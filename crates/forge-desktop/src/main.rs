@@ -138,6 +138,8 @@ mod tts_filters;
 mod unavailable_builtin;
 mod unsaved_work;
 mod update_check;
+mod voice_alias_form;
+mod voice_alias_store;
 mod voice_aliases;
 mod voice_gate;
 mod vtube_catalog_options;

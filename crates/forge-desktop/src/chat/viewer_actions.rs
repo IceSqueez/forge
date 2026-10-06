@@ -5,6 +5,7 @@ use forge_types::{SubActionStep, Variant};
 
 use super::platform_gate::platform_integration;
 use crate::chat_author::{AuthorHandle, AuthorKey};
+use crate::voice_alias_form::{alias_key, platform_scope};
 
 const TWITCH_SHOUTOUT_KIND: &str = "twitch.channel.send_shoutout";
 const TWITCH_WHISPER_KIND: &str = "twitch.chat.send_whisper";
@@ -46,6 +47,15 @@ impl ViewerTarget {
             name: name.into(),
             viewer_id,
         }
+    }
+
+    pub fn tts_alias_key(&self) -> Option<String> {
+        let id = self
+            .viewer_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())?;
+        Some(alias_key(platform_scope(self.platform), id))
     }
 
     pub fn builtin_id(&self) -> String {

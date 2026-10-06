@@ -186,6 +186,11 @@ impl TextInput {
         self
     }
 
+    pub fn read_only(mut self, read_only: bool) -> Self {
+        self.read_only = read_only;
+        self
+    }
+
     pub fn leading_icon(mut self, glyph: Icon, tint: Rgba) -> Self {
         self.leading_icon = Some((glyph, tint));
         self

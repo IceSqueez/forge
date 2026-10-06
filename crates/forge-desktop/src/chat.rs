@@ -12,10 +12,9 @@ use forge_components::{
     menu_item, mono_family, page_frame, platform_color, radius, spacing, status_dot, tr,
 };
 use forge_runtime::ActionEngineHandle;
-use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
+use forge_speak_queue::SpeakQueueHandle;
 use forge_storage::{ChatHistoryRepo, Viewer, ViewerRepo, VoiceAliasRepo};
 use forge_types::{Shared, SubActionStep, Variant, is_bot_account};
-use forge_voice::{AliasId, AliasState, EngineId, VoiceAlias, VoiceId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, ListAlignment, ListState,
     MouseButton, MouseDownEvent, Pixels, Point, Rgba, SharedString, Subscription, Window, div,
@@ -40,10 +39,12 @@ mod platform_gate;
 mod send_plan;
 mod viewer_actions;
 mod viewer_history;
+mod viewer_tts;
 
 pub use composer::ChatComposer;
 use viewer_actions::{ViewerAction, ViewerTarget};
 use viewer_history::{ViewerHistory, ViewerHistoryDismissed};
+use viewer_tts::TtsVoiceHost;
 
 const LIST_OVERDRAW: Pixels = px(240.0);
 const PILL_BOTTOM_LIFT: Pixels = px(16.0);
@@ -86,19 +87,6 @@ fn build_reply_step(username: &str, message: &str, parent_message_id: &str) -> S
         continue_on_error: false,
         condition: None,
         label: Some(format!("Reply to {username}")),
-    }
-}
-
-fn blocked_alias(viewer: &str) -> VoiceAlias {
-    VoiceAlias {
-        id: AliasId::new(),
-        viewer_id: viewer.to_owned(),
-        viewer_name: viewer.to_owned(),
-        engine_id: EngineId(String::new()),
-        voice_id: VoiceId(String::new()),
-        pitch_semitones: None,
-        rate_multiplier: None,
-        state: AliasState::Blocked,
     }
 }
 
@@ -178,6 +166,7 @@ pub struct ChatView {
     selected_viewer: Option<AuthorKey>,
     chat_history_repo: Arc<dyn ChatHistoryRepo>,
     viewer_history: Option<ViewerHistoryHost>,
+    tts_voice: Option<TtsVoiceHost>,
     viewers: ViewerDirectory,
     drawer_keys: Vec<AuthorKey>,
     whisper_open: bool,
@@ -283,6 +272,7 @@ impl ChatView {
             selected_viewer: None,
             chat_history_repo,
             viewer_history: None,
+            tts_voice: None,
             viewers: ViewerDirectory::default(),
             drawer_keys: Vec::new(),
             whisper_open: false,
@@ -880,41 +870,6 @@ impl ChatView {
             InputEvent::Cancelled => self.cancel_whisper(cx),
             InputEvent::Changed(_) | InputEvent::Blurred(_) => {}
         }
-    }
-
-    fn block_tts_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
-        self.drawer_menu_open = None;
-        let alias = blocked_alias(&target.name);
-        let repo = Arc::clone(&self.voice_alias_repo);
-        let speak = self.speak.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let outcome = async move {
-                let stored = repo.upsert(&alias).await.map_err(|e| e.to_string())?;
-                if let Some(handle) = speak
-                    && let Err(e) = handle.send(SpeakCommand::SetAlias(stored)).await
-                {
-                    tracing::warn!(error = %e, "voice alias hot-reload failed");
-                }
-                Ok::<(), String>(())
-            }
-            .await;
-            let _ = tx.send(outcome);
-        });
-        cx.spawn(async move |this, cx| {
-            let outcome = rx
-                .await
-                .unwrap_or_else(|_| Err("dispatch cancelled".to_owned()));
-            let _ = this.update(cx, |_this, cx| match outcome {
-                Ok(()) => cx.push_toast(ToastKind::Success, tr!("chat_drawer_block_tts_sent")),
-                Err(e) => cx.push_toast(
-                    ToastKind::Error,
-                    tr!("chat_drawer_block_tts_failed", error = e),
-                ),
-            });
-        })
-        .detach();
-        cx.notify();
     }
 
     fn jump_to_latest(&mut self, cx: &mut Context<Self>) {
@@ -1693,6 +1648,8 @@ impl ChatView {
         let shoutout_target = target.clone();
         let whisper_key = key.clone();
         let block_target = target.clone();
+        let voice_target = target.clone();
+        let has_tts_key = target.tts_alias_key().is_some();
         let timeout_target = target.clone();
         let ban_target = target.clone();
         let items = vec![
@@ -1719,10 +1676,12 @@ impl ChatView {
             menu_item(
                 "chat-drawer-menu-tts-voice",
                 tr!("chat_drawer_set_tts_voice"),
-                cx.listener(|_, _: &ClickEvent, _, _| {}),
+                cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.open_tts_voice(voice_target.clone(), window, cx)
+                }),
             )
             .icon(Icon::Pencil)
-            .disabled(true)
+            .disabled(!has_tts_key)
             .into(),
             menu_divider(),
             menu_item(
@@ -1733,6 +1692,7 @@ impl ChatView {
                 }),
             )
             .color(palette.warning)
+            .disabled(!has_tts_key)
             .into(),
             menu_item(
                 "chat-drawer-menu-timeout",
@@ -2127,6 +2087,7 @@ impl Render for ChatView {
             .child(frame)
             .children(user_menu)
             .children(self.viewer_history.as_ref().map(|host| host.view.clone()))
+            .children(self.tts_voice.as_ref().map(|host| host.view.clone()))
     }
 }
 

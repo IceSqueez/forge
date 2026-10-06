@@ -378,7 +378,7 @@ async fn delete_reports_nothing_removed_for_an_unknown_blob() {
 
     let removed = fx
         .media()
-        .delete(&MediaBlobId::from_stored(TINY_GIF_ID))
+        .delete(&MediaBlobId::from_stored(TINY_GIF_ID).expect("fixture blob id is well formed"))
         .await
         .expect("delete an unknown blob");
 
@@ -398,7 +398,10 @@ async fn retain_refuses_a_blob_that_was_never_stored() {
 
     let error = fx
         .media()
-        .retain(&clip_source(), &MediaBlobId::from_stored(TINY_GIF_ID))
+        .retain(
+            &clip_source(),
+            &MediaBlobId::from_stored(TINY_GIF_ID).expect("fixture blob id is well formed"),
+        )
         .await
         .unwrap_err();
 

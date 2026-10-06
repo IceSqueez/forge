@@ -37,7 +37,7 @@ fn clip_id() -> ClipId {
 
 fn blob(format: MediaFormat) -> MediaBlob {
     MediaBlob {
-        id: MediaBlobId::from_stored(BLOB_ID),
+        id: MediaBlobId::from_stored(BLOB_ID).expect("fixture blob id is well formed"),
         format,
         byte_size: CLIP_BYTES.len() as u64,
         label: "fanfare.wav".to_owned(),
@@ -78,7 +78,9 @@ impl MediaWorld {
     fn resolvable() -> Self {
         Self {
             clip_row: Some(clip_row()),
-            source_blob: Some(MediaBlobId::from_stored(BLOB_ID)),
+            source_blob: Some(
+                MediaBlobId::from_stored(BLOB_ID).expect("fixture blob id is well formed"),
+            ),
             blob: Some(blob(MediaFormat::Wav)),
             bytes: Some(CLIP_BYTES.to_vec()),
             ..Self::default()
@@ -516,8 +518,8 @@ async fn an_icon_reference_shaped_like_a_path_is_refused_before_anything_is_writ
     assert!(
         matches!(
             report.media_issues.as_slice(),
-            [MediaIssue::LookupFailed { key, reference, .. }]
-                if key == ICON && reference == escaping
+            [MediaIssue::UnknownImage { key, image }]
+                if key == ICON && image == escaping
         ),
         "{:?}",
         report.media_issues
@@ -555,14 +557,18 @@ async fn an_imported_icon_is_drawn_as_imported_and_holds_the_slot_a_glyph_gives_
     );
     assert_eq!(
         imported.world().retained,
-        vec![(ICON.to_owned(), MediaBlobId::from_stored(BLOB_ID))],
+        vec![(
+            ICON.to_owned(),
+            MediaBlobId::from_stored(BLOB_ID).expect("fixture blob id is well formed")
+        )],
         "an imported icon did not hold the blob it draws"
     );
 
     let mut world = MediaWorld::resolvable();
-    world
-        .slots
-        .insert(ICON.to_owned(), MediaBlobId::from_stored(BLOB_ID));
+    world.slots.insert(
+        ICON.to_owned(),
+        MediaBlobId::from_stored(BLOB_ID).expect("fixture blob id is well formed"),
+    );
     let switched = harness(icon_config(DEFAULT_ICON), Some(world));
 
     pass(&switched).await;
@@ -586,7 +592,10 @@ async fn a_resolved_reference_holds_the_blob_for_the_slot_it_fills() {
     let world = harness.world();
     assert_eq!(
         world.retained,
-        vec![(SOUND.to_owned(), MediaBlobId::from_stored(BLOB_ID))]
+        vec![(
+            SOUND.to_owned(),
+            MediaBlobId::from_stored(BLOB_ID).expect("fixture blob id is well formed")
+        )]
     );
     assert!(world.released.is_empty());
 }
@@ -594,9 +603,10 @@ async fn a_resolved_reference_holds_the_blob_for_the_slot_it_fills() {
 #[tokio::test]
 async fn a_slot_already_holding_the_same_blob_is_left_alone_instead_of_retained_again() {
     let mut world = MediaWorld::resolvable();
-    world
-        .slots
-        .insert(SOUND.to_owned(), MediaBlobId::from_stored(BLOB_ID));
+    world.slots.insert(
+        SOUND.to_owned(),
+        MediaBlobId::from_stored(BLOB_ID).expect("fixture blob id is well formed"),
+    );
     let harness = harness(sound_config(&format!("clip:{CLIP_ULID}")), Some(world));
 
     pass(&harness).await;
@@ -609,9 +619,10 @@ async fn a_slot_already_holding_the_same_blob_is_left_alone_instead_of_retained_
 #[tokio::test]
 async fn a_slot_whose_key_stops_naming_a_clip_is_released() {
     let mut world = MediaWorld::resolvable();
-    world
-        .slots
-        .insert(SOUND.to_owned(), MediaBlobId::from_stored(OTHER_BLOB_ID));
+    world.slots.insert(
+        SOUND.to_owned(),
+        MediaBlobId::from_stored(OTHER_BLOB_ID).expect("fixture blob id is well formed"),
+    );
     let harness = harness(sound_config("fanfare.mp3"), Some(world));
 
     pass(&harness).await;
@@ -625,9 +636,10 @@ async fn a_slot_whose_key_stops_naming_a_clip_is_released() {
 async fn a_transient_lookup_failure_leaves_the_slot_exactly_as_it_was() {
     let mut world = MediaWorld::resolvable();
     world.clip_lookup_fails = true;
-    world
-        .slots
-        .insert(SOUND.to_owned(), MediaBlobId::from_stored(BLOB_ID));
+    world.slots.insert(
+        SOUND.to_owned(),
+        MediaBlobId::from_stored(BLOB_ID).expect("fixture blob id is well formed"),
+    );
     let harness = harness(sound_config(&format!("clip:{CLIP_ULID}")), Some(world));
 
     pass(&harness).await;
@@ -681,9 +693,10 @@ async fn a_key_that_does_not_hold_media_keeps_wording_that_opens_with_the_prefix
 #[tokio::test]
 async fn deleting_an_overlay_drops_every_slot_it_held() {
     let mut world = MediaWorld::resolvable();
-    world
-        .slots
-        .insert(SOUND.to_owned(), MediaBlobId::from_stored(BLOB_ID));
+    world.slots.insert(
+        SOUND.to_owned(),
+        MediaBlobId::from_stored(BLOB_ID).expect("fixture blob id is well formed"),
+    );
     let harness = harness(sound_config(&format!("clip:{CLIP_ULID}")), Some(world));
 
     let dropped = harness

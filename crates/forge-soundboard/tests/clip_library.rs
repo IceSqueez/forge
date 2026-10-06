@@ -25,8 +25,10 @@ const CLIP_SOURCE_SLOT: &str = "source";
 const FANFARE: &str = "/home/streamer/sounds/fanfare.wav";
 const AIRHORN: &str = "/home/streamer/sounds/airhorn.wav";
 const UNREADABLE: &str = "/home/streamer/sounds/notes.txt";
-const FANFARE_BLOB: &str = "sha256-fanfare";
-const AIRHORN_BLOB: &str = "sha256-airhorn";
+const FANFARE_BLOB: &str =
+    "sha256-fafafafafafafafafafafafafafafafafafafafafafafafafafafafafafafafa";
+const AIRHORN_BLOB: &str =
+    "sha256-a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1";
 const MANAGED_FANFARE: &str = "/data/media/sha256-fanfare.wav";
 const MANAGED_AIRHORN: &str = "/data/media/sha256-airhorn.wav";
 
@@ -67,7 +69,7 @@ impl FakeMedia {
     }
 
     fn knows(&self, source: &str, blob: &str, managed: &str) {
-        let id = MediaBlobId::from_stored(blob);
+        let id = MediaBlobId::from_stored(blob).expect("fixture blob id is well formed");
         let mut state = self.state.lock().unwrap();
         state.known.insert(PathBuf::from(source), id.clone());
         state.resolvable.insert(id, PathBuf::from(managed));
@@ -78,13 +80,13 @@ impl FakeMedia {
             .lock()
             .unwrap()
             .resolvable
-            .remove(&MediaBlobId::from_stored(blob));
+            .remove(&MediaBlobId::from_stored(blob).expect("fixture blob id is well formed"));
     }
 
     fn already_retained(&self, clip_id: ClipId, blob: &str) {
         self.state.lock().unwrap().retained.insert(
             slot_key(&clip_source(clip_id)),
-            MediaBlobId::from_stored(blob),
+            MediaBlobId::from_stored(blob).expect("fixture blob id is well formed"),
         );
     }
 
@@ -427,7 +429,10 @@ async fn saving_a_clip_with_a_changed_path_retains_the_blob_of_the_new_file() {
         drain(&mut fx.calls),
         vec![
             MediaCall::Import(PathBuf::from(AIRHORN)),
-            MediaCall::Retain(clip_source(row.id), MediaBlobId::from_stored(AIRHORN_BLOB)),
+            MediaCall::Retain(
+                clip_source(row.id),
+                MediaBlobId::from_stored(AIRHORN_BLOB).expect("fixture blob id is well formed")
+            ),
         ]
     );
 }
@@ -487,7 +492,7 @@ async fn repeated_triggers_import_a_clip_once_while_its_adoption_is_in_flight() 
         fx.calls.recv().await,
         Some(MediaCall::Retain(
             clip_source(row.id),
-            MediaBlobId::from_stored(FANFARE_BLOB)
+            MediaBlobId::from_stored(FANFARE_BLOB).expect("fixture blob id is well formed")
         ))
     );
     assert!(drain(&mut fx.calls).is_empty());

@@ -614,7 +614,7 @@ mod tests {
 
     fn blob(id: &str, label: &str, format: MediaFormat) -> MediaBlob {
         MediaBlob {
-            id: MediaBlobId::from_stored(id),
+            id: MediaBlobId::from_stored(id).expect("fixture blob id is well formed"),
             format,
             byte_size: 6,
             label: label.to_owned(),

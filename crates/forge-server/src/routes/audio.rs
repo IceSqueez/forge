@@ -8,7 +8,7 @@ use axum::routing::{get, post};
 use serde::Deserialize;
 
 use crate::audio_clips::ClipOutcome;
-use crate::routes::overlays::cors_header_value;
+use crate::routes::overlays::{NOSNIFF, cors_header_value};
 use crate::server::AppState;
 
 const CLIP_PATH_PREFIX: &str = "/audio/v1/clip/";
@@ -54,6 +54,10 @@ async fn serve_clip(
         HeaderValue::from_static(payload.media_type.as_str()),
     );
     response_headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(NO_STORE));
+    response_headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static(NOSNIFF),
+    );
 
     (StatusCode::OK, response_headers, Body::from(payload.bytes)).into_response()
 }
@@ -575,6 +579,37 @@ mod tests {
             fixture.own_origin()
         );
         assert_eq!(outcome.recv().await, ClipOutcome::Played);
+
+        fixture.handle.abort();
+    }
+
+    #[tokio::test]
+    async fn both_file_routes_forbid_the_browser_from_sniffing_the_served_type() {
+        let root = tempfile::tempdir().expect("tempdir");
+        overlay_root_with_an_asset(root.path()).await;
+        let fixture = serve(
+            false,
+            CORS_MIRRORS_ANY_ORIGIN,
+            root.path().to_path_buf(),
+            MemSettings::new(),
+        )
+        .await;
+        let (ticket, _outcome) = fixture.offer().await;
+        let overlay_path = format!("/overlays/{OVERLAY_IDENTITY}/{OVERLAY_ASSET}");
+
+        for (route, path) in [
+            ("overlay file", overlay_path.as_str()),
+            ("audio clip", ticket.clip_path()),
+        ] {
+            let response = fixture.fetch(path).await;
+
+            assert_eq!(response.status(), StatusCode::OK, "{route}");
+            assert_eq!(
+                header_of(&response, reqwest::header::X_CONTENT_TYPE_OPTIONS),
+                "nosniff",
+                "{route}"
+            );
+        }
 
         fixture.handle.abort();
     }

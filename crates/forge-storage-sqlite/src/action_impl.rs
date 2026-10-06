@@ -176,25 +176,6 @@ impl ActionRepo for SqliteActionRepo {
         Ok(result.rows_affected() > 0)
     }
 
-    async fn list_by_group<'a>(
-        &'a self,
-        group: Option<&'a str>,
-    ) -> Result<Vec<Action>, StorageError> {
-        let group_val = group.unwrap_or("");
-        let rows: Vec<ActionRow> = sqlx::query_as(
-            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
-             FROM actions WHERE group_name = ? AND archived_at IS NULL ORDER BY name",
-        )
-        .bind(group_val)
-        .fetch_all(self.db.reader())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        rows.into_iter()
-            .map(|row| decode_row(row).map_err(StorageError::from))
-            .collect()
-    }
-
     async fn record_execution(
         &self,
         action_id: ActionId,
@@ -447,19 +428,5 @@ impl ActionRepo for SqliteActionRepo {
         .map_err(SqliteStorageError::Sqlx)?;
 
         Ok(result.rows_affected() > 0)
-    }
-
-    async fn list_archived(&self) -> Result<Vec<Action>, StorageError> {
-        let rows: Vec<ActionRow> = sqlx::query_as(
-            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
-             FROM actions WHERE archived_at IS NOT NULL ORDER BY name",
-        )
-        .fetch_all(self.db.reader())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        rows.into_iter()
-            .map(|row| decode_row(row).map_err(StorageError::from))
-            .collect()
     }
 }

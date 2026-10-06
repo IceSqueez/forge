@@ -79,7 +79,10 @@ impl ScreenActionsView {
 
     fn action_passes(&self, group: &ActionGroup, action: &ActionSummary) -> bool {
         let in_filter = Self::category_visible(self.filter, group.category)
-            || (self.filter == ActionsFilter::Timers && self.timer_action_ids.contains(&action.id));
+            || self
+                .filter_action_ids
+                .get(&self.filter)
+                .is_some_and(|ids| ids.contains(&action.id));
         in_filter && self.search.matches(&action.name)
     }
 
@@ -663,7 +666,8 @@ impl ScreenActionsView {
                 if surviving.is_empty() {
                     continue;
                 }
-                col = col.child(self.render_group_header(index, group, palette, cx));
+                col =
+                    col.child(self.render_group_header(index, group, surviving.len(), palette, cx));
                 if !group.collapsed {
                     for action in surviving {
                         col = col.child(self.render_row(action, palette, cx));
@@ -711,6 +715,7 @@ impl ScreenActionsView {
         &self,
         index: usize,
         group: &ActionGroup,
+        shown_count: usize,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -745,7 +750,7 @@ impl ScreenActionsView {
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
-                    .child(group.actions.len().to_string()),
+                    .child(shown_count.to_string()),
             )
             .into_any_element()
     }
@@ -1213,11 +1218,12 @@ mod tests {
     };
 
     const CHAT_KIND: &str = "twitch.chat";
+    const REWARD_KIND: &str = "twitch.reward_redemption";
 
     struct Seed {
         name: &'static str,
         group: &'static str,
-        trigger_kind: Option<&'static str>,
+        trigger_kinds: &'static [&'static str],
     }
 
     fn action(seed: &Seed) -> Action {
@@ -1251,12 +1257,15 @@ mod tests {
     }
 
     fn registry() -> TriggerRegistry {
-        let mut registry = trigger_registry(vec![StubTrigger::new(
-            CHAT_KIND,
-            "Chat",
-            TriggerCategory::Chat,
-            Declares::Nothing,
-        )]);
+        let mut registry = trigger_registry(vec![
+            StubTrigger::new(CHAT_KIND, "Chat", TriggerCategory::Chat, Declares::Nothing),
+            StubTrigger::new(
+                REWARD_KIND,
+                "Reward",
+                TriggerCategory::ChannelPoints,
+                Declares::Nothing,
+            ),
+        ]);
         registry.register(Box::new(TimerTickDescriptor)).unwrap();
         registry
     }
@@ -1277,7 +1286,7 @@ mod tests {
             let mut instances = Vec::new();
             let mut users: HashMap<TriggerInstanceId, Vec<ActionId>> = HashMap::new();
             for (seed, action) in seeds.iter().zip(&actions) {
-                if let Some(kind) = seed.trigger_kind {
+                for kind in seed.trigger_kinds {
                     let instance = instance(kind);
                     users.insert(instance.id, vec![action.id]);
                     instances.push(instance);
@@ -1390,7 +1399,16 @@ mod tests {
                 last_step_outcomes: Vec::new(),
             };
             self.view
-                .update(cx, |view, _| view.sync_timer_membership(&detail));
+                .update(cx, |view, _| view.sync_filter_membership(&detail));
+        }
+    }
+
+    fn label(filter: ActionsFilter) -> &'static str {
+        match filter {
+            ActionsFilter::All => "all",
+            ActionsFilter::Chat => "chat",
+            ActionsFilter::Timers => "timers",
+            ActionsFilter::Points => "points",
         }
     }
 
@@ -1399,40 +1417,75 @@ mod tests {
             Seed {
                 name: "Hydrate",
                 group: "Chat Commands",
-                trigger_kind: Some(TIMER_TICK_KIND),
+                trigger_kinds: &[TIMER_TICK_KIND],
             },
             Seed {
                 name: "Lurk",
                 group: "Chat Commands",
-                trigger_kind: Some(CHAT_KIND),
+                trigger_kinds: &[CHAT_KIND],
             },
             Seed {
                 name: "Raid train",
                 group: "Timers",
-                trigger_kind: None,
+                trigger_kinds: &[],
             },
             Seed {
                 name: "Stretch",
                 group: "Misc",
-                trigger_kind: Some(TIMER_TICK_KIND),
+                trigger_kinds: &[TIMER_TICK_KIND],
+            },
+            Seed {
+                name: "Hug",
+                group: "Misc",
+                trigger_kinds: &[REWARD_KIND],
+            },
+            Seed {
+                name: "Spin the wheel",
+                group: "Misc",
+                trigger_kinds: &[TIMER_TICK_KIND, REWARD_KIND],
             },
         ]
     }
 
     #[gpui::test]
-    fn timers_filter_shows_an_action_with_a_timer_trigger_outside_the_timers_group(
+    fn trigger_filters_show_an_action_with_a_matching_trigger_outside_the_filter_group(
         cx: &mut gpui::TestAppContext,
     ) {
         let fixture = Fixture::new(cx, &seeds());
-        fixture.set_filter(cx, ActionsFilter::Timers);
-        assert!(fixture.visible(cx, "Hydrate"));
+        for (filter, name) in [
+            (ActionsFilter::Timers, "Hydrate"),
+            (ActionsFilter::Points, "Hug"),
+        ] {
+            fixture.set_filter(cx, filter);
+            assert!(fixture.visible(cx, name), "{name} under {}", label(filter));
+        }
     }
 
     #[gpui::test]
-    fn timers_filter_hides_an_action_without_a_timer_trigger(cx: &mut gpui::TestAppContext) {
+    fn trigger_filters_hide_an_action_without_a_trigger_of_their_category(
+        cx: &mut gpui::TestAppContext,
+    ) {
         let fixture = Fixture::new(cx, &seeds());
-        fixture.set_filter(cx, ActionsFilter::Timers);
-        assert!(!fixture.visible(cx, "Lurk"));
+        for (filter, name) in [
+            (ActionsFilter::Timers, "Lurk"),
+            (ActionsFilter::Timers, "Hug"),
+            (ActionsFilter::Points, "Lurk"),
+            (ActionsFilter::Points, "Hydrate"),
+        ] {
+            fixture.set_filter(cx, filter);
+            assert!(!fixture.visible(cx, name), "{name} under {}", label(filter));
+        }
+    }
+
+    #[gpui::test]
+    fn an_action_with_timer_and_reward_triggers_shows_under_both_filters(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::new(cx, &seeds());
+        for filter in [ActionsFilter::Timers, ActionsFilter::Points] {
+            fixture.set_filter(cx, filter);
+            assert!(fixture.visible(cx, "Spin the wheel"), "{}", label(filter));
+        }
     }
 
     #[gpui::test]
@@ -1452,23 +1505,99 @@ mod tests {
     }
 
     #[gpui::test]
-    fn removing_the_last_timer_trigger_drops_the_action_from_the_timers_filter(
+    fn removing_the_last_matching_trigger_drops_the_action_from_its_filter(
         cx: &mut gpui::TestAppContext,
     ) {
-        let fixture = Fixture::new(cx, &seeds());
-        fixture.set_filter(cx, ActionsFilter::Timers);
-        fixture.sync_detail(cx, "Hydrate", &[CHAT_KIND]);
-        assert!(!fixture.visible(cx, "Hydrate"));
+        for (filter, name) in [
+            (ActionsFilter::Timers, "Hydrate"),
+            (ActionsFilter::Points, "Hug"),
+        ] {
+            let fixture = Fixture::new(cx, &seeds());
+            fixture.set_filter(cx, filter);
+            fixture.sync_detail(cx, name, &[CHAT_KIND]);
+            assert!(!fixture.visible(cx, name), "{name} under {}", label(filter));
+        }
     }
 
     #[gpui::test]
-    fn adding_a_timer_trigger_puts_the_action_into_the_timers_filter(
+    fn removing_one_trigger_kind_keeps_the_action_under_the_other_filter(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (remaining, kept, dropped) in [
+            (
+                TIMER_TICK_KIND,
+                ActionsFilter::Timers,
+                ActionsFilter::Points,
+            ),
+            (REWARD_KIND, ActionsFilter::Points, ActionsFilter::Timers),
+        ] {
+            let fixture = Fixture::new(cx, &seeds());
+            fixture.sync_detail(cx, "Spin the wheel", &[remaining]);
+            fixture.set_filter(cx, kept);
+            assert!(
+                fixture.visible(cx, "Spin the wheel"),
+                "kept {}",
+                label(kept)
+            );
+            fixture.set_filter(cx, dropped);
+            assert!(
+                !fixture.visible(cx, "Spin the wheel"),
+                "dropped {}",
+                label(dropped)
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn adding_timer_and_reward_triggers_puts_the_action_into_both_filters(
         cx: &mut gpui::TestAppContext,
     ) {
         let fixture = Fixture::new(cx, &seeds());
-        fixture.set_filter(cx, ActionsFilter::Timers);
-        fixture.sync_detail(cx, "Lurk", &[CHAT_KIND, TIMER_TICK_KIND]);
-        assert!(fixture.visible(cx, "Lurk"));
+        fixture.sync_detail(cx, "Lurk", &[CHAT_KIND, TIMER_TICK_KIND, REWARD_KIND]);
+        for filter in [ActionsFilter::Timers, ActionsFilter::Points] {
+            fixture.set_filter(cx, filter);
+            assert!(fixture.visible(cx, "Lurk"), "{}", label(filter));
+        }
+    }
+
+    #[test]
+    fn actions_by_trigger_filter_buckets_actions_per_filter_and_skips_unmapped_kinds() {
+        let timer_a = instance(TIMER_TICK_KIND);
+        let timer_b = instance(TIMER_TICK_KIND);
+        let reward = instance(REWARD_KIND);
+        let chat = instance(CHAT_KIND);
+        let (first, second, redeemer, chatter) = (
+            ActionId::new(),
+            ActionId::new(),
+            ActionId::new(),
+            ActionId::new(),
+        );
+        let users: HashMap<TriggerInstanceId, Vec<ActionId>> = HashMap::from([
+            (timer_a.id, vec![first]),
+            (timer_b.id, vec![second]),
+            (reward.id, vec![first, redeemer]),
+            (chat.id, vec![chatter]),
+        ]);
+        let instances = vec![timer_a, timer_b, reward, chat];
+        let mut repo = MockTriggerInstanceRepo::new();
+        repo.expect_list_all()
+            .returning(move || Ok(instances.clone()));
+        repo.expect_actions_using()
+            .returning(move |id| Ok(users.get(&id).cloned().unwrap_or_default()));
+        let filter_by_kind = HashMap::from([
+            (TIMER_TICK_KIND.to_owned(), ActionsFilter::Timers),
+            (REWARD_KIND.to_owned(), ActionsFilter::Points),
+        ]);
+
+        let members = runtime()
+            .block_on(actions_by_trigger_filter(&repo, &filter_by_kind))
+            .unwrap();
+
+        let expected = HashMap::from([
+            (ActionsFilter::Timers, HashSet::from([first, second])),
+            (ActionsFilter::Points, HashSet::from([first, redeemer])),
+        ]);
+        assert!(members == expected);
     }
 
     #[gpui::test]

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard};
 
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::sync::{mpsc, watch};
 
 use super::chat::Viewer;
@@ -34,6 +34,7 @@ pub(crate) struct Inner {
     outboxes: HashMap<String, Outbox>,
     pub(crate) viewers: HashMap<String, Viewer>,
     pub(crate) rewards: RewardStore,
+    pub(crate) followers: Vec<Value>,
     request_tap: Option<mpsc::UnboundedSender<TappedRequest>>,
 }
 
@@ -141,6 +142,19 @@ impl Inner {
         if self.viewers.get(&viewer.user_id) != Some(viewer) {
             self.viewers.insert(viewer.user_id.clone(), viewer.clone());
         }
+    }
+
+    pub(crate) fn remember_follow(&mut self, event: &Value) {
+        let Some(user_id) = event["user_id"].as_str() else {
+            return;
+        };
+        self.followers.retain(|row| row["user_id"] != user_id);
+        self.followers.push(json!({
+            "user_id": user_id,
+            "user_login": event["user_login"],
+            "user_name": event["user_name"],
+            "followed_at": event["followed_at"],
+        }));
     }
 
     pub(crate) fn record_request(&mut self, request: RecordedRequest) {

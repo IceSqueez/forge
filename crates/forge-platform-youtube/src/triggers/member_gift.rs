@@ -167,8 +167,8 @@ mod tests {
         for (wire_count, expected) in [
             (json!(5_i64), 5),
             (json!(1_i64), 1),
-            (json!(null), 0),
-            (json!("5"), 0),
+            (json!(null), 1),
+            (json!("5"), 1),
         ] {
             let event = gift_event(json!({
                 "count": wire_count.clone(),
@@ -195,7 +195,7 @@ mod tests {
     }
 
     #[test]
-    fn a_gift_batch_the_wire_leaves_blank_names_nobody_and_counts_nothing() {
+    fn a_gift_batch_the_wire_leaves_blank_names_nobody_and_counts_one_gift() {
         let stack = ChannelMemberGiftDescriptor.build_arg_stack(&gift_event(json!({})));
         for name in [
             "user_id",
@@ -210,6 +210,6 @@ mod tests {
                 "'{name}'"
             );
         }
-        assert_eq!(stack.get("gift_count"), Some(&Variant::Int(0)));
+        assert_eq!(stack.get("gift_count"), Some(&Variant::Int(1)));
     }
 }

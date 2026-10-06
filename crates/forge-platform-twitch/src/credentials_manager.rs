@@ -2,15 +2,15 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
-use forge_platform_core::PlatformError;
 use forge_platform_core::auth::{
     PkceRefreshConfig, PkceRefresher, REFRESH_BUFFER_SECS, ReauthPolicy,
 };
+use forge_platform_core::{PlatformEndpoints, PlatformError};
 use forge_storage::{CredentialsRepo, StorageError};
 use forge_types::OAuthToken;
 use tracing::{debug, info, warn};
 
-use crate::auth::TWITCH_TOKEN_ENDPOINT;
+use crate::auth::twitch_token_endpoint;
 use crate::credentials::{StoredCredential, load, store_credential};
 
 const PLATFORM: &str = "twitch";
@@ -24,8 +24,12 @@ pub struct TwitchCredentialsManager {
 }
 
 impl TwitchCredentialsManager {
-    pub fn new(repo: Arc<dyn CredentialsRepo>, client_id: String) -> Self {
-        Self::with_endpoint(repo, client_id, TWITCH_TOKEN_ENDPOINT.to_owned())
+    pub fn new(
+        endpoints: &PlatformEndpoints,
+        repo: Arc<dyn CredentialsRepo>,
+        client_id: String,
+    ) -> Self {
+        Self::with_endpoint(repo, client_id, twitch_token_endpoint(endpoints))
     }
 
     pub(crate) fn with_endpoint(

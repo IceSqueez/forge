@@ -1540,6 +1540,7 @@ dependencies = [
  "forge-events",
  "forge-types",
  "rand 0.10.2",
+ "serde_json",
  "thiserror 2.0.20",
  "time",
 ]

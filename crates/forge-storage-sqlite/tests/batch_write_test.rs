@@ -64,6 +64,7 @@ fn chat_row(id: &str, author: &str) -> UnifiedChatRow {
         source: ChatSource::Twitch,
         received_at: OffsetDateTime::now_utc(),
         author: author.to_string(),
+        author_id: None,
         author_color: None,
         body_segments: vec![],
         badges: vec![],

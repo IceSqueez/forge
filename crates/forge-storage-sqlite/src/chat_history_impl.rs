@@ -1,5 +1,7 @@
 use async_trait::async_trait;
-use forge_storage::{ChatHistoryRepo, StorageError};
+use forge_storage::{
+    AUTHORLESS_CHAT_HISTORY_RETAINED, ChatAuthorKey, ChatHistoryRepo, StorageError,
+};
 use forge_types::EventId;
 use forge_types::unified_chat::{
     ChatEventDetail, ChatSegment, ChatSource, ModerationMarks, UnifiedChatRow, UserBadge,
@@ -31,7 +33,7 @@ fn encode_source(source: ChatSource) -> Result<String, StorageError> {
         .to_string())
 }
 
-const CHAT_HISTORY_COLUMNS: usize = 11;
+const CHAT_HISTORY_COLUMNS: usize = 12;
 
 struct EncodedChatRow<'a> {
     id: &'a str,
@@ -39,6 +41,7 @@ struct EncodedChatRow<'a> {
     source: String,
     received_at: i64,
     author: &'a str,
+    author_id: Option<&'a str>,
     author_color: Option<String>,
     body_segments: String,
     badges: String,
@@ -55,6 +58,7 @@ impl<'a> EncodedChatRow<'a> {
             source: encode_source(row.source)?,
             received_at: to_epoch_ms(row.received_at),
             author: &row.author,
+            author_id: row.author_id.as_deref(),
             author_color: row
                 .author_color
                 .map(|c| serde_json::to_string(&c))
@@ -83,6 +87,7 @@ struct ChatHistoryRow {
     source: String,
     received_at: i64,
     author: String,
+    author_id: Option<String>,
     author_color: Option<String>,
     body_segments: String,
     badges: String,
@@ -124,6 +129,7 @@ fn decode_row(row: ChatHistoryRow) -> Result<UnifiedChatRow, SqliteStorageError>
         source,
         received_at,
         author: row.author,
+        author_id: row.author_id,
         author_color,
         body_segments,
         badges,
@@ -131,6 +137,12 @@ fn decode_row(row: ChatHistoryRow) -> Result<UnifiedChatRow, SqliteStorageError>
         event_detail,
         moderation,
     })
+}
+
+fn decode_rows(rows: Vec<ChatHistoryRow>) -> Result<Vec<UnifiedChatRow>, StorageError> {
+    rows.into_iter()
+        .map(|r| decode_row(r).map_err(StorageError::from))
+        .collect()
 }
 
 pub struct SqliteChatHistoryRepo {
@@ -149,15 +161,16 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
         let row = EncodedChatRow::encode(row)?;
         sqlx::query(
             "INSERT INTO chat_history
-                (id, event_id, source, received_at, author, author_color,
+                (id, event_id, source, received_at, author, author_id, author_color,
                  body_segments, badges, is_event, event_detail, moderation)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(row.id)
         .bind(&row.event_id)
         .bind(&row.source)
         .bind(row.received_at)
         .bind(row.author)
+        .bind(row.author_id)
         .bind(row.author_color.as_deref())
         .bind(&row.body_segments)
         .bind(&row.badges)
@@ -189,7 +202,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
         insert_rows(
             &mut tx,
             "INSERT INTO chat_history
-                (id, event_id, source, received_at, author, author_color,
+                (id, event_id, source, received_at, author, author_id, author_color,
                  body_segments, badges, is_event, event_detail, moderation) ",
             CHAT_HISTORY_COLUMNS,
             " ON CONFLICT(id) DO NOTHING",
@@ -201,6 +214,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
                     .push_bind(row.source.as_str())
                     .push_bind(row.received_at)
                     .push_bind(row.author)
+                    .push_bind(row.author_id)
                     .push_bind(row.author_color.as_deref())
                     .push_bind(row.body_segments.as_str())
                     .push_bind(row.badges.as_str())
@@ -216,7 +230,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
 
     async fn list_recent(&self, limit: usize) -> Result<Vec<UnifiedChatRow>, StorageError> {
         let rows: Vec<ChatHistoryRow> = sqlx::query_as(
-            "SELECT id, event_id, source, received_at, author, author_color,
+            "SELECT id, event_id, source, received_at, author, author_id, author_color,
                     body_segments, badges, is_event, event_detail, moderation
              FROM chat_history
              ORDER BY seq DESC
@@ -227,24 +241,86 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        rows.into_iter()
-            .map(|r| decode_row(r).map_err(StorageError::from))
-            .collect()
+        decode_rows(rows)
     }
 
-    async fn prune_to_limit(&self, max_rows: usize) -> Result<u64, StorageError> {
-        let result = sqlx::query(
-            "DELETE FROM chat_history
-             WHERE seq NOT IN (
-                 SELECT seq FROM chat_history ORDER BY seq DESC LIMIT ?
-             )",
+    async fn list_recent_messages_by_author(
+        &self,
+        author: &ChatAuthorKey,
+        limit: usize,
+    ) -> Result<Vec<UnifiedChatRow>, StorageError> {
+        let rows: Vec<ChatHistoryRow> = sqlx::query_as(
+            "SELECT id, event_id, source, received_at, author, author_id, author_color,
+                    body_segments, badges, is_event, event_detail, moderation
+             FROM chat_history
+             WHERE source = ? AND author_id = ? AND is_event = 0
+             ORDER BY seq DESC
+             LIMIT ?",
         )
-        .bind(max_rows as i64)
-        .execute(self.db.writer())
+        .bind(encode_source(author.source)?)
+        .bind(&author.author_id)
+        .bind(limit as i64)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        Ok(result.rows_affected())
+        decode_rows(rows)
+    }
+
+    async fn apply_retention(
+        &self,
+        authors: &[ChatAuthorKey],
+        per_author: usize,
+    ) -> Result<u64, StorageError> {
+        let encoded = authors
+            .iter()
+            .map(|author| Ok((encode_source(author.source)?, author.author_id.as_str())))
+            .collect::<Result<Vec<_>, StorageError>>()?;
+
+        let mut tx = self
+            .db
+            .writer()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        let mut deleted = 0;
+        for (source, author_id) in &encoded {
+            deleted += sqlx::query(
+                "DELETE FROM chat_history
+                 WHERE source = ?1 AND author_id = ?2 AND is_event = 0
+                   AND seq <= (
+                       SELECT seq FROM chat_history
+                       WHERE source = ?1 AND author_id = ?2 AND is_event = 0
+                       ORDER BY seq DESC
+                       LIMIT 1 OFFSET ?3
+                   )",
+            )
+            .bind(source)
+            .bind(author_id)
+            .bind(per_author as i64)
+            .execute(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?
+            .rows_affected();
+        }
+        deleted += sqlx::query(
+            "DELETE FROM chat_history
+             WHERE (author_id IS NULL OR is_event = 1)
+               AND seq <= (
+                   SELECT seq FROM chat_history
+                   WHERE (author_id IS NULL OR is_event = 1)
+                   ORDER BY seq DESC
+                   LIMIT 1 OFFSET ?
+               )",
+        )
+        .bind(AUTHORLESS_CHAT_HISTORY_RETAINED as i64)
+        .execute(&mut *tx)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?
+        .rows_affected();
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(deleted)
     }
 
     async fn mark_message_deleted(&self, platform_msg_id: &str) -> Result<u64, StorageError> {
@@ -322,6 +398,8 @@ mod tests {
     };
     use time::OffsetDateTime;
 
+    use forge_storage::{AUTHORLESS_CHAT_HISTORY_RETAINED, ChatAuthorKey};
+
     use super::SqliteChatHistoryRepo;
     use crate::{apply_migrations, connect};
 
@@ -338,6 +416,7 @@ mod tests {
             source: ChatSource::Twitch,
             received_at: OffsetDateTime::from_unix_timestamp(unix_secs).unwrap(),
             author: "user".to_string(),
+            author_id: None,
             author_color: None,
             body_segments: vec![],
             badges: vec![],
@@ -362,6 +441,7 @@ mod tests {
             source: ChatSource::YouTube,
             received_at: OffsetDateTime::from_unix_timestamp(1_700_000_123).unwrap(),
             author: "Стрімер".to_string(),
+            author_id: None,
             author_color: Some([0x12, 0xAB, 0xFF]),
             body_segments: vec![
                 ChatSegment::Text {
@@ -412,47 +492,6 @@ mod tests {
 
         let ids: Vec<&str> = got.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(ids, ["e", "d", "c"]);
-    }
-
-    #[tokio::test]
-    async fn prune_to_limit_keeps_newest_rows_and_reports_deleted_count() {
-        let repo = make_repo().await;
-        seed(
-            &repo,
-            &[("a", 100), ("b", 200), ("c", 300), ("d", 400), ("e", 500)],
-        )
-        .await;
-
-        let deleted = repo.prune_to_limit(2).await.unwrap();
-
-        assert_eq!(deleted, 3);
-        let remaining: Vec<String> = repo
-            .list_recent(10)
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|r| r.id)
-            .collect();
-        assert_eq!(remaining, ["e", "d"]);
-    }
-
-    #[tokio::test]
-    async fn prune_to_limit_is_noop_when_limit_meets_or_exceeds_row_count() {
-        let repo = make_repo().await;
-        seed(&repo, &[("a", 100), ("b", 200), ("c", 300)]).await;
-
-        assert_eq!(repo.prune_to_limit(3).await.unwrap(), 0);
-        assert_eq!(repo.prune_to_limit(10).await.unwrap(), 0);
-        assert_eq!(repo.list_recent(10).await.unwrap().len(), 3);
-    }
-
-    #[tokio::test]
-    async fn prune_to_limit_zero_deletes_all_rows() {
-        let repo = make_repo().await;
-        seed(&repo, &[("a", 100), ("b", 200)]).await;
-
-        assert_eq!(repo.prune_to_limit(0).await.unwrap(), 2);
-        assert!(repo.list_recent(10).await.unwrap().is_empty());
     }
 
     fn row_full(id: &str, source: ChatSource, author: &str, secs: i64) -> UnifiedChatRow {
@@ -604,5 +643,239 @@ mod tests {
         );
         assert!(moderation_of(&repo, "t2").await.deleted);
         assert_eq!(moderation_of(&repo, "y1").await, ModerationMarks::default());
+    }
+
+    const EVERY_ROW: usize = 100_000;
+
+    fn authored(
+        id: &str,
+        source: ChatSource,
+        author_id: Option<&str>,
+        is_event: bool,
+    ) -> UnifiedChatRow {
+        UnifiedChatRow {
+            source,
+            author_id: author_id.map(str::to_owned),
+            is_event,
+            ..row_at(id, 100)
+        }
+    }
+
+    fn key(source: ChatSource, author_id: &str) -> ChatAuthorKey {
+        ChatAuthorKey {
+            source,
+            author_id: author_id.to_owned(),
+        }
+    }
+
+    async fn append_all(repo: &SqliteChatHistoryRepo, rows: &[UnifiedChatRow]) {
+        for row in rows {
+            repo.append(row).await.unwrap();
+        }
+    }
+
+    async fn stored_ids(repo: &SqliteChatHistoryRepo) -> Vec<String> {
+        let mut ids: Vec<String> = repo
+            .list_recent(EVERY_ROW)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|r| r.id)
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    fn messages_of(prefix: &str, count: usize) -> Vec<UnifiedChatRow> {
+        (0..count)
+            .map(|i| {
+                authored(
+                    &format!("{prefix}{i}"),
+                    ChatSource::Twitch,
+                    Some(prefix),
+                    false,
+                )
+            })
+            .collect()
+    }
+
+    async fn ids_by_author(
+        repo: &SqliteChatHistoryRepo,
+        author: &ChatAuthorKey,
+        limit: usize,
+    ) -> Vec<String> {
+        repo.list_recent_messages_by_author(author, limit)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|r| r.id)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn list_recent_messages_by_author_returns_newest_by_insertion_order_capped_at_limit() {
+        let repo = make_repo().await;
+        for (id, secs) in [("m1", 400), ("m2", 300), ("m3", 200), ("m4", 100)] {
+            repo.append(&UnifiedChatRow {
+                received_at: OffsetDateTime::from_unix_timestamp(secs).unwrap(),
+                ..authored(id, ChatSource::Twitch, Some("42"), false)
+            })
+            .await
+            .unwrap();
+        }
+
+        let ids = ids_by_author(&repo, &key(ChatSource::Twitch, "42"), 3).await;
+
+        assert_eq!(ids, ["m4", "m3", "m2"]);
+    }
+
+    #[tokio::test]
+    async fn list_recent_messages_by_author_skips_events_other_authors_and_other_sources() {
+        let repo = make_repo().await;
+        append_all(
+            &repo,
+            &[
+                authored("mine", ChatSource::Twitch, Some("42"), false),
+                authored("my_event", ChatSource::Twitch, Some("42"), true),
+                authored("other_author", ChatSource::Twitch, Some("43"), false),
+                authored(
+                    "same_id_other_source",
+                    ChatSource::YouTube,
+                    Some("42"),
+                    false,
+                ),
+                authored("authorless", ChatSource::Twitch, None, false),
+            ],
+        )
+        .await;
+
+        let ids = ids_by_author(&repo, &key(ChatSource::Twitch, "42"), 10).await;
+
+        assert_eq!(ids, ["mine"]);
+    }
+
+    #[tokio::test]
+    async fn apply_retention_keeps_at_most_the_newest_per_author_rows_around_the_bound() {
+        for (stored, expected_kept, expected_deleted) in [
+            (2, vec!["a0", "a1"], 0),
+            (3, vec!["a0", "a1", "a2"], 0),
+            (4, vec!["a1", "a2", "a3"], 1),
+            (6, vec!["a3", "a4", "a5"], 3),
+        ] {
+            let repo = make_repo().await;
+            append_all(&repo, &messages_of("a", stored)).await;
+
+            let deleted = repo
+                .apply_retention(&[key(ChatSource::Twitch, "a")], 3)
+                .await
+                .unwrap();
+
+            assert_eq!(stored_ids(&repo).await, expected_kept, "stored={stored}");
+            assert_eq!(deleted, expected_deleted, "stored={stored}");
+        }
+    }
+
+    #[tokio::test]
+    async fn apply_retention_leaves_unlisted_authors_and_the_same_id_on_another_source_untouched() {
+        let repo = make_repo().await;
+        append_all(&repo, &messages_of("a", 3)).await;
+        append_all(&repo, &messages_of("b", 3)).await;
+        append_all(
+            &repo,
+            &[
+                authored("yt0", ChatSource::YouTube, Some("a"), false),
+                authored("yt1", ChatSource::YouTube, Some("a"), false),
+            ],
+        )
+        .await;
+
+        repo.apply_retention(&[key(ChatSource::Twitch, "a")], 1)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            stored_ids(&repo).await,
+            ["a2", "b0", "b1", "b2", "yt0", "yt1"]
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_retention_with_no_listed_authors_keeps_every_authored_message() {
+        let repo = make_repo().await;
+        append_all(&repo, &messages_of("a", 4)).await;
+
+        let deleted = repo.apply_retention(&[], 1).await.unwrap();
+
+        assert_eq!((deleted, stored_ids(&repo).await.len()), (0, 4));
+    }
+
+    #[tokio::test]
+    async fn apply_retention_spares_event_rows_of_a_listed_author_from_the_per_author_bound() {
+        let repo = make_repo().await;
+        append_all(
+            &repo,
+            &[
+                authored("event_old", ChatSource::Twitch, Some("a"), true),
+                authored("msg_old", ChatSource::Twitch, Some("a"), false),
+                authored("msg_new", ChatSource::Twitch, Some("a"), false),
+            ],
+        )
+        .await;
+
+        repo.apply_retention(&[key(ChatSource::Twitch, "a")], 1)
+            .await
+            .unwrap();
+
+        assert_eq!(stored_ids(&repo).await, ["event_old", "msg_new"]);
+    }
+
+    fn authorless_rows(count: usize) -> Vec<UnifiedChatRow> {
+        (0..count)
+            .map(|i| authored(&format!("n{i:05}"), ChatSource::Twitch, None, false))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn apply_retention_keeps_exactly_the_authorless_bound_of_newest_rows() {
+        for (extra, expected_deleted) in [(0, 0), (1, 1)] {
+            let repo = make_repo().await;
+            let rows = authorless_rows(AUTHORLESS_CHAT_HISTORY_RETAINED + extra);
+            repo.append_batch(&rows).await.unwrap();
+
+            let deleted = repo.apply_retention(&[], 1).await.unwrap();
+
+            let ids = stored_ids(&repo).await;
+            assert_eq!(deleted, expected_deleted, "extra={extra}");
+            assert_eq!(ids.len(), AUTHORLESS_CHAT_HISTORY_RETAINED, "extra={extra}");
+            assert_eq!(ids.first(), Some(&rows[extra].id), "extra={extra}");
+        }
+    }
+
+    #[tokio::test]
+    async fn apply_retention_counts_authored_events_against_the_authorless_bound_but_not_messages()
+    {
+        let repo = make_repo().await;
+        append_all(
+            &repo,
+            &[
+                authored("authored_event", ChatSource::Twitch, Some("a"), true),
+                authored("authored_message", ChatSource::Twitch, Some("a"), false),
+            ],
+        )
+        .await;
+        repo.append_batch(&authorless_rows(AUTHORLESS_CHAT_HISTORY_RETAINED))
+            .await
+            .unwrap();
+
+        repo.apply_retention(&[], 1).await.unwrap();
+
+        let ids = stored_ids(&repo).await;
+        assert_eq!(
+            (
+                ids.contains(&"authored_event".to_owned()),
+                ids.contains(&"authored_message".to_owned()),
+            ),
+            (false, true)
+        );
     }
 }

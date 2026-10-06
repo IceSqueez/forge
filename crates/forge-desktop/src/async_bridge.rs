@@ -313,10 +313,48 @@ impl Debounced {
         F: Future<Output = Result<(), E>> + Send + 'static,
         E: Display + Send + 'static,
     {
+        self.spawn_debounced(handle, context.into(), fut, |_| {});
+    }
+
+    pub fn schedule_reporting<V, F, E>(
+        &self,
+        handle: &Handle,
+        context: impl Into<SharedString>,
+        fut: F,
+        sink: ErrorSink,
+        cx: &mut Context<V>,
+    ) where
+        V: 'static,
+        F: Future<Output = Result<(), E>> + Send + 'static,
+        E: Display + Send + 'static,
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.spawn_debounced(handle, context.into(), fut, move |context| {
+            let _ = tx.send(context);
+        });
+        cx.spawn(async move |_this, cx| {
+            if let Ok(message) = rx.await {
+                cx.update(|cx| {
+                    sink.report(message.to_string(), cx);
+                });
+            }
+        })
+        .detach();
+    }
+
+    fn spawn_debounced<F, E>(
+        &self,
+        handle: &Handle,
+        context: SharedString,
+        fut: F,
+        on_failure: impl FnOnce(SharedString) + Send + 'static,
+    ) where
+        F: Future<Output = Result<(), E>> + Send + 'static,
+        E: Display + Send + 'static,
+    {
         let ticket = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let generation = Arc::clone(&self.generation);
         let delay = self.delay;
-        let context = context.into();
         handle.spawn(async move {
             tokio::time::sleep(delay).await;
             if generation.load(Ordering::SeqCst) != ticket {
@@ -324,6 +362,7 @@ impl Debounced {
             }
             if let Err(e) = fut.await {
                 tracing::warn!(error = %e, context = %context, "debounced write failed");
+                on_failure(context);
             }
         });
     }
@@ -382,9 +421,11 @@ mod tests {
     use forge_runtime::{ActionCancelRegistry, DispatchError, spawn_action_engine};
     use forge_storage::history::MockHistoryRepo;
     use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
+    use gpui::{AppContext, TestAppContext};
 
     use super::*;
-    use crate::test_support::{StubActions, StubEventLog, runtime};
+    use crate::test_support::{StubActions, StubEventLog, pump, runtime};
+    use crate::toasts::Toasts;
 
     const SUCCEEDS: &str = "test.succeeds";
     const FAILS: &str = "test.fails";
@@ -520,5 +561,129 @@ mod tests {
                 Err(DispatchError::NoOutcome.to_string()),
             )
         );
+    }
+
+    struct Probe;
+
+    type Reported = Vec<(ToastKind, String)>;
+
+    const PERSIST_FAILED: &str = "could not save";
+    const DEBOUNCE: Duration = Duration::from_millis(1);
+    const DEBOUNCE_SETTLE: Duration = Duration::from_millis(15);
+
+    fn reported(cx: &mut TestAppContext) -> Vec<(ToastKind, String)> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|t| (t.kind, t.message.to_string()))
+                .collect()
+        })
+    }
+
+    fn settle(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
+        for _ in 0..2 {
+            rt.block_on(async { tokio::time::sleep(DEBOUNCE_SETTLE).await });
+            pump(rt);
+            cx.run_until_parked();
+        }
+    }
+
+    #[gpui::test]
+    fn a_failed_debounced_write_toasts_its_context_and_a_successful_one_stays_silent(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let probe = cx.new(|_| Probe);
+        let outcomes: [(Result<(), String>, Reported); 2] = [
+            (Ok(()), Vec::new()),
+            (
+                Err("disk gone".to_owned()),
+                vec![(ToastKind::Error, PERSIST_FAILED.to_owned())],
+            ),
+        ];
+        for (write_result, expected) in outcomes {
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            let debounce = Debounced::new(DEBOUNCE);
+
+            probe.update(cx, |_, cx| {
+                debounce.schedule_reporting(
+                    rt.handle(),
+                    PERSIST_FAILED,
+                    async move { write_result },
+                    ErrorSink::Toast,
+                    cx,
+                );
+            });
+            settle(cx, &rt);
+
+            assert_eq!(reported(cx), expected);
+        }
+    }
+
+    #[gpui::test]
+    fn a_debounced_write_superseded_by_a_newer_one_never_runs_or_reports(cx: &mut TestAppContext) {
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let probe = cx.new(|_| Probe);
+        let debounce = Debounced::new(DEBOUNCE);
+        let ran = Arc::new(AtomicU64::new(0));
+
+        probe.update(cx, |_, cx| {
+            let first_ran = Arc::clone(&ran);
+            debounce.schedule_reporting(
+                rt.handle(),
+                PERSIST_FAILED,
+                async move {
+                    first_ran.fetch_add(1, Ordering::SeqCst);
+                    Err::<(), _>("first".to_owned())
+                },
+                ErrorSink::Toast,
+                cx,
+            );
+            let second_ran = Arc::clone(&ran);
+            debounce.schedule_reporting(
+                rt.handle(),
+                PERSIST_FAILED,
+                async move {
+                    second_ran.fetch_add(10, Ordering::SeqCst);
+                    Ok::<(), String>(())
+                },
+                ErrorSink::Toast,
+                cx,
+            );
+        });
+        settle(cx, &rt);
+
+        assert_eq!((ran.load(Ordering::SeqCst), reported(cx)), (10, Vec::new()));
+    }
+
+    #[gpui::test]
+    fn report_failure_toasts_only_when_the_write_failed(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let probe = cx.new(|_| Probe);
+        for (write_result, expected) in [
+            (Ok(()), Vec::new()),
+            (
+                Err("disk gone".to_owned()),
+                vec![(ToastKind::Error, PERSIST_FAILED.to_owned())],
+            ),
+        ] {
+            cx.update(|cx| cx.set_global(Toasts::new()));
+
+            probe.update(cx, |_, cx| {
+                report_failure(
+                    rt.handle(),
+                    async move { write_result },
+                    ErrorSink::Toast,
+                    PERSIST_FAILED,
+                    cx,
+                );
+            });
+            settle(cx, &rt);
+
+            assert_eq!(reported(cx), expected);
+        }
     }
 }

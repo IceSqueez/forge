@@ -191,3 +191,28 @@ fn declaring_an_empty_list_stays_distinguishable_from_declaring_nothing() {
     );
     assert!(declared_variables(&StubTrigger::silent("stub.silent")).is_none());
 }
+
+#[test]
+fn only_a_gift_count_is_floored_at_one_while_other_counts_keep_zero() {
+    let event = Event::new(
+        forge_events::EventSource::Core,
+        "test.count",
+        serde_json::json!({ "n": 0 }),
+    );
+    for (count, wire, expected) in [
+        (CanonicalCount::GiftCount, 0, 1),
+        (CanonicalCount::GiftCount, -3, 1),
+        (CanonicalCount::GiftCount, 5, 5),
+        (CanonicalCount::ViewerCount, 0, 0),
+        (CanonicalCount::SubCumulativeMonths, 0, 0),
+    ] {
+        let stack = TriggerVariables::new()
+            .count(count, move |_| wire)
+            .arg_stack(&event);
+        assert_eq!(
+            stack.get(CanonicalVariable::Count(count).name()),
+            Some(&Variant::Int(expected)),
+            "{count:?} wire {wire}"
+        );
+    }
+}

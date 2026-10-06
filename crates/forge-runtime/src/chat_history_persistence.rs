@@ -1,11 +1,16 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::Event;
-use forge_storage::{ChatHistoryRepo, SettingsRepo, chat_history_store_limit};
+use forge_storage::{
+    ChatAuthorKey, ChatHistoryRepo, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT, SettingsRepo,
+    UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT, chat_history_per_viewer_limit,
+    clamp_chat_history_per_viewer_limit,
+};
 use forge_types::{ChatModerationAction, ChatSource, UnifiedChatRow};
 use time::OffsetDateTime;
+use tokio::sync::watch;
 
 use crate::bus::EventBus;
 use crate::chat_stream::{ChatRecord, ChatRecordMapper};
@@ -14,15 +19,41 @@ use crate::delivery_loss::{ConsumerLossCounters, DeliveryTier};
 use crate::persist_batch::{BATCH_WRITE_TIMEOUT, BatchSink, MappedEvents, run_batched};
 
 const PERSIST_OP_TIMEOUT: Duration = Duration::from_secs(5);
-const PRUNE_EVERY_APPENDS: u64 = 256;
 const MODERATION_MEMORY: usize = 256;
 const MODERATION_LOOKBACK: time::Duration = time::Duration::minutes(2);
+
+#[derive(Clone)]
+pub struct ChatHistoryRetentionHandle {
+    per_viewer: Arc<watch::Sender<Option<usize>>>,
+}
+
+impl ChatHistoryRetentionHandle {
+    pub fn set_per_viewer_limit(&self, limit: u32) {
+        self.per_viewer
+            .send_replace(Some(clamp_chat_history_per_viewer_limit(limit) as usize));
+    }
+
+    async fn adopt_stored_limit(&self, settings: &dyn SettingsRepo) {
+        let stored = stored_per_viewer_limit(settings).await;
+        self.per_viewer.send_if_modified(|current| {
+            if current.is_some() {
+                return false;
+            }
+            *current = Some(stored);
+            true
+        });
+    }
+}
 
 pub fn spawn_chat_history_persistence(
     bus: Arc<EventBus>,
     repo: Arc<dyn ChatHistoryRepo>,
     settings: Arc<dyn SettingsRepo>,
-) {
+) -> ChatHistoryRetentionHandle {
+    let (per_viewer, per_viewer_limit) = watch::channel(None);
+    let handle = ChatHistoryRetentionHandle {
+        per_viewer: Arc::new(per_viewer),
+    };
     let mut mapper = ChatRecordMapper::default();
     let intake = MappedEvents::new(
         bus.subscribe_critical(CHAT_HISTORY),
@@ -30,18 +61,19 @@ pub fn spawn_chat_history_persistence(
     );
     let sink = ChatHistorySink {
         repo,
-        settings,
+        per_viewer_limit,
         loss: bus.loss_counters(CHAT_HISTORY, DeliveryTier::Critical),
         pending: Vec::new(),
-        appended_since_prune: 0,
         recent_moderation: VecDeque::new(),
     };
-    tokio::spawn(run_batched(
-        intake,
-        sink,
-        bus.batch_policy(),
-        bus.flush_ticket(),
-    ));
+    let policy = bus.batch_policy();
+    let ticket = bus.flush_ticket();
+    let loader = handle.clone();
+    tokio::spawn(async move {
+        loader.adopt_stored_limit(settings.as_ref()).await;
+        run_batched(intake, sink, policy, ticket).await;
+    });
+    handle
 }
 
 struct RecentModeration {
@@ -83,10 +115,9 @@ impl RecentModeration {
 
 struct ChatHistorySink {
     repo: Arc<dyn ChatHistoryRepo>,
-    settings: Arc<dyn SettingsRepo>,
+    per_viewer_limit: watch::Receiver<Option<usize>>,
     loss: Arc<ConsumerLossCounters>,
     pending: Vec<UnifiedChatRow>,
-    appended_since_prune: u64,
     recent_moderation: VecDeque<RecentModeration>,
 }
 
@@ -111,10 +142,6 @@ impl BatchSink for ChatHistorySink {
             }
         }
         self.write_pending().await;
-        if self.appended_since_prune >= PRUNE_EVERY_APPENDS {
-            self.appended_since_prune = 0;
-            prune(self.repo.as_ref(), self.settings.as_ref()).await;
-        }
     }
 
     fn abandon(&mut self, rows: u64) -> u64 {
@@ -133,7 +160,7 @@ impl ChatHistorySink {
         let rows = self.pending.len() as u64;
         match tokio::time::timeout(BATCH_WRITE_TIMEOUT, self.repo.append_batch(&self.pending)).await
         {
-            Ok(Ok(())) => self.appended_since_prune += rows,
+            Ok(Ok(())) => self.retain_written_authors().await,
             Ok(Err(e)) => {
                 tracing::warn!(error = %e, rows, "chat history batch append failed");
                 self.loss.unwritten(rows);
@@ -144,6 +171,37 @@ impl ChatHistorySink {
             }
         }
         self.pending.clear();
+    }
+
+    async fn retain_written_authors(&self) {
+        let per_viewer = (*self.per_viewer_limit.borrow())
+            .unwrap_or(DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT as usize);
+        let authors: Vec<ChatAuthorKey> =
+            if per_viewer == UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT as usize {
+                Vec::new()
+            } else {
+                self.pending
+                    .iter()
+                    .filter_map(|row| {
+                        row.author_id.as_ref().map(|author_id| ChatAuthorKey {
+                            source: row.source,
+                            author_id: author_id.clone(),
+                        })
+                    })
+                    .collect::<HashSet<_>>()
+                    .into_iter()
+                    .collect()
+            };
+        match tokio::time::timeout(
+            PERSIST_OP_TIMEOUT,
+            self.repo.apply_retention(&authors, per_viewer),
+        )
+        .await
+        {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => tracing::warn!(error = %e, "chat history retention failed"),
+            Err(_) => tracing::warn!("chat history retention timed out"),
+        }
     }
 
     fn remember(&mut self, moderation: RecentModeration) {
@@ -183,18 +241,17 @@ async fn apply_moderation(
     }
 }
 
-async fn prune(repo: &dyn ChatHistoryRepo, settings: &dyn SettingsRepo) {
-    let limit = match chat_history_store_limit(settings).await {
-        Ok(limit) => limit as usize,
-        Err(e) => {
-            tracing::warn!(error = %e, "reading chat history store limit failed; skipping prune");
-            return;
+async fn stored_per_viewer_limit(settings: &dyn SettingsRepo) -> usize {
+    match tokio::time::timeout(PERSIST_OP_TIMEOUT, chat_history_per_viewer_limit(settings)).await {
+        Ok(Ok(limit)) => limit as usize,
+        Ok(Err(e)) => {
+            tracing::warn!(error = %e, "reading chat history per-viewer limit failed; using the default");
+            DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT as usize
         }
-    };
-    match tokio::time::timeout(PERSIST_OP_TIMEOUT, repo.prune_to_limit(limit)).await {
-        Ok(Ok(_)) => {}
-        Ok(Err(e)) => tracing::warn!(error = %e, "chat history prune failed"),
-        Err(_) => tracing::warn!("chat history prune timed out"),
+        Err(_) => {
+            tracing::warn!("reading chat history per-viewer limit timed out; using the default");
+            DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT as usize
+        }
     }
 }
 
@@ -202,7 +259,6 @@ async fn prune(repo: &dyn ChatHistoryRepo, settings: &dyn SettingsRepo) {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use forge_storage::chat_history::MockChatHistoryRepo;
-    use forge_storage::settings::MockSettingsRepo;
     use forge_storage::{DataProvider, StorageError};
     use forge_types::{ModerationMarks, UnifiedChatRow};
 
@@ -230,10 +286,9 @@ mod tests {
     fn sink_over(repo: Arc<dyn ChatHistoryRepo>, bus: &EventBus) -> ChatHistorySink {
         ChatHistorySink {
             repo,
-            settings: Arc::new(MockSettingsRepo::new()),
+            per_viewer_limit: watch::channel(None).1,
             loss: bus.loss_counters(CHAT_HISTORY, DeliveryTier::Critical),
             pending: Vec::new(),
-            appended_since_prune: 0,
             recent_moderation: VecDeque::new(),
         }
     }
@@ -245,6 +300,7 @@ mod tests {
             source,
             received_at,
             author: author.to_string(),
+            author_id: None,
             author_color: None,
             body_segments: vec![],
             badges: vec![],
@@ -459,6 +515,254 @@ mod tests {
         assert_eq!(unwritten, Some(3));
     }
 
+    fn by(id: &str, source: ChatSource, viewer: Option<&str>) -> ChatRecord {
+        let ChatRecord::Row(mut written) = row(id, source, "name", OffsetDateTime::now_utc())
+        else {
+            unreachable!("row always builds a chat row");
+        };
+        written.author_id = viewer.map(str::to_string);
+        ChatRecord::Row(written)
+    }
+
+    fn key(source: ChatSource, viewer: &str) -> ChatAuthorKey {
+        ChatAuthorKey {
+            source,
+            author_id: viewer.to_string(),
+        }
+    }
+
+    async fn retained_authors(batch: Vec<ChatRecord>) -> Vec<ChatAuthorKey> {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut repo = MockChatHistoryRepo::new();
+        repo.expect_append_batch().returning(|_| Ok(()));
+        repo.expect_apply_retention()
+            .times(1)
+            .returning(move |authors, _| {
+                tx.send(authors.to_vec()).unwrap();
+                Ok(0)
+            });
+        let mut sink = sink_over(Arc::new(repo), &EventBus::new(Arc::new(NullEventLogRepo)));
+
+        flush(&mut sink, batch).await;
+
+        rx.try_recv().unwrap()
+    }
+
+    #[tokio::test]
+    async fn retention_covers_each_distinct_viewer_of_the_written_batch_once() {
+        let authors = retained_authors(vec![
+            by("a", ChatSource::Twitch, Some("u1")),
+            by("b", ChatSource::Twitch, Some("u1")),
+            by("c", ChatSource::Kick, Some("u1")),
+            by("d", ChatSource::YouTube, Some("u2")),
+            by("e", ChatSource::Twitch, None),
+        ])
+        .await;
+
+        assert_eq!(
+            (authors.len(), authors.into_iter().collect::<HashSet<_>>()),
+            (
+                3,
+                HashSet::from([
+                    key(ChatSource::Twitch, "u1"),
+                    key(ChatSource::Kick, "u1"),
+                    key(ChatSource::YouTube, "u2"),
+                ])
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn a_batch_without_viewer_ids_still_runs_retention_for_the_authorless_bound() {
+        let authors = retained_authors(vec![
+            by("a", ChatSource::Twitch, None),
+            by("b", ChatSource::Kick, None),
+        ])
+        .await;
+
+        assert!(authors.is_empty(), "{} viewer keys", authors.len());
+    }
+
+    #[tokio::test]
+    async fn an_unlimited_limit_retains_no_viewer_keys_until_a_number_is_set_again() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut repo = MockChatHistoryRepo::new();
+        repo.expect_append_batch().returning(|_| Ok(()));
+        repo.expect_apply_retention()
+            .returning(move |authors, per_viewer| {
+                tx.send((authors.to_vec(), per_viewer)).unwrap();
+                Ok(0)
+            });
+        let (per_viewer, per_viewer_limit) = watch::channel(None);
+        let handle = ChatHistoryRetentionHandle {
+            per_viewer: Arc::new(per_viewer),
+        };
+        let mut sink = ChatHistorySink {
+            per_viewer_limit,
+            ..sink_over(Arc::new(repo), &EventBus::new(Arc::new(NullEventLogRepo)))
+        };
+
+        let mut retained = Vec::new();
+        for limit in [UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT, 25] {
+            handle.set_per_viewer_limit(limit);
+            flush(&mut sink, vec![by("m", ChatSource::Twitch, Some("u1"))]).await;
+            retained.push(rx.try_recv().unwrap());
+        }
+
+        assert_eq!(
+            retained,
+            vec![(Vec::new(), 0), (vec![key(ChatSource::Twitch, "u1")], 25),]
+        );
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum Outcome {
+        Succeeds,
+        Fails,
+        Stalls,
+    }
+
+    async fn settle(outcome: Outcome) -> Result<(), StorageError> {
+        match outcome {
+            Outcome::Succeeds => Ok(()),
+            Outcome::Fails => Err(StorageError::Connection {
+                reason: "disk full".to_string(),
+            }),
+            Outcome::Stalls => std::future::pending().await,
+        }
+    }
+
+    struct ScriptedRepo {
+        append: Outcome,
+        first_retention: Outcome,
+        appended: std::sync::Mutex<Vec<Vec<String>>>,
+        retentions: std::sync::atomic::AtomicUsize,
+    }
+
+    impl ScriptedRepo {
+        fn new(append: Outcome, first_retention: Outcome) -> Arc<Self> {
+            Arc::new(Self {
+                append,
+                first_retention,
+                appended: std::sync::Mutex::new(Vec::new()),
+                retentions: std::sync::atomic::AtomicUsize::new(0),
+            })
+        }
+
+        fn retention_runs(&self) -> usize {
+            self.retentions.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ChatHistoryRepo for ScriptedRepo {
+        async fn append(&self, row: &UnifiedChatRow) -> Result<(), StorageError> {
+            self.append_batch(std::slice::from_ref(row)).await
+        }
+
+        async fn append_batch(&self, rows: &[UnifiedChatRow]) -> Result<(), StorageError> {
+            self.appended
+                .lock()
+                .unwrap()
+                .push(rows.iter().map(|row| row.id.clone()).collect());
+            settle(self.append).await
+        }
+
+        async fn list_recent(&self, _: usize) -> Result<Vec<UnifiedChatRow>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn list_recent_messages_by_author(
+            &self,
+            _: &ChatAuthorKey,
+            _: usize,
+        ) -> Result<Vec<UnifiedChatRow>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn apply_retention(
+            &self,
+            _: &[ChatAuthorKey],
+            _: usize,
+        ) -> Result<u64, StorageError> {
+            let nth = self
+                .retentions
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let outcome = if nth == 0 {
+                self.first_retention
+            } else {
+                Outcome::Succeeds
+            };
+            settle(outcome).await.map(|()| 0)
+        }
+
+        async fn mark_message_deleted(&self, _: &str) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+
+        async fn mark_user_messages_moderated(
+            &self,
+            _: ChatSource,
+            _: &str,
+            _: bool,
+        ) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+
+        async fn clear_platform(&self, _: ChatSource) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+    }
+
+    fn unwritten(bus: &EventBus) -> Option<u64> {
+        bus.loss_report()
+            .into_iter()
+            .find(|entry| entry.consumer == CHAT_HISTORY)
+            .map(|entry| entry.loss.unwritten)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn no_retention_runs_after_a_failed_or_stalled_append() {
+        for append in [Outcome::Fails, Outcome::Stalls] {
+            let repo = ScriptedRepo::new(append, Outcome::Succeeds);
+            let mut sink = sink_over(repo.clone(), &EventBus::new(Arc::new(NullEventLogRepo)));
+
+            flush(&mut sink, vec![by("m", ChatSource::Twitch, Some("u1"))]).await;
+
+            assert_eq!(repo.retention_runs(), 0, "append {append:?}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_or_stalled_retention_is_skipped_and_the_next_batch_is_still_written() {
+        for retention in [Outcome::Fails, Outcome::Stalls] {
+            let bus = EventBus::new(Arc::new(NullEventLogRepo));
+            let repo = ScriptedRepo::new(Outcome::Succeeds, retention);
+            let mut sink = sink_over(repo.clone(), &bus);
+
+            flush(&mut sink, vec![by("first", ChatSource::Twitch, Some("u1"))]).await;
+            flush(
+                &mut sink,
+                vec![by("second", ChatSource::Twitch, Some("u1"))],
+            )
+            .await;
+
+            assert_eq!(
+                (
+                    repo.appended.lock().unwrap().clone(),
+                    repo.retention_runs(),
+                    unwritten(&bus).unwrap_or(0),
+                ),
+                (
+                    vec![vec!["first".to_string()], vec!["second".to_string()]],
+                    2,
+                    0,
+                ),
+                "retention {retention:?}"
+            );
+        }
+    }
+
     struct StuckAppends {
         appending: Arc<tokio::sync::Notify>,
     }
@@ -474,7 +778,19 @@ mod tests {
             Ok(Vec::new())
         }
 
-        async fn prune_to_limit(&self, _: usize) -> Result<u64, StorageError> {
+        async fn list_recent_messages_by_author(
+            &self,
+            _: &forge_storage::ChatAuthorKey,
+            _: usize,
+        ) -> Result<Vec<UnifiedChatRow>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn apply_retention(
+            &self,
+            _: &[forge_storage::ChatAuthorKey],
+            _: usize,
+        ) -> Result<u64, StorageError> {
             Ok(0)
         }
 

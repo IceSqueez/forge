@@ -116,6 +116,7 @@ impl Forge {
         tracker: &SubscriptionTracker,
     ) -> TwitchChatHandle {
         let manager = Arc::new(TwitchCredentialsManager::new(
+            &self.config.endpoints,
             Arc::clone(&self.creds),
             self.config.client_id.clone(),
         ));
@@ -300,6 +301,7 @@ async fn forge_twitch_boot_calls_only_modeled_helix_endpoints() {
     let lifecycle = TwitchLifecycle::new();
     let tracker = SubscriptionTracker::default();
     let manager = Arc::new(TwitchCredentialsManager::new(
+        &forge.config.endpoints,
         Arc::clone(&forge.creds),
         forge.config.client_id.clone(),
     ));

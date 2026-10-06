@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime};
 
-use forge_platform_core::{AuthFlow, PlatformError};
+use forge_platform_core::{AuthFlow, EndpointSurface, PlatformEndpoints, PlatformError};
 use forge_types::OAuthToken;
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -11,8 +11,8 @@ use twitch_api::twitch_oauth2::{AccessToken, ClientId, TwitchToken, UserToken};
 
 use crate::sub_actions::identity::BroadcasterTier;
 
-pub const TWITCH_DEVICE_ENDPOINT: &str = "https://id.twitch.tv/oauth2/device";
-pub const TWITCH_TOKEN_ENDPOINT: &str = "https://id.twitch.tv/oauth2/token";
+const TWITCH_DEVICE_PATH: &str = "/device";
+const TWITCH_TOKEN_PATH: &str = "/token";
 
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -60,10 +60,24 @@ pub const TWITCH_BROADCASTER_SCOPES: &[&str] = &[
     "channel:manage:guest_star",
 ];
 
-pub fn twitch_auth_flow() -> AuthFlow {
+pub(crate) fn twitch_device_endpoint(endpoints: &PlatformEndpoints) -> String {
+    format!(
+        "{}{TWITCH_DEVICE_PATH}",
+        endpoints.base_url(EndpointSurface::TwitchOAuth)
+    )
+}
+
+pub(crate) fn twitch_token_endpoint(endpoints: &PlatformEndpoints) -> String {
+    format!(
+        "{}{TWITCH_TOKEN_PATH}",
+        endpoints.base_url(EndpointSurface::TwitchOAuth)
+    )
+}
+
+pub fn twitch_auth_flow(endpoints: &PlatformEndpoints) -> AuthFlow {
     AuthFlow::DeviceCode {
-        user_code_endpoint: TWITCH_DEVICE_ENDPOINT.to_owned(),
-        token_endpoint: TWITCH_TOKEN_ENDPOINT.to_owned(),
+        user_code_endpoint: twitch_device_endpoint(endpoints),
+        token_endpoint: twitch_token_endpoint(endpoints),
         scopes: TWITCH_BROADCASTER_SCOPES
             .iter()
             .map(|s| (*s).to_owned())
@@ -146,11 +160,11 @@ pub struct TwitchAuthFlow {
 }
 
 impl TwitchAuthFlow {
-    pub fn new(client_id: String) -> Self {
+    pub fn new(endpoints: &PlatformEndpoints, client_id: String) -> Self {
         Self::with_endpoints(
             client_id,
-            TWITCH_DEVICE_ENDPOINT.to_owned(),
-            TWITCH_TOKEN_ENDPOINT.to_owned(),
+            twitch_device_endpoint(endpoints),
+            twitch_token_endpoint(endpoints),
         )
     }
 
@@ -704,7 +718,8 @@ mod tests {
 
     #[test]
     fn twitch_auth_flow_is_device_code_grant() {
-        let AuthFlow::DeviceCode { scopes, .. } = twitch_auth_flow() else {
+        let AuthFlow::DeviceCode { scopes, .. } = twitch_auth_flow(&PlatformEndpoints::default())
+        else {
             panic!("twitch must use the device-code auth flow");
         };
         assert!(!scopes.is_empty(), "device grant must request scopes");

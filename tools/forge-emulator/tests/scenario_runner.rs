@@ -1544,10 +1544,6 @@ impl forge_platform_core::RateLimiter for KickGrant {
         Ok(forge_platform_core::RateLimitOutcome::Granted)
     }
 
-    fn remaining(&self) -> u32 {
-        u32::MAX
-    }
-
     async fn observe_remote_throttle(&self, _retry_after: Duration) {}
 }
 

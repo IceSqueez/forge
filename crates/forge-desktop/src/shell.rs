@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::mem::Discriminant;
 use std::sync::Arc;
 
-use forge_components::{Density, FOOTER_HEIGHT, Spacing, spacing, toast_card};
+use forge_components::{Density, FOOTER_HEIGHT, FocusNextField, Spacing, spacing, toast_card};
 use forge_events::EventPublisher;
 use forge_registry::TriggerRegistry;
 use forge_runtime::dashboard::compute_stats;
@@ -221,17 +221,20 @@ impl AppShell {
                 let palette = cx.palette();
                 let rt_handle = handles.rt_handle.clone();
                 let viewer_repo = handles.backend.viewer_repo();
+                let chat_history_repo = handles.backend.chat_history_repo();
                 let action_engine = handles.action_engine.clone();
                 let voice_alias_repo = handles.backend.voice_alias_repo();
                 let speak = handles.speak.clone();
                 let bot_accounts = handles.bot_accounts.clone();
                 let bus = Arc::clone(&handles.bus);
+                let builtins = handles.builtins.clone();
                 cx.new(|cx| {
                     ChatView::new(
                         topics.chat_feed.clone(),
                         topics.home_stats.clone(),
                         rt_handle,
                         viewer_repo,
+                        chat_history_repo,
                         action_engine,
                         voice_alias_repo,
                         speak,
@@ -239,6 +242,7 @@ impl AppShell {
                         palette,
                         cx,
                     )
+                    .with_follow_lookups(builtins)
                     .with_lifecycle(topics.integration_lifecycle.clone(), cx)
                     .with_chat_bus(bus, cx)
                 })
@@ -246,7 +250,8 @@ impl AppShell {
             }
             Screen::EventFeed => {
                 let rt_handle = handles.rt_handle.clone();
-                cx.new(|cx| EventFeedView::new(topics.event_log.clone(), rt_handle, cx))
+                let bus = Arc::clone(&handles.bus);
+                cx.new(|cx| EventFeedView::new(topics.event_log.clone(), rt_handle, bus, cx))
                     .into()
             }
             Screen::Globals => {
@@ -646,6 +651,7 @@ impl AppShell {
                 twitch_slot,
                 kick_slot,
                 youtube_slot,
+                handles.endpoints.clone(),
                 obs_install_seed,
                 vtube_install_seed,
                 connectivity,
@@ -984,6 +990,14 @@ impl AppShell {
         self.navigate(Screen::Settings(None), cx);
     }
 
+    fn focus_next_stop(&mut self, _: &FocusNextField, window: &mut Window, cx: &mut Context<Self>) {
+        let before = window.focused(cx);
+        window.focus_next(cx);
+        if window.focused(cx) == before {
+            window.focus(&self.focus, cx);
+        }
+    }
+
     fn leave_confirm(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         if !self.router.guard.is_asking() {
             return None;
@@ -1129,6 +1143,7 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::go_triggers))
             .on_action(cx.listener(Self::go_twitch))
             .on_action(cx.listener(Self::go_settings))
+            .on_action(cx.listener(Self::focus_next_stop))
             .size_full()
             .relative()
             .flex()

@@ -40,6 +40,7 @@ pub mod sound_player;
 pub mod speak_dispatcher;
 pub mod stream_live;
 pub mod sub_action_runners;
+mod task_stop;
 #[cfg(test)]
 mod test_support;
 pub mod timer_scheduler;
@@ -57,7 +58,7 @@ pub use bridge::bus_subscription;
 pub use bus::{BusError, Delivery, EventBus, EventSubscription, NullEventLogRepo};
 pub use catalog::{Catalog, CatalogBinding, CatalogSnapshot};
 pub use chain::{ChainEngine, ChainRun, ChainScope};
-pub use chat_history_persistence::spawn_chat_history_persistence;
+pub use chat_history_persistence::{ChatHistoryRetentionHandle, spawn_chat_history_persistence};
 pub use condition::{ConditionError, ConditionGate};
 pub use config::Config;
 pub use delivery::CriticalSubscription;
@@ -108,7 +109,8 @@ pub use sub_action_runners::{
     CONTENT_SCHEMA_KEY, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlaySendTarget, feeds_overlay,
     overlay_send_targets, register_core_sub_actions, register_scheduled_run_sub_actions,
 };
-pub use timer_scheduler::spawn_timer_scheduler;
+pub use task_stop::TaskStop;
+pub use timer_scheduler::{TimerSchedulerHandle, spawn_timer_scheduler};
 pub use trigger_evaluator::{COMMAND_LINE_TARGET, TriggerEvaluatorHandle, spawn_trigger_evaluator};
 pub use triggers::register_core_triggers;
 pub use twitch_emote_lexicon::{TwitchEmoteLexicon, spawn_twitch_emote_learning};

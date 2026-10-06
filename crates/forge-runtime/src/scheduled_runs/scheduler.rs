@@ -19,6 +19,7 @@ use super::limits::{
 use super::request::{ScheduleError, ScheduleRequest, ScheduledPlacement};
 use super::waiting::WaitingRuns;
 use crate::catalog::Catalog;
+use crate::task_stop::{StopListener, task_stop};
 use crate::{EventBus, QueueSchedulerHandle};
 
 const COMMAND_CAPACITY: usize = 64;
@@ -75,8 +76,13 @@ pub fn spawn_scheduled_runs(parts: ScheduledRunsParts) -> ScheduledRunsHandle {
         retry_at: None,
         waiting,
     };
-    tokio::spawn(task.run(commands, changes, intake_changes, catch_up));
-    ScheduledRunsHandle::new(commands_tx, repo, clock, waiting_rx)
+    let (stop, listener) = task_stop();
+    tokio::spawn(async move {
+        task.run(commands, changes, intake_changes, catch_up, &listener)
+            .await;
+        listener.mark_stopped();
+    });
+    ScheduledRunsHandle::new(commands_tx, repo, clock, waiting_rx, stop)
 }
 
 impl ScheduledRunsTask {
@@ -86,6 +92,7 @@ impl ScheduledRunsTask {
         mut changes: CatalogChanges,
         mut intake_changes: watch::Receiver<()>,
         catch_up: CatchUpSettle,
+        stop: &StopListener,
     ) {
         self.refresh_next_due().await;
         let mut settling = Box::pin(catch_up.wait(CATCH_UP_SETTLE_LIMIT));
@@ -97,6 +104,8 @@ impl ScheduledRunsTask {
             let pause = self.pause_before_next_check();
             let waiting_for_queue = !self.waiting.borrow().is_empty();
             tokio::select! {
+                biased;
+                () = stop.requested() => return,
                 command = commands.recv(), if commands_open => match command {
                     Some(command) => self.serve(command).await,
                     None => commands_open = false,

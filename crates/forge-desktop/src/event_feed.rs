@@ -6,7 +6,11 @@ use forge_components::{
     body_family, chip, empty_state, header_status, icon, mono_family, page_frame, platform_color,
     radius, spacing, status_dot, tr, with_alpha,
 };
+use std::sync::Arc;
+
 use forge_events::EventSource;
+use forge_runtime::{BusError, EventBus};
+use forge_types::EventId;
 use gpui::{
     AnyElement, ClickEvent, Context, Div, Entity, FocusHandle, Pixels, Rgba, ScrollStrategy,
     ScrollWheelEvent, Stateful, Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
@@ -75,8 +79,24 @@ pub struct EventFeedView {
     list_focus: FocusHandle,
     focused_once: bool,
     rt_handle: tokio::runtime::Handle,
+    bus: Arc<EventBus>,
+    replaying: bool,
     _log_obs: Subscription,
     _search_sub: Subscription,
+}
+
+fn parse_event_id(raw: &str) -> Option<EventId> {
+    serde_json::from_value(serde_json::Value::String(raw.to_owned())).ok()
+}
+
+fn replay_failure_message(error: &BusError) -> String {
+    match error {
+        BusError::EventNotFound(_) => tr!("event_feed_replay_not_found"),
+        BusError::Storage(e) => {
+            let detail = e.to_string();
+            tr!("event_feed_replay_failed", error = detail.as_str())
+        }
+    }
 }
 
 fn matches_query(item: &EventItem, query: &str) -> bool {
@@ -127,6 +147,7 @@ impl EventFeedView {
     pub fn new(
         log: Entity<EventLog>,
         rt_handle: tokio::runtime::Handle,
+        bus: Arc<EventBus>,
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
@@ -153,6 +174,8 @@ impl EventFeedView {
             list_focus: cx.focus_handle(),
             focused_once: false,
             rt_handle,
+            bus,
+            replaying: false,
             _log_obs: log_obs,
             _search_sub: search_sub,
         };
@@ -311,7 +334,34 @@ impl EventFeedView {
         );
     }
 
-    fn replay(&mut self, _cx: &mut Context<Self>) {}
+    fn replay(&mut self, cx: &mut Context<Self>) {
+        if self.replaying {
+            return;
+        }
+        let Some(item) = self.resolved_selection(cx) else {
+            return;
+        };
+        let Some(event_id) = parse_event_id(&item.id) else {
+            cx.push_toast(ToastKind::Error, tr!("event_feed_replay_not_found"));
+            return;
+        };
+        self.replaying = true;
+        cx.notify();
+        let bus = Arc::clone(&self.bus);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { bus.replay_and_publish(event_id).await },
+            |this, result, cx| {
+                this.replaying = false;
+                match result {
+                    Ok(()) => cx.push_toast(ToastKind::Success, tr!("event_feed_replay_success")),
+                    Err(e) => cx.push_toast(ToastKind::Error, replay_failure_message(&e)),
+                }
+                cx.notify();
+            },
+            cx,
+        );
+    }
 
     fn toggle_auto_scroll(&mut self, cx: &mut Context<Self>) {
         self.auto_scroll = !self.auto_scroll;
@@ -778,7 +828,13 @@ impl EventFeedView {
                     .child(caused_text),
             );
 
-        let replay = div()
+        let replaying = self.replaying;
+        let replay_color = if replaying {
+            palette.disabled
+        } else {
+            palette.brand
+        };
+        let mut replay = div()
             .id("event-inspector-replay")
             .w_full()
             .flex()
@@ -788,15 +844,25 @@ impl EventFeedView {
             .py(spacing(Spacing::Xs, Density::Cozy))
             .rounded(radius(Radius::Sm))
             .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .cursor_pointer()
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.replay(cx)))
-            .child(icon(Icon::Repeat, FONT_XS, palette.brand))
+            .border_color(if replaying {
+                palette.disabled
+            } else {
+                palette.border_regular
+            });
+        replay = if replaying {
+            replay.cursor_default()
+        } else {
+            replay
+                .cursor_pointer()
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.replay(cx)))
+        };
+        let replay = replay
+            .child(icon(Icon::Repeat, FONT_XS, replay_color))
             .child(
                 div()
                     .font_family(body_family())
                     .text_size(FONT_XS)
-                    .text_color(palette.brand)
+                    .text_color(replay_color)
                     .child(tr!("widget_event_replay")),
             );
 
@@ -1204,8 +1270,261 @@ fn result_color(kind: &str, is_error: bool, palette: &ForgePalette) -> Rgba {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
+    use std::sync::Mutex;
+
+    use forge_components::{Density, ThemeId, tr_lookup};
+    use forge_events::Event;
+    use forge_storage::{EventLogRepo, Language, StorageError};
+    use gpui::TestAppContext;
+    use time::OffsetDateTime;
+    use tokio::sync::Notify;
+
     use super::*;
+    use crate::i18n::install_language;
+    use crate::presentation::Presentation;
+    use crate::test_support::{pump, runtime};
+    use crate::toasts::Toasts;
+
+    const REPLAY_KEYS: [&str; 3] = [
+        "event_feed_replay_success",
+        "event_feed_replay_not_found",
+        "event_feed_replay_failed",
+    ];
+
+    struct GatedEventLog {
+        asked: Mutex<Vec<EventId>>,
+        gate: Notify,
+    }
+
+    impl GatedEventLog {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                asked: Mutex::new(Vec::new()),
+                gate: Notify::new(),
+            })
+        }
+
+        fn asked(&self) -> Vec<String> {
+            self.asked
+                .lock()
+                .unwrap()
+                .iter()
+                .map(ToString::to_string)
+                .collect()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl EventLogRepo for GatedEventLog {
+        async fn insert(&self, _: &Event) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn get(&self, id: EventId) -> Result<Option<Event>, StorageError> {
+            self.asked.lock().unwrap().push(id);
+            self.gate.notified().await;
+            Ok(None)
+        }
+
+        async fn recent(&self, _: usize) -> Result<Vec<Event>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn recent_since(
+            &self,
+            _: usize,
+            _: Option<EventId>,
+        ) -> Result<Vec<Event>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn prune_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+    }
+
+    fn item(id: &str) -> EventItem {
+        EventItem {
+            id: id.to_owned().into(),
+            timestamp: "00:00:00.000".into(),
+            source: EventSource::Core,
+            kind: "core.test".into(),
+            summary: "".into(),
+            caused_by: None,
+            sub_action_count: None,
+            total_ms: None,
+            is_error: false,
+            user_login: "".into(),
+            user_platform: "".into(),
+            payload: serde_json::Value::Null,
+        }
+    }
+
+    struct Mounted {
+        view: Entity<EventFeedView>,
+        repo: Arc<GatedEventLog>,
+        rt: tokio::runtime::Runtime,
+    }
+
+    fn mount(cx: &mut TestAppContext, ids: &[&str]) -> Mounted {
+        install_language(Language::En);
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            cx.set_global(Toasts::new());
+        });
+        let rt = runtime();
+        let repo = GatedEventLog::new();
+        let bus = {
+            let repo = Arc::clone(&repo);
+            rt.block_on(async move { EventBus::new(repo) })
+        };
+        let log = cx.new(|_| {
+            let mut log = EventLog::new();
+            for id in ids {
+                log.push(item(id));
+            }
+            log
+        });
+        let handle = rt.handle().clone();
+        let view = cx.new(|cx| EventFeedView::new(log.clone(), handle, bus, cx));
+        cx.run_until_parked();
+        Mounted { view, repo, rt }
+    }
+
+    fn press_replay(m: &Mounted, cx: &mut TestAppContext) {
+        m.view.update(cx, |view, cx| view.replay(cx));
+        pump(&m.rt);
+        cx.run_until_parked();
+    }
+
+    fn release_and_settle(m: &Mounted, cx: &mut TestAppContext) {
+        m.repo.gate.notify_one();
+        pump(&m.rt);
+        cx.run_until_parked();
+    }
+
+    fn replaying(m: &Mounted, cx: &mut TestAppContext) -> bool {
+        m.view.read_with(cx, |view, _| view.replaying)
+    }
+
+    fn toast_messages(cx: &mut TestAppContext) -> Vec<String> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|t| t.message.to_string())
+                .collect()
+        })
+    }
+
+    #[test]
+    fn parse_event_id_accepts_only_a_canonical_event_id() {
+        let id = EventId::new();
+        assert_eq!(parse_event_id(&id.to_string()), Some(id));
+        for bad in ["", " ", "not-an-event-id", "01ARZ3NDEKTSV4RRFFQ69G5FA"] {
+            assert!(parse_event_id(bad).is_none(), "accepted {bad:?}");
+        }
+    }
+
+    #[test]
+    fn replay_failure_message_distinguishes_a_missing_event_from_a_storage_error() {
+        install_language(Language::En);
+        let missing = replay_failure_message(&BusError::EventNotFound(EventId::new()));
+        let storage = replay_failure_message(&BusError::Storage(StorageError::Connection {
+            reason: "disk gone".to_owned(),
+        }));
+
+        assert_eq!(missing, tr_lookup("event_feed_replay_not_found", None));
+        assert_ne!(missing, storage);
+        assert!(storage.contains("disk gone"), "{storage}");
+    }
+
+    #[test]
+    fn replay_messages_exist_in_every_language() {
+        for lang in [Language::En, Language::Uk] {
+            install_language(lang);
+            for key in REPLAY_KEYS {
+                assert_ne!(tr_lookup(key, None), key, "{lang:?} lacks {key}");
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn replay_without_a_selection_acts_on_the_newest_displayed_event(cx: &mut TestAppContext) {
+        let (old, new) = (EventId::new().to_string(), EventId::new().to_string());
+        let m = mount(cx, &[&old, &new]);
+
+        press_replay(&m, cx);
+
+        assert_eq!(m.repo.asked(), vec![new]);
+    }
+
+    #[gpui::test]
+    fn replay_acts_on_the_selected_event_when_one_is_selected(cx: &mut TestAppContext) {
+        let (old, new) = (EventId::new().to_string(), EventId::new().to_string());
+        let m = mount(cx, &[&old, &new]);
+        m.view
+            .update(cx, |view, _| view.selected = Some(old.clone().into()));
+
+        press_replay(&m, cx);
+
+        assert_eq!(m.repo.asked(), vec![old]);
+    }
+
+    #[gpui::test]
+    fn replay_is_inert_while_one_is_in_flight(cx: &mut TestAppContext) {
+        let m = mount(cx, &[&EventId::new().to_string()]);
+
+        press_replay(&m, cx);
+        press_replay(&m, cx);
+
+        assert!(replaying(&m, cx));
+        assert_eq!(m.repo.asked().len(), 1);
+    }
+
+    #[gpui::test]
+    fn replay_flag_clears_after_the_callback_and_allows_another_replay(cx: &mut TestAppContext) {
+        let m = mount(cx, &[&EventId::new().to_string()]);
+
+        press_replay(&m, cx);
+        release_and_settle(&m, cx);
+
+        assert!(!replaying(&m, cx));
+        assert_eq!(
+            toast_messages(cx),
+            vec![tr_lookup("event_feed_replay_not_found", None)]
+        );
+
+        press_replay(&m, cx);
+        assert_eq!(m.repo.asked().len(), 2);
+    }
+
+    #[gpui::test]
+    fn replay_of_an_unparsable_event_id_toasts_without_touching_the_bus(cx: &mut TestAppContext) {
+        let m = mount(cx, &["not-an-event-id"]);
+
+        press_replay(&m, cx);
+
+        assert!(m.repo.asked().is_empty());
+        assert!(!replaying(&m, cx));
+        assert_eq!(
+            toast_messages(cx),
+            vec![tr_lookup("event_feed_replay_not_found", None)]
+        );
+    }
+
+    #[gpui::test]
+    fn replay_with_an_empty_log_does_nothing(cx: &mut TestAppContext) {
+        let m = mount(cx, &[]);
+
+        press_replay(&m, cx);
+
+        assert!(m.repo.asked().is_empty());
+        assert!(!replaying(&m, cx));
+        assert!(toast_messages(cx).is_empty());
+    }
 
     #[test]
     fn scene_changed_success_color_tracks_namespaced_obs_kind() {

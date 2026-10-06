@@ -177,6 +177,7 @@ struct QueueRow {
     blocking: bool,
     concurrency: u32,
     mode: QueueMode,
+    live: bool,
     pending: u32,
     in_flight: u32,
     overflowed: u64,
@@ -648,7 +649,7 @@ impl QueuesView {
     }
 
     fn apply_rows(&mut self, rows: Vec<QueueRow>, cx: &mut Context<Self>) {
-        self.diverged.retain(|id| rows.iter().any(|r| r.id == *id));
+        self.diverged = rows.iter().filter(|r| !r.live).map(|r| r.id).collect();
         self.queues = rows;
         self.loading = false;
         let health = self.queue_health.clone();
@@ -662,24 +663,36 @@ impl QueuesView {
         cx.notify();
     }
 
-    fn apply_membership_outcome(
-        &mut self,
-        id: QueueId,
-        outcome: Result<MembershipOutcome, String>,
-    ) {
+    fn log_membership_outcome(id: QueueId, outcome: &Result<MembershipOutcome, String>) {
         match outcome {
-            Ok(MembershipOutcome::Applied) | Ok(MembershipOutcome::AlreadyRegistered) => {
-                self.diverged.remove(&id);
-            }
+            Ok(MembershipOutcome::Applied | MembershipOutcome::AlreadyRegistered) => {}
             Ok(MembershipOutcome::NotFound) => {
-                eprintln!("forge-desktop: scheduler reported queue not found: {id}");
-                self.diverged.insert(id);
+                tracing::warn!(queue = %id, "scheduler reported the queue as not found");
             }
-            Err(err) => {
-                eprintln!("forge-desktop: scheduler membership call failed: {err}");
-                self.diverged.insert(id);
+            Err(error) => {
+                tracing::warn!(queue = %id, %error, "scheduler membership call failed");
             }
         }
+    }
+
+    fn apply_live(&mut self, id: QueueId, cx: &mut Context<Self>) {
+        let queue_repo = Arc::clone(&self.queue_repo);
+        let scheduler = self.scheduler.clone();
+        async_bridge::run_async(
+            &self.rt_handle,
+            apply_queue_live(queue_repo, scheduler, id),
+            |this, result, cx| {
+                match result {
+                    Ok(()) => cx.push_toast(ToastKind::Success, tr!("queues_apply_live_done")),
+                    Err(message) => cx.push_toast(
+                        ToastKind::Error,
+                        tr!("queues_apply_live_failed", error = message),
+                    ),
+                }
+                this.reload(cx);
+            },
+            cx,
+        );
     }
 
     fn on_scheduler_error(&mut self, message: impl Into<SharedString>, cx: &mut Context<Self>) {
@@ -917,7 +930,7 @@ impl QueuesView {
             },
             move |this, result, cx| match result {
                 Ok(membership) => {
-                    this.apply_membership_outcome(id, membership);
+                    Self::log_membership_outcome(id, &membership);
                     this.close_modal(cx);
                     this.reload(cx);
                 }
@@ -928,7 +941,7 @@ impl QueuesView {
     }
 
     fn on_save_error(&mut self, message: &str, cx: &mut Context<Self>) {
-        eprintln!("forge-desktop: queue save failed: {message}");
+        tracing::warn!(error = %message, "queue save failed");
         if let Some(modal) = self.modal.as_ref() {
             modal.update(cx, |m, cx| {
                 m.saving = false;
@@ -993,7 +1006,12 @@ impl QueuesView {
             .child(name)
             .child(status_badge(spin_id, q.mode, palette));
         if not_live {
-            name_row = name_row.child(not_live_badge(palette));
+            let id = q.id;
+            name_row = name_row.child(not_live_badge(
+                ("q-not-live", index),
+                palette,
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.apply_live(id, cx)),
+            ));
         }
 
         let desc_text = if q.description.is_empty() {
@@ -1825,6 +1843,7 @@ async fn load_queues(
             let assigned = actions.iter().filter(|a| a.queue_id == q.id).count() as u32;
             let concurrency = q.concurrency.max(1);
             let mode = states.get(&q.id).map_or(QueueMode::RUNNING, |s| s.mode);
+            let live = states.contains_key(&q.id);
             QueueRow {
                 id: q.id,
                 name: q.name,
@@ -1832,6 +1851,7 @@ async fn load_queues(
                 blocking: concurrency == SERIAL_CONCURRENCY,
                 concurrency,
                 mode,
+                live,
                 pending: 0,
                 in_flight: 0,
                 overflowed: 0,
@@ -1842,6 +1862,27 @@ async fn load_queues(
         .collect();
 
     Ok(rows)
+}
+
+async fn apply_queue_live(
+    queue_repo: Arc<dyn QueueRepo>,
+    scheduler: QueueSchedulerHandle,
+    id: QueueId,
+) -> Result<(), String> {
+    let queues = queue_repo.list().await.map_err(|e| e.to_string())?;
+    let queue = queues
+        .into_iter()
+        .find(|q| q.id == id)
+        .ok_or_else(|| tr!("queues_apply_live_missing"))?;
+    let outcome = match scheduler.register(queue.clone()).await {
+        Ok(MembershipOutcome::AlreadyRegistered) => scheduler.reconfigure(queue).await,
+        other => other,
+    };
+    match outcome {
+        Ok(MembershipOutcome::Applied | MembershipOutcome::AlreadyRegistered) => Ok(()),
+        Ok(MembershipOutcome::NotFound) => Err(tr!("queues_apply_live_not_found")),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 async fn delete_queue(
@@ -1872,13 +1913,21 @@ async fn delete_queue(
         .await
         .map_err(|e| e.to_string())?;
     if let Err(err) = scheduler.deregister(deleted_id).await {
-        eprintln!("forge-desktop: queue deregister failed: {err}");
+        tracing::warn!(error = %err, "queue deregister failed");
     }
     Ok(())
 }
 
-fn not_live_badge(palette: &ForgePalette) -> AnyElement {
+fn not_live_badge(
+    id: impl Into<gpui::ElementId>,
+    palette: &ForgePalette,
+    handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> AnyElement {
     div()
+        .id(id.into())
+        .cursor_pointer()
+        .on_click(handler)
+        .tooltip(tooltip_builder(tr!("queues_not_live_tooltip"), palette))
         .flex()
         .items_center()
         .gap(spacing(Spacing::Xxs, Density::Cozy))
@@ -2001,5 +2050,150 @@ mod tests {
         let view = mount(cx, &rt, id, health);
 
         assert_eq!(row_depth(&view, cx), Some((4, 1, 2)));
+    }
+
+    fn mount_stored(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        scheduler: QueueSchedulerHandle,
+        stored: Vec<Queue>,
+    ) -> Entity<QueuesView> {
+        install_language(Language::En);
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            cx.set_global(Toasts::new());
+        });
+        let health = cx.new(|_| QueueHealth::new());
+        let mut repo = MockQueueRepo::new();
+        repo.expect_list().returning(move || Ok(stored.clone()));
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                QueuesView::new(
+                    health,
+                    scheduler,
+                    Arc::new(repo),
+                    Arc::new(StubActions),
+                    rt.handle().clone(),
+                    cx,
+                )
+            })
+        });
+        settle(cx, rt);
+        view
+    }
+
+    fn settle(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
+        for _ in 0..4 {
+            pump(rt);
+            cx.run_until_parked();
+        }
+    }
+
+    fn diverged(view: &Entity<QueuesView>, cx: &mut TestAppContext) -> Vec<QueueId> {
+        view.read_with(cx, |view, _| view.diverged.iter().copied().collect())
+    }
+
+    fn toasts(cx: &mut TestAppContext) -> Vec<(ToastKind, String)> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|t| (t.kind, t.message.to_string()))
+                .collect()
+        })
+    }
+
+    #[gpui::test]
+    fn a_stored_queue_the_scheduler_does_not_run_is_flagged_not_live(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (live, orphan) = (QueueId::new(), QueueId::new());
+        let scheduler = held_queue_scheduler(&rt, queue(live));
+
+        let view = mount_stored(cx, &rt, scheduler, vec![queue(live), queue(orphan)]);
+
+        assert_eq!(diverged(&view, cx), vec![orphan]);
+    }
+
+    #[gpui::test]
+    fn applying_a_not_live_queue_registers_it_clears_the_flag_and_toasts_success(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (live, orphan) = (QueueId::new(), QueueId::new());
+        let scheduler = held_queue_scheduler(&rt, queue(live));
+        let view = mount_stored(cx, &rt, scheduler, vec![queue(live), queue(orphan)]);
+
+        view.update(cx, |view, cx| view.apply_live(orphan, cx));
+        settle(cx, &rt);
+
+        assert_eq!(
+            (diverged(&view, cx), toasts(cx)),
+            (
+                Vec::new(),
+                vec![(ToastKind::Success, tr!("queues_apply_live_done"))]
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn applying_a_queue_deleted_meanwhile_toasts_the_failure_and_stays_flagged(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (live, orphan) = (QueueId::new(), QueueId::new());
+        let scheduler = held_queue_scheduler(&rt, queue(live));
+        let view = mount_stored(cx, &rt, scheduler, vec![queue(live), queue(orphan)]);
+
+        view.update(cx, |view, cx| view.apply_live(QueueId::new(), cx));
+        settle(cx, &rt);
+
+        assert_eq!(
+            (diverged(&view, cx), toasts(cx)),
+            (
+                vec![orphan],
+                vec![(
+                    ToastKind::Error,
+                    tr!(
+                        "queues_apply_live_failed",
+                        error = tr!("queues_apply_live_missing")
+                    )
+                )]
+            )
+        );
+    }
+
+    #[test]
+    fn apply_queue_live_reconfigures_a_queue_the_scheduler_already_runs() {
+        let rt = runtime();
+        let id = QueueId::new();
+        let scheduler = held_queue_scheduler(&rt, queue(id));
+        let mut changed = queue(id);
+        changed.concurrency = 3;
+        let mut repo = MockQueueRepo::new();
+        repo.expect_list()
+            .returning(move || Ok(vec![changed.clone()]));
+
+        let outcome = rt.block_on(apply_queue_live(Arc::new(repo), scheduler.clone(), id));
+        let states = rt.block_on(scheduler.queue_states());
+
+        assert_eq!(outcome, Ok(()));
+        assert!(states.is_ok_and(|s| s.contains_key(&id)));
+    }
+
+    #[test]
+    fn apply_queue_live_reports_a_store_failure_as_text() {
+        let rt = runtime();
+        let id = QueueId::new();
+        let scheduler = held_queue_scheduler(&rt, queue(id));
+        let mut repo = MockQueueRepo::new();
+        repo.expect_list().returning(|| {
+            Err(forge_storage::StorageError::Connection {
+                reason: "disk gone".to_owned(),
+            })
+        });
+
+        let outcome = rt.block_on(apply_queue_live(Arc::new(repo), scheduler, id));
+
+        assert!(outcome.is_err_and(|message| message.contains("disk gone")));
     }
 }

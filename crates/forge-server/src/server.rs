@@ -7,7 +7,7 @@ use axum::http::{Method, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::{Json, Router, middleware};
+use axum::{Extension, Json, Router, middleware};
 use tokio::net::TcpListener;
 
 use forge_runtime::{ActionEngineHandle, EventBus};
@@ -214,7 +214,7 @@ fn misdirected_response() -> Response {
         .into_response()
 }
 
-fn build_router(state: AppState) -> Router {
+fn build_router(state: AppState, shutdown: tokio::sync::watch::Receiver<bool>) -> Router {
     let host_guard = middleware::from_fn_with_state(state.clone(), host_middleware);
     let api_routes = api_v1::router()
         .route_layer(middleware::from_fn_with_state(
@@ -224,7 +224,7 @@ fn build_router(state: AppState) -> Router {
         .route_layer(host_guard.clone());
 
     Router::new()
-        .route("/ws/v1/", get(ws::ws_handler))
+        .route("/ws/v1/", get(ws::ws_handler).layer(Extension(shutdown)))
         .nest("/api/v1", api_routes)
         .route(
             "/overlays/{*path}",
@@ -247,7 +247,8 @@ pub fn serve_on_with_shutdown(
     tokio::sync::watch::Sender<bool>,
 ) {
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
-    let app = build_router(state).into_make_service_with_connect_info::<PeerInfo>();
+    let app =
+        build_router(state, shutdown_rx.clone()).into_make_service_with_connect_info::<PeerInfo>();
     let listener = GuardedListener::new(listener);
     let join = tokio::spawn(async move {
         let result = axum::serve(listener, app)
@@ -546,11 +547,22 @@ pub(crate) mod tests {
         (handle, new_port)
     }
 
+    const RESERVED_PORT_FLOOR: u16 = 20_000;
+    const RESERVED_PORT_SPAN: u16 = 10_000;
+
     async fn reserve_a_free_port() -> u16 {
-        let probe = TcpListener::bind("127.0.0.1:0").await.expect("probe bind");
-        let port = probe.local_addr().expect("probe addr").port();
-        drop(probe);
-        port
+        static NEXT_OFFSET: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
+        loop {
+            let offset =
+                NEXT_OFFSET.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % RESERVED_PORT_SPAN;
+            let port = RESERVED_PORT_FLOOR + offset;
+            if TcpListener::bind(format!("{LOOPBACK}:{port}"))
+                .await
+                .is_ok()
+            {
+                return port;
+            }
+        }
     }
 
     fn loopback_config(
@@ -1057,34 +1069,6 @@ pub(crate) mod tests {
         );
 
         handle.abort();
-    }
-
-    #[tokio::test]
-    async fn stop_disconnects_clients_within_timeout() {
-        use tokio_tungstenite::connect_async;
-
-        let (handle, addr) = make_server(false, MemCreds::new()).await;
-
-        let ws_url = format!("ws://{}/ws/v1/", addr);
-        let (mut ws_stream, _) = connect_async(&ws_url).await.expect("ws connect");
-
-        handle.stop().await.expect("stop");
-
-        let close_msg = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            futures_util::StreamExt::next(&mut ws_stream),
-        )
-        .await
-        .expect("timeout waiting for close")
-        .expect("stream ended without message");
-
-        assert!(
-            matches!(
-                close_msg.expect("ws error"),
-                tokio_tungstenite::tungstenite::Message::Close(_)
-            ),
-            "expected Close frame from server"
-        );
     }
 
     #[tokio::test]
@@ -2027,5 +2011,53 @@ pub(crate) mod tests {
 
         assert_still_serving(&mut page, "an overlay session").await;
         handle.abort();
+    }
+
+    #[tokio::test]
+    async fn a_socket_that_joins_after_shutdown_is_signalled_is_closed_at_once() {
+        let creds = MemCreds::new();
+        let auth = AuthState::load(false, &*creds).await.expect("auth load");
+        let state = make_app_state(auth, creds as Arc<dyn CredentialsRepo>);
+        let (_shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(true);
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("local addr");
+        let app = super::build_router(state, shutdown_rx)
+            .into_make_service_with_connect_info::<crate::listener::PeerInfo>();
+        let serving = tokio::spawn(async move {
+            axum::serve(crate::listener::GuardedListener::new(listener), app).await
+        });
+        let mut late = open_ws(addr).await;
+
+        let first = next_message(&mut late).await;
+
+        assert!(
+            matches!(first, Some(ClientMessage::Close(_))),
+            "a socket admitted after shutdown was left open: {first:?}"
+        );
+        serving.abort();
+    }
+
+    #[tokio::test]
+    async fn stop_and_restart_close_every_connected_socket() {
+        for (lifecycle, restart) in [("stop", false), ("restart", true)] {
+            let (handle, _new_port) = make_server_targeting_a_free_port().await;
+            let boot_addr = handle.bind_addr().await;
+            let mut first = open_ws(boot_addr).await;
+            let mut second = open_ws(boot_addr).await;
+
+            if restart {
+                handle.restart().await.expect("restart");
+            } else {
+                handle.stop().await.expect("stop");
+            }
+
+            for (who, socket) in [("first", &mut first), ("second", &mut second)] {
+                assert!(
+                    matches!(next_message(socket).await, Some(ClientMessage::Close(_))),
+                    "{lifecycle} left the {who} socket open"
+                );
+            }
+            handle.abort();
+        }
     }
 }

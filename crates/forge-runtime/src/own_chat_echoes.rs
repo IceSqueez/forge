@@ -153,6 +153,7 @@ mod tests {
             source,
             received_at: OffsetDateTime::UNIX_EPOCH,
             author: "forge_helper".to_owned(),
+            author_id: None,
             author_color: None,
             body_segments: segments,
             badges: vec![],

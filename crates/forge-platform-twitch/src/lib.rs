@@ -1,6 +1,7 @@
 #![doc = "Twitch platform integration: auth (alpha-2), chat ingestion (alpha-3+)."]
 
 pub mod auth;
+mod ban_list;
 pub mod builtin;
 pub mod chat;
 pub mod chat_platform;

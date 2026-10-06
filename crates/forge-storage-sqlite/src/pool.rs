@@ -35,11 +35,11 @@ impl SqlitePools {
     }
 
     pub async fn close(&self) {
-        self.truncate_wal().await;
         if let Some(checkpointer) = &self.checkpointer {
             checkpointer.close().await;
+            self.reader.close().await;
         }
-        self.reader.close().await;
+        self.truncate_wal().await;
         self.writer.close().await;
     }
 }
@@ -66,7 +66,9 @@ impl SqlitePools {
             Ok(_) => tracing::warn!("shutdown WAL truncate was outlasted by readers"),
             Err(e) => tracing::warn!(error = %e, "shutdown WAL truncate failed"),
         }
-        conn.close_on_drop();
+        if let Err(e) = conn.close().await {
+            tracing::warn!(error = %e, "shutdown writer close failed");
+        }
     }
 }
 

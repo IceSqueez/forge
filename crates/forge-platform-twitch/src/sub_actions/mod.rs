@@ -49,6 +49,7 @@ mod update_category;
 mod update_reward;
 mod update_tags;
 mod update_title;
+pub(crate) mod user_target;
 mod warn_user;
 
 use std::sync::Arc;

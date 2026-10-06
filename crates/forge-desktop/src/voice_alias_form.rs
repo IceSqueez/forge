@@ -704,19 +704,21 @@ mod tests {
         }
     }
 
-    #[gpui::test]
-    fn an_active_alias_opened_for_editing_submits_back_unchanged(cx: &mut TestAppContext) {
-        let existing = VoiceAlias {
+    fn stored(state: AliasState) -> VoiceAlias {
+        VoiceAlias {
             id: AliasId("a1".to_owned()),
             viewer_id: "youtube:UCx9".to_owned(),
             viewer_name: "alice".to_owned(),
-            engine_id: EngineId("piper".to_owned()),
+            engine_id: EngineId("elevenlabs".to_owned()),
             voice_id: VoiceId("en_US-amy".to_owned()),
             pitch_semitones: Some(-2.5),
             rate_multiplier: Some(1.25),
-            state: AliasState::Active,
-        };
-        let mounted = mount(
+            state,
+        }
+    }
+
+    fn mount_editing(cx: &mut TestAppContext, existing: &VoiceAlias) -> Mounted {
+        mount(
             cx,
             Some(existing.id.clone()),
             Some(identity(
@@ -725,10 +727,32 @@ mod tests {
                 platform_scope(Platform::YouTube),
             )),
             true,
-            AliasValues::of(&existing),
-        );
+            AliasValues::of(existing),
+        )
+    }
 
-        assert_eq!(submit(cx, &mounted), [alias_shape(&existing)]);
+    #[gpui::test]
+    fn an_alias_opened_for_editing_submits_back_unchanged_in_either_state(cx: &mut TestAppContext) {
+        for state in [AliasState::Active, AliasState::Blocked] {
+            let existing = stored(state.clone());
+            let mounted = mount_editing(cx, &existing);
+
+            assert_eq!(submit(cx, &mounted), [alias_shape(&existing)], "{state:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn unblocking_an_edited_blocked_alias_restores_its_engine_voice_pitch_and_rate(
+        cx: &mut TestAppContext,
+    ) {
+        let mounted = mount_editing(cx, &stored(AliasState::Blocked));
+
+        mounted.form.update(cx, |form, cx| form.toggle_blocked(cx));
+
+        assert_eq!(
+            submit(cx, &mounted),
+            [alias_shape(&stored(AliasState::Active))]
+        );
     }
 
     #[gpui::test]

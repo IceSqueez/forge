@@ -987,7 +987,7 @@ mod tests {
     use crate::i18n::install_language;
     use crate::presentation::Presentation;
     use crate::test_support::{
-        LiveAliases, Sandboxed, error_toasts, live_alias, runtime, sandboxed_backend,
+        LiveAliases, Sandboxed, alias_shape, error_toasts, live_alias, runtime, sandboxed_backend,
         spawn_speak_queue,
     };
     use crate::toasts::Toasts;
@@ -1200,6 +1200,48 @@ mod tests {
                 "{viewer_id:?}"
             );
         }
+    }
+
+    #[gpui::test]
+    fn editing_a_blocked_row_saves_it_still_blocked_with_its_engine_voice_pitch_and_rate(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let seeded = VoiceAlias {
+            id: AliasId("a1".to_owned()),
+            engine_id: EngineId("elevenlabs".to_owned()),
+            pitch_semitones: Some(-2.5),
+            rate_multiplier: Some(1.25),
+            state: AliasState::Blocked,
+            ..stored_alias("twitch:alice", "alice")
+        };
+        let (fixture, vcx) = mount_in_window(cx, &rt, vec![seeded.clone()]);
+        let view = fixture.view.clone();
+        settle(vcx, &rt, |cx| {
+            view.read_with(cx, |view, _| !view.aliases.is_empty())
+        });
+
+        vcx.update(|window, cx| view.update(cx, |view, cx| view.open_edit(0, window, cx)));
+        vcx.run_until_parked();
+        vcx.simulate_input("x");
+        vcx.simulate_keystrokes("enter");
+        let repo = fixture.backend.voice_alias_repo();
+        let saved = || rt.block_on(repo.list()).expect("list");
+        settle(vcx, &rt, |_| {
+            saved()
+                .iter()
+                .any(|alias| alias.viewer_id == "twitch:alicex")
+        });
+
+        let renamed = VoiceAlias {
+            viewer_id: "twitch:alicex".to_owned(),
+            viewer_name: "alicex".to_owned(),
+            ..seeded
+        };
+        assert_eq!(
+            saved().iter().map(alias_shape).collect::<Vec<_>>(),
+            [alias_shape(&renamed)]
+        );
     }
 
     #[test]

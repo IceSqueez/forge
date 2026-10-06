@@ -30,4 +30,6 @@ time = { workspace = true }
 [dev-dependencies]
 wiremock = { workspace = true }
 forge-storage = { path = "../forge-storage", features = ["test-mocks"] }
+forge-storage-sqlite = { path = "../forge-storage-sqlite" }
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

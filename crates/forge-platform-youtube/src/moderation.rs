@@ -424,6 +424,11 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
+    use crate::ban_ledger_test_support::{
+        BroadcasterSource, LedgerOp, MemoryBanLedger, TEST_BROADCASTER_CHANNEL_ID,
+        TEST_BROADCASTER_TITLE, broadcaster_source, signed_out_broadcaster_source,
+        switchable_broadcaster_source, test_broadcaster,
+    };
     use crate::quota_state::today_pacific;
 
     const TOKEN_SENTINEL: &str = "yt-secret-token";
@@ -436,6 +441,18 @@ mod tests {
     }
 
     fn moderation_on(server: &MockServer) -> (YoutubeModeration, Arc<Mutex<QuotaState>>) {
+        moderation_with(
+            server,
+            Arc::new(MemoryBanLedger::default()),
+            broadcaster_source(),
+        )
+    }
+
+    fn moderation_with(
+        server: &MockServer,
+        ledger: Arc<MemoryBanLedger>,
+        broadcaster: BroadcasterSource,
+    ) -> (YoutubeModeration, Arc<Mutex<QuotaState>>) {
         let handle = LiveChatIdHandle::new();
         handle.set(Some("lc-test".to_owned()));
         let quota = Arc::new(Mutex::new(QuotaState {
@@ -445,13 +462,56 @@ mod tests {
         let moderation = YoutubeModeration::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
-            crate::ban_ledger_test_support::broadcaster_source(),
+            broadcaster,
             handle,
             quota.clone(),
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            ledger,
         )
         .with_api_base(server.uri());
         (moderation, quota)
+    }
+
+    fn target_key() -> BanLedgerKey {
+        ban_ledger_key(TEST_BROADCASTER_CHANNEL_ID, TARGET_CHANNEL)
+    }
+
+    fn stored_ban(platform_ban_id: Option<&str>, origin: BanOrigin) -> BanLedgerEntry {
+        BanLedgerEntry {
+            key: target_key(),
+            viewer_name: "Troll".to_owned(),
+            reason: None,
+            moderator: None,
+            banned_at: OffsetDateTime::now_utc(),
+            expires_at: None,
+            platform_ban_id: platform_ban_id.map(str::to_owned),
+            origin,
+        }
+    }
+
+    fn seeded_ledger(entry: BanLedgerEntry) -> Arc<MemoryBanLedger> {
+        let ledger = Arc::new(MemoryBanLedger::default());
+        ledger.seed(entry);
+        ledger
+    }
+
+    async fn mount_insert_returning(server: &MockServer, body: serde_json::Value) {
+        Mock::given(method("POST"))
+            .and(path("/liveChat/bans"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(server)
+            .await;
+    }
+
+    async fn mount_delete_status(server: &MockServer, status: u16) {
+        Mock::given(method("DELETE"))
+            .and(path("/liveChat/bans"))
+            .respond_with(ResponseTemplate::new(status))
+            .mount(server)
+            .await;
+    }
+
+    async fn request_count(server: &MockServer) -> usize {
+        server.received_requests().await.unwrap().len()
     }
 
     fn mount_insert_ok(server: &MockServer) -> impl std::future::Future<Output = ()> + '_ {
@@ -468,14 +528,14 @@ mod tests {
         mount_insert_ok(&server).await;
         let (moderation, _quota) = moderation_on(&server);
 
-        moderation.ban("UC-target").await.unwrap();
+        moderation.ban(TARGET_CHANNEL).await.unwrap();
 
         let req = &server.received_requests().await.unwrap()[0];
         let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap();
         assert_eq!(body["snippet"]["type"], "permanent");
         assert_eq!(
             body["snippet"]["bannedUserDetails"]["channelId"],
-            "UC-target"
+            TARGET_CHANNEL
         );
         assert!(
             body["snippet"].get("banDurationSeconds").is_none(),
@@ -489,7 +549,7 @@ mod tests {
         mount_insert_ok(&server).await;
         let (moderation, _quota) = moderation_on(&server);
 
-        moderation.timeout("UC-target", 600).await.unwrap();
+        moderation.timeout(TARGET_CHANNEL, 600).await.unwrap();
 
         let req = &server.received_requests().await.unwrap()[0];
         let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap();
@@ -510,8 +570,8 @@ mod tests {
             .await;
         let (moderation, _quota) = moderation_on(&server);
 
-        moderation.ban("UC-target").await.unwrap();
-        moderation.unban("UC-target").await.unwrap();
+        moderation.ban(TARGET_CHANNEL).await.unwrap();
+        moderation.unban(TARGET_CHANNEL).await.unwrap();
 
         let delete = server
             .received_requests()
@@ -530,28 +590,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unban_without_a_recorded_ban_fails_unsupported_and_sends_no_request() {
-        let server = MockServer::start().await;
-        Mock::given(method("DELETE"))
-            .and(path("/liveChat/bans"))
-            .respond_with(ResponseTemplate::new(204))
-            .mount(&server)
-            .await;
-        let (moderation, _quota) = moderation_on(&server);
-
-        let err = moderation.unban("UC-never-banned").await.unwrap_err();
-
-        assert!(
-            matches!(err, PlatformError::Unsupported { .. }),
-            "expected Unsupported, got {err:?}"
-        );
-        assert!(
-            server.received_requests().await.unwrap().is_empty(),
-            "unban with no recorded ban id must not hit the transport"
-        );
-    }
-
-    #[tokio::test]
     async fn forbidden_response_maps_to_error_without_leaking_token_or_url() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -561,7 +599,7 @@ mod tests {
             .await;
         let (moderation, _quota) = moderation_on(&server);
 
-        let err = moderation.ban("UC-target").await.unwrap_err();
+        let err = moderation.ban(TARGET_CHANNEL).await.unwrap_err();
         let msg = err.to_string();
 
         assert!(
@@ -584,7 +622,7 @@ mod tests {
         mount_insert_ok(&server).await;
         let (moderation, quota) = moderation_on(&server);
 
-        moderation.ban("UC-target").await.unwrap();
+        moderation.ban(TARGET_CHANNEL).await.unwrap();
 
         assert_eq!(
             quota.lock().await.used_today,
@@ -846,5 +884,265 @@ mod tests {
             !msg.to_lowercase().contains("googleapis"),
             "leaked API host: {msg}"
         );
+    }
+
+    enum Issue {
+        Ban,
+        Timeout(u32),
+    }
+
+    async fn issue(moderation: &YoutubeModeration, issue: &Issue) -> Result<(), PlatformError> {
+        match issue {
+            Issue::Ban => moderation.ban(TARGET_CHANNEL).await,
+            Issue::Timeout(seconds) => moderation.timeout(TARGET_CHANNEL, *seconds).await,
+        }
+    }
+
+    #[tokio::test]
+    async fn issued_ban_is_recorded_with_its_ban_id_term_and_broadcaster_as_moderator() {
+        for (issued, insert_body, expected_ban_id, expected_term) in [
+            (
+                Issue::Ban,
+                json!({"id": BAN_RESOURCE_ID}),
+                Some(BAN_RESOURCE_ID),
+                None,
+            ),
+            (
+                Issue::Timeout(600),
+                json!({"id": BAN_RESOURCE_ID}),
+                Some(BAN_RESOURCE_ID),
+                Some(time::Duration::seconds(600)),
+            ),
+            (Issue::Ban, json!({"id": ""}), None, None),
+            (
+                Issue::Timeout(1),
+                json!({}),
+                None,
+                Some(time::Duration::SECOND),
+            ),
+        ] {
+            let server = MockServer::start().await;
+            mount_insert_returning(&server, insert_body).await;
+            let ledger = Arc::new(MemoryBanLedger::default());
+            let (moderation, _quota) =
+                moderation_with(&server, Arc::clone(&ledger), broadcaster_source());
+
+            let before = OffsetDateTime::now_utc();
+            issue(&moderation, &issued).await.unwrap();
+            let after = OffsetDateTime::now_utc();
+
+            let row = ledger
+                .stored(&target_key())
+                .expect("the ban must be recorded");
+            assert_eq!(row.origin, BanOrigin::IssuedByForge);
+            assert_eq!(row.platform_ban_id.as_deref(), expected_ban_id);
+            assert!(row.banned_at >= before && row.banned_at <= after);
+            assert_eq!(
+                row.expires_at.map(|expires_at| expires_at - row.banned_at),
+                expected_term
+            );
+            assert_eq!(row.moderator.as_deref(), Some(TEST_BROADCASTER_TITLE));
+            assert_eq!(row.viewer_name, TARGET_CHANNEL);
+            assert_eq!(row.reason, None);
+        }
+    }
+
+    #[tokio::test]
+    async fn issued_ban_keeps_the_viewer_name_already_in_the_ledger() {
+        let server = MockServer::start().await;
+        mount_insert_ok(&server).await;
+        let ledger = seeded_ledger(stored_ban(None, BanOrigin::Observed));
+        let (moderation, _quota) =
+            moderation_with(&server, Arc::clone(&ledger), broadcaster_source());
+
+        moderation.ban(TARGET_CHANNEL).await.unwrap();
+
+        let row = ledger.stored(&target_key()).unwrap();
+        assert_eq!(
+            (row.viewer_name.as_str(), row.origin),
+            ("Troll", BanOrigin::IssuedByForge)
+        );
+    }
+
+    #[tokio::test]
+    async fn issued_ban_reports_success_when_recording_it_fails() {
+        for (ledger_failure, broadcaster) in [
+            (Some(LedgerOp::Upsert), broadcaster_source()),
+            (Some(LedgerOp::Get), broadcaster_source()),
+            (None, signed_out_broadcaster_source()),
+        ] {
+            for issued in [Issue::Ban, Issue::Timeout(60)] {
+                let server = MockServer::start().await;
+                mount_insert_ok(&server).await;
+                let ledger = Arc::new(
+                    ledger_failure
+                        .map_or_else(MemoryBanLedger::default, MemoryBanLedger::failing_on),
+                );
+                let (moderation, _quota) =
+                    moderation_with(&server, ledger, Arc::clone(&broadcaster));
+
+                let outcome = issue(&moderation, &issued).await;
+
+                assert!(
+                    outcome.is_ok(),
+                    "ledger failure {ledger_failure:?} must not fail the ban: {outcome:?}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn issued_ban_is_recorded_when_the_name_lookup_fails() {
+        let server = MockServer::start().await;
+        mount_insert_ok(&server).await;
+        let ledger = Arc::new(MemoryBanLedger::failing_on(LedgerOp::Get));
+        let (moderation, _quota) =
+            moderation_with(&server, Arc::clone(&ledger), broadcaster_source());
+
+        moderation.ban(TARGET_CHANNEL).await.unwrap();
+
+        assert_eq!(
+            ledger
+                .stored(&target_key())
+                .and_then(|row| row.platform_ban_id),
+            Some(BAN_RESOURCE_ID.to_owned())
+        );
+    }
+
+    #[tokio::test]
+    async fn unban_without_a_stored_ban_id_is_refused_without_a_request_or_quota() {
+        for seeded in [None, Some(stored_ban(None, BanOrigin::Observed))] {
+            let server = MockServer::start().await;
+            mount_delete_status(&server, 204).await;
+            let ledger = Arc::new(MemoryBanLedger::default());
+            if let Some(entry) = seeded {
+                ledger.seed(entry);
+            }
+            let (moderation, quota) = moderation_with(&server, ledger, broadcaster_source());
+
+            let err = moderation.unban(TARGET_CHANNEL).await.unwrap_err();
+
+            assert!(
+                matches!(&err, PlatformError::Unsupported { feature } if feature.contains("outside forge")),
+                "expected the issued-outside-forge refusal, got {err:?}"
+            );
+            assert_eq!(request_count(&server).await, 0);
+            assert_eq!(quota.lock().await.used_today, 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn unban_lifted_or_already_gone_removes_the_ledger_row() {
+        for status in [200, 204, 404] {
+            let server = MockServer::start().await;
+            mount_delete_status(&server, status).await;
+            let ledger = seeded_ledger(stored_ban(Some(BAN_RESOURCE_ID), BanOrigin::IssuedByForge));
+            let (moderation, _quota) =
+                moderation_with(&server, Arc::clone(&ledger), broadcaster_source());
+
+            let outcome = moderation.unban(TARGET_CHANNEL).await;
+
+            assert!(outcome.is_ok(), "status {status}: {outcome:?}");
+            assert!(
+                ledger.stored(&target_key()).is_none(),
+                "status {status} must remove the row"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn unban_server_error_keeps_the_ledger_row_and_fails() {
+        for status in [500, 503] {
+            let server = MockServer::start().await;
+            mount_delete_status(&server, status).await;
+            let ledger = seeded_ledger(stored_ban(Some(BAN_RESOURCE_ID), BanOrigin::IssuedByForge));
+            let (moderation, _quota) =
+                moderation_with(&server, Arc::clone(&ledger), broadcaster_source());
+
+            let err = moderation.unban(TARGET_CHANNEL).await.unwrap_err();
+
+            assert!(
+                matches!(err, PlatformError::Http { status: got, .. } if got == status),
+                "status {status}: {err:?}"
+            );
+            assert!(ledger.stored(&target_key()).is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn unban_reports_success_when_removing_the_row_fails() {
+        let server = MockServer::start().await;
+        mount_delete_status(&server, 204).await;
+        let ledger = Arc::new(MemoryBanLedger::failing_on(LedgerOp::Remove));
+        ledger.seed(stored_ban(Some(BAN_RESOURCE_ID), BanOrigin::IssuedByForge));
+        let (moderation, _quota) = moderation_with(&server, ledger, broadcaster_source());
+
+        let outcome = moderation.unban(TARGET_CHANNEL).await;
+
+        assert!(outcome.is_ok(), "{outcome:?}");
+    }
+
+    #[tokio::test]
+    async fn unban_ledger_lookup_failure_is_io_without_a_request_or_quota() {
+        let server = MockServer::start().await;
+        mount_delete_status(&server, 204).await;
+        let ledger = Arc::new(MemoryBanLedger::failing_on(LedgerOp::Get));
+        let (moderation, quota) = moderation_with(&server, ledger, broadcaster_source());
+
+        let err = moderation.unban(TARGET_CHANNEL).await.unwrap_err();
+
+        assert!(matches!(err, PlatformError::Io(_)), "{err:?}");
+        assert_eq!(request_count(&server).await, 0);
+        assert_eq!(quota.lock().await.used_today, 0);
+    }
+
+    #[tokio::test]
+    async fn unban_signed_out_fails_reauth_without_a_request() {
+        let server = MockServer::start().await;
+        mount_delete_status(&server, 204).await;
+        let ledger = seeded_ledger(stored_ban(Some(BAN_RESOURCE_ID), BanOrigin::IssuedByForge));
+        let (moderation, _quota) =
+            moderation_with(&server, ledger, signed_out_broadcaster_source());
+
+        let err = moderation.unban(TARGET_CHANNEL).await.unwrap_err();
+
+        assert!(
+            matches!(err, PlatformError::ReauthRequired { .. }),
+            "{err:?}"
+        );
+        assert_eq!(request_count(&server).await, 0);
+    }
+
+    #[tokio::test]
+    async fn unban_after_switching_account_never_reads_the_previous_channel_rows() {
+        let server = MockServer::start().await;
+        mount_insert_ok(&server).await;
+        mount_delete_status(&server, 204).await;
+        let account = Arc::new(std::sync::Mutex::new(test_broadcaster()));
+        let ledger = Arc::new(MemoryBanLedger::default());
+        let (moderation, _quota) = moderation_with(
+            &server,
+            Arc::clone(&ledger),
+            switchable_broadcaster_source(Arc::clone(&account)),
+        );
+        moderation.ban(TARGET_CHANNEL).await.unwrap();
+        *account.lock().unwrap() = YoutubeBroadcaster {
+            channel_id: "UCsecond".to_owned(),
+            channel_title: "Second".to_owned(),
+        };
+
+        let err = moderation.unban(TARGET_CHANNEL).await.unwrap_err();
+
+        assert!(matches!(err, PlatformError::Unsupported { .. }), "{err:?}");
+        assert!(
+            server
+                .received_requests()
+                .await
+                .unwrap()
+                .iter()
+                .all(|r| r.method != wiremock::http::Method::DELETE),
+            "the first account's ban id must not be deleted from the second account"
+        );
+        assert!(ledger.stored(&target_key()).is_some());
     }
 }

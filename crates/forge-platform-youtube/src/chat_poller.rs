@@ -1124,6 +1124,19 @@ mod tests {
         YoutubeChatPoller,
         tokio::sync::mpsc::UnboundedReceiver<Event>,
     ) {
+        make_poller_with_ledger(
+            server,
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+        )
+    }
+
+    fn make_poller_with_ledger(
+        server: &MockServer,
+        ban_ledger: Arc<dyn BanLedgerRepo>,
+    ) -> (
+        YoutubeChatPoller,
+        tokio::sync::mpsc::UnboundedReceiver<Event>,
+    ) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let poller = YoutubeChatPoller::new(
             &forge_platform_core::PlatformEndpoints::default(),
@@ -1133,7 +1146,7 @@ mod tests {
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
             make_quota(),
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            ban_ledger,
         )
         .with_api_base(server.uri());
         (poller, rx)
@@ -2584,6 +2597,217 @@ mod tests {
             expected,
             "published chat event drifted from the fixture; actual:\n{}",
             serde_json::to_string_pretty(&actual).unwrap()
+        );
+    }
+
+    #[derive(Default)]
+    struct ProbeBanLedger {
+        upserts: std::sync::Mutex<Vec<forge_storage::BanLedgerEntry>>,
+        entered: tokio::sync::Notify,
+        release: Option<tokio::sync::Notify>,
+    }
+
+    impl ProbeBanLedger {
+        fn gated() -> Self {
+            Self {
+                release: Some(tokio::sync::Notify::new()),
+                ..Self::default()
+            }
+        }
+
+        fn upserts(&self) -> Vec<forge_storage::BanLedgerEntry> {
+            self.upserts.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl BanLedgerRepo for ProbeBanLedger {
+        async fn upsert(
+            &self,
+            entry: &forge_storage::BanLedgerEntry,
+            _now: OffsetDateTime,
+        ) -> Result<forge_storage::BanLedgerEntry, forge_storage::StorageError> {
+            self.upserts.lock().unwrap().push(entry.clone());
+            self.entered.notify_one();
+            if let Some(release) = &self.release {
+                release.notified().await;
+            }
+            Ok(entry.clone())
+        }
+
+        async fn remove(
+            &self,
+            _key: &forge_storage::BanLedgerKey,
+        ) -> Result<bool, forge_storage::StorageError> {
+            Ok(false)
+        }
+
+        async fn get(
+            &self,
+            _key: &forge_storage::BanLedgerKey,
+            _now: OffsetDateTime,
+        ) -> Result<Option<forge_storage::BanLedgerEntry>, forge_storage::StorageError> {
+            Ok(None)
+        }
+
+        async fn list_active(
+            &self,
+            _platform: forge_storage::ViewerPlatform,
+            _channel_id: &str,
+            _now: OffsetDateTime,
+            _limit: usize,
+        ) -> Result<Vec<forge_storage::BanLedgerEntry>, forge_storage::StorageError> {
+            Ok(Vec::new())
+        }
+    }
+
+    async fn next_event(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Event>) -> Event {
+        tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn observed_ban_is_recorded_before_the_event_is_published() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("chat-ban-order")).await;
+        mount_chat_mock(
+            &server,
+            chat_response(
+                json!([banned_item("ban-order", "Troll", "permanent", json!(null))]),
+                3000,
+            ),
+        )
+        .await;
+        let ledger = Arc::new(ProbeBanLedger::gated());
+        let (poller, mut rx) =
+            make_poller_with_ledger(&server, Arc::clone(&ledger) as Arc<dyn BanLedgerRepo>);
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn({
+            let cancel = cancel.clone();
+            async move { poller.run(cancel).await }
+        });
+        assert_leading_online(&mut rx).await;
+
+        tokio::time::timeout(Duration::from_secs(5), ledger.entered.notified())
+            .await
+            .expect("the observed ban must reach the ledger");
+        let published_while_recording = rx.try_recv().ok().map(|event| event.kind);
+        ledger.release.as_ref().unwrap().notify_one();
+        assert_eq!(published_while_recording, None);
+        let event = next_event(&mut rx).await;
+        cancel.cancel();
+        handle.await.unwrap().unwrap();
+
+        assert_eq!(event.kind, "youtube.channel.user_banned");
+    }
+
+    #[tokio::test]
+    async fn observed_ban_is_recorded_under_the_poller_channel() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("chat-ban-row")).await;
+        mount_chat_mock(
+            &server,
+            chat_response(
+                json!([banned_item("ban-row", "Troll", "temporary", json!(600))]),
+                3000,
+            ),
+        )
+        .await;
+        let ledger = Arc::new(ProbeBanLedger::default());
+        let (poller, mut rx) =
+            make_poller_with_ledger(&server, Arc::clone(&ledger) as Arc<dyn BanLedgerRepo>);
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn({
+            let cancel = cancel.clone();
+            async move { poller.run(cancel).await }
+        });
+        assert_leading_online(&mut rx).await;
+        next_event(&mut rx).await;
+        cancel.cancel();
+        handle.await.unwrap().unwrap();
+
+        let keys: Vec<(String, String)> = ledger
+            .upserts()
+            .into_iter()
+            .map(|entry| (entry.key.channel_id, entry.key.viewer_id))
+            .collect();
+        assert_eq!(keys, [("UCtest".to_owned(), "UCbanned".to_owned())]);
+    }
+
+    #[tokio::test]
+    async fn observed_ban_is_published_when_the_ledger_write_fails() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("chat-ban-fail")).await;
+        mount_chat_mock(
+            &server,
+            chat_response(
+                json!([banned_item("ban-fail", "Troll", "permanent", json!(null))]),
+                3000,
+            ),
+        )
+        .await;
+        let (poller, mut rx) = make_poller_with_ledger(
+            &server,
+            Arc::new(crate::ban_ledger_test_support::MemoryBanLedger::failing_on(
+                crate::ban_ledger_test_support::LedgerOp::Upsert,
+            )),
+        );
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn({
+            let cancel = cancel.clone();
+            async move { poller.run(cancel).await }
+        });
+        assert_leading_online(&mut rx).await;
+        let event = next_event(&mut rx).await;
+        cancel.cancel();
+        handle.await.unwrap().unwrap();
+
+        assert_eq!(event.kind, "youtube.channel.user_banned");
+    }
+
+    #[tokio::test]
+    async fn duplicate_ban_item_is_published_and_recorded_once() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("chat-ban-dup")).await;
+        mount_chat_mock(
+            &server,
+            chat_response(
+                json!([
+                    banned_item("ban-dup", "Troll", "permanent", json!(null)),
+                    banned_item("ban-dup", "Troll", "permanent", json!(null)),
+                    text_item("after-dup", "still here", "Viewer"),
+                ]),
+                3000,
+            ),
+        )
+        .await;
+        let ledger = Arc::new(ProbeBanLedger::default());
+        let (poller, mut rx) =
+            make_poller_with_ledger(&server, Arc::clone(&ledger) as Arc<dyn BanLedgerRepo>);
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn({
+            let cancel = cancel.clone();
+            async move { poller.run(cancel).await }
+        });
+        assert_leading_online(&mut rx).await;
+        let mut kinds = Vec::new();
+        loop {
+            let event = next_event(&mut rx).await;
+            let is_marker = event.kind != "youtube.channel.user_banned";
+            kinds.push(event.kind);
+            if is_marker {
+                break;
+            }
+        }
+        cancel.cancel();
+        handle.await.unwrap().unwrap();
+
+        assert_eq!(
+            (kinds.len(), ledger.upserts().len()),
+            (2, 1),
+            "events seen: {kinds:?}"
         );
     }
 }

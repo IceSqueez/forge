@@ -247,12 +247,13 @@ mod tests {
         target.step(action).map(|step| (step.kind_id, step.config))
     }
 
-    fn every_action() -> [ViewerAction; 4] {
+    fn every_action() -> [ViewerAction; 5] {
         [
             ViewerAction::Shoutout,
             ViewerAction::Whisper("hi".to_owned()),
             ViewerAction::Timeout { seconds: 600 },
             ViewerAction::Ban,
+            ViewerAction::Unban,
         ]
     }
 
@@ -285,6 +286,12 @@ mod tests {
                 by_id(Platform::Twitch, "1001"),
                 ViewerAction::Ban,
                 "twitch.moderation.ban_user",
+                config(&[("target_user_id", text("1001"))]),
+            ),
+            (
+                by_id(Platform::Twitch, "1001"),
+                ViewerAction::Unban,
+                "twitch.moderation.unban_user",
                 config(&[("target_user_id", text("1001"))]),
             ),
             (
@@ -351,7 +358,7 @@ mod tests {
     }
 
     #[test]
-    fn shoutout_and_whisper_are_offered_only_on_twitch() {
+    fn shoutout_whisper_and_unban_are_offered_only_on_twitch() {
         for (target, offered) in [
             (by_id(Platform::Twitch, "1001"), true),
             (by_id(Platform::YouTube, "UCabc"), false),
@@ -361,8 +368,9 @@ mod tests {
                 [
                     target.supports(&ViewerAction::Shoutout),
                     target.supports(&ViewerAction::Whisper("hi".to_owned())),
+                    target.supports(&ViewerAction::Unban),
                 ],
-                [offered, offered],
+                [offered, offered, offered],
                 "{:?}",
                 target.platform
             );

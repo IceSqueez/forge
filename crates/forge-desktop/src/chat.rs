@@ -2211,7 +2211,7 @@ mod tests {
         })
     }
 
-    fn mount_gated(
+    pub(super) fn mount_gated(
         cx: &mut TestAppContext,
         rt: &tokio::runtime::Runtime,
         lifecycle: Option<Entity<IntegrationLifecycle>>,
@@ -2312,7 +2312,7 @@ mod tests {
         assert_eq!(list_len, expected.len());
     }
 
-    fn chat_states(entries: &[(Integration, LifecycleState)]) -> LifecycleStates {
+    pub(super) fn chat_states(entries: &[(Integration, LifecycleState)]) -> LifecycleStates {
         entries
             .iter()
             .map(|(integration, state)| (integration.builtin_id(), state.clone()))

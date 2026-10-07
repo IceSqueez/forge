@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 use crate::PlatformId;
 
@@ -13,20 +12,7 @@ pub enum PlatformScope {
     Only(BTreeSet<PlatformId>),
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum PlatformScopeError {
-    #[error("PlatformScope::Only requires at least one platform")]
-    EmptySet,
-}
-
 impl PlatformScope {
-    pub fn only(platforms: BTreeSet<PlatformId>) -> Result<Self, PlatformScopeError> {
-        if platforms.is_empty() {
-            return Err(PlatformScopeError::EmptySet);
-        }
-        Ok(Self::Only(platforms))
-    }
-
     pub fn matches(&self, platform: Option<PlatformId>) -> bool {
         match self {
             Self::Any => true,

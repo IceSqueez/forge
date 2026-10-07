@@ -21,7 +21,7 @@ pub(crate) mod supervisor;
 pub mod switchable_sink;
 pub mod triggers;
 
-pub const PLUGIN_NAME: &str = "forge";
+pub const PLUGIN_NAME: &str = "Forge";
 
 pub use auth::AuthState;
 pub use catalog::{VTubeCatalog, VTubeCatalogChanges, VTubeChoice};

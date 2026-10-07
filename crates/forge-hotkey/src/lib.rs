@@ -23,6 +23,10 @@ pub(crate) mod backend_evdev;
 pub(crate) mod backend_portal;
 #[cfg(target_os = "linux")]
 mod evdev_watch;
+#[cfg(target_os = "linux")]
+mod portal_request;
+#[cfg(target_os = "linux")]
+mod portal_trigger;
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 pub(crate) mod backend_global;

@@ -7,10 +7,12 @@ use forge_platform_core::HealthDelta;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::MissedTickBehavior;
 
-use crate::backend::{HotkeyEdge, HotkeyFiredEvent, HotkeyId};
+use crate::backend::{BackendSessionEvent, HotkeyEdge, HotkeyFiredEvent, HotkeyId};
 use crate::client::{EnableFailure, HotkeyClient};
 use crate::combo::HotkeyCombo;
-use crate::health::{build_trigger_delta, registered_count_health_value};
+use crate::health::{
+    BACKEND_METRIC_INDEX, backend_health_value, build_trigger_delta, registered_count_health_value,
+};
 use crate::hold;
 use crate::payload_fields;
 
@@ -25,9 +27,11 @@ pub(crate) async fn run_supervisor(
     client: Arc<HotkeyClient>,
     mut fired_rx: mpsc::Receiver<HotkeyFiredEvent>,
     restart_rx: Option<mpsc::Receiver<()>>,
+    session_rx: Option<mpsc::Receiver<BackendSessionEvent>>,
     mut control_rx: mpsc::Receiver<SupervisorCommand>,
 ) {
     let mut restart_rx = restart_rx;
+    let mut session_rx = session_rx;
     let mut ceiling_sweep = tokio::time::interval(CEILING_SWEEP_INTERVAL);
     ceiling_sweep.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
@@ -48,6 +52,12 @@ pub(crate) async fn run_supervisor(
                     None => restart_rx = None,
                 }
             }
+            session_event = maybe_recv(session_rx.as_mut()) => {
+                match session_event {
+                    Some(event) => handle_session_event(&client, event),
+                    None => session_rx = None,
+                }
+            }
             _ = ceiling_sweep.tick() => {
                 hold::close_expired(&client);
             }
@@ -58,10 +68,34 @@ pub(crate) async fn run_supervisor(
 }
 
 async fn maybe_restart(restart_rx: Option<&mut mpsc::Receiver<()>>) -> Option<()> {
-    match restart_rx {
+    maybe_recv(restart_rx).await
+}
+
+async fn maybe_recv<T>(rx: Option<&mut mpsc::Receiver<T>>) -> Option<T> {
+    match rx {
         Some(rx) => rx.recv().await,
         None => std::future::pending().await,
     }
+}
+
+fn handle_session_event(client: &Arc<HotkeyClient>, event: BackendSessionEvent) {
+    let lost_detail = match event {
+        BackendSessionEvent::Lost(detail) => Some(detail),
+        BackendSessionEvent::Restored => None,
+    };
+    if let Some(detail) = &lost_detail {
+        emit_portal_event(client, payload_fields::portal::reason::SESSION_LOST, detail);
+    }
+    let new_value = backend_health_value(client.portal_available, lost_detail.as_deref());
+    client
+        .health_state
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .backend_session_lost = lost_detail;
+    let _ = client.health_tx.send(HealthDelta {
+        index: BACKEND_METRIC_INDEX,
+        new_value,
+    });
 }
 
 fn handle_fired_event(client: &Arc<HotkeyClient>, event: HotkeyFiredEvent) {
@@ -254,11 +288,19 @@ pub(crate) fn emit_unregistered(client: &HotkeyClient, combo_str: &str, id_u32: 
 
 #[cfg(target_os = "linux")]
 pub(crate) fn emit_portal_unavailable(client: &HotkeyClient, detail: &str) {
+    emit_portal_event(
+        client,
+        payload_fields::portal::reason::NO_BACKEND_AVAILABLE,
+        detail,
+    );
+}
+
+fn emit_portal_event(client: &HotkeyClient, reason: &str, detail: &str) {
     client.publisher.publish(Event::new(
         EventSource::Hotkey,
         "hotkey.portal.unavailable",
         serde_json::json!({
-            (payload_fields::portal::REASON): payload_fields::portal::reason::NO_BACKEND_AVAILABLE,
+            (payload_fields::portal::REASON): reason,
             (payload_fields::portal::DETAIL): detail,
         }),
     ));

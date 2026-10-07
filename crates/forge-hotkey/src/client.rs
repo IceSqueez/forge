@@ -73,9 +73,10 @@ impl HotkeyClient {
         let fired_rx = client.backend.fired_rx();
         if let Some(rx) = fired_rx {
             let restart_rx = client.backend.restart_rx();
+            let session_rx = client.backend.session_events_rx();
             let c = Arc::clone(&client);
             tokio::spawn(async move {
-                supervisor::run_supervisor(c, rx, restart_rx, control_rx).await;
+                supervisor::run_supervisor(c, rx, restart_rx, session_rx, control_rx).await;
             });
         }
 

@@ -27,7 +27,10 @@ pub(crate) struct HotkeyHealthSnapshot {
     pub(crate) conflict_count: usize,
     pub(crate) recent_triggers: VecDeque<TriggerRecord>,
     pub(crate) last_synthesized_release_at: Option<OffsetDateTime>,
+    pub(crate) backend_session_lost: Option<String>,
 }
+
+pub(crate) const BACKEND_METRIC_INDEX: u8 = 3;
 
 impl HotkeyHealthSnapshot {
     pub(crate) fn record_synthesized_release(&mut self) {
@@ -120,7 +123,8 @@ impl BuiltinHealth for HotkeyClient {
             secondary: Some("since startup".to_owned()),
         };
 
-        let portal_value = portal_health_value(self.portal_available);
+        let portal_value =
+            backend_health_value(self.portal_available, snap.backend_session_lost.as_deref());
 
         [
             HealthMetric {
@@ -149,19 +153,27 @@ impl BuiltinHealth for HotkeyClient {
 }
 
 #[cfg(target_os = "linux")]
-fn portal_health_value(portal_available: Option<bool>) -> HealthValue {
-    match portal_available {
-        Some(true) => HealthValue::Status {
+pub(crate) fn backend_health_value(
+    portal_available: Option<bool>,
+    session_lost: Option<&str>,
+) -> HealthValue {
+    match (portal_available, session_lost) {
+        (Some(true), Some(detail)) => HealthValue::Status {
+            label: "Portal session lost - hotkeys will not fire".to_owned(),
+            active: false,
+            detail: Some(detail.to_owned()),
+        },
+        (Some(true), None) => HealthValue::Status {
             label: "Portal active".to_owned(),
             active: true,
             detail: None,
         },
-        Some(false) => HealthValue::Status {
+        (Some(false), _) => HealthValue::Status {
             label: "Portal unavailable - evdev fallback".to_owned(),
             active: false,
             detail: None,
         },
-        None => HealthValue::Status {
+        (None, _) => HealthValue::Status {
             label: "Permission denied - add user to 'input' group".to_owned(),
             active: false,
             detail: None,
@@ -175,7 +187,10 @@ fn backend_label(_portal_available: Option<bool>) -> String {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn portal_health_value(_portal_available: Option<bool>) -> HealthValue {
+pub(crate) fn backend_health_value(
+    _portal_available: Option<bool>,
+    _session_lost: Option<&str>,
+) -> HealthValue {
     HealthValue::Text {
         primary: "N/A".to_owned(),
         secondary: None,

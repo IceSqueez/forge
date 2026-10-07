@@ -14,6 +14,9 @@ pub enum HotkeyError {
     #[error("permission denied - ensure user is in the 'input' group")]
     PermissionDenied,
 
+    #[error("the desktop did not bind {combo:?}: {reason}")]
+    BindRejected { combo: String, reason: String },
+
     #[error("backend error: {0}")]
     Backend(String),
 

@@ -23,6 +23,12 @@ pub(crate) struct HotkeyFiredEvent {
     pub(crate) edge: HotkeyEdge,
 }
 
+#[cfg_attr(not(target_os = "linux"), expect(dead_code))]
+pub(crate) enum BackendSessionEvent {
+    Lost(String),
+    Restored,
+}
+
 pub(crate) struct NullBackend {
     fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,
 }
@@ -66,6 +72,10 @@ pub(crate) trait HotkeyBackend: Send + Sync {
     }
 
     fn restart_rx(&self) -> Option<mpsc::Receiver<()>> {
+        None
+    }
+
+    fn session_events_rx(&self) -> Option<mpsc::Receiver<BackendSessionEvent>> {
         None
     }
 }

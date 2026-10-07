@@ -59,6 +59,7 @@ mod tests {
             | FormField::DateTime { key, .. }
             | FormField::Select { key, .. }
             | FormField::UnitAmount { key, .. }
+            | FormField::Duration { key, .. }
             | FormField::DynamicSelect { key, .. }
             | FormField::DependentSelect { key, .. }
             | FormField::Swatch { key, .. }

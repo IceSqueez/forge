@@ -868,6 +868,7 @@ mod tests {
             | DateTime { key, .. }
             | Select { key, .. }
             | UnitAmount { key, .. }
+            | Duration { key, .. }
             | DynamicSelect { key, .. }
             | DependentSelect { key, .. }
             | Optional { key, .. }

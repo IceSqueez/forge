@@ -1844,6 +1844,7 @@ mod tests {
     use crate::actions_screen::overlay_schema::OverlayContentSchema;
     use crate::presentation::Presentation;
     use crate::test_support::runtime;
+    use forge_registry::UnitAmountBounds;
 
     const REWARD_FIELD: &str = "reward_id";
     const OWNED_REWARDS: &str = "collections.twitch.rewards.manageable";

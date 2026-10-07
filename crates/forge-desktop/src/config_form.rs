@@ -1234,6 +1234,7 @@ pub(crate) fn config_label_cell(
 #[allow(clippy::panic)]
 mod tests {
     use super::*;
+    use forge_registry::UnitAmountBounds;
 
     fn config(entries: &[(&str, Variant)]) -> FieldConfig {
         entries

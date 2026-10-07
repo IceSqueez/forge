@@ -339,7 +339,7 @@ async fn filter_rule_kinds_params_json_round_trip() {
             kind: FilterRuleKind::Literal {
                 pattern: "hello world".to_owned(),
                 replacement: "hi".to_owned(),
-                match_inside_words: false,
+                match_inside_words: true,
             },
         },
         FilterRule {
@@ -385,6 +385,40 @@ async fn filter_rule_kinds_params_json_round_trip() {
             original.id
         );
     }
+}
+
+#[tokio::test]
+async fn literal_stored_before_the_inside_words_flag_existed_matches_whole_words() {
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+        .await
+        .expect("in-memory pool");
+    apply_migrations(&pool).await.expect("migrations apply");
+    sqlx::query(
+        "INSERT INTO tts_filter_rules (id, name, enabled, position, kind, params)
+         VALUES ('legacy', 'GG', 1, 0, 'literal', '{\"pattern\":\"gg\",\"replacement\":\"good game\"}')",
+    )
+    .execute(&pool)
+    .await
+    .expect("insert legacy row");
+
+    let got = SqliteTtsFiltersRepo::new(pool)
+        .list_rules()
+        .await
+        .expect("list");
+
+    assert!(
+        matches!(
+            got.as_slice(),
+            [FilterRule {
+                kind: FilterRuleKind::Literal {
+                    match_inside_words: false,
+                    ..
+                },
+                ..
+            }]
+        ),
+        "{got:?}"
+    );
 }
 
 #[tokio::test]

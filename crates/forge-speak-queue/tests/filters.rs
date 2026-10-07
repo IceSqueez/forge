@@ -73,6 +73,33 @@ mod filters {
     }
 
     #[test]
+    fn literal_inside_words_flag_picks_substring_or_whole_word_matching() {
+        for (match_inside_words, expected) in [(true, "POXERS X!"), (false, "POGGERS X!")] {
+            let rules = [FilterRule {
+                kind: FilterRuleKind::Literal {
+                    pattern: "gg".into(),
+                    replacement: "X".into(),
+                    match_inside_words,
+                },
+                ..literal_rule("gg", "", "", true)
+            }];
+            for (builder, config) in [
+                (
+                    "strict",
+                    build_config_strict(&rules, &default_settings()).unwrap(),
+                ),
+                ("lenient", build_config_lenient(&rules, &default_settings())),
+            ] {
+                assert_eq!(
+                    process("POGGERS GG!", &config, &ctx()),
+                    PipelineResult::Speak(expected.into()),
+                    "{builder}, match_inside_words = {match_inside_words}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn empty_pattern_literal_is_noop() {
         let rules = [literal_rule("empty", "", "anything", true)];
         let config = build_config_strict(&rules, &default_settings()).unwrap();

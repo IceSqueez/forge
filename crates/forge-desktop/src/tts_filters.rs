@@ -2831,6 +2831,49 @@ mod tests {
         }
     }
 
+    #[gpui::test]
+    fn added_text_replacement_keeps_the_modal_inside_words_choice(cx: &mut TestAppContext) {
+        for (toggles, expected) in [(0, Some(false)), (1, Some(true)), (2, Some(false))] {
+            let view = filters_view(cx);
+            view.update(cx, |v, cx| v.open_add_modal(ModalStage::Replace, cx));
+            let modal = view.read_with(cx, |v, _| v.add_modal.clone().unwrap());
+            modal.update(cx, |m, cx| {
+                m.replace_from
+                    .update(cx, |input, cx| input.set_content("gg", cx));
+                for _ in 0..toggles {
+                    m.toggle_replace_inside_words(cx);
+                }
+                m.submit(cx);
+            });
+            cx.run_until_parked();
+            let added = view.read_with(cx, |v, _| match v.rules.last().map(|r| &r.kind) {
+                Some(FilterRuleKind::Literal {
+                    match_inside_words, ..
+                }) => Some(*match_inside_words),
+                _ => None,
+            });
+            assert_eq!(added, expected, "{toggles} toggles");
+        }
+    }
+
+    #[test]
+    fn literal_badge_names_the_inside_words_scope_only_when_it_is_on() {
+        for (match_inside_words, expected) in [
+            (true, tr!("tts_filters_badge_text_inside_words")),
+            (false, tr!("tts_filters_badge_text")),
+        ] {
+            let rule = filter_row(
+                true,
+                FilterRuleKind::Literal {
+                    pattern: "gg".into(),
+                    replacement: "X".into(),
+                    match_inside_words,
+                },
+            );
+            assert_eq!(replacement_meta(&rule), expected, "{match_inside_words}");
+        }
+    }
+
     #[test]
     fn parse_max_duration_accepts_whole_seconds_inside_the_inclusive_range() {
         for (raw, expected) in [("1", 1u32), ("600", 600), ("30", 30), ("  45  ", 45)] {

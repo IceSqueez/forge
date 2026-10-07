@@ -1204,10 +1204,12 @@ mod tests {
     use forge_components::ThemeId;
     use forge_runtime::triggers::{TIMER_TICK_KIND, TimerTickDescriptor};
     use forge_runtime::{ActionCancelRegistry, QueueScheduler, spawn_action_engine};
+    use forge_soundboard::ClipLibrary;
     use forge_storage::MockTriggerInstanceRepo;
     use forge_storage::action::MockActionRepo;
     use forge_storage::queue::MockQueueRepo;
     use forge_storage::soundboard::MockSoundboardClipsRepo;
+    use forge_storage::{DataProvider, SoundboardClipsRepo};
     use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 
     use super::*;
@@ -1340,7 +1342,7 @@ mod tests {
                         service,
                         trigger_repo,
                         Arc::clone(&backend) as Arc<dyn ScriptRepo>,
-                        clips,
+                        Arc::new(ClipLibrary::new(clips, backend.media_repo())),
                         Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
                         Arc::clone(&backend) as Arc<dyn SettingsRepo>,
                         Arc::new(StubOverlays),

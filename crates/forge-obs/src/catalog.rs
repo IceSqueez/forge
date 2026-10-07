@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use forge_platform_core::{
-    BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon, TokenColor,
-    TrailingToken,
+    BannerLevel, BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon,
+    TokenColor, TrailingToken,
 };
 use forge_types::{SubActionStep, Variant};
 
@@ -255,10 +255,22 @@ impl BuiltinContent for ObsClient {
             footer: None,
         };
 
-        vec![DetailSection::TwoColumnLists {
+        let lists = DetailSection::TwoColumnLists {
             left: Box::new(left),
             right: Box::new(right),
-        }]
+        };
+        match self.last_failure() {
+            Some(reason) => vec![
+                DetailSection::WarningBanner {
+                    level: BannerLevel::Error,
+                    title: "Could not connect to OBS".to_owned(),
+                    body: reason,
+                    cta: None,
+                },
+                lists,
+            ],
+            None => vec![lists],
+        }
     }
 }
 

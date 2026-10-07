@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use forge_storage::{
     ActionRepo, DEFAULT_EVENT_LOG_RETENTION_DAYS, ScheduledRunRepo, SettingsRepo,
-    event_log_retention_days,
+    action_history_retention_days, clamp_action_history_retention_days, event_log_retention_days,
 };
 use time::OffsetDateTime;
 use tokio::sync::Notify;
@@ -12,7 +12,6 @@ use tokio::sync::Notify;
 use crate::error::SqliteStorageError;
 use crate::{SqliteEventLogRepo, SqliteHistoryRepo};
 
-const MIN_EXECUTION_RETENTION_DAYS: u32 = 7;
 const FIRST_SWEEP_DELAY: Duration = Duration::from_secs(30);
 const PRUNE_CHUNK_ROWS: u32 = 1_000;
 const PRUNE_CHUNK_GAP: Duration = Duration::from_millis(100);
@@ -28,6 +27,12 @@ pub(crate) struct RetentionTargets {
     pub(crate) action: Arc<dyn ActionRepo>,
     pub(crate) settings: Arc<dyn SettingsRepo>,
     pub(crate) scheduled_run: Arc<dyn ScheduledRunRepo>,
+}
+
+#[derive(Clone, Copy)]
+struct RetentionWindows {
+    event_log_days: u32,
+    action_history_days: u32,
 }
 
 enum Interrupt {
@@ -47,13 +52,13 @@ pub(crate) fn spawn_retention_task(
         }
         let mut ticker = tokio::time::interval_at(tokio::time::Instant::now() + interval, interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        let mut days = retention_days(targets.settings.as_ref()).await;
+        let mut windows = retention_windows(targets.settings.as_ref()).await;
 
         loop {
-            match sweep(&targets, days, &signals).await {
+            match sweep(&targets, windows, &signals).await {
                 Ok(()) => {}
                 Err(Interrupt::WindowChanged) => {
-                    days = retention_days(targets.settings.as_ref()).await;
+                    windows = retention_windows(targets.settings.as_ref()).await;
                     continue;
                 }
                 Err(Interrupt::Shutdown) => break,
@@ -61,7 +66,7 @@ pub(crate) fn spawn_retention_task(
             tokio::select! {
                 _ = ticker.tick() => {}
                 _ = signals.window_changed.notified() => {
-                    days = retention_days(targets.settings.as_ref()).await;
+                    windows = retention_windows(targets.settings.as_ref()).await;
                 }
                 _ = signals.shutdown.notified() => break,
             }
@@ -70,37 +75,49 @@ pub(crate) fn spawn_retention_task(
     })
 }
 
-async fn retention_days(settings: &dyn SettingsRepo) -> u32 {
-    event_log_retention_days(settings)
+async fn retention_windows(settings: &dyn SettingsRepo) -> RetentionWindows {
+    let event_log_days = event_log_retention_days(settings)
         .await
         .unwrap_or_else(|e| {
             tracing::warn!(error = %e, "could not read the event history retention; using the default");
             DEFAULT_EVENT_LOG_RETENTION_DAYS
-        })
+        });
+    let action_history_days = action_history_retention_days(settings)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "could not read the action history retention; using the event history retention");
+            clamp_action_history_retention_days(event_log_days)
+        });
+    RetentionWindows {
+        event_log_days,
+        action_history_days,
+    }
 }
 
 async fn sweep(
     targets: &RetentionTargets,
-    days: u32,
+    windows: RetentionWindows,
     signals: &RetentionSignals,
 ) -> Result<(), Interrupt> {
     let now = OffsetDateTime::now_utc();
-    let cutoff = now - time::Duration::days(i64::from(days));
-    let exec_cutoff = now - time::Duration::days(i64::from(days.max(MIN_EXECUTION_RETENTION_DAYS)));
+    let cutoff = now - time::Duration::days(i64::from(windows.event_log_days));
+    let history_cutoff = now - time::Duration::days(i64::from(windows.action_history_days));
 
     prune_in_chunks("event_log", cutoff, signals, |chunk_rows| {
         targets.event_log.prune_chunk_before(cutoff, chunk_rows)
     })
     .await?;
-    prune_in_chunks("action_history", cutoff, signals, |chunk_rows| {
-        targets.history.prune_chunk_before(cutoff, chunk_rows)
+    prune_in_chunks("action_history", history_cutoff, signals, |chunk_rows| {
+        targets
+            .history
+            .prune_chunk_before(history_cutoff, chunk_rows)
     })
     .await?;
 
-    match targets.action.prune_executions_before(exec_cutoff).await {
+    match targets.action.prune_executions_before(history_cutoff).await {
         Ok(pruned) => tracing::info!(
             pruned_rows = pruned,
-            cutoff = ?exec_cutoff,
+            cutoff = ?history_cutoff,
             "action_executions pruning complete"
         ),
         Err(e) => tracing::warn!(

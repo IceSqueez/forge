@@ -153,7 +153,9 @@ impl SqliteBackend {
     }
 
     fn signal_setting_changed(&self, key: &str) {
-        if key == reserved_keys::EVENT_LOG_RETENTION_DAYS {
+        if key == reserved_keys::EVENT_LOG_RETENTION_DAYS
+            || key == reserved_keys::ACTION_HISTORY_RETENTION_DAYS
+        {
             self.retention_window_changed.notify_one();
         }
     }

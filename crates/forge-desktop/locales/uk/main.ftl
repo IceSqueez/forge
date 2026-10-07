@@ -290,6 +290,8 @@ settings_storage_display_limit_label = Показувати при відкри�
 settings_storage_display_limit_hint = Скільки останніх повідомлень показує чат; старіші зникають. Діє після перезапуску.
 settings_storage_retention_label = Зберігання журналу подій
 settings_storage_retention_hint = Скільки днів зберігати журнал подій у базі даних.
+settings_storage_history_retention_label = Зберігання історії дій
+settings_storage_history_retention_hint = Скільки днів зберігати історію запусків дій у базі даних - щонайменше { $min }.
 
 ## Налаштування → панель черг
 

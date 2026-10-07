@@ -15,6 +15,7 @@ pub mod reserved_keys {
     pub const FONT_BODY: &str = "font_body";
     pub const FONT_MONO: &str = "font_mono";
     pub const EVENT_LOG_RETENTION_DAYS: &str = "event_log_retention_days";
+    pub const ACTION_HISTORY_RETENTION_DAYS: &str = "action_history_retention_days";
     pub const SERVER_ENABLED: &str = "server.enabled";
     pub const SERVER_BIND_ADDRESS: &str = "server.bind_address";
     pub const SERVER_PORT: &str = "server.port";
@@ -101,6 +102,7 @@ pub mod disclosure {
             | reserved_keys::LANGUAGE
             | reserved_keys::DIAGNOSTICS_LOG_LEVEL
             | reserved_keys::EVENT_LOG_RETENTION_DAYS
+            | reserved_keys::ACTION_HISTORY_RETENTION_DAYS
             | reserved_keys::SERVER_ENABLED
             | reserved_keys::SERVER_PORT
             | reserved_keys::SERVER_LAN_BIND_ENABLED

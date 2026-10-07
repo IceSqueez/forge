@@ -280,6 +280,8 @@ settings_storage_display_limit_label = Chat history shown on open
 settings_storage_display_limit_hint = How many recent messages the chat shows; older ones drop off. Takes effect after a restart.
 settings_storage_retention_label = Event log retention
 settings_storage_retention_hint = How many days of event log history to keep in the database.
+settings_storage_history_retention_label = Action history retention
+settings_storage_history_retention_hint = How many days of action run history to keep in the database - at least { $min }.
 
 ## Settings → Queues pane
 

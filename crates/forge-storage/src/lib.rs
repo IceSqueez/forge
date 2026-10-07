@@ -46,7 +46,11 @@ pub use event_log::{
     set_event_log_retention_days,
 };
 pub use globals::{GlobalEntry, GlobalsRepo};
-pub use history::{ActionStats, HistoryRepo};
+pub use history::{
+    ActionStats, HistoryRepo, MAX_ACTION_HISTORY_RETENTION_DAYS, MIN_ACTION_HISTORY_RETENTION_DAYS,
+    action_history_retention_days, clamp_action_history_retention_days,
+    set_action_history_retention_days,
+};
 pub use integration_state::{
     has_credentials_for, has_setting, integration_enabled_key, resolve_integration_enabled,
     set_integration_enabled, stored_integration_enabled,

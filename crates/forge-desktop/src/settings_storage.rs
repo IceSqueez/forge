@@ -10,10 +10,13 @@ use forge_components::{
 use forge_runtime::ChatHistoryRetentionHandle;
 use forge_storage::{
     DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
-    DEFAULT_EVENT_LOG_RETENTION_DAYS, DataProvider, MAX_CHAT_HISTORY_PER_VIEWER_LIMIT,
-    MAX_EVENT_LOG_RETENTION_DAYS, MIN_CHAT_HISTORY_PER_VIEWER_LIMIT, MIN_EVENT_LOG_RETENTION_DAYS,
-    SettingsRepo, UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT, chat_history_display_limit,
-    chat_history_per_viewer_limit, event_log_retention_days, set_chat_history_display_limit,
+    DEFAULT_EVENT_LOG_RETENTION_DAYS, DataProvider, MAX_ACTION_HISTORY_RETENTION_DAYS,
+    MAX_CHAT_HISTORY_PER_VIEWER_LIMIT, MAX_EVENT_LOG_RETENTION_DAYS,
+    MIN_ACTION_HISTORY_RETENTION_DAYS, MIN_CHAT_HISTORY_PER_VIEWER_LIMIT,
+    MIN_EVENT_LOG_RETENTION_DAYS, SettingsRepo, StorageError,
+    UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT, action_history_retention_days,
+    chat_history_display_limit, chat_history_per_viewer_limit, clamp_action_history_retention_days,
+    event_log_retention_days, set_action_history_retention_days, set_chat_history_display_limit,
     set_chat_history_per_viewer_limit, set_event_log_retention_days,
 };
 use gpui::{
@@ -49,6 +52,13 @@ pub(crate) fn per_viewer_choice(limit: u32, custom_selected: bool) -> PerViewerC
     }
 }
 
+struct StoredLimits {
+    per_viewer: u32,
+    display: u32,
+    event_log_retention: u32,
+    action_history_retention: u32,
+}
+
 pub struct SettingsStorageView {
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
@@ -58,11 +68,13 @@ pub struct SettingsStorageView {
     custom_selected: bool,
     display_limit: u32,
     retention_days: u32,
+    history_retention_days: u32,
     backing_up: bool,
 
     per_viewer_input: Entity<TextInput>,
     display_input: Entity<TextInput>,
     retention_input: Entity<TextInput>,
+    history_retention_input: Entity<TextInput>,
     _subs: Vec<Subscription>,
 }
 
@@ -89,6 +101,13 @@ impl SettingsStorageView {
                 .with_palette(palette)
                 .with_font_size(FONT_SM)
         });
+        let default_history_retention =
+            clamp_action_history_retention_days(DEFAULT_EVENT_LOG_RETENTION_DAYS);
+        let history_retention_input = cx.new(|cx| {
+            TextInput::new(default_history_retention.to_string(), cx)
+                .with_palette(palette)
+                .with_font_size(FONT_SM)
+        });
 
         let subs = vec![
             cx.subscribe(&per_viewer_input, |this, _input, event: &InputEvent, cx| {
@@ -106,6 +125,14 @@ impl SettingsStorageView {
                     this.commit_retention(cx);
                 }
             }),
+            cx.subscribe(
+                &history_retention_input,
+                |this, _input, event: &InputEvent, cx| {
+                    if matches!(event, InputEvent::Submitted(_) | InputEvent::Blurred(_)) {
+                        this.commit_history_retention(cx);
+                    }
+                },
+            ),
         ];
 
         let mut view = Self {
@@ -116,10 +143,12 @@ impl SettingsStorageView {
             custom_selected: false,
             display_limit: DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT,
             retention_days: DEFAULT_EVENT_LOG_RETENTION_DAYS,
+            history_retention_days: default_history_retention,
             backing_up: false,
             per_viewer_input,
             display_input,
             retention_input,
+            history_retention_input,
             _subs: subs,
         };
         view.load(cx);
@@ -136,19 +165,21 @@ impl SettingsStorageView {
         );
     }
 
-    fn apply_loaded(&mut self, result: Result<(u32, u32, u32), String>, cx: &mut Context<Self>) {
+    fn apply_loaded(&mut self, result: Result<StoredLimits, String>, cx: &mut Context<Self>) {
         match result {
-            Ok((per_viewer, display, retention)) => {
-                self.per_viewer_limit = per_viewer;
+            Ok(limits) => {
+                self.per_viewer_limit = limits.per_viewer;
                 self.custom_selected = false;
-                self.display_limit = display;
-                self.retention_days = retention;
+                self.display_limit = limits.display;
+                self.retention_days = limits.event_log_retention;
                 self.per_viewer_input
-                    .update(cx, |i, cx| i.set_content(per_viewer.to_string(), cx));
+                    .update(cx, |i, cx| i.set_content(limits.per_viewer.to_string(), cx));
                 self.display_input
-                    .update(cx, |i, cx| i.set_content(display.to_string(), cx));
-                self.retention_input
-                    .update(cx, |i, cx| i.set_content(retention.to_string(), cx));
+                    .update(cx, |i, cx| i.set_content(limits.display.to_string(), cx));
+                self.retention_input.update(cx, |i, cx| {
+                    i.set_content(limits.event_log_retention.to_string(), cx)
+                });
+                self.show_history_retention(limits.action_history_retention, cx);
             }
             Err(message) => {
                 tracing::warn!(error = %message, "failed to load storage settings");
@@ -304,11 +335,20 @@ impl SettingsStorageView {
                 self.retention_input
                     .update(cx, |i, cx| i.set_content(value.to_string(), cx));
                 let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-                self.rt_handle.spawn(async move {
-                    if let Err(e) = set_event_log_retention_days(repo.as_ref(), value).await {
-                        tracing::warn!(error = %e, "failed to persist event log retention days");
-                    }
-                });
+                async_bridge::run_async(
+                    &self.rt_handle,
+                    persist_event_log_retention(repo, value),
+                    |this, result, cx| match result {
+                        Ok(history_days) => {
+                            this.show_history_retention(history_days, cx);
+                            cx.notify();
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "failed to persist event log retention days");
+                        }
+                    },
+                    cx,
+                );
             }
             None => {
                 let restore = self.retention_days.to_string();
@@ -317,6 +357,32 @@ impl SettingsStorageView {
             }
         }
         cx.notify();
+    }
+
+    fn commit_history_retention(&mut self, cx: &mut Context<Self>) {
+        match parse_history_retention_days(self.history_retention_input.read(cx).content()) {
+            Some(value) => {
+                self.show_history_retention(value, cx);
+                let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+                self.rt_handle.spawn(async move {
+                    if let Err(e) = set_action_history_retention_days(repo.as_ref(), value).await {
+                        tracing::warn!(error = %e, "failed to persist action history retention days");
+                    }
+                });
+            }
+            None => {
+                let restore = self.history_retention_days.to_string();
+                self.history_retention_input
+                    .update(cx, |i, cx| i.set_content(restore, cx));
+            }
+        }
+        cx.notify();
+    }
+
+    fn show_history_retention(&mut self, days: u32, cx: &mut Context<Self>) {
+        self.history_retention_days = days;
+        self.history_retention_input
+            .update(cx, |i, cx| i.set_content(days.to_string(), cx));
     }
 
     fn backup_now(&mut self, cx: &mut Context<Self>) {
@@ -425,6 +491,16 @@ impl Render for SettingsStorageView {
                 self.retention_input.clone(),
                 &palette,
                 density,
+            ))
+            .child(self.limit_field(
+                tr!("settings_storage_history_retention_label"),
+                tr!(
+                    "settings_storage_history_retention_hint",
+                    min = MIN_ACTION_HISTORY_RETENTION_DAYS.to_string()
+                ),
+                self.history_retention_input.clone(),
+                &palette,
+                density,
             ));
 
         div()
@@ -440,17 +516,33 @@ impl Render for SettingsStorageView {
     }
 }
 
-async fn load_limits(repo: Arc<dyn SettingsRepo>) -> Result<(u32, u32, u32), String> {
+async fn load_limits(repo: Arc<dyn SettingsRepo>) -> Result<StoredLimits, String> {
     let per_viewer = chat_history_per_viewer_limit(repo.as_ref())
         .await
         .map_err(|e| e.to_string())?;
     let display = chat_history_display_limit(repo.as_ref())
         .await
         .map_err(|e| e.to_string())?;
-    let retention = event_log_retention_days(repo.as_ref())
+    let event_log_retention = event_log_retention_days(repo.as_ref())
         .await
         .map_err(|e| e.to_string())?;
-    Ok((per_viewer, display, retention))
+    let action_history_retention = action_history_retention_days(repo.as_ref())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(StoredLimits {
+        per_viewer,
+        display,
+        event_log_retention,
+        action_history_retention,
+    })
+}
+
+async fn persist_event_log_retention(
+    repo: Arc<dyn SettingsRepo>,
+    days: u32,
+) -> Result<u32, StorageError> {
+    set_event_log_retention_days(repo.as_ref(), days).await?;
+    action_history_retention_days(repo.as_ref()).await
 }
 
 fn parse_limit(raw: &str) -> Option<u32> {
@@ -469,6 +561,12 @@ fn parse_retention_days(raw: &str) -> Option<u32> {
         .parse::<u32>()
         .ok()
         .filter(|v| (MIN_EVENT_LOG_RETENTION_DAYS..=MAX_EVENT_LOG_RETENTION_DAYS).contains(v))
+}
+
+fn parse_history_retention_days(raw: &str) -> Option<u32> {
+    raw.trim().parse::<u32>().ok().filter(|v| {
+        (MIN_ACTION_HISTORY_RETENTION_DAYS..=MAX_ACTION_HISTORY_RETENTION_DAYS).contains(v)
+    })
 }
 
 fn pane_header(

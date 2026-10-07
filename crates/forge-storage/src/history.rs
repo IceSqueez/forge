@@ -4,7 +4,40 @@ use async_trait::async_trait;
 use forge_types::{ActionId, ExecutionContext};
 use time::OffsetDateTime;
 
-use crate::StorageError;
+use crate::settings::reserved_keys;
+use crate::{MAX_EVENT_LOG_RETENTION_DAYS, SettingsRepo, StorageError, event_log_retention_days};
+
+pub const MIN_ACTION_HISTORY_RETENTION_DAYS: u32 = 7;
+pub const MAX_ACTION_HISTORY_RETENTION_DAYS: u32 = MAX_EVENT_LOG_RETENTION_DAYS;
+
+pub async fn action_history_retention_days(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {
+    let raw = repo
+        .get_string(reserved_keys::ACTION_HISTORY_RETENTION_DAYS)
+        .await?;
+    let days = match raw.as_deref().and_then(|s| s.trim().parse().ok()) {
+        Some(days) => days,
+        None => event_log_retention_days(repo).await?,
+    };
+    Ok(clamp_action_history_retention_days(days))
+}
+
+pub async fn set_action_history_retention_days(
+    repo: &dyn SettingsRepo,
+    days: u32,
+) -> Result<(), StorageError> {
+    repo.set_string(
+        reserved_keys::ACTION_HISTORY_RETENTION_DAYS,
+        &clamp_action_history_retention_days(days).to_string(),
+    )
+    .await
+}
+
+pub fn clamp_action_history_retention_days(days: u32) -> u32 {
+    days.clamp(
+        MIN_ACTION_HISTORY_RETENTION_DAYS,
+        MAX_ACTION_HISTORY_RETENTION_DAYS,
+    )
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ActionStats {

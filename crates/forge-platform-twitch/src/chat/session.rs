@@ -168,6 +168,10 @@ impl ChatSession {
             .endpoints
             .base_url(EndpointSurface::TwitchEventSubSocket)
             .to_owned();
+        let stopped_report = StoppedReport {
+            state_tx: self.state_tx.clone(),
+            bus: Arc::clone(&self.config.bus),
+        };
 
         loop {
             let attempt = self.backoff.attempt();
@@ -208,8 +212,7 @@ impl ChatSession {
             }
         }
 
-        self.set_state(ChatConnectionState::Disconnected);
-        self.publish_connection_event();
+        drop(stopped_report);
         info!("twitch chat stopped");
     }
 
@@ -424,7 +427,17 @@ impl ChatSession {
                 debug!("session_welcome received, subscribing topics");
                 *session_id = Some(id.clone());
 
-                let token = match self.config.manager.get_valid_access_token().await {
+                let manager = Arc::clone(&self.config.manager);
+                let token_fetch =
+                    tokio::spawn(async move { manager.get_valid_access_token().await });
+                let fetched = match token_fetch.await {
+                    Ok(fetched) => fetched,
+                    Err(e) => {
+                        warn!(error = %e, "chat token fetch task failed");
+                        return FrameAction::Disconnect;
+                    }
+                };
+                let token = match fetched {
                     Ok(token) => token,
                     Err(PlatformError::ReauthRequired { .. }) => {
                         warn!("chat token refresh rejected: reauth required");
@@ -4091,6 +4104,21 @@ enum FrameAction {
     Subscribe(SubscriptionPassRun),
     Disconnect,
     ReauthRequired,
+}
+
+struct StoppedReport {
+    state_tx: watch::Sender<ChatConnectionState>,
+    bus: Arc<dyn EventPublisher>,
+}
+
+impl Drop for StoppedReport {
+    fn drop(&mut self) {
+        let _ = self.state_tx.send(ChatConnectionState::Disconnected);
+        self.bus.publish(connection_state_changed_event(
+            "twitch",
+            ConnectionState::Disconnected,
+        ));
+    }
 }
 
 #[derive(Debug, Deserialize)]

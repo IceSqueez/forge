@@ -5,10 +5,9 @@ use forge_platform_core::{
 };
 use futures::future::BoxFuture;
 use reqwest::StatusCode;
-use tokio::sync::Mutex;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-use crate::quota_state::{QuotaState, today_pacific};
+use crate::quota_state::{SharedQuota, today_pacific};
 
 const THUMBNAIL_SET_COST: u32 = 50;
 const MAX_THUMBNAIL_BYTES: u64 = 2 * 1024 * 1024;
@@ -19,7 +18,7 @@ pub struct YoutubeThumbnail {
     client: reqwest::Client,
     access_token_source: TokenSource,
     active_broadcast_id: ActiveBroadcastIdHandle,
-    quota: Arc<Mutex<QuotaState>>,
+    quota: SharedQuota,
     api_base: String,
 }
 
@@ -28,7 +27,7 @@ impl YoutubeThumbnail {
         endpoints: &PlatformEndpoints,
         access_token_source: TokenSource,
         active_broadcast_id: ActiveBroadcastIdHandle,
-        quota: Arc<Mutex<QuotaState>>,
+        quota: SharedQuota,
     ) -> Self {
         Self {
             client: reqwest::Client::new(),

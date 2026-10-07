@@ -11,10 +11,9 @@ use reqwest::StatusCode;
 use serde::Deserialize;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
-use tokio::sync::Mutex;
 
 use crate::builtin::YoutubeIntegrationBundle;
-use crate::quota_state::{QuotaState, today_pacific};
+use crate::quota_state::{SharedQuota, today_pacific};
 
 const SUBSCRIPTION_LIST_COST: u32 = 1;
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -65,7 +64,7 @@ struct ErrorDetail {
 pub(crate) struct YoutubeFollowLookup {
     client: reqwest::Client,
     access_token_source: TokenSource,
-    quota: Arc<Mutex<QuotaState>>,
+    quota: SharedQuota,
     rate_limiter: Arc<dyn RateLimiter>,
     api_base: String,
     broadcaster_channel_id: String,
@@ -75,7 +74,7 @@ impl YoutubeFollowLookup {
     pub(crate) fn new(
         endpoints: &PlatformEndpoints,
         access_token_source: TokenSource,
-        quota: Arc<Mutex<QuotaState>>,
+        quota: SharedQuota,
         broadcaster_channel_id: String,
     ) -> Self {
         Self {

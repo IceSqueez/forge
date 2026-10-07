@@ -7,11 +7,11 @@ use forge_platform_core::{
 };
 use futures::future::BoxFuture;
 use reqwest::StatusCode;
-use tokio::sync::{Mutex, watch};
+use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-use crate::quota_state::{QuotaState, today_pacific};
+use crate::quota_state::{SharedQuota, today_pacific};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(60);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -43,7 +43,7 @@ pub struct YoutubeViewerPoll {
     client: reqwest::Client,
     access_token_source: TokenSource,
     active_broadcast_id: ActiveBroadcastIdHandle,
-    quota: Arc<Mutex<QuotaState>>,
+    quota: SharedQuota,
     rate_limiter: Arc<dyn RateLimiter>,
     reports_tx: watch::Sender<ViewerReport>,
     api_base: String,
@@ -54,7 +54,7 @@ impl YoutubeViewerPoll {
         endpoints: &PlatformEndpoints,
         access_token_source: TokenSource,
         active_broadcast_id: ActiveBroadcastIdHandle,
-        quota: Arc<Mutex<QuotaState>>,
+        quota: SharedQuota,
         reports_tx: watch::Sender<ViewerReport>,
     ) -> Self {
         Self {

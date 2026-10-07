@@ -16,7 +16,7 @@ use crate::chat_poller::YoutubeChatPoller;
 use crate::credentials_manager::YoutubeCredentialsManager;
 use crate::event_channel::PlatformEventChannel;
 use crate::live_chat_id::LiveChatIdHandle;
-use crate::quota_state::QuotaState;
+use crate::quota_state::SharedQuota;
 use crate::send_chat::YoutubeSendChat;
 
 const PLATFORM_ID: &str = "youtube";
@@ -32,7 +32,7 @@ pub struct YoutubePlatform {
     sender: YoutubeSendChat,
     live_chat_id: LiveChatIdHandle,
     active_broadcast_id: ActiveBroadcastIdHandle,
-    quota: Arc<tokio::sync::Mutex<QuotaState>>,
+    quota: SharedQuota,
     ban_ledger: Arc<dyn BanLedgerRepo>,
     state: Arc<Mutex<ConnectionState>>,
     state_tx: watch::Sender<ConnectionState>,
@@ -46,14 +46,14 @@ impl YoutubePlatform {
         credentials_manager: Arc<YoutubeCredentialsManager>,
         live_chat_id: LiveChatIdHandle,
         active_broadcast_id: ActiveBroadcastIdHandle,
-        quota: Arc<tokio::sync::Mutex<QuotaState>>,
+        quota: SharedQuota,
         ban_ledger: Arc<dyn BanLedgerRepo>,
     ) -> Self {
         let sender = YoutubeSendChat::new(
             endpoints,
             token_source(Arc::clone(&credentials_manager)),
             live_chat_id.clone(),
-            Arc::clone(&quota),
+            quota.clone(),
         );
         let (state_tx, _) = watch::channel(ConnectionState::Disconnected);
         Self {
@@ -129,7 +129,7 @@ impl ChatPlatform for YoutubePlatform {
             self.channel_id.clone(),
             self.live_chat_id.clone(),
             self.active_broadcast_id.clone(),
-            Arc::clone(&self.quota),
+            self.quota.clone(),
             Arc::clone(&self.ban_ledger),
         );
 

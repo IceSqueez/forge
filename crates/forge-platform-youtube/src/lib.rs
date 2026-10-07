@@ -45,7 +45,7 @@ pub use credentials_manager::YoutubeCredentialsManager;
 pub use integration::YOUTUBE_INTEGRATION;
 pub use live_chat_id::LiveChatIdHandle;
 pub use moderation::YoutubeModeration;
-pub use quota_state::QuotaState;
+pub use quota_state::SharedQuota;
 pub use send_chat::YoutubeSendChat;
 pub use stream_metadata::YoutubeStreamMetadata;
 pub use stream_stats::YoutubeStreamStats;

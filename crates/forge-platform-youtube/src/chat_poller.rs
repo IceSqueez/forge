@@ -10,7 +10,6 @@ use forge_types::{
 use futures::future::BoxFuture;
 use reqwest::StatusCode;
 use time::OffsetDateTime;
-use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
@@ -22,7 +21,7 @@ use crate::payload_fields::{
     gift as gift_fields, member as member_fields, stream as stream_fields,
     support as support_fields,
 };
-use crate::quota_state::{BROADCAST_COST, CHAT_POLL_COST, QuotaState, today_pacific};
+use crate::quota_state::{BROADCAST_COST, CHAT_POLL_COST, SharedQuota, today_pacific};
 
 const POLL_FLOOR_MS: u64 = 3_000;
 const LONG_INTERVAL_MS: u64 = 60_000;
@@ -45,7 +44,7 @@ pub struct YoutubeChatPoller {
     bus_sender: UnboundedSender<Event>,
     channel_id: String,
     api_base: String,
-    quota_tracker: Arc<Mutex<QuotaState>>,
+    quota_tracker: SharedQuota,
     live_chat_id: LiveChatIdHandle,
     active_broadcast_id: ActiveBroadcastIdHandle,
     ban_ledger: Arc<dyn BanLedgerRepo>,
@@ -62,7 +61,7 @@ impl YoutubeChatPoller {
         channel_id: String,
         live_chat_id: LiveChatIdHandle,
         active_broadcast_id: ActiveBroadcastIdHandle,
-        quota_tracker: Arc<Mutex<QuotaState>>,
+        quota_tracker: SharedQuota,
         ban_ledger: Arc<dyn BanLedgerRepo>,
     ) -> Self {
         Self {

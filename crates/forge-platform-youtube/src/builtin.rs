@@ -20,7 +20,7 @@ use tokio_util::sync::CancellationToken;
 use crate::chat_platform::YoutubePlatform;
 use crate::credentials_manager::YoutubeCredentialsManager;
 use crate::follow_lookup::YoutubeFollowLookup;
-use crate::quota_state::QuotaState;
+use crate::quota_state::SharedQuota;
 use crate::triggers::channel_member::SupportNewMemberDescriptor;
 use crate::triggers::channel_member_milestone::SupportMemberMilestoneDescriptor;
 use crate::triggers::channel_user_banned::ChannelUserBannedDescriptor;
@@ -64,7 +64,7 @@ pub struct YoutubeIntegrationBundle {
     health_tx: broadcast::Sender<HealthDelta>,
     platform: Arc<YoutubePlatform>,
     credentials_manager: Arc<YoutubeCredentialsManager>,
-    quota: Arc<tokio::sync::Mutex<QuotaState>>,
+    quota: SharedQuota,
     follow_lookup: YoutubeFollowLookup,
     viewer_report_tx: watch::Sender<ViewerReport>,
     viewer_report_rx: watch::Receiver<ViewerReport>,
@@ -77,7 +77,7 @@ impl YoutubeIntegrationBundle {
         channel_id: String,
         platform: Arc<YoutubePlatform>,
         credentials_manager: Arc<YoutubeCredentialsManager>,
-        quota: Arc<tokio::sync::Mutex<QuotaState>>,
+        quota: SharedQuota,
     ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
         let (health_tx, _) = broadcast::channel(16);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
@@ -95,7 +95,7 @@ impl YoutubeIntegrationBundle {
         let follow_lookup = YoutubeFollowLookup::new(
             platform.endpoints(),
             token_source.clone(),
-            Arc::clone(&quota),
+            quota.clone(),
             channel_id.clone(),
         );
         let retired = CancellationToken::new();
@@ -103,7 +103,7 @@ impl YoutubeIntegrationBundle {
             platform.endpoints(),
             token_source,
             platform.active_broadcast_id(),
-            Arc::clone(&quota),
+            quota.clone(),
             viewer_report_tx.clone(),
         );
         let poll_retired = retired.clone();

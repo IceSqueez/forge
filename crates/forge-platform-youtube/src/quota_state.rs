@@ -1,11 +1,14 @@
+use std::sync::Arc;
+
 use forge_platform_core::PlatformError;
+use tokio::sync::{Mutex, MutexGuard, TryLockError};
 
 const QUOTA_HIGH_WATER: u32 = 9_000;
 const QUOTA_DAILY_LIMIT: u32 = 10_000;
 pub(crate) const BROADCAST_COST: u32 = 1;
 pub(crate) const CHAT_POLL_COST: u32 = 5;
 
-pub struct QuotaState {
+pub(crate) struct QuotaState {
     pub used_today: u32,
     pub peak_seen: u32,
     pub last_reset_date: time::Date,
@@ -40,6 +43,29 @@ impl QuotaState {
             self.long_interval_mode = true;
         }
         Ok(())
+    }
+}
+
+#[derive(Clone)]
+pub struct SharedQuota(Arc<Mutex<QuotaState>>);
+
+impl Default for SharedQuota {
+    fn default() -> Self {
+        Self::new(QuotaState::default())
+    }
+}
+
+impl SharedQuota {
+    pub(crate) fn new(state: QuotaState) -> Self {
+        Self(Arc::new(Mutex::new(state)))
+    }
+
+    pub(crate) async fn lock(&self) -> MutexGuard<'_, QuotaState> {
+        self.0.lock().await
+    }
+
+    pub(crate) fn try_lock(&self) -> Result<MutexGuard<'_, QuotaState>, TryLockError> {
+        self.0.try_lock()
     }
 }
 

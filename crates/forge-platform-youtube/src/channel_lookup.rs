@@ -7,9 +7,8 @@ use forge_platform_core::{
 use forge_types::Variant;
 use futures::future::BoxFuture;
 use reqwest::StatusCode;
-use tokio::sync::Mutex;
 
-use crate::quota_state::{QuotaState, today_pacific};
+use crate::quota_state::{SharedQuota, today_pacific};
 
 const LOOKUP_COST: u32 = 1;
 const CHANNEL_ID_LEN: usize = 24;
@@ -19,7 +18,7 @@ type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformErr
 pub struct YoutubeChannelLookup {
     client: reqwest::Client,
     access_token_source: TokenSource,
-    quota: Arc<Mutex<QuotaState>>,
+    quota: SharedQuota,
     api_base: String,
 }
 
@@ -27,7 +26,7 @@ impl YoutubeChannelLookup {
     pub fn new(
         endpoints: &PlatformEndpoints,
         access_token_source: TokenSource,
-        quota: Arc<Mutex<QuotaState>>,
+        quota: SharedQuota,
     ) -> Self {
         Self {
             client: reqwest::Client::new(),

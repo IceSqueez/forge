@@ -5,10 +5,9 @@ use forge_platform_core::{
 };
 use futures::future::BoxFuture;
 use reqwest::StatusCode;
-use tokio::sync::Mutex;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-use crate::quota_state::{QuotaState, today_pacific};
+use crate::quota_state::{SharedQuota, today_pacific};
 
 const CUEPOINT_COST: u32 = 50;
 
@@ -18,7 +17,7 @@ pub struct YoutubeAdBreak {
     client: reqwest::Client,
     access_token_source: TokenSource,
     active_broadcast_id: ActiveBroadcastIdHandle,
-    quota: Arc<Mutex<QuotaState>>,
+    quota: SharedQuota,
     api_base: String,
 }
 
@@ -27,7 +26,7 @@ impl YoutubeAdBreak {
         endpoints: &PlatformEndpoints,
         access_token_source: TokenSource,
         active_broadcast_id: ActiveBroadcastIdHandle,
-        quota: Arc<Mutex<QuotaState>>,
+        quota: SharedQuota,
     ) -> Self {
         Self {
             client: reqwest::Client::new(),

@@ -7,10 +7,9 @@ use forge_platform_core::{
 use forge_types::Variant;
 use futures::future::BoxFuture;
 use reqwest::StatusCode;
-use tokio::sync::Mutex;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-use crate::quota_state::{QuotaState, today_pacific};
+use crate::quota_state::{SharedQuota, today_pacific};
 
 const FETCH_COST: u32 = 1;
 
@@ -20,7 +19,7 @@ pub struct YoutubeStreamStats {
     client: reqwest::Client,
     access_token_source: TokenSource,
     active_broadcast_id: ActiveBroadcastIdHandle,
-    quota: Arc<Mutex<QuotaState>>,
+    quota: SharedQuota,
     api_base: String,
 }
 
@@ -29,7 +28,7 @@ impl YoutubeStreamStats {
         endpoints: &PlatformEndpoints,
         access_token_source: TokenSource,
         active_broadcast_id: ActiveBroadcastIdHandle,
-        quota: Arc<Mutex<QuotaState>>,
+        quota: SharedQuota,
     ) -> Self {
         Self {
             client: reqwest::Client::new(),

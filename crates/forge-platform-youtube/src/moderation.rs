@@ -7,12 +7,11 @@ use forge_storage::{BanLedgerEntry, BanLedgerKey, BanLedgerRepo, BanOrigin, Stor
 use futures::future::BoxFuture;
 use reqwest::StatusCode;
 use time::OffsetDateTime;
-use tokio::sync::Mutex;
 
 use crate::ban_ledger::{ban_ledger_key, expiry_after};
 use crate::credentials::YoutubeBroadcaster;
 use crate::live_chat_id::LiveChatIdHandle;
-use crate::quota_state::{QuotaState, today_pacific};
+use crate::quota_state::{SharedQuota, today_pacific};
 
 const BAN_COST: u32 = 50;
 const MODERATOR_COST: u32 = 50;
@@ -30,7 +29,7 @@ pub struct YoutubeModeration {
     access_token_source: TokenSource,
     broadcaster_source: BroadcasterSource,
     live_chat_id: LiveChatIdHandle,
-    quota: Arc<Mutex<QuotaState>>,
+    quota: SharedQuota,
     ban_ledger: Arc<dyn BanLedgerRepo>,
     api_base: String,
 }
@@ -41,7 +40,7 @@ impl YoutubeModeration {
         access_token_source: TokenSource,
         broadcaster_source: BroadcasterSource,
         live_chat_id: LiveChatIdHandle,
-        quota: Arc<Mutex<QuotaState>>,
+        quota: SharedQuota,
         ban_ledger: Arc<dyn BanLedgerRepo>,
     ) -> Self {
         Self {

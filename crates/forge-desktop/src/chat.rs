@@ -8,8 +8,9 @@ use forge_components::{
     FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuPlacement, Platform,
     PlatformKind, Radius, ResizeEdge, ResizeRange, SearchState, Spacing, TextInput, ToastKind,
     avatar_tile, badge, badge_color, badge_label, body_family, chat_gap_row, chat_row, chip,
-    context_menu, empty_state, icon, install_resize, menu_button, menu_divider, menu_header,
-    menu_item, mono_family, page_frame, platform_color, radius, spacing, status_dot, tr,
+    context_menu, empty_state, hash_accent, icon, install_resize, menu_button, menu_divider,
+    menu_header, menu_item, mono_family, page_frame, platform_color, radius, spacing, status_dot,
+    tr,
 };
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::SpeakQueueHandle;
@@ -973,7 +974,7 @@ impl ChatView {
         if let Some(color) = msg.author_color {
             color
         } else if !msg.username.is_empty() {
-            hashed_username_color(&msg.username, palette)
+            hash_accent(&msg.username, palette)
         } else {
             match msg.platform {
                 Platform::Twitch => platform_color(PlatformKind::Twitch, palette),
@@ -2066,21 +2067,6 @@ fn body_export_text(body: &ChatBody) -> String {
             .map_or_else(|| descriptor.to_string(), |m| m.to_string()),
         ChatBody::Raid { descriptor, .. } => descriptor.to_string(),
     }
-}
-
-fn hashed_username_color(username: &str, palette: &ForgePalette) -> Rgba {
-    let hash = username.bytes().fold(0u32, |acc, b| {
-        acc.wrapping_mul(31).wrapping_add(u32::from(b))
-    });
-    let colors = [
-        palette.brand,
-        palette.success,
-        palette.warning,
-        palette.info,
-        palette.random,
-        palette.bits,
-    ];
-    colors[(hash as usize) % colors.len()]
 }
 
 impl Render for ChatView {

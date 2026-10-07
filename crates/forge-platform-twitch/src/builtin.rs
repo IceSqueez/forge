@@ -2135,6 +2135,7 @@ mod tests {
             | FilePicker { key, .. }
             | DateTime { key, .. }
             | Select { key, .. }
+            | UnitAmount { key, .. }
             | DynamicSelect { key, .. }
             | DependentSelect { key, .. }
             | Optional { key, .. }

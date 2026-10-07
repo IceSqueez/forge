@@ -29,6 +29,7 @@ fn field_key(field: &FormField) -> &'static str {
         | FormField::FilePicker { key, .. }
         | FormField::DateTime { key, .. }
         | FormField::Select { key, .. }
+        | FormField::UnitAmount { key, .. }
         | FormField::DynamicSelect { key, .. }
         | FormField::DependentSelect { key, .. }
         | FormField::Swatch { key, .. }

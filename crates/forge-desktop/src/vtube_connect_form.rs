@@ -800,6 +800,8 @@ fn failure_detail(reason: &str) -> String {
         "auth_timeout" => tr!("vtube_connect_error_timeout"),
         "auth_failed" => tr!("vtube_connect_error_auth"),
         "subscribe_failed" => tr!("vtube_connect_error_subscribe"),
+        "socket_closed" => tr!("vtube_connect_error_socket_closed"),
+        "unresponsive" => tr!("vtube_connect_error_unresponsive"),
         _ => tr!("vtube_connect_error_unknown"),
     }
 }

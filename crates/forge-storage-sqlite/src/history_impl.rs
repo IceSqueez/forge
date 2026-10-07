@@ -261,3 +261,102 @@ impl HistoryRepo for SqliteHistoryRepo {
         Ok(out)
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use forge_types::{EventId, ExecutionOutcome};
+
+    use super::*;
+    use crate::{apply_migrations, connect};
+
+    const CUTOFF_UNIX_SECS: i64 = 1_700_000_000;
+
+    async fn make_repo() -> SqliteHistoryRepo {
+        let pool = connect(":memory:").await.unwrap();
+        apply_migrations(&pool).await.unwrap();
+        SqliteHistoryRepo::new(pool)
+    }
+
+    fn cutoff() -> OffsetDateTime {
+        OffsetDateTime::from_unix_timestamp(CUTOFF_UNIX_SECS).unwrap()
+    }
+
+    fn run_started_at(started_at: OffsetDateTime) -> ExecutionContext {
+        ExecutionContext {
+            action_id: ActionId::new(),
+            metadata: ExecutionMetadata::Trigger {
+                event_id: EventId::new(),
+                trigger_kind: None,
+            },
+            arg_stack_snapshot: BTreeMap::new(),
+            started_at,
+            completed_at: Some(started_at),
+            telemetry: vec![],
+            outcome: ExecutionOutcome::Success,
+        }
+    }
+
+    async fn surviving_start_ms(repo: &SqliteHistoryRepo) -> Vec<i64> {
+        sqlx::query_scalar("SELECT started_at FROM action_history ORDER BY started_at")
+            .fetch_all(repo.db.writer())
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn prune_chunk_deletes_only_runs_strictly_older_than_the_cutoff_millisecond() {
+        let repo = make_repo().await;
+        let offsets_ms = [-1_000_i64, -1, 0, 1];
+        let runs: Vec<_> = offsets_ms
+            .iter()
+            .map(|ms| run_started_at(cutoff() + time::Duration::milliseconds(*ms)))
+            .collect();
+        repo.save_batch(&runs).await.unwrap();
+
+        let pruned = repo.prune_chunk_before(cutoff(), 100).await.unwrap();
+
+        assert_eq!(pruned, 2);
+        let cutoff_ms = CUTOFF_UNIX_SECS * 1_000;
+        assert_eq!(
+            surviving_start_ms(&repo).await,
+            vec![cutoff_ms, cutoff_ms + 1]
+        );
+    }
+
+    #[tokio::test]
+    async fn prune_chunk_deletes_at_most_max_rows_per_call_and_never_newer_runs() {
+        let repo = make_repo().await;
+        let mut runs: Vec<_> = (1..=5)
+            .map(|days| run_started_at(cutoff() - time::Duration::days(days)))
+            .collect();
+        runs.push(run_started_at(cutoff() + time::Duration::days(1)));
+        repo.save_batch(&runs).await.unwrap();
+
+        let mut per_call = Vec::new();
+        for _ in 0..4 {
+            per_call.push(repo.prune_chunk_before(cutoff(), 2).await.unwrap());
+        }
+
+        assert_eq!(per_call, vec![2, 2, 1, 0]);
+        assert_eq!(
+            surviving_start_ms(&repo).await,
+            vec![to_epoch_ms(cutoff() + time::Duration::days(1))]
+        );
+    }
+
+    #[tokio::test]
+    async fn prune_chunk_with_zero_max_rows_deletes_nothing() {
+        let repo = make_repo().await;
+        repo.save(&run_started_at(cutoff() - time::Duration::days(1)))
+            .await
+            .unwrap();
+
+        let pruned = repo.prune_chunk_before(cutoff(), 0).await.unwrap();
+
+        assert_eq!(pruned, 0);
+        assert_eq!(surviving_start_ms(&repo).await.len(), 1);
+    }
+}

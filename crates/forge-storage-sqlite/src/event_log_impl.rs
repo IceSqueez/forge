@@ -323,4 +323,67 @@ mod tests {
         assert_eq!(result.len(), 4);
         assert_eq!(result[0].id, events[9].id);
     }
+
+    async fn surviving_timestamps(repo: &SqliteEventLogRepo) -> Vec<i64> {
+        sqlx::query_scalar("SELECT timestamp FROM event_log ORDER BY timestamp")
+            .fetch_all(repo.db.writer())
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn prune_chunk_deletes_only_events_strictly_older_than_the_cutoff_second() {
+        let repo = make_repo().await;
+        let cutoff_secs = 1_700_000_000_i64;
+        for offset in [-2_i64, -1, 0, 1] {
+            repo.insert(&event_at("ev", cutoff_secs + offset))
+                .await
+                .unwrap();
+        }
+
+        let cutoff = OffsetDateTime::from_unix_timestamp(cutoff_secs).unwrap();
+        let pruned = repo.prune_chunk_before(cutoff, 100).await.unwrap();
+
+        assert_eq!(pruned, 2);
+        assert_eq!(
+            surviving_timestamps(&repo).await,
+            vec![cutoff_secs, cutoff_secs + 1]
+        );
+    }
+
+    #[tokio::test]
+    async fn prune_chunk_with_a_sub_second_cutoff_keeps_a_newer_event_in_the_same_second() {
+        let repo = make_repo().await;
+        let second = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
+        let mut newer = event_at("ev", 0);
+        newer.timestamp = second + time::Duration::milliseconds(900);
+        repo.insert(&newer).await.unwrap();
+
+        let cutoff = second + time::Duration::milliseconds(500);
+        let pruned = repo.prune_chunk_before(cutoff, 100).await.unwrap();
+
+        assert_eq!(pruned, 0);
+    }
+
+    #[tokio::test]
+    async fn prune_chunk_deletes_the_oldest_events_first_up_to_max_rows() {
+        let repo = make_repo().await;
+        let cutoff_secs = 1_700_000_000_i64;
+        for offset in [-1_i64, -5, -3, -2, -4, 10] {
+            repo.insert(&event_at("ev", cutoff_secs + offset))
+                .await
+                .unwrap();
+        }
+        let cutoff = OffsetDateTime::from_unix_timestamp(cutoff_secs).unwrap();
+
+        let mut per_call = Vec::new();
+        let mut oldest_after_call = Vec::new();
+        for _ in 0..4 {
+            per_call.push(repo.prune_chunk_before(cutoff, 2).await.unwrap());
+            oldest_after_call.push(surviving_timestamps(&repo).await[0] - cutoff_secs);
+        }
+
+        assert_eq!(per_call, vec![2, 2, 1, 0]);
+        assert_eq!(oldest_after_call, vec![-3, -1, 10, 10]);
+    }
 }

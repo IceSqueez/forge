@@ -797,6 +797,33 @@ mod tests {
     }
 
     #[test]
+    fn blob_id_json_round_trips_as_the_bare_id_string() {
+        let id = MediaBlobId::from_digest(&core::array::from_fn(|i| i as u8));
+
+        let json = serde_json::to_string(&id).unwrap();
+
+        assert_eq!(json, format!("\"{id}\""));
+        assert_eq!(serde_json::from_str::<MediaBlobId>(&json).unwrap(), id);
+    }
+
+    #[test]
+    fn blob_id_deserialization_refuses_a_malformed_id_naming_it() {
+        let hex = "0123456789abcdef".repeat(4);
+        for raw in [
+            format!("../sha256-{hex}"),
+            format!("sha256-{}", hex.to_uppercase()),
+            String::new(),
+        ] {
+            let json = serde_json::to_string(&raw).unwrap();
+
+            let error = serde_json::from_str::<MediaBlobId>(&json).unwrap_err();
+
+            let refusal = StorageError::MalformedMediaBlobId { raw: raw.clone() }.to_string();
+            assert!(error.to_string().contains(&refusal), "{raw:?}: {error}");
+        }
+    }
+
+    #[test]
     fn from_extension_resolves_the_container_aliases_and_refuses_the_rest() {
         for (extension, expected) in [
             ("mp3", Some(MediaFormat::Mp3)),

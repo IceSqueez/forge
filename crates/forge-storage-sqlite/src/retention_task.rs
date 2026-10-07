@@ -156,3 +156,182 @@ where
     tracing::info!(table, pruned_rows = pruned, ?cutoff, "pruning complete");
     Ok(())
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::cell::{Cell, RefCell};
+    use std::collections::{BTreeMap, VecDeque};
+
+    use forge_storage::HistoryRepo;
+    use forge_types::{ActionId, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome};
+
+    use super::*;
+    use crate::{apply_migrations, connect};
+
+    const FULL: u64 = PRUNE_CHUNK_ROWS as u64;
+
+    fn signals() -> RetentionSignals {
+        RetentionSignals {
+            window_changed: Arc::new(Notify::new()),
+            shutdown: Arc::new(Notify::new()),
+        }
+    }
+
+    fn cutoff() -> OffsetDateTime {
+        OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap()
+    }
+
+    struct ScriptedChunks {
+        replies: RefCell<VecDeque<Result<u64, SqliteStorageError>>>,
+        calls: Cell<usize>,
+    }
+
+    impl ScriptedChunks {
+        fn new(replies: impl IntoIterator<Item = Result<u64, SqliteStorageError>>) -> Self {
+            Self {
+                replies: RefCell::new(replies.into_iter().collect()),
+                calls: Cell::new(0),
+            }
+        }
+
+        fn next(&self) -> impl Future<Output = Result<u64, SqliteStorageError>> + use<> {
+            self.calls.set(self.calls.get() + 1);
+            let reply = self.replies.borrow_mut().pop_front().unwrap_or(Ok(0));
+            async move { reply }
+        }
+    }
+
+    async fn run(script: &ScriptedChunks, signals: &RetentionSignals) -> Result<(), Interrupt> {
+        prune_in_chunks("action_history", cutoff(), signals, |_| script.next()).await
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn keeps_pruning_while_chunks_come_back_full_and_stops_on_the_first_short_one() {
+        for (replies, expected_calls) in [
+            (vec![0], 1),
+            (vec![FULL - 1], 1),
+            (vec![FULL, FULL - 1], 2),
+            (vec![FULL, FULL, 0], 3),
+            (vec![FULL, FULL, FULL, 1], 4),
+        ] {
+            let script = ScriptedChunks::new(replies.iter().copied().map(Ok));
+
+            let outcome = run(&script, &signals()).await;
+
+            assert!(outcome.is_ok(), "{replies:?}");
+            assert_eq!(script.calls.get(), expected_calls, "{replies:?}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn waits_the_chunk_gap_between_consecutive_chunks() {
+        let script = ScriptedChunks::new([Ok(FULL), Ok(FULL), Ok(0)]);
+        let started = tokio::time::Instant::now();
+
+        run(&script, &signals()).await.ok();
+
+        assert_eq!(started.elapsed(), PRUNE_CHUNK_GAP * 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_pending_signal_stops_pruning_after_the_current_chunk() {
+        for shutdown in [false, true] {
+            let signals = signals();
+            if shutdown {
+                signals.shutdown.notify_one();
+            } else {
+                signals.window_changed.notify_one();
+            }
+            let script = ScriptedChunks::new([Ok(FULL), Ok(FULL), Ok(FULL), Ok(0)]);
+
+            let outcome = run(&script, &signals).await;
+
+            if shutdown {
+                assert!(matches!(outcome, Err(Interrupt::Shutdown)));
+            } else {
+                assert!(matches!(outcome, Err(Interrupt::WindowChanged)));
+            }
+            assert_eq!(script.calls.get(), 1, "shutdown={shutdown}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_chunk_ends_this_cycle_quietly_without_further_chunks() {
+        for (full_chunks_before_failure, expected_calls) in [(0, 1), (2, 3)] {
+            let mut replies: Vec<_> = (0..full_chunks_before_failure).map(|_| Ok(FULL)).collect();
+            replies.push(Err(SqliteStorageError::Decode("disk I/O error".into())));
+            replies.push(Ok(FULL));
+            let script = ScriptedChunks::new(replies);
+
+            let outcome = run(&script, &signals()).await;
+
+            assert!(outcome.is_ok());
+            assert_eq!(script.calls.get(), expected_calls);
+        }
+    }
+
+    fn run_started_at(started_at: OffsetDateTime) -> ExecutionContext {
+        ExecutionContext {
+            action_id: ActionId::new(),
+            metadata: ExecutionMetadata::Trigger {
+                event_id: EventId::new(),
+                trigger_kind: None,
+            },
+            arg_stack_snapshot: BTreeMap::new(),
+            started_at,
+            completed_at: Some(started_at),
+            telemetry: vec![],
+            outcome: ExecutionOutcome::Success,
+        }
+    }
+
+    #[test]
+    fn chunked_prune_of_action_history_removes_every_older_run_across_several_chunks() {
+        let db_runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let paused_runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .start_paused(true)
+            .build()
+            .unwrap();
+        let older_runs = 2 * i64::from(PRUNE_CHUNK_ROWS) + 500;
+        let newer = run_started_at(cutoff());
+        let mut runs: Vec<_> = (1..=older_runs)
+            .map(|ms| run_started_at(cutoff() - time::Duration::milliseconds(ms)))
+            .collect();
+        runs.push(newer.clone());
+        let history = db_runtime.block_on(async {
+            let pool = connect(":memory:").await.unwrap();
+            apply_migrations(&pool).await.unwrap();
+            let history = Arc::new(SqliteHistoryRepo::new(pool));
+            history.save_batch(&runs).await.unwrap();
+            history
+        });
+
+        let outcome = paused_runtime.block_on(prune_in_chunks(
+            "action_history",
+            cutoff(),
+            &signals(),
+            |rows| {
+                let history = Arc::clone(&history);
+                let chunk = db_runtime
+                    .spawn(async move { history.prune_chunk_before(cutoff(), rows).await });
+                async move { chunk.await.unwrap() }
+            },
+        ));
+
+        assert!(outcome.is_ok());
+        let survivors = db_runtime.block_on(history.recent(u32::MAX)).unwrap();
+        assert_eq!(
+            survivors
+                .iter()
+                .map(|run| run.started_at)
+                .collect::<Vec<_>>(),
+            vec![newer.started_at]
+        );
+    }
+}

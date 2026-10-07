@@ -292,7 +292,7 @@ mod tests {
             manager,
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
-            Arc::new(tokio::sync::Mutex::new(QuotaState::default())),
+            SharedQuota::default(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
     }

@@ -165,7 +165,7 @@ mod tests {
     fn make_poll(api_base: String, video_id: Option<String>) -> YoutubeViewerPoll {
         let broadcast = ActiveBroadcastIdHandle::new();
         broadcast.set(video_id);
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let quota = SharedQuota::default();
         let (tx, _rx) = watch::channel(ViewerReport::Absent);
         let source: TokenSource = Arc::new(|| {
             Box::pin(async { Ok("test-token".to_owned()) })

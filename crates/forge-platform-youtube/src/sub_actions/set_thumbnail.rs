@@ -112,13 +112,12 @@ mod tests {
     use forge_types::EventId;
     use futures::future::BoxFuture;
     use serde_json::json;
-    use tokio::sync::Mutex;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-    use crate::quota_state::QuotaState;
+    use crate::quota_state::SharedQuota;
 
     const TOKEN_SENTINEL: &str = "yt-thumb-runner-token";
 
@@ -160,7 +159,7 @@ mod tests {
     fn runner_on(server: &MockServer, broadcast: Option<&str>) -> SetThumbnailRunner {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(broadcast.map(|s| s.to_owned()));
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let quota = SharedQuota::default();
         let thumb = YoutubeThumbnail::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
@@ -182,7 +181,7 @@ mod tests {
     fn validate_config_requires_non_empty_string_image_path() {
         let server_uri = "http://127.0.0.1:0".to_owned();
         let handle = ActiveBroadcastIdHandle::new();
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let quota = SharedQuota::default();
         let thumb = YoutubeThumbnail::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),

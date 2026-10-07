@@ -128,7 +128,7 @@ mod tests {
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-    use crate::quota_state::QuotaState;
+    use crate::quota_state::SharedQuota;
 
     const TOKEN_SENTINEL: &str = "yt-adbreak-secret-token";
 
@@ -136,18 +136,15 @@ mod tests {
         Arc::new(|| Box::pin(async { Ok(TOKEN_SENTINEL.to_owned()) }))
     }
 
-    fn ad_break_on(
-        server: &MockServer,
-        broadcast: Option<&str>,
-    ) -> (YoutubeAdBreak, Arc<Mutex<QuotaState>>) {
+    fn ad_break_on(server: &MockServer, broadcast: Option<&str>) -> (YoutubeAdBreak, SharedQuota) {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(broadcast.map(|s| s.to_owned()));
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let quota = SharedQuota::default();
         let ad_break = YoutubeAdBreak::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             handle,
-            Arc::clone(&quota),
+            quota.clone(),
         )
         .with_api_base(server.uri());
         (ad_break, quota)

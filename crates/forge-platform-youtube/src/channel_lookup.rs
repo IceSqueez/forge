@@ -158,7 +158,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::quota_state::QuotaState;
+    use crate::quota_state::SharedQuota;
 
     const TOKEN_SENTINEL: &str = "yt-lookup-secret-token";
 
@@ -167,7 +167,7 @@ mod tests {
     }
 
     fn lookup_on(server: &MockServer) -> YoutubeChannelLookup {
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let quota = SharedQuota::default();
         YoutubeChannelLookup::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),

@@ -6,7 +6,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
-use forge_platform_youtube::{LiveChatIdHandle, QuotaState, YoutubeBroadcaster, YoutubeModeration};
+use forge_platform_youtube::{
+    LiveChatIdHandle, SharedQuota, YoutubeBroadcaster, YoutubeModeration,
+};
 use forge_storage::{BanLedgerKey, DataProvider, ViewerPlatform};
 use forge_storage_sqlite::SqliteBackend;
 use futures::future::BoxFuture;
@@ -57,7 +59,7 @@ fn moderation_over(server: &MockServer, backend: &SqliteBackend) -> YoutubeModer
         token_source,
         broadcaster_source,
         live_chat_id,
-        Arc::new(tokio::sync::Mutex::new(QuotaState::default())),
+        SharedQuota::default(),
         backend.ban_ledger_repo(),
     )
 }

@@ -1767,9 +1767,7 @@ fn youtube_token(
 fn forge_youtube_echo(fake: &FakeYouTube) -> tokio::task::JoinHandle<()> {
     let endpoints = youtube_endpoints(fake);
     let live_chat = forge_platform_youtube::LiveChatIdHandle::new();
-    let quota = Arc::new(tokio::sync::Mutex::new(
-        forge_platform_youtube::QuotaState::default(),
-    ));
+    let quota = forge_platform_youtube::SharedQuota::default();
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
     let poller = forge_platform_youtube::YoutubeChatPoller::new(
         &endpoints,
@@ -1778,7 +1776,7 @@ fn forge_youtube_echo(fake: &FakeYouTube) -> tokio::task::JoinHandle<()> {
         fake.config().channel_id.clone(),
         live_chat.clone(),
         forge_platform_youtube::ActiveBroadcastIdHandle::new(),
-        Arc::clone(&quota),
+        quota.clone(),
         Arc::new(forge_storage::ban_ledger::MockBanLedgerRepo::new()),
     );
     let sender = forge_platform_youtube::YoutubeSendChat::new(

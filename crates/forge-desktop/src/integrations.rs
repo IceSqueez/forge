@@ -1586,7 +1586,7 @@ mod tests {
 
     fn register_youtube_runners(sub_actions: &mut SubActionRegistry, _: &Arc<dyn DataProvider>) {
         use forge_platform_youtube as yt;
-        let quota = Arc::new(tokio::sync::Mutex::new(yt::QuotaState::default()));
+        let quota = yt::SharedQuota::default();
         let chat = yt::LiveChatIdHandle::new();
         let broadcast = yt::ActiveBroadcastIdHandle::new();
         yt::register_youtube_sub_actions(
@@ -1595,7 +1595,7 @@ mod tests {
                 &forge_platform_core::PlatformEndpoints::default(),
                 youtube_token_source(),
                 chat.clone(),
-                Arc::clone(&quota),
+                quota.clone(),
             )),
             Arc::new(yt::YoutubeModeration::new(
                 &forge_platform_core::PlatformEndpoints::default(),
@@ -1609,32 +1609,32 @@ mod tests {
                     })
                 }),
                 chat,
-                Arc::clone(&quota),
+                quota.clone(),
                 Arc::new(forge_storage::ban_ledger::MockBanLedgerRepo::new()),
             )),
             Arc::new(yt::YoutubeStreamMetadata::new(
                 &forge_platform_core::PlatformEndpoints::default(),
                 youtube_token_source(),
                 broadcast.clone(),
-                Arc::clone(&quota),
+                quota.clone(),
             )),
             Arc::new(yt::YoutubeStreamStats::new(
                 &forge_platform_core::PlatformEndpoints::default(),
                 youtube_token_source(),
                 broadcast.clone(),
-                Arc::clone(&quota),
+                quota.clone(),
             )),
             Arc::new(yt::YoutubeAdBreak::new(
                 &forge_platform_core::PlatformEndpoints::default(),
                 youtube_token_source(),
                 broadcast.clone(),
-                Arc::clone(&quota),
+                quota.clone(),
             )),
             Arc::new(yt::YoutubeThumbnail::new(
                 &forge_platform_core::PlatformEndpoints::default(),
                 youtube_token_source(),
                 broadcast,
-                Arc::clone(&quota),
+                quota.clone(),
             )),
             Arc::new(yt::YoutubeChannelLookup::new(
                 &forge_platform_core::PlatformEndpoints::default(),

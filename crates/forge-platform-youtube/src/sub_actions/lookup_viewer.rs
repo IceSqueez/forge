@@ -167,12 +167,11 @@ mod tests {
     use forge_types::EventId;
     use futures::future::BoxFuture;
     use serde_json::json;
-    use tokio::sync::Mutex;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::quota_state::QuotaState;
+    use crate::quota_state::SharedQuota;
 
     const TOKEN_SENTINEL: &str = "yt-viewer-runner-token";
     const BODY_SENTINEL: &str = "yt-viewer-response-body-sentinel";
@@ -195,7 +194,7 @@ mod tests {
     }
 
     fn runner_on(server: &MockServer) -> LookupViewerRunner {
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let quota = SharedQuota::default();
         let lookup = YoutubeChannelLookup::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
@@ -231,7 +230,7 @@ mod tests {
     }
 
     fn runner_on_uri(uri: &str) -> LookupViewerRunner {
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let quota = SharedQuota::default();
         let lookup = YoutubeChannelLookup::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),

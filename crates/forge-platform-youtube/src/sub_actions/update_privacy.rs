@@ -118,13 +118,12 @@ mod tests {
     use forge_types::EventId;
     use futures::future::BoxFuture;
     use serde_json::json;
-    use tokio::sync::Mutex;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-    use crate::quota_state::QuotaState;
+    use crate::quota_state::SharedQuota;
 
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {
@@ -146,7 +145,7 @@ mod tests {
     fn runner_on(server: &MockServer) -> UpdatePrivacyRunner {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(Some("vid-1".to_owned()));
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let quota = SharedQuota::default();
         let meta = YoutubeStreamMetadata::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
@@ -211,7 +210,7 @@ mod tests {
     fn validate_config_accepts_each_enum_value_and_rejects_off_enum_empty_missing_non_string() {
         let server_uri = "http://127.0.0.1:0".to_owned();
         let handle = ActiveBroadcastIdHandle::new();
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let quota = SharedQuota::default();
         let meta = YoutubeStreamMetadata::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),

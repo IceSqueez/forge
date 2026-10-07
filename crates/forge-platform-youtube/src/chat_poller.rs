@@ -1020,6 +1020,7 @@ mod tests {
     use super::*;
     use crate::live_chat_id::LiveChatIdHandle;
     use crate::quota_state::QuotaState;
+    use crate::quota_state::SharedQuota;
     use serde_json::json;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1097,8 +1098,8 @@ mod tests {
             .await;
     }
 
-    fn make_quota() -> Arc<tokio::sync::Mutex<QuotaState>> {
-        Arc::new(tokio::sync::Mutex::new(QuotaState::default()))
+    fn make_quota() -> SharedQuota {
+        SharedQuota::default()
     }
 
     fn make_poller(server: &MockServer) -> (YoutubeChatPoller, UnboundedSender<Event>) {
@@ -1957,13 +1958,13 @@ mod tests {
         })
     }
 
-    fn quota_for_two_resolutions() -> Arc<tokio::sync::Mutex<QuotaState>> {
-        Arc::new(tokio::sync::Mutex::new(QuotaState {
+    fn quota_for_two_resolutions() -> SharedQuota {
+        SharedQuota::new(QuotaState {
             used_today: QUOTA_DAILY_LIMIT_FOR_TEST - 2 * BROADCAST_COST,
             peak_seen: QUOTA_DAILY_LIMIT_FOR_TEST - 2 * BROADCAST_COST,
             last_reset_date: today_pacific(),
             long_interval_mode: false,
-        }))
+        })
     }
 
     const QUOTA_DAILY_LIMIT_FOR_TEST: u32 = 10_000;
@@ -1971,7 +1972,7 @@ mod tests {
     #[allow(clippy::type_complexity)]
     fn poller_with_quota(
         server: &MockServer,
-        quota: Arc<tokio::sync::Mutex<QuotaState>>,
+        quota: SharedQuota,
     ) -> (
         YoutubeChatPoller,
         LiveChatIdHandle,
@@ -2145,12 +2146,12 @@ mod tests {
             .mount(&server)
             .await;
 
-        let quota = Arc::new(tokio::sync::Mutex::new(QuotaState {
+        let quota = SharedQuota::new(QuotaState {
             used_today: QUOTA_DAILY_LIMIT_FOR_TEST - 3 * BROADCAST_COST,
             peak_seen: QUOTA_DAILY_LIMIT_FOR_TEST - 3 * BROADCAST_COST,
             last_reset_date: today_pacific(),
             long_interval_mode: false,
-        }));
+        });
 
         let (poller, live, rx) = poller_with_quota(&server, quota);
         let events = run_until_resolution_and_drain_titles(poller, live, rx, "lc-2").await;

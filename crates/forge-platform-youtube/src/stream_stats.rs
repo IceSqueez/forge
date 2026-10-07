@@ -177,7 +177,7 @@ mod tests {
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-    use crate::quota_state::QuotaState;
+    use crate::quota_state::SharedQuota;
 
     const TOKEN_SENTINEL: &str = "yt-stats-secret-token";
 
@@ -188,7 +188,7 @@ mod tests {
     fn stats_on(server: &MockServer, broadcast: Option<&str>) -> YoutubeStreamStats {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(broadcast.map(|s| s.to_owned()));
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let quota = SharedQuota::default();
         YoutubeStreamStats::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),

@@ -10,7 +10,7 @@ use forge_platform_core::{
     ChatPlatform, EndpointSurface, PlatformEndpoints, PlatformError, ViewerReport,
 };
 use forge_platform_youtube::{
-    ActiveBroadcastIdHandle, GoogleAuthFlow, LiveChatIdHandle, QuotaState, YoutubeAdBreak,
+    ActiveBroadcastIdHandle, GoogleAuthFlow, LiveChatIdHandle, SharedQuota, YoutubeAdBreak,
     YoutubeAuthBundle, YoutubeBroadcaster, YoutubeChannelLookup, YoutubeCredentialsManager,
     YoutubeModeration, YoutubePlatform, YoutubeSendChat, YoutubeStreamMetadata, YoutubeStreamStats,
     YoutubeThumbnail, YoutubeViewerPoll,
@@ -103,8 +103,8 @@ fn token_source() -> TokenSource {
     Arc::new(|| Box::pin(async { Ok("override-token".to_owned()) }))
 }
 
-fn quota() -> Arc<tokio::sync::Mutex<QuotaState>> {
-    Arc::new(tokio::sync::Mutex::new(QuotaState::default()))
+fn quota() -> SharedQuota {
+    SharedQuota::default()
 }
 
 fn live_chat() -> LiveChatIdHandle {

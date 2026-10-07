@@ -428,6 +428,7 @@ mod tests {
         TEST_BROADCASTER_TITLE, broadcaster_source, signed_out_broadcaster_source,
         switchable_broadcaster_source, test_broadcaster,
     };
+    use crate::quota_state::QuotaState;
     use crate::quota_state::today_pacific;
 
     const TOKEN_SENTINEL: &str = "yt-secret-token";
@@ -439,7 +440,7 @@ mod tests {
         Arc::new(|| Box::pin(async { Ok(TOKEN_SENTINEL.to_owned()) }))
     }
 
-    fn moderation_on(server: &MockServer) -> (YoutubeModeration, Arc<Mutex<QuotaState>>) {
+    fn moderation_on(server: &MockServer) -> (YoutubeModeration, SharedQuota) {
         moderation_with(
             server,
             Arc::new(MemoryBanLedger::default()),
@@ -451,13 +452,13 @@ mod tests {
         server: &MockServer,
         ledger: Arc<MemoryBanLedger>,
         broadcaster: BroadcasterSource,
-    ) -> (YoutubeModeration, Arc<Mutex<QuotaState>>) {
+    ) -> (YoutubeModeration, SharedQuota) {
         let handle = LiveChatIdHandle::new();
         handle.set(Some("lc-test".to_owned()));
-        let quota = Arc::new(Mutex::new(QuotaState {
+        let quota = SharedQuota::new(QuotaState {
             last_reset_date: today_pacific(),
             ..QuotaState::default()
-        }));
+        });
         let moderation = YoutubeModeration::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),

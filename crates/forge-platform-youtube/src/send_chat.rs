@@ -272,7 +272,7 @@ mod tests {
 
     fn make_sender(server: &MockServer) -> (YoutubeSendChat, LiveChatIdHandle) {
         let handle = LiveChatIdHandle::new();
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let quota = SharedQuota::default();
         let sender = YoutubeSendChat::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
@@ -285,7 +285,7 @@ mod tests {
 
     fn make_sender_with_quota(
         server: &MockServer,
-        quota: Arc<Mutex<QuotaState>>,
+        quota: SharedQuota,
     ) -> (YoutubeSendChat, LiveChatIdHandle) {
         let handle = LiveChatIdHandle::new();
         let sender = YoutubeSendChat::new(
@@ -332,8 +332,8 @@ mod tests {
             .mount(&server)
             .await;
 
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let (sender, handle) = make_sender_with_quota(&server, Arc::clone(&quota));
+        let quota = SharedQuota::default();
+        let (sender, handle) = make_sender_with_quota(&server, quota.clone());
         handle.set(Some("lc-test-abc".to_owned()));
 
         sender.send("hello chat").await.unwrap();
@@ -351,7 +351,7 @@ mod tests {
         let handle = LiveChatIdHandle::new();
         handle.set(Some("lc-test".to_owned()));
 
-        let qt_arc = Arc::new(Mutex::new(QuotaState::default()));
+        let qt_arc = SharedQuota::default();
         let today = today_pacific();
         {
             let mut qt = qt_arc.lock().await;
@@ -464,8 +464,8 @@ mod tests {
             .mount(&server)
             .await;
 
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let (sender, _handle) = make_sender_with_quota(&server, Arc::clone(&quota));
+        let quota = SharedQuota::default();
+        let (sender, _handle) = make_sender_with_quota(&server, quota.clone());
 
         sender.delete("msg-xyz").await.unwrap();
 
@@ -487,7 +487,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let qt_arc = Arc::new(Mutex::new(QuotaState::default()));
+        let qt_arc = SharedQuota::default();
         let today = today_pacific();
         {
             let mut qt = qt_arc.lock().await;
@@ -624,8 +624,8 @@ mod tests {
             .mount(&server)
             .await;
 
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let (sender, handle) = make_sender_with_quota(&server, Arc::clone(&quota));
+        let quota = SharedQuota::default();
+        let (sender, handle) = make_sender_with_quota(&server, quota.clone());
         handle.set(Some("lc-poll".to_owned()));
 
         sender

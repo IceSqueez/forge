@@ -187,13 +187,12 @@ mod tests {
     use forge_types::EventId;
     use futures::future::BoxFuture;
     use serde_json::json;
-    use tokio::sync::Mutex;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
     use crate::live_chat_id::LiveChatIdHandle;
-    use crate::quota_state::QuotaState;
+    use crate::quota_state::SharedQuota;
 
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {
@@ -217,7 +216,7 @@ mod tests {
         if live {
             handle.set(Some("lc".to_owned()));
         }
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let quota = SharedQuota::default();
         let sender = YoutubeSendChat::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
@@ -255,7 +254,7 @@ mod tests {
     fn validate_config_requires_question_and_valid_option_count() {
         let runner = {
             let handle = LiveChatIdHandle::new();
-            let quota = Arc::new(Mutex::new(QuotaState::default()));
+            let quota = SharedQuota::default();
             let sender = YoutubeSendChat::new(
                 &forge_platform_core::PlatformEndpoints::default(),
                 token_source(),

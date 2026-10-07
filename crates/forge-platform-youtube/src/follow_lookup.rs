@@ -207,6 +207,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
+    use crate::quota_state::QuotaState;
 
     const BROADCASTER: &str = "UCbroadcasterchannel0001";
     const VIEWER: &str = "UCviewerchannelid0000042";
@@ -227,33 +228,29 @@ mod tests {
         .unwrap()
     }
 
-    fn fresh_quota() -> Arc<Mutex<QuotaState>> {
-        Arc::new(Mutex::new(QuotaState::default()))
+    fn fresh_quota() -> SharedQuota {
+        SharedQuota::default()
     }
 
-    fn exhausted_quota() -> Arc<Mutex<QuotaState>> {
-        Arc::new(Mutex::new(QuotaState {
+    fn exhausted_quota() -> SharedQuota {
+        SharedQuota::new(QuotaState {
             used_today: DAILY_LIMIT,
             peak_seen: DAILY_LIMIT,
             last_reset_date: today_pacific(),
             long_interval_mode: true,
-        }))
+        })
     }
 
-    fn lookup_at(
-        base: &str,
-        quota: &Arc<Mutex<QuotaState>>,
-        broadcaster: &str,
-    ) -> YoutubeFollowLookup {
+    fn lookup_at(base: &str, quota: &SharedQuota, broadcaster: &str) -> YoutubeFollowLookup {
         YoutubeFollowLookup::new(
             &data_api_at(base),
             token_source(),
-            Arc::clone(quota),
+            quota.clone(),
             broadcaster.to_owned(),
         )
     }
 
-    async fn used_units(quota: &Arc<Mutex<QuotaState>>) -> u32 {
+    async fn used_units(quota: &SharedQuota) -> u32 {
         quota.lock().await.used_today
     }
 

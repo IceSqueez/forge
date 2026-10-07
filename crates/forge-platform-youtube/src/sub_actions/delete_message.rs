@@ -112,13 +112,12 @@ mod tests {
     use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
     use futures::future::BoxFuture;
-    use tokio::sync::Mutex;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
     use crate::live_chat_id::LiveChatIdHandle;
-    use crate::quota_state::QuotaState;
+    use crate::quota_state::SharedQuota;
 
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {
@@ -139,7 +138,7 @@ mod tests {
 
     fn runner_on(server: &MockServer) -> DeleteMessageRunner {
         let handle = LiveChatIdHandle::new();
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let quota = SharedQuota::default();
         let sender = YoutubeSendChat::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
@@ -198,7 +197,7 @@ mod tests {
                 &forge_platform_core::PlatformEndpoints::default(),
                 token_source(),
                 LiveChatIdHandle::new(),
-                Arc::new(Mutex::new(QuotaState::default())),
+                SharedQuota::default(),
             )
             .with_api_base("http://127.0.0.1:0".to_owned()),
         ));

@@ -213,15 +213,15 @@ mod tests {
         Arc::new(|| Box::pin(async { Ok(TOKEN_SENTINEL.to_owned()) }))
     }
 
-    fn metadata_on(server: &MockServer) -> (YoutubeStreamMetadata, Arc<Mutex<QuotaState>>) {
+    fn metadata_on(server: &MockServer) -> (YoutubeStreamMetadata, SharedQuota) {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(Some("vid-1".to_owned()));
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let quota = SharedQuota::default();
         let meta = YoutubeStreamMetadata::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             handle,
-            Arc::clone(&quota),
+            quota.clone(),
         )
         .with_api_base(server.uri());
         (meta, quota)
@@ -355,12 +355,12 @@ mod tests {
     async fn no_active_broadcast_returns_unsupported_without_any_http_call() {
         let server = MockServer::start().await;
         let handle = ActiveBroadcastIdHandle::new();
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let quota = SharedQuota::default();
         let meta = YoutubeStreamMetadata::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             handle,
-            Arc::clone(&quota),
+            quota.clone(),
         )
         .with_api_base(server.uri());
 
@@ -384,7 +384,7 @@ mod tests {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(Some("vid-1".to_owned()));
 
-        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let quota = SharedQuota::default();
         let today = today_pacific();
         {
             let mut qt = quota.lock().await;
@@ -396,7 +396,7 @@ mod tests {
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             handle,
-            Arc::clone(&quota),
+            quota.clone(),
         )
         .with_api_base(server.uri());
 

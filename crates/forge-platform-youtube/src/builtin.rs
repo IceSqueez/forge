@@ -784,57 +784,57 @@ mod tests {
             Arc::clone(&manager),
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
-            Arc::new(tokio::sync::Mutex::new(QuotaState::default())),
+            SharedQuota::default(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         ));
         let (bundle, _health_tx) = YoutubeIntegrationBundle::new(
             "UCabc123".to_owned(),
             Arc::clone(&platform),
             manager,
-            Arc::new(tokio::sync::Mutex::new(QuotaState::default())),
+            SharedQuota::default(),
         );
         (bundle, platform)
     }
 
     fn sub_action_registry() -> SubActionRegistry {
-        let quota = Arc::new(tokio::sync::Mutex::new(QuotaState::default()));
+        let quota = SharedQuota::default();
         let sender = Arc::new(YoutubeSendChat::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             LiveChatIdHandle::new(),
-            Arc::clone(&quota),
+            quota.clone(),
         ));
         let moderation = Arc::new(YoutubeModeration::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             crate::ban_ledger_test_support::broadcaster_source(),
             LiveChatIdHandle::new(),
-            Arc::clone(&quota),
+            quota.clone(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         ));
         let metadata = Arc::new(YoutubeStreamMetadata::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
-            Arc::clone(&quota),
+            quota.clone(),
         ));
         let stream_stats = Arc::new(crate::stream_stats::YoutubeStreamStats::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
-            Arc::clone(&quota),
+            quota.clone(),
         ));
         let ad_break = Arc::new(crate::ad_break::YoutubeAdBreak::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
-            Arc::clone(&quota),
+            quota.clone(),
         ));
         let thumbnail = Arc::new(crate::thumbnail::YoutubeThumbnail::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
-            Arc::clone(&quota),
+            quota.clone(),
         ));
         let channel_lookup = Arc::new(crate::channel_lookup::YoutubeChannelLookup::new(
             &forge_platform_core::PlatformEndpoints::default(),

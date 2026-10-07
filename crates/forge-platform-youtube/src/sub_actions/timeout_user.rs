@@ -133,11 +133,10 @@ impl SubActionRunner for TimeoutUserRunner {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use futures::future::BoxFuture;
-    use tokio::sync::Mutex;
 
     use super::*;
     use crate::live_chat_id::LiveChatIdHandle;
-    use crate::quota_state::QuotaState;
+    use crate::quota_state::SharedQuota;
 
     fn runner() -> TimeoutUserRunner {
         let source: Arc<
@@ -150,7 +149,7 @@ mod tests {
             source,
             crate::ban_ledger_test_support::broadcaster_source(),
             LiveChatIdHandle::new(),
-            Arc::new(Mutex::new(QuotaState::default())),
+            SharedQuota::default(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         );
         TimeoutUserRunner::new(Arc::new(moderation))

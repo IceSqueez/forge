@@ -16,7 +16,7 @@ use forge_emulator::youtube::{
 use forge_events::Event;
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError, ViewerReport};
 use forge_platform_youtube::{
-    ActiveBroadcastIdHandle, GoogleAuthFlow, LiveChatIdHandle, QuotaState, YoutubeAuthBundle,
+    ActiveBroadcastIdHandle, GoogleAuthFlow, LiveChatIdHandle, SharedQuota, YoutubeAuthBundle,
     YoutubeChatPoller, YoutubeCredentialsManager, YoutubeSendChat, YoutubeViewerPoll,
 };
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
@@ -118,8 +118,8 @@ fn token_source(token: String) -> TokenSource {
     })
 }
 
-fn quota() -> Arc<tokio::sync::Mutex<QuotaState>> {
-    Arc::new(tokio::sync::Mutex::new(QuotaState::default()))
+fn quota() -> SharedQuota {
+    SharedQuota::default()
 }
 
 fn alice() -> YouTubeChatter {

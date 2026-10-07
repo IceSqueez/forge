@@ -1111,6 +1111,78 @@ mod tests {
     }
 
     #[test]
+    fn whole_word_replacement_needs_a_boundary_only_on_alphanumeric_pattern_edges() {
+        for (case, text, pattern, expected) in [
+            ("inside a longer word", "POGGERS GG", "GG", "POGGERS X"),
+            ("followed by punctuation", "GG!", "GG", "X!"),
+            ("wrapped in brackets", "(GG)", "GG", "(X)"),
+            ("every casing", "gg Gg gG GG", "GG", "X X X X"),
+            ("repeated without a gap", "GGGG", "GG", "GGGG"),
+            ("adjacent words", "GG GG", "GG", "X X"),
+            ("digits are word characters", "GG2 2GG", "GG", "GG2 2GG"),
+            ("cyrillic letter after a latin pattern", "GGі", "GG", "GGі"),
+            ("cyrillic pattern", "ДЯКУЮ, дякуюю", "дякую", "X, дякуюю"),
+            (
+                "pattern spanning two words",
+                "good gamer, good game!",
+                "good game",
+                "good gamer, X!",
+            ),
+            ("symbol pattern inside a word", "@user", "@", "Xuser"),
+            (
+                "symbol pattern between letters",
+                "rock&roll",
+                "&",
+                "rockXroll",
+            ),
+            ("symbol pattern before a digit", "#1", "#", "X1"),
+            (
+                "symbol start, letter end",
+                "hi@user @username",
+                "@user",
+                "hiX @username",
+            ),
+            ("letter start, symbol end", "abc++ c++x", "c++", "abc++ Xx"),
+            ("empty text", "", "GG", ""),
+            ("empty pattern", "GG", "", "GG"),
+        ] {
+            assert_eq!(whole_word_replace(text, pattern, "X"), expected, "{case}");
+        }
+    }
+
+    #[test]
+    fn literal_rule_scope_decides_whether_a_hit_inside_a_word_is_replaced() {
+        for (case, rule, expected) in [
+            (
+                "inside words",
+                ReplacementRule::Text {
+                    pattern: "gg".into(),
+                    replacement: "X".into(),
+                },
+                "POXERS X!",
+            ),
+            (
+                "whole words",
+                ReplacementRule::WholeWord {
+                    pattern: "gg".into(),
+                    replacement: "X".into(),
+                },
+                "POGGERS X!",
+            ),
+        ] {
+            let config = PipelineConfig {
+                replacement_rules: vec![rule],
+                ..PipelineConfig::default()
+            };
+            assert_eq!(
+                process("POGGERS GG!", &config, &ctx()),
+                PipelineResult::Speak(expected.into()),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
     fn text_replacement_regex() {
         let config = PipelineConfig {
             replacement_rules: vec![ReplacementRule::Regex {

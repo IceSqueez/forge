@@ -282,8 +282,18 @@ fn preview_reaches_the_same_verdict_as_process() {
         ("output transforms", stripping),
         ("skip on blocked word", skipping),
         ("skip on url", suppressing),
+        ("every output transform", every_output_transform_config()),
+        (
+            "whole-word rules",
+            PipelineConfig {
+                replacement_rules: vec![url_rule(), whole_word_rule("gg", "дякую")],
+                ..PipelineConfig::default()
+            },
+        ),
     ] {
         for input in [
+            EVERY_OUTPUT_TRANSFORM_INPUT,
+            "hey POGGERS GG gg! lol https://x.y/z",
             "GG GTFO!!! check https://x.y/z thanks",
             "Kappa 😀 thanks!!",
             "Kappa",
@@ -496,5 +506,78 @@ fn an_output_mark_keeps_its_first_letter_when_a_stripped_emote_starts_with_it() 
     assert_eq!(
         marked_slices(stage(&outcomes, StageName::Output)),
         vec![("link", ReplacementOrigin::ReplacementRuleIndex(0))]
+    );
+}
+
+fn whole_word_rule(pattern: &str, replacement: &str) -> ReplacementRule {
+    ReplacementRule::WholeWord {
+        pattern: pattern.into(),
+        replacement: replacement.into(),
+    }
+}
+
+fn every_output_transform_config() -> PipelineConfig {
+    let mut config = PipelineConfig {
+        replacement_rules: vec![
+            text_rule("love", ":heart:"),
+            text_rule("party", "🎉party"),
+            text_rule("yay", "yay!!"),
+            text_rule("smile", "😀"),
+            text_rule("thanks", "дякую"),
+        ],
+        output: OutputConfig {
+            read_display_name_first: true,
+            emote_to_word: true,
+            sanitize_punctuation: true,
+            ..OutputConfig::default()
+        },
+        ..PipelineConfig::default()
+    };
+    config.emote_sources.emoji = true;
+    config
+}
+
+const EVERY_OUTPUT_TRANSFORM_INPUT: &str = "hi :wave: 🎉 love party yay smile thanks!!!";
+
+#[test]
+fn output_marks_shrink_to_surviving_text_and_vanish_when_every_transform_runs_together() {
+    let (_, outcomes) = preview(
+        EVERY_OUTPUT_TRANSFORM_INPUT,
+        &every_output_transform_config(),
+        &ctx(),
+    );
+    let output = stage(&outcomes, StageName::Output);
+    assert_eq!(
+        (output.output.as_str(), marked_slices(output)),
+        (
+            "koval_dev says: hi wave  heart party yay!  дякую!",
+            vec![
+                ("heart", ReplacementOrigin::ReplacementRuleIndex(0)),
+                ("party", ReplacementOrigin::ReplacementRuleIndex(1)),
+                ("yay!", ReplacementOrigin::ReplacementRuleIndex(2)),
+                ("дякую", ReplacementOrigin::ReplacementRuleIndex(4)),
+            ]
+        )
+    );
+}
+
+#[test]
+fn whole_word_marks_land_on_standalone_hits_and_skip_words_containing_the_pattern() {
+    let config = PipelineConfig {
+        replacement_rules: vec![url_rule(), whole_word_rule("gg", "дякую")],
+        ..PipelineConfig::default()
+    };
+    let (_, outcomes) = preview("hey POGGERS GG gg! lol https://x.y/z", &config, &ctx());
+    let output = stage(&outcomes, StageName::Output);
+    assert_eq!(
+        (output.output.as_str(), marked_slices(output)),
+        (
+            "hey POGGERS дякую дякую! lol link",
+            vec![
+                ("дякую", ReplacementOrigin::ReplacementRuleIndex(1)),
+                ("дякую", ReplacementOrigin::ReplacementRuleIndex(1)),
+                ("link", ReplacementOrigin::ReplacementRuleIndex(0)),
+            ]
+        )
     );
 }

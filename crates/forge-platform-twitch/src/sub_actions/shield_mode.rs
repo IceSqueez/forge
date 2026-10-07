@@ -261,8 +261,8 @@ mod tests {
             let req = case.transport.last_request();
             assert_eq!(
                 req.method,
-                HelixMethod::Post,
-                "{}: must POST to shield_mode",
+                HelixMethod::Put,
+                "{}: must PUT to shield_mode",
                 case.label
             );
             assert_eq!(

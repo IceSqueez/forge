@@ -543,7 +543,7 @@ mod tests {
         let transport = MockTransport::returning_sequence(vec![
             Err(HelixError::RateLimited),
             Err(HelixError::Http {
-                status: 401,
+                status: reqwest::StatusCode::UNAUTHORIZED.as_u16(),
                 body: "unauthorized".to_owned(),
             }),
         ]);
@@ -690,5 +690,173 @@ mod tests {
 
             assert!(!revision_moved(&mut revisions), "{topic}");
         }
+    }
+
+    fn shield_row(is_active: Value) -> Value {
+        json!({ "data": [{ "broadcaster_id": SELF_ID, "is_active": is_active }] })
+    }
+
+    #[test]
+    fn shield_topics_move_the_shield_phase() {
+        let cases: [(&[&str], ShieldPhase); 4] = [
+            (&["channel.shield_mode.begin"], ShieldPhase::Active),
+            (&["channel.shield_mode.end"], ShieldPhase::Inactive),
+            (
+                &["channel.shield_mode.begin", "channel.shield_mode.end"],
+                ShieldPhase::Inactive,
+            ),
+            (
+                &["channel.poll.begin", "channel.chat.message"],
+                ShieldPhase::Unknown,
+            ),
+        ];
+        for (topics, expected) in cases {
+            let lifecycle = TwitchLifecycle::new();
+            for topic in topics {
+                lifecycle.apply_notification(topic, &Value::Null, SELF_ID);
+            }
+            assert_eq!(lifecycle.shield_phase(), expected, "after {topics:?}");
+        }
+    }
+
+    #[test]
+    fn every_shield_transition_bumps_the_quick_action_revision() {
+        let lifecycle = TwitchLifecycle::new();
+        let mut revisions = lifecycle.quick_action_revisions();
+        let mut moved = Vec::new();
+
+        for topic in ["channel.shield_mode.begin", "channel.shield_mode.end"] {
+            lifecycle.apply_notification(topic, &Value::Null, SELF_ID);
+            moved.push(revision_moved(&mut revisions));
+        }
+
+        assert_eq!(moved, vec![true, true]);
+    }
+
+    #[test]
+    fn a_repeated_shield_notification_leaves_the_quick_action_revision_alone() {
+        let lifecycle = TwitchLifecycle::new();
+        lifecycle.apply_notification("channel.shield_mode.begin", &Value::Null, SELF_ID);
+        let mut revisions = lifecycle.quick_action_revisions();
+
+        lifecycle.apply_notification("channel.shield_mode.begin", &Value::Null, SELF_ID);
+
+        assert!(!revision_moved(&mut revisions));
+    }
+
+    #[test]
+    fn forgetting_phases_resets_the_shield_phase_and_bumps_the_quick_action_revision() {
+        let lifecycle = TwitchLifecycle::new();
+        lifecycle.apply_notification("channel.shield_mode.begin", &Value::Null, SELF_ID);
+        let mut revisions = lifecycle.quick_action_revisions();
+
+        lifecycle.forget_phases();
+
+        assert_eq!(
+            (lifecycle.shield_phase(), revision_moved(&mut revisions)),
+            (ShieldPhase::Unknown, true)
+        );
+    }
+
+    #[tokio::test]
+    async fn shield_seed_asks_for_our_own_channel_with_us_as_the_moderator() {
+        let transport = MockTransport::returning(Ok(shield_row(json!(false))));
+        let lifecycle = TwitchLifecycle::new();
+
+        lifecycle.seed_shield_from_helix(&transport, "4242").await;
+
+        assert_eq!(transport.call_count(), 1);
+        let request = transport.request(0);
+        assert_eq!(
+            (request.method, request.path.as_str(), request.query),
+            (
+                HelixMethod::Get,
+                "/helix/moderation/shield_mode",
+                vec![
+                    ("broadcaster_id".to_owned(), "4242".to_owned()),
+                    ("moderator_id".to_owned(), "4242".to_owned()),
+                ],
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn shield_seed_maps_the_helix_answer_to_a_shield_phase() {
+        let forbidden = || HelixError::Http {
+            status: reqwest::StatusCode::FORBIDDEN.as_u16(),
+            body: "Missing scope: moderator:read:shield_mode".to_owned(),
+        };
+        let cases: Vec<(&str, Result<Value, HelixError>, ShieldPhase)> = vec![
+            ("active", Ok(shield_row(json!(true))), ShieldPhase::Active),
+            (
+                "inactive",
+                Ok(shield_row(json!(false))),
+                ShieldPhase::Inactive,
+            ),
+            (
+                "401 still rejected after the refresh",
+                Err(HelixError::ReauthRequired),
+                ShieldPhase::Unauthorized,
+            ),
+            (
+                "403 missing scope",
+                Err(forbidden()),
+                ShieldPhase::Unauthorized,
+            ),
+            (
+                "other HTTP failure",
+                Err(HelixError::Http {
+                    status: reqwest::StatusCode::BAD_REQUEST.as_u16(),
+                    body: "bad request".to_owned(),
+                }),
+                ShieldPhase::Unknown,
+            ),
+            (
+                "rate limited",
+                Err(HelixError::RateLimited),
+                ShieldPhase::Unknown,
+            ),
+            (
+                "transport failure",
+                Err(HelixError::Transport("connection reset".to_owned())),
+                ShieldPhase::Unknown,
+            ),
+            (
+                "empty row list",
+                Ok(json!({ "data": [] })),
+                ShieldPhase::Unknown,
+            ),
+            ("no data key", Ok(json!({})), ShieldPhase::Unknown),
+            ("empty body", Ok(Value::Null), ShieldPhase::Unknown),
+            (
+                "row without is_active",
+                Ok(json!({ "data": [{ "broadcaster_id": SELF_ID }] })),
+                ShieldPhase::Unknown,
+            ),
+            (
+                "is_active as a string",
+                Ok(shield_row(json!("true"))),
+                ShieldPhase::Unknown,
+            ),
+        ];
+        for (case, response, expected) in cases {
+            let transport = MockTransport::returning(response);
+            let lifecycle = TwitchLifecycle::new();
+
+            lifecycle.seed_shield_from_helix(&transport, SELF_ID).await;
+
+            assert_eq!(lifecycle.shield_phase(), expected, "{case}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_shield_seed_that_learns_the_phase_bumps_the_quick_action_revision() {
+        let transport = MockTransport::returning(Ok(shield_row(json!(true))));
+        let lifecycle = TwitchLifecycle::new();
+        let mut revisions = lifecycle.quick_action_revisions();
+
+        lifecycle.seed_shield_from_helix(&transport, SELF_ID).await;
+
+        assert!(revision_moved(&mut revisions));
     }
 }

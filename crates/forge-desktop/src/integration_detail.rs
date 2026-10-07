@@ -1891,4 +1891,213 @@ mod tests {
             vec!["Fulfill redemption".to_owned()]
         );
     }
+
+    mod quick_action_bridge {
+        use std::sync::Mutex;
+
+        use forge_components::{Density, ThemeId};
+        use forge_platform_core::{
+            CollectionRevisionSignal, CollectionRevisions, HealthStream, PlatformEndpoints,
+        };
+        use forge_registry::SubActionRegistry;
+        use forge_runtime::{
+            ActionCancelRegistry, spawn_action_engine, spawn_live_viewer_aggregator,
+        };
+        use gpui::TestAppContext;
+
+        use super::super::*;
+        use super::action;
+        use crate::platforms::PlatformConnectivity;
+        use crate::presentation::Presentation;
+        use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime, test_backend};
+
+        struct ShiftingActions {
+            id: IntegrationId,
+            label: Mutex<&'static str>,
+            signal: CollectionRevisionSignal,
+        }
+
+        impl ShiftingActions {
+            fn labelled(label: &'static str) -> Arc<Self> {
+                Arc::new(Self {
+                    id: IntegrationId::new("discord"),
+                    label: Mutex::new(label),
+                    signal: CollectionRevisionSignal::new(),
+                })
+            }
+
+            fn relabel(&self, label: &'static str) {
+                *self.label.lock().unwrap_or_else(|p| p.into_inner()) = label;
+                self.signal.bump();
+            }
+
+            fn object(self: &Arc<Self>) -> BuiltinObject {
+                BuiltinObject {
+                    icon: SectionIcon::new("bug"),
+                    status: self.clone(),
+                    health: self.clone(),
+                    content: self.clone(),
+                    quick: self.clone(),
+                    control: None,
+                    collections: None,
+                    obs_client: None,
+                    vtube_client: None,
+                    follow: None,
+                    ban_list: None,
+                }
+            }
+        }
+
+        impl BuiltinStatus for ShiftingActions {
+            fn id(&self) -> &IntegrationId {
+                &self.id
+            }
+            fn display_name(&self) -> &str {
+                "Discord"
+            }
+            fn version(&self) -> Option<&str> {
+                None
+            }
+            fn connection(&self) -> ConnectionState {
+                ConnectionState::Connected
+            }
+            fn uptime(&self) -> Option<Duration> {
+                None
+            }
+            fn endpoint(&self) -> Option<&str> {
+                None
+            }
+            fn capability_flags(&self) -> CapabilityFlags {
+                CapabilityFlags {
+                    limited: false,
+                    label: None,
+                }
+            }
+            fn header_actions(&self) -> Vec<HeaderAction> {
+                Vec::new()
+            }
+        }
+
+        impl BuiltinHealth for ShiftingActions {
+            fn metrics(&self) -> [HealthMetric; 4] {
+                std::array::from_fn(|i| HealthMetric {
+                    label: format!("metric{i}"),
+                    value: HealthValue::Text {
+                        primary: String::new(),
+                        secondary: None,
+                    },
+                })
+            }
+            fn stream(&self) -> HealthStream {
+                Box::pin(futures_util::stream::pending())
+            }
+        }
+
+        impl BuiltinContent for ShiftingActions {
+            fn sections(&self) -> Vec<DetailSection> {
+                Vec::new()
+            }
+        }
+
+        impl QuickActions for ShiftingActions {
+            fn actions(&self) -> Vec<QuickAction> {
+                vec![action(
+                    *self.label.lock().unwrap_or_else(|p| p.into_inner()),
+                    None,
+                )]
+            }
+
+            fn revisions(&self) -> Option<CollectionRevisions> {
+                Some(self.signal.subscribe())
+            }
+        }
+
+        fn open_detail(
+            cx: &mut TestAppContext,
+            rt: &tokio::runtime::Runtime,
+            object: BuiltinObject,
+        ) -> Entity<IntegrationDetail> {
+            cx.update(|cx| {
+                cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            });
+            let bus = EventBus::new(Arc::new(StubEventLog));
+            let engine = spawn_action_engine(
+                Arc::clone(&bus),
+                crate::test_support::stub_catalog(),
+                Arc::new(StubActions),
+                Arc::new(StubHistory),
+                Arc::new(SubActionRegistry::new()),
+                Arc::new(ActionCancelRegistry::new()),
+            );
+            let (backend, _writes) = test_backend();
+            let connectivity = cx.new(|_| PlatformConnectivity::new());
+            let view = cx.new(|cx| {
+                IntegrationDetail::new(
+                    object,
+                    rt.handle().clone(),
+                    engine,
+                    Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+                    backend as Arc<dyn SettingsRepo>,
+                    Arc::new(StubHistory),
+                    Arc::new(TriggerRegistry::new()),
+                    Arc::clone(&bus) as Arc<dyn EventPublisher>,
+                    Arc::clone(&bus),
+                    spawn_live_viewer_aggregator(),
+                    None,
+                    None,
+                    None,
+                    PlatformEndpoints::default(),
+                    ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
+                    VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
+                    connectivity,
+                    cx,
+                )
+            });
+            cx.run_until_parked();
+            view
+        }
+
+        fn shown_labels(cx: &mut TestAppContext, view: &Entity<IntegrationDetail>) -> Vec<String> {
+            view.read_with(cx, |detail, _| {
+                detail
+                    .quick_actions
+                    .iter()
+                    .map(|action| action.label.clone())
+                    .collect()
+            })
+        }
+
+        #[gpui::test]
+        fn a_quick_action_revision_bump_reloads_the_shown_quick_actions(cx: &mut TestAppContext) {
+            let rt = runtime();
+            let _enter = rt.enter();
+            let builtin = ShiftingActions::labelled("Start Shield mode");
+            let view = open_detail(cx, &rt, builtin.object());
+
+            builtin.relabel("End Shield mode");
+            cx.run_until_parked();
+
+            assert_eq!(shown_labels(cx, &view), vec!["End Shield mode".to_owned()]);
+        }
+
+        #[gpui::test]
+        fn a_reconnected_integration_reloads_on_its_own_quick_action_revisions(
+            cx: &mut TestAppContext,
+        ) {
+            let rt = runtime();
+            let _enter = rt.enter();
+            let first = ShiftingActions::labelled("first session");
+            let view = open_detail(cx, &rt, first.object());
+            let second = ShiftingActions::labelled("second session");
+            view.update(cx, |detail, cx| detail.adopt_builtin(second.object(), cx));
+
+            second.relabel("second session, shield on");
+            cx.run_until_parked();
+
+            assert_eq!(
+                shown_labels(cx, &view),
+                vec!["second session, shield on".to_owned()]
+            );
+        }
+    }
 }

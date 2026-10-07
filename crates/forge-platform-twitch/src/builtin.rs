@@ -2400,4 +2400,120 @@ mod tests {
         assert!(next_delta(&mut fx.health).await.is_none());
         assert_eq!(BuiltinStatus::token_expiry(fx.bundle.as_ref()), before);
     }
+
+    fn shield_face(action: &QuickAction) -> (&str, &str, QuickActionLiveness) {
+        (
+            action.label.as_str(),
+            action.subaction_template.kind_id.as_str(),
+            action.liveness,
+        )
+    }
+
+    #[test]
+    fn the_shield_toggle_offers_to_end_only_an_active_shield() {
+        let end = (
+            "End Shield mode",
+            "twitch.moderation.shield_mode_off",
+            QuickActionLiveness::Live,
+        );
+        let start = (
+            "Start Shield mode",
+            "twitch.moderation.shield_mode_on",
+            QuickActionLiveness::Unknown,
+        );
+        for (phase, expected) in [
+            (ShieldPhase::Active, end),
+            (ShieldPhase::Inactive, start),
+            (ShieldPhase::Unknown, start),
+            (ShieldPhase::Unauthorized, start),
+        ] {
+            let toggle = shield_mode_toggle(true, phase);
+            assert_eq!(shield_face(&toggle), expected, "{phase:?}");
+        }
+    }
+
+    #[test]
+    fn the_shield_toggle_is_usable_only_while_connected_and_authorized() {
+        let reason = Some(SHIELD_SCOPE_MISSING_REASON.to_owned());
+        for (connected, phase, enabled, locked_reason) in [
+            (true, ShieldPhase::Active, true, None),
+            (true, ShieldPhase::Inactive, true, None),
+            (true, ShieldPhase::Unknown, true, None),
+            (true, ShieldPhase::Unauthorized, false, reason.clone()),
+            (false, ShieldPhase::Active, false, None),
+            (false, ShieldPhase::Inactive, false, None),
+            (false, ShieldPhase::Unauthorized, false, reason.clone()),
+        ] {
+            let toggle = shield_mode_toggle(connected, phase);
+            assert_eq!(
+                (toggle.enabled, toggle.locked_reason),
+                (enabled, locked_reason),
+                "connected={connected} {phase:?}"
+            );
+        }
+    }
+
+    fn shield_labels(b: &TwitchIntegrationBundle) -> Vec<String> {
+        b.actions()
+            .into_iter()
+            .filter(|a| {
+                a.subaction_template
+                    .kind_id
+                    .starts_with("twitch.moderation.shield_mode")
+            })
+            .map(|a| a.label)
+            .collect()
+    }
+
+    #[test]
+    fn the_quick_actions_carry_one_shield_toggle_that_follows_the_live_shield_state() {
+        let b = make_bundle(ChatConnectionState::Connected);
+        let before = shield_labels(&b);
+
+        b.lifecycle
+            .apply_notification("channel.shield_mode.begin", &serde_json::Value::Null, "1");
+
+        assert_eq!(
+            (before, shield_labels(&b)),
+            (
+                vec!["Start Shield mode".to_owned()],
+                vec!["End Shield mode".to_owned()]
+            )
+        );
+    }
+
+    #[test]
+    fn a_shield_change_moves_the_published_quick_action_revision() {
+        let b = make_bundle(ChatConnectionState::Connected);
+        let Some(mut revisions) = QuickActions::revisions(b.as_ref()) else {
+            panic!("twitch publishes quick action revisions");
+        };
+
+        b.lifecycle
+            .apply_notification("channel.shield_mode.begin", &serde_json::Value::Null, "1");
+
+        assert!(reward_revision_moved(&mut revisions));
+    }
+
+    #[tokio::test]
+    async fn a_fresh_connection_seeds_the_shield_phase_from_helix_once() {
+        let (b, transport) = bundle_recording_helix("4242");
+
+        for state in [
+            ChatConnectionState::Connected,
+            ChatConnectionState::Connected,
+        ] {
+            b.on_chat_state_changed(state);
+            settle_spawned_tasks().await;
+        }
+
+        let shield_queries = (0..transport.call_count())
+            .map(|index| transport.request(index))
+            .filter(|request| {
+                request.method == HelixMethod::Get
+                    && request.path == "/helix/moderation/shield_mode"
+            })
+            .count();
+        assert_eq!(shield_queries, 1);
+    }
 }

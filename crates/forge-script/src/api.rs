@@ -1642,4 +1642,92 @@ mod tests {
             assert!(read.is_unit(), "{script}");
         }
     }
+
+    struct ScriptedRequester {
+        outcome: Result<(), ScriptSpeakError>,
+        asked: Mutex<Vec<(String, Option<String>)>>,
+    }
+
+    #[async_trait::async_trait]
+    impl SpeakRequester for ScriptedRequester {
+        async fn speak(&self, text: String, voice: Option<String>) -> Result<(), ScriptSpeakError> {
+            self.asked.lock().unwrap().push((text, voice));
+            self.outcome.clone()
+        }
+
+        async fn skip(&self) {}
+
+        async fn clear(&self) {}
+    }
+
+    async fn eval_speaking(
+        outcome: Result<(), ScriptSpeakError>,
+        script: &'static str,
+    ) -> (
+        Result<rhai::Dynamic, crate::ScriptError>,
+        Vec<(String, Option<String>)>,
+    ) {
+        let requester = Arc::new(ScriptedRequester {
+            outcome,
+            asked: Mutex::new(Vec::new()),
+        });
+        let dp = open_dp().await;
+        let (api, _) = make_api_with_publisher(Arc::clone(&dp), Arc::new(Mutex::new(Vec::new())));
+        let engine = Engine::with_api(
+            EngineConfig::default(),
+            api.with_speak_requester(Arc::clone(&requester) as Arc<dyn SpeakRequester>),
+        );
+        let result = tokio::task::spawn_blocking(move || engine.eval_script(script))
+            .await
+            .unwrap();
+        let asked = requester.asked.lock().unwrap().clone();
+        (result, asked)
+    }
+
+    #[tokio::test]
+    async fn speak_as_requests_the_named_voice_and_speak_the_default_voice() {
+        for (script, expected) in [
+            (
+                r#"forge::tts::speak_as("piper/en/amy", "hi")"#,
+                Some("piper/en/amy"),
+            ),
+            (r#"forge::tts::speak("hi")"#, None),
+        ] {
+            let (result, asked) = eval_speaking(Ok(()), script).await;
+
+            assert!(result.is_ok(), "{script} failed: {result:?}");
+            assert_eq!(
+                asked,
+                vec![("hi".to_owned(), expected.map(str::to_owned))],
+                "{script}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_refused_speak_request_throws_naming_the_call_and_the_reason() {
+        for (script, refusal, expected) in [
+            (
+                r#"forge::tts::speak_as("piper/ghost", "hi")"#,
+                ScriptSpeakError::UnknownVoice(
+                    "voice \"ghost\" of engine \"piper\" is not installed".to_owned(),
+                ),
+                "tts::speak_as: voice \"ghost\" of engine \"piper\" is not installed",
+            ),
+            (
+                r#"forge::tts::speak("hi")"#,
+                ScriptSpeakError::QueueUnavailable("the queue actor is gone".to_owned()),
+                "tts::speak: the speak queue is unavailable: the queue actor is gone",
+            ),
+            (
+                r#"forge::tts::speak_as("piper/amy", "hi")"#,
+                ScriptSpeakError::QueueUnavailable("the queue actor is gone".to_owned()),
+                "tts::speak_as: the speak queue is unavailable",
+            ),
+        ] {
+            let (result, _) = eval_speaking(Err(refusal), script).await;
+
+            assert_runtime_error_mentions(script, result, expected);
+        }
+    }
 }

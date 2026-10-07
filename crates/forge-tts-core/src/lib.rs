@@ -156,6 +156,25 @@ mod tests {
     fn _dyn_factory(_: &dyn TtsEngineFactory) {}
 
     #[test]
+    fn engine_ids_show_their_product_names_and_unknown_ids_show_as_is() {
+        for (id, shown) in [
+            ("piper", "Piper"),
+            ("espeak-ng", "eSpeak-NG"),
+            ("sapi", "Microsoft SAPI 5"),
+            ("nsspeech", "Apple AVSpeech"),
+            ("azure", "Azure Speech"),
+            ("elevenlabs", "ElevenLabs"),
+            ("openai", "OpenAI TTS"),
+            ("polly", "Amazon Polly"),
+            ("avfoundation", "avfoundation"),
+            ("my-engine", "my-engine"),
+            ("", ""),
+        ] {
+            assert_eq!(EngineId(id.to_owned()).display_name(), shown, "{id:?}");
+        }
+    }
+
+    #[test]
     fn registry_register_and_lookup() {
         struct FakeFactory;
         impl TtsEngineFactory for FakeFactory {

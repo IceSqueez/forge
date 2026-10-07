@@ -11,10 +11,11 @@ use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_registry::{CancelSignal, RunContext, SubActionRunner};
 use forge_runtime::sub_action_runners::OverlaySendRunner;
 use forge_runtime::{
-    EventBus, NullEventLogRepo, OVERLAY_TARGET_KEY, OverlayDispatch, OverlayFrameSink,
-    OverlayReceivers, OverlayServiceCell, OverlayServiceHandle, SHOW_CEILING,
-    SHOW_SPEECH_START_WAIT, ShowEnd, ShowSpeech, ShowTicket, SpeakDispatchError, SpeakDispatcher,
-    SpeakingViewer, SpeechOrigin, SpeechStartSignal,
+    EngineVoiceError, EventBus, NullEventLogRepo, OVERLAY_NAME_KEY, OVERLAY_SPEECH_FAILED_KIND,
+    OVERLAY_TARGET_KEY, OverlayDispatch, OverlayFrameSink, OverlayReceivers, OverlayServiceCell,
+    OverlayServiceHandle, SHOW_CEILING, SHOW_SPEECH_START_WAIT, SPEECH_FAILURE_ERROR_KEY, ShowEnd,
+    ShowSpeech, ShowTicket, SpeakDispatchError, SpeakDispatcher, SpeakingViewer, SpeechOrigin,
+    SpeechStartSignal,
 };
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::{
@@ -120,6 +121,7 @@ struct Spoken {
 struct ScriptedSpeaker {
     started: Instant,
     speaks: Speaks,
+    voice_check: Option<EngineVoiceError>,
     spoken: Mutex<Vec<Spoken>>,
 }
 
@@ -138,6 +140,10 @@ impl SpeakDispatcher for ScriptedSpeaker {
         _: SpeechOrigin,
     ) -> Result<(), SpeakDispatchError> {
         panic!("show speech took the global speak path")
+    }
+
+    fn check_voice(&self, _: &str) -> Result<(), EngineVoiceError> {
+        self.voice_check.clone().map_or(Ok(()), Err)
     }
 
     async fn speak_for_show(
@@ -216,6 +222,7 @@ struct Harness {
     page: Arc<TimedPage>,
     speaker: Arc<ScriptedSpeaker>,
     service: OverlayServiceHandle,
+    bus: Arc<EventBus>,
 }
 
 fn harness(kind_id: &str, speaks: Speaks) -> Harness {
@@ -223,6 +230,15 @@ fn harness(kind_id: &str, speaks: Speaks) -> Harness {
 }
 
 fn harness_leaving_by(kind_id: &str, speaks: Speaks, motion: OverlayConfig) -> Harness {
+    harness_checking_voice(kind_id, speaks, motion, None)
+}
+
+fn harness_checking_voice(
+    kind_id: &str,
+    speaks: Speaks,
+    motion: OverlayConfig,
+    voice_check: Option<EngineVoiceError>,
+) -> Harness {
     let stored = definition(kind_id, "  amy  ", motion);
     let mut repo = MockOverlayRepo::new();
     repo.expect_get()
@@ -241,14 +257,16 @@ fn harness_leaving_by(kind_id: &str, speaks: Speaks, motion: OverlayConfig) -> H
     let speaker = Arc::new(ScriptedSpeaker {
         started: Instant::now(),
         speaks,
+        voice_check,
         spoken: Mutex::new(Vec::new()),
     });
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
 
     let service = OverlayServiceHandle::new(
         Arc::new(repo) as Arc<dyn OverlayRepo>,
         Arc::new(settings) as Arc<dyn SettingsRepo>,
         Arc::new(kinds),
-        EventBus::new(Arc::new(NullEventLogRepo)),
+        Arc::clone(&bus),
         Some(Arc::clone(&page) as Arc<dyn OverlayFrameSink>),
     )
     .with_speech(Arc::clone(&speaker) as Arc<dyn SpeakDispatcher>);
@@ -256,6 +274,7 @@ fn harness_leaving_by(kind_id: &str, speaks: Speaks, motion: OverlayConfig) -> H
         page,
         speaker,
         service,
+        bus,
     }
 }
 
@@ -574,4 +593,76 @@ async fn a_look_that_applies_on_arrival_speaks_at_once_without_holding_the_page(
             "a {kind} send was held for its speech, or its speech was never requested"
         );
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_show_whose_voice_is_not_installed_is_shown_silently_and_its_failure_is_reported() {
+    let missing = EngineVoiceError::NotInstalled {
+        engine_id: "piper".to_owned(),
+        voice_id: "amy".to_owned(),
+    };
+    for kind in [ALERT_KIND, CHAT_KIND] {
+        let harness = harness_checking_voice(
+            kind,
+            plays_for(Duration::from_secs(1)),
+            exit(NO_MOTION, 0),
+            Some(missing.clone()),
+        );
+        let trigger = EventId::new();
+
+        let dispatch = harness
+            .service
+            .send_to(
+                &OverlayId::new(STAGE),
+                &spoken_show("tip"),
+                &ArgStack::new(),
+                None,
+                Some(trigger),
+            )
+            .await
+            .expect("a stored overlay of a shipped look accepts a send");
+        if let OverlayDispatch::Queued(ticket) = dispatch {
+            finished(ticket).await;
+        }
+        for _ in 0..100 {
+            tokio::task::yield_now().await;
+        }
+
+        let failures: Vec<Event> = harness
+            .bus
+            .recent(16)
+            .into_iter()
+            .filter(|event| event.kind == OVERLAY_SPEECH_FAILED_KIND)
+            .collect();
+        assert!(
+            harness.speaker.spoken().is_empty() && harness.page.frames().len() == 1,
+            "a {kind} show with a missing voice was spoken {:?} or not shown {:?}",
+            harness.speaker.spoken(),
+            harness.page.frames()
+        );
+        assert!(
+            failures.len() == 1
+                && failures[0].source == forge_events::EventSource::Core
+                && failures[0].caused_by == Some(trigger)
+                && failures[0].payload[OVERLAY_NAME_KEY] == STAGE
+                && failures[0].payload[SPEECH_FAILURE_ERROR_KEY] == missing.to_string(),
+            "a {kind} show reported its missing voice as {failures:?}"
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_show_with_an_installed_voice_reports_no_speech_failure() {
+    let harness = harness(ALERT_KIND, plays_for(Duration::from_secs(1)));
+
+    finished(harness.queue("tip").await).await;
+
+    assert!(
+        harness
+            .bus
+            .recent(16)
+            .iter()
+            .all(|event| event.kind != OVERLAY_SPEECH_FAILED_KIND),
+        "a show whose voice passed the check reported a speech failure"
+    );
 }

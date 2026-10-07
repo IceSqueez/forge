@@ -62,3 +62,86 @@ impl fmt::Display for EngineVoiceRef {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn installed(engine_id: &str, voice_id: &str) -> VoiceDescriptor {
+        VoiceDescriptor {
+            id: voice_id.to_owned(),
+            name: voice_id.to_owned(),
+            locale: "en-US".to_owned(),
+            engine_id: engine_id.to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_displayed_voice_reads_back_as_the_same_installed_voice() {
+        for (engine_id, voice_id) in [
+            ("piper", "en_US-amy-medium"),
+            ("piper", "en/US/amy"),
+            ("sapi", "Microsoft Zira Desktop"),
+            ("nsspeech", "com.apple.voice.compact.uk-UA.Lesya"),
+        ] {
+            let voice = EngineVoiceRef::new(engine_id, voice_id);
+            let catalog = [installed("piper", "decoy"), installed(engine_id, voice_id)];
+
+            let read_back = EngineVoiceRef::installed(&voice.to_string(), &catalog);
+
+            assert_eq!(read_back, Ok(voice), "{engine_id} / {voice_id}");
+        }
+    }
+
+    #[test]
+    fn surrounding_whitespace_is_ignored_when_reading_a_voice() {
+        let catalog = [installed("piper", "amy")];
+
+        let read_back = EngineVoiceRef::installed("  piper/amy \t", &catalog);
+
+        assert_eq!(read_back, Ok(EngineVoiceRef::new("piper", "amy")));
+    }
+
+    #[test]
+    fn a_value_without_both_an_engine_and_a_voice_is_not_an_engine_voice() {
+        let catalog = [installed("piper", "amy")];
+        for encoded in ["", "   ", "amy", "/", "/amy", "piper/", " /amy"] {
+            let result = EngineVoiceRef::installed(encoded, &catalog);
+
+            assert_eq!(
+                result,
+                Err(EngineVoiceError::NotAnEngineVoice(encoded.to_owned())),
+                "{encoded:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_voice_absent_from_the_catalog_is_not_installed() {
+        let catalog = [installed("piper", "amy"), installed("sapi", "zira")];
+        for (encoded, engine_id, voice_id) in [
+            ("piper/zira", "piper", "zira"),
+            ("espeak-ng/amy", "espeak-ng", "amy"),
+            ("piper/Amy", "piper", "Amy"),
+            ("piper/amy/x", "piper", "amy/x"),
+        ] {
+            let result = EngineVoiceRef::installed(encoded, &catalog);
+
+            assert_eq!(
+                result,
+                Err(EngineVoiceError::NotInstalled {
+                    engine_id: engine_id.to_owned(),
+                    voice_id: voice_id.to_owned(),
+                }),
+                "{encoded:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn no_voice_is_installed_while_the_catalog_is_empty() {
+        let result = EngineVoiceRef::installed("piper/amy", &[]);
+
+        assert!(matches!(result, Err(EngineVoiceError::NotInstalled { .. })));
+    }
+}

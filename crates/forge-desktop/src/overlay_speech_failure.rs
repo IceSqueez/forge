@@ -29,3 +29,54 @@ fn overlay_speech_failure_text(event: &Event) -> Option<String> {
         error = text_of(SPEECH_FAILURE_ERROR_KEY)
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_runtime::OVERLAY_SPEECH_FAILED_KIND;
+
+    use super::*;
+
+    const UNINSTALLED: &str = "voice \"amy\" of engine \"piper\" is not installed";
+
+    fn failure_from(source: EventSource, kind: &str) -> Event {
+        Event::new(
+            source,
+            kind,
+            serde_json::json!({
+                OVERLAY_NAME_KEY: "Stage alert",
+                SPEECH_FAILURE_ERROR_KEY: UNINSTALLED,
+            }),
+        )
+    }
+
+    #[test]
+    fn a_speech_failure_toast_names_the_overlay_and_the_reason() {
+        crate::i18n::install_language(forge_storage::Language::En);
+
+        let text = overlay_speech_failure_text(&failure_from(
+            EventSource::Core,
+            OVERLAY_SPEECH_FAILED_KIND,
+        ))
+        .map(|text| text.replace(['\u{2068}', '\u{2069}'], ""));
+
+        assert!(
+            text.as_deref()
+                .is_some_and(|text| text.starts_with("Stage alert ") && text.contains(UNINSTALLED)),
+            "{text:?}"
+        );
+    }
+
+    #[test]
+    fn only_a_core_overlay_speech_failure_becomes_a_toast() {
+        for (source, kind) in [
+            (EventSource::Core, "overlay.test_fire"),
+            (EventSource::Core, "playback.failed"),
+            (EventSource::Rhai, OVERLAY_SPEECH_FAILED_KIND),
+            (EventSource::Http, OVERLAY_SPEECH_FAILED_KIND),
+        ] {
+            let text = overlay_speech_failure_text(&failure_from(source, kind));
+
+            assert_eq!(text, None, "{source:?} {kind}");
+        }
+    }
+}

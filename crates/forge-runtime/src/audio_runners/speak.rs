@@ -158,7 +158,7 @@ impl SubActionRunner for SpeakRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::sync::Mutex;
 
@@ -442,6 +442,141 @@ mod tests {
             .await;
 
         assert_eq!(speaker.only().text, "Welcome Alice!");
+    }
+
+    #[derive(Default)]
+    struct VoicedSpeaker {
+        voices: Vec<crate::speak_dispatcher::VoiceDescriptor>,
+        dispatched: Mutex<Vec<(Path, Option<String>)>>,
+    }
+
+    impl VoicedSpeaker {
+        fn with_installed(engine_id: &str, voice_id: &str) -> Self {
+            Self {
+                voices: vec![crate::speak_dispatcher::VoiceDescriptor {
+                    id: voice_id.to_owned(),
+                    name: "Amy".to_owned(),
+                    locale: "en-US".to_owned(),
+                    engine_id: engine_id.to_owned(),
+                }],
+                dispatched: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn dispatched(&self) -> Vec<(Path, Option<String>)> {
+            self.dispatched.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl SpeakDispatcher for VoicedSpeaker {
+        async fn speak(
+            &self,
+            _text: String,
+            voice: Option<String>,
+            _origin: SpeechOrigin,
+        ) -> Result<(), SpeakDispatchError> {
+            self.dispatched.lock().unwrap().push((Path::Speak, voice));
+            Ok(())
+        }
+
+        async fn speak_reward_sourced(
+            &self,
+            _text: String,
+            voice: Option<String>,
+            _origin: SpeechOrigin,
+        ) -> Result<(), SpeakDispatchError> {
+            self.dispatched.lock().unwrap().push((Path::Reward, voice));
+            Ok(())
+        }
+
+        async fn get_available_voices(&self) -> Vec<crate::speak_dispatcher::VoiceDescriptor> {
+            self.voices.clone()
+        }
+    }
+
+    fn voiced(text: &str, wait: bool, voice: &str) -> SubActionConfig {
+        let mut cfg = config(text, wait);
+        cfg.insert(VOICE_KEY.to_owned(), Variant::String(voice.to_owned()));
+        cfg
+    }
+
+    #[tokio::test]
+    async fn a_step_without_a_chosen_voice_speaks_with_the_default_voice() {
+        for step in [config("hello", false), voiced("hello", false, "")] {
+            let speaker = Arc::new(VoicedSpeaker::with_installed("piper", "amy"));
+            let runner = SpeakRunner::new(speaker.clone());
+            let stack = ArgStack::new();
+
+            let (telemetry, _) = runner.execute(&step, &make_ctx(&stack)).await;
+
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Success)
+                    && speaker.dispatched() == vec![(Path::Speak, None)],
+                "{step:?} -> {:?} / {:?}",
+                telemetry.outcome,
+                speaker.dispatched()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_installed_voice_is_dispatched_on_every_speak_path() {
+        for (wait, reward, path) in [
+            (true, false, Path::Speak),
+            (false, false, Path::Speak),
+            (true, true, Path::Reward),
+            (false, true, Path::Reward),
+        ] {
+            let speaker = Arc::new(VoicedSpeaker::with_installed("piper", "en/amy"));
+            let runner = SpeakRunner::new(speaker.clone());
+            let mut stack = ArgStack::new();
+            if reward {
+                stack = stack.set("reward.id".to_owned(), Variant::String("r-1".to_owned()));
+            }
+
+            runner
+                .execute(&voiced("hello", wait, "piper/en/amy"), &make_ctx(&stack))
+                .await;
+
+            assert_eq!(
+                speaker.dispatched(),
+                vec![(path, Some("piper/en/amy".to_owned()))],
+                "wait={wait} reward={reward}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unusable_voice_fails_the_step_naming_it_and_speaks_nothing() {
+        for (stored, names) in [
+            ("amy", "\"amy\" is not an engine voice"),
+            (
+                "piper/ghost",
+                "voice \"ghost\" of engine \"piper\" is not installed",
+            ),
+            (
+                "sapi/amy",
+                "voice \"amy\" of engine \"sapi\" is not installed",
+            ),
+        ] {
+            let speaker = Arc::new(VoicedSpeaker::with_installed("piper", "amy"));
+            let runner = SpeakRunner::new(speaker.clone());
+            let stack = ArgStack::new();
+
+            let (telemetry, _) = runner
+                .execute(&voiced("hello", false, stored), &make_ctx(&stack))
+                .await;
+
+            match telemetry.outcome {
+                SubActionOutcome::Failed(reason) => assert!(
+                    reason.contains(names) && reason.ends_with("pick a voice again"),
+                    "{stored:?} failed with {reason:?}"
+                ),
+                other => panic!("{stored:?} must fail the step, got {other:?}"),
+            }
+            assert!(speaker.dispatched().is_empty(), "{stored:?} was spoken");
+        }
     }
 
     #[test]

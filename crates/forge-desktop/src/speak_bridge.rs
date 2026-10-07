@@ -1138,4 +1138,225 @@ mod tests {
             pages.pushed.lock().unwrap()
         );
     }
+
+    struct ListedVoicesEngine {
+        id: EngineId,
+    }
+
+    const LISTED_VOICES: [(&str, &str); 2] = [("cap-a", "Alpha"), ("en/b", "Beta")];
+
+    #[async_trait]
+    impl forge_tts_core::TtsEngine for ListedVoicesEngine {
+        fn engine_id(&self) -> &EngineId {
+            &self.id
+        }
+
+        fn capabilities(&self) -> &forge_tts_core::EngineCapabilities {
+            static CAPS: forge_tts_core::EngineCapabilities = forge_tts_core::EngineCapabilities {
+                ssml: false,
+                neural_voices: false,
+                streaming: false,
+                custom_lexicons: false,
+            };
+            &CAPS
+        }
+
+        async fn list_voices(
+            &self,
+        ) -> Result<Vec<forge_tts_core::TtsVoice>, forge_tts_core::TtsError> {
+            Ok(LISTED_VOICES
+                .iter()
+                .map(|(id, name)| forge_tts_core::TtsVoice {
+                    id: VoiceId((*id).to_owned()),
+                    name: (*name).to_owned(),
+                    locale: "en-US".to_owned(),
+                    gender: forge_tts_core::VoiceGender::Neutral,
+                    engine_id: self.id.clone(),
+                    is_neural: false,
+                    sample_rate_hint: 22_050,
+                })
+                .collect())
+        }
+
+        async fn synthesize(
+            &self,
+            _: forge_tts_core::SynthesisRequest,
+        ) -> Result<forge_audio::PcmBuffer, forge_tts_core::TtsError> {
+            Ok(forge_audio::PcmBuffer::new(vec![0i16; 4], 22_050, 1))
+        }
+    }
+
+    struct ListedVoicesFactory;
+
+    impl forge_tts_core::TtsEngineFactory for ListedVoicesFactory {
+        fn create(&self) -> Result<Box<dyn forge_tts_core::TtsEngine>, forge_tts_core::TtsError> {
+            Ok(Box::new(ListedVoicesEngine {
+                id: EngineId("cap".to_owned()),
+            }))
+        }
+    }
+
+    async fn queue_with_listed_voices()
+    -> (Arc<SpeakQueueHandle>, forge_speak_queue::SpeakEventStream) {
+        let mut engines = forge_tts_core::TtsRegistry::new();
+        engines.register(EngineId("cap".to_owned()), Arc::new(ListedVoicesFactory));
+        let (handle, stream) = Harness {
+            engines,
+            ..Harness::default()
+        }
+        .spawn();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while handle.available_voices().len() < LISTED_VOICES.len() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the engine's voices never reached the catalog");
+        handle.send(SpeakCommand::Pause).await.unwrap();
+        (handle, stream)
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum VoicedPath {
+        Step,
+        Reward,
+        Script,
+        Show,
+    }
+
+    async fn enqueued_preview(stream: &mut forge_speak_queue::SpeakEventStream) -> String {
+        next_matching(stream, |event| match event {
+            SpeakEvent::Enqueued { voice_preview, .. } => Some(voice_preview),
+            _ => None,
+        })
+        .await
+    }
+
+    async fn enqueue_with_voice(
+        bridge: &SpeakBridge,
+        stream: &mut forge_speak_queue::SpeakEventStream,
+        path: VoicedPath,
+        voice: &str,
+    ) -> String {
+        let text = "hello chat".to_owned();
+        let voice = Some(voice.to_owned());
+        match path {
+            VoicedPath::Step => {
+                SpeakDispatcher::speak(bridge, text, voice, SpeechOrigin::default())
+                    .await
+                    .unwrap();
+                enqueued_preview(stream).await
+            }
+            VoicedPath::Reward => {
+                bridge
+                    .speak_reward_sourced(text, voice, SpeechOrigin::default())
+                    .await
+                    .unwrap();
+                enqueued_preview(stream).await
+            }
+            VoicedPath::Script => {
+                SpeakRequester::speak(bridge, text, voice).await.unwrap();
+                enqueued_preview(stream).await
+            }
+            VoicedPath::Show => {
+                let cancel = CancelSignal::new();
+                let speech = ShowSpeech {
+                    text,
+                    voice,
+                    overlay: "stage-alert".to_owned(),
+                    show: "01J9ZC4W6R7Q2N3M4K5P6S7T8V".to_owned(),
+                    origin: SpeechOrigin::default(),
+                };
+                let (_, shown) = tokio::join!(
+                    bridge.speak_for_show(speech, cancel.clone(), SpeechStartSignal::new()),
+                    async {
+                        let shown = enqueued_preview(stream).await;
+                        cancel.cancel();
+                        shown
+                    }
+                );
+                shown
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_chosen_engine_voice_overrides_voice_resolution_on_every_voiced_path() {
+        for path in [
+            VoicedPath::Step,
+            VoicedPath::Reward,
+            VoicedPath::Script,
+            VoicedPath::Show,
+        ] {
+            for (voice_id, name) in LISTED_VOICES {
+                let (handle, mut stream) = queue_with_listed_voices().await;
+                let bridge = SpeakBridge::new(handle);
+
+                let preview =
+                    enqueue_with_voice(&bridge, &mut stream, path, &format!("cap/{voice_id}"))
+                        .await;
+
+                assert!(
+                    preview.ends_with(name),
+                    "{path:?} asked for cap/{voice_id} but was voiced as {preview:?}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_voice_missing_from_the_catalog_is_refused_before_it_is_queued() {
+        let (handle, _stream) = queue_with_listed_voices().await;
+        let bridge = SpeakBridge::new(handle);
+
+        let step = SpeakDispatcher::speak(
+            &bridge,
+            "hi".to_owned(),
+            Some("cap/ghost".to_owned()),
+            SpeechOrigin::default(),
+        )
+        .await;
+        let script =
+            SpeakRequester::speak(&bridge, "hi".to_owned(), Some("cap-a".to_owned())).await;
+
+        assert!(
+            matches!(
+                &step,
+                Err(SpeakDispatchError::Dispatch(reason))
+                    if reason.contains("voice \"ghost\" of engine \"cap\" is not installed")
+            ),
+            "a step with an uninstalled voice got {step:?}"
+        );
+        assert!(
+            matches!(
+                &script,
+                Err(ScriptSpeakError::UnknownVoice(reason)) if reason.contains("is not an engine voice")
+            ),
+            "a script with a bare voice id got {script:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn check_voice_accepts_only_an_installed_engine_voice() {
+        let (handle, _stream) = queue_with_listed_voices().await;
+        let bridge = SpeakBridge::new(handle);
+
+        for (encoded, expected) in [
+            ("cap/cap-a", Ok(())),
+            ("cap/en/b", Ok(())),
+            (
+                "cap/ghost",
+                Err(EngineVoiceError::NotInstalled {
+                    engine_id: "cap".to_owned(),
+                    voice_id: "ghost".to_owned(),
+                }),
+            ),
+            (
+                "cap-a",
+                Err(EngineVoiceError::NotAnEngineVoice("cap-a".to_owned())),
+            ),
+        ] {
+            assert_eq!(bridge.check_voice(encoded), expected, "{encoded:?}");
+        }
+    }
 }

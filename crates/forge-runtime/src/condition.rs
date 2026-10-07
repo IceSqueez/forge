@@ -32,18 +32,6 @@ impl ConditionGate {
         }
     }
 
-    pub async fn evaluate(&self, expr: &str) -> Result<bool, ConditionError> {
-        if let Some(verdict) = literal_compare(expr) {
-            return Ok(verdict);
-        }
-        let evaluator = self.evaluator.clone();
-        let owned = expr.to_owned();
-        tokio::task::spawn_blocking(move || evaluator.eval(&owned))
-            .await
-            .map_err(|_| ConditionError::Canceled)?
-            .map_err(ConditionError::from)
-    }
-
     pub async fn evaluate_with_args(
         &self,
         condition: &str,

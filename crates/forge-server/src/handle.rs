@@ -299,21 +299,6 @@ impl ServerHandle {
         state.bus_adapter.kick_client(id).await;
         true
     }
-
-    pub fn abort(&self) {
-        self.run_state.stop();
-        let inner = Arc::clone(&self.inner);
-        tokio::spawn(async move {
-            let mut guard = inner.lock().await;
-            guard.state.audio_clips.discard_all();
-            if let Some(tx) = guard.shutdown_tx.take() {
-                let _ = tx.send(true);
-            }
-            if let Some(join) = guard.join.take() {
-                join.abort();
-            }
-        });
-    }
 }
 
 #[cfg(test)]

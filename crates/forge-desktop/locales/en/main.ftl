@@ -2564,6 +2564,12 @@ overlays_toast_deleted = Overlay deleted
 overlays_toast_missing = That overlay is no longer in storage.
 overlays_toast_unknown_type = This build does not have that overlay type.
 overlays_toast_url_unavailable = The server is stopped, so there is no address to copy.
+overlays_toast_build_failed_pages =
+    { $count ->
+        [one] { $count } overlay page could not be rebuilt - its browser source may show an old version. Details are in the log.
+       *[other] { $count } overlay pages could not be rebuilt - their browser sources may show an old version. Details are in the log.
+    }
+overlays_toast_build_failed_pass = Overlay pages could not be rebuilt: { $reason }
 overlays_confirm_delete_title = Delete overlay?
 overlays_confirm_delete_body = Any OBS browser source pointing at this overlay will stop loading. This cannot be undone.
 

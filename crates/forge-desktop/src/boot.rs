@@ -38,6 +38,7 @@ use crate::clip_hotkeys::{HotkeySyncedClipsRepo, spawn_clip_hotkey_dispatcher};
 use crate::integration_supervisor::IntegrationSupervisor;
 use crate::integrations::build_integrations;
 use crate::log_tail::LogTail;
+use crate::overlay_build_failure::OverlayBuildFailure;
 use crate::overlay_frame_sink::ServerOverlayFrameSink;
 use crate::routed_sink::RoutedSink;
 use crate::runtime_handles::RuntimeHandles;
@@ -492,15 +493,17 @@ pub async fn build_runtime(
             .await;
     }
     donations.spawn_catch_up_release(Arc::new(donation_audience));
-    match overlays.materialize_all().await {
+    let overlay_pass = overlays.materialize_all().await;
+    match &overlay_pass {
         Ok(pass) => tracing::info!(
             materialized = pass.materialized,
             unavailable = pass.unavailable,
             failed = pass.failed,
             "overlay pages materialized"
         ),
-        Err(e) => eprintln!("forge-desktop: overlay materialization pass failed: {e}"),
+        Err(e) => tracing::error!(error = %e, "overlay materialization pass failed"),
     }
+    let overlay_build_failure = OverlayBuildFailure::from_outcome(&overlay_pass);
 
     let audio_router = Arc::new(AudioRouter::new(AudioRouterParts {
         backend: Arc::clone(&backend),
@@ -521,6 +524,7 @@ pub async fn build_runtime(
         anonymous_donor,
         latest_values,
         credentials_key_loss,
+        overlay_build_failure,
         bus,
         script_registry,
         sub_action_registry,

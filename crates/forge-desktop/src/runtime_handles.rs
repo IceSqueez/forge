@@ -25,6 +25,7 @@ pub struct RuntimeHandles {
     pub anonymous_donor: forge_types::Shared<String>,
     pub latest_values: LatestValues,
     pub credentials_key_loss: Option<CredentialsKeyLoss>,
+    pub overlay_build_failure: Option<crate::overlay_build_failure::OverlayBuildFailure>,
     pub bus: Arc<EventBus>,
     pub script_registry: Arc<ScriptRegistry>,
     pub sub_action_registry: Arc<SubActionRegistry>,

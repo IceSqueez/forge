@@ -18,6 +18,7 @@ use gpui::{
 };
 
 use crate::async_bridge::{self, ErrorSink};
+use crate::overlay_build_failure::OverlayBuildFailure;
 use crate::presentation::ActivePresentation;
 use crate::server_restart::restart_ignoring_disabled;
 
@@ -679,19 +680,26 @@ impl SettingsWebSocketView {
         self.overlay_root = Some(path_str.clone());
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         let overlays = self.overlays.clone();
-        self.persist_and_reload(
+        self.save_state = SaveState::Saving;
+        async_bridge::run_async(
+            &self.rt_handle,
             async move {
                 ServerSettings::save_overlay_root(repo.as_ref(), &path_str)
                     .await
                     .map_err(|e| e.to_string())?;
-                overlays
-                    .materialize_all()
-                    .await
-                    .map_err(|e| e.to_string())?;
-                Ok(())
+                let pass = overlays.materialize_all().await;
+                Ok(OverlayBuildFailure::from_outcome(&pass))
+            },
+            |this, result: Result<Option<OverlayBuildFailure>, String>, cx| {
+                let build_failure = result.as_ref().ok().and_then(Option::as_ref);
+                if let Some(failure) = build_failure {
+                    failure.raise(cx);
+                }
+                this.apply_persist_outcome(result.map(|_| ()), cx);
             },
             cx,
         );
+        cx.notify();
     }
 
     fn toggle_token_reveal(&mut self, cx: &mut Context<Self>) {

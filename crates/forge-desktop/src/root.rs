@@ -146,6 +146,7 @@ pub fn run_boot(
         match outcome {
             Ok(mut handles) => {
                 let speak_events = handles.speak_events.take();
+                let overlay_build_failure = handles.overlay_build_failure.take();
                 let initial_screen = handles.first_run.opening_screen(initial_screen);
                 let handles = Arc::new(handles);
                 let bridge_sub = handles.bus.subscribe_observer(UI_EVENTS);
@@ -238,6 +239,9 @@ pub fn run_boot(
                 if applied.is_ok() {
                     if let Some(loss) = credentials_key_loss {
                         cx.update(|cx| raise_credentials_key_loss_toast(loss, cx));
+                    }
+                    if let Some(failure) = overlay_build_failure {
+                        cx.update(|cx| failure.raise(cx));
                     }
                     seed_chat_history(
                         cx,

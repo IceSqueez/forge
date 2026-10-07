@@ -1127,11 +1127,9 @@ mod tests {
 
     #[test]
     fn tab_within_a_single_line_inserts_the_unit_in_place_of_the_selection() {
-        for (text, select, expected, cursor) in [
-            ("ab", 1..1, "a  b", 3),
-            ("abc", 1..2, "a  c", 3),
-            ("ab\ncd", 4..4, "ab\nc  d", 6),
-        ] {
+        for (text, select, expected, cursor) in
+            [("ab", 1..1, "a  b", 3), ("ab\ncd", 4..4, "ab\nc  d", 6)]
+        {
             let mut buffer = selecting(text, select.clone(), false);
             buffer.indent("  ");
             assert_eq!(

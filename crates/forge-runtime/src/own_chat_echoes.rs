@@ -125,8 +125,6 @@ fn row_fingerprint(row: &UnifiedChatRow) -> String {
         match segment {
             ChatSegment::Text { text: part } => text.push_str(part),
             ChatSegment::Emote { name, .. } => text.push_str(name),
-            ChatSegment::Link { display, .. } if !display.is_empty() => text.push_str(display),
-            ChatSegment::Link { url, .. } => text.push_str(url),
             ChatSegment::Mention { username } => {
                 text.push('@');
                 text.push_str(username);

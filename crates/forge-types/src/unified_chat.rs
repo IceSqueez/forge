@@ -233,7 +233,6 @@ impl UnifiedChatRow {
 pub enum ChatSegment {
     Text { text: String },
     Emote { id: String, name: String },
-    Link { url: String, display: String },
     Mention { username: String },
 }
 
@@ -248,11 +247,6 @@ impl fmt::Debug for ChatSegment {
                 .debug_struct("Emote")
                 .field("id", id)
                 .field("name", name)
-                .finish(),
-            Self::Link { url, display } => f
-                .debug_struct("Link")
-                .field("url", &RedactedText::new(url))
-                .field("display", &RedactedText::new(display))
                 .finish(),
             Self::Mention { .. } => f
                 .debug_struct("Mention")

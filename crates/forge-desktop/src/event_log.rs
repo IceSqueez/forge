@@ -208,7 +208,6 @@ impl EventLog {
                     out.push_str(username);
                 }
                 ChatSegment::Emote { name, .. } => out.push_str(name),
-                ChatSegment::Link { display, .. } => out.push_str(display),
             }
         }
         out

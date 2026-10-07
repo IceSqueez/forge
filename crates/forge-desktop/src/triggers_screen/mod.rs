@@ -29,6 +29,7 @@ mod collection_choices;
 mod create;
 mod detail;
 mod list;
+mod permission_help;
 mod timer;
 
 use create::CreateStage;

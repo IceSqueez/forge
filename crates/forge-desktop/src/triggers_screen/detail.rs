@@ -1,3 +1,4 @@
+use super::permission_help::{gated_platforms, rung_meanings};
 use super::*;
 use crate::async_bridge;
 use crate::config_field_label::{config_field_labels, row_label};
@@ -823,9 +824,13 @@ impl TriggersRegistryView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        self.registry
-            .get(&detail.instance.kind_id)
-            .and_then(|d| d.chat_trigger_family())?;
+        let descriptor = self.registry.get(&detail.instance.kind_id)?;
+        descriptor.chat_trigger_family()?;
+        let platforms = gated_platforms(
+            descriptor.platform_contract(),
+            &detail.instance.platform_scope,
+        );
+        let meanings = rung_meanings(detail.permission_rung, &platforms);
 
         let segments = PERMISSION_RUNGS
             .into_iter()
@@ -865,12 +870,16 @@ impl TriggersRegistryView {
 
         let helper_row = div()
             .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
             .py(CFG_ROW_PAD_V)
             .px(CFG_ROW_PAD_H)
             .font_family(body_family())
             .text_size(CFG_VAL_FS)
             .text_color(palette.text_faint)
-            .child(tr!("triggers_sheet_permission_helper"));
+            .child(tr!("triggers_sheet_permission_helper"))
+            .children(meanings.into_iter().map(|meaning| div().child(meaning)));
 
         let framed = div()
             .w_full()

@@ -892,4 +892,32 @@ mod tests {
         assert_eq!(outcome_tag(connect_outcome(&foreign_source)), "ignored");
         assert_eq!(outcome_tag(connect_outcome(&foreign_kind)), "ignored");
     }
+
+    #[test]
+    fn every_failure_reason_the_vtube_client_reports_gets_its_own_translated_message() {
+        const REASONS: [&str; 8] = [
+            "connect_failed",
+            "auth_required",
+            "auth_denied",
+            "auth_timeout",
+            "auth_failed",
+            "subscribe_failed",
+            "socket_closed",
+            "unresponsive",
+        ];
+        for lang in [forge_storage::Language::En, forge_storage::Language::Uk] {
+            crate::i18n::install_language(lang);
+            let unknown = failure_detail("something_new");
+            let details = REASONS.map(failure_detail);
+
+            for (reason, detail) in REASONS.iter().zip(&details) {
+                assert!(
+                    *detail != unknown && !detail.starts_with("vtube_connect_error_"),
+                    "{lang:?} {reason} falls back to {detail:?}"
+                );
+            }
+            let distinct: std::collections::HashSet<&String> = details.iter().collect();
+            assert_eq!(distinct.len(), REASONS.len(), "{lang:?} {details:?}");
+        }
+    }
 }

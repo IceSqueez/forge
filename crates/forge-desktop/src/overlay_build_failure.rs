@@ -35,3 +35,55 @@ impl OverlayBuildFailure {
         cx.push_toast_full(ToastKind::Error, self.message(), None, None, Duration::ZERO);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_runtime::MaterializePass;
+
+    use super::OverlayBuildFailure;
+
+    fn pass(
+        materialized: usize,
+        unavailable: usize,
+        failed: usize,
+    ) -> Result<MaterializePass, String> {
+        Ok(MaterializePass {
+            materialized,
+            unavailable,
+            failed,
+        })
+    }
+
+    #[test]
+    fn a_pass_without_failed_pages_raises_nothing_even_when_some_are_unavailable() {
+        for outcome in [pass(0, 0, 0), pass(4, 0, 0), pass(2, 3, 0)] {
+            assert!(
+                OverlayBuildFailure::from_outcome(&outcome).is_none(),
+                "{outcome:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn failed_pages_are_counted_from_one_upward() {
+        for (outcome, expected) in [(pass(0, 0, 1), 1), (pass(5, 1, 3), 3)] {
+            assert!(
+                matches!(
+                    OverlayBuildFailure::from_outcome(&outcome),
+                    Some(OverlayBuildFailure::Pages(failed)) if failed == expected
+                ),
+                "{outcome:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_pass_that_could_not_run_carries_its_error_text() {
+        let outcome: Result<MaterializePass, String> = Err("overlay root is missing".to_owned());
+
+        assert!(matches!(
+            OverlayBuildFailure::from_outcome(&outcome),
+            Some(OverlayBuildFailure::Pass(reason)) if reason == "overlay root is missing"
+        ));
+    }
+}

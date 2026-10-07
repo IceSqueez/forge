@@ -919,4 +919,99 @@ mod tests {
         assert!(!note_keys(&bundle(0, 0, 0), &LogLevel::Info).contains(&ELIDED_NOTE.to_owned()));
         assert!(note_keys(&bundle(0, 0, 1), &LogLevel::Info).contains(&ELIDED_NOTE.to_owned()));
     }
+
+    struct LevelRig {
+        rt: tokio::runtime::Runtime,
+        writes: tokio::sync::mpsc::UnboundedReceiver<crate::test_support::SettingWrite>,
+        view: gpui::Entity<super::SettingsDiagnosticsView>,
+    }
+
+    fn mount_with_stored(stored: LogLevel, cx: &mut gpui::TestAppContext) -> LevelRig {
+        use gpui::AppContext as _;
+
+        crate::test_support::install_presentation(cx);
+        cx.update(|cx| cx.set_global(crate::toasts::Toasts::new()));
+        let rt = crate::test_support::runtime();
+        let (backend, mut writes) = crate::test_support::test_backend();
+        rt.block_on(forge_storage::set_diagnostic_log_level(
+            backend.as_ref(),
+            &stored,
+        ))
+        .unwrap();
+        while writes.try_recv().is_ok() {}
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                super::SettingsDiagnosticsView::new(
+                    crate::log_tail::LogTail::new(),
+                    backend as std::sync::Arc<dyn forge_storage::DataProvider>,
+                    crate::integrations::BuiltinRegistry::default(),
+                    rt.handle().clone(),
+                    false,
+                    cx,
+                )
+            })
+        });
+        LevelRig { rt, writes, view }
+    }
+
+    impl LevelRig {
+        fn settle(&self, cx: &mut gpui::TestAppContext) {
+            for _ in 0..3 {
+                crate::test_support::pump(&self.rt);
+                cx.run_until_parked();
+            }
+        }
+
+        fn level(&self, cx: &mut gpui::TestAppContext) -> LogLevel {
+            self.view.read_with(cx, |view, _| view.level.clone())
+        }
+    }
+
+    #[gpui::test]
+    fn a_level_that_cannot_be_applied_is_neither_shown_nor_persisted(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut rig = mount_with_stored(LogLevel::Debug, cx);
+        rig.settle(cx);
+
+        rig.view
+            .update(cx, |view, cx| view.select_level(LogLevel::Trace, cx));
+        rig.settle(cx);
+
+        let errors = cx.update(|cx| {
+            cx.global::<crate::toasts::Toasts>()
+                .items()
+                .iter()
+                .filter(|toast| toast.kind == forge_components::ToastKind::Error)
+                .count()
+        });
+        assert_eq!(
+            (rig.level(cx), rig.writes.try_recv().is_err(), errors),
+            (LogLevel::Debug, true, 1)
+        );
+    }
+
+    #[gpui::test]
+    fn a_stored_level_arriving_after_the_user_picked_one_does_not_overwrite_it(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let rig = mount_with_stored(LogLevel::Debug, cx);
+        rig.view.update(cx, |view, _| {
+            view.level = LogLevel::Error;
+            view.level_picked = true;
+        });
+
+        rig.settle(cx);
+
+        assert_eq!(rig.level(cx), LogLevel::Error);
+    }
+
+    #[gpui::test]
+    fn the_stored_level_is_shown_once_it_loads(cx: &mut gpui::TestAppContext) {
+        let rig = mount_with_stored(LogLevel::Warn, cx);
+
+        rig.settle(cx);
+
+        assert_eq!(rig.level(cx), LogLevel::Warn);
+    }
 }

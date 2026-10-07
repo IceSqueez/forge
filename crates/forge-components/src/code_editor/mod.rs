@@ -976,4 +976,36 @@ mod tests {
             (LOADED.to_owned(), vec![SAVED])
         );
     }
+
+    #[gpui::test]
+    fn a_field_shows_its_line_count_clamped_to_the_row_range(cx: &mut TestAppContext) {
+        const LINE: Pixels = px(10.0);
+        let chrome = PAD_Y + PAD_Y + BORDER_THIN + BORDER_THIN;
+        let (editor, vcx) = cx.add_window_view(|_window, cx| {
+            CodeEditor::new(Language::Rhai, "", cx)
+                .with_line_height(LINE)
+                .with_field_rows(3..=6)
+        });
+
+        for (lines, shown) in [
+            (1, 3.0),
+            (2, 3.0),
+            (3, 3.0),
+            (4, 4.0),
+            (5, 5.0),
+            (6, 6.0),
+            (7, 6.0),
+            (40, 6.0),
+        ] {
+            let text = vec!["x"; lines].join("\n");
+            let height = vcx.update(|_window, cx| {
+                editor.update(cx, |editor, cx| {
+                    editor.set_content(text, cx);
+                    let rows = editor.field_rows.clone().unwrap_or(0..=0);
+                    editor.field_height(&rows)
+                })
+            });
+            assert_eq!(height, LINE * shown + chrome, "{lines} lines");
+        }
+    }
 }

@@ -393,3 +393,70 @@ fn month_name(month: Month) -> String {
     };
     tr!(key)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use fluent::{FluentBundle, FluentResource};
+    use unic_langid::LanguageIdentifier;
+
+    use super::*;
+    use crate::locale::install_bundle;
+
+    const UK_CATALOG: &str = include_str!("../../forge-desktop/locales/uk/main.ftl");
+
+    fn install_ukrainian() {
+        let lang: LanguageIdentifier = "uk-UA".parse().unwrap_or_default();
+        let resource = FluentResource::try_new(UK_CATALOG.to_owned()).unwrap_or_else(|(r, _)| r);
+        let mut bundle = FluentBundle::new(vec![lang]);
+        assert!(bundle.add_resource(resource).is_ok());
+        install_bundle(Rc::new(bundle));
+    }
+
+    #[test]
+    fn month_names_follow_the_installed_language_in_calendar_order() {
+        install_ukrainian();
+        let months = [
+            Month::January,
+            Month::February,
+            Month::March,
+            Month::April,
+            Month::May,
+            Month::June,
+            Month::July,
+            Month::August,
+            Month::September,
+            Month::October,
+            Month::November,
+            Month::December,
+        ]
+        .map(month_name);
+
+        assert_eq!(
+            months,
+            [
+                "Січень",
+                "Лютий",
+                "Березень",
+                "Квітень",
+                "Травень",
+                "Червень",
+                "Липень",
+                "Серпень",
+                "Вересень",
+                "Жовтень",
+                "Листопад",
+                "Грудень",
+            ]
+        );
+    }
+
+    #[test]
+    fn weekday_headers_follow_the_installed_language_starting_on_sunday() {
+        install_ukrainian();
+        let headers = WEEKDAY_KEYS.map(|key| tr!(key));
+
+        assert_eq!(headers, ["Нд", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]);
+    }
+}

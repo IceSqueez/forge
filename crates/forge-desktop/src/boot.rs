@@ -698,3 +698,73 @@ async fn build_server(
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use forge_components::{Density, ThemeId};
+    use forge_storage::{SettingsRepo, reserved_keys};
+
+    use super::load_appearance;
+    use crate::test_support::test_backend;
+
+    #[tokio::test]
+    async fn the_stored_theme_density_and_both_fonts_come_back_in_their_own_slots() {
+        let (backend, _writes) = test_backend();
+        backend
+            .set_theme(ThemeId::TokyoNight.storage_key())
+            .await
+            .unwrap();
+        backend
+            .set_string(reserved_keys::DENSITY, Density::Spacious.storage_key())
+            .await
+            .unwrap();
+        backend
+            .set_font_body(Some("Inter".to_owned()))
+            .await
+            .unwrap();
+        backend
+            .set_font_mono(Some("Iosevka".to_owned()))
+            .await
+            .unwrap();
+
+        let appearance = load_appearance(backend.as_ref()).await;
+
+        assert_eq!(
+            (
+                appearance.theme,
+                appearance.density,
+                appearance.body_font.as_deref(),
+                appearance.mono_font.as_deref()
+            ),
+            (
+                ThemeId::TokyoNight,
+                Density::Spacious,
+                Some("Inter"),
+                Some("Iosevka")
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn unrecognised_or_missing_appearance_settings_fall_back_to_the_defaults() {
+        let (backend, _writes) = test_backend();
+        backend.set_theme("solarized").await.unwrap();
+        backend
+            .set_string(reserved_keys::DENSITY, "roomy")
+            .await
+            .unwrap();
+
+        let appearance = load_appearance(backend.as_ref()).await;
+
+        assert_eq!(
+            (
+                appearance.theme,
+                appearance.density,
+                appearance.body_font,
+                appearance.mono_font
+            ),
+            (ThemeId::default(), Density::default(), None, None)
+        );
+    }
+}

@@ -2450,4 +2450,61 @@ mod tests {
             view.platform_filter == PlatformFilter::Single(Platform::Kick)
         }));
     }
+
+    fn drawer_avatar_color(username: &str) -> gpui::Rgba {
+        let activity = crate::chat_feed::AuthorActivity {
+            name: username.to_owned().into(),
+            message_count: 1,
+            last_seq: 0,
+            role: None,
+            last_received_at: OffsetDateTime::from_unix_timestamp(0).unwrap(),
+        };
+        crate::chat_drawer::summary_from_activity(
+            &crate::chat_author::AuthorKey::by_name(Platform::Twitch, username),
+            &activity,
+            &FORGE_DEFAULT,
+        )
+        .avatar_color
+    }
+
+    #[test]
+    fn a_name_without_a_platform_color_takes_the_color_of_its_drawer_avatar() {
+        for name in [
+            "a",
+            "ab",
+            "ba",
+            "bob",
+            "Alice",
+            "nightbot",
+            "xX_gamer_Xx",
+            "user42",
+            "Kira",
+            "zed",
+            "\u{41a}\u{456}\u{442}",
+            "streamer_fan_2026",
+        ] {
+            let msg = ChatMessage {
+                username: name.into(),
+                ..message(0, false)
+            };
+
+            assert_eq!(
+                ChatView::username_color(&msg, &FORGE_DEFAULT),
+                drawer_avatar_color(name),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_platform_sent_name_color_wins_over_the_hashed_accent() {
+        let sent = gpui::rgba(0x12345678);
+        let msg = ChatMessage {
+            username: "bob".into(),
+            author_color: Some(sent),
+            ..message(0, false)
+        };
+
+        assert_eq!(ChatView::username_color(&msg, &FORGE_DEFAULT), sent);
+    }
 }

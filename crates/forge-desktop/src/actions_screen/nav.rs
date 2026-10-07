@@ -203,3 +203,97 @@ pub(super) fn set_case_match(config: &mut SubActionConfig, case_index: usize, va
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::{SubActionConfig, SubActionStep, Variant};
+
+    use super::{NavFrame, append_empty_case, resolve_chain, set_chain};
+
+    fn step(kind_id: &str) -> SubActionStep {
+        SubActionStep {
+            kind_id: kind_id.to_owned(),
+            config: SubActionConfig::new(),
+            enabled: true,
+            continue_on_error: false,
+            condition: None,
+            label: None,
+        }
+    }
+
+    fn switch_with_two_cases() -> SubActionStep {
+        let mut switch = step("core.switch");
+        append_empty_case(&mut switch.config);
+        append_empty_case(&mut switch.config);
+        switch
+    }
+
+    fn frame(step_index: usize, chain_key: &str, case_index: Option<usize>) -> NavFrame {
+        NavFrame {
+            step_index,
+            chain_key: chain_key.to_owned(),
+            case_index,
+        }
+    }
+
+    fn edited_chain() -> Vec<SubActionStep> {
+        vec![
+            SubActionStep {
+                config: SubActionConfig::from([(
+                    "text".to_owned(),
+                    Variant::String("hi".to_owned()),
+                )]),
+                enabled: false,
+                continue_on_error: true,
+                condition: Some("%user% == \"bob\"".to_owned()),
+                label: Some("greet".to_owned()),
+                ..step("core.chat_send")
+            },
+            step("core.delay"),
+        ]
+    }
+
+    #[test]
+    fn a_chain_written_through_a_nested_path_reads_back_with_every_step_field_intact() {
+        let mut nested_if = step("core.if");
+        nested_if
+            .config
+            .insert("then".to_owned(), Variant::Array(Vec::new()));
+        let mut root = vec![step("core.log"), switch_with_two_cases()];
+        assert!(set_chain(
+            &mut root,
+            &[frame(1, "cases", Some(1))],
+            &[nested_if]
+        ));
+        let path = [frame(1, "cases", Some(1)), frame(0, "then", None)];
+
+        assert!(set_chain(&mut root, &path, &edited_chain()));
+
+        assert_eq!(resolve_chain(&root, &path), edited_chain());
+    }
+
+    #[test]
+    fn writing_into_one_case_leaves_the_sibling_case_empty() {
+        let mut root = vec![switch_with_two_cases()];
+
+        assert!(set_chain(
+            &mut root,
+            &[frame(0, "cases", Some(1))],
+            &edited_chain()
+        ));
+
+        assert_eq!(
+            resolve_chain(&root, &[frame(0, "cases", Some(0))]),
+            Vec::new()
+        );
+    }
+
+    #[test]
+    fn a_path_through_a_step_that_does_not_exist_is_refused_without_touching_the_chain() {
+        let mut root = vec![step("core.log")];
+
+        let written = set_chain(&mut root, &[frame(3, "then", None)], &edited_chain());
+
+        assert_eq!((written, root), (false, vec![step("core.log")]));
+    }
+}

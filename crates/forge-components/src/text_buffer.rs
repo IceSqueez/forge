@@ -1024,6 +1024,9 @@ mod tests {
             ("ab\ncd", 0..5, false, "  ab\n  cd", 0..9),
             ("ab\ncd\nef", 0..6, false, "  ab\n  cd\nef", 0..10),
             ("ab\ncd", 2..3, false, "  ab\ncd", 4..5),
+            ("abc", 1..2, false, "  abc", 3..4),
+            ("abc", 1..2, true, "  abc", 3..4),
+            ("ab\ncd", 0..3, false, "  ab\ncd", 0..5),
             ("ab\n\ncd", 0..6, false, "  ab\n\n  cd", 0..10),
             (
                 "\u{43f}\u{440}\n\u{432}\u{456}",
@@ -1126,7 +1129,7 @@ mod tests {
     }
 
     #[test]
-    fn tab_within_a_single_line_inserts_the_unit_in_place_of_the_selection() {
+    fn tab_with_an_empty_selection_inserts_the_unit_at_the_caret() {
         for (text, select, expected, cursor) in
             [("ab", 1..1, "a  b", 3), ("ab\ncd", 4..4, "ab\nc  d", 6)]
         {

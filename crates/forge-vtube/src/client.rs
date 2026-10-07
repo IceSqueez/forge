@@ -295,7 +295,7 @@ pub(crate) mod tests {
 
     use super::*;
     use forge_events::{Event, EventPublisher};
-    use forge_platform_core::BuiltinControl;
+    use forge_platform_core::{BannerLevel, BuiltinContent, BuiltinControl, DetailSection};
 
     pub(crate) struct MockPublisher {
         pub events: Arc<std::sync::Mutex<Vec<Event>>>,
@@ -1225,13 +1225,135 @@ pub(crate) mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn a_closed_socket_stops_the_supervisor_when_auto_reconnect_is_off() {
+    const SETTLE: Duration = Duration::from_secs(5);
+
+    const PARKED_WINDOW: Duration = Duration::from_millis(500);
+
+    struct FrozenClock {
+        _release: std::sync::mpsc::Sender<()>,
+    }
+
+    fn freeze_clock() -> FrozenClock {
+        tokio::time::pause();
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        tokio::task::spawn_blocking(move || {
+            let _ = held.recv();
+        });
+        FrozenClock { _release: release }
+    }
+
+    async fn settle_on_a_frozen_clock(budget: Duration, cond: impl Fn() -> bool) -> bool {
+        let started = std::time::Instant::now();
+        while started.elapsed() < budget {
+            if cond() {
+                return true;
+            }
+            let _ = tokio::task::spawn_blocking(|| std::thread::sleep(POLL_STEP)).await;
+        }
+        cond()
+    }
+
+    fn failure_banner(client: &VTubeClient) -> Option<(BannerLevel, String)> {
+        client
+            .sections()
+            .into_iter()
+            .find_map(|section| match section {
+                DetailSection::WarningBanner { level, body, .. } => Some((level, body)),
+                _ => None,
+            })
+    }
+
+    fn is_disconnected(client: &VTubeClient) -> bool {
+        client.connection_state() == ConnectionState::Disconnected
+    }
+
+    async fn parked_after_a_socket_close(
+        vts: &mut FakeVts,
+        publisher: &Arc<MockPublisher>,
+    ) -> VTubeClient {
+        let client = vts.connect(publisher, &stored_token_creds());
+        let conn = vts.logged_in_conn().await;
+        assert!(
+            wait_until(SETTLE, || client.connection_state().is_connected()).await,
+            "precondition: the session never reached connected"
+        );
+        client.set_auto_reconnect(false);
+        conn.tx.close();
+        assert!(
+            wait_until(SETTLE, || is_disconnected(&client)).await,
+            "precondition: the closed session never settled disconnected"
+        );
+        client
+    }
+
+    async fn parked_after_a_refused_connect(addr: std::net::SocketAddr) -> VTubeClient {
+        let client = VTubeClient::connect(
+            VTubeConfig {
+                endpoint: format!("ws://{addr}"),
+            },
+            MockPublisher::new().publisher(),
+            MockCreds::new().creds(),
+        );
+        client.set_auto_reconnect(false);
+        assert!(
+            wait_until(SETTLE, || is_disconnected(&client)).await,
+            "precondition: the refused connect never settled disconnected"
+        );
+        client
+    }
+
+    async fn refusing_vts() -> (std::net::SocketAddr, mpsc::UnboundedReceiver<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let (gate_tx, gate_rx) = tokio::sync::oneshot::channel();
-        let server = tokio::spawn(serve_auth_then_gated_close(listener, gate_rx));
+        let (accept_tx, accept_rx) = mpsc::unbounded_channel();
+        tokio::spawn(serve_refused_handshakes(listener, accept_tx));
+        (addr, accept_rx)
+    }
+
+    #[tokio::test]
+    async fn a_closed_socket_with_auto_reconnect_off_parks_until_auto_reconnect_is_turned_back_on()
+    {
+        let mut vts = FakeVts::bind().await;
         let publisher = MockPublisher::new();
+        let client = parked_after_a_socket_close(&mut vts, &publisher).await;
+        assert!(
+            vts.next_redial(PARKED_WINDOW).await.is_none(),
+            "precondition: a parked supervisor redialled on its own"
+        );
+
+        client.set_auto_reconnect(true);
+
+        assert!(
+            vts.next_conn(SETTLE).await.is_some(),
+            "turning auto-reconnect back on never redialled VTube Studio"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_parked_supervisor_ends_when_the_client_disconnects() {
+        let mut vts = FakeVts::bind().await;
+        let publisher = MockPublisher::new();
+        let client = parked_after_a_socket_close(&mut vts, &publisher).await;
+        let handle = client.supervisor.lock().unwrap().take().unwrap();
+        assert!(
+            !wait_until(PARKED_WINDOW, || handle.is_finished()).await,
+            "precondition: the supervisor exited instead of parking"
+        );
+
+        client.disconnect().await.unwrap();
+
+        assert!(
+            tokio::time::timeout(SETTLE, handle).await.is_ok(),
+            "a parked supervisor kept running after disconnect"
+        );
+    }
+
+    #[tokio::test]
+    async fn turning_auto_reconnect_off_while_retrying_settles_disconnected_without_waiting_out_the_pause()
+     {
+        let (addr, _accepted) = refusing_vts().await;
+        let publisher = MockPublisher::new();
+        let _clock = freeze_clock();
         let client = VTubeClient::connect(
             VTubeConfig {
                 endpoint: format!("ws://{addr}"),
@@ -1239,18 +1361,90 @@ pub(crate) mod tests {
             publisher.publisher(),
             MockCreds::new().creds(),
         );
-        assert!(wait_for_connected(&publisher).await, "expected connected");
+        assert!(
+            settle_on_a_frozen_clock(SETTLE, || publisher
+                .disconnected_with_reason("connect_failed"))
+            .await,
+            "precondition: the first attempt never failed"
+        );
 
         client.set_auto_reconnect(false);
-        let _ = gate_tx.send(());
 
-        let handle = client.supervisor.lock().unwrap().take().unwrap();
-        let stopped = tokio::time::timeout(Duration::from_secs(5), handle).await;
-        server.abort();
         assert!(
-            stopped.is_ok(),
-            "the supervisor kept looping after the socket closed with auto-reconnect off"
+            settle_on_a_frozen_clock(SETTLE, || is_disconnected(&client)).await,
+            "turning auto-reconnect off waited for the backoff pause to end"
         );
+    }
+
+    #[tokio::test]
+    async fn a_refused_connect_with_auto_reconnect_off_shows_why_in_an_error_banner() {
+        let (addr, _accepted) = refusing_vts().await;
+        let client = parked_after_a_refused_connect(addr).await;
+
+        let banner = failure_banner(&client);
+
+        let Some((level, body)) = banner else {
+            panic!("a parked client rendered no failure banner");
+        };
+        assert_eq!(level, BannerLevel::Error);
+        assert!(!body.is_empty(), "the banner gave no reason");
+    }
+
+    #[tokio::test]
+    async fn disconnecting_clears_the_could_not_connect_banner() {
+        let (addr, _accepted) = refusing_vts().await;
+        let client = parked_after_a_refused_connect(addr).await;
+        assert!(
+            failure_banner(&client).is_some(),
+            "precondition: banner shown"
+        );
+
+        client.disconnect().await.unwrap();
+
+        assert!(failure_banner(&client).is_none());
+    }
+
+    #[tokio::test]
+    async fn a_rejected_token_banner_never_echoes_the_stored_token() {
+        let mut vts = FakeVts::bind().await;
+        let publisher = MockPublisher::new();
+        let client = vts.connect(&publisher, &stored_token_creds());
+        let mut conn = vts.next_conn(SETTLE).await.unwrap();
+        let login = conn.expect("AuthenticationRequest", SETTLE).await;
+        conn.tx.reply(
+            &login,
+            serde_json::json!({ "authenticated": false, "reason": "Plugin removed" }),
+        );
+        assert!(
+            wait_until(SETTLE, || is_disconnected(&client)).await,
+            "precondition: the rejected token never settled disconnected"
+        );
+
+        let banner = failure_banner(&client);
+
+        let Some((_, body)) = banner else {
+            panic!("a rejected token rendered no failure banner");
+        };
+        assert!(
+            !body.contains("stored-token"),
+            "the banner leaked the token: {body}"
+        );
+    }
+
+    #[test]
+    fn the_failure_banner_shows_only_while_the_client_is_disconnected() {
+        let client = VTubeClient::new_for_test("ws://127.0.0.1:8001");
+        crate::supervisor::record_failure(&client.last_failure, Some("refused".to_owned()));
+        for (state, shown) in [
+            (ConnectionState::Disconnected, true),
+            (ConnectionState::Connecting, false),
+            (ConnectionState::Connected, false),
+            (ConnectionState::Reconnecting, false),
+        ] {
+            client.state.store(state);
+
+            assert_eq!(failure_banner(&client).is_some(), shown, "state {state:?}");
+        }
     }
 
     #[tokio::test]

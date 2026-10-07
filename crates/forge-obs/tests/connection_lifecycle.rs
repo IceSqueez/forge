@@ -1,12 +1,16 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventPublisher};
 use forge_obs::{ObsClient, ObsError, ObsSink, ObsSource};
-use forge_platform_core::{BuiltinControl, CONNECTION_STATE_CHANGED_KIND, ConnectionState};
+use forge_platform_core::{
+    BannerLevel, BuiltinContent, BuiltinControl, CONNECTION_STATE_CHANGED_KIND, ConnectionState,
+    DetailSection,
+};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::net::{TcpListener, TcpStream};
@@ -954,4 +958,224 @@ async fn an_event_burst_that_overflows_the_buffer_resyncs_the_catalog_on_the_sam
         "the overflow was announced as a lost connection"
     );
     assert_eq!(fake.log.accepted(), 1, "the overflow redialled OBS");
+}
+
+const PROBE_PASSWORD: &str = "obs-auto-reconnect-secret-4k2j";
+
+const QUIET_STEP: Duration = Duration::from_secs(10);
+
+const QUIET_STEPS: usize = 12;
+
+struct RefusingObs {
+    port: u16,
+    attempts: Arc<AtomicUsize>,
+    server: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for RefusingObs {
+    fn drop(&mut self) {
+        self.server.abort();
+    }
+}
+
+impl RefusingObs {
+    async fn spawn() -> Self {
+        let (listener, port) = bind_loopback().await;
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&attempts);
+        let server = tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                counter.fetch_add(1, Ordering::SeqCst);
+                drop(stream);
+            }
+        });
+        Self {
+            port,
+            attempts,
+            server,
+        }
+    }
+
+    fn attempts(&self) -> usize {
+        self.attempts.load(Ordering::SeqCst)
+    }
+
+    async fn connect(&self, password: Option<&str>) -> Arc<ObsClient> {
+        let client = ObsClient::connect(
+            &format!("127.0.0.1:{}", self.port),
+            password,
+            Arc::new(Recorder::default()),
+        )
+        .await
+        .unwrap();
+        Arc::new(client)
+    }
+}
+
+async fn let_every_backoff_window_pass() {
+    for _ in 0..QUIET_STEPS {
+        tokio::time::advance(QUIET_STEP).await;
+        let _ = tokio::task::spawn_blocking(|| std::thread::sleep(REAL_CLOCK_POLL)).await;
+    }
+}
+
+async fn disconnected(client: &ObsClient) {
+    settle_until("the client settled disconnected", || {
+        client.connection_state() == ConnectionState::Disconnected
+    })
+    .await;
+}
+
+async fn parked_after_one_refusal(fake: &RefusingObs, password: Option<&str>) -> Arc<ObsClient> {
+    let client = fake.connect(password).await;
+    client.set_auto_reconnect(false);
+    disconnected(&client).await;
+    assert_eq!(
+        fake.attempts(),
+        1,
+        "precondition: one attempt before parking"
+    );
+    client
+}
+
+fn failure_banner(client: &ObsClient) -> Option<(BannerLevel, String)> {
+    client
+        .sections()
+        .into_iter()
+        .find_map(|section| match section {
+            DetailSection::WarningBanner { level, body, .. } => Some((level, body)),
+            _ => None,
+        })
+}
+
+#[tokio::test]
+async fn a_refused_first_connect_with_auto_reconnect_off_is_attempted_exactly_once() {
+    let _clock = freeze_clock();
+    let fake = RefusingObs::spawn().await;
+    let _client = parked_after_one_refusal(&fake, None).await;
+
+    let_every_backoff_window_pass().await;
+
+    assert_eq!(fake.attempts(), 1);
+}
+
+#[tokio::test]
+async fn turning_auto_reconnect_off_while_retrying_settles_disconnected_without_waiting_out_the_pause()
+ {
+    let _clock = freeze_clock();
+    let fake = RefusingObs::spawn().await;
+    let client = fake.connect(None).await;
+    advance_until("the supervisor retried once", || fake.attempts() == 2).await;
+
+    client.set_auto_reconnect(false);
+
+    disconnected(&client).await;
+}
+
+#[tokio::test]
+async fn turning_auto_reconnect_back_on_resumes_a_parked_supervisor_without_a_pause() {
+    let _clock = freeze_clock();
+    let fake = RefusingObs::spawn().await;
+    let client = parked_after_one_refusal(&fake, None).await;
+
+    client.set_auto_reconnect(true);
+
+    settle_until("the resumed supervisor dialled again", || {
+        fake.attempts() == 2
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_manual_reconnect_with_auto_reconnect_off_makes_exactly_one_attempt() {
+    let _clock = freeze_clock();
+    let fake = RefusingObs::spawn().await;
+    let client = parked_after_one_refusal(&fake, None).await;
+
+    client.reconnect().await.unwrap();
+    settle_until("the manual attempt failed and parked", || {
+        fake.attempts() == 2 && client.connection_state() == ConnectionState::Disconnected
+    })
+    .await;
+    let_every_backoff_window_pass().await;
+
+    assert_eq!(fake.attempts(), 2);
+}
+
+#[tokio::test]
+async fn disconnecting_ends_a_parked_supervisor_so_turning_auto_reconnect_on_dials_nothing() {
+    let _clock = freeze_clock();
+    let fake = RefusingObs::spawn().await;
+    let client = parked_after_one_refusal(&fake, None).await;
+
+    tokio::time::timeout(PROMPT_DISCONNECT, client.disconnect())
+        .await
+        .expect("disconnect waited on the parked supervisor")
+        .unwrap();
+    client.set_auto_reconnect(true);
+    let_every_backoff_window_pass().await;
+
+    assert_eq!(fake.attempts(), 1);
+}
+
+#[tokio::test]
+async fn a_parked_client_shows_why_it_could_not_connect_without_the_password() {
+    let _clock = freeze_clock();
+    let fake = RefusingObs::spawn().await;
+    let client = parked_after_one_refusal(&fake, Some(PROBE_PASSWORD)).await;
+
+    let banner = failure_banner(&client);
+
+    let Some((level, body)) = banner else {
+        panic!("a parked client rendered no failure banner");
+    };
+    assert_eq!(level, BannerLevel::Error);
+    assert!(!body.is_empty(), "the banner gave no reason");
+    assert!(
+        !body.contains(PROBE_PASSWORD),
+        "the banner leaked the password: {body}"
+    );
+}
+
+#[tokio::test]
+async fn disconnecting_clears_the_could_not_connect_banner() {
+    let _clock = freeze_clock();
+    let fake = RefusingObs::spawn().await;
+    let client = parked_after_one_refusal(&fake, None).await;
+    assert!(
+        failure_banner(&client).is_some(),
+        "precondition: banner shown"
+    );
+
+    client.disconnect().await.unwrap();
+
+    assert!(failure_banner(&client).is_none());
+}
+
+#[tokio::test]
+async fn a_live_session_lost_with_auto_reconnect_off_shows_why_and_is_not_redialled() {
+    let _clock = freeze_clock();
+    let fake = spawn_fake_obs(
+        completes_every_handshake,
+        Arc::new(|seen: Seen<'_>| match seen.request_type {
+            "SetCurrentProgramScene" => Reply::DropSocket,
+            other => standard_reply(other),
+        }),
+    )
+    .await;
+    let recorder = Recorder::default();
+    let client = connect_to(&fake, &recorder).await;
+    connected(&client).await;
+    client.set_auto_reconnect(false);
+
+    let lost = client.set_scene(SCENE).await;
+    assert!(matches!(lost, Err(ObsError::Disconnected)), "got {lost:?}");
+    disconnected(&client).await;
+    let_every_backoff_window_pass().await;
+
+    assert_eq!(fake.log.accepted(), 1, "the lost session was redialled");
+    assert!(
+        failure_banner(&client).is_some(),
+        "the lost session left no failure banner"
+    );
 }

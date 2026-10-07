@@ -1,6 +1,9 @@
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod filters {
-    use forge_speak_queue::{PipelineConfigHandle, build_config_lenient, build_config_strict};
+    use forge_speak_queue::{
+        PipelineConfigHandle, ReplacementSource, build_config_lenient,
+        build_config_lenient_with_sources, build_config_strict,
+    };
     use forge_storage::{
         BlocklistMode as StorageBlocklistMode, FilterRule, FilterRuleKind, TtsPipelineSettings,
         UrlMode as StorageUrlMode,
@@ -411,5 +414,43 @@ mod filters {
             PipelineResult::Speak("hello".into()),
             "clone must observe swap made through original handle (shared Arc)"
         );
+    }
+    #[test]
+    fn lenient_sources_name_the_row_behind_each_live_replacement_rule() {
+        let rules = [
+            literal_rule("off", "a", "b", false),
+            blocklist_rule("words", &["gtfo"], StorageBlocklistMode::Censor),
+            regex_rule("broken", "(unclosed", "x"),
+            literal_rule("empty", "", "x", true),
+            regex_rule("digits", r"\d+", "#"),
+            literal_rule("thanks", "thanks", "дякую", true),
+        ];
+        for (url_mode, expected) in [
+            (
+                StorageUrlMode::Replace,
+                vec![
+                    ReplacementSource::UrlMode,
+                    ReplacementSource::FilterRule(4),
+                    ReplacementSource::FilterRule(5),
+                ],
+            ),
+            (
+                StorageUrlMode::Speak,
+                vec![
+                    ReplacementSource::FilterRule(4),
+                    ReplacementSource::FilterRule(5),
+                ],
+            ),
+        ] {
+            let mut settings = default_settings();
+            settings.url_mode = url_mode;
+            let (config, sources) = build_config_lenient_with_sources(&rules, &settings);
+            assert_eq!(sources, expected, "{url_mode:?}");
+            assert_eq!(
+                config.replacement_rules.len(),
+                sources.len(),
+                "{url_mode:?}: one source per replacement rule"
+            );
+        }
     }
 }

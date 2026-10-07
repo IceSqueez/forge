@@ -2507,6 +2507,204 @@ mod tests {
         ))
     }
 
+    fn filters_view(cx: &mut TestAppContext) -> Entity<TtsFiltersView> {
+        install_presentation(cx);
+        let rt = runtime();
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                TtsFiltersView::new(
+                    Arc::new(RecordingFilters::default()),
+                    None,
+                    Shared::new(Vec::new()),
+                    None,
+                    rt.handle().clone(),
+                    cx,
+                )
+            })
+        });
+        pump(&rt);
+        cx.run_until_parked();
+        view
+    }
+
+    fn filter_row(enabled: bool, kind: FilterRuleKind) -> FilterRule {
+        FilterRule {
+            id: String::new(),
+            name: String::new(),
+            enabled,
+            position: 0,
+            kind,
+        }
+    }
+
+    fn literal(pattern: &str, replacement: &str) -> FilterRuleKind {
+        FilterRuleKind::Literal {
+            pattern: pattern.into(),
+            replacement: replacement.into(),
+        }
+    }
+
+    fn blocked(words: &[&str]) -> FilterRuleKind {
+        FilterRuleKind::Blocklist {
+            words: words.iter().map(|w| (*w).to_owned()).collect(),
+            mode: BlocklistMode::Censor,
+        }
+    }
+
+    fn applied(range: Range<usize>, origin: ReplacementOrigin) -> AppliedReplacement {
+        AppliedReplacement {
+            output_range: range,
+            original: String::new(),
+            replacement: String::new(),
+            origin,
+        }
+    }
+
+    #[gpui::test]
+    fn preview_marks_keep_only_ranges_that_fit_the_text_in_order(cx: &mut TestAppContext) {
+        let view = filters_view(cx);
+        view.update(cx, |v, _| {
+            v.rules = vec![filter_row(true, literal("a", "b"))]
+        });
+        let rule = ReplacementOrigin::ReplacementRuleIndex(0);
+        let text = "ok дякую link";
+        for (case, marks, kept) in [
+            ("in range", vec![applied(14..18, rule)], vec![(14, 18)]),
+            ("past the end", vec![applied(14..19, rule)], vec![]),
+            ("empty", vec![applied(4..4, rule)], vec![]),
+            ("splits a char", vec![applied(4..13, rule)], vec![]),
+            (
+                "overlaps the previous mark",
+                vec![applied(3..13, rule), applied(12..18, rule)],
+                vec![(3, 13)],
+            ),
+            (
+                "touches the previous mark",
+                vec![applied(3..13, rule), applied(13..18, rule)],
+                vec![(3, 13), (13, 18)],
+            ),
+            (
+                "unknown source does not shadow the next mark",
+                vec![
+                    applied(3..13, ReplacementOrigin::ReplacementRuleIndex(7)),
+                    applied(3..13, rule),
+                ],
+                vec![(3, 13)],
+            ),
+        ] {
+            let ranges: Vec<(usize, usize)> = view.read_with(cx, |v, _| {
+                v.preview_marks(text, &marks, &[ReplacementSource::FilterRule(0)])
+                    .into_iter()
+                    .map(|mark| (mark.range.start, mark.range.end))
+                    .collect()
+            });
+            assert_eq!(ranges, kept, "{case}");
+        }
+    }
+
+    #[gpui::test]
+    fn mark_tint_colours_by_source_and_by_replacement_row_ordinal(cx: &mut TestAppContext) {
+        let view = filters_view(cx);
+        view.update(cx, |v, _| {
+            v.rules = vec![
+                filter_row(false, literal("off", "x")),
+                filter_row(true, blocked(&["gtfo"])),
+                filter_row(
+                    true,
+                    FilterRuleKind::Regex {
+                        pattern: r"\d+".into(),
+                        replacement: "#".into(),
+                    },
+                ),
+                filter_row(true, literal("thanks", "дякую")),
+            ];
+        });
+        let sources = [
+            ReplacementSource::UrlMode,
+            ReplacementSource::FilterRule(2),
+            ReplacementSource::FilterRule(3),
+        ];
+        for (origin, expected) in [
+            (
+                ReplacementOrigin::ReplacementRuleIndex(0),
+                Some(MarkTint::UrlMode),
+            ),
+            (
+                ReplacementOrigin::BlockedWordIndex(0),
+                Some(MarkTint::Blocklist),
+            ),
+            (
+                ReplacementOrigin::ReplacementRuleIndex(1),
+                Some(MarkTint::ReplacementRow(1)),
+            ),
+            (
+                ReplacementOrigin::ReplacementRuleIndex(2),
+                Some(MarkTint::ReplacementRow(2)),
+            ),
+            (ReplacementOrigin::ReplacementRuleIndex(3), None),
+        ] {
+            assert_eq!(
+                view.read_with(cx, |v, _| v.mark_tint(origin, &sources)),
+                expected,
+                "{origin:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn spoken_marks_land_on_the_replacements_inside_the_quoted_output(cx: &mut TestAppContext) {
+        let view = filters_view(cx);
+        view.update(cx, |v, cx| {
+            v.rules = vec![
+                filter_row(true, blocked(&["gtfo"])),
+                filter_row(true, literal("thanks", "дякую")),
+            ];
+            v.settings.url_mode = forge_storage::UrlMode::Replace;
+            v.preview_input.update(cx, |input, cx| {
+                input.set_content("GG GTFO!!! check https://x.y/z thanks", cx)
+            });
+            v.refresh_preview(cx);
+        });
+        let (quoted, marked) = view.read_with(cx, |v, _| {
+            let preview = v.cached_preview.as_ref().unwrap();
+            let PipelineResult::Speak(spoken) = &preview.result else {
+                return (String::new(), Vec::new());
+            };
+            let quoted = format!("{SPOKEN_QUOTE}{spoken}{SPOKEN_QUOTE}");
+            let marked: Vec<(String, MarkTint)> = v
+                .spoken_marks(preview, spoken)
+                .into_iter()
+                .map(|mark| (quoted[mark.range].to_owned(), mark.tint))
+                .collect();
+            (quoted, marked)
+        });
+        assert_eq!(
+            marked,
+            vec![
+                ("[beep]".to_owned(), MarkTint::Blocklist),
+                ("link".to_owned(), MarkTint::UrlMode),
+                ("дякую".to_owned(), MarkTint::ReplacementRow(0)),
+            ],
+            "{quoted}"
+        );
+    }
+
+    #[gpui::test]
+    fn spoken_marks_are_empty_for_text_other_than_the_final_stage_output(cx: &mut TestAppContext) {
+        let view = filters_view(cx);
+        view.update(cx, |v, cx| {
+            v.rules = vec![filter_row(true, literal("thanks", "дякую"))];
+            v.preview_input
+                .update(cx, |input, cx| input.set_content("thanks", cx));
+            v.refresh_preview(cx);
+        });
+        let marks = view.read_with(cx, |v, _| {
+            let preview = v.cached_preview.as_ref().unwrap();
+            v.spoken_marks(preview, "дякую!")
+        });
+        assert!(marks.is_empty(), "{marks:?}");
+    }
+
     #[gpui::test]
     fn emote_stripping_toggles_persist_and_reach_the_live_pipeline_config(cx: &mut TestAppContext) {
         type Live = fn(&PipelineConfig) -> bool;

@@ -20,7 +20,7 @@ async fn set_shield(
         Ok(id) => id,
         Err(e) => return SubActionOutcome::Failed(e.to_string()),
     };
-    let request = HelixRequest::new(HelixMethod::Post, "/helix/moderation/shield_mode")
+    let request = HelixRequest::new(HelixMethod::Put, "/helix/moderation/shield_mode")
         .query("broadcaster_id", self_id.clone())
         .query("moderator_id", self_id)
         .body(serde_json::json!({ "is_active": is_active }));

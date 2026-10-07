@@ -934,7 +934,7 @@ fn choice_from_strategy(strategy: &AssignmentStrategy) -> StrategyChoice {
 fn engine_visual(engine_id: &str, palette: &ForgePalette) -> (Icon, Rgba) {
     match engine_id {
         "piper" => (Icon::Cpu, palette.success),
-        "espeak" | "espeak-ng" | "sapi" | "avfoundation" => (Icon::Terminal, palette.success),
+        "espeak-ng" | "sapi" | "nsspeech" => (Icon::Terminal, palette.success),
         "elevenlabs" => (Icon::Microphone2, palette.brand),
         "polly" => (Icon::BrandAws, palette.bits),
         "azure" => (Icon::Cloud, palette.info),

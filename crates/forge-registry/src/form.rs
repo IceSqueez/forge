@@ -1,7 +1,39 @@
+use std::ops::RangeInclusive;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodeLanguage {
     Rhai,
     Json,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AmountUnit {
+    pub value: &'static str,
+    pub base_units: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnitAmountBounds {
+    pub min: i64,
+    pub max_base_units: u64,
+    pub units: &'static [AmountUnit],
+}
+
+impl UnitAmountBounds {
+    pub fn unit_or_first(&self, value: &str) -> Option<&'static AmountUnit> {
+        self.units
+            .iter()
+            .find(|unit| unit.value == value)
+            .or_else(|| self.units.first())
+    }
+
+    pub fn range_for(&self, unit: &str) -> RangeInclusive<i64> {
+        let base_units = self
+            .unit_or_first(unit)
+            .map_or(1, |unit| unit.base_units.max(1));
+        let max = i64::try_from(self.max_base_units / base_units).unwrap_or(i64::MAX);
+        self.min..=max.max(self.min)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -50,6 +82,12 @@ pub enum FormField {
         label: &'static str,
         options: &'static [&'static str],
     },
+    UnitAmount {
+        key: &'static str,
+        label: &'static str,
+        unit_key: &'static str,
+        bounds: UnitAmountBounds,
+    },
     DynamicSelect {
         key: &'static str,
         label: &'static str,
@@ -93,6 +131,7 @@ impl FormField {
             | Self::FilePicker { key, .. }
             | Self::DateTime { key, .. }
             | Self::Select { key, .. }
+            | Self::UnitAmount { key, .. }
             | Self::DynamicSelect { key, .. }
             | Self::DependentSelect { key, .. }
             | Self::Swatch { key, .. }

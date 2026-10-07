@@ -14,7 +14,8 @@ use forge_components::{
     toggle,
 };
 use forge_registry::{
-    CodeLanguage, FormField, FormRefinement, FormSchemaSource, SubActionCategory, refined_fields,
+    CodeLanguage, FormField, FormRefinement, FormSchemaSource, SubActionCategory, UnitAmountBounds,
+    refined_fields,
 };
 use forge_types::{SubActionConfig, Variant, normalize_var_name};
 use gpui::{FocusHandle, FontWeight, Rgba};
@@ -78,9 +79,75 @@ enum SubFormField {
         selected: String,
         dependency: Option<SelectDependency>,
     },
+    UnitAmount {
+        key: String,
+        label: String,
+        unit_key: String,
+        bounds: UnitAmountBounds,
+        unit: String,
+        gate: Option<String>,
+        input: Entity<TextInput>,
+        _sub: Subscription,
+    },
     Hint {
         label: String,
     },
+}
+
+struct SelectEntries {
+    options: Vec<(String, String)>,
+    selected: String,
+    accepts_typed_value: bool,
+}
+
+impl SubFormField {
+    fn select_entries(&self, key: &str) -> Option<SelectEntries> {
+        match self {
+            Self::Select {
+                key: k,
+                options,
+                selected,
+                options_key,
+                ..
+            } if k == key => Some(SelectEntries {
+                options: options.clone(),
+                selected: selected.clone(),
+                accepts_typed_value: options_key.is_some(),
+            }),
+            Self::UnitAmount {
+                unit_key,
+                bounds,
+                unit,
+                ..
+            } if unit_key == key => Some(SelectEntries {
+                options: unit_options(bounds),
+                selected: unit.clone(),
+                accepts_typed_value: false,
+            }),
+            _ => None,
+        }
+    }
+
+    fn flag_unit_amount_bound(&self, cx: &mut App) -> bool {
+        let Self::UnitAmount {
+            bounds,
+            unit,
+            input,
+            ..
+        } = self
+        else {
+            return false;
+        };
+        let range = bounds.range_for(unit);
+        let invalid = int_entry_invalid(
+            input.read(cx).content(),
+            *range.start(),
+            *range.end(),
+            false,
+        );
+        input.update(cx, |input, cx| input.set_invalid(invalid, cx));
+        invalid
+    }
 }
 
 struct SelectDependency {
@@ -224,7 +291,7 @@ impl EditSubActionForm {
             && !self
                 .fields
                 .iter()
-                .any(|field| matches!(field, SubFormField::Select { key: k, .. } if *k == key))
+                .any(|field| field.select_entries(&key).is_some())
         {
             self.select_picker = None;
         }
@@ -254,9 +321,7 @@ impl EditSubActionForm {
     fn current_values(&self, cx: &App) -> SubActionConfig {
         let mut values = self.launch_config.clone();
         for field in &self.fields {
-            if let Some((key, value)) = field_value(field, cx) {
-                values.insert(key, value);
-            }
+            values.extend(field_values(field, cx));
         }
         values
     }
@@ -320,27 +385,25 @@ impl EditSubActionForm {
             self.close_select_picker(cx);
             return;
         }
-        let Some(SubFormField::Select {
+        let Some(SelectEntries {
             options,
             selected,
-            options_key,
-            ..
+            accepts_typed_value,
         }) = self
             .fields
             .iter()
-            .find(|field| matches!(field, SubFormField::Select { key: k, .. } if *k == key))
+            .find_map(|field| field.select_entries(&key))
         else {
             return;
         };
-        let accepts_typed_value = options_key.is_some();
         let palette = cx.palette();
         let picker_labels = PickerLabels {
             placeholder: tr!("widget_picker_search_placeholder").into(),
             empty: tr!("actions_sub_select_empty").into(),
             loading: tr!("widget_picker_loading").into(),
         };
-        let items = select_picker_items(options);
-        let current = Some(SharedString::from(selected.clone()));
+        let items = select_picker_items(&options);
+        let current = Some(SharedString::from(selected));
         let picker = cx.new(|cx| {
             let picker = Picker::new(picker_labels, items, palette, cx).with_current(current);
             if accepts_typed_value {
@@ -380,12 +443,15 @@ impl EditSubActionForm {
         let picked = self.select_picker.as_ref().map(|p| p.key.clone());
         if let Some(key) = &picked {
             for field in &mut self.fields {
-                if let SubFormField::Select {
-                    key: k, selected, ..
-                } = field
-                    && k == key
-                {
-                    *selected = value.clone();
+                match field {
+                    SubFormField::Select {
+                        key: k, selected, ..
+                    } if k == key => *selected = value.clone(),
+                    SubFormField::UnitAmount { unit_key, unit, .. } if unit_key == key => {
+                        *unit = value.clone();
+                        field.flag_unit_amount_bound(cx);
+                    }
+                    _ => {}
                 }
             }
         }
@@ -479,6 +545,22 @@ impl EditSubActionForm {
         }
     }
 
+    fn on_unit_amount_input_event(
+        &mut self,
+        changed: Entity<TextInput>,
+        event: &InputEvent,
+        cx: &mut Context<Self>,
+    ) {
+        if !matches!(event, InputEvent::Changed(_)) {
+            return;
+        }
+        if let Some(field) = self.fields.iter().find(
+            |field| matches!(field, SubFormField::UnitAmount { input, .. } if *input == changed),
+        ) {
+            field.flag_unit_amount_bound(cx);
+        }
+    }
+
     fn cancel(&mut self, cx: &mut Context<Self>) {
         cx.emit(SubFormEvent::Cancel);
     }
@@ -498,6 +580,10 @@ impl EditSubActionForm {
         };
         let mut has_invalid = false;
         for field in &self.fields {
+            if let SubFormField::UnitAmount { gate, .. } = field {
+                has_invalid |= gate_on(gate.as_ref()) && field.flag_unit_amount_bound(cx);
+                continue;
+            }
             let SubFormField::Input {
                 key,
                 integer,
@@ -532,7 +618,7 @@ impl EditSubActionForm {
             .fields
             .iter()
             .filter(|field| gate_on(field_gate(field)))
-            .filter_map(|field| field_value(field, cx))
+            .flat_map(|field| field_values(field, cx))
             .collect();
 
         cx.emit(SubFormEvent::Commit(SubFormCommit {
@@ -550,6 +636,30 @@ impl EditSubActionForm {
         &self,
         key: &str,
         label: &str,
+        options: &[(String, String)],
+        selected: &str,
+        open_picker: Option<&SelectPickerForm>,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .child(
+                div()
+                    .font_family(mono_family())
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(label.to_owned()),
+            )
+            .child(self.render_select_trigger(key, options, selected, open_picker, palette, cx))
+            .into_any_element()
+    }
+
+    fn render_select_trigger(
+        &self,
+        key: &str,
         options: &[(String, String)],
         selected: &str,
         open_picker: Option<&SelectPickerForm>,
@@ -609,18 +719,17 @@ impl EditSubActionForm {
         });
 
         div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_muted)
-                    .child(label.to_owned()),
-            )
-            .child(div().relative().w_full().child(trigger).children(popover))
+            .relative()
+            .w_full()
+            .child(trigger)
+            .children(popover)
             .into_any_element()
+    }
+
+    fn open_picker_for(&self, key: &str) -> Option<&SelectPickerForm> {
+        self.select_picker
+            .as_ref()
+            .filter(|picker_form| picker_form.key == key)
     }
 
     fn render_modal(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
@@ -797,10 +906,7 @@ impl EditSubActionForm {
                     if !gate_on(gate) {
                         continue;
                     }
-                    let open_picker = self
-                        .select_picker
-                        .as_ref()
-                        .filter(|picker_form| picker_form.key == *key);
+                    let open_picker = self.open_picker_for(key);
                     grid_items.push((
                         true,
                         self.render_select_field(
@@ -813,6 +919,34 @@ impl EditSubActionForm {
                             cx,
                         ),
                     ));
+                }
+                SubFormField::UnitAmount {
+                    label,
+                    unit_key,
+                    bounds,
+                    unit,
+                    gate,
+                    input,
+                    ..
+                } => {
+                    if !gate_on(gate) {
+                        continue;
+                    }
+                    let unit_select = self.render_select_trigger(
+                        unit_key,
+                        &unit_options(bounds),
+                        unit,
+                        self.open_picker_for(unit_key),
+                        palette,
+                        cx,
+                    );
+                    let control = div()
+                        .flex()
+                        .gap(GRID_COL_GAP)
+                        .child(div().flex_1().child(input.clone()))
+                        .child(div().flex_1().child(unit_select))
+                        .into_any_element();
+                    grid_items.push((false, field_wrap(label, control, palette)));
                 }
                 SubFormField::Hint { label } => {
                     grid_items.push((
@@ -1081,9 +1215,41 @@ fn field_gate(field: &SubFormField) -> Option<&String> {
         | SubFormField::Area { gate, .. }
         | SubFormField::Code { gate, .. }
         | SubFormField::Bool { gate, .. }
-        | SubFormField::Select { gate, .. } => gate.as_ref(),
+        | SubFormField::Select { gate, .. }
+        | SubFormField::UnitAmount { gate, .. } => gate.as_ref(),
         SubFormField::Hint { .. } => None,
     }
+}
+
+fn unit_options(bounds: &UnitAmountBounds) -> Vec<(String, String)> {
+    bounds
+        .units
+        .iter()
+        .map(|unit| (unit.value.to_owned(), unit.value.to_owned()))
+        .collect()
+}
+
+fn field_values(field: &SubFormField, cx: &App) -> Vec<(String, Variant)> {
+    let SubFormField::UnitAmount {
+        key,
+        unit_key,
+        unit,
+        input,
+        ..
+    } = field
+    else {
+        return field_value(field, cx).into_iter().collect();
+    };
+    let amount = input
+        .read(cx)
+        .content()
+        .trim()
+        .parse::<i64>()
+        .ok()
+        .map(|amount| (key.clone(), Variant::Int(amount)));
+    std::iter::once((unit_key.clone(), Variant::String(unit.clone())))
+        .chain(amount)
+        .collect()
 }
 
 fn field_value(field: &SubFormField, cx: &App) -> Option<(String, Variant)> {
@@ -1117,7 +1283,7 @@ fn field_value(field: &SubFormField, cx: &App) -> Option<(String, Variant)> {
         SubFormField::Select { key, selected, .. } => {
             Some((key.clone(), Variant::String(selected.clone())))
         }
-        SubFormField::Hint { .. } => None,
+        SubFormField::UnitAmount { .. } | SubFormField::Hint { .. } => None,
     }
 }
 
@@ -1288,6 +1454,45 @@ fn build_input_field(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn build_unit_amount_field(
+    key: &str,
+    label: &str,
+    unit_key: &str,
+    bounds: UnitAmountBounds,
+    gate: Option<String>,
+    config: &SubActionConfig,
+    palette: ForgePalette,
+    cx: &mut Context<EditSubActionForm>,
+) -> SubFormField {
+    let unit = bounds
+        .unit_or_first(&config_seed(config, unit_key))
+        .map(|unit| unit.value.to_owned())
+        .unwrap_or_default();
+    let range = bounds.range_for(&unit);
+    let seed = config_seed(config, key);
+    let invalid_seed = int_entry_invalid(&seed, *range.start(), *range.end(), false);
+    let input = cx.new(|cx| {
+        let mut input = TextInput::new("0", cx).with_palette(palette);
+        if !seed.is_empty() {
+            input.set_content(seed, cx);
+        }
+        input.set_invalid(invalid_seed, cx);
+        input
+    });
+    let sub = cx.subscribe(&input, EditSubActionForm::on_unit_amount_input_event);
+    SubFormField::UnitAmount {
+        key: key.to_owned(),
+        label: label.to_owned(),
+        unit_key: unit_key.to_owned(),
+        bounds,
+        unit,
+        gate,
+        input,
+        _sub: sub,
+    }
+}
+
 fn build_area_field(
     key: &str,
     label: &str,
@@ -1433,6 +1638,14 @@ fn push_form_field(
             config,
             palette,
             cx,
+        )),
+        FormField::UnitAmount {
+            key,
+            label,
+            unit_key,
+            bounds,
+        } => out.push(build_unit_amount_field(
+            key, label, unit_key, *bounds, gate, config, palette, cx,
         )),
         FormField::FilePicker { key, label } => out.push(build_input_field(
             key, label, "", None, true, false, gate, config, palette, cx,

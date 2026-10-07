@@ -1,5 +1,7 @@
+use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::RangeInclusive;
+use std::rc::Rc;
 
 use forge_components::highlight::Language;
 use forge_components::{
@@ -7,7 +9,7 @@ use forge_components::{
     PickerItem, PickerLabels, Radius, Spacing, TextInput, accent_swatch, body_family, dropdown,
     icon, mono_family, radius, slider, spacing, toggle, tr,
 };
-use forge_registry::{CodeLanguage, FormField};
+use forge_registry::{CodeLanguage, FormField, UnitAmountBounds};
 
 use crate::collection_options::{
     ChoiceOptions, CollectionChoiceField, CollectionSource, collection_choice_fields,
@@ -89,6 +91,17 @@ pub(crate) enum ConfigField {
         selected: String,
         dependency: Option<ChoiceDependency>,
     },
+    UnitAmount {
+        key: String,
+        unit_key: String,
+        gate: Option<String>,
+        bounds: UnitAmountBounds,
+        units: Vec<(String, String)>,
+        unit: String,
+        max: Rc<Cell<i64>>,
+        input: Entity<TextInput>,
+        _sub: Subscription,
+    },
     Hint {
         key: String,
     },
@@ -108,6 +121,7 @@ impl ConfigField {
             | Self::Slide { key, .. }
             | Self::Swatch { key, .. }
             | Self::Choice { key, .. }
+            | Self::UnitAmount { key, .. }
             | Self::Hint { key } => key,
         }
     }
@@ -214,6 +228,12 @@ pub(crate) fn fold_config_field<V: 'static>(
                 cx,
             ));
         }
+        FormField::UnitAmount {
+            key,
+            unit_key,
+            bounds,
+            ..
+        } => out.push(build_unit_amount(key, unit_key, *bounds, gate, ctx, cx)),
         FormField::Slider {
             key,
             min,
@@ -337,7 +357,7 @@ pub(crate) fn fold_config_field<V: 'static>(
     }
 }
 
-pub(crate) fn set_picked_value(fields: &mut [ConfigField], key: &str, value: &str) {
+pub(crate) fn set_picked_value(fields: &mut [ConfigField], key: &str, value: &str, cx: &mut App) {
     for field in fields {
         match field {
             ConfigField::Swatch {
@@ -346,9 +366,44 @@ pub(crate) fn set_picked_value(fields: &mut [ConfigField], key: &str, value: &st
             | ConfigField::Choice {
                 key: k, selected, ..
             } if k == key => value.clone_into(selected),
+            ConfigField::UnitAmount {
+                unit_key,
+                bounds,
+                unit,
+                max,
+                input,
+                ..
+            } if unit_key == key => {
+                value.clone_into(unit);
+                let range = bounds.range_for(unit);
+                max.set(*range.end());
+                let content = input.read(cx).content().to_owned();
+                settle_integer_input(input, &content, &range, cx);
+            }
             _ => {}
         }
     }
+}
+
+pub(crate) fn choice_entries<'a>(
+    fields: &'a [ConfigField],
+    key: &str,
+) -> Option<(&'a [(String, String)], &'a str)> {
+    fields.iter().find_map(|field| match field {
+        ConfigField::Choice {
+            key: k,
+            options,
+            selected,
+            ..
+        } if k == key => Some((options.as_slice(), selected.as_str())),
+        ConfigField::UnitAmount {
+            unit_key,
+            units,
+            unit,
+            ..
+        } if unit_key == key => Some((units.as_slice(), unit.as_str())),
+        _ => None,
+    })
 }
 
 struct ChoicePopover {
@@ -508,15 +563,7 @@ fn open_choice_popover<V: 'static>(
     window: &mut Window,
     cx: &mut Context<V>,
 ) -> Option<ChoicePopover> {
-    let (options, selected) = fields.iter().find_map(|field| match field {
-        ConfigField::Choice {
-            key: k,
-            options,
-            selected,
-            ..
-        } if *k == key => Some((options, selected)),
-        _ => None,
-    })?;
+    let (options, selected) = choice_entries(fields, &key)?;
     let items: Vec<PickerItem> = options
         .iter()
         .map(|(value, label)| PickerItem {
@@ -531,7 +578,7 @@ fn open_choice_popover<V: 'static>(
         empty: tr!("config_form_choice_empty").into(),
         loading: tr!("widget_picker_loading").into(),
     };
-    let current = Some(SharedString::from(selected.clone()));
+    let current = Some(SharedString::from(selected.to_owned()));
     let palette = cx.palette();
     let picker = cx.new(|cx| {
         Picker::new(labels, items, palette, cx)
@@ -668,16 +715,85 @@ fn bound_integer_input(
             field.update(cx, |input, cx| input.set_invalid(invalid, cx));
         }
         InputEvent::Submitted(text) | InputEvent::Blurred(text) => {
-            let settled = clamped_integer_text(text, range);
-            field.update(cx, |input, cx| {
-                if let Some(settled) = settled {
-                    input.set_content(settled, cx);
-                }
-                let invalid = integer_text_invalid(input.content(), range);
-                input.set_invalid(invalid, cx);
-            });
+            settle_integer_input(field, text, range, cx);
         }
         InputEvent::Cancelled => {}
+    }
+}
+
+fn settle_integer_input(
+    field: &Entity<TextInput>,
+    text: &str,
+    range: &RangeInclusive<i64>,
+    cx: &mut App,
+) {
+    let settled = clamped_integer_text(text, range);
+    field.update(cx, |input, cx| {
+        if let Some(settled) = settled {
+            input.set_content(settled, cx);
+        }
+        let invalid = integer_text_invalid(input.content(), range);
+        input.set_invalid(invalid, cx);
+    });
+}
+
+fn build_unit_amount<V: 'static>(
+    key: &str,
+    unit_key: &str,
+    bounds: UnitAmountBounds,
+    gate: Option<String>,
+    ctx: &FoldContext<'_, V>,
+    cx: &mut Context<V>,
+) -> ConfigField {
+    let unit = bounds
+        .unit_or_first(&read_text(ctx.config, unit_key))
+        .map(|unit| unit.value.to_owned())
+        .unwrap_or_default();
+    let range = bounds.range_for(&unit);
+    let max = Rc::new(Cell::new(*range.end()));
+    let seed = read_text(ctx.config, key);
+    let seed_invalid = integer_text_invalid(&seed, &range);
+    let palette = *ctx.palette;
+    let input = cx.new(|cx| {
+        let mut input = TextInput::new(INTEGER_PLACEHOLDER, cx).with_palette(palette);
+        if !seed.is_empty() {
+            input.set_content(seed, cx);
+        }
+        input.set_invalid(seed_invalid, cx);
+        input
+    });
+    let on_committed = ctx.on_committed;
+    let min = bounds.min;
+    let live_max = Rc::clone(&max);
+    let sub = cx.subscribe(
+        &input,
+        move |view, field: Entity<TextInput>, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Cancelled) {
+                field.update(cx, |input, cx| input.restore_committed(cx));
+                return;
+            }
+            bound_integer_input(&field, event, &(min..=live_max.get()), cx);
+            on_committed(view, event, cx);
+        },
+    );
+    let units = bounds
+        .units
+        .iter()
+        .map(|unit| {
+            let label = crate::motion_labels::preset_label(unit_key, unit.value);
+            (unit.value.to_owned(), label)
+        })
+        .collect();
+    ConfigField::UnitAmount {
+        key: key.to_owned(),
+        unit_key: unit_key.to_owned(),
+        gate,
+        bounds,
+        units,
+        unit,
+        max,
+        input,
+        _sub: sub,
     }
 }
 
@@ -813,6 +929,24 @@ pub(crate) fn collect_field_values(fields: &[ConfigField], buffer: &mut FieldCon
                     buffer.remove(key);
                 }
             }
+            ConfigField::UnitAmount {
+                key,
+                unit_key,
+                gate,
+                bounds,
+                unit,
+                input,
+                ..
+            } => {
+                if !gate_on(gate) {
+                    continue;
+                }
+                buffer.insert(unit_key.clone(), Variant::String(unit.clone()));
+                if let Ok(number) = input.read(cx).content().trim().parse::<i64>() {
+                    let bounded = within(number, &bounds.range_for(unit));
+                    buffer.insert(key.clone(), Variant::Int(bounded));
+                }
+            }
             ConfigField::Hint { .. } => {}
         }
     }
@@ -863,6 +997,22 @@ pub(crate) fn render_config_control<V: 'static>(
             selected,
             ..
         } => render_choice(key, options, selected, palette, id_prefix, view, handlers),
+        ConfigField::UnitAmount {
+            unit_key,
+            units,
+            unit,
+            input,
+            ..
+        } => div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .child(div().flex_1().min_w(px(0.0)).child(input.clone()))
+            .child(div().flex_1().min_w(px(0.0)).child(render_choice(
+                unit_key, units, unit, palette, id_prefix, view, handlers,
+            )))
+            .into_any_element(),
         ConfigField::Hint { .. } => div()
             .italic()
             .font_family(body_family())

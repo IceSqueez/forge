@@ -28,9 +28,9 @@ use super::sound_choice::{PickOutcome, field_notes, notes_block, picked_clip, so
 use super::store_config;
 use crate::async_bridge;
 use crate::config_form::{
-    ChoiceDropdown, ChoiceSupport, ConfigField, ConfigFieldHandlers, FoldContext,
+    ChoiceDropdown, ChoiceSupport, ConfigField, ConfigFieldHandlers, FoldContext, choice_entries,
     collect_field_values, fold_config_field, render_config_control, resolve_dependent_choices,
-    sparse_overrides,
+    set_picked_value, sparse_overrides,
 };
 use crate::presentation::ActivePresentation;
 
@@ -407,13 +407,7 @@ impl OverlayPropertyPanel {
             self.close_choice(cx);
             return;
         }
-        let Some(ConfigField::Choice {
-            options, selected, ..
-        }) = self
-            .fields
-            .iter()
-            .find(|field| matches!(field, ConfigField::Choice { key: k, .. } if *k == key))
-        else {
+        let Some((options, selected)) = choice_entries(&self.fields, &key) else {
             return;
         };
 
@@ -431,7 +425,7 @@ impl OverlayPropertyPanel {
             empty: tr!("overlays_panel_choice_empty").into(),
             loading: tr!("widget_picker_loading").into(),
         };
-        let current = Some(SharedString::from(selected.clone()));
+        let current = Some(SharedString::from(selected.to_owned()));
         let palette = cx.palette();
         let picker = cx.new(|cx| Picker::new(labels, items, palette, cx).with_current(current));
         let sub = cx.subscribe(&picker, Self::on_picker_event);
@@ -500,15 +494,7 @@ impl OverlayPropertyPanel {
     }
 
     fn commit_choice(&mut self, key: String, value: String, cx: &mut Context<Self>) {
-        for field in &mut self.fields {
-            if let ConfigField::Choice {
-                key: k, selected, ..
-            } = field
-                && *k == key
-            {
-                selected.clone_from(&value);
-            }
-        }
+        set_picked_value(&mut self.fields, &key, &value, cx);
         let Self {
             fields, choices, ..
         } = self;
@@ -713,6 +699,7 @@ fn index_field(spec: &FormField, section: ConfigSection, out: &mut FieldIndex) {
         | FormField::FilePicker { key, label }
         | FormField::DateTime { key, label }
         | FormField::Select { key, label, .. }
+        | FormField::UnitAmount { key, label, .. }
         | FormField::DynamicSelect { key, label, .. }
         | FormField::DependentSelect { key, label, .. }
         | FormField::Swatch { key, label, .. }

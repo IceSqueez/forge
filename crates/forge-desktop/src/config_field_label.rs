@@ -33,6 +33,7 @@ fn descriptor_label(spec: &FormField) -> &'static str {
         | FormField::FilePicker { label, .. }
         | FormField::DateTime { label, .. }
         | FormField::Select { label, .. }
+        | FormField::UnitAmount { label, .. }
         | FormField::DynamicSelect { label, .. }
         | FormField::DependentSelect { label, .. }
         | FormField::Swatch { label, .. }

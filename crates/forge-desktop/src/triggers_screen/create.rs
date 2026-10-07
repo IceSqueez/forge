@@ -207,7 +207,7 @@ impl TriggersRegistryView {
 
     fn pick_create_config_field(&mut self, key: String, choice: String, cx: &mut Context<Self>) {
         if let Some(CreateStage::Fill(form)) = self.create.as_mut() {
-            set_picked_value(&mut form.fields, &key, &choice);
+            set_picked_value(&mut form.fields, &key, &choice, cx);
         }
         cx.notify();
     }
@@ -239,7 +239,7 @@ impl TriggersRegistryView {
         match event {
             PickerEvent::Selected(value) => {
                 if let Some(key) = form.choices.take_open_key() {
-                    set_picked_value(&mut form.fields, &key, value);
+                    set_picked_value(&mut form.fields, &key, value, cx);
                 }
             }
             PickerEvent::Cancelled => form.choices.close(),

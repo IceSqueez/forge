@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    AmountUnit, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
+    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner, UnitAmountBounds,
 };
 use forge_storage::MissedRunPolicy;
 use forge_types::{
@@ -42,6 +42,26 @@ const SECONDS_PER_MINUTE: u64 = 60;
 const SECONDS_PER_HOUR: u64 = 60 * SECONDS_PER_MINUTE;
 const SECONDS_PER_DAY: u64 = 24 * SECONDS_PER_HOUR;
 const DEFAULT_DELAY_MINUTES: i64 = 10;
+const MIN_DELAY_AMOUNT: i64 = 1;
+
+const DELAY_BOUNDS: UnitAmountBounds = UnitAmountBounds {
+    min: MIN_DELAY_AMOUNT,
+    max_base_units: MAX_SCHEDULE_DELAY.as_secs(),
+    units: &[
+        AmountUnit {
+            value: UNIT_MINUTES,
+            base_units: SECONDS_PER_MINUTE,
+        },
+        AmountUnit {
+            value: UNIT_HOURS,
+            base_units: SECONDS_PER_HOUR,
+        },
+        AmountUnit {
+            value: UNIT_DAYS,
+            base_units: SECONDS_PER_DAY,
+        },
+    ],
+};
 const DEFAULT_LATE_TOLERANCE_MINUTES: i64 = 10;
 
 pub struct CoreActionScheduleRunner {
@@ -90,11 +110,9 @@ fn due(config: &SubActionConfig, ctx: &RunContext<'_>) -> Result<ScheduleDue, St
         return Ok(ScheduleDue::At(instant));
     }
     let amount = u64::try_from(config.int(DELAY_AMOUNT_KEY).unwrap_or(0)).unwrap_or(0);
-    let unit_seconds = match config.str(DELAY_UNIT_KEY).unwrap_or(UNIT_MINUTES) {
-        UNIT_DAYS => SECONDS_PER_DAY,
-        UNIT_HOURS => SECONDS_PER_HOUR,
-        _ => SECONDS_PER_MINUTE,
-    };
+    let unit_seconds = DELAY_BOUNDS
+        .unit_or_first(config.str(DELAY_UNIT_KEY).unwrap_or(UNIT_MINUTES))
+        .map_or(SECONDS_PER_MINUTE, |unit| unit.base_units);
     Ok(ScheduleDue::After(Duration::from_secs(
         amount.saturating_mul(unit_seconds),
     )))
@@ -175,16 +193,11 @@ impl SubActionRunner for CoreActionScheduleRunner {
                 label: "Action",
                 options_key: "action.ids",
             },
-            FormField::Integer {
+            FormField::UnitAmount {
                 key: DELAY_AMOUNT_KEY,
                 label: "Run after",
-                min: 1,
-                max: whole_minutes(MAX_SCHEDULE_DELAY),
-            },
-            FormField::Select {
-                key: DELAY_UNIT_KEY,
-                label: "Unit",
-                options: &[UNIT_MINUTES, UNIT_HOURS, UNIT_DAYS],
+                unit_key: DELAY_UNIT_KEY,
+                bounds: DELAY_BOUNDS,
             },
             FormField::Optional {
                 key: USE_DUE_AT_KEY,

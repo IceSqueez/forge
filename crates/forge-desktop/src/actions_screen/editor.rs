@@ -1370,7 +1370,7 @@ impl ScreenActionsView {
 
     fn pick_trigger_config_field(&mut self, key: String, choice: String, cx: &mut Context<Self>) {
         if let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_mut() {
-            set_picked_value(&mut form.fields, &key, &choice);
+            set_picked_value(&mut form.fields, &key, &choice, cx);
         }
         cx.notify();
     }
@@ -1402,7 +1402,7 @@ impl ScreenActionsView {
         match event {
             PickerEvent::Selected(value) => {
                 if let Some(key) = form.choices.take_open_key() {
-                    set_picked_value(&mut form.fields, &key, value);
+                    set_picked_value(&mut form.fields, &key, value, cx);
                 }
             }
             PickerEvent::Cancelled => form.choices.close(),

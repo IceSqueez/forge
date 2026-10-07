@@ -191,7 +191,7 @@ impl TriggersRegistryView {
 
     fn pick_config_field(&mut self, key: String, choice: String, cx: &mut Context<Self>) {
         if let Some(detail) = self.detail.as_mut() {
-            set_picked_value(&mut detail.fields, &key, &choice);
+            set_picked_value(&mut detail.fields, &key, &choice, cx);
         }
         self.commit_config(cx);
     }

@@ -31,7 +31,7 @@ pub use first_chatter::{
     FIRST_CHATTERS_ONLY, FIRST_MESSAGE_VARIABLE, admits_chatter, chat_message_condition,
     first_chatters_only_field, is_first_chat_message,
 };
-pub use form::{CodeLanguage, FormField};
+pub use form::{AmountUnit, CodeLanguage, FormField, UnitAmountBounds};
 pub use io::{ProducedVariable, SubActionIo};
 pub use kind_platform_contract::KindPlatformContract;
 pub use merge::effective_config;

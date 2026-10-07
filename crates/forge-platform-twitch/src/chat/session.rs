@@ -7618,6 +7618,17 @@ mod tests {
 
     impl HeldHttpEndpoint {
         async fn bind() -> Self {
+            Self::bind_answering(
+                reqwest::StatusCode::ACCEPTED,
+                serde_json::json!({
+                    "data": [{ "id": "sub-1", "type": "generic", "condition": {} }]
+                })
+                .to_string(),
+            )
+            .await
+        }
+
+        async fn bind_answering(status: reqwest::StatusCode, body: String) -> Self {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let url = format!("http://{}", listener.local_addr().unwrap());
             let (gate, released) = watch::channel(false);
@@ -7626,6 +7637,8 @@ mod tests {
                 while let Ok((stream, _)) = listener.accept().await {
                     tokio::spawn(answer_once_released(
                         stream,
+                        status,
+                        body.clone(),
                         released.clone(),
                         request_tx.clone(),
                     ));
@@ -7657,19 +7670,16 @@ mod tests {
 
     async fn answer_once_released(
         mut stream: tokio::net::TcpStream,
+        status: reqwest::StatusCode,
+        body: String,
         mut released: watch::Receiver<bool>,
         requests: mpsc::UnboundedSender<()>,
     ) {
         use tokio::io::AsyncWriteExt;
-        let body = serde_json::json!({
-            "data": [{ "id": "sub-1", "type": "generic", "condition": {} }]
-        })
-        .to_string();
-        let accepted = reqwest::StatusCode::ACCEPTED;
         let response = format!(
             "HTTP/1.1 {} {}\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
-            accepted.as_u16(),
-            accepted.canonical_reason().unwrap_or_default(),
+            status.as_u16(),
+            status.canonical_reason().unwrap_or_default(),
             body.len()
         );
         let mut buffered = Vec::new();
@@ -7953,6 +7963,215 @@ mod tests {
         assert!(
             peer.wait_closed_by_forge().await,
             "a session whose handle is gone can never be stopped again, so it must stop now"
+        );
+    }
+
+    struct StoreSignallingRepo {
+        inner: Arc<crate::credentials_manager::tests::InMemRepo>,
+        stored: tokio::sync::Notify,
+    }
+
+    #[async_trait::async_trait]
+    impl forge_storage::CredentialsRepo for StoreSignallingRepo {
+        async fn store(
+            &self,
+            id: &forge_storage::CredentialId,
+            plaintext: &str,
+        ) -> Result<(), forge_storage::StorageError> {
+            let stored = self.inner.store(id, plaintext).await;
+            self.stored.notify_one();
+            stored
+        }
+
+        async fn load(
+            &self,
+            id: &forge_storage::CredentialId,
+        ) -> Result<Option<String>, forge_storage::StorageError> {
+            self.inner.load(id).await
+        }
+
+        async fn delete(
+            &self,
+            id: &forge_storage::CredentialId,
+        ) -> Result<bool, forge_storage::StorageError> {
+            self.inner.delete(id).await
+        }
+
+        async fn list_ids(
+            &self,
+        ) -> Result<Vec<forge_storage::CredentialId>, forge_storage::StorageError> {
+            self.inner.list_ids().await
+        }
+
+        async fn last_refresh(
+            &self,
+            id: &forge_storage::CredentialId,
+        ) -> Result<Option<time::OffsetDateTime>, forge_storage::StorageError> {
+            self.inner.last_refresh(id).await
+        }
+
+        async fn mark_refreshed(
+            &self,
+            id: &forge_storage::CredentialId,
+        ) -> Result<(), forge_storage::StorageError> {
+            self.inner.mark_refreshed(id).await
+        }
+    }
+
+    const ROTATED_ACCESS_TOKEN: &str = "access_rotated_during_shutdown";
+
+    struct AbortedMidRefresh {
+        bus: Arc<RecordingBus>,
+        state: watch::Receiver<ChatConnectionState>,
+        manager: Arc<TwitchCredentialsManager>,
+        repo: Arc<StoreSignallingRepo>,
+        token_endpoint: HeldHttpEndpoint,
+        _peer: Peer,
+    }
+
+    async fn shut_down_while_refreshing_the_token() -> AbortedMidRefresh {
+        let mut token_endpoint = HeldHttpEndpoint::bind_answering(
+            reqwest::StatusCode::OK,
+            serde_json::json!({
+                "access_token": ROTATED_ACCESS_TOKEN,
+                "refresh_token": "refresh_rotated_during_shutdown",
+                "expires_in": 14400,
+            })
+            .to_string(),
+        )
+        .await;
+        let mut base = FakeEventSub::bind().await;
+        let near_expiry = std::time::SystemTime::now() + Duration::from_secs(60);
+        let repo = Arc::new(StoreSignallingRepo {
+            inner: crate::credentials_manager::tests::InMemRepo::seeded(
+                &crate::credentials_manager::tests::stub_cred(near_expiry),
+            ),
+            stored: tokio::sync::Notify::new(),
+        });
+        let manager = Arc::new(TwitchCredentialsManager::with_endpoint(
+            repo.clone(),
+            "client".to_owned(),
+            token_endpoint.url.clone(),
+        ));
+        let bus = Arc::new(RecordingBus::default());
+        let publisher: Arc<dyn EventPublisher> = bus.clone();
+        let (session, state, shutdown) = ChatSession::new(
+            Arc::clone(&manager),
+            session_config(socket_and_api(&base.url, &token_endpoint.url)),
+            publisher,
+            SubscriptionTracker::default(),
+            TwitchLifecycle::new(),
+        );
+        let handle = crate::chat::TwitchChatHandle::spawn(session, state.clone(), shutdown);
+        let peer = base.accept().await;
+        peer.send(welcome_frame("sess-1"));
+        token_endpoint.wait_for_a_request().await;
+
+        tokio::time::pause();
+        let asked = tokio::time::Instant::now();
+        handle.shutdown().await;
+        let waited = asked.elapsed();
+        tokio::time::resume();
+        assert!(
+            waited >= crate::chat::SHUTDOWN_GRACE,
+            "the session must be stuck in its token fetch so shutdown has to abort it"
+        );
+
+        AbortedMidRefresh {
+            bus,
+            state,
+            manager,
+            repo,
+            token_endpoint,
+            _peer: peer,
+        }
+    }
+
+    impl RecordingBus {
+        fn disconnected_reports(&self) -> usize {
+            let disconnected = serde_json::json!(ConnectionState::Disconnected);
+            self.events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|event| {
+                    event.kind == CONNECTION_STATE_CHANGED_KIND
+                        && event.payload["state"] == disconnected
+                })
+                .count()
+        }
+    }
+
+    #[tokio::test]
+    async fn a_session_aborted_after_the_grace_period_ends_in_the_disconnected_state() {
+        let aborted = shut_down_while_refreshing_the_token().await;
+
+        assert_eq!(
+            *aborted.state.borrow(),
+            ChatConnectionState::Disconnected,
+            "a session cut off mid token fetch must not leave its last reported state behind"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_session_aborted_after_the_grace_period_reports_disconnected_exactly_once() {
+        let aborted = shut_down_while_refreshing_the_token().await;
+
+        assert_eq!(
+            aborted.bus.disconnected_reports(),
+            1,
+            "listeners on the bus must learn the session stopped, and only once"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_token_refresh_in_flight_when_the_session_is_aborted_still_stores_the_rotated_token()
+    {
+        let aborted = shut_down_while_refreshing_the_token().await;
+
+        aborted.token_endpoint.release();
+        let stored = within_real_time(FAKE_WAIT, aborted.repo.stored.notified()).await;
+
+        assert!(
+            stored.is_ok(),
+            "Twitch already rotated the refresh token, so the abort must not drop the save"
+        );
+        let saved = aborted.manager.load().await.unwrap().unwrap();
+        assert_eq!(saved.access_token.expose(), ROTATED_ACCESS_TOKEN);
+    }
+
+    #[tokio::test]
+    async fn a_graceful_shutdown_reports_disconnected_exactly_once() {
+        let api = eventsub_api().await;
+        let mut base = FakeEventSub::bind().await;
+        let bus = Arc::new(RecordingBus::default());
+        let (session, state, shutdown) = session_over(
+            bus.clone(),
+            Arc::new(MockCreds::with_identity()),
+            None,
+            SubscriptionTracker::default(),
+            socket_and_api(&base.url, &api.uri()),
+        );
+        let handle = crate::chat::TwitchChatHandle::spawn(session, state, shutdown);
+        let peer = base.accept().await;
+        peer.send(welcome_frame("sess-1"));
+        bus.wait_until("the Connected report", |bus| {
+            bus.connected_and_chat_timeline()
+                .iter()
+                .any(|entry| entry == "connected")
+        })
+        .await;
+
+        let stopped = tokio::time::timeout(STOPS_ON_ITS_OWN_WITHIN, handle.shutdown()).await;
+        assert!(
+            stopped.is_ok(),
+            "a healthy session must end on the shutdown request, not by abort"
+        );
+
+        assert_eq!(
+            bus.disconnected_reports(),
+            1,
+            "a session that stops on request must report Disconnected once, not once per path"
         );
     }
 

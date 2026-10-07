@@ -262,4 +262,17 @@ mod tests {
             Some(&Variant::String("UCabc".to_owned()))
         );
     }
+
+    #[test]
+    fn output_schema_declares_message_text_as_its_first_message_hinted_variable() {
+        let schema = ChatCommandDescriptor.output_schema().unwrap();
+
+        let first_message_hinted = schema
+            .variables
+            .iter()
+            .find(|v| v.synthesis == Some(SynthesisHint::Message))
+            .map(|v| v.name.as_str());
+
+        assert_eq!(first_message_hinted, Some("message_text"));
+    }
 }

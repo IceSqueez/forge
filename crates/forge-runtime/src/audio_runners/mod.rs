@@ -579,29 +579,57 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stop_sound_with_empty_clip_id_routes_to_stop_all() {
-        let player = RecordingSoundPlayer::ok();
-        let runner = StopSoundRunner::new(player.clone());
-        let stack = ArgStack::new();
-        let ctx = make_ctx(&stack);
+    async fn stop_sound_with_no_resolved_clip_routes_to_stop_all() {
+        let blank_var = ArgStack::new().set("clip".to_owned(), Variant::String(String::new()));
+        let cases = [
+            (
+                "default config",
+                StopSoundRunner::new(RecordingSoundPlayer::ok()).default_config(),
+                ArgStack::new(),
+            ),
+            ("missing key", SubActionConfig::new(), ArgStack::new()),
+            (
+                "template resolving to blank",
+                clip_config("%clip%"),
+                blank_var,
+            ),
+        ];
 
-        let (telemetry, _) = runner.execute(&runner.default_config(), &ctx).await;
+        for (case, cfg, stack) in cases {
+            let player = RecordingSoundPlayer::ok();
+            let runner = StopSoundRunner::new(player.clone());
+            let ctx = make_ctx(&stack);
 
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
-        assert_eq!(player.calls(), vec![SoundCall::StopAll]);
+            let (telemetry, _) = runner.execute(&cfg, &ctx).await;
+
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Success),
+                "{case}"
+            );
+            assert_eq!(player.calls(), vec![SoundCall::StopAll], "{case}");
+        }
     }
 
     #[tokio::test]
-    async fn stop_sound_with_invalid_clip_id_fails_without_touching_player() {
-        let player = RecordingSoundPlayer::ok();
-        let runner = StopSoundRunner::new(player.clone());
-        let stack = ArgStack::new();
-        let ctx = make_ctx(&stack);
+    async fn stop_sound_with_invalid_clip_id_fails_without_touching_player_or_echoing_input() {
+        for bad in [
+            "not-a-ulid-a-viewer-typed-this",
+            "with\"quote",
+            " 01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        ] {
+            let player = RecordingSoundPlayer::ok();
+            let runner = StopSoundRunner::new(player.clone());
+            let stack = ArgStack::new();
+            let ctx = make_ctx(&stack);
 
-        let (telemetry, _) = runner.execute(&clip_config("not-a-ulid"), &ctx).await;
+            let (telemetry, _) = runner.execute(&clip_config(bad), &ctx).await;
 
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
-        assert!(player.calls().is_empty());
+            let SubActionOutcome::Failed(message) = telemetry.outcome else {
+                panic!("expected Failed for {bad:?}, got {:?}", telemetry.outcome);
+            };
+            assert!(!message.contains(bad), "echoed {bad:?}: {message}");
+            assert!(player.calls().is_empty(), "{bad:?}");
+        }
     }
 
     #[tokio::test]
@@ -626,6 +654,10 @@ mod tests {
             (
                 Box::new(StopSoundRunner::new(player.clone())),
                 clip_config(&valid_clip),
+            ),
+            (
+                Box::new(StopSoundRunner::new(player.clone())),
+                clip_config(""),
             ),
             (
                 Box::new(StopAllSoundsRunner::new(player.clone())),

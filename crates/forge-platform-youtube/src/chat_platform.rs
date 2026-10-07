@@ -244,7 +244,7 @@ fn publish_transition(
 mod tests {
     use async_trait::async_trait;
     use forge_events::Event;
-    use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
+    use forge_platform_core::{CONNECTION_STATE_CHANGED_KIND, EndpointSurface};
     use forge_storage::{CredentialId, CredentialsRepo, StorageError};
     use time::OffsetDateTime;
 
@@ -277,17 +277,34 @@ mod tests {
         }
     }
 
+    fn unreachable_endpoints() -> PlatformEndpoints {
+        let closed_port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let base = format!("http://127.0.0.1:{closed_port}");
+        PlatformEndpoints::resolve(|variable| {
+            [
+                EndpointSurface::YouTubeDataApi,
+                EndpointSurface::YouTubeUploadApi,
+                EndpointSurface::YouTubeOAuth,
+            ]
+            .into_iter()
+            .any(|surface| surface.env_var() == variable)
+            .then(|| std::ffi::OsString::from(&base))
+        })
+        .unwrap()
+    }
+
     fn platform() -> YoutubePlatform {
+        let endpoints = unreachable_endpoints();
         let manager = Arc::new(YoutubeCredentialsManager::new(
             Arc::new(EmptyRepo),
-            GoogleAuthFlow::new(
-                &forge_platform_core::PlatformEndpoints::default(),
-                "test_cid".to_owned(),
-                "test_secret".to_owned(),
-            ),
+            GoogleAuthFlow::new(&endpoints, "test_cid".to_owned(), "test_secret".to_owned()),
         ));
         YoutubePlatform::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &endpoints,
             "UCtest".to_owned(),
             manager,
             LiveChatIdHandle::new(),

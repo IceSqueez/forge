@@ -216,17 +216,19 @@ impl TwitchLifecycle {
                 .and_then(|row| row.get("is_active"))
                 .and_then(|active| active.as_bool())
             {
-                Some(true) => ShieldPhase::Active,
-                Some(false) => ShieldPhase::Inactive,
-                None => ShieldPhase::Unknown,
+                Some(true) => Some(ShieldPhase::Active),
+                Some(false) => Some(ShieldPhase::Inactive),
+                None => None,
             },
-            Err(HelixError::ReauthRequired) => ShieldPhase::Unauthorized,
+            Err(HelixError::ReauthRequired) => Some(ShieldPhase::Unauthorized),
             Err(HelixError::Http { status, .. }) if status == FORBIDDEN => {
-                ShieldPhase::Unauthorized
+                Some(ShieldPhase::Unauthorized)
             }
-            Err(_) => ShieldPhase::Unknown,
+            Err(_) => None,
         };
-        self.set_shield(shield_phase);
+        if let Some(phase) = shield_phase {
+            self.set_shield(phase);
+        }
     }
 }
 

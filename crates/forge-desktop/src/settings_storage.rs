@@ -623,15 +623,18 @@ mod tests {
     use forge_events::{Event, EventSource};
     use forge_runtime::{EventBus, spawn_chat_history_persistence};
     use forge_storage::chat_history::MockChatHistoryRepo;
-    use forge_storage::{DataProvider, SettingsRepo, chat_history_per_viewer_limit};
+    use forge_storage::{
+        DataProvider, SettingsRepo, chat_history_per_viewer_limit, reserved_keys,
+        set_action_history_retention_days,
+    };
     use forge_types::{ChatPayload, ModerationMarks};
     use gpui::{AppContext, Entity, TestAppContext};
     use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
     use tokio::time::{Duration, timeout};
 
     use super::{
-        PerViewerChoice, SettingsStorageView, parse_limit, parse_per_viewer_limit,
-        parse_retention_days, per_viewer_choice,
+        PerViewerChoice, SettingsStorageView, parse_history_retention_days, parse_limit,
+        parse_per_viewer_limit, parse_retention_days, per_viewer_choice,
     };
     use crate::test_support::{
         SettingWrite, TestBackend, install_presentation, pump, quiet_bus, runtime, test_backend,
@@ -769,6 +772,12 @@ mod tests {
                 .unwrap()
         }
 
+        fn shown_history_retention(&self, cx: &mut TestAppContext) -> String {
+            self.view.read_with(cx, |view, cx| {
+                view.history_retention_input.read(cx).content().to_owned()
+            })
+        }
+
         fn shown_input(&self, cx: &mut TestAppContext) -> String {
             self.view.read_with(cx, |view, cx| {
                 view.per_viewer_input.read(cx).content().to_owned()
@@ -872,6 +881,91 @@ mod tests {
                 parse_retention_days(raw),
                 expected,
                 "parse_retention_days({raw:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_history_retention_days_accepts_exactly_the_range_storage_honours() {
+        for (raw, expected) in [
+            ("6", None),
+            ("7", Some(7)),
+            ("365", Some(365)),
+            ("366", None),
+            (" 30 ", Some(30)),
+            ("0", None),
+            ("", None),
+            ("abc", None),
+            ("-7", None),
+        ] {
+            assert_eq!(
+                parse_history_retention_days(raw),
+                expected,
+                "parse_history_retention_days({raw:?})"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn committing_the_history_retention_persists_a_valid_value_and_restores_an_invalid_one(
+        cx: &mut TestAppContext,
+    ) {
+        for (typed, shown, written) in [
+            (" 30 ", "30", Some("30")),
+            ("6", "7", None),
+            ("366", "7", None),
+            ("abc", "7", None),
+        ] {
+            let mut rig = rig(cx);
+            rig.view.update(cx, |view, cx| {
+                view.history_retention_input
+                    .update(cx, |input, cx| input.set_content(typed.to_owned(), cx));
+                view.commit_history_retention(cx);
+            });
+            pump(&rig.rt);
+
+            assert_eq!(
+                (rig.shown_history_retention(cx), rig.writes.try_recv().ok()),
+                (
+                    shown.to_owned(),
+                    written.map(|value| (
+                        reserved_keys::ACTION_HISTORY_RETENTION_DAYS.to_owned(),
+                        value.to_owned()
+                    ))
+                ),
+                "typed {typed:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn saving_the_event_log_retention_re_reads_the_history_retention_it_may_have_moved(
+        cx: &mut TestAppContext,
+    ) {
+        for (stored_history, event_log, shown) in
+            [(None, "30", "30"), (None, "3", "7"), (Some(10), "30", "10")]
+        {
+            let rig = rig(cx);
+            if let Some(days) = stored_history {
+                rig.rt
+                    .block_on(set_action_history_retention_days(
+                        rig.backend.as_ref(),
+                        days,
+                    ))
+                    .unwrap();
+            }
+            rig.view.update(cx, |view, cx| {
+                view.retention_input
+                    .update(cx, |input, cx| input.set_content(event_log.to_owned(), cx));
+                view.commit_retention(cx);
+            });
+            pump(&rig.rt);
+            cx.run_until_parked();
+
+            assert_eq!(
+                rig.shown_history_retention(cx),
+                shown,
+                "stored history {stored_history:?}, event log {event_log:?}"
             );
         }
     }

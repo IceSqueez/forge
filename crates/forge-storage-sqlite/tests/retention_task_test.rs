@@ -5,11 +5,11 @@ use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventSource};
 use forge_storage::{
-    DataProvider, MissedRunPolicy, ScheduledRunOutcome, ScheduledRunSpec,
-    set_event_log_retention_days,
+    DataProvider, ExecutionStatus, MissedRunPolicy, ScheduledRunOutcome, ScheduledRunSpec,
+    set_action_history_retention_days, set_event_log_retention_days,
 };
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{ActionId, EventId};
+use forge_types::{ActionId, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome};
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use time::OffsetDateTime;
@@ -74,10 +74,55 @@ impl Db {
     }
 
     async fn rows(&self) -> i64 {
-        sqlx::query_scalar("SELECT COUNT(*) FROM event_log")
+        self.count("event_log").await
+    }
+
+    async fn count(&self, table: &str) -> i64 {
+        sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT COUNT(*) FROM {table}")))
             .fetch_one(&self.side)
             .await
             .unwrap()
+    }
+
+    async fn count_reaches(
+        &self,
+        table: &str,
+        deadline: Duration,
+        done: impl Fn(i64) -> bool,
+    ) -> bool {
+        while self.opened.elapsed() < deadline {
+            if done(self.count(table).await) {
+                return true;
+            }
+            tokio::time::sleep(POLL).await;
+        }
+        done(self.count(table).await)
+    }
+
+    async fn record_run(&self, age: time::Duration) {
+        let started_at = OffsetDateTime::now_utc() - age;
+        let action_id = ActionId::new();
+        self.backend
+            .history_repo()
+            .save(&ExecutionContext {
+                action_id,
+                metadata: ExecutionMetadata::Trigger {
+                    event_id: EventId::new(),
+                    trigger_kind: None,
+                },
+                arg_stack_snapshot: Default::default(),
+                started_at,
+                completed_at: Some(started_at),
+                telemetry: vec![],
+                outcome: ExecutionOutcome::Success,
+            })
+            .await
+            .expect("save run");
+        self.backend
+            .action_repo()
+            .record_execution(action_id, started_at, 5, ExecutionStatus::Success)
+            .await
+            .expect("record execution");
     }
 
     async fn contains(&self, id: EventId) -> bool {
@@ -90,13 +135,7 @@ impl Db {
     }
 
     async fn rows_reach(&self, deadline: Duration, done: impl Fn(i64) -> bool) -> bool {
-        while self.opened.elapsed() < deadline {
-            if done(self.rows().await) {
-                return true;
-            }
-            tokio::time::sleep(POLL).await;
-        }
-        done(self.rows().await)
+        self.count_reaches("event_log", deadline, done).await
     }
 }
 
@@ -255,4 +294,72 @@ async fn a_sweep_prunes_resolved_scheduled_runs_older_than_the_window_and_keeps_
         present.push(repo.get(id).await.unwrap().is_some());
     }
     assert_eq!(present, vec![false, true, true]);
+}
+
+#[tokio::test]
+async fn each_table_is_pruned_by_its_own_window_when_the_two_retentions_differ() {
+    let db = open(SLOW_CADENCE).await;
+    set_event_log_retention_days(&db.backend, 3).await.unwrap();
+    set_action_history_retention_days(&db.backend, 30)
+        .await
+        .unwrap();
+    db.store(&[aged(time::Duration::days(2)), aged(time::Duration::days(4))])
+        .await;
+    resolved_run(&db, time::Duration::days(2)).await;
+    resolved_run(&db, time::Duration::days(4)).await;
+    db.record_run(time::Duration::days(20)).await;
+    db.record_run(time::Duration::days(40)).await;
+
+    db.count_reaches("scheduled_runs", SLOW_CADENCE * 2, |rows| rows == 1)
+        .await;
+    let mut survivors = Vec::new();
+    for table in [
+        "event_log",
+        "scheduled_runs",
+        "action_history",
+        "action_executions",
+    ] {
+        survivors.push((table, db.count(table).await));
+    }
+
+    assert_eq!(
+        survivors,
+        vec![
+            ("event_log", 1),
+            ("scheduled_runs", 1),
+            ("action_history", 1),
+            ("action_executions", 1),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn shrinking_the_action_history_window_re_sweeps_at_once_instead_of_at_the_next_scheduled_sweep()
+ {
+    let db = open(SLOW_CADENCE).await;
+    set_action_history_retention_days(&db.backend, 30)
+        .await
+        .unwrap();
+    db.record_run(time::Duration::days(40)).await;
+    db.record_run(time::Duration::days(20)).await;
+    assert!(
+        db.count_reaches("action_history", SLOW_CADENCE * 2, |rows| rows == 1)
+            .await,
+        "the first sweep never ran"
+    );
+
+    set_action_history_retention_days(&db.backend, 10)
+        .await
+        .unwrap();
+    let changed_at = db.opened.elapsed();
+    let re_swept = db
+        .count_reaches("action_history", changed_at + SLOW_CADENCE / 2, |rows| {
+            rows == 0
+        })
+        .await;
+
+    assert!(
+        re_swept,
+        "a 20-day-old run must go as soon as the action history window shrinks to 10 days"
+    );
 }

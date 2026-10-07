@@ -60,14 +60,14 @@ pub fn clamp_event_log_retention_days(days: u32) -> u32 {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;
 
     use super::*;
 
     #[derive(Default)]
-    struct MapRepo(Mutex<HashMap<String, String>>);
+    pub(crate) struct MapRepo(Mutex<HashMap<String, String>>);
 
     #[async_trait]
     impl SettingsRepo for MapRepo {

@@ -197,7 +197,7 @@ fn speech_is_always_stripped_from_the_content_and_spoken_only_when_it_has_words(
     let program = |voice: Option<&str>| {
         Some(SpeechProgram {
             text: "thanks Mira".to_owned(),
-            voice_alias: voice.map(str::to_owned),
+            voice: voice.map(str::to_owned),
         })
     };
     for (speech, voice, expected, label) in [

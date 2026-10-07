@@ -475,7 +475,7 @@ async fn the_show_frame_carries_the_same_token_as_its_speech() {
         (
             frame.content[SHOW].as_str(),
             spoken.overlay.as_str(),
-            spoken.voice_alias.as_deref(),
+            spoken.voice.as_deref(),
         ),
         (Some(spoken.show.as_str()), STAGE, Some("amy")),
         "the show and its speech cannot be joined on the page, or the speech targets the wrong \

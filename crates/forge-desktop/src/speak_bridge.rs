@@ -964,7 +964,7 @@ mod tests {
         let cancel = CancelSignal::new();
         let speech = ShowSpeech {
             text: "thanks for the five".to_owned(),
-            voice_alias: None,
+            voice: None,
             overlay: "stage-alert".to_owned(),
             show: "01J9ZC4W6R7Q2N3M4K5P6S7T8V".to_owned(),
             origin: from_viewer(viewer("youtube", "UC7x", "Aurora")),
@@ -997,7 +997,7 @@ mod tests {
         let cancel = CancelSignal::new();
         let speech = ShowSpeech {
             text: "thanks for the five".to_owned(),
-            voice_alias: None,
+            voice: None,
             overlay: "stage-alert".to_owned(),
             show: "01J9ZC4W6R7Q2N3M4K5P6S7T8V".to_owned(),
             origin: SpeechOrigin::default(),

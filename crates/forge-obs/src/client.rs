@@ -1,12 +1,11 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use time::OffsetDateTime;
-use tokio::sync::{Notify, broadcast};
+use tokio::sync::{Notify, broadcast, watch};
 use tokio::task::JoinHandle;
 
 use forge_events::{Event, EventPublisher};
@@ -64,7 +63,8 @@ pub struct ObsClient {
     reconnect_port: u16,
     reconnect_password: Arc<Option<String>>,
     reconnect_publisher: Arc<dyn EventPublisher>,
-    auto_reconnect: Arc<AtomicBool>,
+    auto_reconnect: Arc<watch::Sender<bool>>,
+    last_failure: Arc<RwLock<Option<String>>>,
     resync_nudge: Arc<Notify>,
     pub(crate) stream_output: StreamOutputFeed,
 }
@@ -90,7 +90,8 @@ impl ObsClient {
         let catalog_state = Arc::new(RwLock::new(ObsCatalog::default()));
 
         let stored_password = password.map(str::to_owned);
-        let auto_reconnect = Arc::new(AtomicBool::new(true));
+        let auto_reconnect = Arc::new(watch::Sender::new(true));
+        let last_failure = Arc::new(RwLock::new(None::<String>));
         let resync_nudge = Arc::new(Notify::new());
         let stream_output = StreamOutputFeed::new(Arc::clone(&state), Arc::clone(&health_state));
 
@@ -106,7 +107,8 @@ impl ObsClient {
             health_tx: health_tx.clone(),
             publisher: Arc::clone(&publisher),
             item_cache: Arc::clone(&item_cache),
-            auto_reconnect: Arc::clone(&auto_reconnect),
+            auto_reconnect: auto_reconnect.subscribe(),
+            last_failure: Arc::clone(&last_failure),
             resync_nudge: Arc::clone(&resync_nudge),
             stream_output: stream_output.clone(),
         };
@@ -136,6 +138,7 @@ impl ObsClient {
             reconnect_password: Arc::new(stored_password),
             reconnect_publisher: publisher,
             auto_reconnect,
+            last_failure,
             resync_nudge,
             stream_output,
         })
@@ -150,11 +153,18 @@ impl ObsClient {
     }
 
     pub fn set_auto_reconnect(&self, enabled: bool) {
-        self.auto_reconnect.store(enabled, Ordering::Relaxed);
+        self.auto_reconnect.send_replace(enabled);
     }
 
     pub fn auto_reconnect_enabled(&self) -> bool {
-        self.auto_reconnect.load(Ordering::Relaxed)
+        *self.auto_reconnect.borrow()
+    }
+
+    pub(crate) fn last_failure(&self) -> Option<String> {
+        if self.connection_state() != ConnectionState::Disconnected {
+            return None;
+        }
+        self.last_failure.read().ok().and_then(|g| g.clone())
     }
 
     pub(crate) async fn active_session(&self) -> Result<LiveSession, ObsError> {
@@ -186,7 +196,8 @@ impl ObsClient {
             reconnect_port: port,
             reconnect_password: Arc::new(None),
             reconnect_publisher: Arc::new(crate::runners::test_support::NoopPublisher),
-            auto_reconnect: Arc::new(AtomicBool::new(true)),
+            auto_reconnect: Arc::new(watch::Sender::new(true)),
+            last_failure: Arc::new(RwLock::new(None)),
             resync_nudge: Arc::new(Notify::new()),
             stream_output,
         }
@@ -279,6 +290,7 @@ impl BuiltinControl for ObsClient {
             ConnectionState::Connecting,
         );
         clear_connected_at(&self.connected_at);
+        record_failure(&self.last_failure, None);
 
         let ctx = SupervisorContext {
             inner: Arc::clone(&self.inner),
@@ -292,7 +304,8 @@ impl BuiltinControl for ObsClient {
             health_tx: self.health_tx.clone(),
             publisher: Arc::clone(&self.reconnect_publisher),
             item_cache: Arc::clone(&self.scene_item_id_cache),
-            auto_reconnect: Arc::clone(&self.auto_reconnect),
+            auto_reconnect: self.auto_reconnect.subscribe(),
+            last_failure: Arc::clone(&self.last_failure),
             resync_nudge: Arc::clone(&self.resync_nudge),
             stream_output: self.stream_output.clone(),
         };
@@ -319,6 +332,7 @@ impl BuiltinControl for ObsClient {
         if let Some(h) = handle {
             let _ = h.await;
         }
+        record_failure(&self.last_failure, None);
         settle_connection_state(
             &self.state,
             &*self.reconnect_publisher,
@@ -345,7 +359,8 @@ struct SupervisorContext {
     health_tx: broadcast::Sender<HealthDelta>,
     publisher: Arc<dyn EventPublisher>,
     item_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
-    auto_reconnect: Arc<AtomicBool>,
+    auto_reconnect: watch::Receiver<bool>,
+    last_failure: Arc<RwLock<Option<String>>>,
     resync_nudge: Arc<Notify>,
     stream_output: StreamOutputFeed,
 }
@@ -354,6 +369,40 @@ const RECONNECT_BASE_DELAY: Duration = Duration::from_secs(1);
 const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(60);
 
 const EVENT_BUFFER_CAPACITY: usize = 1024;
+
+enum RetryWait {
+    Elapsed,
+    Disabled,
+    Shutdown,
+}
+
+async fn wait_before_retry(
+    delay: Duration,
+    shutdown: &Notify,
+    auto_reconnect: &mut watch::Receiver<bool>,
+) -> RetryWait {
+    tokio::select! {
+        () = tokio::time::sleep(delay) => RetryWait::Elapsed,
+        () = shutdown.notified() => RetryWait::Shutdown,
+        _ = auto_reconnect.wait_for(|enabled| !*enabled) => RetryWait::Disabled,
+    }
+}
+
+async fn park_until_auto_reconnect(
+    shutdown: &Notify,
+    auto_reconnect: &mut watch::Receiver<bool>,
+) -> bool {
+    tokio::select! {
+        () = shutdown.notified() => false,
+        resumed = auto_reconnect.wait_for(|enabled| *enabled) => resumed.is_ok(),
+    }
+}
+
+fn record_failure(slot: &RwLock<Option<String>>, failure: Option<String>) {
+    if let Ok(mut g) = slot.write() {
+        *g = failure;
+    }
+}
 
 async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: SupervisorContext) {
     let SupervisorContext {
@@ -368,27 +417,54 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         health_tx,
         publisher,
         item_cache,
-        auto_reconnect,
+        mut auto_reconnect,
+        last_failure,
         resync_nudge,
         stream_output,
     } = ctx;
     let mut backoff = Backoff::new(RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY);
     let mut reconnecting = false;
+    let mut failure = String::new();
 
     loop {
         if reconnecting {
             let delay = backoff.next_delay();
-            tracing::info!(
-                host = %host,
-                port,
-                delay_ms = delay.as_millis(),
-                "reconnecting to OBS"
-            );
-            tokio::select! {
-                () = tokio::time::sleep(delay) => {}
-                () = shutdown.notified() => {
-                    settle_connection_state(&state, &*publisher, &stream_output, ConnectionState::Disconnected);
+            let retry_enabled = *auto_reconnect.borrow_and_update();
+            let wait = if retry_enabled {
+                tracing::info!(
+                    host = %host,
+                    port,
+                    delay_ms = delay.as_millis(),
+                    "reconnecting to OBS"
+                );
+                wait_before_retry(delay, &shutdown, &mut auto_reconnect).await
+            } else {
+                RetryWait::Disabled
+            };
+            match wait {
+                RetryWait::Elapsed => {}
+                RetryWait::Shutdown => {
+                    settle_connection_state(
+                        &state,
+                        &*publisher,
+                        &stream_output,
+                        ConnectionState::Disconnected,
+                    );
                     return;
+                }
+                RetryWait::Disabled => {
+                    tracing::info!(host = %host, port, "OBS auto-reconnect is off; waiting for a manual connect");
+                    record_failure(&last_failure, Some(std::mem::take(&mut failure)));
+                    settle_connection_state(
+                        &state,
+                        &*publisher,
+                        &stream_output,
+                        ConnectionState::Disconnected,
+                    );
+                    if !park_until_auto_reconnect(&shutdown, &mut auto_reconnect).await {
+                        return;
+                    }
+                    backoff.reset();
                 }
             }
         }
@@ -427,6 +503,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             Ok(client) => client,
             Err(ObsError::Authentication) => {
                 tracing::warn!(host = %host, port, "OBS authentication rejected");
+                record_failure(&last_failure, Some(ObsError::Authentication.to_string()));
                 settle_connection_state(
                     &state,
                     &*publisher,
@@ -440,6 +517,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             }
             Err(e) => {
                 tracing::debug!(host = %host, port, error = %e, "OBS connection attempt failed");
+                failure = e.to_string();
                 reconnecting = true;
                 continue;
             }
@@ -455,6 +533,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                     error = %e,
                     "OBS closed the connection right after the handshake"
                 );
+                failure = e.to_string();
                 reconnecting = true;
                 continue;
             }
@@ -482,6 +561,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                 error = %e,
                 "OBS connection lost while loading its catalog"
             );
+            failure = e.to_string();
             reconnecting = true;
             continue;
         }
@@ -492,6 +572,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             *g = Some(OffsetDateTime::now_utc());
         }
 
+        record_failure(&last_failure, None);
         settle_connection_state(
             &state,
             &*publisher,
@@ -528,6 +609,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                 }
                 () = session.suspected() => {
                     tracing::warn!(host = %host, port, "OBS stopped answering requests; reconnecting");
+                    failure = "OBS stopped answering requests".to_owned();
                     break;
                 }
                 item = stream.next() => match item {
@@ -567,6 +649,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                     }
                     None => {
                         tracing::info!(host = %host, port, "OBS connection lost; reconnecting");
+                        failure = "the connection to OBS was lost".to_owned();
                         break;
                     }
                 },
@@ -579,7 +662,10 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         stats_handle.abort();
         inner.write().await.take();
         clear_connected_at(&connected_at);
-        let retry = auto_reconnect.load(Ordering::Relaxed);
+        let retry = *auto_reconnect.borrow_and_update();
+        if !retry {
+            record_failure(&last_failure, Some(failure.clone()));
+        }
         settle_connection_state(
             &state,
             &*publisher,
@@ -594,12 +680,8 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             crate::payload_fields::connection::reason::CONNECTION_LOST,
             None,
         ));
-        if retry {
-            backoff.reset();
-            reconnecting = true;
-        } else {
-            return;
-        }
+        backoff.reset();
+        reconnecting = true;
     }
 }
 

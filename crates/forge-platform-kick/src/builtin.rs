@@ -842,23 +842,38 @@ mod tests {
             async fn observe_remote_throttle(&self, _: StdDuration) {}
         }
 
+        fn empty_manager() -> Arc<KickCredentialsManager> {
+            Arc::new(KickCredentialsManager::new(
+                &forge_platform_core::PlatformEndpoints::default(),
+                Arc::new(EmptyRepo),
+                "test_cid".to_owned(),
+                "test_secret".to_owned(),
+            ))
+        }
+
         pub(super) fn bundle_with_feeds() -> (
             Arc<KickIntegrationBundle>,
             watch::Sender<ViewerReport>,
             watch::Sender<PollerAuth>,
         ) {
-            let manager = Arc::new(KickCredentialsManager::new(
-                &forge_platform_core::PlatformEndpoints::default(),
-                Arc::new(EmptyRepo),
-                "test_cid".to_owned(),
-                "test_secret".to_owned(),
-            ));
+            let manager = empty_manager();
             let platform = Arc::new(KickPlatform::new(
                 &forge_platform_core::PlatformEndpoints::default(),
                 manager.clone(),
                 Arc::new(GrantLimiter),
                 crate::ban_ledger_test_support::MemoryBanLedger::shared(),
             ));
+            bundle_on(platform, manager)
+        }
+
+        fn bundle_on(
+            platform: Arc<KickPlatform>,
+            manager: Arc<KickCredentialsManager>,
+        ) -> (
+            Arc<KickIntegrationBundle>,
+            watch::Sender<ViewerReport>,
+            watch::Sender<PollerAuth>,
+        ) {
             let (viewer_tx, viewer_rx) = watch::channel(ViewerReport::Absent);
             let (auth_tx, auth_rx) = watch::channel(PollerAuth::Authorized);
             let (bundle, _) = KickIntegrationBundle::new(
@@ -892,15 +907,56 @@ mod tests {
             );
         }
 
-        #[test]
-        fn send_message_quick_action_is_disabled_while_disconnected() {
-            let bundle = disconnected_bundle();
-            let action = bundle
+        fn labels_with_enabled(bundle: &KickIntegrationBundle, enabled: bool) -> Vec<String> {
+            bundle
                 .actions()
                 .into_iter()
-                .find(|a| a.label == "Send message")
-                .unwrap();
-            assert!(!action.enabled);
+                .filter(|a| a.enabled == enabled)
+                .map(|a| a.label)
+                .collect()
+        }
+
+        async fn connected_bundle() -> (
+            Arc<KickIntegrationBundle>,
+            Arc<KickPlatform>,
+            wiremock::MockServer,
+        ) {
+            let (platform, server) = crate::chat_platform::tests::platform_on_chat(
+                "{}".to_owned(),
+                crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            )
+            .await;
+            let platform = Arc::new(platform);
+            let mut state = platform.state_receiver();
+            platform.connect().await.unwrap();
+            tokio::time::timeout(
+                StdDuration::from_secs(5),
+                state.wait_for(ConnectionState::is_connected),
+            )
+            .await
+            .expect("the chat session must report connected")
+            .unwrap();
+            let (bundle, _, _) = bundle_on(Arc::clone(&platform), empty_manager());
+            (bundle, platform, server)
+        }
+
+        #[test]
+        fn every_quick_action_is_disabled_while_disconnected() {
+            let bundle = disconnected_bundle();
+            assert_eq!(labels_with_enabled(&bundle, true), Vec::<String>::new());
+        }
+
+        #[tokio::test]
+        async fn every_quick_action_is_enabled_once_chat_connects() {
+            let (bundle, _platform, _server) = connected_bundle().await;
+            assert_eq!(labels_with_enabled(&bundle, false), Vec::<String>::new());
+        }
+
+        #[tokio::test]
+        async fn quick_actions_disable_again_after_chat_disconnects() {
+            let (bundle, platform, _server) = connected_bundle().await;
+            platform.disconnect().await.unwrap();
+            assert_eq!(labels_with_enabled(&bundle, true), Vec::<String>::new());
         }
 
         #[test]

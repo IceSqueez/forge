@@ -196,7 +196,7 @@ fn map_connect_error(err: KickError) -> PlatformError {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex as StdMutex;
     use std::time::Duration as StdDuration;
@@ -436,7 +436,7 @@ mod tests {
         format!("ws://{socket_addr}/app")
     }
 
-    async fn platform_on_chat(
+    pub(crate) async fn platform_on_chat(
         frame: String,
         ledger: Arc<dyn BanLedgerRepo>,
     ) -> (KickPlatform, wiremock::MockServer) {

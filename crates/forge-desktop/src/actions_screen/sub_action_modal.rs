@@ -2081,4 +2081,151 @@ mod tests {
             );
         }
     }
+
+    const AMOUNT_FIELD: &str = "delay_amount";
+    const UNIT_FIELD: &str = "delay_unit";
+    const AMOUNT_GATE: &str = "use_delay";
+    const AMOUNT_BOUNDS: UnitAmountBounds = UnitAmountBounds {
+        min: 1,
+        max_base_units: 120,
+        units: &[
+            forge_registry::AmountUnit {
+                value: "seconds",
+                base_units: 1,
+            },
+            forge_registry::AmountUnit {
+                value: "minutes",
+                base_units: 60,
+            },
+        ],
+    };
+
+    fn unit_amount_spec(gated: bool) -> FormField {
+        let amount = FormField::UnitAmount {
+            key: AMOUNT_FIELD,
+            label: "Run after",
+            unit_key: UNIT_FIELD,
+            bounds: AMOUNT_BOUNDS,
+        };
+        if gated {
+            FormField::Optional {
+                key: AMOUNT_GATE,
+                label: "Delay",
+                inner: Box::new(amount),
+            }
+        } else {
+            amount
+        }
+    }
+
+    fn stored_amount(amount: Variant, unit: Option<&str>) -> SubActionConfig {
+        let mut config: SubActionConfig = [(AMOUNT_FIELD.to_owned(), amount)].into_iter().collect();
+        if let Some(unit) = unit {
+            config.insert(UNIT_FIELD.to_owned(), Variant::String(unit.to_owned()));
+        }
+        config
+    }
+
+    #[gpui::test]
+    fn an_amount_past_its_units_bound_blocks_submit_only_while_the_field_is_in_use(
+        cx: &mut TestAppContext,
+    ) {
+        for (toggle, amount, unit, commits) in [
+            (None, Variant::Int(120), Some("seconds"), true),
+            (None, Variant::Int(121), Some("seconds"), false),
+            (None, Variant::Int(2), Some("minutes"), true),
+            (None, Variant::Int(3), Some("minutes"), false),
+            (None, Variant::Int(0), Some("minutes"), false),
+            (None, Variant::Int(121), Some("weeks"), false),
+            (
+                None,
+                Variant::String("soon".to_owned()),
+                Some("seconds"),
+                false,
+            ),
+            (None, Variant::String(String::new()), Some("seconds"), true),
+            (Some(true), Variant::Int(3), Some("minutes"), false),
+            (Some(false), Variant::Int(3), Some("minutes"), true),
+        ] {
+            let mut config = stored_amount(amount.clone(), unit);
+            if let Some(on) = toggle {
+                config.insert(AMOUNT_GATE.to_owned(), Variant::Bool(on));
+            }
+            let outcome = submitted_overrides(vec![unit_amount_spec(toggle.is_some())], config, cx);
+            assert_eq!(
+                outcome.is_some(),
+                commits,
+                "toggle {toggle:?}, amount {amount:?}, unit {unit:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_unit_amount_commits_its_amount_and_its_unit_under_their_own_keys(cx: &mut TestAppContext) {
+        for (unit, committed_unit) in [
+            (Some("minutes"), "minutes"),
+            (Some("weeks"), "seconds"),
+            (None, "seconds"),
+        ] {
+            let overrides = committed_overrides(
+                vec![unit_amount_spec(false)],
+                stored_amount(Variant::Int(2), unit),
+                cx,
+            );
+            assert_eq!(
+                (
+                    override_for(&overrides, AMOUNT_FIELD),
+                    override_for(&overrides, UNIT_FIELD)
+                ),
+                (
+                    Some(&Variant::Int(2)),
+                    Some(&Variant::String(committed_unit.to_owned()))
+                ),
+                "stored unit {unit:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn picking_a_smaller_unit_lets_an_amount_too_large_for_the_old_unit_commit(
+        cx: &mut TestAppContext,
+    ) {
+        let launch = launch_with(
+            vec![unit_amount_spec(false)],
+            stored_amount(Variant::Int(100), Some("minutes")),
+        );
+        let (form, vcx, _rt) = open_launch(cx, launch);
+        let heard = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let sink = std::rc::Rc::clone(&heard);
+        let _subscription = vcx.update(|_window, cx| {
+            cx.subscribe(&form, move |_, event: &SubFormEvent, _| {
+                if let SubFormEvent::Commit(commit) = event {
+                    *sink.borrow_mut() = Some(commit.overrides.clone());
+                }
+            })
+        });
+
+        vcx.update(|window, cx| {
+            form.update(cx, |form, cx| {
+                form.open_select_picker(UNIT_FIELD.to_owned(), window, cx);
+                form.pick_select_option("seconds".to_owned(), cx);
+            })
+        });
+        vcx.update(|_window, cx| form.update(cx, |form, cx| form.submit(cx)));
+
+        let overrides = heard
+            .borrow_mut()
+            .take()
+            .unwrap_or_else(|| panic!("100 seconds is in range, so Save must commit"));
+        assert_eq!(
+            (
+                override_for(&overrides, AMOUNT_FIELD),
+                override_for(&overrides, UNIT_FIELD)
+            ),
+            (
+                Some(&Variant::Int(100)),
+                Some(&Variant::String("seconds".to_owned()))
+            )
+        );
+    }
 }

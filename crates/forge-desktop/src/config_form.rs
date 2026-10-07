@@ -1875,4 +1875,130 @@ mod tests {
 
         assert_eq!(host.read_with(cx, |log, _| log.0.clone()), ["blurred"]);
     }
+
+    const AMOUNT_KEY: &str = "amount";
+    const AMOUNT_UNIT_KEY: &str = "amount_unit";
+    const AMOUNT_GATE: &str = "use_amount";
+    const AMOUNT_BOUNDS: UnitAmountBounds = UnitAmountBounds {
+        min: 1,
+        max_base_units: 120,
+        units: &[
+            forge_registry::AmountUnit {
+                value: "seconds",
+                base_units: 1,
+            },
+            forge_registry::AmountUnit {
+                value: "minutes",
+                base_units: 60,
+            },
+        ],
+    };
+
+    fn unit_amount_spec() -> FormField {
+        FormField::UnitAmount {
+            key: AMOUNT_KEY,
+            label: "Amount",
+            unit_key: AMOUNT_UNIT_KEY,
+            bounds: AMOUNT_BOUNDS,
+        }
+    }
+
+    fn stored_unit(unit: Option<&str>) -> FieldConfig {
+        unit.map(|unit| (AMOUNT_UNIT_KEY.to_owned(), Variant::String(unit.to_owned())))
+            .into_iter()
+            .collect()
+    }
+
+    fn amount_input(fields: &[ConfigField]) -> Entity<TextInput> {
+        fields
+            .iter()
+            .find_map(|field| match field {
+                ConfigField::UnitAmount { input, .. } => Some(input.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("a unit amount spec builds a unit amount field"))
+    }
+
+    fn type_amount(cx: &mut gpui::TestAppContext, fields: &[ConfigField], typed: &str) {
+        amount_input(fields).update(cx, |input, cx| input.set_content(typed.to_owned(), cx));
+    }
+
+    fn shown_amount(cx: &mut gpui::TestAppContext, fields: &[ConfigField]) -> String {
+        amount_input(fields).read_with(cx, |input, _| input.content().to_owned())
+    }
+
+    #[gpui::test]
+    fn a_unit_amount_saves_its_unit_and_the_amount_clamped_into_that_units_range(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (unit, typed, saved_unit, saved_amount) in [
+            (Some("seconds"), "500", "seconds", 120),
+            (Some("seconds"), "120", "seconds", 120),
+            (Some("minutes"), "500", "minutes", 2),
+            (Some("minutes"), "0", "minutes", 1),
+            (Some("weeks"), "60", "seconds", 60),
+            (None, "60", "seconds", 60),
+        ] {
+            let seeded = stored_unit(unit);
+            let (_host, fields) = build(cx, &unit_amount_spec(), &FieldConfig::new(), &seeded, "");
+            type_amount(cx, &fields, typed);
+
+            let saved = collected(cx, &fields, &FieldConfig::new());
+            assert_eq!(
+                (saved.get(AMOUNT_UNIT_KEY), saved.get(AMOUNT_KEY)),
+                (
+                    Some(&Variant::String(saved_unit.to_owned())),
+                    Some(&Variant::Int(saved_amount))
+                ),
+                "stored unit {unit:?}, typed {typed:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn picking_a_larger_unit_snaps_the_shown_amount_into_the_new_range(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let seeded = stored_unit(Some("seconds"));
+        let (_host, mut fields) = build(cx, &unit_amount_spec(), &FieldConfig::new(), &seeded, "");
+        type_amount(cx, &fields, "100");
+
+        cx.update(|cx| set_picked_value(&mut fields, AMOUNT_UNIT_KEY, "minutes", cx));
+
+        assert_eq!(shown_amount(cx, &fields), "2");
+    }
+
+    #[gpui::test]
+    fn leaving_the_amount_after_a_unit_switch_snaps_it_to_the_new_units_bound(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let seeded = stored_unit(Some("seconds"));
+        let (_host, mut fields) = build(cx, &unit_amount_spec(), &FieldConfig::new(), &seeded, "");
+        cx.update(|cx| set_picked_value(&mut fields, AMOUNT_UNIT_KEY, "minutes", cx));
+        type_amount(cx, &fields, "50");
+
+        amount_input(&fields).update(cx, |_, cx| cx.emit(InputEvent::Blurred("50".into())));
+        cx.run_until_parked();
+
+        assert_eq!(shown_amount(cx, &fields), "2");
+    }
+
+    #[gpui::test]
+    fn a_gated_off_unit_amount_writes_neither_its_amount_nor_its_unit(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let spec = FormField::Optional {
+            key: AMOUNT_GATE,
+            label: "Use amount",
+            inner: Box::new(unit_amount_spec()),
+        };
+        let seeded = config(&[(AMOUNT_GATE, Variant::Bool(false))]);
+        let (_host, fields) = build(cx, &spec, &FieldConfig::new(), &seeded, "");
+        type_amount(cx, &fields, "30");
+
+        assert_eq!(
+            collected(cx, &fields, &FieldConfig::new()),
+            config(&[(AMOUNT_GATE, Variant::Bool(false))])
+        );
+    }
 }

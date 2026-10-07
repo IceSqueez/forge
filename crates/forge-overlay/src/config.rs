@@ -546,12 +546,29 @@ mod tests {
     use crate::kinds::chat::ChatOverlayKind;
     use crate::motion;
     use crate::preview::{PreviewComposition, PreviewShape, compose};
+    use forge_registry::{AmountUnit, UnitAmountBounds};
 
     const PROBE_TOGGLE: &str = "probe.toggle";
     const PROBE_INTEGER: &str = "probe.integer";
     const PROBE_OPTIONAL: &str = "probe.optional";
     const PROBE_INNER: &str = "probe.inner";
     const PROBE_INNER_OPTIONS: &[&str] = &["left", "right"];
+    const PROBE_AMOUNT: &str = "probe.amount";
+    const PROBE_AMOUNT_UNIT: &str = "probe.amount_unit";
+    const PROBE_AMOUNT_BOUNDS: UnitAmountBounds = UnitAmountBounds {
+        min: 1,
+        max_base_units: 120,
+        units: &[
+            AmountUnit {
+                value: "seconds",
+                base_units: 1,
+            },
+            AmountUnit {
+                value: "minutes",
+                base_units: 60,
+            },
+        ],
+    };
 
     struct FieldProbeKind;
 
@@ -604,6 +621,15 @@ mod tests {
                         label: "Integer",
                         min: 0,
                         max: 10,
+                    },
+                ),
+                in_section(
+                    ConfigSection::Behavior,
+                    FormField::UnitAmount {
+                        key: PROBE_AMOUNT,
+                        label: "Amount",
+                        unit_key: PROBE_AMOUNT_UNIT,
+                        bounds: PROBE_AMOUNT_BOUNDS,
                     },
                 ),
                 in_section(
@@ -727,6 +753,8 @@ mod tests {
             (&probe, PROBE_TOGGLE, text("yes")),
             (&probe, PROBE_INTEGER, Variant::Bool(true)),
             (&probe, PROBE_OPTIONAL, Variant::Int(1)),
+            (&probe, PROBE_AMOUNT, text("2")),
+            (&probe, PROBE_AMOUNT_UNIT, Variant::Int(60)),
         ] {
             let err = validate_overlay_config(descriptor, &one(key, value.clone()))
                 .expect_err("a value of the wrong shape must be rejected");
@@ -763,6 +791,51 @@ mod tests {
             assert!(
                 matches!(&err, OverlayError::OutOfRange { key, .. } if key == DURATION),
                 "duration {rejected} produced {err:?}"
+            );
+        }
+    }
+
+    fn amount_in(amount: i64, unit: Option<&str>) -> OverlayConfig {
+        let mut config = one(PROBE_AMOUNT, Variant::Int(amount));
+        if let Some(unit) = unit {
+            config.insert(PROBE_AMOUNT_UNIT.to_owned(), text(unit));
+        }
+        config
+    }
+
+    #[test]
+    fn validate_accepts_a_unit_amount_up_to_the_bound_of_its_stored_unit() {
+        for (amount, unit) in [
+            (120, Some("seconds")),
+            (1, Some("seconds")),
+            (2, Some("minutes")),
+            (1, Some("minutes")),
+            (120, None),
+            (120, Some("hours")),
+        ] {
+            validate_overlay_config(&FieldProbeKind, &amount_in(amount, unit))
+                .unwrap_or_else(|e| panic!("{amount} {unit:?} sits in range but produced {e:?}"));
+        }
+    }
+
+    #[test]
+    fn validate_rejects_a_unit_amount_past_the_bound_of_its_stored_unit_naming_that_bound() {
+        for (amount, unit, expected_max) in [
+            (121, Some("seconds"), 120),
+            (3, Some("minutes"), 2),
+            (0, Some("minutes"), 2),
+            (121, None, 120),
+            (121, Some("hours"), 120),
+        ] {
+            let err = validate_overlay_config(&FieldProbeKind, &amount_in(amount, unit))
+                .expect_err("an amount outside its unit's range must be rejected");
+
+            assert!(
+                matches!(
+                    &err,
+                    OverlayError::OutOfRange { key, min: 1, max } if key == PROBE_AMOUNT && *max == expected_max
+                ),
+                "{amount} {unit:?} produced {err:?}"
             );
         }
     }

@@ -5,7 +5,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventPublisher};
-use forge_registry::{RunContext, SubActionRegistry, SubActionRunner, effective_config};
+use forge_registry::{
+    FormField, RunContext, SubActionRegistry, SubActionRunner, UnitAmountBounds, effective_config,
+};
 use forge_runtime::scheduled_runs::{MAX_SCHEDULED_ARGS_BYTES, MIN_LATE_TOLERANCE};
 use forge_runtime::sub_action_runners::{
     CANCEL_SCHEDULED_KIND_ID, CoreActionCancelScheduledRunner, CoreActionRunRunner,
@@ -271,6 +273,7 @@ async fn schedule_step_places_the_run_after_the_delay_in_each_unit() {
         (1, "minutes", MINUTE),
         (3, "hours", 3 * HOUR),
         (2, "days", 2 * DAY),
+        (4, "weeks", 4 * MINUTE),
     ] {
         let run = harness.schedule_target(target, &delay(amount, unit)).await;
         assert_eq!(run.spec.due_at, base() + expected, "{amount} {unit}");
@@ -352,6 +355,46 @@ async fn schedule_step_refuses_delays_outside_one_minute_to_one_year() {
         pairs.push(("action_id", text(&target.to_string())));
         let (outcome, _) = harness.schedule(&ArgStack::new(), &pairs).await;
         assert_eq!(failure(&outcome), expected, "{amount} {unit}");
+    }
+}
+
+fn delay_bounds(runner: &dyn SubActionRunner) -> UnitAmountBounds {
+    runner
+        .config_fields()
+        .into_iter()
+        .find_map(|field| match field {
+            FormField::UnitAmount {
+                key: "delay_amount",
+                unit_key: "delay_unit",
+                bounds,
+                ..
+            } => Some(bounds),
+            _ => None,
+        })
+        .expect("the schedule step offers the delay as an amount with a unit")
+}
+
+#[tokio::test]
+async fn schedule_step_form_bounds_match_what_the_scheduler_accepts_in_every_unit() {
+    let harness = Harness::new().await;
+    let target = harness.target().await;
+    let bounds = delay_bounds(&harness.scheduler());
+    let too_short = ScheduleError::DelayTooShort.to_string();
+    let too_long = ScheduleError::DelayTooLong.to_string();
+
+    for unit in bounds.units {
+        let range = bounds.range_for(unit.value);
+        for (amount, expected) in [
+            (*range.start() - 1, Some(too_short.as_str())),
+            (*range.start(), None),
+            (*range.end(), None),
+            (*range.end() + 1, Some(too_long.as_str())),
+        ] {
+            let mut pairs = delay(amount, unit.value).to_vec();
+            pairs.push(("action_id", text(&target.to_string())));
+            let (outcome, _) = harness.schedule(&ArgStack::new(), &pairs).await;
+            assert_eq!(failure(&outcome), expected, "{amount} {}", unit.value);
+        }
     }
 }
 

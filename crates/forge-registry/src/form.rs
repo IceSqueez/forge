@@ -146,6 +146,129 @@ impl FormField {
 mod tests {
     use super::*;
 
+    const SECONDS_PER_DAY: u64 = 86_400;
+
+    const CLOCK_BOUNDS: UnitAmountBounds = UnitAmountBounds {
+        min: 1,
+        max_base_units: 365 * SECONDS_PER_DAY,
+        units: &[
+            AmountUnit {
+                value: "minutes",
+                base_units: 60,
+            },
+            AmountUnit {
+                value: "hours",
+                base_units: 3_600,
+            },
+            AmountUnit {
+                value: "days",
+                base_units: SECONDS_PER_DAY,
+            },
+        ],
+    };
+
+    fn one_unit(value: &'static str, base_units: u64) -> &'static [AmountUnit] {
+        Box::leak(Box::new([AmountUnit { value, base_units }]))
+    }
+
+    #[test]
+    fn range_for_caps_each_unit_at_the_shared_total_expressed_in_that_unit() {
+        for (unit, expected) in [
+            ("minutes", 1..=525_600),
+            ("hours", 1..=8_760),
+            ("days", 1..=365),
+        ] {
+            assert_eq!(CLOCK_BOUNDS.range_for(unit), expected, "unit {unit}");
+        }
+    }
+
+    #[test]
+    fn range_for_an_unlisted_unit_uses_the_first_unit() {
+        for unit in ["weeks", "", "Days", " hours"] {
+            assert_eq!(
+                CLOCK_BOUNDS.range_for(unit),
+                CLOCK_BOUNDS.range_for("minutes"),
+                "unit {unit:?} is not listed and must read as the first unit"
+            );
+        }
+    }
+
+    #[test]
+    fn unit_or_first_finds_the_named_unit_and_falls_back_to_the_first() {
+        let resolved = ["hours", "fortnights"]
+            .map(|unit| CLOCK_BOUNDS.unit_or_first(unit).map(|unit| unit.value));
+
+        assert_eq!(resolved, [Some("hours"), Some("minutes")]);
+    }
+
+    #[test]
+    fn range_for_rounds_a_total_the_unit_does_not_divide_down_to_whole_units() {
+        let bounds = UnitAmountBounds {
+            min: 1,
+            max_base_units: 100,
+            units: one_unit("thirties", 30),
+        };
+
+        assert_eq!(bounds.range_for("thirties"), 1..=3);
+    }
+
+    #[test]
+    fn range_for_never_drops_its_end_below_the_minimum() {
+        for (max_base_units, base_units, expected) in [
+            (59, 60, 1..=1),
+            (60, 60, 1..=1),
+            (120, 60, 1..=2),
+            (0, 60, 1..=1),
+        ] {
+            let bounds = UnitAmountBounds {
+                min: 1,
+                max_base_units,
+                units: one_unit("minutes", base_units),
+            };
+            assert_eq!(
+                bounds.range_for("minutes"),
+                expected,
+                "{max_base_units} base units at {base_units} per unit"
+            );
+        }
+    }
+
+    #[test]
+    fn range_for_a_zero_sized_unit_counts_it_as_one_base_unit_instead_of_dividing_by_zero() {
+        let bounds = UnitAmountBounds {
+            min: 0,
+            max_base_units: 500,
+            units: one_unit("ticks", 0),
+        };
+
+        assert_eq!(bounds.range_for("ticks"), 0..=500);
+    }
+
+    #[test]
+    fn range_for_with_no_units_spans_the_whole_total_and_finds_no_unit() {
+        let bounds = UnitAmountBounds {
+            min: 1,
+            max_base_units: 90,
+            units: &[],
+        };
+
+        assert_eq!(
+            (bounds.range_for("minutes"), bounds.unit_or_first("minutes")),
+            (1..=90, None)
+        );
+    }
+
+    #[test]
+    fn range_for_a_total_beyond_i64_saturates_at_i64_max() {
+        let bounds = UnitAmountBounds {
+            min: 1,
+            max_base_units: u64::MAX,
+            units: one_unit("units", 1),
+        };
+
+        assert_eq!(*bounds.range_for("units").end(), i64::MAX);
+    }
+
     #[test]
     fn key_names_the_config_key_each_field_shape_writes_to() {
         let cases = vec![
@@ -207,6 +330,15 @@ mod tests {
                     options: &["mauve"],
                 },
                 "accent",
+            ),
+            (
+                FormField::UnitAmount {
+                    key: "delay_amount",
+                    label: "Run after",
+                    unit_key: "delay_unit",
+                    bounds: CLOCK_BOUNDS,
+                },
+                "delay_amount",
             ),
             (
                 FormField::Optional {

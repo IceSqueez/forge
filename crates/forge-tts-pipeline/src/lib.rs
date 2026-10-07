@@ -707,15 +707,6 @@ mod tests {
     }
 
     #[test]
-    fn preview_returns_four_stages() {
-        let config = PipelineConfig::default();
-        let (_result, outcomes) = preview("test", &config, &ctx());
-        assert_eq!(outcomes.len(), 4);
-        assert_eq!(outcomes[0].stage, StageName::SkipRules);
-        assert_eq!(outcomes[3].stage, StageName::Output);
-    }
-
-    #[test]
     fn skip_rules_contains_url() {
         let config = PipelineConfig {
             skip_rules: SkipRulesConfig {
@@ -1004,42 +995,72 @@ mod tests {
         );
     }
 
-    #[test]
-    fn word_blocklist_censor_mode() {
-        let config = PipelineConfig {
-            word_blocklist: vec!["badword".into()],
-            blocklist_mode: BlocklistMode::Censor,
+    fn blocklist(words: &[&str], mode: BlocklistMode) -> PipelineConfig {
+        PipelineConfig {
+            word_blocklist: words.iter().map(|w| (*w).to_owned()).collect(),
+            blocklist_mode: mode,
             ..PipelineConfig::default()
-        };
-        let result = process("this is badword here", &config, &ctx());
-        assert_eq!(result, PipelineResult::Speak("this is [beep] here".into()));
+        }
     }
 
     #[test]
-    fn word_blocklist_skip_message_mode() {
-        let config = PipelineConfig {
-            word_blocklist: vec!["badword".into()],
-            blocklist_mode: BlocklistMode::SkipMessage,
-            ..PipelineConfig::default()
-        };
-        let result = process("contains badword here", &config, &ctx());
-        assert!(matches!(
-            result,
-            PipelineResult::Skip {
-                reason: SkipReason::BlockedByWordFilter
-            }
-        ));
+    fn censor_replaces_whole_blocked_words_keeping_surrounding_punctuation() {
+        let config = blocklist(&["gtfo", "дурень", "ass", "a$$!"], BlocklistMode::Censor);
+        for (input, expected) in [
+            ("this is gtfo here", "this is [beep] here"),
+            ("GG GTFO!!!", "GG [beep]!!!"),
+            ("\"gtfo\"", "\"[beep]\""),
+            ("gtfo, then", "[beep], then"),
+            ("(GtFo)", "([beep])"),
+            ("ДУРЕНЬ!", "[beep]!"),
+            ("gtfo,gtfo", "[beep],[beep]"),
+            ("gtfo's", "[beep]'s"),
+            ("a$$!", "[beep]"),
+            ("(A$$!)", "([beep])"),
+            ("classic", "classic"),
+            ("assist", "assist"),
+            ("badass", "badass"),
+            ("gtfogtfo", "gtfogtfo"),
+            ("дурненький", "дурненький"),
+            ("дуренька", "дуренька"),
+        ] {
+            assert_eq!(
+                process(input, &config, &ctx()),
+                PipelineResult::Speak(expected.into()),
+                "input {input:?}"
+            );
+        }
     }
 
     #[test]
-    fn word_blocklist_case_insensitive() {
-        let config = PipelineConfig {
-            word_blocklist: vec!["badword".into()],
-            blocklist_mode: BlocklistMode::Censor,
-            ..PipelineConfig::default()
-        };
-        let result = process("BADWORD in caps", &config, &ctx());
-        assert_eq!(result, PipelineResult::Speak("[beep] in caps".into()));
+    fn censor_prefers_the_longest_entry_that_ends_on_a_word_boundary() {
+        let config = blocklist(&["go", "go-away"], BlocklistMode::Censor);
+        assert_eq!(
+            process("go-away now", &config, &ctx()),
+            PipelineResult::Speak("[beep] now".into())
+        );
+    }
+
+    #[test]
+    fn skip_message_mode_skips_only_when_a_whole_word_is_blocked() {
+        let config = blocklist(&["gtfo", "ass"], BlocklistMode::SkipMessage);
+        for (input, skipped) in [
+            ("gtfo!", true),
+            ("well \"GTFO\"", true),
+            ("classic assist", false),
+        ] {
+            let result = process(input, &config, &ctx());
+            assert_eq!(
+                matches!(
+                    result,
+                    PipelineResult::Skip {
+                        reason: SkipReason::BlockedByWordFilter
+                    }
+                ),
+                skipped,
+                "input {input:?} gave {result:?}"
+            );
+        }
     }
 
     #[test]

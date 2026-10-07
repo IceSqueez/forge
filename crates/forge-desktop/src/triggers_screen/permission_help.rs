@@ -75,7 +75,7 @@ mod tests {
     use crate::i18n::install_language;
 
     fn only(platforms: &[PlatformId]) -> PlatformScope {
-        PlatformScope::only(platforms.iter().copied().collect::<BTreeSet<_>>()).unwrap()
+        PlatformScope::Only(platforms.iter().copied().collect::<BTreeSet<_>>())
     }
 
     #[test]

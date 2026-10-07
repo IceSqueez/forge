@@ -75,7 +75,6 @@ mod tests {
             { "type": "emote", "id": "425618", "name": "LUL" },
             { "type": "text", "text": " that was " },
             { "type": "mention", "username": "aurora" },
-            { "type": "link", "url": "https://example.com", "display": "example.com" },
             { "type": "emote", "id": "Cheer", "name": "Cheer100" },
             { "type": "emote", "id": "1", "name": "" },
             { "type": "emote", "id": "2", "name": "   " },

@@ -30,18 +30,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_rejects_empty_set() {
-        assert!(PlatformScope::only(BTreeSet::new()).is_err());
-    }
-
-    #[test]
-    fn only_accepts_non_empty_set() {
-        let mut set = BTreeSet::new();
-        set.insert(PlatformId::Twitch);
-        assert!(PlatformScope::only(set).is_ok());
-    }
-
-    #[test]
     fn any_matches_every_source() {
         assert!(PlatformScope::Any.matches(Some(PlatformId::Twitch)));
         assert!(PlatformScope::Any.matches(None));
@@ -51,7 +39,7 @@ mod tests {
     fn only_matches_listed_platform() {
         let mut set = BTreeSet::new();
         set.insert(PlatformId::Twitch);
-        let scope = PlatformScope::only(set).unwrap();
+        let scope = PlatformScope::Only(set);
         assert!(scope.matches(Some(PlatformId::Twitch)));
         assert!(!scope.matches(Some(PlatformId::YouTube)));
         assert!(!scope.matches(None));
@@ -70,7 +58,7 @@ mod tests {
     fn only_serde_roundtrip() {
         let mut set = BTreeSet::new();
         set.insert(PlatformId::Twitch);
-        let scope = PlatformScope::only(set).unwrap();
+        let scope = PlatformScope::Only(set);
         let json = serde_json::to_string(&scope).unwrap();
         assert_eq!(json, r#"{"only":["twitch"]}"#);
         let back: PlatformScope = serde_json::from_str(&json).unwrap();

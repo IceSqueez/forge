@@ -205,7 +205,7 @@ mod tests {
     }
 
     #[test]
-    fn matching_ignores_whitespace_and_reads_emotes_mentions_and_links_as_typed() {
+    fn matching_ignores_whitespace_and_reads_emotes_and_mentions_as_typed() {
         let emote = ChatSegment::Emote {
             id: "25".to_owned(),
             name: "Kappa".to_owned(),
@@ -213,24 +213,10 @@ mod tests {
         let mention = ChatSegment::Mention {
             username: "alice".to_owned(),
         };
-        let bare_link = ChatSegment::Link {
-            url: "https://forge.example".to_owned(),
-            display: String::new(),
-        };
-        let shown_link = ChatSegment::Link {
-            url: "https://forge.example".to_owned(),
-            display: "forge.example".to_owned(),
-        };
         for (sent, segments, expected) in [
             ("hello   world ", vec![text("hello world")], true),
             ("hi Kappa", vec![text("hi "), emote], true),
             ("thanks @alice", vec![text("thanks "), mention], true),
-            (
-                "see https://forge.example",
-                vec![text("see "), bare_link],
-                true,
-            ),
-            ("see forge.example", vec![text("see "), shown_link], true),
             ("hello", vec![text("hello!")], false),
         ] {
             let t0 = Instant::now();

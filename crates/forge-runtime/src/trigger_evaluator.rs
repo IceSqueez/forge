@@ -1076,7 +1076,7 @@ mod tests {
             invocations: usize,
         }
 
-        let kick_only = PlatformScope::only(BTreeSet::from([PlatformId::Kick])).unwrap();
+        let kick_only = PlatformScope::Only(BTreeSet::from([PlatformId::Kick]));
         for case in [
             Case {
                 reason: "scope",
@@ -1675,7 +1675,7 @@ mod tests {
     #[tokio::test]
     async fn a_platform_scoped_timer_still_fires_on_its_own_tick() {
         let (_fixture, mut evaluator) = timer_harness().await;
-        let kick_only = PlatformScope::only(BTreeSet::from([PlatformId::Kick])).unwrap();
+        let kick_only = PlatformScope::Only(BTreeSet::from([PlatformId::Kick]));
         let named = timer_instance(kick_only);
 
         assert!(evaluator.decide(&named, &tick_for(&named)).is_some());

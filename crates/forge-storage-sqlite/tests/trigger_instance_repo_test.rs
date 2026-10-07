@@ -504,7 +504,7 @@ async fn platform_scope_only_subset_round_trips() {
     let repo = backend.trigger_instance_repo();
     let mut set = BTreeSet::new();
     set.insert(PlatformId::Twitch);
-    let scope = PlatformScope::only(set).expect("non-empty set");
+    let scope = PlatformScope::Only(set);
     let inst = TriggerInstance {
         id: TriggerInstanceId::new(),
         kind_id: "twitch.chat.message".to_owned(),

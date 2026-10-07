@@ -466,10 +466,6 @@ mod tests {
                         id: "1".to_string(),
                         name: "KEKW".to_string(),
                     },
-                    ChatSegment::Link {
-                        url: "https://x".to_string(),
-                        display: "x".to_string(),
-                    },
                 ],
                 "hey @foo gg",
             ),
@@ -502,13 +498,6 @@ mod tests {
                     name: "KEKW".to_string(),
                 },
                 r#"{"type":"emote","id":"123","name":"KEKW"}"#,
-            ),
-            (
-                ChatSegment::Link {
-                    url: "https://example.test/a".to_string(),
-                    display: "example.test".to_string(),
-                },
-                r#"{"type":"link","url":"https://example.test/a","display":"example.test"}"#,
             ),
             (
                 ChatSegment::Mention {
@@ -643,13 +632,6 @@ mod tests {
                     text: BODY.to_string(),
                 },
                 "Text { text: <redacted len=13> }",
-            ),
-            (
-                ChatSegment::Link {
-                    url: format!("https://example.test/{BODY}"),
-                    display: BODY.to_string(),
-                },
-                "Link { url: <redacted len=34>, display: <redacted len=13> }",
             ),
             (
                 ChatSegment::Mention {

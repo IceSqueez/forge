@@ -335,7 +335,7 @@ mod tests {
 
     fn twitch_only(instance: TriggerInstance) -> TriggerInstance {
         TriggerInstance {
-            platform_scope: PlatformScope::only(BTreeSet::from([PlatformId::Twitch])).unwrap(),
+            platform_scope: PlatformScope::Only(BTreeSet::from([PlatformId::Twitch])),
             ..instance
         }
     }

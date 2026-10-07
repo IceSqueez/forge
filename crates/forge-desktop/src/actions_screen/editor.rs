@@ -2780,6 +2780,7 @@ mod tests {
     };
 
     const MISSING: &str = "file missing";
+    const CLIP_PROBE_ROUNDS: usize = 1_000;
 
     fn options(entries: &[(&str, &str)]) -> Vec<(String, String)> {
         entries
@@ -2838,10 +2839,27 @@ mod tests {
         clips: Vec<StoredClip>,
         media: MockMediaRepo,
     ) -> Entity<ScreenActionsView> {
+        view_with(
+            cx,
+            rt,
+            clips,
+            media,
+            SubActionRegistry::new(),
+            Arc::new(StubActions),
+        )
+    }
+
+    fn view_with(
+        cx: &mut gpui::TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        clips: Vec<StoredClip>,
+        media: MockMediaRepo,
+        sub_actions: SubActionRegistry,
+        action_repo: Arc<dyn ActionRepo>,
+    ) -> Entity<ScreenActionsView> {
         cx.update(|cx| {
             cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
         });
-        let action_repo: Arc<dyn ActionRepo> = Arc::new(StubActions);
         let mut queues = MockQueueRepo::new();
         queues.expect_list().returning(|| Ok(Vec::new()));
         let queue_repo: Arc<dyn QueueRepo> = Arc::new(queues);
@@ -2892,7 +2910,7 @@ mod tests {
                     Arc::new(OverlayKindRegistry::new()),
                     None,
                     None,
-                    Arc::new(SubActionRegistry::new()),
+                    Arc::new(sub_actions),
                     Arc::new(TriggerRegistry::new()),
                     handle,
                     bus,
@@ -2920,14 +2938,212 @@ mod tests {
         let view = view_over(cx, &rt, vec![ghost, real], media);
 
         view.update(cx, |view, cx| view.fetch_select_options(cx));
-        for _ in 0..3 {
+        let mut listed = None;
+        for _ in 0..CLIP_PROBE_ROUNDS {
             pump(&rt);
             cx.run_until_parked();
+            listed = view.read_with(cx, |view, _| {
+                view.select_options.get(CLIP_OPTIONS_KEY).cloned()
+            });
+            if listed.is_some() {
+                break;
+            }
         }
 
-        let listed = view.read_with(cx, |view, _| {
-            view.select_options.get(CLIP_OPTIONS_KEY).cloned()
-        });
         assert_eq!(listed, Some(expected));
+    }
+
+    const PLAY_SOUND: &str = "soundboard.sound.play";
+    const CLIP_FIELD: &str = "clip_id";
+
+    struct SilentPlayer;
+
+    #[async_trait::async_trait]
+    impl forge_runtime::SoundPlayer for SilentPlayer {
+        async fn play(
+            &self,
+            _: ClipId,
+            _: Option<OutputDevice>,
+        ) -> Result<(), forge_runtime::SoundPlayerError> {
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct SavedActions(std::sync::Mutex<Vec<Action>>);
+
+    impl SavedActions {
+        fn saved(&self) -> Vec<Action> {
+            self.0.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ActionRepo for SavedActions {
+        async fn list(&self) -> Result<Vec<Action>, forge_storage::StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn get(&self, _: ActionId) -> Result<Option<Action>, forge_storage::StorageError> {
+            Ok(None)
+        }
+
+        async fn save(&self, action: &Action) -> Result<(), forge_storage::StorageError> {
+            self.0.lock().unwrap().push(action.clone());
+            Ok(())
+        }
+
+        async fn delete(&self, _: ActionId) -> Result<bool, forge_storage::StorageError> {
+            Ok(false)
+        }
+
+        async fn telemetry(
+            &self,
+            _: ActionId,
+        ) -> Result<forge_storage::ActionTelemetry, forge_storage::StorageError> {
+            Ok(forge_storage::ActionTelemetry::default())
+        }
+
+        async fn record_execution(
+            &self,
+            _: ActionId,
+            _: OffsetDateTime,
+            _: u64,
+            _: forge_storage::ExecutionStatus,
+        ) -> Result<(), forge_storage::StorageError> {
+            Ok(())
+        }
+
+        async fn prune_executions_before(
+            &self,
+            _: OffsetDateTime,
+        ) -> Result<u64, forge_storage::StorageError> {
+            Ok(0)
+        }
+    }
+
+    struct PlaySoundEditor {
+        view: Entity<ScreenActionsView>,
+        saves: Arc<SavedActions>,
+        rt: tokio::runtime::Runtime,
+    }
+
+    impl PlaySoundEditor {
+        fn open(cx: &mut gpui::TestAppContext) -> Self {
+            crate::i18n::install_language(forge_storage::Language::En);
+            let rt = runtime();
+            let mut sub_actions = SubActionRegistry::new();
+            sub_actions
+                .register(Box::new(
+                    forge_runtime::audio_runners::PlaySoundRunner::new(Arc::new(SilentPlayer)),
+                ))
+                .unwrap();
+            let saves = Arc::new(SavedActions::default());
+            let mut media = MockMediaRepo::new();
+            media.expect_blob_of().returning(|_| Ok(None));
+            let view = view_with(
+                cx,
+                &rt,
+                Vec::new(),
+                media,
+                sub_actions,
+                Arc::clone(&saves) as Arc<dyn ActionRepo>,
+            );
+            view.update(cx, |view, cx| {
+                view.detail = Some(super::super::integration_gating::tests::detail(vec![
+                    crate::test_support::step(PLAY_SOUND, true),
+                ]));
+                view.open_edit_sub_action(0, cx);
+            });
+            Self { view, saves, rt }
+        }
+
+        fn form(&self, cx: &mut gpui::TestAppContext) -> Option<Entity<EditSubActionForm>> {
+            self.view.read_with(cx, |view, _| view.sub_form.clone())
+        }
+
+        fn save(&self, cx: &mut gpui::TestAppContext, target: SubFormTarget, clip: &str) {
+            let form = self.form(cx).unwrap();
+            let commit = SubFormCommit {
+                target,
+                kind_id: PLAY_SOUND.to_owned(),
+                overrides: vec![(CLIP_FIELD.to_owned(), Variant::String(clip.to_owned()))],
+                continue_on_error: false,
+                condition: None,
+                label: None,
+            };
+            form.update(cx, |_, cx| cx.emit(SubFormEvent::Commit(commit)));
+            for _ in 0..3 {
+                pump(&self.rt);
+                cx.run_until_parked();
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn saving_a_play_sound_step_without_a_clip_keeps_the_dialog_open_and_saves_nothing(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (target, case) in [
+            (SubFormTarget::Edit(0), "edit"),
+            (SubFormTarget::Add, "add"),
+        ] {
+            let editor = PlaySoundEditor::open(cx);
+
+            editor.save(cx, target, "");
+
+            assert_eq!(
+                (editor.form(cx).is_some(), editor.saves.saved().len()),
+                (true, 0),
+                "{case}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_clipless_play_sound_save_is_attributed_to_the_clip_field(cx: &mut gpui::TestAppContext) {
+        let editor = PlaySoundEditor::open(cx);
+        let form = editor.form(cx).unwrap();
+        let commit = SubFormCommit {
+            target: SubFormTarget::Edit(0),
+            kind_id: PLAY_SOUND.to_owned(),
+            overrides: vec![(CLIP_FIELD.to_owned(), Variant::String(String::new()))],
+            continue_on_error: false,
+            condition: None,
+            label: None,
+        };
+
+        let rejection = editor.view.read_with(cx, |view, cx| {
+            view.sub_commit_rejection(&commit, &form.read(cx).field_keys())
+        });
+
+        assert_eq!(
+            rejection,
+            Some(StepRejection {
+                field_key: Some(CLIP_FIELD.to_owned()),
+                message: "clip_id is required".to_owned(),
+            })
+        );
+    }
+
+    #[gpui::test]
+    fn saving_a_play_sound_step_after_picking_a_clip_closes_the_dialog_and_stores_the_clip(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let editor = PlaySoundEditor::open(cx);
+        let clip = ClipId::new().to_string();
+
+        editor.save(cx, SubFormTarget::Edit(0), &clip);
+
+        let stored = editor
+            .saves
+            .saved()
+            .first()
+            .and_then(|action| action.sub_actions.first().cloned())
+            .and_then(|step| step.config.get(CLIP_FIELD).cloned());
+        assert_eq!(
+            (editor.form(cx).is_none(), stored),
+            (true, Some(Variant::String(clip)))
+        );
     }
 }

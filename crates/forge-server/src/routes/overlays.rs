@@ -11,6 +11,7 @@ use crate::protocol::mime_for_extension;
 use crate::server::AppState;
 
 const OVERLAY_ENTRY_DOCUMENT: &str = "index.html";
+pub(crate) const FAVICON_PATH: &str = "/favicon.ico";
 pub(crate) const NOSNIFF: &str = "nosniff";
 const ANY_ORIGIN: &str = "*";
 const SELF_SCHEME: &str = "http://";
@@ -54,7 +55,7 @@ pub async fn serve_overlay_file(
                 HeaderValue::from_static(NOSNIFF),
             );
             if is_generated_media_path(&path) {
-                response_headers.insert(header::CACHE_CONTROL, generated_media_cache_control());
+                response_headers.insert(header::CACHE_CONTROL, immutable_cache_control());
             }
 
             let body = Body::from_stream(ReaderStream::new(served.file));
@@ -62,6 +63,14 @@ pub async fn serve_overlay_file(
         }
         Err(status) => status.into_response(),
     }
+}
+
+pub async fn serve_empty_favicon() -> Response {
+    (
+        StatusCode::NO_CONTENT,
+        [(header::CACHE_CONTROL, immutable_cache_control())],
+    )
+        .into_response()
 }
 
 fn is_generated_media_path(url_path: &str) -> bool {
@@ -75,7 +84,7 @@ fn is_generated_media_path(url_path: &str) -> bool {
     )
 }
 
-fn generated_media_cache_control() -> HeaderValue {
+fn immutable_cache_control() -> HeaderValue {
     let value = format!(
         "{CACHE_CONTROL_PUBLIC}, {CACHE_CONTROL_MAX_AGE_PARAM}={GENERATED_MEDIA_CACHE_MAX_AGE_SECONDS}, {CACHE_CONTROL_IMMUTABLE}"
     );

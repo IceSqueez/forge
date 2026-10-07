@@ -228,7 +228,11 @@ fn build_router(state: AppState, shutdown: tokio::sync::watch::Receiver<bool>) -
         .nest("/api/v1", api_routes)
         .route(
             "/overlays/{*path}",
-            get(overlays::serve_overlay_file).route_layer(host_guard),
+            get(overlays::serve_overlay_file).route_layer(host_guard.clone()),
+        )
+        .route(
+            overlays::FAVICON_PATH,
+            get(overlays::serve_empty_favicon).route_layer(host_guard),
         )
         .merge(audio::router())
         .layer(middleware::from_fn_with_state(

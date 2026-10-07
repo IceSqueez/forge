@@ -1118,4 +1118,105 @@ mod tests {
             .map(|entry| entry.loss.bulk_dropped);
         assert_eq!(dropped, Some(2));
     }
+
+    fn child_of(parent: &Event, kind: &str, own_depth: u16) -> Event {
+        let mut child =
+            Event::caused_by(EventSource::Core, kind, serde_json::Value::Null, parent.id);
+        child.causation_depth = own_depth;
+        child
+    }
+
+    fn published_depth(bus: &EventBus, event: Event) -> u16 {
+        let id = event.id;
+        bus.publish(event);
+        bus.causation_depth(id)
+    }
+
+    #[test]
+    fn publish_carries_the_deepest_of_own_and_parent_depth_down_each_branch() {
+        let bus = null_bus();
+        let root = Event::new(EventSource::Twitch, "twitch.chat", serde_json::Value::Null);
+        let first = child_of(&root, "action.start", 1);
+        let first_run = child_of(&first, "subaction.run", 0);
+        let left = child_of(&first_run, "action.start", 2);
+        let left_leaf = child_of(&left, "action.start", 3);
+        let left_leaf_run = child_of(&left_leaf, "subaction.run", 0);
+        let right = child_of(&first_run, "action.start", 2);
+        let right_run = child_of(&right, "subaction.run", 0);
+        for event in [root, first, first_run, left, left_leaf, right] {
+            bus.publish(event);
+        }
+
+        let depths = (
+            published_depth(&bus, left_leaf_run),
+            published_depth(&bus, right_run),
+        );
+
+        assert_eq!(depths, (3, 2));
+    }
+
+    #[test]
+    fn uncaused_event_after_a_deep_chain_stays_at_depth_zero() {
+        let bus = null_bus();
+        let mut parent = core_event("action.start");
+        bus.publish(parent.clone());
+        for depth in 1..=20 {
+            let next = child_of(&parent, "action.start", depth);
+            bus.publish(next.clone());
+            parent = next;
+        }
+        let platform = Event::new(EventSource::Twitch, "twitch.chat", serde_json::Value::Null);
+
+        assert_eq!(published_depth(&bus, platform), 0);
+    }
+
+    #[test]
+    fn held_parent_evicted_from_the_ring_still_hands_its_depth_to_a_child() {
+        let bus = bus_with_caps(Arc::new(NullEventLogRepo), CHANNEL_CAP, 2);
+        let start = child_of(&core_event("twitch.chat"), "action.start", 5);
+        let _held = bus.hold_lineage(&start);
+        bus.publish(start.clone());
+        for i in 0..3 {
+            bus.publish(core_event(&format!("filler.{i}")));
+        }
+        assert!(bus.lookup(start.id).is_none(), "the start must be evicted");
+
+        assert_eq!(
+            published_depth(&bus, child_of(&start, "test.loop_event", 0)),
+            5
+        );
+    }
+
+    #[test]
+    fn released_hold_leaves_no_depth_behind_for_an_evicted_parent() {
+        let bus = bus_with_caps(Arc::new(NullEventLogRepo), CHANNEL_CAP, 2);
+        let start = child_of(&core_event("twitch.chat"), "action.start", 5);
+        drop(bus.hold_lineage(&start));
+        bus.publish(start.clone());
+        for i in 0..3 {
+            bus.publish(core_event(&format!("filler.{i}")));
+        }
+
+        assert_eq!(
+            published_depth(&bus, child_of(&start, "test.loop_event", 0)),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn replayed_event_takes_its_parents_depth_not_its_own() {
+        let bus = null_bus();
+        let mut sub = bus.subscribe();
+        let trigger = child_of(&core_event("twitch.chat"), "subaction.run", 2);
+        let start = child_of(&trigger, "action.start", 3);
+        let start_id = start.id;
+        bus.publish(trigger);
+        bus.publish(start);
+        while let Ok(Some(_)) = sub.try_recv() {}
+
+        bus.replay_and_publish(start_id).await.unwrap();
+        let replayed = sub.recv().await.unwrap();
+
+        assert_eq!(replayed.causation_depth, 2);
+    }
 }

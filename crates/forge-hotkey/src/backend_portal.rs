@@ -1,7 +1,8 @@
 #![cfg(target_os = "linux")]
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::future::Future;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot};
@@ -43,6 +44,33 @@ const FIRED_QUEUE_CAPACITY: usize = 64;
 const EDGE_QUEUE_CAPACITY: usize = 64;
 const NOTICE_QUEUE_CAPACITY: usize = 4;
 
+pub(crate) struct ShortcutEdge {
+    pub(crate) session: String,
+    pub(crate) shortcut_id: String,
+    pub(crate) edge: HotkeyEdge,
+}
+
+#[async_trait::async_trait]
+pub(crate) trait ShortcutsPortal: Send + Sync {
+    async fn register_app_id(&self);
+
+    async fn create_session(&self) -> Result<String, String>;
+
+    async fn bind_shortcuts(
+        &self,
+        session: &str,
+        combos: &[HotkeyCombo],
+    ) -> Result<HashMap<String, String>, String>;
+
+    async fn close_session(&self, session: &str);
+
+    fn listen_until_portal_restart(
+        &self,
+        edges: mpsc::Sender<ShortcutEdge>,
+        restarts: mpsc::Sender<()>,
+    );
+}
+
 pub(crate) struct PortalBackend {
     cmd_tx: mpsc::Sender<PortalCmd>,
     fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,
@@ -59,14 +87,17 @@ enum PortalCmd {
     Unregister(HotkeyId),
 }
 
-struct ShortcutEdge {
-    shortcut_id: String,
-    edge: HotkeyEdge,
-}
-
 struct PortalOutputs {
     fired_tx: mpsc::Sender<HotkeyFiredEvent>,
     restart_notice_tx: mpsc::Sender<()>,
+    session_tx: mpsc::Sender<BackendSessionEvent>,
+}
+
+struct PortalSignals {
+    edge_tx: mpsc::Sender<ShortcutEdge>,
+    edge_rx: mpsc::Receiver<ShortcutEdge>,
+    restart_tx: mpsc::Sender<()>,
+    restart_rx: mpsc::Receiver<()>,
 }
 
 impl PortalBackend {
@@ -83,34 +114,52 @@ impl PortalBackend {
                 reason: format!("D-Bus session unavailable: {e}"),
             })?;
 
-        register_host_app_id(&conn, app_name).await;
+        Self::with_portal(Arc::new(DbusShortcutsPortal {
+            conn,
+            app_name: app_name.to_owned(),
+        }))
+        .await
+    }
 
-        let session_path = create_portal_session(&conn, app_name)
-            .await
-            .map_err(|reason| HotkeyError::PortalUnavailable {
-                reason: format!("GlobalShortcuts portal not available: {reason}"),
-            })?;
+    pub(crate) async fn with_portal(portal: Arc<dyn ShortcutsPortal>) -> Result<Self, HotkeyError> {
+        portal.register_app_id().await;
+
+        let session_path =
+            portal
+                .create_session()
+                .await
+                .map_err(|reason| HotkeyError::PortalUnavailable {
+                    reason: format!("GlobalShortcuts portal not available: {reason}"),
+                })?;
 
         let (cmd_tx, cmd_rx) = mpsc::channel::<PortalCmd>(COMMAND_QUEUE_CAPACITY);
         let (fired_tx, fired_rx) = mpsc::channel::<HotkeyFiredEvent>(FIRED_QUEUE_CAPACITY);
         let (restart_notice_tx, restart_notice_rx) = mpsc::channel::<()>(NOTICE_QUEUE_CAPACITY);
         let (session_tx, session_rx) = mpsc::channel::<BackendSessionEvent>(NOTICE_QUEUE_CAPACITY);
+        let (edge_tx, edge_rx) = mpsc::channel::<ShortcutEdge>(EDGE_QUEUE_CAPACITY);
+        let (restart_tx, restart_rx) = mpsc::channel::<()>(NOTICE_QUEUE_CAPACITY);
 
         let session = PortalSession {
-            conn,
-            app_name: app_name.to_owned(),
-            session_path,
+            portal,
+            session: Some(session_path),
             session_bound: false,
             registered: HashMap::new(),
             shortcut_ids: HashMap::new(),
-            session_tx,
             session_lost: false,
+            restart_pending: false,
+            signals: PortalSignals {
+                edge_tx,
+                edge_rx,
+                restart_tx,
+                restart_rx,
+            },
+            outputs: PortalOutputs {
+                fired_tx,
+                restart_notice_tx,
+                session_tx,
+            },
         };
-        let outputs = PortalOutputs {
-            fired_tx,
-            restart_notice_tx,
-        };
-        tokio::spawn(session.run(cmd_rx, outputs));
+        tokio::spawn(session.run(cmd_rx));
 
         Ok(Self {
             cmd_tx,
@@ -167,26 +216,20 @@ impl HotkeyBackend for PortalBackend {
 }
 
 struct PortalSession {
-    conn: Connection,
-    app_name: String,
-    session_path: OwnedObjectPath,
+    portal: Arc<dyn ShortcutsPortal>,
+    session: Option<String>,
     session_bound: bool,
     registered: HashMap<HotkeyId, HotkeyCombo>,
     shortcut_ids: HashMap<String, HotkeyId>,
-    session_tx: mpsc::Sender<BackendSessionEvent>,
     session_lost: bool,
+    restart_pending: bool,
+    signals: PortalSignals,
+    outputs: PortalOutputs,
 }
 
 impl PortalSession {
-    async fn run(mut self, mut cmd_rx: mpsc::Receiver<PortalCmd>, outputs: PortalOutputs) {
-        let (edge_tx, mut edge_rx) = mpsc::channel::<ShortcutEdge>(EDGE_QUEUE_CAPACITY);
-        let (owner_restart_tx, mut owner_restart_rx) = mpsc::channel::<()>(NOTICE_QUEUE_CAPACITY);
-
-        tokio::spawn(signal_listener_task(
-            self.conn.clone(),
-            edge_tx.clone(),
-            owner_restart_tx.clone(),
-        ));
+    async fn run(mut self, mut cmd_rx: mpsc::Receiver<PortalCmd>) {
+        self.listen();
 
         loop {
             tokio::select! {
@@ -200,22 +243,48 @@ impl PortalSession {
                         None => break,
                     }
                 }
-                Some(shortcut) = edge_rx.recv() => {
-                    self.forward_edge(shortcut, &outputs.fired_tx).await;
+                Some(shortcut) = self.signals.edge_rx.recv() => {
+                    self.forward_edge(shortcut).await;
                 }
-                Some(()) = owner_restart_rx.recv() => {
-                    tracing::info!("portal daemon restarted - recreating the shortcuts session");
-                    let _ = outputs.restart_notice_tx.send(()).await;
-                    tokio::spawn(signal_listener_task(
-                        self.conn.clone(),
-                        edge_tx.clone(),
-                        owner_restart_tx.clone(),
-                    ));
-                    let outcome = self.recreate().await;
-                    self.note_session_outcome(outcome).await;
+                Some(()) = self.signals.restart_rx.recv() => {
+                    self.restart_pending = true;
+                }
+            }
+
+            while std::mem::take(&mut self.restart_pending) {
+                self.recover_from_restart().await;
+            }
+        }
+    }
+
+    fn listen(&self) {
+        self.portal.listen_until_portal_restart(
+            self.signals.edge_tx.clone(),
+            self.signals.restart_tx.clone(),
+        );
+    }
+
+    async fn serve_signals_while<T>(&mut self, call: impl Future<Output = T>) -> T {
+        let mut call = std::pin::pin!(call);
+        loop {
+            tokio::select! {
+                out = &mut call => return out,
+                Some(shortcut) = self.signals.edge_rx.recv() => {
+                    self.forward_edge(shortcut).await;
+                }
+                Some(()) = self.signals.restart_rx.recv() => {
+                    self.restart_pending = true;
                 }
             }
         }
+    }
+
+    async fn recover_from_restart(&mut self) {
+        tracing::info!("portal daemon restarted - recreating the shortcuts session");
+        let _ = self.outputs.restart_notice_tx.send(()).await;
+        self.listen();
+        let outcome = self.recreate().await;
+        self.note_session_outcome(outcome).await;
     }
 
     async fn register(&mut self, id: HotkeyId, combo: HotkeyCombo) -> Result<(), HotkeyError> {
@@ -268,21 +337,22 @@ impl PortalSession {
             }
         };
         self.session_lost = matches!(event, BackendSessionEvent::Lost(_));
-        let _ = self.session_tx.send(event).await;
+        let _ = self.outputs.session_tx.send(event).await;
     }
 
-    async fn forward_edge(
-        &self,
-        shortcut: ShortcutEdge,
-        fired_tx: &mpsc::Sender<HotkeyFiredEvent>,
-    ) {
+    async fn forward_edge(&self, shortcut: ShortcutEdge) {
+        if self.session.as_deref() != Some(shortcut.session.as_str()) {
+            return;
+        }
         let Some(&id) = self.shortcut_ids.get(&shortcut.shortcut_id) else {
             return;
         };
         let Some(combo) = self.registered.get(&id) else {
             return;
         };
-        let _ = fired_tx
+        let _ = self
+            .outputs
+            .fired_tx
             .send(HotkeyFiredEvent {
                 id,
                 combo: combo.clone(),
@@ -292,26 +362,34 @@ impl PortalSession {
             .await;
     }
 
+    async fn create_session(&mut self) -> Result<String, String> {
+        let portal = Arc::clone(&self.portal);
+        self.serve_signals_while(async move { portal.create_session().await })
+            .await
+    }
+
     async fn recreate(&mut self) -> Result<(), String> {
-        register_host_app_id(&self.conn, &self.app_name).await;
+        self.portal.register_app_id().await;
+        self.session = None;
         self.session_bound = false;
 
         let mut backoff = SESSION_RECREATE_FIRST_BACKOFF;
         let mut attempt = 1;
-        self.session_path = loop {
-            match create_portal_session(&self.conn, &self.app_name).await {
+        let session_path = loop {
+            match self.create_session().await {
                 Ok(path) => break path,
                 Err(reason) if attempt >= SESSION_RECREATE_ATTEMPTS => {
                     return Err(format!("CreateSession failed: {reason}"));
                 }
                 Err(reason) => {
                     tracing::debug!(attempt, %reason, "CreateSession after portal restart failed; retrying");
-                    tokio::time::sleep(backoff).await;
+                    self.serve_signals_while(tokio::time::sleep(backoff)).await;
                     backoff = backoff.saturating_mul(2);
                     attempt += 1;
                 }
             }
         };
+        self.session = Some(session_path);
 
         if self.registered.is_empty() {
             return Ok(());
@@ -325,29 +403,74 @@ impl PortalSession {
         Ok(())
     }
 
-    async fn ensure_unbound_session(&mut self) -> Result<(), String> {
-        if !self.session_bound {
-            return Ok(());
+    async fn unbound_session(&mut self) -> Result<String, String> {
+        if !self.session_bound
+            && let Some(path) = &self.session
+        {
+            return Ok(path.clone());
         }
-        close_session(&self.conn, &self.session_path).await;
-        self.session_path = create_portal_session(&self.conn, &self.app_name).await?;
+        if let Some(stale) = self.session.take() {
+            self.portal.close_session(&stale).await;
+        }
         self.session_bound = false;
-        Ok(())
+        let path = self.create_session().await?;
+        self.session = Some(path.clone());
+        Ok(path)
     }
 
     async fn bind(&mut self) -> Result<HashMap<String, String>, String> {
-        self.ensure_unbound_session().await?;
+        let session = self.unbound_session().await?;
         self.session_bound = true;
 
+        let combos: Vec<HotkeyCombo> = self.registered.values().cloned().collect();
+        let portal = Arc::clone(&self.portal);
+        let bound = self
+            .serve_signals_while(async move { portal.bind_shortcuts(&session, &combos).await })
+            .await?;
+
+        for (shortcut_id, trigger) in &bound {
+            if trigger.is_empty() {
+                tracing::warn!(
+                    shortcut = %shortcut_id,
+                    "global shortcut bound without a key; assign one in the desktop shortcut settings"
+                );
+            } else {
+                tracing::info!(shortcut = %shortcut_id, %trigger, "global shortcut bound");
+            }
+        }
+        Ok(bound)
+    }
+}
+
+struct DbusShortcutsPortal {
+    conn: Connection,
+    app_name: String,
+}
+
+#[async_trait::async_trait]
+impl ShortcutsPortal for DbusShortcutsPortal {
+    async fn register_app_id(&self) {
+        register_host_app_id(&self.conn, &self.app_name).await;
+    }
+
+    async fn create_session(&self) -> Result<String, String> {
+        create_portal_session(&self.conn, &self.app_name)
+            .await
+            .map(|path| path.as_str().to_owned())
+    }
+
+    async fn bind_shortcuts(
+        &self,
+        session: &str,
+        combos: &[HotkeyCombo],
+    ) -> Result<HashMap<String, String>, String> {
         let proxy = global_shortcuts_proxy(&self.conn)
             .await
             .map_err(|e| e.to_string())?;
-        let session =
-            ObjectPath::try_from(self.session_path.as_str()).map_err(|e| e.to_string())?;
+        let session = ObjectPath::try_from(session).map_err(|e| e.to_string())?;
 
-        let shortcuts: Vec<(&str, HashMap<&str, Value<'_>>)> = self
-            .registered
-            .values()
+        let shortcuts: Vec<(&str, HashMap<&str, Value<'_>>)> = combos
+            .iter()
             .map(|combo| (combo.as_str(), shortcut_properties(combo)))
             .collect();
 
@@ -367,18 +490,19 @@ impl PortalSession {
         .map_err(|e| e.to_string())?
         .into_results("BindShortcuts")?;
 
-        let bound = bound_triggers(&results);
-        for (shortcut_id, trigger) in &bound {
-            if trigger.is_empty() {
-                tracing::warn!(
-                    shortcut = %shortcut_id,
-                    "global shortcut bound without a key; assign one in the desktop shortcut settings"
-                );
-            } else {
-                tracing::info!(shortcut = %shortcut_id, %trigger, "global shortcut bound");
-            }
-        }
-        Ok(bound)
+        Ok(bound_triggers(&results))
+    }
+
+    async fn close_session(&self, session: &str) {
+        close_session(&self.conn, session).await;
+    }
+
+    fn listen_until_portal_restart(
+        &self,
+        edges: mpsc::Sender<ShortcutEdge>,
+        restarts: mpsc::Sender<()>,
+    ) {
+        tokio::spawn(signal_listener_task(self.conn.clone(), edges, restarts));
     }
 }
 
@@ -494,21 +618,15 @@ async fn create_portal_session(
         .ok_or_else(|| "CreateSession returned no usable session_handle".to_owned())
 }
 
-async fn close_session(conn: &Connection, session_path: &OwnedObjectPath) {
-    let proxy = match zbus::Proxy::new(
-        conn,
-        PORTAL_DESTINATION,
-        session_path.as_str(),
-        SESSION_INTERFACE,
-    )
-    .await
-    {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::debug!(error = %e, "portal session proxy unavailable; skipping Close");
-            return;
-        }
-    };
+async fn close_session(conn: &Connection, session_path: &str) {
+    let proxy =
+        match zbus::Proxy::new(conn, PORTAL_DESTINATION, session_path, SESSION_INTERFACE).await {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::debug!(error = %e, "portal session proxy unavailable; skipping Close");
+                return;
+            }
+        };
     if let Err(e) = proxy.call::<_, _, ()>("Close", &()).await {
         tracing::debug!(error = %e, "portal session Close failed");
     }
@@ -599,13 +717,17 @@ async fn signal_listener_task(
 }
 
 fn parse_shortcut_signal(msg: &zbus::Message, edge: HotkeyEdge) -> Option<ShortcutEdge> {
-    let (_session, shortcut_id, _timestamp, _options): (
+    let (session, shortcut_id, _timestamp, _options): (
         OwnedObjectPath,
         String,
         u64,
         HashMap<String, OwnedValue>,
     ) = msg.body().deserialize().ok()?;
-    Some(ShortcutEdge { shortcut_id, edge })
+    Some(ShortcutEdge {
+        session: session.as_str().to_owned(),
+        shortcut_id,
+        edge,
+    })
 }
 
 #[cfg(test)]

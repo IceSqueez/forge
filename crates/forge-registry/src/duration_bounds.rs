@@ -105,3 +105,177 @@ impl DurationBounds {
 fn unit_millis(unit: &AmountUnit) -> i64 {
     i64::try_from(unit.base_units.max(1)).unwrap_or(i64::MAX)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const POLL: DurationBounds = DurationBounds {
+        min_ms: 100,
+        max_ms: 30_000,
+    };
+    const TIMEOUT: DurationBounds = DurationBounds {
+        min_ms: 100,
+        max_ms: 600_000,
+    };
+
+    fn unit_values(bounds: DurationBounds) -> Vec<&'static str> {
+        bounds.fitting_units().map(|unit| unit.value).collect()
+    }
+
+    #[test]
+    fn fitting_units_offer_only_units_holding_a_whole_amount_inside_the_bounds() {
+        for (max_ms, expected) in [
+            (
+                59_999,
+                vec![DURATION_UNIT_MILLISECONDS, DURATION_UNIT_SECONDS],
+            ),
+            (
+                60_000,
+                vec![
+                    DURATION_UNIT_MILLISECONDS,
+                    DURATION_UNIT_SECONDS,
+                    DURATION_UNIT_MINUTES,
+                ],
+            ),
+            (
+                3_600_000,
+                vec![
+                    DURATION_UNIT_MILLISECONDS,
+                    DURATION_UNIT_SECONDS,
+                    DURATION_UNIT_MINUTES,
+                    DURATION_UNIT_HOURS,
+                ],
+            ),
+        ] {
+            let bounds = DurationBounds {
+                min_ms: 100,
+                max_ms,
+            };
+            assert_eq!(unit_values(bounds), expected, "max {max_ms} ms");
+        }
+    }
+
+    #[test]
+    fn fitting_units_drop_a_unit_whose_rounded_up_minimum_passes_the_maximum() {
+        let bounds = DurationBounds {
+            min_ms: 1_500,
+            max_ms: 1_999,
+        };
+
+        assert_eq!(unit_values(bounds), [DURATION_UNIT_MILLISECONDS]);
+    }
+
+    #[test]
+    fn range_for_rounds_the_minimum_up_and_the_maximum_down_to_whole_units() {
+        let bounds = DurationBounds {
+            min_ms: 1_500,
+            max_ms: 150_000,
+        };
+        for (unit, expected) in [
+            (DURATION_UNIT_MILLISECONDS, 1_500..=150_000),
+            (DURATION_UNIT_SECONDS, 2..=150),
+            (DURATION_UNIT_MINUTES, 1..=2),
+        ] {
+            assert_eq!(bounds.range_for(unit), expected, "unit {unit}");
+        }
+    }
+
+    #[test]
+    fn range_for_a_unit_that_does_not_fit_or_is_unknown_uses_the_first_fitting_unit() {
+        for unit in [DURATION_UNIT_MINUTES, DURATION_UNIT_HOURS, "weeks", ""] {
+            assert_eq!(POLL.range_for(unit), 100..=30_000, "unit {unit:?}");
+        }
+    }
+
+    #[test]
+    fn in_largest_exact_unit_shows_millis_in_the_largest_fitting_unit_that_divides_them() {
+        for (bounds, millis, unit, amount) in [
+            (TIMEOUT, 1_000, DURATION_UNIT_SECONDS, 1),
+            (TIMEOUT, 60_000, DURATION_UNIT_MINUTES, 1),
+            (TIMEOUT, 90_000, DURATION_UNIT_SECONDS, 90),
+            (TIMEOUT, 1_500, DURATION_UNIT_MILLISECONDS, 1_500),
+            (TIMEOUT, 0, DURATION_UNIT_MILLISECONDS, 0),
+            (TIMEOUT, 3_600_000, DURATION_UNIT_MINUTES, 60),
+            (POLL, 60_000, DURATION_UNIT_SECONDS, 60),
+            (POLL, 500, DURATION_UNIT_MILLISECONDS, 500),
+            (TIMEOUT, -2_000, DURATION_UNIT_SECONDS, -2),
+        ] {
+            let shown = bounds
+                .in_largest_exact_unit(millis)
+                .map(|(unit, amount)| (unit.value, amount));
+            assert_eq!(shown, Some((unit, amount)), "{millis} ms in {bounds:?}");
+        }
+    }
+
+    #[test]
+    fn in_largest_exact_unit_finds_nothing_when_no_unit_fits_the_bounds() {
+        let inverted = DurationBounds {
+            min_ms: 5_000,
+            max_ms: 100,
+        };
+
+        assert!(inverted.in_largest_exact_unit(1_000).is_none());
+    }
+
+    #[test]
+    fn millis_scales_an_amount_by_its_unit_and_saturates_instead_of_overflowing() {
+        for (unit, amount, expected) in [
+            (DURATION_UNIT_MILLISECONDS, 7, 7),
+            (DURATION_UNIT_SECONDS, 2, 2_000),
+            (DURATION_UNIT_MINUTES, 2, 120_000),
+            ("weeks", 7, 7),
+            (DURATION_UNIT_MINUTES, i64::MAX, i64::MAX),
+            (DURATION_UNIT_MINUTES, i64::MIN, i64::MIN),
+        ] {
+            assert_eq!(TIMEOUT.millis(unit, amount), expected, "{amount} {unit:?}");
+        }
+    }
+
+    #[test]
+    fn nearest_amount_in_converts_exactly_or_rounds_half_away_from_zero() {
+        for (amount, from, to, expected) in [
+            (2, DURATION_UNIT_MINUTES, DURATION_UNIT_SECONDS, 120),
+            (2, DURATION_UNIT_SECONDS, DURATION_UNIT_MILLISECONDS, 2_000),
+            (
+                120_000,
+                DURATION_UNIT_MILLISECONDS,
+                DURATION_UNIT_MINUTES,
+                2,
+            ),
+            (1_500, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_SECONDS, 2),
+            (1_499, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_SECONDS, 1),
+            (500, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_SECONDS, 1),
+            (400, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_SECONDS, 0),
+            (90, DURATION_UNIT_SECONDS, DURATION_UNIT_MINUTES, 2),
+            (
+                -1_500,
+                DURATION_UNIT_MILLISECONDS,
+                DURATION_UNIT_SECONDS,
+                -2,
+            ),
+            (-400, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_SECONDS, 0),
+        ] {
+            assert_eq!(
+                TIMEOUT.nearest_amount_in(amount, from, to),
+                expected,
+                "{amount} {from} -> {to}"
+            );
+        }
+    }
+
+    #[test]
+    fn nearest_amount_in_saturates_at_the_ends_of_i64() {
+        for (amount, from, expected) in [
+            (i64::MAX, DURATION_UNIT_MINUTES, i64::MAX / 1_000),
+            (i64::MAX, DURATION_UNIT_MILLISECONDS, i64::MAX / 1_000),
+            (i64::MIN, DURATION_UNIT_MILLISECONDS, i64::MIN / 1_000),
+        ] {
+            assert_eq!(
+                TIMEOUT.nearest_amount_in(amount, from, DURATION_UNIT_SECONDS),
+                expected,
+                "{amount} {from}"
+            );
+        }
+    }
+}

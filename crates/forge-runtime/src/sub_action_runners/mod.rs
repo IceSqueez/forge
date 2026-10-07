@@ -371,10 +371,16 @@ pub fn register_core_sub_actions(
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
-    use super::{CoreLogicIfThenElseRunner, CoreLogicLoopRunner, CoreLogicSwitchCaseRunner};
+    use super::{
+        CoreHttpRunner, CoreLogicIfThenElseRunner, CoreLogicLoopRunner, CoreLogicSwitchCaseRunner,
+        CoreLogicWaitRunner, CoreLogicWaitUntilRunner, CoreNotifyShowRunner, SystemNotifyPort,
+    };
     use crate::condition::ConditionGate;
     use crate::config::Config;
-    use forge_registry::{FormField, SubActionRunner};
+    use crate::egress::{EgressClient, HttpMethod};
+    use crate::test_support::sandboxed_backend;
+    use forge_registry::{DurationBounds, FormField, SubActionRunner};
+    use forge_storage::SettingsRepo;
     use std::sync::Arc;
 
     #[test]
@@ -403,6 +409,47 @@ mod tests {
                 Some(FormField::SubChain { .. }) if !is_case_list => {}
                 other => panic!("chain field `{key}` wrong or missing: {other:?}"),
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn duration_steps_keep_their_stored_millisecond_key_and_bounds() {
+        let gate = Arc::new(ConditionGate::new(&Config::default()));
+        let backend = sandboxed_backend([0x22; 32]).await.map(Arc::new);
+        let settings = Arc::clone(&*backend) as Arc<dyn SettingsRepo>;
+        let http = CoreHttpRunner::new(
+            HttpMethod::Get,
+            settings,
+            Arc::new(EgressClient::new().unwrap()),
+        );
+        let wait_until = CoreLogicWaitUntilRunner::new(gate);
+        let notify = CoreNotifyShowRunner::new(Arc::new(SystemNotifyPort));
+
+        let expectations: &[(&dyn SubActionRunner, &str, i64, i64)] = &[
+            (&CoreLogicWaitRunner, "ms", 0, 60_000),
+            (&wait_until, "poll_interval_ms", 100, 30_000),
+            (&wait_until, "timeout_ms", 100, 600_000),
+            (&notify, "timeout_ms", 1_000, 60_000),
+            (&http, "timeout_ms", 100, 60_000),
+        ];
+
+        for (runner, key, min_ms, max_ms) in expectations {
+            let bounds = runner
+                .config_fields()
+                .into_iter()
+                .find_map(|field| match field {
+                    FormField::Duration { key: k, bounds, .. } if k == *key => Some(bounds),
+                    _ => None,
+                });
+            assert_eq!(
+                bounds,
+                Some(DurationBounds {
+                    min_ms: *min_ms,
+                    max_ms: *max_ms
+                }),
+                "{} `{key}`",
+                runner.id()
+            );
         }
     }
 }

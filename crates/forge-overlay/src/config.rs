@@ -549,7 +549,7 @@ mod tests {
     use crate::kinds::chat::ChatOverlayKind;
     use crate::motion;
     use crate::preview::{PreviewComposition, PreviewShape, compose};
-    use forge_registry::{AmountUnit, UnitAmountBounds};
+    use forge_registry::{AmountUnit, DurationBounds, UnitAmountBounds};
 
     const PROBE_TOGGLE: &str = "probe.toggle";
     const PROBE_INTEGER: &str = "probe.integer";
@@ -558,6 +558,11 @@ mod tests {
     const PROBE_INNER_OPTIONS: &[&str] = &["left", "right"];
     const PROBE_AMOUNT: &str = "probe.amount";
     const PROBE_AMOUNT_UNIT: &str = "probe.amount_unit";
+    const PROBE_DURATION: &str = "probe.duration";
+    const PROBE_DURATION_BOUNDS: DurationBounds = DurationBounds {
+        min_ms: 100,
+        max_ms: 600_000,
+    };
     const PROBE_AMOUNT_BOUNDS: UnitAmountBounds = UnitAmountBounds {
         min: 1,
         max_base_units: 120,
@@ -633,6 +638,14 @@ mod tests {
                         label: "Amount",
                         unit_key: PROBE_AMOUNT_UNIT,
                         bounds: PROBE_AMOUNT_BOUNDS,
+                    },
+                ),
+                in_section(
+                    ConfigSection::Behavior,
+                    FormField::Duration {
+                        key: PROBE_DURATION,
+                        label: "Duration",
+                        bounds: PROBE_DURATION_BOUNDS,
                     },
                 ),
                 in_section(
@@ -758,6 +771,7 @@ mod tests {
             (&probe, PROBE_OPTIONAL, Variant::Int(1)),
             (&probe, PROBE_AMOUNT, text("2")),
             (&probe, PROBE_AMOUNT_UNIT, Variant::Int(60)),
+            (&probe, PROBE_DURATION, text("2000")),
         ] {
             let err = validate_overlay_config(descriptor, &one(key, value.clone()))
                 .expect_err("a value of the wrong shape must be rejected");
@@ -840,6 +854,31 @@ mod tests {
                 ),
                 "{amount} {unit:?} produced {err:?}"
             );
+        }
+    }
+
+    #[test]
+    fn validate_checks_a_duration_against_its_millisecond_bounds() {
+        for (millis, accepted) in [
+            (100, true),
+            (600_000, true),
+            (99, false),
+            (600_001, false),
+            (i64::MIN, false),
+        ] {
+            let rejection = validate_overlay_config(
+                &FieldProbeKind,
+                &one(PROBE_DURATION, Variant::Int(millis)),
+            )
+            .err()
+            .map(|err| {
+                matches!(
+                    &err,
+                    OverlayError::OutOfRange { key, min: 100, max: 600_000 } if key == PROBE_DURATION
+                )
+            });
+
+            assert_eq!(rejection, (!accepted).then_some(true), "{millis} ms");
         }
     }
 

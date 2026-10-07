@@ -2300,4 +2300,105 @@ mod tests {
             )
         );
     }
+
+    const DURATION_FIELD: &str = "timeout_ms";
+
+    fn duration_spec() -> FormField {
+        FormField::Duration {
+            key: DURATION_FIELD,
+            label: "Timeout",
+            bounds: forge_registry::DurationBounds {
+                min_ms: 100,
+                max_ms: 600_000,
+            },
+        }
+    }
+
+    fn duration_unit_picker() -> String {
+        AmountScale::of(&duration_spec())
+            .map(|scale| scale.unit_picker_key(DURATION_FIELD))
+            .unwrap_or_else(|| panic!("a duration spec has an amount scale"))
+    }
+
+    fn stored_millis(millis: Variant) -> SubActionConfig {
+        [(DURATION_FIELD.to_owned(), millis)].into_iter().collect()
+    }
+
+    #[gpui::test]
+    fn a_duration_past_its_bounds_in_the_shown_unit_blocks_submit(cx: &mut TestAppContext) {
+        for (stored, commits) in [
+            (Variant::Int(100), true),
+            (Variant::Int(99), false),
+            (Variant::Int(600_000), true),
+            (Variant::Int(660_000), false),
+            (Variant::Int(601_000), false),
+            (Variant::Int(0), false),
+            (Variant::String("soon".to_owned()), false),
+            (Variant::String(String::new()), true),
+        ] {
+            let outcome =
+                submitted_overrides(vec![duration_spec()], stored_millis(stored.clone()), cx);
+            assert_eq!(outcome.is_some(), commits, "stored {stored:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn an_unedited_duration_commits_only_the_millis_it_loaded(cx: &mut TestAppContext) {
+        for millis in [100, 1_500, 30_000, 120_000] {
+            let overrides = committed_overrides(
+                vec![duration_spec()],
+                stored_millis(Variant::Int(millis)),
+                cx,
+            );
+            assert_eq!(
+                overrides,
+                [(DURATION_FIELD.to_owned(), Variant::Int(millis))],
+                "stored {millis} ms"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn picking_minutes_and_typing_an_amount_commits_it_as_millis(cx: &mut TestAppContext) {
+        let launch = launch_with(vec![duration_spec()], stored_millis(Variant::Int(30_000)));
+        let (form, vcx, _rt) = open_launch(cx, launch);
+        let heard = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let sink = std::rc::Rc::clone(&heard);
+        let _subscription = vcx.update(|_window, cx| {
+            cx.subscribe(&form, move |_, event: &SubFormEvent, _| {
+                if let SubFormEvent::Commit(commit) = event {
+                    *sink.borrow_mut() = Some(commit.overrides.clone());
+                }
+            })
+        });
+
+        vcx.update(|window, cx| {
+            form.update(cx, |form, cx| {
+                form.open_select_picker(duration_unit_picker(), window, cx);
+                form.pick_select_option(forge_registry::DURATION_UNIT_MINUTES.to_owned(), cx);
+            })
+        });
+        vcx.update(|_window, cx| {
+            let input = form
+                .read(cx)
+                .fields
+                .iter()
+                .find_map(|field| match field {
+                    SubFormField::UnitAmount { input, .. } => Some(input.clone()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("a duration spec builds an amount field"));
+            input.update(cx, |input, cx| input.set_content("2".to_owned(), cx));
+        });
+        vcx.update(|_window, cx| form.update(cx, |form, cx| form.submit(cx)));
+
+        let overrides = heard
+            .borrow_mut()
+            .take()
+            .unwrap_or_else(|| panic!("2 minutes is in range, so Save must commit"));
+        assert_eq!(
+            overrides,
+            [(DURATION_FIELD.to_owned(), Variant::Int(120_000))]
+        );
+    }
 }

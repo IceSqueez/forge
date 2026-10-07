@@ -1995,4 +1995,142 @@ mod tests {
             config(&[(AMOUNT_GATE, Variant::Bool(false))])
         );
     }
+
+    const DURATION_KEY: &str = "timeout_ms";
+
+    fn duration_spec(min_ms: i64, max_ms: i64) -> FormField {
+        FormField::Duration {
+            key: DURATION_KEY,
+            label: "Timeout",
+            bounds: forge_registry::DurationBounds { min_ms, max_ms },
+        }
+    }
+
+    fn duration_unit_picker() -> String {
+        AmountScale::of(&duration_spec(100, 600_000))
+            .map(|scale| scale.unit_picker_key(DURATION_KEY))
+            .unwrap_or_else(|| panic!("a duration spec has an amount scale"))
+    }
+
+    fn stored_millis(millis: i64) -> FieldConfig {
+        config(&[(DURATION_KEY, Variant::Int(millis))])
+    }
+
+    #[gpui::test]
+    fn a_duration_saves_millis_clamped_into_the_shown_units_range(cx: &mut gpui::TestAppContext) {
+        for (stored, typed, saved) in [
+            (30_000, "45", 45_000),
+            (30_000, "900", 600_000),
+            (30_000, "0", 1_000),
+            (120_000, "3", 180_000),
+            (120_000, "11", 600_000),
+            (500, "50", 100),
+            (500, "600000", 600_000),
+        ] {
+            let (_host, fields) = build(
+                cx,
+                &duration_spec(100, 600_000),
+                &FieldConfig::new(),
+                &stored_millis(stored),
+                "",
+            );
+            type_amount(cx, &fields, typed);
+
+            assert_eq!(
+                collected(cx, &fields, &FieldConfig::new()),
+                stored_millis(saved),
+                "stored {stored} ms, typed {typed:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn an_unedited_duration_saves_the_millis_it_loaded(cx: &mut gpui::TestAppContext) {
+        for stored in [100, 1_500, 30_000, 90_000, 120_000, 600_000] {
+            let (_host, fields) = build(
+                cx,
+                &duration_spec(100, 600_000),
+                &FieldConfig::new(),
+                &stored_millis(stored),
+                "",
+            );
+
+            assert_eq!(
+                collected(cx, &fields, &FieldConfig::new()),
+                stored_millis(stored),
+                "stored {stored} ms"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn picking_another_duration_unit_converts_the_shown_amount(cx: &mut gpui::TestAppContext) {
+        for (to, shown) in [
+            (forge_registry::DURATION_UNIT_MILLISECONDS, "90000"),
+            (forge_registry::DURATION_UNIT_MINUTES, "2"),
+        ] {
+            let (_host, mut fields) = build(
+                cx,
+                &duration_spec(100, 600_000),
+                &FieldConfig::new(),
+                &stored_millis(90_000),
+                "",
+            );
+
+            cx.update(|cx| set_picked_value(&mut fields, &duration_unit_picker(), to, cx));
+
+            assert_eq!(shown_amount(cx, &fields), shown, "90 seconds into {to}");
+        }
+    }
+
+    #[gpui::test]
+    fn a_duration_rounded_to_zero_by_a_unit_switch_settles_at_the_new_units_minimum(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (_host, mut fields) = build(
+            cx,
+            &duration_spec(100, 30_000),
+            &FieldConfig::new(),
+            &stored_millis(100),
+            "",
+        );
+
+        cx.update(|cx| {
+            set_picked_value(
+                &mut fields,
+                &duration_unit_picker(),
+                forge_registry::DURATION_UNIT_SECONDS,
+                cx,
+            )
+        });
+
+        assert_eq!(shown_amount(cx, &fields), "1");
+    }
+
+    #[gpui::test]
+    fn switching_the_unit_then_typing_saves_the_amount_in_the_new_unit(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (_host, mut fields) = build(
+            cx,
+            &duration_spec(100, 600_000),
+            &FieldConfig::new(),
+            &stored_millis(30_000),
+            "",
+        );
+        cx.update(|cx| {
+            set_picked_value(
+                &mut fields,
+                &duration_unit_picker(),
+                forge_registry::DURATION_UNIT_MINUTES,
+                cx,
+            )
+        });
+        type_amount(cx, &fields, "2");
+
+        assert_eq!(
+            collected(cx, &fields, &FieldConfig::new()),
+            stored_millis(120_000)
+        );
+    }
 }

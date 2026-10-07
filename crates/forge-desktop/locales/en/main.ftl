@@ -960,6 +960,7 @@ tts_filters_output_lang_meta = pick voice per message language
 
 tts_filters_badge_text = TEXT
 tts_filters_badge_regex = REGEX
+tts_filters_badge_text_inside_words = TEXT · INSIDE WORDS
 tts_filters_stage_add = Add
 
 ## TTS Filters - add filter modal
@@ -1022,6 +1023,8 @@ tts_filters_modal_replace_match_label = MATCH PATTERN
 tts_filters_modal_replace_find_placeholder = POG
 tts_filters_modal_replace_replace_label = REPLACE WITH
 tts_filters_modal_replace_replace_text_placeholder = respect
+tts_filters_modal_replace_inside_words_label = Match inside words
+tts_filters_modal_replace_inside_words_hint = Off: GG replaces GG and GG! but not POGGERS. Matching ignores case.
 tts_filters_modal_replace_note = Leave replacement empty to strip matched text.
 
 ## TTS Filters - pipeline settings

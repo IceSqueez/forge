@@ -262,6 +262,7 @@ enum FilterDraft {
         kind: ReplaceKind,
         from: String,
         to: String,
+        match_inside_words: bool,
     },
 }
 
@@ -280,6 +281,7 @@ struct AddFilterModal {
     replace_kind: ReplaceKind,
     replace_from: Entity<TextInput>,
     replace_to: Entity<TextInput>,
+    replace_inside_words: bool,
     _param_sub: Subscription,
 }
 
@@ -322,6 +324,7 @@ impl AddFilterModal {
             replace_kind: ReplaceKind::Text,
             replace_from,
             replace_to,
+            replace_inside_words: false,
             _param_sub: param_sub,
         }
     }
@@ -359,6 +362,11 @@ impl AddFilterModal {
 
     fn set_replace_kind(&mut self, kind: ReplaceKind, cx: &mut Context<Self>) {
         self.replace_kind = kind;
+        cx.notify();
+    }
+
+    fn toggle_replace_inside_words(&mut self, cx: &mut Context<Self>) {
+        self.replace_inside_words = !self.replace_inside_words;
         cx.notify();
     }
 
@@ -422,6 +430,7 @@ impl AddFilterModal {
                 kind: self.replace_kind,
                 from: self.replace_from.read(cx).content().trim().to_owned(),
                 to: self.replace_to.read(cx).content().trim().to_owned(),
+                match_inside_words: self.replace_inside_words,
             },
         };
         cx.emit(AddFilterEvent::Submit(draft));
@@ -891,9 +900,12 @@ impl TtsFiltersView {
             FilterDraft::Blocklist { words, mode } => {
                 self.apply_blocklist_words(words.clone(), *mode, cx)
             }
-            FilterDraft::Replace { kind, from, to } => {
-                self.apply_replacement(*kind, from.clone(), to.clone(), cx)
-            }
+            FilterDraft::Replace {
+                kind,
+                from,
+                to,
+                match_inside_words,
+            } => self.apply_replacement(*kind, from.clone(), to.clone(), *match_inside_words, cx),
         };
         if applied {
             self.close_add_modal(cx);
@@ -993,6 +1005,7 @@ impl TtsFiltersView {
         kind: ReplaceKind,
         from: String,
         to: String,
+        match_inside_words: bool,
         cx: &mut Context<Self>,
     ) -> bool {
         self.try_apply(cx, |this| {
@@ -1000,6 +1013,7 @@ impl TtsFiltersView {
                 ReplaceKind::Text => FilterRuleKind::Literal {
                     pattern: from,
                     replacement: to,
+                    match_inside_words,
                 },
                 ReplaceKind::Regex => FilterRuleKind::Regex {
                     pattern: from,
@@ -1975,7 +1989,7 @@ impl AddFilterModal {
             .text_color(palette.text_faint)
             .child(tr!("tts_filters_modal_replace_note"));
 
-        div()
+        let mut body = div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Sm, density))
@@ -1985,8 +1999,54 @@ impl AddFilterModal {
                 palette,
                 tr!("tts_filters_modal_replace_replace_label"),
                 self.replace_to.clone(),
-            ))
-            .child(note)
+            ));
+        if !is_regex {
+            body = body.child(self.inside_words_row(palette, density, cx));
+        }
+        body.child(note).into_any_element()
+    }
+
+    fn inside_words_row(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Sm, density))
+            .child(
+                toggle(self.replace_inside_words, palette)
+                    .on_color(palette.info)
+                    .on_click(
+                        "filt-modal-replace-inside-words",
+                        cx.listener(|this, _: &ClickEvent, _, cx| {
+                            this.toggle_replace_inside_words(cx)
+                        }),
+                    ),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .font_family(body_family())
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_primary)
+                            .child(tr!("tts_filters_modal_replace_inside_words_label")),
+                    )
+                    .child(
+                        div()
+                            .font_family(body_family())
+                            .text_size(FONT_XXS)
+                            .text_color(palette.text_faint)
+                            .child(tr!("tts_filters_modal_replace_inside_words_hint")),
+                    ),
+            )
             .into_any_element()
     }
 }
@@ -2432,6 +2492,7 @@ fn rule_summary(rule: &FilterRule) -> String {
         FilterRuleKind::Literal {
             pattern,
             replacement,
+            ..
         }
         | FilterRuleKind::Regex {
             pattern,
@@ -2444,6 +2505,10 @@ fn rule_summary(rule: &FilterRule) -> String {
 fn replacement_meta(rule: &FilterRule) -> String {
     let base = match &rule.kind {
         FilterRuleKind::Regex { .. } => tr!("tts_filters_badge_regex"),
+        FilterRuleKind::Literal {
+            match_inside_words: true,
+            ..
+        } => tr!("tts_filters_badge_text_inside_words"),
         _ => tr!("tts_filters_badge_text"),
     };
     if rule.name.trim().is_empty() {

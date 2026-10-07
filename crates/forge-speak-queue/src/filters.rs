@@ -180,13 +180,23 @@ fn map_rule_strict(
         FilterRuleKind::Literal {
             pattern,
             replacement,
+            match_inside_words,
         } => {
             if pattern.is_empty() {
                 return Ok(None);
             }
-            Ok(Some(ReplacementRule::Text {
-                pattern: pattern.clone(),
-                replacement: replacement.clone(),
+            let pattern = pattern.clone();
+            let replacement = replacement.clone();
+            Ok(Some(if *match_inside_words {
+                ReplacementRule::Text {
+                    pattern,
+                    replacement,
+                }
+            } else {
+                ReplacementRule::WholeWord {
+                    pattern,
+                    replacement,
+                }
             }))
         }
         FilterRuleKind::Regex {

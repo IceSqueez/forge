@@ -26,6 +26,8 @@ pub enum FilterRuleKind {
     Literal {
         pattern: String,
         replacement: String,
+        #[serde(default)]
+        match_inside_words: bool,
     },
     Regex {
         pattern: String,

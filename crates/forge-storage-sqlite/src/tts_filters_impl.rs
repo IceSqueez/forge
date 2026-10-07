@@ -43,6 +43,8 @@ fn decode_rule_kind(kind: &str, params_json: &str) -> Result<FilterRuleKind, Sto
     struct LiteralParams {
         pattern: String,
         replacement: String,
+        #[serde(default)]
+        match_inside_words: bool,
     }
     #[derive(serde::Deserialize)]
     struct RegexParams {
@@ -62,6 +64,7 @@ fn decode_rule_kind(kind: &str, params_json: &str) -> Result<FilterRuleKind, Sto
             Ok(FilterRuleKind::Literal {
                 pattern: p.pattern,
                 replacement: p.replacement,
+                match_inside_words: p.match_inside_words,
             })
         }
         "regex" => {
@@ -91,6 +94,7 @@ fn encode_rule_kind(kind: &FilterRuleKind) -> (&'static str, String) {
     struct LiteralParams<'a> {
         pattern: &'a str,
         replacement: &'a str,
+        match_inside_words: bool,
     }
     #[derive(serde::Serialize)]
     struct RegexParams<'a> {
@@ -107,10 +111,12 @@ fn encode_rule_kind(kind: &FilterRuleKind) -> (&'static str, String) {
         FilterRuleKind::Literal {
             pattern,
             replacement,
+            match_inside_words,
         } => {
             let json = serde_json::to_string(&LiteralParams {
                 pattern,
                 replacement,
+                match_inside_words: *match_inside_words,
             })
             .unwrap_or_default();
             ("literal", json)

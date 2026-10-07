@@ -979,6 +979,7 @@ tts_filters_output_lang_meta = обирати голос за мовою пов�
 
 tts_filters_badge_text = ТЕКСТ
 tts_filters_badge_regex = REGEX
+tts_filters_badge_text_inside_words = ТЕКСТ · ВСЕРЕДИНІ СЛІВ
 tts_filters_stage_add = Додати
 
 ## TTS Filters - модальне вікно додавання фільтра
@@ -1041,6 +1042,8 @@ tts_filters_modal_replace_match_label = ШАБЛОН ЗБІГУ
 tts_filters_modal_replace_find_placeholder = POG
 tts_filters_modal_replace_replace_label = ЗАМІНИТИ НА
 tts_filters_modal_replace_replace_text_placeholder = повага
+tts_filters_modal_replace_inside_words_label = Шукати всередині слів
+tts_filters_modal_replace_inside_words_hint = Вимкнено: GG замінює GG і GG!, але не POGGERS. Регістр не враховується.
 tts_filters_modal_replace_note = Залиште заміну порожньою, щоб прибрати збіг.
 
 ## TTS Filters - налаштування конвеєра

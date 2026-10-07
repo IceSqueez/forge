@@ -87,6 +87,13 @@ pub enum ClipToggle {
     Ignored,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayOutcome {
+    Started,
+    BoardDisabled,
+    StoppedBeforeStart,
+}
+
 enum ToggleDecision {
     Stop(Vec<ActivePlay>),
     Start(Box<StoredClip>, Reservation),
@@ -355,11 +362,11 @@ impl SoundboardPlayer {
         &self,
         clip_id: ClipId,
         override_device: Option<OutputDevice>,
-    ) -> Result<(), SoundboardError> {
+    ) -> Result<PlayOutcome, SoundboardError> {
         let settings = self.settings.load();
         if !settings.enabled {
             tracing::debug!(clip_id = %clip_id, "soundboard disabled by settings; play request ignored");
-            return Ok(());
+            return Ok(PlayOutcome::BoardDisabled);
         }
 
         let clip = self
@@ -378,7 +385,7 @@ impl SoundboardPlayer {
         play: Reservation,
         override_device: Option<OutputDevice>,
         settings: &SoundboardSettings,
-    ) -> Result<(), SoundboardError> {
+    ) -> Result<PlayOutcome, SoundboardError> {
         let clip_id = clip.id;
         let reporter = self.reporter();
 
@@ -387,7 +394,7 @@ impl SoundboardPlayer {
             Err(e) => return reported_failure(&reporter, &play, e),
         };
         if play.control.is_stopped() {
-            return Ok(());
+            return Ok(PlayOutcome::StoppedBeforeStart);
         }
 
         let legs = match play_target(&prepared.sinks, prepared.buffer.clone()).await {
@@ -395,7 +402,7 @@ impl SoundboardPlayer {
             Err(e) => return reported_failure(&reporter, &play, SoundboardError::Audio(e)),
         };
         if !play.control.install(legs.handles) {
-            return Ok(());
+            return Ok(PlayOutcome::StoppedBeforeStart);
         }
 
         self.event_sink.emit(AudioEvent::PlaybackStarted {
@@ -410,7 +417,7 @@ impl SoundboardPlayer {
                 clip_id: Some(clip_id),
                 clip_label: Some(clip.name.clone()),
             });
-            return Ok(());
+            return Ok(PlayOutcome::Started);
         }
 
         if clip.loop_playback {
@@ -430,7 +437,7 @@ impl SoundboardPlayer {
                 prepared.duration_ms,
             ));
         }
-        Ok(())
+        Ok(PlayOutcome::Started)
     }
 
     fn reporter(&self) -> PlayReporter {
@@ -542,9 +549,9 @@ fn reported_failure(
     reporter: &PlayReporter,
     play: &Reservation,
     error: SoundboardError,
-) -> Result<(), SoundboardError> {
+) -> Result<PlayOutcome, SoundboardError> {
     if play.control.is_stopped() {
-        return Ok(());
+        return Ok(PlayOutcome::StoppedBeforeStart);
     }
     let reason = match &error {
         SoundboardError::Audio(audio) => audio.to_string(),
@@ -714,6 +721,7 @@ impl SoundPlayer for SoundboardPlayer {
     ) -> Result<(), SoundPlayerError> {
         SoundboardPlayer::play(self, clip_id, output_device_override)
             .await
+            .map(|_| ())
             .map_err(|e| SoundPlayerError::Play(e.to_string()))
     }
 

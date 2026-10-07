@@ -17,8 +17,8 @@ use forge_soundboard::builtin_library::{
     BUILTIN_SOUNDS, BuiltinSoundEntry, builtin_availability, resolve_builtin_path,
 };
 use forge_soundboard::{
-    AdoptionVerdict, ClipAvailability, ClipLibrary, ClipRefusal, SoundboardError, SoundboardPlayer,
-    SoundboardSettings,
+    AdoptionVerdict, ClipAvailability, ClipLibrary, ClipRefusal, PlayOutcome, SoundboardError,
+    SoundboardPlayer, SoundboardSettings,
 };
 use forge_storage::{
     MediaFormat, MediaKind, SettingsRepo, StoredClip, set_soundboard_also_headphones,
@@ -605,22 +605,21 @@ impl SoundboardView {
         cx.spawn(async move |this, cx| {
             let (tx, rx) = tokio::sync::oneshot::channel();
             rt.spawn(async move {
-                let board_enabled = player_play.settings_handle().load().enabled;
                 let result = player_play.play(id, None).await;
-                let _ = tx.send((result, board_enabled));
+                let _ = tx.send(result);
             });
-            let Ok((result, board_enabled)) = rx.await else {
+            let Ok(result) = rx.await else {
                 return;
             };
-            let settled_silently = play_settled_without_outcome(&result, board_enabled);
+            let settled_silently = play_settled_without_outcome(&result);
             let _ = this.update(cx, |this, cx| {
                 if settled_silently {
                     cx.release_pad_play(id);
                 }
                 match &result {
                     Err(error) => this.on_play_error(id, error, cx),
-                    Ok(()) if settled_silently => this.clear_playing(id, cx),
-                    Ok(()) => {}
+                    Ok(_) if settled_silently => this.clear_playing(id, cx),
+                    Ok(_) => {}
                 }
             });
             if result.is_err() {
@@ -2112,9 +2111,10 @@ fn settled_adoption(payload: &serde_json::Value) -> Option<SettledAdoption> {
     }
 }
 
-fn play_settled_without_outcome(result: &Result<(), SoundboardError>, board_enabled: bool) -> bool {
+fn play_settled_without_outcome(result: &Result<PlayOutcome, SoundboardError>) -> bool {
     match result {
-        Ok(()) => !board_enabled,
+        Ok(PlayOutcome::Started) => false,
+        Ok(PlayOutcome::BoardDisabled | PlayOutcome::StoppedBeforeStart) => true,
         Err(
             SoundboardError::SourceMissing(_)
             | SoundboardError::Audio(_)

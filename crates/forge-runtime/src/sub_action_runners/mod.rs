@@ -193,22 +193,39 @@ pub fn register_scheduled_run_sub_actions(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+pub struct CoreSubActionDeps {
+    pub globals: Arc<dyn GlobalsRepo>,
+    pub user_globals: Arc<dyn UserGlobalsRepo>,
+    pub scripts: Arc<ScriptRegistry>,
+    pub publisher: Arc<dyn EventPublisher>,
+    pub settings: Arc<dyn SettingsRepo>,
+    pub scheduler: SchedulerCell,
+    pub trigger_instances: Arc<dyn TriggerInstanceRepo>,
+    pub actions: Arc<dyn ActionRepo>,
+    pub script_repo: Arc<dyn ScriptRepo>,
+    pub cancel_registry: Arc<ActionCancelRegistry>,
+    pub overlays: OverlayServiceCell,
+    pub config: Config,
+}
+
 pub fn register_core_sub_actions(
     reg: &mut SubActionRegistry,
-    globals: Arc<dyn GlobalsRepo>,
-    user_globals: Arc<dyn UserGlobalsRepo>,
-    scripts: Arc<ScriptRegistry>,
-    publisher: Arc<dyn EventPublisher>,
-    settings: Arc<dyn SettingsRepo>,
-    scheduler: SchedulerCell,
-    trigger_instances: Arc<dyn TriggerInstanceRepo>,
-    actions: Arc<dyn ActionRepo>,
-    script_repo: Arc<dyn ScriptRepo>,
-    cancel_registry: Arc<ActionCancelRegistry>,
-    overlays: OverlayServiceCell,
-    config: Config,
+    deps: CoreSubActionDeps,
 ) -> Result<(), RegistryError> {
+    let CoreSubActionDeps {
+        globals,
+        user_globals,
+        scripts,
+        publisher,
+        settings,
+        scheduler,
+        trigger_instances,
+        actions,
+        script_repo,
+        cancel_registry,
+        overlays,
+        config,
+    } = deps;
     let condition_gate = Arc::new(ConditionGate::new(&config));
 
     reg.register(Box::new(CoreArgsSetRunner))?;

@@ -9,18 +9,18 @@ use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_platform_core::{PlatformEndpoints, paths};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionCancelRegistry, ActionEngineHandle, Catalog, CatchUpSettle, Config, DonationIngest,
-    DonationOverlayAudience, EventBus, FirstChatLedger, LatestValues, OverlayConnectFanout,
-    OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary, OverlayServiceCell,
-    OverlayServiceHandle, QueueScheduler, ScheduledRunsCell, ScheduledRunsParts, SchedulerCell,
-    ScriptRegistry, ScriptScheduling, SoundPlayer, SpeakDispatcher, SystemWallClock,
-    TwitchEmoteLexicon, register_audio_sub_actions, register_core_sub_actions,
-    register_core_triggers, register_donation_sub_actions, register_latest_sub_actions,
-    register_scheduled_run_sub_actions, spawn_action_engine, spawn_chat_history_persistence,
-    spawn_event_log_bridge, spawn_latest_overlay_feed, spawn_latest_projector,
-    spawn_live_viewer_aggregator, spawn_scheduled_runs, spawn_stream_live_signal,
-    spawn_timer_scheduler, spawn_trigger_evaluator, spawn_twitch_emote_learning,
-    spawn_viewer_tracker,
+    ActionCancelRegistry, ActionEngineHandle, Catalog, CatchUpSettle, Config, CoreSubActionDeps,
+    DonationIngest, DonationOverlayAudience, EventBus, FirstChatLedger, LatestValues,
+    OverlayConnectFanout, OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary,
+    OverlayServiceCell, OverlayServiceHandle, QueueScheduler, ScheduledRunsCell,
+    ScheduledRunsParts, SchedulerCell, ScriptRegistry, ScriptScheduling, SoundPlayer,
+    SpeakDispatcher, SystemWallClock, TwitchEmoteLexicon, register_audio_sub_actions,
+    register_core_sub_actions, register_core_triggers, register_donation_sub_actions,
+    register_latest_sub_actions, register_scheduled_run_sub_actions, spawn_action_engine,
+    spawn_chat_history_persistence, spawn_event_log_bridge, spawn_latest_overlay_feed,
+    spawn_latest_projector, spawn_live_viewer_aggregator, spawn_scheduled_runs,
+    spawn_stream_live_signal, spawn_timer_scheduler, spawn_trigger_evaluator,
+    spawn_twitch_emote_learning, spawn_viewer_tracker,
 };
 use forge_soundboard::{
     BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
@@ -247,18 +247,20 @@ pub async fn build_runtime(
     let mut sub_action_reg = SubActionRegistry::new();
     if let Err(e) = register_core_sub_actions(
         &mut sub_action_reg,
-        Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
-        Arc::clone(&backend) as Arc<dyn UserGlobalsRepo>,
-        Arc::clone(&script_registry),
-        Arc::clone(&bus) as Arc<dyn EventPublisher>,
-        Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-        scheduler_cell.clone(),
-        backend.trigger_instance_repo(),
-        backend.action_repo(),
-        Arc::clone(&backend) as Arc<dyn ScriptRepo>,
-        Arc::clone(&cancel_registry),
-        overlay_service_cell.clone(),
-        Config::default(),
+        CoreSubActionDeps {
+            globals: Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+            user_globals: Arc::clone(&backend) as Arc<dyn UserGlobalsRepo>,
+            scripts: Arc::clone(&script_registry),
+            publisher: Arc::clone(&bus) as Arc<dyn EventPublisher>,
+            settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            scheduler: scheduler_cell.clone(),
+            trigger_instances: backend.trigger_instance_repo(),
+            actions: backend.action_repo(),
+            script_repo: Arc::clone(&backend) as Arc<dyn ScriptRepo>,
+            cancel_registry: Arc::clone(&cancel_registry),
+            overlays: overlay_service_cell.clone(),
+            config: Config::default(),
+        },
     ) {
         eprintln!("forge-desktop: core sub-action registration failed: {e}");
     }

@@ -106,8 +106,9 @@ pub use speak_dispatcher::{
 };
 pub use stream_live::{LiveSource, StreamLiveHandle, StreamLiveState, spawn_stream_live_signal};
 pub use sub_action_runners::{
-    CONTENT_SCHEMA_KEY, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlaySendTarget, feeds_overlay,
-    overlay_send_targets, register_core_sub_actions, register_scheduled_run_sub_actions,
+    CONTENT_SCHEMA_KEY, CoreSubActionDeps, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY,
+    OverlaySendTarget, feeds_overlay, overlay_send_targets, register_core_sub_actions,
+    register_scheduled_run_sub_actions,
 };
 pub use task_stop::TaskStop;
 pub use timer_scheduler::{TimerSchedulerHandle, spawn_timer_scheduler};

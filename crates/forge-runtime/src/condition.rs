@@ -229,7 +229,7 @@ mod tests {
             assert_eq!(full, expected, "rhai verdict for {expr}");
 
             let gated = gate
-                .evaluate(expr)
+                .evaluate_with_args(expr, &ArgStack::new())
                 .await
                 .unwrap_or_else(|e| panic!("gate evaluation of {expr} errored: {e:?}"));
             assert_eq!(gated, expected, "gate verdict for {expr}");
@@ -240,22 +240,43 @@ mod tests {
     #[tokio::test]
     async fn deferred_string_ordering_returns_correct_boolean_without_error() {
         let gate = ConditionGate::new(&Config::default());
-        assert!(gate.evaluate(r#""apple" < "banana""#).await.unwrap());
-        assert!(!gate.evaluate(r#""banana" < "apple""#).await.unwrap());
+        assert!(
+            gate.evaluate_with_args(r#""apple" < "banana""#, &ArgStack::new())
+                .await
+                .unwrap()
+        );
+        assert!(
+            !gate
+                .evaluate_with_args(r#""banana" < "apple""#, &ArgStack::new())
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]
     async fn deferred_mixed_kind_comparison_returns_correct_boolean_without_error() {
         let gate = ConditionGate::new(&Config::default());
-        assert!(gate.evaluate("2 == 2.0").await.unwrap());
-        assert!(!gate.evaluate("2 < 1.0").await.unwrap());
+        assert!(
+            gate.evaluate_with_args("2 == 2.0", &ArgStack::new())
+                .await
+                .unwrap()
+        );
+        assert!(
+            !gate
+                .evaluate_with_args("2 < 1.0", &ArgStack::new())
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]
     async fn non_boolean_result_surfaces_as_eval_error_not_truthiness() {
         let gate = ConditionGate::new(&Config::default());
         for expr in ["1 + 1", "42", r#""x""#] {
-            let err = gate.evaluate(expr).await.unwrap_err();
+            let err = gate
+                .evaluate_with_args(expr, &ArgStack::new())
+                .await
+                .unwrap_err();
             assert!(
                 matches!(
                     err,
@@ -270,7 +291,10 @@ mod tests {
     async fn op_limit_exhausting_condition_returns_typed_eval_error() {
         let gate = gate_with(100, 5_000);
         let err = gate
-            .evaluate("let x = 0; while x < 1000000 { x += 1; } x > 0")
+            .evaluate_with_args(
+                "let x = 0; while x < 1000000 { x += 1; } x > 0",
+                &ArgStack::new(),
+            )
             .await
             .unwrap_err();
         assert!(
@@ -286,7 +310,10 @@ mod tests {
     async fn wall_budget_exhausting_condition_returns_typed_error_without_hanging() {
         let gate = gate_with(1_000_000_000, 1);
         let start = Instant::now();
-        let err = gate.evaluate("loop {}").await.unwrap_err();
+        let err = gate
+            .evaluate_with_args("loop {}", &ArgStack::new())
+            .await
+            .unwrap_err();
         let elapsed = start.elapsed();
         assert!(
             matches!(err, ConditionError::Eval(ScriptError::Timeout { .. })),

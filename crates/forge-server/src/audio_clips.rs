@@ -276,6 +276,14 @@ impl AudioClipStore {
         let mut inner = self.lock();
         sweep_locked(&mut inner, Instant::now());
         let ClipOutcome::Refused { reason } = outcome else {
+            let fetched = inner
+                .entries
+                .get(capability)
+                .is_some_and(|entry| entry.fetches > 0);
+            if !fetched {
+                tracing::debug!("audio clip verdict ignored: the clip was never fetched");
+                return false;
+            }
             return finish_locked(&mut inner, capability, outcome);
         };
         let Some(entry) = inner.entries.get_mut(capability) else {

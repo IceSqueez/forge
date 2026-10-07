@@ -101,6 +101,38 @@
   var BUDGET_STEP = 0.5;
   var ACCENT_PROPERTY = "--accent";
   var FALLBACK_PARTICLE_COLOR = "#cba6f7";
+  var HOT_PARTICLE_COLOR = "#fff8e7";
+  var LIFTED_Z = "1";
+  var AUTO_Z = "auto";
+  var STATIC_POSITION = "static";
+  var TURN_RADIANS = Math.PI * 2;
+  var EASE_OUT_POWER = 3;
+  var STREAK_SECONDS = 0.035;
+  var PARTICLE_MIN_LIFE_MS = 600;
+
+  var SPARK_SPEED_PX = 300;
+  var SPARK_JITTER = 0.6;
+  var SPARK_LIFT_PX = 140;
+  var SPARK_DELAY_SHARE = 0.4;
+  var SPARK_HOT_SHARE = 0.35;
+  var SPARK_WIDTH_PX = 1.5;
+
+  var ASSEMBLE_PARTICLE_FACTOR = 2;
+  var ASSEMBLE_SCATTER_PX = 140;
+  var ASSEMBLE_REVEAL_OFFSET = 0.55;
+  var ASSEMBLE_TRAVEL_SHARE = 0.7;
+  var ASSEMBLE_SWELL = 0.04;
+
+  var GLOW_SHRINK = 0.25;
+  var GLOW_SPREAD_PX = 60;
+  var GLOW_BLUR_PX = 60;
+  var GLOW_CORE_SHARE = 0.8;
+  var GLOW_PASSES = 3;
+  var GLOW_STREAK_WIDTH_PX = 2.5;
+  var GLOW_LIFE_SHARE = 1.2;
+  var GLOW_RING_SHARE = 0.6;
+  var GLOW_RING_SPEED_PX = 420;
+  var GLOW_RING_DRAG = 2.5;
 
   var FLY_SPREAD = 2.5;
   var FLY_RISE = 1.5;
@@ -153,6 +185,12 @@
     },
   };
 
+  var PARTICLE_ENTRANCES = {
+    sparks: sparks,
+    assemble: assemble,
+    "glow-burst": glowBurst,
+  };
+
   var DESTRUCTIVE_EXITS = {
     dissolve: dissolve,
     smoke: smoke,
@@ -195,6 +233,10 @@
     return RECT_STYLES.indexOf(value) >= 0;
   }
 
+  function isEntranceStyle(value) {
+    return isRectStyle(value) || owned(PARTICLE_ENTRANCES, value);
+  }
+
   function isExitStyle(value) {
     return isRectStyle(value) || owned(DESTRUCTIVE_EXITS, value);
   }
@@ -208,7 +250,7 @@
     var paceMs =
       textEffect === NONE ? 0 : TEXT_EFFECTS[textEffect].staggerMs;
     return {
-      entrance: style(values.entrance, isRectStyle),
+      entrance: style(values.entrance, isEntranceStyle),
       entranceMs: bounded(
         values.entrance_ms,
         MOTION_MS_MIN,
@@ -282,6 +324,7 @@
     var handle = {
       element: element,
       animations: [],
+      pending: [],
       restores: [],
       layer: null,
       frame: 0,
@@ -379,13 +422,14 @@
     if (motionPlan.textEffect !== NONE && !splits.length && entrance === NONE) {
       entrance = FALLBACK_STYLE;
     }
-    if (entrance !== NONE) {
-      handle.animations.push(
-        element.animate(entranceFrames(entrance, motionPlan.intensity.scale), {
-          duration: entranceMs,
-          easing: entrance === POP ? OVERSHOOT_EASING : SETTLE_EASING,
-          fill: "backwards",
-        }),
+    if (owned(PARTICLE_ENTRANCES, entrance)) {
+      PARTICLE_ENTRANCES[entrance](handle, motionPlan, entranceMs, random(seedValue));
+    } else if (entrance !== NONE) {
+      arrive(
+        handle,
+        entranceFrames(entrance, motionPlan.intensity.scale),
+        entranceMs,
+        entrance === POP ? OVERSHOOT_EASING : SETTLE_EASING,
       );
     }
     if (splits.length) {
@@ -400,15 +444,27 @@
     settleWhenFinished(handle);
   }
 
+  function arrive(handle, frames, durationMs, easing) {
+    handle.animations.push(
+      handle.element.animate(frames, {
+        duration: durationMs,
+        easing: easing,
+        fill: "backwards",
+      }),
+    );
+  }
+
   function settleWhenFinished(handle) {
-    if (!handle.animations.length) {
+    if (!handle.animations.length && !handle.pending.length) {
       settle(handle, true);
       return;
     }
     Promise.all(
-      handle.animations.map(function (animation) {
-        return animation.finished;
-      }),
+      handle.animations
+        .map(function (animation) {
+          return animation.finished;
+        })
+        .concat(handle.pending),
     ).then(
       function () {
         settle(handle, true);
@@ -948,12 +1004,79 @@
     });
   }
 
-  function accentColor() {
+  function accentColor(element) {
     var accent = window
-      .getComputedStyle(document_.documentElement)
+      .getComputedStyle(element)
       .getPropertyValue(ACCENT_PROPERTY)
       .trim();
     return accent || FALLBACK_PARTICLE_COLOR;
+  }
+
+  function liftAbove(handle) {
+    var element = handle.element;
+    var computed = window.getComputedStyle(element);
+    if (computed.zIndex !== AUTO_Z) {
+      return;
+    }
+    var css = element.style;
+    var previousPosition = css.position;
+    var previousZ = css.zIndex;
+    if (computed.position === STATIC_POSITION) {
+      css.position = "relative";
+    }
+    css.zIndex = LIFTED_Z;
+    handle.restores.push(function () {
+      css.position = previousPosition;
+      css.zIndex = previousZ;
+    });
+  }
+
+  function openCanvas(handle, behind) {
+    var layer = openLayer(handle);
+    if (!layer) {
+      return null;
+    }
+    var canvas = document_.createElement("canvas");
+    var context = canvas.getContext("2d");
+    if (!context) {
+      return null;
+    }
+    if (behind) {
+      liftAbove(handle);
+    }
+    var ratio = Math.min(window.devicePixelRatio || 1, PIXEL_RATIO_CAP);
+    canvas.width = Math.ceil(layer.box.width * ratio);
+    canvas.height = Math.ceil(layer.box.height * ratio);
+    canvas.style.display = "block";
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
+    layer.element.appendChild(canvas);
+    return { context: context, canvas: canvas, ratio: ratio, box: layer.box };
+  }
+
+  function localRect(rect, box) {
+    return {
+      left: rect.left - box.left,
+      top: rect.top - box.top,
+      width: rect.width,
+      height: rect.height,
+      centerX: rect.left - box.left + rect.width * HALF,
+      centerY: rect.top - box.top + rect.height * HALF,
+    };
+  }
+
+  function emit(handle, behind, build) {
+    var rect = handle.element.getBoundingClientRect();
+    if (!measurable(rect)) {
+      return;
+    }
+    var surface = openCanvas(handle, behind);
+    if (!surface) {
+      return;
+    }
+    handle.pending.push(
+      runParticles(handle, surface, build(localRect(rect, surface.box), rect)),
+    );
   }
 
   function burst(handle, motionPlan, rng) {
@@ -977,109 +1100,362 @@
         },
       ),
     );
-    var layer = openLayer(handle);
-    if (!layer) {
-      return true;
+    var surface = openCanvas(handle, false);
+    if (surface) {
+      runParticles(
+        handle,
+        surface,
+        burstParticles(motionPlan, localRect(rect, surface.box), rect, rng),
+      );
     }
-    var canvas = document_.createElement("canvas");
-    var context = canvas.getContext("2d");
-    if (!context) {
-      return true;
-    }
-    var ratio = Math.min(window.devicePixelRatio || 1, PIXEL_RATIO_CAP);
-    canvas.width = Math.ceil(layer.box.width * ratio);
-    canvas.height = Math.ceil(layer.box.height * ratio);
-    canvas.style.display = "block";
-    canvas.style.width = "100%";
-    canvas.style.height = "100%";
-    layer.element.appendChild(canvas);
-    runParticles(
-      handle,
-      context,
-      canvas,
-      ratio,
-      spawnParticles(motionPlan, rect, layer.box, rng),
-      scale,
-    );
     return true;
   }
 
-  function spawnParticles(motionPlan, rect, box, rng) {
+  function burstParticles(motionPlan, local, rect, rng) {
     var scale = motionPlan.intensity.scale;
-    var left = rect.left - box.left;
-    var top = rect.top - box.top;
-    var centerX = left + rect.width * HALF;
-    var centerY = top + rect.height * HALF;
     var count = pieceCount(motionPlan.intensity.particles, rect, PARTICLE_AREA_PX);
     var particles = [];
     for (var index = 0; index < count; index += 1) {
-      var x = left + rng() * rect.width;
-      var y = top + rng() * rect.height;
-      var length = Math.max(Math.hypot(x - centerX, y - centerY), MIN_RECT_PX);
+      var x = local.left + rng() * local.width;
+      var y = local.top + rng() * local.height;
+      var length = Math.max(
+        Math.hypot(x - local.centerX, y - local.centerY),
+        MIN_RECT_PX,
+      );
       var speed = BURST_SPEED_PX * scale * (HALF + rng());
-      particles.push({
-        x: x,
-        y: y,
-        vx: ((x - centerX) / length) * speed,
-        vy: ((y - centerY) / length) * speed - BURST_LIFT_PX * scale,
-        size: PARTICLE_MIN_PX + rng() * PARTICLE_SPREAD_PX,
-        life:
-          motionPlan.exitMs *
-          (PARTICLE_LIFE_SHARE + rng() * (1 - PARTICLE_LIFE_SHARE)),
-      });
+      particles.push(
+        ballistic(x, y, {
+          vx: ((x - local.centerX) / length) * speed,
+          vy: ((y - local.centerY) / length) * speed - BURST_LIFT_PX * scale,
+          gravity: GRAVITY_PX * scale,
+          size: PARTICLE_MIN_PX + rng() * PARTICLE_SPREAD_PX,
+          life:
+            motionPlan.exitMs *
+            (PARTICLE_LIFE_SHARE + rng() * (1 - PARTICLE_LIFE_SHARE)),
+          draw: drawSquare,
+        }),
+      );
     }
     return particles;
   }
 
-  function runParticles(handle, context, canvas, ratio, particles, scale) {
-    var color = accentColor();
+  function ballistic(x, y, traits) {
+    return {
+      x: x,
+      y: y,
+      vx: traits.vx,
+      vy: traits.vy,
+      gravity: traits.gravity || 0,
+      drag: traits.drag || 0,
+      size: traits.size,
+      life: traits.life,
+      delay: traits.delay || 0,
+      color: traits.color || null,
+      move: drift,
+      fade: fadeOut,
+      draw: traits.draw,
+    };
+  }
+
+  function particleLife(entranceMs, rng) {
+    return (
+      Math.max(PARTICLE_MIN_LIFE_MS, entranceMs) *
+      (PARTICLE_LIFE_SHARE + rng() * (1 - PARTICLE_LIFE_SHARE))
+    );
+  }
+
+  function edgePoint(local, rng) {
+    var horizontal = rng() < local.width / (local.width + local.height);
+    var far = rng() < HALF;
+    if (horizontal) {
+      return {
+        x: local.left + rng() * local.width,
+        y: far ? local.top + local.height : local.top,
+        nx: 0,
+        ny: far ? 1 : -1,
+      };
+    }
+    return {
+      x: far ? local.left + local.width : local.left,
+      y: local.top + rng() * local.height,
+      nx: far ? 1 : -1,
+      ny: 0,
+    };
+  }
+
+  function sparks(handle, motionPlan, entranceMs, rng) {
+    var scale = motionPlan.intensity.scale;
+    arrive(handle, entranceFrames(POP, scale), entranceMs, OVERSHOOT_EASING);
+    emit(handle, false, function (local, rect) {
+      var count = pieceCount(motionPlan.intensity.particles, rect, PARTICLE_AREA_PX);
+      var particles = [];
+      for (var index = 0; index < count; index += 1) {
+        var edge = edgePoint(local, rng);
+        var speed = SPARK_SPEED_PX * scale * (HALF + rng());
+        var sideways = signed(rng) * SPARK_JITTER * speed;
+        particles.push(
+          ballistic(edge.x, edge.y, {
+            vx: edge.nx * speed + (edge.nx ? 0 : sideways),
+            vy:
+              edge.ny * speed + (edge.ny ? 0 : sideways) - SPARK_LIFT_PX * scale,
+            gravity: GRAVITY_PX * scale,
+            size: SPARK_WIDTH_PX + rng() * SPARK_WIDTH_PX,
+            life: particleLife(entranceMs, rng),
+            delay: rng() * SPARK_DELAY_SHARE * entranceMs,
+            color: rng() < SPARK_HOT_SHARE ? HOT_PARTICLE_COLOR : null,
+            draw: drawStreak,
+          }),
+        );
+      }
+      return particles;
+    });
+  }
+
+  function assemble(handle, motionPlan, entranceMs, rng) {
+    var scale = motionPlan.intensity.scale;
+    arrive(
+      handle,
+      [
+        { opacity: 0, transform: scaled(1 + ASSEMBLE_SWELL * scale) },
+        {
+          opacity: 0,
+          transform: scaled(1 + ASSEMBLE_SWELL * scale),
+          offset: ASSEMBLE_REVEAL_OFFSET,
+        },
+        { opacity: 1, transform: "none" },
+      ],
+      entranceMs,
+      SETTLE_EASING,
+    );
+    emit(handle, false, function (local, rect) {
+      var count = pieceCount(
+        motionPlan.intensity.particles * ASSEMBLE_PARTICLE_FACTOR,
+        rect,
+        PARTICLE_AREA_PX / ASSEMBLE_PARTICLE_FACTOR,
+      );
+      var particles = [];
+      for (var index = 0; index < count; index += 1) {
+        var toX = local.left + rng() * local.width;
+        var toY = local.top + rng() * local.height;
+        var angle = rng() * TURN_RADIANS;
+        var reach = ASSEMBLE_SCATTER_PX * scale * (HALF + rng());
+        var landAt =
+          entranceMs *
+          (ASSEMBLE_REVEAL_OFFSET + rng() * (1 - ASSEMBLE_REVEAL_OFFSET));
+        var life = landAt * ASSEMBLE_TRAVEL_SHARE;
+        var fromX = toX + Math.cos(angle) * reach;
+        var fromY = toY + Math.sin(angle) * reach;
+        particles.push({
+          x: fromX,
+          y: fromY,
+          fromX: fromX,
+          fromY: fromY,
+          toX: toX,
+          toY: toY,
+          size: PARTICLE_MIN_PX + rng() * PARTICLE_SPREAD_PX,
+          life: life,
+          delay: landAt - life,
+          color: null,
+          move: converge,
+          fade: fadeSwell,
+          draw: drawSquare,
+        });
+      }
+      return particles;
+    });
+  }
+
+  function glowBurst(handle, motionPlan, entranceMs, rng) {
+    var scale = motionPlan.intensity.scale;
+    arrive(
+      handle,
+      [
+        { opacity: 0, transform: scaled(1 - GLOW_SHRINK * scale) },
+        { opacity: 1, transform: "none" },
+      ],
+      entranceMs,
+      OVERSHOOT_EASING,
+    );
+    emit(handle, true, function (local, rect) {
+      var particles = [
+        {
+          x: local.centerX,
+          y: local.centerY,
+          halfWidth: local.width * HALF,
+          halfHeight: local.height * HALF,
+          spread: GLOW_SPREAD_PX * scale,
+          blur: GLOW_BLUR_PX * scale,
+          life: Math.max(PARTICLE_MIN_LIFE_MS, entranceMs) * GLOW_LIFE_SHARE,
+          delay: 0,
+          color: null,
+          move: stay,
+          fade: fadeLate,
+          draw: drawGlow,
+        },
+      ];
+      var count = pieceCount(
+        motionPlan.intensity.particles * GLOW_RING_SHARE,
+        rect,
+        PARTICLE_AREA_PX,
+      );
+      for (var index = 0; index < count; index += 1) {
+        var angle = rng() * TURN_RADIANS;
+        var speed = GLOW_RING_SPEED_PX * scale * (HALF + rng());
+        particles.push(
+          ballistic(
+            local.centerX + Math.cos(angle) * local.width * HALF,
+            local.centerY + Math.sin(angle) * local.height * HALF,
+            {
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed,
+              drag: GLOW_RING_DRAG,
+              size: GLOW_STREAK_WIDTH_PX + rng() * GLOW_STREAK_WIDTH_PX,
+              life: particleLife(entranceMs, rng),
+              color: rng() < SPARK_HOT_SHARE ? HOT_PARTICLE_COLOR : null,
+              draw: drawStreak,
+            },
+          ),
+        );
+      }
+      return particles;
+    });
+  }
+
+  function easeOut(progress) {
+    return 1 - Math.pow(1 - progress, EASE_OUT_POWER);
+  }
+
+  function drift(particle, seconds) {
+    var keep = particle.drag ? Math.exp(-particle.drag * seconds) : 1;
+    particle.vx *= keep;
+    particle.vy = particle.vy * keep + particle.gravity * seconds;
+    particle.x += particle.vx * seconds;
+    particle.y += particle.vy * seconds;
+  }
+
+  function converge(particle, seconds, progress) {
+    var eased = easeOut(progress);
+    particle.x = particle.fromX + (particle.toX - particle.fromX) * eased;
+    particle.y = particle.fromY + (particle.toY - particle.fromY) * eased;
+  }
+
+  function stay() {}
+
+  function fadeOut(progress) {
+    return 1 - progress;
+  }
+
+  function fadeLate(progress) {
+    return 1 - progress * progress;
+  }
+
+  function fadeSwell(progress) {
+    return Math.sin(Math.PI * progress);
+  }
+
+  function drawSquare(context, particle, ratio, color) {
+    context.fillStyle = color;
+    context.fillRect(
+      particle.x * ratio,
+      particle.y * ratio,
+      particle.size * ratio,
+      particle.size * ratio,
+    );
+  }
+
+  function drawStreak(context, particle, ratio, color) {
+    context.strokeStyle = color;
+    context.lineWidth = particle.size * ratio;
+    context.lineCap = "round";
+    context.beginPath();
+    context.moveTo(
+      (particle.x - particle.vx * STREAK_SECONDS) * ratio,
+      (particle.y - particle.vy * STREAK_SECONDS) * ratio,
+    );
+    context.lineTo(particle.x * ratio, particle.y * ratio);
+    context.stroke();
+  }
+
+  function drawGlow(context, particle, ratio, color, progress) {
+    var grow = particle.spread * easeOut(progress);
+    var offscreen = context.canvas.width + context.canvas.height;
+    context.fillStyle = color;
+    context.shadowColor = color;
+    context.shadowBlur = particle.blur * ratio;
+    context.shadowOffsetX = offscreen;
+    context.beginPath();
+    context.ellipse(
+      particle.x * ratio - offscreen,
+      particle.y * ratio,
+      (particle.halfWidth * GLOW_CORE_SHARE + grow) * ratio,
+      (particle.halfHeight * GLOW_CORE_SHARE + grow) * ratio,
+      0,
+      0,
+      TURN_RADIANS,
+    );
+    for (var pass = 0; pass < GLOW_PASSES; pass += 1) {
+      context.fill();
+    }
+    context.shadowBlur = 0;
+    context.shadowOffsetX = 0;
+  }
+
+  function runParticles(handle, surface, particles) {
+    var context = surface.context;
+    var canvas = surface.canvas;
+    var ratio = surface.ratio;
+    var accent = accentColor(handle.element);
     var started = 0;
     var last = 0;
     var frames = 0;
     var slowFrames = 0;
     var live = particles;
 
-    function step(now) {
-      if (!started) {
-        started = now;
+    return new Promise(function (resolve) {
+      function step(now) {
+        if (!started) {
+          started = now;
+          last = now;
+        }
+        var elapsed = now - started;
+        var seconds = (now - last) / MS_PER_SECOND;
+        if (now - last > SLOW_FRAME_MS) {
+          slowFrames += 1;
+        }
         last = now;
-      }
-      var elapsed = now - started;
-      var seconds = (now - last) / MS_PER_SECOND;
-      if (now - last > SLOW_FRAME_MS) {
-        slowFrames += 1;
-      }
-      last = now;
-      frames += 1;
-      if (frames === FRAME_SAMPLE && slowFrames > FRAME_SAMPLE * HALF) {
-        budget = Math.max(BUDGET_FLOOR, budget * BUDGET_STEP);
-        live = live.slice(0, Math.ceil(live.length * BUDGET_STEP));
-      }
+        frames += 1;
+        if (frames === FRAME_SAMPLE && slowFrames > FRAME_SAMPLE * HALF) {
+          budget = Math.max(BUDGET_FLOOR, budget * BUDGET_STEP);
+          live = live.slice(0, Math.ceil(live.length * BUDGET_STEP));
+        }
 
-      context.clearRect(0, 0, canvas.width, canvas.height);
-      context.fillStyle = color;
-      var alive = 0;
-      live.forEach(function (particle) {
-        if (elapsed >= particle.life) {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        var alive = 0;
+        live.forEach(function (particle) {
+          var age = elapsed - particle.delay;
+          if (age >= particle.life) {
+            return;
+          }
+          alive += 1;
+          if (age < 0) {
+            return;
+          }
+          var progress = age / particle.life;
+          particle.move(particle, seconds, progress);
+          context.globalAlpha = Math.max(0, particle.fade(progress));
+          particle.draw(context, particle, ratio, particle.color || accent, progress);
+        });
+        context.globalAlpha = 1;
+        if (alive) {
+          handle.frame = window.requestAnimationFrame(step);
           return;
         }
-        alive += 1;
-        particle.vy += GRAVITY_PX * scale * seconds;
-        particle.x += particle.vx * seconds;
-        particle.y += particle.vy * seconds;
-        context.globalAlpha = 1 - elapsed / particle.life;
-        context.fillRect(
-          particle.x * ratio,
-          particle.y * ratio,
-          particle.size * ratio,
-          particle.size * ratio,
-        );
-      });
-      context.globalAlpha = 1;
-      handle.frame = alive ? window.requestAnimationFrame(step) : 0;
-    }
+        handle.frame = 0;
+        resolve();
+      }
 
-    handle.frame = window.requestAnimationFrame(step);
+      handle.frame = window.requestAnimationFrame(step);
+    });
   }
 
   window.forgeMotion = Object.freeze({

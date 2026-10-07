@@ -27,6 +27,9 @@ pub const SLIDE_LEFT: &str = "slide-left";
 pub const SLIDE_RIGHT: &str = "slide-right";
 pub const POP: &str = "pop";
 pub const WIPE: &str = "wipe";
+pub const SPARKS: &str = "sparks";
+pub const ASSEMBLE: &str = "assemble";
+pub const GLOW_BURST: &str = "glow-burst";
 
 pub const ENTRANCE_OPTIONS: &[&str] = &[
     NO_MOTION,
@@ -37,6 +40,9 @@ pub const ENTRANCE_OPTIONS: &[&str] = &[
     SLIDE_RIGHT,
     POP,
     WIPE,
+    SPARKS,
+    ASSEMBLE,
+    GLOW_BURST,
 ];
 
 pub const TEXT_EFFECT_OPTIONS: &[&str] =

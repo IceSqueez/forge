@@ -420,7 +420,7 @@ impl AppShell {
                     handles.hotkey_reconciler.clone(),
                 );
                 let script_repo = Arc::clone(&handles.backend) as Arc<dyn ScriptRepo>;
-                let soundboard_repo = handles.backend.soundboard_clips_repo();
+                let clip_library = Arc::clone(handles.soundboard_player.library());
                 let globals_repo = Arc::clone(&handles.backend) as Arc<dyn GlobalsRepo>;
                 let settings_repo = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
                 let overlay_repo = handles.backend.overlay_repo();
@@ -442,7 +442,7 @@ impl AppShell {
                         actions_service,
                         trigger_instance_repo,
                         script_repo,
-                        soundboard_repo,
+                        clip_library,
                         globals_repo,
                         settings_repo,
                         overlay_repo,

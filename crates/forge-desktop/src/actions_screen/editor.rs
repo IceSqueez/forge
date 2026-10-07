@@ -40,10 +40,25 @@ use gpui::{
 };
 use std::collections::HashMap;
 
+const CLIP_OPTIONS_KEY: &str = "soundboard.clip_ids";
+
 struct SelectOptionsFetch {
     options: HashMap<String, Vec<(String, String)>>,
     overlay_kind_by_identity: HashMap<String, String>,
     concurrent_queue_ids: HashSet<String>,
+    unavailable_clip_ids: HashSet<String>,
+}
+
+fn mark_unavailable_clips(
+    clips: &mut [(String, String)],
+    unavailable: &HashSet<String>,
+    suffix: &str,
+) {
+    for (id, label) in clips.iter_mut() {
+        if unavailable.contains(id) {
+            *label = format!("{label} - {suffix}");
+        }
+    }
 }
 
 fn analyzer_finding_message(finding: &analyzer::Finding) -> SharedString {
@@ -862,7 +877,7 @@ impl ScreenActionsView {
         let queue_repo = Arc::clone(&self.queue_repo);
         let ti_repo = Arc::clone(&self.trigger_instance_repo);
         let script_repo = Arc::clone(&self.script_repo);
-        let soundboard_repo = Arc::clone(&self.soundboard_repo);
+        let clip_library = Arc::clone(&self.clip_library);
         let globals_repo = Arc::clone(&self.globals_repo);
         let overlay_repo = Arc::clone(&self.overlay_repo);
         let overlay_schema = Arc::clone(&self.overlay_schema);
@@ -919,9 +934,17 @@ impl ScreenActionsView {
                             .collect(),
                     );
                 }
-                if let Ok(clips) = soundboard_repo.list().await {
+                let mut unavailable_clip_ids: HashSet<String> = HashSet::new();
+                if let Ok(clips) = clip_library.list().await {
+                    unavailable_clip_ids = clip_library
+                        .availability_of(&clips)
+                        .await
+                        .into_iter()
+                        .filter(|(_, availability)| !availability.is_playable())
+                        .map(|(id, _)| id.to_string())
+                        .collect();
                     map.insert(
-                        "soundboard.clip_ids".to_owned(),
+                        CLIP_OPTIONS_KEY.to_owned(),
                         clips
                             .into_iter()
                             .map(|c| (c.id.to_string(), c.name))
@@ -972,6 +995,7 @@ impl ScreenActionsView {
                     options: map,
                     overlay_kind_by_identity,
                     concurrent_queue_ids,
+                    unavailable_clip_ids,
                 }
             },
             |this, fetch, cx| this.on_select_options_fetched(fetch, cx),
@@ -981,10 +1005,18 @@ impl ScreenActionsView {
 
     fn on_select_options_fetched(&mut self, fetch: SelectOptionsFetch, cx: &mut Context<Self>) {
         let SelectOptionsFetch {
-            options,
+            mut options,
             overlay_kind_by_identity,
             concurrent_queue_ids,
+            unavailable_clip_ids,
         } = fetch;
+        if let Some(clips) = options.get_mut(CLIP_OPTIONS_KEY) {
+            mark_unavailable_clips(
+                clips,
+                &unavailable_clip_ids,
+                &tr!("soundboard_pad_source_missing"),
+            );
+        }
         self.overlay_schema = Arc::new(
             self.overlay_schema
                 .with_identities(overlay_kind_by_identity),

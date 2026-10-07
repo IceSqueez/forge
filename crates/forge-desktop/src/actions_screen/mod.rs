@@ -19,10 +19,11 @@ use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerCategory, TriggerRegistry};
 use forge_runtime::actions::{ActionDetail, ActionsService};
 use forge_runtime::{EventBus, QueueSchedulerHandle};
+use forge_soundboard::ClipLibrary;
 use forge_speak_queue::SpeakQueueHandle;
 use forge_storage::{
     ActionRepo, ActionTelemetry, GlobalsRepo, OverlayRepo, QueueRepo, ScriptRepo, SettingsRepo,
-    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, reserved_keys,
+    StorageError, TriggerInstanceRepo, reserved_keys,
 };
 use forge_tts_core::TtsRegistry;
 use forge_types::{Action, ActionId, ExecutionOutcome, QueueId, SubActionStep, TriggerInstanceId};
@@ -183,7 +184,7 @@ pub struct ScreenActionsView {
     actions_service: Arc<ActionsService>,
     trigger_instance_repo: Arc<dyn TriggerInstanceRepo>,
     script_repo: Arc<dyn ScriptRepo>,
-    soundboard_repo: Arc<dyn SoundboardClipsRepo>,
+    clip_library: Arc<ClipLibrary>,
     globals_repo: Arc<dyn GlobalsRepo>,
     settings_repo: Arc<dyn SettingsRepo>,
     overlay_repo: Arc<dyn OverlayRepo>,
@@ -247,7 +248,7 @@ impl ScreenActionsView {
         actions_service: Arc<ActionsService>,
         trigger_instance_repo: Arc<dyn TriggerInstanceRepo>,
         script_repo: Arc<dyn ScriptRepo>,
-        soundboard_repo: Arc<dyn SoundboardClipsRepo>,
+        clip_library: Arc<ClipLibrary>,
         globals_repo: Arc<dyn GlobalsRepo>,
         settings_repo: Arc<dyn SettingsRepo>,
         overlay_repo: Arc<dyn OverlayRepo>,
@@ -272,7 +273,7 @@ impl ScreenActionsView {
             actions_service,
             trigger_instance_repo,
             script_repo,
-            soundboard_repo,
+            clip_library,
             globals_repo,
             settings_repo,
             overlay_repo,

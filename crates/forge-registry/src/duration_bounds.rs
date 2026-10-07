@@ -41,10 +41,14 @@ pub struct DurationBounds {
 
 impl DurationBounds {
     pub fn fitting_units(&self) -> impl DoubleEndedIterator<Item = &'static AmountUnit> + '_ {
-        DURATION_UNITS.iter().filter(|unit| {
-            let (start, end) = self.whole_amounts(unit);
-            start <= end
-        })
+        DURATION_UNITS
+            .iter()
+            .enumerate()
+            .filter_map(|(index, unit)| {
+                let (start, end) = self.whole_amounts(unit);
+                let fits = start <= end && (index == 0 || end >= 1);
+                fits.then_some(unit)
+            })
     }
 
     pub fn unit_or_first(&self, value: &str) -> Option<&'static AmountUnit> {

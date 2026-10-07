@@ -2672,6 +2672,7 @@ dependencies = [
  "forge-types",
  "global-hotkey",
  "libc",
+ "rustix",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

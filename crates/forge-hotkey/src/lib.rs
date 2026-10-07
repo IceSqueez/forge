@@ -21,6 +21,8 @@ pub mod triggers;
 pub(crate) mod backend_evdev;
 #[cfg(target_os = "linux")]
 pub(crate) mod backend_portal;
+#[cfg(target_os = "linux")]
+mod evdev_watch;
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 pub(crate) mod backend_global;

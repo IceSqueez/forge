@@ -13,12 +13,17 @@ use tokio::sync::mpsc;
 use crate::backend::{HotkeyBackend, HotkeyEdge, HotkeyFiredEvent, HotkeyId};
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
+use crate::evdev_watch::{EVENT_NODE_PREFIX, INPUT_DIR, InputDirChange, InputDirWatcher};
 
+const EV_SYN: u16 = 0;
 const EV_KEY: u16 = 1;
+const SYN_DROPPED: u16 = 3;
 const KEY_DOWN: i32 = 1;
 const KEY_UP: i32 = 0;
 const INPUT_EVENT_SIZE: usize = 24;
 const READ_CHUNK_EVENTS: usize = 64;
+const COMMAND_QUEUE_CAPACITY: usize = 64;
+const FIRED_QUEUE_CAPACITY: usize = 64;
 
 pub(crate) struct EvdevBackend {
     cmd_tx: mpsc::Sender<EvdevCmd>,
@@ -31,6 +36,7 @@ enum EvdevCmd {
 }
 
 type HeldKeys = Arc<Mutex<HashMap<u16, (HotkeyId, HotkeyCombo)>>>;
+type Registered = Arc<RwLock<HashMap<HotkeyId, HotkeyCombo>>>;
 
 impl EvdevBackend {
     pub(crate) async fn try_new() -> Result<Self, HotkeyError> {
@@ -39,24 +45,25 @@ impl EvdevBackend {
             return Err(HotkeyError::PermissionDenied);
         }
 
-        let registered: Arc<RwLock<HashMap<HotkeyId, HotkeyCombo>>> =
-            Arc::new(RwLock::new(HashMap::new()));
-        let (cmd_tx, cmd_rx) = mpsc::channel::<EvdevCmd>(64);
-        let (fired_tx, fired_rx) = mpsc::channel::<HotkeyFiredEvent>(64);
-        let modifier_state: Arc<Mutex<HashSet<u16>>> = Arc::new(Mutex::new(HashSet::new()));
-        let held_keys: HeldKeys = Arc::new(Mutex::new(HashMap::new()));
+        let registered: Registered = Arc::new(RwLock::new(HashMap::new()));
+        let (cmd_tx, cmd_rx) = mpsc::channel::<EvdevCmd>(COMMAND_QUEUE_CAPACITY);
+        let (fired_tx, fired_rx) = mpsc::channel::<HotkeyFiredEvent>(FIRED_QUEUE_CAPACITY);
 
-        for device_path in devices {
-            let modifiers = Arc::clone(&modifier_state);
-            let held = Arc::clone(&held_keys);
-            let reg = Arc::clone(&registered);
-            let tx = fired_tx.clone();
-            tokio::spawn(async move {
-                read_device_events(device_path, modifiers, held, reg, tx).await;
-            });
-        }
+        let watcher = match InputDirWatcher::new() {
+            Ok(w) => Some(w),
+            Err(e) => {
+                tracing::warn!(error = %e, "cannot watch {INPUT_DIR}; keyboards plugged in later will not be read");
+                None
+            }
+        };
 
-        tokio::spawn(handle_evdev_commands(cmd_rx, Arc::clone(&registered)));
+        let pool = DevicePool {
+            open: HashSet::new(),
+            registered: Arc::clone(&registered),
+            fired_tx,
+        };
+        tokio::spawn(pool.run(devices, watcher));
+        tokio::spawn(handle_evdev_commands(cmd_rx, registered));
 
         Ok(Self {
             cmd_tx,
@@ -87,10 +94,7 @@ impl HotkeyBackend for EvdevBackend {
     }
 }
 
-async fn handle_evdev_commands(
-    mut cmd_rx: mpsc::Receiver<EvdevCmd>,
-    registered: Arc<RwLock<HashMap<HotkeyId, HotkeyCombo>>>,
-) {
+async fn handle_evdev_commands(mut cmd_rx: mpsc::Receiver<EvdevCmd>, registered: Registered) {
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
             EvdevCmd::Register(id, combo) => {
@@ -107,18 +111,110 @@ async fn handle_evdev_commands(
     }
 }
 
+struct DevicePool {
+    open: HashSet<PathBuf>,
+    registered: Registered,
+    fired_tx: mpsc::Sender<HotkeyFiredEvent>,
+}
+
+impl DevicePool {
+    async fn run(mut self, initial: Vec<PathBuf>, mut watcher: Option<InputDirWatcher>) {
+        let (closed_tx, mut closed_rx) = mpsc::unbounded_channel::<PathBuf>();
+        for path in initial {
+            self.open_device(path, &closed_tx);
+        }
+
+        loop {
+            tokio::select! {
+                Some(path) = closed_rx.recv() => {
+                    self.open.remove(&path);
+                }
+                change = next_dir_change(watcher.as_mut()) => {
+                    match change {
+                        Ok(InputDirChange::Appeared(paths)) => {
+                            for path in paths {
+                                self.open_device(path, &closed_tx);
+                            }
+                        }
+                        Ok(InputDirChange::Rescan) => {
+                            if let Ok(paths) = discover_input_devices().await {
+                                for path in paths {
+                                    self.open_device(path, &closed_tx);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "{INPUT_DIR} watch failed; keyboards plugged in later will not be read");
+                            watcher = None;
+                        }
+                    }
+                }
+                () = self.fired_tx.closed() => break,
+            }
+        }
+    }
+
+    fn open_device(&mut self, path: PathBuf, closed_tx: &mpsc::UnboundedSender<PathBuf>) {
+        if self.open.contains(&path) {
+            return;
+        }
+        let file = match open_device_nonblocking(&path) {
+            Ok(f) => f,
+            Err(e) => {
+                tracing::debug!(device = %path.display(), error = %e, "input device not readable yet");
+                return;
+            }
+        };
+        let async_fd = match AsyncFd::new(file) {
+            Ok(fd) => fd,
+            Err(e) => {
+                tracing::debug!(device = %path.display(), error = %e, "input device cannot be polled");
+                return;
+            }
+        };
+
+        self.open.insert(path.clone());
+        let registered = Arc::clone(&self.registered);
+        let fired_tx = self.fired_tx.clone();
+        let closed_tx = closed_tx.clone();
+        tokio::spawn(async move {
+            let modifier_state = Mutex::new(HashSet::new());
+            let held_keys: HeldKeys = Arc::new(Mutex::new(HashMap::new()));
+            let end = read_device_events(
+                async_fd,
+                &modifier_state,
+                &held_keys,
+                &registered,
+                &fired_tx,
+            )
+            .await;
+            tracing::info!(device = %path.display(), reason = %end, "input device reader stopped");
+            release_all_held(&held_keys, &fired_tx).await;
+            let _ = closed_tx.send(path);
+        });
+    }
+}
+
+async fn next_dir_change(watcher: Option<&mut InputDirWatcher>) -> std::io::Result<InputDirChange> {
+    match watcher {
+        Some(w) => w.next_change().await,
+        None => std::future::pending().await,
+    }
+}
+
 async fn discover_input_devices() -> Result<Vec<PathBuf>, HotkeyError> {
-    let mut dir = match tokio::fs::read_dir("/dev/input").await {
+    let mut dir = match tokio::fs::read_dir(INPUT_DIR).await {
         Ok(d) => d,
-        Err(e) if e.raw_os_error() == Some(13) => return Err(HotkeyError::PermissionDenied),
-        Err(e) => return Err(HotkeyError::Backend(format!("read /dev/input: {e}"))),
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            return Err(HotkeyError::PermissionDenied);
+        }
+        Err(e) => return Err(HotkeyError::Backend(format!("read {INPUT_DIR}: {e}"))),
     };
 
     let mut devices = Vec::new();
     while let Ok(Some(entry)) = dir.next_entry().await {
         let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-        if name_str.starts_with("event") {
+        if name.to_string_lossy().starts_with(EVENT_NODE_PREFIX) {
             let path = entry.path();
             if open_device_nonblocking(&path).is_ok() {
                 devices.push(path);
@@ -140,40 +236,50 @@ fn open_device_nonblocking(path: &Path) -> std::io::Result<std::fs::File> {
 }
 
 async fn read_device_events(
-    path: PathBuf,
-    modifier_state: Arc<Mutex<HashSet<u16>>>,
-    held_keys: HeldKeys,
-    registered: Arc<RwLock<HashMap<HotkeyId, HotkeyCombo>>>,
-    fired_tx: mpsc::Sender<HotkeyFiredEvent>,
-) {
-    let file = match open_device_nonblocking(&path) {
-        Ok(f) => f,
-        Err(_) => return,
-    };
-    let async_fd = match AsyncFd::new(file) {
-        Ok(fd) => fd,
-        Err(_) => return,
-    };
-
+    async_fd: AsyncFd<std::fs::File>,
+    modifier_state: &Mutex<HashSet<u16>>,
+    held_keys: &HeldKeys,
+    registered: &Registered,
+    fired_tx: &mpsc::Sender<HotkeyFiredEvent>,
+) -> String {
     let mut buf = [0u8; INPUT_EVENT_SIZE * READ_CHUNK_EVENTS];
     loop {
         let mut guard = match async_fd.readable().await {
             Ok(g) => g,
-            Err(_) => return,
+            Err(e) => return e.to_string(),
         };
         let read = match guard.try_io(|inner| inner.get_ref().read(&mut buf)) {
-            Ok(Ok(0)) => return,
+            Ok(Ok(0)) => return "end of stream".to_owned(),
             Ok(Ok(n)) => n,
             Ok(Err(e)) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-            Ok(Err(_)) => return,
+            Ok(Err(e)) => return e.to_string(),
             Err(_would_block) => continue,
         };
         drop(guard);
 
         let (events, _partial) = buf[..read].as_chunks::<INPUT_EVENT_SIZE>();
         for raw in events {
-            handle_key_event(raw, &modifier_state, &held_keys, &registered, &fired_tx).await;
+            handle_key_event(raw, modifier_state, held_keys, registered, fired_tx).await;
         }
+    }
+}
+
+async fn release_all_held(held_keys: &HeldKeys, fired_tx: &mpsc::Sender<HotkeyFiredEvent>) {
+    let held: Vec<(HotkeyId, HotkeyCombo)> = held_keys
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .drain()
+        .map(|(_, binding)| binding)
+        .collect();
+    for (id, combo) in held {
+        let _ = fired_tx
+            .send(HotkeyFiredEvent {
+                id,
+                combo,
+                timestamp_us: current_timestamp_us(),
+                edge: HotkeyEdge::Release,
+            })
+            .await;
     }
 }
 
@@ -181,23 +287,31 @@ async fn handle_key_event(
     raw: &[u8],
     modifier_state: &Mutex<HashSet<u16>>,
     held_keys: &HeldKeys,
-    registered: &Arc<RwLock<HashMap<HotkeyId, HotkeyCombo>>>,
+    registered: &Registered,
     fired_tx: &mpsc::Sender<HotkeyFiredEvent>,
 ) {
     let ev_type = u16::from_ne_bytes([raw[16], raw[17]]);
     let code = u16::from_ne_bytes([raw[18], raw[19]]);
     let value = i32::from_ne_bytes([raw[20], raw[21], raw[22], raw[23]]);
 
+    if ev_type == EV_SYN && code == SYN_DROPPED {
+        modifier_state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clear();
+        return;
+    }
+
     if ev_type != EV_KEY {
         return;
     }
 
-    if let Some(modifier) = key_code_to_modifier(code) {
+    if key_code_to_modifier(code).is_some() {
         let mut state = modifier_state.lock().unwrap_or_else(|p| p.into_inner());
         if value == KEY_DOWN {
-            state.insert(modifier);
+            state.insert(code);
         } else if value == KEY_UP {
-            state.remove(&modifier);
+            state.remove(&code);
         }
     } else if let Some(key_name) = key_code_to_name(code) {
         if value == KEY_DOWN {
@@ -217,7 +331,7 @@ async fn press_key(
     code: u16,
     combo_str: &str,
     held_keys: &HeldKeys,
-    registered: &Arc<RwLock<HashMap<HotkeyId, HotkeyCombo>>>,
+    registered: &Registered,
     fired_tx: &mpsc::Sender<HotkeyFiredEvent>,
 ) {
     let matched = {
@@ -265,12 +379,16 @@ async fn release_key(code: u16, held_keys: &HeldKeys, fired_tx: &mpsc::Sender<Ho
         .await;
 }
 
-fn build_combo_string(modifiers: &HashSet<u16>, key: &str) -> String {
+fn build_combo_string(held_modifier_codes: &HashSet<u16>, key: &str) -> String {
     const CTRL_CODE: u16 = 29;
     const SHIFT_CODE: u16 = 42;
     const ALT_CODE: u16 = 56;
     const META_CODE: u16 = 125;
 
+    let modifiers: HashSet<u16> = held_modifier_codes
+        .iter()
+        .filter_map(|&code| key_code_to_modifier(code))
+        .collect();
     let mut parts: Vec<&str> = Vec::new();
     if modifiers.contains(&CTRL_CODE) {
         parts.push("Ctrl");

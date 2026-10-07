@@ -127,4 +127,24 @@ mod tests {
             "expected QuotaExhausted, got {result:?}"
         );
     }
+
+    #[tokio::test]
+    async fn a_cloned_shared_quota_draws_on_the_same_daily_budget() {
+        let today = today_pacific();
+        let poller = SharedQuota::new(QuotaState {
+            used_today: QUOTA_DAILY_LIMIT - CHAT_POLL_COST,
+            peak_seen: 0,
+            last_reset_date: today,
+            long_interval_mode: true,
+        });
+        let sender = poller.clone();
+
+        sender.lock().await.charge(CHAT_POLL_COST, today).unwrap();
+        let result = poller.lock().await.charge(BROADCAST_COST, today);
+
+        assert!(
+            matches!(result, Err(PlatformError::QuotaExhausted)),
+            "a spend through one clone must exhaust the other; got {result:?}"
+        );
+    }
 }

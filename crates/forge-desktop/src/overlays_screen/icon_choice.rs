@@ -305,10 +305,10 @@ pub(super) struct OpenIconPicker {
 
 impl OverlaysView {
     pub(super) fn load_images(&mut self, cx: &mut Context<Self>) {
-        let ticket = self.images_gen.next();
-        let media = Arc::clone(&self.media);
+        let ticket = self.catalog.images_gen.next();
+        let media = Arc::clone(&self.handles.media);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.handles.rt_handle,
             async move {
                 let blobs = media.list().await?;
                 let mut resolved: Vec<IconImage> = Vec::new();
@@ -326,7 +326,7 @@ impl OverlaysView {
                 Ok::<_, StorageError>(resolved)
             },
             move |this, result: Result<Vec<IconImage>, StorageError>, cx| {
-                if !this.images_gen.is_current(ticket) {
+                if !this.catalog.images_gen.is_current(ticket) {
                     return;
                 }
                 match result {
@@ -341,18 +341,23 @@ impl OverlaysView {
     }
 
     fn apply_images(&mut self, images: Vec<IconImage>, cx: &mut Context<Self>) {
-        if self.icon_images == images {
+        if self.catalog.icon_images == images {
             return;
         }
-        self.icon_images = images;
-        let pushed = self.icon_images.clone();
-        if let Some(panel) = self.panel.as_ref().map(|open| open.view.clone()) {
+        self.catalog.icon_images = images;
+        let pushed = self.catalog.icon_images.clone();
+        if let Some(panel) = self.editor.panel.as_ref().map(|open| open.view.clone()) {
             panel.update(cx, |panel, cx| panel.set_icon_images(pushed, cx));
         }
         let palette = cx.palette();
         let accent = self.icon_accent(&palette);
-        let groups = icon_groups(&self.icon_images, accent, &palette);
-        if let Some(picker) = self.icon_picker.as_ref().map(|open| open.view.clone()) {
+        let groups = icon_groups(&self.catalog.icon_images, accent, &palette);
+        if let Some(picker) = self
+            .catalog
+            .icon_picker
+            .as_ref()
+            .map(|open| open.view.clone())
+        {
             picker.update(cx, |picker, cx| picker.set_groups(groups, cx));
         }
         self.sync_preview();
@@ -360,9 +365,9 @@ impl OverlaysView {
     }
 
     pub(super) fn load_icon_favorites(&self, cx: &mut Context<Self>) {
-        let repo = Arc::clone(&self.settings_repo);
+        let repo = Arc::clone(&self.handles.settings_repo);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.handles.rt_handle,
             async move {
                 forge_storage::get_json_setting::<Vec<String>>(
                     repo.as_ref(),
@@ -379,19 +384,24 @@ impl OverlaysView {
     }
 
     fn apply_icon_favorites(&mut self, favorites: HashSet<SharedString>, cx: &mut Context<Self>) {
-        self.icon_favorites = favorites;
-        let pushed = self.icon_favorites.clone();
-        if let Some(picker) = self.icon_picker.as_ref().map(|open| open.view.clone()) {
+        self.catalog.icon_favorites = favorites;
+        let pushed = self.catalog.icon_favorites.clone();
+        if let Some(picker) = self
+            .catalog
+            .icon_picker
+            .as_ref()
+            .map(|open| open.view.clone())
+        {
             picker.update(cx, |picker, cx| picker.set_favorites(pushed, cx));
         }
         cx.notify();
     }
 
     fn persist_icon_favorites(&self, cx: &mut Context<Self>) {
-        let repo = Arc::clone(&self.settings_repo);
-        let ids = crate::picker_favorites::to_ids(&self.icon_favorites);
+        let repo = Arc::clone(&self.handles.settings_repo);
+        let ids = crate::picker_favorites::to_ids(&self.catalog.icon_favorites);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.handles.rt_handle,
             async move {
                 forge_storage::set_json_setting(
                     repo.as_ref(),
@@ -430,7 +440,7 @@ impl OverlaysView {
     fn open_icon_picker(&mut self, key: String, cx: &mut Context<Self>) {
         let palette = cx.palette();
         let accent = self.icon_accent(&palette);
-        let groups = icon_groups(&self.icon_images, accent, &palette);
+        let groups = icon_groups(&self.catalog.icon_images, accent, &palette);
         let config = GridPickerConfig {
             accent,
             art: GridPickerArt {
@@ -445,10 +455,10 @@ impl OverlaysView {
             favorites_label: tr!("picker_favorites").into(),
             favorites_empty: tr!("picker_favorites_empty").into(),
         };
-        let favorites = self.icon_favorites.clone();
+        let favorites = self.catalog.icon_favorites.clone();
         let view = cx.new(|cx| GridPicker::new(config, groups, favorites, palette, cx));
         let sub = cx.subscribe(&view, Self::on_icon_picker_event);
-        self.icon_picker = Some(OpenIconPicker {
+        self.catalog.icon_picker = Some(OpenIconPicker {
             key,
             view,
             focused: false,
@@ -466,8 +476,8 @@ impl OverlaysView {
         match event {
             GridPickerEvent::Picked(id) => self.apply_icon_pick(id.to_string(), cx),
             GridPickerEvent::FavoriteToggled(id) => {
-                if !self.icon_favorites.remove(id) {
-                    self.icon_favorites.insert(id.clone());
+                if !self.catalog.icon_favorites.remove(id) {
+                    self.catalog.icon_favorites.insert(id.clone());
                 }
                 self.persist_icon_favorites(cx);
                 cx.notify();
@@ -477,13 +487,18 @@ impl OverlaysView {
     }
 
     fn apply_icon_pick(&mut self, id: String, cx: &mut Context<Self>) {
-        let Some(key) = self.icon_picker.as_ref().map(|open| open.key.clone()) else {
+        let Some(key) = self
+            .catalog
+            .icon_picker
+            .as_ref()
+            .map(|open| open.key.clone())
+        else {
             return;
         };
-        self.icon_picker = None;
+        self.catalog.icon_picker = None;
         cx.notify();
 
-        let Some(panel) = self.panel.as_ref().map(|open| open.view.clone()) else {
+        let Some(panel) = self.editor.panel.as_ref().map(|open| open.view.clone()) else {
             return;
         };
         match picked_icon(&id) {
@@ -503,7 +518,7 @@ impl OverlaysView {
             extensions: image_dialog_extensions(),
         };
         async_bridge::spawn_dialog(
-            &self.rt_handle,
+            &self.handles.rt_handle,
             async_bridge::pick_file(Some(filter)),
             move |this, result: Result<PathBuf, String>, cx| match result {
                 Ok(path) => this.import_icon_image(key, path, cx),
@@ -514,14 +529,14 @@ impl OverlaysView {
     }
 
     fn import_icon_image(&mut self, key: String, path: PathBuf, cx: &mut Context<Self>) {
-        let media = Arc::clone(&self.media);
+        let media = Arc::clone(&self.handles.media);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.handles.rt_handle,
             async move { media.import_file(&path).await },
             move |this, result: Result<MediaBlob, StorageError>, cx| {
                 let outcome = import_outcome(result);
                 let settled = matches!(outcome, IconPickResult::Chosen(_));
-                if let Some(panel) = this.panel.as_ref().map(|open| open.view.clone()) {
+                if let Some(panel) = this.editor.panel.as_ref().map(|open| open.view.clone()) {
                     panel.update(cx, |panel, cx| panel.settle_icon_import(key, outcome, cx));
                 }
                 if settled {
@@ -533,14 +548,14 @@ impl OverlaysView {
     }
 
     fn cancel_icon_import(&mut self, key: String, cx: &mut Context<Self>) {
-        let Some(panel) = self.panel.as_ref().map(|open| open.view.clone()) else {
+        let Some(panel) = self.editor.panel.as_ref().map(|open| open.view.clone()) else {
             return;
         };
         panel.update(cx, |panel, cx| panel.cancel_icon_import(key, cx));
     }
 
     fn close_icon_picker(&mut self, cx: &mut Context<Self>) {
-        self.icon_picker = None;
+        self.catalog.icon_picker = None;
         cx.notify();
     }
 
@@ -549,7 +564,7 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let open = self.icon_picker.as_ref()?;
+        let open = self.catalog.icon_picker.as_ref()?;
         let view = cx.entity();
         Some(
             overlay(open.view.clone(), palette)
@@ -562,14 +577,19 @@ impl OverlaysView {
     }
 
     pub(super) fn preview_icon(&self, definition: &OverlayDefinition) -> Option<GlyphArt> {
-        let descriptor = self.kinds.get(&definition.kind_id)?;
+        let descriptor = self.handles.kinds.get(&definition.kind_id)?;
         let config = effective_overlay_config(descriptor, &definition.config);
         let stored = config.get(ICON).and_then(forge_types::Variant::as_str)?;
-        icon_art(&icon_choice(stored, &self.icon_images))
+        icon_art(&icon_choice(stored, &self.catalog.icon_images))
     }
 
     pub(super) fn focus_icon_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(open) = self.icon_picker.as_mut().filter(|open| !open.focused) else {
+        let Some(open) = self
+            .catalog
+            .icon_picker
+            .as_mut()
+            .filter(|open| !open.focused)
+        else {
             return;
         };
         open.focused = true;

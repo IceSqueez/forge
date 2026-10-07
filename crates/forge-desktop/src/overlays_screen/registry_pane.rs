@@ -86,7 +86,7 @@ impl OverlaysView {
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
-                    .child(self.overlays.len().to_string()),
+                    .child(self.registry.overlays.len().to_string()),
             )
             .into_any_element()
     }
@@ -101,8 +101,8 @@ impl OverlaysView {
             .pt(LIST_PAD_TOP)
             .pb(LIST_PAD_BOTTOM);
 
-        if self.overlays.is_empty() {
-            let message = if self.loading {
+        if self.registry.overlays.is_empty() {
+            let message = if self.registry.loading {
                 tr!("overlays_pane_loading")
             } else {
                 tr!("overlays_pane_empty")
@@ -110,7 +110,7 @@ impl OverlaysView {
             return list.child(empty_note(message, palette)).into_any_element();
         }
 
-        for (index, definition) in self.overlays.iter().enumerate() {
+        for (index, definition) in self.registry.overlays.iter().enumerate() {
             list = list.child(self.render_row(index, definition, palette, cx));
         }
         list.into_any_element()
@@ -124,7 +124,7 @@ impl OverlaysView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let id = definition.id.clone();
-        let selected = self.selected.as_ref() == Some(&id);
+        let selected = self.registry.selected.as_ref() == Some(&id);
         let visuals = self.visuals(definition, palette);
 
         let stripe: Rgba = if selected {
@@ -248,7 +248,7 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let open = self.menu_open.as_ref() == Some(id);
+        let open = self.registry.menu_open.as_ref() == Some(id);
         let view = cx.entity();
         let rename_id = id.clone();
         let copy_id = id.clone();
@@ -257,7 +257,7 @@ impl OverlaysView {
 
         menu_button(Icon::DotsVertical, open, palette)
             .placement(MenuPlacement::BottomRight)
-            .open_at(self.menu_click_pos)
+            .open_at(self.registry.menu_click_pos)
             .items(vec![
                 menu_item(
                     ("overlay-menu-rename", index),

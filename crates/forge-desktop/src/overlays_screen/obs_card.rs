@@ -62,6 +62,7 @@ impl OverlaysView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let page = self
+            .handles
             .kinds
             .get(&definition.kind_id)
             .is_some_and(|descriptor| descriptor.has_visual_page());

@@ -25,7 +25,7 @@ use super::latest_section::LatestState;
 use super::motion_notices::MotionNotices;
 use super::motion_timing::{motion_hint, motion_label};
 use super::sound_choice::{PickOutcome, field_notes, notes_block, picked_clip, sound_choices};
-use super::store_config;
+use super::writes::store_config;
 use crate::async_bridge;
 use crate::config_form::{
     ChoiceDropdown, ChoiceSupport, ConfigField, ConfigFieldHandlers, FoldContext, choice_entries,

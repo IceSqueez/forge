@@ -401,7 +401,7 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let panel = self.panel.as_ref()?.view.clone();
+        let panel = self.editor.panel.as_ref()?.view.clone();
         let slot = panel.read(cx).reset_prompt()?;
 
         let cancel_panel = panel.clone();

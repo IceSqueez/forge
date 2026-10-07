@@ -16,7 +16,8 @@ use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use crate::unsaved_work::UnsavedWork;
 
-use super::{EditorMode, OverlaysView};
+use super::OverlaysView;
+use super::editor_state::EditorMode;
 
 const TABS_PAD_V: Pixels = px(6.0);
 const TABS_PAD_H: Pixels = px(12.0);
@@ -130,12 +131,13 @@ fn element_id(prefix: &str, file: &str) -> SharedString {
 
 impl OverlaysView {
     fn code_body(&self, cx: &App) -> String {
-        self.code.editor.read(cx).content().to_owned()
+        self.editor.code.editor.read(cx).content().to_owned()
     }
 
     pub(super) fn code_dirty(&self, cx: &App) -> bool {
-        let editor = self.code.editor.read(cx);
-        self.code
+        let editor = self.editor.code.editor.read(cx);
+        self.editor
+            .code
             .open
             .as_ref()
             .is_some_and(|open| open.original != editor.content())
@@ -152,54 +154,58 @@ impl OverlaysView {
     }
 
     fn is_missing(&self, file: &str) -> bool {
-        self.code.missing.iter().any(|held| held == file)
+        self.editor.code.missing.iter().any(|held| held == file)
     }
 
     fn mark_missing(&mut self, file: &'static str, missing: bool) {
-        self.code.missing.retain(|held| held != file);
+        self.editor.code.missing.retain(|held| held != file);
         if missing {
-            self.code.missing.push(file.to_owned());
+            self.editor.code.missing.push(file.to_owned());
         }
     }
 
     pub(super) fn note_missing_overrides(&mut self, missing: Vec<String>) {
-        self.code.missing = missing;
+        self.editor.code.missing = missing;
     }
 
     pub(super) fn invalidate_source(&mut self, cx: &App) {
         if self.code_dirty(cx) {
             return;
         }
-        self.code.open = None;
-        self.code.revision += 1;
+        self.editor.code.open = None;
+        self.editor.code.revision += 1;
     }
 
     pub(super) fn sync_source(&mut self, cx: &mut Context<Self>) {
         if self.mode() != EditorMode::Code {
             return;
         }
-        let Some(id) = self.selected.clone() else {
-            self.code.open = None;
-            self.code.loading = false;
-            self.code.editor.update(cx, |area, cx| area.clear(cx));
+        let Some(id) = self.registry.selected.clone() else {
+            self.editor.code.open = None;
+            self.editor.code.loading = false;
+            self.editor
+                .code
+                .editor
+                .update(cx, |area, cx| area.clear(cx));
             return;
         };
-        let file = self.code.file;
+        let file = self.editor.code.file;
         let matched = self
+            .editor
             .code
             .open
             .as_ref()
             .is_some_and(|open| open.id == id && open.file == file);
-        if matched || self.code.loading {
+        if matched || self.editor.code.loading {
             return;
         }
 
-        self.code.loading = true;
-        let revision = self.code.revision;
-        let service = self.service.clone();
+        self.editor.code.loading = true;
+        let revision = self.editor.code.revision;
+        let service = self.handles.service.clone();
         let target = id.clone();
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.handles.rt_handle,
             async move {
                 service
                     .read_source(&target, file)
@@ -220,8 +226,8 @@ impl OverlaysView {
         result: Result<Option<String>, String>,
         cx: &mut Context<Self>,
     ) {
-        self.code.loading = false;
-        if revision != self.code.revision {
+        self.editor.code.loading = false;
+        if revision != self.editor.code.revision {
             self.sync_source(cx);
             cx.notify();
             return;
@@ -230,11 +236,11 @@ impl OverlaysView {
             Ok(body) => {
                 self.mark_missing(file, body.is_none() && self.is_overridden(file));
                 let body = body.unwrap_or_default();
-                self.code.editor.update(cx, |editor, cx| {
+                self.editor.code.editor.update(cx, |editor, cx| {
                     editor.set_language(file_language(file), cx);
                     editor.set_content(body.clone(), cx);
                 });
-                self.code.open = Some(OpenSource {
+                self.editor.code.open = Some(OpenSource {
                     id,
                     file,
                     original: body,
@@ -247,36 +253,39 @@ impl OverlaysView {
     }
 
     fn select_file(&mut self, file: &'static str, cx: &mut Context<Self>) {
-        if self.code.file == file {
+        if self.editor.code.file == file {
             return;
         }
         if self.code_dirty(cx) {
-            self.code.pending_leave.request(LeaveIntent::File(file));
+            self.editor
+                .code
+                .pending_leave
+                .request(LeaveIntent::File(file));
             cx.notify();
             return;
         }
-        self.code.file = file;
+        self.editor.code.file = file;
         self.sync_source(cx);
         cx.notify();
     }
 
     fn save_source(&mut self, cx: &mut Context<Self>) {
-        if self.code.saving || !self.code_dirty(cx) {
+        if self.editor.code.saving || !self.code_dirty(cx) {
             return;
         }
-        let Some(id) = self.selected.clone() else {
+        let Some(id) = self.registry.selected.clone() else {
             return;
         };
-        let file = self.code.file;
+        let file = self.editor.code.file;
         let body = self.code_body(cx);
 
-        self.code.saving = true;
-        let repo = Arc::clone(&self.repo);
-        let service = self.service.clone();
+        self.editor.code.saving = true;
+        let repo = Arc::clone(&self.handles.repo);
+        let service = self.handles.service.clone();
         let stored = body.clone();
         let saved = id.clone();
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.handles.rt_handle,
             async move {
                 let Some(mut definition) = repo.get(&id).await.map_err(|e| e.to_string())? else {
                     return Ok(false);
@@ -293,10 +302,11 @@ impl OverlaysView {
                 Ok(true)
             },
             move |this, result: Result<bool, String>, cx| {
-                this.code.saving = false;
+                this.editor.code.saving = false;
                 match result {
                     Ok(true) => {
                         if let Some(open) = this
+                            .editor
                             .code
                             .open
                             .as_mut()
@@ -318,28 +328,31 @@ impl OverlaysView {
     }
 
     fn prompt_revert(&mut self, cx: &mut Context<Self>) {
-        self.code.pending_revert.request(self.code.file);
+        self.editor
+            .code
+            .pending_revert
+            .request(self.editor.code.file);
         cx.notify();
     }
 
     fn cancel_revert(&mut self, cx: &mut Context<Self>) {
-        self.code.pending_revert.cancel();
+        self.editor.code.pending_revert.cancel();
         cx.notify();
     }
 
     fn confirm_revert(&mut self, cx: &mut Context<Self>) {
-        let Some(file) = self.code.pending_revert.take() else {
+        let Some(file) = self.editor.code.pending_revert.take() else {
             return;
         };
-        let Some(id) = self.selected.clone() else {
+        let Some(id) = self.registry.selected.clone() else {
             return;
         };
 
-        let repo = Arc::clone(&self.repo);
-        let service = self.service.clone();
+        let repo = Arc::clone(&self.handles.repo);
+        let service = self.handles.service.clone();
         let target = id.clone();
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.handles.rt_handle,
             async move {
                 let Some(mut definition) = repo.get(&id).await.map_err(|e| e.to_string())? else {
                     return Ok((false, Vec::new(), Vec::new()));
@@ -354,8 +367,8 @@ impl OverlaysView {
                     Ok((true, missing, issues)) => {
                         this.note_missing_overrides(missing);
                         this.set_media_issues(&target, issues, cx);
-                        this.code.open = None;
-                        this.code.revision += 1;
+                        this.editor.code.open = None;
+                        this.editor.code.revision += 1;
                         this.load(cx);
                         this.sync_source(cx);
                     }
@@ -370,17 +383,17 @@ impl OverlaysView {
     }
 
     pub(super) fn request_leave(&mut self, intent: LeaveIntent, cx: &mut Context<Self>) {
-        self.code.pending_leave.request(intent);
+        self.editor.code.pending_leave.request(intent);
         cx.notify();
     }
 
     fn cancel_leave(&mut self, cx: &mut Context<Self>) {
-        self.code.pending_leave.cancel();
+        self.editor.code.pending_leave.cancel();
         cx.notify();
     }
 
     fn confirm_leave(&mut self, cx: &mut Context<Self>) {
-        let Some(intent) = self.code.pending_leave.take() else {
+        let Some(intent) = self.editor.code.pending_leave.take() else {
             return;
         };
         self.restore_open_source(cx);
@@ -393,9 +406,10 @@ impl OverlaysView {
     }
 
     fn restore_open_source(&mut self, cx: &mut Context<Self>) {
-        if let Some(open) = self.code.open.as_ref() {
+        if let Some(open) = self.editor.code.open.as_ref() {
             let original = open.original.clone();
-            self.code
+            self.editor
+                .code
                 .editor
                 .update(cx, |area, cx| area.set_content(original, cx));
         }
@@ -442,7 +456,7 @@ impl OverlaysView {
 
         for file in OVERRIDABLE_FILES {
             let file = *file;
-            let active = self.code.file == file;
+            let active = self.editor.code.file == file;
             let marker = if self.is_missing(file) {
                 Some((Icon::AlertTriangle, palette.random))
             } else if self.is_overridden(file) {
@@ -489,8 +503,8 @@ impl OverlaysView {
     }
 
     fn render_code_meta(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        let lines = self.code.editor.read(cx).line_count();
-        let state = if self.code.saving {
+        let lines = self.editor.code.editor.read(cx).line_count();
+        let state = if self.editor.code.saving {
             tr!("overlays_code_state_saving")
         } else if self.code_dirty(cx) {
             tr!("overlays_code_state_unsaved")
@@ -517,7 +531,7 @@ impl OverlaysView {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         self.selected_definition()?;
-        let file = self.code.file;
+        let file = self.editor.code.file;
         let mut row = div().flex_none().flex().items_center().gap(ACTIONS_GAP);
 
         if self.is_overridden(file) {
@@ -536,7 +550,7 @@ impl OverlaysView {
                 primary_button_with_icon(Icon::DeviceFloppy, tr!("overlays_code_save"), palette)
                     .height(ACTION_H)
                     .disabled(!self.code_dirty(cx))
-                    .busy(self.code.saving)
+                    .busy(self.editor.code.saving)
                     .on_click(
                         element_id("overlays-code-save", file),
                         cx.listener(|this, _: &ClickEvent, _, cx| this.save_source(cx)),
@@ -547,7 +561,7 @@ impl OverlaysView {
     }
 
     fn render_escape_hint(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        let file = self.code.file;
+        let file = self.editor.code.file;
         let (glyph, tint, message) = if self.is_missing(file) {
             (
                 Icon::AlertTriangle,
@@ -622,7 +636,7 @@ impl OverlaysView {
             .flex_col()
             .bg(palette.base);
 
-        if self.code.loading && self.code.open.is_none() {
+        if self.editor.code.loading && self.editor.code.open.is_none() {
             return frame
                 .items_center()
                 .justify_center()
@@ -630,7 +644,9 @@ impl OverlaysView {
                 .into_any_element();
         }
 
-        frame.child(self.code.editor.clone()).into_any_element()
+        frame
+            .child(self.editor.code.editor.clone())
+            .into_any_element()
     }
 
     fn render_code_footer(
@@ -665,7 +681,7 @@ impl OverlaysView {
                     .child(format!(
                         "/overlays/{}/{}",
                         definition.id.as_str(),
-                        self.code.file
+                        self.editor.code.file
                     )),
             )
             .into_any_element()
@@ -679,7 +695,7 @@ impl OverlaysView {
         if definition.source_overrides.is_empty() {
             return None;
         }
-        let descriptor = self.kinds.get(&definition.kind_id)?;
+        let descriptor = self.handles.kinds.get(&definition.kind_id)?;
         if descriptor.config_schema_version() == definition.config_schema_version {
             return None;
         }
@@ -715,10 +731,10 @@ impl OverlaysView {
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
         let mut open = Vec::new();
-        if let Some(file) = self.code.pending_revert.get() {
+        if let Some(file) = self.editor.code.pending_revert.get() {
             open.push(self.render_revert_confirm(file, palette, cx));
         }
-        if self.code.pending_leave.is_pending() {
+        if self.editor.code.pending_leave.is_pending() {
             open.push(self.render_leave_confirm(palette, cx));
         }
         open
@@ -764,7 +780,7 @@ impl OverlaysView {
             ConfirmTone::Warning,
             palette,
         )
-        .item_name(self.code.file.to_owned())
+        .item_name(self.editor.code.file.to_owned())
         .on_cancel(
             "overlays-code-discard-cancel",
             tr!("overlays_code_discard_cancel"),
@@ -792,20 +808,20 @@ impl UnsavedWork for OverlaysView {
     }
 
     fn unsaved_work_name(&self) -> Option<SharedString> {
-        Some(SharedString::from(self.code.file))
+        Some(SharedString::from(self.editor.code.file))
     }
 
     fn start_saving_unsaved_work(&mut self, cx: &mut Context<Self>) -> bool {
         self.save_source(cx);
-        self.code.saving
+        self.editor.code.saving
     }
 
     fn is_saving_unsaved_work(&self) -> bool {
-        self.code.saving
+        self.editor.code.saving
     }
 
     fn discard_unsaved_work(&mut self, cx: &mut Context<Self>) {
-        self.code.pending_leave.cancel();
+        self.editor.code.pending_leave.cancel();
         self.restore_open_source(cx);
         cx.notify();
     }

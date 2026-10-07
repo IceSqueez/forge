@@ -17,8 +17,9 @@ impl OverlaysView {
         definition: &OverlayDefinition,
         cx: &mut Context<Self>,
     ) {
-        let ticket = self.hide_probe_gen.next();
+        let ticket = self.editor.hide_probe_gen.next();
         let queues = self
+            .handles
             .kinds
             .get(&definition.kind_id)
             .is_some_and(|descriptor| {
@@ -33,10 +34,10 @@ impl OverlaysView {
             return;
         }
 
-        let service = self.service.clone();
+        let service = self.handles.service.clone();
         let id = definition.id.clone();
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.handles.rt_handle,
             async move {
                 match service.read_source(&id, BEHAVIOR_FILE).await {
                     Ok(Some(behavior)) => times_own_hide(&behavior),
@@ -53,7 +54,7 @@ impl OverlaysView {
     }
 
     fn apply_hide_timing(&mut self, ticket: u64, flagged: bool, cx: &mut Context<Self>) {
-        if !self.hide_probe_gen.is_current(ticket) {
+        if !self.editor.hide_probe_gen.is_current(ticket) {
             return;
         }
         if let Some(panel) = self.panel_view() {

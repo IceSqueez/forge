@@ -8,9 +8,10 @@ use gpui::{
     AnyElement, ClickEvent, Context, Div, FontWeight, Pixels, SharedString, div, prelude::*, px,
 };
 
+use super::OverlaysView;
 use super::bindings_panel::bindings_reference;
+use super::editor_state::EditorMode;
 use super::property_panel::override_notice;
-use super::{EditorMode, OverlaysView};
 
 const HEAD_PAD_V: Pixels = px(9.0);
 const HEAD_PAD_H: Pixels = px(16.0);
@@ -178,7 +179,11 @@ impl OverlaysView {
                         .glyph(Icon::AlertTriangle),
                 ),
             (EditorMode::Code, _) => {
-                let look = self.kinds.get(&definition.kind_id).map(look_contract);
+                let look = self
+                    .handles
+                    .kinds
+                    .get(&definition.kind_id)
+                    .map(look_contract);
                 property_pane_frame(palette).child(
                     div()
                         .id(SharedString::from(format!(
@@ -294,7 +299,9 @@ impl OverlaysView {
                 return self.render_design_stage(definition, palette, cx);
             }
             Some(definition) => return self.render_code_stage(definition, palette, cx),
-            None if self.overlays.is_empty() => (tr!("overlays_stage_empty"), Icon::Browser),
+            None if self.registry.overlays.is_empty() => {
+                (tr!("overlays_stage_empty"), Icon::Browser)
+            }
             None => (tr!("overlays_stage_select"), Icon::Browser),
         };
 

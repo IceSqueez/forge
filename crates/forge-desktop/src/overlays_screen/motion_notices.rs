@@ -110,16 +110,16 @@ impl OverlaysView {
         definition: &OverlayDefinition,
         cx: &mut Context<Self>,
     ) {
-        let ticket = self.motion_probe_gen.next();
+        let ticket = self.editor.motion_probe_gen.next();
         if definition.source_overrides.is_empty() {
             self.apply_motion_notices(ticket, MotionNotices::default(), cx);
             return;
         }
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.handles.rt_handle,
             scan_overrides(
-                Arc::clone(&self.kinds),
-                self.service.clone(),
+                Arc::clone(&self.handles.kinds),
+                self.handles.service.clone(),
                 definition.clone(),
             ),
             move |this, notices, cx| this.apply_motion_notices(ticket, notices, cx),
@@ -133,7 +133,7 @@ impl OverlaysView {
         notices: MotionNotices,
         cx: &mut Context<Self>,
     ) {
-        if !self.motion_probe_gen.is_current(ticket) {
+        if !self.editor.motion_probe_gen.is_current(ticket) {
             return;
         }
         if let Some(panel) = self.panel_view() {

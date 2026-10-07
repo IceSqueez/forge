@@ -1,8 +1,12 @@
 mod base_sections;
 mod bindings_panel;
+mod catalog;
 mod code_pane;
+mod delete_prompt;
 mod editor_pane;
+mod editor_state;
 mod event_wiring;
+mod form_link;
 mod form_modal;
 mod hide_timing;
 mod icon_choice;
@@ -16,77 +20,50 @@ mod preview_shapes;
 mod preview_stage;
 mod property_panel;
 mod receiver;
+mod registry;
 mod registry_pane;
+mod server_status;
 mod sizing_section;
 mod sound_choice;
+mod writes;
 
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use forge_components::{
-    BreadcrumbCrumb, Confirm, ConfirmTone, FONT_XS, ForgePalette, Icon, OverlayPosition, ToastKind,
-    body_family, confirm_modal, icon, overlay, page_frame, tr,
+    BreadcrumbCrumb, Confirm, FONT_XS, ForgePalette, Icon, ToastKind, body_family, icon,
+    page_frame, tr,
 };
-use forge_overlay::config::SOUND_OPTIONS_KEY;
-use forge_overlay::{MediaIssue, OverlayKindRegistry, SectionedField, effective_overlay_config};
+use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::actions::ActionsService;
 use forge_runtime::{EventBus, LatestValues, OverlayServiceHandle, QueueSchedulerHandle};
 use forge_server::ServerHandle;
-use forge_soundboard::{ClipLibrary, SoundboardError};
-use forge_storage::{
-    MediaRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, StoredClip,
-};
+use forge_soundboard::ClipLibrary;
+use forge_storage::{MediaRepo, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, Point, SharedString,
-    Subscription, Window, div, prelude::*, px,
+    AnyElement, Context, Entity, EventEmitter, Pixels, Subscription, Window, div, prelude::*, px,
 };
 
-use crate::async_bridge;
 use crate::audio_router::AudioRouter;
 use crate::hub_crumb::{core_category, hub_crumb};
-use crate::overlay_url::{overlay_origin, overlay_page_url, resolve_routable_host};
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
-use crate::toasts::{PushToast, copy_to_clipboard};
+use crate::toasts::PushToast;
 
-use base_sections::BaseEvent;
-use code_pane::{CodeState, LeaveIntent};
+use catalog::MediaCatalog;
+use delete_prompt::PendingDelete;
+use editor_state::EditorState;
 use event_wiring::{EventWiringView, WiringLaunch};
-use form_modal::{OverlayFormEvent, OverlayFormLaunch, OverlayFormModal, OverlayTypeChoice};
-use icon_choice::{IconImage, OpenIconPicker};
+use form_link::OpenForm;
 use kind_visuals::{KindVisuals, kind_visuals};
 use latest_section::LatestSource;
-use preview_stage::{StageState, TestFireRun};
-use property_panel::{AdoptClipRequested, OverlayPropertyPanel, PanelLaunch, PropertyPanelEvent};
+use preview_stage::StageState;
+use registry::RegistryState;
+use server_status::ServerStatus;
 
 const HEADER_GAP: Pixels = px(5.0);
 const HEADER_GLYPH: Pixels = px(13.0);
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum EditorMode {
-    Design,
-    Code,
-}
-
-struct OpenForm {
-    view: Entity<OverlayFormModal>,
-    _sub: Subscription,
-}
-
-struct OpenPanel {
-    view: Entity<OverlayPropertyPanel>,
-    _sub: Subscription,
-    _media_sub: Subscription,
-    _icon_sub: Subscription,
-    _base_sub: Subscription,
-}
-
-struct PendingDelete {
-    id: OverlayId,
-    display_name: String,
-}
 
 struct WiringLink {
     view: Entity<EventWiringView>,
@@ -94,47 +71,7 @@ struct WiringLink {
     _repaint: Subscription,
 }
 
-struct ServedEndpoint {
-    bind_address: String,
-    routable_host: Option<String>,
-}
-
-#[derive(Default)]
-struct Regenerated {
-    failure: Option<String>,
-    missing: Vec<String>,
-    media_issues: Vec<MediaIssue>,
-}
-
-pub(super) async fn store_config(
-    repo: &dyn OverlayRepo,
-    id: &OverlayId,
-    config: OverlayConfig,
-) -> Result<bool, String> {
-    let Some(mut definition) = repo.get(id).await.map_err(|e| e.to_string())? else {
-        return Ok(false);
-    };
-    definition.config = config;
-    repo.save(&definition).await.map_err(|e| e.to_string())?;
-    Ok(true)
-}
-
-async fn regenerate(service: &OverlayServiceHandle, id: &OverlayId) -> Regenerated {
-    match service.materialize(id).await {
-        Ok(report) => Regenerated {
-            failure: None,
-            missing: report.missing_overrides,
-            media_issues: report.media_issues,
-        },
-        Err(error) => Regenerated {
-            failure: Some(error.to_string()),
-            missing: Vec::new(),
-            media_issues: Vec::new(),
-        },
-    }
-}
-
-pub struct OverlaysView {
+struct OverlayHandles {
     repo: Arc<dyn OverlayRepo>,
     server: Option<ServerHandle>,
     rt_handle: tokio::runtime::Handle,
@@ -144,33 +81,19 @@ pub struct OverlaysView {
     media: Arc<dyn MediaRepo>,
     settings_repo: Arc<dyn SettingsRepo>,
     audio_router: Arc<AudioRouter>,
-    clip_choices: Vec<(String, String)>,
-    clips_gen: async_bridge::Generation,
-    icon_images: Vec<IconImage>,
-    icon_favorites: HashSet<SharedString>,
-    icon_picker: Option<OpenIconPicker>,
-    images_gen: async_bridge::Generation,
-    media_issues: HashMap<OverlayId, Vec<MediaIssue>>,
-    overlays: Vec<OverlayDefinition>,
-    selected: Option<OverlayId>,
-    mode: EditorMode,
-    code: CodeState,
-    panel: Option<OpenPanel>,
-    loading: bool,
-    server_running: bool,
-    bind_address: Option<String>,
-    routable_host: Option<String>,
-    menu_open: Option<OverlayId>,
-    menu_click_pos: Option<Point<Pixels>>,
+}
+
+pub struct OverlaysView {
+    handles: OverlayHandles,
+    registry: RegistryState,
+    served: ServerStatus,
+    editor: EditorState,
+    catalog: MediaCatalog,
+    stage: StageState,
     form: Option<OpenForm>,
     pending_delete: Confirm<PendingDelete>,
-    fire: Option<TestFireRun>,
-    fire_epoch: u64,
-    stage: StageState,
     wiring: WiringLink,
     receiver: Option<OverlayId>,
-    hide_probe_gen: async_bridge::Generation,
-    motion_probe_gen: async_bridge::Generation,
     latest: LatestSource,
 }
 
@@ -199,7 +122,7 @@ impl OverlaysView {
             .as_ref()
             .is_some_and(|handle| *handle.run_state().borrow());
 
-        let code = CodeState::new(cx);
+        let editor = EditorState::new(cx);
         let wiring = cx.new(|_| {
             EventWiringView::new(WiringLaunch {
                 actions: Arc::clone(&launch.actions),
@@ -221,46 +144,30 @@ impl OverlaysView {
             kinds: Arc::clone(&launch.kinds),
         };
         let mut view = Self {
-            repo: launch.repo,
-            server: launch.server,
-            rt_handle: launch.rt_handle,
-            kinds: launch.kinds,
-            service: launch.service,
-            library: launch.library,
-            media: launch.media,
-            settings_repo: launch.settings_repo,
-            audio_router: launch.audio_router,
-            clip_choices: Vec::new(),
-            clips_gen: async_bridge::Generation::default(),
-            icon_images: Vec::new(),
-            icon_favorites: HashSet::new(),
-            icon_picker: None,
-            images_gen: async_bridge::Generation::default(),
-            media_issues: HashMap::new(),
-            overlays: Vec::new(),
-            selected: None,
-            mode: EditorMode::Design,
-            code,
-            panel: None,
-            loading: false,
-            server_running,
-            bind_address: None,
-            routable_host: None,
-            menu_open: None,
-            menu_click_pos: None,
+            handles: OverlayHandles {
+                repo: launch.repo,
+                server: launch.server,
+                rt_handle: launch.rt_handle,
+                kinds: launch.kinds,
+                service: launch.service,
+                library: launch.library,
+                media: launch.media,
+                settings_repo: launch.settings_repo,
+                audio_router: launch.audio_router,
+            },
+            registry: RegistryState::default(),
+            served: ServerStatus::new(server_running),
+            editor,
+            catalog: MediaCatalog::default(),
+            stage: StageState::default(),
             form: None,
             pending_delete: Confirm::default(),
-            fire: None,
-            fire_epoch: 0,
-            stage: StageState::default(),
             wiring: WiringLink {
                 view: wiring,
                 _nav: nav,
                 _repaint: repaint,
             },
             receiver: None,
-            hide_probe_gen: async_bridge::Generation::default(),
-            motion_probe_gen: async_bridge::Generation::default(),
             latest,
         };
         view.load(cx);
@@ -272,149 +179,8 @@ impl OverlaysView {
         view
     }
 
-    fn index_of(&self, id: &OverlayId) -> Option<usize> {
-        self.overlays.iter().position(|item| &item.id == id)
-    }
-
-    fn selected_definition(&self) -> Option<&OverlayDefinition> {
-        self.selected
-            .as_ref()
-            .and_then(|id| self.overlays.iter().find(|item| &item.id == id))
-    }
-
     fn visuals(&self, definition: &OverlayDefinition, palette: &ForgePalette) -> KindVisuals {
-        kind_visuals(definition, &self.kinds, palette)
-    }
-
-    fn enabled_count(&self) -> usize {
-        self.overlays.iter().filter(|item| item.enabled).count()
-    }
-
-    fn overlay_url(&self, id: &OverlayId) -> Option<String> {
-        if !self.server_running {
-            return None;
-        }
-        let origin = overlay_origin(self.bind_address.as_deref()?, self.routable_host.as_deref());
-        Some(overlay_page_url(&origin, id.as_str()))
-    }
-
-    fn type_choices(&self) -> Vec<OverlayTypeChoice> {
-        let mut choices: Vec<OverlayTypeChoice> = self
-            .kinds
-            .all()
-            .map(|descriptor| OverlayTypeChoice {
-                kind_id: descriptor.id().to_owned(),
-                label: descriptor.label().to_owned(),
-                summary: descriptor.summary().to_owned(),
-                icon: Icon::from_name(descriptor.icon_name()),
-            })
-            .collect();
-        choices.sort_by(|a, b| a.label.cmp(&b.label));
-        choices
-    }
-
-    fn apply_regenerated(
-        &mut self,
-        id: &OverlayId,
-        regenerated: Regenerated,
-        cx: &mut Context<Self>,
-    ) {
-        self.note_missing_overrides(regenerated.missing);
-        self.set_media_issues(id, regenerated.media_issues, cx);
-        self.invalidate_source(cx);
-        if let Some(message) = regenerated.failure {
-            self.report(&message, cx);
-        }
-    }
-
-    fn set_media_issues(
-        &mut self,
-        id: &OverlayId,
-        issues: Vec<MediaIssue>,
-        cx: &mut Context<Self>,
-    ) {
-        if issues.is_empty() {
-            self.media_issues.remove(id);
-        } else {
-            self.media_issues.insert(id.clone(), issues.clone());
-        }
-        let Some(panel) = self
-            .panel
-            .as_ref()
-            .filter(|open| open.view.read(cx).overlay_id() == id)
-            .map(|open| open.view.clone())
-        else {
-            return;
-        };
-        panel.update(cx, |panel, cx| panel.set_media_issues(issues, cx));
-    }
-
-    fn issues_of(&self, id: &OverlayId) -> &[MediaIssue] {
-        self.media_issues
-            .get(id)
-            .map(Vec::as_slice)
-            .unwrap_or_default()
-    }
-
-    fn media_badge(&self, id: &OverlayId) -> Option<String> {
-        sound_choice::badge_note(self.issues_of(id))
-    }
-
-    fn load_clips(&mut self, cx: &mut Context<Self>) {
-        let ticket = self.clips_gen.next();
-        let library = Arc::clone(&self.library);
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move { library.list().await },
-            move |this, result: Result<Vec<StoredClip>, SoundboardError>, cx| {
-                if !this.clips_gen.is_current(ticket) {
-                    return;
-                }
-                match result {
-                    Ok(clips) => this.apply_clips(&clips, cx),
-                    Err(error) => {
-                        tracing::warn!(%error, "soundboard clips unavailable for the sound picker");
-                    }
-                }
-            },
-            cx,
-        );
-    }
-
-    fn apply_clips(&mut self, clips: &[StoredClip], cx: &mut Context<Self>) {
-        self.clip_choices = sound_choice::clip_choices(clips);
-        let choices = self.clip_choices.clone();
-        let Some(panel) = self.panel.as_ref().map(|open| open.view.clone()) else {
-            return;
-        };
-        panel.update(cx, |panel, cx| panel.set_sound_choices(choices, cx));
-    }
-
-    fn on_adopt_requested(
-        &mut self,
-        view: Entity<OverlayPropertyPanel>,
-        event: &AdoptClipRequested,
-        cx: &mut Context<Self>,
-    ) {
-        let library = Arc::clone(&self.library);
-        let clip = event.clip;
-        let key = event.key.clone();
-        let value = event.value.clone();
-        async_bridge::run_async_entity(
-            &self.rt_handle,
-            view,
-            async move {
-                let Some(row) = library.get(clip).await? else {
-                    return Ok(None);
-                };
-                let verdict = library.adopt_now(&row).await?;
-                Ok::<_, SoundboardError>(Some((row.name, verdict)))
-            },
-            move |panel, result, cx| {
-                panel.settle_clip_pick(key, value, sound_choice::pick_outcome(result), cx);
-            },
-            cx,
-        );
+        kind_visuals(definition, &self.handles.kinds, palette)
     }
 
     fn report(&mut self, message: &str, cx: &mut Context<Self>) {
@@ -423,567 +189,19 @@ impl OverlaysView {
         cx.notify();
     }
 
-    fn start_server_bridge(&self, cx: &mut Context<Self>) {
-        let Some(handle) = self.server.clone() else {
-            return;
-        };
-        let rt_handle = self.rt_handle.clone();
-        let mut run_state = handle.run_state();
-        cx.spawn(async move |this, cx| {
-            loop {
-                let running = *run_state.borrow_and_update();
-                let (tx, rx) = tokio::sync::oneshot::channel();
-                let probe = handle.clone();
-                rt_handle.spawn(async move {
-                    let bind_address = probe.bind_addr().await.to_string();
-                    let routable_host = resolve_routable_host(&bind_address);
-                    let _ = tx.send(ServedEndpoint {
-                        bind_address,
-                        routable_host,
-                    });
-                });
-                let endpoint = rx.await.ok();
-                if this
-                    .update(cx, |this, cx| {
-                        this.apply_server_state(running, endpoint, cx)
-                    })
-                    .is_err()
-                    || run_state.changed().await.is_err()
-                {
-                    break;
-                }
-            }
-        })
-        .detach();
-    }
-
-    fn apply_server_state(
-        &mut self,
-        running: bool,
-        endpoint: Option<ServedEndpoint>,
-        cx: &mut Context<Self>,
-    ) {
-        let mut changed = self.server_running != running;
-        self.server_running = running;
-        if let Some(endpoint) = endpoint
-            && (self.bind_address.as_deref() != Some(endpoint.bind_address.as_str())
-                || self.routable_host != endpoint.routable_host)
-        {
-            self.bind_address = Some(endpoint.bind_address);
-            self.routable_host = endpoint.routable_host;
-            changed = true;
-        }
-        if changed {
-            cx.notify();
-        }
-    }
-
-    fn load(&mut self, cx: &mut Context<Self>) {
-        self.loading = true;
-        let repo = Arc::clone(&self.repo);
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move { repo.list().await.map_err(|e| e.to_string()) },
-            |this, result, cx| this.apply_list(result, cx),
-            cx,
-        );
-        cx.notify();
-    }
-
-    fn apply_list(
-        &mut self,
-        result: Result<Vec<OverlayDefinition>, String>,
-        cx: &mut Context<Self>,
-    ) {
-        self.loading = false;
-        match result {
-            Ok(rows) => {
-                self.overlays = rows;
-                let live = &self.overlays;
-                self.media_issues
-                    .retain(|id, _| live.iter().any(|item| &item.id == id));
-                let selection_survived = self
-                    .selected
-                    .as_ref()
-                    .is_some_and(|id| self.index_of(id).is_some());
-                if !selection_survived {
-                    self.selected = self.overlays.first().map(|item| item.id.clone());
-                    self.clear_test();
-                }
-                self.sync_panel(cx);
-                self.sync_preview();
-                self.sync_source(cx);
-                self.sync_wiring(cx);
-            }
-            Err(message) => self.report(&message, cx),
-        }
-        cx.notify();
-    }
-
-    fn sync_wiring(&mut self, cx: &mut Context<Self>) {
-        let selection = self.selected_definition().cloned();
-        self.wiring
-            .view
-            .update(cx, |wiring, cx| wiring.focus_overlay(selection, cx));
-    }
-
-    fn select(&mut self, id: OverlayId, cx: &mut Context<Self>) {
-        if self.selected.as_ref() == Some(&id) {
-            return;
-        }
-        if self.code_dirty(cx) {
-            self.request_leave(LeaveIntent::Overlay(id), cx);
-            return;
-        }
-        self.selected = Some(id);
-        self.clear_test();
-        self.sync_panel(cx);
-        self.sync_preview();
-        self.sync_source(cx);
-        self.sync_wiring(cx);
-        cx.notify();
-    }
-
-    pub(super) fn mode(&self) -> EditorMode {
-        self.mode
-    }
-
-    pub(in crate::overlays_screen) fn panel_view(&self) -> Option<Entity<OverlayPropertyPanel>> {
-        self.panel.as_ref().map(|open| open.view.clone())
-    }
-
-    fn set_mode(&mut self, mode: EditorMode, cx: &mut Context<Self>) {
-        if self.mode == mode {
-            return;
-        }
-        if mode == EditorMode::Design && self.code_dirty(cx) {
-            self.request_leave(LeaveIntent::Design, cx);
-            return;
-        }
-        self.mode = mode;
-        if mode == EditorMode::Code {
-            self.invalidate_source(cx);
-        }
-        self.sync_source(cx);
-        cx.notify();
-    }
-
-    fn release_panel(&mut self, cx: &mut Context<Self>) {
-        let Some(open) = self.panel.take() else {
-            return;
-        };
-        let (id, unsaved) = open.view.update(cx, |panel, cx| {
-            (panel.overlay_id().clone(), panel.take_unsaved_config(cx))
-        });
-        if let Some(config) = unsaved
-            && self.index_of(&id).is_some()
-        {
-            self.save_config(id, config, cx);
-        }
-    }
-
-    fn sync_panel(&mut self, cx: &mut Context<Self>) {
-        let target = self
-            .selected_definition()
-            .filter(|definition| self.kinds.get(&definition.kind_id).is_some())
-            .cloned();
-
-        let Some(definition) = target else {
-            self.release_panel(cx);
-            return;
-        };
-        if self.panel.as_ref().is_some_and(|open| {
-            let panel = open.view.read(cx);
-            panel.overlay_id() == &definition.id && panel.look_kind() == definition.kind_id
-        }) {
-            self.probe_hide_timing(&definition, cx);
-            self.probe_motion_notices(&definition, cx);
-            return;
-        }
-        let Some(descriptor) = self.kinds.get(&definition.kind_id) else {
-            self.release_panel(cx);
-            return;
-        };
-
-        let effective = effective_overlay_config(descriptor, &definition.config);
-        let specs: Vec<SectionedField> = look_change::panel_specs(descriptor);
-
-        let launch = PanelLaunch {
-            overlay_id: definition.id.clone(),
-            specs,
-            defaults: descriptor.default_config(),
-            stored: definition.config.clone(),
-            effective,
-            choices: HashMap::from([(SOUND_OPTIONS_KEY.to_owned(), self.clip_choices.clone())]),
-            icon_images: self.icon_images.clone(),
-            overridden_files: definition.source_overrides.clone(),
-            repo: Arc::clone(&self.repo),
-            service: self.service.clone(),
-            rt_handle: self.rt_handle.clone(),
-        };
-
-        let issues = self.issues_of(&definition.id).to_vec();
-        let base = self.base_launch(descriptor, &definition.id);
-        let latest = self.latest.clone();
-        self.release_panel(cx);
-        let view = cx.new(|cx| OverlayPropertyPanel::new(launch, cx));
-        view.update(cx, |panel, cx| {
-            panel.set_media_issues(issues, cx);
-            panel.adopt_base(base, cx);
-            panel.bind_latest(latest, cx);
-        });
-        let sub = cx.subscribe(&view, Self::on_panel_event);
-        let media_sub = cx.subscribe(&view, Self::on_adopt_requested);
-        let icon_sub = cx.subscribe(&view, Self::on_icon_pick_requested);
-        let base_sub = cx.subscribe(&view, Self::on_base_event);
-        self.panel = Some(OpenPanel {
-            view,
-            _sub: sub,
-            _media_sub: media_sub,
-            _icon_sub: icon_sub,
-            _base_sub: base_sub,
-        });
-        self.load_clips(cx);
-        self.probe_hide_timing(&definition, cx);
-        self.probe_motion_notices(&definition, cx);
-    }
-
-    fn on_base_event(
-        &mut self,
-        view: Entity<OverlayPropertyPanel>,
-        event: &BaseEvent,
-        cx: &mut Context<Self>,
-    ) {
-        let id = view.read(cx).overlay_id().clone();
-        match event {
-            BaseEvent::ChangeLook { kind_id, config } => {
-                self.change_look(id, kind_id.clone(), config.clone(), cx);
-            }
-            BaseEvent::SetReceiver(on) => self.set_receiver(id, *on, cx),
-        }
-    }
-
-    fn on_panel_event(
-        &mut self,
-        view: Entity<OverlayPropertyPanel>,
-        event: &PropertyPanelEvent,
-        cx: &mut Context<Self>,
-    ) {
-        let PropertyPanelEvent::Save(config) = event;
-        let id = view.read(cx).overlay_id().clone();
-        self.save_config(id, config.clone(), cx);
-    }
-
-    fn save_config(&mut self, id: OverlayId, config: OverlayConfig, cx: &mut Context<Self>) {
-        let repo = Arc::clone(&self.repo);
-        let service = self.service.clone();
-        let target = id.clone();
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move {
-                if !store_config(repo.as_ref(), &id, config).await? {
-                    return Ok((false, Regenerated::default()));
-                }
-                Ok((true, regenerate(&service, &id).await))
-            },
-            move |this, result: Result<(bool, Regenerated), String>, cx| match result {
-                Ok((true, regenerated)) => {
-                    this.apply_regenerated(&target, regenerated, cx);
-                    this.load(cx);
-                }
-                Ok((false, _)) => this.report(&tr!("overlays_toast_missing"), cx),
-                Err(message) => this.report(&message, cx),
-            },
-            cx,
-        );
-    }
-
-    fn toggle_enabled(&mut self, id: OverlayId, cx: &mut Context<Self>) {
-        let Some(index) = self.index_of(&id) else {
-            return;
-        };
-        let next = !self.overlays[index].enabled;
-        self.overlays[index].enabled = next;
-        cx.notify();
-
-        let service = self.service.clone();
-        let target = id.clone();
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move {
-                service
-                    .set_enabled(&target, next)
-                    .await
-                    .map_err(|e| e.to_string())
-            },
-            move |this, result: Result<bool, String>, cx| {
-                let failure = match result {
-                    Ok(true) => None,
-                    Ok(false) => Some(tr!("overlays_toast_missing")),
-                    Err(message) => Some(message),
-                };
-                let Some(message) = failure else {
-                    return;
-                };
-                if let Some(index) = this.index_of(&id) {
-                    this.overlays[index].enabled = !next;
-                }
-                this.report(&message, cx);
-            },
-            cx,
-        );
-    }
-
-    fn copy_url(&mut self, id: &OverlayId, cx: &mut Context<Self>) {
-        self.menu_open = None;
-        match self.overlay_url(id) {
-            Some(url) => copy_to_clipboard(url, cx),
-            None => cx.push_toast(ToastKind::Info, tr!("overlays_toast_url_unavailable")),
-        }
-        cx.notify();
-    }
-
-    fn open_create_form(&mut self, cx: &mut Context<Self>) {
-        let types = self.type_choices();
-        let kind_id = types
-            .first()
-            .map(|choice| choice.kind_id.clone())
-            .unwrap_or_default();
-        self.open_form(
-            OverlayFormLaunch {
-                target: None,
-                display_name: String::new(),
-                kind_id,
-                types,
-            },
-            cx,
-        );
-    }
-
-    fn open_rename_form(&mut self, id: OverlayId, cx: &mut Context<Self>) {
-        let Some(definition) = self.index_of(&id).map(|index| &self.overlays[index]) else {
-            return;
-        };
-        let launch = OverlayFormLaunch {
-            display_name: definition.display_name.clone(),
-            kind_id: definition.kind_id.clone(),
-            target: Some(id),
-            types: self.type_choices(),
-        };
-        self.open_form(launch, cx);
-    }
-
-    fn open_form(&mut self, launch: OverlayFormLaunch, cx: &mut Context<Self>) {
-        let view = cx.new(|cx| OverlayFormModal::new(launch, cx));
-        let sub = cx.subscribe(&view, Self::on_form_event);
-        self.form = Some(OpenForm { view, _sub: sub });
-        self.menu_open = None;
-        cx.notify();
-    }
-
-    fn close_form(&mut self, cx: &mut Context<Self>) {
-        self.form = None;
-        cx.notify();
-    }
-
-    fn on_form_event(
-        &mut self,
-        _view: Entity<OverlayFormModal>,
-        event: &OverlayFormEvent,
-        cx: &mut Context<Self>,
-    ) {
-        match event {
-            OverlayFormEvent::Submit {
-                target,
-                display_name,
-                kind_id,
-            } => match target {
-                Some(id) => self.rename(id.clone(), display_name.clone(), cx),
-                None => self.create(display_name.clone(), kind_id.clone(), cx),
-            },
-            OverlayFormEvent::Cancel => self.close_form(cx),
-        }
-    }
-
-    fn create(&mut self, display_name: String, kind_id: String, cx: &mut Context<Self>) {
-        let Some(schema_version) = self
-            .kinds
-            .get(&kind_id)
-            .map(|descriptor| descriptor.config_schema_version())
-        else {
-            self.report(&tr!("overlays_toast_unknown_type"), cx);
-            return;
-        };
-        self.close_form(cx);
-
-        let repo = Arc::clone(&self.repo);
-        let service = self.service.clone();
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move {
-                let definition = repo
-                    .create(&display_name, &kind_id, schema_version)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                let regenerated = regenerate(&service, &definition.id).await;
-                Ok((definition, regenerated))
-            },
-            |this, result: Result<(OverlayDefinition, Regenerated), String>, cx| match result {
-                Ok((definition, regenerated)) => {
-                    let created = definition.id;
-                    this.selected = Some(created.clone());
-                    cx.push_toast(ToastKind::Success, tr!("overlays_toast_created"));
-                    this.apply_regenerated(&created, regenerated, cx);
-                    this.load(cx);
-                }
-                Err(message) => this.report(&message, cx),
-            },
-            cx,
-        );
-    }
-
-    fn rename(&mut self, id: OverlayId, display_name: String, cx: &mut Context<Self>) {
-        self.close_form(cx);
-        let repo = Arc::clone(&self.repo);
-        let service = self.service.clone();
-        let target = id.clone();
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move {
-                let Some(mut definition) = repo.get(&id).await.map_err(|e| e.to_string())? else {
-                    return Ok((false, Regenerated::default()));
-                };
-                definition.display_name = display_name;
-                repo.save(&definition).await.map_err(|e| e.to_string())?;
-                Ok((true, regenerate(&service, &id).await))
-            },
-            move |this, result: Result<(bool, Regenerated), String>, cx| match result {
-                Ok((true, regenerated)) => {
-                    cx.push_toast(ToastKind::Success, tr!("overlays_toast_renamed"));
-                    this.apply_regenerated(&target, regenerated, cx);
-                    this.load(cx);
-                }
-                Ok((false, _)) => this.report(&tr!("overlays_toast_missing"), cx),
-                Err(message) => this.report(&message, cx),
-            },
-            cx,
-        );
-    }
-
-    fn prompt_delete(&mut self, id: OverlayId, cx: &mut Context<Self>) {
-        self.menu_open = None;
-        if let Some(index) = self.index_of(&id) {
-            self.pending_delete.request(PendingDelete {
-                display_name: self.overlays[index].display_name.clone(),
-                id: id.clone(),
-            });
-            self.wiring
-                .view
-                .update(cx, |wiring, cx| wiring.count_for_delete(id, cx));
-        }
-        cx.notify();
-    }
-
-    fn cancel_delete(&mut self, cx: &mut Context<Self>) {
-        self.pending_delete.cancel();
-        self.wiring
-            .view
-            .update(cx, |wiring, _| wiring.clear_delete_count());
-        cx.notify();
-    }
-
-    fn confirm_delete(&mut self, cx: &mut Context<Self>) {
-        let Some(prompt) = self.pending_delete.take() else {
-            return;
-        };
-        self.wiring
-            .view
-            .update(cx, |wiring, _| wiring.clear_delete_count());
-        if self.selected.as_ref() == Some(&prompt.id) {
-            self.selected = None;
-            self.clear_test();
-        }
-        let service = self.service.clone();
-        let settings = Arc::clone(&self.settings_repo);
-        let router = Arc::clone(&self.audio_router);
-        let id = prompt.id;
-        let deleted = id.clone();
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move {
-                let was_receiver = receiver::release_receiver(settings.as_ref(), &id)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                let removed = match service.delete(&id).await {
-                    Ok(removed) => removed,
-                    Err(error) => {
-                        if was_receiver {
-                            receiver::restore_receiver(settings.as_ref(), &id).await;
-                        }
-                        return Err(error.to_string());
-                    }
-                };
-                if !removed {
-                    if was_receiver {
-                        receiver::restore_receiver(settings.as_ref(), &id).await;
-                    }
-                    return Ok((false, None));
-                }
-                if was_receiver {
-                    router.apply().await;
-                }
-                if let Err(error) = service.release_media(&id).await {
-                    tracing::warn!(overlay = %id, %error, "overlay media references not released");
-                }
-                let swept = service
-                    .remove_folder(&id)
-                    .await
-                    .err()
-                    .map(|e| e.to_string());
-                Ok((true, swept))
-            },
-            move |this, result: Result<(bool, Option<String>), String>, cx| match result {
-                Ok((true, swept)) => {
-                    if this.receiver.as_ref() == Some(&deleted) {
-                        this.apply_receiver(None, cx);
-                    }
-                    cx.push_toast(ToastKind::Success, tr!("overlays_toast_deleted"));
-                    if let Some(message) = swept {
-                        this.report(&message, cx);
-                    }
-                    this.load(cx);
-                }
-                Ok((false, _)) => this.report(&tr!("overlays_toast_missing"), cx),
-                Err(message) => this.report(&message, cx),
-            },
-            cx,
-        );
-        cx.notify();
-    }
-
-    fn toggle_menu(&mut self, id: &OverlayId, position: Point<Pixels>, cx: &mut Context<Self>) {
-        self.menu_open = if self.menu_open.as_ref() == Some(id) {
-            None
-        } else {
-            self.menu_click_pos = Some(position);
-            Some(id.clone())
-        };
-        cx.notify();
-    }
-
-    fn close_menu(&mut self, cx: &mut Context<Self>) {
-        self.menu_open = None;
-        cx.notify();
-    }
-
     fn render_header_right(&self, palette: &ForgePalette) -> AnyElement {
-        let (dot, summary) = match self.bind_address.as_deref().filter(|_| self.server_running) {
+        let (dot, summary) = match self
+            .served
+            .bind_address
+            .as_deref()
+            .filter(|_| self.served.running)
+        {
             Some(address) => (
                 palette.success,
                 tr!(
                     "overlays_header_summary",
                     enabled = self.enabled_count() as i64,
-                    total = self.overlays.len() as i64,
+                    total = self.registry.overlays.len() as i64,
                     port = crate::overlay_url::extract_port(address)
                 ),
             ),
@@ -992,7 +210,7 @@ impl OverlaysView {
                 tr!(
                     "overlays_header_summary_stopped",
                     enabled = self.enabled_count() as i64,
-                    total = self.overlays.len() as i64
+                    total = self.registry.overlays.len() as i64
                 ),
             ),
         };
@@ -1009,50 +227,6 @@ impl OverlaysView {
                     .text_color(palette.text_muted)
                     .child(summary),
             )
-            .into_any_element()
-    }
-
-    fn delete_body(&self, id: &OverlayId, cx: &Context<Self>) -> String {
-        let base = tr!("overlays_confirm_delete_body");
-        match self.wiring.view.read(cx).delete_feed_count(id) {
-            Some(count) => format!(
-                "{base} {}",
-                tr!("overlays_confirm_delete_feeds", count = count as i64)
-            ),
-            None => base,
-        }
-    }
-
-    fn render_delete_confirm(
-        &self,
-        prompt: &PendingDelete,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let card = confirm_modal(
-            tr!("overlays_confirm_delete_title"),
-            self.delete_body(&prompt.id, cx),
-            ConfirmTone::Destructive,
-            palette,
-        )
-        .item_name(prompt.display_name.clone())
-        .on_cancel(
-            "overlays-delete-cancel",
-            tr!("common_cancel"),
-            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_delete(cx)),
-        )
-        .on_confirm(
-            "overlays-delete-confirm",
-            tr!("common_delete"),
-            cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_delete(cx)),
-        );
-
-        let weak = cx.entity().downgrade();
-        overlay(card, palette)
-            .position(OverlayPosition::Center)
-            .on_dismiss("overlays-delete-dismiss", move |_window, cx| {
-                let _ = weak.update(cx, |this, cx| this.cancel_delete(cx));
-            })
             .into_any_element()
     }
 }

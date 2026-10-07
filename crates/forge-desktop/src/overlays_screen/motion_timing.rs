@@ -262,7 +262,7 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let descriptor = self.kinds.get(&definition.kind_id)?;
+        let descriptor = self.handles.kinds.get(&definition.kind_id)?;
         let timeline = motion_timeline(descriptor, &definition.config)?;
 
         let mut line = div()

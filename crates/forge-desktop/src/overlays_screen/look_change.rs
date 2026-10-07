@@ -8,9 +8,10 @@ use forge_registry::FormField;
 use forge_storage::OverlayId;
 use gpui::Context;
 
+use super::OverlaysView;
 use super::base_sections::{BaseLaunch, LookSummary};
 use super::sizing_section::keep_sizing_notice;
-use super::{OverlaysView, Regenerated, regenerate};
+use super::writes::{Regenerated, regenerate};
 use crate::async_bridge;
 
 pub(super) fn look_summary(descriptor: &dyn OverlayKindDescriptor) -> LookSummary {
@@ -62,7 +63,7 @@ impl OverlaysView {
         descriptor: &dyn OverlayKindDescriptor,
         id: &OverlayId,
     ) -> BaseLaunch {
-        let mut looks: Vec<LookSummary> = self.kinds.all().map(look_summary).collect();
+        let mut looks: Vec<LookSummary> = self.handles.kinds.all().map(look_summary).collect();
         looks.sort_by(|a, b| a.label.cmp(&b.label));
         BaseLaunch {
             look: look_summary(descriptor),
@@ -78,18 +79,18 @@ impl OverlaysView {
         config: OverlayConfig,
         cx: &mut Context<Self>,
     ) {
-        let Some(descriptor) = self.kinds.get(&kind_id) else {
+        let Some(descriptor) = self.handles.kinds.get(&kind_id) else {
             self.report(&forge_components::tr!("overlays_toast_unknown_type"), cx);
             return;
         };
         let mut carried = carried_config(descriptor, &config);
         keep_sizing_notice(&config, &mut carried);
         let schema_version = descriptor.config_schema_version();
-        let repo = Arc::clone(&self.repo);
-        let service = self.service.clone();
+        let repo = Arc::clone(&self.handles.repo);
+        let service = self.handles.service.clone();
         let target = id.clone();
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.handles.rt_handle,
             async move {
                 let Some(mut definition) = repo.get(&id).await.map_err(|e| e.to_string())? else {
                     return Ok((false, Regenerated::default()));

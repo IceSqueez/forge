@@ -75,7 +75,7 @@ fn delivery_hint(phase: &TestFirePhase, server_running: bool) -> DeliveryHint {
     }
 }
 
-pub(super) struct TestFireRun {
+struct TestFireRun {
     overlay: OverlayId,
     phase: TestFirePhase,
 }
@@ -99,6 +99,8 @@ pub(super) struct StageState {
     scale: PreviewScale,
     area: Option<Size<Pixels>>,
     preview: Option<StagePreview>,
+    fire: Option<TestFireRun>,
+    fire_epoch: u64,
 }
 
 impl StageState {
@@ -139,8 +141,8 @@ fn fit_canvas(area: Size<Pixels>, canvas: PreviewCanvas) -> Option<CanvasFit> {
 
 impl OverlaysView {
     pub(super) fn clear_test(&mut self) {
-        self.fire_epoch = self.fire_epoch.wrapping_add(1);
-        self.fire = None;
+        self.stage.fire_epoch = self.stage.fire_epoch.wrapping_add(1);
+        self.stage.fire = None;
         self.sync_preview();
     }
 
@@ -159,24 +161,24 @@ impl OverlaysView {
     }
 
     fn send_test(&mut self, cx: &mut Context<Self>) {
-        let Some(id) = self.selected.clone() else {
+        let Some(id) = self.registry.selected.clone() else {
             return;
         };
         if self.is_sending() {
             return;
         }
 
-        self.fire_epoch = self.fire_epoch.wrapping_add(1);
-        let epoch = self.fire_epoch;
-        self.fire = Some(TestFireRun {
+        self.stage.fire_epoch = self.stage.fire_epoch.wrapping_add(1);
+        let epoch = self.stage.fire_epoch;
+        self.stage.fire = Some(TestFireRun {
             overlay: id.clone(),
             phase: TestFirePhase::Sending,
         });
 
-        let service = self.service.clone();
+        let service = self.handles.service.clone();
         let target = id.clone();
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.handles.rt_handle,
             async move { service.test_fire(&target).await.map_err(|e| e.to_string()) },
             move |this, result: Result<TestFire, String>, cx| this.on_test_fired(epoch, result, cx),
             cx,
@@ -190,10 +192,10 @@ impl OverlaysView {
         result: Result<TestFire, String>,
         cx: &mut Context<Self>,
     ) {
-        if self.fire_epoch != epoch {
+        if self.stage.fire_epoch != epoch {
             return;
         }
-        let Some(run) = self.fire.take() else {
+        let Some(run) = self.stage.fire.take() else {
             return;
         };
 
@@ -201,7 +203,7 @@ impl OverlaysView {
             Ok(fired) => {
                 let overlay = run.overlay;
                 self.start_decay(self.decay_delay(&overlay), epoch, cx);
-                self.fire = Some(TestFireRun {
+                self.stage.fire = Some(TestFireRun {
                     overlay,
                     phase: TestFirePhase::Landed {
                         content: fired.content,
@@ -224,23 +226,24 @@ impl OverlaysView {
     }
 
     fn settle_test(&mut self, epoch: u64, cx: &mut Context<Self>) {
-        if self.fire_epoch != epoch {
+        if self.stage.fire_epoch != epoch {
             return;
         }
-        self.fire = None;
+        self.stage.fire = None;
         self.sync_preview();
         cx.notify();
     }
 
     fn is_sending(&self) -> bool {
         matches!(
-            self.fire.as_ref().map(|run| &run.phase),
+            self.stage.fire.as_ref().map(|run| &run.phase),
             Some(TestFirePhase::Sending)
         )
     }
 
     fn decay_delay(&self, id: &OverlayId) -> Duration {
         let seconds = self
+            .registry
             .overlays
             .iter()
             .find(|item| &item.id == id)
@@ -256,12 +259,12 @@ impl OverlaysView {
     }
 
     pub(super) fn effective_config(&self, definition: &OverlayDefinition) -> Option<OverlayConfig> {
-        let descriptor = self.kinds.get(&definition.kind_id)?;
+        let descriptor = self.handles.kinds.get(&definition.kind_id)?;
         Some(effective_overlay_config(descriptor, &definition.config))
     }
 
     fn preview_composition(&self, definition: &OverlayDefinition) -> Option<PreviewComposition> {
-        let descriptor = self.kinds.get(&definition.kind_id)?;
+        let descriptor = self.handles.kinds.get(&definition.kind_id)?;
         let mut config = effective_overlay_config(descriptor, &definition.config);
         if let Some(content) = self.landed_content(&definition.id) {
             config.extend(content.iter().map(|(key, v)| (key.clone(), v.clone())));
@@ -270,7 +273,7 @@ impl OverlaysView {
     }
 
     fn landed_content(&self, id: &OverlayId) -> Option<&OverlayConfig> {
-        let run = self.fire.as_ref().filter(|run| &run.overlay == id)?;
+        let run = self.stage.fire.as_ref().filter(|run| &run.overlay == id)?;
         match &run.phase {
             TestFirePhase::Landed { content, .. } => Some(content),
             TestFirePhase::Sending => None,
@@ -294,7 +297,7 @@ impl OverlaysView {
     }
 
     fn preview_address(&self) -> Option<String> {
-        let id = self.selected.as_ref()?;
+        let id = self.registry.selected.as_ref()?;
         Some(preview_page_url(&self.overlay_url(id)?))
     }
 
@@ -303,7 +306,7 @@ impl OverlaysView {
             return;
         };
         async_bridge::open_external(
-            &self.rt_handle,
+            &self.handles.rt_handle,
             address,
             ErrorSink::Toast,
             tr!("overlays_preview_open_failed"),
@@ -372,7 +375,7 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let descriptor = self.kinds.get(&definition.kind_id);
+        let descriptor = self.handles.kinds.get(&definition.kind_id);
         let page = descriptor.is_some_and(|d| d.has_visual_page());
         let test_fire_ok = descriptor.is_some();
         let wire_button = self
@@ -555,11 +558,12 @@ impl OverlaysView {
         palette: &ForgePalette,
     ) -> Option<AnyElement> {
         let run = self
+            .stage
             .fire
             .as_ref()
             .filter(|run| run.overlay == definition.id)?;
 
-        let (glyph, tint, message) = match delivery_hint(&run.phase, self.server_running) {
+        let (glyph, tint, message) = match delivery_hint(&run.phase, self.served.running) {
             DeliveryHint::Sending => (
                 Icon::PlayerPlay,
                 palette.text_muted,

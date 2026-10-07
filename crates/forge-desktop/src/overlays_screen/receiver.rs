@@ -11,9 +11,9 @@ use crate::audio_routes::{AudioDomain, load_audio_routes, set_destination, set_r
 
 impl OverlaysView {
     pub(super) fn load_receiver(&mut self, cx: &mut Context<Self>) {
-        let settings = Arc::clone(&self.settings_repo);
+        let settings = Arc::clone(&self.handles.settings_repo);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.handles.rt_handle,
             async move { load_audio_routes(settings.as_ref()).await.destination },
             |this, destination, cx| this.apply_receiver(destination, cx),
             cx,
@@ -47,10 +47,10 @@ impl OverlaysView {
         let previous = self.receiver.clone();
         self.apply_receiver(next.clone(), cx);
 
-        let settings = Arc::clone(&self.settings_repo);
-        let router = Arc::clone(&self.audio_router);
+        let settings = Arc::clone(&self.handles.settings_repo);
+        let router = Arc::clone(&self.handles.audio_router);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.handles.rt_handle,
             async move {
                 route_audio_to(settings.as_ref(), next.as_ref())
                     .await

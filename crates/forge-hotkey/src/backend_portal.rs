@@ -731,7 +731,7 @@ fn parse_shortcut_signal(msg: &zbus::Message, edge: HotkeyEdge) -> Option<Shortc
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -853,5 +853,541 @@ mod tests {
         let msg = message(GLOBAL_SHORTCUTS_INTERFACE, ACTIVATED_SIGNAL, &("Ctrl+F1",));
 
         assert!(parse_shortcut_signal(&msg, HotkeyEdge::Press).is_none());
+    }
+
+    const CTRL_F1: &str = "Ctrl+F1";
+    const ALT_F2: &str = "Alt+F2";
+    const SHIFT_F3: &str = "Shift+F3";
+    const CTRL_F4: &str = "Ctrl+F4";
+    const FIRST: HotkeyId = HotkeyId(1);
+    const SECOND: HotkeyId = HotkeyId(2);
+    const THIRD: HotkeyId = HotkeyId(3);
+    const FOURTH: HotkeyId = HotkeyId(4);
+    const CREATE_FAILURE: &str = "portal is not ready";
+    const DEAD_SESSION: &str = "Invalid session";
+    const ABANDONED_BIND: &str = "bind abandoned";
+    const WAIT: Duration = Duration::from_secs(5);
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    enum PortalCall {
+        RegisterAppId,
+        Create(String),
+        CreateFailed,
+        Bind(String, Vec<String>),
+        Close(String),
+    }
+
+    enum BindReply {
+        Reject(&'static str),
+        Only(&'static str),
+        Hold(oneshot::Receiver<()>),
+    }
+
+    #[derive(Default)]
+    struct FakeState {
+        calls: Vec<(tokio::time::Instant, PortalCall)>,
+        failing_creates: u32,
+        replies: std::collections::VecDeque<BindReply>,
+        live: std::collections::HashSet<String>,
+        sessions_created: u32,
+        listeners: Vec<(mpsc::Sender<ShortcutEdge>, mpsc::Sender<()>)>,
+    }
+
+    struct FakePortal {
+        state: Mutex<FakeState>,
+        call_count: tokio::sync::watch::Sender<usize>,
+    }
+
+    impl FakePortal {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                state: Mutex::new(FakeState::default()),
+                call_count: tokio::sync::watch::channel(0).0,
+            })
+        }
+
+        fn state(&self) -> std::sync::MutexGuard<'_, FakeState> {
+            self.state.lock().unwrap()
+        }
+
+        fn record(&self, call: PortalCall) {
+            let count = {
+                let mut state = self.state();
+                state.calls.push((tokio::time::Instant::now(), call));
+                state.calls.len()
+            };
+            self.call_count.send_replace(count);
+        }
+
+        fn mark(&self) -> usize {
+            self.state().calls.len()
+        }
+
+        fn calls_since(&self, mark: usize) -> Vec<PortalCall> {
+            self.state().calls[mark..]
+                .iter()
+                .map(|(_, call)| call.clone())
+                .collect()
+        }
+
+        fn create_times_since(&self, mark: usize) -> Vec<tokio::time::Instant> {
+            self.state().calls[mark..]
+                .iter()
+                .filter(|(_, call)| {
+                    matches!(call, PortalCall::Create(_) | PortalCall::CreateFailed)
+                })
+                .map(|(at, _)| *at)
+                .collect()
+        }
+
+        async fn wait_for_calls(&self, count: usize) {
+            let mut seen = self.call_count.subscribe();
+            tokio::time::timeout(WAIT, seen.wait_for(|calls| *calls >= count))
+                .await
+                .unwrap()
+                .unwrap();
+        }
+
+        fn fail_next_creates(&self, attempts: u32) {
+            self.state().failing_creates = attempts;
+        }
+
+        fn reply_to_next_bind(&self, reply: BindReply) {
+            self.state().replies.push_back(reply);
+        }
+
+        fn hold_next_bind(&self) -> oneshot::Sender<()> {
+            let (release, held) = oneshot::channel();
+            self.reply_to_next_bind(BindReply::Hold(held));
+            release
+        }
+
+        fn listener_count(&self) -> usize {
+            self.state().listeners.len()
+        }
+
+        fn restart_daemon(&self) {
+            let restarts = {
+                let mut state = self.state();
+                state.live.clear();
+                state.listeners.last().unwrap().1.clone()
+            };
+            restarts.try_send(()).unwrap();
+        }
+
+        async fn emit(&self, session: &str, shortcut: &str, edge: HotkeyEdge) {
+            let edges = self.state().listeners.last().unwrap().0.clone();
+            edges
+                .send(ShortcutEdge {
+                    session: session.to_owned(),
+                    shortcut_id: shortcut.to_owned(),
+                    edge,
+                })
+                .await
+                .unwrap();
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ShortcutsPortal for FakePortal {
+        async fn register_app_id(&self) {
+            self.record(PortalCall::RegisterAppId);
+        }
+
+        async fn create_session(&self) -> Result<String, String> {
+            let created = {
+                let mut state = self.state();
+                if state.failing_creates > 0 {
+                    state.failing_creates -= 1;
+                    None
+                } else {
+                    state.sessions_created += 1;
+                    let path = session_path(state.sessions_created);
+                    state.live.insert(path.clone());
+                    Some(path)
+                }
+            };
+            match created {
+                Some(path) => {
+                    self.record(PortalCall::Create(path.clone()));
+                    Ok(path)
+                }
+                None => {
+                    self.record(PortalCall::CreateFailed);
+                    Err(CREATE_FAILURE.to_owned())
+                }
+            }
+        }
+
+        async fn bind_shortcuts(
+            &self,
+            session: &str,
+            combos: &[HotkeyCombo],
+        ) -> Result<HashMap<String, String>, String> {
+            let mut ids: Vec<String> = combos.iter().map(|c| c.as_str().to_owned()).collect();
+            ids.sort();
+            let reply = {
+                let mut state = self.state();
+                if state.live.contains(session) {
+                    Ok(state.replies.pop_front())
+                } else {
+                    Err(DEAD_SESSION.to_owned())
+                }
+            };
+            self.record(PortalCall::Bind(session.to_owned(), ids.clone()));
+            match reply? {
+                Some(BindReply::Reject(reason)) => return Err(reason.to_owned()),
+                Some(BindReply::Only(kept)) => ids.retain(|id| id == kept),
+                Some(BindReply::Hold(released)) => {
+                    if released.await.is_err() {
+                        return Err(ABANDONED_BIND.to_owned());
+                    }
+                }
+                None => {}
+            }
+            Ok(ids.into_iter().map(|id| (id.clone(), id)).collect())
+        }
+
+        async fn close_session(&self, session: &str) {
+            self.state().live.remove(session);
+            self.record(PortalCall::Close(session.to_owned()));
+        }
+
+        fn listen_until_portal_restart(
+            &self,
+            edges: mpsc::Sender<ShortcutEdge>,
+            restarts: mpsc::Sender<()>,
+        ) {
+            self.state().listeners.push((edges, restarts));
+        }
+    }
+
+    fn session_path(n: u32) -> String {
+        format!("/org/freedesktop/portal/desktop/session/1_42/fake_{n}")
+    }
+
+    fn create(n: u32) -> PortalCall {
+        PortalCall::Create(session_path(n))
+    }
+
+    fn close(n: u32) -> PortalCall {
+        PortalCall::Close(session_path(n))
+    }
+
+    fn bind(n: u32, ids: &[&str]) -> PortalCall {
+        let mut ids: Vec<String> = ids.iter().map(|id| (*id).to_owned()).collect();
+        ids.sort();
+        PortalCall::Bind(session_path(n), ids)
+    }
+
+    struct Harness {
+        portal: Arc<FakePortal>,
+        backend: Arc<PortalBackend>,
+        fired: mpsc::Receiver<HotkeyFiredEvent>,
+        restart_notices: mpsc::Receiver<()>,
+        session_events: mpsc::Receiver<BackendSessionEvent>,
+    }
+
+    impl Harness {
+        async fn start() -> Self {
+            let portal = FakePortal::new();
+            let backend = PortalBackend::with_portal(portal.clone()).await.unwrap();
+            let fired = backend.fired_rx().unwrap();
+            let restart_notices = backend.restart_rx().unwrap();
+            let session_events = backend.session_events_rx().unwrap();
+            Self {
+                portal,
+                backend: Arc::new(backend),
+                fired,
+                restart_notices,
+                session_events,
+            }
+        }
+
+        async fn register(&self, id: HotkeyId, combo: &str) -> Result<(), HotkeyError> {
+            self.backend
+                .register(id, &HotkeyCombo::parse(combo).unwrap())
+                .await
+        }
+
+        fn register_in_background(
+            &self,
+            id: HotkeyId,
+            combo: &'static str,
+        ) -> tokio::task::JoinHandle<Result<(), HotkeyError>> {
+            let backend = Arc::clone(&self.backend);
+            tokio::spawn(async move {
+                backend
+                    .register(id, &HotkeyCombo::parse(combo).unwrap())
+                    .await
+            })
+        }
+
+        async fn next_fired(&mut self) -> HotkeyFiredEvent {
+            tokio::time::timeout(WAIT, self.fired.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        }
+
+        async fn next_restart_notice(&mut self) {
+            tokio::time::timeout(WAIT, self.restart_notices.recv())
+                .await
+                .unwrap()
+                .unwrap();
+        }
+
+        async fn next_session_event(&mut self) -> BackendSessionEvent {
+            tokio::time::timeout(WAIT, self.session_events.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        }
+
+        async fn lose_session_after_a_restart(&mut self) -> String {
+            self.portal.fail_next_creates(SESSION_RECREATE_ATTEMPTS);
+            self.portal.restart_daemon();
+            match self.next_session_event().await {
+                BackendSessionEvent::Lost(reason) => reason,
+                BackendSessionEvent::Restored => panic!("expected the session to be lost"),
+            }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn every_set_change_binds_the_full_set_once_on_a_fresh_session() {
+        let h = Harness::start().await;
+        let mark = h.portal.mark();
+
+        h.register(FIRST, CTRL_F1).await.unwrap();
+        h.register(SECOND, ALT_F2).await.unwrap();
+        h.backend.unregister(FIRST).await.unwrap();
+        h.portal.wait_for_calls(mark + 7).await;
+
+        assert_eq!(
+            h.portal.calls_since(mark),
+            vec![
+                bind(1, &[CTRL_F1]),
+                close(1),
+                create(2),
+                bind(2, &[CTRL_F1, ALT_F2]),
+                close(2),
+                create(3),
+                bind(3, &[ALT_F2]),
+            ]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_rejected_bind_is_reported_and_the_previous_set_is_bound_again() {
+        let h = Harness::start().await;
+        h.register(FIRST, CTRL_F1).await.unwrap();
+        h.portal
+            .reply_to_next_bind(BindReply::Reject("dismissed by the user"));
+
+        let outcome = h.register(SECOND, ALT_F2).await;
+
+        assert!(matches!(
+            outcome,
+            Err(HotkeyError::BindRejected { ref combo, ref reason })
+                if combo == ALT_F2 && reason == "dismissed by the user"
+        ));
+        assert_eq!(h.portal.calls_since(0).last(), Some(&bind(3, &[CTRL_F1])));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_combo_the_desktop_leaves_out_of_the_bound_set_is_rejected_and_dropped() {
+        let h = Harness::start().await;
+        h.register(FIRST, CTRL_F1).await.unwrap();
+        h.portal.reply_to_next_bind(BindReply::Only(CTRL_F1));
+
+        let left_out = h.register(SECOND, ALT_F2).await;
+        h.register(THIRD, SHIFT_F3).await.unwrap();
+
+        assert!(matches!(
+            left_out,
+            Err(HotkeyError::BindRejected { ref combo, .. }) if combo == ALT_F2
+        ));
+        assert_eq!(
+            h.portal.calls_since(0).last(),
+            Some(&bind(3, &[CTRL_F1, SHIFT_F3]))
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_portal_restart_resubscribes_recreates_the_session_and_rebinds_every_shortcut() {
+        let mut h = Harness::start().await;
+        h.register(FIRST, CTRL_F1).await.unwrap();
+        h.register(SECOND, ALT_F2).await.unwrap();
+        let mark = h.portal.mark();
+
+        h.portal.restart_daemon();
+        h.next_restart_notice().await;
+        h.portal.wait_for_calls(mark + 3).await;
+
+        assert_eq!(
+            (h.portal.calls_since(mark), h.portal.listener_count()),
+            (
+                vec![
+                    PortalCall::RegisterAppId,
+                    create(3),
+                    bind(3, &[CTRL_F1, ALT_F2])
+                ],
+                2
+            )
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn create_session_after_a_restart_is_retried_with_a_doubling_backoff() {
+        let h = Harness::start().await;
+        h.register(FIRST, CTRL_F1).await.unwrap();
+        let mark = h.portal.mark();
+        h.portal.fail_next_creates(SESSION_RECREATE_ATTEMPTS - 1);
+
+        h.portal.restart_daemon();
+        h.portal.wait_for_calls(mark + 5).await;
+
+        let attempts = h.portal.create_times_since(mark);
+        let gaps: Vec<Duration> = attempts.windows(2).map(|w| w[1] - w[0]).collect();
+        assert_eq!(
+            gaps,
+            vec![
+                SESSION_RECREATE_FIRST_BACKOFF,
+                SESSION_RECREATE_FIRST_BACKOFF * 2
+            ]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_session_is_reported_lost_after_the_last_create_attempt_fails() {
+        let mut h = Harness::start().await;
+        h.register(FIRST, CTRL_F1).await.unwrap();
+        let mark = h.portal.mark();
+
+        let reason = h.lose_session_after_a_restart().await;
+
+        assert_eq!(
+            (
+                reason.contains(CREATE_FAILURE),
+                h.portal.create_times_since(mark).len()
+            ),
+            (true, SESSION_RECREATE_ATTEMPTS as usize)
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_bind_after_a_lost_session_creates_a_session_instead_of_reusing_the_dead_one() {
+        let mut h = Harness::start().await;
+        h.register(FIRST, CTRL_F1).await.unwrap();
+        h.lose_session_after_a_restart().await;
+        let mark = h.portal.mark();
+
+        let outcome = h.register(THIRD, SHIFT_F3).await;
+
+        assert!(outcome.is_ok());
+        assert_eq!(
+            h.portal.calls_since(mark),
+            vec![create(2), bind(2, &[CTRL_F1, SHIFT_F3])]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_first_successful_bind_after_a_lost_session_reports_restored_once() {
+        let mut h = Harness::start().await;
+        h.register(FIRST, CTRL_F1).await.unwrap();
+        h.lose_session_after_a_restart().await;
+
+        h.register(THIRD, SHIFT_F3).await.unwrap();
+        let after_first_bind = h.next_session_event().await;
+        h.register(FOURTH, CTRL_F4).await.unwrap();
+
+        assert!(matches!(after_first_bind, BackendSessionEvent::Restored));
+        assert!(matches!(
+            h.session_events.try_recv(),
+            Err(mpsc::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_shortcut_edge_arriving_while_a_bind_dialog_is_open_is_delivered() {
+        let mut h = Harness::start().await;
+        h.register(FIRST, CTRL_F1).await.unwrap();
+        let mark = h.portal.mark();
+        let release = h.portal.hold_next_bind();
+        let pending = h.register_in_background(SECOND, ALT_F2);
+        h.portal.wait_for_calls(mark + 3).await;
+
+        h.portal
+            .emit(&session_path(2), CTRL_F1, HotkeyEdge::Press)
+            .await;
+        let fired = h.next_fired().await;
+        release.send(()).unwrap();
+        pending.await.unwrap().unwrap();
+
+        assert_eq!((fired.id, fired.edge), (FIRST, HotkeyEdge::Press));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_restart_during_an_open_bind_dialog_is_recovered_after_the_bind_completes() {
+        let mut h = Harness::start().await;
+        h.register(FIRST, CTRL_F1).await.unwrap();
+        let mark = h.portal.mark();
+        let release = h.portal.hold_next_bind();
+        let pending = h.register_in_background(SECOND, ALT_F2);
+        h.portal.wait_for_calls(mark + 3).await;
+
+        h.portal.restart_daemon();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let calls_while_open = h.portal.calls_since(mark).len();
+        release.send(()).unwrap();
+        pending.await.unwrap().unwrap();
+        h.next_restart_notice().await;
+        h.portal.wait_for_calls(mark + 6).await;
+
+        assert_eq!(
+            (calls_while_open, h.portal.calls_since(mark)),
+            (
+                3,
+                vec![
+                    close(1),
+                    create(2),
+                    bind(2, &[CTRL_F1, ALT_F2]),
+                    PortalCall::RegisterAppId,
+                    create(3),
+                    bind(3, &[CTRL_F1, ALT_F2]),
+                ]
+            )
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_edge_from_a_session_that_is_no_longer_current_is_dropped() {
+        let mut h = Harness::start().await;
+        h.register(FIRST, CTRL_F1).await.unwrap();
+        h.register(SECOND, ALT_F2).await.unwrap();
+
+        h.portal
+            .emit(&session_path(1), CTRL_F1, HotkeyEdge::Press)
+            .await;
+        h.portal
+            .emit(&session_path(2), ALT_F2, HotkeyEdge::Press)
+            .await;
+        let first_delivered = h.next_fired().await;
+
+        assert_eq!(first_delivered.id, SECOND);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_backend_is_unavailable_when_the_first_session_cannot_be_created() {
+        let portal = FakePortal::new();
+        portal.fail_next_creates(1);
+
+        let failure = PortalBackend::with_portal(portal).await.err();
+
+        assert!(matches!(
+            failure,
+            Some(HotkeyError::PortalUnavailable { ref reason }) if reason.contains(CREATE_FAILURE)
+        ));
     }
 }

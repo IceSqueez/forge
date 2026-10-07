@@ -652,42 +652,40 @@ mod tests {
     }
 
     impl FakeDevice {
-        fn missing() -> Self {
+        fn new() -> Self {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("event0");
+            make_fifo(&path, 0o600);
             Self { _dir: dir, path }
         }
 
-        fn new() -> Self {
-            let device = Self::missing();
-            device.create();
-            device
-        }
-
-        fn create(&self) {
-            rustix::fs::mkfifoat(
-                rustix::fs::CWD,
-                &self.path,
-                rustix::fs::Mode::from_raw_mode(0o600),
-            )
-            .unwrap();
-        }
-
         fn writer(&self) -> std::fs::File {
-            std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(&self.path)
-                .unwrap()
+            fifo_writer(&self.path)
         }
 
         fn open_fd_count(&self) -> usize {
-            std::fs::read_dir("/proc/self/fd")
-                .unwrap()
-                .filter_map(|entry| std::fs::read_link(entry.ok()?.path()).ok())
-                .filter(|target| target == &self.path)
-                .count()
+            open_fd_count(&self.path)
         }
+    }
+
+    fn make_fifo(path: &Path, mode: u32) {
+        rustix::fs::mkfifoat(rustix::fs::CWD, path, rustix::fs::Mode::from_raw_mode(mode)).unwrap();
+    }
+
+    fn fifo_writer(path: &Path) -> std::fs::File {
+        std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .unwrap()
+    }
+
+    fn open_fd_count(path: &Path) -> usize {
+        std::fs::read_dir("/proc/self/fd")
+            .unwrap()
+            .filter_map(|entry| std::fs::read_link(entry.ok()?.path()).ok())
+            .filter(|target| target == path)
+            .count()
     }
 
     fn write_keys(writer: &mut std::fs::File, script: &[(u16, i32)]) {
@@ -775,19 +773,107 @@ mod tests {
         assert_eq!(device.open_fd_count(), 2);
     }
 
-    #[tokio::test]
-    async fn a_device_that_failed_to_open_is_read_once_a_later_change_reopens_it() {
-        let id = HotkeyId(7);
-        let device = FakeDevice::missing();
-        let (mut pool, mut fired_rx, closed_tx, _closed_rx) = device_pool(&[(id, "F1")]);
-        pool.open_device(device.path.clone(), &closed_tx);
+    fn spawn_watched_pool(
+        dir: &Path,
+        initial: Vec<PathBuf>,
+        combos: &[(HotkeyId, &str)],
+    ) -> mpsc::Receiver<HotkeyFiredEvent> {
+        let (pool, fired_rx, _closed_tx, _closed_rx) = device_pool(combos);
+        let watcher = InputDirWatcher::new(dir).unwrap();
+        tokio::spawn(pool.run(initial, Some(watcher)));
+        fired_rx
+    }
 
-        device.create();
-        let mut writer = device.writer();
-        pool.open_device(device.path.clone(), &closed_tx);
-        write_keys(&mut writer, &[(F1, KEY_DOWN)]);
+    fn overflow_watch_queue(dir: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        let entries = [dir.join("mouse0"), dir.join("mouse1")];
+        for entry in &entries {
+            std::fs::File::create(entry).unwrap();
+        }
+        let limit: usize = std::fs::read_to_string("/proc/sys/fs/inotify/max_queued_events")
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        for change in 0..=limit {
+            std::fs::set_permissions(
+                &entries[change % entries.len()],
+                std::fs::Permissions::from_mode(0o600),
+            )
+            .unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn a_rescan_after_an_overflow_opens_new_nodes_without_reopening_open_ones() {
+        let id = HotkeyId(7);
+        let dir = tempfile::tempdir().unwrap();
+        let already_open = dir.path().join("event0");
+        let missed = dir.path().join("event1");
+        make_fifo(&already_open, 0o600);
+        let _already_open_writer = fifo_writer(&already_open);
+        let mut fired_rx =
+            spawn_watched_pool(dir.path(), vec![already_open.clone()], &[(id, "F1")]);
+
+        overflow_watch_queue(dir.path());
+        make_fifo(&missed, 0o600);
+        let mut missed_writer = fifo_writer(&missed);
+        write_keys(&mut missed_writer, &[(F1, KEY_DOWN)]);
+        let press = recv_soon(fired_rx.recv()).await;
+
+        assert_eq!(
+            (edges(&[press]), open_fd_count(&already_open)),
+            (vec![(id, "F1", HotkeyEdge::Press)], 2)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_node_unreadable_when_created_is_read_after_its_permissions_change() {
+        use std::os::unix::fs::PermissionsExt;
+        let id = HotkeyId(7);
+        let dir = tempfile::tempdir().unwrap();
+        let locked = dir.path().join("event3");
+        let probe = dir.path().join("event9");
+        let mut fired_rx = spawn_watched_pool(dir.path(), Vec::new(), &[(id, "F1")]);
+
+        make_fifo(&locked, 0o000);
+        make_fifo(&probe, 0o600);
+        let mut probe_writer = fifo_writer(&probe);
+        write_keys(&mut probe_writer, &[(F1, KEY_DOWN)]);
+        recv_soon(fired_rx.recv()).await;
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let mut locked_writer = fifo_writer(&locked);
+        write_keys(&mut locked_writer, &[(F1, KEY_DOWN)]);
         let press = recv_soon(fired_rx.recv()).await;
 
         assert_eq!(edges(&[press]), vec![(id, "F1", HotkeyEdge::Press)]);
+    }
+
+    #[tokio::test]
+    async fn discovery_lists_only_event_nodes_that_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let readable = dir.path().join("event0");
+        make_fifo(&readable, 0o600);
+        make_fifo(&dir.path().join("mouse0"), 0o600);
+        std::os::unix::fs::symlink(dir.path().join("gone"), dir.path().join("event1")).unwrap();
+
+        let found = discover_input_devices(dir.path()).await.unwrap();
+
+        assert_eq!(found, vec![readable]);
+    }
+
+    #[tokio::test]
+    async fn discovery_fails_for_a_directory_without_event_nodes_or_a_missing_one() {
+        let empty = tempfile::tempdir().unwrap();
+        let missing = empty.path().join("absent");
+
+        let without_nodes = discover_input_devices(empty.path()).await;
+        let without_dir = discover_input_devices(&missing).await;
+
+        assert!(matches!(without_nodes, Err(HotkeyError::PermissionDenied)));
+        assert!(matches!(
+            without_dir,
+            Err(HotkeyError::Backend(ref message)) if message.contains("absent")
+        ));
     }
 }

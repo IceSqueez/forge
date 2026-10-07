@@ -5,12 +5,14 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum EventSource {
     Twitch,
+    #[serde(rename = "youtube")]
     YouTube,
     Kick,
     Core,
     Rhai,
     Http,
     Obs,
+    #[serde(rename = "vtube")]
     VTube,
     Discord,
     Midi,

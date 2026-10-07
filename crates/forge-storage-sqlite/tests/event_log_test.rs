@@ -24,6 +24,7 @@ fn make_event_at(source: EventSource, kind: &str, ts: OffsetDateTime) -> Event {
         payload: serde_json::Value::Null,
         caused_by: None,
         replay: false,
+        causation_depth: 0,
     }
 }
 
@@ -109,6 +110,7 @@ async fn json_payload_roundtrip_with_caused_by_and_replay() {
         payload: serde_json::json!({"from": "Menu", "to": "Gameplay", "nested": {"x": 1}}),
         caused_by: Some(parent_id),
         replay: true,
+        causation_depth: 0,
     };
     let id = event.id;
 

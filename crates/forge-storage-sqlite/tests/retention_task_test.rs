@@ -57,6 +57,7 @@ fn aged(age: time::Duration) -> Arc<Event> {
         payload: serde_json::Value::Null,
         caused_by: None,
         replay: false,
+        causation_depth: 0,
     })
 }
 

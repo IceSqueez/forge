@@ -1030,67 +1030,6 @@ mod tests {
         );
     }
 
-    fn child_of(parent: &Event, kind: &str) -> Event {
-        Event::caused_by(EventSource::Core, kind, serde_json::Value::Null, parent.id)
-    }
-
-    fn is_start(event: &Event) -> bool {
-        event.kind == "action.start"
-    }
-
-    #[test]
-    fn lineage_count_follows_only_the_path_of_the_given_event_through_a_branching_chain() {
-        let bus = null_bus();
-        let root = Event::new(EventSource::Twitch, "twitch.chat", serde_json::Value::Null);
-        let first = child_of(&root, "action.start");
-        let first_run = child_of(&first, "subaction.run");
-        let left = child_of(&first_run, "action.start");
-        let left_leaf = child_of(&left, "action.start");
-        let right = child_of(&first_run, "action.start");
-        let (left_leaf_id, right_id) = (left_leaf.id, right.id);
-        for event in [root, first, first_run, left, left_leaf, right] {
-            bus.publish(event);
-        }
-
-        let counts = (
-            bus.count_in_lineage(left_leaf_id, is_start, 16),
-            bus.count_in_lineage(right_id, is_start, 16),
-        );
-
-        assert_eq!(counts, (3, 2));
-    }
-
-    #[test]
-    fn lineage_count_of_an_uncaused_event_ignores_unrelated_runs_in_the_ring() {
-        let bus = null_bus();
-        let mut parent = core_event("action.start");
-        bus.publish(parent.clone());
-        for _ in 0..20 {
-            let next = child_of(&parent, "action.start");
-            bus.publish(next.clone());
-            parent = next;
-        }
-        let platform = Event::new(EventSource::Twitch, "twitch.chat", serde_json::Value::Null);
-        let platform_id = platform.id;
-        bus.publish(platform);
-
-        assert_eq!(bus.count_in_lineage(platform_id, is_start, 16), 0);
-    }
-
-    #[test]
-    fn lineage_count_stops_walking_at_the_ceiling() {
-        let bus = null_bus();
-        let mut parent = core_event("action.start");
-        bus.publish(parent.clone());
-        for _ in 0..9 {
-            let next = child_of(&parent, "action.start");
-            bus.publish(next.clone());
-            parent = next;
-        }
-
-        assert_eq!(bus.count_in_lineage(parent.id, is_start, 4), 4);
-    }
-
     #[test]
     fn published_event_is_in_the_ring_before_any_subscriber_can_receive_it() {
         let bus = null_bus();

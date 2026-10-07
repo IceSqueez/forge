@@ -82,6 +82,7 @@ mod tests {
             payload: json!({ "user": { "login": "лісоруб" }, "text": "привіт 👋" }),
             caused_by: None,
             replay: false,
+            causation_depth: 0,
         };
         let replayed_effect = Event {
             id: EventId::new(),
@@ -91,6 +92,7 @@ mod tests {
             payload: Value::Null,
             caused_by: Some(root.id),
             replay: true,
+            causation_depth: 0,
         };
         vec![root, replayed_effect]
     }

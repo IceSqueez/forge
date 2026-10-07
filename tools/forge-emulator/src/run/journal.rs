@@ -164,6 +164,7 @@ mod tests {
             payload: json!({}),
             caused_by: None,
             replay,
+            causation_depth: 0,
         }
     }
 

@@ -104,6 +104,7 @@ fn event(id_text: &str, source: EventSource, kind: &str, payload: Value) -> Even
         payload,
         caused_by: None,
         replay: false,
+        causation_depth: 0,
     }
 }
 

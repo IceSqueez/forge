@@ -111,6 +111,7 @@ pub use core_logic_break_loop::CoreLogicBreakLoopRunner;
 pub use core_logic_continue_loop::CoreLogicContinueLoopRunner;
 pub use core_logic_if_then_else::CoreLogicIfThenElseRunner;
 pub use core_logic_loop::CoreLogicLoopRunner;
+pub use core_logic_shared::{CASE_CHAIN_KEY, decode_steps};
 pub use core_logic_stop::CoreLogicStopRunner;
 pub use core_logic_switch_case::CoreLogicSwitchCaseRunner;
 pub use core_logic_wait::{CoreLogicWaitRunner, WAIT_KIND_ID, WAIT_MS_KEY};

@@ -1,13 +1,13 @@
 use forge_registry::{ChainSignal, ControlSignal, RunContext};
 use forge_types::{SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry, Variant};
 
-pub(super) const CASE_CHAIN_KEY: &str = "chain";
+pub const CASE_CHAIN_KEY: &str = "chain";
 
 pub(super) fn decode_chain(config: &SubActionConfig, key: &str) -> Vec<SubActionStep> {
     decode_steps(config.get(key))
 }
 
-pub(super) fn decode_steps(value: Option<&Variant>) -> Vec<SubActionStep> {
+pub fn decode_steps(value: Option<&Variant>) -> Vec<SubActionStep> {
     let Some(steps) = value.and_then(Variant::as_array) else {
         return Vec::new();
     };

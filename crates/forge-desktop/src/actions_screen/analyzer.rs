@@ -371,7 +371,7 @@ pub(crate) fn nested_chains(
     for field in runner.config_fields() {
         match field {
             FormField::SubChain { key, .. } => {
-                out.push(nav::decode_chain_value(nav::chain_value_at(
+                out.push(forge_runtime::decode_steps(nav::chain_value_at(
                     &step.config,
                     key,
                     None,
@@ -384,7 +384,7 @@ pub(crate) fn nested_chains(
                     .and_then(Variant::as_array)
                     .map_or(0, <[Variant]>::len);
                 for ci in 0..count {
-                    out.push(nav::decode_chain_value(nav::chain_value_at(
+                    out.push(forge_runtime::decode_steps(nav::chain_value_at(
                         &step.config,
                         key,
                         Some(ci),

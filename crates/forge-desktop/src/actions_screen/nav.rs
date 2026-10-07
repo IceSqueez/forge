@@ -1,3 +1,4 @@
+use forge_runtime::{CASE_CHAIN_KEY, decode_steps};
 use forge_types::{SubActionConfig, SubActionStep, Variant};
 
 pub(super) const UI_MAX_NESTING_DEPTH: usize = 8;
@@ -7,47 +8,6 @@ pub(super) struct NavFrame {
     pub step_index: usize,
     pub chain_key: String,
     pub case_index: Option<usize>,
-}
-
-pub(super) fn decode_chain_value(value: Option<&Variant>) -> Vec<SubActionStep> {
-    let Some(steps) = value.and_then(Variant::as_array) else {
-        return Vec::new();
-    };
-    steps
-        .iter()
-        .filter_map(|step| {
-            let obj = step.as_object()?;
-            let kind_id = obj.get("kind_id").and_then(Variant::as_str)?.to_owned();
-            let config = match obj.get("config") {
-                Some(Variant::Object(map)) => map.clone(),
-                _ => SubActionConfig::new(),
-            };
-            let enabled = obj
-                .get("enabled")
-                .and_then(Variant::as_bool)
-                .unwrap_or(true);
-            let continue_on_error = obj
-                .get("continue_on_error")
-                .and_then(Variant::as_bool)
-                .unwrap_or(false);
-            let condition = obj
-                .get("condition")
-                .and_then(Variant::as_str)
-                .map(str::to_owned);
-            let label = obj
-                .get("label")
-                .and_then(Variant::as_str)
-                .map(str::to_owned);
-            Some(SubActionStep {
-                kind_id,
-                config,
-                enabled,
-                continue_on_error,
-                condition,
-                label,
-            })
-        })
-        .collect()
 }
 
 pub(super) fn encode_chain(steps: &[SubActionStep]) -> Variant {
@@ -86,7 +46,7 @@ pub(super) fn chain_value_at<'a>(
             .and_then(Variant::as_array)
             .and_then(|cases| cases.get(ci))
             .and_then(Variant::as_object)
-            .and_then(|case| case.get("chain")),
+            .and_then(|case| case.get(CASE_CHAIN_KEY)),
     }
 }
 
@@ -106,7 +66,7 @@ fn write_chain_value(
                 _ => Vec::new(),
             };
             if let Some(Variant::Object(case)) = cases.get_mut(ci) {
-                case.insert("chain".to_owned(), encode_chain(steps));
+                case.insert(CASE_CHAIN_KEY.to_owned(), encode_chain(steps));
                 config.insert(chain_key.to_owned(), Variant::Array(cases));
             }
         }
@@ -119,7 +79,7 @@ pub(super) fn resolve_chain(root: &[SubActionStep], path: &[NavFrame]) -> Vec<Su
         let Some(step) = current.get(frame.step_index) else {
             return Vec::new();
         };
-        current = decode_chain_value(chain_value_at(
+        current = decode_steps(chain_value_at(
             &step.config,
             &frame.chain_key,
             frame.case_index,
@@ -140,7 +100,7 @@ pub(super) fn set_chain(
     let Some(step) = root.get_mut(frame.step_index) else {
         return false;
     };
-    let mut sub = decode_chain_value(chain_value_at(
+    let mut sub = decode_steps(chain_value_at(
         &step.config,
         &frame.chain_key,
         frame.case_index,
@@ -202,7 +162,7 @@ pub(super) fn append_empty_case(config: &mut SubActionConfig) {
     };
     let mut case = SubActionConfig::new();
     case.insert("match".to_owned(), Variant::String(String::new()));
-    case.insert("chain".to_owned(), Variant::Array(Vec::new()));
+    case.insert(CASE_CHAIN_KEY.to_owned(), Variant::Array(Vec::new()));
     cases.push(Variant::Object(case));
     config.insert("cases".to_owned(), Variant::Array(cases));
 }

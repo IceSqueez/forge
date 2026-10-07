@@ -175,12 +175,11 @@ impl ActionEngine {
         let (tx, rx) = mpsc::channel(EXECUTION_INTAKE_CAPACITY);
         let (quick_tx, quick_rx) = mpsc::channel(QUICK_ACTION_INTAKE_CAPACITY);
         let (stop_tx, stop_rx) = watch::channel(false);
-        let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
         let config = Config::default();
         let gate = Arc::new(crate::condition::ConditionGate::new(&config));
-        let chain_engine = Arc::new(ChainEngine::new(
+        let chain_engine = Arc::new(ChainEngine::on_bus(
             Arc::clone(&sub_action_registry),
-            publisher,
+            Arc::clone(&bus),
             gate,
             config,
         ));
@@ -488,15 +487,14 @@ async fn run_quick_action(
     sub_action_registry: Arc<SubActionRegistry>,
     integrations: IntegrationGate,
 ) {
-    let publisher: Arc<dyn forge_events::EventPublisher> =
-        Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>;
+    let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
     let run_payload = json!({ "step_index": 0, "kind": req.step.kind_id });
     let run_event = match req.caused_by {
         Some(parent) => Event::caused_by(EventSource::Core, "subaction.run", run_payload, parent),
         None => Event::new(EventSource::Core, "subaction.run", run_payload),
     };
     let run_event_id = run_event.id;
-    bus.publish(run_event);
+    let _step_lineage = bus.publish_held(run_event);
 
     let stack = ArgStack::new();
     let leaf_ctx = RunContext::leaf(&stack, 0, run_event_id, publisher.as_ref());

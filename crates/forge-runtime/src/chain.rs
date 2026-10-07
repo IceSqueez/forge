@@ -18,6 +18,7 @@ use crate::Config;
 use crate::action_engine::{
     condition_failed_telemetry, condition_skipped_telemetry, disabled_telemetry, skipped_telemetry,
 };
+use crate::bus::{EventBus, LineageHold};
 use crate::condition::ConditionGate;
 use crate::integration_gate::{IntegrationGate, run_gated_step, step_owner};
 
@@ -104,6 +105,7 @@ pub(crate) fn publish_subaction_done(
 pub struct ChainEngine {
     registry: Arc<SubActionRegistry>,
     publisher: Arc<dyn EventPublisher>,
+    lineage: Option<Arc<EventBus>>,
     gate: Arc<ConditionGate>,
     integrations: IntegrationGate,
     config: Config,
@@ -131,9 +133,32 @@ impl ChainEngine {
         Self {
             registry,
             publisher,
+            lineage: None,
             gate,
             integrations: IntegrationGate::new(),
             config,
+        }
+    }
+
+    pub(crate) fn on_bus(
+        registry: Arc<SubActionRegistry>,
+        bus: Arc<EventBus>,
+        gate: Arc<ConditionGate>,
+        config: Config,
+    ) -> Self {
+        Self {
+            lineage: Some(Arc::clone(&bus)),
+            ..Self::new(registry, bus, gate, config)
+        }
+    }
+
+    fn publish_step_run(&self, run_event: Event) -> Option<LineageHold<'_>> {
+        match self.lineage.as_deref() {
+            Some(bus) => Some(bus.publish_held(run_event)),
+            None => {
+                self.publisher.publish(run_event);
+                None
+            }
         }
     }
 
@@ -272,7 +297,7 @@ impl ChainEngine {
                 parent_event_id,
             );
             let run_event_id = run_event.id;
-            self.publisher.publish(run_event);
+            let _step_lineage = self.publish_step_run(run_event);
 
             let run_ctx = RunContext {
                 arg_stack: &current,
@@ -421,7 +446,7 @@ impl ChainEngine {
                         parent_event_id,
                     );
                     let run_event_id = run_event.id;
-                    self.publisher.publish(run_event);
+                    let _step_lineage = self.publish_step_run(run_event);
 
                     let args_in = capture_args_in(&self.registry, step, arg_stack);
                     let nested_sink = TelemetrySink::new();

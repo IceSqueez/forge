@@ -165,7 +165,20 @@ impl EventBus {
         })
     }
 
-    pub fn publish(&self, mut event: Event) {
+    pub fn publish(&self, event: Event) {
+        self.publish_tracked(event, false);
+    }
+
+    pub(crate) fn publish_held(&self, event: Event) -> LineageHold<'_> {
+        let event_id = event.id;
+        self.publish_tracked(event, true);
+        LineageHold {
+            bus: self,
+            event_id,
+        }
+    }
+
+    fn publish_tracked(&self, mut event: Event, hold_lineage: bool) {
         if let Some(ledger) = self.first_chats.load().as_deref() {
             ledger.stamp(&mut event);
         }
@@ -175,6 +188,12 @@ impl EventBus {
             if let Some(parent) = event.caused_by {
                 let inherited = self.depth_of(parent, &ring);
                 event.causation_depth = event.causation_depth.max(inherited);
+            }
+            if hold_lineage {
+                self.held_lineages
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .insert(event.id, event.causation_depth);
             }
             let event = Arc::new(event);
             let transient = lanes.is_transient(&event, &ring);

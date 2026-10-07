@@ -46,6 +46,7 @@ pub struct SettingsDiagnosticsView {
     rt_handle: tokio::runtime::Handle,
     lines: Vec<LogLine>,
     level: LogLevel,
+    level_picked: bool,
     env_overridden: bool,
     scroll: ScrollHandle,
     active: bool,
@@ -72,6 +73,7 @@ impl SettingsDiagnosticsView {
             rt_handle,
             lines: Vec::new(),
             level: DEFAULT_DIAGNOSTIC_LOG_LEVEL,
+            level_picked: false,
             env_overridden: crate::log_level::env_overridden(),
             scroll: ScrollHandle::new(),
             active: initial_active,
@@ -98,6 +100,7 @@ impl SettingsDiagnosticsView {
             },
             |this, result, cx| {
                 match result {
+                    Ok(_) if this.level_picked => return,
                     Ok(level) => this.level = level,
                     Err(message) => {
                         tracing::warn!(error = %message, "could not read the diagnostics log level");
@@ -113,13 +116,15 @@ impl SettingsDiagnosticsView {
         if self.env_overridden || self.level == level {
             return;
         }
-        self.level = level.clone();
         if !crate::log_level::apply(&level) {
             cx.push_toast(
                 ToastKind::Error,
                 tr!("settings_diagnostics_level_apply_failed"),
             );
+            return;
         }
+        self.level = level.clone();
+        self.level_picked = true;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         self.rt_handle.spawn(async move {
             if let Err(e) = set_diagnostic_log_level(repo.as_ref(), &level).await {

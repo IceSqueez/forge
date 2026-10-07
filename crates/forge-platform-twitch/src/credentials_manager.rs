@@ -651,15 +651,13 @@ pub(crate) mod tests {
         let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(3600));
         let repo: Arc<dyn CredentialsRepo> = InMemRepo::seeded(&cred);
         let mgr = Arc::new(manager_with_server(Arc::clone(&repo), &server));
-        let bundle = crate::builtin::TwitchIntegrationBundle::new(
-            Some("streamer".to_owned()),
+        let platform = Arc::new(crate::chat_platform::TwitchPlatform::new(
             crate::builtin::ChatSessionConfig {
                 client_id: "test_client_id".to_owned(),
                 broadcaster_id: "user_1".to_owned(),
                 user_id: "user_1".to_owned(),
                 endpoints: crate::sub_actions::test_support::unreachable_twitch_endpoints(),
             },
-            Arc::new(crate::event_channel::PlatformEventChannel::new()),
             repo,
             Arc::clone(&mgr),
             crate::subscriptions::SubscriptionTracker::default(),
@@ -668,7 +666,9 @@ pub(crate) mod tests {
                 crate::builtin::HELIX_BUDGET_WINDOW,
             )),
             crate::lifecycle::TwitchLifecycle::new(),
-        );
+        ));
+        let bundle =
+            crate::builtin::TwitchIntegrationBundle::new(Some("streamer".to_owned()), platform);
         let stale = OAuthToken::new("existing_access");
 
         let (verb, direct) = tokio::join!(bundle.refresh_token(), mgr.refresh(&stale));

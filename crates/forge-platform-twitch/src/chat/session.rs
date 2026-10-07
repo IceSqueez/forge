@@ -7928,20 +7928,19 @@ mod tests {
         );
     }
 
-    fn bundle_over(
+    async fn bundle_over(
         socket_url: &str,
         api_url: &str,
     ) -> Arc<crate::builtin::TwitchIntegrationBundle> {
+        use forge_platform_core::ChatPlatform;
         let creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::new(MockCreds::with_identity());
         let manager = Arc::new(TwitchCredentialsManager::new(
             &forge_platform_core::PlatformEndpoints::default(),
             Arc::clone(&creds),
             "client".to_owned(),
         ));
-        crate::builtin::TwitchIntegrationBundle::new(
-            Some("streamer".to_owned()),
+        let platform = Arc::new(crate::chat_platform::TwitchPlatform::new(
             session_config(socket_and_api(socket_url, api_url)),
-            Arc::new(PlatformEventChannel::new()),
             creds,
             manager,
             SubscriptionTracker::default(),
@@ -7950,7 +7949,13 @@ mod tests {
                 crate::builtin::HELIX_BUDGET_WINDOW,
             )),
             TwitchLifecycle::new(),
-        )
+        ));
+        let bundle = crate::builtin::TwitchIntegrationBundle::new(
+            Some("streamer".to_owned()),
+            Arc::clone(&platform),
+        );
+        platform.connect().await.unwrap();
+        bundle
     }
 
     async fn bundle_reaches(
@@ -7976,7 +7981,7 @@ mod tests {
         use forge_platform_core::BuiltinControl;
         let api = eventsub_api().await;
         let mut base = FakeEventSub::bind().await;
-        let bundle = bundle_over(&base.url, &api.uri());
+        let bundle = bundle_over(&base.url, &api.uri()).await;
         let mut first = base.accept().await;
         first.send(welcome_frame("sess-1"));
         assert!(bundle_reaches(&bundle, ConnectionState::Connected).await);
@@ -7995,7 +8000,7 @@ mod tests {
         use forge_platform_core::BuiltinControl;
         let api = eventsub_api().await;
         let mut base = FakeEventSub::bind().await;
-        let bundle = bundle_over(&base.url, &api.uri());
+        let bundle = bundle_over(&base.url, &api.uri()).await;
         let first = base.accept().await;
         first.send(welcome_frame("sess-1"));
         assert!(bundle_reaches(&bundle, ConnectionState::Connected).await);

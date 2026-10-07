@@ -17,7 +17,7 @@ use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{
     BroadcasterTier, ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW,
     SubscriptionTracker, TwitchChat, TwitchChatHandle, TwitchCredentialsManager,
-    TwitchIntegrationBundle, TwitchLifecycle,
+    TwitchIntegrationBundle, TwitchLifecycle, TwitchPlatform,
 };
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::OAuthToken;
@@ -104,15 +104,12 @@ impl Forge {
             endpoints,
         };
         let lifecycle = TwitchLifecycle::new();
-        let bus: Arc<dyn EventPublisher> = Arc::new(DiscardBus);
         let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
             HELIX_BUDGET_CAPACITY,
             HELIX_BUDGET_WINDOW,
         ));
-        let bundle = TwitchIntegrationBundle::new(
-            Some(account.login.clone()),
+        let platform = Arc::new(TwitchPlatform::new(
             config.clone(),
-            bus,
             Arc::clone(&creds),
             Arc::new(TwitchCredentialsManager::new(
                 &config.endpoints,
@@ -122,7 +119,8 @@ impl Forge {
             SubscriptionTracker::default(),
             rate_limiter,
             lifecycle.clone(),
-        );
+        ));
+        let bundle = TwitchIntegrationBundle::new(Some(account.login.clone()), platform);
         Self {
             bundle,
             lifecycle,

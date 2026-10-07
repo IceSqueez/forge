@@ -10,13 +10,13 @@ use forge_emulator::fixture::TwitchAccount;
 use forge_emulator::twitch::{CredentialCheck, FakeTwitch, FakeTwitchConfig, Viewer, ViewerBadge};
 use forge_events::{Event, EventPublisher};
 use forge_platform_core::{
-    EndpointSurface, PlatformEndpoints, RateLimiter, TokenBucketRateLimiter,
+    ChatPlatform, EndpointSurface, PlatformEndpoints, RateLimiter, TokenBucketRateLimiter,
 };
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{
     ChatSessionConfig, CredentialsTokenSource, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW,
     HelixHttpTransport, SubscriptionTracker, TwitchChat, TwitchChatHandle,
-    TwitchCredentialsManager, TwitchIntegrationBundle, TwitchLifecycle, send_chat,
+    TwitchCredentialsManager, TwitchIntegrationBundle, TwitchLifecycle, TwitchPlatform, send_chat,
 };
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::{ChatPayload, OAuthToken, PermissionRung};
@@ -306,16 +306,16 @@ async fn forge_twitch_boot_calls_only_modeled_helix_endpoints() {
         forge.config.client_id.clone(),
     ));
 
-    let _bundle = TwitchIntegrationBundle::new(
-        Some(account.login.clone()),
+    let platform = Arc::new(TwitchPlatform::new(
         forge.config.clone(),
-        Arc::clone(&forge.bus),
         Arc::clone(&forge.creds),
         manager,
         tracker,
         Forge::rate_limiter(),
         lifecycle,
-    );
+    ));
+    let _bundle = TwitchIntegrationBundle::new(Some(account.login.clone()), Arc::clone(&platform));
+    platform.connect().await.unwrap();
 
     let boot_paths = [
         "/helix/eventsub/subscriptions",

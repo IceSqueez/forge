@@ -2207,15 +2207,13 @@ mod tests {
     #[tokio::test]
     async fn shutting_down_twice_stops_the_chat_session_and_every_task_holding_the_bundle() {
         let creds: Arc<dyn CredentialsRepo> = Arc::new(NullCreds);
-        let bundle = TwitchIntegrationBundle::new(
-            Some("streamer".to_owned()),
+        let platform = Arc::new(TwitchPlatform::new(
             ChatSessionConfig {
                 client_id: "test-client".to_owned(),
                 broadcaster_id: "1".to_owned(),
                 user_id: "1".to_owned(),
                 endpoints: crate::sub_actions::test_support::unreachable_twitch_endpoints(),
             },
-            Arc::new(crate::event_channel::PlatformEventChannel::new()),
             Arc::clone(&creds),
             Arc::new(TwitchCredentialsManager::new(
                 &forge_platform_core::PlatformEndpoints::default(),
@@ -2228,7 +2226,8 @@ mod tests {
                 HELIX_BUDGET_WINDOW,
             )),
             TwitchLifecycle::new(),
-        );
+        ));
+        let bundle = TwitchIntegrationBundle::new(Some("streamer".to_owned()), platform);
 
         bundle.shutdown().await;
         bundle.shutdown().await;
@@ -2244,7 +2243,10 @@ mod tests {
             "{} task(s) still hold the bundle after shutdown",
             Arc::strong_count(&bundle) - 1
         );
-        assert!(bundle.handle.lock().await.is_none());
+        assert_eq!(
+            bundle.platform().connection_state(),
+            ConnectionState::Disconnected
+        );
     }
 
     struct ExpiryBridgeFixture {

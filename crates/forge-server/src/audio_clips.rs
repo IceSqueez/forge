@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use axum::body::Bytes;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -9,6 +9,7 @@ use forge_storage::OverlayId;
 use forge_types::Redacted;
 use rand::Rng as _;
 use tokio::sync::{Notify, oneshot};
+use tokio::time::Instant;
 
 use crate::ServerError;
 use crate::routes::audio::{clip_path, report_path};
@@ -350,7 +351,7 @@ impl AudioClipStore {
                     break;
                 };
                 tokio::select! {
-                    () = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => {}
+                    () = tokio::time::sleep_until(deadline) => {}
                     () = store.deadline_moved.notified() => {}
                 }
             }

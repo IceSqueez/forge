@@ -2,7 +2,7 @@ mod element;
 mod layout;
 pub(crate) mod lines;
 
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, EntityInputHandler, EventEmitter,
@@ -55,7 +55,7 @@ pub struct CodeEditor {
     font_size: Pixels,
     line_height: Pixels,
     gutter_marks: Vec<usize>,
-    field_height: Option<Pixels>,
+    field_rows: Option<RangeInclusive<usize>>,
     last_bounds: Option<Bounds<Pixels>>,
     text_left: Pixels,
     scroll_offset: Pixels,
@@ -91,7 +91,7 @@ impl CodeEditor {
             font_size: FONT_XS,
             line_height: FONT_XS * LINE_HEIGHT_RATIO,
             gutter_marks: Vec::new(),
-            field_height: None,
+            field_rows: None,
             last_bounds: None,
             text_left: px(0.0),
             scroll_offset: px(0.0),
@@ -120,8 +120,8 @@ impl CodeEditor {
         self
     }
 
-    pub fn with_field_height(mut self, height: Pixels) -> Self {
-        self.field_height = Some(height);
+    pub fn with_field_rows(mut self, rows: RangeInclusive<usize>) -> Self {
+        self.field_rows = Some(rows);
         self
     }
 
@@ -187,8 +187,13 @@ impl CodeEditor {
         window.focus(&self.focus_handle, cx);
     }
 
+    fn field_height(&self, rows: &RangeInclusive<usize>) -> Pixels {
+        let shown = self.lines.len().max(*rows.start()).min(*rows.end());
+        self.line_height * shown as f32 + PAD_Y + PAD_Y + BORDER_THIN + BORDER_THIN
+    }
+
     fn gutter_corner_radius(&self) -> Pixels {
-        match self.field_height {
+        match self.field_rows {
             Some(_) => radius(Radius::Md) - BORDER_THIN,
             None => px(0.0),
         }
@@ -622,7 +627,7 @@ impl Render for CodeEditor {
             .text_size(self.font_size)
             .text_color(self.palette.text_primary)
             .line_height(self.line_height);
-        let editor = match self.field_height {
+        let editor = match self.field_rows.as_ref().map(|rows| self.field_height(rows)) {
             Some(height) => editor
                 .h(height)
                 .flex_none()

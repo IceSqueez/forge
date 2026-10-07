@@ -41,7 +41,7 @@ const EDITOR_KINDS: [VariantKind; 7] = [
 ];
 
 const NAME_LIMIT: usize = 64;
-const VALUE_AREA_H: gpui::Pixels = px(130.0);
+const VALUE_AREA_ROWS: std::ops::RangeInclusive<usize> = 3..=12;
 
 const ROW_DOT: gpui::Pixels = px(6.0);
 const VALUE_ICON: gpui::Pixels = px(11.0);
@@ -114,7 +114,7 @@ impl GlobalEditor {
         let value_area = cx.new(|cx| {
             let mut ta = CodeEditor::new(Language::Json, "[1, 2, 3]", cx)
                 .with_palette(palette)
-                .with_field_height(VALUE_AREA_H);
+                .with_field_rows(VALUE_AREA_ROWS);
             if let Some(seed) = area_seed {
                 ta.set_content(seed, cx);
             }

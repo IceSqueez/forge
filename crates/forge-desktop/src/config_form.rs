@@ -46,7 +46,7 @@ pub(crate) const CHOICE_GLYPH: Pixels = px(12.0);
 
 const INTEGER_PLACEHOLDER: &str = "0";
 
-const CODE_FIELD_H: Pixels = px(150.0);
+const CODE_FIELD_ROWS: RangeInclusive<usize> = 2..=12;
 
 type FieldConfig = BTreeMap<String, Variant>;
 
@@ -804,13 +804,7 @@ fn build_config_code<V: 'static>(
     ctx: &FoldContext<'_, V>,
     cx: &mut Context<V>,
 ) -> ConfigField {
-    let editor = code_field_editor(
-        language,
-        read_text(ctx.config, key),
-        CODE_FIELD_H,
-        *ctx.palette,
-        cx,
-    );
+    let editor = code_field_editor(language, read_text(ctx.config, key), *ctx.palette, cx);
     let on_committed = ctx.on_committed;
     let sub = cx.subscribe(&editor, move |view, _, event: &InputEvent, cx| {
         if matches!(event, InputEvent::Blurred(_)) {
@@ -828,7 +822,6 @@ fn build_config_code<V: 'static>(
 pub(crate) fn code_field_editor<V: 'static>(
     language: CodeLanguage,
     seed: String,
-    height: Pixels,
     palette: ForgePalette,
     cx: &mut Context<V>,
 ) -> Entity<CodeEditor> {
@@ -839,7 +832,7 @@ pub(crate) fn code_field_editor<V: 'static>(
     cx.new(|cx| {
         let mut editor = CodeEditor::new(language, "", cx)
             .with_palette(palette)
-            .with_field_height(height);
+            .with_field_rows(CODE_FIELD_ROWS);
         if !seed.is_empty() {
             editor.set_content(seed, cx);
         }

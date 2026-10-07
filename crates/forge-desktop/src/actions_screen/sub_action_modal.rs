@@ -1528,13 +1528,7 @@ fn build_code_field(
     palette: ForgePalette,
     cx: &mut Context<EditSubActionForm>,
 ) -> SubFormField {
-    let editor = code_field_editor(
-        language,
-        config_seed(config, key),
-        SUB_AREA_FIELD_H,
-        palette,
-        cx,
-    );
+    let editor = code_field_editor(language, config_seed(config, key), palette, cx);
     SubFormField::Code {
         key: key.to_owned(),
         label: label.to_owned(),

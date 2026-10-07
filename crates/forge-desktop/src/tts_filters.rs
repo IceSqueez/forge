@@ -2501,7 +2501,10 @@ mod tests {
     }
 
     fn initial_config() -> PipelineConfigHandle {
-        PipelineConfigHandle::new(build_config_lenient(&[], &TtsPipelineSettings::default()))
+        PipelineConfigHandle::new(forge_speak_queue::build_config_lenient(
+            &[],
+            &TtsPipelineSettings::default(),
+        ))
     }
 
     #[gpui::test]

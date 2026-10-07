@@ -461,6 +461,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_played_report_for_a_clip_never_fetched_is_a_miss_and_leaves_the_clip_to_its_page() {
+        let fixture = serve_default().await;
+        let (ticket, outcome) = fixture.offer().await;
+
+        let premature = fixture.report(ticket.report_path(), played_body()).await;
+        let unknown = fixture
+            .report(&report_path(UNKNOWN_CAPABILITY), played_body())
+            .await;
+        assert_eq!(premature.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            comparable_headers(&premature),
+            comparable_headers(&unknown),
+            "an unfetched clip must answer like a capability that was never minted"
+        );
+
+        let fetched = fixture.fetch(ticket.clip_path()).await;
+        assert_eq!(fetched.status(), StatusCode::OK);
+        assert_eq!(fetched.bytes().await.expect("body"), CLIP_BYTES);
+        let accepted = fixture.report(ticket.report_path(), played_body()).await;
+        assert_eq!(accepted.status(), StatusCode::NO_CONTENT);
+        assert_eq!(outcome.recv().await, ClipOutcome::Played);
+
+        fixture.handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn a_refused_report_before_any_fetch_settles_the_offer_as_refused() {
+        let fixture = serve_default().await;
+        let (ticket, outcome) = fixture.offer().await;
+
+        let response = fixture
+            .report(ticket.report_path(), refused_body(SHORT_REASON))
+            .await;
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            outcome.recv().await,
+            ClipOutcome::Refused {
+                reason: SHORT_REASON.to_owned()
+            }
+        );
+
+        fixture.handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
     async fn a_refusal_reason_reaches_the_caller_cut_on_a_character_boundary() {
         for (case, reason, expected) in [
             (

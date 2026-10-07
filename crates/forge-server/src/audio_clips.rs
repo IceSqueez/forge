@@ -761,15 +761,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_played_verdict_is_ignored_for_a_clip_whose_bytes_were_never_fetched() {
+    async fn a_verdict_other_than_a_refusal_is_ignored_for_a_clip_whose_bytes_were_never_fetched() {
+        for verdict in [
+            ClipOutcome::Played,
+            ClipOutcome::NeverFetched,
+            ClipOutcome::NoVerdict,
+            ClipOutcome::Revoked,
+            ClipOutcome::ServerStopped,
+        ] {
+            let store = AudioClipStore::new();
+            let (ticket, _outcome) = store
+                .offer(&owner(), sized_offer(SAMPLE_CLIP_BYTES))
+                .expect("offer");
+            let capability = ticket.capability().expose();
+
+            assert!(
+                !store.record_verdict(capability, verdict.clone()),
+                "{verdict:?} was taken for a clip the page never fetched"
+            );
+            assert_eq!(held_bytes(&store), SAMPLE_CLIP_BYTES, "{verdict:?}");
+            assert!(
+                store.take_clip(capability).is_some(),
+                "{verdict:?} cost the page its fetch"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_refusal_before_any_fetch_settles_the_clip_as_refused() {
         let store = AudioClipStore::new();
-        let (ticket, _outcome) = store
+        let (ticket, outcome) = store
             .offer(&owner(), sized_offer(SAMPLE_CLIP_BYTES))
             .expect("offer");
 
-        assert!(!store.record_verdict(ticket.capability().expose(), ClipOutcome::Played));
+        assert!(store.record_verdict(ticket.capability().expose(), refused(FIRST_REFUSAL)));
 
-        assert_eq!(held_bytes(&store), SAMPLE_CLIP_BYTES);
+        assert_eq!(outcome.recv().await, refused(FIRST_REFUSAL));
+        assert_eq!(held_bytes(&store), 0);
     }
 
     #[tokio::test]
@@ -860,25 +888,6 @@ mod tests {
         assert!(
             sweeper_armed(&store),
             "a clip arriving after the sweeper retired must arm a new one"
-        );
-    }
-
-    #[tokio::test]
-    async fn the_next_sweep_is_scheduled_for_the_clip_whose_window_closes_first() {
-        let store = AudioClipStore::new();
-        let (_later, _later_outcome) = store.offer(&owner(), clip_offer()).expect("offer");
-        let (sooner, _sooner_outcome) = store.offer(&owner(), clip_offer()).expect("offer");
-        store
-            .take_clip(sooner.capability().expose())
-            .expect("fetch");
-
-        let inner = store.lock();
-        let next = next_deadline_locked(&inner).expect("a live store must schedule a sweep");
-
-        assert_eq!(
-            next,
-            inner.entries[sooner.capability().expose()].deadline,
-            "a clip whose window closes first must not wait on a later one"
         );
     }
 
@@ -1043,27 +1052,70 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn a_hold_that_runs_to_the_lifetime_cap_still_expires() {
-        let store = AudioClipStore::new();
-        let (ticket, outcome) = store.offer(&owner(), clip_offer()).expect("offer");
-        let capability = ticket.capability().expose();
-        store.take_clip(capability).expect("fetch");
-        store.hold(capability);
+    enum Before {
+        Nothing,
+        Fetch,
+        FetchAndHold,
+    }
 
-        sweep_at(&store, Instant::now() + MAX_CLIP_LIFETIME - ONE_SECOND);
-        let held_before_the_cap = still_waiting(&store, capability);
-        sweep_at(&store, Instant::now() + MAX_CLIP_LIFETIME);
-        assert!(
-            !still_waiting(&store, capability),
-            "a hold kept the clip past its lifetime cap"
-        );
+    async fn settle_the_sweeper() {
+        for _ in 0..SCHEDULER_TURNS {
+            tokio::task::yield_now().await;
+        }
+    }
 
-        assert!(
-            held_before_the_cap,
-            "the hold expired before the lifetime cap"
-        );
-        assert_eq!(outcome.recv().await, ClipOutcome::NoVerdict);
+    #[tokio::test(start_paused = true)]
+    async fn the_background_sweeper_closes_each_window_on_the_tokio_clock_and_not_a_moment_early() {
+        for (case, before, closes_after, expected) in [
+            (
+                "never fetched",
+                Before::Nothing,
+                FETCH_WINDOW,
+                ClipOutcome::NeverFetched,
+            ),
+            (
+                "a fetch pulls the deadline in to the verdict window",
+                Before::Fetch,
+                verdict_window(CLIP_DURATION_MS),
+                ClipOutcome::NoVerdict,
+            ),
+            (
+                "a hold pushes the deadline out to the lifetime cap",
+                Before::FetchAndHold,
+                MAX_CLIP_LIFETIME,
+                ClipOutcome::NoVerdict,
+            ),
+        ] {
+            let store = AudioClipStore::new();
+            let (ticket, outcome) = store
+                .offer(&owner(), sized_offer(SAMPLE_CLIP_BYTES))
+                .expect("offer");
+            let capability = ticket.capability().expose();
+            settle_the_sweeper().await;
+            if matches!(before, Before::Fetch | Before::FetchAndHold) {
+                store.take_clip(capability).expect("fetch");
+            }
+            if matches!(before, Before::FetchAndHold) {
+                assert!(store.hold(capability));
+            }
+            settle_the_sweeper().await;
+
+            tokio::time::advance(closes_after - Duration::from_millis(1)).await;
+            settle_the_sweeper().await;
+            assert!(
+                still_waiting(&store, capability),
+                "{case}: the sweeper closed the window early"
+            );
+
+            tokio::time::advance(Duration::from_millis(1)).await;
+            settle_the_sweeper().await;
+            assert!(
+                !still_waiting(&store, capability),
+                "{case}: the sweeper missed the deadline"
+            );
+            assert_eq!(held_bytes(&store), 0, "{case}");
+            assert_eq!(outcome.recv().await, expected, "{case}");
+        }
     }
 
     #[test]

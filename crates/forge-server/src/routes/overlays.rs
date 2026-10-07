@@ -1082,4 +1082,25 @@ mod tests {
 
         handle.stop().await.expect("stop");
     }
+
+    #[tokio::test]
+    async fn the_favicon_request_is_answered_with_no_content_and_cached_forever() {
+        let dir = qa_tempdir();
+        let (handle, addr) =
+            make_overlay_server(dir.path().to_path_buf(), true, MemCreds::new()).await;
+
+        let response = reqwest::get(format!("http://{addr}{}", super::FAVICON_PATH))
+            .await
+            .expect("request");
+
+        assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT);
+        assert_eq!(
+            response.headers().get(reqwest::header::CACHE_CONTROL),
+            Some(&super::immutable_cache_control()),
+            "a browser source must not ask for the icon again"
+        );
+        assert!(response.bytes().await.expect("body").is_empty());
+
+        handle.stop().await.expect("stop");
+    }
 }

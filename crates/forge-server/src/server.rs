@@ -1787,11 +1787,15 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn a_request_naming_a_foreign_host_is_misdirected_on_the_api_and_overlay_routes() {
+    async fn a_request_naming_a_foreign_host_is_misdirected_on_every_host_guarded_route() {
         let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
         let foreign = format!("{FOREIGN_HOST}:{}", addr.port());
 
-        for target in ["/api/v1/info", "/overlays/alerts/config.json"] {
+        for target in [
+            "/api/v1/info",
+            "/overlays/alerts/config.json",
+            crate::routes::overlays::FAVICON_PATH,
+        ] {
             let (status, body) = raw_request_naming(addr, target, Some(&foreign)).await;
             assert_eq!(
                 status,

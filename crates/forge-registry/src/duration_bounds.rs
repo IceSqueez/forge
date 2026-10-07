@@ -161,6 +161,47 @@ mod tests {
     }
 
     #[test]
+    fn fitting_units_drop_a_unit_that_could_only_hold_zero() {
+        let bounds = DurationBounds {
+            min_ms: 0,
+            max_ms: 60_000,
+        };
+
+        assert_eq!(
+            unit_values(bounds),
+            [
+                DURATION_UNIT_MILLISECONDS,
+                DURATION_UNIT_SECONDS,
+                DURATION_UNIT_MINUTES,
+            ]
+        );
+    }
+
+    #[test]
+    fn fitting_units_keep_the_smallest_unit_even_when_its_range_is_only_zero() {
+        let bounds = DurationBounds {
+            min_ms: 0,
+            max_ms: 0,
+        };
+
+        assert_eq!(unit_values(bounds), [DURATION_UNIT_MILLISECONDS]);
+    }
+
+    #[test]
+    fn fitting_units_offer_a_unit_whose_range_top_is_exactly_one() {
+        for (max_ms, expected) in [
+            (999, vec![DURATION_UNIT_MILLISECONDS]),
+            (
+                1_000,
+                vec![DURATION_UNIT_MILLISECONDS, DURATION_UNIT_SECONDS],
+            ),
+        ] {
+            let bounds = DurationBounds { min_ms: 0, max_ms };
+            assert_eq!(unit_values(bounds), expected, "max {max_ms} ms");
+        }
+    }
+
+    #[test]
     fn fitting_units_drop_a_unit_whose_rounded_up_minimum_passes_the_maximum() {
         let bounds = DurationBounds {
             min_ms: 1_500,

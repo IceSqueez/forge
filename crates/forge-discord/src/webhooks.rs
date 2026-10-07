@@ -121,6 +121,7 @@ mod tests {
     use super::*;
     use crate::client::tests::MockCreds;
     use crate::content::record_send;
+    use forge_storage::{CredentialsRepo, StorageError};
 
     const SECRET: &str = "S3CRET-WEBHOOK-TOKEN";
 
@@ -346,5 +347,116 @@ mod tests {
         let err = client.webhook_url("absent").await.unwrap_err();
 
         assert!(matches!(err, DiscordError::WebhookNotFound { .. }));
+    }
+
+    const INTERLEAVING_YIELDS: usize = 16;
+
+    struct StalledListing {
+        inner: Arc<MockCreds>,
+        entered: tokio::sync::Notify,
+        release: tokio::sync::Notify,
+    }
+
+    impl StalledListing {
+        fn over(inner: &Arc<MockCreds>) -> Arc<Self> {
+            Arc::new(Self {
+                inner: Arc::clone(inner),
+                entered: tokio::sync::Notify::new(),
+                release: tokio::sync::Notify::new(),
+            })
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl CredentialsRepo for StalledListing {
+        async fn store(&self, id: &CredentialId, bundle: &str) -> Result<(), StorageError> {
+            self.inner.store(id, bundle).await
+        }
+
+        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
+            self.inner.load(id).await
+        }
+
+        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
+            self.inner.delete(id).await
+        }
+
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            let snapshot = self.inner.list_ids().await;
+            self.entered.notify_one();
+            self.release.notified().await;
+            snapshot
+        }
+
+        async fn last_refresh(
+            &self,
+            id: &CredentialId,
+        ) -> Result<Option<time::OffsetDateTime>, StorageError> {
+            self.inner.last_refresh(id).await
+        }
+
+        async fn mark_refreshed(&self, id: &CredentialId) -> Result<(), StorageError> {
+            self.inner.mark_refreshed(id).await
+        }
+    }
+
+    async fn while_a_listing_is_stalled<F, Fut, T>(
+        creds: &Arc<MockCreds>,
+        edit: F,
+    ) -> (Arc<DiscordClient>, T)
+    where
+        F: FnOnce(Arc<DiscordClient>) -> Fut,
+        Fut: std::future::Future<Output = T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let stalled = StalledListing::over(creds);
+        let client = DiscordClient::new_for_test_with_creds(
+            Arc::clone(&stalled) as Arc<dyn CredentialsRepo>
+        );
+        let listing = tokio::spawn({
+            let client = Arc::clone(&client);
+            async move { client.list_webhooks().await }
+        });
+        stalled.entered.notified().await;
+        let edited = tokio::spawn(edit(Arc::clone(&client)));
+        for _ in 0..INTERLEAVING_YIELDS {
+            tokio::task::yield_now().await;
+        }
+        stalled.release.notify_one();
+        listing.await.unwrap().unwrap();
+        (client, edited.await.unwrap())
+    }
+
+    #[tokio::test]
+    async fn a_webhook_deleted_during_the_startup_listing_stays_deleted() {
+        let creds = MockCreds::new();
+        creds.insert(
+            "discord:alerts",
+            &serde_json::json!({ "url": secret_url() }).to_string(),
+        );
+
+        let (client, removed) = while_a_listing_is_stalled(&creds, |client| async move {
+            client.delete_webhook("alerts").await.unwrap()
+        })
+        .await;
+
+        assert!(removed);
+        assert!(
+            client.webhook_names().is_empty(),
+            "the stale listing resurrected {:?}",
+            client.webhook_names()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_webhook_saved_during_the_startup_listing_stays_listed() {
+        let creds = MockCreds::new();
+
+        let (client, ()) = while_a_listing_is_stalled(&creds, |client| async move {
+            client.save_webhook("alerts", &secret_url()).await.unwrap()
+        })
+        .await;
+
+        assert_eq!(client.webhook_names(), ["alerts"]);
     }
 }

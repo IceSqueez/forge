@@ -427,6 +427,7 @@ fn start_bridge(
             cx.update(|cx| {
                 for event in batch {
                     crate::clip_playback::report_clip_playback(event, cx);
+                    crate::overlay_speech_failure::report_overlay_speech_failure(event, cx);
                 }
             });
 

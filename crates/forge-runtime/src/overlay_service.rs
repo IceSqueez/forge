@@ -37,6 +37,14 @@ use crate::speak_dispatcher::{ShowSpeech, SpeakDispatcher, SpeechOrigin, SpeechS
 
 pub const OVERLAY_TEST_FIRE_KIND: &str = "overlay.test_fire";
 
+pub const OVERLAY_SPEECH_FAILED_KIND: &str = "overlay.speech.failed";
+
+pub const OVERLAY_NAME_KEY: &str = "overlayName";
+
+pub const SPEECH_FAILURE_ERROR_KEY: &str = "error";
+
+const SPEECH_FAILURE_VOICE_KEY: &str = "voice";
+
 const OVERLAY_ID_KEY: &str = "overlayId";
 
 const LATEST_PREVIEW_HOLD: Duration = Duration::from_secs(DEFAULT_DISPLAY_SECS.unsigned_abs());
@@ -478,6 +486,8 @@ impl OverlayServiceHandle {
                 show: Ulid::generate().to_string(),
                 origin: SpeechOrigin::from_args(args, caused_by),
             });
+        let speech =
+            speech.and_then(|speech| self.with_installed_voice(&definition, speech, caused_by));
         let Some(timing) = show_timing(descriptor, &definition.config, duration_ms) else {
             let disposition = descriptor.delivery_disposition();
             let delivery = self
@@ -508,6 +518,43 @@ impl OverlayServiceHandle {
                 id: definition.id,
                 capacity: SHOW_QUEUE_CAPACITY,
             })
+    }
+
+    fn with_installed_voice(
+        &self,
+        definition: &OverlayDefinition,
+        speech: ShowSpeech,
+        caused_by: Option<EventId>,
+    ) -> Option<ShowSpeech> {
+        let (Some(voice), Some(speaker)) = (speech.voice.as_deref(), self.inner.speaker.as_ref())
+        else {
+            return Some(speech);
+        };
+        let Err(error) = speaker.check_voice(voice) else {
+            return Some(speech);
+        };
+        tracing::info!(
+            overlay = %definition.id,
+            reason = %error,
+            "show speech skipped; the show is shown without it"
+        );
+        let payload = json!({
+            OVERLAY_ID_KEY: definition.id.as_str(),
+            OVERLAY_NAME_KEY: definition.display_name,
+            SPEECH_FAILURE_VOICE_KEY: voice,
+            SPEECH_FAILURE_ERROR_KEY: error.to_string(),
+        });
+        let event = match caused_by {
+            Some(parent) => Event::caused_by(
+                EventSource::Core,
+                OVERLAY_SPEECH_FAILED_KIND,
+                payload,
+                parent,
+            ),
+            None => Event::new(EventSource::Core, OVERLAY_SPEECH_FAILED_KIND, payload),
+        };
+        self.inner.bus.publish(event);
+        None
     }
 
     fn speak_unheld(&self, speech: ShowSpeech) {

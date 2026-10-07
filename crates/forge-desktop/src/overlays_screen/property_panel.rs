@@ -6,9 +6,9 @@ use forge_components::{
     BORDER_THIN, FONT_XXS, ForgePalette, Picker, PickerEvent, PickerItem, PickerLabels,
     accent_swatch, body_family, field_label, section_label, tr,
 };
-use forge_overlay::config::{ACCENT, RETIRED_KEYS, SOUND_OPTIONS_KEY};
+use forge_overlay::config::{ACCENT, RETIRED_KEYS, SOUND_OPTIONS_KEY, SPEECH_VOICE};
 use forge_overlay::{ConfigSection, MediaIssue, MediaSlot, SectionedField, media_slot};
-use forge_registry::FormField;
+use forge_registry::{ENGINE_VOICE_OPTIONS_KEY, FormField};
 use forge_runtime::OverlayServiceHandle;
 use forge_storage::{OverlayConfig, OverlayId, OverlayRepo};
 use forge_types::ClipId;
@@ -25,6 +25,7 @@ use super::latest_section::LatestState;
 use super::motion_notices::MotionNotices;
 use super::motion_timing::{motion_hint, motion_label};
 use super::sound_choice::{PickOutcome, field_notes, notes_block, picked_clip, sound_choices};
+use super::voice_choice::speech_voice_choices;
 use super::writes::store_config;
 use crate::async_bridge;
 use crate::config_form::{
@@ -166,6 +167,7 @@ impl OverlayPropertyPanel {
             _release: release,
         };
         panel.refresh_media_choices();
+        panel.refresh_voice_choices();
         panel
     }
 
@@ -269,6 +271,26 @@ impl OverlayPropertyPanel {
                 && media_slot(key) == Some(MediaSlot::Sound)
             {
                 *options = sound_choices(&clips, selected);
+            }
+        }
+    }
+
+    fn refresh_voice_choices(&mut self) {
+        let voices = self
+            .choices
+            .get(ENGINE_VOICE_OPTIONS_KEY)
+            .cloned()
+            .unwrap_or_default();
+        for field in &mut self.fields {
+            if let ConfigField::Choice {
+                key,
+                options,
+                selected,
+                ..
+            } = field
+                && key == SPEECH_VOICE
+            {
+                *options = speech_voice_choices(&voices, selected);
             }
         }
     }
@@ -500,6 +522,7 @@ impl OverlayPropertyPanel {
         } = self;
         resolve_dependent_choices(fields, choices, cx);
         self.refresh_media_choices();
+        self.refresh_voice_choices();
         self.emit_save(cx);
         cx.notify();
     }

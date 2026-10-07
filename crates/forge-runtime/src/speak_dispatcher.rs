@@ -5,6 +5,8 @@ use forge_registry::{CancelSignal, message_emote_codes};
 use forge_types::{ActorRole, ActorSlot, ArgStack, CanonicalVariable, EventId, Variant};
 use tokio::sync::watch;
 
+use crate::engine_voice_ref::EngineVoiceError;
+
 #[derive(Debug, thiserror::Error)]
 pub enum SpeakDispatchError {
     #[error("{0}")]
@@ -203,6 +205,11 @@ pub trait SpeakDispatcher: Send + Sync {
 
     async fn get_available_voices(&self) -> Vec<VoiceDescriptor> {
         Vec::new()
+    }
+
+    fn check_voice(&self, encoded: &str) -> Result<(), EngineVoiceError> {
+        let _ = encoded;
+        Ok(())
     }
 
     async fn get_engines(&self) -> Vec<String> {

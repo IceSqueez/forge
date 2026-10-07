@@ -329,6 +329,10 @@ impl SpeakDispatcher for SpeakBridge {
         self.voice_descriptors()
     }
 
+    fn check_voice(&self, encoded: &str) -> Result<(), EngineVoiceError> {
+        self.installed_voice_overrides(Some(encoded)).map(|_| ())
+    }
+
     async fn get_engines(&self) -> Vec<String> {
         self.handle.engines().into_iter().map(|e| e.0).collect()
     }

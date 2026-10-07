@@ -25,6 +25,7 @@ mod registry_pane;
 mod server_status;
 mod sizing_section;
 mod sound_choice;
+mod voice_choice;
 mod writes;
 
 use std::sync::Arc;
@@ -39,6 +40,7 @@ use forge_runtime::actions::ActionsService;
 use forge_runtime::{EventBus, LatestValues, OverlayServiceHandle, QueueSchedulerHandle};
 use forge_server::ServerHandle;
 use forge_soundboard::ClipLibrary;
+use forge_speak_queue::SpeakQueueHandle;
 use forge_storage::{MediaRepo, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo};
 use gpui::{
     AnyElement, Context, Entity, EventEmitter, Pixels, Subscription, Window, div, prelude::*, px,
@@ -81,6 +83,7 @@ struct OverlayHandles {
     media: Arc<dyn MediaRepo>,
     settings_repo: Arc<dyn SettingsRepo>,
     audio_router: Arc<AudioRouter>,
+    speak: Option<SpeakQueueHandle>,
 }
 
 pub struct OverlaysView {
@@ -107,6 +110,7 @@ pub struct OverlaysLaunch {
     pub media: Arc<dyn MediaRepo>,
     pub settings_repo: Arc<dyn SettingsRepo>,
     pub audio_router: Arc<AudioRouter>,
+    pub speak: Option<SpeakQueueHandle>,
     pub actions: Arc<ActionsService>,
     pub triggers: Arc<TriggerRegistry>,
     pub sub_actions: Arc<SubActionRegistry>,
@@ -154,6 +158,7 @@ impl OverlaysView {
                 media: launch.media,
                 settings_repo: launch.settings_repo,
                 audio_router: launch.audio_router,
+                speak: launch.speak,
             },
             registry: RegistryState::default(),
             served: ServerStatus::new(server_running),

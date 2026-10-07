@@ -2648,6 +2648,7 @@ overlays_toast_build_failed_pages =
        *[other] Не вдалося перебудувати { $count } сторінки оверлеїв - браузерні джерела можуть показувати стару версію. Подробиці в журналі.
     }
 overlays_toast_build_failed_pass = Не вдалося перебудувати сторінки оверлеїв: { $reason }
+overlays_toast_speech_failed = { $overlay } показано без мовлення: { $error }. Оберіть встановлений голос у полі Голос.
 overlays_confirm_delete_title = Видалити оверлей?
 overlays_confirm_delete_body = Будь-яке браузерне джерело OBS, що вказує на цей оверлей, перестане завантажуватися. Це не можна скасувати.
 
@@ -2770,7 +2771,9 @@ overlays_base_sound = Звук
 overlays_base_speech = Текст для озвучення
 overlays_base_speech_hint = Читається вголос, коли з'являється показ. Тут працюють змінні події, як-от %message%.
 overlays_base_voice = Голос
-overlays_base_voice_hint = Псевдонім голосу; порожнє поле - псевдонім глядача або типовий голос.
+overlays_base_voice_hint = Встановлений голос рушія; Типовий голос - псевдонім глядача або типовий голос.
+overlays_voice_default = Типовий голос
+overlays_voice_not_installed = { $voice } - не встановлено
 overlays_base_duration = Тривалість
 overlays_base_duration_hint = Залишається на екрані стільки часу або до кінця озвучення, якщо воно довше.
 overlays_display_draws_nothing = Нічого не показує на екрані - лише відтворює свій звук і озвучення.

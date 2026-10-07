@@ -373,6 +373,7 @@ impl AppShell {
                     media: handles.backend.media_repo(),
                     settings_repo: Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>,
                     audio_router: Arc::clone(&handles.audio_router),
+                    speak: handles.speak.clone(),
                     actions: Arc::new(forge_runtime::actions::ActionsService::new(
                         handles.backend.action_repo(),
                         handles.backend.queue_repo(),

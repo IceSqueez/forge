@@ -2586,6 +2586,7 @@ overlays_toast_build_failed_pages =
        *[other] { $count } overlay pages could not be rebuilt - their browser sources may show an old version. Details are in the log.
     }
 overlays_toast_build_failed_pass = Overlay pages could not be rebuilt: { $reason }
+overlays_toast_speech_failed = { $overlay } was shown without speech: { $error }. Pick an installed voice in its Voice field.
 overlays_confirm_delete_title = Delete overlay?
 overlays_confirm_delete_body = Any OBS browser source pointing at this overlay will stop loading. This cannot be undone.
 
@@ -2704,7 +2705,9 @@ overlays_base_sound = Sound
 overlays_base_speech = Speech text
 overlays_base_speech_hint = Read aloud when the show appears. Event variables like %message% work here.
 overlays_base_voice = Voice
-overlays_base_voice_hint = A voice alias; empty uses the viewer's alias or the default voice.
+overlays_base_voice_hint = An installed engine voice; Default voice uses the viewer's alias or the default voice.
+overlays_voice_default = Default voice
+overlays_voice_not_installed = { $voice } - not installed
 overlays_base_duration = Duration
 overlays_base_duration_hint = Stays up this long, or until its speech ends if that is later.
 overlays_display_draws_nothing = Shows nothing on screen - it only plays its sound and speech.

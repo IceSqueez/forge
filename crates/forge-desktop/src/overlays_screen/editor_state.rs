@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use forge_overlay::config::SOUND_OPTIONS_KEY;
 use forge_overlay::{SectionedField, effective_overlay_config};
+use forge_registry::ENGINE_VOICE_OPTIONS_KEY;
 use gpui::{AppContext, Context, Entity, Subscription};
 
 use super::OverlaysView;
@@ -11,6 +12,7 @@ use super::code_pane::{CodeState, LeaveIntent};
 use super::look_change;
 use super::property_panel::{OverlayPropertyPanel, PanelLaunch, PropertyPanelEvent};
 use crate::async_bridge;
+use crate::engine_voice_choices::engine_voice_options;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum EditorMode {
@@ -47,6 +49,22 @@ impl EditorState {
 }
 
 impl OverlaysView {
+    fn panel_choices(&self) -> HashMap<String, Vec<(String, String)>> {
+        let voices = self
+            .handles
+            .speak
+            .as_ref()
+            .map(|speak| engine_voice_options(&speak.available_voices()))
+            .unwrap_or_default();
+        HashMap::from([
+            (
+                SOUND_OPTIONS_KEY.to_owned(),
+                self.catalog.clip_choices.clone(),
+            ),
+            (ENGINE_VOICE_OPTIONS_KEY.to_owned(), voices),
+        ])
+    }
+
     pub(super) fn mode(&self) -> EditorMode {
         self.editor.mode
     }
@@ -117,10 +135,7 @@ impl OverlaysView {
             defaults: descriptor.default_config(),
             stored: definition.config.clone(),
             effective,
-            choices: HashMap::from([(
-                SOUND_OPTIONS_KEY.to_owned(),
-                self.catalog.clip_choices.clone(),
-            )]),
+            choices: self.panel_choices(),
             icon_images: self.catalog.icon_images.clone(),
             overridden_files: definition.source_overrides.clone(),
             repo: Arc::clone(&self.handles.repo),

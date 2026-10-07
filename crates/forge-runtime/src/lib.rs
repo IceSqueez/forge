@@ -68,7 +68,7 @@ pub use donations::{
     CatchUpWaker, DONATION_CATCH_UP, DonationAudience, DonationIngest, DonationOverlayAudience,
     TestDonationRunner, register_donation_sub_actions,
 };
-pub use engine_voice_ref::{ENGINE_VOICE_OPTIONS_KEY, EngineVoiceError, EngineVoiceRef};
+pub use engine_voice_ref::{EngineVoiceError, EngineVoiceRef};
 pub use event_log_bridge::spawn_event_log_bridge;
 pub use first_chat_ledger::FirstChatLedger;
 pub use integration_gate::IntegrationGate;
@@ -80,9 +80,10 @@ pub use live_viewers::{LiveViewerAggregatorHandle, LiveViewerCount, spawn_live_v
 pub use overlay_definition_revision::OverlayDefinitionChanges;
 pub use overlay_media::OverlayMediaLibrary;
 pub use overlay_service::{
-    EnabledOverlay, MaterializePass, OverlayConnectFanout, OverlayConnectListener, OverlayDelivery,
-    OverlayDispatch, OverlayFrameSink, OverlayReceivers, OverlayServiceCell, OverlayServiceError,
-    OverlayServiceHandle, TestFire,
+    EnabledOverlay, MaterializePass, OVERLAY_NAME_KEY, OVERLAY_SPEECH_FAILED_KIND,
+    OverlayConnectFanout, OverlayConnectListener, OverlayDelivery, OverlayDispatch,
+    OverlayFrameSink, OverlayReceivers, OverlayServiceCell, OverlayServiceError,
+    OverlayServiceHandle, SPEECH_FAILURE_ERROR_KEY, TestFire,
 };
 pub use overlay_shows::{
     SHOW_CEILING, SHOW_QUEUE_CAPACITY, SHOW_SPEECH_START_WAIT, ShowDepthWatch, ShowEnd, ShowTicket,

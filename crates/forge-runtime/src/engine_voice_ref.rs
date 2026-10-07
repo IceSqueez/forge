@@ -2,8 +2,6 @@ use std::fmt;
 
 use crate::speak_dispatcher::VoiceDescriptor;
 
-pub const ENGINE_VOICE_OPTIONS_KEY: &str = "tts.engine_voices";
-
 const ENGINE_VOICE_SEPARATOR: char = '/';
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

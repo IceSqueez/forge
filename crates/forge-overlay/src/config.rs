@@ -1,4 +1,4 @@
-use forge_registry::{FormField, effective_config};
+use forge_registry::{ENGINE_VOICE_OPTIONS_KEY, FormField, effective_config};
 use forge_types::Variant;
 
 use crate::descriptor::{ConfigSection, OverlayConfig, OverlayKindDescriptor, SectionedField};
@@ -512,10 +512,10 @@ pub(crate) fn speech_field() -> SectionedField {
 pub(crate) fn speech_voice_field() -> SectionedField {
     in_section(
         ConfigSection::Behavior,
-        FormField::Text {
+        FormField::DynamicSelect {
             key: SPEECH_VOICE,
             label: "Speech voice",
-            placeholder: "e.g. piper/en_US-amy-medium",
+            options_key: ENGINE_VOICE_OPTIONS_KEY,
         },
     )
 }

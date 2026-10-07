@@ -951,7 +951,7 @@ tts_filters_skip_regex_row = Regex: { $pattern }
 ## TTS Filters - блок-список слів
 
 tts_filters_blocklist_censor = Цензурувати збіги
-tts_filters_blocklist_censor_meta = замінити на ***
+tts_filters_blocklist_censor_meta = замінити на [beep]
 tts_filters_blocklist_skip = Пропустити все повідомлення при збігу
 tts_filters_blocklist_more = +{ $count } ще
 tts_filters_blocklist_empty = Заблокованих слів ще немає
@@ -1027,10 +1027,10 @@ tts_filters_preset_output_sanitize_hint = "!!!" → "!"
 
 tts_filters_modal_blocklist_words_label = СЛОВА АБО ФРАЗИ
 tts_filters_modal_blocklist_words_placeholder = по одному на рядок або через кому...
-tts_filters_modal_blocklist_note = Збіг не чутливий до регістру та шукає лише цілі слова; багатослівні фрази не збігаються як одне ціле.
+tts_filters_modal_blocklist_note = Збіг не чутливий до регістру та шукає лише цілі слова; розділові знаки навколо слова ігноруються; багатослівні фрази не збігаються як одне ціле.
 tts_filters_modal_blocklist_when_matched_label = ПРИ ЗБІГУ
 tts_filters_modal_blocklist_censor_row = Цензурувати слово
-tts_filters_modal_blocklist_censor_row_hint = замінити на ***
+tts_filters_modal_blocklist_censor_row_hint = замінити на [beep]
 tts_filters_modal_blocklist_skip_row = Пропустити все повідомлення
 tts_filters_modal_blocklist_skip_row_hint = нічого не озвучується
 

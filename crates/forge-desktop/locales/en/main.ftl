@@ -932,7 +932,7 @@ tts_filters_skip_regex_row = Regex: { $pattern }
 ## TTS Filters - word blocklist
 
 tts_filters_blocklist_censor = Censor matched words
-tts_filters_blocklist_censor_meta = replace with ***
+tts_filters_blocklist_censor_meta = replace with [beep]
 tts_filters_blocklist_skip = Skip entire message if matched
 tts_filters_blocklist_more = +{ $count } more
 tts_filters_blocklist_empty = No blocked words yet
@@ -1008,10 +1008,10 @@ tts_filters_preset_output_sanitize_hint = "!!!" → "!"
 
 tts_filters_modal_blocklist_words_label = WORDS OR PHRASES
 tts_filters_modal_blocklist_words_placeholder = one per line, or comma-separated...
-tts_filters_modal_blocklist_note = Matching is case-insensitive and matches whole words only; multi-word phrases will not match as a unit.
+tts_filters_modal_blocklist_note = Matching is case-insensitive and matches whole words only; punctuation around a word is ignored; multi-word phrases will not match as a unit.
 tts_filters_modal_blocklist_when_matched_label = WHEN MATCHED
 tts_filters_modal_blocklist_censor_row = Censor the word
-tts_filters_modal_blocklist_censor_row_hint = replace with ***
+tts_filters_modal_blocklist_censor_row_hint = replace with [beep]
 tts_filters_modal_blocklist_skip_row = Skip the whole message
 tts_filters_modal_blocklist_skip_row_hint = nothing is spoken
 

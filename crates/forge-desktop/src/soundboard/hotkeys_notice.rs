@@ -1,7 +1,8 @@
-use forge_components::integration_disabled_notice;
+use forge_components::{ForgePalette, integration_disabled_notice, tr};
 use forge_types::IntegrationId;
+use gpui::{AnyElement, ClickEvent, Context, prelude::*};
 
-use super::*;
+use super::SoundboardView;
 use crate::integration_switch::{IntegrationSwitch, SwitchWatch, integration_name};
 
 pub(crate) fn hotkeys_integration() -> IntegrationId {

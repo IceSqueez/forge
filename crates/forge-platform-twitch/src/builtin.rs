@@ -13,11 +13,12 @@ use tracing::debug;
 use forge_platform_core::TokenBucketRateLimiter;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform, CollectionId,
-    ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream,
-    HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, PlatformEndpoints, QuickAction,
-    QuickActionAccent, QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField,
-    QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness, QuickActions, RateLimiter,
-    SectionIcon, SubscriptionRow, SubscriptionStatus, ViewerReport, ViewerReportStream,
+    CollectionRevisions, ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric,
+    HealthStream, HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, PlatformEndpoints,
+    QuickAction, QuickActionAccent, QuickActionChoiceOption, QuickActionChoiceSource,
+    QuickActionField, QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness,
+    QuickActions, RateLimiter, SectionIcon, SubscriptionRow, SubscriptionStatus, ViewerReport,
+    ViewerReportStream,
 };
 use forge_types::IntegrationId;
 use std::collections::BTreeMap;
@@ -36,7 +37,7 @@ use crate::helix::{
     HelixHttpTransport, HelixMethod, HelixRequest, HelixTokenRefresher, HelixTokenSource,
     HelixTransport,
 };
-use crate::lifecycle::{LifecycleSnapshot, TwitchLifecycle};
+use crate::lifecycle::{LifecycleSnapshot, ShieldPhase, TwitchLifecycle};
 use crate::reward_collection::REWARDS_COLLECTION;
 use crate::sub_actions::identity::{BroadcasterTier, resolve_broadcaster_tier};
 use crate::subscriptions::{SubStatus, SubscriptionTracker};
@@ -259,6 +260,10 @@ impl TwitchIntegrationBundle {
             bundle
                 .lifecycle
                 .seed_from_helix(bundle.transport.as_ref(), &bundle.config.broadcaster_id)
+                .await;
+            bundle
+                .lifecycle
+                .seed_shield_from_helix(bundle.transport.as_ref(), &bundle.config.broadcaster_id)
                 .await;
         });
     }
@@ -693,6 +698,7 @@ impl BuiltinContent for TwitchIntegrationBundle {
 }
 
 const TIER_LOCKED_REASON: &str = "Requires Twitch Affiliate or Partner";
+const SHIELD_SCOPE_MISSING_REASON: &str = "Sign in to Twitch again to grant Shield mode access";
 
 fn blank() -> Variant {
     Variant::String(String::new())
@@ -882,7 +888,44 @@ fn gated_on(action: QuickAction, liveness: QuickActionLiveness) -> QuickAction {
     QuickAction { liveness, ..action }
 }
 
+fn shield_mode_toggle(connected: bool, phase: ShieldPhase) -> QuickAction {
+    let (label, icon, kind_id, liveness) = match phase {
+        ShieldPhase::Active => (
+            "End Shield mode",
+            "shield-off",
+            "twitch.moderation.shield_mode_off",
+            QuickActionLiveness::Live,
+        ),
+        ShieldPhase::Inactive | ShieldPhase::Unknown | ShieldPhase::Unauthorized => (
+            "Start Shield mode",
+            "shield",
+            "twitch.moderation.shield_mode_on",
+            QuickActionLiveness::Unknown,
+        ),
+    };
+    let unauthorized = phase == ShieldPhase::Unauthorized;
+    gated_on(
+        quick_action(
+            label,
+            icon,
+            QuickActionAccent::Brand,
+            connected && !unauthorized,
+            unauthorized.then(|| SHIELD_SCOPE_MISSING_REASON.to_owned()),
+            "Moderation",
+            false,
+            kind_id,
+            BTreeMap::new(),
+            Vec::new(),
+        ),
+        liveness,
+    )
+}
+
 impl QuickActions for TwitchIntegrationBundle {
+    fn revisions(&self) -> Option<CollectionRevisions> {
+        Some(self.lifecycle.quick_action_revisions())
+    }
+
     fn actions(&self) -> Vec<QuickAction> {
         let connected = self.is_chat_connected();
         let tier_locked = self.tier() == BroadcasterTier::Standard;
@@ -1261,18 +1304,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 config([("target_user_login", blank())]),
                 vec![text_field("target_user_login", "Username", "@user").required()],
             ),
-            quick_action(
-                "Shield mode",
-                "shield",
-                QuickActionAccent::Brand,
-                connected,
-                None,
-                "Moderation",
-                false,
-                "twitch.moderation.shield_mode_on",
-                BTreeMap::new(),
-                Vec::new(),
-            ),
+            shield_mode_toggle(connected, self.lifecycle.shield_phase()),
             quick_action(
                 "Add / remove VIP",
                 "star",

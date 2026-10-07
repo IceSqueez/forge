@@ -3,7 +3,9 @@ use std::time::{Duration, Instant};
 
 use forge_platform_core::{CollectionRevisionSignal, CollectionRevisions, QuickActionLiveness};
 
-use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+
+const FORBIDDEN: u16 = reqwest::StatusCode::FORBIDDEN.as_u16();
 
 const RAID_COUNTDOWN: Duration = Duration::from_secs(90);
 
@@ -11,6 +13,9 @@ const POLLS_PATH: &str = "/helix/polls";
 const PREDICTIONS_PATH: &str = "/helix/predictions";
 const STATUS_ACTIVE: &str = "ACTIVE";
 const STATUS_LOCKED: &str = "LOCKED";
+const SHIELD_MODE_PATH: &str = "/helix/moderation/shield_mode";
+const SHIELD_BEGIN_TOPIC: &str = "channel.shield_mode.begin";
+const SHIELD_END_TOPIC: &str = "channel.shield_mode.end";
 
 const REWARD_COLLECTION_TOPICS: &[&str] = &[
     "channel.channel_points_custom_reward.add",
@@ -35,10 +40,20 @@ pub(crate) enum PredictionPhase {
     Locked,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum ShieldPhase {
+    #[default]
+    Unknown,
+    Inactive,
+    Active,
+    Unauthorized,
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 struct ChannelEntities {
     poll: PollPhase,
     prediction: PredictionPhase,
+    shield: ShieldPhase,
     raid_until: Option<Instant>,
 }
 
@@ -46,6 +61,7 @@ struct ChannelEntities {
 pub struct TwitchLifecycle {
     entities: Arc<RwLock<ChannelEntities>>,
     rewards: Arc<CollectionRevisionSignal>,
+    quick_actions: Arc<CollectionRevisionSignal>,
 }
 
 impl TwitchLifecycle {
@@ -74,6 +90,11 @@ impl TwitchLifecycle {
             self.rewards_changed();
             return;
         }
+        match subscription_type {
+            SHIELD_BEGIN_TOPIC => return self.set_shield(ShieldPhase::Active),
+            SHIELD_END_TOPIC => return self.set_shield(ShieldPhase::Inactive),
+            _ => {}
+        }
         let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
         match subscription_type {
             "channel.poll.begin" | "channel.poll.progress" => entities.poll = PollPhase::Active,
@@ -96,6 +117,27 @@ impl TwitchLifecycle {
         }
     }
 
+    pub(crate) fn shield_phase(&self) -> ShieldPhase {
+        self.entities
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .shield
+    }
+
+    pub(crate) fn quick_action_revisions(&self) -> CollectionRevisions {
+        self.quick_actions.subscribe()
+    }
+
+    fn set_shield(&self, phase: ShieldPhase) {
+        let changed = {
+            let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
+            std::mem::replace(&mut entities.shield, phase) != phase
+        };
+        if changed {
+            self.quick_actions.bump();
+        }
+    }
+
     pub(crate) fn rewards_changed(&self) {
         self.rewards.bump();
     }
@@ -115,9 +157,13 @@ impl TwitchLifecycle {
     }
 
     pub(crate) fn forget_phases(&self) {
-        let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
-        entities.poll = PollPhase::Unknown;
-        entities.prediction = PredictionPhase::Unknown;
+        {
+            let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
+            entities.poll = PollPhase::Unknown;
+            entities.prediction = PredictionPhase::Unknown;
+            entities.shield = ShieldPhase::Unknown;
+        }
+        self.quick_actions.bump();
     }
 
     pub(crate) async fn seed_from_helix(
@@ -154,6 +200,33 @@ impl TwitchLifecycle {
             let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
             entities.prediction = phase;
         }
+    }
+
+    pub(crate) async fn seed_shield_from_helix(
+        &self,
+        transport: &dyn HelixTransport,
+        broadcaster_id: &str,
+    ) {
+        let shield = HelixRequest::new(HelixMethod::Get, SHIELD_MODE_PATH)
+            .query("broadcaster_id", broadcaster_id.to_owned())
+            .query("moderator_id", broadcaster_id.to_owned());
+        let shield_phase = match transport.execute(shield).await {
+            Ok(body) => match entity_rows(&body)
+                .and_then(|rows| rows.first())
+                .and_then(|row| row.get("is_active"))
+                .and_then(|active| active.as_bool())
+            {
+                Some(true) => ShieldPhase::Active,
+                Some(false) => ShieldPhase::Inactive,
+                None => ShieldPhase::Unknown,
+            },
+            Err(HelixError::ReauthRequired) => ShieldPhase::Unauthorized,
+            Err(HelixError::Http { status, .. }) if status == FORBIDDEN => {
+                ShieldPhase::Unauthorized
+            }
+            Err(_) => ShieldPhase::Unknown,
+        };
+        self.set_shield(shield_phase);
     }
 }
 

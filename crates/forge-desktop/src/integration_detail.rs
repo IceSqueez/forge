@@ -10,7 +10,7 @@ use forge_platform_core::{
     BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus,
     CapabilityFlags, CollectionId, ConnectionState, ControlFailure, DetailSection, HeaderAction,
     HealthDelta, HealthMetric, HealthValue, HeroBadge, HeroBadgeTone, PlatformEndpoints,
-    QuickAction, QuickActions, SectionIcon,
+    QuickAction, QuickActions, RevisionWait, SectionIcon,
 };
 use forge_registry::TriggerRegistry;
 use forge_runtime::{ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
@@ -116,6 +116,7 @@ pub struct IntegrationDetail {
     _conn_obs: Subscription,
     _qa_search_sub: Subscription,
     _health_bridge: Task<()>,
+    _quick_action_bridge: Option<Task<()>>,
     _bridges: Vec<Task<()>>,
 }
 
@@ -223,6 +224,7 @@ impl IntegrationDetail {
         let quick_actions = reachable_quick_actions(&*quick, collections.as_deref());
 
         let health_bridge = Self::spawn_health_bridge(&health, cx);
+        let quick_action_bridge = Self::spawn_quick_action_bridge(&*quick, cx);
         let mut bridges = Vec::new();
 
         if is_twitch {
@@ -293,6 +295,7 @@ impl IntegrationDetail {
             _conn_obs: conn_obs,
             _qa_search_sub: qa_search_sub,
             _health_bridge: health_bridge,
+            _quick_action_bridge: quick_action_bridge,
             _bridges: bridges,
         };
 
@@ -398,6 +401,20 @@ impl IntegrationDetail {
                 }
             }
         })
+    }
+
+    fn spawn_quick_action_bridge(
+        quick: &dyn QuickActions,
+        cx: &mut Context<Self>,
+    ) -> Option<Task<()>> {
+        let mut revisions = quick.revisions()?;
+        Some(cx.spawn(async move |this, cx| {
+            while revisions.changed().await == RevisionWait::Changed {
+                if this.update(cx, |this, cx| this.reload(cx)).is_err() {
+                    break;
+                }
+            }
+        }))
     }
 
     fn spawn_obs_content_watch(bus: &Arc<EventBus>, cx: &mut Context<Self>) -> Task<()> {
@@ -927,6 +944,7 @@ impl IntegrationDetail {
         self.eventsub_tally.clear();
         self.viewer_samples.clear();
         self._health_bridge = Self::spawn_health_bridge(&self.health, cx);
+        self._quick_action_bridge = Self::spawn_quick_action_bridge(&*self.quick, cx);
         self.reload(cx);
     }
 

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use forge_types::{IntegrationId, SubActionStep, Variant};
 
 use crate::ConnectionState;
-use crate::collections::CollectionId;
+use crate::collections::{CollectionId, CollectionRevisions};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -482,6 +482,10 @@ pub trait BuiltinContent: Send + Sync {
 
 pub trait QuickActions: Send + Sync {
     fn actions(&self) -> Vec<QuickAction>;
+
+    fn revisions(&self) -> Option<CollectionRevisions> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

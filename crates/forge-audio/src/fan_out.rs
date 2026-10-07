@@ -78,53 +78,97 @@ impl AudioSink for FanOutSink {
             })
             .collect();
 
-        let mut started = Vec::new();
-        let mut start_reasons: Vec<Option<String>> = Vec::with_capacity(self.sinks.len());
-        for result in futures::future::join_all(futures).await {
-            match result {
-                Ok(playback) => {
-                    started.push(playback);
-                    start_reasons.push(None);
-                }
-                Err(e) => start_reasons.push(Some(e.to_string())),
-            }
-        }
+        let routes: Vec<RouteStart> = futures::future::join_all(futures)
+            .await
+            .into_iter()
+            .map(|result| match result {
+                Ok(playback) => RouteStart::Started(playback),
+                Err(e) => RouteStart::Refused(e.to_string()),
+            })
+            .collect();
 
-        if started.is_empty() {
-            return Err(route_failure(start_reasons.into_iter().flatten().collect()));
+        if !routes.iter().any(RouteStart::is_started) {
+            return Err(route_failure(
+                routes
+                    .into_iter()
+                    .filter_map(RouteStart::into_refusal)
+                    .collect(),
+            ));
         }
-        warn_failed_routes(start_reasons.iter().filter_map(Option::as_deref));
+        warn_failed_routes(routes.iter().filter_map(RouteStart::refusal));
 
-        let handle = PlaybackHandle::merge(started.iter().map(ControlledPlayback::handle));
+        let handle = PlaybackHandle::merge(routes.iter().filter_map(RouteStart::handle));
         let completion = async move {
-            let mut outcomes = futures::future::join_all(started).await.into_iter();
-            let verdicts: Vec<(bool, Result<(), String>)> = start_reasons
-                .into_iter()
-                .map(|slot| match slot {
-                    Some(reason) => (false, Err(reason)),
-                    None => (
-                        true,
-                        outcomes.next().unwrap_or(Ok(())).map_err(|e| e.to_string()),
-                    ),
-                })
-                .collect();
+            let verdicts =
+                futures::future::join_all(routes.into_iter().map(RouteStart::verdict)).await;
 
-            if verdicts.iter().any(|(_, verdict)| verdict.is_ok()) {
-                let settled_failures = verdicts.iter().filter_map(|(is_settled, verdict)| {
-                    is_settled.then(|| verdict.as_ref().err()).flatten()
-                });
+            if verdicts.iter().any(|verdict| verdict.outcome.is_ok()) {
+                let settled_failures = verdicts
+                    .iter()
+                    .filter(|verdict| verdict.started)
+                    .filter_map(|verdict| verdict.outcome.as_ref().err());
                 warn_failed_routes(settled_failures.map(String::as_str));
                 Ok(())
             } else {
                 Err(route_failure(
                     verdicts
                         .into_iter()
-                        .filter_map(|(_, verdict)| verdict.err())
+                        .filter_map(|verdict| verdict.outcome.err())
                         .collect(),
                 ))
             }
         };
         Ok(ControlledPlayback::merged(handle, Box::pin(completion)))
+    }
+}
+
+enum RouteStart {
+    Started(ControlledPlayback),
+    Refused(String),
+}
+
+struct RouteVerdict {
+    started: bool,
+    outcome: Result<(), String>,
+}
+
+impl RouteStart {
+    fn is_started(&self) -> bool {
+        matches!(self, Self::Started(_))
+    }
+
+    fn handle(&self) -> Option<PlaybackHandle> {
+        match self {
+            Self::Started(playback) => Some(playback.handle()),
+            Self::Refused(_) => None,
+        }
+    }
+
+    fn refusal(&self) -> Option<&str> {
+        match self {
+            Self::Started(_) => None,
+            Self::Refused(reason) => Some(reason),
+        }
+    }
+
+    fn into_refusal(self) -> Option<String> {
+        match self {
+            Self::Started(_) => None,
+            Self::Refused(reason) => Some(reason),
+        }
+    }
+
+    async fn verdict(self) -> RouteVerdict {
+        match self {
+            Self::Started(playback) => RouteVerdict {
+                started: true,
+                outcome: playback.await.map_err(|e| e.to_string()),
+            },
+            Self::Refused(reason) => RouteVerdict {
+                started: false,
+                outcome: Err(reason),
+            },
+        }
     }
 }
 

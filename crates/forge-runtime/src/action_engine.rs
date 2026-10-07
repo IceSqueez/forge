@@ -1234,12 +1234,43 @@ mod tests {
 
     const LOOP_EVENT_KIND: &str = "test.loop_event";
 
-    struct EmitRunner;
+    const EMIT_KIND: &str = "test.emit";
+    const FLOOD_KIND: &str = "test.flood";
+    const FLOOD_THEN_EMIT_KIND: &str = "test.flood_then_emit";
+    const SMALL_RING: usize = 16;
+
+    struct EmitRunner {
+        id: &'static str,
+        fillers: usize,
+        emits: bool,
+    }
+
+    impl EmitRunner {
+        fn all() -> [Self; 3] {
+            [
+                Self {
+                    id: EMIT_KIND,
+                    fillers: 0,
+                    emits: true,
+                },
+                Self {
+                    id: FLOOD_KIND,
+                    fillers: SMALL_RING,
+                    emits: false,
+                },
+                Self {
+                    id: FLOOD_THEN_EMIT_KIND,
+                    fillers: SMALL_RING,
+                    emits: true,
+                },
+            ]
+        }
+    }
 
     #[async_trait]
     impl forge_registry::SubActionRunner for EmitRunner {
         fn id(&self) -> &str {
-            "test.emit"
+            self.id
         }
         fn category(&self) -> SubActionCategory {
             SubActionCategory::Util
@@ -1273,18 +1304,27 @@ mod tests {
             _: &forge_registry::SubActionConfig,
             ctx: &RunContext<'_>,
         ) -> (SubActionTelemetry, Option<ArgStack>) {
-            ctx.publisher.publish(Event::caused_by(
-                EventSource::Core,
-                LOOP_EVENT_KIND,
-                serde_json::Value::Null,
-                ctx.parent_event_id,
-            ));
+            for _ in 0..self.fillers {
+                ctx.publisher.publish(Event::new(
+                    EventSource::Twitch,
+                    "twitch.chat",
+                    serde_json::Value::Null,
+                ));
+            }
+            if self.emits {
+                ctx.publisher.publish(Event::caused_by(
+                    EventSource::Core,
+                    LOOP_EVENT_KIND,
+                    serde_json::Value::Null,
+                    ctx.parent_event_id,
+                ));
+            }
             (
                 SubActionTelemetry {
                     args_in: BTreeMap::new(),
                     produced: BTreeMap::new(),
                     index: ctx.index,
-                    kind: "test.emit".to_owned(),
+                    kind: self.id.to_owned(),
                     started_at: OffsetDateTime::now_utc(),
                     duration_ms: 0,
                     outcome: SubActionOutcome::Success,
@@ -1302,12 +1342,29 @@ mod tests {
     }
 
     async fn self_loop_rig() -> SelfLoopRig {
+        self_loop_rig_with(EventBus::new(Arc::new(NullEventLogRepo)), &[EMIT_KIND]).await
+    }
+
+    async fn small_ring_self_loop_rig(steps: &[&str]) -> SelfLoopRig {
+        let config = Config {
+            bus_ring_retention: SMALL_RING,
+            ..Config::default()
+        };
+        self_loop_rig_with(
+            EventBus::with_config(Arc::new(NullEventLogRepo), &config),
+            steps,
+        )
+        .await
+    }
+
+    async fn self_loop_rig_with(bus: Arc<EventBus>, steps: &[&str]) -> SelfLoopRig {
         let dp = sandboxed_backend([0x16; 32])
             .await
             .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut reg = SubActionRegistry::new();
-        reg.register(Box::new(EmitRunner)).unwrap();
+        for runner in EmitRunner::all() {
+            reg.register(Box::new(runner)).unwrap();
+        }
         let engine = spawn_action_engine(
             Arc::clone(&bus),
             crate::Catalog::new(
@@ -1331,14 +1388,17 @@ mod tests {
             bypass_pause: false,
             execution_mode: forge_types::ExecutionMode::Sequential,
             description: None,
-            sub_actions: vec![SubActionStep {
-                kind_id: "test.emit".to_owned(),
-                config: BTreeMap::new(),
-                enabled: true,
-                continue_on_error: false,
-                condition: None,
-                label: None,
-            }],
+            sub_actions: steps
+                .iter()
+                .map(|kind_id| SubActionStep {
+                    kind_id: (*kind_id).to_owned(),
+                    config: BTreeMap::new(),
+                    enabled: true,
+                    continue_on_error: false,
+                    condition: None,
+                    label: None,
+                })
+                .collect(),
         };
         dp.action_repo().save(&action).await.unwrap();
         SelfLoopRig {
@@ -1412,6 +1472,28 @@ mod tests {
     #[tokio::test]
     async fn action_retriggered_by_its_own_event_runs_exactly_the_depth_limit_times() {
         let rig = self_loop_rig().await;
+        let root = platform_event(&rig.bus);
+
+        let trace = drive_self_loop(&rig, root).await;
+
+        assert_eq!(trace.starts, MAX_CAUSATION_DEPTH);
+    }
+
+    #[tokio::test]
+    async fn self_loop_stops_at_the_depth_limit_after_an_earlier_step_floods_its_start_out_of_the_ring()
+     {
+        let rig = small_ring_self_loop_rig(&[FLOOD_KIND, EMIT_KIND]).await;
+        let root = platform_event(&rig.bus);
+
+        let trace = drive_self_loop(&rig, root).await;
+
+        assert_eq!(trace.starts, MAX_CAUSATION_DEPTH);
+    }
+
+    #[tokio::test]
+    async fn self_loop_stops_at_the_depth_limit_when_its_emitting_step_floods_its_own_run_event_out_of_the_ring()
+     {
+        let rig = small_ring_self_loop_rig(&[FLOOD_THEN_EMIT_KIND]).await;
         let root = platform_event(&rig.bus);
 
         let trace = drive_self_loop(&rig, root).await;

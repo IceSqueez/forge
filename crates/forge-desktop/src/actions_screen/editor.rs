@@ -1,3 +1,4 @@
+use super::step_validation::{StepRejection, step_rejection};
 use super::sub_action_modal::{
     EditSubActionForm, SubFormCommit, SubFormEvent, SubFormLaunch, SubFormTarget,
 };
@@ -31,8 +32,8 @@ use forge_registry::{
 };
 use forge_runtime::triggers::DONATION_PROVIDER_OPTIONS_KEY;
 use forge_types::{
-    ExecutionOutcome, PermissionRung, PlatformScope, SubActionStep, TriggerInstance,
-    TriggerInstanceId, Variant,
+    ExecutionOutcome, PermissionRung, PlatformScope, SubActionConfig, SubActionStep,
+    TriggerInstance, TriggerInstanceId, Variant,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, FontWeight, Rgba, SharedString,
@@ -745,13 +746,18 @@ impl ScreenActionsView {
 
     fn on_sub_form_event(
         &mut self,
-        _form: Entity<EditSubActionForm>,
+        form: Entity<EditSubActionForm>,
         event: &SubFormEvent,
         cx: &mut Context<Self>,
     ) {
         match event {
             SubFormEvent::Commit(commit) => {
                 let commit = commit.clone();
+                let field_keys = form.read(cx).field_keys();
+                if let Some(rejection) = self.sub_commit_rejection(&commit, &field_keys) {
+                    form.update(cx, |form, cx| form.show_rejection(rejection, cx));
+                    return;
+                }
                 self.close_sub_form();
                 self.step_menu_open = None;
                 self.apply_sub_form_commit(commit, cx);
@@ -764,17 +770,42 @@ impl ScreenActionsView {
         }
     }
 
+    fn committed_step_config(&self, commit: &SubFormCommit) -> SubActionConfig {
+        let mut config = match commit.target {
+            SubFormTarget::Edit(index) => self
+                .current_chain()
+                .get(index)
+                .map(|step| step.config.clone())
+                .unwrap_or_default(),
+            SubFormTarget::Add => self
+                .sub_action_registry
+                .get(&commit.kind_id)
+                .map(|r| r.default_config())
+                .unwrap_or_default(),
+        };
+        config.extend(commit.overrides.iter().cloned());
+        config
+    }
+
+    fn sub_commit_rejection(
+        &self,
+        commit: &SubFormCommit,
+        field_keys: &[String],
+    ) -> Option<StepRejection> {
+        let runner = self.sub_action_registry.get(&commit.kind_id)?;
+        step_rejection(runner, &self.committed_step_config(commit), field_keys)
+    }
+
     fn apply_sub_form_commit(&mut self, commit: SubFormCommit, cx: &mut Context<Self>) {
-        let SubFormCommit {
-            target,
-            kind_id,
-            overrides,
-            continue_on_error,
-            condition,
-            label,
-        } = commit;
-        match target {
+        match commit.target {
             SubFormTarget::Edit(index) => {
+                let SubFormCommit {
+                    overrides,
+                    continue_on_error,
+                    condition,
+                    label,
+                    ..
+                } = commit;
                 self.persist_chain_mutation(
                     move |chain| {
                         if let Some(step) = chain.get_mut(index) {
@@ -790,14 +821,14 @@ impl ScreenActionsView {
                 );
             }
             SubFormTarget::Add => {
-                let mut config = self
-                    .sub_action_registry
-                    .get(&kind_id)
-                    .map(|r| r.default_config())
-                    .unwrap_or_default();
-                for (key, value) in overrides {
-                    config.insert(key, value);
-                }
+                let config = self.committed_step_config(&commit);
+                let SubFormCommit {
+                    kind_id,
+                    continue_on_error,
+                    condition,
+                    label,
+                    ..
+                } = commit;
                 self.persist_chain_mutation(
                     move |chain| {
                         chain.push(SubActionStep {

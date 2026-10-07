@@ -46,6 +46,7 @@ mod list;
 mod nav;
 mod overlay_schema;
 mod run_history;
+mod step_validation;
 mod sub_action_modal;
 mod test_run;
 mod test_trigger;

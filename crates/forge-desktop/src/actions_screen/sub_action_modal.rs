@@ -1,5 +1,6 @@
 use super::editor::{step_glyph, sub_category_color};
 use super::files_root_note::files_root_note;
+use super::step_validation::StepRejection;
 use super::*;
 use crate::async_bridge;
 use crate::config_field_label::localized_label;
@@ -207,6 +208,7 @@ pub(super) struct EditSubActionForm {
     datetime_picker: Option<DateTimePickerForm>,
     datetime_focus: FocusHandle,
     datetime_focus_restore: Option<FocusHandle>,
+    rejection: Option<StepRejection>,
     rt_handle: tokio::runtime::Handle,
 }
 
@@ -261,6 +263,7 @@ impl EditSubActionForm {
             datetime_picker: None,
             datetime_focus: cx.focus_handle(),
             datetime_focus_restore: None,
+            rejection: None,
             rt_handle,
         };
         form.rebuild_refined(cx);
@@ -565,7 +568,43 @@ impl EditSubActionForm {
         cx.emit(SubFormEvent::Cancel);
     }
 
+    pub(super) fn field_keys(&self) -> Vec<String> {
+        self.fields
+            .iter()
+            .flat_map(field_keys)
+            .map(str::to_owned)
+            .collect()
+    }
+
+    pub(super) fn show_rejection(&mut self, rejection: StepRejection, cx: &mut Context<Self>) {
+        self.mark_rejected_input(&rejection, true, cx);
+        self.rejection = Some(rejection);
+        cx.notify();
+    }
+
+    fn clear_rejection(&mut self, cx: &mut Context<Self>) {
+        if let Some(rejection) = self.rejection.take() {
+            self.mark_rejected_input(&rejection, false, cx);
+            cx.notify();
+        }
+    }
+
+    fn mark_rejected_input(&self, rejection: &StepRejection, invalid: bool, cx: &mut App) {
+        let Some(rejected_key) = rejection.field_key.as_deref() else {
+            return;
+        };
+        for field in &self.fields {
+            if let SubFormField::Input { key, input, .. }
+            | SubFormField::UnitAmount { key, input, .. } = field
+                && key == rejected_key
+            {
+                input.update(cx, |input, cx| input.set_invalid(invalid, cx));
+            }
+        }
+    }
+
     fn submit(&mut self, cx: &mut Context<Self>) {
+        self.clear_rejection(cx);
         let bool_vals: HashMap<String, bool> = self
             .fields
             .iter()
@@ -757,8 +796,14 @@ impl EditSubActionForm {
                 .unwrap_or(true)
         };
 
+        let rejected_key = self
+            .rejection
+            .as_ref()
+            .and_then(|rejection| rejection.field_key.as_deref());
+        let mut rejection_shown_inline = false;
         let mut grid_items: Vec<(bool, AnyElement)> = Vec::new();
         for field in &self.fields {
+            let pushed_before = grid_items.len();
             match field {
                 SubFormField::Input {
                     key,
@@ -973,6 +1018,16 @@ impl EditSubActionForm {
                     ));
                 }
             }
+            let names_rejected_key =
+                rejected_key.is_some_and(|rejected| field_keys(field).contains(&rejected));
+            if names_rejected_key
+                && grid_items.len() > pushed_before
+                && let Some(message) = self.rejection.as_ref().map(|r| r.message.clone())
+                && let Some((half, element)) = grid_items.pop()
+            {
+                rejection_shown_inline = true;
+                grid_items.push((half, with_rejection_note(element, message, palette)));
+            }
         }
 
         let mut grid = div()
@@ -1136,12 +1191,17 @@ impl EditSubActionForm {
             "actions-sub-submit",
             cx.listener(|this, _: &ClickEvent, _, cx| this.submit(cx)),
         );
+        let footer_rejection = self
+            .rejection
+            .as_ref()
+            .filter(|_| !rejection_shown_inline)
+            .map(|rejection| rejection_note(rejection.message.clone(), palette));
         let footer = div()
             .w_full()
             .flex()
             .items_center()
-            .justify_end()
             .gap(spacing(Spacing::Xs, Density::Cozy))
+            .child(div().flex_1().min_w_0().children(footer_rejection))
             .child(cancel)
             .child(save);
 
@@ -1219,6 +1279,37 @@ fn field_gate(field: &SubFormField) -> Option<&String> {
         | SubFormField::UnitAmount { gate, .. } => gate.as_ref(),
         SubFormField::Hint { .. } => None,
     }
+}
+
+fn field_keys(field: &SubFormField) -> Vec<&str> {
+    match field {
+        SubFormField::Input { key, .. }
+        | SubFormField::Area { key, .. }
+        | SubFormField::Code { key, .. }
+        | SubFormField::Bool { key, .. }
+        | SubFormField::Select { key, .. } => vec![key.as_str()],
+        SubFormField::UnitAmount { key, unit_key, .. } => vec![key.as_str(), unit_key.as_str()],
+        SubFormField::Hint { .. } => Vec::new(),
+    }
+}
+
+fn rejection_note(message: String, palette: &ForgePalette) -> AnyElement {
+    div()
+        .font_family(body_family())
+        .text_size(FONT_XXS)
+        .text_color(palette.random)
+        .child(message)
+        .into_any_element()
+}
+
+fn with_rejection_note(element: AnyElement, message: String, palette: &ForgePalette) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(spacing(Spacing::Xxs, Density::Cozy))
+        .child(element)
+        .child(rejection_note(message, palette))
+        .into_any_element()
 }
 
 fn unit_options(bounds: &UnitAmountBounds) -> Vec<(String, String)> {

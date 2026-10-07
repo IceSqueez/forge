@@ -844,7 +844,7 @@ mod tests {
 
         fn empty_manager() -> Arc<KickCredentialsManager> {
             Arc::new(KickCredentialsManager::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                &crate::endpoints_test_support::unreachable_endpoints(),
                 Arc::new(EmptyRepo),
                 "test_cid".to_owned(),
                 "test_secret".to_owned(),
@@ -858,7 +858,7 @@ mod tests {
         ) {
             let manager = empty_manager();
             let platform = Arc::new(KickPlatform::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                &crate::endpoints_test_support::unreachable_endpoints(),
                 manager.clone(),
                 Arc::new(GrantLimiter),
                 crate::ban_ledger_test_support::MemoryBanLedger::shared(),
@@ -1093,7 +1093,7 @@ mod tests {
                 &mut registry,
                 KickSubActionDeps {
                     client: Arc::new(KickSendChat::new(
-                        &forge_platform_core::PlatformEndpoints::default(),
+                        &crate::endpoints_test_support::unreachable_endpoints(),
                         Arc::clone(&limiter),
                     )),
                     token_source: Arc::new(|| {
@@ -1105,20 +1105,20 @@ mod tests {
                             as BoxFuture<'static, Result<u64, PlatformError>>
                     }),
                     moderation: Arc::new(KickModeration::new(
-                        &forge_platform_core::PlatformEndpoints::default(),
+                        &crate::endpoints_test_support::unreachable_endpoints(),
                         Arc::clone(&limiter),
                         crate::ban_ledger_test_support::MemoryBanLedger::shared(),
                     )),
                     channel: Arc::new(KickChannel::new(
-                        &forge_platform_core::PlatformEndpoints::default(),
+                        &crate::endpoints_test_support::unreachable_endpoints(),
                         Arc::clone(&limiter),
                     )),
                     rewards: Arc::new(KickRewards::new(
-                        &forge_platform_core::PlatformEndpoints::default(),
+                        &crate::endpoints_test_support::unreachable_endpoints(),
                         Arc::clone(&limiter),
                     )),
                     categories: Arc::new(KickCategories::new(
-                        &forge_platform_core::PlatformEndpoints::default(),
+                        &crate::endpoints_test_support::unreachable_endpoints(),
                         limiter,
                     )),
                 },

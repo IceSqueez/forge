@@ -12,6 +12,8 @@ pub mod chat_poller;
 pub(crate) mod control;
 pub mod credentials;
 pub mod credentials_manager;
+#[cfg(test)]
+mod endpoints_test_support;
 pub(crate) mod error_shape;
 mod event_channel;
 mod follow_lookup;

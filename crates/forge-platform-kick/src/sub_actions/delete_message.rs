@@ -159,7 +159,7 @@ mod tests {
 
     fn runner_on(server: &MockServer) -> DeleteMessageRunner {
         let client = KickSendChat::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
         )
         .with_delete_base(format!("{}/chat", server.uri()));
@@ -210,7 +210,7 @@ mod tests {
     fn default_config_message_id_matches_chat_trigger_arg_stack_key() {
         let runner = DeleteMessageRunner::new(
             Arc::new(KickSendChat::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                &crate::endpoints_test_support::unreachable_endpoints(),
                 Arc::new(GrantLimiter),
             )),
             token_source(),
@@ -225,7 +225,7 @@ mod tests {
     fn validate_config_accepts_non_empty_and_rejects_empty_missing_non_string() {
         let runner = DeleteMessageRunner::new(
             Arc::new(KickSendChat::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                &crate::endpoints_test_support::unreachable_endpoints(),
                 Arc::new(GrantLimiter),
             )),
             token_source(),

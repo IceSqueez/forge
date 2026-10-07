@@ -274,7 +274,7 @@ mod tests {
         let handle = LiveChatIdHandle::new();
         let quota = SharedQuota::default();
         let sender = YoutubeSendChat::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             handle.clone(),
             quota,
@@ -289,7 +289,7 @@ mod tests {
     ) -> (YoutubeSendChat, LiveChatIdHandle) {
         let handle = LiveChatIdHandle::new();
         let sender = YoutubeSendChat::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             handle.clone(),
             quota,
@@ -360,7 +360,7 @@ mod tests {
             qt.last_reset_date = today;
         }
         let sender_at_limit = YoutubeSendChat::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             handle.clone(),
             qt_arc,

@@ -460,7 +460,7 @@ mod tests {
             ..QuotaState::default()
         });
         let moderation = YoutubeModeration::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             broadcaster,
             handle,

@@ -258,7 +258,7 @@ mod tests {
 
     fn channel_on(server: &MockServer) -> KickChannel {
         KickChannel::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
         )
         .with_api_base(server.uri())
@@ -387,7 +387,7 @@ mod tests {
             .await;
 
         let client = KickChannel::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(ExhaustedLimiter),
         )
         .with_api_base(server.uri());

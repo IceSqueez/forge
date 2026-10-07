@@ -13,6 +13,8 @@ pub mod chat_platform;
 pub(crate) mod control;
 pub mod credentials;
 pub mod credentials_manager;
+#[cfg(test)]
+mod endpoints_test_support;
 pub mod error;
 mod event_channel;
 pub mod integration;

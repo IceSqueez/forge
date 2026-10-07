@@ -153,7 +153,7 @@ mod tests {
 
     fn categories_on(server: &MockServer) -> KickCategories {
         KickCategories::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
         )
         .with_api_base(server.uri())
@@ -282,7 +282,7 @@ mod tests {
         mount_categories(&server, serde_json::json!({ "data": [] })).await;
 
         let client = KickCategories::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(ExhaustedLimiter),
         )
         .with_api_base(server.uri());

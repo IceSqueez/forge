@@ -297,7 +297,7 @@ mod tests {
 
     fn runner_on(server: &MockServer) -> UpdateRewardRunner {
         let client = KickRewards::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
         )
         .with_api_base(server.uri());
@@ -306,7 +306,7 @@ mod tests {
 
     fn runner_offline() -> UpdateRewardRunner {
         let client = KickRewards::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
         );
         UpdateRewardRunner::new(Arc::new(client), token_source())

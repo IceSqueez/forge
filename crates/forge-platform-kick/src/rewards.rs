@@ -449,7 +449,7 @@ mod tests {
 
     fn rewards_on(server: &MockServer) -> KickRewards {
         KickRewards::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
         )
         .with_api_base(server.uri())
@@ -658,7 +658,7 @@ mod tests {
             .await;
 
         let client = KickRewards::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(ExhaustedLimiter),
         )
         .with_api_base(server.uri());
@@ -801,7 +801,7 @@ mod tests {
             .await;
 
         let client = KickRewards::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(ExhaustedLimiter),
         )
         .with_api_base(server.uri());

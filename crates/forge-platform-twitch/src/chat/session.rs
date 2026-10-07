@@ -6516,7 +6516,7 @@ mod tests {
         oneshot::Sender<()>,
     ) {
         let manager = Arc::new(TwitchCredentialsManager::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             repo,
             "client".to_owned(),
         ));
@@ -7808,7 +7808,7 @@ mod tests {
                 TwitchCredentialsManager::with_endpoint(repo, "client".to_owned(), endpoint)
             }
             None => TwitchCredentialsManager::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                &crate::endpoints_test_support::unreachable_endpoints(),
                 repo,
                 "client".to_owned(),
             ),
@@ -7835,7 +7835,7 @@ mod tests {
     ) -> (crate::chat::TwitchChat, Arc<PlatformEventChannel>) {
         let bus = Arc::new(PlatformEventChannel::new());
         let manager = Arc::new(TwitchCredentialsManager::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(MockCreds::with_identity()),
             "client".to_owned(),
         ));
@@ -8182,7 +8182,7 @@ mod tests {
         use forge_platform_core::ChatPlatform;
         let creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::new(MockCreds::with_identity());
         let manager = Arc::new(TwitchCredentialsManager::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::clone(&creds),
             "client".to_owned(),
         ));

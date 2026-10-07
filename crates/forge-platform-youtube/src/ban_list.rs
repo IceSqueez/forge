@@ -61,7 +61,6 @@ impl BanListSource for YoutubeIntegrationBundle {
 mod tests {
     use std::sync::Arc;
 
-    use forge_platform_core::PlatformEndpoints;
     use forge_storage::credentials::MockCredentialsRepo;
     use forge_storage::{BanLedgerKey, BanLedgerRepo, BanOrigin};
     use time::Duration;
@@ -81,7 +80,7 @@ mod tests {
         broadcaster_channel_id: &str,
         ledger: Arc<dyn BanLedgerRepo>,
     ) -> Arc<YoutubeIntegrationBundle> {
-        let endpoints = PlatformEndpoints::default();
+        let endpoints = crate::endpoints_test_support::unreachable_endpoints();
         let manager = Arc::new(YoutubeCredentialsManager::new(
             Arc::new(MockCredentialsRepo::new()),
             GoogleAuthFlow::new(&endpoints, "client".to_owned(), "secret".to_owned()),

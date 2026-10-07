@@ -141,7 +141,7 @@ mod tests {
         handle.set(Some("vid-1".to_owned()));
         let quota = SharedQuota::default();
         let meta = YoutubeStreamMetadata::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             handle,
             quota,
@@ -205,7 +205,7 @@ mod tests {
         let handle = ActiveBroadcastIdHandle::new();
         let quota = SharedQuota::default();
         let meta = YoutubeStreamMetadata::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             handle,
             quota,

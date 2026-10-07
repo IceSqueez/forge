@@ -207,7 +207,7 @@ mod tests {
 
     fn grant_sender(server: &MockServer) -> KickSendChat {
         KickSendChat::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
         )
         .with_send_endpoint(format!("{}/chat", server.uri()))
@@ -332,7 +332,7 @@ mod tests {
     async fn send_returns_rate_limit_exhausted_when_limiter_exhausted() {
         let server = MockServer::start().await;
         let sender = KickSendChat::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(ExhaustedLimiter),
         )
         .with_send_endpoint(format!("{}/chat", server.uri()));
@@ -360,7 +360,7 @@ mod tests {
 
     fn grant_deleter(server: &MockServer) -> KickSendChat {
         KickSendChat::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
         )
         .with_delete_base(format!("{}/chat", server.uri()))
@@ -443,7 +443,7 @@ mod tests {
     async fn delete_returns_rate_limit_exhausted_without_reaching_server() {
         let server = MockServer::start().await;
         let sender = KickSendChat::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(ExhaustedLimiter),
         )
         .with_delete_base(format!("{}/chat", server.uri()));

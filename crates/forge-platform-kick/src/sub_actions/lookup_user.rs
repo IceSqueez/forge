@@ -184,7 +184,7 @@ mod tests {
 
     fn runner_on(server: &MockServer) -> LookupUserRunner {
         let channel = KickChannel::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
         )
         .with_api_base(server.uri());
@@ -254,7 +254,7 @@ mod tests {
     fn validate_config_requires_a_non_empty_slug() {
         let runner = LookupUserRunner::new(
             Arc::new(KickChannel::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                &crate::endpoints_test_support::unreachable_endpoints(),
                 Arc::new(GrantLimiter),
             )),
             token_source(),

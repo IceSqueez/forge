@@ -119,7 +119,7 @@ mod tests {
                 + Sync,
         > = Arc::new(|| Box::pin(async { Ok(String::new()) }));
         let moderation = YoutubeModeration::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             source,
             crate::ban_ledger_test_support::broadcaster_source(),
             LiveChatIdHandle::new(),

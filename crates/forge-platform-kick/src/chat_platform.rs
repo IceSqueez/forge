@@ -282,13 +282,13 @@ pub(crate) mod tests {
 
     fn platform(repo: Arc<InMemRepo>, limiter: Arc<dyn RateLimiter>) -> KickPlatform {
         let manager = Arc::new(KickCredentialsManager::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             repo,
             "test_cid".to_owned(),
             "test_secret".to_owned(),
         ));
         KickPlatform::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             manager,
             limiter,
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
@@ -341,7 +341,7 @@ pub(crate) mod tests {
             .await;
         let mut p = platform(InMemRepo::with_valid_creds(), Arc::new(GrantLimiter));
         p.sender = KickSendChat::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
         )
         .with_send_endpoint(server.uri());

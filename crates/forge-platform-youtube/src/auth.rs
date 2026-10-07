@@ -387,7 +387,7 @@ mod tests {
     #[tokio::test]
     async fn start_builds_authorize_url_with_offline_access_and_no_prompt_by_default() {
         let mut flow = GoogleAuthFlow::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             "test_client".to_owned(),
             "test_secret".to_owned(),
         );
@@ -401,7 +401,7 @@ mod tests {
     #[tokio::test]
     async fn start_appends_prompt_when_force_consent_enabled() {
         let mut flow = GoogleAuthFlow::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             "test_client".to_owned(),
             "test_secret".to_owned(),
         );

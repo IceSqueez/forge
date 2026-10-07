@@ -188,7 +188,7 @@ mod tests {
         handle.set(broadcast.map(|s| s.to_owned()));
         let quota = SharedQuota::default();
         let thumb = YoutubeThumbnail::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             handle,
             quota.clone(),

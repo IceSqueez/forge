@@ -196,7 +196,7 @@ mod tests {
     fn runner_on(server: &MockServer) -> LookupViewerRunner {
         let quota = SharedQuota::default();
         let lookup = YoutubeChannelLookup::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             quota,
         )
@@ -232,7 +232,7 @@ mod tests {
     fn runner_on_uri(uri: &str) -> LookupViewerRunner {
         let quota = SharedQuota::default();
         let lookup = YoutubeChannelLookup::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             quota,
         )

@@ -223,7 +223,7 @@ mod tests {
 
     fn runner_on(server: &MockServer) -> TimeoutUserRunner {
         let client = KickModeration::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
@@ -284,7 +284,7 @@ mod tests {
     fn validate_config_enforces_user_id_and_duration_bounds() {
         let runner = TimeoutUserRunner::new(
             Arc::new(KickModeration::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                &crate::endpoints_test_support::unreachable_endpoints(),
                 Arc::new(GrantLimiter),
                 crate::ban_ledger_test_support::MemoryBanLedger::shared(),
             )),

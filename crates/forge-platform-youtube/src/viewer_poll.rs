@@ -172,7 +172,7 @@ mod tests {
                 as BoxFuture<'static, Result<String, PlatformError>>
         });
         YoutubeViewerPoll::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             source,
             broadcast,
             quota,

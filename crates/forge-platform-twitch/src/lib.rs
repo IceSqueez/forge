@@ -10,6 +10,8 @@ mod creator_goals;
 pub mod credentials;
 pub mod credentials_manager;
 mod custom_rewards;
+#[cfg(test)]
+mod endpoints_test_support;
 mod event_channel;
 mod follow_lookup;
 pub mod helix;

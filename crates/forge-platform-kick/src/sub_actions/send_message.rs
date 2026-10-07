@@ -228,7 +228,7 @@ mod tests {
 
     fn runner_on(server: &MockServer) -> SendMessageRunner {
         let client = KickSendChat::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
         )
         .with_send_endpoint(format!("{}/chat", server.uri()));
@@ -290,7 +290,7 @@ mod tests {
             .await;
 
         let client = KickSendChat::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
         )
         .with_send_endpoint(format!("{}/chat", server.uri()));
@@ -310,7 +310,7 @@ mod tests {
     async fn user_mode_reports_a_broadcaster_id_failure_without_sending() {
         let server = MockServer::start().await;
         let client = KickSendChat::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
         )
         .with_send_endpoint(format!("{}/chat", server.uri()));
@@ -339,7 +339,7 @@ mod tests {
     fn validate_config_accepts_non_empty_and_rejects_empty_missing_non_string() {
         let runner = SendMessageRunner::new(
             Arc::new(KickSendChat::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                &crate::endpoints_test_support::unreachable_endpoints(),
                 Arc::new(GrantLimiter),
             )),
             token_source(),
@@ -426,7 +426,7 @@ mod tests {
                 .mount(&server)
                 .await;
             let client = KickSendChat::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                &crate::endpoints_test_support::unreachable_endpoints(),
                 Arc::new(GrantLimiter),
             )
             .with_send_endpoint(format!("{}/chat", server.uri()));

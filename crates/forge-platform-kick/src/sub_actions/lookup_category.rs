@@ -172,7 +172,7 @@ mod tests {
 
     fn runner_on(server: &MockServer) -> LookupCategoryRunner {
         let categories = KickCategories::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
         )
         .with_api_base(server.uri());

@@ -250,7 +250,7 @@ mod tests {
 
     fn moderation_on(server: &MockServer) -> KickModeration {
         KickModeration::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
@@ -372,7 +372,7 @@ mod tests {
             .await;
 
         let client = KickModeration::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(ExhaustedLimiter),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
@@ -391,7 +391,7 @@ mod tests {
 
     fn moderation_over(server: &MockServer, ledger: &Arc<MemoryBanLedger>) -> KickModeration {
         KickModeration::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
             Arc::clone(ledger) as Arc<dyn BanLedgerRepo>,
         )

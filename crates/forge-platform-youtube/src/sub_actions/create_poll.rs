@@ -218,7 +218,7 @@ mod tests {
         }
         let quota = SharedQuota::default();
         let sender = YoutubeSendChat::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             handle,
             quota,
@@ -256,7 +256,7 @@ mod tests {
             let handle = LiveChatIdHandle::new();
             let quota = SharedQuota::default();
             let sender = YoutubeSendChat::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                &crate::endpoints_test_support::unreachable_endpoints(),
                 token_source(),
                 handle,
                 quota,

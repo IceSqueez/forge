@@ -169,7 +169,7 @@ mod tests {
     fn lookup_on(server: &MockServer) -> YoutubeChannelLookup {
         let quota = SharedQuota::default();
         YoutubeChannelLookup::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             quota,
         )

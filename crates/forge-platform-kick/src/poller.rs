@@ -567,7 +567,7 @@ mod tests {
 
     fn channel_on(server: &MockServer) -> KickChannel {
         KickChannel::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
         )
         .with_api_base(server.uri())
@@ -575,7 +575,7 @@ mod tests {
 
     fn rewards_on(server: &MockServer) -> KickRewards {
         KickRewards::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
         )
         .with_api_base(server.uri())
@@ -1432,11 +1432,11 @@ mod tests {
         let (event_tx, mut event_rx) = mpsc::channel(8);
         let (source, poller) = spawn_kick_poller(
             Arc::new(KickChannel::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                &crate::endpoints_test_support::unreachable_endpoints(),
                 Arc::new(GrantLimiter),
             )),
             Arc::new(KickRewards::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                &crate::endpoints_test_support::unreachable_endpoints(),
                 Arc::new(GrantLimiter),
             )),
             err_token(),

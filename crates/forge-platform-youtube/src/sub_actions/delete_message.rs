@@ -140,7 +140,7 @@ mod tests {
         let handle = LiveChatIdHandle::new();
         let quota = SharedQuota::default();
         let sender = YoutubeSendChat::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             handle,
             quota,
@@ -194,7 +194,7 @@ mod tests {
     fn validate_config_rejects_empty_or_non_string_id_and_accepts_valid() {
         let runner = DeleteMessageRunner::new(Arc::new(
             YoutubeSendChat::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                &crate::endpoints_test_support::unreachable_endpoints(),
                 token_source(),
                 LiveChatIdHandle::new(),
                 SharedQuota::default(),

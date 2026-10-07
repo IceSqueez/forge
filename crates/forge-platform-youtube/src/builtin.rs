@@ -773,13 +773,13 @@ mod tests {
         let manager = Arc::new(YoutubeCredentialsManager::new(
             repo,
             GoogleAuthFlow::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                &crate::endpoints_test_support::unreachable_endpoints(),
                 "test_cid".to_owned(),
                 "test_secret".to_owned(),
             ),
         ));
         let platform = Arc::new(YoutubePlatform::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             "UCabc123".to_owned(),
             Arc::clone(&manager),
             LiveChatIdHandle::new(),
@@ -799,13 +799,13 @@ mod tests {
     fn sub_action_registry() -> SubActionRegistry {
         let quota = SharedQuota::default();
         let sender = Arc::new(YoutubeSendChat::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             LiveChatIdHandle::new(),
             quota.clone(),
         ));
         let moderation = Arc::new(YoutubeModeration::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             crate::ban_ledger_test_support::broadcaster_source(),
             LiveChatIdHandle::new(),
@@ -813,31 +813,31 @@ mod tests {
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         ));
         let metadata = Arc::new(YoutubeStreamMetadata::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
             quota.clone(),
         ));
         let stream_stats = Arc::new(crate::stream_stats::YoutubeStreamStats::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
             quota.clone(),
         ));
         let ad_break = Arc::new(crate::ad_break::YoutubeAdBreak::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
             quota.clone(),
         ));
         let thumbnail = Arc::new(crate::thumbnail::YoutubeThumbnail::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
             quota.clone(),
         ));
         let channel_lookup = Arc::new(crate::channel_lookup::YoutubeChannelLookup::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             token_source(),
             quota,
         ));

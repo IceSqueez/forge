@@ -176,7 +176,7 @@ mod tests {
 
     fn runner_on(server: &MockServer) -> UnbanUserRunner {
         let client = KickModeration::new(
-            &forge_platform_core::PlatformEndpoints::default(),
+            &crate::endpoints_test_support::unreachable_endpoints(),
             Arc::new(GrantLimiter),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
@@ -225,7 +225,7 @@ mod tests {
     fn validate_config_accepts_non_empty_and_rejects_empty_missing_non_string() {
         let runner = UnbanUserRunner::new(
             Arc::new(KickModeration::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                &crate::endpoints_test_support::unreachable_endpoints(),
                 Arc::new(GrantLimiter),
                 crate::ban_ledger_test_support::MemoryBanLedger::shared(),
             )),

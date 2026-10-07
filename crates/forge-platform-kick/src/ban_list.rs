@@ -62,9 +62,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration as StdDuration;
 
-    use forge_platform_core::{
-        PlatformEndpoints, PlatformError, RateLimitOutcome, RateLimiter, ViewerReport,
-    };
+    use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter, ViewerReport};
     use forge_storage::{
         BanLedgerKey, BanLedgerRepo, BanOrigin, CredentialId, CredentialsRepo, StorageError,
     };
@@ -148,7 +146,7 @@ mod tests {
         credentials: Arc<SwitchableCredentials>,
         ledger: Arc<dyn BanLedgerRepo>,
     ) -> Arc<KickIntegrationBundle> {
-        let endpoints = PlatformEndpoints::default();
+        let endpoints = crate::endpoints_test_support::unreachable_endpoints();
         let manager = Arc::new(KickCredentialsManager::new(
             &endpoints,
             credentials,

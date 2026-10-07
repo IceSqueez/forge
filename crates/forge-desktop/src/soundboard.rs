@@ -2728,8 +2728,9 @@ mod tests {
     fn only_a_play_the_player_settled_without_an_event_counts_as_outcome_free() {
         let audio = || SoundboardError::Audio(forge_audio::AudioError::NoDefaultDevice);
         for (result, board_enabled, expected) in [
-            (Ok(()), false, true),
-            (Ok(()), true, false),
+            (Ok(PlayOutcome::BoardDisabled), false, true),
+            (Ok(PlayOutcome::StoppedBeforeStart), true, true),
+            (Ok(PlayOutcome::Started), true, false),
             (
                 Err(SoundboardError::ClipNotFound("01J0".to_owned())),
                 true,
@@ -2762,7 +2763,7 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                play_settled_without_outcome(&result, board_enabled),
+                play_settled_without_outcome(&result),
                 expected,
                 "{result:?} with the board enabled={board_enabled}"
             );

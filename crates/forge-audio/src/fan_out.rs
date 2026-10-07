@@ -226,6 +226,7 @@ mod tests {
     const START_REFUSAL_B: &str = "second route reached nobody";
     const VERDICT_FAILURE_A: &str = "first route never reported a verdict";
     const VERDICT_FAILURE_B: &str = "second route refused to play";
+    const VERDICT_ABANDONED: &str = "the test dropped this route's verdict";
 
     type FinishOutcome = Result<(), String>;
 
@@ -264,7 +265,9 @@ mod tests {
             let finish = self.finish.lock().unwrap().take().unwrap();
             let completions = Arc::clone(&self.completions);
             let completion = async move {
-                let outcome = finish.await.unwrap_or(Ok(()));
+                let outcome = finish
+                    .await
+                    .unwrap_or_else(|_| Err(VERDICT_ABANDONED.to_owned()));
                 completions.fetch_add(1, Ordering::Relaxed);
                 outcome.map_err(AudioError::Host)
             };

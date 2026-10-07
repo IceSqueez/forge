@@ -415,33 +415,81 @@ fn stage_word_blocklist_logged(
     if blocklist.is_empty() {
         return Ok(text.to_owned());
     }
-    let lower_list: Vec<String> = blocklist.iter().map(|w| w.to_lowercase()).collect();
+    let blocked: Vec<Vec<char>> = blocklist
+        .iter()
+        .map(|entry| entry.chars().collect::<Vec<char>>())
+        .filter(|entry| !entry.is_empty())
+        .collect();
     let mut result = String::with_capacity(text.len());
-    let mut first = true;
-    for word in text.split_whitespace() {
-        let lower_word = word.to_lowercase();
-        if lower_list.iter().any(|b| b == &lower_word) {
-            match mode {
-                BlocklistMode::SkipMessage => return Err(SkipReason::BlockedByWordFilter),
-                BlocklistMode::Censor => {
-                    if !first {
-                        result.push(' ');
-                    }
-                    let censored_from = result.len();
-                    result.push_str(CENSOR_TOKEN);
-                    log.record(censored_from..result.len(), word, CENSOR_TOKEN);
-                    first = false;
-                    continue;
-                }
-            }
-        }
-        if !first {
+    for (position, word) in text.split_whitespace().enumerate() {
+        if position > 0 {
             result.push(' ');
         }
-        result.push_str(word);
-        first = false;
+        censor_blocked_in_word(word, &blocked, mode, &mut result, log)?;
     }
     Ok(result)
+}
+
+fn censor_blocked_in_word(
+    word: &str,
+    blocked: &[Vec<char>],
+    mode: &BlocklistMode,
+    result: &mut String,
+    log: &mut impl EditLog,
+) -> Result<(), SkipReason> {
+    let mut copied_until = 0usize;
+    let mut cursor = 0usize;
+    while let Some(current) = word[cursor..].chars().next() {
+        let blocked_len = if follows_word_boundary(&word[..cursor]) {
+            longest_blocked_match(&word[cursor..], blocked)
+        } else {
+            None
+        };
+        match blocked_len {
+            Some(match_len) => {
+                if let BlocklistMode::SkipMessage = mode {
+                    return Err(SkipReason::BlockedByWordFilter);
+                }
+                result.push_str(&word[copied_until..cursor]);
+                let censored_from = result.len();
+                result.push_str(CENSOR_TOKEN);
+                log.record(
+                    censored_from..result.len(),
+                    &word[cursor..cursor + match_len],
+                    CENSOR_TOKEN,
+                );
+                cursor += match_len;
+                copied_until = cursor;
+            }
+            None => cursor += current.len_utf8(),
+        }
+    }
+    result.push_str(&word[copied_until..]);
+    Ok(())
+}
+
+fn longest_blocked_match(rest: &str, blocked: &[Vec<char>]) -> Option<usize> {
+    blocked
+        .iter()
+        .filter_map(|entry| match_len_ignoring_case(rest, entry))
+        .filter(|&match_len| precedes_word_boundary(&rest[match_len..]))
+        .max()
+}
+
+fn follows_word_boundary(before: &str) -> bool {
+    before
+        .chars()
+        .next_back()
+        .is_none_or(|c| !c.is_alphanumeric())
+}
+
+fn precedes_word_boundary(after: &str) -> bool {
+    after.chars().next().is_none_or(|c| !c.is_alphanumeric())
+}
+
+fn equals_ignoring_case(text: &str, pattern: &str) -> bool {
+    let pattern_chars: Vec<char> = pattern.chars().collect();
+    match_len_ignoring_case(text, &pattern_chars) == Some(text.len())
 }
 
 fn transform_emotes(text: &str, config: &PipelineConfig) -> String {

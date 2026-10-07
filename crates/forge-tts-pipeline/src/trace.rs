@@ -2,8 +2,8 @@ use std::ops::Range;
 
 use crate::{
     PipelineConfig, PipelineContext, ReplacementRule, StageName, StageOut,
-    case_insensitive_replace_logged, run_stage, sanitize_punctuation, spoken_name_prefix,
-    stage_output, stage_word_blocklist_logged,
+    case_insensitive_replace_logged, equals_ignoring_case, run_stage, sanitize_punctuation,
+    spoken_name_prefix, stage_output, stage_word_blocklist_logged,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,10 +109,9 @@ fn blocklist_traced(text: &str, config: &PipelineConfig) -> (StageOut, Vec<Appli
 }
 
 fn blocked_word_index(blocklist: &[String], word: &str) -> Option<usize> {
-    let lower_word = word.to_lowercase();
     blocklist
         .iter()
-        .position(|blocked| blocked.to_lowercase() == lower_word)
+        .position(|blocked| equals_ignoring_case(word, blocked))
 }
 
 fn replacements_traced(

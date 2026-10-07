@@ -2727,18 +2727,13 @@ mod tests {
     #[test]
     fn only_a_play_the_player_settled_without_an_event_counts_as_outcome_free() {
         let audio = || SoundboardError::Audio(forge_audio::AudioError::NoDefaultDevice);
-        for (result, board_enabled, expected) in [
-            (Ok(PlayOutcome::BoardDisabled), false, true),
-            (Ok(PlayOutcome::StoppedBeforeStart), true, true),
-            (Ok(PlayOutcome::Started), true, false),
-            (
-                Err(SoundboardError::ClipNotFound("01J0".to_owned())),
-                true,
-                true,
-            ),
+        for (result, expected) in [
+            (Ok(PlayOutcome::BoardDisabled), true),
+            (Ok(PlayOutcome::StoppedBeforeStart), true),
+            (Ok(PlayOutcome::Started), false),
+            (Err(SoundboardError::ClipNotFound("01J0".to_owned())), true),
             (
                 Err(SoundboardError::Storage("disk is busy".to_owned())),
-                true,
                 true,
             ),
             (
@@ -2748,24 +2743,21 @@ mod tests {
                     },
                 )),
                 true,
-                true,
             ),
             (
                 Err(SoundboardError::SourceMissing("Fanfare".to_owned())),
-                true,
                 false,
             ),
-            (Err(audio()), true, false),
+            (Err(audio()), false),
             (
                 Err(SoundboardError::JoinError("panicked".to_owned())),
-                true,
                 false,
             ),
         ] {
             assert_eq!(
                 play_settled_without_outcome(&result),
                 expected,
-                "{result:?} with the board enabled={board_enabled}"
+                "{result:?}"
             );
         }
     }

@@ -1876,8 +1876,8 @@ mod tests {
             let played = playing.await.unwrap();
 
             assert!(
-                played.is_ok(),
-                "a stopped play is not a failure: {played:?}"
+                matches!(played, Ok(PlayOutcome::StoppedBeforeStart)),
+                "a play stopped before it started must say so: {played:?}"
             );
             assert_eq!(
                 (opened.load(Ordering::SeqCst), started_count(&events)),
@@ -1885,6 +1885,181 @@ mod tests {
                 "stop_all={stop_all}: a clip stopped before it started still reached the device"
             );
         }
+    }
+
+    struct GatedRefusingFactory {
+        entered: Arc<tokio::sync::Notify>,
+        release: Arc<tokio::sync::Notify>,
+    }
+
+    #[async_trait]
+    impl AudioSinkFactory for GatedRefusingFactory {
+        async fn build(&self, _device: &OutputDevice) -> Result<Arc<dyn AudioSink>, AudioError> {
+            self.entered.notify_one();
+            self.release.notified().await;
+            Err(AudioError::NoDefaultDevice)
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stop_while_preparing_a_clip_whose_device_then_fails_reports_it_stopped_not_failed() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, SHORT_CLIP_FRAMES);
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let factory = GatedRefusingFactory {
+            entered: Arc::clone(&entered),
+            release: Arc::clone(&release),
+        };
+        let (player, events) = player_over(
+            Arc::new(factory),
+            make_stored_clip(clip_id, tmp.path().to_path_buf()),
+        );
+        let player = Arc::new(player);
+        let playing = tokio::spawn({
+            let player = Arc::clone(&player);
+            async move { player.play(clip_id, None).await }
+        });
+        tokio::time::timeout(EVENT_DEADLINE, entered.notified())
+            .await
+            .unwrap();
+
+        player.stop(clip_id);
+        release.notify_one();
+        let played = playing.await.unwrap();
+
+        let failures = events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| matches!(event, AudioEvent::PlaybackFailed { .. }))
+            .count();
+        assert!(
+            matches!(played, Ok(PlayOutcome::StoppedBeforeStart)) && failures == 0,
+            "a stopped play whose device failed afterwards was reported as {played:?} with {failures} failures"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_stop_while_the_clip_is_being_delivered_reports_it_stopped_before_start() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, SHORT_CLIP_FRAMES);
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let (overlay, _commands) = overlay_page(Some(DeliveryGate {
+            at_delivery: 1,
+            entered: Arc::clone(&entered),
+            release: Arc::clone(&release),
+        }));
+        let (player, events) = player_over(
+            Arc::new(CountingFactory::new().0),
+            make_stored_clip(clip_id, tmp.path().to_path_buf()),
+        );
+        player.install_route(ClipRoute::new(AudioRoute::Overlay, Some(overlay)));
+        let player = Arc::new(player);
+        let playing = tokio::spawn({
+            let player = Arc::clone(&player);
+            async move { player.play(clip_id, None).await }
+        });
+        tokio::time::timeout(EVENT_DEADLINE, entered.notified())
+            .await
+            .unwrap();
+
+        player.stop(clip_id);
+        release.notify_one();
+        let played = playing.await.unwrap();
+
+        assert!(
+            matches!(played, Ok(PlayOutcome::StoppedBeforeStart)) && started_count(&events) == 0,
+            "a play stopped during delivery was reported as {played:?}"
+        );
+    }
+
+    struct StopOnStart {
+        player: Arc<std::sync::OnceLock<std::sync::Weak<SoundboardPlayer>>>,
+        events: SharedEvents,
+    }
+
+    impl AudioEventSink for StopOnStart {
+        fn emit(&self, event: AudioEvent) {
+            let started = match &event {
+                AudioEvent::PlaybackStarted {
+                    clip_id: Some(id), ..
+                } => Some(*id),
+                _ => None,
+            };
+            self.events.lock().unwrap().push(event);
+            let player = self.player.get().and_then(std::sync::Weak::upgrade);
+            if let (Some(id), Some(player)) = (started, player) {
+                player.stop(id);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stop_that_lands_right_after_the_clip_started_still_reports_it_started() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, SHORT_CLIP_FRAMES);
+        let slot = Arc::new(std::sync::OnceLock::new());
+        let events: SharedEvents = Arc::new(Mutex::new(Vec::new()));
+        let player = Arc::new(SoundboardPlayer::with_settings(
+            Arc::new(CountingFactory::new().0),
+            Arc::new(StopOnStart {
+                player: Arc::clone(&slot),
+                events: Arc::clone(&events),
+            }),
+            unadopted_library(Some(make_stored_clip(clip_id, tmp.path().to_path_buf()))),
+            SoundboardSettingsHandle::default(),
+        ));
+        slot.set(Arc::downgrade(&player)).unwrap();
+
+        let played = player.play(clip_id, None).await;
+        let finished = events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| matches!(event, AudioEvent::PlaybackFinished { .. }))
+            .count();
+
+        assert!(
+            matches!(played, Ok(PlayOutcome::Started)) && finished > 0,
+            "a clip stopped after it started was reported as {played:?} with {finished} finish events"
+        );
+    }
+
+    #[tokio::test]
+    async fn disabling_the_board_while_a_clip_is_prepared_still_reports_it_started() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, SHORT_CLIP_FRAMES);
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let opened = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let factory = GatedFactory {
+            entered: Arc::clone(&entered),
+            release: Arc::clone(&release),
+            opened: Arc::clone(&opened),
+        };
+        let (player, _events) = player_over(
+            Arc::new(factory),
+            make_stored_clip(clip_id, tmp.path().to_path_buf()),
+        );
+        let player = Arc::new(player);
+        let playing = tokio::spawn({
+            let player = Arc::clone(&player);
+            async move { player.play(clip_id, None).await }
+        });
+        tokio::time::timeout(EVENT_DEADLINE, entered.notified())
+            .await
+            .unwrap();
+
+        player.update_settings(|settings| settings.enabled = false);
+        release.notify_one();
+        let played = playing.await.unwrap();
+
+        assert!(
+            matches!(played, Ok(PlayOutcome::Started)) && opened.load(Ordering::SeqCst) == 1,
+            "a clip that passed the board gate was reported as {played:?}"
+        );
     }
 
     #[tokio::test]
@@ -2143,6 +2318,27 @@ mod tests {
         assert_eq!(
             (second, rig.opened.load(Ordering::SeqCst)),
             (ClipToggle::Stopped, 0)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_play_with_the_soundboard_disabled_reports_it_and_stays_off_the_device() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, SHORT_CLIP_FRAMES);
+        let (factory, played, _) = CountingFactory::new();
+        let (player, events) = player_over(
+            Arc::new(factory),
+            make_stored_clip(clip_id, tmp.path().to_path_buf()),
+        );
+        player.update_settings(|settings| settings.enabled = false);
+
+        let outcome = player.play(clip_id, None).await;
+
+        assert!(
+            matches!(outcome, Ok(PlayOutcome::BoardDisabled))
+                && *played.lock().unwrap() == 0
+                && events.lock().unwrap().is_empty(),
+            "a disabled board reported {outcome:?}"
         );
     }
 

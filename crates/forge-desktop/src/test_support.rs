@@ -16,11 +16,11 @@ use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
     ActionRepo, ActionStats, ActionTelemetry, BanLedgerRepo, CatalogRevision, ChatHistoryRepo,
     CredentialId, CredentialsRepo, DataProvider, DonationRepo, EventLogRepo, ExecutionStatus,
-    GlobalEntry, GlobalsRepo, HistoryRepo, LatestValueRepo, MediaRepo, OverlayConfig,
-    OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo, QueueRepo, ScheduledRunRepo,
-    ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError,
-    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
-    VoiceAliasRepo,
+    GlobalEntry, GlobalsRepo, HistoryRepo, LatestValueRepo, MediaBlob, MediaBlobId, MediaReferrer,
+    MediaReferrerKind, MediaRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId,
+    OverlayRepo, QueueRepo, ScheduledRunRepo, ScriptRecord, ScriptRepo, ScriptTelemetry,
+    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo,
+    UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{
     Action, ActionId, ActorRole, EventId, ExecutionContext, PlatformId, ScriptId, TriggerConfig,
@@ -38,25 +38,34 @@ pub(crate) struct TestBackend {
     writes: UnboundedSender<SettingWrite>,
     overlays: Option<Arc<dyn OverlayRepo>>,
     scripts: Option<Arc<dyn ScriptRepo>>,
+    media: Arc<dyn MediaRepo>,
 }
 
 pub(crate) fn test_backend() -> (Arc<TestBackend>, UnboundedReceiver<SettingWrite>) {
-    backend_over(None, None)
+    backend_over(None, None, Arc::new(EmptyMediaLibrary))
 }
 
 pub(crate) fn test_backend_with_scripts(scripts: Arc<dyn ScriptRepo>) -> Arc<TestBackend> {
-    backend_over(None, Some(scripts)).0
+    backend_over(None, Some(scripts), Arc::new(EmptyMediaLibrary)).0
 }
 
 pub(crate) fn test_backend_with_overlays(
     overlays: Arc<dyn OverlayRepo>,
 ) -> (Arc<TestBackend>, UnboundedReceiver<SettingWrite>) {
-    backend_over(Some(overlays), None)
+    backend_over(Some(overlays), None, Arc::new(EmptyMediaLibrary))
+}
+
+#[allow(dead_code)]
+pub(crate) fn test_backend_with_media(
+    media: Arc<dyn MediaRepo>,
+) -> (Arc<TestBackend>, UnboundedReceiver<SettingWrite>) {
+    backend_over(None, None, media)
 }
 
 fn backend_over(
     overlays: Option<Arc<dyn OverlayRepo>>,
     scripts: Option<Arc<dyn ScriptRepo>>,
+    media: Arc<dyn MediaRepo>,
 ) -> (Arc<TestBackend>, UnboundedReceiver<SettingWrite>) {
     let (writes, rx) = unbounded_channel();
     (
@@ -65,6 +74,7 @@ fn backend_over(
             writes,
             overlays,
             scripts,
+            media,
         }),
         rx,
     )
@@ -282,7 +292,7 @@ impl DataProvider for TestBackend {
     }
 
     fn media_repo(&self) -> Arc<dyn MediaRepo> {
-        unreachable!("the settings pane reaches no sub-repo")
+        Arc::clone(&self.media)
     }
 
     fn donation_repo(&self) -> Arc<dyn DonationRepo> {
@@ -314,6 +324,67 @@ impl DataProvider for TestBackend {
     }
 
     async fn shutdown(&self) {}
+}
+
+pub(crate) struct EmptyMediaLibrary;
+
+#[async_trait::async_trait]
+impl MediaRepo for EmptyMediaLibrary {
+    async fn store(&self, _: &str, _: Vec<u8>) -> Result<MediaBlob, StorageError> {
+        unreachable!("the empty media library never stores a blob")
+    }
+
+    async fn import_file(&self, _: &std::path::Path) -> Result<MediaBlob, StorageError> {
+        unreachable!("the empty media library never imports a file")
+    }
+
+    async fn get(&self, _: &MediaBlobId) -> Result<Option<MediaBlob>, StorageError> {
+        Ok(None)
+    }
+
+    async fn list(&self) -> Result<Vec<MediaBlob>, StorageError> {
+        Ok(Vec::new())
+    }
+
+    async fn total_bytes(&self) -> Result<u64, StorageError> {
+        Ok(0)
+    }
+
+    async fn resolve(&self, id: &MediaBlobId) -> Result<std::path::PathBuf, StorageError> {
+        Err(StorageError::NotFound {
+            key: id.to_string(),
+        })
+    }
+
+    async fn read(&self, id: &MediaBlobId) -> Result<Vec<u8>, StorageError> {
+        Err(StorageError::NotFound {
+            key: id.to_string(),
+        })
+    }
+
+    async fn delete(&self, _: &MediaBlobId) -> Result<bool, StorageError> {
+        Ok(false)
+    }
+
+    async fn retain(&self, _: &MediaReferrer, _: &MediaBlobId) -> Result<(), StorageError> {
+        unreachable!("the empty media library holds no blob to retain")
+    }
+
+    async fn release(&self, _: &MediaReferrer) -> Result<bool, StorageError> {
+        Ok(false)
+    }
+
+    async fn release_all(&self, _: MediaReferrerKind, _: &str) -> Result<u64, StorageError> {
+        Ok(0)
+    }
+
+    async fn referrers(&self, _: &MediaBlobId) -> Result<Vec<MediaReferrer>, StorageError> {
+        Ok(Vec::new())
+    }
+
+    async fn blob_of(&self, _: &MediaReferrer) -> Result<Option<MediaBlobId>, StorageError> {
+        Ok(None)
+    }
 }
 
 pub(crate) struct StubEventLog;

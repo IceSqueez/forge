@@ -26,6 +26,15 @@ const MAX_CLONES = 48;
 const WAIT_MS = 8000;
 
 const RECT_EXITS = ["fade", "slide-up", "slide-down", "slide-left", "slide-right", "pop", "wipe"];
+const RECT_ENTRANCES = RECT_EXITS;
+const PARTICLE_ENTRANCES = ["sparks", "assemble", "glow-burst"];
+const LIFTED_ENTRANCES = ["glow-burst"];
+const ENTRANCE_MS = 500;
+const ENTRANCE_WINDOW_MS = 4000;
+const MID_ENTRANCE_MS = 150;
+const ENTRANCE_SETTLED_MS = 1200;
+const IN_FLIGHT_MS = 210;
+const TRACE_BOX = { width: 600, height: 300 };
 const DESTRUCTIVE_EXITS = ["dissolve", "smoke", "shatter", "dust", "burst"];
 const TEXT_EFFECTS = ["typewriter", "fly-in", "spin", "wave", "bounce"];
 const UNITS = ["letter", "word"];
@@ -444,6 +453,226 @@ async function determinismAndIntensityCase(browser, failures) {
   }
 }
 
+function entranceConfig(entrance) {
+  return alertConfig({ duration: ENTRANCE_WINDOW_MS / 1000, entrance, entrance_ms: ENTRANCE_MS, exit: "none" });
+}
+
+function sampleRest() {
+  const stage = document.getElementById("stage");
+  const computed = getComputedStyle(stage);
+  const scroller = document.scrollingElement;
+  return {
+    zIndex: stage.style.zIndex,
+    position: stage.style.position,
+    opacity: computed.opacity,
+    transform: computed.transform,
+    canvases: document.querySelectorAll("canvas").length,
+    scrolls: scroller.scrollWidth > window.innerWidth || scroller.scrollHeight > window.innerHeight,
+  };
+}
+
+async function assertAtRest(page, label, failures) {
+  const rest = await page.evaluate(sampleRest);
+  if (rest.zIndex !== "" || rest.position !== "") {
+    failures.push(`${label}: the stage kept z-index '${rest.zIndex}' and position '${rest.position}' after the entrance`);
+  }
+  if (rest.opacity !== "1" || rest.transform !== "none") {
+    failures.push(`${label}: the stage rests at opacity ${rest.opacity} and transform ${rest.transform}`);
+  }
+  if (rest.canvases) failures.push(`${label}: ${rest.canvases} particle canvas(es) left after the entrance`);
+  if (rest.scrolls) failures.push(`${label}: the page scrolls after the entrance`);
+}
+
+async function restingShot(browser) {
+  const probe = await open(browser, { config: entranceConfig("none"), content: ALERT_CONTENT });
+  try {
+    const shown = await shownAt(probe.page);
+    await until(probe.page, shown + ENTRANCE_SETTLED_MS);
+    return await probe.page.screenshot({ omitBackground: true });
+  } finally {
+    await probe.close();
+  }
+}
+
+async function entranceCase(browser, entrance, resting, failures) {
+  const label = `entrance ${entrance}`;
+  const particles = PARTICLE_ENTRANCES.includes(entrance);
+  const probe = await open(browser, { config: entranceConfig(entrance), content: ALERT_CONTENT });
+  try {
+    const shown = await shownAt(probe.page);
+    const before = await probe.page.evaluate(() => window.__probe.rafs);
+    await until(probe.page, shown + MID_ENTRANCE_MS);
+    const mid = await probe.page.evaluate(sampleInMotion);
+    const lift = await probe.page.evaluate(() => document.getElementById("stage").style.zIndex);
+    if (entrance === "none") {
+      if (mid.running || mid.layers) failures.push(`${label}: something moved (${mid.running} running, ${mid.layers} layers)`);
+    } else if (particles) {
+      if (mid.canvases !== 1) failures.push(`${label}: ${mid.canvases} particle canvas(es) mid-entrance`);
+      if (mid.rafs <= before) failures.push(`${label}: no particle frames were drawn`);
+      if (mid.running < 1) failures.push(`${label}: the content itself did not animate in`);
+    } else if (mid.running < 1 || mid.layers) {
+      failures.push(`${label}: no whole-rect entrance animation ran (${mid.running} running, ${mid.layers} layers)`);
+    }
+    if (LIFTED_ENTRANCES.includes(entrance) !== (lift !== "")) {
+      failures.push(`${label}: the stage z-index mid-entrance was '${lift}'`);
+    }
+    for (const breach of mid.outside) failures.push(`${label}: ${breach}`);
+    await until(probe.page, shown + ENTRANCE_SETTLED_MS);
+    await assertIdle(probe.page, label, failures);
+    await assertAtRest(probe.page, label, failures);
+    const shot = await probe.page.screenshot({ omitBackground: true });
+    if (!Buffer.from(shot).equals(Buffer.from(resting))) failures.push(`${label}: the settled page paints differently from a page that never moved`);
+    if (probe.pageErrors.length) failures.push(`${label}: ${probe.pageErrors.join("; ")}`);
+  } finally {
+    await probe.close();
+  }
+}
+
+async function entranceInterruptedCase(browser, entrance, failures) {
+  const reshowLabel = `entrance ${entrance} under a newer show`;
+  const reshow = await open(browser, { config: entranceConfig(entrance), content: ALERT_CONTENT });
+  try {
+    const shown = await shownAt(reshow.page);
+    await until(reshow.page, shown + MID_ENTRANCE_MS);
+    reshow.host.push({ frame: "content", content: { headline: "Second", subline: "Again" } });
+    const reshown = await reshow.page
+      .waitForFunction(
+        () => document.querySelector('[data-bind="headline"]').textContent === "Second" && performance.now(),
+        { timeout: WAIT_MS, polling: 5 },
+      )
+      .then((handle) => handle.jsonValue());
+    const layers = await reshow.page.evaluate(() => document.querySelectorAll("[data-forge-motion]").length);
+    if (layers > 1) failures.push(`${reshowLabel}: ${layers} motion layers, the old entrance kept playing`);
+    await until(reshow.page, reshown + ENTRANCE_SETTLED_MS);
+    await assertIdle(reshow.page, reshowLabel, failures);
+    await assertAtRest(reshow.page, reshowLabel, failures);
+    if (reshow.pageErrors.length) failures.push(`${reshowLabel}: ${reshow.pageErrors.join("; ")}`);
+  } finally {
+    await reshow.close();
+  }
+
+  const clearLabel = `entrance ${entrance} under a clear`;
+  const cleared = await open(browser, { config: entranceConfig(entrance), content: ALERT_CONTENT });
+  try {
+    const shown = await shownAt(cleared.page);
+    await until(cleared.page, shown + MID_ENTRANCE_MS);
+    cleared.host.push({ frame: "clear" });
+    await cleared.page.waitForFunction(() => document.body.style.visibility === "hidden", { timeout: WAIT_MS, polling: 5 });
+    const after = await cleared.page.evaluate(() => ({
+      layers: document.querySelectorAll("[data-forge-motion]").length,
+      animations: document.getAnimations().length,
+    }));
+    if (after.layers || after.animations) {
+      failures.push(`${clearLabel}: the entrance kept playing (${after.layers} layers, ${after.animations} animations)`);
+    }
+    await assertIdle(cleared.page, clearLabel, failures);
+    await assertAtRest(cleared.page, clearLabel, failures);
+    if (cleared.pageErrors.length) failures.push(`${clearLabel}: ${cleared.pageErrors.join("; ")}`);
+  } finally {
+    await cleared.close();
+  }
+}
+
+async function entrancePlanCase(browser, failures) {
+  const probe = await open(browser, { config: alertConfig({}), content: ALERT_CONTENT });
+  try {
+    await shownAt(probe.page);
+    const planned = await probe.page.evaluate(
+      (names) => names.map((name) => window.forgeMotion.plan({ entrance: name }, 0).entrance),
+      [...RECT_ENTRANCES, ...PARTICLE_ENTRANCES, "sparkles", "none"],
+    );
+    const expected = [...RECT_ENTRANCES, ...PARTICLE_ENTRANCES, "fade", "none"];
+    if (JSON.stringify(planned) !== JSON.stringify(expected)) {
+      failures.push(`the plan keeps entrances ${JSON.stringify(planned)}, expected ${JSON.stringify(expected)}`);
+    }
+  } finally {
+    await probe.close();
+  }
+}
+
+async function particleEntranceTraceCase(browser, failures) {
+  const probe = await open(browser, { config: alertConfig({ duration: 30 }), content: ALERT_CONTENT });
+  try {
+    await shownAt(probe.page);
+    await sleep(600);
+    const traces = await probe.page.evaluate(
+      (entrances, box, entranceMs, inFlightMs) => {
+        const context = CanvasRenderingContext2D.prototype;
+        const drawn = [];
+        const original = { fillRect: context.fillRect, lineTo: context.lineTo, stroke: context.stroke };
+        context.fillRect = function (...args) {
+          drawn.push(["square", ...args.map((value) => value.toFixed(2))]);
+          return original.fillRect.apply(this, args);
+        };
+        context.lineTo = function (...args) {
+          drawn.push(["streak", ...args.map((value) => value.toFixed(2))]);
+          return original.lineTo.apply(this, args);
+        };
+        const realFrame = window.requestAnimationFrame;
+        const frames = [];
+        window.requestAnimationFrame = (callback) => {
+          frames.push(callback);
+          return 0;
+        };
+        const target = document.createElement("div");
+        target.style.cssText = `position:absolute;left:0;top:0;width:${box.width}px;height:${box.height}px`;
+        document.body.appendChild(target);
+        const trace = (entrance, seed, intensity) => {
+          frames.length = 0;
+          const plan = window.forgeMotion.plan({ entrance, entrance_ms: entranceMs, intensity }, 0);
+          window.forgeMotion.enter(target, plan, seed);
+          const begin = frames.shift();
+          if (!begin) return [];
+          begin(1000);
+          drawn.length = 0;
+          const inFlight = frames.shift();
+          if (inFlight) inFlight(1000 + inFlightMs);
+          const shape = drawn.map((call) => call.join(" "));
+          window.forgeMotion.cancel(target);
+          return shape;
+        };
+        const result = {};
+        try {
+          for (const entrance of entrances) {
+            result[entrance] = {
+              first: trace(entrance, 11, "medium"),
+              again: trace(entrance, 11, "medium"),
+              other: trace(entrance, 12, "medium"),
+              low: trace(entrance, 11, "low").length,
+              high: trace(entrance, 11, "high").length,
+            };
+          }
+        } finally {
+          window.requestAnimationFrame = realFrame;
+          Object.assign(context, original);
+        }
+        result.left = document.querySelectorAll("[data-forge-motion]").length;
+        result.restored = target.style.zIndex === "" && target.style.position === "absolute";
+        target.remove();
+        return result;
+      },
+      PARTICLE_ENTRANCES,
+      TRACE_BOX,
+      ENTRANCE_MS,
+      IN_FLIGHT_MS,
+    );
+    for (const entrance of PARTICLE_ENTRANCES) {
+      const trace = traces[entrance];
+      const medium = trace.first.length;
+      if (!medium) failures.push(`entrance ${entrance}: no particle drawn in flight`);
+      if (JSON.stringify(trace.first) !== JSON.stringify(trace.again)) failures.push(`entrance ${entrance}: the same seed scattered particles differently`);
+      if (JSON.stringify(trace.first) === JSON.stringify(trace.other)) failures.push(`entrance ${entrance}: a different seed scattered particles identically`);
+      if (!(trace.low < medium && medium < trace.high)) {
+        failures.push(`entrance ${entrance}: intensity does not scale particles: low ${trace.low}, medium ${medium}, high ${trace.high}`);
+      }
+    }
+    if (traces.left) failures.push(`a cancelled particle entrance left ${traces.left} layer(s) behind`);
+    if (!traces.restored) failures.push("a cancelled particle entrance left its element lifted");
+  } finally {
+    await probe.close();
+  }
+}
+
 async function persistentLookCases(browser, failures) {
   const chat = await open(browser, {
     kind: "chat",
@@ -499,6 +728,15 @@ async function persistentLookCases(browser, failures) {
       }
     }
     await run("text-compressed", () => textCase(browser, "bounce", "letter", LONG_HEADLINE, failures));
+    const resting = only.length && !only.some((name) => name.startsWith("entrance-")) ? null : await restingShot(browser);
+    for (const entrance of ["none", ...RECT_ENTRANCES, ...PARTICLE_ENTRANCES]) {
+      await run(`entrance-${entrance}`, () => entranceCase(browser, entrance, resting, failures));
+      if (entrance !== "none") {
+        await run(`entrance-${entrance}-interrupted`, () => entranceInterruptedCase(browser, entrance, failures));
+      }
+    }
+    await run("entrance-plan", () => entrancePlanCase(browser, failures));
+    await run("entrance-particle-trace", () => particleEntranceTraceCase(browser, failures));
     await run("cancel", () => cancelCase(browser, failures));
     await run("clear", () => clearCase(browser, failures));
     await run("preview-loop", () => previewLoopCase(browser, failures));

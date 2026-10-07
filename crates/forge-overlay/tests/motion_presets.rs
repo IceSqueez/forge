@@ -504,11 +504,13 @@ fn the_page_engine_and_forge_bound_motion_durations_identically() {
 #[test]
 fn every_preset_the_form_offers_is_one_the_page_engine_plays_rather_than_falling_back() {
     let rect = engine_rect_styles();
-    let mut exits = rect.clone();
+    let mut entrances = rect.clone();
+    entrances.extend(engine_table_keys("PARTICLE_ENTRANCES"));
+    let mut exits = rect;
     exits.extend(engine_table_keys("DESTRUCTIVE_EXITS"));
 
     for (field, offered, played) in [
-        (ENTRANCE, options(ENTRANCE_OPTIONS), rect),
+        (ENTRANCE, options(ENTRANCE_OPTIONS), entrances),
         (EXIT, options(EXIT_OPTIONS), exits),
         (
             TEXT_EFFECT,
@@ -527,6 +529,38 @@ fn every_preset_the_form_offers_is_one_the_page_engine_plays_rather_than_falling
              plays the fallback"
         );
     }
+}
+
+#[test]
+fn the_particle_entrances_are_exactly_the_offered_entrances_no_whole_rect_style_plays() {
+    let rect = engine_rect_styles();
+    let beyond_rect: BTreeSet<String> = options(ENTRANCE_OPTIONS)
+        .into_iter()
+        .filter(|entrance| !rect.contains(entrance))
+        .collect();
+
+    assert_eq!(
+        engine_table_keys("PARTICLE_ENTRANCES"),
+        beyond_rect,
+        "a particle entrance either shadows a whole-rect style or is not offered by the form"
+    );
+}
+
+#[test]
+fn the_page_plan_keeps_a_particle_entrance_instead_of_falling_back() {
+    let plan = engine_function("plan");
+    let opening = "entrance: style(values.entrance, ";
+    let start = plan
+        .find(opening)
+        .unwrap_or_else(|| panic!("the plan no longer reads the entrance through '{opening}'"))
+        + opening.len();
+    let predicate = &plan[start..start + plan[start..].find(')').unwrap()];
+
+    assert!(
+        engine_function(predicate).contains("owned(PARTICLE_ENTRANCES, value)"),
+        "the plan checks the entrance with '{predicate}', which turns every particle entrance \
+         into the fallback"
+    );
 }
 
 #[test]

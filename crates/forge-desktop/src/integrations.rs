@@ -1758,4 +1758,32 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test]
+    async fn event_bridge_forwards_a_platform_s_final_events_then_exits_once_its_channel_closes() {
+        let bus = test_bus();
+        let mut observer = bus.subscribe();
+        let (platform_tx, platform_rx) = broadcast::channel(16);
+        let bridge = spawn_event_bridge(publisher(&bus), EventStream::new(platform_rx), "twitch");
+
+        for state in ["connected", "disconnected"] {
+            platform_tx
+                .send(Event::new(
+                    EventSource::Core,
+                    "platform.connection.changed",
+                    serde_json::json!({ "platform_id": "twitch", "state": state }),
+                ))
+                .unwrap();
+        }
+        drop(platform_tx);
+
+        tokio::time::timeout(Duration::from_secs(2), bridge)
+            .await
+            .expect("the bridge must exit once every platform sender is gone")
+            .unwrap();
+        for state in ["connected", "disconnected"] {
+            let event = observer.recv().await.unwrap();
+            assert_eq!(event.payload["state"], state);
+        }
+    }
 }

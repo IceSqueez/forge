@@ -8,9 +8,10 @@ use std::time::{Duration, SystemTime};
 use async_trait::async_trait;
 use forge_emulator::fixture::TwitchAccount;
 use forge_emulator::twitch::{CredentialCheck, FakeTwitch, FakeTwitchConfig, Viewer, ViewerBadge};
-use forge_events::{Event, EventPublisher};
+use forge_events::{Event, EventPublisher, EventStream};
 use forge_platform_core::{
-    ChatPlatform, EndpointSurface, PlatformEndpoints, RateLimiter, TokenBucketRateLimiter,
+    BuiltinControl, CONNECTION_STATE_CHANGED_KIND, ChatPlatform, ConnectionState, EndpointSurface,
+    PlatformEndpoints, RateLimiter, TokenBucketRateLimiter,
 };
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{
@@ -27,6 +28,9 @@ use tokio::time::timeout;
 const DEADLINE: Duration = Duration::from_secs(10);
 const CHAT_MESSAGE_KIND: &str = "twitch.channel.chat.message";
 const CHAT_SUBSCRIPTION: &str = "channel.chat.message";
+const FOLLOW_SUBSCRIPTION: &str = "channel.follow";
+const FOLLOW_KIND: &str = "twitch.channel.follow";
+const STATE_POLL: Duration = Duration::from_millis(10);
 
 #[derive(Default)]
 struct MemoryCredentials(Mutex<HashMap<String, String>>);
@@ -128,6 +132,22 @@ impl Forge {
             lifecycle.clone(),
         )
         .start()
+    }
+
+    fn platform(&self) -> Arc<TwitchPlatform> {
+        let manager = Arc::new(TwitchCredentialsManager::new(
+            &self.config.endpoints,
+            Arc::clone(&self.creds),
+            self.config.client_id.clone(),
+        ));
+        Arc::new(TwitchPlatform::new(
+            self.config.clone(),
+            Arc::clone(&self.creds),
+            manager,
+            SubscriptionTracker::default(),
+            Self::rate_limiter(),
+            TwitchLifecycle::new(),
+        ))
     }
 
     fn rate_limiter() -> Arc<dyn RateLimiter> {
@@ -298,22 +318,7 @@ async fn forge_twitch_boot_calls_only_modeled_helix_endpoints() {
         .await
         .unwrap();
     let forge = Forge::against(&fake, &account, &account.access_token).await;
-    let lifecycle = TwitchLifecycle::new();
-    let tracker = SubscriptionTracker::default();
-    let manager = Arc::new(TwitchCredentialsManager::new(
-        &forge.config.endpoints,
-        Arc::clone(&forge.creds),
-        forge.config.client_id.clone(),
-    ));
-
-    let platform = Arc::new(TwitchPlatform::new(
-        forge.config.clone(),
-        Arc::clone(&forge.creds),
-        manager,
-        tracker,
-        Forge::rate_limiter(),
-        lifecycle,
-    ));
+    let platform = forge.platform();
     let _bundle = TwitchIntegrationBundle::new(Some(account.login.clone()), Arc::clone(&platform));
     platform.connect().await.unwrap();
 
@@ -377,4 +382,165 @@ async fn forge_chat_send_returns_the_message_id_the_fake_issued() {
         .expect("chat send recorded");
     assert_eq!(request.body.as_ref().unwrap()["message"], "pong");
     assert_eq!(request.response["data"][0]["message_id"], sent.0.as_str());
+}
+
+async fn next_platform_event(events: &mut EventStream) -> Event {
+    timeout(DEADLINE, events.recv())
+        .await
+        .expect("the platform published nothing in time")
+        .expect("the platform event stream must stay open")
+}
+
+async fn platform_reaches_connected(platform: &TwitchPlatform) {
+    timeout(DEADLINE, async {
+        while platform.connection_state() != ConnectionState::Connected {
+            tokio::time::sleep(STATE_POLL).await;
+        }
+    })
+    .await
+    .expect("the platform never reported Connected");
+}
+
+async fn sole_live_session_subscribed_to(fake: &FakeTwitch, types: &[&str]) {
+    fake.wait_for(
+        "exactly one live eventsub session holding forge's subscriptions",
+        DEADLINE,
+        |ledger| {
+            let live: Vec<_> = ledger.live_sessions().collect();
+            let [session] = live.as_slice() else {
+                return None;
+            };
+            types
+                .iter()
+                .all(|subscription_type| {
+                    ledger.subscriptions.iter().any(|subscription| {
+                        subscription.session_id == session.id
+                            && subscription.subscription_type == *subscription_type
+                    })
+                })
+                .then_some(())
+        },
+    )
+    .await
+    .unwrap();
+}
+
+fn follow_event(account: &TwitchAccount) -> serde_json::Value {
+    serde_json::json!({
+        "user_id": "200000042",
+        "user_login": "alice",
+        "user_name": "alice",
+        "broadcaster_user_id": account.user_id,
+        "broadcaster_user_login": account.login,
+        "broadcaster_user_name": account.login,
+        "followed_at": "2026-10-07T12:00:00Z",
+    })
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn boot_connect_racing_a_reconnect_leaves_one_eventsub_session_delivering_each_event_once() {
+    let account = TwitchAccount::default();
+    let fake = FakeTwitch::start(FakeTwitchConfig::for_account(&account))
+        .await
+        .unwrap();
+    let forge = Forge::against(&fake, &account, &account.access_token).await;
+    let platform = forge.platform();
+    let bundle = TwitchIntegrationBundle::new(Some(account.login.clone()), Arc::clone(&platform));
+    let mut events = platform.events();
+
+    let boot = tokio::spawn({
+        let platform = Arc::clone(&platform);
+        async move { platform.connect().await }
+    });
+    let reconnect = tokio::spawn({
+        let bundle = Arc::clone(&bundle);
+        async move { bundle.reconnect().await }
+    });
+    boot.await.unwrap().unwrap();
+    assert_eq!(reconnect.await.unwrap(), Ok(()));
+    platform_reaches_connected(&platform).await;
+    sole_live_session_subscribed_to(&fake, &[CHAT_SUBSCRIPTION, FOLLOW_SUBSCRIPTION]).await;
+
+    let alice = Viewer::new("200000042", "alice");
+    fake.inject_chat_message(&alice, "once").await.unwrap();
+    let follow_reach = fake
+        .inject_notification(FOLLOW_SUBSCRIPTION, follow_event(&account))
+        .await
+        .unwrap();
+    fake.inject_chat_message(&alice, "marker").await.unwrap();
+
+    let (mut chats, mut follows) = (0, 0);
+    loop {
+        let event = next_platform_event(&mut events).await;
+        match event.kind.as_str() {
+            CHAT_MESSAGE_KIND if event.payload["message"] == "marker" => break,
+            CHAT_MESSAGE_KIND => chats += 1,
+            FOLLOW_KIND => follows += 1,
+            _ => {}
+        }
+    }
+    assert_eq!(
+        (follow_reach, chats, follows),
+        (1, 1, 1),
+        "(sockets the follow reached, chat deliveries, follow deliveries)"
+    );
+}
+
+#[tokio::test]
+async fn bundle_shutdown_publishes_a_final_disconnected_change_and_closes_the_eventsub_session() {
+    let account = TwitchAccount::default();
+    let fake = FakeTwitch::start(FakeTwitchConfig::for_account(&account))
+        .await
+        .unwrap();
+    let forge = Forge::against(&fake, &account, &account.access_token).await;
+    let platform = forge.platform();
+    let bundle = TwitchIntegrationBundle::new(Some(account.login.clone()), Arc::clone(&platform));
+    let mut events = platform.events();
+    platform.connect().await.unwrap();
+    platform_reaches_connected(&platform).await;
+    sole_live_session_subscribed_to(&fake, &[CHAT_SUBSCRIPTION]).await;
+
+    bundle.shutdown().await;
+
+    loop {
+        let event = next_platform_event(&mut events).await;
+        if event.kind == CONNECTION_STATE_CHANGED_KIND && event.payload["state"] == "disconnected" {
+            break;
+        }
+    }
+    fake.wait_for("forge to close its eventsub session", DEADLINE, |ledger| {
+        (ledger.live_sessions().count() == 0).then_some(())
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn a_refused_chat_send_through_the_platform_publishes_request_fail_without_the_token() {
+    const NEVER_ISSUED: &str = "a-token-the-fake-never-issued";
+    let account = TwitchAccount::default();
+    let fake = FakeTwitch::start(FakeTwitchConfig::for_account(&account))
+        .await
+        .unwrap();
+    let forge = Forge::against(&fake, &account, NEVER_ISSUED).await;
+    let platform = forge.platform();
+    let mut events = platform.events();
+
+    platform
+        .send_message(&account.login, "pong")
+        .await
+        .unwrap_err();
+
+    let failure = loop {
+        let event = next_platform_event(&mut events).await;
+        if event.kind == "request.fail" {
+            break event;
+        }
+    };
+    assert_eq!(failure.payload["endpoint"], "/helix/chat/messages");
+    assert!(
+        !failure.payload.to_string().contains(NEVER_ISSUED),
+        "token leaked into request.fail: {}",
+        failure.payload
+    );
 }

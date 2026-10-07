@@ -5,8 +5,10 @@ use async_trait::async_trait;
 use forge_platform_core::auth::{
     PkceRefreshConfig, PkceRefresher, REFRESH_BUFFER_SECS, ReauthPolicy,
 };
-use forge_platform_core::{PlatformEndpoints, PlatformError};
-use forge_storage::{CredentialsRepo, StorageError};
+use forge_platform_core::{
+    PlatformEndpoints, PlatformError, credential_storage_error, reauth_required,
+};
+use forge_storage::CredentialsRepo;
 use forge_types::OAuthToken;
 use tracing::{debug, info, warn};
 
@@ -57,11 +59,16 @@ impl TwitchCredentialsManager {
     }
 
     pub async fn load(&self) -> Result<Option<StoredCredential>, PlatformError> {
-        load(self.repo.as_ref()).await.map_err(storage_err)
+        load(self.repo.as_ref())
+            .await
+            .map_err(|e| credential_storage_error(PLATFORM, e))
     }
 
     pub async fn get_valid_access_token(&self) -> Result<OAuthToken, PlatformError> {
-        let cred = self.load().await?.ok_or_else(reauth_err)?;
+        let cred = self
+            .load()
+            .await?
+            .ok_or_else(|| reauth_required(PLATFORM))?;
         if !near_expiry(&cred) {
             return Ok(cred.access_token);
         }
@@ -70,12 +77,18 @@ impl TwitchCredentialsManager {
             "twitch access token inside the refresh buffer; renewing"
         );
         let _guard = self.refresh_guard.lock().await;
-        let cred = self.load().await?.ok_or_else(reauth_err)?;
+        let cred = self
+            .load()
+            .await?
+            .ok_or_else(|| reauth_required(PLATFORM))?;
         if !near_expiry(&cred) {
             debug!("twitch token already renewed by a concurrent refresh");
             return Ok(cred.access_token);
         }
-        let refresh_token = cred.refresh_token.clone().ok_or_else(reauth_err)?;
+        let refresh_token = cred
+            .refresh_token
+            .clone()
+            .ok_or_else(|| reauth_required(PLATFORM))?;
         let renewed = self.perform_refresh(&refresh_token, cred).await?;
         Ok(renewed.access_token)
     }
@@ -85,12 +98,18 @@ impl TwitchCredentialsManager {
         failed_access_token: &OAuthToken,
     ) -> Result<StoredCredential, PlatformError> {
         let _guard = self.refresh_guard.lock().await;
-        let existing = self.load().await?.ok_or_else(reauth_err)?;
+        let existing = self
+            .load()
+            .await?
+            .ok_or_else(|| reauth_required(PLATFORM))?;
         if existing.access_token.expose() != failed_access_token.expose() {
             debug!("twitch token already rotated by a concurrent refresh; reusing it");
             return Ok(existing);
         }
-        let refresh_token = existing.refresh_token.clone().ok_or_else(reauth_err)?;
+        let refresh_token = existing
+            .refresh_token
+            .clone()
+            .ok_or_else(|| reauth_required(PLATFORM))?;
         self.perform_refresh(&refresh_token, existing).await
     }
 
@@ -140,7 +159,7 @@ impl TwitchCredentialsManager {
         };
         store_credential(self.repo.as_ref(), &renewed)
             .await
-            .map_err(storage_err)?;
+            .map_err(|e| credential_storage_error(PLATFORM, e))?;
         self.expiry_tx.send_replace(renewed.expires_at);
         Ok(renewed)
     }
@@ -185,19 +204,6 @@ impl crate::helix::HelixTokenRefresher for TwitchCredentialsManager {
             .await
             .map(|renewed| renewed.access_token)
             .map_err(token_error_to_helix)
-    }
-}
-
-fn storage_err(e: StorageError) -> PlatformError {
-    match e {
-        StorageError::Decryption => reauth_err(),
-        other => PlatformError::Io(std::io::Error::other(other)),
-    }
-}
-
-fn reauth_err() -> PlatformError {
-    PlatformError::ReauthRequired {
-        platform: PLATFORM.to_owned(),
     }
 }
 

@@ -3,8 +3,10 @@ use std::sync::Arc;
 use forge_platform_core::auth::{
     PkceRefreshConfig, PkceRefresher, REFRESH_BUFFER_SECS, ReauthPolicy,
 };
-use forge_platform_core::{PlatformEndpoints, PlatformError};
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+use forge_platform_core::{
+    PlatformEndpoints, PlatformError, credential_storage_error, reauth_required,
+};
+use forge_storage::{CredentialId, CredentialsRepo};
 use time::{Duration, OffsetDateTime};
 
 use crate::auth::{KickAuthBundle, kick_token_endpoint};
@@ -66,7 +68,12 @@ impl KickCredentialsManager {
 
     pub async fn load(&self) -> Result<Option<KickCredentials>, PlatformError> {
         let key = CredentialId::new(CREDENTIAL_KEY);
-        let Some(json) = self.repo.load(&key).await.map_err(storage_err)? else {
+        let Some(json) = self
+            .repo
+            .load(&key)
+            .await
+            .map_err(|e| credential_storage_error(PLATFORM, e))?
+        else {
             return Ok(None);
         };
         let creds: KickCredentials = serde_json::from_str(&json)?;
@@ -86,12 +93,18 @@ impl KickCredentialsManager {
     }
 
     pub async fn get_valid_access_token(&self) -> Result<String, PlatformError> {
-        let creds = self.load().await?.ok_or_else(reauth_err)?;
+        let creds = self
+            .load()
+            .await?
+            .ok_or_else(|| reauth_required(PLATFORM))?;
         if !near_expiry(&creds) {
             return Ok(creds.access_token);
         }
         let _guard = self.refresh_guard.lock().await;
-        let creds = self.load().await?.ok_or_else(reauth_err)?;
+        let creds = self
+            .load()
+            .await?
+            .ok_or_else(|| reauth_required(PLATFORM))?;
         if !near_expiry(&creds) {
             return Ok(creds.access_token);
         }
@@ -101,7 +114,11 @@ impl KickCredentialsManager {
     }
 
     pub async fn user_id(&self) -> Result<u64, PlatformError> {
-        Ok(self.load().await?.ok_or_else(reauth_err)?.user_id)
+        Ok(self
+            .load()
+            .await?
+            .ok_or_else(|| reauth_required(PLATFORM))?
+            .user_id)
     }
 
     pub async fn refresh(
@@ -109,7 +126,10 @@ impl KickCredentialsManager {
         failed_access_token: &str,
     ) -> Result<KickCredentials, PlatformError> {
         let _guard = self.refresh_guard.lock().await;
-        let existing = self.load().await?.ok_or_else(reauth_err)?;
+        let existing = self
+            .load()
+            .await?
+            .ok_or_else(|| reauth_required(PLATFORM))?;
         if existing.access_token != failed_access_token {
             return Ok(existing);
         }
@@ -143,7 +163,7 @@ impl KickCredentialsManager {
         self.repo
             .delete(&CredentialId::new(CREDENTIAL_KEY))
             .await
-            .map_err(storage_err)?;
+            .map_err(|e| credential_storage_error(PLATFORM, e))?;
         Ok(())
     }
 
@@ -152,25 +172,12 @@ impl KickCredentialsManager {
         self.repo
             .store(&CredentialId::new(CREDENTIAL_KEY), &json)
             .await
-            .map_err(storage_err)
+            .map_err(|e| credential_storage_error(PLATFORM, e))
     }
 }
 
 fn near_expiry(creds: &KickCredentials) -> bool {
     creds.expires_at <= OffsetDateTime::now_utc() + REFRESH_BUFFER
-}
-
-fn storage_err(e: StorageError) -> PlatformError {
-    match e {
-        StorageError::Decryption => reauth_err(),
-        other => PlatformError::Io(std::io::Error::other(other)),
-    }
-}
-
-fn reauth_err() -> PlatformError {
-    PlatformError::ReauthRequired {
-        platform: PLATFORM.to_owned(),
-    }
 }
 
 #[cfg(test)]

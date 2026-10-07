@@ -2771,6 +2771,7 @@ dependencies = [
  "base64 0.23.1",
  "directories",
  "forge-events",
+ "forge-storage",
  "forge-types",
  "futures-core",
  "rand 0.10.3",

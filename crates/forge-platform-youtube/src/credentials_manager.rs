@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
-use forge_platform_core::PlatformError;
 use forge_platform_core::auth::{PkceRefresher, REFRESH_BUFFER_SECS};
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+use forge_platform_core::{PlatformError, credential_storage_error, reauth_required};
+use forge_storage::{CredentialId, CredentialsRepo};
 use reqwest::StatusCode;
 use time::{Duration, OffsetDateTime};
 
@@ -37,7 +37,12 @@ impl YoutubeCredentialsManager {
 
     pub async fn load(&self) -> Result<Option<YoutubeCredentials>, PlatformError> {
         let key = CredentialId::new(CREDENTIAL_KEY);
-        let Some(json) = self.repo.load(&key).await.map_err(storage_err)? else {
+        let Some(json) = self
+            .repo
+            .load(&key)
+            .await
+            .map_err(|e| credential_storage_error(PLATFORM, e))?
+        else {
             return Ok(None);
         };
         let creds: YoutubeCredentials = serde_json::from_str(&json)?;
@@ -45,7 +50,10 @@ impl YoutubeCredentialsManager {
     }
 
     pub async fn broadcaster(&self) -> Result<YoutubeBroadcaster, PlatformError> {
-        let creds = self.load().await?.ok_or_else(reauth_err)?;
+        let creds = self
+            .load()
+            .await?
+            .ok_or_else(|| reauth_required(PLATFORM))?;
         Ok(YoutubeBroadcaster {
             channel_id: creds.channel_id,
             channel_title: creds.channel_title,
@@ -78,12 +86,18 @@ impl YoutubeCredentialsManager {
     }
 
     pub async fn get_valid_access_token(&self) -> Result<String, PlatformError> {
-        let creds = self.load().await?.ok_or_else(reauth_err)?;
+        let creds = self
+            .load()
+            .await?
+            .ok_or_else(|| reauth_required(PLATFORM))?;
         if !near_expiry(&creds) {
             return Ok(creds.access_token);
         }
         let _guard = self.refresh_guard.lock().await;
-        let creds = self.load().await?.ok_or_else(reauth_err)?;
+        let creds = self
+            .load()
+            .await?
+            .ok_or_else(|| reauth_required(PLATFORM))?;
         if !near_expiry(&creds) {
             return Ok(creds.access_token);
         }
@@ -97,7 +111,10 @@ impl YoutubeCredentialsManager {
         failed_access_token: &str,
     ) -> Result<YoutubeCredentials, PlatformError> {
         let _guard = self.refresh_guard.lock().await;
-        let existing = self.load().await?.ok_or_else(reauth_err)?;
+        let existing = self
+            .load()
+            .await?
+            .ok_or_else(|| reauth_required(PLATFORM))?;
         if existing.access_token != failed_access_token {
             return Ok(existing);
         }
@@ -129,7 +146,10 @@ impl YoutubeCredentialsManager {
     }
 
     pub async fn ensure_channel_handle(&self) -> Result<YoutubeCredentials, PlatformError> {
-        let creds = self.load().await?.ok_or_else(reauth_err)?;
+        let creds = self
+            .load()
+            .await?
+            .ok_or_else(|| reauth_required(PLATFORM))?;
         if creds.channel_handle.is_some() {
             return Ok(creds);
         }
@@ -173,7 +193,7 @@ impl YoutubeCredentialsManager {
         self.repo
             .delete(&CredentialId::new(CREDENTIAL_KEY))
             .await
-            .map_err(storage_err)?;
+            .map_err(|e| credential_storage_error(PLATFORM, e))?;
         Ok(())
     }
 
@@ -182,25 +202,12 @@ impl YoutubeCredentialsManager {
         self.repo
             .store(&CredentialId::new(CREDENTIAL_KEY), &json)
             .await
-            .map_err(storage_err)
+            .map_err(|e| credential_storage_error(PLATFORM, e))
     }
 }
 
 fn near_expiry(creds: &YoutubeCredentials) -> bool {
     creds.expires_at <= OffsetDateTime::now_utc() + REFRESH_BUFFER
-}
-
-fn storage_err(e: StorageError) -> PlatformError {
-    match e {
-        StorageError::Decryption => reauth_err(),
-        other => PlatformError::Io(std::io::Error::other(other)),
-    }
-}
-
-fn reauth_err() -> PlatformError {
-    PlatformError::ReauthRequired {
-        platform: PLATFORM.to_owned(),
-    }
 }
 
 #[cfg(test)]

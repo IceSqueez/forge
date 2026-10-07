@@ -5,8 +5,14 @@ use forge_types::is_bot_account;
 use serde::{Deserialize, Serialize};
 
 mod language;
+mod trace;
 
 pub use language::{DetectionOutcome, LanguageCode, LanguageDetector};
+pub use trace::{AppliedReplacement, ReplacementOrigin};
+
+use trace::{EditLog, Unlogged};
+
+const CENSOR_TOKEN: &str = "[beep]";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PipelineResult {
@@ -27,6 +33,7 @@ pub struct StageOutcome {
     pub input: String,
     pub output: String,
     pub action: StageAction,
+    pub replacements: Vec<AppliedReplacement>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -339,6 +346,15 @@ fn stage_text_replacements(text: &str, rules: &[ReplacementRule]) -> String {
 }
 
 fn case_insensitive_replace(text: &str, pattern: &str, replacement: &str) -> String {
+    case_insensitive_replace_logged(text, pattern, replacement, &mut Unlogged)
+}
+
+fn case_insensitive_replace_logged(
+    text: &str,
+    pattern: &str,
+    replacement: &str,
+    log: &mut impl EditLog,
+) -> String {
     let pattern_chars: Vec<char> = pattern.chars().collect();
     if pattern_chars.is_empty() {
         return text.to_owned();
@@ -350,7 +366,13 @@ fn case_insensitive_replace(text: &str, pattern: &str, replacement: &str) -> Str
         match match_len_ignoring_case(&text[cursor..], &pattern_chars) {
             Some(match_len) => {
                 result.push_str(&text[copied_until..cursor]);
+                let replaced_from = result.len();
                 result.push_str(replacement);
+                log.record(
+                    replaced_from..result.len(),
+                    &text[cursor..cursor + match_len],
+                    replacement,
+                );
                 cursor += match_len;
                 copied_until = cursor;
             }
@@ -381,6 +403,15 @@ fn stage_word_blocklist(
     blocklist: &[String],
     mode: &BlocklistMode,
 ) -> Result<String, SkipReason> {
+    stage_word_blocklist_logged(text, blocklist, mode, &mut Unlogged)
+}
+
+fn stage_word_blocklist_logged(
+    text: &str,
+    blocklist: &[String],
+    mode: &BlocklistMode,
+    log: &mut impl EditLog,
+) -> Result<String, SkipReason> {
     if blocklist.is_empty() {
         return Ok(text.to_owned());
     }
@@ -396,7 +427,9 @@ fn stage_word_blocklist(
                     if !first {
                         result.push(' ');
                     }
-                    result.push_str("[beep]");
+                    let censored_from = result.len();
+                    result.push_str(CENSOR_TOKEN);
+                    log.record(censored_from..result.len(), word, CENSOR_TOKEN);
                     first = false;
                     continue;
                 }
@@ -434,6 +467,10 @@ fn sanitize_punctuation(text: &str) -> String {
     result
 }
 
+fn spoken_name_prefix(viewer_name: &str) -> String {
+    format!("{viewer_name} says: ")
+}
+
 fn stage_output(
     text: &str,
     config: &PipelineConfig,
@@ -447,7 +484,9 @@ fn stage_output(
         emote_pass
     };
     let named = if prepend_display_name {
-        format!("{} says: {}", context.viewer_name, emoji_pass)
+        let mut named = spoken_name_prefix(context.viewer_name);
+        named.push_str(&emoji_pass);
+        named
     } else {
         emoji_pass
     };
@@ -540,6 +579,7 @@ pub fn preview(
 ) -> (PipelineResult, Vec<StageOutcome>) {
     let mut outcomes = Vec::with_capacity(STAGES.len());
     let mut current = text.to_owned();
+    let mut marks: Vec<AppliedReplacement> = Vec::new();
     let mut early_skip: Option<SkipReason> = None;
 
     for name in STAGES {
@@ -552,14 +592,17 @@ pub fn preview(
                 },
             )
         } else {
-            match run_stage(
+            let (stage_out, stage_marks) = trace::run_stage_traced(
                 name,
                 &input,
                 config,
                 context,
                 config.output.read_display_name_first,
-            ) {
+                &marks,
+            );
+            match stage_out {
                 StageOut::Ok(out) => {
+                    marks = stage_marks;
                     let action = if out == input {
                         StageAction::PassedThrough
                     } else {
@@ -578,6 +621,7 @@ pub fn preview(
             input,
             output: output.clone(),
             action,
+            replacements: marks.clone(),
         });
         current = output;
     }

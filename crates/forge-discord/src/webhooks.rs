@@ -33,6 +33,7 @@ fn credential_id(name: &str) -> CredentialId {
 
 impl DiscordClient {
     pub async fn list_webhooks(&self) -> Result<Vec<String>, DiscordError> {
+        let _serial = self.webhook_registry_serial.lock().await;
         let ids = self
             .creds
             .list_ids()
@@ -61,6 +62,7 @@ impl DiscordClient {
         let url = url.trim();
         validate_webhook_url(url)?;
 
+        let _serial = self.webhook_registry_serial.lock().await;
         let payload = serde_json::to_string(&WebhookCredential {
             name: name.to_owned(),
             url: url.to_owned(),
@@ -80,6 +82,7 @@ impl DiscordClient {
     }
 
     pub async fn delete_webhook(&self, name: &str) -> Result<bool, DiscordError> {
+        let _serial = self.webhook_registry_serial.lock().await;
         let removed = self
             .creds
             .delete(&credential_id(name))

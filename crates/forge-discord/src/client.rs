@@ -31,6 +31,7 @@ pub struct DiscordClient {
     pub(crate) health_state: Arc<Mutex<DiscordHealthSnapshot>>,
     pub(crate) content_state: Arc<Mutex<DiscordContentSnapshot>>,
     pub(crate) rate_limiter: Arc<Mutex<DiscordRateLimiter>>,
+    pub(crate) webhook_registry_serial: tokio::sync::Mutex<()>,
 }
 
 impl DiscordClient {
@@ -57,6 +58,7 @@ impl DiscordClient {
             health_state,
             content_state: Arc::clone(&content_state),
             rate_limiter,
+            webhook_registry_serial: tokio::sync::Mutex::new(()),
         });
 
         let boot_sync = Arc::clone(&client);
@@ -708,6 +710,7 @@ impl DiscordClient {
             health_state,
             content_state: make_content_state(),
             rate_limiter: Arc::new(Mutex::new(DiscordRateLimiter::new())),
+            webhook_registry_serial: tokio::sync::Mutex::new(()),
         })
     }
 
@@ -759,6 +762,7 @@ impl DiscordClient {
             health_state,
             content_state,
             rate_limiter: Arc::new(Mutex::new(DiscordRateLimiter::new())),
+            webhook_registry_serial: tokio::sync::Mutex::new(()),
         })
     }
 }

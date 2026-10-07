@@ -233,18 +233,20 @@ async fn harness(instances: &[(&TriggerInstance, ActionId)]) -> Harness {
     let mut sub_reg = SubActionRegistry::new();
     register_core_sub_actions(
         &mut sub_reg,
-        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-        Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
-        scripts,
-        publisher,
-        Arc::clone(&dp) as Arc<dyn SettingsRepo>,
-        forge_runtime::SchedulerCell::new(),
-        dp.trigger_instance_repo(),
-        dp.action_repo(),
-        script_repo,
-        Arc::new(forge_runtime::ActionCancelRegistry::new()),
-        forge_runtime::OverlayServiceCell::new(),
-        forge_runtime::Config::default(),
+        forge_runtime::CoreSubActionDeps {
+            globals: Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+            user_globals: Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
+            scripts,
+            publisher,
+            settings: Arc::clone(&dp) as Arc<dyn SettingsRepo>,
+            scheduler: forge_runtime::SchedulerCell::new(),
+            trigger_instances: dp.trigger_instance_repo(),
+            actions: dp.action_repo(),
+            script_repo,
+            cancel_registry: Arc::new(forge_runtime::ActionCancelRegistry::new()),
+            overlays: forge_runtime::OverlayServiceCell::new(),
+            config: forge_runtime::Config::default(),
+        },
     )
     .unwrap();
 

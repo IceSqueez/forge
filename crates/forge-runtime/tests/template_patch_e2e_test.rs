@@ -113,18 +113,20 @@ fn build_core_registries(
     let mut sub_reg = SubActionRegistry::new();
     register_core_sub_actions(
         &mut sub_reg,
-        globals,
-        user_globals,
-        scripts,
-        publisher,
-        settings,
-        forge_runtime::SchedulerCell::new(),
-        trigger_instances,
-        actions,
-        script_repo,
-        Arc::new(forge_runtime::ActionCancelRegistry::new()),
-        forge_runtime::OverlayServiceCell::new(),
-        forge_runtime::Config::default(),
+        forge_runtime::CoreSubActionDeps {
+            globals,
+            user_globals,
+            scripts,
+            publisher,
+            settings,
+            scheduler: forge_runtime::SchedulerCell::new(),
+            trigger_instances,
+            actions,
+            script_repo,
+            cancel_registry: Arc::new(forge_runtime::ActionCancelRegistry::new()),
+            overlays: forge_runtime::OverlayServiceCell::new(),
+            config: forge_runtime::Config::default(),
+        },
     )
     .unwrap();
 

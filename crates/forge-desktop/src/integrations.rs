@@ -1522,18 +1522,20 @@ mod tests {
         let mut sub_actions = SubActionRegistry::new();
         forge_runtime::register_core_sub_actions(
             &mut sub_actions,
-            Arc::clone(&backend) as Arc<dyn forge_storage::GlobalsRepo>,
-            Arc::clone(&backend) as Arc<dyn forge_storage::UserGlobalsRepo>,
-            Arc::new(forge_runtime::ScriptRegistry::new()),
-            publisher(&bus),
-            Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>,
-            forge_runtime::SchedulerCell::new(),
-            backend.trigger_instance_repo(),
-            backend.action_repo(),
-            Arc::clone(&backend) as Arc<dyn forge_storage::ScriptRepo>,
-            Arc::new(forge_runtime::ActionCancelRegistry::new()),
-            forge_runtime::OverlayServiceCell::new(),
-            forge_runtime::Config::default(),
+            forge_runtime::CoreSubActionDeps {
+                globals: Arc::clone(&backend) as Arc<dyn forge_storage::GlobalsRepo>,
+                user_globals: Arc::clone(&backend) as Arc<dyn forge_storage::UserGlobalsRepo>,
+                scripts: Arc::new(forge_runtime::ScriptRegistry::new()),
+                publisher: publisher(&bus),
+                settings: Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>,
+                scheduler: forge_runtime::SchedulerCell::new(),
+                trigger_instances: backend.trigger_instance_repo(),
+                actions: backend.action_repo(),
+                script_repo: Arc::clone(&backend) as Arc<dyn forge_storage::ScriptRepo>,
+                cancel_registry: Arc::new(forge_runtime::ActionCancelRegistry::new()),
+                overlays: forge_runtime::OverlayServiceCell::new(),
+                config: forge_runtime::Config::default(),
+            },
         )
         .unwrap();
         wire_obs(&mut sub_actions, &backend, &bus);

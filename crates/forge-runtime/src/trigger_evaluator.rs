@@ -606,18 +606,20 @@ mod tests {
         let mut sub_reg = SubActionRegistry::new();
         register_core_sub_actions(
             &mut sub_reg,
-            globals,
-            user_globals,
-            registry,
-            publisher,
-            settings,
-            crate::SchedulerCell::new(),
-            trigger_instances,
-            actions,
-            script_repo,
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-            crate::OverlayServiceCell::new(),
-            crate::Config::default(),
+            crate::CoreSubActionDeps {
+                globals,
+                user_globals,
+                scripts: registry,
+                publisher,
+                settings,
+                scheduler: crate::SchedulerCell::new(),
+                trigger_instances,
+                actions,
+                script_repo,
+                cancel_registry: Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+                overlays: crate::OverlayServiceCell::new(),
+                config: crate::Config::default(),
+            },
         )
         .unwrap();
 

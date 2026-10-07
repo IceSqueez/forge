@@ -2729,7 +2729,7 @@ mod tests {
         let audio = || SoundboardError::Audio(forge_audio::AudioError::NoDefaultDevice);
         for (result, expected) in [
             (Ok(PlayOutcome::BoardDisabled), true),
-            (Ok(PlayOutcome::StoppedBeforeStart), true),
+            (Ok(PlayOutcome::StoppedBeforeStart), false),
             (Ok(PlayOutcome::Started), false),
             (Err(SoundboardError::ClipNotFound("01J0".to_owned())), true),
             (

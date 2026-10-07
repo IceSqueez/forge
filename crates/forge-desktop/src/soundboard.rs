@@ -2113,8 +2113,8 @@ fn settled_adoption(payload: &serde_json::Value) -> Option<SettledAdoption> {
 
 fn play_settled_without_outcome(result: &Result<PlayOutcome, SoundboardError>) -> bool {
     match result {
-        Ok(PlayOutcome::Started) => false,
-        Ok(PlayOutcome::BoardDisabled | PlayOutcome::StoppedBeforeStart) => true,
+        Ok(PlayOutcome::Started | PlayOutcome::StoppedBeforeStart) => false,
+        Ok(PlayOutcome::BoardDisabled) => true,
         Err(
             SoundboardError::SourceMissing(_)
             | SoundboardError::Audio(_)

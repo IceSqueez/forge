@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 
 use time::OffsetDateTime;
 use tokio::sync::broadcast;
-use tokio::sync::{Mutex, watch};
+use tokio::sync::watch;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::{BroadcastStream, WatchStream};
 use tokio_util::sync::CancellationToken;
@@ -12,12 +12,12 @@ use tracing::debug;
 #[cfg(test)]
 use forge_platform_core::TokenBucketRateLimiter;
 use forge_platform_core::{
-    BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, CollectionId, ConnectionState,
-    DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream, HealthValue, HeroBadge,
-    HeroBadgeTone, LiveViewerSource, PlatformEndpoints, QuickAction, QuickActionAccent,
-    QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField, QuickActionFieldKind,
-    QuickActionFieldValue, QuickActionLiveness, QuickActions, RateLimiter, SectionIcon,
-    SubscriptionRow, SubscriptionStatus, ViewerReport, ViewerReportStream,
+    BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform, CollectionId,
+    ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream,
+    HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, PlatformEndpoints, QuickAction,
+    QuickActionAccent, QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField,
+    QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness, QuickActions, RateLimiter,
+    SectionIcon, SubscriptionRow, SubscriptionStatus, ViewerReport, ViewerReportStream,
 };
 use forge_types::IntegrationId;
 use std::collections::BTreeMap;
@@ -27,7 +27,8 @@ use forge_storage::CredentialsRepo;
 use forge_types::{SubActionStep, Variant};
 
 use crate::TWITCH_BROADCASTER_SCOPES;
-use crate::chat::{ChatConnectionState, TwitchChat, TwitchChatHandle};
+use crate::chat::ChatConnectionState;
+use crate::chat_platform::TwitchPlatform;
 use crate::creator_goals;
 use crate::credentials;
 use crate::credentials_manager::TwitchCredentialsManager;
@@ -84,7 +85,7 @@ pub struct ChatSessionConfig {
 pub struct TwitchIntegrationBundle {
     id: IntegrationId,
     login: Option<String>,
-    state_tx: watch::Sender<ChatConnectionState>,
+    platform: Arc<TwitchPlatform>,
     state_rx: watch::Receiver<ChatConnectionState>,
     health_tx: broadcast::Sender<HealthDelta>,
     tracker: SubscriptionTracker,
@@ -92,7 +93,6 @@ pub struct TwitchIntegrationBundle {
     bus: Arc<dyn EventPublisher>,
     creds: Arc<dyn CredentialsRepo>,
     credentials_manager: Arc<TwitchCredentialsManager>,
-    handle: Mutex<Option<TwitchChatHandle>>,
     viewer_state: std::sync::RwLock<ViewerPollState>,
     viewer_report_tx: watch::Sender<ViewerReport>,
     transport: Arc<dyn HelixTransport>,
@@ -105,28 +105,13 @@ pub struct TwitchIntegrationBundle {
 }
 
 impl TwitchIntegrationBundle {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        login: Option<String>,
-        config: ChatSessionConfig,
-        bus: Arc<dyn EventPublisher>,
-        creds: Arc<dyn CredentialsRepo>,
-        credentials_manager: Arc<TwitchCredentialsManager>,
-        tracker: SubscriptionTracker,
-        rate_limiter: Arc<dyn RateLimiter>,
-        lifecycle: TwitchLifecycle,
-    ) -> Arc<Self> {
+    pub fn new(login: Option<String>, platform: Arc<TwitchPlatform>) -> Arc<Self> {
         let (health_tx, _) = broadcast::channel(16);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
-        let (state_tx, state_rx) = watch::channel(ChatConnectionState::Connecting);
-        let handle = TwitchChat::new(
-            Arc::clone(&credentials_manager),
-            config.clone(),
-            Arc::clone(&bus),
-            tracker.clone(),
-            lifecycle.clone(),
-        )
-        .start_reporting_to(state_tx.clone());
+        let config = platform.config().clone();
+        let bus = platform.publisher();
+        let credentials_manager = Arc::clone(platform.credentials_manager());
+        let rate_limiter = Arc::clone(platform.rate_limiter());
         let transport = Self::build_helix_transport(
             &config,
             &bus,
@@ -136,15 +121,13 @@ impl TwitchIntegrationBundle {
         let bundle = Arc::new(Self {
             id: crate::TWITCH_INTEGRATION.id,
             login,
-            state_tx,
-            state_rx,
+            state_rx: platform.session_states(),
             health_tx,
-            tracker,
+            tracker: platform.tracker().clone(),
             config,
             bus,
-            creds,
+            creds: Arc::clone(platform.credentials()),
             credentials_manager,
-            handle: Mutex::new(Some(handle)),
             viewer_state: std::sync::RwLock::new(ViewerPollState::default()),
             viewer_report_tx,
             transport: Arc::clone(&transport),
@@ -152,7 +135,8 @@ impl TwitchIntegrationBundle {
             tier: std::sync::RwLock::new(BroadcasterTier::default()),
             token_expires_at: std::sync::RwLock::new(None),
             connected_at: std::sync::RwLock::new(None),
-            lifecycle,
+            lifecycle: platform.lifecycle().clone(),
+            platform,
             retired: CancellationToken::new(),
         });
         Self::spawn_health_bridge(&bundle);
@@ -354,17 +338,6 @@ impl TwitchIntegrationBundle {
         });
     }
 
-    pub(crate) fn spawn_chat(&self) -> TwitchChatHandle {
-        TwitchChat::new(
-            Arc::clone(&self.credentials_manager),
-            self.config.clone(),
-            Arc::clone(&self.bus),
-            self.tracker.clone(),
-            self.lifecycle.clone(),
-        )
-        .start_reporting_to(self.state_tx.clone())
-    }
-
     pub(crate) fn credentials(&self) -> &Arc<dyn CredentialsRepo> {
         &self.creds
     }
@@ -385,16 +358,13 @@ impl TwitchIntegrationBundle {
         &self.lifecycle
     }
 
-    pub(crate) fn handle_slot(&self) -> &Mutex<Option<TwitchChatHandle>> {
-        &self.handle
+    pub(crate) fn platform(&self) -> &TwitchPlatform {
+        &self.platform
     }
 
     pub async fn shutdown(&self) {
         self.retired.cancel();
-        let handle = self.handle.lock().await.take();
-        if let Some(handle) = handle {
-            handle.shutdown().await;
-        }
+        let _ = self.platform.disconnect().await;
     }
 
     pub fn viewer_source(&self) -> Box<dyn LiveViewerSource> {
@@ -441,34 +411,44 @@ impl TwitchIntegrationBundle {
             Arc::clone(&creds),
             "test-client".to_owned(),
         ));
+        let config = ChatSessionConfig {
+            client_id: "test-client".to_owned(),
+            broadcaster_id: broadcaster_id.to_owned(),
+            user_id: broadcaster_id.to_owned(),
+            endpoints: crate::sub_actions::test_support::unreachable_twitch_endpoints(),
+        };
+        let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
+            HELIX_BUDGET_CAPACITY,
+            HELIX_BUDGET_WINDOW,
+        ));
+        let lifecycle = TwitchLifecycle::new();
+        let platform = Arc::new(TwitchPlatform::new(
+            config.clone(),
+            Arc::clone(&creds),
+            Arc::clone(&credentials_manager),
+            tracker.clone(),
+            Arc::clone(&rate_limiter),
+            lifecycle.clone(),
+        ));
         Arc::new(Self {
             id: IntegrationId::new("twitch"),
             login,
-            state_tx: watch::channel(ChatConnectionState::Disconnected).0,
+            platform,
             state_rx,
             health_tx,
             tracker,
-            config: ChatSessionConfig {
-                client_id: "test-client".to_owned(),
-                broadcaster_id: broadcaster_id.to_owned(),
-                user_id: broadcaster_id.to_owned(),
-                endpoints: crate::sub_actions::test_support::unreachable_twitch_endpoints(),
-            },
+            config,
             bus: Arc::new(crate::event_channel::PlatformEventChannel::new()),
             creds,
             credentials_manager,
-            handle: Mutex::new(None),
             viewer_state: std::sync::RwLock::new(ViewerPollState::default()),
             viewer_report_tx,
             transport,
-            rate_limiter: Arc::new(TokenBucketRateLimiter::new(
-                HELIX_BUDGET_CAPACITY,
-                HELIX_BUDGET_WINDOW,
-            )),
+            rate_limiter,
             tier: std::sync::RwLock::new(tier),
             token_expires_at: std::sync::RwLock::new(None),
             connected_at: std::sync::RwLock::new(None),
-            lifecycle: TwitchLifecycle::new(),
+            lifecycle,
             retired: CancellationToken::new(),
         })
     }

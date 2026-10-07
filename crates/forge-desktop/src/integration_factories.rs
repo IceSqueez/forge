@@ -45,7 +45,6 @@ pub(crate) struct TwitchFactory {
     manager: Arc<forge_platform_twitch::TwitchCredentialsManager>,
     lifecycle: forge_platform_twitch::TwitchLifecycle,
     rate_limiter: Arc<dyn RateLimiter>,
-    send_platform: Arc<dyn ChatPlatform>,
 }
 
 pub(crate) fn wire_twitch(
@@ -87,20 +86,6 @@ pub(crate) fn wire_twitch(
     ) {
         eprintln!("forge-desktop: twitch sub-action registration failed: {e}");
     }
-    let send_platform: Arc<dyn ChatPlatform> =
-        Arc::new(forge_platform_twitch::TwitchPlatform::new(
-            forge_platform_twitch::ChatSessionConfig {
-                client_id: client_id.clone(),
-                broadcaster_id: String::new(),
-                user_id: String::new(),
-                endpoints: endpoints.clone(),
-            },
-            Arc::clone(&creds),
-            Arc::clone(&manager),
-            forge_platform_twitch::SubscriptionTracker::default(),
-            Arc::clone(&rate_limiter),
-            lifecycle.clone(),
-        ));
     Some(TwitchFactory {
         bus: Arc::clone(bus),
         endpoints: endpoints.clone(),
@@ -109,7 +94,6 @@ pub(crate) fn wire_twitch(
         manager,
         lifecycle,
         rate_limiter,
-        send_platform,
     })
 }
 
@@ -124,36 +108,41 @@ impl IntegrationFactory for TwitchFactory {
     }
 
     async fn start(&self) -> Result<RunningIntegration, String> {
-        let tasks = spawn_chat_send_bridge(
-            Arc::clone(&self.bus),
-            Arc::clone(&self.send_platform),
-            "twitch",
-            EventSource::Twitch,
-        );
         let stored = forge_platform_twitch::credentials::load(self.creds.as_ref())
             .await
             .ok()
             .flatten();
-        let Some(stored) = stored else {
-            return Ok(idle_with_tasks(tasks));
-        };
-        let login = (!stored.login.is_empty()).then(|| stored.login.clone());
-        let config = forge_platform_twitch::ChatSessionConfig {
-            client_id: self.client_id.clone(),
-            broadcaster_id: stored.user_id.clone(),
-            user_id: stored.user_id,
-            endpoints: self.endpoints.clone(),
-        };
-        let bundle = forge_platform_twitch::TwitchIntegrationBundle::new(
-            login,
-            config,
-            publisher(&self.bus),
+        let user_id = stored
+            .as_ref()
+            .map(|stored| stored.user_id.clone())
+            .unwrap_or_default();
+        let platform = Arc::new(forge_platform_twitch::TwitchPlatform::new(
+            forge_platform_twitch::ChatSessionConfig {
+                client_id: self.client_id.clone(),
+                broadcaster_id: user_id.clone(),
+                user_id,
+                endpoints: self.endpoints.clone(),
+            },
             Arc::clone(&self.creds),
             Arc::clone(&self.manager),
             forge_platform_twitch::SubscriptionTracker::default(),
             Arc::clone(&self.rate_limiter),
             self.lifecycle.clone(),
+        ));
+        let chat_platform: Arc<dyn ChatPlatform> = Arc::clone(&platform) as _;
+        spawn_event_bridge(publisher(&self.bus), chat_platform.events(), "twitch");
+        let mut tasks = spawn_chat_send_bridge(
+            Arc::clone(&self.bus),
+            Arc::clone(&chat_platform),
+            "twitch",
+            EventSource::Twitch,
         );
+        let Some(stored) = stored else {
+            return Ok(idle_with_tasks(tasks));
+        };
+        let login = (!stored.login.is_empty()).then_some(stored.login);
+        let bundle = forge_platform_twitch::TwitchIntegrationBundle::new(login, platform);
+        tasks.track(spawn_connect(chat_platform, "twitch"));
         let viewers = bundle.viewer_source();
         let object = twitch_builtin_object(Arc::clone(&bundle));
         let teardown = Box::pin(async move {

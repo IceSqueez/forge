@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::{EventPublisher, EventStream};
@@ -7,12 +7,12 @@ use forge_platform_core::{
     RateLimiter,
 };
 use forge_storage::CredentialsRepo;
-use tokio::sync::OnceCell;
+use tokio::sync::{Mutex, OnceCell, watch};
 
 use crate::builtin::ChatSessionConfig;
 use crate::chat::{
-    ChatSendError, TwitchChat, TwitchChatHandle, WhisperError, send_chat, send_chat_reply,
-    send_whisper,
+    ChatConnectionState, ChatSendError, TwitchChat, TwitchChatHandle, WhisperError, send_chat,
+    send_chat_reply, send_whisper,
 };
 use crate::credentials::load;
 use crate::credentials_manager::TwitchCredentialsManager;
@@ -32,7 +32,8 @@ pub struct TwitchPlatform {
     tracker: SubscriptionTracker,
     rate_limiter: Arc<dyn RateLimiter>,
     lifecycle: TwitchLifecycle,
-    handle: Mutex<Option<TwitchChatHandle>>,
+    state_tx: watch::Sender<ChatConnectionState>,
+    session: Mutex<Option<TwitchChatHandle>>,
     transport: OnceCell<Arc<dyn HelixTransport>>,
 }
 
@@ -63,20 +64,52 @@ impl TwitchPlatform {
             tracker,
             rate_limiter,
             lifecycle,
-            handle: Mutex::new(None),
+            state_tx: watch::channel(ChatConnectionState::Disconnected).0,
+            session: Mutex::new(None),
             transport: OnceCell::new(),
         }
+    }
+
+    pub(crate) fn publisher(&self) -> Arc<dyn EventPublisher> {
+        self.events.clone()
+    }
+
+    pub(crate) fn session_states(&self) -> watch::Receiver<ChatConnectionState> {
+        self.state_tx.subscribe()
+    }
+
+    pub(crate) fn config(&self) -> &ChatSessionConfig {
+        &self.config
+    }
+
+    pub(crate) fn credentials(&self) -> &Arc<dyn CredentialsRepo> {
+        &self.creds
+    }
+
+    pub(crate) fn credentials_manager(&self) -> &Arc<TwitchCredentialsManager> {
+        &self.credentials_manager
+    }
+
+    pub(crate) fn tracker(&self) -> &SubscriptionTracker {
+        &self.tracker
+    }
+
+    pub(crate) fn rate_limiter(&self) -> &Arc<dyn RateLimiter> {
+        &self.rate_limiter
+    }
+
+    pub(crate) fn lifecycle(&self) -> &TwitchLifecycle {
+        &self.lifecycle
     }
 
     async fn helix_transport(&self) -> Result<Arc<dyn HelixTransport>, PlatformError> {
         self.transport
             .get_or_try_init(|| async {
-                let publisher: Arc<dyn EventPublisher> = self.events.clone();
                 let transport: Arc<dyn HelixTransport> = Arc::new(
                     HelixHttpTransport::new(
                         &self.config.endpoints,
                         Arc::clone(&self.rate_limiter),
-                        publisher,
+                        self.publisher(),
                         self.config.client_id.clone(),
                         Arc::clone(&self.credentials_manager) as Arc<dyn HelixTokenSource>,
                     )
@@ -112,16 +145,7 @@ impl TwitchPlatform {
 #[async_trait]
 impl ChatPlatform for TwitchPlatform {
     fn connection_state(&self) -> ConnectionState {
-        let snapshot = self
-            .handle
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .as_ref()
-            .map(TwitchChatHandle::connection_state);
-        match snapshot {
-            Some(state) => state.to_connection_state(),
-            None => ConnectionState::Disconnected,
-        }
+        self.state_tx.borrow().to_connection_state()
     }
 
     async fn connect(&self) -> Result<(), PlatformError> {
@@ -134,27 +158,26 @@ impl ChatPlatform for TwitchPlatform {
                 platform: PLATFORM_ID.to_owned(),
             })?;
 
-        let previous = self.handle.lock().unwrap_or_else(|p| p.into_inner()).take();
-        if let Some(previous) = previous {
+        let mut session = self.session.lock().await;
+        if let Some(previous) = session.take() {
             previous.shutdown().await;
         }
-
-        let publisher: Arc<dyn EventPublisher> = self.events.clone();
-        let handle = TwitchChat::new(
-            Arc::clone(&self.credentials_manager),
-            self.config.clone(),
-            publisher,
-            self.tracker.clone(),
-            self.lifecycle.clone(),
-        )
-        .start();
-        *self.handle.lock().unwrap_or_else(|p| p.into_inner()) = Some(handle);
+        *session = Some(
+            TwitchChat::new(
+                Arc::clone(&self.credentials_manager),
+                self.config.clone(),
+                self.publisher(),
+                self.tracker.clone(),
+                self.lifecycle.clone(),
+            )
+            .start_reporting_to(self.state_tx.clone()),
+        );
         Ok(())
     }
 
     async fn disconnect(&self) -> Result<(), PlatformError> {
-        let handle = self.handle.lock().unwrap_or_else(|p| p.into_inner()).take();
-        if let Some(handle) = handle {
+        let mut session = self.session.lock().await;
+        if let Some(handle) = session.take() {
             handle.shutdown().await;
         }
         Ok(())

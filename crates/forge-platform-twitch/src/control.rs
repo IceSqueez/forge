@@ -1,5 +1,7 @@
 use async_trait::async_trait;
-use forge_platform_core::{BuiltinControl, ControlFailure, ControlOutcome, PlatformError};
+use forge_platform_core::{
+    BuiltinControl, ChatPlatform, ControlFailure, ControlOutcome, PlatformError,
+};
 
 use crate::builtin::TwitchIntegrationBundle;
 use crate::credentials::load;
@@ -12,20 +14,17 @@ impl BuiltinControl for TwitchIntegrationBundle {
             .map_err(|_| ControlFailure::Transport)?
             .ok_or(ControlFailure::NotConnected)?;
 
-        let mut slot = self.handle_slot().lock().await;
-        if let Some(old) = slot.take() {
-            old.shutdown().await;
-        }
-        *slot = Some(self.spawn_chat());
-        Ok(())
+        self.platform().connect().await.map_err(|e| match e {
+            PlatformError::ReauthRequired { .. } => ControlFailure::NotConnected,
+            _ => ControlFailure::Transport,
+        })
     }
 
     async fn disconnect(&self) -> ControlOutcome {
-        let mut slot = self.handle_slot().lock().await;
-        if let Some(handle) = slot.take() {
-            handle.shutdown().await;
-        }
-        Ok(())
+        self.platform()
+            .disconnect()
+            .await
+            .map_err(|_| ControlFailure::Transport)
     }
 
     async fn refresh_token(&self) -> ControlOutcome {

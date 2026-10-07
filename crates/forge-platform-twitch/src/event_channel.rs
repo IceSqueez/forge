@@ -1,7 +1,7 @@
 use forge_events::{Event, EventPublisher, EventStream};
 use tokio::sync::broadcast;
 
-const CHANNEL_CAPACITY: usize = 256;
+const CHANNEL_CAPACITY: usize = 4096;
 
 pub(crate) struct PlatformEventChannel {
     sender: broadcast::Sender<Event>,

@@ -2,18 +2,91 @@
 
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use forge_events::{Event, EventPublisher};
-use forge_registry::{CancelSignal, SubActionRegistry};
+use forge_registry::{
+    CancelSignal, ChainSignal, FormField, RegistryError, RunContext, SubActionCategory,
+    SubActionRegistry, SubActionRunner,
+};
 use forge_runtime::sub_action_runners::{
     CoreArgsSetRunner, CoreLogicBreakLoopRunner, CoreLogicContinueLoopRunner,
     CoreLogicIfThenElseRunner, CoreLogicLoopRunner, CoreLogicStopRunner, CoreLogicSwitchCaseRunner,
 };
 use forge_runtime::{ChainEngine, ChainRun, ConditionGate, Config};
-use forge_types::{ArgStack, EventId, SubActionConfig, SubActionStep, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, EventId, SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry,
+    Variant,
+};
+use time::OffsetDateTime;
 
 struct NullPublisher;
 impl EventPublisher for NullPublisher {
     fn publish(&self, _event: Event) {}
+}
+
+const TRIP_KIND: &str = "test.trip";
+const TRIP_ITERATION: i64 = 150;
+
+struct TripRunner;
+
+#[async_trait]
+impl SubActionRunner for TripRunner {
+    fn id(&self) -> &str {
+        TRIP_KIND
+    }
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        ""
+    }
+    fn summary(&self) -> &str {
+        ""
+    }
+    fn search_text(&self) -> &str {
+        ""
+    }
+    fn icon_name(&self) -> &str {
+        ""
+    }
+    fn default_config(&self) -> SubActionConfig {
+        SubActionConfig::new()
+    }
+    fn config_fields(&self) -> Vec<FormField> {
+        Vec::new()
+    }
+    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
+        Ok(())
+    }
+    async fn execute(
+        &self,
+        config: &SubActionConfig,
+        ctx: &RunContext<'_>,
+    ) -> (SubActionTelemetry, Option<ArgStack>) {
+        let tripped = ctx.arg_stack.get("loop.index") == Some(&Variant::Int(TRIP_ITERATION));
+        let outcome = match config.get("on_trip") {
+            Some(Variant::String(mode)) if tripped && mode == "fail" => {
+                SubActionOutcome::Failed("boom".to_owned())
+            }
+            Some(Variant::String(mode)) if tripped && mode == "cancel" => {
+                ctx.cancel.cancel();
+                SubActionOutcome::Success
+            }
+            _ => SubActionOutcome::Success,
+        };
+        (
+            SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
+                index: ctx.index,
+                kind: TRIP_KIND.to_owned(),
+                started_at: OffsetDateTime::now_utc(),
+                duration_ms: 0,
+                outcome,
+            },
+            None,
+        )
+    }
 }
 
 fn engine() -> Arc<ChainEngine> {
@@ -28,6 +101,7 @@ fn engine() -> Arc<ChainEngine> {
         .unwrap();
     reg.register(Box::new(CoreLogicLoopRunner::new(Arc::clone(&gate))))
         .unwrap();
+    reg.register(Box::new(TripRunner)).unwrap();
     Arc::new(ChainEngine::new(
         Arc::new(reg),
         Arc::new(NullPublisher),
@@ -250,4 +324,137 @@ async fn empty_branch_body_leaves_only_the_non_nested_composite_row() {
     let top = top_level(&run.telemetry);
     assert_eq!(top.len(), 1);
     assert_eq!(top[0].kind, "core.logic.if_then_else");
+}
+
+const RECORDED_ITERATIONS: usize = 100;
+
+fn recorded_iteration_paths(iterations: usize) -> Vec<String> {
+    (0..iterations)
+        .map(|n| format!("0.body#{n}/0.core.args.set"))
+        .collect()
+}
+
+fn index_body() -> Variant {
+    inline(vec![args_set_step("x", "%loop.index%")])
+}
+
+fn while_true_cfg(max_iterations: i64) -> SubActionConfig {
+    let mut c = SubActionConfig::new();
+    c.insert("mode".to_owned(), Variant::String("while".to_owned()));
+    c.insert(
+        "while_condition".to_owned(),
+        Variant::String("1 == 1".to_owned()),
+    );
+    c.insert("max_iterations".to_owned(), Variant::Int(max_iterations));
+    c.insert("body".to_owned(), index_body());
+    c
+}
+
+fn foreach_cfg() -> SubActionConfig {
+    let mut c = SubActionConfig::new();
+    c.insert(
+        "mode".to_owned(),
+        Variant::String("foreach_array".to_owned()),
+    );
+    c.insert(
+        "array_source".to_owned(),
+        Variant::String("items".to_owned()),
+    );
+    c.insert("body".to_owned(), index_body());
+    c
+}
+
+async fn run_loop(engine: &Arc<ChainEngine>, cfg: SubActionConfig, items: usize) -> ChainRun {
+    let items = (0..items as i64).map(Variant::Int).collect();
+    let stack = ArgStack::new().set("items".to_owned(), Variant::Array(items));
+    engine
+        .run_sequential(
+            &[step("core.logic.loop", cfg)],
+            &stack,
+            EventId::new(),
+            &CancelSignal::new(),
+        )
+        .await
+}
+
+fn summary_rows(tel: &[SubActionTelemetry]) -> Vec<(String, bool)> {
+    tel.iter()
+        .filter(|t| t.is_nested() && !t.kind.contains('/'))
+        .map(|t| {
+            (
+                t.kind.clone(),
+                matches!(t.outcome, SubActionOutcome::Skipped(_)),
+            )
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn a_loop_of_exactly_the_recorded_iterations_keeps_every_step_and_adds_no_summary() {
+    let eng = engine();
+    let run = run_loop(&eng, loop_cfg(RECORDED_ITERATIONS as i64, index_body()), 0).await;
+
+    assert_eq!(
+        nested_paths(&run.telemetry),
+        recorded_iteration_paths(RECORDED_ITERATIONS)
+    );
+}
+
+#[tokio::test]
+async fn iterations_past_the_recorded_ones_collapse_into_one_skipped_summary_in_every_mode() {
+    let eng = engine();
+    for (label, cfg, items, last) in [
+        ("count 101", loop_cfg(101, index_body()), 0, 100),
+        ("count 250", loop_cfg(250, index_body()), 0, 249),
+        ("while 101", while_true_cfg(101), 0, 100),
+        ("foreach 101", foreach_cfg(), 101, 100),
+    ] {
+        let run = run_loop(&eng, cfg, items).await;
+
+        let mut expected = recorded_iteration_paths(RECORDED_ITERATIONS);
+        expected.push(format!("0.body#100-{last}"));
+        assert_eq!(nested_paths(&run.telemetry), expected, "{label}");
+        assert_eq!(
+            summary_rows(&run.telemetry),
+            vec![(format!("0.body#100-{last}"), true)],
+            "{label}"
+        );
+    }
+}
+
+fn tripping_loop(on_trip: &str) -> SubActionConfig {
+    let mut trip = SubActionConfig::new();
+    trip.insert("on_trip".to_owned(), Variant::String(on_trip.to_owned()));
+    loop_cfg(
+        300,
+        inline(vec![
+            chain_step(TRIP_KIND, trip),
+            args_set_step("x", "%loop.index%"),
+        ]),
+    )
+}
+
+#[tokio::test]
+async fn a_failure_past_the_recorded_iterations_ends_the_summary_at_the_failing_iteration() {
+    let eng = engine();
+    let run = run_loop(&eng, tripping_loop("fail"), 0).await;
+
+    assert_eq!(
+        (summary_rows(&run.telemetry), run.signal),
+        (
+            vec![(format!("0.body#100-{TRIP_ITERATION}"), true)],
+            ChainSignal::Error("boom".to_owned())
+        )
+    );
+}
+
+#[tokio::test]
+async fn a_cancel_past_the_recorded_iterations_ends_the_summary_at_the_aborted_iteration() {
+    let eng = engine();
+    let run = run_loop(&eng, tripping_loop("cancel"), 0).await;
+
+    assert_eq!(
+        summary_rows(&run.telemetry),
+        vec![(format!("0.body#100-{TRIP_ITERATION}"), true)]
+    );
 }

@@ -33,6 +33,7 @@ impl BuiltinControl for VTubeClient {
         if let Ok(mut g) = self.connected_at.write() {
             *g = None;
         }
+        crate::supervisor::record_failure(&self.last_failure, None);
 
         let (new_req_tx, new_req_rx) = tokio::sync::mpsc::unbounded_channel();
         {
@@ -53,7 +54,8 @@ impl BuiltinControl for VTubeClient {
             health_tx: self.health_tx.clone(),
             content_notifier: self.content_notifier.clone(),
             connected_notifier: self.connected_notifier.clone(),
-            auto_reconnect: Arc::clone(&self.auto_reconnect),
+            auto_reconnect: self.auto_reconnect.subscribe(),
+            last_failure: Arc::clone(&self.last_failure),
         };
         let new_handle = tokio::spawn(crate::supervisor::run_supervisor(ctx));
         if let Ok(mut g) = self.supervisor.lock() {
@@ -73,6 +75,7 @@ impl BuiltinControl for VTubeClient {
         if let Some(h) = handle {
             let _ = h.await;
         }
+        crate::supervisor::record_failure(&self.last_failure, None);
         crate::supervisor::set_connection_state(
             &self.state,
             &self.health_state,

@@ -1,8 +1,7 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 
 use time::OffsetDateTime;
-use tokio::sync::{Notify, broadcast, mpsc};
+use tokio::sync::{Notify, broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 
 use forge_events::EventPublisher;
@@ -74,7 +73,8 @@ pub struct VTubeClient {
     content_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     catalog_metrics_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     version_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
-    pub(crate) auto_reconnect: Arc<AtomicBool>,
+    pub(crate) auto_reconnect: Arc<watch::Sender<bool>>,
+    pub(crate) last_failure: Arc<RwLock<Option<String>>>,
     pub(crate) reconnect_publisher: Arc<dyn EventPublisher>,
     pub(crate) reconnect_creds: Arc<dyn CredentialsRepo>,
 }
@@ -97,7 +97,8 @@ impl VTubeClient {
         let content_state = Arc::new(RwLock::new(crate::content::ContentSnapshot::default()));
         let (content_notifier, content_changed_rx) = crate::content::ContentNotifier::new();
         let (connected_tx, connected_rx) = mpsc::unbounded_channel::<()>();
-        let auto_reconnect = Arc::new(AtomicBool::new(true));
+        let auto_reconnect = Arc::new(watch::Sender::new(true));
+        let last_failure = Arc::new(RwLock::new(None::<String>));
 
         let content_handle = crate::content::spawn_content_task(
             Arc::clone(&content_state),
@@ -129,7 +130,8 @@ impl VTubeClient {
             health_tx: health_tx.clone(),
             content_notifier: content_notifier.clone(),
             connected_notifier: connected_tx.clone(),
-            auto_reconnect: Arc::clone(&auto_reconnect),
+            auto_reconnect: auto_reconnect.subscribe(),
+            last_failure: Arc::clone(&last_failure),
         };
         let handle = tokio::spawn(crate::supervisor::run_supervisor(ctx));
 
@@ -152,6 +154,7 @@ impl VTubeClient {
             catalog_metrics_task: Arc::new(std::sync::Mutex::new(Some(catalog_metrics_handle))),
             version_task: Arc::new(std::sync::Mutex::new(Some(version_handle))),
             auto_reconnect,
+            last_failure,
             reconnect_publisher: publisher,
             reconnect_creds: creds,
         }
@@ -166,11 +169,18 @@ impl VTubeClient {
     }
 
     pub fn set_auto_reconnect(&self, enabled: bool) {
-        self.auto_reconnect.store(enabled, Ordering::Relaxed);
+        self.auto_reconnect.send_replace(enabled);
     }
 
     pub fn auto_reconnect_enabled(&self) -> bool {
-        self.auto_reconnect.load(Ordering::Relaxed)
+        *self.auto_reconnect.borrow()
+    }
+
+    pub(crate) fn last_failure(&self) -> Option<String> {
+        if self.connection_state() != ConnectionState::Disconnected {
+            return None;
+        }
+        self.last_failure.read().ok().and_then(|g| g.clone())
     }
 
     pub(crate) async fn send_json_request(
@@ -245,7 +255,8 @@ impl VTubeClient {
             content_task: Arc::new(std::sync::Mutex::new(None)),
             catalog_metrics_task: Arc::new(std::sync::Mutex::new(None)),
             version_task: Arc::new(std::sync::Mutex::new(None)),
-            auto_reconnect: Arc::new(AtomicBool::new(true)),
+            auto_reconnect: Arc::new(watch::Sender::new(true)),
+            last_failure: Arc::new(RwLock::new(None)),
             reconnect_publisher: publisher,
             reconnect_creds: creds,
         }

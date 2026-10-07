@@ -2723,3 +2723,180 @@ impl ScreenActionsView {
             .into_any_element()
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use forge_components::ThemeId;
+    use forge_runtime::{ActionCancelRegistry, QueueScheduler, spawn_action_engine};
+    use forge_soundboard::ClipLibrary;
+    use forge_storage::globals::MockGlobalsRepo;
+    use forge_storage::queue::MockQueueRepo;
+    use forge_storage::script::MockScriptRepo;
+    use forge_storage::soundboard::MockSoundboardClipsRepo;
+    use forge_storage::{
+        DataProvider, MEDIA_CONTENT_DIGEST_BYTES, MediaBlobId, MockMediaRepo,
+        MockTriggerInstanceRepo, SoundboardClipsRepo, StoredClip, clip_source_referrer,
+    };
+    use forge_types::{ClipId, OutputDevice};
+    use time::OffsetDateTime;
+
+    use super::*;
+    use crate::presentation::Presentation;
+    use crate::test_support::{
+        StubActions, StubEventLog, StubHistory, StubOverlays, pump, runtime, stub_catalog,
+        test_backend_with_media,
+    };
+
+    const MISSING: &str = "file missing";
+
+    fn options(entries: &[(&str, &str)]) -> Vec<(String, String)> {
+        entries
+            .iter()
+            .map(|(id, label)| ((*id).to_owned(), (*label).to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn only_clips_in_the_unavailable_set_get_the_missing_suffix() {
+        let mut clips = options(&[("a", "Airhorn"), ("b", "Bell"), ("c", "Cheer")]);
+        let unavailable: HashSet<String> = ["b", "zz"].into_iter().map(str::to_owned).collect();
+
+        mark_unavailable_clips(&mut clips, &unavailable, MISSING);
+
+        assert_eq!(
+            clips,
+            options(&[
+                ("a", "Airhorn"),
+                ("b", "Bell - file missing"),
+                ("c", "Cheer")
+            ])
+        );
+    }
+
+    fn stored_clip(name: &str, file_path: std::path::PathBuf) -> StoredClip {
+        StoredClip {
+            id: ClipId::new(),
+            name: name.to_owned(),
+            file_path,
+            volume: 1.0,
+            output_device: OutputDevice::Default,
+            hotkey: None,
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            category: String::new(),
+            loop_playback: false,
+            duration_secs: None,
+            builtin_id: None,
+        }
+    }
+
+    fn media_holding(clip: ClipId, file: std::path::PathBuf) -> MockMediaRepo {
+        let blob = MediaBlobId::from_digest(&[7; MEDIA_CONTENT_DIGEST_BYTES]);
+        let held = clip_source_referrer(clip);
+        let mut media = MockMediaRepo::new();
+        media
+            .expect_blob_of()
+            .returning(move |referrer| Ok((*referrer == held).then(|| blob.clone())));
+        media.expect_resolve().returning(move |_| Ok(file.clone()));
+        media
+    }
+
+    fn view_over(
+        cx: &mut gpui::TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        clips: Vec<StoredClip>,
+        media: MockMediaRepo,
+    ) -> Entity<ScreenActionsView> {
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+        });
+        let action_repo: Arc<dyn ActionRepo> = Arc::new(StubActions);
+        let mut queues = MockQueueRepo::new();
+        queues.expect_list().returning(|| Ok(Vec::new()));
+        let queue_repo: Arc<dyn QueueRepo> = Arc::new(queues);
+        let mut triggers = MockTriggerInstanceRepo::new();
+        triggers.expect_list_all().returning(|| Ok(Vec::new()));
+        let trigger_repo: Arc<dyn TriggerInstanceRepo> = Arc::new(triggers);
+        let mut scripts = MockScriptRepo::new();
+        scripts.expect_list().returning(|| Ok(Vec::new()));
+        let mut globals = MockGlobalsRepo::new();
+        globals.expect_list().returning(|| Ok(Vec::new()));
+        let mut clip_repo = MockSoundboardClipsRepo::new();
+        clip_repo.expect_list().returning(move || Ok(clips.clone()));
+        let clip_repo: Arc<dyn SoundboardClipsRepo> = Arc::new(clip_repo);
+        let service = Arc::new(ActionsService::new(
+            Arc::clone(&action_repo),
+            Arc::clone(&queue_repo),
+            Arc::new(StubHistory),
+            Arc::clone(&trigger_repo),
+            Arc::clone(&clip_repo),
+        ));
+        let (backend, _writes) = test_backend_with_media(Arc::new(media));
+        let (bus, scheduler) = rt.block_on(async {
+            let bus = EventBus::new(Arc::new(StubEventLog));
+            let engine = spawn_action_engine(
+                Arc::clone(&bus),
+                stub_catalog(),
+                Arc::new(StubActions),
+                Arc::new(StubHistory),
+                Arc::new(SubActionRegistry::new()),
+                Arc::new(ActionCancelRegistry::new()),
+            );
+            let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), Vec::new());
+            (bus, scheduler)
+        });
+        let handle = rt.handle().clone();
+        cx.update(|cx| {
+            cx.new(|cx| {
+                ScreenActionsView::new(
+                    action_repo,
+                    queue_repo,
+                    service,
+                    trigger_repo,
+                    Arc::new(scripts),
+                    Arc::new(ClipLibrary::new(clip_repo, backend.media_repo())),
+                    Arc::new(globals),
+                    Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+                    Arc::new(StubOverlays),
+                    Arc::new(OverlayKindRegistry::new()),
+                    None,
+                    None,
+                    Arc::new(SubActionRegistry::new()),
+                    Arc::new(TriggerRegistry::new()),
+                    handle,
+                    bus,
+                    scheduler,
+                    None,
+                    cx,
+                )
+            })
+        })
+    }
+
+    #[gpui::test]
+    fn the_clip_picker_marks_a_clip_whose_file_is_gone(cx: &mut gpui::TestAppContext) {
+        crate::i18n::install_language(forge_storage::Language::En);
+        let rt = runtime();
+        let managed_file = tempfile::NamedTempFile::new().unwrap();
+        let gone = std::path::PathBuf::from("/nonexistent/forge/ghost.wav");
+        let ghost = stored_clip("Ghost clip", gone.clone());
+        let real = stored_clip("Real clip", gone);
+        let media = media_holding(real.id, managed_file.path().to_owned());
+        let expected = options(&[
+            (&ghost.id.to_string(), "Ghost clip - file missing"),
+            (&real.id.to_string(), "Real clip"),
+        ]);
+        let view = view_over(cx, &rt, vec![ghost, real], media);
+
+        view.update(cx, |view, cx| view.fetch_select_options(cx));
+        for _ in 0..3 {
+            pump(&rt);
+            cx.run_until_parked();
+        }
+
+        let listed = view.read_with(cx, |view, _| {
+            view.select_options.get(CLIP_OPTIONS_KEY).cloned()
+        });
+        assert_eq!(listed, Some(expected));
+    }
+}

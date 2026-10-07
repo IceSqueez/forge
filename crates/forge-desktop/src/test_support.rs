@@ -55,7 +55,6 @@ pub(crate) fn test_backend_with_overlays(
     backend_over(Some(overlays), None, Arc::new(EmptyMediaLibrary))
 }
 
-#[allow(dead_code)]
 pub(crate) fn test_backend_with_media(
     media: Arc<dyn MediaRepo>,
 ) -> (Arc<TestBackend>, UnboundedReceiver<SettingWrite>) {

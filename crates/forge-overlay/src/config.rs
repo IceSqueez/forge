@@ -612,7 +612,7 @@ mod tests {
         }
 
         fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
-            compose(PreviewShape::Strip, config)
+            compose(PreviewShape::Strip, None, config)
         }
         fn page_assets(&self) -> PageAssets {
             PageAssets {

@@ -267,6 +267,7 @@ mod tests {
     fn appearance(key: &str, value: &str) -> PreviewComposition {
         compose(
             PreviewShape::Strip,
+            None,
             &OverlayConfig::from([(key.to_owned(), config::text(value))]),
         )
     }
@@ -302,7 +303,7 @@ mod tests {
                     OverlayConfig::from([(config::POSITION.to_owned(), config::text(stored))]);
 
                 assert_eq!(
-                    compose(shape, &config).position,
+                    compose(shape, None, &config).position,
                     expected,
                     "{shape:?} placed {stored:?} on the wrong edge"
                 );
@@ -326,7 +327,7 @@ mod tests {
                 ),
             ] {
                 assert_eq!(
-                    compose(shape, &config).position,
+                    compose(shape, None, &config).position,
                     PreviewPosition::Bottom,
                     "{shape:?} with a position {label}"
                 );
@@ -343,7 +344,7 @@ mod tests {
         ] {
             for stored in [config::POSITION_TOP, config::POSITION_BOTTOM, "center"] {
                 assert_eq!(
-                    compose(shape, &one_text(config::POSITION, stored)).position,
+                    compose(shape, None, &one_text(config::POSITION, stored)).position,
                     PreviewPosition::Center,
                     "{shape:?} still placed itself by a stored {stored:?}"
                 );
@@ -370,7 +371,7 @@ mod tests {
                 ]),
             ),
         ] {
-            let composition = compose(PreviewShape::Strip, &config);
+            let composition = compose(PreviewShape::Strip, None, &config);
 
             assert_eq!(composition.accent, PreviewAccent::Mauve, "accent {label}");
             assert_eq!(composition.font, PreviewFont::Sans, "font {label}");
@@ -392,7 +393,7 @@ mod tests {
             ),
             ("nothing set", OverlayConfig::new(), Vec::new()),
         ] {
-            let roles: Vec<PreviewLineRole> = compose(PreviewShape::Strip, &config)
+            let roles: Vec<PreviewLineRole> = compose(PreviewShape::Strip, None, &config)
                 .lines
                 .iter()
                 .map(|line| line.role)
@@ -410,7 +411,7 @@ mod tests {
     }
 
     fn line_texts(shape: PreviewShape, config: &OverlayConfig) -> Vec<String> {
-        compose(shape, config)
+        compose(shape, None, config)
             .lines
             .into_iter()
             .map(|line| line.text)
@@ -490,7 +491,7 @@ mod tests {
             let config = every_vocabulary(&[(config::VALUE, value), (config::TARGET, target)]);
 
             assert_eq!(
-                compose(PreviewShape::ProgressBar, &config).fill,
+                compose(PreviewShape::ProgressBar, None, &config).fill,
                 expected,
                 "{label} produced the wrong fill"
             );
@@ -508,7 +509,7 @@ mod tests {
             PreviewShape::Strip,
         ] {
             assert_eq!(
-                compose(shape, &config).fill,
+                compose(shape, None, &config).fill,
                 None,
                 "{shape:?} draws no track, so a fill would be rendered nowhere"
             );
@@ -522,7 +523,7 @@ mod tests {
             config::text("%user% just subscribed!"),
         )]);
 
-        let composition = compose(PreviewShape::Strip, &config);
+        let composition = compose(PreviewShape::Strip, None, &config);
 
         assert_eq!(
             composition.lines.first().map(|line| line.text.as_str()),

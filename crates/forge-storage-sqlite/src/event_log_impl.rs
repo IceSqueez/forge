@@ -85,6 +85,7 @@ fn decode_row(row: EventLogRow) -> Result<Event, SqliteStorageError> {
         payload,
         caused_by,
         replay: row.replay != 0,
+        causation_depth: 0,
     })
 }
 

@@ -321,12 +321,8 @@ impl ActionEngine {
         };
         let started_at = OffsetDateTime::now_utc();
 
-        let ancestor_runs = self.bus.count_in_lineage(
-            req.trigger_event_id,
-            |event| event.kind == ACTION_START_KIND,
-            MAX_CAUSATION_DEPTH,
-        );
-        if ancestor_runs >= MAX_CAUSATION_DEPTH {
+        let trigger_depth = self.bus.causation_depth(req.trigger_event_id);
+        if usize::from(trigger_depth) >= MAX_CAUSATION_DEPTH {
             self.refuse_too_deep(
                 &action,
                 req.trigger_event_id,
@@ -348,7 +344,7 @@ impl ActionEngine {
             outcome: ExecutionOutcome::Success,
         };
 
-        let start_event = Event::caused_by(
+        let mut start_event = Event::caused_by(
             EventSource::Core,
             ACTION_START_KIND,
             json!({
@@ -358,7 +354,9 @@ impl ActionEngine {
             }),
             req.trigger_event_id,
         );
+        start_event.causation_depth = trigger_depth.saturating_add(1);
         let start_event_id = start_event.id;
+        let _lineage = self.bus.hold_lineage(&start_event);
         self.bus.publish(start_event);
 
         let pick: Vec<SubActionStep> = if matches!(

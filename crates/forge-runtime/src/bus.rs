@@ -17,6 +17,7 @@ use forge_storage::{EventLogRepo, StorageError};
 use forge_types::EventId;
 use futures_util::FutureExt;
 use futures_util::future::Shared;
+use std::collections::HashMap;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU64, Ordering},
@@ -74,6 +75,22 @@ pub struct EventBus {
     abandoned_rows: Arc<AtomicU64>,
     flushes: Mutex<Vec<Shared<oneshot::Receiver<()>>>>,
     first_chats: ArcSwapOption<FirstChatLedger>,
+    held_lineages: Mutex<HashMap<EventId, u16>>,
+}
+
+pub(crate) struct LineageHold<'a> {
+    bus: &'a EventBus,
+    event_id: EventId,
+}
+
+impl Drop for LineageHold<'_> {
+    fn drop(&mut self) {
+        self.bus
+            .held_lineages
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&self.event_id);
+    }
 }
 
 pub enum Delivery {
@@ -144,6 +161,7 @@ impl EventBus {
             abandoned_rows: Arc::new(AtomicU64::new(0)),
             flushes: Mutex::new(Vec::new()),
             first_chats: ArcSwapOption::empty(),
+            held_lineages: Mutex::new(HashMap::new()),
         })
     }
 
@@ -151,13 +169,17 @@ impl EventBus {
         if let Some(ledger) = self.first_chats.load().as_deref() {
             ledger.stamp(&mut event);
         }
-        let event = Arc::new(event);
         let lanes = self.lanes.load();
-        let transient = {
+        let (event, transient) = {
             let mut ring = self.ring.lock().unwrap_or_else(|p| p.into_inner());
+            if let Some(parent) = event.caused_by {
+                let inherited = self.depth_of(parent, &ring);
+                event.causation_depth = event.causation_depth.max(inherited);
+            }
+            let event = Arc::new(event);
             let transient = lanes.is_transient(&event, &ring);
             ring.push(Arc::clone(&event));
-            transient
+            (event, transient)
         };
         let lane = lanes.lane_of(&event);
         self.critical.deliver(&event, lane, transient);
@@ -232,27 +254,31 @@ impl EventBus {
             .map(|event| Event::clone(event))
     }
 
-    pub(crate) fn count_in_lineage(
-        &self,
-        from: EventId,
-        counts: impl Fn(&Event) -> bool,
-        ceiling: usize,
-    ) -> usize {
+    pub(crate) fn causation_depth(&self, event_id: EventId) -> u16 {
         let ring = self.ring.lock().unwrap_or_else(|p| p.into_inner());
-        let mut matched = 0;
-        let mut cursor = Some(from);
-        while let Some(id) = cursor
-            && matched < ceiling
-        {
-            let Some(event) = ring.get(id) else {
-                break;
-            };
-            if counts(event) {
-                matched += 1;
-            }
-            cursor = event.caused_by;
+        self.depth_of(event_id, &ring)
+    }
+
+    pub(crate) fn hold_lineage(&self, event: &Event) -> LineageHold<'_> {
+        self.held_lineages
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(event.id, event.causation_depth);
+        LineageHold {
+            bus: self,
+            event_id: event.id,
         }
-        matched
+    }
+
+    fn depth_of(&self, event_id: EventId, ring: &EventRing) -> u16 {
+        let held = self
+            .held_lineages
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(&event_id)
+            .copied();
+        held.or_else(|| ring.get(event_id).map(|event| event.causation_depth))
+            .unwrap_or(0)
     }
 
     pub fn recent(&self, limit: usize) -> Vec<Event> {
@@ -312,6 +338,7 @@ impl EventBus {
             payload: original.payload,
             caused_by: original.caused_by,
             replay: true,
+            causation_depth: 0,
         };
 
         self.publish(replayed);

@@ -27,6 +27,8 @@ pub struct Event {
     pub caused_by: Option<EventId>,
     #[serde(default)]
     pub replay: bool,
+    #[serde(default)]
+    pub causation_depth: u16,
 }
 
 impl Event {
@@ -39,6 +41,7 @@ impl Event {
             payload,
             caused_by: None,
             replay: false,
+            causation_depth: 0,
         }
     }
 

@@ -37,6 +37,7 @@ pub(crate) fn decode_push(frame: Value) -> Result<Event, serde_json::Error> {
         payload: data,
         caused_by: event.caused_by,
         replay: event.replay,
+        causation_depth: 0,
     })
 }
 

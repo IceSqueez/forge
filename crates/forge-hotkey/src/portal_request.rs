@@ -102,3 +102,82 @@ fn predicted_request_path(conn: &Connection, handle_token: &str) -> String {
     let sender = unique.trim_start_matches(':').replace('.', "_");
     format!("{REQUEST_PATH_PREFIX}/{sender}/{handle_token}")
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use zbus::zvariant::ObjectPath;
+
+    fn results(key: &str, value: Value<'_>) -> HashMap<String, OwnedValue> {
+        HashMap::from([(key.to_owned(), OwnedValue::try_from(value).unwrap())])
+    }
+
+    #[test]
+    fn a_successful_response_yields_its_results() {
+        let outcome = PortalOutcome::Success(results("session_handle", Value::from("x")));
+
+        let out = outcome.into_results("CreateSession").unwrap();
+
+        assert!(out.contains_key("session_handle"));
+    }
+
+    #[test]
+    fn a_non_success_response_names_the_method_and_the_reason() {
+        for (outcome, expected) in [
+            (PortalOutcome::Cancelled, "cancelled"),
+            (PortalOutcome::Ended(2), "response 2"),
+        ] {
+            let err = outcome.into_results("BindShortcuts").unwrap_err();
+            assert!(
+                err.contains("BindShortcuts") && err.contains(expected),
+                "unexpected message {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn object_path_result_accepts_a_path_or_a_path_string_only() {
+        let path = ObjectPath::try_from("/org/freedesktop/portal/desktop/session/1_2/t").unwrap();
+        for (value, expected) in [
+            (Value::from(path.clone()), Some(path.as_str())),
+            (Value::from(path.as_str()), Some(path.as_str())),
+            (Value::from("not a path"), None),
+            (Value::from(7_u32), None),
+        ] {
+            let found = object_path_result(&results("session_handle", value), "session_handle");
+            assert_eq!(found.as_ref().map(|p| p.as_str()), expected);
+        }
+    }
+
+    #[test]
+    fn object_path_result_is_none_when_the_key_is_missing() {
+        let found = object_path_result(&results("other", Value::from("/a")), "session_handle");
+
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn make_token_is_a_valid_object_path_element_for_any_app_name() {
+        for app in [
+            "forge",
+            "dev.forge.Forge-desktop",
+            "\u{444}\u{43e}\u{440}\u{434}\u{436}",
+            "",
+        ] {
+            let token = make_token(app, "bind");
+            assert!(
+                ObjectPath::try_from(format!("{REQUEST_PATH_PREFIX}/1_42/{token}")).is_ok(),
+                "token {token:?} for {app:?} is not a valid path element"
+            );
+        }
+    }
+
+    #[test]
+    fn make_token_never_repeats_for_the_same_app_and_purpose() {
+        let first = make_token("forge", "bind");
+        let second = make_token("forge", "bind");
+
+        assert_ne!(first, second);
+    }
+}

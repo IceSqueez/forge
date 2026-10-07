@@ -607,3 +607,129 @@ fn parse_shortcut_signal(msg: &zbus::Message, edge: HotkeyEdge) -> Option<Shortc
     ) = msg.body().deserialize().ok()?;
     Some(ShortcutEdge { shortcut_id, edge })
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    const SESSION: &str = "/org/freedesktop/portal/desktop/session/1_42/forge_sess_0";
+
+    fn message<B>(interface: &str, member: &str, body: &B) -> zbus::Message
+    where
+        B: serde::Serialize + zbus::zvariant::DynamicType,
+    {
+        zbus::Message::signal(PORTAL_OBJECT_PATH, interface, member)
+            .unwrap()
+            .build(body)
+            .unwrap()
+    }
+
+    fn bind_response(
+        shortcuts: Vec<(&str, HashMap<&str, Value<'_>>)>,
+    ) -> HashMap<String, OwnedValue> {
+        let mut results: HashMap<&str, Value<'_>> = HashMap::new();
+        results.insert(RESULT_SHORTCUTS, Value::from(shortcuts));
+        let msg = message(
+            "org.freedesktop.portal.Request",
+            "Response",
+            &(0_u32, results),
+        );
+        let (_code, decoded): (u32, HashMap<String, OwnedValue>) =
+            msg.body().deserialize().unwrap();
+        decoded
+    }
+
+    fn unchecked_combo(raw: &str) -> HotkeyCombo {
+        serde_json::from_value(serde_json::Value::String(raw.to_owned())).unwrap()
+    }
+
+    #[test]
+    fn bound_triggers_reads_each_returned_shortcut_with_its_trigger_description() {
+        let results = bind_response(vec![
+            (
+                "Ctrl+F1",
+                HashMap::from([
+                    (SHORTCUT_DESCRIPTION, Value::from("Ctrl+F1")),
+                    (SHORTCUT_TRIGGER_DESCRIPTION, Value::from("Ctrl + F1")),
+                ]),
+            ),
+            (
+                "Alt+X",
+                HashMap::from([(SHORTCUT_DESCRIPTION, Value::from("Alt+X"))]),
+            ),
+        ]);
+
+        let bound = bound_triggers(&results);
+
+        assert_eq!(
+            bound,
+            HashMap::from([
+                ("Ctrl+F1".to_owned(), "Ctrl + F1".to_owned()),
+                ("Alt+X".to_owned(), String::new()),
+            ])
+        );
+    }
+
+    #[test]
+    fn bound_triggers_is_empty_for_an_empty_subset_or_a_missing_shortcuts_key() {
+        let empty_subset = bind_response(Vec::new());
+        let missing_key: HashMap<String, OwnedValue> = HashMap::new();
+
+        for results in [empty_subset, missing_key] {
+            assert!(bound_triggers(&results).is_empty());
+        }
+    }
+
+    #[test]
+    fn shortcut_properties_omit_the_trigger_for_a_combo_the_spec_cannot_express() {
+        let combo = unchecked_combo("Ctrl+PrintScreen");
+
+        let props = shortcut_properties(&combo);
+
+        assert!(props.contains_key(SHORTCUT_DESCRIPTION));
+        assert!(!props.contains_key(SHORTCUT_PREFERRED_TRIGGER));
+    }
+
+    #[test]
+    fn shortcut_properties_carry_the_preferred_trigger_for_a_supported_combo() {
+        let combo = HotkeyCombo::parse("Ctrl+F1").unwrap();
+
+        let props = shortcut_properties(&combo);
+
+        assert_eq!(
+            props.get(SHORTCUT_PREFERRED_TRIGGER),
+            Some(&Value::from("CTRL+F1"))
+        );
+    }
+
+    #[test]
+    fn activated_and_deactivated_signals_map_to_press_and_release_of_the_shortcut() {
+        let session = ObjectPath::try_from(SESSION).unwrap();
+        let options: HashMap<&str, Value<'_>> = HashMap::new();
+        for (member, edge) in [
+            (ACTIVATED_SIGNAL, HotkeyEdge::Press),
+            (DEACTIVATED_SIGNAL, HotkeyEdge::Release),
+        ] {
+            let msg = message(
+                GLOBAL_SHORTCUTS_INTERFACE,
+                member,
+                &(session.clone(), "Ctrl+F1", 123_456_u64, options.clone()),
+            );
+
+            let parsed = parse_shortcut_signal(&msg, edge).unwrap();
+
+            assert_eq!(
+                (parsed.shortcut_id.as_str(), parsed.edge),
+                ("Ctrl+F1", edge)
+            );
+        }
+    }
+
+    #[test]
+    fn a_shortcut_signal_with_an_unexpected_body_is_ignored() {
+        let msg = message(GLOBAL_SHORTCUTS_INTERFACE, ACTIVATED_SIGNAL, &("Ctrl+F1",));
+
+        assert!(parse_shortcut_signal(&msg, HotkeyEdge::Press).is_none());
+    }
+}

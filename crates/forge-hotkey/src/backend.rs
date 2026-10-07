@@ -96,9 +96,11 @@ pub(crate) mod tests {
         pub(crate) unregister_calls: Arc<AtomicUsize>,
         pub(crate) fail_unregister: Arc<AtomicBool>,
         pub(crate) restart_tx: mpsc::Sender<()>,
+        pub(crate) session_tx: mpsc::Sender<BackendSessionEvent>,
         gate_only: bool,
         fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,
         restart_rx_slot: Mutex<Option<mpsc::Receiver<()>>>,
+        session_rx_slot: Mutex<Option<mpsc::Receiver<BackendSessionEvent>>>,
     }
 
     impl MockPortalBackend {
@@ -113,6 +115,7 @@ pub(crate) mod tests {
         fn with_gate(gate_only: bool) -> (Self, mpsc::Sender<HotkeyFiredEvent>) {
             let (tx, rx) = mpsc::channel(64);
             let (restart_tx, restart_rx) = mpsc::channel(4);
+            let (session_tx, session_rx) = mpsc::channel(4);
             let mock = Self {
                 registered: Arc::new(Mutex::new(HashMap::new())),
                 fail_on: Arc::new(Mutex::new(HashSet::new())),
@@ -120,9 +123,11 @@ pub(crate) mod tests {
                 unregister_calls: Arc::new(AtomicUsize::new(0)),
                 fail_unregister: Arc::new(AtomicBool::new(false)),
                 restart_tx,
+                session_tx,
                 gate_only,
                 fired_rx_slot: Mutex::new(Some(rx)),
                 restart_rx_slot: Mutex::new(Some(restart_rx)),
+                session_rx_slot: Mutex::new(Some(session_rx)),
             };
             (mock, tx)
         }
@@ -163,6 +168,10 @@ pub(crate) mod tests {
 
         fn restart_rx(&self) -> Option<mpsc::Receiver<()>> {
             self.restart_rx_slot.lock().unwrap().take()
+        }
+
+        fn session_events_rx(&self) -> Option<mpsc::Receiver<BackendSessionEvent>> {
+            self.session_rx_slot.lock().unwrap().take()
         }
     }
 

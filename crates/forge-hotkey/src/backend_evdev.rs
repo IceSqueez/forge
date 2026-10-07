@@ -508,6 +508,7 @@ mod tests {
     use super::*;
 
     const CTRL: u16 = 29;
+    const RIGHT_CTRL: u16 = 97;
     const F1: u16 = 59;
     const X: u16 = 45;
     const AUTO_REPEAT: i32 = 2;
@@ -520,7 +521,25 @@ mod tests {
         raw
     }
 
+    fn syn_dropped_bytes() -> [u8; INPUT_EVENT_SIZE] {
+        let mut raw = [0u8; INPUT_EVENT_SIZE];
+        raw[16..18].copy_from_slice(&EV_SYN.to_ne_bytes());
+        raw[18..20].copy_from_slice(&SYN_DROPPED.to_ne_bytes());
+        raw
+    }
+
     async fn feed(script: &[(u16, i32)], combos: &[(HotkeyId, &str)]) -> Vec<HotkeyFiredEvent> {
+        let raw: Vec<[u8; INPUT_EVENT_SIZE]> = script
+            .iter()
+            .map(|(code, value)| key_event_bytes(*code, *value))
+            .collect();
+        feed_raw(&raw, combos).await
+    }
+
+    async fn feed_raw(
+        script: &[[u8; INPUT_EVENT_SIZE]],
+        combos: &[(HotkeyId, &str)],
+    ) -> Vec<HotkeyFiredEvent> {
         let modifier_state = Mutex::new(HashSet::new());
         let held_keys: HeldKeys = Arc::new(Mutex::new(HashMap::new()));
         let registered = Arc::new(RwLock::new(
@@ -531,15 +550,8 @@ mod tests {
         ));
         let (fired_tx, mut fired_rx) = mpsc::channel(16);
 
-        for (code, value) in script {
-            handle_key_event(
-                &key_event_bytes(*code, *value),
-                &modifier_state,
-                &held_keys,
-                &registered,
-                &fired_tx,
-            )
-            .await;
+        for raw in script {
+            handle_key_event(raw, &modifier_state, &held_keys, &registered, &fired_tx).await;
         }
 
         drop(fired_tx);
@@ -562,12 +574,8 @@ mod tests {
 
         let fired = feed(&script, &[(id, "Ctrl+F1")]).await;
 
-        let edges: Vec<(HotkeyId, &str, HotkeyEdge)> = fired
-            .iter()
-            .map(|e| (e.id, e.combo.as_str(), e.edge))
-            .collect();
         assert_eq!(
-            edges,
+            edges(&fired),
             vec![
                 (id, "Ctrl+F1", HotkeyEdge::Press),
                 (id, "Ctrl+F1", HotkeyEdge::Release),
@@ -591,5 +599,187 @@ mod tests {
             let fired = feed(&script, &[(id, "Ctrl+F1")]).await;
             assert_eq!(fired.len(), expected, "wrong edge count for {case}");
         }
+    }
+
+    fn edges(fired: &[HotkeyFiredEvent]) -> Vec<(HotkeyId, &str, HotkeyEdge)> {
+        fired
+            .iter()
+            .map(|e| (e.id, e.combo.as_str(), e.edge))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn releasing_one_side_of_a_modifier_keeps_the_other_side_held() {
+        let id = HotkeyId(7);
+        let script = [
+            (CTRL, KEY_DOWN),
+            (RIGHT_CTRL, KEY_DOWN),
+            (RIGHT_CTRL, KEY_UP),
+            (F1, KEY_DOWN),
+        ];
+
+        let fired = feed(&script, &[(id, "Ctrl+F1")]).await;
+
+        assert_eq!(edges(&fired), vec![(id, "Ctrl+F1", HotkeyEdge::Press)]);
+    }
+
+    #[tokio::test]
+    async fn syn_dropped_forgets_the_modifiers_held_before_it() {
+        let with_ctrl = HotkeyId(1);
+        let bare = HotkeyId(2);
+        let script = [
+            key_event_bytes(CTRL, KEY_DOWN),
+            syn_dropped_bytes(),
+            key_event_bytes(F1, KEY_DOWN),
+        ];
+
+        let fired = feed_raw(&script, &[(with_ctrl, "Ctrl+F1"), (bare, "F1")]).await;
+
+        assert_eq!(edges(&fired), vec![(bare, "F1", HotkeyEdge::Press)]);
+    }
+
+    struct FakeDevice {
+        _dir: tempfile::TempDir,
+        path: PathBuf,
+    }
+
+    impl FakeDevice {
+        fn missing() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("event0");
+            Self { _dir: dir, path }
+        }
+
+        fn new() -> Self {
+            let device = Self::missing();
+            device.create();
+            device
+        }
+
+        fn create(&self) {
+            rustix::fs::mkfifoat(
+                rustix::fs::CWD,
+                &self.path,
+                rustix::fs::Mode::from_raw_mode(0o600),
+            )
+            .unwrap();
+        }
+
+        fn writer(&self) -> std::fs::File {
+            std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&self.path)
+                .unwrap()
+        }
+
+        fn open_fd_count(&self) -> usize {
+            std::fs::read_dir("/proc/self/fd")
+                .unwrap()
+                .filter_map(|entry| std::fs::read_link(entry.ok()?.path()).ok())
+                .filter(|target| target == &self.path)
+                .count()
+        }
+    }
+
+    fn write_keys(writer: &mut std::fs::File, script: &[(u16, i32)]) {
+        use std::io::Write;
+        for (code, value) in script {
+            writer.write_all(&key_event_bytes(*code, *value)).unwrap();
+        }
+    }
+
+    async fn recv_soon<T>(rx: impl std::future::Future<Output = Option<T>>) -> T {
+        tokio::time::timeout(std::time::Duration::from_secs(5), rx)
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    fn device_pool(
+        combos: &[(HotkeyId, &str)],
+    ) -> (
+        DevicePool,
+        mpsc::Receiver<HotkeyFiredEvent>,
+        mpsc::UnboundedSender<PathBuf>,
+        mpsc::UnboundedReceiver<PathBuf>,
+    ) {
+        let registered: Registered = Arc::new(RwLock::new(
+            combos
+                .iter()
+                .map(|(id, s)| (*id, HotkeyCombo::parse(s).unwrap()))
+                .collect(),
+        ));
+        let (fired_tx, fired_rx) = mpsc::channel(16);
+        let (closed_tx, closed_rx) = mpsc::unbounded_channel();
+        let pool = DevicePool {
+            open: HashSet::new(),
+            registered,
+            fired_tx,
+        };
+        (pool, fired_rx, closed_tx, closed_rx)
+    }
+
+    #[tokio::test]
+    async fn a_device_reader_that_ends_releases_the_combo_it_was_holding() {
+        let id = HotkeyId(7);
+        let device = FakeDevice::new();
+        let mut writer = device.writer();
+        let (mut pool, mut fired_rx, closed_tx, _closed_rx) = device_pool(&[(id, "Ctrl+F1")]);
+        pool.open_device(device.path.clone(), &closed_tx);
+
+        write_keys(&mut writer, &[(CTRL, KEY_DOWN), (F1, KEY_DOWN)]);
+        drop(writer);
+        let press = recv_soon(fired_rx.recv()).await;
+        let release = recv_soon(fired_rx.recv()).await;
+
+        assert_eq!(
+            edges(&[press, release]),
+            vec![
+                (id, "Ctrl+F1", HotkeyEdge::Press),
+                (id, "Ctrl+F1", HotkeyEdge::Release),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_device_reader_that_ends_hands_its_path_back_and_closes_its_fd() {
+        let device = FakeDevice::new();
+        let writer = device.writer();
+        let (mut pool, _fired_rx, closed_tx, mut closed_rx) = device_pool(&[]);
+        pool.open_device(device.path.clone(), &closed_tx);
+
+        drop(writer);
+        let freed = recv_soon(closed_rx.recv()).await;
+
+        assert_eq!((freed, device.open_fd_count()), (device.path.clone(), 0));
+    }
+
+    #[tokio::test]
+    async fn opening_an_already_open_device_again_keeps_a_single_reader() {
+        let device = FakeDevice::new();
+        let _writer = device.writer();
+        let (mut pool, _fired_rx, closed_tx, _closed_rx) = device_pool(&[]);
+
+        pool.open_device(device.path.clone(), &closed_tx);
+        pool.open_device(device.path.clone(), &closed_tx);
+
+        assert_eq!(device.open_fd_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_device_that_failed_to_open_is_read_once_a_later_change_reopens_it() {
+        let id = HotkeyId(7);
+        let device = FakeDevice::missing();
+        let (mut pool, mut fired_rx, closed_tx, _closed_rx) = device_pool(&[(id, "F1")]);
+        pool.open_device(device.path.clone(), &closed_tx);
+
+        device.create();
+        let mut writer = device.writer();
+        pool.open_device(device.path.clone(), &closed_tx);
+        write_keys(&mut writer, &[(F1, KEY_DOWN)]);
+        let press = recv_soon(fired_rx.recv()).await;
+
+        assert_eq!(edges(&[press]), vec![(id, "F1", HotkeyEdge::Press)]);
     }
 }

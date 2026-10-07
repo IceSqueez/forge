@@ -979,6 +979,109 @@ pub(crate) mod tests {
         assert_eq!(released_event(&publisher).payload["synthesized"], true);
     }
 
+    #[cfg(target_os = "linux")]
+    fn backend_tile(client: &HotkeyClient) -> Option<(bool, Option<String>)> {
+        use forge_platform_core::{BuiltinHealth, HealthValue};
+        match client
+            .metrics()
+            .into_iter()
+            .nth(usize::from(crate::health::BACKEND_METRIC_INDEX))?
+            .value
+        {
+            HealthValue::Status { active, detail, .. } => Some((active, detail)),
+            _ => None,
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn wait_for_backend_tile(client: &HotkeyClient, expected: (bool, Option<String>)) {
+        for _ in 0..10_000 {
+            if backend_tile(client).as_ref() == Some(&expected) {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!(
+            "BACKEND tile never became {expected:?}, last {:?}",
+            backend_tile(client)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_lost_portal_session_publishes_portal_unavailable_with_the_session_lost_reason() {
+        let publisher = RecordingPublisher::new();
+        let (backend, _inject_tx) = MockPortalBackend::new();
+        let session_tx = backend.session_tx.clone();
+        let _client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+
+        session_tx
+            .send(crate::backend::BackendSessionEvent::Lost(
+                "CreateSession failed: timed out".to_owned(),
+            ))
+            .await
+            .unwrap();
+        wait_for_kind(&publisher, "hotkey.portal.unavailable").await;
+
+        let ev = publisher.find_kind("hotkey.portal.unavailable").unwrap();
+        assert_eq!(
+            (&ev.payload["reason"], &ev.payload["detail"]),
+            (
+                &serde_json::json!("shortcuts_session_lost"),
+                &serde_json::json!("CreateSession failed: timed out")
+            )
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn the_backend_tile_goes_inactive_on_session_loss_and_active_again_on_restore() {
+        let (backend, _inject_tx) = MockPortalBackend::new();
+        let session_tx = backend.session_tx.clone();
+        let client = start_supervised(backend, noop_publisher());
+        assert_eq!(backend_tile(&client), Some((true, None)));
+
+        session_tx
+            .send(crate::backend::BackendSessionEvent::Lost(
+                "bind failed".to_owned(),
+            ))
+            .await
+            .unwrap();
+        wait_for_backend_tile(&client, (false, Some("bind failed".to_owned()))).await;
+
+        session_tx
+            .send(crate::backend::BackendSessionEvent::Restored)
+            .await
+            .unwrap();
+        wait_for_backend_tile(&client, (true, None)).await;
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_lost_portal_session_pushes_an_inactive_backend_delta_to_the_health_stream() {
+        use forge_platform_core::{BuiltinHealth, HealthValue};
+        use tokio_stream::StreamExt;
+
+        let (backend, _inject_tx) = MockPortalBackend::new();
+        let session_tx = backend.session_tx.clone();
+        let client = start_supervised(backend, noop_publisher());
+        let mut stream = client.stream();
+
+        session_tx
+            .send(crate::backend::BackendSessionEvent::Lost(
+                "bind failed".to_owned(),
+            ))
+            .await
+            .unwrap();
+        let delta = stream.next().await.unwrap();
+
+        assert_eq!(delta.index, crate::health::BACKEND_METRIC_INDEX);
+        assert!(matches!(
+            delta.new_value,
+            HealthValue::Status { active: false, detail: Some(ref d), .. } if d == "bind failed"
+        ));
+    }
+
     #[tokio::test]
     async fn supervisor_teardown_closes_an_open_hold_with_a_synthesized_release() {
         let publisher = RecordingPublisher::new();

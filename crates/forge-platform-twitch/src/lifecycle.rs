@@ -852,6 +852,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_shield_phase_learned_from_a_notification_survives_a_failed_or_unreadable_seed() {
+        let failures: Vec<(&str, Result<Value, HelixError>)> = vec![
+            ("rate limited", Err(HelixError::RateLimited)),
+            (
+                "transport failure",
+                Err(HelixError::Transport("connection reset".to_owned())),
+            ),
+            (
+                "other HTTP failure",
+                Err(HelixError::Http {
+                    status: reqwest::StatusCode::BAD_REQUEST.as_u16(),
+                    body: "bad request".to_owned(),
+                }),
+            ),
+            ("empty row list", Ok(json!({ "data": [] }))),
+            ("is_active as a string", Ok(shield_row(json!("true")))),
+        ];
+        for (case, response) in failures {
+            let lifecycle = TwitchLifecycle::new();
+            lifecycle.apply_notification("channel.shield_mode.begin", &Value::Null, SELF_ID);
+            let transport = MockTransport::returning(response);
+
+            lifecycle.seed_shield_from_helix(&transport, SELF_ID).await;
+
+            assert_eq!(lifecycle.shield_phase(), ShieldPhase::Active, "{case}");
+        }
+    }
+
+    #[tokio::test]
     async fn a_shield_seed_that_learns_the_phase_bumps_the_quick_action_revision() {
         let transport = MockTransport::returning(Ok(shield_row(json!(true))));
         let lifecycle = TwitchLifecycle::new();

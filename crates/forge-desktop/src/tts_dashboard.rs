@@ -12,7 +12,7 @@ use forge_speak_queue::{
     EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
 };
 use forge_storage::SettingsRepo;
-use forge_tts_core::{TtsRegistry, TtsVoice};
+use forge_tts_core::{TtsRegistry, TtsVoice, engine_display_name};
 use gpui::{
     Animation, AnimationExt, AnyElement, ClickEvent, Context, CursorStyle, Entity, FontWeight,
     Pixels, Rgba, SharedString, Subscription, Window, bounce, div, ease_in_out, prelude::*, px,
@@ -1036,7 +1036,7 @@ fn resolve_now_voice(engine_id: &str, voice_id: &str, voices: &[TtsVoice]) -> Op
         .find(|v| v.id.0 == voice_id)
         .map(|v| v.name.clone())
         .unwrap_or_else(|| voice_id.to_owned());
-    Some(format!("{} \u{b7} {}", engine_label(engine_id), name).into())
+    Some(format!("{} \u{b7} {}", engine_display_name(engine_id), name).into())
 }
 
 fn now_speaking_panel(
@@ -1292,7 +1292,6 @@ fn test_speak_request(text: String, speaker_name: String) -> SpeakRequest {
         viewer_name: speaker_name,
         text,
         priority: Priority::Normal,
-        alias_override: None,
         engine_override: None,
         voice_override: None,
         source_event_id: None,
@@ -1312,27 +1311,12 @@ fn load_engine_roster(registry: Option<&Arc<RwLock<TtsRegistry>>>) -> Vec<Engine
         .engine_ids();
     ids.into_iter()
         .map(|id| EngineStatus {
-            name: engine_label(&id.0),
+            name: id.display_name().to_owned(),
             meta: engine_kind(&id.0).to_owned(),
             warn: false,
             id: id.0,
         })
         .collect()
-}
-
-fn engine_label(id: &str) -> String {
-    match id {
-        "piper" => "Piper",
-        "espeak-ng" => "eSpeak-NG",
-        "sapi" => "Microsoft SAPI 5",
-        "nsspeech" => "Apple AVSpeech",
-        "azure" => "Azure Speech",
-        "elevenlabs" => "ElevenLabs",
-        "openai" => "OpenAI TTS",
-        "polly" => "Amazon Polly",
-        other => return other.to_owned(),
-    }
-    .to_owned()
 }
 
 fn engine_kind(id: &str) -> &'static str {

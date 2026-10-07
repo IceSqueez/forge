@@ -48,7 +48,6 @@ pub struct SpeakRequest {
     pub viewer_name: String,
     pub text: String,
     pub priority: Priority,
-    pub alias_override: Option<AliasId>,
     pub engine_override: Option<EngineId>,
     pub voice_override: Option<VoiceId>,
     pub source_event_id: Option<forge_types::EventId>,

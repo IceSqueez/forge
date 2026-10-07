@@ -1,7 +1,6 @@
 use super::*;
 use crate::async_bridge;
 use crate::donation_services::donation_provider_options;
-use crate::tts_engines::engine_label;
 use forge_components::tr;
 use forge_registry::FormSchemaSource;
 use forge_runtime::triggers::DONATION_PROVIDER_OPTIONS_KEY;
@@ -36,7 +35,7 @@ fn engine_voice_options(voices: &[TtsVoice]) -> Vec<(String, String)> {
         .iter()
         .map(|voice| {
             let encoded = EngineVoiceRef::new(voice.engine_id.0.clone(), voice.id.0.clone());
-            let engine = engine_label(&voice.engine_id.0);
+            let engine = voice.engine_id.display_name();
             let label = if voice.locale.is_empty() {
                 format!("{engine} - {}", voice.name)
             } else {

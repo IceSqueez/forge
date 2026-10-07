@@ -514,7 +514,7 @@ pub(crate) fn speech_voice_field() -> SectionedField {
         ConfigSection::Behavior,
         FormField::Text {
             key: SPEECH_VOICE,
-            label: "Speech voice alias",
+            label: "Speech voice",
             placeholder: "e.g. piper/en_US-amy-medium",
         },
     )

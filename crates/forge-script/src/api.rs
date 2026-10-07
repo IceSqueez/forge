@@ -27,9 +27,17 @@ pub fn is_engine_bound_name(name: &str) -> bool {
     ENGINE_BOUND_NAMES.contains(&name)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ScriptSpeakError {
+    #[error("{0}")]
+    UnknownVoice(String),
+    #[error("the speak queue is unavailable: {0}")]
+    QueueUnavailable(String),
+}
+
 #[async_trait::async_trait]
 pub trait SpeakRequester: Send + Sync {
-    async fn speak(&self, text: String, voice_id_override: Option<String>);
+    async fn speak(&self, text: String, voice: Option<String>) -> Result<(), ScriptSpeakError>;
     async fn skip(&self);
     async fn clear(&self);
 }
@@ -389,20 +397,22 @@ fn build_tts_module(requester: Arc<dyn SpeakRequester>) -> Module {
         move |text: ImmutableString| -> Result<(), Box<EvalAltResult>> {
             let r = Arc::clone(&r_speak);
             let text_owned = text.to_string();
-            Handle::current().block_on(async move { r.speak(text_owned, None).await });
-            Ok(())
+            Handle::current()
+                .block_on(async move { r.speak(text_owned, None).await })
+                .map_err(|e| -> Box<EvalAltResult> { format!("tts::speak: {e}").into() })
         },
     );
 
     let r_speak_as = Arc::clone(&requester);
     m.set_native_fn(
         "speak_as",
-        move |voice_id: ImmutableString, text: ImmutableString| -> Result<(), Box<EvalAltResult>> {
+        move |voice: ImmutableString, text: ImmutableString| -> Result<(), Box<EvalAltResult>> {
             let r = Arc::clone(&r_speak_as);
-            let voice_owned = voice_id.to_string();
+            let voice_owned = voice.to_string();
             let text_owned = text.to_string();
-            Handle::current().block_on(async move { r.speak(text_owned, Some(voice_owned)).await });
-            Ok(())
+            Handle::current()
+                .block_on(async move { r.speak(text_owned, Some(voice_owned)).await })
+                .map_err(|e| -> Box<EvalAltResult> { format!("tts::speak_as: {e}").into() })
         },
     );
 

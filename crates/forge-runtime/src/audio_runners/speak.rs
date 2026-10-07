@@ -37,18 +37,9 @@ impl SpeakRunner {
         let Some(stored) = config.str_nonempty(VOICE_KEY) else {
             return Ok(None);
         };
-        let Some(voice) = EngineVoiceRef::parse(stored) else {
-            return Err(format!(
-                "tts.speak.text: \"{stored}\" is not an engine voice - pick a voice again"
-            ));
-        };
-        if !voice.is_installed_in(&self.speak.get_available_voices().await) {
-            return Err(format!(
-                "tts.speak.text: voice \"{}\" of engine \"{}\" is not installed - pick a voice again",
-                voice.voice_id, voice.engine_id
-            ));
-        }
-        Ok(Some(voice.to_string()))
+        EngineVoiceRef::installed(stored, &self.speak.get_available_voices().await)
+            .map(|voice| Some(voice.to_string()))
+            .map_err(|reason| format!("tts.speak.text: {reason} - pick a voice again"))
     }
 
     fn add_learned_reward_emotes(&self, origin: &mut SpeechOrigin, text: &str) {

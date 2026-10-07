@@ -18,7 +18,9 @@ mod schedule_api;
 #[cfg(test)]
 mod test_support;
 
-pub use api::{ENGINE_BOUND_NAMES, ForgeApi, SpeakRequester, is_engine_bound_name};
+pub use api::{
+    ENGINE_BOUND_NAMES, ForgeApi, ScriptSpeakError, SpeakRequester, is_engine_bound_name,
+};
 pub use arg_binding::BoundExpression;
 pub use catalog::{MethodDescriptor, ParamDescriptor, catalog};
 pub use condition::ConditionEvaluator;

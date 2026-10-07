@@ -100,7 +100,7 @@ pub fn exit_tail(descriptor: &dyn OverlayKindDescriptor, stored: &OverlayConfig)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpeechProgram {
     pub text: String,
-    pub voice_alias: Option<String>,
+    pub voice: Option<String>,
 }
 
 pub fn take_speech(
@@ -115,11 +115,11 @@ pub fn take_speech(
     if text.is_empty() {
         return None;
     }
-    let voice_alias = effective_overlay_config(descriptor, stored)
+    let voice = effective_overlay_config(descriptor, stored)
         .get(SPEECH_VOICE)
         .and_then(Variant::as_str)
         .map(str::trim)
-        .filter(|alias| !alias.is_empty())
+        .filter(|voice| !voice.is_empty())
         .map(str::to_owned);
-    Some(SpeechProgram { text, voice_alias })
+    Some(SpeechProgram { text, voice })
 }

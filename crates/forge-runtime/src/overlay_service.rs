@@ -473,7 +473,7 @@ impl OverlayServiceHandle {
             .filter(|_| self.inner.speaker.is_some())
             .map(|program| ShowSpeech {
                 text: program.text,
-                voice_alias: program.voice_alias,
+                voice: program.voice,
                 overlay: definition.id.as_str().to_owned(),
                 show: Ulid::generate().to_string(),
                 origin: SpeechOrigin::from_args(args, caused_by),

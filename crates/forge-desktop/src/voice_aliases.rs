@@ -14,6 +14,7 @@ use forge_speak_queue::{
 use forge_storage::{
     AliasId, AssignmentStrategy, StorageError, ViewerRepo, VoiceAlias, VoiceAliasRepo,
 };
+use forge_tts_core::engine_display_name;
 use forge_voice::AliasState;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
@@ -383,7 +384,6 @@ impl VoiceAliasesView {
                 viewer_name,
                 text,
                 priority: Priority::Normal,
-                alias_override: None,
                 engine_override: None,
                 voice_override: None,
                 source_event_id: None,
@@ -899,7 +899,7 @@ fn platform_badge(
 
 fn row_from_alias(a: VoiceAlias) -> AliasRow {
     let engine = a.engine_id.0;
-    let engine_label = engine_display_label(&engine);
+    let engine_label = engine_display_name(&engine).to_owned();
     let voice = a.voice_id.0;
     let (platform, _) = split_alias_key(&a.viewer_id);
     let viewer_name = match a.viewer_name.split_once(':') {
@@ -940,16 +940,6 @@ fn engine_visual(engine_id: &str, palette: &ForgePalette) -> (Icon, Rgba) {
         "azure" => (Icon::Cloud, palette.info),
         "openai" => (Icon::Bolt, palette.accent_teal),
         _ => (Icon::Cloud, palette.text_muted),
-    }
-}
-
-fn engine_display_label(engine_id: &str) -> String {
-    match engine_id {
-        "piper" => "Piper".to_owned(),
-        "espeak" | "espeak-ng" => "eSpeak-NG".to_owned(),
-        "sapi" => "SAPI 5".to_owned(),
-        "avfoundation" => "AVFoundation".to_owned(),
-        other => other.to_owned(),
     }
 }
 

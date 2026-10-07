@@ -11,6 +11,26 @@ pub type Locale = String;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EngineId(pub String);
 
+impl EngineId {
+    pub fn display_name(&self) -> &str {
+        engine_display_name(&self.0)
+    }
+}
+
+pub fn engine_display_name(id: &str) -> &str {
+    match id {
+        "piper" => "Piper",
+        "espeak-ng" => "eSpeak-NG",
+        "sapi" => "Microsoft SAPI 5",
+        "nsspeech" => "Apple AVSpeech",
+        "azure" => "Azure Speech",
+        "elevenlabs" => "ElevenLabs",
+        "openai" => "OpenAI TTS",
+        "polly" => "Amazon Polly",
+        other => other,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct VoiceId(pub String);
 

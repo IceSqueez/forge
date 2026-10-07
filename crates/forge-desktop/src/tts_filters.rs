@@ -1047,7 +1047,6 @@ impl TtsFiltersView {
                 viewer_name: speaker_name,
                 text,
                 priority: Priority::Normal,
-                alias_override: None,
                 engine_override: None,
                 voice_override: None,
                 source_event_id: None,

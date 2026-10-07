@@ -1011,26 +1011,11 @@ fn enqueue_preview(req: &SpeakRequest, deps: &QueueDeps, catalog: &[TtsVoice]) -
                 .find(|v| v.id == voice_id)
                 .map(|v| v.name.clone())
                 .unwrap_or_else(|| voice_id.0.clone());
-            format!("{} \u{b7} {}", engine_label(&engine_id.0), name)
+            format!("{} \u{b7} {}", engine_id.display_name(), name)
         }
         ResolveResult::Skip { .. } => String::new(),
     };
     (preview, estimated_secs)
-}
-
-fn engine_label(id: &str) -> String {
-    match id {
-        "piper" => "Piper",
-        "espeak-ng" => "eSpeak-NG",
-        "sapi" => "Microsoft SAPI 5",
-        "nsspeech" => "Apple AVSpeech",
-        "azure" => "Azure Speech",
-        "elevenlabs" => "ElevenLabs",
-        "openai" => "OpenAI TTS",
-        "polly" => "Amazon Polly",
-        other => return other.to_owned(),
-    }
-    .to_owned()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1620,7 +1605,6 @@ mod tests {
             viewer_name: viewer.into(),
             text: text.into(),
             priority,
-            alias_override: None,
             engine_override: None,
             voice_override: None,
             source_event_id: Some(forge_types::EventId::new()),

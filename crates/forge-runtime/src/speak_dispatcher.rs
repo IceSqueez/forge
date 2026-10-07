@@ -80,7 +80,7 @@ fn principal_viewer(args: &ArgStack) -> Option<SpeakingViewer> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShowSpeech {
     pub text: String,
-    pub voice_alias: Option<String>,
+    pub voice: Option<String>,
     pub overlay: String,
     pub show: String,
     pub origin: SpeechOrigin,

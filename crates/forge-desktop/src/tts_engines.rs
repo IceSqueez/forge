@@ -314,7 +314,6 @@ impl TtsEnginesView {
             viewer_name: String::new(),
             text: tr!("tts_engines_voice_preview_sample"),
             priority: Priority::Normal,
-            alias_override: None,
             engine_override: Some(EngineId(engine_id)),
             voice_override: Some(VoiceId(voice_id)),
             source_event_id: None,
@@ -1065,25 +1064,10 @@ fn load_roster(registry: Option<&Arc<RwLock<TtsRegistry>>>) -> Vec<EngineEntry> 
     ids.into_iter()
         .map(|id| EngineEntry {
             kind: engine_kind(&id.0),
-            name: engine_label(&id.0),
+            name: id.display_name().to_owned(),
             id: id.0,
         })
         .collect()
-}
-
-pub(crate) fn engine_label(id: &str) -> String {
-    match id {
-        "piper" => "Piper",
-        "espeak-ng" => "eSpeak-NG",
-        "sapi" => "Microsoft SAPI 5",
-        "nsspeech" => "Apple AVSpeech",
-        "azure" => "Azure Speech",
-        "elevenlabs" => "ElevenLabs",
-        "openai" => "OpenAI TTS",
-        "polly" => "Amazon Polly",
-        other => return other.to_owned(),
-    }
-    .to_owned()
 }
 
 fn engine_kind(id: &str) -> &'static str {

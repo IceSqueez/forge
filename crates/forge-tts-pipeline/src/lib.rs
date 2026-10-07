@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::ops::Range;
 use std::sync::LazyLock;
 
 use forge_types::is_bot_account;
@@ -88,6 +89,10 @@ impl FromIterator<String> for EmoteTokenSet {
 #[derive(Debug, Clone)]
 pub enum ReplacementRule {
     Text {
+        pattern: String,
+        replacement: String,
+    },
+    WholeWord {
         pattern: String,
         replacement: String,
     },
@@ -218,14 +223,58 @@ fn is_emoji_char(c: char) -> bool {
 }
 
 pub fn strip_emote_tokens(text: &str, tokens: &EmoteTokenSet) -> String {
+    strip_emote_tokens_logged(text, tokens, &mut Unlogged)
+}
+
+fn strip_emote_tokens_logged(text: &str, tokens: &EmoteTokenSet, log: &mut impl EditLog) -> String {
     if tokens.tokens.is_empty() {
         return text.to_owned();
     }
-    let words: Vec<&str> = text
-        .split_whitespace()
-        .filter(|w| !tokens.tokens.contains(*w))
-        .collect();
-    words.join(" ")
+    let mut result = String::with_capacity(text.len());
+    let mut gap_start = 0usize;
+    for word in word_ranges(text)
+        .into_iter()
+        .filter(|word| !tokens.tokens.contains(&text[word.clone()]))
+    {
+        let separator = if result.is_empty() { "" } else { " " };
+        replace_gap(&text[gap_start..word.start], separator, &mut result, log);
+        result.push_str(&text[word.clone()]);
+        gap_start = word.end;
+    }
+    replace_gap(&text[gap_start..], "", &mut result, log);
+    result
+}
+
+fn word_ranges(text: &str) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut word_start: Option<usize> = None;
+    for (at, c) in text.char_indices() {
+        match (c.is_whitespace(), word_start) {
+            (true, Some(start)) => {
+                ranges.push(start..at);
+                word_start = None;
+            }
+            (false, None) => word_start = Some(at),
+            _ => {}
+        }
+    }
+    if let Some(start) = word_start {
+        ranges.push(start..text.len());
+    }
+    ranges
+}
+
+fn replace_gap(gap: &str, separator: &str, result: &mut String, log: &mut impl EditLog) {
+    let replaced_from = result.len();
+    result.push_str(separator);
+    if gap != separator {
+        log.record(replaced_from..result.len(), gap, separator);
+    }
+}
+
+fn record_removal(removed: &str, result: &str, log: &mut impl EditLog) {
+    let at = result.len();
+    log.record(at..at, removed, "");
 }
 
 #[allow(clippy::expect_used)]
@@ -236,8 +285,21 @@ static URL_RE: LazyLock<regex::Regex> =
 static COLON_EMOTE_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r":([A-Za-z0-9_]+):").expect("static regex"));
 
-fn colon_tokens_to_words(text: &str) -> String {
-    COLON_EMOTE_RE.replace_all(text, "$1").into_owned()
+fn colon_tokens_to_words_logged(text: &str, log: &mut impl EditLog) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut copied_until = 0usize;
+    for captures in COLON_EMOTE_RE.captures_iter(text) {
+        let (Some(whole), Some(word)) = (captures.get(0), captures.get(1)) else {
+            continue;
+        };
+        result.push_str(&text[copied_until..whole.start()]);
+        record_removal(&text[whole.start()..word.start()], &result, log);
+        result.push_str(word.as_str());
+        record_removal(&text[word.end()..whole.end()], &result, log);
+        copied_until = whole.end();
+    }
+    result.push_str(&text[copied_until..]);
+    result
 }
 
 fn is_repeat_of_recent(text: &str, recent: &[String]) -> bool {
@@ -332,6 +394,12 @@ fn stage_text_replacements(text: &str, rules: &[ReplacementRule]) -> String {
             } => {
                 current = case_insensitive_replace(&current, pattern, replacement);
             }
+            ReplacementRule::WholeWord {
+                pattern,
+                replacement,
+            } => {
+                current = whole_word_replace(&current, pattern, replacement);
+            }
             ReplacementRule::Regex {
                 compiled,
                 replacement,
@@ -345,25 +413,58 @@ fn stage_text_replacements(text: &str, rules: &[ReplacementRule]) -> String {
     current
 }
 
-fn case_insensitive_replace(text: &str, pattern: &str, replacement: &str) -> String {
-    case_insensitive_replace_logged(text, pattern, replacement, &mut Unlogged)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LiteralScope {
+    AnywhereInText,
+    WholeWords,
 }
 
-fn case_insensitive_replace_logged(
+fn case_insensitive_replace(text: &str, pattern: &str, replacement: &str) -> String {
+    literal_replace_logged(
+        text,
+        pattern,
+        replacement,
+        LiteralScope::AnywhereInText,
+        &mut Unlogged,
+    )
+}
+
+fn whole_word_replace(text: &str, pattern: &str, replacement: &str) -> String {
+    literal_replace_logged(
+        text,
+        pattern,
+        replacement,
+        LiteralScope::WholeWords,
+        &mut Unlogged,
+    )
+}
+
+fn literal_replace_logged(
     text: &str,
     pattern: &str,
     replacement: &str,
+    scope: LiteralScope,
     log: &mut impl EditLog,
 ) -> String {
     let pattern_chars: Vec<char> = pattern.chars().collect();
-    if pattern_chars.is_empty() {
+    let (Some(&first), Some(&last)) = (pattern_chars.first(), pattern_chars.last()) else {
         return text.to_owned();
-    }
+    };
+    let whole_words = scope == LiteralScope::WholeWords;
+    let bounded_start = whole_words && is_word_char(first);
+    let bounded_end = whole_words && is_word_char(last);
     let mut result = String::with_capacity(text.len());
     let mut copied_until = 0usize;
     let mut cursor = 0usize;
     while let Some(current) = text[cursor..].chars().next() {
-        match match_len_ignoring_case(&text[cursor..], &pattern_chars) {
+        let starts_here = !bounded_start || follows_word_boundary(&text[..cursor]);
+        let matched = starts_here
+            .then(|| match_len_ignoring_case(&text[cursor..], &pattern_chars))
+            .flatten()
+            .filter(|&match_len| {
+                !bounded_end || precedes_word_boundary(&text[cursor + match_len..])
+            });
+        match matched {
             Some(match_len) => {
                 result.push_str(&text[copied_until..cursor]);
                 let replaced_from = result.len();
@@ -476,15 +577,16 @@ fn longest_blocked_match(rest: &str, blocked: &[Vec<char>]) -> Option<usize> {
         .max()
 }
 
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric()
+}
+
 fn follows_word_boundary(before: &str) -> bool {
-    before
-        .chars()
-        .next_back()
-        .is_none_or(|c| !c.is_alphanumeric())
+    before.chars().next_back().is_none_or(|c| !is_word_char(c))
 }
 
 fn precedes_word_boundary(after: &str) -> bool {
-    after.chars().next().is_none_or(|c| !c.is_alphanumeric())
+    after.chars().next().is_none_or(|c| !is_word_char(c))
 }
 
 fn equals_ignoring_case(text: &str, pattern: &str) -> bool {
@@ -492,21 +594,34 @@ fn equals_ignoring_case(text: &str, pattern: &str) -> bool {
     match_len_ignoring_case(text, &pattern_chars) == Some(text.len())
 }
 
-fn transform_emotes(text: &str, config: &PipelineConfig) -> String {
+fn transform_emotes_logged(text: &str, config: &PipelineConfig, log: &mut impl EditLog) -> String {
     if config.output.emote_to_word {
-        colon_tokens_to_words(text)
+        colon_tokens_to_words_logged(text, log)
     } else if config.emote_sources.twitch {
-        strip_emote_tokens(text, &config.emote_tokens)
+        strip_emote_tokens_logged(text, &config.emote_tokens, log)
     } else {
         text.to_owned()
     }
 }
 
-fn sanitize_punctuation(text: &str) -> String {
+fn strip_emoji_logged(text: &str, log: &mut impl EditLog) -> String {
+    let mut result = String::with_capacity(text.len());
+    for (at, c) in text.char_indices() {
+        if is_emoji_char(c) {
+            record_removal(&text[at..at + c.len_utf8()], &result, log);
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+fn sanitize_punctuation_logged(text: &str, log: &mut impl EditLog) -> String {
     let mut result = String::with_capacity(text.len());
     let mut last: Option<char> = None;
-    for c in text.chars() {
+    for (at, c) in text.char_indices() {
         if c.is_ascii_punctuation() && last == Some(c) {
+            record_removal(&text[at..at + c.len_utf8()], &result, log);
             continue;
         }
         result.push(c);
@@ -525,24 +640,40 @@ fn stage_output(
     context: &PipelineContext,
     prepend_display_name: bool,
 ) -> String {
-    let emote_pass = transform_emotes(text, config);
-    let emoji_pass: String = if config.emote_sources.emoji {
-        emote_pass.chars().filter(|c| !is_emoji_char(*c)).collect()
+    stage_output_logged(text, config, context, prepend_display_name, &mut Unlogged)
+}
+
+fn stage_output_logged(
+    text: &str,
+    config: &PipelineConfig,
+    context: &PipelineContext,
+    prepend_display_name: bool,
+    log: &mut impl EditLog,
+) -> String {
+    let emote_pass = transform_emotes_logged(text, config, log);
+    log.end_pass();
+    let emoji_pass = if config.emote_sources.emoji {
+        strip_emoji_logged(&emote_pass, log)
     } else {
         emote_pass
     };
+    log.end_pass();
     let named = if prepend_display_name {
         let mut named = spoken_name_prefix(context.viewer_name);
+        log.record(0..named.len(), "", &named);
         named.push_str(&emoji_pass);
         named
     } else {
         emoji_pass
     };
-    if config.output.sanitize_punctuation {
-        sanitize_punctuation(&named)
+    log.end_pass();
+    let sanitized = if config.output.sanitize_punctuation {
+        sanitize_punctuation_logged(&named, log)
     } else {
         named
-    }
+    };
+    log.end_pass();
+    sanitized
 }
 
 enum StageOut {

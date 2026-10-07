@@ -1,9 +1,9 @@
 use std::ops::Range;
 
 use crate::{
-    PipelineConfig, PipelineContext, ReplacementRule, StageName, StageOut,
-    case_insensitive_replace_logged, equals_ignoring_case, run_stage, sanitize_punctuation,
-    spoken_name_prefix, stage_output, stage_word_blocklist_logged,
+    LiteralScope, PipelineConfig, PipelineContext, ReplacementRule, StageName, StageOut,
+    equals_ignoring_case, literal_replace_logged, run_stage, stage_output_logged,
+    stage_word_blocklist_logged,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +22,8 @@ pub enum ReplacementOrigin {
 
 pub(crate) trait EditLog {
     fn record(&mut self, output: Range<usize>, original: &str, replacement: &str);
+
+    fn end_pass(&mut self) {}
 }
 
 pub(crate) struct Unlogged;
@@ -38,6 +40,22 @@ struct PassEdit {
 
 #[derive(Default)]
 struct PassEdits(Vec<PassEdit>);
+
+#[derive(Default)]
+struct SubPassEdits {
+    finished: Vec<Vec<PassEdit>>,
+    open: PassEdits,
+}
+
+impl EditLog for SubPassEdits {
+    fn record(&mut self, output: Range<usize>, original: &str, replacement: &str) {
+        self.open.record(output, original, replacement);
+    }
+
+    fn end_pass(&mut self) {
+        self.finished.push(std::mem::take(&mut self.open.0));
+    }
+}
 
 impl EditLog for PassEdits {
     fn record(&mut self, output: Range<usize>, original: &str, replacement: &str) {
@@ -68,13 +86,16 @@ pub(crate) fn run_stage_traced(
             (StageOut::Ok(output), carried)
         }
         StageName::Output => {
-            let output = stage_output(text, config, context, prepend_display_name);
-            let body_start = if prepend_display_name {
-                spoken_prefix_len(context.viewer_name, config)
-            } else {
-                0
-            };
-            let carried = realign(marks, text, &output, body_start);
+            let mut sub_passes = SubPassEdits::default();
+            let output =
+                stage_output_logged(text, config, context, prepend_display_name, &mut sub_passes);
+            sub_passes.end_pass();
+            let carried = sub_passes
+                .finished
+                .iter()
+                .fold(marks.to_vec(), |carried, edits| {
+                    shrink_through_pass(carried, edits)
+                });
             (StageOut::Ok(output), carried)
         }
     }
@@ -127,7 +148,23 @@ fn replacements_traced(
             ReplacementRule::Text {
                 pattern,
                 replacement,
-            } => case_insensitive_replace_logged(&current, pattern, replacement, &mut edits),
+            } => literal_replace_logged(
+                &current,
+                pattern,
+                replacement,
+                LiteralScope::AnywhereInText,
+                &mut edits,
+            ),
+            ReplacementRule::WholeWord {
+                pattern,
+                replacement,
+            } => literal_replace_logged(
+                &current,
+                pattern,
+                replacement,
+                LiteralScope::WholeWords,
+                &mut edits,
+            ),
             ReplacementRule::Regex {
                 compiled,
                 replacement,
@@ -168,26 +205,34 @@ fn regex_replace_logged(
     result
 }
 
-fn carry_through_pass(
-    marks: Vec<AppliedReplacement>,
-    edits: Vec<PassEdit>,
-    origin: ReplacementOrigin,
-) -> Vec<AppliedReplacement> {
+struct Splice {
+    input: Range<usize>,
+    output: Range<usize>,
+}
+
+fn splices(edits: &[PassEdit]) -> Vec<Splice> {
     let mut consumed_input = 0usize;
     let mut produced_output = 0usize;
-    let spans: Vec<(Range<usize>, Range<usize>)> = edits
+    edits
         .iter()
         .map(|edit| {
             let input_start = edit.output.start - produced_output + consumed_input;
             consumed_input += edit.original.len();
             produced_output += edit.output.len();
-            (
-                input_start..input_start + edit.original.len(),
-                edit.output.clone(),
-            )
+            Splice {
+                input: input_start..input_start + edit.original.len(),
+                output: edit.output.clone(),
+            }
         })
-        .collect();
+        .collect()
+}
 
+fn carry_through_pass(
+    marks: Vec<AppliedReplacement>,
+    edits: Vec<PassEdit>,
+    origin: ReplacementOrigin,
+) -> Vec<AppliedReplacement> {
+    let spans = splices(&edits);
     let mut carried: Vec<AppliedReplacement> = marks
         .into_iter()
         .filter_map(|mark| shift_unless_rewritten(mark, &spans))
@@ -204,17 +249,17 @@ fn carry_through_pass(
 
 fn shift_unless_rewritten(
     mut mark: AppliedReplacement,
-    spans: &[(Range<usize>, Range<usize>)],
+    spans: &[Splice],
 ) -> Option<AppliedReplacement> {
     let mut removed_before = 0usize;
     let mut inserted_before = 0usize;
-    for (input, output) in spans {
-        if rewrites(input, &mark.output_range) {
+    for span in spans {
+        if rewrites(&span.input, &mark.output_range) {
             return None;
         }
-        if input.end <= mark.output_range.start {
-            removed_before += input.len();
-            inserted_before += output.len();
+        if span.input.end <= mark.output_range.start {
+            removed_before += span.input.len();
+            inserted_before += span.output.len();
         }
     }
     mark.output_range = mark.output_range.start - removed_before + inserted_before
@@ -228,68 +273,50 @@ fn rewrites(edit: &Range<usize>, mark: &Range<usize>) -> bool {
     overlaps || inserts_inside
 }
 
-fn spoken_prefix_len(viewer_name: &str, config: &PipelineConfig) -> usize {
-    let prefix = spoken_name_prefix(viewer_name);
-    if config.output.sanitize_punctuation {
-        sanitize_punctuation(&prefix).len()
-    } else {
-        prefix.len()
-    }
-}
-
-struct AlignedChar {
-    source: usize,
-    target: Option<Range<usize>>,
-}
-
-fn realign(
-    marks: &[AppliedReplacement],
-    source: &str,
-    target: &str,
-    body_start: usize,
+fn shrink_through_pass(
+    marks: Vec<AppliedReplacement>,
+    edits: &[PassEdit],
 ) -> Vec<AppliedReplacement> {
-    let alignment = align_surviving_chars(source, target, body_start);
+    let spans = splices(edits);
     marks
-        .iter()
-        .filter_map(|mark| {
-            let mut survivors = alignment
-                .iter()
-                .filter(|aligned| mark.output_range.contains(&aligned.source))
-                .filter_map(|aligned| aligned.target.clone());
-            let first = survivors.next()?;
-            let end = survivors.next_back().map_or(first.end, |last| last.end);
-            Some(AppliedReplacement {
-                output_range: first.start..end,
-                ..mark.clone()
+        .into_iter()
+        .filter_map(|mut mark| {
+            let start = surviving_start(mark.output_range.start, &spans);
+            let end = surviving_end(mark.output_range.end, &spans);
+            (start < end).then(|| {
+                mark.output_range = start..end;
+                mark
             })
         })
         .collect()
 }
 
-fn align_surviving_chars(source: &str, target: &str, body_start: usize) -> Vec<AlignedChar> {
-    let mut remaining = target
-        .get(body_start..)
-        .unwrap_or_default()
-        .char_indices()
-        .peekable();
-    source
-        .char_indices()
-        .map(|(source_at, source_char)| {
-            let target = match remaining.peek() {
-                Some(&(target_at, target_char))
-                    if source_char == target_char
-                        || (source_char.is_whitespace() && target_char.is_whitespace()) =>
-                {
-                    remaining.next();
-                    let start = body_start + target_at;
-                    Some(start..start + target_char.len_utf8())
-                }
-                _ => None,
-            };
-            AlignedChar {
-                source: source_at,
-                target,
-            }
-        })
-        .collect()
+fn surviving_start(at: usize, spans: &[Splice]) -> usize {
+    let mut removed_before = 0usize;
+    let mut inserted_before = 0usize;
+    for span in spans {
+        if span.input.contains(&at) {
+            return span.output.end;
+        }
+        if span.input.end <= at {
+            removed_before += span.input.len();
+            inserted_before += span.output.len();
+        }
+    }
+    at - removed_before + inserted_before
+}
+
+fn surviving_end(at: usize, spans: &[Splice]) -> usize {
+    let mut removed_before = 0usize;
+    let mut inserted_before = 0usize;
+    for span in spans {
+        if span.input.start < at && at < span.input.end {
+            return span.output.start;
+        }
+        if span.input.start < at && span.input.end <= at {
+            removed_before += span.input.len();
+            inserted_before += span.output.len();
+        }
+    }
+    at - removed_before + inserted_before
 }

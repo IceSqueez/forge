@@ -1237,31 +1237,42 @@ mod tests {
     const EMIT_KIND: &str = "test.emit";
     const FLOOD_KIND: &str = "test.flood";
     const FLOOD_THEN_EMIT_KIND: &str = "test.flood_then_emit";
+    const CANCEL_KIND: &str = "test.cancel";
     const SMALL_RING: usize = 16;
 
     struct EmitRunner {
         id: &'static str,
         fillers: usize,
         emits: bool,
+        cancels: bool,
     }
 
     impl EmitRunner {
-        fn all() -> [Self; 3] {
+        fn all() -> [Self; 4] {
             [
                 Self {
                     id: EMIT_KIND,
                     fillers: 0,
                     emits: true,
+                    cancels: false,
                 },
                 Self {
                     id: FLOOD_KIND,
                     fillers: SMALL_RING,
                     emits: false,
+                    cancels: false,
                 },
                 Self {
                     id: FLOOD_THEN_EMIT_KIND,
                     fillers: SMALL_RING,
                     emits: true,
+                    cancels: false,
+                },
+                Self {
+                    id: CANCEL_KIND,
+                    fillers: 0,
+                    emits: false,
+                    cancels: true,
                 },
             ]
         }
@@ -1311,6 +1322,9 @@ mod tests {
                     serde_json::Value::Null,
                 ));
             }
+            if self.cancels {
+                ctx.cancel.cancel();
+            }
             if self.emits {
                 ctx.publisher.publish(Event::caused_by(
                     EventSource::Core,
@@ -1342,22 +1356,42 @@ mod tests {
     }
 
     async fn self_loop_rig() -> SelfLoopRig {
-        self_loop_rig_with(EventBus::new(Arc::new(NullEventLogRepo)), &[EMIT_KIND]).await
-    }
-
-    async fn small_ring_self_loop_rig(steps: &[&str]) -> SelfLoopRig {
-        let config = Config {
-            bus_ring_retention: SMALL_RING,
-            ..Config::default()
-        };
         self_loop_rig_with(
-            EventBus::with_config(Arc::new(NullEventLogRepo), &config),
-            steps,
+            EventBus::new(Arc::new(NullEventLogRepo)),
+            vec![quick_step(EMIT_KIND, BTreeMap::new())],
+            false,
         )
         .await
     }
 
-    async fn self_loop_rig_with(bus: Arc<EventBus>, steps: &[&str]) -> SelfLoopRig {
+    async fn small_ring_self_loop_rig(steps: &[&str]) -> SelfLoopRig {
+        small_ring_rig(
+            steps
+                .iter()
+                .map(|kind_id| quick_step(kind_id, BTreeMap::new()))
+                .collect(),
+            false,
+        )
+        .await
+    }
+
+    fn small_ring_bus() -> Arc<EventBus> {
+        let config = Config {
+            bus_ring_retention: SMALL_RING,
+            ..Config::default()
+        };
+        EventBus::with_config(Arc::new(NullEventLogRepo), &config)
+    }
+
+    async fn small_ring_rig(steps: Vec<SubActionStep>, concurrent: bool) -> SelfLoopRig {
+        self_loop_rig_with(small_ring_bus(), steps, concurrent).await
+    }
+
+    async fn self_loop_rig_with(
+        bus: Arc<EventBus>,
+        steps: Vec<SubActionStep>,
+        concurrent: bool,
+    ) -> SelfLoopRig {
         let dp = sandboxed_backend([0x16; 32])
             .await
             .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
@@ -1365,6 +1399,15 @@ mod tests {
         for runner in EmitRunner::all() {
             reg.register(Box::new(runner)).unwrap();
         }
+        let gate = Arc::new(crate::ConditionGate::new(&Config::default()));
+        reg.register(Box::new(
+            crate::sub_action_runners::CoreLogicIfThenElseRunner::new(Arc::clone(&gate)),
+        ))
+        .unwrap();
+        reg.register(Box::new(
+            crate::sub_action_runners::CoreLogicLoopRunner::new(gate),
+        ))
+        .unwrap();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
             crate::Catalog::new(
@@ -1384,21 +1427,11 @@ mod tests {
             group: None,
             queue_id: serde_json::from_str("\"00000000000000000000000000\"").unwrap(),
             enabled: true,
-            concurrent: false,
+            concurrent,
             bypass_pause: false,
             execution_mode: forge_types::ExecutionMode::Sequential,
             description: None,
-            sub_actions: steps
-                .iter()
-                .map(|kind_id| SubActionStep {
-                    kind_id: (*kind_id).to_owned(),
-                    config: BTreeMap::new(),
-                    enabled: true,
-                    continue_on_error: false,
-                    condition: None,
-                    label: None,
-                })
-                .collect(),
+            sub_actions: steps,
         };
         dp.action_repo().save(&action).await.unwrap();
         SelfLoopRig {
@@ -1499,6 +1532,155 @@ mod tests {
         let trace = drive_self_loop(&rig, root).await;
 
         assert_eq!(trace.starts, MAX_CAUSATION_DEPTH);
+    }
+
+    fn body_of(kind_id: &str) -> Variant {
+        Variant::Array(vec![Variant::Object(BTreeMap::from([(
+            "kind_id".to_owned(),
+            Variant::String(kind_id.to_owned()),
+        )]))])
+    }
+
+    fn taken_branch_around(kind_id: &str) -> SubActionStep {
+        quick_step(
+            "core.logic.if_then_else",
+            BTreeMap::from([
+                ("condition".to_owned(), Variant::String("1 == 1".to_owned())),
+                ("then_chain".to_owned(), body_of(kind_id)),
+            ]),
+        )
+    }
+
+    fn single_pass_loop_around(kind_id: &str) -> SubActionStep {
+        quick_step(
+            "core.logic.loop",
+            BTreeMap::from([
+                ("mode".to_owned(), Variant::String("count".to_owned())),
+                ("count".to_owned(), Variant::Int(1)),
+                ("body".to_owned(), body_of(kind_id)),
+            ]),
+        )
+    }
+
+    fn drain_lineage_ids(sub: &mut crate::EventSubscription) -> Vec<EventId> {
+        let mut ids = Vec::new();
+        while let Ok(Some(event)) = sub.try_recv() {
+            if event.kind == ACTION_START_KIND || event.kind == "subaction.run" {
+                ids.push(event.id);
+            }
+        }
+        ids
+    }
+
+    fn depths_after_flooding_the_ring(bus: &EventBus, ids: &[EventId]) -> Vec<u16> {
+        for _ in 0..SMALL_RING {
+            bus.publish(Event::new(
+                EventSource::Twitch,
+                "twitch.chat",
+                serde_json::Value::Null,
+            ));
+        }
+        ids.iter().map(|id| bus.causation_depth(*id)).collect()
+    }
+
+    #[tokio::test]
+    async fn concurrent_self_loop_stops_at_the_depth_limit_when_its_emitting_step_floods_its_own_run_event_out_of_the_ring()
+     {
+        let rig = small_ring_rig(
+            vec![quick_step(FLOOD_THEN_EMIT_KIND, BTreeMap::new())],
+            true,
+        )
+        .await;
+        let root = platform_event(&rig.bus);
+
+        let trace = drive_self_loop(&rig, root).await;
+
+        assert_eq!(trace.starts, MAX_CAUSATION_DEPTH);
+    }
+
+    #[tokio::test]
+    async fn self_loop_stops_at_the_depth_limit_when_a_nested_body_step_floods_its_run_event_out_of_the_ring()
+     {
+        for (container, nested) in [
+            ("if", taken_branch_around(FLOOD_THEN_EMIT_KIND)),
+            ("loop", single_pass_loop_around(FLOOD_THEN_EMIT_KIND)),
+        ] {
+            let rig = small_ring_rig(vec![nested], false).await;
+            let root = platform_event(&rig.bus);
+
+            let trace = drive_self_loop(&rig, root).await;
+
+            assert_eq!(trace.starts, MAX_CAUSATION_DEPTH, "{container}");
+        }
+    }
+
+    #[tokio::test]
+    async fn finished_run_releases_every_lineage_it_held() {
+        for concurrent in [false, true] {
+            let rig = small_ring_rig(
+                vec![
+                    quick_step(EMIT_KIND, BTreeMap::new()),
+                    taken_branch_around(EMIT_KIND),
+                    single_pass_loop_around(EMIT_KIND),
+                ],
+                concurrent,
+            )
+            .await;
+            let mut sub = rig.bus.subscribe();
+
+            run_to_completion(&rig, platform_event(&rig.bus)).await;
+            let held = drain_lineage_ids(&mut sub);
+
+            assert_eq!(
+                depths_after_flooding_the_ring(&rig.bus, &held),
+                vec![0; 6],
+                "concurrent: {concurrent}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_run_releases_every_lineage_it_held() {
+        let rig = small_ring_rig(
+            vec![
+                taken_branch_around(CANCEL_KIND),
+                quick_step(EMIT_KIND, BTreeMap::new()),
+            ],
+            false,
+        )
+        .await;
+        let mut sub = rig.bus.subscribe();
+
+        run_to_completion(&rig, platform_event(&rig.bus)).await;
+        let held = drain_lineage_ids(&mut sub);
+
+        assert_eq!(depths_after_flooding_the_ring(&rig.bus, &held), vec![0; 3]);
+    }
+
+    #[tokio::test]
+    async fn finished_quick_action_releases_its_run_lineage() {
+        let rig = small_ring_rig(Vec::new(), false).await;
+        let mut parent = Event::new(EventSource::Core, "action.start", serde_json::Value::Null);
+        parent.causation_depth = 3;
+        let parent_id = parent.id;
+        rig.bus.publish(parent);
+        let mut sub = rig.bus.subscribe();
+
+        rig.engine
+            .execute_quick_action(
+                quick_step(EMIT_KIND, BTreeMap::new()),
+                "obs".to_owned(),
+                "Run".to_owned(),
+                Some(parent_id),
+            )
+            .await
+            .unwrap()
+            .outcome()
+            .await
+            .unwrap();
+        let held = drain_lineage_ids(&mut sub);
+
+        assert_eq!(depths_after_flooding_the_ring(&rig.bus, &held), vec![0]);
     }
 
     #[tokio::test]

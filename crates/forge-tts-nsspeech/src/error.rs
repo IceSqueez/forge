@@ -1,4 +1,4 @@
-use forge_tts_core::{EngineId, TtsError};
+use forge_tts_core::{ENGINE_ID_NSSPEECH, EngineId, TtsError};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum NsSpeechError {
@@ -19,7 +19,7 @@ impl From<NsSpeechError> for TtsError {
     fn from(e: NsSpeechError) -> Self {
         match e {
             NsSpeechError::NoCatalog => TtsError::EngineUnavailable {
-                id: EngineId("nsspeech".into()),
+                id: EngineId(ENGINE_ID_NSSPEECH.into()),
                 detail: "no AVSpeech voices installed".into(),
             },
             NsSpeechError::Timeout | NsSpeechError::NoAudio => {

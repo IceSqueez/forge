@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use forge_audio::PcmBuffer;
 use forge_platform_core::RateLimiter;
 use forge_tts_core::{
-    EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsError, TtsVoice,
+    ENGINE_ID_AZURE, EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsError, TtsVoice,
 };
 
 use crate::credentials::AzureCredentials;
@@ -19,7 +19,7 @@ pub(crate) const SAMPLE_RATE_HZ: u32 = 24_000;
 
 impl From<AzureError> for TtsError {
     fn from(e: AzureError) -> Self {
-        let engine_id = EngineId("azure".into());
+        let engine_id = EngineId(ENGINE_ID_AZURE.into());
         match e {
             AzureError::Http(msg) => TtsError::NetworkFailed(msg),
             AzureError::Unauthorized(reason) => TtsError::AuthFailed { reason },
@@ -63,7 +63,7 @@ fn resolved_base_url(creds: &AzureCredentials) -> String {
 impl AzureEngine {
     pub fn new(credentials: AzureCredentials) -> Self {
         Self {
-            id: EngineId("azure".into()),
+            id: EngineId(ENGINE_ID_AZURE.into()),
             credentials,
             client: reqwest::Client::new(),
             limiter: Arc::new(SynthesisRateLimiter::new()),

@@ -1321,8 +1321,8 @@ fn load_engine_roster(registry: Option<&Arc<RwLock<TtsRegistry>>>) -> Vec<Engine
 
 fn engine_kind(id: &str) -> &'static str {
     match id {
-        "piper" | "espeak-ng" => "local",
-        "sapi" | "nsspeech" => "system",
+        forge_tts_core::ENGINE_ID_PIPER | forge_tts_core::ENGINE_ID_ESPEAK_NG => "local",
+        forge_tts_core::ENGINE_ID_SAPI | forge_tts_core::ENGINE_ID_NSSPEECH => "system",
         _ => "cloud",
     }
 }

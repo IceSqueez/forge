@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use forge_tts_core::{EngineId, TtsVoice, VoiceGender, VoiceId};
+use forge_tts_core::{ENGINE_ID_ELEVENLABS, EngineId, TtsVoice, VoiceGender, VoiceId};
 use reqwest::{Client, StatusCode};
 use serde::Deserialize;
 
@@ -58,7 +58,7 @@ pub(super) async fn fetch_voices(
         .await
         .map_err(|e| ElevenLabsError::Http(e.to_string()))?;
 
-    let engine_id = EngineId("elevenlabs".into());
+    let engine_id = EngineId(ENGINE_ID_ELEVENLABS.into());
     Ok(list
         .voices
         .into_iter()

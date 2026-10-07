@@ -1,4 +1,4 @@
-use forge_tts_core::{EngineId, TtsVoice, VoiceGender, VoiceId};
+use forge_tts_core::{ENGINE_ID_POLLY, EngineId, TtsVoice, VoiceGender, VoiceId};
 use reqwest::{Client, StatusCode};
 use serde::Deserialize;
 
@@ -66,7 +66,7 @@ pub(super) async fn fetch_voices(
         .await
         .map_err(|e| PollyError::Http(e.to_string()))?;
 
-    let engine_id = EngineId("polly".into());
+    let engine_id = EngineId(ENGINE_ID_POLLY.into());
     Ok(list
         .voices
         .into_iter()

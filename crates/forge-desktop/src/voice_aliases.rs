@@ -933,12 +933,14 @@ fn choice_from_strategy(strategy: &AssignmentStrategy) -> StrategyChoice {
 
 fn engine_visual(engine_id: &str, palette: &ForgePalette) -> (Icon, Rgba) {
     match engine_id {
-        "piper" => (Icon::Cpu, palette.success),
-        "espeak-ng" | "sapi" | "nsspeech" => (Icon::Terminal, palette.success),
-        "elevenlabs" => (Icon::Microphone2, palette.brand),
-        "polly" => (Icon::BrandAws, palette.bits),
-        "azure" => (Icon::Cloud, palette.info),
-        "openai" => (Icon::Bolt, palette.accent_teal),
+        forge_tts_core::ENGINE_ID_PIPER => (Icon::Cpu, palette.success),
+        forge_tts_core::ENGINE_ID_ESPEAK_NG
+        | forge_tts_core::ENGINE_ID_SAPI
+        | forge_tts_core::ENGINE_ID_NSSPEECH => (Icon::Terminal, palette.success),
+        forge_tts_core::ENGINE_ID_ELEVENLABS => (Icon::Microphone2, palette.brand),
+        forge_tts_core::ENGINE_ID_POLLY => (Icon::BrandAws, palette.bits),
+        forge_tts_core::ENGINE_ID_AZURE => (Icon::Cloud, palette.info),
+        forge_tts_core::ENGINE_ID_OPENAI => (Icon::Bolt, palette.accent_teal),
         _ => (Icon::Cloud, palette.text_muted),
     }
 }

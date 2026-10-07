@@ -70,7 +70,7 @@ async fn register_local_engines(registry: &mut TtsRegistry) {
             );
         }
         registry.register(
-            EngineId("piper".into()),
+            EngineId(forge_tts_core::ENGINE_ID_PIPER.into()),
             Arc::new(PiperEngineFactory {
                 piper_binary: piper_binary.clone(),
                 voices_dir,

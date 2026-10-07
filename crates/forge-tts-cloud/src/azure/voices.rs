@@ -1,4 +1,4 @@
-use forge_tts_core::{EngineId, TtsVoice, VoiceGender, VoiceId};
+use forge_tts_core::{ENGINE_ID_AZURE, EngineId, TtsVoice, VoiceGender, VoiceId};
 use reqwest::{Client, StatusCode};
 use serde::Deserialize;
 
@@ -58,7 +58,7 @@ pub(super) async fn fetch_voices(
         .await
         .map_err(|e| AzureError::Decode(e.to_string()))?;
 
-    let engine_id = EngineId("azure".into());
+    let engine_id = EngineId(ENGINE_ID_AZURE.into());
     Ok(raw
         .into_iter()
         .map(|v| TtsVoice {

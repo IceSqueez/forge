@@ -2,8 +2,8 @@ use std::sync::{Arc, mpsc};
 
 use async_trait::async_trait;
 use forge_tts_core::{
-    EngineCapabilities, EngineId, PcmBuffer, SynthesisRequest, TtsEngine, TtsEngineFactory,
-    TtsError, TtsVoice,
+    ENGINE_ID_NSSPEECH, EngineCapabilities, EngineId, PcmBuffer, SynthesisRequest, TtsEngine,
+    TtsEngineFactory, TtsError, TtsVoice,
 };
 
 use crate::synth::{NsSpeechRequest, spawn_worker};
@@ -75,7 +75,7 @@ pub struct NsSpeechEngineFactory;
 
 impl TtsEngineFactory for NsSpeechEngineFactory {
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
-        let engine_id = EngineId("nsspeech".into());
+        let engine_id = EngineId(ENGINE_ID_NSSPEECH.into());
         let catalog = voices::voice_catalog(&engine_id).map_err(TtsError::from)?;
         let worker_tx = spawn_worker();
 

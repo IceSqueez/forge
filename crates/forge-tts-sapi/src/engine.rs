@@ -2,8 +2,8 @@ use std::sync::{Arc, mpsc};
 
 use async_trait::async_trait;
 use forge_tts_core::{
-    EngineCapabilities, EngineId, PcmBuffer, SynthesisRequest, TtsEngine, TtsEngineFactory,
-    TtsError, TtsVoice,
+    ENGINE_ID_SAPI, EngineCapabilities, EngineId, PcmBuffer, SynthesisRequest, TtsEngine,
+    TtsEngineFactory, TtsError, TtsVoice,
 };
 
 use crate::com::{StaRequest, spawn_sta_worker};
@@ -68,7 +68,7 @@ pub struct SapiEngineFactory;
 
 impl TtsEngineFactory for SapiEngineFactory {
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
-        let engine_id = EngineId("sapi".into());
+        let engine_id = EngineId(ENGINE_ID_SAPI.into());
         let (sta_tx, catalog) = spawn_sta_worker(engine_id.clone()).map_err(TtsError::from)?;
 
         if catalog.is_empty() {

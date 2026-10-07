@@ -19,7 +19,7 @@ pub async fn register_cloud_engines(registry: &RwLock<TtsRegistry>, creds: &dyn 
 }
 
 pub fn register_azure(registry: &RwLock<TtsRegistry>, creds: AzureCredentials) -> EngineId {
-    let id = EngineId("azure".into());
+    let id = EngineId(forge_tts_core::ENGINE_ID_AZURE.into());
     registry
         .write()
         .unwrap_or_else(|e| e.into_inner())
@@ -31,7 +31,7 @@ pub fn register_elevenlabs(
     registry: &RwLock<TtsRegistry>,
     creds: ElevenLabsCredentials,
 ) -> EngineId {
-    let id = EngineId("elevenlabs".into());
+    let id = EngineId(forge_tts_core::ENGINE_ID_ELEVENLABS.into());
     registry
         .write()
         .unwrap_or_else(|e| e.into_inner())
@@ -40,7 +40,7 @@ pub fn register_elevenlabs(
 }
 
 pub fn register_openai(registry: &RwLock<TtsRegistry>, creds: OpenAiCredentials) -> EngineId {
-    let id = EngineId("openai".into());
+    let id = EngineId(forge_tts_core::ENGINE_ID_OPENAI.into());
     registry
         .write()
         .unwrap_or_else(|e| e.into_inner())
@@ -49,7 +49,7 @@ pub fn register_openai(registry: &RwLock<TtsRegistry>, creds: OpenAiCredentials)
 }
 
 pub fn register_polly(registry: &RwLock<TtsRegistry>, creds: PollyCredentials) -> EngineId {
-    let id = EngineId("polly".into());
+    let id = EngineId(forge_tts_core::ENGINE_ID_POLLY.into());
     registry
         .write()
         .unwrap_or_else(|e| e.into_inner())

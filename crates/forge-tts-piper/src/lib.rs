@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_tts_core::{
-    EngineCapabilities, EngineId, PcmBuffer, SynthesisRequest, TtsEngine, TtsEngineFactory,
-    TtsError, TtsVoice, VoiceGender, VoiceId,
+    ENGINE_ID_PIPER, EngineCapabilities, EngineId, PcmBuffer, SynthesisRequest, TtsEngine,
+    TtsEngineFactory, TtsError, TtsVoice, VoiceGender, VoiceId,
 };
 
 static CAPABILITIES: EngineCapabilities = EngineCapabilities {
@@ -16,7 +16,7 @@ static CAPABILITIES: EngineCapabilities = EngineCapabilities {
 };
 
 fn piper_engine_id() -> EngineId {
-    EngineId("piper".into())
+    EngineId(ENGINE_ID_PIPER.into())
 }
 
 pub struct PiperEngine {

@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use forge_audio::PcmBuffer;
 use forge_platform_core::RateLimiter;
 use forge_tts_core::{
-    EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsError, TtsVoice,
+    ENGINE_ID_OPENAI, EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsError, TtsVoice,
 };
 
 use crate::credentials::OpenAiCredentials;
@@ -17,7 +17,7 @@ use error::OpenAiError;
 
 impl From<OpenAiError> for TtsError {
     fn from(e: OpenAiError) -> Self {
-        let engine_id = EngineId("openai".into());
+        let engine_id = EngineId(ENGINE_ID_OPENAI.into());
         match e {
             OpenAiError::Http(msg) => TtsError::NetworkFailed(msg),
             OpenAiError::Unauthorized(reason) => TtsError::AuthFailed { reason },
@@ -55,7 +55,7 @@ pub struct OpenAiEngine {
 impl OpenAiEngine {
     pub fn new(credentials: OpenAiCredentials) -> Self {
         Self {
-            id: EngineId("openai".into()),
+            id: EngineId(ENGINE_ID_OPENAI.into()),
             credentials,
             client: reqwest::Client::new(),
             limiter: Arc::new(SynthesisRateLimiter::new()),

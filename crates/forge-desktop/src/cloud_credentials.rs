@@ -55,10 +55,10 @@ impl CloudEngineKind {
 
     pub fn key(self) -> &'static str {
         match self {
-            CloudEngineKind::Azure => "azure",
-            CloudEngineKind::ElevenLabs => "elevenlabs",
-            CloudEngineKind::OpenAI => "openai",
-            CloudEngineKind::Polly => "polly",
+            CloudEngineKind::Azure => forge_tts_core::ENGINE_ID_AZURE,
+            CloudEngineKind::ElevenLabs => forge_tts_core::ENGINE_ID_ELEVENLABS,
+            CloudEngineKind::OpenAI => forge_tts_core::ENGINE_ID_OPENAI,
+            CloudEngineKind::Polly => forge_tts_core::ENGINE_ID_POLLY,
         }
     }
 
@@ -73,10 +73,10 @@ impl CloudEngineKind {
 
     pub fn from_engine_id(id: &str) -> Option<CloudEngineKind> {
         match id {
-            "azure" => Some(CloudEngineKind::Azure),
-            "elevenlabs" => Some(CloudEngineKind::ElevenLabs),
-            "openai" => Some(CloudEngineKind::OpenAI),
-            "polly" => Some(CloudEngineKind::Polly),
+            forge_tts_core::ENGINE_ID_AZURE => Some(CloudEngineKind::Azure),
+            forge_tts_core::ENGINE_ID_ELEVENLABS => Some(CloudEngineKind::ElevenLabs),
+            forge_tts_core::ENGINE_ID_OPENAI => Some(CloudEngineKind::OpenAI),
+            forge_tts_core::ENGINE_ID_POLLY => Some(CloudEngineKind::Polly),
             _ => None,
         }
     }

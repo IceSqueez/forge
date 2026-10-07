@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_tts_core::{
-    EngineCapabilities, EngineId, PcmBuffer, SynthesisRequest, TtsEngine, TtsEngineFactory,
-    TtsError, TtsVoice,
+    ENGINE_ID_ESPEAK_NG, EngineCapabilities, EngineId, PcmBuffer, SynthesisRequest, TtsEngine,
+    TtsEngineFactory, TtsError, TtsVoice,
 };
 
 use crate::{process, voices};
@@ -14,7 +14,7 @@ static CAPABILITIES: EngineCapabilities = EngineCapabilities {
 };
 
 fn espeak_engine_id() -> EngineId {
-    EngineId("espeak-ng".into())
+    EngineId(ENGINE_ID_ESPEAK_NG.into())
 }
 
 pub struct EspeakEngine {

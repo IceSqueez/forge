@@ -1,11 +1,11 @@
-use forge_tts_core::{EngineId, TtsEngine, TtsEngineFactory, TtsError};
+use forge_tts_core::{ENGINE_ID_NSSPEECH, EngineId, TtsEngine, TtsEngineFactory, TtsError};
 
 pub struct NsSpeechEngineFactory;
 
 impl TtsEngineFactory for NsSpeechEngineFactory {
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
         Err(TtsError::EngineUnavailable {
-            id: EngineId("nsspeech".into()),
+            id: EngineId(ENGINE_ID_NSSPEECH.into()),
             detail: "AVFoundation is macOS-only".into(),
         })
     }

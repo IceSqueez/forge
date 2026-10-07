@@ -97,19 +97,19 @@ struct EngineOption {
 
 const ENGINE_OPTIONS: [EngineOption; 4] = [
     EngineOption {
-        id: "piper",
+        id: forge_tts_core::ENGINE_ID_PIPER,
         label: "Piper",
     },
     EngineOption {
-        id: "espeak-ng",
+        id: forge_tts_core::ENGINE_ID_ESPEAK_NG,
         label: "eSpeak-NG",
     },
     EngineOption {
-        id: "polly",
+        id: forge_tts_core::ENGINE_ID_POLLY,
         label: "Amazon Polly",
     },
     EngineOption {
-        id: "elevenlabs",
+        id: forge_tts_core::ENGINE_ID_ELEVENLABS,
         label: "ElevenLabs",
     },
 ];

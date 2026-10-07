@@ -1,6 +1,6 @@
-use forge_tts_core::{EngineId, TtsVoice, VoiceGender, VoiceId};
+use forge_tts_core::{ENGINE_ID_OPENAI, EngineId, TtsVoice, VoiceGender, VoiceId};
 
-const ENGINE: fn() -> EngineId = || EngineId("openai".into());
+const ENGINE: fn() -> EngineId = || EngineId(ENGINE_ID_OPENAI.into());
 
 pub fn static_voices() -> Vec<TtsVoice> {
     [

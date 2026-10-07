@@ -1,4 +1,4 @@
-use forge_tts_core::{EngineId, TtsError};
+use forge_tts_core::{ENGINE_ID_SAPI, EngineId, TtsError};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum SapiError {
@@ -23,18 +23,18 @@ impl From<SapiError> for TtsError {
     fn from(e: SapiError) -> Self {
         match e {
             SapiError::ComInit(hr) => TtsError::EngineUnavailable {
-                id: EngineId("sapi".into()),
+                id: EngineId(ENGINE_ID_SAPI.into()),
                 detail: format!("CoInitializeEx 0x{hr:08x}"),
             },
             SapiError::NoCatalog => TtsError::EngineUnavailable {
-                id: EngineId("sapi".into()),
+                id: EngineId(ENGINE_ID_SAPI.into()),
                 detail: "no SAPI 5 voices found".into(),
             },
             SapiError::Speak(hr) => {
                 TtsError::Io(std::io::Error::other(format!("SAPI HRESULT 0x{hr:08x}")))
             }
             SapiError::WorkerTerminated => TtsError::EngineUnavailable {
-                id: EngineId("sapi".into()),
+                id: EngineId(ENGINE_ID_SAPI.into()),
                 detail: "STA worker terminated".into(),
             },
             SapiError::Io(io_err) => TtsError::Io(io_err),

@@ -8,6 +8,15 @@ pub use forge_audio::PcmBuffer;
 
 pub type Locale = String;
 
+pub const ENGINE_ID_PIPER: &str = "piper";
+pub const ENGINE_ID_ESPEAK_NG: &str = "espeak-ng";
+pub const ENGINE_ID_SAPI: &str = "sapi";
+pub const ENGINE_ID_NSSPEECH: &str = "nsspeech";
+pub const ENGINE_ID_AZURE: &str = "azure";
+pub const ENGINE_ID_ELEVENLABS: &str = "elevenlabs";
+pub const ENGINE_ID_OPENAI: &str = "openai";
+pub const ENGINE_ID_POLLY: &str = "polly";
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EngineId(pub String);
 
@@ -19,14 +28,14 @@ impl EngineId {
 
 pub fn engine_display_name(id: &str) -> &str {
     match id {
-        "piper" => "Piper",
-        "espeak-ng" => "eSpeak-NG",
-        "sapi" => "Microsoft SAPI 5",
-        "nsspeech" => "Apple AVSpeech",
-        "azure" => "Azure Speech",
-        "elevenlabs" => "ElevenLabs",
-        "openai" => "OpenAI TTS",
-        "polly" => "Amazon Polly",
+        ENGINE_ID_PIPER => "Piper",
+        ENGINE_ID_ESPEAK_NG => "eSpeak-NG",
+        ENGINE_ID_SAPI => "Microsoft SAPI 5",
+        ENGINE_ID_NSSPEECH => "Apple AVSpeech",
+        ENGINE_ID_AZURE => "Azure Speech",
+        ENGINE_ID_ELEVENLABS => "ElevenLabs",
+        ENGINE_ID_OPENAI => "OpenAI TTS",
+        ENGINE_ID_POLLY => "Amazon Polly",
         other => other,
     }
 }

@@ -8,7 +8,8 @@ use async_trait::async_trait;
 use forge_audio::PcmBuffer;
 use forge_platform_core::RateLimiter;
 use forge_tts_core::{
-    EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsError, TtsVoice,
+    ENGINE_ID_ELEVENLABS, EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsError,
+    TtsVoice,
 };
 
 use crate::credentials::ElevenLabsCredentials;
@@ -17,7 +18,7 @@ use error::ElevenLabsError;
 
 impl From<ElevenLabsError> for TtsError {
     fn from(e: ElevenLabsError) -> Self {
-        let engine_id = EngineId("elevenlabs".into());
+        let engine_id = EngineId(ENGINE_ID_ELEVENLABS.into());
         match e {
             ElevenLabsError::Http(msg) => TtsError::NetworkFailed(msg),
             ElevenLabsError::Unauthorized(reason) => TtsError::AuthFailed { reason },
@@ -55,7 +56,7 @@ pub struct ElevenLabsEngine {
 impl ElevenLabsEngine {
     pub fn new(credentials: ElevenLabsCredentials) -> Self {
         Self {
-            id: EngineId("elevenlabs".into()),
+            id: EngineId(ENGINE_ID_ELEVENLABS.into()),
             credentials,
             client: reqwest::Client::new(),
             limiter: Arc::new(SynthesisRateLimiter::new()),

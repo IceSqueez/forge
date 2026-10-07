@@ -9,7 +9,8 @@ use async_trait::async_trait;
 use forge_audio::PcmBuffer;
 use forge_platform_core::RateLimiter;
 use forge_tts_core::{
-    EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsError, TtsVoice, VoiceId,
+    ENGINE_ID_POLLY, EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsError, TtsVoice,
+    VoiceId,
 };
 
 use crate::credentials::PollyCredentials;
@@ -20,7 +21,7 @@ pub(crate) const SAMPLE_RATE_HZ: u32 = 16_000;
 
 impl From<PollyError> for TtsError {
     fn from(e: PollyError) -> Self {
-        let engine_id = EngineId("polly".into());
+        let engine_id = EngineId(ENGINE_ID_POLLY.into());
         match e {
             PollyError::Http(msg) => TtsError::NetworkFailed(msg),
             PollyError::Unauthorized(reason) => TtsError::AuthFailed { reason },
@@ -64,7 +65,7 @@ fn resolved_base_url(creds: &PollyCredentials) -> String {
 impl PollyEngine {
     pub fn new(credentials: PollyCredentials) -> Self {
         Self {
-            id: EngineId("polly".into()),
+            id: EngineId(ENGINE_ID_POLLY.into()),
             credentials,
             client: reqwest::Client::new(),
             limiter: Arc::new(SynthesisRateLimiter::new()),

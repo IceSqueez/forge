@@ -1,4 +1,4 @@
-use forge_tts_core::{EngineId, TtsError};
+use forge_tts_core::{ENGINE_ID_ESPEAK_NG, EngineId, TtsError};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum EspeakError {
@@ -16,7 +16,7 @@ impl From<EspeakError> for TtsError {
     fn from(e: EspeakError) -> Self {
         match e {
             EspeakError::BinaryNotFound => TtsError::EngineUnavailable {
-                id: EngineId("espeak-ng".into()),
+                id: EngineId(ENGINE_ID_ESPEAK_NG.into()),
                 detail: "espeak-ng binary not found on PATH".into(),
             },
             EspeakError::SubprocessFailed(msg) => TtsError::Io(std::io::Error::other(msg)),

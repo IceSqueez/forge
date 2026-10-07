@@ -9,8 +9,11 @@ use forge_types::{
     ArgStack, PlatformId, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
 };
 
+use crate::engine_voice_ref::{ENGINE_VOICE_OPTIONS_KEY, EngineVoiceRef};
 use crate::speak_dispatcher::{SpeakDispatcher, SpeechOrigin};
 use crate::twitch_emote_lexicon::TwitchEmoteLexicon;
+
+const VOICE_KEY: &str = "voice";
 
 pub struct SpeakRunner {
     speak: Arc<dyn SpeakDispatcher>,
@@ -28,6 +31,24 @@ impl SpeakRunner {
     pub fn with_reward_emotes(mut self, lexicon: TwitchEmoteLexicon) -> Self {
         self.reward_emotes = lexicon;
         self
+    }
+
+    async fn installed_voice(&self, config: &SubActionConfig) -> Result<Option<String>, String> {
+        let Some(stored) = config.str_nonempty(VOICE_KEY) else {
+            return Ok(None);
+        };
+        let Some(voice) = EngineVoiceRef::parse(stored) else {
+            return Err(format!(
+                "tts.speak.text: \"{stored}\" is not an engine voice - pick a voice again"
+            ));
+        };
+        if !voice.is_installed_in(&self.speak.get_available_voices().await) {
+            return Err(format!(
+                "tts.speak.text: voice \"{}\" of engine \"{}\" is not installed - pick a voice again",
+                voice.voice_id, voice.engine_id
+            ));
+        }
+        Ok(Some(voice.to_string()))
     }
 
     fn add_learned_reward_emotes(&self, origin: &mut SpeechOrigin, text: &str) {
@@ -58,11 +79,11 @@ impl SubActionRunner for SpeakRunner {
     }
 
     fn summary(&self) -> &str {
-        "Send text to the TTS speak queue with an optional voice alias override"
+        "Send text to the TTS speak queue, optionally with a chosen engine voice"
     }
 
     fn search_text(&self) -> &str {
-        "speak tts text voice alias queue"
+        "speak tts text voice engine queue"
     }
 
     fn icon_name(&self) -> &str {
@@ -83,12 +104,12 @@ impl SubActionRunner for SpeakRunner {
                 label: "Text",
             },
             FormField::Optional {
-                key: "voice_alias",
-                label: "Voice alias",
-                inner: Box::new(FormField::Text {
-                    key: "voice_alias",
-                    label: "Voice alias",
-                    placeholder: "e.g. piper/en_US-amy-medium",
+                key: VOICE_KEY,
+                label: "Voice (leave empty for the default voice)",
+                inner: Box::new(FormField::DynamicSelect {
+                    key: VOICE_KEY,
+                    label: "Voice",
+                    options_key: ENGINE_VOICE_OPTIONS_KEY,
                 }),
             },
             FormField::Toggle {
@@ -117,7 +138,10 @@ impl SubActionRunner for SpeakRunner {
         let raw_text = config.str("text").unwrap_or_default();
         let text = ctx.arg_stack.interpolate(raw_text);
 
-        let voice_alias = config.str("voice_alias").map(|s| s.to_owned());
+        let voice = match self.installed_voice(config).await {
+            Ok(voice) => voice,
+            Err(reason) => return (timer.finish(SubActionOutcome::Failed(reason)), None),
+        };
 
         let is_reward = ctx.arg_stack.get("reward.id").is_some();
         let mut origin = SpeechOrigin::from_args(ctx.arg_stack, Some(ctx.parent_event_id));
@@ -127,14 +151,12 @@ impl SubActionRunner for SpeakRunner {
         let wait_for_completion = config.bool("wait_for_completion").unwrap_or(true);
         let dispatch_result = if wait_for_completion {
             self.speak
-                .speak_and_wait(text, voice_alias, is_reward, origin, ctx.cancel.clone())
+                .speak_and_wait(text, voice, is_reward, origin, ctx.cancel.clone())
                 .await
         } else if is_reward {
-            self.speak
-                .speak_reward_sourced(text, voice_alias, origin)
-                .await
+            self.speak.speak_reward_sourced(text, voice, origin).await
         } else {
-            self.speak.speak(text, voice_alias, origin).await
+            self.speak.speak(text, voice, origin).await
         };
 
         (

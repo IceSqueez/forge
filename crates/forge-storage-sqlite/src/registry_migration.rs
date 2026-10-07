@@ -238,7 +238,7 @@ fn map_sub_action_variant(
             let mut config = BTreeMap::new();
             insert_str(&mut config, fields, "text");
             if let Some(alias) = fields.get("voice_alias").and_then(|v| v.as_str()) {
-                config.insert("voice_alias".to_owned(), Variant::String(alias.to_owned()));
+                config.insert("voice".to_owned(), Variant::String(alias.to_owned()));
             }
             ("tts.speak.text".to_owned(), config)
         }

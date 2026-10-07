@@ -16,6 +16,7 @@ pub mod delivery;
 mod delivery_loss;
 mod donations;
 mod egress;
+mod engine_voice_ref;
 pub mod event_log_bridge;
 mod event_log_writer;
 mod event_ring;
@@ -67,6 +68,7 @@ pub use donations::{
     CatchUpWaker, DONATION_CATCH_UP, DonationAudience, DonationIngest, DonationOverlayAudience,
     TestDonationRunner, register_donation_sub_actions,
 };
+pub use engine_voice_ref::{ENGINE_VOICE_OPTIONS_KEY, EngineVoiceRef};
 pub use event_log_bridge::spawn_event_log_bridge;
 pub use first_chat_ledger::FirstChatLedger;
 pub use integration_gate::IntegrationGate;

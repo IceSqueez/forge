@@ -1071,7 +1071,7 @@ fn load_roster(registry: Option<&Arc<RwLock<TtsRegistry>>>) -> Vec<EngineEntry> 
         .collect()
 }
 
-fn engine_label(id: &str) -> String {
+pub(crate) fn engine_label(id: &str) -> String {
     match id {
         "piper" => "Piper",
         "espeak-ng" => "eSpeak-NG",

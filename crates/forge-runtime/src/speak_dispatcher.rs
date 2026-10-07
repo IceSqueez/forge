@@ -115,7 +115,7 @@ pub trait SpeakDispatcher: Send + Sync {
     async fn speak(
         &self,
         text: String,
-        voice_id_override: Option<String>,
+        voice: Option<String>,
         origin: SpeechOrigin,
     ) -> Result<(), SpeakDispatchError>;
 
@@ -132,26 +132,25 @@ pub trait SpeakDispatcher: Send + Sync {
     async fn speak_reward_sourced(
         &self,
         text: String,
-        voice_id_override: Option<String>,
+        voice: Option<String>,
         origin: SpeechOrigin,
     ) -> Result<(), SpeakDispatchError> {
-        self.speak(text, voice_id_override, origin).await
+        self.speak(text, voice, origin).await
     }
 
     async fn speak_and_wait(
         &self,
         text: String,
-        voice_id_override: Option<String>,
+        voice: Option<String>,
         is_reward: bool,
         origin: SpeechOrigin,
         cancel: CancelSignal,
     ) -> Result<(), SpeakDispatchError> {
         let _ = cancel;
         if is_reward {
-            self.speak_reward_sourced(text, voice_id_override, origin)
-                .await
+            self.speak_reward_sourced(text, voice, origin).await
         } else {
-            self.speak(text, voice_id_override, origin).await
+            self.speak(text, voice, origin).await
         }
     }
 

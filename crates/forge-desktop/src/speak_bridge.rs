@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use forge_audio::{PlaybackCorrelation, RemoteDestinationId};
 use forge_registry::CancelSignal;
 use forge_runtime::{
-    ShowSpeech, SpeakDispatchError, SpeakDispatcher, SpeakingViewer, SpeechOrigin,
+    EngineVoiceRef, ShowSpeech, SpeakDispatchError, SpeakDispatcher, SpeakingViewer, SpeechOrigin,
     SpeechStartSignal, VoiceDescriptor,
 };
 use forge_script::SpeakRequester;
@@ -166,46 +166,47 @@ async fn wait_marking_start(
     }
 }
 
+fn engine_voice_overrides(
+    voice: Option<String>,
+) -> Result<(Option<EngineId>, Option<VoiceId>), SpeakDispatchError> {
+    let Some(encoded) = voice else {
+        return Ok((None, None));
+    };
+    let voice = EngineVoiceRef::parse(&encoded).ok_or_else(|| {
+        SpeakDispatchError::Dispatch(format!("\"{encoded}\" is not an engine voice"))
+    })?;
+    Ok((
+        Some(EngineId(voice.engine_id)),
+        Some(VoiceId(voice.voice_id)),
+    ))
+}
+
 #[async_trait]
 impl SpeakDispatcher for SpeakBridge {
     async fn speak(
         &self,
         text: String,
-        voice_id_override: Option<String>,
+        voice: Option<String>,
         origin: SpeechOrigin,
     ) -> Result<(), SpeakDispatchError> {
-        self.enqueue(
-            text,
-            voice_id_override.map(AliasId),
-            None,
-            None,
-            false,
-            None,
-            origin,
-        )
-        .await
-        .map(|_| ())
-        .map_err(SpeakDispatchError::Dispatch)
+        let (engine, voice) = engine_voice_overrides(voice)?;
+        self.enqueue(text, None, engine, voice, false, None, origin)
+            .await
+            .map(|_| ())
+            .map_err(SpeakDispatchError::Dispatch)
     }
 
     async fn speak_reward_sourced(
         &self,
         text: String,
-        voice_id_override: Option<String>,
+        voice: Option<String>,
         origin: SpeechOrigin,
     ) -> Result<(), SpeakDispatchError> {
-        self.enqueue(
-            text,
-            voice_id_override.map(AliasId),
-            None,
-            None,
-            true,
-            None,
-            origin,
-        )
-        .await
-        .map(|_| ())
-        .map_err(SpeakDispatchError::Dispatch)
+        let (engine, voice) = engine_voice_overrides(voice)?;
+        self.enqueue(text, None, engine, voice, true, None, origin)
+            .await
+            .map(|_| ())
+            .map_err(SpeakDispatchError::Dispatch)
     }
 
     async fn speak_with_engine(
@@ -231,22 +232,15 @@ impl SpeakDispatcher for SpeakBridge {
     async fn speak_and_wait(
         &self,
         text: String,
-        voice_id_override: Option<String>,
+        voice: Option<String>,
         is_reward: bool,
         origin: SpeechOrigin,
         cancel: CancelSignal,
     ) -> Result<(), SpeakDispatchError> {
+        let (engine, voice) = engine_voice_overrides(voice)?;
         let mut events = self.handle.subscribe();
         let request_id = self
-            .enqueue(
-                text,
-                voice_id_override.map(AliasId),
-                None,
-                None,
-                is_reward,
-                None,
-                origin,
-            )
+            .enqueue(text, None, engine, voice, is_reward, None, origin)
             .await
             .map_err(SpeakDispatchError::Dispatch)?;
         wait_for_terminal(&mut events, &request_id, cancel).await

@@ -360,7 +360,7 @@ mod tests {
         let body = resp.bytes().await.expect("body");
         assert_eq!(&body[..], b"<h1>Alert</h1>");
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -375,7 +375,7 @@ mod tests {
             .expect("request");
         assert_eq!(resp.status().as_u16(), 404);
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     async fn raw_get(addr: SocketAddr, target: &str, extra_headers: &str) -> (u16, String) {
@@ -440,7 +440,7 @@ mod tests {
             );
         }
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -465,7 +465,7 @@ mod tests {
             );
         }
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[cfg(unix)]
@@ -482,7 +482,7 @@ mod tests {
         assert_eq!(status, 404);
         assert!(!body.contains(ESCAPE_MARKER));
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[cfg(unix)]
@@ -502,7 +502,7 @@ mod tests {
         assert_eq!(status, 200);
         assert!(body.contains("<p>inside</p>"));
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -520,7 +520,7 @@ mod tests {
             .expect("request");
         assert_eq!(resp.status().as_u16(), 404);
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     const WIDGET_FILE: &str = "widget.js";
@@ -549,7 +549,7 @@ mod tests {
         assert_eq!(response.status(), reqwest::StatusCode::OK);
         let headers = response.headers().clone();
 
-        handle.abort();
+        handle.stop().await.expect("stop");
         (addr, headers)
     }
 
@@ -672,7 +672,7 @@ mod tests {
             assert_eq!(body, "<h1>Entry</h1>", "wrong body for {target}");
         }
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -698,7 +698,7 @@ mod tests {
             assert_eq!(status, 404, "expected 404 for {target}");
         }
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[cfg(unix)]
@@ -726,7 +726,7 @@ mod tests {
             );
         }
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -761,7 +761,7 @@ mod tests {
             );
         }
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     const MEDIA_FILE: &str =
@@ -856,7 +856,7 @@ mod tests {
             "a content-named body was given a {max_age}s lifetime"
         );
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     fn overlay_definition(identity: &str, enabled: bool) -> OverlayDefinition {
@@ -934,7 +934,7 @@ mod tests {
             );
         }
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[cfg(unix)]
@@ -965,7 +965,7 @@ mod tests {
             );
         }
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -995,7 +995,7 @@ mod tests {
             assert_eq!(body, expected_body, "wrong body for {target}");
         }
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[cfg(unix)]
@@ -1019,7 +1019,7 @@ mod tests {
             assert!(!body.contains(ESCAPE_MARKER), "{target} was served");
         }
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1050,7 +1050,7 @@ mod tests {
                 ANY_ORIGIN_WILDCARD.to_owned()
             ]
         );
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1080,6 +1080,6 @@ mod tests {
             "the streamed body differs from the file"
         );
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 }

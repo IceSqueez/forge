@@ -761,20 +761,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_verdict_is_accepted_for_a_clip_whose_bytes_were_never_fetched() {
+    async fn a_played_verdict_is_ignored_for_a_clip_whose_bytes_were_never_fetched() {
         let store = AudioClipStore::new();
-        let (ticket, outcome) = store
+        let (ticket, _outcome) = store
             .offer(&owner(), sized_offer(SAMPLE_CLIP_BYTES))
             .expect("offer");
 
-        assert!(store.record_verdict(ticket.capability().expose(), ClipOutcome::Played));
+        assert!(!store.record_verdict(ticket.capability().expose(), ClipOutcome::Played));
 
-        assert_eq!(
-            outcome.recv().await,
-            ClipOutcome::Played,
-            "the store takes the page's word for it without ever handing over the bytes"
-        );
-        assert_eq!(held_bytes(&store), 0);
+        assert_eq!(held_bytes(&store), SAMPLE_CLIP_BYTES);
     }
 
     #[tokio::test]

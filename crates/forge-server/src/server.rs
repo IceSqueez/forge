@@ -748,7 +748,7 @@ pub(crate) mod tests {
             "a non-browser client sends no Origin and must still connect"
         );
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -767,7 +767,7 @@ pub(crate) mod tests {
             );
         }
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -784,7 +784,7 @@ pub(crate) mod tests {
                 .is_ok()
         );
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -796,7 +796,7 @@ pub(crate) mod tests {
         assert_eq!(response.status(), axum::http::StatusCode::FORBIDDEN);
         assert_eq!(origin_rejection_code(&response), ORIGIN_NOT_ALLOWED);
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -810,7 +810,7 @@ pub(crate) mod tests {
             "a browser source dialling the machine's LAN address must upgrade without configuration"
         );
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -830,7 +830,7 @@ pub(crate) mod tests {
         assert_eq!(response.status(), axum::http::StatusCode::FORBIDDEN);
         assert_eq!(origin_rejection_code(&response), ORIGIN_NOT_ALLOWED);
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -853,7 +853,7 @@ pub(crate) mod tests {
             "rejection body echoed the origin: {body}"
         );
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -867,7 +867,7 @@ pub(crate) mod tests {
             "a refused handshake must not reach the socket loop"
         );
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -883,7 +883,7 @@ pub(crate) mod tests {
         let response = refused_ws_handshake(addr, "http://127.0.0.1:0").await;
         assert_eq!(response.status().as_u16(), 403);
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -957,7 +957,7 @@ pub(crate) mod tests {
         let url = format!("http://{}/api/v1/info", addr);
         let resp = reqwest::get(&url).await.expect("HTTP request");
         assert_eq!(resp.status().as_u16(), 200);
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -973,7 +973,7 @@ pub(crate) mod tests {
         assert_eq!(resp.status().as_u16(), 401);
         let body: serde_json::Value = resp.json().await.expect("JSON body");
         assert_eq!(body["error"]["code"], "UNAUTHENTICATED");
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -991,7 +991,7 @@ pub(crate) mod tests {
             resp.status().as_u16() != 401,
             "expected auth to pass, got 401"
         );
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1006,7 +1006,7 @@ pub(crate) mod tests {
             .await
             .expect("HTTP request");
         assert_eq!(resp.status().as_u16(), 401);
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1016,7 +1016,7 @@ pub(crate) mod tests {
         let url = format!("http://{}/api/v1/info", addr);
         let resp = reqwest::get(&url).await.expect("HTTP request");
         assert_eq!(resp.status().as_u16(), 401);
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1031,7 +1031,7 @@ pub(crate) mod tests {
             .await
             .expect("HTTP request");
         assert_eq!(resp.status().as_u16(), 200);
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1072,7 +1072,7 @@ pub(crate) mod tests {
             "new token should be accepted after regenerate"
         );
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1116,7 +1116,7 @@ pub(crate) mod tests {
             .collect();
         assert_eq!(remaining, ["dashboard-b"]);
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1136,7 +1136,7 @@ pub(crate) mod tests {
             "an untargeted client must keep its socket open"
         );
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1152,14 +1152,14 @@ pub(crate) mod tests {
             "a missed lookup must not close anyone"
         );
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
     async fn run_state_reports_running_right_after_bind() {
         let (handle, _addr) = make_server(false, MemCreds::new()).await;
         assert!(*handle.run_state().borrow());
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1179,13 +1179,6 @@ pub(crate) mod tests {
         assert!(!*run_state.borrow());
 
         stopper.await.expect("stop task").expect("stop");
-    }
-
-    #[tokio::test]
-    async fn abort_flips_run_state_without_awaiting() {
-        let (handle, _addr) = make_server(false, MemCreds::new()).await;
-        handle.abort();
-        assert!(!*handle.run_state().borrow());
     }
 
     #[tokio::test]
@@ -1493,7 +1486,7 @@ pub(crate) mod tests {
             "the page's runtime reads frame and content exactly as written here"
         );
 
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[test]
@@ -1518,7 +1511,7 @@ pub(crate) mod tests {
                 let (handle, addr) =
                     start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
                 refused_ws_handshake(addr, origin).await;
-                handle.abort();
+                handle.stop().await.expect("stop");
                 addr.port()
             });
 
@@ -1665,7 +1658,7 @@ pub(crate) mod tests {
             close_code_of(next_message(&mut anonymous).await),
             Some(close_code::POLICY)
         );
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1682,7 +1675,7 @@ pub(crate) mod tests {
             .await
             .expect("HTTP request");
         assert_eq!(http.status(), reqwest::StatusCode::UNAUTHORIZED);
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1715,7 +1708,7 @@ pub(crate) mod tests {
 
         assert_still_serving(&mut bearer, "a bearer session").await;
         assert_still_serving(&mut page, "an overlay page").await;
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1745,7 +1738,7 @@ pub(crate) mod tests {
             close_code_of(next_message(&mut session).await),
             Some(close_code::POLICY)
         );
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1760,7 +1753,7 @@ pub(crate) mod tests {
             ask(&mut session, code_event_request()).await["status"],
             "ok"
         );
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     async fn raw_request_naming(
@@ -1808,7 +1801,7 @@ pub(crate) mod tests {
             let json: serde_json::Value = serde_json::from_str(&body).expect("json body");
             assert_eq!(json["error"]["code"], "HOST_NOT_ALLOWED", "{target}");
         }
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1830,7 +1823,7 @@ pub(crate) mod tests {
             let (status, _) = raw_request_naming(addr, "/api/v1/info", host.as_deref()).await;
             assert_eq!(status, reqwest::StatusCode::OK.as_u16(), "host {host:?}");
         }
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1852,7 +1845,7 @@ pub(crate) mod tests {
             close_code_of(next_message(&mut anonymous).await),
             Some(close_code::SIZE)
         );
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1866,7 +1859,7 @@ pub(crate) mod tests {
             next_message(&mut session).await,
             Some(ClientMessage::Text(_))
         ));
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1891,7 +1884,7 @@ pub(crate) mod tests {
             Some(close_code::UNSUPPORTED),
             "the oversized frame reached the socket loop"
         );
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1918,7 +1911,7 @@ pub(crate) mod tests {
             opened.elapsed() >= crate::listener::REQUEST_READ_TIMEOUT,
             "the connection was dropped before the deadline"
         );
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1930,7 +1923,7 @@ pub(crate) mod tests {
         elapse(crate::listener::REQUEST_READ_TIMEOUT * 2).await;
 
         assert_eq!(ask(&mut socket, get_info_request()).await["status"], "ok");
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1945,7 +1938,7 @@ pub(crate) mod tests {
             Some(close_code::POLICY),
             "a socket that never spoke must be closed once the window passes"
         );
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1957,7 +1950,7 @@ pub(crate) mod tests {
         elapse(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
 
         assert_still_serving(&mut socket, "a reader that had spoken while reads are open").await;
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1978,7 +1971,7 @@ pub(crate) mod tests {
             Some(close_code::POLICY),
             "having sent a message must not exempt an unauthenticated socket at the window"
         );
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -1989,7 +1982,7 @@ pub(crate) mod tests {
         elapse(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
 
         assert_still_serving(&mut session, "a bearer-authenticated session").await;
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -2014,7 +2007,7 @@ pub(crate) mod tests {
         elapse(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
 
         assert_still_serving(&mut page, "an overlay session").await;
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -2061,7 +2054,7 @@ pub(crate) mod tests {
                     "{lifecycle} left the {who} socket open"
                 );
             }
-            handle.abort();
+            handle.stop().await.expect("stop");
         }
     }
 }

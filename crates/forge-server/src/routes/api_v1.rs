@@ -373,7 +373,7 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 200);
         let body: serde_json::Value = resp.json().await.expect("json");
         assert!(body.get("version").is_some(), "missing version field");
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -383,7 +383,7 @@ mod tests {
             .await
             .expect("request");
         assert_eq!(resp.status().as_u16(), 401);
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -395,7 +395,7 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 200);
         let body: serde_json::Value = resp.json().await.expect("json");
         assert!(body.get("version").is_some(), "missing version field");
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -410,7 +410,7 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 200);
         let body: serde_json::Value = resp.json().await.expect("json");
         assert!(body.get("globals").is_some(), "missing globals field");
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -424,7 +424,7 @@ mod tests {
             .await
             .expect("request");
         assert_eq!(resp.status().as_u16(), 200);
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -437,6 +437,6 @@ mod tests {
             .await
             .expect("request");
         assert_eq!(resp.status().as_u16(), 401);
-        handle.abort();
+        handle.stop().await.expect("stop");
     }
 }

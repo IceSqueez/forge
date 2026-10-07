@@ -341,7 +341,7 @@ mod tests {
         );
         assert_eq!(response.bytes().await.expect("body"), CLIP_BYTES);
 
-        fixture.handle.abort();
+        fixture.handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -387,7 +387,7 @@ mod tests {
             assert_eq!(body, first_body, "{case} answers differently");
         }
 
-        fixture.handle.abort();
+        fixture.handle.stop().await.expect("stop");
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -408,7 +408,7 @@ mod tests {
             "a capability that two fetches race for is still single use"
         );
 
-        fixture.handle.abort();
+        fixture.handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -441,7 +441,7 @@ mod tests {
         );
         assert_eq!(outcome.recv().await, ClipOutcome::Played);
 
-        fixture.handle.abort();
+        fixture.handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -457,7 +457,7 @@ mod tests {
         assert_eq!(repeated.status(), StatusCode::NOT_FOUND);
         assert_eq!(outcome.recv().await, ClipOutcome::Played);
 
-        fixture.handle.abort();
+        fixture.handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -495,7 +495,7 @@ mod tests {
                 "{case}"
             );
 
-            fixture.handle.abort();
+            fixture.handle.stop().await.expect("stop");
         }
     }
 
@@ -529,7 +529,7 @@ mod tests {
             );
             assert_eq!(outcome.recv().await, ClipOutcome::Played, "{case}");
 
-            fixture.handle.abort();
+            fixture.handle.stop().await.expect("stop");
         }
     }
 
@@ -556,7 +556,7 @@ mod tests {
             "the capability guards the audio routes and nothing else"
         );
 
-        fixture.handle.abort();
+        fixture.handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -580,7 +580,7 @@ mod tests {
         );
         assert_eq!(outcome.recv().await, ClipOutcome::Played);
 
-        fixture.handle.abort();
+        fixture.handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -611,7 +611,7 @@ mod tests {
             );
         }
 
-        fixture.handle.abort();
+        fixture.handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
@@ -654,7 +654,7 @@ mod tests {
                 );
             }
 
-            fixture.handle.abort();
+            fixture.handle.stop().await.expect("stop");
         }
     }
 
@@ -684,41 +684,27 @@ mod tests {
             );
         }
 
-        fixture.handle.abort();
+        fixture.handle.stop().await.expect("stop");
     }
 
     #[tokio::test]
     async fn a_server_that_goes_away_resolves_every_clip_it_still_holds() {
-        for (case, graceful) in [("a graceful stop", true), ("an abort", false)] {
-            let fixture = serve_default().await;
-            let (unfetched, unfetched_outcome) = fixture.offer().await;
-            let (fetched, fetched_outcome) = fixture.offer().await;
-            fixture.fetch(fetched.clip_path()).await;
+        let fixture = serve_default().await;
+        let (unfetched, unfetched_outcome) = fixture.offer().await;
+        let (fetched, fetched_outcome) = fixture.offer().await;
+        fixture.fetch(fetched.clip_path()).await;
 
-            if graceful {
-                fixture.handle.stop().await.expect("stop");
-            } else {
-                fixture.handle.abort();
-            }
+        fixture.handle.stop().await.expect("stop");
 
-            assert_eq!(
-                unfetched_outcome.recv().await,
-                ClipOutcome::ServerStopped,
-                "{case}"
-            );
-            assert_eq!(
-                fetched_outcome.recv().await,
-                ClipOutcome::ServerStopped,
-                "{case}"
-            );
-            assert!(
-                !fixture
-                    .handle
-                    .revoke_audio_clip(unfetched.capability())
-                    .await,
-                "{case}: a discarded clip is already gone"
-            );
-        }
+        assert_eq!(unfetched_outcome.recv().await, ClipOutcome::ServerStopped);
+        assert_eq!(fetched_outcome.recv().await, ClipOutcome::ServerStopped);
+        assert!(
+            !fixture
+                .handle
+                .revoke_audio_clip(unfetched.capability())
+                .await,
+            "a discarded clip is already gone"
+        );
     }
 
     #[tokio::test]
@@ -754,7 +740,7 @@ mod tests {
             "the clip store must be carried over into the rebound server"
         );
 
-        rebound.handle.abort();
+        rebound.handle.stop().await.expect("stop");
     }
 
     #[test]
@@ -777,7 +763,7 @@ mod tests {
             let (held, _held_outcome) = fixture.offer().await;
             let mut secrets = secrets;
             secrets.push(held.capability().expose().to_owned());
-            fixture.handle.abort();
+            fixture.handle.stop().await.expect("stop");
             tokio::task::yield_now().await;
 
             secrets

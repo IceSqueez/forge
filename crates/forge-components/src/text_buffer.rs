@@ -328,8 +328,7 @@ impl TextBuffer {
     }
 
     pub(crate) fn indent(&mut self, unit: &str) {
-        let range = self.target_range(None);
-        if !self.text[range].contains('\n') {
+        if self.target_range(None).is_empty() {
             self.insert(unit, EditKind::Standalone);
             return;
         }

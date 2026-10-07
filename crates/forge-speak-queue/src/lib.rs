@@ -9,7 +9,8 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 pub use filters::{
-    FilterMappingError, PipelineConfigHandle, build_config_lenient, build_config_strict,
+    FilterMappingError, PipelineConfigHandle, ReplacementSource, build_config_lenient,
+    build_config_lenient_with_sources, build_config_strict,
 };
 pub use forge_audio::PlaybackTarget;
 use forge_audio::TargetedSinkFactory;

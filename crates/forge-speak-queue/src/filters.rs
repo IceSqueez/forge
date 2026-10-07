@@ -41,21 +41,30 @@ impl From<FilterMappingError> for PipelineError {
 static MIGRATED_URL_REGEX: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"https?://\S+").expect("static regex"));
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplacementSource {
+    FilterRule(usize),
+    UrlMode,
+}
+
 fn migrate_url_mode(
     mode: StorageUrlMode,
-    replacement_rules: &mut Vec<ReplacementRule>,
+    mapped: &mut MappedRules,
     skip_rules: &mut SkipRulesConfig,
 ) {
     match mode {
         StorageUrlMode::Speak => {}
         StorageUrlMode::Replace => {
-            replacement_rules.insert(
+            mapped.replacement_rules.insert(
                 0,
                 ReplacementRule::Regex {
                     compiled: MIGRATED_URL_REGEX.clone(),
                     replacement: "link".to_owned(),
                 },
             );
+            mapped
+                .replacement_sources
+                .insert(0, ReplacementSource::UrlMode);
         }
         StorageUrlMode::Suppress => {
             skip_rules.contains_url = true;
@@ -202,6 +211,7 @@ fn map_rule_strict(
 
 struct MappedRules {
     replacement_rules: Vec<ReplacementRule>,
+    replacement_sources: Vec<ReplacementSource>,
     word_blocklist: Vec<String>,
     blocklist_mode: BlocklistMode,
 }
@@ -212,6 +222,7 @@ fn map_rules(
     strict: bool,
 ) -> Result<MappedRules, FilterMappingError> {
     let mut replacement_rules = Vec::new();
+    let mut replacement_sources = Vec::new();
     let mut word_blocklist = Vec::new();
     let mut blocklist_mode = storage_blocklist_mode_to_pipeline(settings.blocklist_mode);
 
@@ -225,7 +236,10 @@ fn map_rules(
                 blocklist_mode = storage_blocklist_mode_to_pipeline(*mode);
             }
             _ => match map_rule_strict(rule, index) {
-                Ok(Some(r)) => replacement_rules.push(r),
+                Ok(Some(r)) => {
+                    replacement_rules.push(r);
+                    replacement_sources.push(ReplacementSource::FilterRule(index));
+                }
                 Ok(None) => {}
                 Err(e) if strict => return Err(e),
                 Err(e) => {
@@ -242,6 +256,7 @@ fn map_rules(
 
     Ok(MappedRules {
         replacement_rules,
+        replacement_sources,
         word_blocklist,
         blocklist_mode,
     })
@@ -261,16 +276,15 @@ pub fn build_config_strict(
     rules: &[FilterRule],
     settings: &TtsPipelineSettings,
 ) -> Result<PipelineConfig, FilterMappingError> {
-    let mapped = map_rules(rules, settings, true)?;
-    let mut replacement_rules = mapped.replacement_rules;
+    let mut mapped = map_rules(rules, settings, true)?;
     let mut skip_rules = skip_rules_from_settings_strict(settings)?;
-    migrate_url_mode(settings.url_mode, &mut replacement_rules, &mut skip_rules);
+    migrate_url_mode(settings.url_mode, &mut mapped, &mut skip_rules);
     migrate_max_length(settings.max_length, &mut skip_rules);
     Ok(PipelineConfig::new(
         emote_sources_from_settings(settings),
         EmoteTokenSet::default(),
         skip_rules,
-        replacement_rules,
+        mapped.replacement_rules,
         mapped.word_blocklist,
         mapped.blocklist_mode,
         output_from_settings(settings),
@@ -282,25 +296,33 @@ pub fn build_config_lenient(
     rules: &[FilterRule],
     settings: &TtsPipelineSettings,
 ) -> PipelineConfig {
-    let mapped = map_rules(rules, settings, false).unwrap_or_else(|_| MappedRules {
+    build_config_lenient_with_sources(rules, settings).0
+}
+
+pub fn build_config_lenient_with_sources(
+    rules: &[FilterRule],
+    settings: &TtsPipelineSettings,
+) -> (PipelineConfig, Vec<ReplacementSource>) {
+    let mut mapped = map_rules(rules, settings, false).unwrap_or_else(|_| MappedRules {
         replacement_rules: vec![],
+        replacement_sources: vec![],
         word_blocklist: vec![],
         blocklist_mode: storage_blocklist_mode_to_pipeline(settings.blocklist_mode),
     });
-    let mut replacement_rules = mapped.replacement_rules;
     let mut skip_rules = skip_rules_from_settings_lenient(settings);
-    migrate_url_mode(settings.url_mode, &mut replacement_rules, &mut skip_rules);
+    migrate_url_mode(settings.url_mode, &mut mapped, &mut skip_rules);
     migrate_max_length(settings.max_length, &mut skip_rules);
-    PipelineConfig::new(
+    let config = PipelineConfig::new(
         emote_sources_from_settings(settings),
         EmoteTokenSet::default(),
         skip_rules,
-        replacement_rules,
+        mapped.replacement_rules,
         mapped.word_blocklist,
         mapped.blocklist_mode,
         output_from_settings(settings),
         settings.strip_reward_emotes,
-    )
+    );
+    (config, mapped.replacement_sources)
 }
 
 #[derive(Clone)]

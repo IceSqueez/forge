@@ -1,3 +1,4 @@
+use std::ops::Range;
 use std::sync::Arc;
 
 use forge_components::{
@@ -7,17 +8,20 @@ use forge_components::{
     radio_row_label, radius, spacing, toggle, tr, with_alpha,
 };
 use forge_speak_queue::{
-    EmoteTokenSet, PipelineConfigHandle, Priority, RequestId, SpeakCommand, SpeakQueueHandle,
-    SpeakRequest, build_config_lenient, build_config_strict,
+    EmoteTokenSet, PipelineConfigHandle, Priority, ReplacementSource, RequestId, SpeakCommand,
+    SpeakQueueHandle, SpeakRequest, build_config_lenient_with_sources, build_config_strict,
 };
 use forge_storage::{
     BlocklistMode, FilterRule, FilterRuleKind, TtsFiltersRepo, TtsPipelineSettings,
 };
-use forge_tts_pipeline::{PipelineResult, SkipReason, StageAction, StageName, StageOutcome};
+use forge_tts_pipeline::{
+    AppliedReplacement, PipelineResult, ReplacementOrigin, SkipReason, StageAction, StageName,
+    StageOutcome,
+};
 use forge_types::Shared;
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, Rgba, SharedString,
-    Subscription, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, HighlightStyle, Hsla, Pixels, Rgba,
+    SharedString, StyledText, Subscription, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
@@ -32,6 +36,7 @@ const MODAL_W: Pixels = px(480.0);
 const MAX_DURATION_MIN: u32 = 1;
 const MAX_DURATION_MAX: u32 = 600;
 const MAX_DURATION_DEFAULT: u32 = 30;
+const SPOKEN_QUOTE: &str = "\"";
 
 #[derive(Clone, Copy)]
 enum SkipRule {
@@ -430,6 +435,20 @@ impl AddFilterModal {
 struct CachedPreview {
     stages: Vec<StageOutcome>,
     result: PipelineResult,
+    replacement_sources: Vec<ReplacementSource>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MarkTint {
+    ReplacementRow(usize),
+    UrlMode,
+    Blocklist,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PreviewMark {
+    range: Range<usize>,
+    tint: MarkTint,
 }
 
 pub struct TtsFiltersView {
@@ -542,14 +561,87 @@ impl TtsFiltersView {
             self.cached_preview = None;
             return;
         }
-        let config = build_config_lenient(&self.rules, &self.settings);
+        let (config, replacement_sources) =
+            build_config_lenient_with_sources(&self.rules, &self.settings);
         let speaker_name = tr!("tts_filters_preview_speaker_name");
         let context = forge_tts_pipeline::PipelineContext {
             viewer_name: &speaker_name,
             recent_messages: &[],
         };
         let (result, stages) = forge_tts_pipeline::preview(&input, &config, &context);
-        self.cached_preview = Some(CachedPreview { stages, result });
+        self.cached_preview = Some(CachedPreview {
+            stages,
+            result,
+            replacement_sources,
+        });
+    }
+
+    fn replacement_ordinal(&self, row: usize) -> usize {
+        self.rules
+            .iter()
+            .take(row)
+            .filter(|rule| is_replacement_kind(&rule.kind))
+            .count()
+    }
+
+    fn mark_tint(
+        &self,
+        origin: ReplacementOrigin,
+        sources: &[ReplacementSource],
+    ) -> Option<MarkTint> {
+        match origin {
+            ReplacementOrigin::BlockedWordIndex(_) => Some(MarkTint::Blocklist),
+            ReplacementOrigin::ReplacementRuleIndex(index) => match sources.get(index)? {
+                ReplacementSource::UrlMode => Some(MarkTint::UrlMode),
+                ReplacementSource::FilterRule(row) => {
+                    Some(MarkTint::ReplacementRow(self.replacement_ordinal(*row)))
+                }
+            },
+        }
+    }
+
+    fn preview_marks(
+        &self,
+        text: &str,
+        applied: &[AppliedReplacement],
+        sources: &[ReplacementSource],
+    ) -> Vec<PreviewMark> {
+        let mut marks = Vec::with_capacity(applied.len());
+        let mut covered_until = 0;
+        for replacement in applied {
+            let range = replacement.output_range.clone();
+            let in_text = range.start < range.end
+                && range.start >= covered_until
+                && range.end <= text.len()
+                && text.is_char_boundary(range.start)
+                && text.is_char_boundary(range.end);
+            if !in_text {
+                continue;
+            }
+            let Some(tint) = self.mark_tint(replacement.origin, sources) else {
+                continue;
+            };
+            covered_until = range.end;
+            marks.push(PreviewMark { range, tint });
+        }
+        marks
+    }
+
+    fn spoken_marks(&self, preview: &CachedPreview, spoken: &str) -> Vec<PreviewMark> {
+        let Some(last) = preview.stages.last() else {
+            return Vec::new();
+        };
+        if last.output != spoken {
+            return Vec::new();
+        }
+        let shift = SPOKEN_QUOTE.len();
+        self.preview_marks(spoken, &last.replacements, &preview.replacement_sources)
+            .into_iter()
+            .map(|mark| PreviewMark {
+                range: mark.range.start + shift..mark.range.end + shift,
+                tint: mark.tint,
+            })
+            .collect()
     }
 
     fn after_change(&mut self, cx: &mut Context<Self>) {
@@ -2021,17 +2113,28 @@ impl TtsFiltersView {
 
         if let Some(preview) = &self.cached_preview {
             for (i, outcome) in preview.stages.iter().enumerate() {
+                let marks = self.preview_marks(
+                    &outcome.output,
+                    &outcome.replacements,
+                    &preview.replacement_sources,
+                );
                 stages_section = stages_section.child(preview_stage_card(
                     (i + 1) as u32,
                     stage_name_label(outcome.stage),
                     outcome,
+                    &marks,
                     palette,
                     density,
                 ));
             }
+            let spoken_marks = match &preview.result {
+                PipelineResult::Speak(spoken) => self.spoken_marks(preview, spoken),
+                PipelineResult::Skip { .. } => Vec::new(),
+            };
             stages_section = stages_section.child(final_output_card(
                 (preview.stages.len() + 1) as u32,
                 &preview.result,
+                &spoken_marks,
                 palette,
                 density,
             ));
@@ -2136,6 +2239,7 @@ fn preview_stage_card(
     n: u32,
     name: String,
     outcome: &StageOutcome,
+    marks: &[PreviewMark],
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
@@ -2159,9 +2263,17 @@ fn preview_stage_card(
                     .child(tr!("tts_filters_stage_pass")),
             )
             .into_any_element(),
-        StageAction::Transformed => {
-            highlighted_output(&outcome.input, &outcome.output, palette, density)
-        }
+        StageAction::Transformed => div()
+            .font_family(body_family())
+            .text_size(FONT_XS)
+            .text_color(palette.text_primary)
+            .child(marked_text(
+                outcome.output.clone(),
+                marks,
+                Some(palette.surface_overlay),
+                palette,
+            ))
+            .into_any_element(),
         StageAction::Skipped { reason } => div()
             .flex()
             .items_center()
@@ -2193,11 +2305,15 @@ fn preview_stage_card(
 fn final_output_card(
     n: u32,
     result: &PipelineResult,
+    marks: &[PreviewMark],
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
     let (text, color) = match result {
-        PipelineResult::Speak(spoken) => (format!("\"{spoken}\""), palette.text_primary),
+        PipelineResult::Speak(spoken) => (
+            format!("{SPOKEN_QUOTE}{spoken}{SPOKEN_QUOTE}"),
+            palette.text_primary,
+        ),
         PipelineResult::Skip { reason } => (
             format!(
                 "{}: {}",
@@ -2214,7 +2330,7 @@ fn final_output_card(
             .font_family(body_family())
             .text_size(FONT_XS)
             .text_color(color)
-            .child(text)
+            .child(marked_text(text, marks, None, palette))
             .into_any_element(),
         palette,
         density,
@@ -2248,47 +2364,44 @@ fn stage_card_frame(
     .into_any_element()
 }
 
-fn highlighted_output(
-    input: &str,
-    output: &str,
-    palette: &ForgePalette,
-    density: Density,
-) -> AnyElement {
-    let input_tokens: std::collections::HashSet<&str> = input.split_whitespace().collect();
-    let mut row = div()
-        .flex()
-        .flex_row()
-        .flex_wrap()
-        .items_center()
-        .gap(spacing(Spacing::Xxs, density));
-    for token in output.split_whitespace() {
-        if input_tokens.contains(token) {
-            row = row.child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_primary)
-                    .child(token.to_owned()),
-            );
-        } else {
-            let color = if token.contains('*') {
-                palette.warning
-            } else {
-                palette.brand
-            };
-            row = row.child(
-                div()
-                    .px(px(3.0))
-                    .rounded(px(2.0))
-                    .bg(palette.surface_overlay)
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(color)
-                    .child(token.to_owned()),
-            );
+fn mark_color(tint: MarkTint, palette: &ForgePalette) -> Rgba {
+    match tint {
+        MarkTint::Blocklist => palette.random,
+        MarkTint::UrlMode => palette.info,
+        MarkTint::ReplacementRow(ordinal) => {
+            let rotation = [
+                palette.success,
+                palette.warning,
+                palette.brand,
+                palette.bits,
+                palette.accent_pink_light,
+                palette.accent_teal,
+            ];
+            rotation[ordinal % rotation.len()]
         }
     }
-    row.into_any_element()
+}
+
+fn marked_text(
+    text: String,
+    marks: &[PreviewMark],
+    background: Option<Rgba>,
+    palette: &ForgePalette,
+) -> StyledText {
+    let highlights = marks
+        .iter()
+        .map(|mark| {
+            (
+                mark.range.clone(),
+                HighlightStyle {
+                    color: Some(Hsla::from(mark_color(mark.tint, palette))),
+                    background_color: background.map(Hsla::from),
+                    ..HighlightStyle::default()
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    StyledText::new(SharedString::from(text)).with_highlights(highlights)
 }
 
 fn stage_name_label(stage: StageName) -> String {

@@ -56,24 +56,46 @@ fn default_db_path() -> PathBuf {
     paths::data_dir().join("forge.db")
 }
 
-pub fn read_persisted_presentation(rt_handle: &tokio::runtime::Handle) -> (ThemeId, Density) {
-    let (tx, rx) = std::sync::mpsc::channel();
-    rt_handle.spawn(async move {
-        let _ = tx.send(load_presentation_from_storage().await);
-    });
-    let (theme, density) = rx.recv_timeout(Duration::from_secs(2)).unwrap_or_default();
-    tracing::info!(?theme, ?density, "applied persisted presentation");
-    (theme, density)
+const APPEARANCE_READ_BUDGET: Duration = Duration::from_secs(2);
+
+#[derive(Default)]
+pub struct PersistedAppearance {
+    pub theme: ThemeId,
+    pub density: Density,
+    pub body_font: Option<String>,
+    pub mono_font: Option<String>,
 }
 
-async fn load_presentation_from_storage() -> (ThemeId, Density) {
-    let db_path = default_db_path();
-    let url = format!("sqlite://{}?mode=rwc", db_path.display());
-    let backend = match SqliteBackend::open(&url).await {
-        Ok(backend) => backend,
-        Err(_) => return (ThemeId::default(), Density::default()),
-    };
-    let settings: &dyn SettingsRepo = &backend;
+pub struct BootStorage {
+    pub appearance: PersistedAppearance,
+    pub backend: Option<Arc<dyn DataProvider>>,
+}
+
+pub fn open_boot_storage(rt_handle: &tokio::runtime::Handle) -> BootStorage {
+    let (tx, rx) = std::sync::mpsc::channel();
+    rt_handle.spawn(async move {
+        let opened = match open_backend().await {
+            Ok(backend) => {
+                let appearance = load_appearance(backend.as_ref()).await;
+                (appearance, Some(backend))
+            }
+            Err(_) => (PersistedAppearance::default(), None),
+        };
+        let _ = tx.send(opened);
+    });
+    let (appearance, backend) = rx.recv_timeout(APPEARANCE_READ_BUDGET).unwrap_or_default();
+    tracing::info!(
+        theme = ?appearance.theme,
+        density = ?appearance.density,
+        "applied persisted presentation"
+    );
+    BootStorage {
+        appearance,
+        backend,
+    }
+}
+
+async fn load_appearance(settings: &dyn SettingsRepo) -> PersistedAppearance {
     let theme = match settings.get_theme().await {
         Ok(Some(key)) => ThemeId::from_storage_key(&key).unwrap_or_default(),
         _ => ThemeId::default(),
@@ -82,30 +104,39 @@ async fn load_presentation_from_storage() -> (ThemeId, Density) {
         Ok(Some(key)) => Density::from_storage_key(&key).unwrap_or_default(),
         _ => Density::default(),
     };
-    (theme, density)
+    PersistedAppearance {
+        theme,
+        density,
+        body_font: settings.font_body().await.ok().flatten(),
+        mono_font: settings.font_mono().await.ok().flatten(),
+    }
 }
 
-pub fn read_persisted_fonts(
-    rt_handle: &tokio::runtime::Handle,
-) -> (Option<String>, Option<String>) {
-    let (tx, rx) = std::sync::mpsc::channel();
-    rt_handle.spawn(async move {
-        let _ = tx.send(load_fonts_from_storage().await);
-    });
-    rx.recv_timeout(Duration::from_secs(2)).unwrap_or_default()
-}
-
-async fn load_fonts_from_storage() -> (Option<String>, Option<String>) {
+async fn open_backend() -> Result<Arc<dyn DataProvider>, BootFailure> {
     let db_path = default_db_path();
+    if let Some(parent) = db_path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        return Err(BootFailure::Retry {
+            reason: format!("failed to create data directory {}: {e}", parent.display()),
+        });
+    }
     let url = format!("sqlite://{}?mode=rwc", db_path.display());
-    let backend = match SqliteBackend::open(&url).await {
-        Ok(backend) => backend,
-        Err(_) => return (None, None),
-    };
-    let settings: &dyn SettingsRepo = &backend;
-    let body = settings.font_body().await.ok().flatten();
-    let mono = settings.font_mono().await.ok().flatten();
-    (body, mono)
+    match SqliteBackend::open(&url).await {
+        Ok(backend) => Ok(Arc::new(backend) as Arc<dyn DataProvider>),
+        Err(e) => {
+            let err: StorageError = e.into();
+            Err(match err {
+                StorageError::SchemaMismatch { expected, found } => {
+                    BootFailure::UpgradeRequired { expected, found }
+                }
+                StorageError::PreBaselineSchema { found } => BootFailure::PreBaseline { found },
+                other => BootFailure::Retry {
+                    reason: other.to_string(),
+                },
+            })
+        }
+    }
 }
 
 async fn apply_persisted_log_level(repo: &dyn SettingsRepo) {
@@ -128,31 +159,11 @@ pub async fn build_runtime(
     log_tail: LogTail,
     endpoints: PlatformEndpoints,
     hotkey_main_thread: forge_hotkey::MainThreadLink,
+    preopened: Option<Arc<dyn DataProvider>>,
 ) -> Result<RuntimeHandles, BootFailure> {
-    let db_path = default_db_path();
-    if let Some(parent) = db_path.parent()
-        && let Err(e) = std::fs::create_dir_all(parent)
-    {
-        return Err(BootFailure::Retry {
-            reason: format!("failed to create data directory {}: {e}", parent.display()),
-        });
-    }
-    let url = format!("sqlite://{}?mode=rwc", db_path.display());
-
-    let backend = match SqliteBackend::open(&url).await {
-        Ok(backend) => Arc::new(backend) as Arc<dyn DataProvider>,
-        Err(e) => {
-            let err: StorageError = e.into();
-            return Err(match err {
-                StorageError::SchemaMismatch { expected, found } => {
-                    BootFailure::UpgradeRequired { expected, found }
-                }
-                StorageError::PreBaselineSchema { found } => BootFailure::PreBaseline { found },
-                other => BootFailure::Retry {
-                    reason: other.to_string(),
-                },
-            });
-        }
+    let backend = match preopened {
+        Some(backend) => backend,
+        None => open_backend().await?,
     };
 
     let settings_repo: Arc<dyn SettingsRepo> = Arc::clone(&backend) as Arc<dyn SettingsRepo>;

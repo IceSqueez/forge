@@ -103,7 +103,15 @@ impl RootView {
         let initial_screen = self.initial_screen.clone();
         self.state = BootState::Booting;
         cx.notify();
-        run_boot(rt_handle, log_tail, endpoints, initial_screen, window, cx);
+        run_boot(
+            rt_handle,
+            log_tail,
+            endpoints,
+            initial_screen,
+            None,
+            window,
+            cx,
+        );
     }
 }
 
@@ -112,6 +120,7 @@ pub fn run_boot(
     log_tail: LogTail,
     endpoints: PlatformEndpoints,
     initial_screen: Screen,
+    preopened: Option<Arc<dyn forge_storage::DataProvider>>,
     window: WindowHandle<RootView>,
     cx: &mut App,
 ) {
@@ -133,7 +142,8 @@ pub fn run_boot(
     let (result_tx, result_rx) =
         tokio::sync::oneshot::channel::<Result<RuntimeHandles, BootFailure>>();
     rt_handle.spawn(async move {
-        let _ = result_tx.send(build_runtime(log_tail, endpoints, hotkey_main_thread).await);
+        let _ =
+            result_tx.send(build_runtime(log_tail, endpoints, hotkey_main_thread, preopened).await);
     });
 
     cx.spawn(async move |cx| {

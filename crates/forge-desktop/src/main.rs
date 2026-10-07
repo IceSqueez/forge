@@ -379,12 +379,11 @@ fn main() {
             eprintln!("forge-desktop: failed to register embedded fonts: {err}");
         }
 
-        let (theme, density) = crate::boot::read_persisted_presentation(&rt_handle);
-        cx.set_global(Presentation::new(theme, density));
-
-        let (body_font, mono_font) = crate::boot::read_persisted_fonts(&rt_handle);
-        forge_components::set_body_family(body_font.map(Into::into));
-        forge_components::set_mono_family(mono_font.map(Into::into));
+        let boot_storage = crate::boot::open_boot_storage(&rt_handle);
+        let appearance = boot_storage.appearance;
+        cx.set_global(Presentation::new(appearance.theme, appearance.density));
+        forge_components::set_body_family(appearance.body_font.map(Into::into));
+        forge_components::set_mono_family(appearance.mono_font.map(Into::into));
         #[cfg(target_os = "linux")]
         prewarm_kit_fonts(cx);
         cx.set_global(crate::presentation::ActiveLanguage(
@@ -453,6 +452,7 @@ fn main() {
             log_tail.clone(),
             endpoints.clone(),
             initial_screen.clone(),
+            boot_storage.backend,
             window,
             cx,
         );

@@ -40,7 +40,8 @@ type Registered = Arc<RwLock<HashMap<HotkeyId, HotkeyCombo>>>;
 
 impl EvdevBackend {
     pub(crate) async fn try_new() -> Result<Self, HotkeyError> {
-        let devices = discover_input_devices().await?;
+        let input_dir = Path::new(INPUT_DIR);
+        let devices = discover_input_devices(input_dir).await?;
         if devices.is_empty() {
             return Err(HotkeyError::PermissionDenied);
         }
@@ -49,7 +50,7 @@ impl EvdevBackend {
         let (cmd_tx, cmd_rx) = mpsc::channel::<EvdevCmd>(COMMAND_QUEUE_CAPACITY);
         let (fired_tx, fired_rx) = mpsc::channel::<HotkeyFiredEvent>(FIRED_QUEUE_CAPACITY);
 
-        let watcher = match InputDirWatcher::new() {
+        let watcher = match InputDirWatcher::new(input_dir) {
             Ok(w) => Some(w),
             Err(e) => {
                 tracing::warn!(error = %e, "cannot watch {INPUT_DIR}; keyboards plugged in later will not be read");
@@ -137,14 +138,16 @@ impl DevicePool {
                             }
                         }
                         Ok(InputDirChange::Rescan) => {
-                            if let Ok(paths) = discover_input_devices().await {
+                            if let Some(dir) = watcher.as_ref().map(|w| w.dir().to_path_buf())
+                                && let Ok(paths) = discover_input_devices(&dir).await
+                            {
                                 for path in paths {
                                     self.open_device(path, &closed_tx);
                                 }
                             }
                         }
                         Err(e) => {
-                            tracing::warn!(error = %e, "{INPUT_DIR} watch failed; keyboards plugged in later will not be read");
+                            tracing::warn!(error = %e, "input device directory watch failed; keyboards plugged in later will not be read");
                             watcher = None;
                         }
                     }
@@ -202,13 +205,18 @@ async fn next_dir_change(watcher: Option<&mut InputDirWatcher>) -> std::io::Resu
     }
 }
 
-async fn discover_input_devices() -> Result<Vec<PathBuf>, HotkeyError> {
-    let mut dir = match tokio::fs::read_dir(INPUT_DIR).await {
+async fn discover_input_devices(input_dir: &Path) -> Result<Vec<PathBuf>, HotkeyError> {
+    let mut dir = match tokio::fs::read_dir(input_dir).await {
         Ok(d) => d,
         Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
             return Err(HotkeyError::PermissionDenied);
         }
-        Err(e) => return Err(HotkeyError::Backend(format!("read {INPUT_DIR}: {e}"))),
+        Err(e) => {
+            return Err(HotkeyError::Backend(format!(
+                "read {}: {e}",
+                input_dir.display()
+            )));
+        }
     };
 
     let mut devices = Vec::new();

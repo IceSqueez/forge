@@ -18,22 +18,28 @@ pub(crate) enum InputDirChange {
 }
 
 pub(crate) struct InputDirWatcher {
+    dir: PathBuf,
     fd: AsyncFd<OwnedFd>,
     buf: Vec<MaybeUninit<u8>>,
 }
 
 impl InputDirWatcher {
-    pub(crate) fn new() -> std::io::Result<Self> {
+    pub(crate) fn new(dir: &Path) -> std::io::Result<Self> {
         let fd = inotify::init(CreateFlags::NONBLOCK | CreateFlags::CLOEXEC)?;
         inotify::add_watch(
             &fd,
-            INPUT_DIR,
+            dir,
             WatchFlags::CREATE | WatchFlags::ATTRIB | WatchFlags::MOVED_TO,
         )?;
         Ok(Self {
+            dir: dir.to_path_buf(),
             fd: AsyncFd::new(fd)?,
             buf: vec![MaybeUninit::uninit(); WATCH_BUFFER_BYTES],
         })
+    }
+
+    pub(crate) fn dir(&self) -> &Path {
+        &self.dir
     }
 
     pub(crate) async fn next_change(&mut self) -> std::io::Result<InputDirChange> {
@@ -52,7 +58,7 @@ impl InputDirWatcher {
                                 .file_name()
                                 .and_then(|name| name.to_str().ok())
                                 .filter(|name| name.starts_with(EVENT_NODE_PREFIX))
-                                .map(|name| Path::new(INPUT_DIR).join(name))
+                                .map(|name| self.dir.join(name))
                             {
                                 appeared.push(path);
                             }

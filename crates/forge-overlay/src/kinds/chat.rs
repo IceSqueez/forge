@@ -121,6 +121,10 @@ impl OverlayKindDescriptor for ChatOverlayKind {
     }
 
     fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
-        compose(PreviewShape::MessageFeed, config)
+        compose(
+            PreviewShape::MessageFeed,
+            metrics::element_sizing(KIND_ID),
+            config,
+        )
     }
 }

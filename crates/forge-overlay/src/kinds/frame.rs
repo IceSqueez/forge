@@ -96,6 +96,10 @@ impl OverlayKindDescriptor for FrameOverlayKind {
     }
 
     fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
-        compose(PreviewShape::BorderedFrame, config)
+        compose(
+            PreviewShape::BorderedFrame,
+            metrics::element_sizing(KIND_ID),
+            config,
+        )
     }
 }

@@ -97,6 +97,10 @@ impl OverlayKindDescriptor for GoalOverlayKind {
     }
 
     fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
-        compose(PreviewShape::ProgressBar, config)
+        compose(
+            PreviewShape::ProgressBar,
+            metrics::element_sizing(KIND_ID),
+            config,
+        )
     }
 }

@@ -100,6 +100,10 @@ impl OverlayKindDescriptor for AlertOverlayKind {
     }
 
     fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
-        compose(PreviewShape::BadgeBanner, config)
+        compose(
+            PreviewShape::BadgeBanner,
+            metrics::element_sizing(KIND_ID),
+            config,
+        )
     }
 }

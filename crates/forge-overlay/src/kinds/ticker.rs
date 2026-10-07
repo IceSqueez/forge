@@ -102,6 +102,10 @@ impl OverlayKindDescriptor for TickerOverlayKind {
     }
 
     fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
-        compose(PreviewShape::Strip, config)
+        compose(
+            PreviewShape::Strip,
+            metrics::element_sizing(KIND_ID),
+            config,
+        )
     }
 }

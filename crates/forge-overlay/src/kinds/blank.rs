@@ -1,5 +1,6 @@
 use crate::assets::PageAssets;
 use crate::descriptor::{DeliveryDisposition, OverlayConfig, OverlayKindDescriptor};
+use crate::metrics;
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.blank";
@@ -44,7 +45,11 @@ impl OverlayKindDescriptor for BlankOverlayKind {
     }
 
     fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
-        compose(PreviewShape::Blank, config)
+        compose(
+            PreviewShape::Blank,
+            metrics::element_sizing(KIND_ID),
+            config,
+        )
     }
 
     fn has_visual_page(&self) -> bool {

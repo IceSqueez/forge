@@ -2,7 +2,7 @@ use forge_types::{LATEST_DONATION_SLOT, NOW_PLAYING_SLOT, Variant};
 
 use crate::config;
 use crate::descriptor::OverlayConfig;
-use crate::metrics::{self, ElementSizing};
+use crate::metrics::ElementSizing;
 use crate::source_box::{ContentMargins, DesignSize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,7 +92,11 @@ pub struct PreviewComposition {
     pub mark: Option<PreviewMark>,
 }
 
-pub(crate) fn compose(shape: PreviewShape, config: &OverlayConfig) -> PreviewComposition {
+pub(crate) fn compose(
+    shape: PreviewShape,
+    sizing: Option<ElementSizing>,
+    config: &OverlayConfig,
+) -> PreviewComposition {
     PreviewComposition {
         shape,
         accent: accent_of(config),
@@ -100,7 +104,7 @@ pub(crate) fn compose(shape: PreviewShape, config: &OverlayConfig) -> PreviewCom
         position: position_of(shape, config),
         canvas: DesignSize::read(config, DesignSize::BROWSER_SOURCE_DEFAULT).into(),
         margins: ContentMargins::read(config, ContentMargins::NONE),
-        element: element_of(shape, config),
+        element: element_of(sizing, config),
         lines: lines_of(shape, config),
         fill: fill_of(shape, config),
         mark: mark_of(shape, config),
@@ -139,20 +143,8 @@ fn position_of(shape: PreviewShape, config: &OverlayConfig) -> PreviewPosition {
     }
 }
 
-fn sizing_of(shape: PreviewShape) -> Option<ElementSizing> {
-    match shape {
-        PreviewShape::Blank => None,
-        PreviewShape::BadgeBanner => Some(metrics::ALERT_SIZING),
-        PreviewShape::BorderedFrame => Some(metrics::FRAME_SIZING),
-        PreviewShape::LatestCard => Some(metrics::LATEST_SIZING),
-        PreviewShape::MessageFeed => Some(metrics::CHAT_SIZING),
-        PreviewShape::ProgressBar => Some(metrics::GOAL_SIZING),
-        PreviewShape::Strip => Some(metrics::TICKER_SIZING),
-    }
-}
-
-fn element_of(shape: PreviewShape, config: &OverlayConfig) -> PreviewElement {
-    let Some(sizing) = sizing_of(shape) else {
+fn element_of(sizing: Option<ElementSizing>, config: &OverlayConfig) -> PreviewElement {
+    let Some(sizing) = sizing else {
         return PreviewElement { text_size: None };
     };
 

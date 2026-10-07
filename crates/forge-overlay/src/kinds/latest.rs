@@ -148,6 +148,10 @@ impl OverlayKindDescriptor for LatestOverlayKind {
         let sample = sample_latest_value(config::read_str(config, config::SLOT));
         let mut shown = config.clone();
         shown.extend(latest_content(self, config, Some(&sample)));
-        compose(PreviewShape::LatestCard, &shown)
+        compose(
+            PreviewShape::LatestCard,
+            metrics::element_sizing(KIND_ID),
+            &shown,
+        )
     }
 }

@@ -2010,6 +2010,28 @@ widget_confirm_delete_title = Видалити { $kind }?
 widget_confirm_delete_hint = Цей елемент буде остаточно видалено. Дію не можна скасувати.
 widget_confirm_delete_kind_script = скрипт
 
+## Widget - date time picker
+
+widget_date_month_january = Січень
+widget_date_month_february = Лютий
+widget_date_month_march = Березень
+widget_date_month_april = Квітень
+widget_date_month_may = Травень
+widget_date_month_june = Червень
+widget_date_month_july = Липень
+widget_date_month_august = Серпень
+widget_date_month_september = Вересень
+widget_date_month_october = Жовтень
+widget_date_month_november = Листопад
+widget_date_month_december = Грудень
+widget_date_weekday_sunday = Нд
+widget_date_weekday_monday = Пн
+widget_date_weekday_tuesday = Вт
+widget_date_weekday_wednesday = Ср
+widget_date_weekday_thursday = Чт
+widget_date_weekday_friday = Пт
+widget_date_weekday_saturday = Сб
+
 ## Widget - save indicator
 
 widget_copied_toast = Скопійовано в буфер обміну

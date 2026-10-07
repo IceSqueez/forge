@@ -11,13 +11,22 @@ use crate::tokens::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, body_family, mono_family,
     radius, spacing,
 };
+use crate::tr;
 
 const PANEL_W: Pixels = px(284.0);
 const CELL: Pixels = px(34.0);
 const NAV_BTN: Pixels = px(26.0);
 const NAV_GLYPH: Pixels = px(14.0);
 
-const WEEKDAYS: [&str; 7] = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const WEEKDAY_KEYS: [&str; 7] = [
+    "widget_date_weekday_sunday",
+    "widget_date_weekday_monday",
+    "widget_date_weekday_tuesday",
+    "widget_date_weekday_wednesday",
+    "widget_date_weekday_thursday",
+    "widget_date_weekday_friday",
+    "widget_date_weekday_saturday",
+];
 
 pub struct DateTimePickerLabels {
     pub now: SharedString,
@@ -167,7 +176,7 @@ impl DateTimePicker {
     fn render_weekday_header(&self) -> AnyElement {
         let p = self.palette;
         let mut row = div().flex();
-        for label in WEEKDAYS {
+        for key in WEEKDAY_KEYS {
             row = row.child(
                 div()
                     .w(CELL)
@@ -176,7 +185,7 @@ impl DateTimePicker {
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(p.text_faint)
-                    .child(label),
+                    .child(tr!(key)),
             );
         }
         row.into_any_element()
@@ -367,19 +376,20 @@ fn nav_btn(
         .into_any_element()
 }
 
-fn month_name(month: Month) -> &'static str {
-    match month {
-        Month::January => "January",
-        Month::February => "February",
-        Month::March => "March",
-        Month::April => "April",
-        Month::May => "May",
-        Month::June => "June",
-        Month::July => "July",
-        Month::August => "August",
-        Month::September => "September",
-        Month::October => "October",
-        Month::November => "November",
-        Month::December => "December",
-    }
+fn month_name(month: Month) -> String {
+    let key = match month {
+        Month::January => "widget_date_month_january",
+        Month::February => "widget_date_month_february",
+        Month::March => "widget_date_month_march",
+        Month::April => "widget_date_month_april",
+        Month::May => "widget_date_month_may",
+        Month::June => "widget_date_month_june",
+        Month::July => "widget_date_month_july",
+        Month::August => "widget_date_month_august",
+        Month::September => "widget_date_month_september",
+        Month::October => "widget_date_month_october",
+        Month::November => "widget_date_month_november",
+        Month::December => "widget_date_month_december",
+    };
+    tr!(key)
 }

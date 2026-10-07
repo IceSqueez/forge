@@ -1971,6 +1971,28 @@ widget_confirm_delete_title = Delete { $kind }?
 widget_confirm_delete_hint = This item will be permanently removed. This action cannot be undone.
 widget_confirm_delete_kind_script = script
 
+## Widget - date time picker
+
+widget_date_month_january = January
+widget_date_month_february = February
+widget_date_month_march = March
+widget_date_month_april = April
+widget_date_month_may = May
+widget_date_month_june = June
+widget_date_month_july = July
+widget_date_month_august = August
+widget_date_month_september = September
+widget_date_month_october = October
+widget_date_month_november = November
+widget_date_month_december = December
+widget_date_weekday_sunday = Su
+widget_date_weekday_monday = Mo
+widget_date_weekday_tuesday = Tu
+widget_date_weekday_wednesday = We
+widget_date_weekday_thursday = Th
+widget_date_weekday_friday = Fr
+widget_date_weekday_saturday = Sa
+
 ## Widget - save indicator
 
 widget_copied_toast = Copied to clipboard

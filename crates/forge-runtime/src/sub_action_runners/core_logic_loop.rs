@@ -16,6 +16,7 @@ use crate::ConditionGate;
 const MAX_COUNT: i64 = 1000;
 const MAX_WHILE_ITERATIONS: i64 = 1_000_000;
 const MAX_FOREACH_ITERATIONS: i64 = 10_000;
+const MAX_RECORDED_ITERATIONS: i64 = 100;
 
 pub struct CoreLogicLoopRunner {
     gate: Arc<ConditionGate>,
@@ -171,6 +172,7 @@ impl SubActionRunner for CoreLogicLoopRunner {
         let mut iterations: i64 = 0;
         let mut exit_reason = "completed";
         let mut failure: Option<String> = None;
+        let mut unrecorded: Option<(StepTimer, i64)> = None;
 
         loop {
             if ctx.cancel.is_cancelled() {
@@ -227,10 +229,17 @@ impl SubActionRunner for CoreLogicLoopRunner {
             };
 
             let iter_no = iterations;
+            if iter_no >= MAX_RECORDED_ITERATIONS && unrecorded.is_none() {
+                unrecorded = Some((StepTimer::start(ctx, String::new()), iter_no));
+            }
             let (iter_outcome, body_telemetry) =
                 run_body(ctx.executor, &body, iter_stack, ctx.parent_event_id).await;
-            ctx.telemetry
-                .extend(retag(body_telemetry, ctx.index, &format!("body#{iter_no}")));
+            if iter_no < MAX_RECORDED_ITERATIONS {
+                ctx.telemetry
+                    .extend(retag(body_telemetry, ctx.index, &format!("body#{iter_no}")));
+            } else if let Some((_, last_iteration)) = unrecorded.as_mut() {
+                *last_iteration = iter_no;
+            }
 
             match iter_outcome {
                 IterOutcome::Continue(stack) => {
@@ -258,6 +267,18 @@ impl SubActionRunner for CoreLogicLoopRunner {
                     break;
                 }
             }
+        }
+
+        if let Some((timer, last_iteration)) = unrecorded {
+            let mut summary = timer.skipped(format!(
+                "core.logic.loop: steps of iterations {MAX_RECORDED_ITERATIONS}-{last_iteration} are not recorded"
+            ));
+            summary.kind = format!(
+                "{}.body#{MAX_RECORDED_ITERATIONS}-{last_iteration}",
+                ctx.index
+            );
+            summary.index = SubActionTelemetry::NESTED;
+            ctx.telemetry.extend([summary]);
         }
 
         let stack = current

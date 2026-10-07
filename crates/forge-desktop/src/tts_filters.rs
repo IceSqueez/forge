@@ -2606,6 +2606,7 @@ mod tests {
         FilterRuleKind::Literal {
             pattern: pattern.into(),
             replacement: replacement.into(),
+            match_inside_words: false,
         }
     }
 

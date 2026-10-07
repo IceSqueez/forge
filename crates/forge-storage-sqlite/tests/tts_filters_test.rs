@@ -32,6 +32,7 @@ fn literal_rule(id: &str, pos: u32) -> FilterRule {
         kind: FilterRuleKind::Literal {
             pattern: format!("pat_{id}"),
             replacement: format!("rep_{id}"),
+            match_inside_words: false,
         },
     }
 }
@@ -338,6 +339,7 @@ async fn filter_rule_kinds_params_json_round_trip() {
             kind: FilterRuleKind::Literal {
                 pattern: "hello world".to_owned(),
                 replacement: "hi".to_owned(),
+                match_inside_words: false,
             },
         },
         FilterRule {
@@ -486,6 +488,7 @@ async fn rule_at_max_position_does_not_overflow() {
         kind: FilterRuleKind::Literal {
             pattern: "x".to_owned(),
             replacement: "y".to_owned(),
+            match_inside_words: false,
         },
     };
     r.replace_rules(std::slice::from_ref(&rule))
@@ -507,6 +510,7 @@ async fn disabled_rule_enabled_field_round_trips_correctly() {
         kind: FilterRuleKind::Literal {
             pattern: "bad".to_owned(),
             replacement: "".to_owned(),
+            match_inside_words: false,
         },
     };
     r.replace_rules(std::slice::from_ref(&disabled))

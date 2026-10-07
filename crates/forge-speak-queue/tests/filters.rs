@@ -30,6 +30,7 @@ mod filters {
             kind: FilterRuleKind::Literal {
                 pattern: pattern.to_owned(),
                 replacement: replacement.to_owned(),
+                match_inside_words: false,
             },
         }
     }
@@ -109,6 +110,7 @@ mod filters {
                 kind: FilterRuleKind::Literal {
                     pattern: "hello".into(),
                     replacement: "hi".into(),
+                    match_inside_words: false,
                 },
             },
             FilterRule {
@@ -119,6 +121,7 @@ mod filters {
                 kind: FilterRuleKind::Literal {
                     pattern: "hi".into(),
                     replacement: "hey".into(),
+                    match_inside_words: false,
                 },
             },
         ];

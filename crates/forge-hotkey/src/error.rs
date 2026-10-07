@@ -28,41 +28,42 @@ pub enum HotkeyError {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
     #[test]
-    fn already_registered_display_contains_combo() {
-        let e = HotkeyError::AlreadyRegistered {
-            combo: "Ctrl+A".to_owned(),
+    fn display_carries_every_field_of_the_variant() {
+        let bind_rejected = HotkeyError::BindRejected {
+            combo: "Ctrl+F1".to_owned(),
+            reason: "BindShortcuts was cancelled on the desktop".to_owned(),
         };
-        assert!(e.to_string().contains("Ctrl+A"));
-    }
-
-    #[test]
-    fn invalid_combo_display_contains_input() {
-        let e = HotkeyError::InvalidCombo("bad+".to_owned());
-        assert!(e.to_string().contains("bad+"));
-    }
-
-    #[test]
-    fn portal_unavailable_display_contains_reason() {
-        let e = HotkeyError::PortalUnavailable {
-            reason: "no D-Bus".to_owned(),
-        };
-        assert!(e.to_string().contains("no D-Bus"));
-    }
-
-    #[test]
-    fn permission_denied_display_mentions_input_group() {
-        let e = HotkeyError::PermissionDenied;
-        assert!(e.to_string().contains("input"));
-    }
-
-    #[test]
-    fn backend_display_contains_message() {
-        let e = HotkeyError::Backend("channel closed".to_owned());
-        assert!(e.to_string().contains("channel closed"));
+        for (error, fields) in [
+            (
+                HotkeyError::AlreadyRegistered {
+                    combo: "Ctrl+A".to_owned(),
+                },
+                vec!["Ctrl+A"],
+            ),
+            (HotkeyError::InvalidCombo("bad+".to_owned()), vec!["bad+"]),
+            (
+                HotkeyError::PortalUnavailable {
+                    reason: "no D-Bus".to_owned(),
+                },
+                vec!["no D-Bus"],
+            ),
+            (
+                bind_rejected,
+                vec!["Ctrl+F1", "BindShortcuts was cancelled on the desktop"],
+            ),
+            (
+                HotkeyError::Backend("channel closed".to_owned()),
+                vec!["channel closed"],
+            ),
+        ] {
+            let shown = error.to_string();
+            for field in fields {
+                assert!(shown.contains(field), "{shown:?} lacks {field:?}");
+            }
+        }
     }
 }

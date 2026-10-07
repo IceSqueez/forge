@@ -153,6 +153,17 @@ fn each_kind_defaults_to_the_text_size_its_stylesheet_falls_back_to() {
 }
 
 #[test]
+fn each_kind_preview_without_a_stored_size_draws_its_own_base_text_size() {
+    for (kind_id, base) in BASE_TEXT_SIZE {
+        let element = with_kind(kind_id, |descriptor| {
+            descriptor.preview(&OverlayConfig::new()).element
+        });
+
+        assert_eq!(element.text_size, *base, "{kind_id}");
+    }
+}
+
+#[test]
 fn a_chosen_text_size_scales_a_page_by_its_ratio_to_the_kinds_base() {
     for (kind_id, rows) in TEXT_SCALES {
         let sizing = element_sizing(kind_id).expect("a kind that draws a page has a sizing table");

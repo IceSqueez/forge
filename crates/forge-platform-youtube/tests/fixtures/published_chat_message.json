@@ -1,5 +1,5 @@
 {
-  "source": "you_tube",
+  "source": "youtube",
   "kind": "youtube.chat.message",
   "raw": {
     "kind": "youtube#liveChatMessage",

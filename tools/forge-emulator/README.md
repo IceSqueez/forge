@@ -287,7 +287,7 @@ Two expectations read the fake's ledger, counting only what happened after the s
 
 forge connects during boot, so a scenario that judges forge's connection events starts the fake
 with `online_at_boot: false` and a `vtube_online` step. forge publishes VTube Studio events with
-the source `v_tube`. `fake-vtube [--token T] [--deny-token-requests]` runs the fake alone and
+the source `vtube`. `fake-vtube [--token T] [--deny-token-requests]` runs the fake alone and
 prints its address.
 
 ## Kick
@@ -382,7 +382,7 @@ message with the given `snippet` (copied from the liveChatMessage reference, e.g
 steps need the broadcast live at that point. Expectations: `youtube_request` (method, path, body
 pointers, status, within the step), `youtube_request_count` and `youtube_no_unexpected_requests`
 (whole run). The recorded refresh form never keeps `client_secret`. forge publishes YouTube events
-with the source `you_tube`.
+with the source `youtube`.
 
 ## Throughput runs
 

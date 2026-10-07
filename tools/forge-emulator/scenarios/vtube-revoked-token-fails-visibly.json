@@ -15,7 +15,7 @@
         { "vtube_auth": { "accepted": false, "within_ms": 45000 } },
         {
           "event": {
-            "source": "v_tube",
+            "source": "vtube",
             "kind": "vtube.connection.changed",
             "payload": {
               "/is_connected": { "equals": false },
@@ -31,7 +31,7 @@
       "expect": [
         {
           "event_absent": {
-            "source": "v_tube",
+            "source": "vtube",
             "kind": "vtube.connection.changed",
             "payload": { "/is_connected": { "equals": true } },
             "window_ms": 5000

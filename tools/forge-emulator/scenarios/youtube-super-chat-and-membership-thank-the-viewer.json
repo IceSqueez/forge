@@ -59,7 +59,7 @@
         {
           "event": {
             "name": "super_chat",
-            "source": "you_tube",
+            "source": "youtube",
             "kind": "youtube.chat.super_chat",
             "payload": {
               "/amount_micros": { "equals": 5000000 },
@@ -108,7 +108,7 @@
         {
           "event": {
             "name": "member",
-            "source": "you_tube",
+            "source": "youtube",
             "kind": "youtube.channel.member",
             "payload": {
               "/member_level_name": { "equals": "Forge Fans" },

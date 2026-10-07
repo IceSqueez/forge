@@ -32,7 +32,7 @@
       "expect": [
         {
           "event": {
-            "source": "v_tube",
+            "source": "vtube",
             "kind": "vtube.hotkey.triggered",
             "payload": { "/hotkey_name": { "equals": "Wave" } },
             "within_ms": 5000
@@ -53,7 +53,7 @@
       "expect": [
         {
           "event": {
-            "source": "v_tube",
+            "source": "vtube",
             "kind": "vtube.tracking.face_lost",
             "within_ms": 5000
           }
@@ -73,7 +73,7 @@
       "expect": [
         {
           "event": {
-            "source": "v_tube",
+            "source": "vtube",
             "kind": "vtube.item.added",
             "payload": { "/item_file_name": { "equals": "emulator_star.png" } },
             "within_ms": 5000
@@ -94,7 +94,7 @@
       "expect": [
         {
           "event": {
-            "source": "v_tube",
+            "source": "vtube",
             "kind": "vtube.expression.state_changed",
             "payload": {
               "/expression_file": { "equals": "Blush.exp3.json" },

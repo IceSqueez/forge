@@ -2334,13 +2334,13 @@ mod tests {
                 SubscriptionChipKind::Source(EventSource::Twitch),
             ),
             (
-                "you_tube",
+                "youtube",
                 "*",
                 "youtube.*",
                 SubscriptionChipKind::Source(EventSource::YouTube),
             ),
             (
-                "v_tube",
+                "vtube",
                 "model.loaded",
                 "vtube.model.loaded",
                 SubscriptionChipKind::Source(EventSource::VTube),

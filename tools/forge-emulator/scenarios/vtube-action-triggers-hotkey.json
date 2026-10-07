@@ -47,7 +47,7 @@
         },
         {
           "event": {
-            "source": "v_tube",
+            "source": "vtube",
             "kind": "vtube.hotkey.triggered",
             "payload": { "/hotkey_name": { "equals": "Wave" } },
             "within_ms": 5000

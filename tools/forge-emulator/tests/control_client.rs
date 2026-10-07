@@ -232,7 +232,7 @@ async fn subscribe_sends_filters_in_the_server_wire_shape() {
     assert_eq!(request["request"], "subscribe");
     assert_eq!(
         request["events"],
-        json!([{ "source": "you_tube", "type": "youtube.chat.message" }, {}])
+        json!([{ "source": "youtube", "type": "youtube.chat.message" }, {}])
     );
 }
 

@@ -19,7 +19,7 @@
         {
           "event": {
             "name": "online",
-            "source": "you_tube",
+            "source": "youtube",
             "kind": "youtube.stream.online",
             "payload": {
               "/broadcast_id": { "equals": "EmuBroadcst" },
@@ -54,7 +54,7 @@
         {
           "event": {
             "name": "offline",
-            "source": "you_tube",
+            "source": "youtube",
             "kind": "youtube.stream.offline",
             "within_ms": 15000
           }
@@ -71,7 +71,7 @@
         { "caused_by": { "effect": "offline_action", "cause": "offline" } },
         {
           "event": {
-            "source": "you_tube",
+            "source": "youtube",
             "kind": "youtube.stream.offline",
             "count": { "exactly": 1 },
             "within_ms": 5000

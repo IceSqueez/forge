@@ -40,7 +40,7 @@
         {
           "event": {
             "name": "chat",
-            "source": "you_tube",
+            "source": "youtube",
             "kind": "youtube.chat.command",
             "payload": {
               "/message_text": { "equals": "!hello there" },
@@ -75,7 +75,7 @@
         },
         {
           "event": {
-            "source": "you_tube",
+            "source": "youtube",
             "kind": "chat.send",
             "payload": {
               "/channel": { "equals": "youtube" },

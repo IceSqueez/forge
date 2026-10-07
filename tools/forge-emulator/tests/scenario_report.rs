@@ -395,7 +395,7 @@ fn event_stream_failures_spell_out_counts_near_misses_and_gaps() {
             expected: "forge publishes `chat.message` from twitch for this message where `/user/login` equals \"alice\" within 2s",
             actual: "forge published no matching `chat.message` within 2s",
             details: vec![
-                "closest near miss: `chat.message` at +800 ms differs at source (wanted twitch, got you_tube)",
+                "closest near miss: `chat.message` at +800 ms differs at source (wanted twitch, got youtube)",
             ],
         },
         Case {

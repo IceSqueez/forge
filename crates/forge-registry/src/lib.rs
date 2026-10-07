@@ -2,6 +2,7 @@ pub mod category;
 pub mod chain;
 pub mod config_ext;
 pub mod descriptor;
+pub mod duration_bounds;
 pub mod error;
 pub mod evaluator;
 pub mod first_chatter;
@@ -25,6 +26,10 @@ pub use chain::{
 };
 pub use config_ext::SubActionConfigExt;
 pub use descriptor::{ChatTriggerFamily, TriggerKindDescriptor};
+pub use duration_bounds::{
+    DURATION_UNIT_HOURS, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_MINUTES, DURATION_UNIT_SECONDS,
+    DurationBounds,
+};
 pub use error::RegistryError;
 pub use evaluator::{EventFilter, kind_matches_prefix};
 pub use first_chatter::{

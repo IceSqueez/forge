@@ -1,5 +1,7 @@
 use std::ops::RangeInclusive;
 
+use crate::duration_bounds::DurationBounds;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodeLanguage {
     Rhai,
@@ -88,6 +90,11 @@ pub enum FormField {
         unit_key: &'static str,
         bounds: UnitAmountBounds,
     },
+    Duration {
+        key: &'static str,
+        label: &'static str,
+        bounds: DurationBounds,
+    },
     DynamicSelect {
         key: &'static str,
         label: &'static str,
@@ -132,6 +139,7 @@ impl FormField {
             | Self::DateTime { key, .. }
             | Self::Select { key, .. }
             | Self::UnitAmount { key, .. }
+            | Self::Duration { key, .. }
             | Self::DynamicSelect { key, .. }
             | Self::DependentSelect { key, .. }
             | Self::Swatch { key, .. }

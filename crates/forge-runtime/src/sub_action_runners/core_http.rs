@@ -4,13 +4,16 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    DurationBounds, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionRunner,
 };
 use forge_storage::{SettingsRepo, get_bool_setting, reserved_keys};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
 use crate::egress::{EgressClient, EgressRequest, EgressResponse, HttpMethod};
+
+const TIMEOUT_MIN_MS: i64 = 100;
+const TIMEOUT_MAX_MS: i64 = 60_000;
 
 pub struct CoreHttpRunner {
     method: HttpMethod,
@@ -166,11 +169,13 @@ impl SubActionRunner for CoreHttpRunner {
             key: "query_params",
             label: "Query Parameters (JSON object)",
         });
-        fields.push(FormField::Integer {
+        fields.push(FormField::Duration {
             key: "timeout_ms",
-            label: "Timeout (ms)",
-            min: 100,
-            max: 60_000,
+            label: "Timeout",
+            bounds: DurationBounds {
+                min_ms: TIMEOUT_MIN_MS,
+                max_ms: TIMEOUT_MAX_MS,
+            },
         });
         fields.push(FormField::Toggle {
             key: "follow_redirects",
@@ -214,7 +219,7 @@ impl SubActionRunner for CoreHttpRunner {
         let timeout_ms = config
             .int("timeout_ms")
             .unwrap_or(10_000)
-            .clamp(100, 60_000) as u64;
+            .clamp(TIMEOUT_MIN_MS, TIMEOUT_MAX_MS) as u64;
         let follow_redirects = config.bool("follow_redirects").unwrap_or(true);
         let parse_as = config.str("parse_response_as").unwrap_or("json").to_owned();
 

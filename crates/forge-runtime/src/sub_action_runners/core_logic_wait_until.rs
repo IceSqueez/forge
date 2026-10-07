@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    CancelSignal, CodeLanguage, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionRunner,
+    CancelSignal, CodeLanguage, DurationBounds, FormField, RegistryError, RunContext, StepTimer,
+    SubActionCategory, SubActionConfigExt, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 use tokio::time::Instant;
@@ -68,17 +68,21 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
                 label: "Condition",
                 language: CodeLanguage::Rhai,
             },
-            FormField::Integer {
+            FormField::Duration {
                 key: "poll_interval_ms",
-                label: "Poll Interval (ms)",
-                min: POLL_MIN_MS,
-                max: POLL_MAX_MS,
+                label: "Poll Interval",
+                bounds: DurationBounds {
+                    min_ms: POLL_MIN_MS,
+                    max_ms: POLL_MAX_MS,
+                },
             },
-            FormField::Integer {
+            FormField::Duration {
                 key: "timeout_ms",
-                label: "Timeout (ms)",
-                min: TIMEOUT_MIN_MS,
-                max: TIMEOUT_MAX_MS,
+                label: "Timeout",
+                bounds: DurationBounds {
+                    min_ms: TIMEOUT_MIN_MS,
+                    max_ms: TIMEOUT_MAX_MS,
+                },
             },
         ]
     }

@@ -2,6 +2,7 @@ use super::editor::{step_glyph, sub_category_color};
 use super::files_root_note::files_root_note;
 use super::step_validation::StepRejection;
 use super::*;
+use crate::amount_scale::{AmountScale, AmountSeed};
 use crate::async_bridge;
 use crate::config_field_label::localized_label;
 use crate::config_form::{code_field_editor, dependent_options};
@@ -15,8 +16,7 @@ use forge_components::{
     toggle,
 };
 use forge_registry::{
-    CodeLanguage, FormField, FormRefinement, FormSchemaSource, SubActionCategory, UnitAmountBounds,
-    refined_fields,
+    CodeLanguage, FormField, FormRefinement, FormSchemaSource, SubActionCategory, refined_fields,
 };
 use forge_types::{SubActionConfig, Variant, normalize_var_name};
 use gpui::{FocusHandle, FontWeight, Rgba};
@@ -83,8 +83,8 @@ enum SubFormField {
     UnitAmount {
         key: String,
         label: String,
-        unit_key: String,
-        bounds: UnitAmountBounds,
+        unit_picker_key: String,
+        scale: AmountScale,
         unit: String,
         gate: Option<String>,
         input: Entity<TextInput>,
@@ -116,12 +116,12 @@ impl SubFormField {
                 accepts_typed_value: options_key.is_some(),
             }),
             Self::UnitAmount {
-                unit_key,
-                bounds,
+                unit_picker_key,
+                scale,
                 unit,
                 ..
-            } if unit_key == key => Some(SelectEntries {
-                options: unit_options(bounds),
+            } if unit_picker_key == key => Some(SelectEntries {
+                options: scale.unit_options(),
                 selected: unit.clone(),
                 accepts_typed_value: false,
             }),
@@ -131,15 +131,12 @@ impl SubFormField {
 
     fn flag_unit_amount_bound(&self, cx: &mut App) -> bool {
         let Self::UnitAmount {
-            bounds,
-            unit,
-            input,
-            ..
+            scale, unit, input, ..
         } = self
         else {
             return false;
         };
-        let range = bounds.range_for(unit);
+        let range = scale.range_for(unit);
         let invalid = int_entry_invalid(
             input.read(cx).content(),
             *range.start(),
@@ -450,7 +447,19 @@ impl EditSubActionForm {
                     SubFormField::Select {
                         key: k, selected, ..
                     } if k == key => *selected = value.clone(),
-                    SubFormField::UnitAmount { unit_key, unit, .. } if unit_key == key => {
+                    SubFormField::UnitAmount {
+                        unit_picker_key,
+                        scale,
+                        unit,
+                        input,
+                        ..
+                    } if unit_picker_key == key => {
+                        let typed = input.read(cx).content().to_owned();
+                        if let Some(converted) =
+                            scale.amount_after_unit_switch(&typed, unit, &value)
+                        {
+                            input.update(cx, |input, cx| input.set_content(converted, cx));
+                        }
                         *unit = value.clone();
                         field.flag_unit_amount_bound(cx);
                     }
@@ -967,8 +976,8 @@ impl EditSubActionForm {
                 }
                 SubFormField::UnitAmount {
                     label,
-                    unit_key,
-                    bounds,
+                    unit_picker_key,
+                    scale,
                     unit,
                     gate,
                     input,
@@ -978,10 +987,10 @@ impl EditSubActionForm {
                         continue;
                     }
                     let unit_select = self.render_select_trigger(
-                        unit_key,
-                        &unit_options(bounds),
+                        unit_picker_key,
+                        &scale.unit_options(),
                         unit,
-                        self.open_picker_for(unit_key),
+                        self.open_picker_for(unit_picker_key),
                         palette,
                         cx,
                     );
@@ -1288,7 +1297,7 @@ fn field_keys(field: &SubFormField) -> Vec<&str> {
         | SubFormField::Code { key, .. }
         | SubFormField::Bool { key, .. }
         | SubFormField::Select { key, .. } => vec![key.as_str()],
-        SubFormField::UnitAmount { key, unit_key, .. } => vec![key.as_str(), unit_key.as_str()],
+        SubFormField::UnitAmount { key, scale, .. } => scale.stored_keys(key),
         SubFormField::Hint { .. } => Vec::new(),
     }
 }
@@ -1312,18 +1321,10 @@ fn with_rejection_note(element: AnyElement, message: String, palette: &ForgePale
         .into_any_element()
 }
 
-fn unit_options(bounds: &UnitAmountBounds) -> Vec<(String, String)> {
-    bounds
-        .units
-        .iter()
-        .map(|unit| (unit.value.to_owned(), unit.value.to_owned()))
-        .collect()
-}
-
 fn field_values(field: &SubFormField, cx: &App) -> Vec<(String, Variant)> {
     let SubFormField::UnitAmount {
         key,
-        unit_key,
+        scale,
         unit,
         input,
         ..
@@ -1331,16 +1332,8 @@ fn field_values(field: &SubFormField, cx: &App) -> Vec<(String, Variant)> {
     else {
         return field_value(field, cx).into_iter().collect();
     };
-    let amount = input
-        .read(cx)
-        .content()
-        .trim()
-        .parse::<i64>()
-        .ok()
-        .map(|amount| (key.clone(), Variant::Int(amount)));
-    std::iter::once((unit_key.clone(), Variant::String(unit.clone())))
-        .chain(amount)
-        .collect()
+    let amount = input.read(cx).content().trim().parse::<i64>().ok();
+    scale.stored_values(key, unit, amount)
 }
 
 fn field_value(field: &SubFormField, cx: &App) -> Option<(String, Variant)> {
@@ -1545,23 +1538,17 @@ fn build_input_field(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_unit_amount_field(
     key: &str,
     label: &str,
-    unit_key: &str,
-    bounds: UnitAmountBounds,
+    scale: AmountScale,
     gate: Option<String>,
     config: &SubActionConfig,
     palette: ForgePalette,
     cx: &mut Context<EditSubActionForm>,
 ) -> SubFormField {
-    let unit = bounds
-        .unit_or_first(&config_seed(config, unit_key))
-        .map(|unit| unit.value.to_owned())
-        .unwrap_or_default();
-    let range = bounds.range_for(&unit);
-    let seed = config_seed(config, key);
+    let AmountSeed { unit, amount: seed } = scale.seed(key, config);
+    let range = scale.range_for(&unit);
     let invalid_seed = int_entry_invalid(&seed, *range.start(), *range.end(), false);
     let input = cx.new(|cx| {
         let mut input = TextInput::new("0", cx).with_palette(palette);
@@ -1575,8 +1562,8 @@ fn build_unit_amount_field(
     SubFormField::UnitAmount {
         key: key.to_owned(),
         label: label.to_owned(),
-        unit_key: unit_key.to_owned(),
-        bounds,
+        unit_picker_key: scale.unit_picker_key(key),
+        scale,
         unit,
         gate,
         input,
@@ -1724,14 +1711,13 @@ fn push_form_field(
             palette,
             cx,
         )),
-        FormField::UnitAmount {
-            key,
-            label,
-            unit_key,
-            bounds,
-        } => out.push(build_unit_amount_field(
-            key, label, unit_key, *bounds, gate, config, palette, cx,
-        )),
+        FormField::UnitAmount { key, label, .. } | FormField::Duration { key, label, .. } => {
+            if let Some(scale) = AmountScale::of(spec) {
+                out.push(build_unit_amount_field(
+                    key, label, scale, gate, config, palette, cx,
+                ));
+            }
+        }
         FormField::FilePicker { key, label } => out.push(build_input_field(
             key, label, "", None, true, false, gate, config, palette, cx,
         )),

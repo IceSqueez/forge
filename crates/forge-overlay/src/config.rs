@@ -147,6 +147,9 @@ fn check_field(field: &FormField, config: &OverlayConfig) -> Result<(), OverlayE
             let range = bounds.range_for(unit);
             bounded_int(config, key, *range.start(), *range.end())
         }
+        FormField::Duration { key, bounds, .. } => {
+            bounded_int(config, key, bounds.min_ms, bounds.max_ms)
+        }
         FormField::Toggle { key, .. } => match config.get(*key) {
             None | Some(Variant::Bool(_)) => Ok(()),
             Some(_) => Err(OverlayError::WrongType {

@@ -700,6 +700,7 @@ fn index_field(spec: &FormField, section: ConfigSection, out: &mut FieldIndex) {
         | FormField::DateTime { key, label }
         | FormField::Select { key, label, .. }
         | FormField::UnitAmount { key, label, .. }
+        | FormField::Duration { key, label, .. }
         | FormField::DynamicSelect { key, label, .. }
         | FormField::DependentSelect { key, label, .. }
         | FormField::Swatch { key, label, .. }

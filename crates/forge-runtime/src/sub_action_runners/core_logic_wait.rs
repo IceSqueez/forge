@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    CancelSignal, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionRunner,
+    CancelSignal, DurationBounds, FormField, RegistryError, RunContext, StepTimer,
+    SubActionCategory, SubActionConfigExt, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
@@ -48,11 +48,13 @@ impl SubActionRunner for CoreLogicWaitRunner {
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Integer {
+        vec![FormField::Duration {
             key: WAIT_MS_KEY,
-            label: "Milliseconds",
-            min: 0,
-            max: MAX_DELAY_MS as i64,
+            label: "Duration",
+            bounds: DurationBounds {
+                min_ms: 0,
+                max_ms: MAX_DELAY_MS as i64,
+            },
         }]
     }
 

@@ -9,7 +9,9 @@ use forge_components::{
     PickerItem, PickerLabels, Radius, Spacing, TextInput, accent_swatch, body_family, dropdown,
     icon, mono_family, radius, slider, spacing, toggle, tr,
 };
-use forge_registry::{CodeLanguage, FormField, UnitAmountBounds};
+use forge_registry::{CodeLanguage, FormField};
+
+use crate::amount_scale::{AmountScale, AmountSeed};
 
 use crate::collection_options::{
     ChoiceOptions, CollectionChoiceField, CollectionSource, collection_choice_fields,
@@ -93,12 +95,12 @@ pub(crate) enum ConfigField {
     },
     UnitAmount {
         key: String,
-        unit_key: String,
+        unit_picker_key: String,
         gate: Option<String>,
-        bounds: UnitAmountBounds,
+        scale: AmountScale,
         units: Vec<(String, String)>,
         unit: String,
-        max: Rc<Cell<i64>>,
+        live_range: Rc<Cell<(i64, i64)>>,
         input: Entity<TextInput>,
         _sub: Subscription,
     },
@@ -228,12 +230,11 @@ pub(crate) fn fold_config_field<V: 'static>(
                 cx,
             ));
         }
-        FormField::UnitAmount {
-            key,
-            unit_key,
-            bounds,
-            ..
-        } => out.push(build_unit_amount(key, unit_key, *bounds, gate, ctx, cx)),
+        FormField::UnitAmount { key, .. } | FormField::Duration { key, .. } => {
+            if let Some(scale) = AmountScale::of(spec) {
+                out.push(build_unit_amount(key, scale, gate, ctx, cx));
+            }
+        }
         FormField::Slider {
             key,
             min,
@@ -367,16 +368,20 @@ pub(crate) fn set_picked_value(fields: &mut [ConfigField], key: &str, value: &st
                 key: k, selected, ..
             } if k == key => value.clone_into(selected),
             ConfigField::UnitAmount {
-                unit_key,
-                bounds,
+                unit_picker_key,
+                scale,
                 unit,
-                max,
+                live_range,
                 input,
                 ..
-            } if unit_key == key => {
+            } if unit_picker_key == key => {
+                let typed = input.read(cx).content().to_owned();
+                if let Some(converted) = scale.amount_after_unit_switch(&typed, unit, value) {
+                    input.update(cx, |input, cx| input.set_content(converted, cx));
+                }
                 value.clone_into(unit);
-                let range = bounds.range_for(unit);
-                max.set(*range.end());
+                let range = scale.range_for(unit);
+                live_range.set((*range.start(), *range.end()));
                 let content = input.read(cx).content().to_owned();
                 settle_integer_input(input, &content, &range, cx);
             }
@@ -397,11 +402,11 @@ pub(crate) fn choice_entries<'a>(
             ..
         } if k == key => Some((options.as_slice(), selected.as_str())),
         ConfigField::UnitAmount {
-            unit_key,
+            unit_picker_key,
             units,
             unit,
             ..
-        } if unit_key == key => Some((units.as_slice(), unit.as_str())),
+        } if unit_picker_key == key => Some((units.as_slice(), unit.as_str())),
         _ => None,
     })
 }
@@ -739,19 +744,14 @@ fn settle_integer_input(
 
 fn build_unit_amount<V: 'static>(
     key: &str,
-    unit_key: &str,
-    bounds: UnitAmountBounds,
+    scale: AmountScale,
     gate: Option<String>,
     ctx: &FoldContext<'_, V>,
     cx: &mut Context<V>,
 ) -> ConfigField {
-    let unit = bounds
-        .unit_or_first(&read_text(ctx.config, unit_key))
-        .map(|unit| unit.value.to_owned())
-        .unwrap_or_default();
-    let range = bounds.range_for(&unit);
-    let max = Rc::new(Cell::new(*range.end()));
-    let seed = read_text(ctx.config, key);
+    let AmountSeed { unit, amount: seed } = scale.seed(key, ctx.config);
+    let range = scale.range_for(&unit);
+    let live_range = Rc::new(Cell::new((*range.start(), *range.end())));
     let seed_invalid = integer_text_invalid(&seed, &range);
     let palette = *ctx.palette;
     let input = cx.new(|cx| {
@@ -763,8 +763,7 @@ fn build_unit_amount<V: 'static>(
         input
     });
     let on_committed = ctx.on_committed;
-    let min = bounds.min;
-    let live_max = Rc::clone(&max);
+    let bound_range = Rc::clone(&live_range);
     let sub = cx.subscribe(
         &input,
         move |view, field: Entity<TextInput>, event: &InputEvent, cx| {
@@ -772,26 +771,19 @@ fn build_unit_amount<V: 'static>(
                 field.update(cx, |input, cx| input.restore_committed(cx));
                 return;
             }
-            bound_integer_input(&field, event, &(min..=live_max.get()), cx);
+            let (min, max) = bound_range.get();
+            bound_integer_input(&field, event, &(min..=max), cx);
             on_committed(view, event, cx);
         },
     );
-    let units = bounds
-        .units
-        .iter()
-        .map(|unit| {
-            let label = crate::motion_labels::preset_label(unit_key, unit.value);
-            (unit.value.to_owned(), label)
-        })
-        .collect();
     ConfigField::UnitAmount {
         key: key.to_owned(),
-        unit_key: unit_key.to_owned(),
+        unit_picker_key: scale.unit_picker_key(key),
         gate,
-        bounds,
-        units,
+        scale,
+        units: scale.unit_options(),
         unit,
-        max,
+        live_range,
         input,
         _sub: sub,
     }
@@ -924,9 +916,8 @@ pub(crate) fn collect_field_values(fields: &[ConfigField], buffer: &mut FieldCon
             }
             ConfigField::UnitAmount {
                 key,
-                unit_key,
                 gate,
-                bounds,
+                scale,
                 unit,
                 input,
                 ..
@@ -934,11 +925,14 @@ pub(crate) fn collect_field_values(fields: &[ConfigField], buffer: &mut FieldCon
                 if !gate_on(gate) {
                     continue;
                 }
-                buffer.insert(unit_key.clone(), Variant::String(unit.clone()));
-                if let Ok(number) = input.read(cx).content().trim().parse::<i64>() {
-                    let bounded = within(number, &bounds.range_for(unit));
-                    buffer.insert(key.clone(), Variant::Int(bounded));
-                }
+                let amount = input
+                    .read(cx)
+                    .content()
+                    .trim()
+                    .parse::<i64>()
+                    .ok()
+                    .map(|number| within(number, &scale.range_for(unit)));
+                buffer.extend(scale.stored_values(key, unit, amount));
             }
             ConfigField::Hint { .. } => {}
         }
@@ -991,7 +985,7 @@ pub(crate) fn render_config_control<V: 'static>(
             ..
         } => render_choice(key, options, selected, palette, id_prefix, view, handlers),
         ConfigField::UnitAmount {
-            unit_key,
+            unit_picker_key,
             units,
             unit,
             input,
@@ -1003,7 +997,13 @@ pub(crate) fn render_config_control<V: 'static>(
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .child(div().flex_1().min_w(px(0.0)).child(input.clone()))
             .child(div().flex_1().min_w(px(0.0)).child(render_choice(
-                unit_key, units, unit, palette, id_prefix, view, handlers,
+                unit_picker_key,
+                units,
+                unit,
+                palette,
+                id_prefix,
+                view,
+                handlers,
             )))
             .into_any_element(),
         ConfigField::Hint { .. } => div()

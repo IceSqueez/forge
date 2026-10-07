@@ -1,5 +1,6 @@
 mod actions;
 mod actions_screen;
+mod amount_scale;
 mod app_shortcut_modal;
 mod async_bridge;
 mod audio_router;

@@ -2,12 +2,15 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    DurationBounds, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
 use super::os_ports::{DesktopNotice, NotifyPort, NotifyUrgency};
+
+const TIMEOUT_MIN_MS: i64 = 1000;
+const TIMEOUT_MAX_MS: i64 = 60000;
 
 pub struct CoreNotifyShowRunner {
     notify: Arc<dyn NotifyPort>,
@@ -76,11 +79,13 @@ impl SubActionRunner for CoreNotifyShowRunner {
                 label: "Icon Path",
                 placeholder: "/path/to/icon.png",
             },
-            FormField::Integer {
+            FormField::Duration {
                 key: "timeout_ms",
-                label: "Timeout (ms)",
-                min: 1000,
-                max: 60000,
+                label: "Timeout",
+                bounds: DurationBounds {
+                    min_ms: TIMEOUT_MIN_MS,
+                    max_ms: TIMEOUT_MAX_MS,
+                },
             },
         ]
     }
@@ -109,7 +114,10 @@ impl SubActionRunner for CoreNotifyShowRunner {
             .str("icon_path")
             .map(|s| ctx.arg_stack.interpolate(s))
             .filter(|s| !s.is_empty());
-        let timeout_ms = config.int("timeout_ms").unwrap_or(5000).clamp(1000, 60000) as u32;
+        let timeout_ms = config
+            .int("timeout_ms")
+            .unwrap_or(5000)
+            .clamp(TIMEOUT_MIN_MS, TIMEOUT_MAX_MS) as u32;
 
         let notice = DesktopNotice {
             title,

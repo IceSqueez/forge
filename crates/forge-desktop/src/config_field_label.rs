@@ -34,6 +34,7 @@ fn descriptor_label(spec: &FormField) -> &'static str {
         | FormField::DateTime { label, .. }
         | FormField::Select { label, .. }
         | FormField::UnitAmount { label, .. }
+        | FormField::Duration { label, .. }
         | FormField::DynamicSelect { label, .. }
         | FormField::DependentSelect { label, .. }
         | FormField::Swatch { label, .. }

@@ -429,10 +429,7 @@ mod tests {
     use gpui::{AppContext as _, Entity, TestAppContext};
     use time::OffsetDateTime;
 
-    use super::{
-        HISTORY_LOAD_CAP, HistoryState, ViewerHistory, mark_moderated, merge_newest_first,
-        moderated_ids_by,
-    };
+    use super::{HISTORY_PAGE_SIZE, HistoryState, ViewerHistory, history_row, moderated_ids_by};
     use crate::chat::ChatView;
     use crate::chat::tests::{message, mount_with_chat_history, push_each};
     use crate::chat_author::AuthorKey;
@@ -518,11 +515,14 @@ mod tests {
                 newest_at: rows.iter().map(|row| row.received_at).max(),
             };
             repo.expect_author_page()
-                .withf(move |asked, limit| *asked == query && *limit == HISTORY_LOAD_CAP)
-                .returning(move |_, _| {
+                .withf(move |asked, older, limit| {
+                    *asked == query && older.is_none() && *limit == HISTORY_PAGE_SIZE
+                })
+                .returning(move |_, _, _| {
                     Ok(ChatAuthorPage {
                         tally,
                         rows: rows.clone(),
+                        older: None,
                     })
                 });
         }
@@ -585,7 +585,17 @@ mod tests {
 
     fn shown(cx: &mut TestAppContext, history: &Entity<ViewerHistory>) -> Vec<ChatMessage> {
         match state(cx, history) {
-            HistoryState::Loaded => history.read_with(cx, |history, _| history.shown.clone()),
+            HistoryState::Loaded => history.read_with(cx, |history, app| {
+                let unsaved = history.messages.read(app).unsaved(&history.key);
+                (0..history.listed.total)
+                    .filter_map(|ix| history_row(ix, unsaved, &history.stored))
+                    .map(|message| {
+                        let mut message = message.clone();
+                        message.moderated |= history.moderated.contains(&message.id);
+                        message
+                    })
+                    .collect()
+            }),
             other => panic!("expected a loaded history, got {other:?}"),
         }
     }
@@ -617,59 +627,6 @@ mod tests {
                 author_id: id.to_owned(),
             });
             assert_eq!(stored_author(&key), expected, "{key:?}");
-        }
-    }
-
-    #[test]
-    fn merge_drops_an_arrived_message_whose_id_is_already_known() {
-        let merged = merge_newest_first(
-            vec![line("m1", 10, ANN)],
-            vec![line("m1", 10, ANN), line("m2", 20, ANN)],
-            HISTORY_LOAD_CAP,
-        );
-
-        assert_eq!(ids(&merged), ["m2", "m1"]);
-    }
-
-    #[test]
-    fn merge_never_treats_messages_without_an_id_as_duplicates() {
-        let merged = merge_newest_first(
-            vec![line("", 10, ANN)],
-            vec![line("", 20, ANN)],
-            HISTORY_LOAD_CAP,
-        );
-
-        assert_eq!(merged.len(), 2);
-    }
-
-    #[test]
-    fn merge_orders_both_inputs_together_newest_first() {
-        let merged = merge_newest_first(
-            vec![line("k3", 30, ANN), line("k1", 10, ANN)],
-            vec![line("a4", 40, ANN), line("a2", 20, ANN)],
-            HISTORY_LOAD_CAP,
-        );
-
-        assert_eq!(ids(&merged), ["a4", "k3", "a2", "k1"]);
-    }
-
-    #[test]
-    fn merge_keeps_only_the_newest_messages_up_to_the_cap() {
-        const CAP: usize = 3;
-        for total in [CAP - 1, CAP, CAP + 1] {
-            let all: Vec<ChatMessage> = (0..total)
-                .map(|ix| line(&format!("m{ix}"), ix as i64, ANN))
-                .collect();
-            let (known, arrived) = all.split_at(total / 2);
-
-            let merged = merge_newest_first(known.to_vec(), arrived.to_vec(), CAP);
-
-            let expected: Vec<String> = (0..total)
-                .rev()
-                .take(CAP)
-                .map(|ix| format!("m{ix}"))
-                .collect();
-            assert_eq!(ids(&merged), expected, "{total} messages");
         }
     }
 
@@ -728,7 +685,7 @@ mod tests {
     fn a_failed_load_shows_the_failed_state(cx: &mut TestAppContext) {
         let rt = runtime();
         let mut repo = MockChatHistoryRepo::new();
-        repo.expect_author_page().returning(|_, _| {
+        repo.expect_author_page().returning(|_, _, _| {
             Err(StorageError::Connection {
                 reason: "closed".into(),
             })
@@ -810,35 +767,6 @@ mod tests {
         assert_eq!(found, HashSet::from(["m1".into()]));
     }
 
-    #[test]
-    fn mark_moderated_dims_only_shown_lines_whose_id_was_moderated() {
-        let mut shown = vec![line("m1", 1, ANN), line("m2", 2, ANN)];
-
-        let changed = mark_moderated(&mut shown, &HashSet::from(["m1".into(), "x9".into()]));
-
-        assert!(changed);
-        assert_eq!(
-            shown.iter().map(|m| m.moderated).collect::<Vec<_>>(),
-            [true, false]
-        );
-    }
-
-    #[test]
-    fn mark_moderated_reports_no_change_when_nothing_is_newly_moderated() {
-        let mut already = line("m1", 1, ANN);
-        already.moderated = true;
-        let cases: [(&str, Vec<ChatMessage>, Vec<&str>); 3] = [
-            ("no moderated ids", vec![line("m1", 1, ANN)], vec![]),
-            ("id not shown", vec![line("m1", 1, ANN)], vec!["x9"]),
-            ("already dimmed", vec![already], vec!["m1"]),
-        ];
-        for (name, mut shown, ids) in cases {
-            let ids: HashSet<_> = ids.into_iter().map(Into::into).collect();
-
-            assert!(!mark_moderated(&mut shown, &ids), "{name}");
-        }
-    }
-
     fn chatter(ix: usize, viewer_id: &str) -> ChatMessage {
         let mut chatter = message(ix, false);
         chatter.author_id = Some(viewer_id.to_owned().into());
@@ -853,7 +781,7 @@ mod tests {
         let queries = Arc::new(AtomicUsize::new(0));
         let counter = Arc::clone(&queries);
         let mut repo = MockChatHistoryRepo::new();
-        repo.expect_author_page().returning(move |_, _| {
+        repo.expect_author_page().returning(move |_, _, _| {
             counter.fetch_add(1, Ordering::SeqCst);
             Ok(ChatAuthorPage::default())
         });

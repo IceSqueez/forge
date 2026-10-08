@@ -359,6 +359,7 @@ impl ChatHistoryRepo for StuckChatHistory {
     async fn author_page(
         &self,
         _: &forge_storage::ChatAuthorKey,
+        _: Option<forge_storage::ChatHistoryCursor>,
         _: usize,
     ) -> Result<forge_storage::ChatAuthorPage, StorageError> {
         Ok(forge_storage::ChatAuthorPage::default())

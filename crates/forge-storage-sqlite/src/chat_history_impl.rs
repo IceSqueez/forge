@@ -776,7 +776,7 @@ mod tests {
         author: &ChatAuthorKey,
         limit: usize,
     ) -> Vec<String> {
-        repo.author_page(author, limit)
+        repo.author_page(author, None, limit)
             .await
             .unwrap()
             .rows

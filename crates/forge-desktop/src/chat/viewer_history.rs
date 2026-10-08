@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use forge_components::{
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition, Spacing,
-    body_family, fmt_relative_time, modal, mono_family, overlay, spacing, tr,
+    body_family, fmt_relative_time, ghost_button, modal, mono_family, overlay, spacing, tr,
 };
 use forge_storage::{
     ChatAuthorKey, ChatAuthorPage, ChatAuthorTally, ChatHistoryCursor, ChatHistoryRepo,
@@ -93,6 +93,8 @@ pub(crate) struct ViewerHistory {
     state: HistoryState,
     stored: Vec<ChatMessage>,
     older: Option<ChatHistoryCursor>,
+    older_failed: bool,
+    full_tally: Option<ChatAuthorTally>,
     moderated: HashSet<SharedString>,
     list_state: ListState,
     listed: ListedRows,
@@ -145,6 +147,8 @@ impl ViewerHistory {
             state: HistoryState::Loading,
             stored: Vec::new(),
             older: None,
+            older_failed: false,
+            full_tally: None,
             moderated,
             list_state,
             listed: ListedRows::default(),
@@ -198,35 +202,60 @@ impl ViewerHistory {
 
     fn apply_page(&mut self, page: Option<ChatAuthorPage>, cx: &mut Context<Self>) {
         self._load = None;
+        let first_page = self.state == HistoryState::Loading;
         let Some(page) = page else {
-            self.state = HistoryState::Failed;
+            if first_page {
+                self.state = HistoryState::Failed;
+            } else {
+                self.older_failed = true;
+                self.publish_tally(false, cx);
+                self.sync_rows(cx);
+            }
             cx.notify();
             return;
         };
-        let first_page = self.state == HistoryState::Loading;
+        self.older_failed = false;
         self.stored
             .extend(page.rows.iter().map(ChatMessage::from_row));
         self.older = page.older;
         self.state = HistoryState::Loaded;
-        let exhausted = self.older.is_none();
-        let key = self.key.clone();
-        let held = if first_page {
-            Some(page.tally)
-        } else {
-            self.messages.read(cx).stored_tally(&key)
-        };
-        if let Some(held) = held {
-            let settled = settled_tally(held, self.stored.len(), exhausted);
-            if first_page || settled != held {
-                let feed = self.feed.clone();
-                self.messages.update(cx, |messages, cx| {
-                    messages.adopt(&key, settled, feed.read(cx));
-                    cx.notify();
-                });
-            }
+        if first_page {
+            self.full_tally = Some(page.tally);
         }
+        self.publish_tally(first_page, cx);
         self.sync_rows(cx);
         self.load_more_if_near(cx);
+        cx.notify();
+    }
+
+    fn publish_tally(&mut self, force: bool, cx: &mut Context<Self>) {
+        let Some(full) = self.full_tally else {
+            return;
+        };
+        let key = self.key.clone();
+        let settled = settled_tally(
+            full,
+            self.stored.len(),
+            self.older.is_none() || self.older_failed,
+        );
+        if force || self.messages.read(cx).stored_tally(&key) != Some(settled) {
+            let feed = self.feed.clone();
+            self.messages.update(cx, |messages, cx| {
+                messages.adopt(&key, settled, feed.read(cx));
+                cx.notify();
+            });
+        }
+    }
+
+    fn retry_older(&mut self, cx: &mut Context<Self>) {
+        if !self.older_failed || self._load.is_some() {
+            return;
+        }
+        let Some(query) = stored_author(&self.key) else {
+            return;
+        };
+        self.older_failed = false;
+        self.spawn_load(query, self.older, cx);
         cx.notify();
     }
 
@@ -239,6 +268,7 @@ impl ViewerHistory {
         self.state == HistoryState::Loaded
             && self._load.is_none()
             && self.older.is_some()
+            && !self.older_failed
             && self.visible_end + HISTORY_PREFETCH_ROWS >= self.listed.unsaved + self.stored.len()
     }
 
@@ -352,6 +382,28 @@ impl ViewerHistory {
         }
     }
 
+    fn render_older_failed(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
+        div()
+            .w_full()
+            .flex_none()
+            .pt(spacing(Spacing::Xs, density))
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
+            .child(Self::render_note(
+                tr!("chat_drawer_history_older_failed"),
+                palette.random,
+            ))
+            .child(
+                ghost_button(tr!("chat_drawer_history_retry"), palette).on_click(
+                    "chat-viewer-history-retry",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.retry_older(cx)),
+                ),
+            )
+            .into_any_element()
+    }
+
     fn render_body(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         match self.state {
             HistoryState::Loading => {
@@ -378,6 +430,9 @@ impl ViewerHistory {
                     .flex_grow_1()
                     .min_h(px(0.0)),
                 )
+                .when(self.older_failed, |column| {
+                    column.child(self.render_older_failed(palette, cx))
+                })
                 .into_any_element(),
         }
     }

@@ -96,6 +96,7 @@ pub(crate) mod tests {
         pub(crate) unregister_calls: Arc<AtomicUsize>,
         pub(crate) fail_unregister: Arc<AtomicBool>,
         pub(crate) restart_tx: mpsc::Sender<()>,
+        #[cfg_attr(not(target_os = "linux"), expect(dead_code))]
         pub(crate) session_tx: mpsc::Sender<BackendSessionEvent>,
         gate_only: bool,
         fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,

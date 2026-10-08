@@ -235,25 +235,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(v.username, "Alice");
-        assert_eq!(v.message_count, 1);
         assert!(!v.custom_greeting);
-    }
-
-    #[tokio::test]
-    async fn record_message_increments_count() {
-        let backend = open().await;
-        let repo = backend.viewer_repo_impl();
-        for _ in 0..3 {
-            repo.record_message(ViewerPlatform::Twitch, "u1", "Alice")
-                .await
-                .unwrap();
-        }
-        let v = repo
-            .get(ViewerPlatform::Twitch, "u1")
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(v.message_count, 3);
     }
 
     #[tokio::test]

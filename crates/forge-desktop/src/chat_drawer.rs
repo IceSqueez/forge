@@ -221,7 +221,6 @@ mod tests {
 
     fn viewer(
         username: &str,
-        message_count: u64,
         first_seen_at: OffsetDateTime,
         last_seen_at: OffsetDateTime,
     ) -> Viewer {
@@ -231,7 +230,6 @@ mod tests {
             username: username.into(),
             first_seen_at,
             last_seen_at,
-            message_count,
             custom_greeting: false,
         }
     }
@@ -289,7 +287,6 @@ mod tests {
         let now = OffsetDateTime::now_utc();
         let stored = viewer(
             "alice",
-            99,
             now - Duration::minutes(120),
             now - Duration::days(2),
         );
@@ -306,7 +303,7 @@ mod tests {
         let messages = [msg("alice", vec![])];
         let summary = synthesize_from_chat("alice", &messages).unwrap();
         let now = OffsetDateTime::now_utc();
-        let other = viewer("someone-else", 99, now, now);
+        let other = viewer("someone-else", now, now);
         let enriched = enrich_with_storage(
             summary,
             ViewerDirectory::new(vec![other]).get(&key("alice")),
@@ -373,21 +370,20 @@ mod tests {
     fn viewer_directory_resolves_a_shared_username_to_the_first_listed_viewer() {
         let now = OffsetDateTime::now_utc();
         let directory = ViewerDirectory::new(vec![
-            viewer("alice", 7, now, now),
-            viewer("alice", 99, now, now),
+            viewer("alice", now, now),
+            viewer("alice", now - Duration::days(1), now),
         ]);
 
-        assert_eq!(directory.get(&key("alice")).unwrap().message_count, 7);
+        assert_eq!(directory.get(&key("alice")).unwrap().first_seen_at, now);
         assert!(directory.get(&key("bob")).is_none());
     }
 
-    fn stored(platform: ViewerPlatform, viewer_id: &str, username: &str, count: u64) -> Viewer {
+    fn stored(platform: ViewerPlatform, viewer_id: &str, username: &str) -> Viewer {
         Viewer {
             viewer_id: viewer_id.into(),
             platform,
             ..viewer(
                 username,
-                count,
                 OffsetDateTime::now_utc(),
                 OffsetDateTime::now_utc(),
             )
@@ -405,21 +401,21 @@ mod tests {
     #[test]
     fn viewer_directory_finds_a_viewer_by_platform_and_id_or_platform_and_username_only() {
         let directory = ViewerDirectory::new(vec![
-            stored(ViewerPlatform::Twitch, "t1", "alice", 1),
-            stored(ViewerPlatform::Kick, "k1", "bob", 2),
+            stored(ViewerPlatform::Twitch, "t1", "alice"),
+            stored(ViewerPlatform::Kick, "k1", "bob"),
         ]);
         for (key, expected) in [
-            (AuthorKey::by_viewer_id(Platform::Twitch, "t1"), Some(1)),
-            (AuthorKey::by_name(Platform::Twitch, "alice"), Some(1)),
-            (AuthorKey::by_viewer_id(Platform::Kick, "k1"), Some(2)),
-            (AuthorKey::by_name(Platform::Kick, "bob"), Some(2)),
+            (AuthorKey::by_viewer_id(Platform::Twitch, "t1"), Some("t1")),
+            (AuthorKey::by_name(Platform::Twitch, "alice"), Some("t1")),
+            (AuthorKey::by_viewer_id(Platform::Kick, "k1"), Some("k1")),
+            (AuthorKey::by_name(Platform::Kick, "bob"), Some("k1")),
             (AuthorKey::by_viewer_id(Platform::Kick, "t1"), None),
             (AuthorKey::by_name(Platform::YouTube, "alice"), None),
             (AuthorKey::by_viewer_id(Platform::Twitch, "alice"), None),
             (AuthorKey::by_name(Platform::Twitch, "t1"), None),
         ] {
             assert_eq!(
-                directory.get(&key).map(|viewer| viewer.message_count),
+                directory.get(&key).map(|viewer| viewer.viewer_id.as_str()),
                 expected,
                 "{key:?}"
             );
@@ -430,7 +426,7 @@ mod tests {
     fn a_renamed_viewer_card_shows_the_chat_name_and_the_message_count_found_by_id() {
         let feed = feed_of(&[spoken(Platform::Twitch, "t1", "alice_new")]);
         let directory =
-            ViewerDirectory::new(vec![stored(ViewerPlatform::Twitch, "t1", "alice_old", 99)]);
+            ViewerDirectory::new(vec![stored(ViewerPlatform::Twitch, "t1", "alice_old")]);
 
         let summary = author_summary(
             &AuthorKey::by_viewer_id(Platform::Twitch, "t1"),
@@ -451,8 +447,8 @@ mod tests {
     fn current_name_prefers_the_chat_name_then_the_stored_name_then_the_name_key() {
         let feed = feed_of(&[spoken(Platform::Twitch, "t1", "alice_new")]);
         let directory = ViewerDirectory::new(vec![
-            stored(ViewerPlatform::Twitch, "t1", "alice_old", 1),
-            stored(ViewerPlatform::Twitch, "t2", "bob", 1),
+            stored(ViewerPlatform::Twitch, "t1", "alice_old"),
+            stored(ViewerPlatform::Twitch, "t2", "bob"),
         ]);
         for (key, expected) in [
             (

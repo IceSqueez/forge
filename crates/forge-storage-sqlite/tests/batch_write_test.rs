@@ -269,18 +269,8 @@ async fn a_viewer_batch_counts_every_message_and_keeps_the_latest_name() {
         .await
         .unwrap()
         .unwrap();
-    let v2 = repo
-        .get(ViewerPlatform::Twitch, "v2")
-        .await
-        .unwrap()
-        .unwrap();
     assert_eq!(
-        (
-            v1.message_count,
-            v1.username.as_str(),
-            v1.first_seen_at,
-            v2.message_count
-        ),
-        (3, "new-name", first_seen, 1)
+        (v1.username.as_str(), v1.first_seen_at,),
+        ("new-name", first_seen)
     );
 }

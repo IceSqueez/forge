@@ -63,7 +63,6 @@ mod tests {
             username: viewer_id.to_owned(),
             first_seen_at: OffsetDateTime::UNIX_EPOCH,
             last_seen_at: OffsetDateTime::UNIX_EPOCH,
-            message_count: 1,
             custom_greeting: false,
         }
     }

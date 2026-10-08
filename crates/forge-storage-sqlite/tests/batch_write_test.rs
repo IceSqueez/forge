@@ -243,7 +243,7 @@ async fn a_chat_message_already_stored_keeps_its_row_and_the_rest_of_the_batch_l
 }
 
 #[tokio::test]
-async fn a_viewer_batch_counts_every_message_and_keeps_the_latest_name() {
+async fn a_viewer_batch_keeps_the_latest_name_and_the_first_seen_time() {
     let pool = pool().await;
     let repo = SqliteViewerRepo::new(pool.clone());
     repo.record_message(ViewerPlatform::Twitch, "v1", "old-name")

@@ -6,6 +6,7 @@ use gpui::{Rgba, SharedString};
 
 use crate::chat_author::{AuthorKey, viewer_platform};
 use crate::chat_feed::{AuthorActivity, AuthorIndex};
+use crate::chat_viewer_messages::ViewerMessages;
 
 pub(crate) const DASH: &str = "-";
 
@@ -73,6 +74,7 @@ impl ViewerDirectory {
 pub(crate) fn summary_from_activity(
     key: &AuthorKey,
     activity: &AuthorActivity,
+    message_count: u64,
     palette: &ForgePalette,
 ) -> ViewerSummary {
     let username = activity.name.as_ref();
@@ -84,7 +86,7 @@ pub(crate) fn summary_from_activity(
         key: key.clone(),
         username: username.to_owned(),
         role: activity.role,
-        message_count: activity.message_count as u64,
+        message_count,
         last_seen_label: fmt_relative_time(Some(activity.last_received_at)),
         avatar_letter,
         avatar_color: hash_accent(username, palette),
@@ -97,7 +99,6 @@ pub(crate) fn enrich_with_storage(
     viewer: Option<&Viewer>,
 ) -> ViewerSummary {
     if let Some(v) = viewer {
-        summary.message_count = v.message_count;
         summary.last_seen_label = fmt_relative_time(Some(v.last_seen_at));
     }
     summary
@@ -107,11 +108,12 @@ pub(crate) fn author_summary(
     key: &AuthorKey,
     authors: &AuthorIndex,
     directory: &ViewerDirectory,
+    messages: &ViewerMessages,
     palette: &ForgePalette,
 ) -> Option<ViewerSummary> {
     let activity = authors.get(key)?;
     Some(enrich_with_storage(
-        summary_from_activity(key, activity, palette),
+        summary_from_activity(key, activity, messages.count(key), palette),
         directory.get(key),
     ))
 }
@@ -120,10 +122,11 @@ pub(crate) fn selected_summary(
     selected: Option<&AuthorKey>,
     authors: &AuthorIndex,
     directory: &ViewerDirectory,
+    messages: &ViewerMessages,
     palette: &ForgePalette,
 ) -> Option<ViewerSummary> {
     let key = displayed_viewer(selected, authors)?;
-    author_summary(&key, authors, directory, palette)
+    author_summary(&key, authors, directory, messages, palette)
 }
 
 pub(crate) fn displayed_viewer(

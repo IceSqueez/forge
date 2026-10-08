@@ -3,6 +3,7 @@ use std::fmt;
 use async_trait::async_trait;
 use forge_types::redaction::Redacted;
 use forge_types::unified_chat::{ChatSource, UnifiedChatRow};
+use time::OffsetDateTime;
 
 use crate::StorageError;
 
@@ -23,6 +24,18 @@ impl fmt::Debug for ChatAuthorKey {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ChatAuthorTally {
+    pub messages: u64,
+    pub newest_at: Option<OffsetDateTime>,
+}
+
+#[derive(Clone, Default)]
+pub struct ChatAuthorPage {
+    pub tally: ChatAuthorTally,
+    pub rows: Vec<UnifiedChatRow>,
+}
+
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait ChatHistoryRepo: Send + Sync {
@@ -37,11 +50,16 @@ pub trait ChatHistoryRepo: Send + Sync {
 
     async fn list_recent(&self, limit: usize) -> Result<Vec<UnifiedChatRow>, StorageError>;
 
-    async fn list_recent_messages_by_author(
+    async fn author_page(
         &self,
         author: &ChatAuthorKey,
         limit: usize,
-    ) -> Result<Vec<UnifiedChatRow>, StorageError>;
+    ) -> Result<ChatAuthorPage, StorageError>;
+
+    async fn author_tallies(
+        &self,
+        authors: &[ChatAuthorKey],
+    ) -> Result<Vec<ChatAuthorTally>, StorageError>;
 
     async fn apply_retention(
         &self,

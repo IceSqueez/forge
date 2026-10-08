@@ -14,7 +14,7 @@ use forge_components::{
 };
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::SpeakQueueHandle;
-use forge_storage::{ChatHistoryRepo, Viewer, ViewerRepo, VoiceAliasRepo};
+use forge_storage::{ChatAuthorTally, ChatHistoryRepo, Viewer, ViewerRepo, VoiceAliasRepo};
 use forge_types::{Shared, SubActionStep, Variant, is_bot_account};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, ListAlignment, ListState,
@@ -29,6 +29,7 @@ use crate::chat_drawer::{
     displayed_viewer, drawer_matches, selected_summary,
 };
 use crate::chat_feed::{ChatFeed, ChatMessage};
+use crate::chat_viewer_messages::{ViewerMessages, stored_author};
 use crate::home_stats::HomeStats;
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::presentation::ActivePresentation;
@@ -173,6 +174,8 @@ pub struct ChatView {
     selected_viewer: Option<AuthorKey>,
     follows: FollowLookups,
     chat_history_repo: Arc<dyn ChatHistoryRepo>,
+    viewer_messages: Entity<ViewerMessages>,
+    _viewer_messages_obs: Subscription,
     viewer_history: Option<ViewerHistoryHost>,
     tts_voice: Option<TtsVoiceHost>,
     viewers: ViewerDirectory,
@@ -258,7 +261,14 @@ impl ChatView {
             });
         });
 
-        Self::spawn_viewer_refresh(viewer_repo, rt_handle.clone(), cx);
+        let viewer_messages = cx.new(|_| ViewerMessages::default());
+        let viewer_messages_obs = cx.observe(&viewer_messages, |_, _, cx| cx.notify());
+        Self::spawn_viewer_refresh(
+            viewer_repo,
+            Arc::clone(&chat_history_repo),
+            rt_handle.clone(),
+            cx,
+        );
 
         let mut this = Self {
             feed,
@@ -281,6 +291,8 @@ impl ChatView {
             selected_viewer: None,
             follows: FollowLookups::default(),
             chat_history_repo,
+            viewer_messages,
+            _viewer_messages_obs: viewer_messages_obs,
             viewer_history: None,
             tts_voice: None,
             viewers: ViewerDirectory::default(),
@@ -306,11 +318,13 @@ impl ChatView {
         this.rebuild_visible(cx);
         this.chat_list.reset(this.visible.len());
         this.refresh_drawer_keys(cx);
+        this.absorb_viewer_messages(cx);
         this
     }
 
     fn spawn_viewer_refresh(
         repo: Arc<dyn ViewerRepo>,
+        chat_history: Arc<dyn ChatHistoryRepo>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) {
@@ -318,24 +332,44 @@ impl ChatView {
         cx.spawn(async move |this, cx| {
             loop {
                 presence.until_visible().await;
+                let Ok(keys) = this.update(cx, |this, cx| this.stored_author_keys(cx)) else {
+                    break;
+                };
                 let repo = Arc::clone(&repo);
+                let chat_history = Arc::clone(&chat_history);
                 let (tx, rx) = tokio::sync::oneshot::channel();
+                let queries: Vec<_> = keys.iter().filter_map(stored_author).collect();
                 rt_handle.spawn(async move {
-                    let _ = tx.send(repo.list().await);
+                    let viewers = repo.list().await;
+                    let tallies = if queries.is_empty() {
+                        Ok(Vec::new())
+                    } else {
+                        chat_history.author_tallies(&queries).await
+                    };
+                    let _ = tx.send((viewers, tallies));
                 });
-                match rx.await {
-                    Ok(Ok(list)) => {
-                        if this
-                            .update(cx, |this, cx| this.apply_viewers(list, cx))
-                            .is_err()
-                        {
-                            break;
+                if let Ok((viewers, tallies)) = rx.await {
+                    let viewers = viewers
+                        .inspect_err(|err| {
+                            eprintln!("forge-desktop: viewer snapshot load failed: {err}");
+                        })
+                        .ok();
+                    let tallies = tallies
+                        .inspect_err(|err| {
+                            eprintln!("forge-desktop: viewer message tally load failed: {err}");
+                        })
+                        .ok();
+                    let applied = this.update(cx, |this, cx| {
+                        if let Some(list) = viewers {
+                            this.apply_viewers(list, cx);
                         }
+                        if let Some(tallies) = tallies {
+                            this.apply_tallies(keys, tallies, cx);
+                        }
+                    });
+                    if applied.is_err() {
+                        break;
                     }
-                    Ok(Err(err)) => {
-                        eprintln!("forge-desktop: viewer snapshot load failed: {err}");
-                    }
-                    Err(_) => {}
                 }
                 cx.background_executor().timer(VIEWER_REFRESH).await;
             }
@@ -348,6 +382,42 @@ impl ChatView {
             self.viewers = ViewerDirectory::new(viewers);
             cx.notify();
         }
+    }
+
+    fn stored_author_keys(&self, cx: &App) -> Vec<AuthorKey> {
+        self.feed
+            .read(cx)
+            .authors()
+            .newest_first()
+            .map(|(key, _)| key)
+            .filter(|key| stored_author(key).is_some())
+            .cloned()
+            .collect()
+    }
+
+    fn apply_tallies(
+        &mut self,
+        keys: Vec<AuthorKey>,
+        tallies: Vec<ChatAuthorTally>,
+        cx: &mut Context<Self>,
+    ) {
+        if keys.len() != tallies.len() {
+            return;
+        }
+        let feed = self.feed.clone();
+        self.viewer_messages.update(cx, |messages, cx| {
+            messages.replace_tallies(keys.into_iter().zip(tallies), feed.read(cx));
+            cx.notify();
+        });
+    }
+
+    fn absorb_viewer_messages(&mut self, cx: &mut Context<Self>) {
+        let feed = self.feed.clone();
+        self.viewer_messages.update(cx, |messages, cx| {
+            if messages.absorb(feed.read(cx)) {
+                cx.notify();
+            }
+        });
     }
 
     fn on_feed_changed(&mut self, feed: Entity<ChatFeed>, cx: &mut Context<Self>) {
@@ -363,15 +433,21 @@ impl ChatView {
         }
         self.last_seen_seq = end;
         self.refresh_drawer_keys(cx);
+        self.absorb_viewer_messages(cx);
         cx.notify();
     }
 
     fn open_viewer_history(&mut self, key: AuthorKey, viewer_name: String, cx: &mut Context<Self>) {
         let feed = self.feed.clone();
+        let messages = self.viewer_messages.clone();
         let repo = Arc::clone(&self.chat_history_repo);
         let rt_handle = self.rt_handle.clone();
-        let view =
-            cx.new(|cx| ViewerHistory::new(key, feed, repo, rt_handle, cx).titled(viewer_name));
+        let held = key.clone();
+        self.viewer_messages
+            .update(cx, |messages, _| messages.hold(held));
+        let view = cx.new(|cx| {
+            ViewerHistory::new(key, feed, messages, repo, rt_handle, cx).titled(viewer_name)
+        });
         let dismissed = cx.subscribe(&view, Self::on_viewer_history_dismissed);
         self.viewer_history = Some(ViewerHistoryHost {
             view,
@@ -387,6 +463,8 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) {
         self.viewer_history = None;
+        self.viewer_messages
+            .update(cx, |messages, _| messages.release());
         cx.notify();
     }
 
@@ -1260,6 +1338,7 @@ impl ChatView {
             self.selected_viewer.as_ref(),
             authors,
             &self.viewers,
+            self.viewer_messages.read(cx),
             palette,
         );
         let selected_key = detail.as_ref().map(|d| d.key.clone());
@@ -1822,7 +1901,13 @@ impl ChatView {
                     let mut rows = Vec::with_capacity(range.len());
                     for ix in range {
                         let Some(summary) = this.drawer_keys.get(ix).and_then(|key| {
-                            author_summary(key, this.feed.read(cx).authors(), &this.viewers, &pal)
+                            author_summary(
+                                key,
+                                this.feed.read(cx).authors(),
+                                &this.viewers,
+                                this.viewer_messages.read(cx),
+                                &pal,
+                            )
                         }) else {
                             continue;
                         };

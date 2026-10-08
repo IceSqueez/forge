@@ -13,6 +13,7 @@ mod chat_author;
 mod chat_drawer;
 mod chat_feed;
 mod chat_feed_bridge;
+mod chat_viewer_messages;
 mod chrome;
 mod clip_editor;
 mod clip_hotkeys;

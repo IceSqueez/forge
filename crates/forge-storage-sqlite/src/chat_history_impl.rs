@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use forge_storage::{
-    AUTHORLESS_CHAT_HISTORY_RETAINED, ChatAuthorKey, ChatHistoryRepo, StorageError,
+    AUTHORLESS_CHAT_HISTORY_RETAINED, ChatAuthorKey, ChatAuthorPage, ChatAuthorTally,
+    ChatHistoryRepo, StorageError,
 };
 use forge_types::EventId;
 use forge_types::unified_chat::{
@@ -145,6 +146,27 @@ fn decode_rows(rows: Vec<ChatHistoryRow>) -> Result<Vec<UnifiedChatRow>, Storage
         .collect()
 }
 
+async fn author_tally(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    source: &str,
+    author_id: &str,
+) -> Result<ChatAuthorTally, StorageError> {
+    let (messages, newest_ms): (i64, Option<i64>) = sqlx::query_as(
+        "SELECT COUNT(*), MAX(received_at)
+         FROM chat_history
+         WHERE source = ? AND author_id = ? AND is_event = 0",
+    )
+    .bind(source)
+    .bind(author_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+    Ok(ChatAuthorTally {
+        messages: u64::try_from(messages).unwrap_or(0),
+        newest_at: newest_ms.map(from_epoch_ms).transpose()?,
+    })
+}
+
 pub struct SqliteChatHistoryRepo {
     db: SqlitePools,
 }
@@ -244,11 +266,19 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
         decode_rows(rows)
     }
 
-    async fn list_recent_messages_by_author(
+    async fn author_page(
         &self,
         author: &ChatAuthorKey,
         limit: usize,
-    ) -> Result<Vec<UnifiedChatRow>, StorageError> {
+    ) -> Result<ChatAuthorPage, StorageError> {
+        let source = encode_source(author.source)?;
+        let mut tx = self
+            .db
+            .reader()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        let tally = author_tally(&mut tx, &source, &author.author_id).await?;
         let rows: Vec<ChatHistoryRow> = sqlx::query_as(
             "SELECT id, event_id, source, received_at, author, author_id, author_color,
                     body_segments, badges, is_event, event_detail, moderation
@@ -257,14 +287,40 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
              ORDER BY seq DESC
              LIMIT ?",
         )
-        .bind(encode_source(author.source)?)
+        .bind(&source)
         .bind(&author.author_id)
         .bind(limit as i64)
-        .fetch_all(self.db.reader())
+        .fetch_all(&mut *tx)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
 
-        decode_rows(rows)
+        Ok(ChatAuthorPage {
+            tally,
+            rows: decode_rows(rows)?,
+        })
+    }
+
+    async fn author_tallies(
+        &self,
+        authors: &[ChatAuthorKey],
+    ) -> Result<Vec<ChatAuthorTally>, StorageError> {
+        if authors.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut tx = self
+            .db
+            .reader()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        let mut tallies = Vec::with_capacity(authors.len());
+        for author in authors {
+            let source = encode_source(author.source)?;
+            tallies.push(author_tally(&mut tx, &source, &author.author_id).await?);
+        }
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(tallies)
     }
 
     async fn apply_retention(

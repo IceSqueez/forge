@@ -9,7 +9,7 @@ use crate::{
     TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 
-pub const EXPECTED_SCHEMA_VERSION: u32 = 52;
+pub const EXPECTED_SCHEMA_VERSION: u32 = 53;
 
 pub const LAST_PRE_BASELINE_RELEASE: &str = "0.5.5";
 

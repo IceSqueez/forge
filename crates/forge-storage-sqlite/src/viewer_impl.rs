@@ -20,13 +20,12 @@ fn from_epoch_ms(ms: i64) -> Result<OffsetDateTime, StorageError> {
     })
 }
 
-const VIEWER_COLUMNS: usize = 7;
+const VIEWER_COLUMNS: usize = 6;
 
 struct ViewerTally<'a> {
     platform: &'static str,
     viewer_id: &'a str,
     username: &'a str,
-    messages: i64,
 }
 
 pub struct SqliteViewerRepo {
@@ -46,7 +45,6 @@ struct ViewerRow {
     username: String,
     first_seen_at: i64,
     last_seen_at: i64,
-    message_count: i64,
     custom_greeting: i64,
 }
 
@@ -63,7 +61,6 @@ fn row_to_viewer(row: ViewerRow) -> Result<Viewer, StorageError> {
         username: row.username,
         first_seen_at: from_epoch_ms(row.first_seen_at)?,
         last_seen_at: from_epoch_ms(row.last_seen_at)?,
-        message_count: u64::try_from(row.message_count).unwrap_or(0),
         custom_greeting: row.custom_greeting != 0,
     })
 }
@@ -73,7 +70,7 @@ impl ViewerRepo for SqliteViewerRepo {
     async fn list(&self) -> Result<Vec<Viewer>, StorageError> {
         let rows: Vec<ViewerRow> = sqlx::query_as(
             "SELECT platform, viewer_id, username, first_seen_at, last_seen_at,
-                    message_count, custom_greeting
+                    custom_greeting
              FROM viewers
              ORDER BY last_seen_at DESC",
         )
@@ -99,7 +96,7 @@ impl ViewerRepo for SqliteViewerRepo {
     ) -> Result<Option<Viewer>, StorageError> {
         let row: Option<ViewerRow> = sqlx::query_as(
             "SELECT platform, viewer_id, username, first_seen_at, last_seen_at,
-                    message_count, custom_greeting
+                    custom_greeting
              FROM viewers WHERE platform = ? AND viewer_id = ?",
         )
         .bind(platform.as_str())
@@ -120,12 +117,11 @@ impl ViewerRepo for SqliteViewerRepo {
         let now_ms = to_epoch_ms(OffsetDateTime::now_utc());
         sqlx::query(
             "INSERT INTO viewers
-                (platform, viewer_id, username, first_seen_at, last_seen_at, message_count, custom_greeting)
-             VALUES (?, ?, ?, ?, ?, 1, 0)
+                (platform, viewer_id, username, first_seen_at, last_seen_at, custom_greeting)
+             VALUES (?, ?, ?, ?, ?, 0)
              ON CONFLICT(platform, viewer_id) DO UPDATE SET
-                username      = excluded.username,
-                last_seen_at  = excluded.last_seen_at,
-                message_count = message_count + 1",
+                username     = excluded.username,
+                last_seen_at = excluded.last_seen_at",
         )
         .bind(platform.as_str())
         .bind(viewer_id)
@@ -151,7 +147,6 @@ impl ViewerRepo for SqliteViewerRepo {
                 Some(&position) => {
                     let tally = &mut tallies[position];
                     tally.username = &message.username;
-                    tally.messages += 1;
                 }
                 None => {
                     positions.insert(key, tallies.len());
@@ -159,7 +154,6 @@ impl ViewerRepo for SqliteViewerRepo {
                         platform: key.0,
                         viewer_id: key.1,
                         username: &message.username,
-                        messages: 1,
                     });
                 }
             }
@@ -174,12 +168,11 @@ impl ViewerRepo for SqliteViewerRepo {
         insert_rows(
             &mut tx,
             "INSERT INTO viewers
-                (platform, viewer_id, username, first_seen_at, last_seen_at, message_count, custom_greeting) ",
+                (platform, viewer_id, username, first_seen_at, last_seen_at, custom_greeting) ",
             VIEWER_COLUMNS,
             " ON CONFLICT(platform, viewer_id) DO UPDATE SET
-                username      = excluded.username,
-                last_seen_at  = excluded.last_seen_at,
-                message_count = message_count + excluded.message_count",
+                username     = excluded.username,
+                last_seen_at = excluded.last_seen_at",
             &tallies,
             |values, tally| {
                 values
@@ -188,7 +181,6 @@ impl ViewerRepo for SqliteViewerRepo {
                     .push_bind(tally.username)
                     .push_bind(now_ms)
                     .push_bind(now_ms)
-                    .push_bind(tally.messages)
                     .push_bind(0_i64);
             },
         )

@@ -38,7 +38,6 @@ pub struct Viewer {
     pub username: String,
     pub first_seen_at: OffsetDateTime,
     pub last_seen_at: OffsetDateTime,
-    pub message_count: u64,
     pub custom_greeting: bool,
 }
 

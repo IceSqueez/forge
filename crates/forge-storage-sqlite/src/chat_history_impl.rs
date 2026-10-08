@@ -470,7 +470,9 @@ mod tests {
     };
     use time::OffsetDateTime;
 
-    use forge_storage::{AUTHORLESS_CHAT_HISTORY_RETAINED, ChatAuthorKey};
+    use forge_storage::{
+        AUTHORLESS_CHAT_HISTORY_RETAINED, ChatAuthorKey, ChatAuthorPage, ChatAuthorTally,
+    };
 
     use super::SqliteChatHistoryRepo;
     use crate::{apply_migrations, connect};
@@ -786,7 +788,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_recent_messages_by_author_returns_newest_by_insertion_order_capped_at_limit() {
+    async fn author_page_lists_newest_by_insertion_order_capped_at_limit() {
         let repo = make_repo().await;
         for (id, secs) in [("m1", 400), ("m2", 300), ("m3", 200), ("m4", 100)] {
             repo.append(&UnifiedChatRow {
@@ -803,7 +805,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_recent_messages_by_author_skips_events_other_authors_and_other_sources() {
+    async fn author_page_skips_events_other_authors_and_other_sources() {
         let repo = make_repo().await;
         append_all(
             &repo,
@@ -949,6 +951,248 @@ mod tests {
                 ids.contains(&"authored_message".to_owned()),
             ),
             (false, true)
+        );
+    }
+
+    fn at_secs(secs: i64) -> OffsetDateTime {
+        OffsetDateTime::from_unix_timestamp(secs).unwrap()
+    }
+
+    fn mixed_authors() -> Vec<UnifiedChatRow> {
+        vec![
+            UnifiedChatRow {
+                received_at: at_secs(300),
+                ..authored("mine_newest", ChatSource::Twitch, Some("42"), false)
+            },
+            UnifiedChatRow {
+                received_at: at_secs(100),
+                ..authored("mine_oldest", ChatSource::Twitch, Some("42"), false)
+            },
+            UnifiedChatRow {
+                received_at: at_secs(900),
+                ..authored("my_event", ChatSource::Twitch, Some("42"), true)
+            },
+            UnifiedChatRow {
+                received_at: at_secs(900),
+                ..authored("other_author", ChatSource::Twitch, Some("43"), false)
+            },
+            UnifiedChatRow {
+                received_at: at_secs(900),
+                ..authored(
+                    "same_id_other_source",
+                    ChatSource::YouTube,
+                    Some("42"),
+                    false,
+                )
+            },
+            UnifiedChatRow {
+                received_at: at_secs(900),
+                ..authored("authorless", ChatSource::Twitch, None, false)
+            },
+        ]
+    }
+
+    async fn every_page(
+        repo: &SqliteChatHistoryRepo,
+        author: &ChatAuthorKey,
+        limit: usize,
+    ) -> Vec<ChatAuthorPage> {
+        let mut pages = Vec::new();
+        let mut older_than = None;
+        loop {
+            let page = repo.author_page(author, older_than, limit).await.unwrap();
+            older_than = page.older;
+            pages.push(page);
+            if older_than.is_none() || pages.len() > EVERY_ROW {
+                return pages;
+            }
+        }
+    }
+
+    fn page_ids(pages: &[ChatAuthorPage]) -> Vec<Vec<String>> {
+        pages
+            .iter()
+            .map(|page| page.rows.iter().map(|row| row.id.clone()).collect())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn author_page_tally_counts_and_dates_exactly_the_rows_the_page_lists() {
+        let repo = make_repo().await;
+        append_all(&repo, &mixed_authors()).await;
+
+        let page = repo
+            .author_page(&key(ChatSource::Twitch, "42"), None, 10)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            (page.tally, page.rows.len()),
+            (
+                ChatAuthorTally {
+                    messages: 2,
+                    newest_at: Some(at_secs(300)),
+                },
+                2
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn author_page_of_an_unknown_viewer_is_an_empty_tally_with_no_rows_and_no_older_page() {
+        let repo = make_repo().await;
+        append_all(&repo, &messages_of("a", 2)).await;
+
+        let page = repo
+            .author_page(&key(ChatSource::Twitch, "ghost"), None, 10)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            (page.tally, page.rows.len(), page.older),
+            (ChatAuthorTally::default(), 0, None)
+        );
+    }
+
+    #[tokio::test]
+    async fn author_pages_split_at_the_limit_and_offer_an_older_page_only_when_rows_remain() {
+        let limit = 3;
+        for (stored, expected_sizes) in [
+            (0, vec![0]),
+            (limit - 1, vec![2]),
+            (limit, vec![3]),
+            (limit + 1, vec![3, 1]),
+            (2 * limit, vec![3, 3]),
+            (2 * limit + 1, vec![3, 3, 1]),
+        ] {
+            let repo = make_repo().await;
+            append_all(&repo, &messages_of("a", stored)).await;
+
+            let pages = every_page(&repo, &key(ChatSource::Twitch, "a"), limit).await;
+
+            let sizes: Vec<usize> = pages.iter().map(|page| page.rows.len()).collect();
+            assert_eq!(sizes, expected_sizes, "stored={stored}");
+        }
+    }
+
+    #[tokio::test]
+    async fn walking_author_pages_lists_every_message_once_newest_first_past_other_rows() {
+        let repo = make_repo().await;
+        for ix in 0..5 {
+            append_all(
+                &repo,
+                &[
+                    authored(&format!("a{ix}"), ChatSource::Twitch, Some("a"), false),
+                    authored(&format!("e{ix}"), ChatSource::Twitch, Some("a"), true),
+                    authored(&format!("b{ix}"), ChatSource::Twitch, Some("b"), false),
+                    authored(&format!("y{ix}"), ChatSource::YouTube, Some("a"), false),
+                ],
+            )
+            .await;
+        }
+
+        let pages = every_page(&repo, &key(ChatSource::Twitch, "a"), 2).await;
+
+        assert_eq!(
+            page_ids(&pages),
+            [vec!["a4", "a3"], vec!["a2", "a1"], vec!["a0"]]
+        );
+    }
+
+    #[tokio::test]
+    async fn every_author_page_reports_the_full_tally_not_only_the_rows_older_than_its_cursor() {
+        let repo = make_repo().await;
+        append_all(&repo, &messages_of("a", 5)).await;
+
+        let pages = every_page(&repo, &key(ChatSource::Twitch, "a"), 2).await;
+
+        let tallies: Vec<u64> = pages.iter().map(|page| page.tally.messages).collect();
+        assert_eq!(tallies, [5, 5, 5]);
+    }
+
+    #[tokio::test]
+    async fn author_page_after_retention_counts_and_lists_only_the_rows_the_prune_kept() {
+        let repo = make_repo().await;
+        append_all(&repo, &messages_of("a", 6)).await;
+        repo.apply_retention(&[key(ChatSource::Twitch, "a")], 3)
+            .await
+            .unwrap();
+
+        let pages = every_page(&repo, &key(ChatSource::Twitch, "a"), 10).await;
+
+        assert_eq!(
+            (pages[0].tally.messages, page_ids(&pages)),
+            (
+                3,
+                vec![vec!["a5".to_owned(), "a4".to_owned(), "a3".to_owned()]]
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn an_older_page_asked_after_a_prune_removed_its_rows_is_empty_and_final() {
+        let repo = make_repo().await;
+        append_all(&repo, &messages_of("a", 6)).await;
+        let author = key(ChatSource::Twitch, "a");
+        let first = repo.author_page(&author, None, 3).await.unwrap();
+        repo.apply_retention(std::slice::from_ref(&author), 3)
+            .await
+            .unwrap();
+
+        let older = repo.author_page(&author, first.older, 3).await.unwrap();
+
+        assert_eq!(
+            (older.rows.len(), older.older, older.tally.messages),
+            (0, None, 3)
+        );
+    }
+
+    #[tokio::test]
+    async fn the_tally_newest_time_keeps_millisecond_precision_and_drops_finer_digits() {
+        let repo = make_repo().await;
+        repo.append(&UnifiedChatRow {
+            received_at: at_secs(100) + time::Duration::nanoseconds(1_999_999),
+            ..authored("m1", ChatSource::Twitch, Some("42"), false)
+        })
+        .await
+        .unwrap();
+
+        let tallies = repo
+            .author_tallies(&[key(ChatSource::Twitch, "42")])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            tallies[0].newest_at,
+            Some(at_secs(100) + time::Duration::milliseconds(1))
+        );
+    }
+
+    #[tokio::test]
+    async fn author_tallies_answer_each_asked_viewer_in_order_with_the_page_filter() {
+        let repo = make_repo().await;
+        append_all(&repo, &mixed_authors()).await;
+        let asked = [
+            key(ChatSource::YouTube, "42"),
+            key(ChatSource::Twitch, "ghost"),
+            key(ChatSource::Twitch, "42"),
+        ];
+
+        let tallies = repo.author_tallies(&asked).await.unwrap();
+
+        assert_eq!(
+            tallies,
+            [
+                ChatAuthorTally {
+                    messages: 1,
+                    newest_at: Some(at_secs(900)),
+                },
+                ChatAuthorTally::default(),
+                ChatAuthorTally {
+                    messages: 2,
+                    newest_at: Some(at_secs(300)),
+                },
+            ]
         );
     }
 }

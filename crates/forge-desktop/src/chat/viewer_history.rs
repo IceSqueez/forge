@@ -422,19 +422,25 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use forge_components::{ChatBody, Platform};
+    use forge_components::{ChatBody, FORGE_DEFAULT, Platform};
     use forge_storage::chat_history::MockChatHistoryRepo;
-    use forge_storage::{ChatAuthorKey, ChatAuthorPage, ChatAuthorTally, StorageError};
+    use forge_storage::{
+        ChatAuthorKey, ChatAuthorPage, ChatAuthorTally, ChatHistoryCursor, StorageError,
+    };
     use forge_types::{ChatSegment, ChatSource, EventId, ModerationMarks, UnifiedChatRow};
     use gpui::{AppContext as _, Entity, TestAppContext};
     use time::OffsetDateTime;
 
-    use super::{HISTORY_PAGE_SIZE, HistoryState, ViewerHistory, history_row, moderated_ids_by};
-    use crate::chat::ChatView;
+    use super::{
+        HISTORY_PAGE_SIZE, HistoryState, ListedRows, RowChange, ViewerHistory, history_row,
+        moderated_ids_by, row_change, settled_tally,
+    };
     use crate::chat::tests::{message, mount_with_chat_history, push_each};
+    use crate::chat::{ChatView, VIEWER_REFRESH};
     use crate::chat_author::AuthorKey;
+    use crate::chat_drawer::author_summary;
     use crate::chat_feed::{ChatFeed, ChatMessage};
-    use crate::chat_viewer_messages::{ViewerMessages, stored_author};
+    use crate::chat_viewer_messages::ViewerMessages;
     use crate::test_support::{pump, runtime};
 
     type Author = (Platform, Option<&'static str>, &'static str);
@@ -602,32 +608,6 @@ mod tests {
 
     fn loaded_ids(cx: &mut TestAppContext, history: &Entity<ViewerHistory>) -> Vec<String> {
         ids(&shown(cx, history))
-    }
-
-    #[test]
-    fn history_query_asks_by_viewer_id_on_the_viewers_platform_and_skips_name_only_keys() {
-        let cases = [
-            (
-                AuthorKey::by_viewer_id(Platform::Twitch, "42"),
-                Some((ChatSource::Twitch, "42")),
-            ),
-            (
-                AuthorKey::by_viewer_id(Platform::YouTube, "UCx"),
-                Some((ChatSource::YouTube, "UCx")),
-            ),
-            (
-                AuthorKey::by_viewer_id(Platform::Kick, "9"),
-                Some((ChatSource::Kick, "9")),
-            ),
-            (AuthorKey::by_name(Platform::Kick, "ann"), None),
-        ];
-        for (key, expected) in cases {
-            let expected = expected.map(|(source, id)| ChatAuthorKey {
-                source,
-                author_id: id.to_owned(),
-            });
-            assert_eq!(stored_author(&key), expected, "{key:?}");
-        }
     }
 
     fn loaded_moderated_ids(
@@ -895,5 +875,315 @@ mod tests {
             (dialog_viewer(cx, &view), queries.load(Ordering::SeqCst)),
             (Some(viewer("10")), 1)
         );
+    }
+
+    fn rows(unsaved: usize, total: usize) -> ListedRows {
+        ListedRows { unsaved, total }
+    }
+
+    #[test]
+    fn row_change_splices_only_newest_unsaved_lines_onto_a_listed_history() {
+        let cases = [
+            (
+                "nothing listed yet",
+                rows(0, 0),
+                rows(0, 0),
+                RowChange::Same,
+            ),
+            ("unchanged", rows(1, 5), rows(1, 5), RowChange::Same),
+            (
+                "new live lines",
+                rows(0, 5),
+                rows(2, 7),
+                RowChange::NewestAdded(2),
+            ),
+            ("first fill", rows(0, 0), rows(2, 2), RowChange::Rebuilt),
+            (
+                "lines flushed into storage",
+                rows(2, 7),
+                rows(0, 7),
+                RowChange::Rebuilt,
+            ),
+            (
+                "count settled lower",
+                rows(0, 130),
+                rows(0, 100),
+                RowChange::Rebuilt,
+            ),
+            (
+                "stored count grew",
+                rows(0, 5),
+                rows(1, 7),
+                RowChange::Rebuilt,
+            ),
+            (
+                "unsaved line dropped",
+                rows(1, 5),
+                rows(0, 6),
+                RowChange::Rebuilt,
+            ),
+        ];
+        for (name, before, after, expected) in cases {
+            assert_eq!(row_change(before, after), expected, "{name}");
+        }
+    }
+
+    #[test]
+    fn history_rows_run_from_the_newest_unsaved_line_into_the_stored_rows() {
+        let unsaved = [line("u1", 30, ANN), line("u2", 40, ANN)];
+        let stored = [line("s2", 20, ANN), line("s1", 10, ANN)];
+        let cases: [(&[ChatMessage], &[&str]); 2] =
+            [(&unsaved, &["u2", "u1", "s2", "s1"]), (&[], &["s2", "s1"])];
+        for (unsaved, expected) in cases {
+            let listed: Vec<String> = (0..expected.len() + 1)
+                .map_while(|ix| history_row(ix, unsaved, &stored))
+                .map(|message| message.id.to_string())
+                .collect();
+            assert_eq!(listed, expected);
+        }
+    }
+
+    #[test]
+    fn settled_tally_matches_the_loaded_rows_only_once_storage_has_no_older_page() {
+        let tally = ChatAuthorTally {
+            messages: 130,
+            newest_at: Some(OffsetDateTime::from_unix_timestamp(10).unwrap()),
+        };
+        for (loaded, exhausted, expected) in [
+            (100, true, 100),
+            (130, true, 130),
+            (100, false, 130),
+            (0, true, 0),
+        ] {
+            assert_eq!(
+                settled_tally(tally, loaded, exhausted),
+                ChatAuthorTally {
+                    messages: expected,
+                    ..tally
+                },
+                "loaded={loaded} exhausted={exhausted}"
+            );
+        }
+    }
+
+    struct PagedStore {
+        rows: Vec<UnifiedChatRow>,
+        kept: Arc<AtomicUsize>,
+    }
+
+    impl PagedStore {
+        fn tally(rows: &[UnifiedChatRow], kept: usize) -> ChatAuthorTally {
+            ChatAuthorTally {
+                messages: kept as u64,
+                newest_at: rows.first().map(|row| row.received_at),
+            }
+        }
+
+        fn page(
+            rows: &[UnifiedChatRow],
+            kept: usize,
+            older_than: Option<ChatHistoryCursor>,
+            limit: usize,
+        ) -> ChatAuthorPage {
+            let from = older_than.map_or(0, |ChatHistoryCursor(ix)| ix as usize);
+            let to = (from + limit).min(kept);
+            ChatAuthorPage {
+                tally: Self::tally(rows, kept),
+                rows: rows.get(from..to).unwrap_or_default().to_vec(),
+                older: (to < kept).then_some(ChatHistoryCursor(to as i64)),
+            }
+        }
+
+        fn into_repo(self) -> MockChatHistoryRepo {
+            let mut repo = MockChatHistoryRepo::new();
+            let (rows, kept) = (self.rows.clone(), Arc::clone(&self.kept));
+            repo.expect_author_tallies().returning(move |authors| {
+                let kept = kept.load(Ordering::SeqCst);
+                Ok(authors.iter().map(|_| Self::tally(&rows, kept)).collect())
+            });
+            let (rows, kept) = (self.rows, self.kept);
+            repo.expect_author_page()
+                .returning(move |_, older_than, limit| {
+                    Ok(Self::page(
+                        &rows,
+                        kept.load(Ordering::SeqCst),
+                        older_than,
+                        limit,
+                    ))
+                });
+            repo
+        }
+    }
+
+    fn stored_newest_first(count: usize) -> Vec<UnifiedChatRow> {
+        (0..count)
+            .map(|ix| stored(&format!("s{ix}"), 1_000 - ix as i64, ANN))
+            .collect()
+    }
+
+    fn event_by(id: &str, at: i64, author: Author) -> ChatMessage {
+        let mut event = line(id, at, author);
+        event.is_event = true;
+        event
+    }
+
+    fn run_viewer_refresh(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
+        settle(cx, rt);
+        cx.executor().advance_clock(VIEWER_REFRESH);
+        settle(cx, rt);
+    }
+
+    fn tile_count(cx: &mut TestAppContext, view: &Entity<ChatView>) -> u64 {
+        view.read_with(cx, |view, cx| {
+            author_summary(
+                &key_of(ANN),
+                view.feed.read(cx).authors(),
+                &view.viewers,
+                view.viewer_messages.read(cx),
+                &FORGE_DEFAULT,
+            )
+            .map(|summary| summary.message_count)
+        })
+        .unwrap()
+    }
+
+    fn open_ann_history(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        view: &Entity<ChatView>,
+    ) -> Entity<ViewerHistory> {
+        view.update(cx, |view, cx| {
+            view.open_viewer_history(key_of(ANN), "ann".to_owned(), cx);
+        });
+        settle(cx, rt);
+        open_dialog(cx, view).unwrap()
+    }
+
+    fn scroll_to_the_end(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        history: &Entity<ViewerHistory>,
+    ) {
+        for _ in 0..HISTORY_PAGE_SIZE {
+            history.update(cx, |history, cx| {
+                history.on_scrolled(history.listed.total, cx);
+            });
+            settle(cx, rt);
+            if history.read_with(cx, |history, _| history.older.is_none()) {
+                return;
+            }
+        }
+    }
+
+    fn tile_and_dialog_rows(
+        cx: &mut TestAppContext,
+        view: &Entity<ChatView>,
+        history: &Entity<ViewerHistory>,
+    ) -> (u64, u64) {
+        (tile_count(cx, view), shown(cx, history).len() as u64)
+    }
+
+    #[gpui::test]
+    fn the_tile_matches_the_rows_the_dialog_scrolls_through_past_one_page_ignoring_events(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let store = PagedStore {
+            rows: stored_newest_first(130),
+            kept: Arc::new(AtomicUsize::new(130)),
+        };
+        let (feed, view) = mount_with_chat_history(cx, &rt, store.into_repo());
+        push_each(
+            cx,
+            &feed,
+            vec![line("s0", 1_000, ANN), event_by("cheer", 2_000, ANN)],
+        );
+        run_viewer_refresh(cx, &rt);
+        let history = open_ann_history(cx, &rt, &view);
+
+        scroll_to_the_end(cx, &rt, &history);
+
+        assert_eq!(tile_and_dialog_rows(cx, &view, &history), (130, 130));
+    }
+
+    #[gpui::test]
+    fn the_tile_matches_the_dialog_rows_with_unsaved_live_lines_newer_than_storage(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let store = PagedStore {
+            rows: stored_newest_first(2),
+            kept: Arc::new(AtomicUsize::new(2)),
+        };
+        let (feed, view) = mount_with_chat_history(cx, &rt, store.into_repo());
+        push_each(
+            cx,
+            &feed,
+            vec![
+                line("s0", 1_000, ANN),
+                line("live1", 2_000, ANN),
+                event_by("sub", 2_500, ANN),
+                line("live2", 3_000, ANN),
+            ],
+        );
+        run_viewer_refresh(cx, &rt);
+        let history = open_ann_history(cx, &rt, &view);
+
+        scroll_to_the_end(cx, &rt, &history);
+
+        assert_eq!(tile_and_dialog_rows(cx, &view, &history), (4, 4));
+    }
+
+    #[gpui::test]
+    fn the_tile_settles_to_the_dialog_rows_when_retention_prunes_rows_mid_scroll(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let kept = Arc::new(AtomicUsize::new(130));
+        let store = PagedStore {
+            rows: stored_newest_first(130),
+            kept: Arc::clone(&kept),
+        };
+        let (feed, view) = mount_with_chat_history(cx, &rt, store.into_repo());
+        push_each(
+            cx,
+            &feed,
+            vec![line("s0", 1_000, ANN), line("live", 2_000, ANN)],
+        );
+        run_viewer_refresh(cx, &rt);
+        let history = open_ann_history(cx, &rt, &view);
+
+        kept.store(HISTORY_PAGE_SIZE, Ordering::SeqCst);
+        scroll_to_the_end(cx, &rt, &history);
+
+        assert_eq!(
+            tile_and_dialog_rows(cx, &view, &history),
+            (HISTORY_PAGE_SIZE as u64 + 1, HISTORY_PAGE_SIZE as u64 + 1)
+        );
+    }
+
+    #[gpui::test]
+    fn the_tile_holds_its_count_while_the_dialog_is_open_and_follows_storage_after_close(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let kept = Arc::new(AtomicUsize::new(5));
+        let store = PagedStore {
+            rows: stored_newest_first(9),
+            kept: Arc::clone(&kept),
+        };
+        let (feed, view) = mount_with_chat_history(cx, &rt, store.into_repo());
+        push_each(cx, &feed, vec![line("s0", 1_000, ANN)]);
+        run_viewer_refresh(cx, &rt);
+        let history = open_ann_history(cx, &rt, &view);
+
+        kept.store(9, Ordering::SeqCst);
+        run_viewer_refresh(cx, &rt);
+        let while_open = tile_and_dialog_rows(cx, &view, &history);
+        history.update(cx, |history, cx| history.dismiss(cx));
+        drop(history);
+        run_viewer_refresh(cx, &rt);
+
+        assert_eq!((while_open, tile_count(cx, &view)), ((5, 5), 9));
     }
 }

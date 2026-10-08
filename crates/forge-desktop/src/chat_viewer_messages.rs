@@ -49,6 +49,10 @@ impl ViewerMessages {
         stored.saturating_add(self.unsaved(key).len() as u64)
     }
 
+    pub fn stored_tally(&self, key: &AuthorKey) -> Option<ChatAuthorTally> {
+        self.stored.get(key).copied()
+    }
+
     pub fn unsaved(&self, key: &AuthorKey) -> &[ChatMessage] {
         self.unsaved.get(key).map_or(&[], Vec::as_slice)
     }

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_storage::{
     AUTHORLESS_CHAT_HISTORY_RETAINED, ChatAuthorKey, ChatAuthorPage, ChatAuthorTally,
-    ChatHistoryRepo, StorageError,
+    ChatHistoryCursor, ChatHistoryRepo, StorageError,
 };
 use forge_types::EventId;
 use forge_types::unified_chat::{
@@ -95,6 +95,13 @@ struct ChatHistoryRow {
     is_event: i64,
     event_detail: Option<String>,
     moderation: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct SequencedChatHistoryRow {
+    seq: i64,
+    #[sqlx(flatten)]
+    row: ChatHistoryRow,
 }
 
 fn decode_row(row: ChatHistoryRow) -> Result<UnifiedChatRow, SqliteStorageError> {
@@ -269,9 +276,11 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
     async fn author_page(
         &self,
         author: &ChatAuthorKey,
+        older_than: Option<ChatHistoryCursor>,
         limit: usize,
     ) -> Result<ChatAuthorPage, StorageError> {
         let source = encode_source(author.source)?;
+        let before_seq = older_than.map_or(i64::MAX, |ChatHistoryCursor(seq)| seq);
         let mut tx = self
             .db
             .reader()
@@ -279,25 +288,32 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
             .await
             .map_err(SqliteStorageError::Sqlx)?;
         let tally = author_tally(&mut tx, &source, &author.author_id).await?;
-        let rows: Vec<ChatHistoryRow> = sqlx::query_as(
-            "SELECT id, event_id, source, received_at, author, author_id, author_color,
+        let mut rows: Vec<SequencedChatHistoryRow> = sqlx::query_as(
+            "SELECT seq, id, event_id, source, received_at, author, author_id, author_color,
                     body_segments, badges, is_event, event_detail, moderation
              FROM chat_history
-             WHERE source = ? AND author_id = ? AND is_event = 0
+             WHERE source = ? AND author_id = ? AND is_event = 0 AND seq < ?
              ORDER BY seq DESC
              LIMIT ?",
         )
         .bind(&source)
         .bind(&author.author_id)
-        .bind(limit as i64)
+        .bind(before_seq)
+        .bind(i64::try_from(limit.saturating_add(1)).unwrap_or(i64::MAX))
         .fetch_all(&mut *tx)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
         tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
 
+        let has_older = rows.len() > limit;
+        rows.truncate(limit);
+        let older = has_older
+            .then(|| rows.last().map(|row| ChatHistoryCursor(row.seq)))
+            .flatten();
         Ok(ChatAuthorPage {
             tally,
-            rows: decode_rows(rows)?,
+            rows: decode_rows(rows.into_iter().map(|row| row.row).collect())?,
+            older,
         })
     }
 

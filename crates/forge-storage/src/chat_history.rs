@@ -30,10 +30,14 @@ pub struct ChatAuthorTally {
     pub newest_at: Option<OffsetDateTime>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChatHistoryCursor(pub i64);
+
 #[derive(Clone, Default)]
 pub struct ChatAuthorPage {
     pub tally: ChatAuthorTally,
     pub rows: Vec<UnifiedChatRow>,
+    pub older: Option<ChatHistoryCursor>,
 }
 
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
@@ -53,6 +57,7 @@ pub trait ChatHistoryRepo: Send + Sync {
     async fn author_page(
         &self,
         author: &ChatAuthorKey,
+        older_than: Option<ChatHistoryCursor>,
         limit: usize,
     ) -> Result<ChatAuthorPage, StorageError>;
 

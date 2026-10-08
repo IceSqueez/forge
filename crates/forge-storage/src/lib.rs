@@ -38,7 +38,7 @@ pub use catalog::{
 };
 pub use chat_history::{
     AUTHORLESS_CHAT_HISTORY_RETAINED, ChatAuthorKey, ChatAuthorPage, ChatAuthorTally,
-    ChatHistoryRepo,
+    ChatHistoryCursor, ChatHistoryRepo,
 };
 pub use credentials::{CredentialId, CredentialsRepo, SERVER_BEARER_CREDENTIAL_ID};
 pub use donation::{DonationRepo, StoredDonation};

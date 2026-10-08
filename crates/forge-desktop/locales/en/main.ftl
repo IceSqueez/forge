@@ -1642,7 +1642,6 @@ chat_follow_not_following = Not following
 chat_follow_hidden = Hidden
 chat_drawer_history_loading = Loading messages...
 chat_drawer_history_empty = No saved messages
-chat_drawer_history_truncated = Showing the newest { $shown } of { $total }
 chat_drawer_history_failed = Could not load message history
 chat_drawer_shoutout_sent = Shoutout sent
 chat_drawer_shoutout_failed = Shoutout failed: { $error }

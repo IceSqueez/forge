@@ -1680,7 +1680,6 @@ chat_follow_not_following = Не фоловить
 chat_follow_hidden = Приховано
 chat_drawer_history_loading = Завантаження повідомлень...
 chat_drawer_history_empty = Немає збережених повідомлень
-chat_drawer_history_truncated = Показано { $shown } найновіших із { $total }
 chat_drawer_history_failed = Не вдалося завантажити історію повідомлень
 chat_drawer_shoutout_sent = Shoutout надіслано
 chat_drawer_shoutout_failed = Помилка shoutout: { $error }

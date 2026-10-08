@@ -760,9 +760,10 @@ mod tests {
         author: &ChatAuthorKey,
         limit: usize,
     ) -> Vec<String> {
-        repo.list_recent_messages_by_author(author, limit)
+        repo.author_page(author, limit)
             .await
             .unwrap()
+            .rows
             .into_iter()
             .map(|r| r.id)
             .collect()

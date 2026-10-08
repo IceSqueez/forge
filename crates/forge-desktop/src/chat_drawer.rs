@@ -168,6 +168,7 @@ mod tests {
     };
     use crate::chat_author::AuthorKey;
     use crate::chat_feed::{ChatFeed, ChatMessage};
+    use crate::chat_viewer_messages::ViewerMessages;
 
     fn key(name: &str) -> AuthorKey {
         AuthorKey::by_name(Platform::Twitch, name)
@@ -179,14 +180,22 @@ mod tests {
         feed
     }
 
+    fn ledger_of(feed: &ChatFeed) -> ViewerMessages {
+        let mut ledger = ViewerMessages::default();
+        ledger.absorb(feed);
+        ledger
+    }
+
     fn synthesize_from_chat(
         username: &str,
         messages: &[ChatMessage],
     ) -> Option<super::ViewerSummary> {
+        let feed = feed_of(messages);
         author_summary(
             &key(username),
-            feed_of(messages).authors(),
+            feed.authors(),
             &ViewerDirectory::default(),
+            &ledger_of(&feed),
             &FORGE_DEFAULT,
         )
     }
@@ -272,7 +281,7 @@ mod tests {
     }
 
     #[test]
-    fn enrich_overlays_storage_fields_and_leaves_role_untouched() {
+    fn enrich_overlays_last_seen_and_leaves_count_and_role_untouched() {
         let messages = [msg("alice", vec![BadgeKind::Subscriber])];
         let summary = synthesize_from_chat("alice", &messages).unwrap();
         assert_eq!(summary.message_count, 1);
@@ -286,7 +295,7 @@ mod tests {
         );
         let enriched = enrich_with_storage(summary, Some(&stored));
 
-        assert_eq!(enriched.message_count, 99);
+        assert_eq!(enriched.message_count, 1);
         assert_eq!(enriched.last_seen_label, "fmt_relative_days");
         assert_eq!(enriched.role, Some(BadgeKind::Subscriber));
         assert!(enriched.sub == SubStatus::Subscribed);
@@ -348,10 +357,12 @@ mod tests {
     #[test]
     fn selected_summary_uses_the_selected_author() {
         let messages = [msg("alice", vec![]), msg("bob", vec![])];
+        let feed = feed_of(&messages);
         let summary = selected_summary(
             Some(&key("alice")),
-            feed_of(&messages).authors(),
+            feed.authors(),
             &ViewerDirectory::default(),
+            &ledger_of(&feed),
             &FORGE_DEFAULT,
         )
         .unwrap();
@@ -416,7 +427,7 @@ mod tests {
     }
 
     #[test]
-    fn a_renamed_viewer_card_shows_the_chat_name_with_the_stored_count_found_by_id() {
+    fn a_renamed_viewer_card_shows_the_chat_name_and_the_message_count_found_by_id() {
         let feed = feed_of(&[spoken(Platform::Twitch, "t1", "alice_new")]);
         let directory =
             ViewerDirectory::new(vec![stored(ViewerPlatform::Twitch, "t1", "alice_old", 99)]);
@@ -425,13 +436,14 @@ mod tests {
             &AuthorKey::by_viewer_id(Platform::Twitch, "t1"),
             feed.authors(),
             &directory,
+            &ledger_of(&feed),
             &FORGE_DEFAULT,
         )
         .unwrap();
 
         assert_eq!(
             (summary.username.as_str(), summary.message_count),
-            ("alice_new", 99)
+            ("alice_new", 1)
         );
     }
 

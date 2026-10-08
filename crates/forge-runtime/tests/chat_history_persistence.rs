@@ -356,11 +356,18 @@ impl ChatHistoryRepo for StuckChatHistory {
         Ok(Vec::new())
     }
 
-    async fn list_recent_messages_by_author(
+    async fn author_page(
         &self,
         _: &forge_storage::ChatAuthorKey,
         _: usize,
-    ) -> Result<Vec<forge_types::UnifiedChatRow>, StorageError> {
+    ) -> Result<forge_storage::ChatAuthorPage, StorageError> {
+        Ok(forge_storage::ChatAuthorPage::default())
+    }
+
+    async fn author_tallies(
+        &self,
+        _: &[forge_storage::ChatAuthorKey],
+    ) -> Result<Vec<forge_storage::ChatAuthorTally>, StorageError> {
         Ok(Vec::new())
     }
 

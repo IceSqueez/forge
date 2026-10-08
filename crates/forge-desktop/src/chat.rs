@@ -2547,6 +2547,7 @@ mod tests {
         crate::chat_drawer::summary_from_activity(
             &crate::chat_author::AuthorKey::by_name(Platform::Twitch, username),
             &activity,
+            1,
             &FORGE_DEFAULT,
         )
         .avatar_color

@@ -330,19 +330,20 @@ mod tests {
 
     use forge_components::{ChatBody, Platform};
     use forge_storage::chat_history::MockChatHistoryRepo;
-    use forge_storage::{ChatAuthorKey, StorageError};
+    use forge_storage::{ChatAuthorKey, ChatAuthorPage, ChatAuthorTally, StorageError};
     use forge_types::{ChatSegment, ChatSource, EventId, ModerationMarks, UnifiedChatRow};
     use gpui::{AppContext as _, Entity, TestAppContext};
     use time::OffsetDateTime;
 
     use super::{
-        HISTORY_LOAD_CAP, HistoryState, ViewerHistory, feed_messages_by, history_query,
-        mark_moderated, merge_newest_first, moderated_ids_by,
+        HISTORY_LOAD_CAP, HistoryState, ViewerHistory, mark_moderated, merge_newest_first,
+        moderated_ids_by,
     };
     use crate::chat::ChatView;
     use crate::chat::tests::{message, mount_with_chat_history, push_each};
     use crate::chat_author::AuthorKey;
     use crate::chat_feed::{ChatFeed, ChatMessage};
+    use crate::chat_viewer_messages::{ViewerMessages, stored_author};
     use crate::test_support::{pump, runtime};
 
     type Author = (Platform, Option<&'static str>, &'static str);
@@ -418,9 +419,18 @@ mod tests {
         let mut repo = MockChatHistoryRepo::new();
         for (author, rows) in entries {
             let query = query_of(author);
-            repo.expect_list_recent_messages_by_author()
+            let tally = ChatAuthorTally {
+                messages: rows.len() as u64,
+                newest_at: rows.iter().map(|row| row.received_at).max(),
+            };
+            repo.expect_author_page()
                 .withf(move |asked, limit| *asked == query && *limit == HISTORY_LOAD_CAP)
-                .returning(move |_, _| Ok(rows.clone()));
+                .returning(move |_, _| {
+                    Ok(ChatAuthorPage {
+                        tally,
+                        rows: rows.clone(),
+                    })
+                });
         }
         repo
     }
@@ -433,10 +443,40 @@ mod tests {
         live: Vec<ChatMessage>,
     ) -> (Entity<ChatFeed>, Entity<ViewerHistory>) {
         let feed = cx.new(|_| feed_of(live));
+        let messages = cx.new(|cx| {
+            let mut messages = ViewerMessages::default();
+            messages.absorb(feed.read(cx));
+            messages
+        });
         let history = cx.new(|cx| {
-            ViewerHistory::new(key, feed.clone(), Arc::new(repo), rt.handle().clone(), cx)
+            ViewerHistory::new(
+                key,
+                feed.clone(),
+                messages.clone(),
+                Arc::new(repo),
+                rt.handle().clone(),
+                cx,
+            )
         });
         (feed, history)
+    }
+
+    fn feed_and_absorb(
+        cx: &mut TestAppContext,
+        feed: &Entity<ChatFeed>,
+        history: &Entity<ViewerHistory>,
+        change: impl FnOnce(&mut ChatFeed),
+    ) {
+        feed.update(cx, |feed, cx| {
+            change(feed);
+            cx.notify();
+        });
+        let messages = history.read_with(cx, |history, _| history.messages.clone());
+        messages.update(cx, |messages, cx| {
+            messages.absorb(feed.read(cx));
+            cx.notify();
+        });
+        cx.run_until_parked();
     }
 
     fn settle(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
@@ -446,14 +486,18 @@ mod tests {
     }
 
     fn state(cx: &mut TestAppContext, history: &Entity<ViewerHistory>) -> HistoryState {
-        history.read_with(cx, |history, _| history.state.clone())
+        history.read_with(cx, |history, _| history.state)
+    }
+
+    fn shown(cx: &mut TestAppContext, history: &Entity<ViewerHistory>) -> Vec<ChatMessage> {
+        match state(cx, history) {
+            HistoryState::Loaded => history.read_with(cx, |history, _| history.shown.clone()),
+            other => panic!("expected a loaded history, got {other:?}"),
+        }
     }
 
     fn loaded_ids(cx: &mut TestAppContext, history: &Entity<ViewerHistory>) -> Vec<String> {
-        match state(cx, history) {
-            HistoryState::Loaded(messages) => ids(&messages),
-            other => panic!("expected a loaded history, got {other:?}"),
-        }
+        ids(&shown(cx, history))
     }
 
     #[test]
@@ -478,44 +522,7 @@ mod tests {
                 source,
                 author_id: id.to_owned(),
             });
-            assert_eq!(history_query(&key), expected, "{key:?}");
-        }
-    }
-
-    #[test]
-    fn feed_messages_by_keeps_only_the_viewers_chat_lines_newest_first() {
-        let mut event = line("e1", 3, ANN);
-        event.is_event = true;
-        let same_id_elsewhere = line("y1", 4, (Platform::YouTube, Some("42"), "ann"));
-        let feed = feed_of(vec![
-            line("m1", 1, ANN),
-            line("b1", 2, BOB),
-            event,
-            same_id_elsewhere,
-            line("m2", 5, ANN),
-        ]);
-
-        let found = feed_messages_by(&feed, &key_of(ANN), feed.start_seq());
-
-        assert_eq!(ids(&found), ["m2", "m1"]);
-    }
-
-    #[test]
-    fn feed_messages_by_scans_from_the_given_seq_inclusive() {
-        let feed = feed_of(vec![
-            line("m0", 0, ANN),
-            line("m1", 1, ANN),
-            line("m2", 2, ANN),
-        ]);
-        let cases: [(u64, &[&str]); 4] = [
-            (0, &["m2", "m1", "m0"]),
-            (1, &["m2", "m1"]),
-            (2, &["m2"]),
-            (3, &[]),
-        ];
-        for (from_seq, expected) in cases {
-            let found = feed_messages_by(&feed, &key_of(ANN), from_seq);
-            assert_eq!(ids(&found), expected, "from seq {from_seq}");
+            assert_eq!(stored_author(&key), expected, "{key:?}");
         }
     }
 
@@ -576,14 +583,11 @@ mod tests {
         cx: &mut TestAppContext,
         history: &Entity<ViewerHistory>,
     ) -> Vec<String> {
-        match state(cx, history) {
-            HistoryState::Loaded(messages) => messages
-                .iter()
-                .filter(|m| m.moderated)
-                .map(|m| m.id.to_string())
-                .collect(),
-            other => panic!("expected a loaded history, got {other:?}"),
-        }
+        shown(cx, history)
+            .iter()
+            .filter(|m| m.moderated)
+            .map(|m| m.id.to_string())
+            .collect()
     }
 
     #[gpui::test]
@@ -608,31 +612,33 @@ mod tests {
     }
 
     #[gpui::test]
-    fn a_viewer_known_only_by_name_needs_an_id_instead_of_loading(cx: &mut TestAppContext) {
+    fn a_viewer_known_only_by_name_shows_their_live_lines_without_a_storage_query(
+        cx: &mut TestAppContext,
+    ) {
         let rt = runtime();
+        let by_name: Author = (Platform::Twitch, None, "ann");
         let (_feed, history) = mount_history(
             cx,
             &rt,
-            AuthorKey::by_name(Platform::Kick, "ann"),
+            key_of(by_name),
             MockChatHistoryRepo::new(),
-            vec![],
+            vec![line("n1", 10, by_name), line("m1", 20, ANN)],
         );
 
         settle(cx, &rt);
 
-        assert!(matches!(state(cx, &history), HistoryState::NeedsViewerId));
+        assert_eq!(loaded_ids(cx, &history), ["n1"]);
     }
 
     #[gpui::test]
     fn a_failed_load_shows_the_failed_state(cx: &mut TestAppContext) {
         let rt = runtime();
         let mut repo = MockChatHistoryRepo::new();
-        repo.expect_list_recent_messages_by_author()
-            .returning(|_, _| {
-                Err(StorageError::Connection {
-                    reason: "closed".into(),
-                })
-            });
+        repo.expect_author_page().returning(|_, _| {
+            Err(StorageError::Connection {
+                reason: "closed".into(),
+            })
+        });
         let (_feed, history) = mount_history(cx, &rt, key_of(ANN), repo, vec![line("m1", 10, ANN)]);
 
         settle(cx, &rt);
@@ -647,12 +653,10 @@ mod tests {
         let (feed, history) = mount_history(cx, &rt, key_of(ANN), repo, vec![line("", 10, ANN)]);
         settle(cx, &rt);
 
-        feed.update(cx, |feed, cx| {
+        feed_and_absorb(cx, &feed, &history, |feed| {
             feed.push(line("m2", 20, ANN));
             feed.push(line("b3", 30, BOB));
-            cx.notify();
         });
-        cx.run_until_parked();
 
         assert_eq!(loaded_ids(cx, &history), ["m2", ""]);
     }
@@ -670,11 +674,9 @@ mod tests {
         );
         settle(cx, &rt);
 
-        feed.update(cx, |feed, cx| {
+        feed_and_absorb(cx, &feed, &history, |feed| {
             feed.mark_deleted("m1");
-            cx.notify();
         });
-        cx.run_until_parked();
 
         assert_eq!(loaded_moderated_ids(cx, &history), ["m1"]);
     }
@@ -757,11 +759,10 @@ mod tests {
         let queries = Arc::new(AtomicUsize::new(0));
         let counter = Arc::clone(&queries);
         let mut repo = MockChatHistoryRepo::new();
-        repo.expect_list_recent_messages_by_author()
-            .returning(move |_, _| {
-                counter.fetch_add(1, Ordering::SeqCst);
-                Ok(vec![])
-            });
+        repo.expect_author_page().returning(move |_, _| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            Ok(ChatAuthorPage::default())
+        });
         (repo, queries)
     }
 

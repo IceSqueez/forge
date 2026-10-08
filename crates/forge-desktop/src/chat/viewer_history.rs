@@ -475,7 +475,8 @@ impl Render for ViewerHistory {
 mod tests {
     use std::collections::HashSet;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use forge_components::{ChatBody, FORGE_DEFAULT, Platform};
     use forge_storage::chat_history::MockChatHistoryRepo;
@@ -1240,5 +1241,137 @@ mod tests {
         run_viewer_refresh(cx, &rt);
 
         assert_eq!((while_open, tile_count(cx, &view)), ((5, 5), 9));
+    }
+
+    struct FlakyOlderPages {
+        fail_older: Arc<AtomicBool>,
+        asked: Arc<Mutex<Vec<Option<ChatHistoryCursor>>>>,
+    }
+
+    fn flaky_older_pages(total: usize) -> (MockChatHistoryRepo, FlakyOlderPages) {
+        let flaky = FlakyOlderPages {
+            fail_older: Arc::new(AtomicBool::new(true)),
+            asked: Arc::new(Mutex::new(Vec::new())),
+        };
+        let rows = stored_newest_first(total);
+        let mut repo = MockChatHistoryRepo::new();
+        let tally_rows = rows.clone();
+        repo.expect_author_tallies().returning(move |authors| {
+            Ok(authors
+                .iter()
+                .map(|_| PagedStore::tally(&tally_rows, total))
+                .collect())
+        });
+        let (fail_older, asked) = (Arc::clone(&flaky.fail_older), Arc::clone(&flaky.asked));
+        repo.expect_author_page()
+            .returning(move |_, older_than, limit| {
+                asked.lock().unwrap().push(older_than);
+                if older_than.is_some() && fail_older.load(Ordering::SeqCst) {
+                    return Err(StorageError::Connection {
+                        reason: "closed".into(),
+                    });
+                }
+                Ok(PagedStore::page(&rows, total, older_than, limit))
+            });
+        (repo, flaky)
+    }
+
+    fn open_with_a_failing_older_page(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+    ) -> (Entity<ChatView>, Entity<ViewerHistory>, FlakyOlderPages) {
+        let (repo, flaky) = flaky_older_pages(HISTORY_PAGE_SIZE + 30);
+        let (feed, view) = mount_with_chat_history(cx, rt, repo);
+        push_each(cx, &feed, vec![line("s0", 1_000, ANN)]);
+        run_viewer_refresh(cx, rt);
+        let history = open_ann_history(cx, rt, &view);
+        history.update(cx, |history, cx| {
+            history.on_scrolled(history.listed.total, cx);
+        });
+        settle(cx, rt);
+        (view, history, flaky)
+    }
+
+    fn older_requests(flaky: &FlakyOlderPages) -> usize {
+        flaky
+            .asked
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|cursor| cursor.is_some())
+            .count()
+    }
+
+    #[gpui::test]
+    fn a_failed_older_page_keeps_the_loaded_rows_and_settles_the_tile_to_them(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+
+        let (view, history, _flaky) = open_with_a_failing_older_page(cx, &rt);
+
+        let (older_failed, state) =
+            history.read_with(cx, |history, _| (history.older_failed, history.state));
+        assert_eq!(
+            (
+                state,
+                older_failed,
+                tile_and_dialog_rows(cx, &view, &history)
+            ),
+            (
+                HistoryState::Loaded,
+                true,
+                (HISTORY_PAGE_SIZE as u64, HISTORY_PAGE_SIZE as u64)
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn a_failed_older_page_is_not_requested_again_until_retried(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (_view, history, flaky) = open_with_a_failing_older_page(cx, &rt);
+        let failed_requests = older_requests(&flaky);
+
+        for _ in 0..3 {
+            history.update(cx, |history, cx| {
+                history.on_scrolled(history.listed.total, cx);
+            });
+            settle(cx, &rt);
+        }
+
+        let wants_more = history.read_with(cx, |history, _| history.wants_more());
+        assert_eq!(
+            (failed_requests, older_requests(&flaky), wants_more),
+            (1, 1, false)
+        );
+    }
+
+    #[gpui::test]
+    fn retrying_a_failed_older_page_asks_the_same_cursor_and_restores_the_full_tally(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (view, history, flaky) = open_with_a_failing_older_page(cx, &rt);
+        flaky.fail_older.store(false, Ordering::SeqCst);
+
+        history.update(cx, |history, cx| history.retry_older(cx));
+        settle(cx, &rt);
+
+        let asked = flaky.asked.lock().unwrap().clone();
+        let older_failed = history.read_with(cx, |history, _| history.older_failed);
+        assert_eq!(
+            (
+                asked[asked.len() - 2],
+                asked[asked.len() - 1],
+                older_failed,
+                tile_and_dialog_rows(cx, &view, &history)
+            ),
+            (
+                Some(ChatHistoryCursor(HISTORY_PAGE_SIZE as i64)),
+                Some(ChatHistoryCursor(HISTORY_PAGE_SIZE as i64)),
+                false,
+                (HISTORY_PAGE_SIZE as u64 + 30, HISTORY_PAGE_SIZE as u64 + 30)
+            )
+        );
     }
 }

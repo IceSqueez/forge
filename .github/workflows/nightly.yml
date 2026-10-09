@@ -33,43 +33,8 @@ jobs:
             echo "should_run=false" >> "$GITHUB_OUTPUT"
           fi
 
-  lint:
-    name: lint
+  checks:
+    name: Checks
     needs: check_changes
     if: needs.check_changes.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Rust with cache
-        uses: ./.github/actions/setup-rust-cached
-
-      - name: Check formatting
-        shell: bash
-        run: cargo fmt --all -- --check
-
-      - name: Clippy
-        shell: bash
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-  test:
-    name: test (${{ matrix.os }})
-    needs: [check_changes, lint]
-    if: needs.check_changes.outputs.should_run == 'true'
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
-    strategy:
-      fail-fast: true
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Rust with cache
-        uses: ./.github/actions/setup-rust-cached
-
-      - name: Test
-        shell: bash
-        run: cargo test --workspace
+    uses: ./.github/workflows/_test-matrix.yml

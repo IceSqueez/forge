@@ -10,11 +10,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # No `test` job here: tags are cut from `main`, where CI has already
-  # validated `cargo test --workspace --locked`. Re-running the test suite
-  # would burn ~5 min/release for zero added signal.
+  checks:
+    name: Checks
+    uses: ./.github/workflows/_test-matrix.yml
+
   build:
     name: Build
+    needs: [checks]
     uses: ./.github/workflows/_build-matrix.yml
     secrets: inherit
     with:

@@ -32,6 +32,7 @@ const EXPRESSION_POLL_INTERVAL: Duration = Duration::from_secs(3);
 const EXPRESSION_POLL_TIMEOUT: Duration = Duration::from_secs(5);
 const UNANSWERED_POLLS_BEFORE_SUSPECT: u32 = 2;
 const REQUEST_SWEEP_INTERVAL: Duration = Duration::from_secs(1);
+const UNRESPONSIVE_THRESHOLD: Duration = REQUEST_TIMEOUT.saturating_add(REQUEST_SWEEP_INTERVAL);
 const TOKEN_APPROVAL_TIMEOUT: Duration = Duration::from_secs(30);
 const HANDSHAKE_REPLY_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -770,7 +771,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     }
                 }
                 _ = sweep_tick.tick() => {
-                    if pending.values().any(|f| f.sent_at.elapsed() >= REQUEST_TIMEOUT) {
+                    if pending.values().any(|f| f.sent_at.elapsed() >= UNRESPONSIVE_THRESHOLD) {
                         tracing::warn!(
                             endpoint = %endpoint,
                             "VTube Studio left a request unanswered; dropping the session"

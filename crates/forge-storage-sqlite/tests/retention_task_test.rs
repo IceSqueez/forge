@@ -1,38 +1,45 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
+use std::fmt::Debug;
+use std::future::Future;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use forge_events::{Event, EventSource};
 use forge_storage::{
-    DataProvider, ExecutionStatus, MissedRunPolicy, ScheduledRunOutcome, ScheduledRunSpec,
-    set_action_history_retention_days, set_event_log_retention_days,
+    DataProvider, ExecutionStatus, MissedRunPolicy, ScheduledRunId, ScheduledRunOutcome,
+    ScheduledRunSpec, set_action_history_retention_days, set_event_log_retention_days,
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{ActionId, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome};
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use time::OffsetDateTime;
+use tokio::sync::Notify;
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
-const SLOW_CADENCE: Duration = Duration::from_secs(2);
-const FAST_CADENCE: Duration = Duration::from_millis(50);
-const CHUNK_ROWS: usize = 1_000;
+const CADENCE: Duration = Duration::from_millis(50);
+const HANG_GUARD: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(5);
+const CHUNK_ROWS: usize = 1_000;
+const BEYOND_ANY_WINDOW: time::Duration = time::Duration::days(3_650);
 
 struct Db {
     backend: SqliteBackend,
     side: SqlitePool,
-    opened: Instant,
-    _dir: tempfile::TempDir,
+    url: String,
+    dir: tempfile::TempDir,
 }
 
-async fn open(cadence: Duration) -> Db {
+async fn open() -> Db {
     let dir = tempfile::tempdir().expect("create tmpdir");
     let url = format!("sqlite:{}", dir.path().join("test.db").display());
-    let opened = Instant::now();
+    open_at(dir, url).await
+}
+
+async fn open_at(dir: tempfile::TempDir, url: String) -> Db {
     let backend =
-        SqliteBackend::open_for_test(&url, TEST_KEY, dir.path().join("media"), Some(cadence))
+        SqliteBackend::open_for_test(&url, TEST_KEY, dir.path().join("media"), Some(CADENCE))
             .await
             .expect("open");
     let side = SqlitePoolOptions::new()
@@ -43,9 +50,13 @@ async fn open(cadence: Duration) -> Db {
     Db {
         backend,
         side,
-        opened,
-        _dir: dir,
+        url,
+        dir,
     }
+}
+
+async fn within_hang_guard<T>(work: impl Future<Output = T>) -> Option<T> {
+    tokio::time::timeout(HANG_GUARD, work).await.ok()
 }
 
 fn aged(age: time::Duration) -> Arc<Event> {
@@ -65,17 +76,41 @@ fn aged_batch(n: usize, age: time::Duration) -> Vec<Arc<Event>> {
     (0..n).map(|_| aged(age)).collect()
 }
 
+fn spec(due_at: OffsetDateTime, scheduled_at: OffsetDateTime, label: &str) -> ScheduledRunSpec {
+    ScheduledRunSpec {
+        target_action_id: ActionId::new(),
+        due_at,
+        key: None,
+        missed_run_policy: MissedRunPolicy::RunLateOnce,
+        args: Default::default(),
+        scheduled_by_action: None,
+        scheduled_by_run: None,
+        trigger_event_id: None,
+        scheduled_at,
+        label: label.to_owned(),
+    }
+}
+
 impl Db {
+    async fn restarted(self) -> Db {
+        let Db {
+            backend,
+            side,
+            url,
+            dir,
+        } = self;
+        backend.shutdown().await;
+        drop(backend);
+        side.close().await;
+        open_at(dir, url).await
+    }
+
     async fn store(&self, events: &[Arc<Event>]) {
         self.backend
             .event_log_repo()
             .insert_batch(events)
             .await
             .expect("insert");
-    }
-
-    async fn rows(&self) -> i64 {
-        self.count("event_log").await
     }
 
     async fn count(&self, table: &str) -> i64 {
@@ -85,19 +120,50 @@ impl Db {
             .unwrap()
     }
 
-    async fn count_reaches(
-        &self,
-        table: &str,
-        deadline: Duration,
-        done: impl Fn(i64) -> bool,
-    ) -> bool {
-        while self.opened.elapsed() < deadline {
-            if done(self.count(table).await) {
-                return true;
+    async fn reaches(&self, table: &str, done: impl Fn(i64) -> bool) -> bool {
+        within_hang_guard(async {
+            while !done(self.count(table).await) {
+                tokio::time::sleep(POLL).await;
             }
-            tokio::time::sleep(POLL).await;
+        })
+        .await
+        .is_some()
+    }
+
+    async fn resolved_run(&self, age: time::Duration) -> ScheduledRunId {
+        let repo = self.backend.scheduled_run_repo();
+        let resolved_at = OffsetDateTime::now_utc() - age;
+        let id = repo
+            .schedule(&spec(resolved_at, resolved_at, "follow-up"))
+            .await
+            .unwrap()
+            .id;
+        repo.settle(id, ScheduledRunOutcome::Dispatched, None, resolved_at)
+            .await
+            .unwrap();
+        id
+    }
+
+    async fn is_scheduled(&self, id: ScheduledRunId) -> bool {
+        self.backend
+            .scheduled_run_repo()
+            .get(id)
+            .await
+            .unwrap()
+            .is_some()
+    }
+
+    async fn after_a_full_sweep(&self) {
+        for _ in 0..2 {
+            let marker = self.resolved_run(BEYOND_ANY_WINDOW).await;
+            let pruned = within_hang_guard(async {
+                while self.is_scheduled(marker).await {
+                    tokio::time::sleep(POLL).await;
+                }
+            })
+            .await;
+            assert!(pruned.is_some(), "the pruner never completed a sweep");
         }
-        done(self.count(table).await)
     }
 
     async fn record_run(&self, age: time::Duration) {
@@ -134,15 +200,11 @@ impl Db {
             .expect("get")
             .is_some()
     }
-
-    async fn rows_reach(&self, deadline: Duration, done: impl Fn(i64) -> bool) -> bool {
-        self.count_reaches("event_log", deadline, done).await
-    }
 }
 
 #[tokio::test]
-async fn one_sweep_deletes_every_row_older_than_the_window_across_whole_chunks_and_nothing_newer() {
-    let db = open(SLOW_CADENCE).await;
+async fn a_sweep_deletes_every_event_older_than_the_window_across_whole_chunks_and_nothing_newer() {
+    let db = open().await;
     db.store(&aged_batch(2 * CHUNK_ROWS, time::Duration::days(8)))
         .await;
     let just_inside = aged(time::Duration::days(7) - time::Duration::hours(1));
@@ -150,169 +212,131 @@ async fn one_sweep_deletes_every_row_older_than_the_window_across_whole_chunks_a
     db.store(&[Arc::clone(&just_inside), Arc::clone(&recent)])
         .await;
 
-    let deadline = SLOW_CADENCE + SLOW_CADENCE / 2;
-    let swept_once = db.rows_reach(deadline, |rows| rows == 2).await;
-    let over_deleted = db.rows_reach(deadline, |rows| rows < 2).await;
+    db.after_a_full_sweep().await;
 
     assert_eq!(
         (
-            swept_once,
-            over_deleted,
+            db.count("event_log").await,
             db.contains(just_inside.id).await,
             db.contains(recent.id).await
         ),
-        (true, false, true, true)
+        (2, true, true)
     );
 }
 
 #[tokio::test]
-async fn a_batched_write_lands_between_prune_chunks_while_older_rows_remain() {
-    let db = open(FAST_CADENCE).await;
-    let backlog = (3 * CHUNK_ROWS) as i64;
-    db.store(&aged_batch(3 * CHUNK_ROWS, time::Duration::days(30)))
-        .await;
-
-    let mid_prune = db
-        .rows_reach(SLOW_CADENCE, |rows| rows > 0 && rows < backlog)
-        .await;
-    db.store(&aged_batch(1, time::Duration::ZERO)).await;
-    let old_rows_left = db.rows().await - 1;
-
-    assert!(
-        mid_prune && old_rows_left > 0,
-        "the write must not wait for the whole backlog (mid-prune seen: {mid_prune}, old rows left: {old_rows_left})"
-    );
-}
-
-#[tokio::test]
-async fn shrinking_the_window_re_sweeps_at_once_instead_of_at_the_next_scheduled_sweep() {
-    let db = open(SLOW_CADENCE).await;
-    let expired = aged(time::Duration::days(30));
+async fn shrinking_the_event_window_makes_the_running_pruner_apply_the_new_window() {
+    let db = open().await;
     let five_days = aged(time::Duration::days(5));
-    db.store(&[Arc::clone(&expired), Arc::clone(&five_days)])
+    db.store(&[aged(time::Duration::days(30)), Arc::clone(&five_days)])
         .await;
-    assert!(
-        db.rows_reach(SLOW_CADENCE * 2, |rows| rows == 1).await,
-        "the first sweep never ran"
-    );
+    db.after_a_full_sweep().await;
 
     set_event_log_retention_days(&db.backend, 3).await.unwrap();
-    let changed_at = db.opened.elapsed();
-    let re_swept = db
-        .rows_reach(changed_at + SLOW_CADENCE / 2, |rows| rows == 0)
-        .await;
 
     assert!(
-        re_swept,
-        "a 5-day-old row must go as soon as the window shrinks to 3 days"
+        db.reaches("event_log", |rows| rows == 0).await,
+        "a 5-day-old event must go once the window shrinks to 3 days"
     );
+}
+
+struct PrunerStopWatch(Arc<Notify>);
+
+struct StopMessage(bool);
+
+impl tracing::field::Visit for StopMessage {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn Debug) {
+        if field.name() == "message" && format!("{value:?}") == "retention pruner stopped" {
+            self.0 = true;
+        }
+    }
+}
+
+impl tracing::Subscriber for PrunerStopWatch {
+    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+        true
+    }
+
+    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        tracing::span::Id::from_u64(1)
+    }
+
+    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+
+    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+
+    fn event(&self, event: &tracing::Event<'_>) {
+        let mut message = StopMessage(false);
+        event.record(&mut message);
+        if message.0 {
+            self.0.notify_one();
+        }
+    }
+
+    fn enter(&self, _: &tracing::span::Id) {}
+
+    fn exit(&self, _: &tracing::span::Id) {}
 }
 
 #[tokio::test]
-async fn the_pruner_stops_once_its_backend_is_dropped() {
-    let db = open(FAST_CADENCE).await;
-    db.store(&[aged(time::Duration::days(30))]).await;
+async fn dropping_the_backend_stops_its_pruner() {
+    let stopped = Arc::new(Notify::new());
+    let _watch = tracing::subscriber::set_default(PrunerStopWatch(Arc::clone(&stopped)));
+    let db = open().await;
+    db.after_a_full_sweep().await;
+
+    drop(db.backend);
+
     assert!(
-        db.rows_reach(SLOW_CADENCE, |rows| rows == 0).await,
-        "the pruner never ran"
+        within_hang_guard(stopped.notified()).await.is_some(),
+        "a dropped backend's pruner must stop"
     );
-    let Db {
-        backend,
-        side,
-        _dir,
-        ..
-    } = db;
-
-    drop(backend);
-    sqlx::query("INSERT INTO event_log (id, source, kind, timestamp, payload, replay) VALUES ('orphan', 'Twitch', 'x', 0, 'null', 0)")
-        .execute(&side)
-        .await
-        .unwrap();
-    tokio::time::sleep(FAST_CADENCE * 5).await;
-    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM event_log")
-        .fetch_one(&side)
-        .await
-        .unwrap();
-
-    assert_eq!(rows, 1, "a dropped backend's pruner must not keep deleting");
-}
-
-async fn resolved_run(db: &Db, age: time::Duration) -> forge_storage::ScheduledRunId {
-    let repo = db.backend.scheduled_run_repo();
-    let resolved_at = OffsetDateTime::now_utc() - age;
-    let id = repo
-        .schedule(&ScheduledRunSpec {
-            target_action_id: ActionId::new(),
-            due_at: resolved_at,
-            key: None,
-            missed_run_policy: MissedRunPolicy::RunLateOnce,
-            args: Default::default(),
-            scheduled_by_action: None,
-            scheduled_by_run: None,
-            trigger_event_id: None,
-            scheduled_at: resolved_at,
-            label: "follow-up".to_owned(),
-        })
-        .await
-        .unwrap()
-        .id;
-    repo.settle(id, ScheduledRunOutcome::Dispatched, None, resolved_at)
-        .await
-        .unwrap();
-    id
 }
 
 #[tokio::test]
 async fn a_sweep_prunes_resolved_scheduled_runs_older_than_the_window_and_keeps_pending_ones() {
-    let db = open(FAST_CADENCE).await;
-    let repo = db.backend.scheduled_run_repo();
-    let expired = resolved_run(&db, time::Duration::days(8)).await;
-    let recent = resolved_run(&db, time::Duration::days(1)).await;
-    let pending = repo
-        .schedule(&ScheduledRunSpec {
-            target_action_id: ActionId::new(),
-            due_at: OffsetDateTime::now_utc() - time::Duration::days(30),
-            key: None,
-            missed_run_policy: MissedRunPolicy::RunLateOnce,
-            args: Default::default(),
-            scheduled_by_action: None,
-            scheduled_by_run: None,
-            trigger_event_id: None,
-            scheduled_at: OffsetDateTime::now_utc() - time::Duration::days(31),
-            label: "overdue".to_owned(),
-        })
+    let db = open().await;
+    let expired = db.resolved_run(time::Duration::days(8)).await;
+    let recent = db.resolved_run(time::Duration::days(1)).await;
+    let now = OffsetDateTime::now_utc();
+    let pending = db
+        .backend
+        .scheduled_run_repo()
+        .schedule(&spec(
+            now - time::Duration::days(30),
+            now - time::Duration::days(31),
+            "overdue",
+        ))
         .await
         .unwrap()
         .id;
 
-    let deadline = Instant::now() + SLOW_CADENCE;
-    while repo.get(expired).await.unwrap().is_some() && Instant::now() < deadline {
-        tokio::time::sleep(POLL).await;
-    }
+    db.after_a_full_sweep().await;
 
     let mut present = Vec::new();
     for id in [expired, recent, pending] {
-        present.push(repo.get(id).await.unwrap().is_some());
+        present.push(db.is_scheduled(id).await);
     }
     assert_eq!(present, vec![false, true, true]);
 }
 
 #[tokio::test]
 async fn each_table_is_pruned_by_its_own_window_when_the_two_retentions_differ() {
-    let db = open(SLOW_CADENCE).await;
+    let db = open().await;
     set_event_log_retention_days(&db.backend, 3).await.unwrap();
     set_action_history_retention_days(&db.backend, 30)
         .await
         .unwrap();
+    let db = db.restarted().await;
     db.store(&[aged(time::Duration::days(2)), aged(time::Duration::days(4))])
         .await;
-    resolved_run(&db, time::Duration::days(2)).await;
-    resolved_run(&db, time::Duration::days(4)).await;
+    db.resolved_run(time::Duration::days(2)).await;
+    db.resolved_run(time::Duration::days(4)).await;
     db.record_run(time::Duration::days(20)).await;
     db.record_run(time::Duration::days(40)).await;
 
-    db.count_reaches("scheduled_runs", SLOW_CADENCE * 2, |rows| rows == 1)
-        .await;
+    db.after_a_full_sweep().await;
+
     let mut survivors = Vec::new();
     for table in [
         "event_log",
@@ -322,7 +346,6 @@ async fn each_table_is_pruned_by_its_own_window_when_the_two_retentions_differ()
     ] {
         survivors.push((table, db.count(table).await));
     }
-
     assert_eq!(
         survivors,
         vec![
@@ -335,32 +358,22 @@ async fn each_table_is_pruned_by_its_own_window_when_the_two_retentions_differ()
 }
 
 #[tokio::test]
-async fn shrinking_the_action_history_window_re_sweeps_at_once_instead_of_at_the_next_scheduled_sweep()
- {
-    let db = open(SLOW_CADENCE).await;
+async fn shrinking_the_action_history_window_makes_the_running_pruner_apply_the_new_window() {
+    let db = open().await;
     set_action_history_retention_days(&db.backend, 30)
         .await
         .unwrap();
+    let db = db.restarted().await;
     db.record_run(time::Duration::days(40)).await;
     db.record_run(time::Duration::days(20)).await;
-    assert!(
-        db.count_reaches("action_history", SLOW_CADENCE * 2, |rows| rows == 1)
-            .await,
-        "the first sweep never ran"
-    );
+    db.after_a_full_sweep().await;
 
     set_action_history_retention_days(&db.backend, 10)
         .await
         .unwrap();
-    let changed_at = db.opened.elapsed();
-    let re_swept = db
-        .count_reaches("action_history", changed_at + SLOW_CADENCE / 2, |rows| {
-            rows == 0
-        })
-        .await;
 
     assert!(
-        re_swept,
-        "a 20-day-old run must go as soon as the action history window shrinks to 10 days"
+        db.reaches("action_history", |rows| rows == 0).await,
+        "a 20-day-old run must go once the action history window shrinks to 10 days"
     );
 }

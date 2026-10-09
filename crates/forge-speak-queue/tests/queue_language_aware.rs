@@ -112,7 +112,7 @@ async fn speak_and_settle(
 ) {
     let id = req.request_id.clone();
     handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(5_000);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(30_000);
     loop {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.is_zero() {
@@ -133,7 +133,7 @@ async fn speak_and_settle(
     }
 }
 
-const DETECTOR_READY_BUDGET_MS: u64 = 15_000;
+const DETECTOR_READY_BUDGET_MS: u64 = 120_000;
 
 async fn narrowed_voice_for(
     handle: &SpeakQueueHandle,

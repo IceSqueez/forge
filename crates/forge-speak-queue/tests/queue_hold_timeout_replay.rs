@@ -20,7 +20,7 @@ use tokio::sync::Notify;
 
 const ENGINE: &str = "gated";
 const HANGING_TEXT: &str = "this synthesis never returns";
-const EVENT_WAIT_MS: u64 = 2_000;
+const EVENT_WAIT_MS: u64 = 30_000;
 const QUIET_WINDOW_MS: u64 = 50;
 const SHORT_SYNTHESIS_TIMEOUT: Duration = Duration::from_millis(50);
 
@@ -293,7 +293,7 @@ async fn skipping_a_held_clip_drops_it_and_resume_plays_the_next_message() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_synthesis_past_timeout_per_item_fails_as_engine_timeout_and_the_queue_moves_on() {
     let mut q = spawn_queue(
         QueueConfig {

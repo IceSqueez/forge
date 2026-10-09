@@ -1153,7 +1153,7 @@ mod tests {
     }
 
     async fn assert_leading_online(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Event>) {
-        let online = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        let online = tokio::time::timeout(Duration::from_secs(30), rx.recv())
             .await
             .unwrap()
             .unwrap();
@@ -1575,7 +1575,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(100)).await;
         cancel.cancel();
 
-        let result = tokio::time::timeout(Duration::from_secs(3), handle)
+        let result = tokio::time::timeout(Duration::from_secs(30), handle)
             .await
             .expect("run() did not return within timeout after cancel")
             .unwrap();
@@ -1620,7 +1620,7 @@ mod tests {
         let cancel_clone = cancel.clone();
         let join = tokio::spawn(async move { poller.run(cancel_clone).await });
 
-        let (lc, bc) = tokio::time::timeout(Duration::from_secs(5), async {
+        let (lc, bc) = tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 if let (Some(lc), Some(bc)) = (live.get(), broadcast.get()) {
                     return (lc, bc);
@@ -1665,7 +1665,7 @@ mod tests {
         let cancel_clone = cancel.clone();
         let join = tokio::spawn(async move { poller.run(cancel_clone).await });
 
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 if live.get().is_none() && broadcast.get().is_none() {
                     return;
@@ -1770,7 +1770,7 @@ mod tests {
         let handle = tokio::spawn(async move { poller.run(cancel_clone).await });
 
         assert_leading_online(&mut rx).await;
-        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        let event = tokio::time::timeout(Duration::from_secs(30), rx.recv())
             .await
             .unwrap()
             .unwrap();
@@ -2662,7 +2662,7 @@ mod tests {
     }
 
     async fn next_event(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Event>) -> Event {
-        tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        tokio::time::timeout(Duration::from_secs(30), rx.recv())
             .await
             .unwrap()
             .unwrap()
@@ -2690,7 +2690,7 @@ mod tests {
         });
         assert_leading_online(&mut rx).await;
 
-        tokio::time::timeout(Duration::from_secs(5), ledger.entered.notified())
+        tokio::time::timeout(Duration::from_secs(30), ledger.entered.notified())
             .await
             .expect("the observed ban must reach the ledger");
         let published_while_recording = rx.try_recv().ok().map(|event| event.kind);

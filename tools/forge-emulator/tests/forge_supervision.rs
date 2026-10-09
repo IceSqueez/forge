@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::collections::BTreeSet;
-use std::net::{Ipv4Addr, TcpListener as StdTcpListener};
+use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -15,12 +15,12 @@ use forge_emulator::launch::{
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tempfile::TempDir;
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpSocket};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 
-const DEADLINE: Duration = Duration::from_secs(10);
+const DEADLINE: Duration = Duration::from_secs(30);
 const TOKEN: &str = "fixture-bearer-token";
 const BIND_FAILURE_LINE: &str = "forge-desktop: server failed to start, leaving it off: could not bind to 127.0.0.1:40000: Address already in use (os error 98)";
 const OVERRIDE_REFUSAL_LINE: &str = "2026-09-13T10:00:00.000000Z ERROR platform endpoint override refused; exiting error=endpoint override FORGE_TWITCH_EVENTSUB_WS_URL refused: host is not 127.0.0.0/8, ::1 or localhost";
@@ -94,12 +94,11 @@ fn elsewhere() -> LivePaths {
     }
 }
 
-fn unused_port() -> u16 {
-    StdTcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
+fn reserved_port() -> (TcpSocket, u16) {
+    let socket = TcpSocket::new_v4().unwrap();
+    socket.bind((Ipv4Addr::LOCALHOST, 0).into()).unwrap();
+    let port = socket.local_addr().unwrap().port();
+    (socket, port)
 }
 
 fn process_is_gone(pid: u32) -> bool {
@@ -174,7 +173,8 @@ fn serve_auth(listener: TcpListener) -> mpsc::UnboundedReceiver<String> {
 async fn forge_exiting_before_readiness_reports_its_code_and_stderr_tail() {
     let stage = Stage::new();
     let mut process = stage.spawn("echo 'panicked at boot' >&2; exit 3").await;
-    let failure = timeout(DEADLINE, process.wait_ready(unused_port(), TOKEN, DEADLINE))
+    let (_reserved, port) = reserved_port();
+    let failure = timeout(DEADLINE, process.wait_ready(port, TOKEN, DEADLINE))
         .await
         .unwrap();
     assert!(
@@ -191,7 +191,8 @@ async fn endpoint_override_refusal_exit_is_its_own_failure_class() {
     let mut process = stage
         .spawn(&format!("echo '{OVERRIDE_REFUSAL_LINE}'; exit 1"))
         .await;
-    let failure = timeout(DEADLINE, process.wait_ready(unused_port(), TOKEN, DEADLINE))
+    let (_reserved, port) = reserved_port();
+    let failure = timeout(DEADLINE, process.wait_ready(port, TOKEN, DEADLINE))
         .await
         .unwrap();
     assert!(
@@ -207,9 +208,10 @@ async fn lost_server_port_race_is_reported_without_waiting_out_the_deadline() {
     let mut process = stage
         .spawn(&format!("echo '{BIND_FAILURE_LINE}' >&2; exec sleep 600"))
         .await;
+    let (_reserved, port) = reserved_port();
     let failure = timeout(
         DEADLINE,
-        process.wait_ready(unused_port(), TOKEN, Duration::from_secs(120)),
+        process.wait_ready(port, TOKEN, Duration::from_secs(120)),
     )
     .await
     .expect("bind failure short-circuits readiness");
@@ -226,9 +228,10 @@ async fn forge_that_never_serves_times_out_at_the_readiness_deadline() {
     let stage = Stage::new();
     let mut process = stage.spawn("exec sleep 600").await;
     let readiness_deadline = Duration::from_millis(300);
+    let (_reserved, port) = reserved_port();
     let failure = timeout(
         DEADLINE,
-        process.wait_ready(unused_port(), TOKEN, readiness_deadline),
+        process.wait_ready(port, TOKEN, readiness_deadline),
     )
     .await
     .unwrap();
@@ -244,7 +247,7 @@ async fn forge_that_never_serves_times_out_at_the_readiness_deadline() {
 async fn readiness_retries_until_the_control_server_authenticates() {
     let stage = Stage::new();
     let mut process = stage.spawn("echo booted; exec sleep 600").await;
-    let port = unused_port();
+    let (reserved, port) = reserved_port();
     let output = process.output().clone();
     let waiting = tokio::spawn(async move {
         let ready = process.wait_ready(port, TOKEN, DEADLINE).await.map(drop);
@@ -256,11 +259,7 @@ async fn readiness_retries_until_the_control_server_authenticates() {
         })
         .await
         .unwrap();
-    let mut tokens = serve_auth(
-        TcpListener::bind((Ipv4Addr::LOCALHOST, port))
-            .await
-            .unwrap(),
-    );
+    let mut tokens = serve_auth(reserved.listen(16).unwrap());
 
     let (process, ready) = timeout(DEADLINE, waiting).await.unwrap().unwrap();
     assert!(ready.is_ok(), "got {ready:?}");

@@ -193,7 +193,7 @@ mod tests {
 
         bus.publish(chat_event(EventSource::Twitch, &owned(&["LUL"])));
         drop(bus);
-        tokio::time::timeout(std::time::Duration::from_secs(5), task)
+        tokio::time::timeout(std::time::Duration::from_secs(30), task)
             .await
             .unwrap()
             .unwrap();

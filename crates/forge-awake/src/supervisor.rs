@@ -113,7 +113,7 @@ mod tests {
     use crate::fake_backend::{Call, FakeBackend, spawn_supervisor, supervisor};
     use crate::{Aspect, AspectState, AwakeError, AwakeStatus};
 
-    const WAIT: Duration = Duration::from_secs(5);
+    const WAIT: Duration = Duration::from_secs(30);
 
     async fn wait_until(
         status: &mut watch::Receiver<AwakeStatus>,

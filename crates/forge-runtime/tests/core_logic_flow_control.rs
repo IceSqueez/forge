@@ -76,7 +76,11 @@ impl SubActionRunner for AlwaysFailRunner {
 }
 
 fn engine() -> Arc<ChainEngine> {
-    let gate = Arc::new(ConditionGate::new(&Config::default()));
+    let config = Config {
+        condition_wall_time_ms: 30_000,
+        ..Config::default()
+    };
+    let gate = Arc::new(ConditionGate::new(&config));
     let mut reg = SubActionRegistry::new();
     reg.register(Box::new(CoreArgsSetRunner)).unwrap();
     reg.register(Box::new(CoreLogicBreakLoopRunner)).unwrap();
@@ -92,7 +96,7 @@ fn engine() -> Arc<ChainEngine> {
         Arc::new(reg),
         Arc::new(NullPublisher),
         gate,
-        Config::default(),
+        config,
     ))
 }
 

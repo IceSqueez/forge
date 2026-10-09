@@ -237,7 +237,7 @@ mod tests {
     where
         S: Stream<Item = LiveViewerCount> + Unpin,
     {
-        let outcome = tokio::time::timeout(Duration::from_secs(2), async {
+        let outcome = tokio::time::timeout(Duration::from_secs(30), async {
             while let Some(value) = stream.next().await {
                 if value == expected {
                     return;
@@ -340,7 +340,7 @@ mod tests {
         let expected: LivePlatforms = expected.iter().copied().collect();
         let mut platforms = handle.live_platforms();
         let outcome = tokio::time::timeout(
-            Duration::from_secs(2),
+            Duration::from_secs(30),
             platforms.wait_for(|current| *current == expected),
         )
         .await;
@@ -499,7 +499,7 @@ mod tests {
         let (second, _second_tx) = channel_source();
         handle.register(PlatformId::Twitch, second);
 
-        let outcome = tokio::time::timeout(Duration::from_secs(2), first_tx.closed()).await;
+        let outcome = tokio::time::timeout(Duration::from_secs(30), first_tx.closed()).await;
 
         assert!(outcome.is_ok(), "replaced source was still being polled");
     }

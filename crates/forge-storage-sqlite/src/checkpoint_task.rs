@@ -130,7 +130,7 @@ mod tests {
     use super::*;
     use crate::pool::{SqlitePools, connect_pools};
 
-    const RESET_DEADLINE: Duration = Duration::from_secs(8);
+    const RESET_DEADLINE: Duration = Duration::from_secs(60);
     const POLL: Duration = Duration::from_millis(20);
     const SMALL_PAGE_BYTES: u32 = 512;
     const JOURNAL_SIZE_LIMIT: u64 = 64 * 1024 * 1024;
@@ -217,7 +217,7 @@ mod tests {
         let restarted = restart_wal(db.pools.writer()).await.unwrap();
 
         assert_eq!(
-            (restarted, started.elapsed() < Duration::from_secs(1)),
+            (restarted, started.elapsed() < BUSY_TIMEOUT / 2),
             (false, true),
             "took {:?}",
             started.elapsed()

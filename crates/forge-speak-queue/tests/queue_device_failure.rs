@@ -13,7 +13,7 @@ use forge_voice::AssignmentStrategy;
 use common::{make_deps, request, standard_registry};
 
 const DEVICE_REFUSAL: &str = "device 'hw:9,9' not found";
-const SETTLE_BUDGET: Duration = Duration::from_secs(5);
+const SETTLE_BUDGET: Duration = Duration::from_secs(30);
 
 struct RefusingSink;
 

@@ -167,7 +167,7 @@ mod tests {
     #[tokio::test]
     async fn a_hold_is_closed_by_the_ceiling_only_once_it_has_reached_it() {
         for (age_secs, ceiling_secs, should_close) in [
-            (0, Some(1), false),
+            (0, Some(3_600), false),
             (1, Some(1), true),
             (3, Some(1), true),
             (3, None, false),

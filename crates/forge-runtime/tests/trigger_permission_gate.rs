@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_events::{Event, EventSource};
+use forge_events::{Event, EventSource, EventsError};
 use forge_registry::{
     ChatTriggerFamily, EventFilter, FormField, KindPlatformContract, SubActionRegistry,
     TriggerCategory, TriggerKindDescriptor, TriggerRegistry,
@@ -286,25 +286,49 @@ async fn harness(instances: &[(&TriggerInstance, ActionId)]) -> Harness {
     }
 }
 
+const HANG_GUARD: Duration = Duration::from_secs(30);
+const QUIET_AFTER: Duration = Duration::from_millis(200);
+
 async fn next_kind(sub: &mut EventSubscription, target: &str) -> Option<Event> {
-    for _ in 0..60 {
-        match tokio::time::timeout(Duration::from_millis(300), sub.recv()).await {
-            Ok(Ok(ev)) if ev.kind == target => return Some(ev),
-            Ok(Ok(_)) => {}
-            _ => break,
+    tokio::time::timeout(HANG_GUARD, async {
+        loop {
+            match sub.recv().await {
+                Ok(ev) if ev.kind == target => return Some(ev),
+                Ok(_) | Err(EventsError::LaggingReceiver) => {}
+                Err(_) => return None,
+            }
         }
-    }
-    None
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
-async fn drain_kinds(sub: &mut EventSubscription, targets: &[&str], wait_ms: u64) -> Vec<Event> {
-    let deadline = tokio::time::Instant::now() + Duration::from_millis(wait_ms);
+fn count(seen: &[Event], kind: &str) -> usize {
+    seen.iter().filter(|e| e.kind == kind).count()
+}
+
+async fn drain_kinds(
+    sub: &mut EventSubscription,
+    targets: &[&str],
+    settled: impl Fn(&[Event]) -> bool,
+) -> Vec<Event> {
     let mut seen = Vec::new();
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(50), sub.recv()).await {
-            Ok(Ok(ev)) if targets.contains(&ev.kind.as_str()) => seen.push(ev),
-            Ok(Ok(_)) => {}
-            _ => {}
+    let reached = tokio::time::timeout(HANG_GUARD, async {
+        while !settled(&seen) {
+            match sub.recv().await {
+                Ok(ev) if targets.contains(&ev.kind.as_str()) => seen.push(ev),
+                Ok(_) | Err(EventsError::LaggingReceiver) => {}
+                Err(e) => panic!("bus failed: {e:?}"),
+            }
+        }
+    })
+    .await;
+    if reached.is_ok() {
+        while let Ok(Ok(ev)) = tokio::time::timeout(QUIET_AFTER, sub.recv()).await {
+            if targets.contains(&ev.kind.as_str()) {
+                seen.push(ev);
+            }
         }
     }
     seen
@@ -343,7 +367,7 @@ async fn two_instances_matching_one_message_each_emit_their_own_command_matched(
     let mut h = harness(&[(&first, ActionId::new()), (&second, ActionId::new())]).await;
 
     h.bus.publish(chat_event("rando", vec![]));
-    let matched = drain_kinds(&mut h.sub, &["command.matched"], 400).await;
+    let matched = drain_kinds(&mut h.sub, &["command.matched"], |s| s.len() >= 2).await;
     assert_eq!(
         matched.len(),
         2,
@@ -357,7 +381,10 @@ async fn one_instance_on_two_actions_records_a_single_refusal_per_message() {
     let mut h = harness(&[(&inst, ActionId::new()), (&inst, ActionId::new())]).await;
 
     h.bus.publish(chat_event("rando", vec![]));
-    let seen = drain_kinds(&mut h.sub, &["command.matched", "trigger.blocked"], 600).await;
+    let seen = drain_kinds(&mut h.sub, &["command.matched", "trigger.blocked"], |s| {
+        count(s, "command.matched") >= 1 && count(s, "trigger.blocked") >= 1
+    })
+    .await;
 
     let matched = seen.iter().filter(|e| e.kind == "command.matched").count();
     let blocked: Vec<_> = seen
@@ -383,7 +410,10 @@ async fn one_authorized_instance_on_two_actions_matches_once_and_dispatches_twic
     let mut h = harness(&[(&inst, ActionId::new()), (&inst, ActionId::new())]).await;
 
     h.bus.publish(chat_event("rando", vec![]));
-    let seen = drain_kinds(&mut h.sub, &["command.matched", "action.done"], 800).await;
+    let seen = drain_kinds(&mut h.sub, &["command.matched", "action.done"], |s| {
+        count(s, "command.matched") >= 1 && count(s, "action.done") >= 2
+    })
+    .await;
 
     assert_eq!(
         seen.iter().filter(|e| e.kind == "command.matched").count(),
@@ -405,7 +435,10 @@ async fn two_instances_matching_one_message_get_independent_gate_outcomes() {
     let mut h = harness(&[(&open, ActionId::new()), (&gated, ActionId::new())]).await;
 
     h.bus.publish(chat_event("rando", vec![]));
-    let seen = drain_kinds(&mut h.sub, &["trigger.blocked", "action.done"], 600).await;
+    let seen = drain_kinds(&mut h.sub, &["trigger.blocked", "action.done"], |s| {
+        count(s, "trigger.blocked") >= 1 && count(s, "action.done") >= 1
+    })
+    .await;
 
     let blocked: Vec<_> = seen
         .iter()

@@ -553,7 +553,7 @@ async fn read_returns_the_exact_bytes_that_were_stored() {
 
 const STALE_INCOMING_AGE: Duration = Duration::from_hours(1);
 const ONE_MINUTE: Duration = Duration::from_mins(1);
-const STARTUP_SWEEP_DEADLINE: Duration = Duration::from_secs(5);
+const STARTUP_SWEEP_DEADLINE: Duration = Duration::from_secs(30);
 const STARTUP_SWEEP_POLL: Duration = Duration::from_millis(10);
 #[cfg(windows)]
 const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;

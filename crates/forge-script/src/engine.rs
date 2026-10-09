@@ -191,6 +191,13 @@ mod tests {
     use forge_types::{EventId, Variant};
     use std::sync::Arc;
 
+    fn unhurried() -> EngineConfig {
+        EngineConfig {
+            wall_time_ms: 30_000,
+            ..EngineConfig::default()
+        }
+    }
+
     struct MockPublisher;
 
     impl EventPublisher for MockPublisher {
@@ -236,7 +243,7 @@ mod tests {
     #[tokio::test]
     async fn with_api_forge_log_runs_without_error() {
         let dp = open_test_dp().await;
-        let engine = Engine::with_api(EngineConfig::default(), make_api(dp.clone()));
+        let engine = Engine::with_api(unhurried(), make_api(dp.clone()));
         let result = tokio::task::spawn_blocking(move || {
             engine.eval_script(r#"forge::log("hello from script")"#)
         })
@@ -248,7 +255,7 @@ mod tests {
     #[tokio::test]
     async fn with_api_forge_warn_runs_without_error() {
         let dp = open_test_dp().await;
-        let engine = Engine::with_api(EngineConfig::default(), make_api(dp.clone()));
+        let engine = Engine::with_api(unhurried(), make_api(dp.clone()));
         let result = tokio::task::spawn_blocking(move || {
             engine.eval_script(r#"forge::warn("something fishy")"#)
         })
@@ -417,7 +424,7 @@ mod tests {
         GlobalsRepo::set(dp.as_ref(), "counter", Variant::Int(42), false)
             .await
             .unwrap();
-        let engine = Engine::with_api(EngineConfig::default(), make_api(Arc::clone(&dp)));
+        let engine = Engine::with_api(unhurried(), make_api(Arc::clone(&dp)));
         let result = tokio::task::spawn_blocking(move || {
             engine.eval_script(r#"forge::globals::get("counter")"#)
         })
@@ -430,7 +437,7 @@ mod tests {
     #[tokio::test]
     async fn with_api_globals_get_missing_key_returns_unit() {
         let dp = open_test_dp().await;
-        let engine = Engine::with_api(EngineConfig::default(), make_api(Arc::clone(&dp)));
+        let engine = Engine::with_api(unhurried(), make_api(Arc::clone(&dp)));
         let result = tokio::task::spawn_blocking(move || {
             engine.eval_script(r#"forge::globals::get("no_such_key")"#)
         })
@@ -444,7 +451,7 @@ mod tests {
     async fn with_api_globals_set_writes_and_get_round_trips() {
         let dp = open_test_dp().await;
         let dp_check = Arc::clone(&dp);
-        let engine = Engine::with_api(EngineConfig::default(), make_api(dp.clone()));
+        let engine = Engine::with_api(unhurried(), make_api(dp.clone()));
         tokio::task::spawn_blocking(move || {
             let _ = engine
                 .eval_script(r#"forge::globals::set("score", 99, true)"#)

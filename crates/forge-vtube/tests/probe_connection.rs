@@ -26,7 +26,7 @@ async fn serve_one_reply(
         return;
     };
     let Ok(Some(Ok(Message::Text(text)))) =
-        tokio::time::timeout(Duration::from_secs(3), socket.next()).await
+        tokio::time::timeout(Duration::from_secs(30), socket.next()).await
     else {
         return;
     };
@@ -153,8 +153,17 @@ async fn a_peer_that_answers_with_non_json_text_is_rejected_without_panicking() 
 }
 
 #[tokio::test]
-async fn a_refused_port_reports_the_connect_failure_rather_than_waiting_out_the_timeout() {
-    let error = expect_error(probe_connection("127.0.0.1", 1).await);
+async fn a_port_that_drops_every_connection_reports_the_connect_failure_rather_than_waiting_out_the_timeout()
+ {
+    let (listener, port) = bind_loopback().await;
+    let server = tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            drop(stream);
+        }
+    });
+
+    let error = expect_error(probe_connection("127.0.0.1", port).await);
+    server.abort();
 
     assert!(
         matches!(error, VTubeError::Connect(_)),

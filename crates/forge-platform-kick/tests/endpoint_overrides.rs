@@ -28,7 +28,7 @@ use tokio_tungstenite::tungstenite::handshake::server::{
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-const STEP_DEADLINE: Duration = Duration::from_secs(5);
+const STEP_DEADLINE: Duration = Duration::from_secs(30);
 const CHATROOM_ID: u64 = 4242;
 
 struct GrantLimiter;

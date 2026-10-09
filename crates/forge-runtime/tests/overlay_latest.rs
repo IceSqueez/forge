@@ -32,7 +32,7 @@ const LIVE_TRACK: &str = "Night Bus";
 const STALE_RETAINED: &str = "stale retained";
 const SAMPLE_DONOR: &str = "PixelPal";
 const PREVIEW_HOLD: Duration = Duration::from_secs(5);
-const WAIT_BOUND: Duration = Duration::from_secs(5);
+const WAIT_BOUND: Duration = Duration::from_secs(30);
 const HOLD_SLACK: Duration = Duration::from_millis(10);
 
 async fn bounded<F: std::future::Future>(work: F) -> F::Output {

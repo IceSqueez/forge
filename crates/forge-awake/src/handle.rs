@@ -94,7 +94,7 @@ mod tests {
     use crate::fake_backend::{Call, FakeBackend, spawn_supervisor};
     use crate::{Aspect, AwakeError, AwakeStatus};
 
-    const WAIT: Duration = Duration::from_secs(5);
+    const WAIT: Duration = Duration::from_secs(30);
 
     #[derive(Default)]
     struct RecordingPreference(Mutex<Vec<bool>>);

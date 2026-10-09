@@ -289,7 +289,7 @@ mod tests {
         test_client(HotkeyConfig::default(), Arc::new(SilentPublisher))
     }
 
-    const EVENT_DEADLINE: Duration = Duration::from_secs(2);
+    const EVENT_DEADLINE: Duration = Duration::from_secs(30);
     const STILL_WAITING: Duration = Duration::from_millis(50);
 
     struct Synced {
@@ -904,8 +904,12 @@ mod tests {
         }
     }
 
-    async fn engine_starts_after(starts: &CountingEngine, at_least: usize) -> bool {
-        tokio::time::timeout(STILL_WAITING, async {
+    async fn engine_starts_within(
+        starts: &CountingEngine,
+        at_least: usize,
+        bound: Duration,
+    ) -> bool {
+        tokio::time::timeout(bound, async {
             while starts.0.load(Ordering::SeqCst) < at_least {
                 tokio::task::yield_now().await;
             }
@@ -939,13 +943,13 @@ mod tests {
 
         synced.reconciler.reconcile().await;
         synced.reconciler.reconcile().await;
-        let started_at_boot = engine_starts_after(&engine, 1).await;
+        let started_at_boot = engine_starts_within(&engine, 1, STILL_WAITING).await;
         synced
             .repo
             .save(&instance(HOTKEY_PRESSED_KIND, Some("F6")))
             .await
             .unwrap();
-        let started_on_new_binding = engine_starts_after(&engine, 1).await;
+        let started_on_new_binding = engine_starts_within(&engine, 1, EVENT_DEADLINE).await;
 
         assert!(
             !started_at_boot,

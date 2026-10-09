@@ -557,7 +557,12 @@ mod tests {
 
     const OBS_SCENE: &str = "obs.scene.set";
     const TWITCH_CHAT: &str = "twitch.chat";
-    const SETTLE_ROUNDS: usize = 500;
+    const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
+
+    fn until_the_settle_deadline() -> impl Iterator<Item = ()> {
+        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
+        std::iter::from_fn(move || (std::time::Instant::now() < deadline).then_some(()))
+    }
     const WINDOW_W: f32 = 1000.0;
     const WINDOW_H: f32 = 800.0;
     const SCAN_X: f32 = 120.0;
@@ -613,7 +618,7 @@ mod tests {
         view: &Entity<IntegrationDisabledView>,
         loaded: impl Fn(&IntegrationDisabledView) -> bool,
     ) -> bool {
-        (0..SETTLE_ROUNDS).any(|_| {
+        until_the_settle_deadline().any(|()| {
             rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
             cx.run_until_parked();
             view.read_with(cx, |view, _| loaded(view))
@@ -721,7 +726,7 @@ mod tests {
             })
         });
         vcx.simulate_resize(size(px(WINDOW_W), px(WINDOW_H)));
-        let loaded = (0..SETTLE_ROUNDS).any(|_| {
+        let loaded = until_the_settle_deadline().any(|()| {
             rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
             vcx.run_until_parked();
             view.read_with(vcx, |view, _| !view.references.actions.is_empty())

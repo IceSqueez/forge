@@ -896,7 +896,7 @@ impl QueueScheduler {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::sync::Arc;
     use std::time::Duration;
@@ -904,10 +904,9 @@ mod tests {
     use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_registry::SubActionRegistry;
     use forge_storage::DataProvider;
-    use forge_types::{Action, ActionId, EventId, Queue, QueueId, SubActionStep, Variant};
+    use forge_types::{Action, ActionId, EventId, Queue, QueueId, SubActionStep};
 
     use super::*;
-    use crate::sub_action_runners::CoreLogicWaitRunner;
     use crate::{EventBus, EventSubscription, NullEventLogRepo, spawn_action_engine};
 
     async fn make_dp() -> Sandboxed<Arc<dyn DataProvider>> {
@@ -961,15 +960,146 @@ mod tests {
         }
     }
 
-    async fn collect_events(
+    const HANG_GUARD: Duration = Duration::from_secs(30);
+
+    async fn events_until(
         sub: &mut EventSubscription,
-        target_kind: &str,
-        max_attempts: usize,
-        timeout_ms: u64,
-    ) -> bool {
-        collect_event(sub, target_kind, max_attempts, timeout_ms)
-            .await
-            .is_some()
+        done: impl Fn(&[Event]) -> bool,
+    ) -> Option<Vec<Event>> {
+        let mut seen = Vec::new();
+        tokio::time::timeout(HANG_GUARD, async {
+            while !done(&seen) {
+                match sub.recv().await {
+                    Ok(ev) => seen.push(ev),
+                    Err(forge_events::EventsError::LaggingReceiver) => {}
+                    Err(e) => panic!("bus failed: {e:?}"),
+                }
+            }
+        })
+        .await
+        .ok()
+        .map(|()| seen)
+    }
+
+    fn has(events: &[Event], kind: &str, action_id: ActionId) -> bool {
+        ids_of(events, kind).contains(&action_id.to_string())
+    }
+
+    fn buffered(sub: &mut EventSubscription) -> Vec<Event> {
+        let mut seen = Vec::new();
+        while let Ok(Some(ev)) = sub.try_recv() {
+            seen.push(ev);
+        }
+        seen
+    }
+
+    async fn collect_events(sub: &mut EventSubscription, target_kind: &str) -> bool {
+        collect_event(sub, target_kind).await.is_some()
+    }
+
+    struct HeldRunner {
+        release: Arc<tokio::sync::Semaphore>,
+        cancelled: tokio::sync::mpsc::UnboundedSender<()>,
+    }
+
+    #[async_trait::async_trait]
+    impl forge_registry::SubActionRunner for HeldRunner {
+        fn id(&self) -> &str {
+            "test.held"
+        }
+        fn category(&self) -> forge_registry::SubActionCategory {
+            forge_registry::SubActionCategory::Util
+        }
+        fn label(&self) -> &str {
+            ""
+        }
+        fn summary(&self) -> &str {
+            ""
+        }
+        fn search_text(&self) -> &str {
+            ""
+        }
+        fn icon_name(&self) -> &str {
+            ""
+        }
+        fn default_config(&self) -> forge_types::SubActionConfig {
+            forge_types::SubActionConfig::new()
+        }
+        fn config_fields(&self) -> Vec<forge_registry::FormField> {
+            Vec::new()
+        }
+        fn validate_config(
+            &self,
+            _: &forge_types::SubActionConfig,
+        ) -> Result<(), forge_registry::RegistryError> {
+            Ok(())
+        }
+        async fn execute(
+            &self,
+            _: &forge_types::SubActionConfig,
+            ctx: &forge_registry::RunContext<'_>,
+        ) -> (forge_types::SubActionTelemetry, Option<ArgStack>) {
+            loop {
+                if ctx.cancel.is_cancelled() {
+                    let _ = self.cancelled.send(());
+                    break;
+                }
+                if let Ok(permit) = self.release.try_acquire() {
+                    permit.forget();
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+            (
+                forge_types::SubActionTelemetry {
+                    args_in: std::collections::BTreeMap::new(),
+                    produced: std::collections::BTreeMap::new(),
+                    index: ctx.index,
+                    kind: "test.held".to_owned(),
+                    started_at: time::OffsetDateTime::now_utc(),
+                    duration_ms: 0,
+                    outcome: forge_types::SubActionOutcome::Success,
+                },
+                None,
+            )
+        }
+    }
+
+    struct Held {
+        release: Arc<tokio::sync::Semaphore>,
+        cancelled: tokio::sync::mpsc::UnboundedReceiver<()>,
+    }
+
+    impl Held {
+        fn release_one(&self) {
+            self.release.add_permits(1);
+        }
+
+        async fn saw_a_cancelled_run(&mut self) -> bool {
+            tokio::time::timeout(HANG_GUARD, self.cancelled.recv())
+                .await
+                .is_ok_and(|ended| ended.is_some())
+        }
+    }
+
+    fn held_registry() -> (Arc<SubActionRegistry>, Held) {
+        let release = Arc::new(tokio::sync::Semaphore::new(0));
+        let (cancelled_tx, cancelled) = tokio::sync::mpsc::unbounded_channel();
+        let mut reg = SubActionRegistry::new();
+        reg.register(Box::new(HeldRunner {
+            release: Arc::clone(&release),
+            cancelled: cancelled_tx,
+        }))
+        .unwrap();
+        (Arc::new(reg), Held { release, cancelled })
+    }
+
+    fn held_action(id: ActionId, queue_id: QueueId, held: bool) -> Action {
+        let mut action = log_action(id, queue_id);
+        if held {
+            action.sub_actions[0].kind_id = "test.held".to_owned();
+        }
+        action
     }
 
     fn spawn_sched(
@@ -1025,20 +1155,12 @@ mod tests {
             .collect()
     }
 
-    async fn collect_event(
-        sub: &mut EventSubscription,
-        target_kind: &str,
-        max_attempts: usize,
-        timeout_ms: u64,
-    ) -> Option<Event> {
-        for _ in 0..max_attempts {
-            match tokio::time::timeout(Duration::from_millis(timeout_ms), sub.recv()).await {
-                Ok(Ok(ev)) if ev.kind == target_kind => return Some(ev),
-                Ok(Ok(_)) => {}
-                _ => break,
-            }
-        }
-        None
+    async fn collect_event(sub: &mut EventSubscription, target_kind: &str) -> Option<Event> {
+        events_until(sub, |seen| {
+            seen.last().is_some_and(|ev| ev.kind == target_kind)
+        })
+        .await
+        .and_then(|mut seen| seen.pop())
     }
 
     #[tokio::test]
@@ -1079,7 +1201,7 @@ mod tests {
             .unwrap();
 
         assert!(
-            collect_events(&mut sub, "action.done", 20, 300).await,
+            collect_events(&mut sub, "action.done").await,
             "action.done must arrive for non-blocking queue"
         );
         sched.shutdown();
@@ -1130,21 +1252,10 @@ mod tests {
                 .unwrap();
         }
 
-        let mut done_count = 0;
-        for _ in 0..60 {
-            match tokio::time::timeout(Duration::from_millis(300), sub.recv()).await {
-                Ok(Ok(ev)) if ev.kind == "action.done" => {
-                    done_count += 1;
-                    if done_count == 3 {
-                        break;
-                    }
-                }
-                Ok(Ok(_)) => {}
-                _ => break,
-            }
-        }
+        let dones = |seen: &[Event]| seen.iter().filter(|ev| ev.kind == "action.done").count();
+        let seen = events_until(&mut sub, |seen| dones(seen) == 3).await;
 
-        assert_eq!(done_count, 3, "all three serialized actions must complete");
+        assert!(seen.is_some(), "all three serialized actions must complete");
         sched.shutdown();
     }
 
@@ -1188,7 +1299,7 @@ mod tests {
             .await
             .unwrap();
 
-        let skipped = collect_event(&mut sub, "action.skipped", 20, 60)
+        let skipped = collect_event(&mut sub, "action.skipped")
             .await
             .expect("paused queue must emit action.skipped");
         assert_eq!(skipped.payload["reason"].as_str(), Some("queue_paused"));
@@ -1199,7 +1310,10 @@ mod tests {
         );
 
         assert!(
-            !collect_events(&mut sub, "action.done", 6, 30).await,
+            record(&mut sub, Duration::from_millis(180))
+                .await
+                .iter()
+                .all(|ev| ev.kind != "action.done"),
             "paused queue must not execute action"
         );
         sched.shutdown();
@@ -1245,7 +1359,7 @@ mod tests {
             .unwrap();
 
         assert!(
-            collect_events(&mut sub, "action.done", 30, 300).await,
+            collect_events(&mut sub, "action.done").await,
             "bypass_pause must execute despite paused queue"
         );
         sched.shutdown();
@@ -1292,7 +1406,7 @@ mod tests {
             .unwrap();
 
         assert!(
-            collect_events(&mut sub, "action.done", 30, 300).await,
+            collect_events(&mut sub, "action.done").await,
             "resumed queue must execute actions"
         );
         sched.shutdown();
@@ -1316,7 +1430,7 @@ mod tests {
             (QueueMode::RUNNING, "queue.resumed", "running", "accept"),
         ] {
             sched.set_mode(q_id, mode).await.unwrap();
-            let published = collect_event(&mut sub, kind, 10, 200).await;
+            let published = collect_event(&mut sub, kind).await;
             assert!(published.is_some(), "mode change must publish {kind}");
             let ev = published.unwrap();
             assert_eq!(
@@ -1395,7 +1509,7 @@ mod tests {
             .await
             .unwrap();
 
-        let skipped = collect_event(&mut sub, "action.skipped", 10, 200)
+        let skipped = collect_event(&mut sub, "action.skipped")
             .await
             .expect("unknown queue must emit action.skipped");
         assert_eq!(skipped.payload["reason"].as_str(), Some("queue_not_found"));
@@ -1448,7 +1562,7 @@ mod tests {
             .unwrap();
 
         assert!(
-            collect_events(&mut sub, "action.done", 30, 300).await,
+            collect_events(&mut sub, "action.done").await,
             "newly registered queue must execute dispatched actions"
         );
         sched.shutdown();
@@ -1501,7 +1615,7 @@ mod tests {
             QueueMode::PAUSED,
             "re-registering must not un-pause the existing slot"
         );
-        let skipped = collect_event(&mut sub, "action.skipped", 10, 200)
+        let skipped = collect_event(&mut sub, "action.skipped")
             .await
             .expect("the surviving paused slot must keep refusing dispatches");
         assert_eq!(skipped.payload["reason"].as_str(), Some("queue_paused"));
@@ -1549,7 +1663,7 @@ mod tests {
             .unwrap();
 
         assert!(
-            collect_events(&mut sub, "action.skipped", 10, 200).await,
+            collect_events(&mut sub, "action.skipped").await,
             "dispatch after deregister must emit action.skipped"
         );
         sched.shutdown();
@@ -1620,7 +1734,7 @@ mod tests {
             .unwrap();
 
         assert!(
-            collect_events(&mut sub, "action.done", 30, 300).await,
+            collect_events(&mut sub, "action.done").await,
             "queue must execute work after blocking-flip reconfigure"
         );
         sched.shutdown();
@@ -1673,7 +1787,7 @@ mod tests {
             QueueMode::PAUSED,
             "a blocking-flip reconfigure must leave the pause in place"
         );
-        let skipped = collect_event(&mut sub, "action.skipped", 10, 200)
+        let skipped = collect_event(&mut sub, "action.skipped")
             .await
             .expect("a paused queue must keep refusing dispatches after a reconfigure");
         assert_eq!(skipped.payload["reason"].as_str(), Some("queue_paused"));
@@ -1711,36 +1825,6 @@ mod tests {
         sched.shutdown();
     }
 
-    fn wait_action(id: ActionId, queue_id: QueueId, ms: i64) -> Action {
-        let mut config = std::collections::BTreeMap::new();
-        config.insert("ms".to_owned(), Variant::Int(ms));
-        Action {
-            id,
-            name: "wait".to_string(),
-            group: None,
-            queue_id,
-            enabled: true,
-            concurrent: false,
-            bypass_pause: false,
-            execution_mode: forge_types::ExecutionMode::Sequential,
-            description: None,
-            sub_actions: vec![SubActionStep {
-                kind_id: "core.logic.wait".to_owned(),
-                config,
-                enabled: true,
-                continue_on_error: false,
-                condition: None,
-                label: None,
-            }],
-        }
-    }
-
-    fn waiting_registry() -> Arc<SubActionRegistry> {
-        let mut reg = SubActionRegistry::new();
-        reg.register(Box::new(CoreLogicWaitRunner)).unwrap();
-        Arc::new(reg)
-    }
-
     fn req(queue_id: QueueId, action_id: ActionId) -> SchedulerRequest {
         SchedulerRequest {
             queue_id,
@@ -1759,72 +1843,29 @@ mod tests {
             .map(str::to_owned)
     }
 
-    async fn await_action_start(
+    async fn await_action_start(sub: &mut EventSubscription, action_id: ActionId) -> bool {
+        events_until(sub, |seen| has(seen, "action.start", action_id))
+            .await
+            .is_some()
+    }
+
+    async fn events_until_done(
         sub: &mut EventSubscription,
         action_id: ActionId,
-        attempts: usize,
-    ) -> bool {
-        let target = action_id.to_string();
-        for _ in 0..attempts {
-            match tokio::time::timeout(Duration::from_millis(200), sub.recv()).await {
-                Ok(Ok(ev))
-                    if ev.kind == "action.start"
-                        && action_id_of(&ev).as_deref() == Some(target.as_str()) =>
-                {
-                    return true;
-                }
-                Ok(Ok(_)) => {}
-                _ => {}
-            }
-        }
-        false
+    ) -> Option<Vec<Event>> {
+        events_until(sub, |seen| has(seen, "action.done", action_id)).await
     }
 
-    async fn drain_dones(
-        sub: &mut EventSubscription,
-        window: Duration,
-    ) -> std::collections::HashSet<String> {
-        let deadline = tokio::time::Instant::now() + window;
-        let mut seen = std::collections::HashSet::new();
-        loop {
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                break;
-            }
-            match tokio::time::timeout(remaining, sub.recv()).await {
-                Ok(Ok(ev)) if ev.kind == "action.done" => {
-                    if let Some(a) = action_id_of(&ev) {
-                        seen.insert(a);
-                    }
-                }
-                Ok(Ok(_)) => {}
-                _ => break,
-            }
-        }
-        seen
-    }
-
-    async fn await_queue_event(
-        sub: &mut EventSubscription,
-        kind: &str,
-        queue_id: QueueId,
-        attempts: usize,
-    ) -> bool {
+    async fn await_queue_event(sub: &mut EventSubscription, kind: &str, queue_id: QueueId) -> bool {
         let target = queue_id.to_string();
-        for _ in 0..attempts {
-            match tokio::time::timeout(Duration::from_millis(200), sub.recv()).await {
-                Ok(Ok(ev))
-                    if ev.kind == kind
-                        && ev.payload.get("queue_id").and_then(|v| v.as_str())
-                            == Some(target.as_str()) =>
-                {
-                    return true;
-                }
-                Ok(Ok(_)) => {}
-                _ => {}
-            }
-        }
-        false
+        events_until(sub, |seen| {
+            seen.iter().any(|ev| {
+                ev.kind == kind
+                    && ev.payload.get("queue_id").and_then(|v| v.as_str()) == Some(target.as_str())
+            })
+        })
+        .await
+        .is_some()
     }
 
     #[tokio::test]
@@ -1839,16 +1880,13 @@ mod tests {
         );
         let queue = blocking_q(q_id);
         dp.queue_repo().save(&queue).await.unwrap();
-        dp.action_repo()
-            .save(&wait_action(a, q_id, 150))
-            .await
-            .unwrap();
-        for id in [b, c, d] {
+        for (id, held) in [(a, true), (b, false), (c, false), (d, false)] {
             dp.action_repo()
-                .save(&wait_action(id, q_id, 0))
+                .save(&held_action(id, q_id, held))
                 .await
                 .unwrap();
         }
+        let (registry, held) = held_registry();
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
@@ -1860,7 +1898,7 @@ mod tests {
             ),
             dp.action_repo(),
             dp.history_repo(),
-            waiting_registry(),
+            registry,
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
@@ -1868,7 +1906,7 @@ mod tests {
 
         sched.dispatch(req(q_id, a)).await.unwrap();
         assert!(
-            await_action_start(&mut sub, a, 30).await,
+            await_action_start(&mut sub, a).await,
             "A must occupy the blocking slot before clearing"
         );
         sched.dispatch(req(q_id, b)).await.unwrap();
@@ -1876,22 +1914,21 @@ mod tests {
 
         sched.clear(q_id, true).await.unwrap();
         sched.dispatch(req(q_id, d)).await.unwrap();
+        held.release_one();
 
-        let dones = drain_dones(&mut sub, Duration::from_millis(800)).await;
+        let seen = events_until_done(&mut sub, d)
+            .await
+            .expect("the queue must run work dispatched after clear");
         assert!(
-            dones.contains(&a.to_string()),
+            has(&seen, "action.done", a),
             "keep_current=true must let the in-flight A finish"
         );
         assert!(
-            dones.contains(&d.to_string()),
-            "the queue must run work dispatched after clear"
-        );
-        assert!(
-            !dones.contains(&b.to_string()),
+            !has(&seen, "action.start", b),
             "pending B must be discarded by clear"
         );
         assert!(
-            !dones.contains(&c.to_string()),
+            !has(&seen, "action.start", c),
             "pending C must be discarded by clear"
         );
         sched.shutdown();
@@ -1904,14 +1941,13 @@ mod tests {
         let (a, d) = (ActionId::new(), ActionId::new());
         let queue = blocking_q(q_id);
         dp.queue_repo().save(&queue).await.unwrap();
-        dp.action_repo()
-            .save(&wait_action(a, q_id, 150))
-            .await
-            .unwrap();
-        dp.action_repo()
-            .save(&wait_action(d, q_id, 0))
-            .await
-            .unwrap();
+        for (id, held) in [(a, true), (d, false)] {
+            dp.action_repo()
+                .save(&held_action(id, q_id, held))
+                .await
+                .unwrap();
+        }
+        let (registry, mut held) = held_registry();
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
@@ -1923,7 +1959,7 @@ mod tests {
             ),
             dp.action_repo(),
             dp.history_repo(),
-            waiting_registry(),
+            registry,
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
@@ -1931,20 +1967,20 @@ mod tests {
 
         sched.dispatch(req(q_id, a)).await.unwrap();
         assert!(
-            await_action_start(&mut sub, a, 30).await,
+            await_action_start(&mut sub, a).await,
             "A must be in-flight before clearing"
         );
 
         sched.clear(q_id, false).await.unwrap();
         sched.dispatch(req(q_id, d)).await.unwrap();
 
-        let dones = drain_dones(&mut sub, Duration::from_millis(800)).await;
+        let seen = events_until_done(&mut sub, d).await;
         assert!(
-            dones.contains(&d.to_string()),
+            seen.is_some(),
             "queue must keep working after a keep_current=false clear"
         );
         assert!(
-            !dones.contains(&a.to_string()),
+            held.saw_a_cancelled_run().await,
             "keep_current=false must abort the in-flight action"
         );
         sched.shutdown();
@@ -2033,55 +2069,67 @@ mod tests {
         sched.clear(q_id, true).await.unwrap();
 
         assert!(
-            await_queue_event(&mut sub, "queue.cleared", q_id, 10).await,
+            await_queue_event(&mut sub, "queue.cleared", q_id).await,
             "clear must emit queue.cleared carrying the cleared queue_id"
         );
         sched.shutdown();
     }
 
-    async fn serial_queue_with_waits(
-        ms: &[(ActionId, i64)],
+    async fn serial_queue_with_held(
+        actions: &[(ActionId, bool)],
         q_id: QueueId,
     ) -> (
         Sandboxed<Arc<dyn DataProvider>>,
         Arc<EventBus>,
         QueueSchedulerHandle,
+        Held,
     ) {
         let dp = make_dp().await;
         dp.queue_repo().save(&blocking_q(q_id)).await.unwrap();
-        for (id, wait_ms) in ms {
+        for (id, held) in actions {
             dp.action_repo()
-                .save(&wait_action(*id, q_id, *wait_ms))
+                .save(&held_action(*id, q_id, *held))
                 .await
                 .unwrap();
         }
+        let (registry, held) = held_registry();
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let sched = spawn_sched(&dp, &bus, waiting_registry(), vec![blocking_q(q_id)]);
-        (dp, bus, sched)
+        let sched = spawn_sched(&dp, &bus, registry, vec![blocking_q(q_id)]);
+        (dp, bus, sched, held)
+    }
+
+    async fn settles_at(
+        sched: &QueueSchedulerHandle,
+        q_id: QueueId,
+        expected: crate::QueueDepth,
+    ) -> Option<crate::QueueDepth> {
+        settled_depth(&mut sched.watch_depths(), q_id, expected).await
     }
 
     #[tokio::test]
     async fn freezing_lets_the_running_task_finish_but_withholds_the_next_one() {
         let q_id = QueueId::new();
         let (a, b) = (ActionId::new(), ActionId::new());
-        let (_dp, bus, sched) = serial_queue_with_waits(&[(a, 150), (b, 0)], q_id).await;
+        let (_dp, bus, sched, held) = serial_queue_with_held(&[(a, true), (b, false)], q_id).await;
         let mut sub = bus.subscribe();
 
         sched.dispatch(req(q_id, a)).await.unwrap();
         assert!(
-            await_action_start(&mut sub, a, 30).await,
+            await_action_start(&mut sub, a).await,
             "A must occupy the single slot before the freeze"
         );
         sched.dispatch(req(q_id, b)).await.unwrap();
         sched.set_mode(q_id, QueueMode::HOLDING).await.unwrap();
+        held.release_one();
 
-        let seen = record(&mut sub, Duration::from_millis(500)).await;
-        assert!(
-            ids_of(&seen, "action.done").contains(&a.to_string()),
-            "a task already in flight when the freeze lands must still finish"
-        );
-        assert!(
-            !ids_of(&seen, "action.start").contains(&b.to_string()),
+        let mut seen = events_until_done(&mut sub, a)
+            .await
+            .expect("a task already in flight when the freeze lands must still finish");
+        let settled = settles_at(&sched, q_id, depth(1, 0, 0)).await;
+        seen.extend(buffered(&mut sub));
+        assert_eq!(
+            (settled, has(&seen, "action.start", b)),
+            (Some(depth(1, 0, 0)), false),
             "a frozen queue must stop between tasks, not start the buffered B"
         );
         sched.shutdown();
@@ -2091,7 +2139,8 @@ mod tests {
     async fn resuming_runs_tasks_buffered_while_frozen_in_enqueue_order() {
         let q_id = QueueId::new();
         let (a, b, c) = (ActionId::new(), ActionId::new(), ActionId::new());
-        let (_dp, bus, sched) = serial_queue_with_waits(&[(a, 0), (b, 0), (c, 0)], q_id).await;
+        let (_dp, bus, sched, _held) =
+            serial_queue_with_held(&[(a, false), (b, false), (c, false)], q_id).await;
         let mut sub = bus.subscribe();
 
         sched.set_mode(q_id, QueueMode::HOLDING).await.unwrap();
@@ -2099,14 +2148,16 @@ mod tests {
             sched.dispatch(req(q_id, id)).await.unwrap();
         }
 
-        let while_frozen = record(&mut sub, Duration::from_millis(150)).await;
-        assert!(
-            ids_of(&while_frozen, "action.start").is_empty(),
+        let settled = settles_at(&sched, q_id, depth(3, 0, 0)).await;
+        let while_frozen = buffered(&mut sub);
+        assert_eq!(
+            (settled, ids_of(&while_frozen, "action.start")),
+            (Some(depth(3, 0, 0)), Vec::<String>::new()),
             "a holding queue must collect the dispatches without starting them"
         );
 
         sched.set_mode(q_id, QueueMode::RUNNING).await.unwrap();
-        let after_resume = record(&mut sub, Duration::from_millis(600)).await;
+        let after_resume = events_until_done(&mut sub, c).await.unwrap_or_default();
         assert_eq!(
             ids_of(&after_resume, "action.start"),
             vec![a.to_string(), b.to_string(), c.to_string()],
@@ -2119,23 +2170,29 @@ mod tests {
     async fn draining_skips_new_work_while_buffered_tasks_keep_executing() {
         let q_id = QueueId::new();
         let (a, b, c) = (ActionId::new(), ActionId::new(), ActionId::new());
-        let (_dp, bus, sched) = serial_queue_with_waits(&[(a, 150), (b, 0), (c, 0)], q_id).await;
+        let (_dp, bus, sched, held) =
+            serial_queue_with_held(&[(a, true), (b, false), (c, false)], q_id).await;
         let mut sub = bus.subscribe();
 
         sched.dispatch(req(q_id, a)).await.unwrap();
         assert!(
-            await_action_start(&mut sub, a, 30).await,
+            await_action_start(&mut sub, a).await,
             "A must occupy the single slot before draining starts"
         );
         sched.dispatch(req(q_id, b)).await.unwrap();
         sched.set_mode(q_id, QueueMode::DRAINING).await.unwrap();
         sched.dispatch(req(q_id, c)).await.unwrap();
+        held.release_one();
 
-        let seen = record(&mut sub, Duration::from_millis(600)).await;
+        let seen = events_until(&mut sub, |seen| {
+            has(seen, "action.done", b) && !skip_reasons(seen).is_empty()
+        })
+        .await;
         assert!(
-            ids_of(&seen, "action.done").contains(&b.to_string()),
+            seen.is_some(),
             "draining must keep executing work buffered before the switch"
         );
+        let seen = seen.unwrap_or_default();
         assert!(
             !ids_of(&seen, "action.start").contains(&c.to_string()),
             "draining must refuse work dispatched after the switch"
@@ -2152,27 +2209,30 @@ mod tests {
     async fn pausing_withholds_buffered_work_until_the_queue_resumes() {
         let q_id = QueueId::new();
         let (a, b) = (ActionId::new(), ActionId::new());
-        let (_dp, bus, sched) = serial_queue_with_waits(&[(a, 150), (b, 0)], q_id).await;
+        let (_dp, bus, sched, held) = serial_queue_with_held(&[(a, true), (b, false)], q_id).await;
         let mut sub = bus.subscribe();
 
         sched.dispatch(req(q_id, a)).await.unwrap();
         assert!(
-            await_action_start(&mut sub, a, 30).await,
+            await_action_start(&mut sub, a).await,
             "A must occupy the single slot before the pause"
         );
         sched.dispatch(req(q_id, b)).await.unwrap();
         sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
+        held.release_one();
 
-        let while_paused = record(&mut sub, Duration::from_millis(500)).await;
-        assert!(
-            !ids_of(&while_paused, "action.start").contains(&b.to_string()),
+        let mut while_paused = events_until_done(&mut sub, a).await.unwrap_or_default();
+        let settled = settles_at(&sched, q_id, depth(1, 0, 0)).await;
+        while_paused.extend(buffered(&mut sub));
+        assert_eq!(
+            (settled, has(&while_paused, "action.start", b)),
+            (Some(depth(1, 0, 0)), false),
             "pausing must freeze processing too, not only close intake"
         );
 
         sched.set_mode(q_id, QueueMode::RUNNING).await.unwrap();
-        let after_resume = record(&mut sub, Duration::from_millis(400)).await;
         assert!(
-            ids_of(&after_resume, "action.done").contains(&b.to_string()),
+            events_until_done(&mut sub, b).await.is_some(),
             "resuming must release the withheld task"
         );
         sched.shutdown();
@@ -2182,12 +2242,13 @@ mod tests {
     async fn queue_states_reports_live_pending_and_in_flight_counts() {
         let q_id = QueueId::new();
         let (a, b, c) = (ActionId::new(), ActionId::new(), ActionId::new());
-        let (_dp, bus, sched) = serial_queue_with_waits(&[(a, 300), (b, 0), (c, 0)], q_id).await;
+        let (_dp, bus, sched, _held) =
+            serial_queue_with_held(&[(a, true), (b, false), (c, false)], q_id).await;
         let mut sub = bus.subscribe();
 
         sched.dispatch(req(q_id, a)).await.unwrap();
         assert!(
-            await_action_start(&mut sub, a, 30).await,
+            await_action_start(&mut sub, a).await,
             "A must be executing before the counts are read"
         );
         sched.dispatch(req(q_id, b)).await.unwrap();
@@ -2350,7 +2411,7 @@ mod tests {
     ) -> crate::QueueDepths {
         let mut depths = watch.current();
         while !settled(&depths) {
-            match tokio::time::timeout(Duration::from_secs(3), watch.changed()).await {
+            match tokio::time::timeout(HANG_GUARD, watch.changed()).await {
                 Ok(Some(next)) => depths = next,
                 _ => break,
             }
@@ -2421,7 +2482,7 @@ mod tests {
     async fn depth_watch_shows_the_running_task_in_flight_and_clears_it_when_it_finishes() {
         let q_id = QueueId::new();
         let (a, b) = (ActionId::new(), ActionId::new());
-        let (_dp, _bus, sched) = serial_queue_with_waits(&[(a, 300), (b, 0)], q_id).await;
+        let (_dp, _bus, sched, held) = serial_queue_with_held(&[(a, true), (b, false)], q_id).await;
         let mut watch = sched.watch_depths();
 
         sched.dispatch(req(q_id, a)).await.unwrap();
@@ -2430,6 +2491,7 @@ mod tests {
             settled_depth(&mut watch, q_id, depth(1, 1, 0)).await,
             Some(depth(1, 1, 0))
         );
+        held.release_one();
 
         assert_eq!(
             settled_depth(&mut watch, q_id, depth(0, 0, 0)).await,

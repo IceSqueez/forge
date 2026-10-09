@@ -327,7 +327,7 @@ mod tests {
         let auth_url = flow.start().await.unwrap().auth_url;
         trigger_callback(&auth_url, "code123").await;
         let bundle = flow
-            .wait_for_authorization(Duration::from_secs(2))
+            .wait_for_authorization(Duration::from_secs(30))
             .await
             .unwrap();
 

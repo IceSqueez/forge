@@ -21,11 +21,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
-const UNROUTABLE_HOST: &str = "192.0.2.1";
-
-const OBS_WEBSOCKET_PORT: u16 = 4455;
-
-const PROMPT_DISCONNECT: Duration = Duration::from_secs(2);
+const DISCONNECT_HANG_GUARD: Duration = Duration::from_secs(30);
 
 const BACKOFF_JUMP: Duration = Duration::from_secs(1);
 
@@ -148,21 +144,39 @@ async fn a_backoff_loop_announces_one_state_change_per_real_transition() {
 }
 
 #[tokio::test]
-async fn disconnecting_during_an_unreachable_connect_does_not_wait_out_the_connect_timeout() {
+async fn disconnecting_during_a_stalled_connect_does_not_wait_out_the_connect_timeout() {
+    let (listener, port) = bind_loopback().await;
+    let (dialed_tx, mut dialed) = mpsc::unbounded_channel();
+    let server = tokio::spawn(async move {
+        let mut held = Vec::new();
+        while let Ok((stream, _)) = listener.accept().await {
+            held.push(stream);
+            if dialed_tx.send(()).is_err() {
+                return;
+            }
+        }
+    });
     let (tx, _rx) = mpsc::unbounded_channel();
     let client = ObsClient::connect(
-        &format!("{UNROUTABLE_HOST}:{OBS_WEBSOCKET_PORT}"),
+        &format!("127.0.0.1:{port}"),
         None,
         Arc::new(ChannelPublisher(tx)),
     )
     .await
     .unwrap();
-    tokio::task::yield_now().await;
+    assert!(
+        tokio::time::timeout(DISCONNECT_HANG_GUARD, dialed.recv())
+            .await
+            .is_ok_and(|dial| dial.is_some()),
+        "the client never dialed"
+    );
+    let _clock = freeze_clock();
 
-    let outcome = tokio::time::timeout(PROMPT_DISCONNECT, client.disconnect()).await;
+    let outcome = finishes_on_a_frozen_clock(client.disconnect()).await;
+    server.abort();
 
     assert!(
-        outcome.is_ok(),
+        outcome.is_some(),
         "disconnect queued behind the connect instead of cancelling it"
     );
 }
@@ -245,6 +259,19 @@ async fn settle_until(what: &str, mut done: impl FnMut() -> bool) {
         assert!(started.elapsed() < WALL_BUDGET, "never happened: {what}");
         tokio::task::yield_now().await;
     }
+}
+
+async fn finishes_on_a_frozen_clock<F: std::future::Future>(work: F) -> Option<F::Output> {
+    tokio::pin!(work);
+    let started = Instant::now();
+    while started.elapsed() < DISCONNECT_HANG_GUARD {
+        tokio::select! {
+            biased;
+            done = &mut work => return Some(done),
+            _ = tokio::task::spawn_blocking(|| std::thread::sleep(REAL_CLOCK_POLL)) => {}
+        }
+    }
+    None
 }
 
 async fn advance_until(what: &str, mut done: impl FnMut() -> bool) {
@@ -652,11 +679,12 @@ async fn disconnecting_while_the_catalog_load_waits_on_obs_returns_promptly() {
         fake.log.count(0, "GetVersion") == 2
     })
     .await;
+    let _clock = freeze_clock();
 
-    let outcome = tokio::time::timeout(PROMPT_DISCONNECT, client.disconnect()).await;
+    let outcome = finishes_on_a_frozen_clock(client.disconnect()).await;
 
     assert!(
-        outcome.is_ok(),
+        outcome.is_some(),
         "disconnect waited on the stalled catalog load"
     );
 }
@@ -733,6 +761,14 @@ async fn drive_a_drop_during_the_catalog_load() -> (Recorder, Arc<ObsClient>, Fa
 
     let lost = client.set_scene(SCENE).await;
     assert!(matches!(lost, Err(ObsError::Disconnected)), "got {lost:?}");
+    advance_until("the supervisor dialled again after the drop", || {
+        fake.log.accepted() == 2
+    })
+    .await;
+    settle_until("connection 1 reached its catalog load", || {
+        fake.log.count(1, "GetSceneList") == 1
+    })
+    .await;
     advance_until("the supervisor dialled again after the failed load", || {
         fake.log.accepted() == 3
     })
@@ -1108,7 +1144,7 @@ async fn disconnecting_ends_a_parked_supervisor_so_turning_auto_reconnect_on_dia
     let fake = RefusingObs::spawn().await;
     let client = parked_after_one_refusal(&fake, None).await;
 
-    tokio::time::timeout(PROMPT_DISCONNECT, client.disconnect())
+    finishes_on_a_frozen_clock(client.disconnect())
         .await
         .expect("disconnect waited on the parked supervisor")
         .unwrap();

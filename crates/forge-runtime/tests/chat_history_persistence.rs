@@ -17,7 +17,7 @@ use forge_types::{
 use tokio::sync::{Notify, mpsc};
 use tokio::time::{Duration, timeout};
 
-const RECV_TIMEOUT: Duration = Duration::from_secs(5);
+const RECV_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn bus() -> Arc<EventBus> {
     EventBus::new(Arc::new(NullEventLogRepo))

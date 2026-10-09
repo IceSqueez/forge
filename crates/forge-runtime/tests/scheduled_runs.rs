@@ -42,7 +42,7 @@ use tokio::runtime::Handle;
 use tokio::sync::{Notify, mpsc, oneshot};
 use tokio::time::{Instant, timeout};
 
-const DEADLINE: Duration = Duration::from_secs(5);
+const DEADLINE: Duration = Duration::from_secs(30);
 const BASE_UNIX_SECS: i64 = 1_791_115_200;
 const FIVE_MINUTES: Duration = Duration::from_secs(5 * 60);
 const ONE_SECOND: Duration = Duration::from_secs(1);

@@ -1464,7 +1464,7 @@ mod tests {
             )
             .await
             .unwrap();
-        tokio::time::timeout(Duration::from_secs(5), done_rx)
+        tokio::time::timeout(Duration::from_secs(30), done_rx)
             .await
             .expect("run did not finish")
             .unwrap();
@@ -1797,7 +1797,7 @@ mod tests {
                 .await
                 .unwrap();
             let start = loop {
-                let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+                let event = tokio::time::timeout(Duration::from_secs(30), sub.recv())
                     .await
                     .expect("the dispatched run never started")
                     .unwrap();

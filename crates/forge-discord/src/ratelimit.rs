@@ -141,7 +141,7 @@ mod tests {
     #[test]
     fn bucket_grants_when_remaining() {
         let mut b = DiscordBucket::default();
-        b.update_from_headers(5, 4, 1.0);
+        b.update_from_headers(5, 4, 3600.0);
         assert!(matches!(b.check(), RateLimitOutcome::Granted));
         assert_eq!(b.remaining, 3);
     }
@@ -149,7 +149,7 @@ mod tests {
     #[test]
     fn bucket_throttles_when_exhausted() {
         let mut b = DiscordBucket::default();
-        b.update_from_headers(5, 0, 2.0);
+        b.update_from_headers(5, 0, 3600.0);
         assert!(matches!(b.check(), RateLimitOutcome::Throttled { .. }));
     }
 
@@ -170,8 +170,8 @@ mod tests {
     #[test]
     fn rate_limiter_acquire_uses_per_webhook_bucket() {
         let mut rl = DiscordRateLimiter::new();
-        rl.record_response("alerts", 5, 2, 1.0);
-        rl.record_response("clips", 5, 0, 1.0);
+        rl.record_response("alerts", 5, 2, 3600.0);
+        rl.record_response("clips", 5, 0, 3600.0);
 
         assert!(matches!(rl.acquire("alerts"), RateLimitOutcome::Granted));
         assert!(matches!(

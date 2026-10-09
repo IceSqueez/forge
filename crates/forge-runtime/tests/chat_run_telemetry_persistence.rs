@@ -20,7 +20,7 @@ use forge_types::{
 };
 
 const CHAT_KIND: &str = "twitch.channel.chat.message";
-const RUN_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
+const RUN_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
 
 struct ChatDescriptor;
 

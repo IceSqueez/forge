@@ -985,7 +985,12 @@ mod tests {
     use crate::toasts::Toasts;
 
     const TEST_KEY: [u8; 32] = [0x5a; 32];
-    const SETTLE_ROUNDS: usize = 2000;
+    const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
+
+    fn until_the_settle_deadline() -> impl Iterator<Item = ()> {
+        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
+        std::iter::from_fn(move || (std::time::Instant::now() < deadline).then_some(()))
+    }
 
     struct Fixture {
         backend: Sandboxed<forge_storage_sqlite::SqliteBackend>,
@@ -1083,7 +1088,7 @@ mod tests {
         rt: &tokio::runtime::Runtime,
         done: impl Fn(&mut TestAppContext) -> bool,
     ) {
-        for _ in 0..SETTLE_ROUNDS {
+        for () in until_the_settle_deadline() {
             rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
             cx.run_until_parked();
             if done(cx) {

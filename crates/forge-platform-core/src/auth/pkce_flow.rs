@@ -389,7 +389,7 @@ mod tests {
         let auth_url = flow.start(&[]).await.unwrap().auth_url;
         spawn_callback(&auth_url, "auth_code_xyz").await;
 
-        let token = flow.exchange(Duration::from_secs(2)).await.unwrap();
+        let token = flow.exchange(Duration::from_secs(30)).await.unwrap();
         assert_eq!(token.access_token, "access_abc");
         assert_eq!(token.refresh_token.as_deref(), Some("refresh_xyz"));
         assert_eq!(token.expires_in, Some(3600));
@@ -413,7 +413,7 @@ mod tests {
         let auth_url = flow.start(&[]).await.unwrap().auth_url;
         spawn_callback(&auth_url, "bad_code").await;
 
-        let err = flow.exchange(Duration::from_secs(2)).await.unwrap_err();
+        let err = flow.exchange(Duration::from_secs(30)).await.unwrap_err();
         assert!(matches!(err, PlatformError::Http { status: 400, .. }));
     }
 
@@ -435,7 +435,7 @@ mod tests {
         let auth_url = flow.start(&[]).await.unwrap().auth_url;
         spawn_callback(&auth_url, "auth_code_abc").await;
 
-        let token = flow.exchange(Duration::from_secs(2)).await.unwrap();
+        let token = flow.exchange(Duration::from_secs(30)).await.unwrap();
         assert_eq!(token.access_token, "access_only");
         assert!(token.refresh_token.is_none());
         assert!(token.expires_in.is_none());

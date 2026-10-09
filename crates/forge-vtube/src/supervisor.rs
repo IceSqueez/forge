@@ -1176,12 +1176,13 @@ mod tests {
         };
         use crate::client::VTubeClient;
         use crate::client::tests::{
-            FakeVts, MockCreds, MockPublisher, PeerConn, elapse, stored_token_creds, wait_until,
+            FakeVts, MockCreds, MockPublisher, PeerConn, elapse, finishes_on_a_frozen_clock,
+            freeze_clock, settle_on_a_frozen_clock, stored_token_creds, wait_until,
         };
         use crate::request::REQUEST_TIMEOUT;
         use crate::sink::VTubeSink;
 
-        const SETTLE: Duration = Duration::from_secs(5);
+        const SETTLE: Duration = Duration::from_secs(30);
         const PROMPT: Duration = Duration::from_secs(1);
         const EARLY_WINDOW: Duration = Duration::from_millis(50);
         const ANSWERED_POLLS: usize = 10;
@@ -1282,20 +1283,26 @@ mod tests {
             let _client = vts.connect(&publisher, &stored_token_creds());
             let mut conn = vts.next_conn(SETTLE).await.unwrap();
             conn.expect("AuthenticationRequest", SETTLE).await;
+            let _frozen = freeze_clock();
 
-            elapse(HANDSHAKE_REPLY_TIMEOUT - PROMPT).await;
+            tokio::time::advance(HANDSHAKE_REPLY_TIMEOUT - PROMPT).await;
             assert!(
-                !wait_until(EARLY_WINDOW, || publisher
+                !settle_on_a_frozen_clock(EARLY_WINDOW, || publisher
                     .disconnected_with_reason("auth_failed"))
                 .await,
                 "the login was given up before the handshake deadline"
             );
-            elapse(PROMPT).await;
+            let started = std::time::Instant::now();
+            let mut failed = false;
+            while !failed && started.elapsed() < SETTLE {
+                tokio::time::advance(PROMPT).await;
+                failed = settle_on_a_frozen_clock(EARLY_WINDOW, || {
+                    publisher.disconnected_with_reason("auth_failed")
+                })
+                .await;
+            }
 
-            assert!(
-                wait_until(SETTLE, || publisher.disconnected_with_reason("auth_failed")).await,
-                "a login nobody answers must end as auth_failed"
-            );
+            assert!(failed, "a login nobody answers must end as auth_failed");
             drop(conn);
         }
 
@@ -1313,11 +1320,14 @@ mod tests {
                 let client = vts.connect(&MockPublisher::new(), &creds);
                 let mut conn = vts.next_conn(SETTLE).await.unwrap();
                 conn.expect(request, SETTLE).await;
+                let frozen = freeze_clock();
 
-                let outcome = tokio::time::timeout(PROMPT, client.disconnect()).await;
+                let outcome = finishes_on_a_frozen_clock(SETTLE, client.disconnect()).await;
+                drop(frozen);
+                tokio::time::resume();
 
                 assert!(
-                    outcome.is_ok(),
+                    outcome.is_some(),
                     "disconnect during the {phase} waited for the peer instead of cancelling"
                 );
                 drop(conn);

@@ -235,10 +235,7 @@ impl SubActionRunner for GateRunner {
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         self.running.notify_one();
-        for _ in 0..400 {
-            if ctx.cancel.is_cancelled() {
-                break;
-            }
+        while !ctx.cancel.is_cancelled() {
             tokio::time::sleep(Duration::from_millis(2)).await;
         }
         (
@@ -297,7 +294,7 @@ fn catalog_over(repo: &Arc<SpyActionRepo>) -> Arc<Catalog> {
 }
 
 async fn eventually<F: Fn() -> bool>(pred: F) -> bool {
-    for _ in 0..80 {
+    for _ in 0..1_200 {
         if pred() {
             return true;
         }
@@ -397,7 +394,7 @@ async fn cancelled_execution_records_no_row_but_saves_history() {
     );
     engine.dispatch(request(id)).await.unwrap();
 
-    tokio::time::timeout(Duration::from_secs(5), running.notified())
+    tokio::time::timeout(Duration::from_secs(30), running.notified())
         .await
         .expect("gated action never reached its in-flight point");
     cancel_registry.cancel(id);
@@ -562,7 +559,7 @@ async fn disabling_an_integration_mid_run_fails_the_run_instead_of_cancelling_it
     let engine = spawn_with(&repo, &history, reg);
 
     engine.dispatch(request(id)).await.unwrap();
-    tokio::time::timeout(Duration::from_secs(5), running.notified())
+    tokio::time::timeout(Duration::from_secs(30), running.notified())
         .await
         .expect("the owned step never started");
     assert_eq!(engine.integration_gate().disable(twitch()), 1);
@@ -689,6 +686,13 @@ impl ScriptHarness {
             .await
             .unwrap(),
         );
+        forge_storage::SettingsRepo::set_string(
+            backend.as_ref(),
+            forge_storage::reserved_keys::SCRIPT_TIMEOUT_MS,
+            "30000",
+        )
+        .await
+        .unwrap();
         let published = Arc::new(Mutex::new(Vec::new()));
         let mut reg = SubActionRegistry::new();
         reg.register(Box::new(ScriptRunInlineRunner::new(

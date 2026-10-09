@@ -7863,46 +7863,56 @@ mod tests {
         (handle, peer, events)
     }
 
-    const STOPS_ON_ITS_OWN_WITHIN: Duration = crate::chat::SHUTDOWN_GRACE.checked_div(2).unwrap();
+    const ABORTED_AFTER_THE_GRACE: &str = "did not stop within the grace period";
 
-    #[tokio::test]
-    async fn shutting_down_a_live_session_closes_its_socket_and_never_redials() {
-        let api = eventsub_api().await;
-        let mut base = FakeEventSub::bind().await;
-        let (handle, mut peer, _events) = live_handle(&mut base, &api).await;
+    #[test]
+    fn shutting_down_a_live_session_closes_its_socket_and_never_redials() {
+        let ((), lines) = crate::log_capture::capture_blocking(tracing::Level::WARN, async {
+            let api = eventsub_api().await;
+            let mut base = FakeEventSub::bind().await;
+            let (handle, mut peer, _events) = live_handle(&mut base, &api).await;
 
-        let stopped = tokio::time::timeout(STOPS_ON_ITS_OWN_WITHIN, handle.shutdown()).await;
+            handle.shutdown().await;
+
+            assert!(
+                peer.wait_closed_by_forge().await,
+                "shutdown must close the socket so Twitch drops the session's subscriptions"
+            );
+            assert!(
+                base.no_dial_pending(),
+                "a session that was shut down must not dial a replacement"
+            );
+        });
 
         assert!(
-            stopped.is_ok(),
+            !lines
+                .iter()
+                .any(|line| line.mentions(ABORTED_AFTER_THE_GRACE)),
             "a healthy session must end on the shutdown request instead of being aborted after \
              the grace period"
         );
-        assert!(
-            peer.wait_closed_by_forge().await,
-            "shutdown must close the socket so Twitch drops the session's subscriptions"
-        );
-        assert!(
-            base.no_dial_pending(),
-            "a session that was shut down must not dial a replacement"
-        );
     }
 
-    #[tokio::test]
-    async fn shutting_down_while_the_socket_handshake_hangs_ends_the_session() {
-        let mut hung = HeldHttpEndpoint::bind().await;
-        let (chat, bus) = chat_over(&hung.ws_url(), &hung.url);
-        let mut events = bus.subscribe();
-        let handle = chat.start();
-        hung.wait_for_a_request().await;
+    #[test]
+    fn shutting_down_while_the_socket_handshake_hangs_ends_the_session() {
+        let ((), lines) = crate::log_capture::capture_blocking(tracing::Level::WARN, async {
+            let mut hung = HeldHttpEndpoint::bind().await;
+            let (chat, bus) = chat_over(&hung.ws_url(), &hung.url);
+            let mut events = bus.subscribe();
+            let handle = chat.start();
+            hung.wait_for_a_request().await;
 
-        let stopped = tokio::time::timeout(STOPS_ON_ITS_OWN_WITHIN, handle.shutdown()).await;
+            handle.shutdown().await;
+
+            connection_states_until(&mut events, ConnectionState::Disconnected).await;
+        });
 
         assert!(
-            stopped.is_ok(),
+            !lines
+                .iter()
+                .any(|line| line.mentions(ABORTED_AFTER_THE_GRACE)),
             "a dial that never completes must not hold the session past a shutdown request"
         );
-        connection_states_until(&mut events, ConnectionState::Disconnected).await;
     }
 
     async fn next_state_jumping_backoffs(events: &mut EventStream, want: ConnectionState) {
@@ -8140,38 +8150,43 @@ mod tests {
         assert_eq!(saved.access_token.expose(), ROTATED_ACCESS_TOKEN);
     }
 
-    #[tokio::test]
-    async fn a_graceful_shutdown_reports_disconnected_exactly_once() {
-        let api = eventsub_api().await;
-        let mut base = FakeEventSub::bind().await;
-        let bus = Arc::new(RecordingBus::default());
-        let (session, state, shutdown) = session_over(
-            bus.clone(),
-            Arc::new(MockCreds::with_identity()),
-            None,
-            SubscriptionTracker::default(),
-            socket_and_api(&base.url, &api.uri()),
-        );
-        let handle = crate::chat::TwitchChatHandle::spawn(session, state, shutdown);
-        let peer = base.accept().await;
-        peer.send(welcome_frame("sess-1"));
-        bus.wait_until("the Connected report", |bus| {
-            bus.connected_and_chat_timeline()
-                .iter()
-                .any(|entry| entry == "connected")
-        })
-        .await;
+    #[test]
+    fn a_graceful_shutdown_reports_disconnected_exactly_once() {
+        let ((), lines) = crate::log_capture::capture_blocking(tracing::Level::WARN, async {
+            let api = eventsub_api().await;
+            let mut base = FakeEventSub::bind().await;
+            let bus = Arc::new(RecordingBus::default());
+            let (session, state, shutdown) = session_over(
+                bus.clone(),
+                Arc::new(MockCreds::with_identity()),
+                None,
+                SubscriptionTracker::default(),
+                socket_and_api(&base.url, &api.uri()),
+            );
+            let handle = crate::chat::TwitchChatHandle::spawn(session, state, shutdown);
+            let peer = base.accept().await;
+            peer.send(welcome_frame("sess-1"));
+            bus.wait_until("the Connected report", |bus| {
+                bus.connected_and_chat_timeline()
+                    .iter()
+                    .any(|entry| entry == "connected")
+            })
+            .await;
 
-        let stopped = tokio::time::timeout(STOPS_ON_ITS_OWN_WITHIN, handle.shutdown()).await;
+            handle.shutdown().await;
+
+            assert_eq!(
+                bus.disconnected_reports(),
+                1,
+                "a session that stops on request must report Disconnected once, not once per path"
+            );
+        });
+
         assert!(
-            stopped.is_ok(),
+            !lines
+                .iter()
+                .any(|line| line.mentions(ABORTED_AFTER_THE_GRACE)),
             "a healthy session must end on the shutdown request, not by abort"
-        );
-
-        assert_eq!(
-            bus.disconnected_reports(),
-            1,
-            "a session that stops on request must report Disconnected once, not once per path"
         );
     }
 

@@ -232,6 +232,7 @@ mod tests {
         Arc::new(ScriptHttpConfig {
             allowed_domains: domains.iter().map(|s| s.to_string()).collect(),
             allow_local: true,
+            timeout_ms: 30_000,
             ..ScriptHttpConfig::default()
         })
     }
@@ -342,6 +343,7 @@ mod tests {
             allowed_domains: vec![host],
             allow_local: true,
             max_response_bytes: 1024,
+            timeout_ms: 30_000,
             ..ScriptHttpConfig::default()
         });
         let url = format!("{server_url}/big");

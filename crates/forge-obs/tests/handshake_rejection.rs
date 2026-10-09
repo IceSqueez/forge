@@ -21,7 +21,7 @@ const PROBE_PASSWORD: &str = "obs-handshake-secret-9z8y7x";
 
 const AUTH_FAILED_KIND: &str = "obs.connection.auth_failed";
 
-const SUPERVISOR_BUDGET: Duration = Duration::from_secs(5);
+const SUPERVISOR_BUDGET: Duration = Duration::from_secs(30);
 
 async fn serve_one_close_frame(listener: TcpListener, code: u16, reason: &'static str) {
     let Ok((stream, _)) = listener.accept().await else {

@@ -15,6 +15,8 @@ use forge_tts_core::{
 use forge_types::EventId;
 use forge_voice::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAliasResolver};
 
+const HANG_GUARD_MS: u64 = 30_000;
+
 struct FakeEngine {
     id: EngineId,
 }
@@ -135,7 +137,8 @@ async fn wait_for<F>(stream: &mut forge_speak_queue::SpeakEventStream, pred: F, 
 where
     F: Fn(&SpeakEvent) -> bool,
 {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(max_ms);
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_millis(max_ms.max(HANG_GUARD_MS));
     loop {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.is_zero() {

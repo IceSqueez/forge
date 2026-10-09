@@ -559,19 +559,21 @@ mod tests {
         }
     }
 
-    async fn collect_kind(
-        sub: &mut EventSubscription,
-        target: &str,
-        attempts: usize,
-    ) -> Option<Event> {
-        for _ in 0..attempts {
-            match tokio::time::timeout(Duration::from_millis(300), sub.recv()).await {
-                Ok(Ok(ev)) if ev.kind == target => return Some(ev),
-                Ok(Ok(_)) => {}
-                _ => break,
+    const HANG_GUARD: Duration = Duration::from_secs(30);
+
+    async fn collect_kind(sub: &mut EventSubscription, target: &str) -> Option<Event> {
+        tokio::time::timeout(HANG_GUARD, async {
+            loop {
+                match sub.recv().await {
+                    Ok(ev) if ev.kind == target => return Some(ev),
+                    Ok(_) | Err(forge_events::EventsError::LaggingReceiver) => {}
+                    Err(_) => return None,
+                }
             }
-        }
-        None
+        })
+        .await
+        .ok()
+        .flatten()
     }
 
     async fn drain_no_kind(sub: &mut EventSubscription, forbidden: &str, wait_ms: u64) -> bool {
@@ -726,7 +728,7 @@ mod tests {
             json!({ "user": "alice" }),
         ));
 
-        let done = collect_kind(&mut sub, "action.done", 30).await;
+        let done = collect_kind(&mut sub, "action.done").await;
         assert!(
             done.is_some(),
             "action.done expected for matching custom event"
@@ -764,7 +766,7 @@ mod tests {
 
     async fn count_done(sub: &mut EventSubscription, wanted: usize) -> usize {
         let mut seen = 0;
-        while seen < wanted && collect_kind(sub, "action.done", 30).await.is_some() {
+        while seen < wanted && collect_kind(sub, "action.done").await.is_some() {
             seen += 1;
         }
         seen
@@ -803,7 +805,7 @@ mod tests {
         bus.publish(matching_event());
         bus.publish(matching_event());
 
-        let stopped = tokio::time::timeout(Duration::from_secs(5), handle.stop()).await;
+        let stopped = tokio::time::timeout(HANG_GUARD, handle.stop()).await;
 
         assert_eq!((stopped.is_ok(), count_done(&mut sub, 2).await), (true, 2));
     }
@@ -818,7 +820,7 @@ mod tests {
         bus.publish(matching_event());
         tokio::task::yield_now().await;
 
-        let stopped = tokio::time::timeout(Duration::from_secs(5), handle.stop()).await;
+        let stopped = tokio::time::timeout(HANG_GUARD, handle.stop()).await;
 
         assert_eq!((stopped.is_ok(), count_done(&mut sub, 1).await), (true, 1));
     }

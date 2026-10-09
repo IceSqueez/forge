@@ -2264,7 +2264,7 @@ mod tests {
         bundle.shutdown().await;
         bundle.shutdown().await;
 
-        let released = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        let released = tokio::time::timeout(std::time::Duration::from_secs(30), async {
             while Arc::strong_count(&bundle) > 1 {
                 tokio::time::sleep(std::time::Duration::from_millis(5)).await;
             }

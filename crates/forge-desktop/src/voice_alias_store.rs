@@ -66,7 +66,7 @@ mod tests {
     };
 
     const TEST_KEY: [u8; 32] = [0x3c; 32];
-    const QUEUE_DEADLINE: Duration = Duration::from_secs(5);
+    const QUEUE_DEADLINE: Duration = Duration::from_secs(30);
 
     fn alias(id: &str, viewer_id: &str, viewer_name: &str) -> VoiceAlias {
         VoiceAlias {

@@ -9,7 +9,7 @@ use forge_storage::viewer::MockViewerRepo;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
 
-const RECV_TIMEOUT: Duration = Duration::from_secs(5);
+const RECV_TIMEOUT: Duration = Duration::from_secs(30);
 
 type Recorded = (ViewerPlatform, String, String);
 

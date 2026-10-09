@@ -30,7 +30,7 @@ use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
-const DEADLINE: Duration = Duration::from_secs(5);
+const DEADLINE: Duration = Duration::from_secs(30);
 const BASE_UNIX_SECS: i64 = 1_791_115_200;
 const MINUTE: Duration = Duration::from_secs(60);
 const HOUR: Duration = Duration::from_secs(60 * 60);

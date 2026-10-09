@@ -18,7 +18,7 @@ use common::{make_deps, request, standard_registry, wait_for};
 
 const DESTINATION: &str = "stage-audio";
 const EVENT_WAIT_MS: u64 = 2_000;
-const COMMAND_WAIT: Duration = Duration::from_secs(2);
+const COMMAND_WAIT: Duration = Duration::from_secs(30);
 const SECOND_STOP_WINDOW: Duration = Duration::from_millis(100);
 
 struct SilentPage {

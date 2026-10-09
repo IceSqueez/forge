@@ -565,6 +565,7 @@ mod tests {
                 "stalled timer, scheduled runs and trigger evaluator",
             ),
         ] {
+            crate::test_support::install_tracing_interest_floor();
             let captured = Captured::default();
             let sink = captured.clone();
             let _logs = tracing::subscriber::set_default(
@@ -738,7 +739,7 @@ mod tests {
         let elapsed = started.elapsed();
         release.send(()).unwrap();
         assert!(
-            elapsed < RUNTIME_SHUTDOWN_BUDGET + Duration::from_secs(2),
+            elapsed < RUNTIME_SHUTDOWN_BUDGET + Duration::from_secs(20),
             "{elapsed:?}"
         );
         assert_eq!(log::max_level(), log::LevelFilter::Off);

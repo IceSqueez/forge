@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_donatello::{
-    DONATELLO_CREDENTIAL_ID, DonatelloConfig, DonatelloProvider, MIN_POLL_INTERVAL, PollStatus,
+    DONATELLO_CREDENTIAL_ID, DonatelloConfig, DonatelloProvider, MAX_POLL_INTERVAL, PollStatus,
 };
 use forge_platform_core::{
     DonationProvider, DonationStream, PlatformError, RateLimitOutcome, RateLimiter,
@@ -21,7 +21,7 @@ use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
 pub const TOKEN: &str = "dn-test-token-7f3a9c";
 pub const OTHER_TOKEN: &str = "dn-other-token-41be02";
-pub const WAIT: Duration = Duration::from_secs(5);
+pub const WAIT: Duration = Duration::from_secs(30);
 pub const QUIET: Duration = Duration::from_millis(50);
 
 #[derive(Default)]
@@ -131,7 +131,7 @@ impl RateLimiter for ScriptedLimiter {
 pub fn config(base_url: &str) -> DonatelloConfig {
     DonatelloConfig {
         base_url: base_url.to_owned(),
-        poll_interval: MIN_POLL_INTERVAL,
+        poll_interval: MAX_POLL_INTERVAL,
         request_timeout: WAIT,
     }
 }
@@ -343,9 +343,9 @@ impl Harness {
         let before = self.provider.poll_status().last_poll_at;
         self.flip = !self.flip;
         let interval = if self.flip {
-            MIN_POLL_INTERVAL + Duration::from_secs(1)
+            MAX_POLL_INTERVAL - Duration::from_secs(1)
         } else {
-            MIN_POLL_INTERVAL
+            MAX_POLL_INTERVAL
         };
         self.provider.set_poll_interval(interval);
         self.wait_for("next completed poll", |status| {

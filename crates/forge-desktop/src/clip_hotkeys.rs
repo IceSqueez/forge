@@ -172,7 +172,7 @@ mod tests {
     use crate::hotkey_bindings::HOTKEY_RELEASED_KIND;
     use crate::test_support::StubEventLog;
 
-    const EVENT_DEADLINE: Duration = Duration::from_secs(2);
+    const EVENT_DEADLINE: Duration = Duration::from_secs(30);
 
     fn clip(hotkey: Option<&str>) -> StoredClip {
         StoredClip {

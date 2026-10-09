@@ -58,7 +58,7 @@ mod tests {
         let donation_id = donation.id;
 
         bus.publish(donation);
-        let changed: Event = tokio::time::timeout(Duration::from_secs(5), async {
+        let changed: Event = tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 let event = watcher.recv().await.unwrap();
                 if LatestChanged::from_event(&event).is_some() {

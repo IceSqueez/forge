@@ -66,10 +66,7 @@ impl SubActionRunner for GateRunner {
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         self.running.notify_one();
-        for _ in 0..400 {
-            if ctx.cancel.is_cancelled() {
-                break;
-            }
+        while !ctx.cancel.is_cancelled() {
             tokio::time::sleep(Duration::from_millis(2)).await;
         }
         (
@@ -124,17 +121,20 @@ fn cancel_cfg(action_id: &str) -> SubActionConfig {
     c
 }
 
+const HANG_GUARD: Duration = Duration::from_secs(30);
+
 async fn await_history(dp: &Arc<dyn DataProvider>, id: ActionId) -> ExecutionOutcome {
-    let mut found = None;
-    for _ in 0..80 {
-        let recent = dp.history_repo().recent_for_action(id, 1).await.unwrap();
-        if let Some(ctx) = recent.into_iter().next() {
-            found = Some(ctx.outcome);
-            break;
+    tokio::time::timeout(HANG_GUARD, async {
+        loop {
+            let recent = dp.history_repo().recent_for_action(id, 1).await.unwrap();
+            if let Some(ctx) = recent.into_iter().next() {
+                return ctx.outcome;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
         }
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
-    found.expect("a run must record an outcome to history")
+    })
+    .await
+    .expect("a run must record an outcome to history")
 }
 
 #[tokio::test]
@@ -189,7 +189,7 @@ async fn cancel_runner_aborts_a_live_in_flight_execution() {
         .await
         .unwrap();
 
-    tokio::time::timeout(Duration::from_secs(5), running.notified())
+    tokio::time::timeout(HANG_GUARD, running.notified())
         .await
         .expect("gated action never reached its in-flight point");
 
@@ -244,9 +244,14 @@ async fn cancel_guard_deregisters_after_a_run_completes() {
         .unwrap();
 
     assert_eq!(await_history(&dp, id).await, ExecutionOutcome::Success);
-    assert_eq!(
-        cancel_registry.cancel(id),
-        0,
+    let deregistered = tokio::time::timeout(HANG_GUARD, async {
+        while cancel_registry.cancel(id) != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await;
+    assert!(
+        deregistered.is_ok(),
         "the guard must have deregistered the finished run"
     );
 }

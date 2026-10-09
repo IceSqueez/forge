@@ -17,7 +17,7 @@ const DEVICE_LOSS: &str = "output stream disconnected";
 const EXPECTED_FAILURE: &str = "cpal host error: output stream disconnected";
 const DEVICE_ERROR_REASON: &str = "device_error";
 const SPEAK_FAILED_KIND: &str = "speak.failed";
-const SETTLE_BUDGET: Duration = Duration::from_secs(5);
+const SETTLE_BUDGET: Duration = Duration::from_secs(30);
 const STAYS_QUIET_MS: u64 = 50;
 
 struct DyingSink {

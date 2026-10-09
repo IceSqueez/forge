@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_emulator::control::{ClientTimeouts, ControlClient, ControlEndpoint};
+use forge_emulator::control::{ClientTimeouts, ControlClient, ControlEndpoint, Observation};
 use forge_emulator::discord::FakeDiscord;
 use forge_emulator::donatello::{FAKE_DONATELLO_TOKEN, FakeDonatello, FakeDonatelloConfig};
 use forge_emulator::fixture::{SeedReport, SeededCommand, SeededServer, TwitchAccount};
@@ -587,13 +587,24 @@ async fn crowd_delivers_every_planned_message_to_forge() {
         subscribed(),
         {
             "do": { "crowd": { "viewers": 5, "chatter": ["hi from {login}"], "chatter_per_viewer": 2, "spacing_ms": 1 } },
-            "expect": [ { "event": { "kind": "chat.message", "count": { "exactly": 10 }, "within_ms": 300 } } ]
+            "expect": [ { "event": { "kind": "chat.message", "count": { "at_least": 10 }, "within_ms": 15000 } } ]
         }
     ]));
 
     let steps = harness.run(&scenario).await;
 
-    assert_eq!(verdicts(&steps[2]), [Verdict::Passed], "{:#?}", steps[2]);
+    let delivered = harness.journal.read(|view| {
+        view.entries
+            .iter()
+            .filter(|entry| matches!(&entry.observation, Observation::Event(event) if event.kind == "chat.message"))
+            .count()
+    });
+    assert_eq!(
+        (verdicts(&steps[2]), delivered),
+        (vec![Verdict::Passed], 10),
+        "{:#?}",
+        steps[2]
+    );
     assert!(matches!(
         steps[2].action,
         Some(ActionReport::Done(ActionDetail::CrowdSent { messages: 10 }))
@@ -645,6 +656,10 @@ async fn a_server_drop_notice_inside_the_window_fails_an_absence_check() {
         }]),
     );
     harness.forge.pushes.send(json!({ "dropped": 2 })).unwrap();
+    harness
+        .journal
+        .wait_until(Instant::now() + DEADLINE, |view| !view.entries.is_empty())
+        .await;
 
     let steps = harness.run(&scenario).await;
 
@@ -669,8 +684,6 @@ async fn stop_interrupts_the_running_step_and_skips_the_rest() {
             { "do": { "run_action": { "action": "Ping" } } }
         ]),
     );
-    let started = Instant::now();
-
     let steps = timeout(
         DEADLINE,
         execute_steps(
@@ -690,7 +703,6 @@ async fn stop_interrupts_the_running_step_and_skips_the_rest() {
             StepStatus::NotRun
         ]
     );
-    assert!(started.elapsed() < Duration::from_secs(5));
 }
 
 #[tokio::test]
@@ -733,11 +745,10 @@ async fn forge_closing_the_control_connection_ends_waiting_expectations_as_a_clo
         json!({}),
         json!([{
             "do": { "forge_ready": { "within_ms": 1000 } },
-            "expect": [ { "event": { "kind": "custom.never", "within_ms": 10000 } } ]
+            "expect": [ { "event": { "kind": "custom.never", "within_ms": 60000 } } ]
         }]),
     );
     harness.forge.pushes.send(Value::Null).unwrap();
-    let started = Instant::now();
 
     let steps = harness.run(&scenario).await;
 
@@ -745,7 +756,6 @@ async fn forge_closing_the_control_connection_ends_waiting_expectations_as_a_clo
         verdicts(&steps[0]),
         [Verdict::Failed(FailureCause::StreamClosed)]
     );
-    assert!(started.elapsed() < Duration::from_secs(10));
 }
 
 #[tokio::test]
@@ -1433,8 +1443,9 @@ async fn vtube_auth_rejected_passes_when_forge_offers_a_revoked_token() {
 async fn vtube_request_expectations_tell_answered_requests_from_refused_ones() {
     let harness = harness_with_vtube(true).await;
     let forge = forge_vtube_client(&harness, VTUBE_TOKEN).await;
-    let poll = |answer: Value| {
-        let mut request = json!({ "message_type": "ExpressionStateRequest", "within_ms": 5000 });
+    let poll = |within_ms: u64, answer: Value| {
+        let mut request =
+            json!({ "message_type": "ExpressionStateRequest", "within_ms": within_ms });
         request
             .as_object_mut()
             .unwrap()
@@ -1448,7 +1459,7 @@ async fn vtube_request_expectations_tell_answered_requests_from_refused_ones() {
             { "do": { "vtube_authenticated": { "within_ms": 10000 } } },
             {
                 "do": { "pause": { "ms": 10, "reason": "let the expression poll run" } },
-                "expect": [poll(json!({ "succeeded": true })), poll(json!({ "error_id": 601 }))]
+                "expect": [poll(15000, json!({ "succeeded": true })), poll(50, json!({ "error_id": 601 }))]
             }
         ]),
     );

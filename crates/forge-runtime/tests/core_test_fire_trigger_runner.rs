@@ -149,26 +149,25 @@ async fn run_outcome(runner: &dyn SubActionRunner, config: &SubActionConfig) -> 
     telemetry.outcome
 }
 
-async fn await_action_done(
-    sub: &mut EventSubscription,
-    action_id: ActionId,
-    attempts: usize,
-) -> bool {
+async fn await_action_done(sub: &mut EventSubscription, action_id: ActionId) -> bool {
     let target = action_id.to_string();
-    for _ in 0..attempts {
-        match tokio::time::timeout(Duration::from_millis(200), sub.recv()).await {
-            Ok(Ok(ev))
-                if ev.kind == "action.done"
-                    && ev.payload.get("action_id").and_then(|v| v.as_str())
-                        == Some(target.as_str()) =>
-            {
-                return true;
+    tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            match sub.recv().await {
+                Ok(ev)
+                    if ev.kind == "action.done"
+                        && ev.payload.get("action_id").and_then(|v| v.as_str())
+                            == Some(target.as_str()) =>
+                {
+                    return true;
+                }
+                Ok(_) | Err(forge_events::EventsError::LaggingReceiver) => {}
+                Err(_) => return false,
             }
-            Ok(Ok(_)) => {}
-            _ => {}
         }
-    }
-    false
+    })
+    .await
+    .unwrap_or(false)
 }
 
 fn fire_runner(h: &Harness) -> CoreTestFireTriggerRunner {
@@ -209,7 +208,7 @@ async fn fired_trigger_runs_the_chain_of_its_one_bound_enabled_action() {
 
     assert!(matches!(outcome, SubActionOutcome::Success));
     assert!(
-        await_action_done(&mut sub, a_id, 20).await,
+        await_action_done(&mut sub, a_id).await,
         "firing the instance must run the bound enabled action's chain to completion"
     );
     h.handle.shutdown();
@@ -245,7 +244,7 @@ async fn override_outputs_reach_the_fired_actions_execution_context() {
     assert!(matches!(outcome, SubActionOutcome::Success));
 
     assert!(
-        await_action_done(&mut sub, a_id, 20).await,
+        await_action_done(&mut sub, a_id).await,
         "the bound action must complete before its global is read"
     );
     let captured = h.globals.get("captured").await.unwrap();
@@ -364,7 +363,7 @@ async fn instance_with_no_bound_actions_succeeds_and_dispatches_nothing() {
         .await
         .unwrap();
     assert!(
-        await_action_done(&mut sub, barrier, 30).await,
+        await_action_done(&mut sub, barrier).await,
         "barrier must complete so the FIFO queue is fully drained"
     );
 
@@ -424,7 +423,7 @@ async fn fired_trigger_dispatches_disabled_action_but_engine_skips_it() {
         .await
         .unwrap();
     assert!(
-        await_action_done(&mut sub, barrier, 30).await,
+        await_action_done(&mut sub, barrier).await,
         "barrier must complete so the disabled action is known to have been processed"
     );
 

@@ -1098,7 +1098,7 @@ mod tests {
 
         assert_eq!(*play_count.lock().unwrap(), 1, "sink must be called once");
 
-        let deadline = std::time::Instant::now() + Duration::from_millis(2_000);
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
         while events.lock().unwrap().len() < 2 && std::time::Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
@@ -1580,7 +1580,7 @@ mod tests {
         );
     }
 
-    const EVENT_DEADLINE: Duration = Duration::from_secs(2);
+    const EVENT_DEADLINE: Duration = Duration::from_secs(30);
     const EVENT_POLL: Duration = Duration::from_millis(5);
     const ONE_SECOND_OF_FRAMES: usize = 22_050;
     const SHORT_CLIP_FRAMES: usize = 100;

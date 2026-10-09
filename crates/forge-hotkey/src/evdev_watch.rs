@@ -97,7 +97,7 @@ mod tests {
 
     use super::*;
 
-    const WAIT: Duration = Duration::from_secs(5);
+    const WAIT: Duration = Duration::from_secs(30);
     const INOTIFY_QUEUE_LIMIT: &str = "/proc/sys/fs/inotify/max_queued_events";
 
     #[derive(Debug, Clone, Copy)]

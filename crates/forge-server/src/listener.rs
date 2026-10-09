@@ -251,7 +251,7 @@ mod tests {
     };
     use crate::server::tests::elapse;
 
-    const BYTE_BUDGET: Duration = Duration::from_secs(5);
+    const BYTE_BUDGET: Duration = Duration::from_secs(30);
     const MARGIN: Duration = Duration::from_secs(1);
     const SETTLE_YIELDS: usize = 8;
 

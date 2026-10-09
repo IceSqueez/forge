@@ -727,6 +727,13 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Instant;
 
+    fn unhurried() -> EngineConfig {
+        EngineConfig {
+            wall_time_ms: 30_000,
+            ..EngineConfig::default()
+        }
+    }
+
     struct CapturingPublisher(Arc<Mutex<Vec<Event>>>);
 
     impl EventPublisher for CapturingPublisher {
@@ -748,7 +755,7 @@ mod tests {
             Arc::new(CapturingPublisher(captured)),
             dp.clone() as Arc<dyn GlobalsRepo>,
             caused_by,
-            Instant::now() + std::time::Duration::from_secs(10),
+            Instant::now() + std::time::Duration::from_secs(30),
         );
         (api, caused_by)
     }
@@ -758,7 +765,7 @@ mod tests {
         let dp = open_dp().await;
         let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
         let (api, caused_by) = make_api_with_publisher(Arc::clone(&dp), Arc::clone(&captured));
-        let engine = Engine::with_api(EngineConfig::default(), api);
+        let engine = Engine::with_api(unhurried(), api);
 
         tokio::task::spawn_blocking(move || {
             let _ = engine
@@ -789,7 +796,7 @@ mod tests {
 
         let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
         let (api, caused_by) = make_api_with_publisher(Arc::clone(&dp), Arc::clone(&captured));
-        let engine = Engine::with_api(EngineConfig::default(), api);
+        let engine = Engine::with_api(unhurried(), api);
 
         tokio::task::spawn_blocking(move || {
             let _ = engine
@@ -823,7 +830,7 @@ mod tests {
 
         let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
         let (api, caused_by) = make_api_with_publisher(Arc::clone(&dp), Arc::clone(&captured));
-        let engine = Engine::with_api(EngineConfig::default(), api);
+        let engine = Engine::with_api(unhurried(), api);
 
         tokio::task::spawn_blocking(move || {
             let _ = engine
@@ -854,10 +861,10 @@ mod tests {
             Arc::new(CapturingPublisher(captured)),
             dp.clone() as Arc<dyn GlobalsRepo>,
             caused_by,
-            Instant::now() + std::time::Duration::from_secs(10),
+            Instant::now() + std::time::Duration::from_secs(30),
         )
         .with_http(http_client);
-        Engine::with_api(EngineConfig::default(), api)
+        Engine::with_api(unhurried(), api)
     }
 
     #[tokio::test]
@@ -972,10 +979,10 @@ mod tests {
                 Arc::new(CapturingPublisher(Arc::clone(&captured))),
                 dp.clone() as Arc<dyn GlobalsRepo>,
                 caused_by,
-                Instant::now() + std::time::Duration::from_secs(10),
+                Instant::now() + std::time::Duration::from_secs(30),
             )
             .with_script_id(script_id);
-            let engine = Engine::with_api(EngineConfig::default(), api);
+            let engine = Engine::with_api(unhurried(), api);
 
             tokio::task::spawn_blocking(move || {
                 let _ = engine.eval_script(call).unwrap();
@@ -1015,10 +1022,10 @@ mod tests {
             Arc::new(CapturingPublisher(captured)),
             dp.clone() as Arc<dyn GlobalsRepo>,
             caused_by,
-            Instant::now() + std::time::Duration::from_secs(10),
+            Instant::now() + std::time::Duration::from_secs(30),
         );
         let counter = api.error_count_handle();
-        let engine = Engine::with_api(EngineConfig::default(), api);
+        let engine = Engine::with_api(unhurried(), api);
 
         tokio::task::spawn_blocking(move || {
             let _ = engine
@@ -1042,7 +1049,7 @@ mod tests {
         let dp = open_dp().await;
         let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
         let (api, _caused_by) = make_api_with_publisher(Arc::clone(&dp), Arc::clone(&captured));
-        let engine = Engine::with_api(EngineConfig::default(), api);
+        let engine = Engine::with_api(unhurried(), api);
 
         tokio::task::spawn_blocking(move || {
             let _ = engine.eval_script(r#"forge::log("x")"#).unwrap();
@@ -1132,7 +1139,7 @@ mod tests {
             let dp = open_dp().await;
             let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
             let (api, caused_by) = make_api_with_publisher(Arc::clone(&dp), Arc::clone(&captured));
-            let engine = Engine::with_api(EngineConfig::default(), api);
+            let engine = Engine::with_api(unhurried(), api);
 
             tokio::task::spawn_blocking(move || {
                 let _ = engine.eval_script(call).unwrap();
@@ -1194,7 +1201,7 @@ mod tests {
             let dp = open_dp().await;
             let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
             let (api, caused_by) = make_api_with_publisher(Arc::clone(&dp), Arc::clone(&captured));
-            let engine = Engine::with_api(EngineConfig::default(), api);
+            let engine = Engine::with_api(unhurried(), api);
 
             tokio::task::spawn_blocking(move || {
                 let _ = engine.eval_script(call).unwrap();
@@ -1262,7 +1269,7 @@ mod tests {
         let dp = open_dp().await;
         let (api, _) = make_api_with_publisher(Arc::clone(&dp), captured);
         let api = api.with_integration_availability(Arc::new(availability));
-        (Engine::with_api(EngineConfig::default(), api), dp)
+        (Engine::with_api(unhurried(), api), dp)
     }
 
     fn sent_requests(captured: &Mutex<Vec<Event>>) -> usize {
@@ -1584,7 +1591,7 @@ mod tests {
         let dp = open_dp().await;
         let (api, _) = make_api_with_publisher(Arc::clone(&dp), Arc::new(Mutex::new(Vec::new())));
         let engine = Engine::with_api(
-            EngineConfig::default(),
+            unhurried(),
             api.with_latest_values(reader as Arc<dyn LatestValueReader>),
         );
         tokio::task::spawn_blocking(move || engine.eval_script(script).unwrap())
@@ -1674,7 +1681,7 @@ mod tests {
         let dp = open_dp().await;
         let (api, _) = make_api_with_publisher(Arc::clone(&dp), Arc::new(Mutex::new(Vec::new())));
         let engine = Engine::with_api(
-            EngineConfig::default(),
+            unhurried(),
             api.with_speak_requester(Arc::clone(&requester) as Arc<dyn SpeakRequester>),
         );
         let result = tokio::task::spawn_blocking(move || engine.eval_script(script))

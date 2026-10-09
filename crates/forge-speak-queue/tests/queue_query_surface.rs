@@ -10,8 +10,11 @@ use common::{make_deps, recording_sink, request, standard_registry, wait_for};
 use forge_tts_core::EngineId;
 use forge_voice::{AssignmentStrategy, SynthesisDefaults};
 
+const HANG_GUARD_MS: u64 = 30_000;
+
 async fn wait_until_depth(handle: &SpeakQueueHandle, expected: usize, max_ms: u64) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(max_ms);
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_millis(max_ms.max(HANG_GUARD_MS));
     while handle.queue_depth() != expected {
         if std::time::Instant::now() >= deadline {
             panic!(
@@ -24,7 +27,8 @@ async fn wait_until_depth(handle: &SpeakQueueHandle, expected: usize, max_ms: u6
 }
 
 async fn wait_until_catalog_populated(handle: &SpeakQueueHandle, max_ms: u64) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(max_ms);
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_millis(max_ms.max(HANG_GUARD_MS));
     while handle.available_voices().is_empty() {
         if std::time::Instant::now() >= deadline {
             panic!("catalog never populated");

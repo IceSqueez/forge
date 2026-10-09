@@ -248,7 +248,7 @@ fn forge_client(url: &str) -> Arc<DiscordClient> {
     };
     DiscordClient::new(
         DiscordConfig {
-            request_timeout: Duration::from_secs(5),
+            request_timeout: Duration::from_secs(30),
         },
         Arc::new(SilentPublisher),
         Arc::new(creds),

@@ -67,10 +67,14 @@ mod tests {
 
     const PROBE_PASSWORD: &str = "obs-probe-secret-1a2b3c";
 
-    async fn closed_loopback_port() -> u16 {
+    async fn refusing_loopback_port() -> u16 {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
-        drop(listener);
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                drop(stream);
+            }
+        });
         port
     }
 
@@ -82,8 +86,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn probe_of_a_port_nothing_listens_on_reports_a_connect_failure() {
-        let port = closed_loopback_port().await;
+    async fn probe_of_a_port_that_drops_every_connection_reports_a_connect_failure() {
+        let port = refusing_loopback_port().await;
         let error = probe_error(port, "").await;
         assert!(
             matches!(error, ObsError::Connect(_)),
@@ -93,7 +97,7 @@ mod tests {
 
     #[tokio::test]
     async fn probe_failure_never_carries_the_password_into_its_error_text() {
-        let port = closed_loopback_port().await;
+        let port = refusing_loopback_port().await;
         let error = probe_error(port, PROBE_PASSWORD).await;
         assert!(
             !format!("{error}").contains(PROBE_PASSWORD),

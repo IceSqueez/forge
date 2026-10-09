@@ -229,7 +229,12 @@ mod tests {
     use forge_types::EventId;
 
     async fn make_backend() -> Sandboxed<Arc<SqliteBackend>> {
-        sandboxed_backend([0xab; 32]).await.map(Arc::new)
+        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
+        backend
+            .set_string(forge_storage::reserved_keys::SCRIPT_TIMEOUT_MS, "30000")
+            .await
+            .unwrap();
+        backend
     }
 
     #[tokio::test]

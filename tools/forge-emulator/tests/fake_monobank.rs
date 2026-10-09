@@ -21,7 +21,7 @@ use futures_util::StreamExt;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 
-const WAIT: Duration = Duration::from_secs(5);
+const WAIT: Duration = Duration::from_secs(30);
 const JAR: &str = "fakeJar001";
 const OTHER_JAR: &str = "fakeJar002";
 const T0: i64 = 1_790_000_000;

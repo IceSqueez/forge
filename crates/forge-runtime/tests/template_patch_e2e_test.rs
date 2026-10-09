@@ -136,15 +136,19 @@ fn build_core_registries(
     (Arc::new(sub_reg), Arc::new(trig_reg))
 }
 
-async fn collect_kind(sub: &mut EventSubscription, target: &str, attempts: usize) -> Option<Event> {
-    for _ in 0..attempts {
-        match tokio::time::timeout(Duration::from_millis(300), sub.recv()).await {
-            Ok(Ok(ev)) if ev.kind == target => return Some(ev),
-            Ok(Ok(_)) => {}
-            _ => break,
+async fn collect_kind(sub: &mut EventSubscription, target: &str) -> Option<Event> {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            match sub.recv().await {
+                Ok(ev) if ev.kind == target => return Some(ev),
+                Ok(_) | Err(forge_events::EventsError::LaggingReceiver) => {}
+                Err(_) => return None,
+            }
         }
-    }
-    None
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 async fn drain_no_kind(sub: &mut EventSubscription, forbidden: &str, wait_ms: u64) -> bool {
@@ -290,7 +294,7 @@ async fn trigger_evaluator_applies_effective_config_overrides() {
         json!({}),
     ));
 
-    let done = collect_kind(&mut sub, "action.done", 30).await;
+    let done = collect_kind(&mut sub, "action.done").await;
     assert!(
         done.is_some(),
         "action.done must fire: effective_config must carry the premium_event override \
@@ -398,7 +402,7 @@ async fn sub_action_runner_sees_merged_default_and_override() {
 
     bus.publish(Event::new(EventSource::Server, "custom.go", json!({})));
 
-    let done = collect_kind(&mut sub, "action.done", 30).await;
+    let done = collect_kind(&mut sub, "action.done").await;
     assert!(
         done.is_some(),
         "action.done must fire when custom.go is published and the instance is linked"

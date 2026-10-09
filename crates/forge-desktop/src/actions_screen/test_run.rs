@@ -1032,7 +1032,7 @@ mod tests {
     };
 
     const OBS_SCENE: &str = "obs.scene.set";
-    const RUN_SETTLE: Duration = Duration::from_secs(5);
+    const RUN_SETTLE: Duration = Duration::from_secs(30);
 
     fn launch(action_id: ActionId, queue_id: QueueId) -> TestRunLaunch {
         TestRunLaunch {

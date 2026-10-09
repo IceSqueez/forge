@@ -135,6 +135,24 @@ async fn collect_events(
     events
 }
 
+async fn admissions(stream: &mut forge_speak_queue::SpeakEventStream, n: usize) -> Vec<SpeakEvent> {
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        let mut admitted = Vec::new();
+        while admitted.len() < n {
+            match stream.recv().await {
+                Ok(ev @ (SpeakEvent::Enqueued { .. } | SpeakEvent::Rejected { .. })) => {
+                    admitted.push(ev);
+                }
+                Ok(_) => {}
+                Err(e) => panic!("speak event stream failed: {e:?}"),
+            }
+        }
+        admitted
+    })
+    .await
+    .expect("every request must be enqueued or rejected")
+}
+
 #[tokio::test]
 async fn sixth_request_rejected_when_limit_is_five() {
     let config = QueueConfig {
@@ -163,7 +181,7 @@ async fn sixth_request_rejected_when_limit_is_five() {
         .await
         .unwrap();
 
-    let events = collect_events(&mut stream, 15, 1_000).await;
+    let events = admissions(&mut stream, 6).await;
     let rejected_count = events
         .iter()
         .filter(|e| matches!(e, SpeakEvent::Rejected { .. }))
@@ -195,7 +213,7 @@ async fn different_viewers_are_tracked_independently() {
         }
     }
 
-    let events = collect_events(&mut stream, 10, 500).await;
+    let events = admissions(&mut stream, 4).await;
     let rejected_count = events
         .iter()
         .filter(|e| matches!(e, SpeakEvent::Rejected { .. }))

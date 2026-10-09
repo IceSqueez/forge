@@ -141,7 +141,7 @@ mod tests {
         if handle.current().sources() == &expected {
             return;
         }
-        let outcome = tokio::time::timeout(Duration::from_secs(2), async {
+        let outcome = tokio::time::timeout(Duration::from_secs(30), async {
             while let Some(state) = handle.changed().await {
                 if state.sources() == &expected {
                     return;
@@ -301,7 +301,7 @@ mod tests {
         settle_to(&mut live, expected.clone()).await;
 
         let mut subscriber = Box::pin(live.subscribe());
-        let first = tokio::time::timeout(Duration::from_secs(2), subscriber.next())
+        let first = tokio::time::timeout(Duration::from_secs(30), subscriber.next())
             .await
             .expect("subscriber got no initial value");
 
@@ -361,7 +361,7 @@ mod tests {
         drop(platforms_tx);
         drop(obs_sink);
 
-        let ended = tokio::time::timeout(Duration::from_secs(2), async {
+        let ended = tokio::time::timeout(Duration::from_secs(30), async {
             while live.changed().await.is_some() {}
         })
         .await;

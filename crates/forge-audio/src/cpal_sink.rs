@@ -415,8 +415,8 @@ fn ends_playback(kind: cpal::ErrorKind) -> bool {
 mod tests {
     use super::*;
 
-    const LONG_CLIP_MS: u64 = 10_000;
-    const EARLY_EXIT_BUDGET: Duration = Duration::from_secs(2);
+    const LONG_CLIP_MS: u64 = 600_000;
+    const EARLY_EXIT_BUDGET: Duration = Duration::from_secs(30);
 
     #[test]
     fn a_stream_error_ends_playback_only_when_the_device_can_no_longer_play() {

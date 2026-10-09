@@ -111,9 +111,13 @@ mod tests {
     }
 
     fn capture(emit: impl FnOnce()) -> Vec<LogLine> {
+        crate::test_support::install_tracing_interest_floor();
         let tail = LogTail::new();
         let subscriber = tracing_subscriber::registry().with(tail.layer());
-        tracing::subscriber::with_default(subscriber, emit);
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::callsite::rebuild_interest_cache();
+            emit();
+        });
         tail.snapshot()
     }
 

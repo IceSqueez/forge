@@ -408,7 +408,7 @@ mod tests {
     };
     use crate::request::REQUEST_TIMEOUT;
 
-    const SETTLE: Duration = Duration::from_secs(5);
+    const SETTLE: Duration = Duration::from_secs(30);
     const DEADLINE_MARGIN: Duration = Duration::from_secs(1);
     const EARLY_WINDOW: Duration = Duration::from_millis(50);
     const REJECTION_ERROR_ID: i64 = 452;

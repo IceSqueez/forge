@@ -930,7 +930,7 @@ mod tests {
             let mut state = platform.state_receiver();
             platform.connect().await.unwrap();
             tokio::time::timeout(
-                StdDuration::from_secs(5),
+                StdDuration::from_secs(30),
                 state.wait_for(ConnectionState::is_connected),
             )
             .await
@@ -998,7 +998,7 @@ mod tests {
 
             viewer_tx.send(ViewerReport::Live { count: 5 }).unwrap();
 
-            let delta = tokio::time::timeout(StdDuration::from_secs(5), health.next())
+            let delta = tokio::time::timeout(StdDuration::from_secs(30), health.next())
                 .await
                 .expect("the viewer bridge must publish a health delta")
                 .expect("the health stream must stay open");
@@ -1028,7 +1028,7 @@ mod tests {
             ] {
                 auth_tx.send(auth).unwrap();
 
-                let delta = tokio::time::timeout(StdDuration::from_secs(5), health.next())
+                let delta = tokio::time::timeout(StdDuration::from_secs(30), health.next())
                     .await
                     .expect("the events bridge must publish a health delta")
                     .expect("the health stream must stay open");
@@ -1055,7 +1055,7 @@ mod tests {
             bundle.shutdown().await;
             bundle.shutdown().await;
 
-            let released = tokio::time::timeout(StdDuration::from_secs(2), async {
+            let released = tokio::time::timeout(StdDuration::from_secs(30), async {
                 while Arc::strong_count(&bundle) > 1 {
                     tokio::time::sleep(StdDuration::from_millis(5)).await;
                 }

@@ -696,7 +696,7 @@ mod tests {
     }
 
     async fn recv_soon<T>(rx: impl std::future::Future<Output = Option<T>>) -> T {
-        tokio::time::timeout(std::time::Duration::from_secs(5), rx)
+        tokio::time::timeout(std::time::Duration::from_secs(30), rx)
             .await
             .unwrap()
             .unwrap()

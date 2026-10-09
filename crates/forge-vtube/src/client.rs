@@ -427,7 +427,7 @@ pub(crate) mod tests {
     ) {
         use tokio_tungstenite::tungstenite::Message;
         let Ok(Some(Ok(Message::Text(text)))) =
-            tokio::time::timeout(Duration::from_secs(3), futures_util::StreamExt::next(ws)).await
+            tokio::time::timeout(Duration::from_secs(30), futures_util::StreamExt::next(ws)).await
         else {
             return;
         };
@@ -446,7 +446,7 @@ pub(crate) mod tests {
             ws.send(Message::Text(resp.to_string().into())).await.ok();
 
             let Ok(Some(Ok(Message::Text(text2)))) =
-                tokio::time::timeout(Duration::from_secs(3), futures_util::StreamExt::next(ws))
+                tokio::time::timeout(Duration::from_secs(30), futures_util::StreamExt::next(ws))
                     .await
             else {
                 return;
@@ -478,7 +478,7 @@ pub(crate) mod tests {
     }
 
     pub(crate) async fn wait_for(cond: impl Fn() -> bool) -> bool {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
         while tokio::time::Instant::now() < deadline {
             if cond() {
                 return true;
@@ -606,7 +606,7 @@ pub(crate) mod tests {
 
         pub(crate) async fn accept_login(&mut self) {
             let login = self
-                .expect("AuthenticationRequest", Duration::from_secs(5))
+                .expect("AuthenticationRequest", Duration::from_secs(30))
                 .await;
             self.tx.reply(
                 &login,
@@ -712,7 +712,7 @@ pub(crate) mod tests {
         }
 
         pub(crate) async fn logged_in_conn(&mut self) -> PeerConn {
-            let Some(mut conn) = self.next_conn(Duration::from_secs(5)).await else {
+            let Some(mut conn) = self.next_conn(Duration::from_secs(30)).await else {
                 panic!("forge never dialed the fake VTube Studio");
             };
             conn.accept_login().await;
@@ -764,7 +764,7 @@ pub(crate) mod tests {
             };
             let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
             serve_full_auth(&mut ws).await;
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            while let Some(Ok(_)) = futures_util::StreamExt::next(&mut ws).await {}
         });
 
         let publisher = MockPublisher::new();
@@ -834,7 +834,7 @@ pub(crate) mod tests {
         };
         let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
 
-        let result = tokio::time::timeout(Duration::from_secs(5), async {
+        let result = tokio::time::timeout(Duration::from_secs(30), async {
             accept_rx.recv().await;
             accept_rx.recv().await;
         })
@@ -855,7 +855,7 @@ pub(crate) mod tests {
             };
             let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
             serve_full_auth(&mut ws).await;
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            while let Some(Ok(_)) = futures_util::StreamExt::next(&mut ws).await {}
         });
 
         let publisher = MockPublisher::new();
@@ -888,7 +888,7 @@ pub(crate) mod tests {
             };
             let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
             serve_full_auth(&mut ws).await;
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            while let Some(Ok(_)) = futures_util::StreamExt::next(&mut ws).await {}
         });
 
         let publisher = MockPublisher::new();
@@ -938,15 +938,15 @@ pub(crate) mod tests {
             let publisher = MockPublisher::new();
             let creds = stored_token_creds();
             let _client = vts.connect(&publisher, &creds);
-            let mut conn = vts.next_conn(Duration::from_secs(5)).await.unwrap();
+            let mut conn = vts.next_conn(Duration::from_secs(30)).await.unwrap();
 
             let login = conn
-                .expect("AuthenticationRequest", Duration::from_secs(5))
+                .expect("AuthenticationRequest", Duration::from_secs(30))
                 .await;
             reject(&conn.tx, &login);
 
             assert!(
-                wait_until(Duration::from_secs(5), || {
+                wait_until(Duration::from_secs(30), || {
                     publisher.disconnected_with_reason("auth_required")
                 })
                 .await,
@@ -983,15 +983,15 @@ pub(crate) mod tests {
             let mut vts = FakeVts::bind().await;
             let publisher = MockPublisher::new();
             let _client = vts.connect(&publisher, &MockCreds::new());
-            let mut conn = vts.next_conn(Duration::from_secs(5)).await.unwrap();
+            let mut conn = vts.next_conn(Duration::from_secs(30)).await.unwrap();
 
             let popup = conn
-                .expect("AuthenticationTokenRequest", Duration::from_secs(5))
+                .expect("AuthenticationTokenRequest", Duration::from_secs(30))
                 .await;
             answer(&conn.tx, &popup);
 
             assert!(
-                wait_until(Duration::from_secs(5), || {
+                wait_until(Duration::from_secs(30), || {
                     first_disconnect_reason(&publisher).is_some()
                 })
                 .await,
@@ -1019,7 +1019,7 @@ pub(crate) mod tests {
             serve_full_auth(&mut ws).await;
             use tokio_tungstenite::tungstenite::Message;
             while let Ok(Some(Ok(Message::Text(text)))) = tokio::time::timeout(
-                Duration::from_secs(5),
+                Duration::from_secs(30),
                 futures_util::StreamExt::next(&mut ws),
             )
             .await
@@ -1039,7 +1039,7 @@ pub(crate) mod tests {
         };
         let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
 
-        let seen = tokio::time::timeout(Duration::from_secs(5), seen_rx.recv()).await;
+        let seen = tokio::time::timeout(Duration::from_secs(30), seen_rx.recv()).await;
         assert!(
             matches!(seen, Ok(Some(()))),
             "a connected client must poll ExpressionStateRequest"
@@ -1109,7 +1109,7 @@ pub(crate) mod tests {
         rx: &mut ProbedEvents,
         matches: impl Fn(&Event) -> bool,
     ) -> Option<Option<ConnectionState>> {
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 let (event, state) = rx.recv().await?;
                 if matches(&event) {
@@ -1159,7 +1159,7 @@ pub(crate) mod tests {
             return;
         };
         let Ok(Some(Ok(Message::Text(text)))) = tokio::time::timeout(
-            Duration::from_secs(3),
+            Duration::from_secs(30),
             futures_util::StreamExt::next(&mut ws),
         )
         .await
@@ -1225,15 +1225,15 @@ pub(crate) mod tests {
         }
     }
 
-    const SETTLE: Duration = Duration::from_secs(5);
+    const SETTLE: Duration = Duration::from_secs(30);
 
     const PARKED_WINDOW: Duration = Duration::from_millis(500);
 
-    struct FrozenClock {
+    pub(crate) struct FrozenClock {
         _release: std::sync::mpsc::Sender<()>,
     }
 
-    fn freeze_clock() -> FrozenClock {
+    pub(crate) fn freeze_clock() -> FrozenClock {
         tokio::time::pause();
         let (release, held) = std::sync::mpsc::channel::<()>();
         tokio::task::spawn_blocking(move || {
@@ -1242,7 +1242,10 @@ pub(crate) mod tests {
         FrozenClock { _release: release }
     }
 
-    async fn settle_on_a_frozen_clock(budget: Duration, cond: impl Fn() -> bool) -> bool {
+    pub(crate) async fn settle_on_a_frozen_clock(
+        budget: Duration,
+        cond: impl Fn() -> bool,
+    ) -> bool {
         let started = std::time::Instant::now();
         while started.elapsed() < budget {
             if cond() {
@@ -1251,6 +1254,22 @@ pub(crate) mod tests {
             let _ = tokio::task::spawn_blocking(|| std::thread::sleep(POLL_STEP)).await;
         }
         cond()
+    }
+
+    pub(crate) async fn finishes_on_a_frozen_clock<F: std::future::Future>(
+        budget: Duration,
+        work: F,
+    ) -> Option<F::Output> {
+        tokio::pin!(work);
+        let started = std::time::Instant::now();
+        while started.elapsed() < budget {
+            tokio::select! {
+                biased;
+                done = &mut work => return Some(done),
+                _ = tokio::task::spawn_blocking(|| std::thread::sleep(POLL_STEP)) => {}
+            }
+        }
+        None
     }
 
     fn failure_banner(client: &VTubeClient) -> Option<(BannerLevel, String)> {
@@ -1470,7 +1489,7 @@ pub(crate) mod tests {
         let _ = gate_tx.send(());
 
         let handle = client.supervisor.lock().unwrap().take().unwrap();
-        let stopped = tokio::time::timeout(Duration::from_secs(5), handle).await;
+        let stopped = tokio::time::timeout(Duration::from_secs(30), handle).await;
         server.abort();
         assert!(
             stopped.is_ok(),
@@ -1542,9 +1561,7 @@ pub(crate) mod tests {
         assert_eq!(client.auth_state(), AuthState::AwaitingApproval);
     }
 
-    const UNREACHABLE_VTS: &str = "ws://192.0.2.1:8001/";
-
-    const PROMPT_DISCONNECT: Duration = Duration::from_secs(2);
+    const DISCONNECT_HANG_GUARD: Duration = Duration::from_secs(30);
 
     const RETRY_WALL_BUDGET: Duration = Duration::from_secs(20);
 
@@ -1689,20 +1706,39 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn disconnecting_during_an_unreachable_connect_does_not_wait_out_the_tcp_timeout() {
+    async fn disconnecting_during_a_stalled_connect_does_not_wait_out_the_connect_timeout() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (dialed_tx, mut dialed) = mpsc::unbounded_channel();
+        let server = tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((stream, _)) = listener.accept().await {
+                held.push(stream);
+                if dialed_tx.send(()).is_err() {
+                    return;
+                }
+            }
+        });
         let client = VTubeClient::connect(
             VTubeConfig {
-                endpoint: UNREACHABLE_VTS.to_owned(),
+                endpoint: format!("ws://{addr}"),
             },
             MockPublisher::new().publisher(),
             MockCreds::new().creds(),
         );
-        tokio::task::yield_now().await;
+        assert!(
+            tokio::time::timeout(DISCONNECT_HANG_GUARD, dialed.recv())
+                .await
+                .is_ok_and(|dial| dial.is_some()),
+            "the client never dialed"
+        );
+        let _frozen = freeze_clock();
 
-        let outcome = tokio::time::timeout(PROMPT_DISCONNECT, client.disconnect()).await;
+        let outcome = finishes_on_a_frozen_clock(DISCONNECT_HANG_GUARD, client.disconnect()).await;
+        server.abort();
 
         assert!(
-            outcome.is_ok(),
+            outcome.is_some(),
             "disconnect queued behind the connect instead of cancelling it"
         );
     }

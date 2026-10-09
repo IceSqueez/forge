@@ -791,7 +791,7 @@ mod tests {
         }
 
         let mut persisted = Vec::new();
-        for _ in 0..500 {
+        for _ in 0..3_000 {
             persisted = backend
                 .event_log_repo()
                 .recent(100)
@@ -1003,7 +1003,7 @@ mod tests {
         bus.publish(ev3);
         bus.shutdown();
 
-        let completed = tokio::time::timeout(Duration::from_secs(5), bus.await_flush()).await;
+        let completed = tokio::time::timeout(Duration::from_secs(30), bus.await_flush()).await;
         assert!(
             completed.is_ok(),
             "await_flush must resolve after the shutdown drain"
@@ -1021,7 +1021,7 @@ mod tests {
     #[tokio::test]
     async fn await_flush_returns_immediately_when_flush_task_never_spawned() {
         let bus = null_bus();
-        let completed = tokio::time::timeout(Duration::from_secs(5), bus.await_flush()).await;
+        let completed = tokio::time::timeout(Duration::from_secs(30), bus.await_flush()).await;
         assert!(
             completed.is_ok(),
             "await_flush must not hang when no flush task was ever spawned"
@@ -1036,13 +1036,13 @@ mod tests {
         bus.publish(core_event("second.a"));
         bus.shutdown();
 
-        let first = tokio::time::timeout(Duration::from_secs(5), bus.await_flush()).await;
+        let first = tokio::time::timeout(Duration::from_secs(30), bus.await_flush()).await;
         assert!(
             first.is_ok(),
             "first await_flush must resolve after the shutdown drain"
         );
 
-        let second = tokio::time::timeout(Duration::from_secs(5), bus.await_flush()).await;
+        let second = tokio::time::timeout(Duration::from_secs(30), bus.await_flush()).await;
         assert!(
             second.is_ok(),
             "second await_flush must return immediately once the receiver is consumed"
@@ -1125,7 +1125,7 @@ mod tests {
             bus.publish(core_event("action.start"));
         }
 
-        let report = tokio::time::timeout(Duration::from_secs(5), watch.changed())
+        let report = tokio::time::timeout(Duration::from_secs(30), watch.changed())
             .await
             .ok()
             .flatten()

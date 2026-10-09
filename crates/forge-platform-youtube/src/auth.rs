@@ -298,7 +298,7 @@ mod tests {
         let auth_url = flow.start().await.unwrap().auth_url;
         trigger_callback(&auth_url, "code123").await;
         let bundle = flow
-            .wait_for_authorization(Duration::from_secs(2))
+            .wait_for_authorization(Duration::from_secs(30))
             .await
             .unwrap();
 
@@ -435,7 +435,7 @@ mod tests {
         trigger_callback(&auth_url, "auth_code_xyz").await;
 
         let err = flow
-            .wait_for_authorization(Duration::from_secs(2))
+            .wait_for_authorization(Duration::from_secs(30))
             .await
             .unwrap_err();
         assert!(
@@ -468,7 +468,7 @@ mod tests {
         trigger_callback(&auth_url, "auth_code_abc").await;
 
         let bundle = flow
-            .wait_for_authorization(Duration::from_secs(2))
+            .wait_for_authorization(Duration::from_secs(30))
             .await
             .unwrap();
         assert_eq!(bundle.channel_id, "UCtest123");

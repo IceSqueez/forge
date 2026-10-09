@@ -12,7 +12,7 @@ use forge_types::ChatViewer;
 use tokio::time::timeout;
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
-const RECV_TIMEOUT: Duration = Duration::from_secs(5);
+const RECV_TIMEOUT: Duration = Duration::from_secs(30);
 const CONCURRENT_PUBLISHERS: usize = 32;
 
 fn chat_line(viewer_id: &str) -> Event {

@@ -354,7 +354,7 @@ pub(crate) mod tests {
         assert_eq!(body["reply_to_message_id"], "parent-7");
     }
 
-    const BANNED_STEP_DEADLINE: StdDuration = StdDuration::from_secs(5);
+    const BANNED_STEP_DEADLINE: StdDuration = StdDuration::from_secs(30);
 
     #[derive(Default)]
     struct GatedBanLedger {

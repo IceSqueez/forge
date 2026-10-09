@@ -18,6 +18,8 @@ use forge_voice::{
     VoiceAliasResolver,
 };
 
+pub const HANG_GUARD_MS: u64 = 30_000;
+
 pub fn voice(id: &str, engine: &str) -> TtsVoice {
     TtsVoice {
         id: VoiceId(id.into()),
@@ -187,7 +189,8 @@ pub async fn wait_for<F>(stream: &mut SpeakEventStream, pred: F, max_ms: u64)
 where
     F: Fn(&SpeakEvent) -> bool,
 {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(max_ms);
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_millis(max_ms.max(HANG_GUARD_MS));
     loop {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.is_zero() {
@@ -206,7 +209,8 @@ pub async fn wait_for_resolved_voice(
     stream: &mut SpeakEventStream,
     max_ms: u64,
 ) -> (String, String) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(max_ms);
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_millis(max_ms.max(HANG_GUARD_MS));
     loop {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.is_zero() {

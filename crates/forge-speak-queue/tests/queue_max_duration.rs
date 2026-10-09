@@ -16,6 +16,8 @@ use forge_voice::AssignmentStrategy;
 
 use common::{make_deps, recording_sink, request, voice};
 
+const HANG_GUARD_MS: u64 = 30_000;
+
 const SAMPLE_RATE: u32 = 22_050;
 const CLIP_SECS: u32 = 5;
 
@@ -97,7 +99,8 @@ fn spawn_with_cap(
 }
 
 async fn resolved_duration_secs(stream: &mut SpeakEventStream, max_ms: u64) -> u32 {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(max_ms);
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_millis(max_ms.max(HANG_GUARD_MS));
     loop {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.is_zero() {

@@ -19,7 +19,7 @@ use futures_util::StreamExt;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 
-const WAIT: Duration = Duration::from_secs(5);
+const WAIT: Duration = Duration::from_secs(30);
 
 fn donation(index: usize) -> FakeDonation {
     FakeDonation::new(

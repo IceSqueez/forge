@@ -472,7 +472,7 @@ impl ChainExecutor for ScriptedExecutor {
     ) -> Result<ChildChainOutcome, RegistryError> {
         let kinds: Vec<String> = steps.iter().map(|s| s.kind_id.clone()).collect();
         self.calls.lock().unwrap().push(kinds.clone());
-        tokio::time::timeout(std::time::Duration::from_secs(2), self.started.wait())
+        tokio::time::timeout(std::time::Duration::from_secs(30), self.started.wait())
             .await
             .expect("children were not started concurrently");
         let kind = kinds.first().cloned().unwrap_or_default();

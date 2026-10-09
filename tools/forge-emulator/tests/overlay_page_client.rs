@@ -17,7 +17,7 @@ use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
-const DEADLINE: Duration = Duration::from_secs(5);
+const DEADLINE: Duration = Duration::from_secs(30);
 const IDENTITY: &str = "alert-box";
 const CREDENTIAL: &str = "0123456789abcdef0123456789abcdef";
 const CONTENT: &str =

@@ -100,7 +100,7 @@ mod tests {
 
     const OBSERVER_CAPACITY: usize = 16;
     const BURST: usize = OBSERVER_CAPACITY * 4;
-    const RECORD_TIMEOUT: Duration = Duration::from_millis(500);
+    const RECORD_TIMEOUT: Duration = Duration::from_secs(30);
 
     fn chat_message(login: &str) -> Event {
         Event::new(

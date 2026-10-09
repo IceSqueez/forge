@@ -16,7 +16,7 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
-const DEADLINE: Duration = Duration::from_secs(5);
+const DEADLINE: Duration = Duration::from_secs(30);
 const CHAT: &str = "channel.chat.message";
 
 fn config() -> FakeTwitchConfig {

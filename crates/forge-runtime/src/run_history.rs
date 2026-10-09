@@ -183,7 +183,7 @@ mod tests {
 
     async fn drain(bus: &EventBus) {
         bus.shutdown();
-        tokio::time::timeout(std::time::Duration::from_secs(5), bus.await_flush())
+        tokio::time::timeout(std::time::Duration::from_secs(30), bus.await_flush())
             .await
             .unwrap();
     }

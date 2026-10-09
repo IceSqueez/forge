@@ -458,7 +458,7 @@ mod tests {
     }
 
     async fn await_served(done_rx: tokio::sync::oneshot::Receiver<()>) {
-        tokio::time::timeout(tokio::time::Duration::from_secs(5), done_rx)
+        tokio::time::timeout(tokio::time::Duration::from_secs(30), done_rx)
             .await
             .expect("mock VTS handler must serve every queued response")
             .expect("mock VTS handler must not be dropped");
@@ -631,8 +631,9 @@ mod tests {
         assert_eq!(items, ["Blush".to_owned(), "wink.exp3.json".to_owned()]);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn the_catalog_sweep_publishes_both_counts_as_soon_as_it_starts() {
+        const BEFORE_THE_SECOND_SWEEP: tokio::time::Duration = tokio::time::Duration::from_secs(1);
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
         let mut health_rx = c.health_tx.subscribe();
         let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
@@ -655,11 +656,14 @@ mod tests {
             req_tx,
             c.health_tx.clone(),
         );
-        await_served(done).await;
+        tokio::time::timeout(BEFORE_THE_SECOND_SWEEP, done)
+            .await
+            .expect("the first catalog sweep must run at startup, not one interval later")
+            .expect("mock VTS handler must not be dropped");
 
         let mut reported = Vec::new();
         for _ in 0..2 {
-            let delta = tokio::time::timeout(tokio::time::Duration::from_secs(2), health_rx.recv())
+            let delta = tokio::time::timeout(BEFORE_THE_SECOND_SWEEP, health_rx.recv())
                 .await
                 .expect("the first catalog sweep must run at startup, not one interval later")
                 .expect("the health channel must stay open");
@@ -746,7 +750,7 @@ mod tests {
         );
 
         let _ = connected_tx.send(());
-        let req = tokio::time::timeout(tokio::time::Duration::from_secs(2), req_rx.recv())
+        let req = tokio::time::timeout(tokio::time::Duration::from_secs(30), req_rx.recv())
             .await
             .expect("a connection announcement must trigger the version fetch")
             .expect("the request channel must stay open");
@@ -770,14 +774,14 @@ mod tests {
         let handle = spawn_version_fetch(req_tx, Arc::clone(&version), connected_rx);
 
         let _ = connected_tx.send(());
-        let unanswered = tokio::time::timeout(tokio::time::Duration::from_secs(2), req_rx.recv())
+        let unanswered = tokio::time::timeout(tokio::time::Duration::from_secs(30), req_rx.recv())
             .await
             .expect("the first announcement must trigger a version fetch")
             .expect("the request channel must stay open");
         drop(unanswered);
 
         let _ = connected_tx.send(());
-        let retried = tokio::time::timeout(tokio::time::Duration::from_secs(2), req_rx.recv())
+        let retried = tokio::time::timeout(tokio::time::Duration::from_secs(30), req_rx.recv())
             .await
             .expect("a later connection must retry the unanswered version fetch")
             .expect("the request channel must stay open");
@@ -797,7 +801,7 @@ mod tests {
         rx: &mut broadcast::Receiver<HealthDelta>,
         c: &VTubeClient,
     ) -> (String, String, Option<String>) {
-        let delta = tokio::time::timeout(tokio::time::Duration::from_secs(2), rx.recv())
+        let delta = tokio::time::timeout(tokio::time::Duration::from_secs(30), rx.recv())
             .await
             .expect("the catalog sweep must publish a health delta")
             .expect("the health channel must stay open");

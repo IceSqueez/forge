@@ -260,13 +260,17 @@ mod tests {
     async fn list_orders_by_last_seen_desc() {
         let backend = open().await;
         let repo = backend.viewer_repo_impl();
-        repo.record_message(ViewerPlatform::Twitch, "u1", "A")
-            .await
-            .unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(2)).await;
-        repo.record_message(ViewerPlatform::Twitch, "u2", "B")
-            .await
-            .unwrap();
+        for (viewer_id, last_seen_ms) in [("u1", 1_000_i64), ("u2", 2_000_i64)] {
+            repo.record_message(ViewerPlatform::Twitch, viewer_id, viewer_id)
+                .await
+                .unwrap();
+            sqlx::query("UPDATE viewers SET last_seen_at = ? WHERE viewer_id = ?")
+                .bind(last_seen_ms)
+                .bind(viewer_id)
+                .execute(repo.db.writer())
+                .await
+                .unwrap();
+        }
         let listed = repo.list().await.unwrap();
         assert_eq!(listed.len(), 2);
         assert_eq!(listed[0].viewer_id, "u2");

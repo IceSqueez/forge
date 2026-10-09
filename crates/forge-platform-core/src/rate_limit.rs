@@ -192,7 +192,8 @@ mod tests {
     #[tokio::test]
     async fn fresh_bucket_grants_capacity_then_throttles() {
         let capacity = 4;
-        let rl = limiter(capacity, Duration::from_secs(2));
+        let window = Duration::from_secs(3_600);
+        let rl = limiter(capacity, window);
         for i in 0..capacity {
             assert!(
                 matches!(rl.acquire(1).await.unwrap(), RateLimitOutcome::Granted),
@@ -203,7 +204,7 @@ mod tests {
             RateLimitOutcome::Throttled { wait_for } => {
                 assert!(wait_for > Duration::ZERO);
                 assert!(
-                    wait_for <= Duration::from_secs(2),
+                    wait_for <= window,
                     "wait_for {wait_for:?} should not exceed the refill window"
                 );
             }
@@ -254,7 +255,7 @@ mod tests {
 
     #[tokio::test]
     async fn usage_after_acquires_counts_consumed_against_capacity() {
-        let rl = limiter(10, Duration::from_secs(60));
+        let rl = limiter(10, Duration::from_secs(3_600));
         for _ in 0..3 {
             rl.acquire(1).await.unwrap();
         }
@@ -264,20 +265,21 @@ mod tests {
         let resets_in = usage.resets_in.unwrap();
         assert!(resets_in > Duration::ZERO);
         assert!(
-            resets_in <= Duration::from_secs(60),
+            resets_in <= Duration::from_secs(3_600),
             "reset ETA {resets_in:?} must not exceed the refill window"
         );
     }
 
     #[tokio::test]
     async fn usage_on_exhausted_bucket_reports_full_capacity_and_window_reset() {
-        let rl = limiter(4, Duration::from_secs(8));
+        let window = Duration::from_secs(8 * 3_600);
+        let rl = limiter(4, window);
         for _ in 0..4 {
             rl.acquire(1).await.unwrap();
         }
         let usage = rl.usage();
         assert_eq!(usage.used, Some(4));
-        assert_eq!(usage.resets_in, Some(Duration::from_secs(8)));
+        assert_eq!(usage.resets_in, Some(window));
     }
 
     struct NoIntrospectionLimiter;

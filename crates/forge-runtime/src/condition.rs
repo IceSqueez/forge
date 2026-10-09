@@ -172,6 +172,13 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
 
+    fn unhurried() -> Config {
+        Config {
+            condition_wall_time_ms: 30_000,
+            ..Config::default()
+        }
+    }
+
     fn gate_with(op_limit: u64, wall_time_ms: u64) -> ConditionGate {
         ConditionGate::new(&Config {
             max_nesting_depth: 32,
@@ -183,7 +190,7 @@ mod tests {
 
     #[tokio::test]
     async fn fast_path_verdict_never_diverges_from_full_evaluation() {
-        let cfg = Config::default();
+        let cfg = unhurried();
         let gate = ConditionGate::new(&cfg);
         let evaluator = ConditionEvaluator::with_config(EngineConfig {
             op_limit: cfg.condition_op_limit,
@@ -239,7 +246,7 @@ mod tests {
 
     #[tokio::test]
     async fn deferred_string_ordering_returns_correct_boolean_without_error() {
-        let gate = ConditionGate::new(&Config::default());
+        let gate = ConditionGate::new(&unhurried());
         assert!(
             gate.evaluate_with_args(r#""apple" < "banana""#, &ArgStack::new())
                 .await
@@ -255,7 +262,7 @@ mod tests {
 
     #[tokio::test]
     async fn deferred_mixed_kind_comparison_returns_correct_boolean_without_error() {
-        let gate = ConditionGate::new(&Config::default());
+        let gate = ConditionGate::new(&unhurried());
         assert!(
             gate.evaluate_with_args("2 == 2.0", &ArgStack::new())
                 .await
@@ -271,7 +278,7 @@ mod tests {
 
     #[tokio::test]
     async fn non_boolean_result_surfaces_as_eval_error_not_truthiness() {
-        let gate = ConditionGate::new(&Config::default());
+        let gate = ConditionGate::new(&unhurried());
         for expr in ["1 + 1", "42", r#""x""#] {
             let err = gate
                 .evaluate_with_args(expr, &ArgStack::new())

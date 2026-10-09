@@ -332,13 +332,18 @@ mod tests {
 
     #[test]
     fn clear_truncates_the_active_log_and_deletes_the_rotated_ones() {
-        let dir = ScratchDir::new("clear_logs");
-        let active = active_file_name();
-        dir.write(&active, b"today's entries");
-        dir.write("forge.log.2026-01-05", b"rotated");
-        dir.write("forge.log", b"undated");
+        let (dir, active) = loop {
+            let dir = ScratchDir::new("clear_logs");
+            let active = active_file_name();
+            dir.write(&active, b"today's entries");
+            dir.write("forge.log.2026-01-05", b"rotated");
+            dir.write("forge.log", b"undated");
 
-        clear(dir.path()).expect("clear");
+            clear(dir.path()).expect("clear");
+            if active_file_name() == active {
+                break (dir, active);
+            }
+        };
 
         assert_eq!(
             fs::read_to_string(dir.path().join(&active)).expect(

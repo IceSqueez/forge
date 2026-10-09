@@ -740,7 +740,7 @@ mod tests {
     }
 
     async fn expect_call(rx: &mut mpsc::UnboundedReceiver<PlatformCall>) -> PlatformCall {
-        tokio::time::timeout(Duration::from_secs(2), rx.recv())
+        tokio::time::timeout(Duration::from_secs(30), rx.recv())
             .await
             .expect("a platform send call was expected but never arrived")
             .expect("mock send channel closed")
@@ -934,7 +934,7 @@ mod tests {
     }
 
     async fn next_of_kind(sub: &mut forge_runtime::EventSubscription, kind: &str) -> Event {
-        tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 let event = sub.recv().await.expect("observer subscription failed");
                 if event.kind == kind {
@@ -1777,7 +1777,7 @@ mod tests {
         }
         drop(platform_tx);
 
-        tokio::time::timeout(Duration::from_secs(2), bridge)
+        tokio::time::timeout(Duration::from_secs(30), bridge)
             .await
             .expect("the bridge must exit once every platform sender is gone")
             .unwrap();

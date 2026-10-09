@@ -15,7 +15,7 @@ use forge_types::{Action, ActionId, ArgStack, SubActionStep};
 use tempfile::TempDir;
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
-const PIPELINE_TIMEOUT_MS: u64 = 2_000;
+const PIPELINE_TIMEOUT_MS: u64 = 30_000;
 
 async fn make_dp() -> (Arc<dyn DataProvider>, TempDir) {
     let media = tempfile::tempdir().unwrap();
@@ -229,7 +229,13 @@ async fn replay_causation_chain_is_rooted_at_replayed_event() {
     let original_chat_id = original_chat.id;
     bus.publish(original_chat);
 
-    collect_until_kind(&mut sub, "action.done", PIPELINE_TIMEOUT_MS).await;
+    assert!(
+        collect_until_kind(&mut sub, "action.done", PIPELINE_TIMEOUT_MS)
+            .await
+            .iter()
+            .any(|e| e.kind == "action.done"),
+        "the previous run must reach action.done before the next replay"
+    );
 
     bus.replay_and_publish(original_chat_id)
         .await
@@ -296,7 +302,13 @@ async fn replay_of_replay_still_has_replay_flag() {
     let original_chat_id = original_chat.id;
     bus.publish(original_chat);
 
-    collect_until_kind(&mut sub, "action.done", PIPELINE_TIMEOUT_MS).await;
+    assert!(
+        collect_until_kind(&mut sub, "action.done", PIPELINE_TIMEOUT_MS)
+            .await
+            .iter()
+            .any(|e| e.kind == "action.done"),
+        "the previous run must reach action.done before the next replay"
+    );
 
     bus.replay_and_publish(original_chat_id)
         .await
@@ -312,7 +324,13 @@ async fn replay_of_replay_still_has_replay_flag() {
     );
     assert_ne!(first_replay_id, original_chat_id);
 
-    collect_until_kind(&mut sub, "action.done", PIPELINE_TIMEOUT_MS).await;
+    assert!(
+        collect_until_kind(&mut sub, "action.done", PIPELINE_TIMEOUT_MS)
+            .await
+            .iter()
+            .any(|e| e.kind == "action.done"),
+        "the previous run must reach action.done before the next replay"
+    );
 
     bus.replay_and_publish(first_replay_id)
         .await

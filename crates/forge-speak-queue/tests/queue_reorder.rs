@@ -9,6 +9,8 @@ use forge_speak_queue::{
 use common::{make_deps, recording_sink, request, standard_registry};
 use forge_voice::AssignmentStrategy;
 
+const HANG_GUARD_MS: u64 = 30_000;
+
 fn spawn_standard() -> (forge_speak_queue::SpeakQueueHandle, SpeakEventStream) {
     let (sink, _plays) = recording_sink();
     let deps = make_deps(
@@ -26,7 +28,8 @@ async fn first_started_ids(
     max_ms: u64,
 ) -> Vec<RequestId> {
     let mut seen: Vec<RequestId> = Vec::new();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(max_ms);
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_millis(max_ms.max(HANG_GUARD_MS));
     while seen.len() < count {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.is_zero() {

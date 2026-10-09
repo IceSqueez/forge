@@ -532,9 +532,7 @@ pub(crate) mod tests {
         let boot_addr = listener.local_addr().expect("local addr");
         let handle = serve_on(listener, state);
 
-        let probe = TcpListener::bind("127.0.0.1:0").await.expect("probe bind");
-        let new_port = probe.local_addr().expect("probe addr").port();
-        drop(probe);
+        let new_port = reserve_a_free_port().await;
         assert_ne!(
             boot_addr.port(),
             new_port,
@@ -734,6 +732,7 @@ pub(crate) mod tests {
     const DRAIN_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
     const UNFINISHED_REQUEST_HEAD: &[u8] = b"GET /api/v1/info HTTP/1.1\r\nHost: localhost\r\n";
     const LOOPBACK_SETTLE: std::time::Duration = std::time::Duration::from_millis(50);
+    const SETUP_ATTEMPTS: usize = 20;
     const OLD_LISTENER_WINDOW: std::time::Duration = std::time::Duration::from_millis(50);
     const REAL_CLOCK_WINDOW: std::time::Duration = std::time::Duration::from_millis(10);
     const REAL_CLOCK_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
@@ -1210,36 +1209,45 @@ pub(crate) mod tests {
     async fn a_listener_outliving_a_restart_cannot_report_the_new_one_stopped() {
         use tokio::io::AsyncWriteExt;
 
-        let settings = MapSettings::new();
-        let (handle, boot_addr) =
-            start_on_an_ephemeral_port(Arc::clone(&settings), Vec::new()).await;
-        let new_port = reserve_a_free_port().await;
-        crate::config::ServerSettings::save_bind_address(&*settings, LOOPBACK)
-            .await
-            .expect("save addr");
-        crate::config::ServerSettings::save_port(&*settings, new_port)
-            .await
-            .expect("save port");
+        let mut outlasted_the_drain = None;
+        for _ in 0..SETUP_ATTEMPTS {
+            let settings = MapSettings::new();
+            let (handle, boot_addr) =
+                start_on_an_ephemeral_port(Arc::clone(&settings), Vec::new()).await;
+            let new_port = reserve_a_free_port().await;
+            crate::config::ServerSettings::save_bind_address(&*settings, LOOPBACK)
+                .await
+                .expect("save addr");
+            crate::config::ServerSettings::save_port(&*settings, new_port)
+                .await
+                .expect("save port");
 
-        let mut lingering = tokio::net::TcpStream::connect(boot_addr)
-            .await
-            .expect("connect");
-        lingering
-            .write_all(UNFINISHED_REQUEST_HEAD)
-            .await
-            .expect("write");
-        lingering.flush().await.expect("flush");
-        tokio::time::sleep(LOOPBACK_SETTLE).await;
+            let mut lingering = tokio::net::TcpStream::connect(boot_addr)
+                .await
+                .expect("connect");
+            lingering
+                .write_all(UNFINISHED_REQUEST_HEAD)
+                .await
+                .expect("write");
+            lingering.flush().await.expect("flush");
+            tokio::time::sleep(LOOPBACK_SETTLE).await;
 
-        let started = tokio::time::Instant::now();
-        run_stepping_the_clock(handle.restart(), DRAIN_BUDGET * 2)
-            .await
-            .expect("the restart outlived twice the drain budget")
-            .expect("restart");
-        assert!(
-            started.elapsed() >= DRAIN_BUDGET,
-            "the lingering connection must outlast the drain or this proves nothing"
-        );
+            let started = tokio::time::Instant::now();
+            run_stepping_the_clock(handle.restart(), DRAIN_BUDGET * 2)
+                .await
+                .expect("the restart outlived twice the drain budget")
+                .expect("restart");
+            if started.elapsed() >= DRAIN_BUDGET {
+                outlasted_the_drain = Some((handle, lingering));
+                break;
+            }
+            handle
+                .stop()
+                .await
+                .expect("stop a setup that missed the drain");
+        }
+        let (handle, lingering) = outlasted_the_drain
+            .expect("the lingering connection must outlast the drain or this proves nothing");
 
         let mut run_state = handle.run_state();
         assert!(
@@ -1935,10 +1943,14 @@ pub(crate) mod tests {
         let (handle, addr) = make_server(false, MemCreds::new()).await;
         let mut socket = open_ws(addr).await;
 
-        elapse(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
+        let closed = run_stepping_the_clock(
+            futures_util::StreamExt::next(&mut socket),
+            (PRE_AUTH_WINDOW + PRE_AUTH_MARGIN) * 2,
+        )
+        .await;
 
         assert_eq!(
-            close_code_of(next_message(&mut socket).await),
+            close_code_of(closed.flatten().and_then(Result::ok)),
             Some(close_code::POLICY),
             "a socket that never spoke must be closed once the window passes"
         );

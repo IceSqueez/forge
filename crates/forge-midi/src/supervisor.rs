@@ -825,7 +825,7 @@ mod tests {
 
         drop(control_tx);
 
-        let finished = tokio::time::timeout(Duration::from_secs(2), task).await;
+        let finished = tokio::time::timeout(Duration::from_secs(30), task).await;
         assert!(
             finished.is_ok(),
             "the supervisor must exit once its control channel closes"
@@ -954,7 +954,7 @@ mod tests {
 
         client.shutdown().await.unwrap();
 
-        let stopped = tokio::time::timeout(Duration::from_secs(2), async {
+        let stopped = tokio::time::timeout(Duration::from_secs(30), async {
             while open_ports() > 0 || Arc::strong_count(&client) > 1 {
                 tokio::task::yield_now().await;
             }

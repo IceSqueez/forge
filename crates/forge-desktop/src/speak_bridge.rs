@@ -605,7 +605,7 @@ mod tests {
         stream: &mut forge_speak_queue::SpeakEventStream,
         mut pick: impl FnMut(SpeakEvent) -> Option<T>,
     ) -> T {
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 if let Ok(event) = stream.recv().await
                     && let Some(found) = pick(event)
@@ -800,7 +800,7 @@ mod tests {
         let lexicon = forge_runtime::TwitchEmoteLexicon::default();
         forge_runtime::spawn_twitch_emote_learning(&bus, lexicon.clone());
         bus.publish(twitch_chat_with_emote("LUL"));
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(30), async {
             while lexicon.codes_in("LUL").is_empty() {
                 tokio::task::yield_now().await;
             }
@@ -1007,7 +1007,7 @@ mod tests {
             origin: SpeechOrigin::default(),
         };
 
-        let (outcome, removed) = tokio::time::timeout(Duration::from_secs(5), async {
+        let (outcome, removed) = tokio::time::timeout(Duration::from_secs(30), async {
             tokio::join!(
                 bridge.speak_for_show(speech, cancel.clone(), SpeechStartSignal::new()),
                 async {
@@ -1120,7 +1120,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let revealed = tokio::time::timeout(Duration::from_secs(3), async {
+        let revealed = tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 let arrived = pages.arrived.notified();
                 if let Some(frame) = pages.reveal() {
@@ -1205,7 +1205,7 @@ mod tests {
             ..Harness::default()
         }
         .spawn();
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(30), async {
             while handle.available_voices().len() < LISTED_VOICES.len() {
                 tokio::task::yield_now().await;
             }

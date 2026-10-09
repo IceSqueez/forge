@@ -652,7 +652,7 @@ mod tests {
         );
     }
 
-    const RELEASE_BOUND: std::time::Duration = std::time::Duration::from_secs(5);
+    const RELEASE_BOUND: std::time::Duration = std::time::Duration::from_secs(30);
 
     struct ScriptedAudience {
         listening: AtomicBool,

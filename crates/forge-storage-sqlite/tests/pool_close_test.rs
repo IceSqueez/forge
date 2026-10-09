@@ -8,7 +8,8 @@ use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{Connection, SqliteConnection, SqlitePool};
 use tempfile::TempDir;
 
-const DEADLINE: Duration = Duration::from_secs(3);
+const DEADLINE: Duration = Duration::from_secs(30);
+const UNDER_THE_BUSY_TIMEOUT: Duration = Duration::from_millis(4_500);
 const ROWS: i64 = 50;
 
 fn wal_of(db: &Path) -> PathBuf {
@@ -75,7 +76,7 @@ async fn close_returns_in_bounded_time_while_a_reader_holds_a_snapshot_and_data_
         .await
         .unwrap();
 
-    tokio::time::timeout(DEADLINE, pools.close())
+    tokio::time::timeout(UNDER_THE_BUSY_TIMEOUT, pools.close())
         .await
         .expect("close must not wait for a reader's snapshot");
 

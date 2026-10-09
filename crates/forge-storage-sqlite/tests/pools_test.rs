@@ -7,7 +7,7 @@ use std::time::Duration;
 use forge_storage_sqlite::{SqlitePools, apply_migrations, connect_pools};
 use tempfile::TempDir;
 
-const DEADLINE: Duration = Duration::from_secs(2);
+const DEADLINE: Duration = Duration::from_secs(30);
 
 async fn file_pools() -> (SqlitePools, TempDir) {
     let dir = tempfile::tempdir().unwrap();
@@ -71,11 +71,9 @@ async fn the_backend_checkpoints_what_the_writer_left_in_the_wal() {
     let _backend =
         common::sandboxed_backend(&format!("sqlite://{}", db.display()), common::TEST_KEY).await;
 
+    let deadline = tokio::time::Instant::now() + DEADLINE;
     let mut progress = wal_progress(&db);
-    for _ in 0..250 {
-        if progress.0 > 0 && progress.1 == progress.0 {
-            break;
-        }
+    while !(progress.0 > 0 && progress.1 == progress.0) && tokio::time::Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(20)).await;
         progress = wal_progress(&db);
     }

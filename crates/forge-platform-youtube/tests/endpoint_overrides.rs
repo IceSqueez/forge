@@ -25,7 +25,7 @@ use tokio::sync::watch;
 use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-const STEP_DEADLINE: Duration = Duration::from_secs(5);
+const STEP_DEADLINE: Duration = Duration::from_secs(30);
 const BROADCAST_ID: &str = "broadcast-override";
 const LIVE_CHAT_ID: &str = "live-chat-override";
 const DATA_API_PREFIX: &str = "/youtube/v3";

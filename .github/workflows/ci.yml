@@ -1,10 +1,31 @@
-name: Test Matrix (reusable)
+name: CI
 
 on:
-  workflow_call:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE*'
+      - '.gitignore'
+      - '.gitattributes'
+      - 'cliff.toml'
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE*'
+      - '.gitignore'
+      - '.gitattributes'
+      - 'cliff.toml'
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
@@ -16,6 +37,8 @@ jobs:
 
       - name: Setup Rust with cache
         uses: ./.github/actions/setup-rust-cached
+        with:
+          save-if: ${{ github.event_name == 'push' }}
 
       - name: Check formatting
         shell: bash
@@ -25,11 +48,17 @@ jobs:
         shell: bash
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      - name: Doc
+        shell: bash
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps
+
   test:
     name: test (${{ matrix.os }})
-    needs: [lint]
+    needs: lint
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 20
     strategy:
       fail-fast: true
       matrix:
@@ -40,7 +69,9 @@ jobs:
 
       - name: Setup Rust with cache
         uses: ./.github/actions/setup-rust-cached
+        with:
+          save-if: ${{ github.event_name == 'push' }}
 
       - name: Test
         shell: bash
-        run: cargo test --workspace
+        run: cargo test --workspace --locked

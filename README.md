@@ -9,7 +9,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/IceSqueez/forge?include_prereleases&logo=github&label=Latest&cacheSeconds=600)](https://github.com/IceSqueez/forge/releases)
 [![Release Date](https://img.shields.io/github/release-date-pre/IceSqueez/forge?logo=github&label=Released&cacheSeconds=600)](https://github.com/IceSqueez/forge/releases)
 [![Release Workflow](https://github.com/IceSqueez/forge/actions/workflows/release.yml/badge.svg)](https://github.com/IceSqueez/forge/actions/workflows/release.yml)
-[![Nightly Workflow](https://github.com/IceSqueez/forge/actions/workflows/nightly.yml/badge.svg)](https://github.com/IceSqueez/forge/actions/workflows/nightly.yml)
+[![CI](https://github.com/IceSqueez/forge/actions/workflows/ci.yml/badge.svg)](https://github.com/IceSqueez/forge/actions/workflows/ci.yml)
 
 [![Commits Since Latest Release](https://img.shields.io/github/commits-since/IceSqueez/forge/latest?include_prereleases&logo=github&label=Commits%20since&cacheSeconds=600)](https://github.com/IceSqueez/forge/commits/main)
 [![Open Issues](https://img.shields.io/github/issues/IceSqueez/forge?logo=github&label=Issues&cacheSeconds=600)](https://github.com/IceSqueez/forge/issues)

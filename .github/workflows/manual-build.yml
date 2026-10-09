@@ -1,4 +1,4 @@
-name: Manual Build
+name: Manual Build (artifacts only)
 
 on:
   workflow_dispatch:
@@ -10,13 +10,8 @@ on:
         type: string
 
 jobs:
-  checks:
-    name: Checks
-    uses: ./.github/workflows/_test-matrix.yml
-
   build:
     name: Build
-    needs: [checks]
     uses: ./.github/workflows/_build-matrix.yml
     secrets: inherit
     with:

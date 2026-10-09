@@ -1,9 +1,9 @@
 name: Setup Rust with cache
-description: Install toolchain from rust-toolchain.toml. Cache is shared across dev workflows via shared-key=dev-<os> so pr/nightly/manual reuse each other's target/debug/ rather than rebuilding cold. On Linux runners, installs the gpui + cpal system libraries needed to build and link forge-desktop.
+description: Install toolchain from rust-toolchain.toml. Cache is shared across dev workflows via shared-key=dev-<os> so ci/manual reuse each other's target/debug/ rather than rebuilding cold. On Linux runners, installs the gpui + cpal system libraries needed to build and link forge-desktop.
 
 inputs:
   shared-key:
-    description: "Cache key shared across workflows. Default `dev-<os>` lets pr/nightly/manual reuse target/debug/ across workflow boundaries."
+    description: "Cache key shared across workflows. Default `dev-<os>` lets ci/manual reuse target/debug/ across workflow boundaries."
     required: false
     default: dev-${{ runner.os }}
   save-if:

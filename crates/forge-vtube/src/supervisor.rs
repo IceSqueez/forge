@@ -1187,6 +1187,7 @@ mod tests {
         const PROMPT: Duration = Duration::from_secs(1);
         const EARLY_WINDOW: Duration = Duration::from_millis(50);
         const ANSWERED_POLLS: usize = 10;
+        const TIMER_RESOLUTION: Duration = Duration::from_millis(1);
 
         async fn connected_session(
             vts: &mut FakeVts,
@@ -1274,6 +1275,49 @@ mod tests {
             assert!(
                 vts.next_redial(SETTLE).await.is_some(),
                 "an unresponsive session must be redialed"
+            );
+        }
+
+        #[tokio::test]
+        async fn an_unanswered_request_times_out_the_caller_before_dropping_the_session() {
+            let mut vts = FakeVts::bind().await;
+            let publisher = MockPublisher::new();
+            let (client, conn) = connected_session(&mut vts, &publisher).await;
+            let (_peer, ignored) =
+                conn.answer_all_except(|f| f["messageType"] == "HotkeyTriggerRequest");
+            let _frozen = freeze_clock();
+
+            let (outcome, ()) = tokio::join!(
+                finishes_on_a_frozen_clock(SETTLE, client.trigger_hotkey("hk-1")),
+                async {
+                    assert!(
+                        settle_on_a_frozen_clock(SETTLE, || ignored.load(Ordering::SeqCst) == 1)
+                            .await,
+                        "the hotkey request never reached VTS"
+                    );
+                    tokio::time::advance(REQUEST_TIMEOUT + TIMER_RESOLUTION).await;
+                }
+            );
+
+            assert!(
+                matches!(outcome, Some(Err(crate::error::VTubeError::Timeout))),
+                "the caller must time out at the request deadline, got {outcome:?}"
+            );
+            tokio::time::advance(REQUEST_SWEEP_INTERVAL - TIMER_RESOLUTION * 2).await;
+            assert!(
+                !settle_on_a_frozen_clock(EARLY_WINDOW, || publisher
+                    .disconnected_with_reason("unresponsive"))
+                .await,
+                "the session was dropped before the unresponsive threshold"
+            );
+            assert!(client.connection_state().is_connected());
+
+            tokio::time::advance(REQUEST_SWEEP_INTERVAL).await;
+            assert!(
+                settle_on_a_frozen_clock(SETTLE, || publisher
+                    .disconnected_with_reason("unresponsive"))
+                .await,
+                "the first sweep past the unresponsive threshold must drop the session"
             );
         }
 

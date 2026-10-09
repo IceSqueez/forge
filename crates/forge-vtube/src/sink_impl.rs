@@ -404,12 +404,13 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     use crate::client::tests::{
-        FakeVts, MockPublisher, PeerConn, elapse, stored_token_creds, wait_until,
+        FakeVts, MockPublisher, PeerConn, freeze_clock, settle_on_a_frozen_clock,
+        stored_token_creds, wait_until,
     };
     use crate::request::REQUEST_TIMEOUT;
 
     const SETTLE: Duration = Duration::from_secs(30);
-    const DEADLINE_MARGIN: Duration = Duration::from_secs(1);
+    const TIMER_RESOLUTION: Duration = Duration::from_millis(1);
     const EARLY_WINDOW: Duration = Duration::from_millis(50);
     const REJECTION_ERROR_ID: i64 = 452;
     const ITEM_ERROR_ID: i64 = 751;
@@ -453,6 +454,7 @@ mod tests {
         let (_peer, ignored) =
             conn.answer_all_except(|f| f["messageType"] == "HotkeyTriggerRequest");
         let settled = Cell::new(false);
+        let _frozen = freeze_clock();
 
         let (outcome, ()) = tokio::join!(
             async {
@@ -462,15 +464,19 @@ mod tests {
             },
             async {
                 assert!(
-                    wait_until(SETTLE, || ignored.load(Ordering::SeqCst) == 1).await,
+                    settle_on_a_frozen_clock(SETTLE, || ignored.load(Ordering::SeqCst) == 1).await,
                     "the hotkey request never reached VTS"
                 );
-                elapse(REQUEST_TIMEOUT - DEADLINE_MARGIN).await;
+                tokio::time::advance(REQUEST_TIMEOUT - TIMER_RESOLUTION).await;
                 assert!(
-                    !wait_until(EARLY_WINDOW, || settled.get()).await,
+                    !settle_on_a_frozen_clock(EARLY_WINDOW, || settled.get()).await,
                     "the request gave up before its deadline"
                 );
-                elapse(DEADLINE_MARGIN).await;
+                tokio::time::advance(TIMER_RESOLUTION * 2).await;
+                assert!(
+                    settle_on_a_frozen_clock(SETTLE, || settled.get()).await,
+                    "the request outlived its deadline"
+                );
             }
         );
 

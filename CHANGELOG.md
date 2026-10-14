@@ -1,6 +1,524 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-10-14
+### ⚙️ Miscellaneous Tasks
+- *(toolchain)* Pin Rust 1.99.0 and clear the lints it adds
+
+### ⚡ Performance
+- *(storage)* Prune action history in bounded chunks
+- *(desktop)* Open the database once during boot
+
+### 🐛 Bug Fixes
+- *(chat)* Never count bots or forge's own messages as chat activity
+- *(kick)* Keep broadcaster, bot, VIP and founder badges on chat rows
+- *(chat)* Consume own echoes for any author and apply the bot list everywhere
+- *(tts)* Speak as the viewer who triggered the action
+- *(platforms)* Keep one live source per platform and drop it on disconnect
+- *(tts)* Scope viewer voice aliases to the platform that set them
+- *(tts)* Match alias names case-insensitively when switching voices
+- *(platforms)* Translate reward manager messages
+- *(ui)* Match MIDI, hotkeys and server screens to the design
+- *(ui)* Select a picker row when its id is pasted
+- *(obs)* Fill scene and source pickers in action steps
+- *(vtube)* Fill model, hotkey and expression pickers in action steps
+- *(obs)* Pick scenes and audio sources in trigger settings
+- *(ui)* Show friendly connect errors and align OBS and Discord screens
+- *(discord)* Let webhook posts ping roles with an opt-in for @everyone
+- *(discord)* Apply the mention policy to file captions
+- *(overlays)* Accept spaced and uppercase stage ids in overridden markup
+- *(overlays)* Show animation preset names and round timings in the editor
+- *(platforms)* Fail steps aimed at disabled integrations and bound their lifecycle
+- *(scripting)* Fail script sends aimed at disabled integrations
+- *(scripting)* Fail quick actions and editor runs aimed at disabled integrations
+- *(home)* Show live connection state for enabled integrations
+- *(ui)* Lead core and integration breadcrumbs back to the hub
+- *(integrations)* Close dead ends in connect, failed and run-history flows
+- *(actions)* Report instant test-run failures instead of a paused queue
+- *(chat)* Send blank-target broadcasts and fail when no platform is on
+- *(chat)* Deliver script whispers privately and replies as threaded replies
+- *(chat)* Send composer messages only to running platforms
+- *(obs)* Explain preview scene failures when Studio Mode is off
+- *(ui)* Show the picker keyboard ring only after arrow keys
+- *(ui)* Fit the event feed kind column and highlight hovered rows
+- *(integrations)* Open and highlight every hub card like the built-in ones
+- *(actions)* Merge the branch back arrow and Steps crumb into one control
+- *(settings)* Remove the empty notifications section
+- *(tts)* Put the dashboard sections on plates like the other screens
+- *(donations)* Show and save the Donatello poll interval while it is disabled
+- *(obs)* Tell the user when OBS rejects the saved password
+- *(overlays)* Hide the sound settings on latest value overlays
+- *(scripting)* Give script editor runs the latest value API
+- *(server)* List active viewers from every chat platform
+- *(kick)* Skip chat viewers without a username
+- *(ui)* Keep code highlighting right after edits to open strings and json keys
+- *(overlays)* Reload generated source in code mode after design changes
+- *(overlays)* Show the missing overlay type notice once in bindings
+- *(storage)* Keep scheduled runs readable when one row cannot decode
+- *(scheduler)* Cancel pending scheduled runs when their action is deleted
+- *(scheduler)* Signal scheduled list changes from the archive transaction itself
+- *(queues)* Count down scheduled runs evenly and follow action renames
+- *(scheduler)* Show current action names and hide unused late tolerance
+- *(kick)* Route Kick API, chat socket and token refresh via endpoint overrides
+- *(youtube)* Route Data API, uploads and token refresh via endpoint overrides
+- *(youtube)* Report the broadcast id when a chat ends and stop polling it
+- *(ui)* Save text fields when tab moves focus to the next field
+- *(ui)* Enforce integer field bounds in config forms and step dialogs
+- *(kick)* Show when the poller loses Kick authorization
+- *(kick)* Track poller authorization per endpoint so it does not flap
+- *(ui)* Keep tab focus inside an open dialog
+- *(tts)* Strip Twitch emotes from chat and reward speech
+- *(actions)* Keep every file step inside one files folder
+- *(twitch)* Refresh the token expiry countdown after every token refresh
+- *(twitch)* Drop gift-sub recipient variables Twitch never fills
+- *(ui)* Run the graceful shutdown and exit cleanly when the window closes
+- *(storage)* Checkpoint and truncate the write-ahead log on shutdown
+- *(ui)* Quit forge when its window closes on macOS too
+- *(kick)* Send Kick chat through the shared rate limiter
+- *(server)* Send nosniff on served files and close sockets that join during a restart
+- *(twitch)* Route token refresh and device login via an endpoint override
+- *(ui)* Use endpoint overrides in Twitch and YouTube sign-in flows
+- *(kick)* Use endpoint overrides in the Kick sign-in flow
+- *(chat)* Accept any case for chat targets and fail on unknown ones
+- *(triggers)* Count a gift event as at least one gift on every platform
+- *(ui)* Replay the inspected event from the event feed
+- *(actions)* Finish writing a file before the write step reports success
+- *(core)* Stop timers and scheduled runs first when forge shuts down
+- *(core)* Wake the trigger evaluator when forge shuts down
+- *(ui)* Leave undo history untouched when Esc cancels a composition
+- *(tts)* Cap the queued speech estimate by the maximum duration
+- *(ui)* Surface settings and server load failures and apply queue changes live
+- *(ui)* Include actions with channel point triggers in the Points filter
+- *(ui)* Pulse the live dots on Home
+- *(chat)* Drop the misleading watch time from the viewer card
+- *(tts)* Refuse moving a voice alias onto a taken viewer and reload the stored id
+- *(chat)* Send viewer card moderation to the viewer's own platform
+- *(tts)* Keep a blocked voice alias's engine when it is edited
+- *(chat)* Target Twitch card actions by viewer id instead of display name
+- *(storage)* Close the writer last so shutdown leaves no WAL files
+- *(twitch)* Treat unbanning a user who is not banned as success
+- *(kick)* Cut an interpolated ban reason to Kick's 100 character limit
+- *(chat)* Refresh YouTube and Kick bans after card moderation and on tab show
+- *(storage)* Create an overlay's id, position and row in one transaction
+- *(storage)* Stamp saved actions with the current format version
+- *(storage)* Sweep stale incoming media files at startup
+- *(storage)* Reject malformed stored media blob ids
+- *(storage)* Validate media blob ids when deserializing
+- *(server)* Ignore a played verdict for an audio clip the page never fetched
+- *(server)* Answer the overlay favicon request with no content
+- *(runtime)* Stop recording loop steps past the first hundred iterations
+- *(runtime)* Carry action chain depth on events so slow loops still stop
+- *(runtime)* Keep a running step's depth when its event leaves the ring
+- *(chat)* Color viewer names with the shared accent hash
+- *(settings)* Keep the log level unchanged when applying it fails
+- *(vtube)* Explain closed and unresponsive connection failures
+- *(ui)* Translate month and weekday names in the date picker
+- *(ui)* Size code fields to their content within a row range
+- *(ui)* Indent the selected lines when Tab is pressed over a selection
+- *(overlays)* Tell the user when overlay pages fail to rebuild
+- *(soundboard)* Release a pad when its clip never started playing
+- *(actions)* Mark clips whose file is missing in the clip picker
+- *(soundboard)* Leave a replayed pad alone when an earlier play stops early
+- *(actions)* Refuse to save a step its runner rejects
+- *(actions)* Offer only duration units that can hold a nonzero amount
+- *(discord)* Keep deleted webhooks from returning after the startup sync
+- *(vtube)* Register with VTube Studio as Forge
+- *(twitch)* Report the chat session as disconnected after a forced stop
+- *(audio)* Pair each fan-out route verdict with its own start
+- *(pipeline)* Censor blocked words wrapped in punctuation
+- *(tts)* Say censored words become [beep], not ***
+- *(pipeline)* Map output preview marks through recorded edits
+- *(hotkey)* Read keyboards plugged in after start on Linux
+- *(hotkey)* Bind portal shortcuts once and recover after a portal restart
+- *(hotkey)* Recreate a lost portal session before the next bind
+- *(server)* Name YouTube and VTube event sources youtube and vtube
+- *(obs)* Honor auto-reconnect off for the first connect attempt
+- *(vtube)* Honor auto-reconnect off live and show why connect failed
+- *(tts)* Speak the voice chosen by overlay shows and scripts
+- *(tts)* Show the macOS engine icon for macOS voice aliases
+- *(twitch)* Send shield mode updates as PUT
+- *(twitch)* Keep a known shield state when the connect-time check fails
+- *(chat)* Count a viewer's messages from the same history the dialog shows
+- *(chat)* Let the history dialog scroll through every counted message
+- *(chat)* Keep loaded history rows when an older page fails and offer a retry
+- *(vtube)* Time out the caller before dropping an unresponsive session
+
+### 📚 Documentation
+- *(readme)* State the pinned Rust 1.99 toolchain
+
+### 🚀 Features
+- *(runtime)* Publish whether the stream is live from platforms and OBS
+- *(triggers)* Fire actions on an interval, gated by live state and chat
+- *(triggers)* Show timer settings and summaries in the trigger screens
+- *(triggers)* Show translated labels instead of raw keys in config forms
+- *(tts)* Pick a platform for each voice alias in the aliases tab
+- *(platforms)* Add a managed-collection capability for integrations
+- *(twitch)* Manage channel point rewards as a collection
+- *(platforms)* Manage integration collections from a quick-action modal
+- *(twitch)* Pick channel point rewards by name in actions and triggers
+- *(overlays)* Let overlays fill the browser source with percent margins
+- *(overlays)* Size overlays and their margins for the OBS browser source
+- *(overlays)* Add entrance, text and exit animation presets
+- *(overlays)* Pick animation presets and see their timing in the editor
+- *(platforms)* Declare integrations with ids, categories and ownership
+- *(storage)* Remember which integrations are enabled, seeded from setup
+- *(platforms)* Start and stop integrations at runtime by their enabled state
+- *(integrations)* Add the integrations hub and an enabled-only sidebar
+- *(integrations)* Add the first-run welcome and a disabled-integration page
+- *(integrations)* Flag steps, triggers and hotkeys hit by a disabled integration
+- *(triggers)* Mark inactive triggers in the trigger editor
+- *(integrations)* Flag steps of failed integrations and hide disabled chat filters
+- *(chat)* Send messages from the chat composer to the chosen platforms
+- *(storage)* Replace the migration chain with a baseline and adopt existing databases
+- *(storage)* Explain data folders that need an older forge first
+- *(donations)* Add the donation event, trigger, money values and provider contract
+- *(chat)* Flag the first message forge sees from each viewer
+- *(donations)* Record each donation once in a persistent ledger
+- *(donations)* Poll Donatello for new donations
+- *(donations)* Poll a monobank jar for new donations
+- *(donations)* Announce new donations once and add a test donation action
+- *(donations)* Set up Donatello and monobank from their integration pages
+- *(storage)* Keep the latest value per widget slot across restarts
+- *(overlays)* Track the latest donation across restarts for widgets and scripts
+- *(overlays)* Add a latest value overlay that stays current across reconnects
+- *(overlays)* Show and reset the latest value from the overlay editor
+- *(ui)* Add undo and redo to text fields through a shared editing core
+- *(ui)* Add syntax highlighting for HTML, CSS and JavaScript
+- *(overlays)* Edit overlay source in a code editor with gutter and wrap
+- *(overlays)* Declare the api, bindings and keys an overlay page can use
+- *(overlays)* Show the page bindings reference next to the code editor
+- *(ui)* Indent and outdent selected lines with tab and shift-tab
+- *(ui)* Edit scripts, code steps and json globals in the code editor
+- *(donations)* Hold missed donations until a donation overlay connects
+- *(ui)* Keep place on script format and edit form code fields as code
+- *(storage)* Store scheduled action runs with keyed replace and claim
+- *(scheduler)* Run scheduled actions through their queues at due time
+- *(scheduler)* Add steps to schedule an action and cancel a scheduled run
+- *(queues)* List scheduled runs with run now and cancel
+- *(scripting)* Schedule and cancel action runs from scripts
+- *(twitch)* Sync creator goals on every connect
+- *(scheduler)* Hold due runs until a paused queue resumes
+- *(overlays)* Tell chat overlay pages which platform a message came from
+- *(ui)* Ask before leaving a screen or closing with unsaved code
+- *(ui)* Save with Ctrl/Cmd-S and leave the code editor with Esc
+- *(ui)* Add emote stripping toggles, trigger source chips and voice gate retry
+- *(storage)* Key chat history by viewer id and keep the last messages per viewer
+- *(chat)* Record the viewer id and trim each viewer to the last messages
+- *(chat)* Key the viewer card by platform and viewer id
+- *(chat)* Allow unlimited chat history per viewer
+- *(chat)* Show a viewer's saved messages on the viewer card
+- *(chat)* Open a viewer's saved messages in a dialog from the card
+- *(tts)* Set or block a viewer's TTS voice from the viewer card
+- *(twitch)* Look up a viewer's channel follow date
+- *(youtube)* Look up a viewer's channel subscription date
+- *(chat)* Show the follow date on the viewer card
+- *(twitch)* Let moderation, shoutout and whisper steps target a user id
+- *(platform)* Add an optional ban list capability
+- *(twitch)* List the channel's active bans and timeouts
+- *(chat)* Add a Banned tab listing Twitch bans with unban
+- *(storage)* Add a ban ledger for platforms without a ban list API
+- *(youtube)* Keep bans in the ledger so unban survives a restart
+- *(kick)* Keep bans in the ledger and list them for the Banned tab
+- *(chat)* Unban YouTube and Kick rows and keep the Banned tab steady
+- *(storage)* Keep action history for its own number of days
+- *(actions)* Bound the schedule delay by the selected unit
+- *(triggers)* Explain each permission rung for the trigger's platform
+- *(actions)* Edit step durations as an amount with a unit
+- *(pipeline)* Report applied replacements per preview stage
+- *(tts)* Colour each filter's replacements in the live preview
+- *(tts)* Match literal replacements as whole words by default
+- *(obs)* Show why OBS could not connect while disconnected
+- *(tts)* Pick an installed engine voice in the speak step
+- *(overlays)* Pick the speech voice from installed voices and flag a missing one
+- *(twitch)* Toggle shield mode from one live-state quick action
+- *(overlays)* Add sparks, assemble and glow burst particle entrances
+
+### 🚜 Refactor
+- *(overlays)* Name page contract properties from the shared metrics
+- Delete repository, limiter and platform methods nothing calls
+- *(obs)* Remove the raw request step that could never run
+- *(chat)* Bind each history dialog to one viewer
+- *(storage)* Drop the unused whole-table prune from history and event log
+- *(server)* Run the audio clip store on the tokio clock
+- *(server)* Drop the abort shortcut only tests used
+- *(runtime)* Pass core sub-action dependencies as one struct
+- *(overlay)* Size kind previews from the one metrics table
+- *(runtime)* Drop the unused argument-free condition evaluation
+- *(actions)* Decode step chains with the runtime decoder
+- *(youtube)* Share the quota budget through an owned handle
+- *(platforms)* Share credential storage error mapping across platforms
+- *(twitch)* Receive chat through the platform connect and event stream
+- *(types)* Drop the platform scope constructor only tests used
+- *(chat)* Drop the link segment no platform ever produces
+- *(hotkey)* Take the input device directory as a parameter
+- *(hotkeys)* Split the hotkeys screen into focused modules
+- *(overlays)* Group the overlays screen state by responsibility
+- *(actions)* Split the step dialog into focused modules
+- *(soundboard)* Split the soundboard screen into focused modules
+- *(actions)* Split the action editor into focused modules
+- *(tts)* Name every engine id once
+- *(storage)* Drop the viewer message counter nothing reads
+
+### 🛠️ Build
+- *(deps)* Bump rustls to 0.23.45 in the emulator
+- *(deps)* Bump source-map-js to 1.2.2 in pageprobe
+- Check out embedded text assets with LF line endings on every OS
+- *(deps)* Bump taiki-e/install-action from 2.87.21 to 2.87.22 (#81)
+- *(deps)* Bump notify-rust from 4.18.0 to 4.18.1 (#82)
+- *(deps)* Bump rubato from 5.0.0 to 5.0.1 (#83)
+- *(deps)* Bump libc from 0.2.189 to 0.2.190 (#84)
+- *(build)* Run lint and tests on all OSes before release and manual builds
+- *(build)* Test the release build in place instead of a separate test stage
+- *(deps)* Bump taiki-e/install-action from 2.87.22 to 2.87.27 (#85)
+- *(deps)* Bump midir from 0.11.0 to 0.11.1 (#86)
+- *(deps)* Bump notify-rust from 4.18.1 to 4.18.2 (#87)
+- *(deps)* Bump serde_json from 1.0.151 to 1.0.152 (#88)
+- *(deps)* Bump tokio-util from 0.7.19 to 0.7.20 (#89)
+- *(deps)* Bump jiff from 0.2.37 to 0.2.38 (#90)
+- *(deps)* Bump gpui and gpui_platform to zed v1.23.3
+- *(deps)* Bump rustls to 0.23.46 for the October TLS advisories
+
+### 🧪 Testing
+- *(runtime)* Cover the stream-live signal and platform attribution
+- *(runtime)* Cover interval timers and targeted tick matching
+- *(chat)* Cover bot filtering, the own-echo ledger and Kick badges
+- *(tts)* Cover speaker identity, alias fallback and per-viewer limits
+- *(triggers)* Cover timer summaries, cooldown gating and the timers filter
+- *(platforms)* Cover live-source replacement and trigger label translations
+- *(tts)* Cover platform-scoped voice aliases
+- *(tts)* Cover case-insensitive alias switching
+- *(platforms)* Cover managed reward collections
+- *(emulator)* Fake channel point rewards
+- *(platforms)* Cover reward pickers and manager connection states
+- *(ui)* Cover catalog-backed pickers in action steps
+- *(ui)* Follow catalog pickers in trigger forms
+- *(overlays)* Cover source-box sizing, margins and their migration
+- *(overlays)* Cover overlay sizing, margins, look carry and sizing notice
+- *(discord)* Cover allowed_mentions per toggle and webhook secret redaction
+- *(emulator)* Add a fake Discord webhook receiver and go-live ping scenario
+- *(discord)* Expect the default mention policy on file uploads
+- *(overlays)* Cover motion presets, exit tail and override scan
+- *(overlays)* Cover motion id scan, timing line and notices
+- *(overlays)* Expect translated preset names in the timing line
+- *(platforms)* Cover integration lifecycle, gating and enabled-state seeding
+- *(platforms)* Cover targeted send gating and lifecycle bounds
+- *(scripting)* Cover script sends and quick actions aimed at disabled integrations
+- *(integrations)* Cover the hub, reference tally and enabled-only sidebar
+- *(integrations)* Cover first-run welcome, disabled page and enabled-only tally
+- *(integrations)* Cover inline disabled-integration states and switch watch
+- *(home)* Cover connection mirror and hub breadcrumb navigation
+- *(integrations)* Cover connect follow-up, failed page and run-history jumps
+- *(integrations)* Cover failed-integration gating and instant test-run halt
+- *(chat)* Cover blank-target broadcasts and the no-platform refusal
+- *(emulator)* Pass the mention policy to the Discord file upload
+- *(emulator)* Add a fake OBS WebSocket server with connection and trigger scenarios
+- *(chat)* Cover reply and whisper intent routing and whisper privacy
+- *(emulator)* Add a fake Twitch whisper endpoint and a script whisper scenario
+- *(chat)* Cover composer send planning, delivery tracking and target availability
+- *(emulator)* Add a core chat send request scenario for the Twitch endpoint
+- *(chat)* Cover running-only platform reach for composer send planning
+- *(storage)* Drop tests of one-off legacy data migrations
+- *(storage)* Verify baseline schema equivalence and journal adoption
+- *(storage)* Cover the pre-baseline boot screen text and state
+- *(obs)* Cover studio mode error mapping
+- *(emulator)* Fake OBS studio mode and preview scene scenario
+- *(ui)* Cover the picker keyboard ring visibility
+- *(donations)* Cover money parsing, donation events and the donation trigger
+- *(chat)* Cover first-time chatter detection and the viewer identity envelope
+- *(emulator)* Add a first-time chatter filter scenario
+- *(storage)* Keep baseline and journal tests valid past the newest migration
+- *(donations)* Cover the donation ledger repository
+- *(endpoints)* Pin the Donatello production endpoint
+- *(donations)* Cover the Donatello poller, token check, normalization and redirect policy
+- *(emulator)* Add a fake Donatello API
+- *(donations)* Cover the monobank poller, token check, windows and redirect policy
+- *(emulator)* Add a fake monobank API
+- *(donations)* Cover ingest, the test donation step and the donation factory
+- *(emulator)* Drive donation services and forge restarts from scenarios
+- *(donations)* Cover the donation settings page and service wiring
+- *(emulator)* Run fake Donatello and monobank alone with stdin injection
+- *(storage)* Cover latest value upsert, listing and slot reset
+- *(overlays)* Cover the latest value projector, feeds and read surfaces
+- *(emulator)* Check donations and cheers fill the latest donation slot
+- *(emulator)* Keep events published while forge boots after a restart
+- *(overlays)* Cover the latest look content, slot binding, push and box metrics
+- *(emulator)* Read a reopened overlay page from its first frame
+- *(overlays)* Cover the latest look preview, reset flow and editor status
+- *(chat)* Cover active viewers, empty Kick usernames and latest values in editor runs
+- *(ui)* Cover undo grouping, history limit and IME edits in the shared text buffer
+- *(ui)* Cover html, css, js, json and rhai highlighting and token colors
+- *(ui)* Cover code editor incremental relex, indent newline and line geometry
+- *(overlays)* Guard the page contract against drift from the runtime asset
+- *(overlays)* Cover bindings intro highlighting and label coverage in en and uk
+- *(ui)* Cover block indent and outdent of selected lines
+- *(ui)* Cover code field bodies and gating in the sub-action form
+- *(donations)* Cover holding missed donations until an overlay connects
+- *(ui)* Drop the unused input handle from the config form commit helper
+- *(ui)* Cover in-place script format caret, code editor blur commits and form code fields
+- *(storage)* Cover scheduled run keyed replace, claim, settle and cascade
+- *(scheduler)* Cover scheduled run hand-off, catch-up, provenance and caps
+- *(scheduler)* Cover schedule and cancel steps, shared datetime input and claim atomicity
+- *(scheduler)* Cover archive cancelling pending runs and its revision bump
+- *(queues)* Cover scheduled run countdown, reason labels and plural forms
+- *(scripting)* Build script hosts without a scheduler in runner tests
+- *(scripting)* Cover script scheduling options, name lookup and limits
+- *(scheduler)* Cover the skip-if-late toggle and the unknown scheduled-run count note
+- *(twitch)* Cover creator goal sync on connect and the synced flag
+- *(emulator)* Serve creator goals and check they fill an overlay on connect
+- *(scheduler)* Cover scheduled runs waiting for a paused queue
+- *(emulator)* Add a fake VTube Studio API with hotkey, trigger and auth scenarios
+- *(kick)* Prove each endpoint override reaches its Kick client
+- *(emulator)* Add a fake Kick with chat, gift, stream and refresh scenarios
+- *(youtube)* Prove each endpoint override reaches its YouTube client
+- *(emulator)* Add a fake YouTube with chat, super chat, broadcast and refresh scenarios
+- *(youtube)* Pin chat-ended offline broadcast id, no re-poll and discovery cadence
+- *(kick)* Pin poller auth-required transition, single warning and recovery
+- *(ui)* Pin tab and shift-tab commit-then-move-focus on text inputs
+- *(ui)* Pin integer bound clamping in config forms and step dialog submit
+- *(kick)* Pin per-endpoint auth tracking without flapping
+- *(emulator)* Align chat-command and YouTube end scenarios with forge behavior
+- *(overlays)* Pin chat platform delivery from the sender and explicit overrides
+- *(tts)* Cover Twitch emote stripping from chat and learned reward codes
+- *(actions)* Cover the shared files-folder sandbox across all file steps
+- *(twitch)* Cover token expiry publication on every refresh path and the bundle bridge
+- *(youtube)* Make the chat-ended discovery cadence test deterministic
+- *(ui)* Cover the unsaved-work leave guard, its dialog and the script editor
+- *(twitch)* Assert gift-sub payload and variables carry no recipient
+- *(storage)* Cover write-ahead log truncate on pool close
+- *(ui)* Cover quit teardown claim and finish
+- *(twitch)* Cover OAuth endpoint override for refresh and device flow
+- *(server)* Cover nosniff on served files and socket close on shutdown
+- *(kick)* Cover sign-in flow routing through endpoint overrides
+- *(youtube)* Cover sign-in flow routing through endpoint overrides
+- *(server)* Pin auth rejection reason in the error display
+- *(chat)* Cover case-insensitive chat targets and unknown target failures
+- *(triggers)* Pin the one-gift floor on gift counts across platforms
+- *(kick)* Serialize sign-in tests that bind the fixed callback port
+- *(server)* Reserve restart-test ports outside the ephemeral range
+- *(ui)* Cover event replay id parsing, failure text and the in-flight flag
+- *(core)* Cover stopping timers and scheduled runs on shutdown
+- *(core)* Drive the evaluator backlog test through the stop handle
+- *(core)* Cover waking and draining the trigger evaluator on shutdown
+- *(ui)* Cover the save chord and leaving the code editor with Esc
+- *(ui)* Cover undo and redo history after Esc cancels a composition
+- *(tts)* Cover the queued speech estimate cap
+- *(ui)* Cover emote toggles, trigger chips, queue live apply and persist failure toasts
+- *(obs)* Drop raw request coverage with the removed step
+- *(ui)* Follow the trigger filter membership rename
+- *(ui)* Cover Points filter membership from channel point triggers
+- *(chat)* Drop watch time assertions with the removed field
+- *(storage)* Follow the per-viewer chat retention contract
+- *(storage)* Cover viewer-keyed chat retention and alias upsert
+- *(tts)* Cover voice alias re-key refusal and stored-id hot reload
+- *(chat)* Follow per-batch viewer retention in persistence tests
+- *(chat)* Cover viewer id mapping and per-batch viewer retention
+- *(chat)* Follow the viewer identity key in chat tests
+- *(chat)* Cover viewer identity keys and the per-viewer limit setting
+- *(chat)* Expect zero to mean an unlimited per-viewer history
+- *(chat)* Cover per-platform viewer actions and unlimited history
+- *(chat)* Pass a chat history repo to the chat view under test
+- *(chat)* Cover viewer card history load, merge and live append
+- *(chat)* Drop inline card history tests replaced by the dialog
+- *(chat)* Cover the viewer history dialog and live moderation marks
+- *(chat)* Drop history tests for removed viewer switching
+- *(tts)* Import voice ids after the alias form moved
+- *(tts)* Cover setting and blocking a viewer's TTS voice from the card
+- *(twitch)* Cover follow lookup mapping and short-circuits
+- *(tts)* Keep a blocked alias's engine through edit and unblock
+- *(emulator)* Serve channel followers from injected follows
+- *(emulator)* Pass endpoints to the twitch credentials manager
+- *(youtube)* Cover subscription lookup mapping and short-circuits
+- *(emulator)* Serve youtube subscriptions from seeded subscribers
+- *(chat)* Give test builtin objects no follow lookup
+- *(chat)* Cover follow lookups on the viewer card
+- *(chat)* Expect Twitch card steps to carry the viewer id
+- *(twitch)* Cover id-or-login targeting across moderation and whisper steps
+- *(storage)* Assert close leaves no WAL or SHM files across repeated cycles
+- *(twitch)* Cover the ban list mapping and the unban not-banned rule
+- *(emulator)* Serve twitch banned users and unban routes
+- *(chat)* Give test builtin objects no ban list
+- *(chat)* Cover the Banned tab ban list, relist debounce and unban
+- *(storage)* Give test data providers a ban ledger accessor
+- *(storage)* Cover ban ledger merge rules, expiry, ordering and migration
+- *(youtube)* Pass a ban ledger to youtube moderation and chat under test
+- *(youtube)* Cover the ban ledger in moderation, chat poller and ban list
+- *(kick)* Pass a ban ledger to kick moderation and chat under test
+- *(kick)* Cover the ban ledger in moderation, chat, reason and ban list
+- *(chat)* Allow unban on YouTube and Kick rows in Banned tab tests
+- *(chat)* Cover YouTube and Kick unban, hidden relist, depth and unban suppression
+- *(chat)* Expect ledger groups to relist whenever Banned is shown
+- *(chat)* Cover YouTube and Kick relist after card ban, timeout and tab show
+- *(storage)* Use well-formed blob ids in media fixtures
+- *(storage)* Cover overlay create races, action format stamps and media id checks
+- *(storage)* Drop mocks and tests of the removed whole-table prune
+- *(storage)* Cover chunked retention pruning and media id deserialization
+- *(storage)* Cover separate action history retention windows
+- *(server)* Stop test servers gracefully and expect ignored unfetched verdicts
+- *(server)* Cover clip expiry, early verdicts and the favicon route
+- *(runtime)* Register core sub-actions through the dependency struct
+- *(overlay)* Compose previews with an explicit sizing
+- *(runtime)* Evaluate conditions against an empty argument stack
+- *(runtime)* Drop lineage walk tests and build events with a depth
+- *(runtime)* Cover causation depth inheritance, held lineages and replay
+- *(runtime)* Cover the loop run-history cap and its summary row
+- *(overlay)* Size each kind's preview from its own base text size
+- *(runtime)* Stop self-loops whose steps flood their events out of the ring
+- *(runtime)* Cover held step lineages in concurrent and nested runs
+- Read the key of an amount with unit field
+- *(actions)* Cover schedule delay bounds per selected unit
+- *(ui)* Drop the case that pinned Tab replacing an in-line selection
+- *(desktop)* Give the test backend a working media library
+- *(ui)* Cover the latest editor, picker, chat, diagnostics and overlay fixes
+- *(soundboard)* Settle pads from the reported play outcome
+- *(actions)* Build the actions screen with a clip library
+- *(soundboard)* Pin each play outcome the player reports
+- *(actions)* Cover the missing-file marker in the clip picker
+- *(soundboard)* Expect an early stop to be settled by its finish event
+- *(actions)* Cover refusing to save a step its runner rejects
+- *(triggers)* Cover per-platform permission rung meanings
+- Read the key of a duration field
+- *(actions)* Cover step durations edited as an amount with a unit
+- *(actions)* Cover duration units that can only hold zero
+- *(youtube)* Build quota-using parts with the shared quota handle
+- *(twitch)* Build bundles over a connected platform
+- *(twitch)* Cover the single platform-owned session, teardown and event burst
+- *(discord)* Pin webhook edits made during the startup listing
+- *(youtube)* Pin one quota budget across shared handles
+- *(platforms)* Pin credential storage error mapping
+- *(twitch)* Pin the disconnected report and token save on a forced chat stop
+- *(tts)* Build the preview config through its public path
+- *(pipeline)* Cover punctuation-wrapped blocklist hits
+- *(tts)* Cover preview mark tints and spoken marks
+- *(audio)* Fail a fan-out route whose verdict the test dropped
+- *(pipeline)* Cover preview marks through every stage
+- *(tts)* Build literal rules with the inside-words flag
+- *(pipeline)* Cover whole-word replacements and combined output marks
+- *(tts)* Cover the inside-words toggle from modal to storage and builder
+- *(kick)* Cover quick actions across the chat connection lifecycle
+- Guard the first message-hinted variable and keep tests off real hosts
+- *(platforms)* Route endpoint fixtures to a closed loopback port
+- Build platform scopes directly and drop link segment cases
+- *(hotkey)* Merge error display checks into one table
+- *(hotkey)* Cover portal triggers, session loss and evdev device lifecycle
+- *(hotkey)* Cover the portal session state machine and input dir watcher
+- *(events)* Pin flat youtube and vtube wire names
+- *(integrations)* Pin auto-reconnect off parking and the connect failure banner
+- *(tts)* Build speak requests and show speech with the voice field
+- *(tts)* Pin engine voice routing, missing-voice refusal and the speech failure toast
+- *(twitch)* Pin the live shield toggle and its quick action reload
+- *(overlay)* Pin particle entrances to the form and the page engine
+- *(twitch)* Keep a notified shield phase through a failed connect check
+- *(hotkey)* Keep the mock portal session sender quiet off Linux
+- *(chat)* Follow the shared viewer message ledger
+- *(chat)* Page viewer history through a cursor
+- *(chat)* Pin the viewer message tile to the paged history rows
+- *(storage)* Build viewers without the dropped message counter
+- *(chat)* Pin the viewer history to its loaded rows when an older page fails
+- *(storage)* Migrate viewers to 53 without the message counter
+- *(storage)* Make the retention pruner tests independent of runner speed
+- *(solution)* Replace wall-clock deadlines with event waits and hang guards
+- *(vtube)* Pin the request deadline and unresponsive drop on a frozen clock
+
 ## [0.5.5] - 2026-09-30
 ### ⚙️ Miscellaneous Tasks
 - *(deps)* Bump taiki-e/install-action from 2.87.15 to 2.87.20 (#75)
@@ -9,6 +527,7 @@ All notable changes to this project will be documented in this file.
 - Remove comments added since the last release
 - Remove comments across the codebase, keep only SAFETY and CLI help
 - *(deps)* Bump taiki-e/install-action from 2.87.20 to 2.87.21 (#80)
+- Release
 
 ### ⚡ Performance
 - *(runtime)* Match triggers against an in-memory catalog, not storage
@@ -24,6 +543,7 @@ All notable changes to this project will be documented in this file.
 - *(contributing)* Match the current crates, toolchain and workflow
 - *(storage)* Describe the schema mismatch outcome as it happens
 - *(readme)* Retake screenshots in one theme
+- *(release)* Release v0.5.5
 
 ### 🚀 Features
 - *(ui)* Show dropped events in the footer, on Home and in chat

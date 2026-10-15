@@ -117,3 +117,89 @@ fn init_supervisor_logging(data_dir: &Path) {
         Err(_) => builder.with_writer(std::io::stderr).init(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use forge_storage::{DATABASE_FILE_NAME, DataProvider, EXPECTED_SCHEMA_VERSION};
+    use forge_update::{SchemaProbe, SupervisorOutcome};
+
+    use super::{EXIT_SUPERVISOR_ERROR, StoredSchemaVersion, supervisor_exit_code};
+    use crate::EXIT_USAGE_ERROR;
+
+    const TEST_KEY: [u8; 32] = [0x5a; 32];
+
+    #[test]
+    fn supervisor_exits_zero_only_when_the_new_version_is_kept_or_nothing_was_due() {
+        for outcome in [
+            SupervisorOutcome::NothingPending,
+            SupervisorOutcome::Updated,
+            SupervisorOutcome::AwaitingFirstStart,
+        ] {
+            assert_eq!(supervisor_exit_code(outcome), 0, "for {outcome:?}");
+        }
+        for outcome in [
+            SupervisorOutcome::RolledBack,
+            SupervisorOutcome::NotApplied,
+            SupervisorOutcome::RollbackFailed,
+        ] {
+            let code = supervisor_exit_code(outcome);
+            assert!(
+                code != 0 && code != EXIT_USAGE_ERROR && code != EXIT_SUPERVISOR_ERROR,
+                "{outcome:?} exits {code}, indistinguishable from success, usage or supervisor error"
+            );
+        }
+    }
+
+    #[test]
+    fn a_failed_rollback_exits_differently_from_a_completed_one() {
+        assert_ne!(
+            supervisor_exit_code(SupervisorOutcome::RollbackFailed),
+            supervisor_exit_code(SupervisorOutcome::RolledBack),
+        );
+    }
+
+    #[test]
+    fn schema_probe_reports_no_version_for_a_missing_or_unreadable_database() {
+        for contents in [
+            None,
+            Some(&b""[..]),
+            Some(&b"this is not a sqlite database, only some bytes on disk"[..]),
+            Some(&[0xff_u8; 4096][..]),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            if let Some(bytes) = contents {
+                std::fs::write(dir.path().join(DATABASE_FILE_NAME), bytes).unwrap();
+            }
+            assert_eq!(
+                StoredSchemaVersion.current_schema_version(dir.path()),
+                None,
+                "for {contents:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn schema_probe_reads_the_version_of_the_migrated_database_in_the_data_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let url = format!("sqlite://{}", dir.path().join(DATABASE_FILE_NAME).display());
+        let media = dir.path().join("media");
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let backend =
+                    forge_storage_sqlite::SqliteBackend::open_for_test(&url, TEST_KEY, media, None)
+                        .await
+                        .unwrap();
+                backend.shutdown().await;
+            });
+
+        assert_eq!(
+            StoredSchemaVersion.current_schema_version(dir.path()),
+            Some(EXPECTED_SCHEMA_VERSION)
+        );
+    }
+}

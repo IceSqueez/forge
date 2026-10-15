@@ -327,7 +327,7 @@ mod tests {
 
     use super::{
         CURRENT_VERSION, REPO_URL, Release, UpdateNotice, any_output_active, latest_release_url,
-        parse_version, release_from_json, should_notify,
+        parse_version, release_from_json, release_page_url, should_notify,
     };
 
     fn status(active: bool) -> HealthMetric {
@@ -439,6 +439,65 @@ mod tests {
             latest_release_url(REPO_URL).is_some(),
             "no release api url from {REPO_URL:?}",
         );
+        assert!(
+            release_page_url(REPO_URL, CURRENT_VERSION).is_some(),
+            "no release page url from {REPO_URL:?}",
+        );
+    }
+
+    #[test]
+    fn release_page_url_opens_the_v_tag_page_whatever_the_version_and_web_url_spelling() {
+        for (repo, version, expected) in [
+            (
+                "https://github.com/nova/forge",
+                "0.7.1",
+                "https://github.com/nova/forge/releases/tag/v0.7.1",
+            ),
+            (
+                "https://github.com/nova/forge",
+                "v0.7.1",
+                "https://github.com/nova/forge/releases/tag/v0.7.1",
+            ),
+            (
+                "https://github.com/nova/forge.git",
+                " v0.7.1 ",
+                "https://github.com/nova/forge/releases/tag/v0.7.1",
+            ),
+            (
+                "https://github.com/nova/forge/",
+                "0.7.1",
+                "https://github.com/nova/forge/releases/tag/v0.7.1",
+            ),
+            (
+                "https://github.com/nova/forge.git/",
+                "0.8.0-rc.1",
+                "https://github.com/nova/forge/releases/tag/v0.8.0-rc.1",
+            ),
+        ] {
+            assert_eq!(
+                release_page_url(repo, version).as_deref(),
+                Some(expected),
+                "for {repo:?} {version:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn release_page_url_is_none_without_a_github_repo_or_a_version() {
+        for (repo, version) in [
+            ("https://gitlab.com/nova/forge", "0.7.1"),
+            ("git@github.com:nova/forge.git", "0.7.1"),
+            ("https://github.com/", "0.7.1"),
+            ("https://github.com/nova/forge", ""),
+            ("https://github.com/nova/forge", "v"),
+            ("https://github.com/nova/forge", "   "),
+        ] {
+            assert_eq!(
+                release_page_url(repo, version),
+                None,
+                "accepted {repo:?} {version:?}",
+            );
+        }
     }
 
     #[test]

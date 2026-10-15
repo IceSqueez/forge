@@ -479,3 +479,70 @@ fn main() {
     }
     silence_logging();
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_update::CANDIDATE_FLAG;
+
+    use super::{FLAG_SCREEN, StartupRequest, parse_startup_request};
+    use crate::screen::Screen;
+
+    fn parse(args: &[&str]) -> Result<StartupRequest, String> {
+        parse_startup_request(args.iter().map(|arg| (*arg).to_owned()))
+    }
+
+    fn opened(args: &[&str]) -> Option<Screen> {
+        match parse(args) {
+            Ok(StartupRequest::Open(screen)) => Some(screen),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn the_update_candidate_flag_starts_exactly_as_if_it_were_absent() {
+        let name = Screen::accepted_cli_names()[0];
+        for (with_flag, without_flag) in [
+            (vec![CANDIDATE_FLAG], vec![]),
+            (
+                vec![CANDIDATE_FLAG, FLAG_SCREEN, name],
+                vec![FLAG_SCREEN, name],
+            ),
+            (
+                vec![FLAG_SCREEN, name, CANDIDATE_FLAG],
+                vec![FLAG_SCREEN, name],
+            ),
+        ] {
+            let expected = opened(&without_flag);
+            assert!(expected.is_some(), "baseline {without_flag:?} did not open");
+            assert_eq!(opened(&with_flag), expected, "for {with_flag:?}");
+        }
+    }
+
+    #[test]
+    fn arguments_other_than_the_candidate_flag_still_fail_as_unrecognized() {
+        for (args, offending) in [
+            (
+                vec!["--forge-update-candidates"],
+                "--forge-update-candidates",
+            ),
+            (
+                vec!["--forge-update-candidate=1"],
+                "--forge-update-candidate=1",
+            ),
+            (vec!["--FORGE-UPDATE-CANDIDATE"], "--FORGE-UPDATE-CANDIDATE"),
+            (
+                vec!["--forge-update-supervisor"],
+                "--forge-update-supervisor",
+            ),
+            (vec![CANDIDATE_FLAG, "--bogus"], "--bogus"),
+        ] {
+            let message = parse(&args).err();
+            assert!(
+                message
+                    .as_deref()
+                    .is_some_and(|m| m.contains("unrecognized") && m.contains(offending)),
+                "{args:?} gave {message:?}"
+            );
+        }
+    }
+}

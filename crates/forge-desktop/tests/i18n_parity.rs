@@ -437,3 +437,25 @@ fn every_tr_call_site_passes_exactly_the_arguments_its_message_declares() {
         diverging.join("\n  ")
     );
 }
+
+#[test]
+fn rollback_messages_picked_by_data_outcome_take_the_same_arguments_in_both_locales() {
+    let expected: BTreeSet<String> = ["failed", "reason", "restored"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    for locale in ["en", "uk"] {
+        let declared = placeholders_by_key(&load(locale));
+        for key in [
+            "update_report_rolled_back",
+            "update_report_rolled_back_data_restored",
+            "update_report_rolled_back_data_failed",
+        ] {
+            assert_eq!(
+                declared.get(key),
+                Some(&expected),
+                "{locale} {key} does not take the arguments the runtime-picked call passes"
+            );
+        }
+    }
+}

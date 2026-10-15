@@ -6,3 +6,4 @@ shared-version = true
 consolidate-commits = true
 tag-name = "v{{version}}"
 pre-release-commit-message = "chore(release): {{version}}"
+pre-release-hook = ["sh", "-c", "cargo update --offline --workspace --manifest-path \"$WORKSPACE_ROOT/tools/forge-emulator/Cargo.toml\""]

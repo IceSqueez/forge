@@ -1,16 +1,36 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
-fn locale_path(locale: &str) -> PathBuf {
+fn app_locale_path(locale: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("locales")
         .join(locale)
         .join("main.ftl")
 }
 
+fn kit_locale_path(locale: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("forge-components")
+        .join("locales")
+        .join(locale)
+        .join("main.ftl")
+}
+
 fn load(locale: &str) -> String {
-    let path = locale_path(locale);
-    let content = std::fs::read_to_string(&path).unwrap_or_default();
+    format!("{}\n{}", load_app(locale), load_kit(locale))
+}
+
+fn load_app(locale: &str) -> String {
+    read_catalog(&app_locale_path(locale))
+}
+
+fn load_kit(locale: &str) -> String {
+    read_catalog(&kit_locale_path(locale))
+}
+
+fn read_catalog(path: &Path) -> String {
+    let content = std::fs::read_to_string(path).unwrap_or_default();
     assert!(
         !content.is_empty(),
         "could not read locale catalog at {}",
@@ -181,17 +201,14 @@ fn duplicates(keys: &[String]) -> Vec<String> {
     dups
 }
 
-#[test]
-fn en_and_uk_define_identical_message_key_sets() {
-    let en_keys = message_keys(&load("en"));
-    let uk_keys = message_keys(&load("uk"));
+fn assert_identical_key_sets(label: &str, en_content: &str, uk_content: &str, anchor: &str) {
+    let en_keys = message_keys(en_content);
+    let uk_keys = message_keys(uk_content);
 
-    for anchor in ["nav_home", "common_save", "triggers_override_badge"] {
-        assert!(
-            en_keys.iter().any(|k| k == anchor),
-            "parser failed to find anchor key `{anchor}` in en catalog"
-        );
-    }
+    assert!(
+        en_keys.iter().any(|k| k == anchor),
+        "parser failed to find anchor key `{anchor}` in the en {label} catalog"
+    );
 
     let en: HashSet<&str> = en_keys.iter().map(String::as_str).collect();
     let uk: HashSet<&str> = uk_keys.iter().map(String::as_str).collect();
@@ -203,19 +220,52 @@ fn en_and_uk_define_identical_message_key_sets() {
 
     assert!(
         en_only.is_empty() && uk_only.is_empty(),
-        "locale key sets diverge:\n  en-only ({}): {en_only:?}\n  uk-only ({}): {uk_only:?}",
+        "{label} key sets diverge:\n  en-only ({}): {en_only:?}\n  uk-only ({}): {uk_only:?}",
         en_only.len(),
         uk_only.len()
     );
 }
 
 #[test]
-fn no_message_key_is_defined_twice_within_a_locale() {
+fn en_and_uk_define_identical_app_message_key_sets() {
+    assert_identical_key_sets("app", &load_app("en"), &load_app("uk"), "nav_home");
+}
+
+#[test]
+fn en_and_uk_define_identical_kit_message_key_sets() {
+    assert_identical_key_sets(
+        "kit",
+        &load_kit("en"),
+        &load_kit("uk"),
+        "widget_date_month_january",
+    );
+}
+
+#[test]
+fn no_message_key_is_defined_twice_within_a_catalog_file() {
     for locale in ["en", "uk"] {
-        let dups = duplicates(&message_keys(&load(locale)));
+        for (label, content) in [("app", load_app(locale)), ("kit", load_kit(locale))] {
+            let dups = duplicates(&message_keys(&content));
+            assert!(
+                dups.is_empty(),
+                "{locale} {label} catalog defines these keys more than once: {dups:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn no_message_key_is_defined_in_both_the_app_and_kit_catalogs() {
+    for locale in ["en", "uk"] {
+        let app: HashSet<String> = message_keys(&load_app(locale)).into_iter().collect();
+        let mut shadowed: Vec<String> = message_keys(&load_kit(locale))
+            .into_iter()
+            .filter(|key| app.contains(key))
+            .collect();
+        shadowed.sort_unstable();
         assert!(
-            dups.is_empty(),
-            "{locale} catalog defines these keys more than once: {dups:?}"
+            shadowed.is_empty(),
+            "{locale} app and kit catalogs both define these keys, one silently shadows the other: {shadowed:?}"
         );
     }
 }

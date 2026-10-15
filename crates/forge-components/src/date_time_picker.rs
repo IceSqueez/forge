@@ -404,7 +404,7 @@ mod tests {
     use super::*;
     use crate::locale::install_bundle;
 
-    const UK_CATALOG: &str = include_str!("../../forge-desktop/locales/uk/main.ftl");
+    const UK_CATALOG: &str = include_str!("../locales/uk/main.ftl");
 
     fn install_ukrainian() {
         let lang: LanguageIdentifier = "uk-UA".parse().unwrap_or_default();

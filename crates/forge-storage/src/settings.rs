@@ -57,9 +57,8 @@ pub mod reserved_keys {
     pub const SOUNDBOARD_MASTER_VOLUME: &str = "soundboard.master_volume";
     pub const SOUNDBOARD_ALSO_HEADPHONES: &str = "soundboard.also_headphones";
     pub const DIAGNOSTICS_LOG_LEVEL: &str = "diagnostics.log_level";
-    pub const UPDATES_NOTIFY: &str = "updates.notify";
     pub const STAY_AWAKE: &str = "app.stay_awake";
-    pub const UPDATES_SKIPPED_VERSION: &str = "updates.skipped_version";
+    pub const UPDATES_ROLLED_BACK_VERSION: &str = "updates.rolled_back_version";
     pub const UPDATES_LEFTOVER_INSTALL_NOTICED: &str = "updates.leftover_install_noticed";
     pub const CREDENTIALS_KEY_LOSS: &str = "credentials.key_loss_stranded";
     pub const INTEGRATION_ENABLED_PREFIX: &str = "integration.enabled.";
@@ -130,9 +129,8 @@ pub mod disclosure {
             | reserved_keys::SOUNDBOARD_ENABLED
             | reserved_keys::SOUNDBOARD_MASTER_VOLUME
             | reserved_keys::SOUNDBOARD_ALSO_HEADPHONES
-            | reserved_keys::UPDATES_NOTIFY
             | reserved_keys::STAY_AWAKE
-            | reserved_keys::UPDATES_SKIPPED_VERSION
+            | reserved_keys::UPDATES_ROLLED_BACK_VERSION
             | reserved_keys::UPDATES_LEFTOVER_INSTALL_NOTICED
             | reserved_keys::CREDENTIALS_KEY_LOSS
             | reserved_keys::RETIRED_MIDI_ENABLED

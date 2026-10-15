@@ -256,18 +256,12 @@ settings_diagnostics_level_error = Error
 settings_version_title = Версія та оновлення
 settings_version_license = Відкритий код · MIT OR Apache-2.0
 settings_version_check_updates = Перевірити оновлення
-settings_version_notify_label = Сповіщати про нові версії
-settings_version_notify_hint = Під час запуску показує сповіщення про новіший реліз, доки ви не пропустите цю версію. Ніколи під час трансляції чи запису в OBS.
 
 ## Сповіщення про оновлення
 
 app_menu_quit = Вийти з forge
 update_toast_available = Доступна forge { $version }
 update_toast_open_action = Завантажити
-update_toast_skip_action = Пропустити цю версію
-update_toast_update_action = Оновити
-update_toast_downloading = Завантаження forge { $version }: { $percent }%
-update_toast_cancel_action = Скасувати
 update_toast_ready = forge { $version } готова. Вона встановиться, коли ви закриєте програму.
 update_toast_restart_action = Перезапустити й оновити
 update_toast_preparing = Підготовка оновлення до forge { $version }...

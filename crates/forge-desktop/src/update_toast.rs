@@ -2,18 +2,13 @@ use forge_components::{Icon, ToastAction, ToastData, ToastKind, tr};
 use forge_update::ApplyMode;
 use gpui::{App, WeakEntity};
 
-use crate::update_flow::{
-    UpdateCandidate, UpdateFailure, UpdateFlow, UpdateStage, download_fraction, download_percent,
-};
+use crate::update_flow::{UpdateCandidate, UpdateFailure, UpdateFlow, UpdateStage};
 
 const PREPARING_PROGRESS: f32 = 1.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateCommand {
-    StartDownload,
     OpenReleasePage,
-    Skip,
-    Cancel,
     Restart,
     Retry,
 }
@@ -39,17 +34,6 @@ fn button(label: String, command: UpdateCommand) -> Option<ToastButton> {
 }
 
 fn offered(candidate: &UpdateCandidate) -> UpdateToast {
-    let primary = if candidate.install.is_some() {
-        button(
-            tr!("update_toast_update_action"),
-            UpdateCommand::StartDownload,
-        )
-    } else {
-        button(
-            tr!("update_toast_open_action"),
-            UpdateCommand::OpenReleasePage,
-        )
-    };
     UpdateToast {
         kind: ToastKind::Info,
         message: tr!(
@@ -58,8 +42,11 @@ fn offered(candidate: &UpdateCandidate) -> UpdateToast {
         ),
         icon: Some(Icon::Sparkles),
         progress: None,
-        primary,
-        secondary: button(tr!("update_toast_skip_action"), UpdateCommand::Skip),
+        primary: button(
+            tr!("update_toast_open_action"),
+            UpdateCommand::OpenReleasePage,
+        ),
+        secondary: None,
     }
 }
 
@@ -73,24 +60,8 @@ fn failure_message(failure: UpdateFailure, version: &str) -> String {
 
 pub fn update_toast(stage: &UpdateStage) -> Option<UpdateToast> {
     match stage {
-        UpdateStage::Idle => None,
+        UpdateStage::Idle | UpdateStage::Downloading(_) => None,
         UpdateStage::Offered(candidate) => Some(offered(candidate)),
-        UpdateStage::Downloading {
-            candidate,
-            progress,
-            ..
-        } => Some(UpdateToast {
-            kind: ToastKind::Info,
-            message: tr!(
-                "update_toast_downloading",
-                version = candidate.version.as_str(),
-                percent = i64::from(download_percent(*progress)),
-            ),
-            icon: Some(Icon::Sparkles),
-            progress: Some(download_fraction(*progress)),
-            primary: None,
-            secondary: button(tr!("update_toast_cancel_action"), UpdateCommand::Cancel),
-        }),
         UpdateStage::Ready { candidate, .. } => Some(UpdateToast {
             kind: ToastKind::Info,
             message: tr!("update_toast_ready", version = candidate.version.as_str()),

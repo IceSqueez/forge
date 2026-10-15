@@ -4,23 +4,22 @@ use std::time::Duration;
 
 use forge_components::{Icon, ToastAction, ToastKind, tr};
 use forge_platform_core::paths;
-use forge_storage::DataProvider;
+use forge_storage::{DataProvider, SettingsRepo, reserved_keys};
 use forge_update::{
     ApplyFailure, DatabaseRestore, GithubRepo, RollbackReason, UpdateError, UpdateReport,
     take_update_report, write_health_marker,
 };
-use gpui::{App, AsyncApp};
+use gpui::{App, AsyncApp, Task};
 use tokio::runtime::Handle;
 
 use crate::async_bridge::{detached, open_path};
-use crate::update_check::{CURRENT_VERSION, REPO_URL, remember_skipped};
+use crate::update_check::{CURRENT_VERSION, REPO_URL};
 use forge_components::PushToast;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReportOffer {
     Nothing,
     Download { version: String },
-    SkipOrDownload { version: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,7 +55,7 @@ pub fn report_notice(report: &UpdateReport) -> ReportNotice {
                     restored = restored_version.as_str(),
                     reason = rollback_reason(reason),
                 ),
-                offer: ReportOffer::SkipOrDownload {
+                offer: ReportOffer::Download {
                     version: failed_version.clone(),
                 },
             }
@@ -86,6 +85,22 @@ pub fn report_notice(report: &UpdateReport) -> ReportNotice {
             offer: ReportOffer::Nothing,
         },
     }
+}
+
+pub fn rolled_back_version(report: &UpdateReport) -> Option<&str> {
+    match report {
+        UpdateReport::RolledBack { failed_version, .. }
+        | UpdateReport::RollbackFailed { failed_version, .. } => Some(failed_version),
+        UpdateReport::Updated { .. } | UpdateReport::NotApplied { .. } => None,
+    }
+}
+
+fn remember_rolled_back(version: String, backend: Arc<dyn DataProvider>, rt_handle: &Handle) {
+    detached(rt_handle, "remember the rolled back version", async move {
+        let repo = backend as Arc<dyn SettingsRepo>;
+        repo.set_string(reserved_keys::UPDATES_ROLLED_BACK_VERSION, &version)
+            .await
+    });
 }
 
 fn rollback_reason(reason: &RollbackReason) -> String {
@@ -118,7 +133,11 @@ fn settle_boot_update(data_dir: PathBuf) -> BootUpdateState {
     BootUpdateState { report, health }
 }
 
-pub fn start_update_report(cx: &mut AsyncApp, backend: Arc<dyn DataProvider>, rt_handle: Handle) {
+pub fn start_update_report(
+    cx: &mut AsyncApp,
+    backend: Arc<dyn DataProvider>,
+    rt_handle: Handle,
+) -> Task<Option<String>> {
     let data_dir = paths::data_dir();
     let settle = cx
         .background_executor()
@@ -133,21 +152,23 @@ pub fn start_update_report(cx: &mut AsyncApp, backend: Arc<dyn DataProvider>, rt
         match state.report {
             Ok(Some(report)) => {
                 tracing::info!(?report, "update outcome reported");
-                cx.update(|cx| raise_report_toast(&report, backend, rt_handle, cx));
+                let rolled_back = rolled_back_version(&report).map(str::to_owned);
+                if let Some(version) = rolled_back.clone() {
+                    remember_rolled_back(version, backend, &rt_handle);
+                }
+                cx.update(|cx| raise_report_toast(&report, rt_handle, cx));
+                rolled_back
             }
-            Ok(None) => {}
-            Err(error) => tracing::warn!(error = %error, "update outcome could not be read"),
+            Ok(None) => None,
+            Err(error) => {
+                tracing::warn!(error = %error, "update outcome could not be read");
+                None
+            }
         }
     })
-    .detach();
 }
 
-fn raise_report_toast(
-    report: &UpdateReport,
-    backend: Arc<dyn DataProvider>,
-    rt_handle: Handle,
-    cx: &mut App,
-) {
+fn raise_report_toast(report: &UpdateReport, rt_handle: Handle, cx: &mut App) {
     let notice = report_notice(report);
     match notice.offer {
         ReportOffer::Nothing => cx.push_toast_full(
@@ -164,23 +185,6 @@ fn raise_report_toast(
             Some(download_action(&version, rt_handle)),
             Duration::ZERO,
         ),
-        ReportOffer::SkipOrDownload { version } => {
-            let download = download_action(&version, rt_handle.clone());
-            let skip = ToastAction::new(
-                tr!("update_toast_skip_action"),
-                move |_window, _app: &mut App| {
-                    remember_skipped(version.clone(), Arc::clone(&backend), &rt_handle);
-                },
-            );
-            cx.push_toast_with_secondary(
-                notice.kind,
-                notice.message,
-                None,
-                download,
-                skip,
-                Duration::ZERO,
-            );
-        }
     }
 }
 

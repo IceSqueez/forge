@@ -1,62 +1,51 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_events::Event;
-use forge_platform_core::{BuiltinHealth, HealthMetric, HealthValue};
-use forge_runtime::{EventBus, EventSubscription};
-use forge_storage::{DataProvider, SettingsRepo, get_bool_setting, reserved_keys};
+use forge_storage::{DataProvider, SettingsRepo, reserved_keys};
 use forge_update::{
     GithubRepo, InstallKind, ManualReason, Platform, PublishedRelease, TrustedKeys, UpdateClient,
     UpdateOffer, check_for_update, detect_install, fetch_latest_release, is_newer, parse_version,
 };
-use gpui::{AsyncApp, Entity};
+use gpui::{AsyncApp, Entity, Task};
 use tokio::runtime::Handle;
 
-use crate::async_bridge::{EventBatch, detached, recv_event_batch};
-use crate::integrations::ObsInstallSeed;
 use crate::update_flow::{InstallTarget, UpdateCandidate, UpdateFlow};
 
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const REPO_URL: &str = env!("CARGO_PKG_REPOSITORY");
 
-const STREAM_STOPPED_KIND: &str = "obs.streaming.stopped";
-const RECORD_STOPPED_KIND: &str = "obs.recording.stopped";
-
-pub const NOTIFY_DEFAULT: bool = true;
-
 const BOOT_SETTLE_DELAY: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UpdateNotice {
-    Raise,
-    DeferUntilObsIdle,
+pub enum UpdatePlan {
+    Download,
+    Offer,
 }
 
-pub fn should_notify(
+pub fn plan_update(
     current: &str,
     latest: &str,
-    skipped: Option<&str>,
-    enabled: bool,
-    obs_live: bool,
-) -> Option<UpdateNotice> {
-    if !enabled {
-        return None;
-    }
+    installable: bool,
+    rolled_back: Option<&str>,
+    reported_this_launch: Option<&str>,
+) -> Option<UpdatePlan> {
     let current = parse_version(current)?;
     let latest = parse_version(latest)?;
     if !is_newer(&current, &latest) {
         return None;
     }
-    if skipped
-        .and_then(parse_version)
-        .is_some_and(|seen| seen >= latest)
-    {
+    let covers_latest = |version: Option<&str>| {
+        version
+            .and_then(parse_version)
+            .is_some_and(|seen| seen >= latest)
+    };
+    if covers_latest(reported_this_launch) {
         return None;
     }
-    Some(if obs_live {
-        UpdateNotice::DeferUntilObsIdle
+    Some(if installable && !covers_latest(rolled_back) {
+        UpdatePlan::Download
     } else {
-        UpdateNotice::Raise
+        UpdatePlan::Offer
     })
 }
 
@@ -117,8 +106,7 @@ enum SignedCheck {
 }
 
 struct Probe {
-    enabled: bool,
-    skipped: Option<String>,
+    rolled_back: Option<String>,
     found: Option<FoundUpdate>,
     install: InstallKind,
 }
@@ -127,11 +115,11 @@ pub fn start_update_check(
     cx: &mut AsyncApp,
     backend: Arc<dyn DataProvider>,
     rt_handle: Handle,
-    obs: ObsInstallSeed,
-    bus: Arc<EventBus>,
+    boot_report: Task<Option<String>>,
     flow: Entity<UpdateFlow>,
 ) {
     cx.spawn(async move |cx| {
+        let reported = boot_report.await;
         cx.background_executor().timer(BOOT_SETTLE_DELAY).await;
 
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -145,42 +133,35 @@ pub fn start_update_check(
             return;
         };
 
-        let subscription = bus.subscribe();
-        let Some(notice) = should_notify(
+        let version = found.version();
+        let mut candidate = update_candidate(found, &probe.install, Platform::running());
+        let Some(plan) = plan_update(
             CURRENT_VERSION,
-            &found.version(),
-            probe.skipped.as_deref(),
-            probe.enabled,
-            obs_busy(&obs),
+            &version,
+            candidate.install.is_some(),
+            probe.rolled_back.as_deref(),
+            reported.as_deref(),
         ) else {
             return;
         };
 
-        if notice == UpdateNotice::DeferUntilObsIdle && !wait_for_obs_idle(subscription, &obs).await
-        {
-            return;
+        match plan {
+            UpdatePlan::Download => {
+                flow.update(cx, |flow, cx| flow.download(candidate, cx));
+            }
+            UpdatePlan::Offer => {
+                candidate.install = None;
+                flow.update(cx, |flow, cx| flow.offer(candidate, cx));
+            }
         }
-
-        let candidate = update_candidate(found, &probe.install, Platform::running());
-        flow.update(cx, |flow, cx| flow.offer(candidate, cx));
     })
     .detach();
 }
 
 async fn probe(backend: Arc<dyn DataProvider>) -> Probe {
     let repo = backend as Arc<dyn SettingsRepo>;
-    let enabled =
-        get_bool_setting(repo.as_ref(), reserved_keys::UPDATES_NOTIFY, NOTIFY_DEFAULT).await;
-    if !enabled {
-        return Probe {
-            enabled,
-            skipped: None,
-            found: None,
-            install: InstallKind::ManualOnly(ManualReason::NotReleaseBuild),
-        };
-    }
-    let skipped = repo
-        .get_string(reserved_keys::UPDATES_SKIPPED_VERSION)
+    let rolled_back = repo
+        .get_string(reserved_keys::UPDATES_ROLLED_BACK_VERSION)
         .await
         .ok()
         .flatten();
@@ -189,8 +170,7 @@ async fn probe(backend: Arc<dyn DataProvider>) -> Probe {
         .await
         .unwrap_or(InstallKind::ManualOnly(ManualReason::UnknownExecutable));
     Probe {
-        enabled,
-        skipped,
+        rolled_back,
         found,
         install,
     }
@@ -244,42 +224,6 @@ async fn latest_release(client: &UpdateClient, repo: &GithubRepo) -> Option<Publ
             None
         }
     }
-}
-
-fn obs_busy(obs: &ObsInstallSeed) -> bool {
-    obs.live()
-        .is_some_and(|client| any_output_active(&client.metrics()))
-}
-
-fn any_output_active(metrics: &[HealthMetric]) -> bool {
-    metrics
-        .iter()
-        .any(|metric| matches!(metric.value, HealthValue::Status { active: true, .. }))
-}
-
-async fn wait_for_obs_idle(mut subscription: EventSubscription, obs: &ObsInstallSeed) -> bool {
-    loop {
-        match recv_event_batch(&mut subscription).await {
-            EventBatch::Ready(batch) => {
-                if batch.iter().any(output_stopped) && !obs_busy(obs) {
-                    return true;
-                }
-            }
-            EventBatch::Closed => return false,
-        }
-    }
-}
-
-fn output_stopped(event: &Event) -> bool {
-    event.kind == STREAM_STOPPED_KIND || event.kind == RECORD_STOPPED_KIND
-}
-
-pub fn remember_skipped(tag: String, backend: Arc<dyn DataProvider>, rt_handle: &Handle) {
-    detached(rt_handle, "remember the skipped version", async move {
-        let repo = backend as Arc<dyn SettingsRepo>;
-        repo.set_string(reserved_keys::UPDATES_SKIPPED_VERSION, &tag)
-            .await
-    });
 }
 
 #[cfg(test)]

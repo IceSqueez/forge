@@ -3,20 +3,17 @@ use std::sync::Arc;
 
 use forge_storage::DataProvider;
 use forge_update::{
-    ApplyMode, Artifact, CancelSignal, DownloadProgress, StagedArtifact, UpdatableInstall,
-    UpdateClient, UpdateError, download_artifact, progress_channel,
+    ApplyMode, Artifact, CancelSignal, StagedArtifact, UpdatableInstall, UpdateClient, UpdateError,
+    download_artifact, progress_channel,
 };
 use gpui::{App, Context, EventEmitter, WeakEntity};
 use tokio::runtime::Handle;
 
 use crate::async_bridge::{detached, open_path, run_async};
-use crate::update_check::remember_skipped;
 use crate::update_exit::ExitHandoff;
 use crate::update_handoff::{HandoffInput, prepare_handoff};
 use crate::update_toast::{UpdateCommand, toast_data, update_toast};
 use forge_components::Toasts;
-
-const PERCENT_SCALE: u128 = 100;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstallTarget {
@@ -42,11 +39,7 @@ pub enum UpdateFailure {
 pub enum UpdateStage {
     Idle,
     Offered(UpdateCandidate),
-    Downloading {
-        candidate: UpdateCandidate,
-        progress: DownloadProgress,
-        cancel: CancelSignal,
-    },
+    Downloading(UpdateCandidate),
     Ready {
         candidate: UpdateCandidate,
         staged: StagedArtifact,
@@ -79,21 +72,6 @@ pub enum CloseDecision {
     Hold,
 }
 
-pub fn download_fraction(progress: DownloadProgress) -> f32 {
-    if progress.total == 0 {
-        return 0.0;
-    }
-    (progress.received as f64 / progress.total as f64).clamp(0.0, 1.0) as f32
-}
-
-pub fn download_percent(progress: DownloadProgress) -> u8 {
-    if progress.total == 0 {
-        return 0;
-    }
-    let received = u128::from(progress.received.min(progress.total));
-    u8::try_from(received * PERCENT_SCALE / u128::from(progress.total)).unwrap_or(u8::MAX)
-}
-
 pub fn failure_of(error: &UpdateError) -> UpdateFailure {
     match error {
         UpdateError::ArtifactHashMismatch
@@ -116,6 +94,7 @@ pub struct UpdateFlow {
     stage: UpdateStage,
     restart_requested: bool,
     ticket: u64,
+    silent_retry_spent: bool,
     toast: Option<u64>,
     backend: Arc<dyn DataProvider>,
     rt_handle: Handle,
@@ -130,6 +109,7 @@ impl UpdateFlow {
             stage: UpdateStage::Idle,
             restart_requested: false,
             ticket: 0,
+            silent_retry_spent: false,
             toast: None,
             backend,
             rt_handle,
@@ -146,22 +126,22 @@ impl UpdateFlow {
         cx.notify();
     }
 
+    pub fn download(&mut self, candidate: UpdateCandidate, cx: &mut Context<Self>) {
+        if !matches!(self.stage, UpdateStage::Idle | UpdateStage::Offered(_)) {
+            return;
+        }
+        self.start_download(candidate, cx);
+    }
+
     pub fn run(&mut self, command: UpdateCommand, cx: &mut Context<Self>) {
         match command {
-            UpdateCommand::StartDownload => self.start_download(cx),
             UpdateCommand::OpenReleasePage => self.open_release_page(cx),
-            UpdateCommand::Skip => self.skip(cx),
-            UpdateCommand::Cancel => self.cancel_download(cx),
             UpdateCommand::Restart => self.request_restart(cx),
             UpdateCommand::Retry => self.retry(cx),
         }
     }
 
-    pub fn start_download(&mut self, cx: &mut Context<Self>) {
-        let UpdateStage::Offered(candidate) = &self.stage else {
-            return;
-        };
-        let candidate = candidate.clone();
+    fn start_download(&mut self, candidate: UpdateCandidate, cx: &mut Context<Self>) {
         let Some(target) = candidate.install.clone() else {
             return;
         };
@@ -170,38 +150,33 @@ impl UpdateFlow {
             return;
         };
 
-        let (progress_tx, mut progress_rx) = progress_channel();
-        let cancel = CancelSignal::new();
         self.ticket = self.ticket.wrapping_add(1);
         let ticket = self.ticket;
-        self.stage = UpdateStage::Downloading {
-            candidate,
-            progress: progress_rx.latest(),
-            cancel: cancel.clone(),
-        };
+        self.stage = UpdateStage::Downloading(candidate);
 
-        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
         let artifact = target.artifact;
-        self.rt_handle.spawn(async move {
-            let result = match UpdateClient::for_github() {
+        let download = async move {
+            let (progress, _) = progress_channel();
+            match UpdateClient::for_github() {
                 Ok(client) => {
-                    download_artifact(&client, &artifact, &staging_dir, &progress_tx, &cancel).await
+                    download_artifact(
+                        &client,
+                        &artifact,
+                        &staging_dir,
+                        &progress,
+                        &CancelSignal::new(),
+                    )
+                    .await
                 }
                 Err(error) => Err(error),
-            };
-            drop(progress_tx);
-            let _ = done_tx.send(result);
+            }
+        };
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let _ = done_tx.send(download.await);
         });
 
         cx.spawn(async move |this: WeakEntity<Self>, cx| {
-            while let Some(progress) = progress_rx.changed().await {
-                if this
-                    .update(cx, |flow, cx| flow.apply_progress(ticket, progress, cx))
-                    .is_err()
-                {
-                    return;
-                }
-            }
             let _ = match done_rx.await {
                 Ok(result) => this.update(cx, |flow, cx| flow.finish_download(ticket, result, cx)),
                 Err(_) => this.update(cx, |flow, cx| flow.download_task_lost(ticket, cx)),
@@ -213,29 +188,6 @@ impl UpdateFlow {
         cx.notify();
     }
 
-    pub fn apply_progress(
-        &mut self,
-        ticket: u64,
-        progress: DownloadProgress,
-        cx: &mut Context<Self>,
-    ) {
-        if ticket != self.ticket {
-            return;
-        }
-        let UpdateStage::Downloading {
-            progress: current, ..
-        } = &mut self.stage
-        else {
-            return;
-        };
-        let repaint = download_percent(*current) != download_percent(progress);
-        *current = progress;
-        if repaint {
-            self.refresh_toast(cx);
-            cx.notify();
-        }
-    }
-
     pub fn finish_download(
         &mut self,
         ticket: u64,
@@ -245,8 +197,8 @@ impl UpdateFlow {
         if ticket != self.ticket {
             return;
         }
-        let Some(UpdateStage::Downloading { candidate, .. }) =
-            self.take_stage(|stage| matches!(stage, UpdateStage::Downloading { .. }))
+        let Some(UpdateStage::Downloading(candidate)) =
+            self.take_stage(|stage| matches!(stage, UpdateStage::Downloading(_)))
         else {
             return;
         };
@@ -254,20 +206,13 @@ impl UpdateFlow {
             Ok(staged) => {
                 tracing::info!(version = %candidate.version, "update downloaded and verified");
                 self.stage = UpdateStage::Ready { candidate, staged };
-            }
-            Err(UpdateError::Cancelled) => {
-                self.stage = UpdateStage::Offered(candidate);
+                self.show_toast(cx);
             }
             Err(error) => {
                 tracing::warn!(error = %error, "update download failed");
-                self.stage = UpdateStage::Failed {
-                    candidate,
-                    failure: failure_of(&error),
-                    staged: None,
-                };
+                self.download_failed(candidate, failure_of(&error), cx);
             }
         }
-        self.show_toast(cx);
         cx.notify();
     }
 
@@ -275,41 +220,28 @@ impl UpdateFlow {
         if ticket != self.ticket {
             return;
         }
-        let Some(UpdateStage::Downloading { candidate, .. }) =
-            self.take_stage(|stage| matches!(stage, UpdateStage::Downloading { .. }))
+        let Some(UpdateStage::Downloading(candidate)) =
+            self.take_stage(|stage| matches!(stage, UpdateStage::Downloading(_)))
         else {
             return;
         };
         tracing::warn!(version = %candidate.version, "update download task ended without a result");
-        self.fail(candidate, UpdateFailure::Download, None, cx);
+        self.download_failed(candidate, UpdateFailure::Download, cx);
     }
 
-    pub fn cancel_download(&mut self, cx: &mut Context<Self>) {
-        let Some(UpdateStage::Downloading {
-            candidate, cancel, ..
-        }) = self.take_stage(|stage| matches!(stage, UpdateStage::Downloading { .. }))
-        else {
+    fn download_failed(
+        &mut self,
+        candidate: UpdateCandidate,
+        failure: UpdateFailure,
+        cx: &mut Context<Self>,
+    ) {
+        if self.silent_retry_spent {
+            self.fail(candidate, failure, None, cx);
             return;
-        };
-        cancel.cancel();
-        self.ticket = self.ticket.wrapping_add(1);
-        self.stage = UpdateStage::Offered(candidate);
-        self.show_toast(cx);
-        cx.notify();
-    }
-
-    pub fn skip(&mut self, cx: &mut Context<Self>) {
-        let Some(candidate) = self.candidate() else {
-            return;
-        };
-        remember_skipped(
-            candidate.version.clone(),
-            Arc::clone(&self.backend),
-            &self.rt_handle,
-        );
-        self.stage = UpdateStage::Idle;
-        self.hide_toast(cx);
-        cx.notify();
+        }
+        self.silent_retry_spent = true;
+        tracing::info!(version = %candidate.version, "retrying the update download");
+        self.start_download(candidate, cx);
     }
 
     pub fn open_release_page(&mut self, cx: &mut Context<Self>) {
@@ -357,10 +289,7 @@ impl UpdateFlow {
                 self.show_toast(cx);
                 self.request_restart(cx);
             }
-            None => {
-                self.stage = UpdateStage::Offered(candidate);
-                self.start_download(cx);
-            }
+            None => self.start_download(candidate, cx),
         }
         cx.notify();
     }
@@ -451,7 +380,7 @@ impl UpdateFlow {
         match &self.stage {
             UpdateStage::Idle => None,
             UpdateStage::Offered(candidate)
-            | UpdateStage::Downloading { candidate, .. }
+            | UpdateStage::Downloading(candidate)
             | UpdateStage::Ready { candidate, .. }
             | UpdateStage::Failed { candidate, .. }
             | UpdateStage::HandingOff { candidate, .. }
@@ -488,20 +417,6 @@ impl UpdateFlow {
             }
             _ => self.toast = Some(toasts.show(data)),
         }
-    }
-
-    fn refresh_toast(&mut self, cx: &mut Context<Self>) {
-        let Some(id) = self.toast else {
-            return;
-        };
-        if !cx.global::<Toasts>().contains(id) {
-            return;
-        }
-        let Some(content) = update_toast(&self.stage) else {
-            return;
-        };
-        let data = toast_data(content, cx.weak_entity(), run_command);
-        cx.global_mut::<Toasts>().replace(id, data);
     }
 
     fn hide_toast(&mut self, cx: &mut Context<Self>) {

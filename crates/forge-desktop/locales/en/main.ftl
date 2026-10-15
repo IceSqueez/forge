@@ -248,18 +248,12 @@ settings_diagnostics_level_error = Error
 settings_version_title = Version & updates
 settings_version_license = Open-source · MIT OR Apache-2.0
 settings_version_check_updates = Check for updates
-settings_version_notify_label = Notify about new versions
-settings_version_notify_hint = Shows a toast at launch whenever a newer release is out, until you skip that version. Never while OBS is streaming or recording.
 
 ## Update notification
 
 app_menu_quit = Quit forge
 update_toast_available = forge { $version } is available
 update_toast_open_action = Download
-update_toast_skip_action = Skip this version
-update_toast_update_action = Update
-update_toast_downloading = Downloading forge { $version }: { $percent }%
-update_toast_cancel_action = Cancel
 update_toast_ready = forge { $version } is ready. It installs when you quit.
 update_toast_restart_action = Restart to update
 update_toast_preparing = Preparing the update to forge { $version }...

@@ -185,8 +185,6 @@ pub fn run_boot(
                 let rt_handle_for_history = handles.rt_handle.clone();
                 let backend_for_updates = Arc::clone(&handles.backend);
                 let rt_handle_for_updates = handles.rt_handle.clone();
-                let obs_for_updates = handles.obs_install_seed.clone();
-                let bus_for_updates = Arc::clone(&handles.bus);
                 let mut flow_for_updates = None;
                 let credentials_key_loss = handles.credentials_key_loss;
                 let applied = window.update(cx, |root, window, cx| {
@@ -290,7 +288,7 @@ pub fn run_boot(
                     start_awake_bridge(cx, awake_for_bridge, awake_watch);
                     start_live_viewers_bridge(cx, home_stats_for_viewers, live_viewers_handle);
                     apply_persisted_shortcuts(cx, backend_for_shortcuts, rt_handle_for_shortcuts);
-                    crate::update_report::start_update_report(
+                    let boot_report = crate::update_report::start_update_report(
                         cx,
                         Arc::clone(&backend_for_updates),
                         rt_handle_for_updates.clone(),
@@ -304,8 +302,7 @@ pub fn run_boot(
                         cx,
                         backend_for_updates,
                         rt_handle_for_updates,
-                        obs_for_updates,
-                        bus_for_updates,
+                        boot_report,
                         update_flow,
                     );
                     if let Some(events) = speak_events {

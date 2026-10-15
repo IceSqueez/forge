@@ -216,6 +216,7 @@ mod tests {
     const SUBSCRIBED_AT_UNIX: i64 = 1_680_674_828;
     const DAILY_LIMIT: u32 = 10_000;
     const LOCAL_READ_BUDGET: usize = 60;
+    const UNREACHABLE_BASE: &str = "http://127.0.0.1:0";
 
     fn token_source() -> TokenSource {
         Arc::new(|| Box::pin(async { Ok(ACCESS_TOKEN.to_owned()) }))
@@ -259,7 +260,14 @@ mod tests {
     }
 
     async fn server_answering(response: ResponseTemplate) -> MockServer {
-        let server = MockServer::start().await;
+        mount_subscriptions(MockServer::start().await, response).await
+    }
+
+    async fn unshared_server_answering(response: ResponseTemplate) -> MockServer {
+        mount_subscriptions(MockServer::builder().start().await, response).await
+    }
+
+    async fn mount_subscriptions(server: MockServer, response: ResponseTemplate) -> MockServer {
         Mock::given(method("GET"))
             .and(path("/subscriptions"))
             .respond_with(response)
@@ -301,13 +309,6 @@ mod tests {
 
     fn subscribed_at() -> OffsetDateTime {
         OffsetDateTime::from_unix_timestamp(SUBSCRIBED_AT_UNIX).unwrap()
-    }
-
-    fn unreachable_base() -> String {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        drop(listener);
-        format!("http://{address}")
     }
 
     #[tokio::test]
@@ -495,7 +496,7 @@ mod tests {
 
     #[tokio::test]
     async fn status_of_is_unavailable_when_the_data_api_host_is_unreachable() {
-        let lookup = lookup_at(&unreachable_base(), &fresh_quota(), BROADCASTER);
+        let lookup = lookup_at(UNREACHABLE_BASE, &fresh_quota(), BROADCASTER);
 
         assert_eq!(lookup.status_of(VIEWER).await, FollowStatus::Unavailable);
     }
@@ -520,7 +521,8 @@ mod tests {
 
     #[tokio::test]
     async fn status_of_is_unavailable_when_the_token_source_fails() {
-        let server = server_answering(ok_json(subscription_page(json!(SUBSCRIBED_AT)))).await;
+        let server =
+            unshared_server_answering(ok_json(subscription_page(json!(SUBSCRIBED_AT)))).await;
         let failing: TokenSource = Arc::new(|| {
             Box::pin(async {
                 Err(PlatformError::ReauthRequired {
@@ -544,7 +546,8 @@ mod tests {
     #[tokio::test]
     async fn a_missing_broadcaster_or_viewer_id_is_unavailable_without_a_request_or_charge() {
         for (broadcaster, viewer) in [("", VIEWER), (BROADCASTER, ""), ("", "")] {
-            let server = server_answering(ok_json(subscription_page(json!(SUBSCRIBED_AT)))).await;
+            let server =
+                unshared_server_answering(ok_json(subscription_page(json!(SUBSCRIBED_AT)))).await;
             let quota = fresh_quota();
             let lookup = lookup_at(&server.uri(), &quota, broadcaster);
 
@@ -564,7 +567,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_broadcaster_looking_up_themself_is_not_following_without_a_request_or_charge() {
-        let server = server_answering(ok_json(subscription_page(json!(SUBSCRIBED_AT)))).await;
+        let server =
+            unshared_server_answering(ok_json(subscription_page(json!(SUBSCRIBED_AT)))).await;
         let quota = fresh_quota();
         let lookup = lookup_at(&server.uri(), &quota, BROADCASTER);
 
@@ -582,7 +586,8 @@ mod tests {
 
     #[tokio::test]
     async fn an_exhausted_daily_quota_is_unavailable_without_a_request() {
-        let server = server_answering(ok_json(subscription_page(json!(SUBSCRIBED_AT)))).await;
+        let server =
+            unshared_server_answering(ok_json(subscription_page(json!(SUBSCRIBED_AT)))).await;
         let quota = exhausted_quota();
         let lookup = lookup_at(&server.uri(), &quota, BROADCASTER);
 
@@ -600,7 +605,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_spent_local_read_budget_is_unavailable_without_a_request_or_charge() {
-        let server = server_answering(ok_json(subscription_page(json!(SUBSCRIBED_AT)))).await;
+        let server =
+            unshared_server_answering(ok_json(subscription_page(json!(SUBSCRIBED_AT)))).await;
         let quota = fresh_quota();
         let lookup = lookup_at(&server.uri(), &quota, BROADCASTER);
         for _ in 0..LOCAL_READ_BUDGET {

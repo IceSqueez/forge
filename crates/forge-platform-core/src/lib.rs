@@ -57,7 +57,9 @@ pub use error::{HTTP_UNAUTHORIZED, NON_HTTP_STATUS, PlatformError};
 pub use follow_lookup::{FollowLookup, FollowStatus};
 pub use integration::{ConnectionAffordance, IntegrationCategory, IntegrationDeclaration};
 pub use live_viewers::{LiveViewerSource, ViewerReport, ViewerReportStream};
-pub use net::is_private_or_special;
+pub use net::{
+    HostRejection, ensure_public_host, ensure_public_host_blocking, is_private_or_special,
+};
 pub use poll::DedupSet;
 pub use rate_limit::{
     DEFAULT_RETRY_AFTER_SECS, MAX_ACQUIRE_ATTEMPTS, MAX_THROTTLE_WAIT, RateLimitOutcome,

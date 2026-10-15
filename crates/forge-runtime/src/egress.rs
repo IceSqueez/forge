@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
-use std::net::IpAddr;
 use std::time::Duration;
 
-use forge_platform_core::is_private_or_special;
+use forge_platform_core::{HostRejection, ensure_public_host};
 use tokio::sync::Semaphore;
 
 const MAX_RESPONSE_BYTES: usize = 1_048_576;
@@ -155,28 +154,13 @@ async fn validate_url(url: &reqwest::Url, allow_local: bool) -> Result<(), Egres
         return Ok(());
     }
     let host = url.host_str().ok_or(EgressError::InvalidUrl)?;
-    if let Ok(ip) = host.parse::<IpAddr>() {
-        if is_private_or_special(ip) {
-            return Err(EgressError::BlockedAddress);
-        }
-        return Ok(());
-    }
     let port = url.port_or_known_default().unwrap_or(443);
-    let resolved = tokio::net::lookup_host((host, port))
+    ensure_public_host(host, port)
         .await
-        .map_err(|_| EgressError::UnresolvableHost)?;
-    let mut any = false;
-    for addr in resolved {
-        any = true;
-        if is_private_or_special(addr.ip()) {
-            return Err(EgressError::BlockedAddress);
-        }
-    }
-    if any {
-        Ok(())
-    } else {
-        Err(EgressError::UnresolvableHost)
-    }
+        .map_err(|rejection| match rejection {
+            HostRejection::PrivateOrSpecial => EgressError::BlockedAddress,
+            HostRejection::Unresolvable => EgressError::UnresolvableHost,
+        })
 }
 
 async fn read_response(response: reqwest::Response) -> Result<EgressResponse, EgressError> {

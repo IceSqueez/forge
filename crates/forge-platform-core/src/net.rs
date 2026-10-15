@@ -1,4 +1,70 @@
-use std::net::IpAddr;
+use std::net::{IpAddr, ToSocketAddrs};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum HostRejection {
+    #[error("target resolves to a private or special address")]
+    PrivateOrSpecial,
+    #[error("target host did not resolve")]
+    Unresolvable,
+}
+
+enum HostTarget<'a> {
+    Literal(IpAddr),
+    Name(&'a str),
+}
+
+fn classify_host(host: &str) -> Result<HostTarget<'_>, HostRejection> {
+    let unbracketed = host
+        .strip_prefix('[')
+        .and_then(|inner| inner.strip_suffix(']'))
+        .unwrap_or(host);
+    if let Ok(ip) = unbracketed.parse::<IpAddr>() {
+        return Ok(HostTarget::Literal(ip));
+    }
+    if host.is_empty() {
+        return Err(HostRejection::Unresolvable);
+    }
+    Ok(HostTarget::Name(host))
+}
+
+fn screen_addresses(addresses: impl IntoIterator<Item = IpAddr>) -> Result<(), HostRejection> {
+    let mut resolved_any = false;
+    for ip in addresses {
+        resolved_any = true;
+        if is_private_or_special(ip) {
+            return Err(HostRejection::PrivateOrSpecial);
+        }
+    }
+    if resolved_any {
+        Ok(())
+    } else {
+        Err(HostRejection::Unresolvable)
+    }
+}
+
+pub async fn ensure_public_host(host: &str, port: u16) -> Result<(), HostRejection> {
+    match classify_host(host)? {
+        HostTarget::Literal(ip) => screen_addresses([ip]),
+        HostTarget::Name(name) => {
+            let resolved = tokio::net::lookup_host((name, port))
+                .await
+                .map_err(|_| HostRejection::Unresolvable)?;
+            screen_addresses(resolved.map(|addr| addr.ip()))
+        }
+    }
+}
+
+pub fn ensure_public_host_blocking(host: &str, port: u16) -> Result<(), HostRejection> {
+    match classify_host(host)? {
+        HostTarget::Literal(ip) => screen_addresses([ip]),
+        HostTarget::Name(name) => {
+            let resolved = (name, port)
+                .to_socket_addrs()
+                .map_err(|_| HostRejection::Unresolvable)?;
+            screen_addresses(resolved.map(|addr| addr.ip()))
+        }
+    }
+}
 
 pub fn is_private_or_special(addr: IpAddr) -> bool {
     match addr {

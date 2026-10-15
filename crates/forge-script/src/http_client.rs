@@ -1,10 +1,9 @@
 use std::collections::BTreeMap;
-use std::net::{IpAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
-use forge_platform_core::is_private_or_special;
+use forge_platform_core::{HostRejection, ensure_public_host_blocking};
 
 use crate::http_config::ScriptHttpConfig;
 
@@ -183,22 +182,10 @@ fn domain_allowed(host: &str, allowed: &[String]) -> bool {
 }
 
 fn check_private_ip(host: &str, port: u16) -> Result<(), HttpError> {
-    if let Ok(ip) = host.parse::<IpAddr>() {
-        if is_private_or_special(ip) {
-            return Err(HttpError::PrivateAddress);
-        }
-    } else if !host.is_empty() {
-        let target = format!("{host}:{port}");
-        for addr in target
-            .to_socket_addrs()
-            .map_err(|e| HttpError::Network(e.to_string()))?
-        {
-            if is_private_or_special(addr.ip()) {
-                return Err(HttpError::PrivateAddress);
-            }
-        }
-    }
-    Ok(())
+    ensure_public_host_blocking(host, port).map_err(|rejection| match rejection {
+        HostRejection::PrivateOrSpecial => HttpError::PrivateAddress,
+        HostRejection::Unresolvable => HttpError::Network(rejection.to_string()),
+    })
 }
 
 #[cfg(test)]

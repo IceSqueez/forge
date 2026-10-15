@@ -521,7 +521,9 @@ mod tests {
             intake.timer_catalog,
             spawn_stream_live_signal(
                 &spawn_live_viewer_aggregator(),
-                forge_obs::SwitchableObsSink::new().stream_output(),
+                forge_obs::SwitchableObsSink::new()
+                    .stream_output()
+                    .into_receiver(),
             ),
             forge_types::Shared::default(),
         );

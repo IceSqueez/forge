@@ -112,20 +112,16 @@ async fn follow_live_inputs(
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use std::time::Duration;
 
-    use forge_obs::SwitchableObsSink;
     use forge_platform_core::ViewerReport;
     use tokio_stream::StreamExt as _;
 
     use crate::live_viewers::spawn_live_viewer_aggregator;
     use crate::test_support::channel_viewer_source;
 
-    fn idle_obs() -> (Arc<SwitchableObsSink>, StreamOutputActive) {
-        let sink = SwitchableObsSink::new();
-        let output = sink.stream_output();
-        (sink, output)
+    fn idle_obs() -> (watch::Sender<bool>, watch::Receiver<bool>) {
+        watch::channel(false)
     }
 
     fn sources_of(items: &[LiveSource]) -> BTreeSet<LiveSource> {

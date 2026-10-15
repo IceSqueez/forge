@@ -256,7 +256,6 @@ mod tests {
     use std::time::Duration;
 
     use forge_events::EventSource;
-    use forge_obs::SwitchableObsSink;
     use forge_platform_core::ViewerReport;
     use forge_storage::action::MockActionRepo;
     use forge_storage::trigger_instance::MockTriggerInstanceRepo;
@@ -352,7 +351,7 @@ mod tests {
         next_message: u32,
         stop: TimerSchedulerHandle,
         _viewers: LiveViewerAggregatorHandle,
-        _obs: Arc<SwitchableObsSink>,
+        _obs: tokio::sync::watch::Sender<bool>,
     }
 
     async fn rig(instances: Vec<TriggerInstance>) -> Rig {
@@ -389,8 +388,8 @@ mod tests {
         );
 
         let viewers = spawn_live_viewer_aggregator();
-        let obs = SwitchableObsSink::new();
-        let stream_live = spawn_stream_live_signal(&viewers, obs.stream_output());
+        let (obs, obs_active) = tokio::sync::watch::channel(false);
+        let stream_live = spawn_stream_live_signal(&viewers, obs_active);
         let (source, live_reports) = channel_viewer_source();
         viewers.register(PlatformId::Twitch, source);
 

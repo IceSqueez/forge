@@ -573,7 +573,7 @@ mod tests {
     use crate::test_support::{
         Declares, StubEventLog, StubTrigger, overlay_definition, runtime, trigger_registry,
     };
-    use crate::toasts::Toasts;
+    use forge_components::Toasts;
 
     const SUBSCRIBER: &str = "twitch.support.subscriber";
     const FOLLOW: &str = "twitch.channel.follow";

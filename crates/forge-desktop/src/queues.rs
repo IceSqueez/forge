@@ -1960,7 +1960,7 @@ mod tests {
     use crate::i18n::install_language;
     use crate::presentation::Presentation;
     use crate::test_support::{StubActions, held_queue_scheduler, pump, runtime};
-    use crate::toasts::Toasts;
+    use forge_components::Toasts;
 
     fn queue(id: QueueId) -> Queue {
         Queue {

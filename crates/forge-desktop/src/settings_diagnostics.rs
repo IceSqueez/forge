@@ -930,7 +930,7 @@ mod tests {
         use gpui::AppContext as _;
 
         crate::test_support::install_presentation(cx);
-        cx.update(|cx| cx.set_global(crate::toasts::Toasts::new()));
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
         let rt = crate::test_support::runtime();
         let (backend, mut writes) = crate::test_support::test_backend();
         rt.block_on(forge_storage::set_diagnostic_log_level(
@@ -979,7 +979,7 @@ mod tests {
         rig.settle(cx);
 
         let errors = cx.update(|cx| {
-            cx.global::<crate::toasts::Toasts>()
+            cx.global::<forge_components::Toasts>()
                 .items()
                 .iter()
                 .filter(|toast| toast.kind == forge_components::ToastKind::Error)

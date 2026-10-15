@@ -112,7 +112,7 @@ mod tests {
     use crate::chat::viewer_actions::ViewerTarget;
     use crate::home_stats::Integration;
     use crate::test_support::{StubActions, StubEventLog, runtime};
-    use crate::toasts::Toasts;
+    use forge_components::Toasts;
 
     const PAST_ANY_RELIST_DEBOUNCE: Duration = Duration::from_secs(10);
 

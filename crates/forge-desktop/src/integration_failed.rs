@@ -241,7 +241,7 @@ mod tests {
     use super::*;
     use crate::integration_supervisor::LifecycleStates;
     use crate::test_support::{error_toasts, hub_crumb_targets, runtime};
-    use crate::toasts::Toasts;
+    use forge_components::Toasts;
 
     fn failed(id: &IntegrationId) -> LifecycleStates {
         LifecycleStates::from([(id.clone(), LifecycleState::Failed("boom".to_owned()))])

@@ -174,7 +174,7 @@ mod tests {
     use crate::chat::viewer_actions::ViewerTarget;
     use crate::chat_author::AuthorKey;
     use crate::test_support::{alias_shape, runtime};
-    use crate::toasts::Toasts;
+    use forge_components::Toasts;
 
     const VIEWER_KEY: &str = "twitch:141981764";
     const SETTLE_ROUNDS: usize = 2000;

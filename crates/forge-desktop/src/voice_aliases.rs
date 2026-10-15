@@ -982,7 +982,7 @@ mod tests {
         LiveAliases, Sandboxed, alias_shape, error_toasts, live_alias, runtime, sandboxed_backend,
         spawn_speak_queue,
     };
-    use crate::toasts::Toasts;
+    use forge_components::Toasts;
 
     const TEST_KEY: [u8; 32] = [0x5a; 32];
     const SETTLE_DEADLINE: Duration = Duration::from_secs(30);

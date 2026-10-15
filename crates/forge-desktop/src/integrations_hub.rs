@@ -875,7 +875,7 @@ mod tests {
         install_presentation, link, nav_log, owned_sub_actions, owned_triggers, pump, runtime,
         sandboxed_provider, seed_action, seed_trigger, step, test_backend,
     };
-    use crate::toasts::Toasts;
+    use forge_components::Toasts;
 
     const OBS_SCENE: &str = "obs.scene.set";
     const TWITCH_CHAT: &str = "twitch.chat";

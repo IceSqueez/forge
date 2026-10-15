@@ -83,7 +83,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::toasts::Toasts;
+    use forge_components::Toasts;
 
     const CLIP: &str = "01J8Z3N5Q7R9T1V3X5Z7B9D1F3";
 

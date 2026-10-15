@@ -250,3 +250,100 @@ pub fn toast_layer(palette: &ForgePalette, cx: &App) -> Option<AnyElement> {
         .into_any_element(),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use gpui::TestAppContext;
+
+    use super::{PushToast, Toasts};
+    use crate::toast::{ToastAction, ToastData, ToastKind};
+
+    const TIMED: Duration = Duration::from_secs(12);
+    const LONG_AFTER: Duration = Duration::from_secs(60 * 60);
+
+    fn push_pair(cx: &mut TestAppContext, duration: Duration) {
+        cx.update(|cx| {
+            cx.push_toast_with_secondary(
+                ToastKind::Info,
+                "update available",
+                None,
+                ToastAction::new("Download", |_window, _cx| {}),
+                ToastAction::new("Skip", |_window, _cx| {}),
+                duration,
+            );
+        });
+    }
+
+    fn action_labels(cx: &mut TestAppContext) -> Vec<(Option<String>, Option<String>)> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|toast| {
+                    (
+                        toast.action.as_ref().map(|a| a.label.to_string()),
+                        toast.secondary_action.as_ref().map(|a| a.label.to_string()),
+                    )
+                })
+                .collect()
+        })
+    }
+
+    #[gpui::test]
+    fn a_zero_duration_two_action_toast_survives_any_amount_of_time(cx: &mut TestAppContext) {
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        push_pair(cx, Duration::ZERO);
+
+        cx.executor().advance_clock(LONG_AFTER);
+        cx.run_until_parked();
+
+        assert_eq!(
+            action_labels(cx),
+            vec![(Some("Download".to_owned()), Some("Skip".to_owned()))],
+        );
+    }
+
+    #[gpui::test]
+    fn a_timed_two_action_toast_expires_once_its_duration_elapses(cx: &mut TestAppContext) {
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        push_pair(cx, TIMED);
+
+        cx.executor().advance_clock(TIMED);
+        cx.run_until_parked();
+
+        assert_eq!(action_labels(cx), Vec::new());
+    }
+
+    #[test]
+    fn replacing_a_dismissed_toast_does_not_bring_it_back() {
+        let mut toasts = Toasts::new();
+        let id = toasts.show(ToastData::new(0, ToastKind::Info, "downloading"));
+        toasts.dismiss(id);
+
+        assert!(!toasts.replace(id, ToastData::new(0, ToastKind::Info, "42%")));
+        assert!(toasts.items().is_empty());
+    }
+
+    #[test]
+    fn replace_keeps_the_toast_id_and_position() {
+        let mut toasts = Toasts::new();
+        let first = toasts.show(ToastData::new(0, ToastKind::Info, "first"));
+        let second = toasts.show(ToastData::new(0, ToastKind::Info, "second"));
+        toasts.replace(first, ToastData::new(99, ToastKind::Info, "first, updated"));
+
+        let shown: Vec<(u64, String)> = toasts
+            .items()
+            .iter()
+            .map(|t| (t.id, t.message.to_string()))
+            .collect();
+        assert_eq!(
+            shown,
+            vec![
+                (first, "first, updated".to_owned()),
+                (second, "second".to_owned())
+            ]
+        );
+    }
+}

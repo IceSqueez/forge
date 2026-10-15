@@ -425,7 +425,7 @@ mod tests {
 
     use super::*;
     use crate::test_support::{StubActions, StubEventLog, pump, runtime};
-    use crate::toasts::Toasts;
+    use forge_components::Toasts;
 
     const SUCCEEDS: &str = "test.succeeds";
     const FAILS: &str = "test.fails";

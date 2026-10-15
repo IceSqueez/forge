@@ -2256,7 +2256,7 @@ mod tests {
     use crate::test_support::{
         StubActions, StubEventLog, StubHistory, install_presentation, runtime, switch_lifecycle,
     };
-    use crate::toasts::Toasts;
+    use forge_components::Toasts;
 
     const CAP: usize = 5;
     const OVERFLOW: usize = 8;

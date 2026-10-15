@@ -256,7 +256,7 @@ mod tests {
     use crate::integration_lifecycle::IntegrationLifecycle;
     use crate::integration_supervisor::{LifecycleState, LifecycleStates};
     use crate::test_support::{pump, runtime};
-    use crate::toasts::Toasts;
+    use forge_components::Toasts;
 
     fn mount<'a>(
         cx: &'a mut TestAppContext,

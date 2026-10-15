@@ -688,7 +688,7 @@ mod tests {
     use crate::combo_conflict::ClipKey;
     use crate::hotkey_bindings::{BindingHalf, BindingRow};
     use crate::presentation::Presentation;
-    use crate::toasts::Toasts;
+    use forge_components::Toasts;
 
     const ESCAPE: &str = "escape";
 

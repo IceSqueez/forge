@@ -1284,7 +1284,7 @@ mod tests {
     use crate::i18n::install_language;
     use crate::presentation::Presentation;
     use crate::test_support::{pump, runtime};
-    use crate::toasts::Toasts;
+    use forge_components::Toasts;
 
     const REPLAY_KEYS: [&str; 3] = [
         "event_feed_replay_success",

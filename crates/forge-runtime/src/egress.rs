@@ -304,6 +304,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn bracketed_public_ipv6_literal_passes_validation() {
+        let url = reqwest::Url::parse("http://[2606:4700::1]/").unwrap();
+        assert!(validate_url(&url, false).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn bracketed_ipv6_loopback_literal_is_blocked() {
+        let url = reqwest::Url::parse("http://[::1]:8080/").unwrap();
+        assert!(matches!(
+            validate_url(&url, false).await,
+            Err(EgressError::BlockedAddress)
+        ));
+    }
+
+    #[tokio::test]
     async fn localhost_hostname_is_rejected_after_dns_resolution() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))

@@ -153,6 +153,56 @@ mod tests {
         assert!(!is_private_or_special(ip("100.128.0.0")));
     }
 
+    const HOST_CASES: [(&str, Result<(), HostRejection>); 9] = [
+        ("10.0.0.1", Err(HostRejection::PrivateOrSpecial)),
+        ("169.254.169.254", Err(HostRejection::PrivateOrSpecial)),
+        ("fe80::1", Err(HostRejection::PrivateOrSpecial)),
+        ("[::1]", Err(HostRejection::PrivateOrSpecial)),
+        ("localhost", Err(HostRejection::PrivateOrSpecial)),
+        ("192.0.2.1", Ok(())),
+        ("2606:4700::1", Ok(())),
+        ("[2606:4700::1]", Ok(())),
+        ("", Err(HostRejection::Unresolvable)),
+    ];
+
+    #[tokio::test]
+    async fn async_host_check_screens_literals_brackets_names_and_empty_host() {
+        for (host, expected) in HOST_CASES {
+            assert_eq!(
+                ensure_public_host(host, 443).await,
+                expected,
+                "async outcome for {host:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn blocking_host_check_screens_literals_brackets_names_and_empty_host() {
+        for (host, expected) in HOST_CASES {
+            assert_eq!(
+                ensure_public_host_blocking(host, 443),
+                expected,
+                "blocking outcome for {host:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn screening_no_resolved_addresses_reports_unresolvable() {
+        assert_eq!(
+            screen_addresses(std::iter::empty()),
+            Err(HostRejection::Unresolvable)
+        );
+    }
+
+    #[test]
+    fn screening_rejects_when_any_resolved_address_is_private() {
+        assert_eq!(
+            screen_addresses([ip("192.0.2.1"), ip("2606:4700::1"), ip("10.0.0.1")]),
+            Err(HostRejection::PrivateOrSpecial)
+        );
+    }
+
     #[test]
     fn rfc1918_172_boundary_excludes_neighbouring_public_blocks() {
         assert!(is_private_or_special(ip("172.16.0.0")));

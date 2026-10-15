@@ -598,15 +598,17 @@ impl DataProvider for SqliteBackend {
             reason: "non-utf8 export path".into(),
         })?;
 
-        sqlx::query("VACUUM INTO ?")
-            .bind(path_str)
-            .execute(self.pool.writer())
+        crate::snapshot::checkpoint_then_vacuum_into(self.pool.writer(), path_str)
             .await
             .map_err(|e| StorageError::Connection {
                 reason: e.to_string(),
-            })?;
+            })
+    }
 
-        Ok(())
+    async fn schema_version(&self) -> Result<u32, StorageError> {
+        crate::migrations::applied_version(self.pool.reader())
+            .await
+            .map_err(StorageError::from)
     }
 
     async fn shutdown(&self) {

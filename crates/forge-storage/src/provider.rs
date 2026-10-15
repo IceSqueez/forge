@@ -11,6 +11,18 @@ use crate::{
 
 pub const EXPECTED_SCHEMA_VERSION: u32 = 53;
 
+pub const DATABASE_FILE_NAME: &str = "forge.db";
+const WAL_SUFFIX: &str = "-wal";
+const SHARED_MEMORY_SUFFIX: &str = "-shm";
+
+pub fn database_unit_file_names() -> [String; 3] {
+    [
+        DATABASE_FILE_NAME.to_owned(),
+        format!("{DATABASE_FILE_NAME}{WAL_SUFFIX}"),
+        format!("{DATABASE_FILE_NAME}{SHARED_MEMORY_SUFFIX}"),
+    ]
+}
+
 pub const LAST_PRE_BASELINE_RELEASE: &str = "0.5.5";
 
 #[async_trait]
@@ -40,6 +52,8 @@ pub trait DataProvider:
     fn scheduled_run_revision(&self) -> CatalogRevision;
 
     async fn export(&self, path: &std::path::Path) -> Result<(), StorageError>;
+
+    async fn schema_version(&self) -> Result<u32, StorageError>;
 
     async fn shutdown(&self);
 }

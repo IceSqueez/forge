@@ -23,6 +23,7 @@ pub(crate) mod retention_task;
 pub mod scheduled_run_impl;
 pub mod script_impl;
 pub mod settings_impl;
+mod snapshot;
 pub mod soundboard_impl;
 #[cfg(test)]
 mod test_support;

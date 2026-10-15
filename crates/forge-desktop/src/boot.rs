@@ -53,7 +53,7 @@ pub enum BootFailure {
 }
 
 fn default_db_path() -> PathBuf {
-    paths::data_dir().join("forge.db")
+    paths::data_dir().join(forge_storage::DATABASE_FILE_NAME)
 }
 
 const APPEARANCE_READ_BUDGET: Duration = Duration::from_secs(2);

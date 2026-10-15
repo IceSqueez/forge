@@ -65,7 +65,10 @@ pub use media::{
     MediaReferrer, MediaReferrerKind, MediaRepo, accept_media, sanitize_label, sniff,
 };
 pub use overlay::{OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo};
-pub use provider::{DataProvider, EXPECTED_SCHEMA_VERSION, LAST_PRE_BASELINE_RELEASE};
+pub use provider::{
+    DATABASE_FILE_NAME, DataProvider, EXPECTED_SCHEMA_VERSION, LAST_PRE_BASELINE_RELEASE,
+    database_unit_file_names,
+};
 pub use queue::QueueRepo;
 pub use scheduled_run::{
     ACTION_REMOVED_REASON, CANCELLED_REASON, MissedRunPolicy, RevisingScheduledRunRepo,

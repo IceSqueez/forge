@@ -228,11 +228,7 @@ async fn write_snapshot(pool: &sqlx::SqlitePool) -> Result<PathBuf, SqliteStorag
         .await
         .map_err(|e| snapshot_failed(format!("could not create the snapshot file: {e}")))?;
 
-    let written = match sqlx::query("VACUUM INTO ?")
-        .bind(target)
-        .execute(pool)
-        .await
-    {
+    let written = match crate::snapshot::vacuum_into(pool, &target).await {
         Ok(_) => sync_file(&path)
             .await
             .map_err(|e| format!("could not flush the snapshot file: {e}")),

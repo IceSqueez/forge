@@ -13,7 +13,7 @@ pub(crate) async fn write_atomically(path: &Path, bytes: Vec<u8>) -> Result<(), 
         .map_err(|error| UpdateError::Io(std::io::Error::other(error.to_string())))?
 }
 
-fn write_atomically_blocking(path: &Path, bytes: &[u8]) -> Result<(), UpdateError> {
+pub(crate) fn write_atomically_blocking(path: &Path, bytes: &[u8]) -> Result<(), UpdateError> {
     let dir = path
         .parent()
         .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
@@ -45,11 +45,11 @@ fn write_and_sync(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 #[cfg(unix)]
-fn sync_dir(dir: &Path) -> std::io::Result<()> {
+pub(crate) fn sync_dir(dir: &Path) -> std::io::Result<()> {
     std::fs::File::open(dir)?.sync_all()
 }
 
 #[cfg(not(unix))]
-fn sync_dir(_dir: &Path) -> std::io::Result<()> {
+pub(crate) fn sync_dir(_dir: &Path) -> std::io::Result<()> {
     Ok(())
 }

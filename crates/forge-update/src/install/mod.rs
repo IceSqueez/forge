@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use crate::platform::ArtifactKind;
 
 mod probe;
@@ -40,7 +42,8 @@ impl UpdatableInstall {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum InstallLayout {
     MacAppBundle,
     WindowsPerUserMsi,

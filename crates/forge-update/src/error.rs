@@ -42,6 +42,26 @@ pub enum UpdateError {
     Io(#[from] std::io::Error),
     #[error("the update journal is malformed: {0}")]
     MalformedJournal(String),
+    #[error("an update record is malformed: {0}")]
+    MalformedRecord(String),
+    #[error("no update is waiting to be applied")]
+    NoPendingUpdate,
+    #[error("another update supervisor is already running")]
+    SupervisorBusy,
+    #[error("the running forge did not exit in time")]
+    ParentStillRunning,
+    #[error("the update payload does not contain exactly one application bundle")]
+    MalformedPayload,
+    #[error("the installer exited with code {0}")]
+    InstallerFailed(i32),
+    #[error("the installer was terminated before it finished")]
+    InstallerTerminated,
+    #[error("the installer did not finish in time")]
+    InstallerTimedOut,
+    #[error("the previous build is missing, so it cannot be restored")]
+    PreviousBuildMissing,
+    #[error("an install path has no file name")]
+    PathWithoutFileName,
 }
 
 impl UpdateError {

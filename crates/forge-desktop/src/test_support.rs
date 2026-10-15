@@ -322,6 +322,10 @@ impl DataProvider for TestBackend {
         unreachable!("the settings pane never exports")
     }
 
+    async fn schema_version(&self) -> Result<u32, StorageError> {
+        unreachable!("the settings pane never reads the schema version")
+    }
+
     async fn shutdown(&self) {}
 }
 

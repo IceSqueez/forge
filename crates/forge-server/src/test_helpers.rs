@@ -419,6 +419,10 @@ impl DataProvider for TestDataProvider {
         Ok(())
     }
 
+    async fn schema_version(&self) -> Result<u32, StorageError> {
+        Ok(forge_storage::EXPECTED_SCHEMA_VERSION)
+    }
+
     async fn shutdown(&self) {}
 }
 

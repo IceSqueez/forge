@@ -5,6 +5,7 @@ use forge_platform_core::HealthDelta;
 use serde_json::json;
 
 use crate::catalog::ObsCatalog;
+use crate::event_kinds;
 use crate::health::{FrameCounterSample, HealthSnapshot};
 use crate::payload_fields::{
     audio as audio_fields, collection as collection_fields, connection as connection_fields,
@@ -15,13 +16,17 @@ use crate::payload_fields::{
 use crate::source::SourceInfo;
 
 pub(crate) fn make_connection_connected() -> Event {
-    Event::new(EventSource::Obs, "obs.connection.connected", json!({}))
+    Event::new(
+        EventSource::Obs,
+        event_kinds::CONNECTION_CONNECTED,
+        json!({}),
+    )
 }
 
 pub(crate) fn make_connection_disconnected(reason: &str, detail: Option<&str>) -> Event {
     Event::new(
         EventSource::Obs,
-        "obs.connection.disconnected",
+        event_kinds::CONNECTION_DISCONNECTED,
         json!({
             (connection_fields::REASON): reason,
             (connection_fields::DETAIL): detail,
@@ -32,7 +37,7 @@ pub(crate) fn make_connection_disconnected(reason: &str, detail: Option<&str>) -
 pub(crate) fn make_connection_auth_failed(message: &str) -> Event {
     Event::new(
         EventSource::Obs,
-        "obs.connection.auth_failed",
+        event_kinds::CONNECTION_AUTH_FAILED,
         json!({ (connection_fields::ERROR_MESSAGE): message }),
     )
 }
@@ -42,7 +47,7 @@ pub(crate) fn make_scene_changed_event(from_scene: Option<&str>, to_scene: &str)
         (scene_fields::FROM_SCENE): from_scene.unwrap_or(""),
         (scene_fields::TO_SCENE): to_scene,
     });
-    Event::new(EventSource::Obs, "obs.scene.changed", payload)
+    Event::new(EventSource::Obs, event_kinds::SCENE_CHANGED, payload)
 }
 
 pub(crate) fn make_record_event(active: bool, path: Option<&str>) -> Event {
@@ -140,7 +145,7 @@ pub(crate) fn map_obs_event(ev: &obws::events::Event, from_scene: Option<&str>) 
         }
         obws::events::Event::CurrentPreviewSceneChanged { id } => Some(Event::new(
             EventSource::Obs,
-            "obs.scene.preview_changed",
+            event_kinds::SCENE_PREVIEW_CHANGED,
             json!({
                 (scene_fields::SCENE_NAME_OLD): from_scene.unwrap_or(""),
                 (scene_fields::SCENE_NAME_NEW): id.name,
@@ -150,25 +155,25 @@ pub(crate) fn map_obs_event(ev: &obws::events::Event, from_scene: Option<&str>) 
             let names: Vec<&str> = scenes.iter().map(|s| s.name.as_str()).collect();
             Some(Event::new(
                 EventSource::Obs,
-                "obs.scene.list_changed",
+                event_kinds::SCENE_LIST_CHANGED,
                 json!({ (scene_fields::ALL_NAMES): names }),
             ))
         }
         obws::events::Event::SceneCreated { id, .. } => Some(Event::new(
             EventSource::Obs,
-            "obs.scene.created",
+            event_kinds::SCENE_CREATED,
             json!({ (scene_fields::SCENE_NAME): id.name }),
         )),
         obws::events::Event::SceneRemoved { id, .. } => Some(Event::new(
             EventSource::Obs,
-            "obs.scene.removed",
+            event_kinds::SCENE_REMOVED,
             json!({ (scene_fields::SCENE_NAME): id.name }),
         )),
         obws::events::Event::SceneNameChanged {
             old_name, new_name, ..
         } => Some(Event::new(
             EventSource::Obs,
-            "obs.scene.renamed",
+            event_kinds::SCENE_RENAMED,
             json!({
                 (scene_fields::SCENE_NAME_OLD): old_name,
                 (scene_fields::SCENE_NAME_NEW): new_name,
@@ -280,7 +285,7 @@ pub(crate) fn map_obs_event(ev: &obws::events::Event, from_scene: Option<&str>) 
             ..
         } => Some(Event::new(
             EventSource::Obs,
-            "obs.source.scene_item_created",
+            event_kinds::SOURCE_SCENE_ITEM_CREATED,
             json!({
                 (source_fields::SCENE_NAME): scene.name,
                 (source_fields::SOURCE_NAME): source.name,
@@ -293,7 +298,7 @@ pub(crate) fn map_obs_event(ev: &obws::events::Event, from_scene: Option<&str>) 
             item_id,
         } => Some(Event::new(
             EventSource::Obs,
-            "obs.source.scene_item_removed",
+            event_kinds::SOURCE_SCENE_ITEM_REMOVED,
             json!({
                 (source_fields::SCENE_NAME): scene.name,
                 (source_fields::SOURCE_NAME): source.name,
@@ -306,7 +311,7 @@ pub(crate) fn map_obs_event(ev: &obws::events::Event, from_scene: Option<&str>) 
             ..
         } => Some(Event::new(
             EventSource::Obs,
-            "obs.source.input_created",
+            event_kinds::SOURCE_INPUT_CREATED,
             json!({
                 (source_fields::SOURCE_NAME): id.name,
                 (source_fields::SOURCE_KIND): unversioned_kind,
@@ -314,14 +319,14 @@ pub(crate) fn map_obs_event(ev: &obws::events::Event, from_scene: Option<&str>) 
         )),
         obws::events::Event::InputRemoved { id } => Some(Event::new(
             EventSource::Obs,
-            "obs.source.input_removed",
+            event_kinds::SOURCE_INPUT_REMOVED,
             json!({ (source_fields::SOURCE_NAME): id.name }),
         )),
         obws::events::Event::InputNameChanged {
             old_name, new_name, ..
         } => Some(Event::new(
             EventSource::Obs,
-            "obs.source.input_renamed",
+            event_kinds::SOURCE_INPUT_RENAMED,
             json!({
                 (source_fields::SOURCE_NAME_OLD): old_name,
                 (source_fields::SOURCE_NAME_NEW): new_name,
@@ -369,7 +374,7 @@ pub(crate) fn map_obs_event(ev: &obws::events::Event, from_scene: Option<&str>) 
 pub(crate) fn map_scene_item_visibility(scene: &str, source: &str, enabled: bool) -> Event {
     Event::new(
         EventSource::Obs,
-        "obs.source.visibility_changed",
+        event_kinds::SOURCE_VISIBILITY_CHANGED,
         json!({
             (source_fields::SCENE_NAME): scene,
             (source_fields::SOURCE_NAME): source,
@@ -381,7 +386,7 @@ pub(crate) fn map_scene_item_visibility(scene: &str, source: &str, enabled: bool
 pub(crate) fn map_scene_item_lock(scene: &str, source: &str, locked: bool) -> Event {
     Event::new(
         EventSource::Obs,
-        "obs.source.lock_changed",
+        event_kinds::SOURCE_LOCK_CHANGED,
         json!({
             (source_fields::SCENE_NAME): scene,
             (source_fields::SOURCE_NAME): source,

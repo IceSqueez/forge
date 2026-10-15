@@ -2,6 +2,7 @@ pub mod catalog;
 pub mod client;
 pub mod credentials;
 pub mod error;
+pub mod event_kinds;
 mod events;
 pub mod health;
 pub mod integration;

@@ -12,18 +12,6 @@ use crate::collection_options::ChoiceOptions;
 use crate::integrations::BuiltinRegistry;
 
 const OBS_BUILTIN_ID: &str = "obs";
-const OBS_CONNECTION_PREFIX: &str = "obs.connection.";
-const OBS_NAME_LIST_KINDS: [&str; 9] = [
-    "obs.scene.list_changed",
-    "obs.scene.created",
-    "obs.scene.removed",
-    "obs.scene.renamed",
-    "obs.source.input_created",
-    "obs.source.input_removed",
-    "obs.source.input_renamed",
-    "obs.source.scene_item_created",
-    "obs.source.scene_item_removed",
-];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ObsCatalogList {
@@ -176,8 +164,10 @@ async fn read_snapshot(source: &dyn ObsSource) -> ObsCatalogSnapshot {
 
 pub(crate) fn changes_obs_catalog(event: &Event) -> bool {
     event.source == EventSource::Obs
-        && (event.kind.starts_with(OBS_CONNECTION_PREFIX)
-            || OBS_NAME_LIST_KINDS.contains(&event.kind.as_str()))
+        && (event
+            .kind
+            .starts_with(forge_obs::event_kinds::CONNECTION_PREFIX)
+            || forge_obs::event_kinds::NAME_LIST_CHANGING_KINDS.contains(&event.kind.as_str()))
 }
 
 pub(crate) fn watch_obs_catalog<V: 'static>(

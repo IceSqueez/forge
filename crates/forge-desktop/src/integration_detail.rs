@@ -123,23 +123,7 @@ pub struct IntegrationDetail {
 const VIEWER_DELTA_WINDOW: Duration = Duration::from_secs(15 * 60);
 const VIEWER_RING_CAP: usize = 256;
 const DETAIL_TICK: Duration = Duration::from_secs(30);
-const OBS_CONNECTION_PREFIX: &str = "obs.connection.";
 const HISTORY_LIMIT: u32 = 50;
-const OBS_CATALOG_KINDS: [&str; 13] = [
-    "obs.scene.changed",
-    "obs.scene.preview_changed",
-    "obs.scene.list_changed",
-    "obs.scene.created",
-    "obs.scene.removed",
-    "obs.scene.renamed",
-    "obs.source.visibility_changed",
-    "obs.source.lock_changed",
-    "obs.source.input_created",
-    "obs.source.input_removed",
-    "obs.source.input_renamed",
-    "obs.source.scene_item_created",
-    "obs.source.scene_item_removed",
-];
 const TWITCH_LIFECYCLE_KINDS: [&str; 8] = [
     "twitch.channel.poll.begin",
     "twitch.channel.poll.progress",
@@ -1521,12 +1505,15 @@ impl Render for IntegrationDetail {
 }
 
 fn refreshes_obs_content(event: &Event) -> bool {
-    matches!(event.source, EventSource::Obs) && OBS_CATALOG_KINDS.contains(&event.kind.as_str())
+    matches!(event.source, EventSource::Obs)
+        && forge_obs::event_kinds::CATALOG_CHANGING_KINDS.contains(&event.kind.as_str())
 }
 
 pub(crate) fn rebuilds_descriptors(event: &Event) -> bool {
     match event.source {
-        EventSource::Obs => event.kind.starts_with(OBS_CONNECTION_PREFIX),
+        EventSource::Obs => event
+            .kind
+            .starts_with(forge_obs::event_kinds::CONNECTION_PREFIX),
         EventSource::Twitch => TWITCH_LIFECYCLE_KINDS.contains(&event.kind.as_str()),
         _ => false,
     }

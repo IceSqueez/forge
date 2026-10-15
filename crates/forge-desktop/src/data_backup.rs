@@ -9,6 +9,11 @@ use forge_storage::DataProvider;
 use time::OffsetDateTime;
 
 pub use forge_platform_core::paths::BACKUPS_DIR_NAME;
+use forge_platform_core::paths::{
+    ASSETS_DIR_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME, TTS_DIR_NAME,
+};
+use forge_storage::DATABASE_FILE_NAME;
+use forge_storage_sqlite::crypto::CREDENTIALS_KEY_FILE_NAME;
 
 const ARCHIVE_ROOT: &str = "forge";
 const ARCHIVE_EXTENSION: &str = "tar.gz";
@@ -17,9 +22,12 @@ const SNAPSHOT_EXTENSION: &str = "db.snapshot";
 const FILE_PREFIX: &str = "forge-backup";
 const SUFFIX_LEN: usize = 6;
 
-const DB_ENTRY: &str = "forge.db";
-const KEY_FILE: &str = "credentials-key";
-const INCLUDED_DIRS: [&str; 4] = ["media", "overlays", "tts", "assets"];
+const INCLUDED_DIRS: [&str; 4] = [
+    MEDIA_DIR_NAME,
+    OVERLAYS_DIR_NAME,
+    TTS_DIR_NAME,
+    ASSETS_DIR_NAME,
+];
 
 #[cfg(unix)]
 const OWNER_ONLY_MODE: u32 = 0o600;
@@ -91,11 +99,11 @@ pub fn write_archive(data_dir: &Path, db_snapshot: &Path, dest: &Path) -> io::Re
     builder.follow_symlinks(false);
 
     let root = Path::new(ARCHIVE_ROOT);
-    builder.append_path_with_name(db_snapshot, root.join(DB_ENTRY))?;
+    builder.append_path_with_name(db_snapshot, root.join(DATABASE_FILE_NAME))?;
 
-    let key = data_dir.join(KEY_FILE);
+    let key = data_dir.join(CREDENTIALS_KEY_FILE_NAME);
     if key.is_file() {
-        builder.append_path_with_name(&key, root.join(KEY_FILE))?;
+        builder.append_path_with_name(&key, root.join(CREDENTIALS_KEY_FILE_NAME))?;
     }
 
     for name in INCLUDED_DIRS {

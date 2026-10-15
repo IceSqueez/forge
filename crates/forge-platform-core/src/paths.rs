@@ -8,9 +8,13 @@ const MACOS_BUNDLE_ID: &str = "com.icesqueez.forge";
 #[cfg(not(target_os = "macos"))]
 const APP_DIR_NAME: &str = "forge";
 
-const MEDIA_DIR_NAME: &str = "media";
+pub const MEDIA_DIR_NAME: &str = "media";
 
-const ASSETS_DIR_NAME: &str = "assets";
+pub const ASSETS_DIR_NAME: &str = "assets";
+
+pub const OVERLAYS_DIR_NAME: &str = "overlays";
+
+pub const TTS_DIR_NAME: &str = "tts";
 
 pub const BACKUPS_DIR_NAME: &str = "backups";
 
@@ -37,7 +41,7 @@ pub fn data_dir() -> PathBuf {
 }
 
 pub fn overlays_dir() -> PathBuf {
-    data_dir().join("overlays")
+    data_dir().join(OVERLAYS_DIR_NAME)
 }
 
 pub fn media_dir() -> PathBuf {

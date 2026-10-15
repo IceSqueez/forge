@@ -4,13 +4,15 @@ use rand::rand_core::Rng;
 
 use crate::error::SqliteStorageError;
 
+pub const CREDENTIALS_KEY_FILE_NAME: &str = "credentials-key";
+
 const NONCE_LEN: usize = 12;
 
 pub fn load_or_create_key() -> Result<CredentialsKey, SqliteStorageError> {
     let path = if let Ok(p) = std::env::var("FORGE_CREDENTIAL_KEY_FILE") {
         std::path::PathBuf::from(p)
     } else {
-        forge_platform_core::paths::data_dir().join("credentials-key")
+        forge_platform_core::paths::data_dir().join(CREDENTIALS_KEY_FILE_NAME)
     };
     let minted = !path.exists();
     let key = load_or_create_file_key(&path)?;

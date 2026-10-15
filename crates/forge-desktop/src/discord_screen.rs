@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ConfirmTone, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    MenuPlacement, OverlayPosition, SectionLabel, ToastKind, badge, body_family, card,
-    confirm_modal, fmt_relative_time, icon, menu_button, menu_divider, menu_item, mono_family,
-    overlay, pad_tile, page_frame, status_dot, tr,
+    BORDER_THIN, BreadcrumbCrumb, ConfirmTone, FONT_XS, ForgePalette, Icon, MenuPlacement,
+    OverlayPosition, SectionLabel, ToastKind, badge, body_family, card, confirm_modal,
+    fmt_relative_time, icon, menu_button, menu_divider, menu_item, mono_family, overlay, pad_tile,
+    page_frame, status_dot, tr,
 };
 use forge_discord::{DiscordClient, DiscordSendHealth, WebhookPost};
 use forge_runtime::EventBus;
 use forge_storage::ActionRepo;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, Point, Rgba, SharedString,
-    Subscription, Task, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, Point, Rgba, Subscription, Task,
+    Window, div, prelude::*, px,
 };
 use time::OffsetDateTime;
 
@@ -27,7 +27,7 @@ use crate::integration_supervisor::IntegrationSlot;
 use crate::presentation::ActivePresentation;
 use crate::sidebar::NavRequested;
 use forge_components::PushToast;
-use forge_components::grow_cell;
+use forge_components::{grow_cell, stat_card};
 
 const SCROLL_PAD_X: Pixels = px(22.0);
 const SCROLL_PAD_Y: Pixels = px(18.0);
@@ -52,10 +52,6 @@ const COUNT_SUB_FS: Pixels = px(10.0);
 
 const STAT_GAP: Pixels = px(10.0);
 const STAT_MARGIN_B: Pixels = px(14.0);
-const STAT_PAD_V: Pixels = px(10.0);
-const STAT_PAD_H: Pixels = px(12.0);
-const STAT_LABEL_MB: Pixels = px(4.0);
-const STAT_HINT_MT: Pixels = px(2.0);
 
 const COLUMN_GAP: Pixels = px(12.0);
 const COLUMN_FLEX: f32 = 1.0;
@@ -994,54 +990,6 @@ fn footer_text(text: String, palette: &ForgePalette) -> impl IntoElement {
         .text_size(FOOTER_FS)
         .text_color(palette.text_faint)
         .child(text)
-}
-
-fn stat_card(
-    label: String,
-    value: String,
-    value_color: Rgba,
-    hint: String,
-    hint_color: Rgba,
-    palette: &ForgePalette,
-) -> impl IntoElement {
-    let body = div()
-        .w_full()
-        .flex()
-        .flex_col()
-        .child(
-            div()
-                .mb(STAT_LABEL_MB)
-                .font_family(mono_family())
-                .text_size(FONT_XXS)
-                .text_color(palette.text_muted)
-                .child(SharedString::from(label.to_uppercase())),
-        )
-        .child(
-            div()
-                .w_full()
-                .truncate()
-                .font_family(body_family())
-                .text_size(FONT_SM)
-                .font_weight(gpui::FontWeight::MEDIUM)
-                .text_color(value_color)
-                .child(value),
-        )
-        .child(
-            div()
-                .mt(STAT_HINT_MT)
-                .font_family(mono_family())
-                .text_size(FONT_XXS)
-                .text_color(hint_color)
-                .child(hint),
-        );
-
-    grow_cell(
-        card(body, palette)
-            .padding_xy(STAT_PAD_V, STAT_PAD_H)
-            .full_width()
-            .full_height(),
-        1.0,
-    )
 }
 
 impl EventEmitter<NavRequested> for DiscordScreenView {}

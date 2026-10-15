@@ -1,17 +1,10 @@
-use forge_components::{
-    FONT_SM, FONT_XXS, ForgePalette, body_family, card, fmt_relative_time, grow_cell, mono_family,
-    tr,
-};
-use gpui::{AnyElement, Pixels, SharedString, div, prelude::*, px};
+use forge_components::{ForgePalette, fmt_relative_time, stat_card, tr};
+use gpui::{AnyElement, Pixels, div, prelude::*, px};
 
 use super::HotkeysScreenView;
 
 const STAT_GAP: Pixels = px(10.0);
 const STAT_MARGIN_B: Pixels = px(14.0);
-const STAT_PAD_V: Pixels = px(10.0);
-const STAT_PAD_H: Pixels = px(12.0);
-const STAT_LABEL_MB: Pixels = px(4.0);
-const STAT_HINT_MT: Pixels = px(2.0);
 
 const NO_VALUE: &str = "-";
 
@@ -77,52 +70,4 @@ impl HotkeysScreenView {
             ))
             .into_any_element()
     }
-}
-
-fn stat_card(
-    label: String,
-    value: String,
-    value_color: gpui::Rgba,
-    hint: String,
-    hint_color: gpui::Rgba,
-    palette: &ForgePalette,
-) -> impl IntoElement {
-    let body = div()
-        .w_full()
-        .flex()
-        .flex_col()
-        .child(
-            div()
-                .mb(STAT_LABEL_MB)
-                .font_family(mono_family())
-                .text_size(FONT_XXS)
-                .text_color(palette.text_muted)
-                .child(SharedString::from(label.to_uppercase())),
-        )
-        .child(
-            div()
-                .w_full()
-                .truncate()
-                .font_family(body_family())
-                .text_size(FONT_SM)
-                .font_weight(gpui::FontWeight::MEDIUM)
-                .text_color(value_color)
-                .child(value),
-        )
-        .child(
-            div()
-                .mt(STAT_HINT_MT)
-                .font_family(mono_family())
-                .text_size(FONT_XXS)
-                .text_color(hint_color)
-                .child(hint),
-        );
-
-    grow_cell(
-        card(body, palette)
-            .padding_xy(STAT_PAD_V, STAT_PAD_H)
-            .full_width()
-            .full_height(),
-        1.0,
-    )
 }

@@ -1059,6 +1059,60 @@ pub fn card_shell(palette: &ForgePalette) -> Div {
         .bg(palette.elevated)
 }
 
+const STAT_CARD_PAD_V: Pixels = px(10.0);
+const STAT_CARD_PAD_H: Pixels = px(12.0);
+const STAT_CARD_LABEL_MB: Pixels = px(4.0);
+const STAT_CARD_HINT_MT: Pixels = px(2.0);
+const STAT_CARD_GROW: f32 = 1.0;
+
+pub fn stat_card(
+    label: impl Into<SharedString>,
+    value: impl Into<SharedString>,
+    value_color: Rgba,
+    hint: impl Into<SharedString>,
+    hint_color: Rgba,
+    palette: &ForgePalette,
+) -> impl IntoElement {
+    let body = div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .child(
+            div()
+                .mb(STAT_CARD_LABEL_MB)
+                .font_family(mono_family())
+                .text_size(FONT_XXS)
+                .text_color(palette.text_muted)
+                .child(SharedString::from(label.into().to_uppercase())),
+        )
+        .child(
+            div()
+                .w_full()
+                .truncate()
+                .font_family(body_family())
+                .text_size(FONT_SM)
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(value_color)
+                .child(value.into()),
+        )
+        .child(
+            div()
+                .mt(STAT_CARD_HINT_MT)
+                .font_family(mono_family())
+                .text_size(FONT_XXS)
+                .text_color(hint_color)
+                .child(hint.into()),
+        );
+
+    grow_cell(
+        card(body, palette)
+            .padding_xy(STAT_CARD_PAD_V, STAT_CARD_PAD_H)
+            .full_width()
+            .full_height(),
+        STAT_CARD_GROW,
+    )
+}
+
 pub fn grow_cell(el: impl IntoElement, grow: f32) -> Div {
     let mut cell = div().min_w(px(0.0)).child(el);
     let style = cell.style();

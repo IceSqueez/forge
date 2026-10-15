@@ -46,3 +46,25 @@ impl RenderOnce for ProgressBar {
             )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::clamped_fraction;
+
+    #[test]
+    fn clamped_fraction_keeps_the_fill_inside_the_track() {
+        for (input, expected) in [
+            (0.0, 0.0),
+            (0.42, 0.42),
+            (1.0, 1.0),
+            (-0.0, 0.0),
+            (-0.5, 0.0),
+            (1.5, 1.0),
+            (f32::NAN, 0.0),
+            (f32::INFINITY, 0.0),
+            (f32::NEG_INFINITY, 0.0),
+        ] {
+            assert_eq!(clamped_fraction(input), expected, "{input}");
+        }
+    }
+}

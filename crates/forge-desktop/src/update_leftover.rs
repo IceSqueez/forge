@@ -92,3 +92,32 @@ fn raise_leftover_toast(rt_handle: Handle, cx: &mut App) {
         Duration::ZERO,
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const INSTALL_DIR: &str = "C:\\Program Files\\forge";
+
+    #[test]
+    fn leftover_notice_is_raised_only_for_an_unnoticed_leftover_install() {
+        for (leftover, noticed, expected) in [
+            (None, false, None),
+            (None, true, None),
+            (Some(PathBuf::from(INSTALL_DIR)), true, None),
+            (
+                Some(PathBuf::from(INSTALL_DIR)),
+                false,
+                Some(LeftoverNotice {
+                    install_dir: PathBuf::from(INSTALL_DIR),
+                }),
+            ),
+        ] {
+            assert_eq!(
+                leftover_notice(leftover.clone(), noticed),
+                expected,
+                "{leftover:?} noticed={noticed}"
+            );
+        }
+    }
+}

@@ -372,3 +372,38 @@ impl RenderOnce for ToastCard {
             .with_animation(anim_id, enter_animation(), |el, delta| el.opacity(delta))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{ToastCard, ToastKind, toast_card};
+    use crate::palette::FORGE_DEFAULT;
+
+    fn card() -> ToastCard {
+        toast_card("toast", ToastKind::Info, "message", &FORGE_DEFAULT)
+    }
+
+    #[test]
+    fn only_a_toast_with_actions_or_progress_stacks_a_footer() {
+        for (label, card, expected) in [
+            ("plain", card(), false),
+            (
+                "plain with dismiss",
+                card().on_dismiss("x", |_, _, _| {}),
+                false,
+            ),
+            ("progress", card().progress(0.0), true),
+            (
+                "primary action",
+                card().action("a", "Go", |_, _, _| {}),
+                true,
+            ),
+            (
+                "secondary action",
+                card().secondary_action("s", "Skip", |_, _, _| {}),
+                true,
+            ),
+        ] {
+            assert_eq!(card.has_footer(), expected, "{label}");
+        }
+    }
+}

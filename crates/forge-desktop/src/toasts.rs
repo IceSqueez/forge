@@ -182,7 +182,7 @@ fn push_toast_parts(
 mod tests {
     use std::time::Duration;
 
-    use forge_components::{ToastAction, ToastKind};
+    use forge_components::{ToastAction, ToastData, ToastKind};
     use gpui::TestAppContext;
 
     use super::{PushToast, Toasts};
@@ -241,5 +241,36 @@ mod tests {
         cx.run_until_parked();
 
         assert_eq!(action_labels(cx), Vec::new());
+    }
+
+    #[test]
+    fn replacing_a_dismissed_toast_does_not_bring_it_back() {
+        let mut toasts = Toasts::new();
+        let id = toasts.show(ToastData::new(0, ToastKind::Info, "downloading"));
+        toasts.dismiss(id);
+
+        assert!(!toasts.replace(id, ToastData::new(0, ToastKind::Info, "42%")));
+        assert!(toasts.items().is_empty());
+    }
+
+    #[test]
+    fn replace_keeps_the_toast_id_and_position() {
+        let mut toasts = Toasts::new();
+        let first = toasts.show(ToastData::new(0, ToastKind::Info, "first"));
+        let second = toasts.show(ToastData::new(0, ToastKind::Info, "second"));
+        toasts.replace(first, ToastData::new(99, ToastKind::Info, "first, updated"));
+
+        let shown: Vec<(u64, String)> = toasts
+            .items()
+            .iter()
+            .map(|t| (t.id, t.message.to_string()))
+            .collect();
+        assert_eq!(
+            shown,
+            vec![
+                (first, "first, updated".to_owned()),
+                (second, "second".to_owned())
+            ]
+        );
     }
 }

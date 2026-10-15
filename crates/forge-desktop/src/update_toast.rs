@@ -157,3 +157,210 @@ pub fn toast_data(
     data.secondary_action = toast.secondary.map(action);
     data
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+mod tests {
+    use std::path::PathBuf;
+
+    use forge_storage::Language;
+    use forge_update::{
+        Artifact, CancelSignal, DownloadProgress, InstallLayout, Sha256Digest, StagedArtifact,
+        UpdatableInstall,
+    };
+
+    use super::*;
+    use crate::i18n::install_language;
+    use crate::update_flow::InstallTarget;
+
+    const VERSION: &str = "0.9.0";
+
+    fn candidate(installable: bool) -> UpdateCandidate {
+        UpdateCandidate {
+            version: VERSION.to_owned(),
+            release_page: "https://example.invalid/releases/v0.9.0".to_owned(),
+            install: installable.then(|| InstallTarget {
+                install: UpdatableInstall {
+                    layout: InstallLayout::LinuxAppImage,
+                    target: PathBuf::from("/opt/forge/forge.AppImage"),
+                },
+                artifact: Artifact {
+                    platform: "linux-x64".to_owned(),
+                    kind: "appimage".to_owned(),
+                    name: "forge.AppImage".to_owned(),
+                    url: "https://example.invalid/forge.AppImage".to_owned(),
+                    sha256: Sha256Digest::of(b"forge"),
+                    size: 100,
+                },
+            }),
+        }
+    }
+
+    fn staged() -> StagedArtifact {
+        StagedArtifact {
+            path: PathBuf::from("/opt/forge/staged"),
+            size: 100,
+        }
+    }
+
+    fn commands(toast: &UpdateToast) -> (Option<UpdateCommand>, Option<UpdateCommand>) {
+        (
+            toast.primary.as_ref().map(|b| b.command),
+            toast.secondary.as_ref().map(|b| b.command),
+        )
+    }
+
+    fn failed(failure: UpdateFailure) -> UpdateStage {
+        UpdateStage::Failed {
+            candidate: candidate(true),
+            failure,
+            staged: None,
+        }
+    }
+
+    #[test]
+    fn each_stage_offers_the_buttons_that_move_it_forward() {
+        install_language(Language::En);
+        for (label, stage, expected) in [
+            (
+                "installable offer",
+                UpdateStage::Offered(candidate(true)),
+                (
+                    Some(UpdateCommand::StartDownload),
+                    Some(UpdateCommand::Skip),
+                ),
+            ),
+            (
+                "download-only offer",
+                UpdateStage::Offered(candidate(false)),
+                (
+                    Some(UpdateCommand::OpenReleasePage),
+                    Some(UpdateCommand::Skip),
+                ),
+            ),
+            (
+                "downloading",
+                UpdateStage::Downloading {
+                    candidate: candidate(true),
+                    progress: DownloadProgress {
+                        received: 0,
+                        total: 100,
+                    },
+                    cancel: CancelSignal::new(),
+                },
+                (None, Some(UpdateCommand::Cancel)),
+            ),
+            (
+                "ready",
+                UpdateStage::Ready {
+                    candidate: candidate(true),
+                    staged: staged(),
+                },
+                (Some(UpdateCommand::Restart), None),
+            ),
+            (
+                "failed",
+                failed(UpdateFailure::Download),
+                (
+                    Some(UpdateCommand::Retry),
+                    Some(UpdateCommand::OpenReleasePage),
+                ),
+            ),
+            (
+                "restarting",
+                UpdateStage::HandedOff {
+                    candidate: candidate(true),
+                    mode: ApplyMode::Restart,
+                },
+                (None, None),
+            ),
+        ] {
+            let toast = update_toast(&stage).unwrap_or_else(|| panic!("{label}: no toast"));
+            assert_eq!(commands(&toast), expected, "{label}");
+        }
+    }
+
+    #[test]
+    fn idle_and_a_handed_off_apply_on_quit_update_show_no_toast() {
+        install_language(Language::En);
+        for stage in [
+            UpdateStage::Idle,
+            UpdateStage::HandedOff {
+                candidate: candidate(true),
+                mode: ApplyMode::OnQuit,
+            },
+        ] {
+            assert_eq!(update_toast(&stage), None, "{stage:?}");
+        }
+    }
+
+    #[test]
+    fn a_handoff_in_either_mode_shows_a_full_preparing_bar_without_actions() {
+        install_language(Language::En);
+        for mode in [ApplyMode::OnQuit, ApplyMode::Restart] {
+            let toast = update_toast(&UpdateStage::HandingOff {
+                candidate: candidate(true),
+                staged: staged(),
+                mode,
+            })
+            .unwrap_or_else(|| panic!("{mode:?}: no toast"));
+
+            assert!(
+                toast.message.starts_with("Preparing"),
+                "{mode:?}: {}",
+                toast.message
+            );
+            assert!(
+                toast.message.contains(VERSION),
+                "{mode:?}: {}",
+                toast.message
+            );
+            assert_eq!(toast.progress, Some(1.0), "{mode:?}");
+            assert_eq!(commands(&toast), (None, None), "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn the_downloading_toast_shows_the_percent_and_a_matching_bar() {
+        install_language(Language::En);
+        let toast = update_toast(&UpdateStage::Downloading {
+            candidate: candidate(true),
+            progress: DownloadProgress {
+                received: 42,
+                total: 100,
+            },
+            cancel: CancelSignal::new(),
+        })
+        .expect("downloading toast");
+
+        assert!(toast.message.contains("42"), "{}", toast.message);
+        assert_eq!(toast.progress, Some(0.42));
+    }
+
+    #[test]
+    fn every_failure_kind_is_an_error_toast_with_its_own_wording() {
+        for lang in [Language::En, Language::Uk] {
+            install_language(lang);
+            let toasts: Vec<UpdateToast> = [
+                UpdateFailure::Download,
+                UpdateFailure::Unverified,
+                UpdateFailure::Handoff,
+            ]
+            .into_iter()
+            .map(|failure| update_toast(&failed(failure)).expect("failure toast"))
+            .collect();
+
+            assert!(
+                toasts.iter().all(|t| t.kind == ToastKind::Error),
+                "{lang:?}"
+            );
+            assert!(
+                toasts.iter().all(|t| t.message.contains(VERSION)),
+                "{lang:?}"
+            );
+            let distinct: std::collections::BTreeSet<&str> =
+                toasts.iter().map(|t| t.message.as_str()).collect();
+            assert_eq!(distinct.len(), toasts.len(), "{lang:?}");
+        }
+    }
+}

@@ -387,12 +387,21 @@ pub fn remember_skipped(tag: String, backend: Arc<dyn DataProvider>, rt_handle: 
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use forge_platform_core::{HealthMetric, HealthValue};
 
+    use std::path::PathBuf;
+
+    use forge_update::{
+        Artifact, ArtifactKind, InstallKind, InstallLayout, ManualReason, Platform, Sha256Digest,
+        UpdatableInstall, UpdateOffer,
+    };
+
     use super::{
-        CURRENT_VERSION, REPO_URL, Release, UpdateNotice, any_output_active, latest_release_url,
-        parse_version, release_from_json, release_page_url, should_notify,
+        CURRENT_VERSION, FoundUpdate, REPO_URL, Release, UpdateNotice, any_output_active,
+        display_version, latest_release_url, parse_version, release_from_json, release_page_url,
+        should_notify, update_candidate,
     };
 
     fn status(active: bool) -> HealthMetric {
@@ -700,5 +709,131 @@ mod tests {
         ] {
             assert_eq!(any_output_active(&metrics), expected, "{label}");
         }
+    }
+
+    const OFFER_PAGE: &str = "https://example.invalid/releases/v0.9.0";
+
+    fn artifact(platform: Platform, kind: ArtifactKind) -> Artifact {
+        let kind = kind.id();
+        Artifact {
+            platform: platform.id().to_owned(),
+            kind: kind.to_owned(),
+            name: format!("forge-{}-{kind}", platform.id()),
+            url: format!("https://example.invalid/{}-{kind}", platform.id()),
+            sha256: Sha256Digest::of(kind.as_bytes()),
+            size: 100,
+        }
+    }
+
+    fn signed(artifacts: Vec<Artifact>) -> FoundUpdate {
+        FoundUpdate::Signed(UpdateOffer {
+            version: parse_version("0.9.0").expect("version"),
+            published_at: "2026-10-15T00:00:00Z".to_owned(),
+            release_page: OFFER_PAGE.to_owned(),
+            artifacts,
+        })
+    }
+
+    fn appimage_install() -> InstallKind {
+        InstallKind::Updatable(UpdatableInstall {
+            layout: InstallLayout::LinuxAppImage,
+            target: PathBuf::from("/opt/forge/forge.AppImage"),
+        })
+    }
+
+    fn linux_offer() -> Vec<Artifact> {
+        vec![
+            artifact(Platform::WindowsX64, ArtifactKind::Msi),
+            artifact(Platform::LinuxX64, ArtifactKind::AppImage),
+            artifact(Platform::MacosUniversal, ArtifactKind::AppBundleArchive),
+        ]
+    }
+
+    #[test]
+    fn a_signed_offer_for_an_updatable_install_targets_the_matching_artifact() {
+        let candidate = update_candidate(
+            signed(linux_offer()),
+            &appimage_install(),
+            Some(Platform::LinuxX64),
+        );
+
+        let target = candidate.install.map(|target| target.artifact);
+        assert_eq!(
+            target,
+            Some(artifact(Platform::LinuxX64, ArtifactKind::AppImage))
+        );
+    }
+
+    #[test]
+    fn every_other_combination_falls_back_to_a_download_link() {
+        let unsigned = FoundUpdate::Unsigned(Release {
+            tag: "v0.9.0".to_owned(),
+            url: OFFER_PAGE.to_owned(),
+        });
+        for (label, found, install, platform) in [
+            (
+                "unsigned release",
+                unsigned,
+                appimage_install(),
+                Some(Platform::LinuxX64),
+            ),
+            (
+                "manual-only install",
+                signed(linux_offer()),
+                InstallKind::ManualOnly(ManualReason::LinuxPackageManaged),
+                Some(Platform::LinuxX64),
+            ),
+            (
+                "unknown platform",
+                signed(linux_offer()),
+                appimage_install(),
+                None,
+            ),
+            (
+                "no artifact for this platform",
+                signed(vec![artifact(Platform::WindowsX64, ArtifactKind::AppImage)]),
+                appimage_install(),
+                Some(Platform::LinuxX64),
+            ),
+            (
+                "no artifact of this install kind",
+                signed(vec![artifact(Platform::LinuxX64, ArtifactKind::Msi)]),
+                appimage_install(),
+                Some(Platform::LinuxX64),
+            ),
+            (
+                "empty manifest",
+                signed(Vec::new()),
+                appimage_install(),
+                Some(Platform::LinuxX64),
+            ),
+        ] {
+            let candidate = update_candidate(found, &install, platform);
+            assert_eq!(candidate.install, None, "{label}");
+            assert_eq!(candidate.release_page, OFFER_PAGE, "{label}");
+        }
+    }
+
+    #[test]
+    fn display_version_drops_the_tag_prefix_and_surrounding_space() {
+        for raw in ["v0.9.0", " 0.9.0 ", "0.9.0", " v0.9.0\n"] {
+            assert_eq!(display_version(raw), "0.9.0", "{raw:?}");
+        }
+    }
+
+    #[test]
+    fn signed_and_unsigned_offers_of_one_release_show_the_same_version() {
+        let unsigned = FoundUpdate::Unsigned(Release {
+            tag: "v0.9.0".to_owned(),
+            url: OFFER_PAGE.to_owned(),
+        });
+        let signed = signed(linux_offer());
+
+        assert_eq!(unsigned.version(), signed.version());
+        let install = appimage_install();
+        assert_eq!(
+            update_candidate(unsigned, &install, None).version,
+            update_candidate(signed, &install, None).version,
+        );
     }
 }

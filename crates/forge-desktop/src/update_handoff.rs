@@ -83,3 +83,28 @@ async fn snapshot_and_plan(
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+mod tests {
+    use time::{Date, Month, PrimitiveDateTime, Time};
+
+    use super::*;
+
+    #[test]
+    fn the_update_snapshot_lands_in_the_backups_dir_as_a_stamped_pre_update_database() {
+        let data_dir = Path::new("/data/forge");
+        let now = PrimitiveDateTime::new(
+            Date::from_calendar_date(2026, Month::October, 15).unwrap(),
+            Time::from_hms(9, 5, 7).unwrap(),
+        )
+        .assume_utc();
+
+        let path = update_snapshot_path(data_dir, now, "a1b2c3");
+
+        assert_eq!(
+            path,
+            backups_dir(data_dir).join("forge-backup-20261015-090507Z-a1b2c3.pre-update.db")
+        );
+    }
+}

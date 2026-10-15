@@ -23,9 +23,6 @@ use gpui::{
 
 use crate::async_bridge::{self, ErrorSink};
 use crate::hub_crumb::{core_category, hub_crumb};
-use crate::overlay_url::{
-    extract_port, overlay_file_url, overlay_origin, overlay_page_url, resolve_routable_host,
-};
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::server_restart::restart_ignoring_disabled;
@@ -33,6 +30,9 @@ use crate::settings::SettingsSection;
 use crate::sidebar::NavRequested;
 use crate::window_presence::PresenceGate;
 use forge_components::grow_cell;
+use forge_server::overlay_url::{
+    extract_port, overlay_file_url, overlay_origin, overlay_page_url, resolve_routable_host,
+};
 
 const BEARER_CREDENTIAL_ID: &str = "server:bearer";
 

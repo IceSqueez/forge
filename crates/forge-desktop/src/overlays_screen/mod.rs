@@ -207,7 +207,7 @@ impl OverlaysView {
                     "overlays_header_summary",
                     enabled = self.enabled_count() as i64,
                     total = self.registry.overlays.len() as i64,
-                    port = crate::overlay_url::extract_port(address)
+                    port = forge_server::overlay_url::extract_port(address)
                 ),
             ),
             None => (

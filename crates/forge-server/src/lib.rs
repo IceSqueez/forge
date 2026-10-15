@@ -11,6 +11,7 @@ pub mod error;
 pub mod handle;
 mod listener;
 mod origin;
+pub mod overlay_url;
 pub mod protocol;
 mod run_state;
 mod sandbox;

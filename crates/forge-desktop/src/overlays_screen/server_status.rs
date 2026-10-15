@@ -2,7 +2,7 @@ use forge_storage::OverlayId;
 use gpui::Context;
 
 use super::OverlaysView;
-use crate::overlay_url::{overlay_origin, overlay_page_url, resolve_routable_host};
+use forge_server::overlay_url::{overlay_origin, overlay_page_url, resolve_routable_host};
 
 struct ServedEndpoint {
     bind_address: String,

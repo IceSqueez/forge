@@ -91,7 +91,6 @@ mod obs_settings_modal;
 mod overlay_build_failure;
 mod overlay_frame_sink;
 mod overlay_speech_failure;
-mod overlay_url;
 mod overlays_screen;
 mod picker_favorites;
 mod platforms;

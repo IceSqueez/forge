@@ -227,7 +227,7 @@ fn build_router(state: AppState, shutdown: tokio::sync::watch::Receiver<bool>) -
         .route("/ws/v1/", get(ws::ws_handler).layer(Extension(shutdown)))
         .nest("/api/v1", api_routes)
         .route(
-            "/overlays/{*path}",
+            &format!("/{}/{{*path}}", crate::overlay_url::OVERLAY_ROUTE),
             get(overlays::serve_overlay_file).route_layer(host_guard.clone()),
         )
         .route(

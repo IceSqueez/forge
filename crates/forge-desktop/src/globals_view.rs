@@ -5,6 +5,7 @@ use std::time::Duration;
 use forge_components::chip::ChipGlyph;
 use forge_components::confirm::ConfirmTone;
 use forge_components::highlight::Language;
+use forge_components::highlighted_text;
 use forge_components::tokens::ModalSize;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, CodeEditor, ColumnWidth, DataRow, Density, FONT_XS, FONT_XXS,
@@ -1524,17 +1525,14 @@ impl GlobalsView {
                         .child("\u{00A0}"),
                 );
             } else {
-                for (text, hue) in json_line_runs(line, palette) {
-                    code_line = code_line.child(
-                        div()
-                            .flex_none()
-                            .font_family(mono_family())
-                            .text_size(FONT_XS)
-                            .text_color(hue)
-                            .whitespace_nowrap()
-                            .child(SharedString::from(text)),
-                    );
-                }
+                code_line = code_line.child(
+                    div()
+                        .flex_none()
+                        .font_family(mono_family())
+                        .text_size(FONT_XS)
+                        .whitespace_nowrap()
+                        .child(highlighted_text(Language::Json, line.to_owned(), palette)),
+                );
             }
             listing = listing.child(
                 div()
@@ -1695,66 +1693,6 @@ fn inspect_count(value: &Variant) -> (&'static str, usize) {
         Variant::Object(map) => ("globals_inspect_subtitle_keys", map.len()),
         _ => ("globals_inspect_subtitle_keys", 0),
     }
-}
-
-fn json_line_runs(line: &str, palette: &ForgePalette) -> Vec<(String, Rgba)> {
-    let chars: Vec<char> = line.chars().collect();
-    let n = chars.len();
-    let mut runs: Vec<(String, Rgba)> = Vec::new();
-    let mut i = 0;
-    while i < n {
-        let c = chars[i];
-        if c.is_whitespace() {
-            let start = i;
-            while i < n && chars[i].is_whitespace() {
-                i += 1;
-            }
-            runs.push((chars[start..i].iter().collect(), palette.text_secondary));
-        } else if c == '"' {
-            let start = i;
-            i += 1;
-            while i < n {
-                match chars[i] {
-                    '\\' => i += 2,
-                    '"' => {
-                        i += 1;
-                        break;
-                    }
-                    _ => i += 1,
-                }
-            }
-            let mut j = i;
-            while j < n && chars[j].is_whitespace() {
-                j += 1;
-            }
-            let is_key = j < n && chars[j] == ':';
-            let hue = if is_key {
-                palette.info
-            } else {
-                palette.success
-            };
-            runs.push((chars[start..i.min(n)].iter().collect(), hue));
-        } else if c == '-' || c.is_ascii_digit() {
-            let start = i;
-            i += 1;
-            while i < n
-                && (chars[i].is_ascii_digit() || matches!(chars[i], '.' | 'e' | 'E' | '+' | '-'))
-            {
-                i += 1;
-            }
-            runs.push((chars[start..i].iter().collect(), palette.bits));
-        } else if let Some(word) = ["true", "false", "null"]
-            .into_iter()
-            .find(|w| chars[i..].starts_with(&w.chars().collect::<Vec<_>>()[..]))
-        {
-            runs.push((word.to_owned(), palette.brand));
-            i += word.chars().count();
-        } else {
-            runs.push((c.to_string(), palette.text_secondary));
-            i += 1;
-        }
-    }
-    runs
 }
 
 async fn export_globals_to_chosen_file(repo: Arc<dyn GlobalsRepo>) -> Result<PathBuf, String> {

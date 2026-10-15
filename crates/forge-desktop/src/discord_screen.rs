@@ -27,7 +27,7 @@ use crate::hub_crumb::hub_crumb;
 use crate::integration_supervisor::IntegrationSlot;
 use crate::presentation::ActivePresentation;
 use crate::sidebar::NavRequested;
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 const SCROLL_PAD_X: Pixels = px(22.0);
 const SCROLL_PAD_Y: Pixels = px(18.0);

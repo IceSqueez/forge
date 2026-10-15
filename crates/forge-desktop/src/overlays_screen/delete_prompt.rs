@@ -9,7 +9,7 @@ use gpui::{AnyElement, ClickEvent, Context, prelude::*};
 use super::OverlaysView;
 use super::receiver;
 use crate::async_bridge;
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 pub(super) struct PendingDelete {
     id: OverlayId,

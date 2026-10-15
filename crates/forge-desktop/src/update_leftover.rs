@@ -11,7 +11,7 @@ use gpui::{App, AsyncApp};
 use tokio::runtime::Handle;
 
 use crate::async_bridge::{detached, open_path};
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 pub const INSTALLED_APPS_SETTINGS: &str = "ms-settings:appsfeatures";
 

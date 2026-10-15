@@ -1,4 +1,4 @@
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 use forge_components::{
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Spacing, ToastKind, body_family,
     ghost_button_with_icon, mono_family, spacing, tr,

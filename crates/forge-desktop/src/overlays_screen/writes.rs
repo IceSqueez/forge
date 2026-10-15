@@ -8,7 +8,7 @@ use gpui::Context;
 
 use super::OverlaysView;
 use crate::async_bridge;
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 #[derive(Default)]
 pub(super) struct Regenerated {

@@ -8,7 +8,7 @@ use crate::actions::shortcut_entry;
 use crate::combo_capture::{CapturedKey, captured_key, warn_if_typing_key};
 use crate::combo_conflict::{Claimant, holder_of_combo};
 use crate::shortcut_overrides::ChordVerdict;
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 const ADD_BAR_PAD_H: Pixels = px(12.0);
 

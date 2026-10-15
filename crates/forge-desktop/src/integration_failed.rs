@@ -19,7 +19,7 @@ use crate::integrations_hub::card_status_badge;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 const BODY_PAD_V: Pixels = px(18.0);
 const BODY_PAD_H: Pixels = px(22.0);

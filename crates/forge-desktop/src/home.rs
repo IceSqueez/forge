@@ -22,7 +22,7 @@ use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::shell::refresh_dashboard_stats;
 use crate::sidebar::NavRequested;
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 const BODY_PAD_V: Pixels = px(22.0);
 const BODY_PAD_H: Pixels = px(28.0);

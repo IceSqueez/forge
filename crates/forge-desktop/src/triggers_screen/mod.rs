@@ -23,7 +23,7 @@ use crate::integrations::BuiltinRegistry;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 mod collection_choices;
 mod create;

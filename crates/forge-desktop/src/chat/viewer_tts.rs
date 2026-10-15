@@ -7,11 +7,11 @@ use gpui::{AppContext, Context, Entity, Subscription, Window};
 use super::ChatView;
 use super::viewer_actions::ViewerTarget;
 use crate::async_bridge;
-use crate::toasts::PushToast;
 use crate::voice_alias_form::{
     AliasForm, AliasFormEvent, AliasIdentity, AliasValues, platform_scope,
 };
 use crate::voice_alias_store::{block_viewer, save_alias};
+use forge_components::PushToast;
 
 pub(super) struct TtsVoiceHost {
     pub(super) view: Entity<AliasForm>,

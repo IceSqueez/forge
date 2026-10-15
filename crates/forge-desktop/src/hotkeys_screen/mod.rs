@@ -24,7 +24,7 @@ use crate::integration_supervisor::IntegrationSlot;
 use crate::presentation::ActivePresentation;
 use crate::shortcut_overrides::{ShortcutOverrides, save_overrides};
 use crate::sidebar::NavRequested;
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 mod action_modal;
 mod app_row;

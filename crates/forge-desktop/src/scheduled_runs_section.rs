@@ -25,8 +25,8 @@ use crate::scheduled_run_labels::{
 };
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
-use crate::toasts::PushToast;
 use crate::window_presence::PresenceGate;
+use forge_components::PushToast;
 
 const RECENT_LIMIT: usize = 20;
 const COUNTDOWN_TICK: Duration = Duration::from_secs(30);

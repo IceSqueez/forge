@@ -13,8 +13,8 @@ use gpui::{App, AsyncApp};
 use tokio::runtime::Handle;
 
 use crate::async_bridge::{detached, open_path};
-use crate::toasts::PushToast;
 use crate::update_check::{CURRENT_VERSION, REPO_URL, release_page_url, remember_skipped};
+use forge_components::PushToast;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReportOffer {

@@ -23,12 +23,12 @@ use gpui::{
 
 use crate::async_bridge;
 use crate::presentation::ActivePresentation;
-use crate::toasts::PushToast;
 use crate::voice_alias_form::{
     AliasForm, AliasFormEvent, AliasIdentity, AliasValues, PlatformScope, alias_key, fmt_field,
     split_alias_key,
 };
 use crate::voice_alias_store::save_alias;
+use forge_components::PushToast;
 
 const SEARCH_W: Pixels = px(240.0);
 const ACTIONS_W: Pixels = px(90.0);

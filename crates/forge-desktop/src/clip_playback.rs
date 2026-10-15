@@ -6,7 +6,7 @@ use forge_types::ClipId;
 use gpui::{App, Global};
 use serde_json::Value;
 
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 const PLAYBACK_STARTED: &str = "playback.started";
 const PLAYBACK_FINISHED: &str = "playback.finished";

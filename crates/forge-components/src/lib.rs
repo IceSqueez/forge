@@ -48,6 +48,7 @@ pub(crate) mod text_buffer;
 pub(crate) mod text_edit;
 pub mod text_input;
 pub mod toast;
+pub mod toast_queue;
 pub mod toggle;
 pub mod tokens;
 pub mod tooltip;
@@ -136,6 +137,7 @@ pub use text_input::{
     search_input_on_surface,
 };
 pub use toast::{ToastAction, ToastCard, ToastData, ToastKind, toast_card};
+pub use toast_queue::{PushToast, Toasts, toast_layer};
 pub use toggle::{Toggle, toggle};
 pub use tokens::{
     BORDER_ACCENT, BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,

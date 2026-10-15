@@ -3,7 +3,7 @@ use forge_hotkey::HotkeyCombo;
 use gpui::{App, Context, Keystroke, Subscription};
 
 use crate::hotkey_bindings::keystroke_to_combo;
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 const ESCAPE_KEY: &str = "escape";
 

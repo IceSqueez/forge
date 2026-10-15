@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::mem::Discriminant;
 use std::sync::Arc;
 
-use forge_components::{Density, FOOTER_HEIGHT, FocusNextField, Spacing, spacing, toast_card};
+use forge_components::{FocusNextField, Toasts, toast_layer};
 use forge_events::EventPublisher;
 use forge_registry::TriggerRegistry;
 use forge_runtime::dashboard::compute_stats;
@@ -10,7 +10,7 @@ use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, Sett
 use forge_types::{IntegrationAvailability, IntegrationId};
 use gpui::{
     AnyElement, AnyView, App, AppContext, AsyncApp, ClickEvent, Context, Entity, EventEmitter,
-    FocusHandle, Global, WeakEntity, Window, deferred, div, prelude::*,
+    FocusHandle, Global, WeakEntity, Window, div, prelude::*,
 };
 
 use crate::home_stats::HomeStats;
@@ -54,7 +54,6 @@ use crate::server_console::ServerConsoleView;
 use crate::settings::SettingsView;
 use crate::sidebar::NavRequested;
 use crate::soundboard::SoundboardView;
-use crate::toasts::Toasts;
 use crate::topics::Topics;
 use crate::triggers_screen::TriggersRegistryView;
 use crate::tts::TtsView;
@@ -63,8 +62,6 @@ use crate::unsaved_work::{UnsavedWork, UnsavedWorkHandle};
 use crate::update_flow::{CloseDecision, UpdateFlowEvent};
 use crate::vtube_connect::VTubeConnectView;
 use crate::vtube_connect_form::VTubeConnected;
-
-const TOAST_PRIORITY: usize = 2;
 
 fn settled_kinds(states: &LifecycleStates) -> HashMap<IntegrationId, Discriminant<LifecycleState>> {
     states
@@ -1071,78 +1068,6 @@ impl AppShell {
             },
         ))
     }
-
-    fn toast_host(&self, cx: &App) -> Option<AnyElement> {
-        let toasts = cx.global::<Toasts>();
-        if toasts.items().is_empty() {
-            return None;
-        }
-        let palette = cx.palette();
-
-        let mut column = div()
-            .flex()
-            .flex_col()
-            .items_end()
-            .gap(spacing(Spacing::Sm, Density::Cozy));
-
-        for data in toasts.items() {
-            let id = data.id;
-            let mut card = toast_card(
-                ("toast-card", id as usize),
-                data.kind,
-                data.message.clone(),
-                &palette,
-            )
-            .on_dismiss(("toast-dismiss", id as usize), move |_, _, cx: &mut App| {
-                cx.global_mut::<Toasts>().dismiss(id);
-            });
-            if let Some(glyph) = data.icon {
-                card = card.icon(glyph);
-            }
-            if let Some(fraction) = data.progress {
-                card = card.progress(fraction);
-            }
-            if let Some(action) = &data.action {
-                card = card.action(
-                    ("toast-action", id as usize),
-                    action.label.clone(),
-                    move |_, window, cx: &mut App| {
-                        if let Some(data) = cx.global_mut::<Toasts>().take(id)
-                            && let Some(action) = data.action
-                        {
-                            (action.on_action)(window, cx);
-                        }
-                    },
-                );
-            }
-            if let Some(secondary) = &data.secondary_action {
-                card = card.secondary_action(
-                    ("toast-secondary", id as usize),
-                    secondary.label.clone(),
-                    move |_, window, cx: &mut App| {
-                        if let Some(data) = cx.global_mut::<Toasts>().take(id)
-                            && let Some(secondary) = data.secondary_action
-                        {
-                            (secondary.on_action)(window, cx);
-                        }
-                    },
-                );
-            }
-            column = column.child(card);
-        }
-
-        Some(
-            deferred(
-                div()
-                    .absolute()
-                    .right(spacing(Spacing::Md, Density::Cozy))
-                    .bottom(FOOTER_HEIGHT + spacing(Spacing::Sm, Density::Cozy))
-                    .child(column),
-            )
-            .with_priority(TOAST_PRIORITY)
-            .into_any_element(),
-        )
-    }
 }
 
 pub(crate) async fn refresh_dashboard_stats(
@@ -1224,6 +1149,6 @@ impl Render for AppShell {
             .when(!welcome, |root| root.child(self.chrome.footer.clone()));
 
         root.children(self.leave_confirm(cx))
-            .children(self.toast_host(cx))
+            .children(toast_layer(&cx.palette(), cx))
     }
 }

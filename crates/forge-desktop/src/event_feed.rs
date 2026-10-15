@@ -21,7 +21,7 @@ use crate::actions::{LIST_CONTEXT, ListActivate, ListSelectNext, ListSelectPrev}
 use crate::async_bridge;
 use crate::event_log::{EventFilter, EventItem, EventLog};
 use crate::presentation::ActivePresentation;
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 const INSPECTOR_INITIAL: f32 = 300.0;
 const INSPECTOR_MIN: f32 = 220.0;

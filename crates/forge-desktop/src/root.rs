@@ -33,10 +33,10 @@ use crate::runtime_status::RuntimeStatus;
 use crate::screen::Screen;
 use crate::shell::AppShell;
 use crate::speak_state::SpeakState;
-use crate::toasts::PushToast;
 use crate::topics::Topics;
 use crate::update_flow::UpdateFlow;
 use crate::window_presence::PresenceGate;
+use forge_components::PushToast;
 use forge_speak_queue::{SpeakError, SpeakEventStream};
 
 const LOSS_REPAINT_INTERVAL: Duration = Duration::from_millis(250);

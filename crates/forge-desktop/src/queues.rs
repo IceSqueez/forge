@@ -27,7 +27,7 @@ use crate::presentation::ActivePresentation;
 use crate::queue_health::QueueHealth;
 use crate::scheduled_runs_section::ScheduledRunsView;
 use crate::sidebar::NavRequested;
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 const BADGE_RADIUS: Pixels = px(8.0);
 const PILL_RADIUS: Pixels = px(5.0);

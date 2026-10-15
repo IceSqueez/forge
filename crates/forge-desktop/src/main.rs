@@ -412,7 +412,7 @@ fn main() {
         cx.set_global(crate::presentation::ActiveLanguage(
             forge_storage::Language::default(),
         ));
-        cx.set_global(crate::toasts::Toasts::new());
+        cx.set_global(forge_components::Toasts::new());
 
         crate::i18n::install_os_default();
 

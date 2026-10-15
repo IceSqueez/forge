@@ -4,7 +4,7 @@ use forge_runtime::{OVERLAY_NAME_KEY, OVERLAY_SPEECH_FAILED_KIND, SPEECH_FAILURE
 use gpui::App;
 use serde_json::Value;
 
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 pub fn report_overlay_speech_failure(event: &Event, cx: &mut App) {
     if let Some(message) = overlay_speech_failure_text(event) {

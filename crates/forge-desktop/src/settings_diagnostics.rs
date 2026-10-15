@@ -26,8 +26,8 @@ use crate::integrations::BuiltinRegistry;
 use crate::log_archive;
 use crate::log_tail::{LogLine, LogTail};
 use crate::presentation::ActivePresentation;
-use crate::toasts::PushToast;
 use crate::window_presence::PresenceGate;
+use forge_components::PushToast;
 
 const TAIL_REFRESH: Duration = Duration::from_secs(2);
 const TAIL_MAX_HEIGHT: Pixels = px(320.0);

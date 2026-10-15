@@ -15,7 +15,7 @@ use crate::clip_editor::{ClipDraft, ClipEditor, ClipEditorEvent, ClipEditorLaunc
 use crate::clip_key_state::canonical_combo;
 use crate::clip_messages::failure_message;
 use crate::combo_conflict::release_holder;
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 const ADD_ICON: Pixels = px(13.0);
 

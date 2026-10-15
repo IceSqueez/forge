@@ -8,8 +8,8 @@ use crate::presentation::ActivePresentation;
 use crate::run_history_modal::RunHistoryModal;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
-use crate::toasts::PushToast;
 use crate::vtube_catalog_options::VTubeCatalogField;
+use forge_components::PushToast;
 use forge_components::{
     BreadcrumbCrumb, Confirm, Density, ForgePalette, GridPicker, Icon, InlineEdit, OverlayPosition,
     SearchState, TextArea, TextInput, ToastKind, fmt_number, fmt_relative_time, icon, overlay,

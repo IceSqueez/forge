@@ -26,7 +26,7 @@ use crate::midi_mapping_modal::{
 use crate::midi_signal::{MIDI_INPUT_PREFIX, MidiSignal, kind_color, note_name};
 use crate::presentation::ActivePresentation;
 use crate::sidebar::NavRequested;
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 pub const MIDI_KNOWN_DEVICES_KEY: &str = "midi.known_devices";
 

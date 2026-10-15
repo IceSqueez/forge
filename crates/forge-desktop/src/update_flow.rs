@@ -10,11 +10,11 @@ use gpui::{App, Context, EventEmitter, WeakEntity};
 use tokio::runtime::Handle;
 
 use crate::async_bridge::{detached, open_path, run_async};
-use crate::toasts::Toasts;
 use crate::update_check::remember_skipped;
 use crate::update_exit::ExitHandoff;
 use crate::update_handoff::{HandoffInput, prepare_handoff};
 use crate::update_toast::{UpdateCommand, toast_data, update_toast};
+use forge_components::Toasts;
 
 const PERCENT_SCALE: u128 = 100;
 

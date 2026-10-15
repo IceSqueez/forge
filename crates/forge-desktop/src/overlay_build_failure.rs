@@ -5,7 +5,7 @@ use forge_components::{ToastKind, tr};
 use forge_runtime::MaterializePass;
 use gpui::App;
 
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 pub enum OverlayBuildFailure {
     Pages(usize),

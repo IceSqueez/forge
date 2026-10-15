@@ -1331,7 +1331,7 @@ pub(crate) fn nav_log<V: gpui::EventEmitter<crate::sidebar::NavRequested>>(
 }
 
 pub(crate) fn error_toasts(cx: &gpui::App) -> usize {
-    cx.global::<crate::toasts::Toasts>()
+    cx.global::<forge_components::Toasts>()
         .items()
         .iter()
         .filter(|toast| toast.kind == forge_components::ToastKind::Error)

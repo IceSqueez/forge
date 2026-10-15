@@ -19,7 +19,7 @@ use crate::collection_form::{CollectionForm, CollectionFormEvent};
 use crate::collection_list::{CollectionList, CollectionListEvent, ListLoad};
 use crate::collection_text::{collection_failure_message, localized_collection_text};
 use crate::presentation::ActivePresentation;
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 const MANAGER_WIDTH: gpui::Pixels = px(560.0);
 const BODY_MAX_HEIGHT: gpui::Pixels = px(440.0);

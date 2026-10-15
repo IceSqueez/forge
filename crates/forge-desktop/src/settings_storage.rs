@@ -27,7 +27,7 @@ use gpui::{
 use crate::async_bridge;
 use crate::data_backup;
 use crate::presentation::ActivePresentation;
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 const BACKUP_TOAST_DURATION: Duration = Duration::from_secs(10);
 const LIMIT_INPUT_MAX_W: Pixels = px(200.0);

@@ -13,7 +13,7 @@ use forge_types::{SubActionOutcome, SubActionStep, integration_disabled_reason};
 use gpui::{App, AsyncApp, Context, Entity, SharedString};
 use tokio::runtime::Handle;
 
-use crate::toasts::PushToast;
+use forge_components::PushToast;
 
 const BRIDGE_DRAIN_CAP: usize = 128;
 

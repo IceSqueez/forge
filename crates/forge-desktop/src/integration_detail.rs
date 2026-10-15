@@ -49,8 +49,8 @@ use crate::presentation::ActivePresentation;
 use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal, RunHistoryOpenIntegration};
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
-use crate::toasts::PushToast;
 use crate::window_presence::PresenceGate;
+use forge_components::PushToast;
 
 struct ActiveConnect {
     view: Entity<ConnectFlow>,

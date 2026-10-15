@@ -10,7 +10,8 @@ use super::OverlaysView;
 use super::code_pane::LeaveIntent;
 use super::sound_choice;
 use crate::async_bridge;
-use crate::toasts::{PushToast, copy_to_clipboard};
+use crate::toasts::copy_to_clipboard;
+use forge_components::PushToast;
 
 #[derive(Default)]
 pub(super) struct RegistryState {

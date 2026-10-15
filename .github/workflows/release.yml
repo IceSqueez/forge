@@ -22,11 +22,15 @@ jobs:
       bin_name: forge
       retention_days: 1
       require_platform_client_ids: true
+      release_build: true
 
   publish:
     name: Publish
     needs: [build]
     runs-on: ubuntu-latest
+    # The update signing key lives only in this environment (restricted to
+    # v* tags); the build matrix never sees it.
+    environment: release
     permissions:
       contents: write
     steps:
@@ -46,6 +50,64 @@ jobs:
           for f in *; do
             [ -f "$f" ] && sha256sum "$f" > "$f.sha256"
           done
+
+      - name: Install minisign
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y minisign
+          minisign -v
+
+      - name: Generate update manifest
+        run: |
+          python3 .github/scripts/update-manifest.py \
+            artifacts "${GITHUB_REF_NAME}" "${GITHUB_REPOSITORY}" artifacts/forge-update.json
+
+      - name: Sign update manifest
+        env:
+          FORGE_UPDATE_SIGNING_KEY: ${{ secrets.FORGE_UPDATE_SIGNING_KEY }}
+          FORGE_UPDATE_SIGNING_PASSWORD: ${{ secrets.FORGE_UPDATE_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$FORGE_UPDATE_SIGNING_KEY" || -z "$FORGE_UPDATE_SIGNING_PASSWORD" ]]; then
+            echo "::error::FORGE_UPDATE_SIGNING_KEY / FORGE_UPDATE_SIGNING_PASSWORD are empty - they must be set in the 'release' environment"
+            exit 1
+          fi
+          KEY_FILE="$RUNNER_TEMP/forge-update.key"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          (umask 077 && printf '%s\n' "$FORGE_UPDATE_SIGNING_KEY" > "$KEY_FILE")
+          printf '%s\n' "$FORGE_UPDATE_SIGNING_PASSWORD" | minisign -S \
+            -s "$KEY_FILE" \
+            -m artifacts/forge-update.json \
+            -x artifacts/forge-update.json.minisig \
+            -t "version:${GITHUB_REF_NAME#v}"
+
+      - name: Verify update manifest signature against the shipped key
+        run: |
+          set -euo pipefail
+          # Same key set the client compiles in; -H rejects the legacy
+          # (non-prehashed) format the client refuses.
+          mapfile -t KEYS < <(grep '^const PRODUCTION_KEYS' crates/forge-update/src/trust.rs | grep -o 'RW[A-Za-z0-9+/=]*')
+          if [[ ${#KEYS[@]} -eq 0 ]]; then
+            echo "::error::no public key found in crates/forge-update/src/trust.rs"
+            exit 1
+          fi
+          verified=""
+          for key in "${KEYS[@]}"; do
+            if OUT=$(minisign -V -H -P "$key" -m artifacts/forge-update.json -x artifacts/forge-update.json.minisig); then
+              verified="$OUT"
+              break
+            fi
+          done
+          if [[ -z "$verified" ]]; then
+            echo "::error::forge-update.json.minisig does not verify against any key the client trusts"
+            exit 1
+          fi
+          echo "$verified"
+          expected="Trusted comment: version:${GITHUB_REF_NAME#v}"
+          if ! grep -qxF "$expected" <<< "$verified"; then
+            echo "::error::trusted comment does not carry the release version (expected '$expected')"
+            exit 1
+          fi
 
       - name: Resolve previous tag
         id: prev_tag

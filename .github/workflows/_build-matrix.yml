@@ -18,6 +18,11 @@ on:
         required: false
         type: boolean
         default: false
+      release_build:
+        description: "Compile in the FORGE_RELEASE_BUILD marker that enables in-place updates. Only the tagged release sets it."
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -104,6 +109,13 @@ jobs:
           FORGE_YOUTUBE_CLIENT_ID: ${{ secrets.FORGE_YOUTUBE_CLIENT_ID }}
           FORGE_YOUTUBE_CLIENT_SECRET: ${{ secrets.FORGE_YOUTUBE_CLIENT_SECRET }}
         run: |
+          # option_env! treats an empty value as present, so the marker is
+          # exported only for release builds and left unset otherwise.
+          if [[ "${{ inputs.release_build }}" == "true" ]]; then
+            export FORGE_RELEASE_BUILD=1
+          else
+            unset FORGE_RELEASE_BUILD
+          fi
           if [[ "${{ matrix.asset_name }}" == "macos-universal" ]]; then
             cargo build --release --locked --target aarch64-apple-darwin -p ${{ inputs.package_name }}
             cargo build --release --locked --target x86_64-apple-darwin -p ${{ inputs.package_name }}
@@ -300,6 +312,43 @@ jobs:
           hdiutil convert "$STAGING" -format UDZO -o "$OUT"
           rm -f "$STAGING"
 
+      # In-place update payload: the signed Forge.app as a tar.gz with one
+      # top-level Forge.app/ entry. COPYFILE_DISABLE keeps AppleDouble ._*
+      # files out (they would land inside the bundle and break the seal).
+      # tar keeps symlinks as links and the mode bits; the ad-hoc signature
+      # lives in files inside the bundle, so it travels with them.
+      - name: Package macOS update payload
+        if: startsWith(matrix.os, 'macos')
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_BUNDLE="Forge.app"
+          OUT="${{ inputs.bin_name }}-${{ env.VERSION }}+${{ github.run_number }}-${{ matrix.asset_name }}.app.tar.gz"
+          COPYFILE_DISABLE=1 tar -czf "$OUT" "$APP_BUNDLE"
+
+          if tar -tzf "$OUT" | grep -v "^${APP_BUNDLE}\(/\|$\)"; then
+            echo "::error::$OUT has entries outside the single top-level ${APP_BUNDLE}"
+            exit 1
+          fi
+          if tar -tzf "$OUT" | grep '\(^\|/\)\._'; then
+            echo "::error::$OUT contains AppleDouble ._ files"
+            exit 1
+          fi
+
+          ROUND_TRIP="$(mktemp -d)"
+          tar -xzf "$OUT" -C "$ROUND_TRIP"
+          codesign --verify --deep --strict --verbose=2 "$ROUND_TRIP/$APP_BUNDLE"
+          test -x "$ROUND_TRIP/$APP_BUNDLE/Contents/MacOS/Forge"
+          diff -r "$APP_BUNDLE" "$ROUND_TRIP/$APP_BUNDLE"
+          ORIG_LINKS=$(find "$APP_BUNDLE" -type l | wc -l)
+          TRIP_LINKS=$(find "$ROUND_TRIP/$APP_BUNDLE" -type l | wc -l)
+          if [[ "$ORIG_LINKS" != "$TRIP_LINKS" ]]; then
+            echo "::error::symlink count changed in the round trip ($ORIG_LINKS -> $TRIP_LINKS)"
+            exit 1
+          fi
+          rm -rf "$ROUND_TRIP"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
@@ -311,5 +360,6 @@ jobs:
             ${{ inputs.bin_name }}-*.deb
             ${{ inputs.bin_name }}-*.rpm
             ${{ inputs.bin_name }}-*.dmg
+            ${{ inputs.bin_name }}-*.app.tar.gz
           if-no-files-found: ignore
           retention-days: ${{ inputs.retention_days == 0 && 3 || inputs.retention_days }}

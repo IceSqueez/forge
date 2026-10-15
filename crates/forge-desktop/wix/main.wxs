@@ -44,18 +44,6 @@
                       package.
 -->
 
-<!--
-  Please do not remove these pre-processor If-Else blocks. These are used with
-  the `cargo wix` subcommand to automatically determine the installation
-  destination for 32-bit versus 64-bit installers. Removal of these lines will
-  cause installation errors.
--->
-<?if $(sys.BUILDARCH) = x64 or $(sys.BUILDARCH) = arm64 ?>
-    <?define PlatformProgramFilesFolder = "ProgramFiles64Folder" ?>
-<?else ?>
-    <?define PlatformProgramFilesFolder = "ProgramFilesFolder" ?>
-<?endif ?>
-
 <Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
 
     <Product
@@ -74,7 +62,7 @@
             InstallerVersion='450'
             Languages='1033'
             Compressed='yes'
-            InstallScope='perMachine'
+            InstallScope='perUser'
             SummaryCodepage='1252'
             />
 
@@ -86,17 +74,22 @@
         <Property Id='DiskPrompt' Value='Forge Installation'/>
 
         <Directory Id='TARGETDIR' Name='SourceDir'>
-            <Directory Id='$(var.PlatformProgramFilesFolder)' Name='PFiles'>
-                <Directory Id='APPLICATIONFOLDER' Name='Forge'>
-                    <Directory Id='Bin' Name='bin'>
-                        <Component Id='binary0' Guid='*'>
-                            <File
-                                Id='exe0'
-                                Name='forge.exe'
-                                DiskId='1'
-                                Source='$(var.CargoTargetBinDir)\forge.exe'
-                                KeyPath='yes'/>
-                        </Component>
+            <Directory Id='LocalAppDataFolder'>
+                <Directory Id='UserProgramsFolder' Name='Programs'>
+                    <Directory Id='APPLICATIONFOLDER' Name='Forge'>
+                        <Directory Id='Bin' Name='bin'>
+                            <Component Id='binary0' Guid='9C0C8E2B-6F1D-4E5A-8B3C-2A7D4F6E1B90'>
+                                <File
+                                    Id='exe0'
+                                    Name='forge.exe'
+                                    DiskId='1'
+                                    Source='$(var.CargoTargetBinDir)\forge.exe'/>
+                                <RegistryValue Root='HKCU' Key='Software\IceSqueez\Forge' Name='binary' Type='integer' Value='1' KeyPath='yes'/>
+                                <RemoveFolder Id='RemoveBinFolder' Directory='Bin' On='uninstall'/>
+                                <RemoveFolder Id='RemoveApplicationFolder' Directory='APPLICATIONFOLDER' On='uninstall'/>
+                                <RemoveFolder Id='RemoveUserProgramsFolder' Directory='UserProgramsFolder' On='uninstall'/>
+                            </Component>
+                        </Directory>
                     </Directory>
                 </Directory>
             </Directory>
@@ -123,7 +116,6 @@
             Title='Application'
             Description='Installs all binaries and the license.'
             Level='1'
-            ConfigurableDirectory='APPLICATIONFOLDER'
             AllowAdvertise='no'
             Display='expand'
             Absent='disallow'>

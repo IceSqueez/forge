@@ -275,6 +275,11 @@ pub fn run_boot(
                     start_awake_bridge(cx, awake_for_bridge, awake_watch);
                     start_live_viewers_bridge(cx, home_stats_for_viewers, live_viewers_handle);
                     apply_persisted_shortcuts(cx, backend_for_shortcuts, rt_handle_for_shortcuts);
+                    crate::update_report::start_update_report(
+                        cx,
+                        Arc::clone(&backend_for_updates),
+                        rt_handle_for_updates.clone(),
+                    );
                     crate::update_check::start_update_check(
                         cx,
                         backend_for_updates,

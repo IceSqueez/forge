@@ -264,6 +264,21 @@ settings_version_notify_hint = Під час запуску показує сп�
 update_toast_available = Доступна forge { $version }
 update_toast_open_action = Завантажити
 update_toast_skip_action = Пропустити цю версію
+update_report_updated = forge оновлено до { $version }
+update_report_rolled_back = forge { $failed } { $reason }. Повернуто { $restored }.
+update_report_rolled_back_data_restored = forge { $failed } { $reason }. Повернуто { $restored } і дані.
+update_report_rolled_back_data_failed = forge { $failed } { $reason }. Повернуто { $restored }, дані не відновлено.
+update_report_rollback_failed = forge { $failed } { $reason }, і повернути попередню версію не вдалося. Перевстановіть forge.
+update_report_not_applied = forge { $version } не встановлено: { $reason }.
+update_reason_crashed = аварійно закрилася під час запуску
+update_reason_no_health_signal = не запустилася вчасно
+update_reason_launch_failed = не запустилася
+update_reason_parent_still_running = forge не закрилася вчасно
+update_reason_installer_failed = інсталятор повідомив про помилку
+update_reason_installer_timed_out = інсталятор не завершився вчасно
+update_reason_malformed_payload = завантажене оновлення пошкоджене
+update_reason_file_operation = не вдалося замінити файли forge
+update_reason_interrupted = оновлення було перервано
 
 ## Налаштування → панель сховища
 

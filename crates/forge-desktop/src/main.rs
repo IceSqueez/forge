@@ -143,6 +143,8 @@ mod tts_filters;
 mod unavailable_builtin;
 mod unsaved_work;
 mod update_check;
+mod update_launch;
+mod update_report;
 mod voice_alias_form;
 mod voice_alias_store;
 mod voice_aliases;
@@ -202,6 +204,7 @@ fn parse_startup_request(mut args: impl Iterator<Item = String>) -> Result<Start
                         .ok_or_else(|| format!("{FLAG_SELECT} requires a value"))?,
                 );
             }
+            forge_update::CANDIDATE_FLAG => {}
             other => return Err(format!("unrecognized argument: {other}")),
         }
     }
@@ -315,6 +318,11 @@ fn prewarm_kit_fonts(cx: &mut App) {
 }
 
 fn main() {
+    let deferred_update_error = match update_launch::decide_start(std::env::args_os().skip(1)) {
+        update_launch::StartDecision::Boot { deferred_error } => deferred_error,
+        update_launch::StartDecision::Exit(code) => std::process::exit(code),
+    };
+
     let initial_screen = match parse_startup_request(std::env::args().skip(1)) {
         Ok(StartupRequest::Open(screen)) => screen,
         Ok(StartupRequest::Help) => {
@@ -328,6 +336,9 @@ fn main() {
     };
 
     let (log_guard, log_tail) = init_tracing();
+    if let Some(error) = deferred_update_error {
+        tracing::warn!(error = %error, "pending update could not be resumed at start");
+    }
 
     let endpoints = match forge_platform_core::PlatformEndpoints::from_env() {
         Ok(endpoints) => endpoints,

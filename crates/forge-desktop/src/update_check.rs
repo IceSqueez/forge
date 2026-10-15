@@ -16,13 +16,14 @@ use crate::async_bridge::{EventBatch, detached, open_path, recv_event_batch};
 use crate::integrations::ObsInstallSeed;
 use crate::toasts::PushToast;
 
-const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
-const REPO_URL: &str = env!("CARGO_PKG_REPOSITORY");
+pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const REPO_URL: &str = env!("CARGO_PKG_REPOSITORY");
 const USER_AGENT_VALUE: &str = concat!("forge/", env!("CARGO_PKG_VERSION"));
 
 const GITHUB_WEB_PREFIX: &str = "https://github.com/";
 const GITHUB_API_REPOS: &str = "https://api.github.com/repos/";
 const LATEST_RELEASE_PATH: &str = "/releases/latest";
+const RELEASE_TAG_PATH: &str = "/releases/tag/v";
 const GIT_SUFFIX: &str = ".git";
 
 const TAG_FIELD: &str = "tag_name";
@@ -64,16 +65,30 @@ pub fn release_from_json(body: &str) -> Option<Release> {
     Some(Release { tag, url })
 }
 
-pub fn latest_release_url(repo_url: &str) -> Option<String> {
+fn repo_slug(repo_url: &str) -> Option<&str> {
     let slug = repo_url
         .trim()
         .strip_prefix(GITHUB_WEB_PREFIX)?
         .trim_end_matches('/');
     let slug = slug.strip_suffix(GIT_SUFFIX).unwrap_or(slug);
-    if slug.is_empty() {
+    (!slug.is_empty()).then_some(slug)
+}
+
+pub fn latest_release_url(repo_url: &str) -> Option<String> {
+    let slug = repo_slug(repo_url)?;
+    Some(format!("{GITHUB_API_REPOS}{slug}{LATEST_RELEASE_PATH}"))
+}
+
+pub fn release_page_url(repo_url: &str, version: &str) -> Option<String> {
+    let slug = repo_slug(repo_url)?;
+    let version = version.trim();
+    let version = version.strip_prefix('v').unwrap_or(version);
+    if version.is_empty() {
         return None;
     }
-    Some(format!("{GITHUB_API_REPOS}{slug}{LATEST_RELEASE_PATH}"))
+    Some(format!(
+        "{GITHUB_WEB_PREFIX}{slug}{RELEASE_TAG_PATH}{version}"
+    ))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -298,7 +313,7 @@ fn raise_update_toast(
     );
 }
 
-fn remember_skipped(tag: String, backend: Arc<dyn DataProvider>, rt_handle: &Handle) {
+pub fn remember_skipped(tag: String, backend: Arc<dyn DataProvider>, rt_handle: &Handle) {
     detached(rt_handle, "remember the skipped version", async move {
         let repo = backend as Arc<dyn SettingsRepo>;
         repo.set_string(reserved_keys::UPDATES_SKIPPED_VERSION, &tag)

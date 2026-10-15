@@ -256,6 +256,21 @@ settings_version_notify_hint = Shows a toast at launch whenever a newer release 
 update_toast_available = forge { $version } is available
 update_toast_open_action = Download
 update_toast_skip_action = Skip this version
+update_report_updated = forge updated to { $version }
+update_report_rolled_back = forge { $failed } { $reason }. Back on { $restored }.
+update_report_rolled_back_data_restored = forge { $failed } { $reason }. Back on { $restored }, data restored.
+update_report_rolled_back_data_failed = forge { $failed } { $reason }. Back on { $restored }, data not restored.
+update_report_rollback_failed = forge { $failed } { $reason } and could not be undone. Reinstall forge.
+update_report_not_applied = forge { $version } not installed: { $reason }.
+update_reason_crashed = crashed on start
+update_reason_no_health_signal = did not start in time
+update_reason_launch_failed = could not be started
+update_reason_parent_still_running = forge did not close in time
+update_reason_installer_failed = the installer reported an error
+update_reason_installer_timed_out = the installer did not finish in time
+update_reason_malformed_payload = the downloaded update was damaged
+update_reason_file_operation = forge files could not be replaced
+update_reason_interrupted = the update was interrupted
 
 ## Settings → Storage pane
 

@@ -155,3 +155,69 @@ fn push_toast_parts(
     })
     .detach();
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use forge_components::{ToastAction, ToastKind};
+    use gpui::TestAppContext;
+
+    use super::{PushToast, Toasts};
+
+    const TIMED: Duration = Duration::from_secs(12);
+    const LONG_AFTER: Duration = Duration::from_secs(60 * 60);
+
+    fn push_pair(cx: &mut TestAppContext, duration: Duration) {
+        cx.update(|cx| {
+            cx.push_toast_with_secondary(
+                ToastKind::Info,
+                "update available",
+                None,
+                ToastAction::new("Download", |_window, _cx| {}),
+                ToastAction::new("Skip", |_window, _cx| {}),
+                duration,
+            );
+        });
+    }
+
+    fn action_labels(cx: &mut TestAppContext) -> Vec<(Option<String>, Option<String>)> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|toast| {
+                    (
+                        toast.action.as_ref().map(|a| a.label.to_string()),
+                        toast.secondary_action.as_ref().map(|a| a.label.to_string()),
+                    )
+                })
+                .collect()
+        })
+    }
+
+    #[gpui::test]
+    fn a_zero_duration_two_action_toast_survives_any_amount_of_time(cx: &mut TestAppContext) {
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        push_pair(cx, Duration::ZERO);
+
+        cx.executor().advance_clock(LONG_AFTER);
+        cx.run_until_parked();
+
+        assert_eq!(
+            action_labels(cx),
+            vec![(Some("Download".to_owned()), Some("Skip".to_owned()))],
+        );
+    }
+
+    #[gpui::test]
+    fn a_timed_two_action_toast_expires_once_its_duration_elapses(cx: &mut TestAppContext) {
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        push_pair(cx, TIMED);
+
+        cx.executor().advance_clock(TIMED);
+        cx.run_until_parked();
+
+        assert_eq!(action_labels(cx), Vec::new());
+    }
+}

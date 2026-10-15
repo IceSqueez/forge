@@ -630,27 +630,37 @@ mod tests {
     }
 
     #[test]
-    fn should_notify_raises_for_a_newer_release_the_user_has_not_been_shown() {
-        for dismissed in [None, Some("0.5.2"), Some("v0.5.2"), Some("not a version")] {
+    fn should_notify_raises_for_a_newer_release_the_user_has_not_skipped() {
+        for (label, skipped) in [
+            ("nothing skipped", None),
+            ("skipped the running version", Some("0.5.2")),
+            ("skipped the running version under a v tag", Some("v0.5.2")),
+            ("skipped one patch below the latest", Some("v0.5.3")),
+            ("skipped a prerelease of the latest", Some("0.5.4-beta.1")),
+            ("unparseable skip", Some("not a version")),
+        ] {
             assert_eq!(
-                should_notify("0.5.2", "v0.5.3", dismissed, true, false),
+                should_notify("0.5.2", "v0.5.4", skipped, true, false),
                 Some(UpdateNotice::Raise),
-                "for dismissed {dismissed:?}",
+                "{label}",
             );
         }
     }
 
     #[test]
-    fn should_notify_defers_a_newer_release_while_obs_is_live() {
-        assert_eq!(
-            should_notify("0.5.2", "0.5.3", None, true, true),
-            Some(UpdateNotice::DeferUntilObsIdle),
-        );
+    fn should_notify_defers_an_unskipped_newer_release_while_obs_is_live() {
+        for skipped in [None, Some("0.5.3")] {
+            assert_eq!(
+                should_notify("0.5.2", "0.5.4", skipped, true, true),
+                Some(UpdateNotice::DeferUntilObsIdle),
+                "for skipped {skipped:?}",
+            );
+        }
     }
 
     #[test]
-    fn should_notify_stays_silent_when_disabled_already_shown_or_not_newer() {
-        for (label, current, latest, dismissed, enabled, obs_live) in [
+    fn should_notify_stays_silent_when_disabled_skipped_or_not_newer() {
+        for (label, current, latest, skipped, enabled, obs_live) in [
             ("disabled", "0.5.2", "0.5.3", None, false, false),
             (
                 "disabled while obs is live",
@@ -671,7 +681,7 @@ mod tests {
                 false,
             ),
             (
-                "already shown",
+                "skipped exactly the latest",
                 "0.5.2",
                 "0.5.3",
                 Some("0.5.3"),
@@ -679,7 +689,7 @@ mod tests {
                 false,
             ),
             (
-                "already shown under a v tag",
+                "skipped the latest under a v tag",
                 "0.5.2",
                 "v0.5.3",
                 Some("v0.5.3"),
@@ -687,7 +697,15 @@ mod tests {
                 false,
             ),
             (
-                "shown a later version",
+                "skipped a v tag against a bare latest",
+                "0.5.2",
+                "0.5.3",
+                Some("v0.5.3"),
+                true,
+                false,
+            ),
+            (
+                "skipped a later version",
                 "0.5.2",
                 "0.5.3",
                 Some("0.6.0"),
@@ -697,7 +715,7 @@ mod tests {
             ("unparseable current", "nightly", "0.5.3", None, true, false),
             ("unparseable latest", "0.5.2", "latest", None, true, false),
             (
-                "already shown while obs is live",
+                "skipped the latest while obs is live",
                 "0.5.2",
                 "0.5.3",
                 Some("0.5.3"),
@@ -706,7 +724,7 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                should_notify(current, latest, dismissed, enabled, obs_live),
+                should_notify(current, latest, skipped, enabled, obs_live),
                 None,
                 "{label}",
             );

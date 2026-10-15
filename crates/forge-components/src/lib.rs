@@ -107,8 +107,9 @@ pub use integration_gating::{
     integration_disabled_reason, integration_inactive_badge,
 };
 pub use locale::{
-    ArgsBuilder, fmt_bytes, fmt_clock, fmt_number, fmt_relative_time, fmt_short_date, fmt_uptime,
-    fmt_uptime_short, install_bundle, set_locale_id, tr_lookup,
+    ArgsBuilder, CatalogLanguage, catalog_source, fmt_bytes, fmt_clock, fmt_number,
+    fmt_relative_time, fmt_short_date, fmt_uptime, fmt_uptime_short, install_bundle, set_locale_id,
+    tr_lookup,
 };
 pub use menu::{
     ContextMenu, MenuButton, MenuEntry, MenuItem, MenuPlacement, context_menu, menu_button,

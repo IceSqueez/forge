@@ -24,16 +24,23 @@ fn build_bundle(lang: Language) -> Rc<FluentBundle<FluentResource>> {
         Language::Uk => UK_MAIN_FTL,
     };
 
+    let kit_source = forge_components::catalog_source(match lang {
+        Language::En => forge_components::CatalogLanguage::En,
+        Language::Uk => forge_components::CatalogLanguage::Uk,
+    });
+
     let mut bundle = FluentBundle::new(vec![lang_id]);
-    let resource = match FluentResource::try_new(ftl_source.to_owned()) {
-        Ok(r) => r,
-        Err((r, errors)) => {
-            tracing::warn!(?errors, "FTL parse errors in {:?} bundle", lang);
-            r
+    for source in [ftl_source, kit_source] {
+        let resource = match FluentResource::try_new(source.to_owned()) {
+            Ok(r) => r,
+            Err((r, errors)) => {
+                tracing::warn!(?errors, "FTL parse errors in {:?} bundle", lang);
+                r
+            }
+        };
+        if let Err(errors) = bundle.add_resource(resource) {
+            tracing::warn!(?errors, "FTL resource add errors for {:?}", lang);
         }
-    };
-    if let Err(errors) = bundle.add_resource(resource) {
-        tracing::warn!(?errors, "FTL resource add errors for {:?}", lang);
     }
     Rc::new(bundle)
 }

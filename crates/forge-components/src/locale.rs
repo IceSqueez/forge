@@ -5,6 +5,22 @@ use std::rc::Rc;
 use fluent::{FluentArgs, FluentBundle, FluentResource, FluentValue};
 use time::OffsetDateTime;
 
+const EN_CATALOG: &str = include_str!("../locales/en/main.ftl");
+const UK_CATALOG: &str = include_str!("../locales/uk/main.ftl");
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CatalogLanguage {
+    En,
+    Uk,
+}
+
+pub fn catalog_source(language: CatalogLanguage) -> &'static str {
+    match language {
+        CatalogLanguage::En => EN_CATALOG,
+        CatalogLanguage::Uk => UK_CATALOG,
+    }
+}
+
 thread_local! {
     static BUNDLE: RefCell<Option<Rc<FluentBundle<FluentResource>>>> = const { RefCell::new(None) };
 

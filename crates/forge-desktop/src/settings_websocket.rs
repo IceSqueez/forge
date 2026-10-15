@@ -1006,7 +1006,7 @@ impl SettingsWebSocketView {
         let shown = if self.token_revealed {
             self.bearer_token.clone()
         } else {
-            mask_token(&self.bearer_token)
+            forge_server::masked_token(&self.bearer_token)
         };
         let reveal_glyph = if self.token_revealed {
             Icon::EyeOff
@@ -1421,21 +1421,6 @@ fn lan_bind_bullets() -> Vec<BulletItem> {
 
 fn hline(color: Rgba) -> Div {
     div().w_full().h(BORDER_THIN).bg(color)
-}
-
-fn mask_token(token: &str) -> String {
-    if token.is_empty() {
-        return "-".to_owned();
-    }
-    let tail: String = token
-        .chars()
-        .rev()
-        .take(4)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
-    format!("fg_•••••{tail}")
 }
 
 #[cfg(test)]

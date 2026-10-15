@@ -727,7 +727,7 @@ impl ServerConsoleView {
         let shown = if self.token_revealed {
             self.bearer_token.clone()
         } else {
-            mask_token(&self.bearer_token)
+            forge_server::masked_token(&self.bearer_token)
         };
         let reveal_glyph = if self.token_revealed {
             Icon::EyeOff
@@ -1684,21 +1684,6 @@ fn color_for_source(source: EventSource, palette: &ForgePalette) -> Rgba {
         EventSource::Audio => palette.bits,
         EventSource::Donation => palette.success,
     }
-}
-
-fn mask_token(token: &str) -> String {
-    if token.is_empty() {
-        return "-".to_owned();
-    }
-    let tail: String = token
-        .chars()
-        .rev()
-        .take(4)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
-    format!("fg_•••••{tail}")
 }
 
 struct ServerPoll {

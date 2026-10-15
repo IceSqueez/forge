@@ -117,6 +117,25 @@ impl From<StorageError> for ServerError {
     }
 }
 
+const MASKED_TAIL_LEN: usize = 4;
+const EMPTY_TOKEN_PLACEHOLDER: &str = "-";
+const MASKED_TOKEN_PREFIX: &str = "fg_•••••";
+
+pub fn masked_token(token: &str) -> String {
+    if token.is_empty() {
+        return EMPTY_TOKEN_PLACEHOLDER.to_owned();
+    }
+    let tail: String = token
+        .chars()
+        .rev()
+        .take(MASKED_TAIL_LEN)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    format!("{MASKED_TOKEN_PREFIX}{tail}")
+}
+
 fn generate_token() -> String {
     let mut bytes = [0u8; TOKEN_BYTE_LEN];
     rand::rng().fill_bytes(&mut bytes);

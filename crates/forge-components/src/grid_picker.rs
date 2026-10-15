@@ -16,6 +16,7 @@ use crate::tokens::{
     BORDER_ACCENT, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, body_family, mono_family,
     radius, spacing,
 };
+use crate::tr;
 
 const GRID_W: Pixels = px(880.0);
 const GRID_H: Pixels = px(640.0);
@@ -646,10 +647,15 @@ impl GridPicker {
                     .font_family(body_family())
                     .text_size(GRID_META_FS)
                     .text_color(p.text_faint)
-                    .child(format!(
-                        "{total} {} for \u{201c}{query}\u{201d}",
-                        if total == 1 { "match" } else { "matches" },
-                    )),
+                    .child(if total == 1 {
+                        tr!("widget_grid_picker_match_one", query = query.as_str())
+                    } else {
+                        tr!(
+                            "widget_grid_picker_match_many",
+                            total = total,
+                            query = query.as_str()
+                        )
+                    }),
             );
         }
 
@@ -660,7 +666,7 @@ impl GridPicker {
             } else {
                 (
                     Icon::Search,
-                    SharedString::from(format!("Nothing matches \u{201c}{query}\u{201d}")),
+                    SharedString::from(tr!("widget_grid_picker_no_match", query = query.as_str())),
                 )
             };
             return col

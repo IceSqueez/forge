@@ -7,6 +7,7 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{BORDER_THIN, FONT_XS, FONT_XXS, body_family, mono_family};
+use crate::tr;
 
 const ROW_GAP: Pixels = px(8.0);
 const LINE1_GAP: Pixels = px(6.0);
@@ -96,20 +97,20 @@ pub fn badge_color(kind: BadgeKind, palette: &ForgePalette) -> Rgba {
     }
 }
 
-pub fn badge_label(kind: BadgeKind) -> &'static str {
+pub fn badge_label(kind: BadgeKind) -> String {
     match kind {
-        BadgeKind::Broadcaster => "OWNER",
-        BadgeKind::Moderator => "MOD",
-        BadgeKind::Vip => "VIP",
-        BadgeKind::Subscriber => "SUB",
-        BadgeKind::Bot => "BOT",
-        BadgeKind::Partner => "PARTNER",
-        BadgeKind::Premium => "PRIME",
-        BadgeKind::Founder => "FOUNDER",
-        BadgeKind::Turbo => "TURBO",
-        BadgeKind::HypeTrain => "HYPE",
-        BadgeKind::Bits => "BITS",
-        BadgeKind::BitsLeader => "BITS LEADER",
+        BadgeKind::Broadcaster => tr!("widget_badge_owner"),
+        BadgeKind::Moderator => tr!("widget_badge_mod"),
+        BadgeKind::Vip => tr!("widget_badge_vip"),
+        BadgeKind::Subscriber => tr!("widget_badge_sub"),
+        BadgeKind::Bot => tr!("widget_badge_bot"),
+        BadgeKind::Partner => tr!("widget_badge_partner"),
+        BadgeKind::Premium => tr!("widget_badge_prime"),
+        BadgeKind::Founder => tr!("widget_badge_founder"),
+        BadgeKind::Turbo => tr!("widget_badge_turbo"),
+        BadgeKind::HypeTrain => tr!("widget_badge_hype"),
+        BadgeKind::Bits => tr!("widget_badge_bits"),
+        BadgeKind::BitsLeader => tr!("widget_badge_bits_leader"),
     }
 }
 

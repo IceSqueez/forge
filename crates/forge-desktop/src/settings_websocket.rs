@@ -1464,7 +1464,7 @@ mod tests {
         );
         let handle = rt.handle().clone();
         cx.update(|cx| {
-            cx.set_global(crate::presentation::Presentation::new(
+            cx.set_global(forge_components::Presentation::new(
                 ThemeId::default(),
                 Density::default(),
             ));

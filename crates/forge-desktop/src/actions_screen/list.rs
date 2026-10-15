@@ -1213,11 +1213,11 @@ mod tests {
     use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 
     use super::*;
-    use crate::presentation::Presentation;
     use crate::test_support::{
         Declares, StubEventLog, StubHistory, StubOverlays, StubTrigger, pump, runtime,
         stub_catalog, test_backend, trigger_registry,
     };
+    use forge_components::Presentation;
 
     const CHAT_KIND: &str = "twitch.chat";
     const REWARD_KIND: &str = "twitch.reward_redemption";

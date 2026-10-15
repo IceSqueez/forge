@@ -153,10 +153,10 @@ mod tests {
     };
 
     use super::*;
-    use crate::presentation::Presentation;
     use crate::test_support::{
         StubActions, StubEventLog, StubHistory, StubOverlays, stub_catalog, test_backend_with_media,
     };
+    use forge_components::Presentation;
 
     pub(super) fn view_with(
         cx: &mut gpui::TestAppContext,

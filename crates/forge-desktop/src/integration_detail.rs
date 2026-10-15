@@ -1886,8 +1886,8 @@ mod tests {
         use super::super::*;
         use super::action;
         use crate::platforms::PlatformConnectivity;
-        use crate::presentation::Presentation;
         use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime, test_backend};
+        use forge_components::Presentation;
 
         struct ShiftingActions {
             id: IntegrationId,

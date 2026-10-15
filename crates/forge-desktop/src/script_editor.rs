@@ -3786,9 +3786,9 @@ mod tests {
         use super::*;
         use crate::i18n::install_language;
         use crate::navigation_guard::{LeaveTarget, NavigationGuard};
-        use crate::presentation::Presentation;
         use crate::test_support::{StubEventLog, pump, runtime, test_backend_with_scripts};
         use crate::unsaved_work::UnsavedWorkHandle;
+        use forge_components::Presentation;
 
         const SAVED_BODY: &str = "let greeting = \"hi\";";
         const EDITED_BODY: &str = "let greeting = \"hello\";";

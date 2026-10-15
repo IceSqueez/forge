@@ -49,8 +49,8 @@ mod tests {
     };
 
     use super::*;
-    use crate::presentation::{ActivePresentation, Presentation};
     use crate::tts::TtsSection;
+    use forge_components::{ActivePresentation, Presentation};
 
     const WINDOW_W: f32 = 600.0;
     const WINDOW_H: f32 = 80.0;

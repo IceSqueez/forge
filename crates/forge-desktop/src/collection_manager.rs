@@ -588,8 +588,8 @@ mod tests {
     use gpui::TestAppContext;
 
     use super::*;
-    use crate::presentation::Presentation;
     use crate::test_support::{FakeCollections, owned_reward, pump, runtime};
+    use forge_components::Presentation;
 
     struct Harness {
         manager: Entity<CollectionManager>,

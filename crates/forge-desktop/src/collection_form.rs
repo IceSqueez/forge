@@ -539,7 +539,7 @@ mod tests {
     use gpui::{Entity, TestAppContext};
 
     use super::*;
-    use crate::presentation::Presentation;
+    use forge_components::Presentation;
 
     const TITLE: &str = "title";
     const COST: &str = "cost";

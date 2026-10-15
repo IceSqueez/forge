@@ -1351,8 +1351,8 @@ mod tests {
         use super::super::{BuiltinObject, ObsInstallSeed, VTubeInstallSeed};
         use crate::integration_detail::IntegrationDetail;
         use crate::platforms::PlatformConnectivity;
-        use crate::presentation::Presentation;
         use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime, test_backend};
+        use forge_components::Presentation;
         use forge_registry::{SubActionRegistry, TriggerRegistry};
         use forge_runtime::EventBus;
         use forge_storage::{CredentialsRepo, SettingsRepo};

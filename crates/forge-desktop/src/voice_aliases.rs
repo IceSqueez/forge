@@ -977,11 +977,11 @@ mod tests {
 
     use super::*;
     use crate::i18n::install_language;
-    use crate::presentation::Presentation;
     use crate::test_support::{
         LiveAliases, Sandboxed, alias_shape, error_toasts, live_alias, runtime, sandboxed_backend,
         spawn_speak_queue,
     };
+    use forge_components::Presentation;
     use forge_components::Toasts;
 
     const TEST_KEY: [u8; 32] = [0x5a; 32];

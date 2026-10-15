@@ -326,7 +326,7 @@ impl Render for OverlayFormModal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::presentation::Presentation;
+    use forge_components::Presentation;
     use forge_components::{Density, ThemeId};
 
     const NAME: &str = "Stream alert";

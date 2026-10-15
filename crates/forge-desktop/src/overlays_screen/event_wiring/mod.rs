@@ -569,10 +569,10 @@ mod tests {
 
     use super::*;
     use crate::i18n::install_language;
-    use crate::presentation::Presentation;
     use crate::test_support::{
         Declares, StubEventLog, StubTrigger, overlay_definition, runtime, trigger_registry,
     };
+    use forge_components::Presentation;
     use forge_components::Toasts;
 
     const SUBSCRIBER: &str = "twitch.support.subscriber";

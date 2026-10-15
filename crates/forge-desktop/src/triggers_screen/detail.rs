@@ -1085,11 +1085,11 @@ mod tests {
 
     use super::*;
     use crate::integrations::BuiltinRegistry;
-    use crate::presentation::Presentation;
     use crate::test_support::{
         Declares, FakeCollections, StubActions, StubTrigger, owned_reward, pump, runtime,
         test_backend, trigger_registry,
     };
+    use forge_components::Presentation;
 
     const KIND: &str = "midi.input.note_on";
     const NAME: &str = "Note on";

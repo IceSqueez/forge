@@ -21,8 +21,8 @@ mod tests {
     use gpui::TestAppContext;
 
     use super::*;
-    use crate::presentation::ActivePresentation;
     use crate::test_support::install_presentation;
+    use forge_components::ActivePresentation;
 
     #[gpui::test]
     fn the_banner_is_shown_only_once_a_startup_failure_reason_is_recorded(cx: &mut TestAppContext) {

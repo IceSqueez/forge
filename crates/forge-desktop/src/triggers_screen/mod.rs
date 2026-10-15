@@ -586,10 +586,10 @@ mod tests {
 
     use super::*;
     use crate::integration_supervisor::{LifecycleState, LifecycleStates};
-    use crate::presentation::Presentation;
     use crate::test_support::{
         StubActions, lifecycle_switch, owned_triggers, runtime, switch_lifecycle, test_backend,
     };
+    use forge_components::Presentation;
 
     const TWITCH_CHAT: &str = "twitch.chat";
 

@@ -286,8 +286,8 @@ mod tests {
     use super::*;
     use crate::actions_screen::overlay_schema::OverlayContentSchema;
     use crate::amount_scale::AmountScale;
-    use crate::presentation::Presentation;
     use crate::test_support::runtime;
+    use forge_components::Presentation;
     use forge_registry::{CodeLanguage, UnitAmountBounds};
 
     const REWARD_FIELD: &str = "reward_id";

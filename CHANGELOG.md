@@ -1,9 +1,45 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.6.1] - 2026-10-15
+### 🐛 Bug Fixes
+- *(net)* Screen script and egress hosts with one public-address rule
+
+### 🚀 Features
+- *(updates)* Keep the update toast until acted on and let a version be skipped
+- *(storage)* Checkpoint before export and report the schema version
+- *(updates)* Add the signed update manifest, install detection and staged download
+- *(updates)* Apply a staged update under a supervisor that rolls back a failed start
+- *(storage)* Read a database's schema version without opening it for writes
+- *(updates)* Hand off to the update supervisor at start and report the outcome
+- *(updates)* Download, verify and hand off updates from the toast
+- *(updates)* Download updates automatically and offer a restart when ready
+
+### 🚜 Refactor
+- *(ui)* Move the toast queue and layer into the component kit
+- *(updates)* Fetch the latest release through the shared GitHub limiter
+
+### 🛠️ Build
+- *(emulator)* Sync the emulator lockfile to 0.6.0
+- *(release)* Sign an update manifest and ship per-user and app-bundle payloads
+
+### 🧪 Testing
+- *(updates)* Cover skipped-version notify and the sticky two-action toast
+- *(storage)* Cover standalone export, schema version and database unit files
+- *(updates)* Cover manifest signing, version rule, download staging and journal
+- *(updates)* Cover apply, supervision, rollback and start-up recovery
+- *(storage)* Cover the read-only schema version probe
+- *(updates)* Cover boot-time update notices, launch exit codes and candidate start
+- *(updates)* Cover the update toast flow, close handoff and kit progress
+- *(ui)* Move the toast queue tests with the kit and update their imports
+- *(updates)* Move release lookup tests to the update crate and cover them
+- *(net)* Cover shared public-host screening and bracketed IPv6 egress
+- *(updates)* Cover the automatic update plan, silent retry and rollback memory
+
 ## [0.6.0] - 2026-10-14
 ### ⚙️ Miscellaneous Tasks
 - *(toolchain)* Pin Rust 1.99.0 and clear the lints it adds
+- Release
 
 ### ⚡ Performance
 - *(storage)* Prune action history in bounded chunks
@@ -145,6 +181,7 @@ All notable changes to this project will be documented in this file.
 
 ### 📚 Documentation
 - *(readme)* State the pinned Rust 1.99 toolchain
+- *(release)* Release v0.6.0
 
 ### 🚀 Features
 - *(runtime)* Publish whether the stream is live from platforms and OBS

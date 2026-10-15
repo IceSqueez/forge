@@ -9,7 +9,9 @@ use forge_update::{
     ApplyFailure, ApplyMode, ApplyPhase, ChildExit, InstallLayout, SupervisorOutcome, UpdateReport,
     take_update_report,
 };
-use harness::{FROM, Fixture, NEW_BUILD, OLD_BUILD, SCHEMA, Spawn, TO, bundle_binary};
+#[cfg(unix)]
+use harness::bundle_binary;
+use harness::{FROM, Fixture, NEW_BUILD, OLD_BUILD, SCHEMA, Spawn, TO};
 
 fn not_applied_reason(fixture: &Fixture) -> ApplyFailure {
     match take_update_report(&fixture.data_dir, FROM).unwrap() {
@@ -77,6 +79,7 @@ fn with_raw_entry(name: &[u8], body: &[u8]) -> Vec<u8> {
     builder.into_inner().unwrap().finish().unwrap()
 }
 
+#[cfg(unix)]
 fn valid_bundle() -> Vec<u8> {
     archive(
         &[

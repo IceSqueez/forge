@@ -261,9 +261,23 @@ settings_version_notify_hint = Під час запуску показує сп�
 
 ## Сповіщення про оновлення
 
+app_menu_quit = Вийти з forge
 update_toast_available = Доступна forge { $version }
 update_toast_open_action = Завантажити
 update_toast_skip_action = Пропустити цю версію
+update_toast_update_action = Оновити
+update_toast_downloading = Завантаження forge { $version }: { $percent }%
+update_toast_cancel_action = Скасувати
+update_toast_ready = forge { $version } готова. Вона встановиться, коли ви закриєте програму.
+update_toast_restart_action = Перезапустити й оновити
+update_toast_preparing = Підготовка оновлення до forge { $version }...
+update_toast_restarting = Перезапуск для встановлення forge { $version }
+update_toast_download_failed = Не вдалося завантажити forge { $version }.
+update_toast_unverified = Не вдалося перевірити forge { $version }, тому її не встановлено.
+update_toast_handoff_failed = Не вдалося підготувати forge { $version } до встановлення.
+update_toast_retry_action = Повторити
+update_leftover_install = Інша копія forge встановлена для всіх користувачів. Видаліть її, щоб ваші дані використовувала лише одна копія.
+update_leftover_open_action = Відкрити встановлені програми
 update_report_updated = forge оновлено до { $version }
 update_report_rolled_back = forge { $failed } { $reason }. Повернуто { $restored }.
 update_report_rolled_back_data_restored = forge { $failed } { $reason }. Повернуто { $restored } і дані.

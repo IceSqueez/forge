@@ -31,6 +31,7 @@ pub mod page_frame;
 pub mod palette;
 pub mod picker;
 pub mod platform_hero;
+pub mod progress_bar;
 pub mod radio_row;
 pub mod resize_handle;
 pub mod save_state;
@@ -117,6 +118,7 @@ pub use palette::{
 };
 pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels, bind_picker_keys};
 pub use platform_hero::{PlatformHero, platform_hero};
+pub use progress_bar::{ProgressBar, clamped_fraction, progress_bar};
 pub use radio_row::{RadioRow, radio_row, radio_row_label};
 pub use resize_handle::{ResizeEdge, ResizeRange, install_resize};
 pub use save_state::{SaveState, save_indicator};

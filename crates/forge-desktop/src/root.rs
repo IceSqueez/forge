@@ -35,6 +35,7 @@ use crate::shell::AppShell;
 use crate::speak_state::SpeakState;
 use crate::toasts::PushToast;
 use crate::topics::Topics;
+use crate::update_flow::UpdateFlow;
 use crate::window_presence::PresenceGate;
 use forge_speak_queue::{SpeakError, SpeakEventStream};
 
@@ -186,6 +187,7 @@ pub fn run_boot(
                 let rt_handle_for_updates = handles.rt_handle.clone();
                 let obs_for_updates = handles.obs_install_seed.clone();
                 let bus_for_updates = Arc::clone(&handles.bus);
+                let mut flow_for_updates = None;
                 let credentials_key_loss = handles.credentials_key_loss;
                 let applied = window.update(cx, |root, window, cx| {
                     crate::i18n::install_language(handles.startup_language);
@@ -206,6 +208,14 @@ pub fn run_boot(
                     );
                     let integration_lifecycle = cx
                         .new(|_| IntegrationLifecycle::new(handles.integrations.watch().current()));
+                    let update_flow = cx.new(|_| {
+                        UpdateFlow::new(
+                            Arc::clone(&handles.backend),
+                            handles.rt_handle.clone(),
+                            paths::data_dir(),
+                        )
+                    });
+                    flow_for_updates = Some(update_flow.clone());
                     let topics = Topics::new(
                         chat_feed,
                         home_stats,
@@ -217,6 +227,7 @@ pub fn run_boot(
                         event_loss,
                         awake,
                         integration_lifecycle,
+                        update_flow,
                     );
                     let shell = cx.new(|cx| {
                         AppShell::new(
@@ -235,9 +246,13 @@ pub fn run_boot(
                         stay_awake.release();
                         let taken = shutdown.take();
                         let teardown = crate::shutdown::QuitTeardown::claim(cx);
+                        let exit = crate::update_exit::ExitHandoff::claim_at_quit(cx);
                         async move {
                             if let Some(handles) = taken {
                                 handles.run_graceful().await;
+                            }
+                            if let Some(exit) = exit {
+                                exit.finish();
                             }
                             teardown.finish();
                         }
@@ -246,7 +261,7 @@ pub fn run_boot(
                     root.mark_ready(shell, handles);
                     cx.notify();
                 });
-                if applied.is_ok() {
+                if let (Ok(()), Some(update_flow)) = (applied, flow_for_updates) {
                     if let Some(loss) = credentials_key_loss {
                         cx.update(|cx| raise_credentials_key_loss_toast(loss, cx));
                     }
@@ -280,12 +295,18 @@ pub fn run_boot(
                         Arc::clone(&backend_for_updates),
                         rt_handle_for_updates.clone(),
                     );
+                    crate::update_leftover::start_leftover_install_notice(
+                        cx,
+                        Arc::clone(&backend_for_updates),
+                        rt_handle_for_updates.clone(),
+                    );
                     crate::update_check::start_update_check(
                         cx,
                         backend_for_updates,
                         rt_handle_for_updates,
                         obs_for_updates,
                         bus_for_updates,
+                        update_flow,
                     );
                     if let Some(events) = speak_events {
                         start_speak_bridge(cx, speak_for_bridge, events);

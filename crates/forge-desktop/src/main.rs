@@ -143,8 +143,13 @@ mod tts_filters;
 mod unavailable_builtin;
 mod unsaved_work;
 mod update_check;
+mod update_exit;
+mod update_flow;
+mod update_handoff;
 mod update_launch;
+mod update_leftover;
 mod update_report;
+mod update_toast;
 mod voice_alias_form;
 mod voice_alias_store;
 mod voice_aliases;
@@ -349,7 +354,7 @@ fn main() {
         }
     };
 
-    let _instance_lock = match instance_lock::acquire(&paths::data_dir()) {
+    let instance_lock = match instance_lock::acquire(&paths::data_dir()) {
         instance_lock::LockOutcome::Acquired(lock) => Some(lock),
         instance_lock::LockOutcome::AlreadyRunning => {
             tracing::error!(
@@ -377,6 +382,8 @@ fn main() {
     let rt_guard = guard_handle.enter();
     let runtime_slot = RuntimeSlot::new(rt);
     let slot_for_app = runtime_slot.clone();
+    let exit_handoff = update_exit::ExitHandoff::new(instance_lock);
+    let exit_for_app = exit_handoff.clone();
 
     let application = gpui_platform::application()
         .with_assets(IconAssets)
@@ -387,6 +394,7 @@ fn main() {
 
     application.run(move |cx: &mut App| {
         cx.set_global(slot_for_app);
+        cx.set_global(exit_for_app);
         if let Err(err) = cx
             .text_system()
             .add_fonts(forge_components::embedded_fonts())
@@ -414,6 +422,13 @@ fn main() {
         bind_picker_keys(cx);
         bind_list_keys(cx);
         register_shell_key_bindings(cx);
+        cx.on_action(crate::shell::quit_requested);
+        if cfg!(target_os = "macos") {
+            cx.set_menus([gpui::Menu::new("forge").items([gpui::MenuItem::action(
+                forge_components::tr!("app_menu_quit"),
+                crate::actions::Quit,
+            )])]);
+        }
 
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
@@ -477,6 +492,7 @@ fn main() {
     if let Some(rt) = runtime_slot.take() {
         rt.shutdown_timeout(RUNTIME_SHUTDOWN_BUDGET);
     }
+    exit_handoff.finish();
     silence_logging();
 }
 

@@ -60,6 +60,7 @@ pub mod reserved_keys {
     pub const UPDATES_NOTIFY: &str = "updates.notify";
     pub const STAY_AWAKE: &str = "app.stay_awake";
     pub const UPDATES_SKIPPED_VERSION: &str = "updates.skipped_version";
+    pub const UPDATES_LEFTOVER_INSTALL_NOTICED: &str = "updates.leftover_install_noticed";
     pub const CREDENTIALS_KEY_LOSS: &str = "credentials.key_loss_stranded";
     pub const INTEGRATION_ENABLED_PREFIX: &str = "integration.enabled.";
     pub const RETIRED_MIDI_ENABLED: &str = "midi.enabled";
@@ -132,6 +133,7 @@ pub mod disclosure {
             | reserved_keys::UPDATES_NOTIFY
             | reserved_keys::STAY_AWAKE
             | reserved_keys::UPDATES_SKIPPED_VERSION
+            | reserved_keys::UPDATES_LEFTOVER_INSTALL_NOTICED
             | reserved_keys::CREDENTIALS_KEY_LOSS
             | reserved_keys::RETIRED_MIDI_ENABLED
             | reserved_keys::RETIRED_HOTKEY_ENABLED => Verbatim,

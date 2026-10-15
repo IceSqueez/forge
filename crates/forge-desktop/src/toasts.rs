@@ -39,8 +39,30 @@ impl Toasts {
             icon,
             action,
             secondary_action,
+            progress: None,
         });
         id
+    }
+
+    pub fn show(&mut self, mut data: ToastData) -> u64 {
+        let id = self.next_id;
+        self.next_id = self.next_id.wrapping_add(1);
+        data.id = id;
+        self.items.push(data);
+        id
+    }
+
+    pub fn replace(&mut self, id: u64, mut data: ToastData) -> bool {
+        let Some(slot) = self.items.iter_mut().find(|t| t.id == id) else {
+            return false;
+        };
+        data.id = id;
+        *slot = data;
+        true
+    }
+
+    pub fn contains(&self, id: u64) -> bool {
+        self.items.iter().any(|t| t.id == id)
     }
 
     pub fn dismiss(&mut self, id: u64) {

@@ -10,12 +10,14 @@ use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, Sett
 use forge_types::{IntegrationAvailability, IntegrationId};
 use gpui::{
     AnyElement, AnyView, App, AppContext, AsyncApp, ClickEvent, Context, Entity, EventEmitter,
-    FocusHandle, Window, deferred, div, prelude::*,
+    FocusHandle, Global, WeakEntity, Window, deferred, div, prelude::*,
 };
 
 use crate::home_stats::HomeStats;
 
-use crate::actions::{GoActions, GoChat, GoHome, GoSettings, GoTriggers, GoTwitch, SHELL_CONTEXT};
+use crate::actions::{
+    GoActions, GoChat, GoHome, GoSettings, GoTriggers, GoTwitch, Quit, SHELL_CONTEXT,
+};
 use crate::actions_screen::ScreenActionsView;
 use crate::chat::ChatView;
 use crate::chrome::Chrome;
@@ -58,6 +60,7 @@ use crate::triggers_screen::TriggersRegistryView;
 use crate::tts::TtsView;
 use crate::unavailable_builtin::unavailable_builtin;
 use crate::unsaved_work::{UnsavedWork, UnsavedWorkHandle};
+use crate::update_flow::{CloseDecision, UpdateFlowEvent};
 use crate::vtube_connect::VTubeConnectView;
 use crate::vtube_connect_form::VTubeConnected;
 
@@ -96,6 +99,20 @@ impl From<AnyView> for RoutedContent {
 impl<V: Render> From<Entity<V>> for RoutedContent {
     fn from(view: Entity<V>) -> Self {
         AnyView::from(view).into()
+    }
+}
+
+struct QuitRoute(WeakEntity<AppShell>);
+
+impl Global for QuitRoute {}
+
+pub fn quit_requested(_: &Quit, cx: &mut App) {
+    let routed = cx
+        .try_global::<QuitRoute>()
+        .map(|route| route.0.clone())
+        .and_then(|shell| shell.update(cx, |shell, cx| shell.request_close(cx)).ok());
+    if routed.is_none() {
+        cx.quit();
     }
 }
 
@@ -147,10 +164,21 @@ impl AppShell {
 
         cx.observe_global::<Toasts>(|_, cx| cx.notify()).detach();
 
+        cx.subscribe(
+            &topics.update_flow,
+            |this, _flow, event: &UpdateFlowEvent, cx| match event {
+                UpdateFlowEvent::RestartRequested => this.request_close(cx),
+                UpdateFlowEvent::CloseApproved => this.router.guard.close_window(cx),
+            },
+        )
+        .detach();
+
         Self::spawn_lifecycle_bridge(&handles, topics.integration_lifecycle.clone(), cx);
 
         window.focus(&focus, cx);
         cx.on_focus_lost(window, Self::restore_focus).detach();
+
+        cx.set_global(QuitRoute(cx.weak_entity()));
 
         let shell = cx.weak_entity();
         window.on_window_should_close(cx, move |_window, cx| {
@@ -911,22 +939,46 @@ impl AppShell {
 
     fn allow_window_close(&mut self, cx: &mut Context<Self>) -> bool {
         if !self.router.guard.blocks(cx) {
-            return true;
+            return self.update_close_decision(cx) == CloseDecision::Proceed;
         }
         self.router.guard.ask(LeaveTarget::CloseWindow);
         cx.notify();
         false
     }
 
+    fn request_close(&mut self, cx: &mut Context<Self>) {
+        if self.router.guard.blocks(cx) {
+            self.router.guard.ask(LeaveTarget::CloseWindow);
+            cx.notify();
+            return;
+        }
+        self.close_window_now(cx);
+    }
+
+    fn close_window_now(&mut self, cx: &mut Context<Self>) {
+        if self.update_close_decision(cx) == CloseDecision::Proceed {
+            self.router.guard.close_window(cx);
+        }
+    }
+
+    fn update_close_decision(&mut self, cx: &mut Context<Self>) -> CloseDecision {
+        self.topics
+            .update_flow
+            .update(cx, |flow, cx| flow.close_decision(cx))
+    }
+
     fn leave_to(&mut self, target: LeaveTarget, cx: &mut Context<Self>) {
         match target {
             LeaveTarget::Screen(screen) => self.enter(screen, cx),
-            LeaveTarget::CloseWindow => self.router.guard.close_window(cx),
+            LeaveTarget::CloseWindow => self.close_window_now(cx),
         }
     }
 
     fn cancel_leave(&mut self, cx: &mut Context<Self>) {
         self.router.guard.cancel();
+        self.topics
+            .update_flow
+            .update(cx, |flow, cx| flow.abort_restart(cx));
         cx.notify();
     }
 
@@ -1046,6 +1098,9 @@ impl AppShell {
             });
             if let Some(glyph) = data.icon {
                 card = card.icon(glyph);
+            }
+            if let Some(fraction) = data.progress {
+                card = card.progress(fraction);
             }
             if let Some(action) = &data.action {
                 card = card.action(

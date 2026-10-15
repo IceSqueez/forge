@@ -1,0 +1,85 @@
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+
+use forge_storage::DataProvider;
+use forge_update::{ApplyMode, HandoffPlan, HandoffRequest, StagedArtifact, UpdatableInstall};
+use time::OffsetDateTime;
+
+use crate::data_backup::{backup_file_stem, backups_dir, unique_suffix};
+use crate::update_check::CURRENT_VERSION;
+
+pub const HANDOFF_PREPARE_BUDGET: Duration = Duration::from_secs(30);
+const SNAPSHOT_EXTENSION: &str = "pre-update.db";
+
+#[derive(Debug, Clone)]
+pub struct HandoffInput {
+    pub install: UpdatableInstall,
+    pub staged: StagedArtifact,
+    pub to_version: String,
+    pub mode: ApplyMode,
+    pub data_dir: PathBuf,
+}
+
+pub fn update_snapshot_path(data_dir: &Path, now: OffsetDateTime, suffix: &str) -> PathBuf {
+    backups_dir(data_dir).join(format!(
+        "{}.{SNAPSHOT_EXTENSION}",
+        backup_file_stem(now, suffix)
+    ))
+}
+
+pub async fn prepare_handoff(
+    backend: Arc<dyn DataProvider>,
+    input: HandoffInput,
+) -> Result<(), String> {
+    tokio::time::timeout(HANDOFF_PREPARE_BUDGET, write_handoff(backend, input))
+        .await
+        .unwrap_or_else(|_| Err("preparing the update took too long".to_owned()))
+}
+
+async fn write_handoff(backend: Arc<dyn DataProvider>, input: HandoffInput) -> Result<(), String> {
+    let dir = backups_dir(&input.data_dir);
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
+    let snapshot =
+        update_snapshot_path(&input.data_dir, OffsetDateTime::now_utc(), &unique_suffix());
+    let written = snapshot_and_plan(backend, input, snapshot.clone()).await;
+    if written.is_err() {
+        let _ = tokio::fs::remove_file(&snapshot).await;
+    }
+    written
+}
+
+async fn snapshot_and_plan(
+    backend: Arc<dyn DataProvider>,
+    input: HandoffInput,
+    snapshot: PathBuf,
+) -> Result<(), String> {
+    backend
+        .export(&snapshot)
+        .await
+        .map_err(|e| format!("database snapshot failed: {e}"))?;
+    let schema_version = backend
+        .schema_version()
+        .await
+        .map_err(|e| format!("schema version unavailable: {e}"))?;
+    let running =
+        std::env::current_exe().map_err(|e| format!("running executable unknown: {e}"))?;
+    tokio::task::spawn_blocking(move || {
+        let plan = HandoffPlan::new(HandoffRequest {
+            install: &input.install,
+            staged: &input.staged,
+            from_version: CURRENT_VERSION,
+            to_version: &input.to_version,
+            database_snapshot: snapshot,
+            schema_version,
+            running_executable: &running,
+            mode: input.mode,
+        })?;
+        plan.write(&input.data_dir)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}

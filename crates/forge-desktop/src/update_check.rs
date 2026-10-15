@@ -1,20 +1,22 @@
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use forge_components::{Icon, ToastAction, ToastKind, tr};
 use forge_events::Event;
 use forge_platform_core::{
     BuiltinHealth, HealthMetric, HealthValue, RateLimiter, TokenBucketRateLimiter, acquire_or_wait,
 };
 use forge_runtime::{EventBus, EventSubscription};
 use forge_storage::{DataProvider, SettingsRepo, get_bool_setting, reserved_keys};
-use forge_update::{is_newer, parse_version};
-use gpui::{App, AsyncApp};
+use forge_update::{
+    InstallKind, ManifestSource, ManualReason, Platform, TrustedKeys, UpdateClient, UpdateOffer,
+    check_for_update, detect_install, is_newer, parse_version,
+};
+use gpui::{AsyncApp, Entity};
 use tokio::runtime::Handle;
 
-use crate::async_bridge::{EventBatch, detached, open_path, recv_event_batch};
+use crate::async_bridge::{EventBatch, detached, recv_event_batch};
 use crate::integrations::ObsInstallSeed;
-use crate::toasts::PushToast;
+use crate::update_flow::{InstallTarget, UpdateCandidate, UpdateFlow};
 
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const REPO_URL: &str = env!("CARGO_PKG_REPOSITORY");
@@ -125,10 +127,67 @@ pub fn should_notify(
     })
 }
 
+pub fn display_version(raw: &str) -> String {
+    let trimmed = raw.trim();
+    trimmed.strip_prefix('v').unwrap_or(trimmed).to_owned()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FoundUpdate {
+    Signed(UpdateOffer),
+    Unsigned(Release),
+}
+
+impl FoundUpdate {
+    pub fn version(&self) -> String {
+        match self {
+            FoundUpdate::Signed(offer) => offer.version.to_string(),
+            FoundUpdate::Unsigned(release) => display_version(&release.tag),
+        }
+    }
+}
+
+pub fn update_candidate(
+    found: FoundUpdate,
+    install: &InstallKind,
+    platform: Option<Platform>,
+) -> UpdateCandidate {
+    match found {
+        FoundUpdate::Unsigned(release) => UpdateCandidate {
+            version: display_version(&release.tag),
+            release_page: release.url,
+            install: None,
+        },
+        FoundUpdate::Signed(offer) => {
+            let install = match (install, platform) {
+                (InstallKind::Updatable(install), Some(platform)) => offer
+                    .artifact_for(platform, install.artifact_kind())
+                    .map(|artifact| InstallTarget {
+                        install: install.clone(),
+                        artifact: artifact.clone(),
+                    }),
+                _ => None,
+            };
+            UpdateCandidate {
+                version: offer.version.to_string(),
+                release_page: offer.release_page,
+                install,
+            }
+        }
+    }
+}
+
+enum SignedCheck {
+    Offer(UpdateOffer),
+    UpToDate,
+    Unavailable,
+}
+
 struct Probe {
     enabled: bool,
     skipped: Option<String>,
-    release: Option<Release>,
+    found: Option<FoundUpdate>,
+    install: InstallKind,
 }
 
 pub fn start_update_check(
@@ -137,27 +196,26 @@ pub fn start_update_check(
     rt_handle: Handle,
     obs: ObsInstallSeed,
     bus: Arc<EventBus>,
+    flow: Entity<UpdateFlow>,
 ) {
-    let backend_for_probe = Arc::clone(&backend);
     cx.spawn(async move |cx| {
         cx.background_executor().timer(BOOT_SETTLE_DELAY).await;
 
         let (tx, rx) = tokio::sync::oneshot::channel();
-        let probe_handle = rt_handle.clone();
-        probe_handle.spawn(async move {
-            let _ = tx.send(probe(backend_for_probe).await);
+        rt_handle.spawn(async move {
+            let _ = tx.send(probe(backend).await);
         });
         let Ok(probe) = rx.await else {
             return;
         };
-        let Some(release) = probe.release else {
+        let Some(found) = probe.found else {
             return;
         };
 
         let subscription = bus.subscribe();
         let Some(notice) = should_notify(
             CURRENT_VERSION,
-            &release.tag,
+            &found.version(),
             probe.skipped.as_deref(),
             probe.enabled,
             obs_busy(&obs),
@@ -170,7 +228,8 @@ pub fn start_update_check(
             return;
         }
 
-        cx.update(|cx| raise_update_toast(release, backend, rt_handle, cx));
+        let candidate = update_candidate(found, &probe.install, Platform::running());
+        flow.update(cx, |flow, cx| flow.offer(candidate, cx));
     })
     .detach();
 }
@@ -183,7 +242,8 @@ async fn probe(backend: Arc<dyn DataProvider>) -> Probe {
         return Probe {
             enabled,
             skipped: None,
-            release: None,
+            found: None,
+            install: InstallKind::ManualOnly(ManualReason::NotReleaseBuild),
         };
     }
     let skipped = repo
@@ -191,11 +251,49 @@ async fn probe(backend: Arc<dyn DataProvider>) -> Probe {
         .await
         .ok()
         .flatten();
-    let release = fetch_latest_release().await;
+    let found = find_update().await;
+    let install = tokio::task::spawn_blocking(detect_install)
+        .await
+        .unwrap_or(InstallKind::ManualOnly(ManualReason::UnknownExecutable));
     Probe {
         enabled,
         skipped,
-        release,
+        found,
+        install,
+    }
+}
+
+async fn find_update() -> Option<FoundUpdate> {
+    match check_signed().await {
+        SignedCheck::Offer(offer) => Some(FoundUpdate::Signed(offer)),
+        SignedCheck::UpToDate => None,
+        SignedCheck::Unavailable => fetch_latest_release().await.map(FoundUpdate::Unsigned),
+    }
+}
+
+async fn check_signed() -> SignedCheck {
+    let (Some(source), Some(running)) = (
+        ManifestSource::github_latest(REPO_URL),
+        parse_version(CURRENT_VERSION),
+    ) else {
+        return SignedCheck::Unavailable;
+    };
+    let prepared =
+        TrustedKeys::production().and_then(|keys| Ok((keys, UpdateClient::for_github()?)));
+    let (keys, client) = match prepared {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            tracing::debug!(error = %error, "signed update check could not start");
+            return SignedCheck::Unavailable;
+        }
+    };
+    match check_for_update(&client, &source, &keys, &running).await {
+        Ok(Some(offer)) => SignedCheck::Offer(offer),
+        Ok(None) => SignedCheck::UpToDate,
+        Err(error) => {
+            tracing::debug!(error = %error, "signed update manifest unavailable; falling back");
+            SignedCheck::Unavailable
+        }
     }
 }
 
@@ -278,39 +376,6 @@ async fn wait_for_obs_idle(mut subscription: EventSubscription, obs: &ObsInstall
 
 fn output_stopped(event: &Event) -> bool {
     event.kind == STREAM_STOPPED_KIND || event.kind == RECORD_STOPPED_KIND
-}
-
-fn raise_update_toast(
-    release: Release,
-    backend: Arc<dyn DataProvider>,
-    rt_handle: Handle,
-    cx: &mut App,
-) {
-    let url = release.url.clone();
-    let tag = release.tag.clone();
-    let open_handle = rt_handle.clone();
-    cx.push_toast_with_secondary(
-        ToastKind::Info,
-        tr!("update_toast_available", version = release.tag.as_str()),
-        Some(Icon::Sparkles),
-        ToastAction::new(
-            tr!("update_toast_open_action"),
-            move |_window, _app: &mut App| {
-                detached(
-                    &open_handle,
-                    "open the release page",
-                    open_path(url.clone()),
-                );
-            },
-        ),
-        ToastAction::new(
-            tr!("update_toast_skip_action"),
-            move |_window, _app: &mut App| {
-                remember_skipped(tag.clone(), Arc::clone(&backend), &rt_handle);
-            },
-        ),
-        Duration::ZERO,
-    );
 }
 
 pub fn remember_skipped(tag: String, backend: Arc<dyn DataProvider>, rt_handle: &Handle) {

@@ -253,9 +253,23 @@ settings_version_notify_hint = Shows a toast at launch whenever a newer release 
 
 ## Update notification
 
+app_menu_quit = Quit forge
 update_toast_available = forge { $version } is available
 update_toast_open_action = Download
 update_toast_skip_action = Skip this version
+update_toast_update_action = Update
+update_toast_downloading = Downloading forge { $version }: { $percent }%
+update_toast_cancel_action = Cancel
+update_toast_ready = forge { $version } is ready. It installs when you quit.
+update_toast_restart_action = Restart to update
+update_toast_preparing = Preparing the update to forge { $version }...
+update_toast_restarting = Restarting to install forge { $version }
+update_toast_download_failed = forge { $version } could not be downloaded.
+update_toast_unverified = forge { $version } could not be verified, so it was not installed.
+update_toast_handoff_failed = forge { $version } could not be prepared for install.
+update_toast_retry_action = Retry
+update_leftover_install = Another forge is installed for all users. Uninstall it so only one copy uses your data.
+update_leftover_open_action = Open installed apps
 update_report_updated = forge updated to { $version }
 update_report_rolled_back = forge { $failed } { $reason }. Back on { $restored }.
 update_report_rolled_back_data_restored = forge { $failed } { $reason }. Back on { $restored }, data restored.

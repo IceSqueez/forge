@@ -6,6 +6,7 @@ use gpui::{App, KeyBinding, Keystroke, actions};
 pub const SHELL_CONTEXT: &str = "ForgeShell";
 pub const LIST_CONTEXT: &str = "ForgeList";
 const NEXT_FIELD_CHORD: &str = "tab";
+const QUIT_CHORD: &str = "cmd-q";
 
 actions!(
     forge_shell,
@@ -13,6 +14,8 @@ actions!(
 );
 
 actions!(forge_list, [ListSelectPrev, ListSelectNext, ListActivate]);
+
+actions!(forge_app, [Quit]);
 
 pub fn bind_list_keys(cx: &mut App) {
     cx.bind_keys([
@@ -225,6 +228,9 @@ fn bind_shell(cx: &mut App, overrides: &HashMap<String, String>) {
         if let Some(chord) = effective_chord(overrides, entry) {
             bindings.extend(key_bindings_for(entry.id, chord));
         }
+    }
+    if cfg!(target_os = "macos") {
+        bindings.push(KeyBinding::new(QUIT_CHORD, Quit, None));
     }
     cx.bind_keys(bindings);
 }

@@ -67,12 +67,12 @@ impl TriggerKindDescriptor for MidiDeviceDisconnectedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Midi),
-            kind_prefix: Some("midi.port.".to_owned()),
+            kind_prefix: Some(crate::event_kinds::PORT_PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != "midi.port.removed" {
+        if event.kind != crate::event_kinds::PORT_REMOVED {
             return false;
         }
         if let Some(Variant::String(d)) = config.get("direction")

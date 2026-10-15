@@ -5,6 +5,7 @@ pub(crate) mod content;
 pub(crate) mod control;
 pub(crate) mod decode;
 pub mod error;
+pub mod event_kinds;
 pub mod events;
 pub(crate) mod health;
 pub mod integration;

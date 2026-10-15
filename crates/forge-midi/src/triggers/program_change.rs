@@ -118,12 +118,12 @@ impl TriggerKindDescriptor for MidiProgramChangeDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Midi),
-            kind_prefix: Some("midi.input.".to_owned()),
+            kind_prefix: Some(crate::event_kinds::INPUT_PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != "midi.input.program_change" {
+        if event.kind != crate::event_kinds::PROGRAM_CHANGE {
             return false;
         }
         if let Some(Variant::Int(p)) = config.get("program") {

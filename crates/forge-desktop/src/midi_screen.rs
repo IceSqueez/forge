@@ -7,6 +7,7 @@ use forge_components::{
     menu_button, menu_divider, menu_item, mono_family, pad_tile, page_frame, radius, status_dot,
     toggle, tr,
 };
+use forge_midi::event_kinds::{INPUT_PREFIX, PORT_PREFIX};
 use forge_midi::{MidiClient, MidiMonitorEvent, SwitchableMidiSink};
 use forge_runtime::EventBus;
 use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, set_json_setting};
@@ -23,15 +24,13 @@ use crate::integration_supervisor::{IntegrationSlot, LifecycleState};
 use crate::midi_mapping_modal::{
     MappingDraft, MappingModalLaunch, MidiMappingModal, MidiMappingModalEvent,
 };
-use crate::midi_signal::{MIDI_INPUT_PREFIX, MidiSignal, kind_color, note_name};
+use crate::midi_signal::{MidiSignal, kind_color, note_name};
 use crate::presentation::ActivePresentation;
 use crate::sidebar::NavRequested;
 use forge_components::PushToast;
 use forge_components::grow_cell;
 
 pub const MIDI_KNOWN_DEVICES_KEY: &str = "midi.known_devices";
-
-const MIDI_PORT_PREFIX: &str = "midi.port.";
 
 const SCROLL_PAD_X: Pixels = px(22.0);
 const SCROLL_PAD_Y: Pixels = px(18.0);
@@ -167,7 +166,7 @@ async fn load_mappings(
     let instances = triggers.list_all().await.map_err(|e| e.to_string())?;
     let mut rows = Vec::new();
     for instance in instances {
-        if !instance.kind_id.starts_with(MIDI_INPUT_PREFIX) {
+        if !instance.kind_id.starts_with(INPUT_PREFIX) {
             continue;
         }
         let linked = triggers
@@ -446,7 +445,7 @@ impl MidiScreenView {
             drain_events(&bus, cx, move |batch, cx| {
                 let touched = batch
                     .iter()
-                    .any(|event| event.kind.starts_with(MIDI_PORT_PREFIX));
+                    .any(|event| event.kind.starts_with(PORT_PREFIX));
                 if !touched {
                     return BridgeFlow::Continue;
                 }
@@ -1593,7 +1592,7 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::*;
-    use crate::midi_signal::{CONTROL_CHANGE_KIND, NOTE_ON_KIND};
+    use forge_midi::event_kinds::{CONTROL_CHANGE, NOTE_ON};
 
     #[derive(Default)]
     struct TriggerStore {
@@ -1843,7 +1842,7 @@ mod tests {
 
     fn note_signal(selector: i64) -> MidiSignal {
         MidiSignal {
-            kind_id: NOTE_ON_KIND.to_owned(),
+            kind_id: NOTE_ON.to_owned(),
             selector: Some(selector),
             channel: Some(3),
             device: Some("Keys".to_owned()),
@@ -1879,7 +1878,7 @@ mod tests {
         assert!(created.enabled, "a fresh mapping must be active");
         assert!(created.user_defined, "a fresh mapping must be user defined");
         assert_eq!(created.name, "Draft name");
-        assert_eq!(created.kind_id, NOTE_ON_KIND);
+        assert_eq!(created.kind_id, NOTE_ON);
         assert_eq!(created.overrides.get("note"), Some(&Variant::Int(60)));
         assert_eq!(created.overrides.get("channel"), Some(&Variant::Int(3)));
         assert_eq!(
@@ -1915,12 +1914,12 @@ mod tests {
         let triggers = FakeTriggerRepo::default();
         let target = action("Play sound");
         let actions = FakeActionRepo::with(vec![target.clone()]);
-        let existing = stored_instance(NOTE_ON_KIND);
+        let existing = stored_instance(NOTE_ON);
         let existing_id = existing.id;
         triggers.seed(existing);
 
         let mut signal = note_signal(7);
-        signal.kind_id = CONTROL_CHANGE_KIND.to_owned();
+        signal.kind_id = CONTROL_CHANGE.to_owned();
         save_mapping(
             &triggers,
             &actions,
@@ -1937,7 +1936,7 @@ mod tests {
             !saved.enabled,
             "editing must not silently re-enable a mapping"
         );
-        assert_eq!(saved.kind_id, CONTROL_CHANGE_KIND);
+        assert_eq!(saved.kind_id, CONTROL_CHANGE);
         assert_eq!(saved.overrides.get("controller"), Some(&Variant::Int(7)));
     }
 
@@ -1946,7 +1945,7 @@ mod tests {
         let triggers = FakeTriggerRepo::default();
         let target = action("Play sound");
         let actions = FakeActionRepo::with(vec![target.clone()]);
-        let existing = stored_instance(NOTE_ON_KIND);
+        let existing = stored_instance(NOTE_ON);
         let existing_id = existing.id;
         triggers.seed(existing);
         triggers.seed_link(target.id, existing_id, 4);
@@ -1973,7 +1972,7 @@ mod tests {
         let previous = action("Old target");
         let next = action("New target");
         let actions = FakeActionRepo::with(vec![previous.clone(), next.clone()]);
-        let existing = stored_instance(NOTE_ON_KIND);
+        let existing = stored_instance(NOTE_ON);
         let existing_id = existing.id;
         triggers.seed(existing);
         triggers.seed_link(previous.id, existing_id, 0);
@@ -2029,7 +2028,7 @@ mod tests {
         let actions = FakeActionRepo::with(vec![target.clone()]);
         let other_family = stored_instance("twitch.chat");
         triggers.seed(other_family);
-        let midi = stored_instance(NOTE_ON_KIND);
+        let midi = stored_instance(NOTE_ON);
         let midi_id = midi.id;
         triggers.seed(midi);
         triggers.seed_link(target.id, midi_id, 0);
@@ -2048,7 +2047,7 @@ mod tests {
     async fn load_mappings_reports_a_row_whose_linked_action_no_longer_exists_as_unassigned() {
         let triggers = FakeTriggerRepo::default();
         let actions = FakeActionRepo::default();
-        let midi = stored_instance(NOTE_ON_KIND);
+        let midi = stored_instance(NOTE_ON);
         let midi_id = midi.id;
         triggers.seed(midi);
         triggers.seed_link(ActionId::new(), midi_id, 0);
@@ -2063,7 +2062,7 @@ mod tests {
             id: TriggerInstanceId::new(),
             name: name.to_owned(),
             signal: MidiSignal {
-                kind_id: NOTE_ON_KIND.to_owned(),
+                kind_id: NOTE_ON.to_owned(),
                 selector: Some(60),
                 channel: Some(1),
                 device: device.map(str::to_owned),

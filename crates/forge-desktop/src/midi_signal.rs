@@ -1,22 +1,8 @@
 use forge_components::{ForgePalette, tr};
 use forge_midi::MidiMonitorEvent;
+use forge_midi::event_kinds::{CONTROL_CHANGE, NOTE_OFF, NOTE_ON, PITCH_BEND, PROGRAM_CHANGE};
 use forge_types::{TriggerConfig, Variant};
 use gpui::Rgba;
-
-pub const MIDI_INPUT_PREFIX: &str = "midi.input.";
-pub const NOTE_ON_KIND: &str = "midi.input.note_on";
-pub const NOTE_OFF_KIND: &str = "midi.input.note_off";
-pub const CONTROL_CHANGE_KIND: &str = "midi.input.control_change";
-pub const PITCH_BEND_KIND: &str = "midi.input.pitch_bend";
-pub const PROGRAM_CHANGE_KIND: &str = "midi.input.program_change";
-
-pub const SIGNAL_KINDS: [&str; 5] = [
-    NOTE_ON_KIND,
-    NOTE_OFF_KIND,
-    CONTROL_CHANGE_KIND,
-    PROGRAM_CHANGE_KIND,
-    PITCH_BEND_KIND,
-];
 
 const NOTE_NAMES: [&str; 12] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
@@ -31,41 +17,41 @@ pub fn note_name(note: i64) -> String {
 
 pub fn selector_key(kind_id: &str) -> Option<&'static str> {
     match kind_id {
-        NOTE_ON_KIND | NOTE_OFF_KIND => Some("note"),
-        CONTROL_CHANGE_KIND => Some("controller"),
-        PROGRAM_CHANGE_KIND => Some("program"),
+        NOTE_ON | NOTE_OFF => Some("note"),
+        CONTROL_CHANGE => Some("controller"),
+        PROGRAM_CHANGE => Some("program"),
         _ => None,
     }
 }
 
 pub fn kind_label(kind_id: &str) -> &str {
     match kind_id {
-        NOTE_ON_KIND => "Note On",
-        NOTE_OFF_KIND => "Note Off",
-        CONTROL_CHANGE_KIND => "CC",
-        PROGRAM_CHANGE_KIND => "Program change",
-        PITCH_BEND_KIND => "Pitch bend",
+        NOTE_ON => "Note On",
+        NOTE_OFF => "Note Off",
+        CONTROL_CHANGE => "CC",
+        PROGRAM_CHANGE => "Program change",
+        PITCH_BEND => "Pitch bend",
         other => other,
     }
 }
 
 pub fn kind_color(kind_id: &str, palette: &ForgePalette) -> Rgba {
     match kind_id {
-        NOTE_ON_KIND => palette.success,
-        NOTE_OFF_KIND => palette.text_faint,
-        CONTROL_CHANGE_KIND | PITCH_BEND_KIND => palette.info,
-        PROGRAM_CHANGE_KIND => palette.brand,
+        NOTE_ON => palette.success,
+        NOTE_OFF => palette.text_faint,
+        CONTROL_CHANGE | PITCH_BEND => palette.info,
+        PROGRAM_CHANGE => palette.brand,
         _ => palette.text_faint,
     }
 }
 
 fn kind_from_monitor(kind: &str) -> Option<&'static str> {
     match kind {
-        "note_on" => Some(NOTE_ON_KIND),
-        "note_off" => Some(NOTE_OFF_KIND),
-        "control_change" => Some(CONTROL_CHANGE_KIND),
-        "pitch_bend" => Some(PITCH_BEND_KIND),
-        "program_change" => Some(PROGRAM_CHANGE_KIND),
+        "note_on" => Some(NOTE_ON),
+        "note_off" => Some(NOTE_OFF),
+        "control_change" => Some(CONTROL_CHANGE),
+        "pitch_bend" => Some(PITCH_BEND),
+        "program_change" => Some(PROGRAM_CHANGE),
         _ => None,
     }
 }
@@ -132,18 +118,16 @@ impl MidiSignal {
 
     pub fn label(&self) -> String {
         let value = match self.selector {
-            Some(n) if self.kind_id == NOTE_ON_KIND || self.kind_id == NOTE_OFF_KIND => {
-                note_name(n)
-            }
+            Some(n) if self.kind_id == NOTE_ON || self.kind_id == NOTE_OFF => note_name(n),
             Some(n) => n.to_string(),
             None => tr!("midi_value_any"),
         };
         match self.kind_id.as_str() {
-            NOTE_ON_KIND => format!("Note {value}"),
-            NOTE_OFF_KIND => format!("NoteOff {value}"),
-            CONTROL_CHANGE_KIND => format!("CC {value}"),
-            PROGRAM_CHANGE_KIND => format!("PC {value}"),
-            PITCH_BEND_KIND => "Pitch".to_owned(),
+            NOTE_ON => format!("Note {value}"),
+            NOTE_OFF => format!("NoteOff {value}"),
+            CONTROL_CHANGE => format!("CC {value}"),
+            PROGRAM_CHANGE => format!("PC {value}"),
+            PITCH_BEND => "Pitch".to_owned(),
             other => other.to_owned(),
         }
     }
@@ -164,6 +148,7 @@ mod tests {
     use forge_registry::{FormField, TriggerRegistry};
 
     use super::*;
+    use forge_midi::event_kinds::SIGNAL_KINDS;
 
     fn monitor_event(kind: &str, number: Option<u8>, channel: u8, port: &str) -> MidiMonitorEvent {
         MidiMonitorEvent {
@@ -259,27 +244,27 @@ mod tests {
             (
                 "note_on",
                 Some(60),
-                signal(NOTE_ON_KIND, Some(60), Some(9), Some("Keys")),
+                signal(NOTE_ON, Some(60), Some(9), Some("Keys")),
             ),
             (
                 "note_off",
                 Some(48),
-                signal(NOTE_OFF_KIND, Some(48), Some(9), Some("Keys")),
+                signal(NOTE_OFF, Some(48), Some(9), Some("Keys")),
             ),
             (
                 "control_change",
                 Some(7),
-                signal(CONTROL_CHANGE_KIND, Some(7), Some(9), Some("Keys")),
+                signal(CONTROL_CHANGE, Some(7), Some(9), Some("Keys")),
             ),
             (
                 "program_change",
                 Some(10),
-                signal(PROGRAM_CHANGE_KIND, Some(10), Some(9), Some("Keys")),
+                signal(PROGRAM_CHANGE, Some(10), Some(9), Some("Keys")),
             ),
             (
                 "pitch_bend",
                 None,
-                signal(PITCH_BEND_KIND, None, Some(9), Some("Keys")),
+                signal(PITCH_BEND, None, Some(9), Some("Keys")),
             ),
         ] {
             let event = monitor_event(monitor_kind, number, 9, "Keys");
@@ -301,13 +286,13 @@ mod tests {
     #[test]
     fn signal_round_trips_through_overrides_for_every_field_combination() {
         for original in [
-            signal(NOTE_ON_KIND, Some(60), Some(0), Some("Keys")),
-            signal(NOTE_ON_KIND, Some(60), None, None),
-            signal(NOTE_OFF_KIND, Some(0), Some(15), None),
-            signal(CONTROL_CHANGE_KIND, Some(7), None, Some("Pad")),
-            signal(PROGRAM_CHANGE_KIND, Some(127), Some(9), None),
-            signal(PITCH_BEND_KIND, None, Some(3), Some("Keys")),
-            signal(PITCH_BEND_KIND, None, None, None),
+            signal(NOTE_ON, Some(60), Some(0), Some("Keys")),
+            signal(NOTE_ON, Some(60), None, None),
+            signal(NOTE_OFF, Some(0), Some(15), None),
+            signal(CONTROL_CHANGE, Some(7), None, Some("Pad")),
+            signal(PROGRAM_CHANGE, Some(127), Some(9), None),
+            signal(PITCH_BEND, None, Some(3), Some("Keys")),
+            signal(PITCH_BEND, None, None, None),
         ] {
             let restored = MidiSignal::from_instance(&original.kind_id, &original.overrides());
             assert!(
@@ -320,7 +305,7 @@ mod tests {
 
     #[test]
     fn overrides_drops_a_selector_the_kind_cannot_carry() {
-        let stray = signal(PITCH_BEND_KIND, Some(5), Some(1), None);
+        let stray = signal(PITCH_BEND, Some(5), Some(1), None);
         let written = stray.overrides();
 
         assert_eq!(written.keys().collect::<Vec<_>>(), vec!["channel"]);
@@ -331,7 +316,7 @@ mod tests {
         let mut config = TriggerConfig::new();
         config.insert("device".to_owned(), Variant::String(String::new()));
 
-        let restored = MidiSignal::from_instance(NOTE_ON_KIND, &config);
+        let restored = MidiSignal::from_instance(NOTE_ON, &config);
 
         assert_eq!(restored.device, None);
     }
@@ -355,11 +340,11 @@ mod tests {
     #[test]
     fn label_renders_note_kinds_as_pitch_names_and_the_rest_as_raw_numbers() {
         for (kind, selector, expected) in [
-            (NOTE_ON_KIND, Some(60), "Note C4"),
-            (NOTE_OFF_KIND, Some(60), "NoteOff C4"),
-            (CONTROL_CHANGE_KIND, Some(7), "CC 7"),
-            (PROGRAM_CHANGE_KIND, Some(10), "PC 10"),
-            (PITCH_BEND_KIND, None, "Pitch"),
+            (NOTE_ON, Some(60), "Note C4"),
+            (NOTE_OFF, Some(60), "NoteOff C4"),
+            (CONTROL_CHANGE, Some(7), "CC 7"),
+            (PROGRAM_CHANGE, Some(10), "PC 10"),
+            (PITCH_BEND, None, "Pitch"),
         ] {
             assert_eq!(signal(kind, selector, None, None).label(), expected);
         }
@@ -367,7 +352,7 @@ mod tests {
 
     #[test]
     fn label_replaces_a_missing_selector_with_a_placeholder_instead_of_a_number() {
-        let label = signal(CONTROL_CHANGE_KIND, None, None, None).label();
+        let label = signal(CONTROL_CHANGE, None, None, None).label();
 
         assert!(label.starts_with("CC "), "{label} lost its kind prefix");
         assert!(
@@ -378,12 +363,9 @@ mod tests {
 
     #[test]
     fn channel_label_renders_the_channel_number_and_a_placeholder_for_any() {
-        assert_eq!(
-            signal(NOTE_ON_KIND, None, Some(0), None).channel_label(),
-            "ch 0"
-        );
+        assert_eq!(signal(NOTE_ON, None, Some(0), None).channel_label(), "ch 0");
 
-        let any = signal(NOTE_ON_KIND, None, None, None).channel_label();
+        let any = signal(NOTE_ON, None, None, None).channel_label();
         assert!(any.starts_with("ch "), "{any} lost its prefix");
         assert!(
             !any.chars().any(|c| c.is_ascii_digit()),

@@ -99,12 +99,12 @@ impl TriggerKindDescriptor for MidiPitchBendDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Midi),
-            kind_prefix: Some("midi.input.".to_owned()),
+            kind_prefix: Some(crate::event_kinds::INPUT_PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != "midi.input.pitch_bend" {
+        if event.kind != crate::event_kinds::PITCH_BEND {
             return false;
         }
         if let Some(Variant::Int(c)) = config.get("channel") {

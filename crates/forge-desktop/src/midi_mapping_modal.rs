@@ -14,8 +14,9 @@ use gpui::{
 };
 
 use crate::async_bridge;
-use crate::midi_signal::{MidiSignal, SIGNAL_KINDS, kind_label, selector_key};
+use crate::midi_signal::{MidiSignal, kind_label, selector_key};
 use crate::presentation::ActivePresentation;
+use forge_midi::event_kinds::SIGNAL_KINDS;
 
 const MODAL_W: Pixels = px(520.0);
 const BODY_PAD_V: Pixels = px(16.0);

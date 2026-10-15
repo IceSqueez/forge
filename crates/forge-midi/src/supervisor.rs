@@ -118,9 +118,9 @@ fn handle_supervisor_command(
 
 fn emit_engine_state_change(client: &Arc<MidiClient>, enabled: bool) {
     let kind = if enabled {
-        "midi.engine.enabled"
+        crate::event_kinds::ENGINE_ENABLED
     } else {
-        "midi.engine.disabled"
+        crate::event_kinds::ENGINE_DISABLED
     };
     client
         .publisher
@@ -270,9 +270,9 @@ fn open_input_port(
 
 fn emit_port_event(client: &Arc<MidiClient>, name: &str, direction: PortDirection, added: bool) {
     let kind = if added {
-        "midi.port.added"
+        crate::event_kinds::PORT_ADDED
     } else {
-        "midi.port.removed"
+        crate::event_kinds::PORT_REMOVED
     };
     let dir_str = match direction {
         PortDirection::Input => "input",
@@ -303,7 +303,7 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
             velocity,
             channel,
         } => (
-            "midi.input.note_on",
+            crate::event_kinds::NOTE_ON,
             serde_json::json!({
                 (input_fields::NOTE): note,
                 (input_fields::VELOCITY): velocity,
@@ -316,7 +316,7 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
             velocity,
             channel,
         } => (
-            "midi.input.note_off",
+            crate::event_kinds::NOTE_OFF,
             serde_json::json!({
                 (input_fields::NOTE): note,
                 (input_fields::VELOCITY): velocity,
@@ -329,7 +329,7 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
             value,
             channel,
         } => (
-            "midi.input.control_change",
+            crate::event_kinds::CONTROL_CHANGE,
             serde_json::json!({
                 (input_fields::CONTROLLER): controller,
                 (input_fields::VALUE): value,
@@ -338,7 +338,7 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
             }),
         ),
         MidiEvent::PitchBend { value, channel } => (
-            "midi.input.pitch_bend",
+            crate::event_kinds::PITCH_BEND,
             serde_json::json!({
                 (input_fields::VALUE): value,
                 (input_fields::CHANNEL): channel,
@@ -346,7 +346,7 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
             }),
         ),
         MidiEvent::ProgramChange { program, channel } => (
-            "midi.input.program_change",
+            crate::event_kinds::PROGRAM_CHANGE,
             serde_json::json!({
                 (input_fields::PROGRAM): program,
                 (input_fields::CHANNEL): channel,

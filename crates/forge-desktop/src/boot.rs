@@ -425,8 +425,13 @@ pub async fn build_runtime(
     ) {
         reconciler.enable_engine_on_new_bindings(engine);
     }
-    let stream_live =
-        spawn_stream_live_signal(&live_viewers, integrations.obs_install_seed.stream_output());
+    let stream_live = spawn_stream_live_signal(
+        &live_viewers,
+        integrations
+            .obs_install_seed
+            .stream_output()
+            .into_receiver(),
+    );
     let bot_accounts = load_bot_accounts(&backend).await;
     let timer_scheduler = spawn_timer_scheduler(
         Arc::clone(&bus),

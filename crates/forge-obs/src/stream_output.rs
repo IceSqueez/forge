@@ -13,6 +13,10 @@ impl StreamOutputActive {
         *self.0.borrow()
     }
 
+    pub fn into_receiver(self) -> watch::Receiver<bool> {
+        self.0
+    }
+
     pub async fn changed(&mut self) -> Option<bool> {
         self.0.changed().await.ok()?;
         Some(*self.0.borrow_and_update())

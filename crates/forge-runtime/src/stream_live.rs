@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 
-use forge_obs::StreamOutputActive;
 use forge_types::PlatformId;
 use futures_core::Stream;
 use tokio::sync::watch;
@@ -61,10 +60,10 @@ impl StreamLiveHandle {
 
 pub fn spawn_stream_live_signal(
     viewers: &LiveViewerAggregatorHandle,
-    obs: StreamOutputActive,
+    obs: watch::Receiver<bool>,
 ) -> StreamLiveHandle {
     let platforms = viewers.live_platforms();
-    let initial = StreamLiveState::from_parts(&platforms.borrow(), obs.is_active());
+    let initial = StreamLiveState::from_parts(&platforms.borrow(), *obs.borrow());
     let (output, receiver) = watch::channel(initial);
     tokio::spawn(follow_live_inputs(platforms, obs, output));
     StreamLiveHandle(receiver)
@@ -72,21 +71,21 @@ pub fn spawn_stream_live_signal(
 
 async fn follow_live_inputs(
     mut platforms: watch::Receiver<LivePlatforms>,
-    mut obs: StreamOutputActive,
+    mut obs: watch::Receiver<bool>,
     output: watch::Sender<StreamLiveState>,
 ) {
     let mut platforms_open = true;
     let mut obs_open = true;
-    let mut obs_streaming = obs.is_active();
+    let mut obs_streaming = *obs.borrow();
     while platforms_open || obs_open {
         tokio::select! {
             () = output.closed() => return,
             changed = platforms.changed(), if platforms_open => {
                 platforms_open = changed.is_ok();
             }
-            active = obs.changed(), if obs_open => match active {
-                Some(active) => obs_streaming = active,
-                None => {
+            changed = obs.changed(), if obs_open => match changed {
+                Ok(()) => obs_streaming = *obs.borrow_and_update(),
+                Err(_) => {
                     obs_open = false;
                     obs_streaming = false;
                 }

@@ -135,10 +135,7 @@ mod tests {
     use std::path::PathBuf;
 
     use forge_storage::Language;
-    use forge_update::{
-        Artifact, CancelSignal, DownloadProgress, InstallLayout, Sha256Digest, StagedArtifact,
-        UpdatableInstall,
-    };
+    use forge_update::{Artifact, InstallLayout, Sha256Digest, StagedArtifact, UpdatableInstall};
 
     use super::*;
     use crate::i18n::install_language;
@@ -194,32 +191,9 @@ mod tests {
         install_language(Language::En);
         for (label, stage, expected) in [
             (
-                "installable offer",
-                UpdateStage::Offered(candidate(true)),
-                (
-                    Some(UpdateCommand::StartDownload),
-                    Some(UpdateCommand::Skip),
-                ),
-            ),
-            (
-                "download-only offer",
+                "offer",
                 UpdateStage::Offered(candidate(false)),
-                (
-                    Some(UpdateCommand::OpenReleasePage),
-                    Some(UpdateCommand::Skip),
-                ),
-            ),
-            (
-                "downloading",
-                UpdateStage::Downloading {
-                    candidate: candidate(true),
-                    progress: DownloadProgress {
-                        received: 0,
-                        total: 100,
-                    },
-                    cancel: CancelSignal::new(),
-                },
-                (None, Some(UpdateCommand::Cancel)),
+                (Some(UpdateCommand::OpenReleasePage), None),
             ),
             (
                 "ready",
@@ -252,10 +226,11 @@ mod tests {
     }
 
     #[test]
-    fn idle_and_a_handed_off_apply_on_quit_update_show_no_toast() {
+    fn idle_a_silent_download_and_a_handed_off_apply_on_quit_update_show_no_toast() {
         install_language(Language::En);
         for stage in [
             UpdateStage::Idle,
+            UpdateStage::Downloading(candidate(true)),
             UpdateStage::HandedOff {
                 candidate: candidate(true),
                 mode: ApplyMode::OnQuit,
@@ -289,23 +264,6 @@ mod tests {
             assert_eq!(toast.progress, Some(1.0), "{mode:?}");
             assert_eq!(commands(&toast), (None, None), "{mode:?}");
         }
-    }
-
-    #[test]
-    fn the_downloading_toast_shows_the_percent_and_a_matching_bar() {
-        install_language(Language::En);
-        let toast = update_toast(&UpdateStage::Downloading {
-            candidate: candidate(true),
-            progress: DownloadProgress {
-                received: 42,
-                total: 100,
-            },
-            cancel: CancelSignal::new(),
-        })
-        .expect("downloading toast");
-
-        assert!(toast.message.contains("42"), "{}", toast.message);
-        assert_eq!(toast.progress, Some(0.42));
     }
 
     #[test]

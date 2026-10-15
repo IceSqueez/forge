@@ -208,7 +208,7 @@ mod tests {
     use forge_storage::Language;
     use forge_update::{ApplyFailure, DatabaseRestore, RollbackReason, UpdateReport};
 
-    use super::{ReportOffer, report_notice};
+    use super::{ReportOffer, report_notice, rolled_back_version};
     use crate::i18n::install_language;
 
     const FAILED: &str = "0.7.1";
@@ -340,22 +340,32 @@ mod tests {
     }
 
     #[test]
-    fn only_a_failed_new_version_is_offered_and_only_a_rollback_may_skip_it() {
-        let failed = || FAILED.to_owned();
+    fn only_a_failed_new_version_is_offered_for_download() {
+        let download = || ReportOffer::Download {
+            version: FAILED.to_owned(),
+        };
         for (reports, expected) in [
             (vec![updated()], ReportOffer::Nothing),
             (every_not_applied(), ReportOffer::Nothing),
-            (
-                every_rolled_back(),
-                ReportOffer::SkipOrDownload { version: failed() },
-            ),
-            (
-                every_rollback_failed(),
-                ReportOffer::Download { version: failed() },
-            ),
+            (every_rolled_back(), download()),
+            (every_rollback_failed(), download()),
         ] {
             for report in reports {
                 assert_eq!(report_notice(&report).offer, expected, "for {report:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn rolled_back_version_names_the_failed_version_only_when_the_new_version_was_undone() {
+        for (reports, expected) in [
+            (vec![updated()], None),
+            (every_not_applied(), None),
+            (every_rolled_back(), Some(FAILED)),
+            (every_rollback_failed(), Some(FAILED)),
+        ] {
+            for report in reports {
+                assert_eq!(rolled_back_version(&report), expected, "for {report:?}");
             }
         }
     }

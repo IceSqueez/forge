@@ -436,13 +436,13 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use forge_storage::{Language, reserved_keys};
+    use forge_storage::Language;
     use forge_update::{InstallLayout, Sha256Digest};
     use gpui::{AppContext, Entity, TestAppContext};
 
     use super::*;
     use crate::i18n::install_language;
-    use crate::test_support::{SettingWrite, pump, runtime, test_backend};
+    use crate::test_support::{runtime, test_backend};
 
     const VERSION: &str = "0.9.0";
     const RELEASE_PAGE: &str = "https://example.invalid/releases/v0.9.0";
@@ -451,14 +451,13 @@ mod tests {
     struct Harness {
         flow: Entity<UpdateFlow>,
         events: Rc<RefCell<Vec<UpdateFlowEvent>>>,
-        rt: tokio::runtime::Runtime,
-        writes: tokio::sync::mpsc::UnboundedReceiver<SettingWrite>,
+        _rt: tokio::runtime::Runtime,
     }
 
     fn harness(cx: &mut TestAppContext) -> Harness {
         install_language(Language::En);
         let rt = runtime();
-        let (backend, writes) = test_backend();
+        let (backend, _) = test_backend();
         let handle = rt.handle().clone();
         cx.update(|cx| cx.set_global(Toasts::new()));
         let flow = cx.new(|_| {
@@ -479,8 +478,7 @@ mod tests {
         Harness {
             flow,
             events,
-            rt,
-            writes,
+            _rt: rt,
         }
     }
 
@@ -523,10 +521,6 @@ mod tests {
         }
     }
 
-    fn progress(received: u64, total: u64) -> DownloadProgress {
-        DownloadProgress { received, total }
-    }
-
     fn stage(cx: &mut TestAppContext, h: &Harness) -> UpdateStage {
         h.flow.read_with(cx, |flow, _| flow.stage.clone())
     }
@@ -535,19 +529,22 @@ mod tests {
         h.flow.read_with(cx, |flow, _| flow.ticket)
     }
 
-    fn toasts(cx: &mut TestAppContext) -> Vec<(u64, String, Option<f32>, Option<String>)> {
+    fn toast_actions(cx: &mut TestAppContext) -> Vec<Option<String>> {
         cx.update(|cx| {
             cx.global::<Toasts>()
                 .items()
                 .iter()
-                .map(|toast| {
-                    (
-                        toast.id,
-                        toast.message.to_string(),
-                        toast.progress,
-                        toast.action.as_ref().map(|a| a.label.to_string()),
-                    )
-                })
+                .map(|toast| toast.action.as_ref().map(|a| a.label.to_string()))
+                .collect()
+        })
+    }
+
+    fn toast_ids(cx: &mut TestAppContext) -> Vec<u64> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|toast| toast.id)
                 .collect()
         })
     }
@@ -560,9 +557,12 @@ mod tests {
         h.flow.update(cx, |flow, cx| flow.run(command, cx));
     }
 
+    fn download(cx: &mut TestAppContext, h: &Harness, candidate: UpdateCandidate) {
+        h.flow.update(cx, |flow, cx| flow.download(candidate, cx));
+    }
+
     fn downloading(cx: &mut TestAppContext, h: &Harness) -> u64 {
-        offer(cx, h, installable());
-        run(cx, h, UpdateCommand::StartDownload);
+        download(cx, h, installable());
         ticket(cx, h)
     }
 
@@ -576,9 +576,31 @@ mod tests {
             .update(cx, |flow, cx| flow.finish_download(ticket, result, cx));
     }
 
-    fn tick(cx: &mut TestAppContext, h: &Harness, ticket: u64, update: DownloadProgress) {
+    fn network_error() -> Result<StagedArtifact, UpdateError> {
+        Err(UpdateError::Network("reset".to_owned()))
+    }
+
+    fn failed_twice(cx: &mut TestAppContext, h: &Harness) {
+        let first = downloading(cx, h);
+        finish(cx, h, first, network_error());
+        let second = ticket(cx, h);
+        finish(cx, h, second, network_error());
+    }
+
+    fn lose(cx: &mut TestAppContext, h: &Harness, ticket: u64) {
         h.flow
-            .update(cx, |flow, cx| flow.apply_progress(ticket, update, cx));
+            .update(cx, |flow, cx| flow.download_task_lost(ticket, cx));
+    }
+
+    fn is_download_failure(stage: &UpdateStage) -> bool {
+        matches!(
+            stage,
+            UpdateStage::Failed {
+                failure: UpdateFailure::Download,
+                staged: None,
+                ..
+            }
+        )
     }
 
     fn ready(cx: &mut TestAppContext, h: &Harness) {
@@ -599,46 +621,6 @@ mod tests {
     fn events(cx: &mut TestAppContext, h: &Harness) -> Vec<UpdateFlowEvent> {
         cx.run_until_parked();
         h.events.borrow().clone()
-    }
-
-    #[test]
-    fn download_percent_floors_and_clamps_across_the_byte_range() {
-        for (received, total, expected) in [
-            (0, 100, 0),
-            (42, 100, 42),
-            (99, 100, 99),
-            (100, 100, 100),
-            (101, 100, 100),
-            (u64::MAX, u64::MAX, 100),
-            (u64::MAX - 1, u64::MAX, 99),
-            (1, 3, 33),
-            (5, 0, 0),
-            (0, 0, 0),
-        ] {
-            assert_eq!(
-                download_percent(progress(received, total)),
-                expected,
-                "{received}/{total}"
-            );
-        }
-    }
-
-    #[test]
-    fn download_fraction_stays_within_the_unit_range_even_without_a_total() {
-        for (received, total, expected) in [
-            (0, 100, 0.0),
-            (42, 100, 0.42),
-            (100, 100, 1.0),
-            (250, 100, 1.0),
-            (5, 0, 0.0),
-            (0, 0, 0.0),
-        ] {
-            let fraction = download_fraction(progress(received, total));
-            assert!(
-                (fraction - expected).abs() < f32::EPSILON,
-                "{received}/{total} gave {fraction}"
-            );
-        }
     }
 
     #[test]
@@ -673,26 +655,28 @@ mod tests {
     }
 
     #[gpui::test]
-    fn start_download_moves_an_installable_offer_to_downloading(cx: &mut TestAppContext) {
+    fn download_runs_silently_without_a_toast(cx: &mut TestAppContext) {
         let h = harness(cx);
         downloading(cx, &h);
 
-        assert!(matches!(stage(cx, &h), UpdateStage::Downloading { .. }));
+        assert!(matches!(stage(cx, &h), UpdateStage::Downloading(_)));
+        assert!(toast_ids(cx).is_empty());
     }
 
     #[gpui::test]
-    fn start_download_ignores_a_download_only_offer(cx: &mut TestAppContext) {
+    fn download_takes_over_an_offer_and_replaces_its_toast(cx: &mut TestAppContext) {
         let h = harness(cx);
         offer(cx, &h, download_only());
-        run(cx, &h, UpdateCommand::StartDownload);
+        downloading(cx, &h);
 
-        assert!(matches!(stage(cx, &h), UpdateStage::Offered(_)));
+        assert!(matches!(stage(cx, &h), UpdateStage::Downloading(_)));
+        assert!(toast_ids(cx).is_empty());
     }
 
     #[gpui::test]
-    fn start_download_fails_when_the_install_has_no_staging_directory(cx: &mut TestAppContext) {
+    fn download_fails_when_the_install_has_no_staging_directory(cx: &mut TestAppContext) {
         let h = harness(cx);
-        offer(
+        download(
             cx,
             &h,
             UpdateCandidate {
@@ -700,7 +684,6 @@ mod tests {
                 ..installable()
             },
         );
-        run(cx, &h, UpdateCommand::StartDownload);
 
         assert!(matches!(
             stage(cx, &h),
@@ -718,7 +701,16 @@ mod tests {
         downloading(cx, &h);
         offer(cx, &h, download_only());
 
-        assert!(matches!(stage(cx, &h), UpdateStage::Downloading { .. }));
+        assert!(matches!(stage(cx, &h), UpdateStage::Downloading(_)));
+    }
+
+    #[gpui::test]
+    fn a_second_download_request_does_not_restart_a_running_download(cx: &mut TestAppContext) {
+        let h = harness(cx);
+        let running = downloading(cx, &h);
+        download(cx, &h, installable());
+
+        assert_eq!(ticket(cx, &h), running);
     }
 
     #[gpui::test]
@@ -733,40 +725,34 @@ mod tests {
     }
 
     #[gpui::test]
-    fn cancel_returns_to_the_offer_without_a_staged_file(cx: &mut TestAppContext) {
+    fn a_finished_download_raises_the_restart_toast(cx: &mut TestAppContext) {
         let h = harness(cx);
-        downloading(cx, &h);
-        run(cx, &h, UpdateCommand::Cancel);
+        ready(cx, &h);
 
-        assert!(matches!(stage(cx, &h), UpdateStage::Offered(_)));
+        assert_eq!(
+            toast_actions(cx),
+            vec![Some("Restart to update".to_owned())]
+        );
     }
 
     #[gpui::test]
-    fn cancel_signals_the_running_download(cx: &mut TestAppContext) {
+    fn a_first_download_failure_retries_silently(cx: &mut TestAppContext) {
         let h = harness(cx);
-        downloading(cx, &h);
-        let UpdateStage::Downloading { cancel, .. } = stage(cx, &h) else {
-            panic!("not downloading");
-        };
-        run(cx, &h, UpdateCommand::Cancel);
+        let first = downloading(cx, &h);
+        finish(cx, &h, first, network_error());
 
-        assert!(cancel.is_cancelled());
+        assert!(matches!(stage(cx, &h), UpdateStage::Downloading(_)));
+        assert_ne!(ticket(cx, &h), first);
+        assert!(toast_ids(cx).is_empty());
     }
 
     #[gpui::test]
-    fn a_download_that_reports_cancelled_returns_to_the_offer(cx: &mut TestAppContext) {
+    fn a_second_download_failure_raises_the_failed_toast_with_retry(cx: &mut TestAppContext) {
         let h = harness(cx);
-        let ticket = downloading(cx, &h);
-        finish(cx, &h, ticket, Err(UpdateError::Cancelled));
-
-        assert!(matches!(stage(cx, &h), UpdateStage::Offered(_)));
-    }
-
-    #[gpui::test]
-    fn a_failed_download_fails_with_its_kind_and_nothing_staged(cx: &mut TestAppContext) {
-        let h = harness(cx);
-        let ticket = downloading(cx, &h);
-        finish(cx, &h, ticket, Err(UpdateError::ArtifactHashMismatch));
+        let first = downloading(cx, &h);
+        finish(cx, &h, first, network_error());
+        let second = ticket(cx, &h);
+        finish(cx, &h, second, Err(UpdateError::ArtifactHashMismatch));
 
         assert!(matches!(
             stage(cx, &h),
@@ -776,111 +762,72 @@ mod tests {
                 ..
             }
         ));
+        assert_eq!(toast_actions(cx), vec![Some("Retry".to_owned())]);
     }
 
     #[gpui::test]
     fn retry_after_a_failed_download_starts_a_fresh_download(cx: &mut TestAppContext) {
         let h = harness(cx);
-        let first = downloading(cx, &h);
-        finish(cx, &h, first, Err(UpdateError::Network("reset".to_owned())));
+        failed_twice(cx, &h);
+        let failed_at = ticket(cx, &h);
         run(cx, &h, UpdateCommand::Retry);
 
-        assert!(matches!(stage(cx, &h), UpdateStage::Downloading { .. }));
-        assert_ne!(ticket(cx, &h), first);
+        assert!(matches!(stage(cx, &h), UpdateStage::Downloading(_)));
+        assert_ne!(ticket(cx, &h), failed_at);
+        assert!(toast_ids(cx).is_empty());
     }
 
     #[gpui::test]
-    fn a_result_from_a_cancelled_download_cannot_finish_the_next_one(cx: &mut TestAppContext) {
+    fn a_failing_manual_retry_raises_the_toast_without_another_silent_retry(
+        cx: &mut TestAppContext,
+    ) {
+        let h = harness(cx);
+        failed_twice(cx, &h);
+        run(cx, &h, UpdateCommand::Retry);
+        let retried = ticket(cx, &h);
+        finish(cx, &h, retried, network_error());
+
+        assert!(is_download_failure(&stage(cx, &h)));
+        assert_eq!(toast_actions(cx), vec![Some("Retry".to_owned())]);
+    }
+
+    #[gpui::test]
+    fn a_late_result_from_a_superseded_download_cannot_finish_the_retry(cx: &mut TestAppContext) {
         let h = harness(cx);
         let stale = downloading(cx, &h);
-        run(cx, &h, UpdateCommand::Cancel);
-        run(cx, &h, UpdateCommand::StartDownload);
+        finish(cx, &h, stale, network_error());
         finish(cx, &h, stale, Ok(staged()));
 
-        assert!(matches!(stage(cx, &h), UpdateStage::Downloading { .. }));
+        assert!(matches!(stage(cx, &h), UpdateStage::Downloading(_)));
     }
 
     #[gpui::test]
-    fn progress_from_a_cancelled_download_cannot_move_the_next_one(cx: &mut TestAppContext) {
+    fn a_late_failure_from_a_superseded_download_does_not_spend_the_retry_again(
+        cx: &mut TestAppContext,
+    ) {
         let h = harness(cx);
         let stale = downloading(cx, &h);
-        run(cx, &h, UpdateCommand::Cancel);
-        run(cx, &h, UpdateCommand::StartDownload);
-        tick(cx, &h, stale, progress(90, 100));
+        finish(cx, &h, stale, network_error());
+        let retry = ticket(cx, &h);
+        finish(cx, &h, stale, network_error());
 
-        assert!(matches!(
-            stage(cx, &h),
-            UpdateStage::Downloading { progress: p, .. } if p.received == 0
-        ));
-    }
-
-    #[gpui::test]
-    fn skip_forgets_the_offer_and_remembers_its_version(cx: &mut TestAppContext) {
-        let mut h = harness(cx);
-        offer(cx, &h, installable());
-        run(cx, &h, UpdateCommand::Skip);
-        pump(&h.rt);
-
-        assert!(toasts(cx).is_empty());
-        assert_eq!(
-            h.writes.try_recv().ok(),
-            Some((
-                reserved_keys::UPDATES_SKIPPED_VERSION.to_owned(),
-                VERSION.to_owned()
-            ))
-        );
-    }
-
-    #[gpui::test]
-    fn progress_ticks_replace_the_offer_toast_in_place(cx: &mut TestAppContext) {
-        let h = harness(cx);
-        offer(cx, &h, installable());
-        let offered_id = toasts(cx)[0].0;
-        run(cx, &h, UpdateCommand::StartDownload);
-        let ticket = ticket(cx, &h);
-        tick(cx, &h, ticket, progress(42, 100));
-
-        let shown = toasts(cx);
-        assert_eq!(shown.len(), 1);
-        let (id, message, fraction, _) = &shown[0];
-        assert_eq!(*id, offered_id);
-        assert!(message.contains("42"), "{message}");
-        assert_eq!(*fraction, Some(0.42));
-    }
-
-    #[gpui::test]
-    fn a_dismissed_progress_toast_stays_hidden_on_later_ticks(cx: &mut TestAppContext) {
-        let h = harness(cx);
-        let ticket = downloading(cx, &h);
-        let id = toasts(cx)[0].0;
-        cx.update(|cx| cx.global_mut::<Toasts>().dismiss(id));
-        tick(cx, &h, ticket, progress(42, 100));
-
-        assert!(toasts(cx).is_empty());
-    }
-
-    #[gpui::test]
-    fn the_ready_toast_shows_after_the_progress_toast_was_dismissed(cx: &mut TestAppContext) {
-        let h = harness(cx);
-        let ticket = downloading(cx, &h);
-        let id = toasts(cx)[0].0;
-        cx.update(|cx| cx.global_mut::<Toasts>().dismiss(id));
-        finish(cx, &h, ticket, Ok(staged()));
-
-        let actions: Vec<Option<String>> = toasts(cx).into_iter().map(|(_, _, _, a)| a).collect();
-        assert_eq!(actions, vec![Some("Restart to update".to_owned())]);
+        assert!(matches!(stage(cx, &h), UpdateStage::Downloading(_)));
+        assert_eq!(ticket(cx, &h), retry);
+        assert!(toast_ids(cx).is_empty());
     }
 
     #[gpui::test]
     fn close_proceeds_while_no_update_is_ready(cx: &mut TestAppContext) {
         let h = harness(cx);
         assert_eq!(close(cx, &h), CloseDecision::Proceed, "idle");
-        offer(cx, &h, installable());
+        offer(cx, &h, download_only());
         assert_eq!(close(cx, &h), CloseDecision::Proceed, "offered");
-        run(cx, &h, UpdateCommand::StartDownload);
-        let ticket = ticket(cx, &h);
+        downloading(cx, &h);
         assert_eq!(close(cx, &h), CloseDecision::Proceed, "downloading");
-        finish(cx, &h, ticket, Err(UpdateError::Status(500)));
+        for _ in 0..2 {
+            let running = ticket(cx, &h);
+            finish(cx, &h, running, network_error());
+        }
         assert_eq!(close(cx, &h), CloseDecision::Proceed, "failed");
     }
 
@@ -1020,13 +967,15 @@ mod tests {
     fn a_cancelled_leave_dialog_shows_the_ready_toast_again(cx: &mut TestAppContext) {
         let h = harness(cx);
         ready(cx, &h);
-        let id = toasts(cx)[0].0;
+        let id = toast_ids(cx)[0];
         cx.update(|cx| cx.global_mut::<Toasts>().take(id));
         run(cx, &h, UpdateCommand::Restart);
         h.flow.update(cx, |flow, cx| flow.abort_restart(cx));
 
-        let actions: Vec<Option<String>> = toasts(cx).into_iter().map(|(_, _, _, a)| a).collect();
-        assert_eq!(actions, vec![Some("Restart to update".to_owned())]);
+        assert_eq!(
+            toast_actions(cx),
+            vec![Some("Restart to update".to_owned())]
+        );
     }
 
     #[gpui::test]
@@ -1047,41 +996,25 @@ mod tests {
     }
 
     #[gpui::test]
-    fn a_lost_download_task_fails_the_download(cx: &mut TestAppContext) {
+    fn a_lost_download_task_is_retried_once_then_fails_the_download(cx: &mut TestAppContext) {
         let h = harness(cx);
-        let ticket = downloading(cx, &h);
-        h.flow
-            .update(cx, |flow, cx| flow.download_task_lost(ticket, cx));
+        let first = downloading(cx, &h);
+        lose(cx, &h, first);
+        assert!(matches!(stage(cx, &h), UpdateStage::Downloading(_)));
 
-        assert!(matches!(
-            stage(cx, &h),
-            UpdateStage::Failed {
-                failure: UpdateFailure::Download,
-                staged: None,
-                ..
-            }
-        ));
+        let second = ticket(cx, &h);
+        lose(cx, &h, second);
+        assert!(is_download_failure(&stage(cx, &h)));
     }
 
     #[gpui::test]
-    fn a_lost_task_from_a_cancelled_download_leaves_the_next_one_running(cx: &mut TestAppContext) {
+    fn a_lost_task_from_a_superseded_download_leaves_the_retry_running(cx: &mut TestAppContext) {
         let h = harness(cx);
         let stale = downloading(cx, &h);
-        run(cx, &h, UpdateCommand::Cancel);
-        run(cx, &h, UpdateCommand::StartDownload);
-        h.flow
-            .update(cx, |flow, cx| flow.download_task_lost(stale, cx));
+        finish(cx, &h, stale, network_error());
+        lose(cx, &h, stale);
 
-        assert!(matches!(stage(cx, &h), UpdateStage::Downloading { .. }));
-    }
-
-    #[gpui::test]
-    fn cancel_without_a_running_download_keeps_the_offer(cx: &mut TestAppContext) {
-        let h = harness(cx);
-        offer(cx, &h, installable());
-        run(cx, &h, UpdateCommand::Cancel);
-
-        assert!(matches!(stage(cx, &h), UpdateStage::Offered(_)));
+        assert!(matches!(stage(cx, &h), UpdateStage::Downloading(_)));
     }
 
     #[gpui::test]

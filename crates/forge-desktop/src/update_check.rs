@@ -229,8 +229,6 @@ async fn latest_release(client: &UpdateClient, repo: &GithubRepo) -> Option<Publ
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
-    use forge_platform_core::{HealthMetric, HealthValue};
-
     use std::path::PathBuf;
 
     use forge_update::{
@@ -239,41 +237,9 @@ mod tests {
     };
 
     use super::{
-        CURRENT_VERSION, FoundUpdate, REPO_URL, UpdateNotice, any_output_active, display_version,
-        parse_version, should_notify, update_candidate,
+        CURRENT_VERSION, FoundUpdate, REPO_URL, UpdatePlan, display_version, parse_version,
+        plan_update, update_candidate,
     };
-
-    fn status(active: bool) -> HealthMetric {
-        HealthMetric {
-            label: "Stream".to_owned(),
-            value: HealthValue::Status {
-                label: if active { "Live" } else { "Off" }.to_owned(),
-                active,
-                detail: None,
-            },
-        }
-    }
-
-    fn text() -> HealthMetric {
-        HealthMetric {
-            label: "Scene".to_owned(),
-            value: HealthValue::Text {
-                primary: "Starting soon".to_owned(),
-                secondary: None,
-            },
-        }
-    }
-
-    fn ratio() -> HealthMetric {
-        HealthMetric {
-            label: "Buffer".to_owned(),
-            value: HealthValue::Ratio {
-                used: 3,
-                total: 4,
-                reset_hint: None,
-            },
-        }
-    }
 
     #[test]
     fn the_manifest_version_and_repository_both_feed_the_check() {
@@ -290,139 +256,120 @@ mod tests {
     }
 
     #[test]
-    fn should_notify_raises_for_a_newer_release_the_user_has_not_skipped() {
-        for (label, skipped) in [
-            ("nothing skipped", None),
-            ("skipped the running version", Some("0.5.2")),
-            ("skipped the running version under a v tag", Some("v0.5.2")),
-            ("skipped one patch below the latest", Some("v0.5.3")),
-            ("skipped a prerelease of the latest", Some("0.5.4-beta.1")),
-            ("unparseable skip", Some("not a version")),
+    fn plan_update_stays_silent_for_a_release_that_is_not_newer_or_was_already_reported() {
+        for (label, current, latest, installable, rolled_back, reported) in [
+            ("same version", "0.5.4", "0.5.4", true, None, None),
+            ("older release", "0.5.4", "0.5.2", true, None, None),
+            ("unparseable current", "nightly", "0.5.4", true, None, None),
+            ("unparseable latest", "0.5.2", "latest", true, None, None),
+            (
+                "reported the latest",
+                "0.5.2",
+                "v0.5.4",
+                true,
+                None,
+                Some("0.5.4"),
+            ),
+            (
+                "reported a newer one",
+                "0.5.2",
+                "0.5.4",
+                true,
+                None,
+                Some("v0.6.0"),
+            ),
+            (
+                "reported the latest while not installable",
+                "0.5.2",
+                "0.5.4",
+                false,
+                None,
+                Some("0.5.4"),
+            ),
+            (
+                "reported the latest that also rolled back",
+                "0.5.2",
+                "0.5.4",
+                true,
+                Some("0.5.4"),
+                Some("0.5.4"),
+            ),
         ] {
             assert_eq!(
-                should_notify("0.5.2", "v0.5.4", skipped, true, false),
-                Some(UpdateNotice::Raise),
+                plan_update(current, latest, installable, rolled_back, reported),
+                None,
                 "{label}",
             );
         }
     }
 
     #[test]
-    fn should_notify_defers_an_unskipped_newer_release_while_obs_is_live() {
-        for skipped in [None, Some("0.5.3")] {
-            assert_eq!(
-                should_notify("0.5.2", "0.5.4", skipped, true, true),
-                Some(UpdateNotice::DeferUntilObsIdle),
-                "for skipped {skipped:?}",
-            );
-        }
-    }
-
-    #[test]
-    fn should_notify_stays_silent_when_disabled_skipped_or_not_newer() {
-        for (label, current, latest, skipped, enabled, obs_live) in [
-            ("disabled", "0.5.2", "0.5.3", None, false, false),
+    fn plan_update_downloads_only_an_installable_release_that_has_not_rolled_back() {
+        for (label, installable, rolled_back, reported, expected) in [
+            ("installable", true, None, None, UpdatePlan::Download),
+            ("not installable", false, None, None, UpdatePlan::Offer),
             (
-                "disabled while obs is live",
-                "0.5.2",
-                "0.5.3",
+                "rolled back the latest",
+                true,
+                Some("0.5.4"),
                 None,
-                false,
-                true,
+                UpdatePlan::Offer,
             ),
-            ("same version", "0.5.3", "0.5.3", None, true, false),
-            ("older release", "0.5.3", "0.5.2", None, true, false),
             (
-                "prerelease for a release build",
-                "0.5.2",
-                "0.5.3-beta.1",
+                "rolled back the latest under a v tag",
+                true,
+                Some("v0.5.4"),
                 None,
-                true,
-                false,
+                UpdatePlan::Offer,
             ),
             (
-                "skipped exactly the latest",
-                "0.5.2",
-                "0.5.3",
-                Some("0.5.3"),
+                "rolled back a newer one",
                 true,
-                false,
-            ),
-            (
-                "skipped the latest under a v tag",
-                "0.5.2",
-                "v0.5.3",
-                Some("v0.5.3"),
-                true,
-                false,
-            ),
-            (
-                "skipped a v tag against a bare latest",
-                "0.5.2",
-                "0.5.3",
-                Some("v0.5.3"),
-                true,
-                false,
-            ),
-            (
-                "skipped a later version",
-                "0.5.2",
-                "0.5.3",
                 Some("0.6.0"),
-                true,
-                false,
+                None,
+                UpdatePlan::Offer,
             ),
-            ("unparseable current", "nightly", "0.5.3", None, true, false),
-            ("unparseable latest", "0.5.2", "latest", None, true, false),
             (
-                "skipped the latest while obs is live",
-                "0.5.2",
-                "0.5.3",
+                "rolled back an older one",
+                true,
                 Some("0.5.3"),
+                None,
+                UpdatePlan::Download,
+            ),
+            (
+                "unparseable rolled back version",
                 true,
+                Some("broken"),
+                None,
+                UpdatePlan::Download,
+            ),
+            (
+                "rolled back an older one while not installable",
+                false,
+                Some("0.5.3"),
+                None,
+                UpdatePlan::Offer,
+            ),
+            (
+                "reported an older one",
                 true,
+                None,
+                Some("0.5.3"),
+                UpdatePlan::Download,
+            ),
+            (
+                "reported an older one while not installable",
+                false,
+                None,
+                Some("0.5.3"),
+                UpdatePlan::Offer,
             ),
         ] {
             assert_eq!(
-                should_notify(current, latest, skipped, enabled, obs_live),
-                None,
+                plan_update("0.5.2", "0.5.4", installable, rolled_back, reported),
+                Some(expected),
                 "{label}",
             );
-        }
-    }
-
-    #[test]
-    fn any_output_active_holds_the_update_back_only_for_a_running_status_metric() {
-        for (label, metrics, expected) in [
-            ("no metrics at all", Vec::new(), false),
-            (
-                "every status idle",
-                vec![status(false), status(false)],
-                false,
-            ),
-            (
-                "one running status among idle ones",
-                vec![status(false), status(true), status(false)],
-                true,
-            ),
-            (
-                "a running status is the last metric",
-                vec![status(false), status(true)],
-                true,
-            ),
-            ("no status metric at all", vec![text(), ratio()], false),
-            (
-                "a running status beside non-status metrics",
-                vec![text(), status(true), ratio()],
-                true,
-            ),
-            (
-                "only idle statuses beside non-status metrics",
-                vec![text(), status(false), ratio()],
-                false,
-            ),
-        ] {
-            assert_eq!(any_output_active(&metrics), expected, "{label}");
         }
     }
 

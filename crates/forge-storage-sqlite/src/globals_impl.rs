@@ -4,18 +4,9 @@ use forge_storage::{GlobalEntry, GlobalsRepo, StorageError};
 use forge_types::Variant;
 use time::OffsetDateTime;
 
+use crate::epoch::{epoch_ms_now, from_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
-
-fn epoch_ms_now() -> i64 {
-    let now = OffsetDateTime::now_utc();
-    (now.unix_timestamp_nanos() / 1_000_000) as i64
-}
-
-fn from_epoch_ms(ms: i64) -> Result<OffsetDateTime, SqliteStorageError> {
-    OffsetDateTime::from_unix_timestamp_nanos(ms as i128 * 1_000_000)
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid epoch ms {ms}: {e}")))
-}
 
 pub struct SqliteGlobalsRepo {
     db: SqlitePools,

@@ -7,20 +7,11 @@ use forge_types::EventId;
 use forge_types::unified_chat::{
     ChatEventDetail, ChatSegment, ChatSource, ModerationMarks, UnifiedChatRow, UserBadge,
 };
-use time::OffsetDateTime;
 
 use crate::batch::insert_rows;
+use crate::epoch::{from_epoch_ms, to_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
-
-fn to_epoch_ms(dt: OffsetDateTime) -> i64 {
-    (dt.unix_timestamp_nanos() / 1_000_000) as i64
-}
-
-fn from_epoch_ms(ms: i64) -> Result<OffsetDateTime, SqliteStorageError> {
-    OffsetDateTime::from_unix_timestamp_nanos(i128::from(ms) * 1_000_000)
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid epoch {ms}: {e}")))
-}
 
 fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, SqliteStorageError> {
     serde_json::from_str(&format!("\"{s}\""))

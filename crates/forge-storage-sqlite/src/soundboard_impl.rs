@@ -5,6 +5,7 @@ use forge_storage::{SoundboardClipsRepo, StorageError, StoredClip};
 use forge_types::{ClipId, OutputDevice};
 use time::OffsetDateTime;
 
+use crate::epoch::{NANOS_PER_MILLI, to_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 
@@ -14,10 +15,6 @@ fn parse_clip_id(s: &str) -> Result<ClipId, StorageError> {
             "invalid clip id `{s}`: {e}"
         )))
     })
-}
-
-fn to_epoch_ms(dt: OffsetDateTime) -> i64 {
-    (dt.unix_timestamp_nanos() / 1_000_000) as i64
 }
 
 pub struct SqliteSoundboardClipsRepo {
@@ -141,15 +138,14 @@ fn row_to_clip(row: ClipRow) -> Result<StoredClip, StorageError> {
             "invalid output_device json: {e}"
         )))
     })?;
-    let created_at = OffsetDateTime::from_unix_timestamp_nanos(
-        i128::from(row.created_at) * 1_000_000,
-    )
-    .map_err(|e| {
-        StorageError::from(SqliteStorageError::Decode(format!(
-            "invalid created_at {}: {e}",
-            row.created_at
-        )))
-    })?;
+    let created_at =
+        OffsetDateTime::from_unix_timestamp_nanos(i128::from(row.created_at) * NANOS_PER_MILLI)
+            .map_err(|e| {
+                StorageError::from(SqliteStorageError::Decode(format!(
+                    "invalid created_at {}: {e}",
+                    row.created_at
+                )))
+            })?;
     Ok(StoredClip {
         id,
         name: row.name,

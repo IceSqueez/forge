@@ -3,6 +3,7 @@ use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use time::OffsetDateTime;
 
 use crate::crypto;
+use crate::epoch::{epoch_ms_now, from_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 
@@ -23,16 +24,6 @@ impl SqliteCredentialsRepo {
             .await?;
         Ok(u64::try_from(count).unwrap_or_default())
     }
-}
-
-fn epoch_ms_now() -> i64 {
-    let now = OffsetDateTime::now_utc();
-    (now.unix_timestamp_nanos() / 1_000_000) as i64
-}
-
-fn from_epoch_ms(ms: i64) -> Result<OffsetDateTime, SqliteStorageError> {
-    OffsetDateTime::from_unix_timestamp_nanos(ms as i128 * 1_000_000)
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid epoch ms {ms}: {e}")))
 }
 
 #[async_trait]

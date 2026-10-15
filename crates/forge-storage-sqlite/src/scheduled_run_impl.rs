@@ -10,10 +10,9 @@ use forge_types::{ActionId, EventId, Variant};
 use sqlx::SqliteConnection;
 use time::OffsetDateTime;
 
+use crate::epoch::{from_epoch_ms, to_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
-
-const NANOS_PER_MILLI: i128 = 1_000_000;
 
 const POLICY_RUN_LATE_ONCE: &str = "run_late_once";
 const POLICY_SKIP_IF_LATE_BY: &str = "skip_if_late_by";
@@ -28,15 +27,6 @@ macro_rules! columns {
     () => {
         "id, target_action_id, due_at, key, missed_policy, skip_late_ms, args, scheduled_by_action, scheduled_by_run, trigger_event_id, scheduled_at, label, state, outcome_reason, resolved_at"
     };
-}
-
-fn to_epoch_ms(dt: OffsetDateTime) -> i64 {
-    (dt.unix_timestamp_nanos() / NANOS_PER_MILLI) as i64
-}
-
-fn from_epoch_ms(ms: i64) -> Result<OffsetDateTime, SqliteStorageError> {
-    OffsetDateTime::from_unix_timestamp_nanos(i128::from(ms) * NANOS_PER_MILLI)
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid epoch {ms}: {e}")))
 }
 
 fn state_label(state: ScheduledRunState) -> &'static str {

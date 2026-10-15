@@ -4,8 +4,8 @@ use forge_storage::{
 };
 use rand::rand_core::Rng;
 use sqlx::SqliteConnection;
-use time::OffsetDateTime;
 
+use crate::epoch::{epoch_ms_now, from_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 
@@ -45,19 +45,6 @@ fn decode_row(row: OverlayRow) -> Result<OverlayDefinition, SqliteStorageError> 
         created_at: from_epoch_ms(row.created_at)?,
         updated_at: from_epoch_ms(row.updated_at)?,
     })
-}
-
-fn to_epoch_ms(dt: OffsetDateTime) -> i64 {
-    (dt.unix_timestamp_nanos() / 1_000_000) as i64
-}
-
-fn epoch_ms_now() -> i64 {
-    to_epoch_ms(OffsetDateTime::now_utc())
-}
-
-fn from_epoch_ms(ms: i64) -> Result<OffsetDateTime, SqliteStorageError> {
-    OffsetDateTime::from_unix_timestamp_nanos(ms as i128 * 1_000_000)
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid epoch ms {ms}: {e}")))
 }
 
 fn slugify(input: &str) -> String {

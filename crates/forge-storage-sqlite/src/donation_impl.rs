@@ -5,10 +5,9 @@ use forge_types::{
 };
 use time::OffsetDateTime;
 
+use crate::epoch::{from_epoch_ms, to_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
-
-const NANOS_PER_MILLI: i128 = 1_000_000;
 
 const ORIGIN_LIVE: &str = "live";
 const ORIGIN_HISTORY: &str = "history";
@@ -16,15 +15,6 @@ const ORIGIN_HISTORY: &str = "history";
 const SELECT_COLUMNS: &str = "SELECT provider, donation_id, amount_micros, currency, donor_kind,
         donor_name, message, occurred_at, received_at, origin, announced_at
      FROM donations";
-
-fn to_epoch_ms(dt: OffsetDateTime) -> i64 {
-    (dt.unix_timestamp_nanos() / NANOS_PER_MILLI) as i64
-}
-
-fn from_epoch_ms(ms: i64) -> Result<OffsetDateTime, SqliteStorageError> {
-    OffsetDateTime::from_unix_timestamp_nanos(i128::from(ms) * NANOS_PER_MILLI)
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid epoch {ms}: {e}")))
-}
 
 fn encode_origin(origin: DonationOrigin) -> Result<&'static str, StorageError> {
     match origin {

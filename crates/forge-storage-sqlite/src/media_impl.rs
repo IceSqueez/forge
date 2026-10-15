@@ -12,6 +12,7 @@ use rand::rand_core::Rng as _;
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
+use crate::epoch::{from_epoch_ms, to_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 
@@ -151,15 +152,6 @@ fn read_import(source: &Path) -> Result<(String, Vec<u8>), StorageError> {
 
 fn task_failure(error: tokio::task::JoinError) -> StorageError {
     StorageError::Io(std::io::Error::other(error))
-}
-
-fn to_epoch_ms(dt: OffsetDateTime) -> i64 {
-    (dt.unix_timestamp_nanos() / 1_000_000) as i64
-}
-
-fn from_epoch_ms(ms: i64) -> Result<OffsetDateTime, SqliteStorageError> {
-    OffsetDateTime::from_unix_timestamp_nanos(ms as i128 * 1_000_000)
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid epoch ms {ms}: {e}")))
 }
 
 #[derive(sqlx::FromRow)]

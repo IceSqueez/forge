@@ -4,6 +4,7 @@ use forge_types::{ScriptContract, ScriptId};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
+use crate::epoch::{epoch_ms_now, from_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 
@@ -17,16 +18,6 @@ fn hash_body(body: &str) -> String {
         let _ = write!(out, "{b:02x}");
     }
     out
-}
-
-fn epoch_ms_now() -> i64 {
-    let now = OffsetDateTime::now_utc();
-    (now.unix_timestamp_nanos() / 1_000_000) as i64
-}
-
-fn from_epoch_ms(ms: i64) -> Result<OffsetDateTime, SqliteStorageError> {
-    OffsetDateTime::from_unix_timestamp_nanos(ms as i128 * 1_000_000)
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid epoch ms {ms}: {e}")))
 }
 
 fn parse_script_id(s: &str) -> Result<ScriptId, SqliteStorageError> {

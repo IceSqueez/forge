@@ -6,6 +6,7 @@ mod checkpoint_task;
 pub mod credentials_impl;
 pub mod crypto;
 pub mod donation_impl;
+mod epoch;
 pub mod error;
 pub mod event_log_impl;
 pub mod globals_impl;

@@ -7,6 +7,7 @@ use serde_json;
 use time::OffsetDateTime;
 
 use crate::batch::insert_rows;
+use crate::epoch::{NANOS_PER_MILLI, to_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 
@@ -16,10 +17,6 @@ fn parse_action_id(s: &str) -> Result<ActionId, StorageError> {
             "invalid action id `{s}`: {e}"
         )))
     })
-}
-
-fn to_epoch_ms(dt: OffsetDateTime) -> i64 {
-    (dt.unix_timestamp_nanos() / 1_000_000) as i64
 }
 
 fn decode_contexts(rows: Vec<(String,)>) -> Result<Vec<ExecutionContext>, StorageError> {
@@ -242,14 +239,15 @@ impl HistoryRepo for SqliteHistoryRepo {
         let mut out = HashMap::with_capacity(rows.len());
         for row in rows {
             let id = parse_action_id(&row.action_id)?;
-            let last_ran_at =
-                OffsetDateTime::from_unix_timestamp_nanos(i128::from(row.last_started) * 1_000_000)
-                    .map_err(|e| {
-                        StorageError::from(SqliteStorageError::Decode(format!(
-                            "invalid started_at {}: {e}",
-                            row.last_started
-                        )))
-                    })?;
+            let last_ran_at = OffsetDateTime::from_unix_timestamp_nanos(
+                i128::from(row.last_started) * NANOS_PER_MILLI,
+            )
+            .map_err(|e| {
+                StorageError::from(SqliteStorageError::Decode(format!(
+                    "invalid started_at {}: {e}",
+                    row.last_started
+                )))
+            })?;
             out.insert(
                 id,
                 ActionStats {

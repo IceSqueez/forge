@@ -5,25 +5,15 @@ use forge_storage::{
 };
 use time::OffsetDateTime;
 
+use crate::epoch::{from_epoch_ms, to_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
-
-const NANOS_PER_MILLI: i128 = 1_000_000;
 
 macro_rules! entry_columns {
     () => {
         "platform, channel_id, viewer_id, viewer_name, reason, moderator, \
          banned_at, expires_at, platform_ban_id, origin"
     };
-}
-
-fn to_epoch_ms(dt: OffsetDateTime) -> i64 {
-    (dt.unix_timestamp_nanos() / NANOS_PER_MILLI) as i64
-}
-
-fn from_epoch_ms(ms: i64) -> Result<OffsetDateTime, SqliteStorageError> {
-    OffsetDateTime::from_unix_timestamp_nanos(i128::from(ms) * NANOS_PER_MILLI)
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid epoch {ms}: {e}")))
 }
 
 fn at_stored_precision(dt: OffsetDateTime) -> Result<OffsetDateTime, SqliteStorageError> {

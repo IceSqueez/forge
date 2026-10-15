@@ -9,7 +9,9 @@ use gpui::{
 use crate::icons::{Icon, icon, spinner};
 use crate::palette::ForgePalette;
 use crate::status::status_dot;
-use crate::tokens::{BORDER_THIN, FONT_XXS, Radius, body_family, mono_family, radius};
+use crate::tokens::{
+    BORDER_THIN, FONT_SECTION_LABEL, FONT_XXS, Radius, body_family, mono_family, radius,
+};
 use crate::tooltip::tooltip_builder;
 
 pub const HUB_CARD_HEIGHT: Pixels = px(158.0);
@@ -59,7 +61,6 @@ const ICON_ONLY_PAD_H: Pixels = px(6.0);
 
 const SECTION_GAP: Pixels = px(10.0);
 const SECTION_MB: Pixels = px(10.0);
-const SECTION_LABEL_SIZE: Pixels = px(9.5);
 const SECTION_BLURB_SIZE: Pixels = px(11.0);
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
@@ -551,7 +552,7 @@ pub fn hub_section_header(
             div()
                 .flex_none()
                 .font_family(mono_family())
-                .text_size(SECTION_LABEL_SIZE)
+                .text_size(FONT_SECTION_LABEL)
                 .text_color(palette.text_muted)
                 .child(SharedString::from(label.to_uppercase())),
         )

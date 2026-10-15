@@ -1,14 +1,11 @@
-use forge_components::{ForgePalette, Icon, icon, mono_family, pad_tile, tr};
+use forge_components::{ForgePalette, Icon, SectionLabel, icon, mono_family, pad_tile, tr};
 use forge_types::TriggerInstanceId;
-use gpui::{AnyElement, ClickEvent, Context, Pixels, Point, SharedString, div, prelude::*, px};
+use gpui::{AnyElement, ClickEvent, Context, Pixels, Point, div, prelude::*, px};
 
 use super::HotkeysScreenView;
 use super::capture::Capture;
 use crate::actions::SHORTCUTS;
 
-const SECTION_LABEL_FS: Pixels = px(9.5);
-const SECTION_LABEL_MT: Pixels = px(4.0);
-const SECTION_LABEL_MB: Pixels = px(8.0);
 const SECTION_HINT_FS: Pixels = px(10.0);
 const LIST_GAP: Pixels = px(6.0);
 
@@ -72,11 +69,11 @@ impl HotkeysScreenView {
             .w_full()
             .flex()
             .flex_col()
-            .child(section_label(
-                &tr!("hotkeys_section_bindings"),
-                palette,
-                hint,
-            ))
+            .child(
+                SectionLabel::new(tr!("hotkeys_section_bindings"), palette)
+                    .row()
+                    .trailing(Some(hint)),
+            )
             .child(list)
             .into_any_element()
     }
@@ -115,22 +112,4 @@ impl HotkeysScreenView {
         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_capture(Capture::Add, cx)))
         .into_any_element()
     }
-}
-
-fn section_label(label: &str, palette: &ForgePalette, right: AnyElement) -> impl IntoElement {
-    div()
-        .w_full()
-        .mt(SECTION_LABEL_MT)
-        .mb(SECTION_LABEL_MB)
-        .flex()
-        .items_center()
-        .justify_between()
-        .child(
-            div()
-                .font_family(mono_family())
-                .text_size(SECTION_LABEL_FS)
-                .text_color(palette.text_muted)
-                .child(SharedString::from(label.to_uppercase())),
-        )
-        .child(right)
 }

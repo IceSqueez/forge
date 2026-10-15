@@ -1,6 +1,7 @@
 use forge_components::{
-    BORDER_THIN, ForgePalette, Icon, OverlayPosition, body_family, ghost_button_with_icon, icon,
-    modal, mono_family, overlay, primary_button, secondary_button, tr,
+    BORDER_THIN, FONT_SECTION_LABEL, ForgePalette, Icon, OverlayPosition, body_family,
+    ghost_button_with_icon, icon, modal, mono_family, overlay, primary_button, secondary_button,
+    tr,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, EventEmitter, Pixels, SharedString, Window, div, prelude::*,
@@ -15,7 +16,6 @@ const MODAL_W: Pixels = px(440.0);
 const BODY_PAD_V: Pixels = px(16.0);
 const BODY_PAD_H: Pixels = px(18.0);
 
-const SECTION_LABEL_FS: Pixels = px(9.5);
 const SECTION_LABEL_MB: Pixels = px(8.0);
 const SIGNAL_GAP: Pixels = px(10.0);
 const RECAPTURE_HEIGHT: Pixels = px(32.0);
@@ -138,7 +138,7 @@ impl AppShortcutModal {
                     .w_full()
                     .mb(SECTION_LABEL_MB)
                     .font_family(mono_family())
-                    .text_size(SECTION_LABEL_FS)
+                    .text_size(FONT_SECTION_LABEL)
                     .text_color(palette.text_muted)
                     .child(SharedString::from(
                         tr!("hotkeys_modal_section_combo").to_uppercase(),

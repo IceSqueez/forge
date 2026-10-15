@@ -2,9 +2,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, FONT_XS, ForgePalette, Icon, MenuPlacement, Radius, ToastAction,
-    ToastKind, badge, body_family, card, ghost_button_with_icon, header_status, icon, menu_button,
-    menu_divider, menu_item, mono_family, pad_tile, page_frame, radius, status_dot, toggle, tr,
+    BORDER_THIN, BreadcrumbCrumb, FONT_XS, ForgePalette, Icon, MenuPlacement, Radius, SectionLabel,
+    ToastAction, ToastKind, badge, body_family, card, ghost_button_with_icon, header_status, icon,
+    menu_button, menu_divider, menu_item, mono_family, pad_tile, page_frame, radius, status_dot,
+    toggle, tr,
 };
 use forge_midi::{MidiClient, MidiMonitorEvent, SwitchableMidiSink};
 use forge_runtime::EventBus;
@@ -12,8 +13,8 @@ use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, set_json_sett
 use forge_types::{ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 use futures_util::StreamExt;
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, Point, Rgba, SharedString,
-    Subscription, Task, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, Point, Rgba, Subscription,
+    Task, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge::{self, BridgeFlow, ErrorSink, drain_events};
@@ -51,9 +52,6 @@ const COLUMNS_GAP: Pixels = px(12.0);
 const LEFT_COLUMN_FLEX: f32 = 1.0;
 const RIGHT_COLUMN_FLEX: f32 = 1.7;
 
-const SECTION_LABEL_FS: Pixels = px(9.5);
-const SECTION_LABEL_MT: Pixels = px(4.0);
-const SECTION_LABEL_MB: Pixels = px(8.0);
 const LIST_GAP: Pixels = px(6.0);
 
 const DEVICE_PAD_V: Pixels = px(10.0);
@@ -993,7 +991,11 @@ impl MidiScreenView {
             .w_full()
             .flex()
             .flex_col()
-            .child(section_label(&tr!("midi_section_devices"), palette, None))
+            .child(
+                SectionLabel::new(tr!("midi_section_devices"), palette)
+                    .row()
+                    .trailing(None),
+            )
             .child(
                 list.child(
                     div().w_full().mt(RESCAN_MT).child(
@@ -1157,7 +1159,11 @@ impl MidiScreenView {
             .w_full()
             .flex()
             .flex_col()
-            .child(section_label(&tr!("midi_section_monitor"), palette, None))
+            .child(
+                SectionLabel::new(tr!("midi_section_monitor"), palette)
+                    .row()
+                    .trailing(None),
+            )
             .child(lines);
 
         div()
@@ -1200,11 +1206,11 @@ impl MidiScreenView {
             .w_full()
             .flex()
             .flex_col()
-            .child(section_label(
-                &tr!("midi_section_mappings"),
-                palette,
-                Some(count),
-            ))
+            .child(
+                SectionLabel::new(tr!("midi_section_mappings"), palette)
+                    .row()
+                    .trailing(Some(count)),
+            )
             .child(list.child(self.render_add_bar(palette, cx)))
             .into_any_element()
     }
@@ -1487,28 +1493,6 @@ impl MidiScreenView {
             )
             .into_any_element()
     }
-}
-
-fn section_label(
-    label: &str,
-    palette: &ForgePalette,
-    right: Option<AnyElement>,
-) -> impl IntoElement {
-    div()
-        .w_full()
-        .mt(SECTION_LABEL_MT)
-        .mb(SECTION_LABEL_MB)
-        .flex()
-        .items_center()
-        .justify_between()
-        .child(
-            div()
-                .font_family(mono_family())
-                .text_size(SECTION_LABEL_FS)
-                .text_color(palette.text_muted)
-                .child(SharedString::from(label.to_uppercase())),
-        )
-        .children(right)
 }
 
 impl EventEmitter<NavRequested> for MidiScreenView {}

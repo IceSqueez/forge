@@ -125,7 +125,7 @@ pub use radio_row::{RadioRow, radio_row, radio_row_label};
 pub use resize_handle::{ResizeEdge, ResizeRange, install_resize};
 pub use save_state::{SaveState, save_indicator};
 pub use search_state::SearchState;
-pub use section_label::section_label;
+pub use section_label::{SectionLabel, section_label};
 pub use segmented::{Segment, SegmentedControl, segment, segmented};
 pub use side_sheet::{SheetPosition, SheetWidth, SideSheet, side_sheet};
 pub use slider::{Slider, slider};
@@ -142,8 +142,8 @@ pub use toast_queue::{PushToast, Toasts, toast_layer};
 pub use toggle::{Toggle, toggle};
 pub use tokens::{
     BORDER_ACCENT, BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,
-    FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ModalSize, Radius, Spacing, body_family, modal_width,
-    mono_family, radius, set_body_family, set_mono_family, spacing,
+    FONT_MD, FONT_SECTION_LABEL, FONT_SM, FONT_XS, FONT_XXS, ModalSize, Radius, Spacing,
+    body_family, modal_width, mono_family, radius, set_body_family, set_mono_family, spacing,
 };
 pub use tooltip::{
     Tooltip, TooltipLines, tooltip, tooltip_builder, tooltip_lines, tooltip_lines_builder,

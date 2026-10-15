@@ -7,8 +7,9 @@ use forge_audio::{
 };
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, Radius,
-    Spacing, TextInput, body_family, drive_overlay_focus, dropdown, dropdown_list, dropdown_row,
-    ghost_button, icon, mono_family, radius, setting_row, spacing, toggle, tr, with_alpha,
+    SectionLabel, Spacing, TextInput, body_family, drive_overlay_focus, dropdown, dropdown_list,
+    dropdown_row, ghost_button, icon, mono_family, radius, setting_row, spacing, toggle, tr,
+    with_alpha,
 };
 use forge_storage::{DataProvider, SettingsRepo, VoiceGateSettings};
 use gpui::{
@@ -370,16 +371,6 @@ impl SettingsVoiceGateView {
             )
     }
 
-    fn section_label(&self, key: &'static str, palette: &ForgePalette) -> impl IntoElement {
-        div()
-            .py(spacing(Spacing::Xs, Density::Cozy))
-            .px(spacing(Spacing::Md, Density::Cozy))
-            .font_family(mono_family())
-            .text_size(FONT_XXS)
-            .text_color(palette.text_muted)
-            .child(tr!(key))
-    }
-
     fn device_section(
         &self,
         palette: &ForgePalette,
@@ -637,7 +628,7 @@ impl Render for SettingsVoiceGateView {
                 &palette,
                 density,
             ))
-            .child(self.section_label("settings_voice_gate_input_devices", &palette))
+            .child(SectionLabel::new(tr!("settings_voice_gate_input_devices"), &palette).padded())
             .child(self.device_section(&palette, density, cx))
             .child(self.threshold_row(&palette, density, cx))
             .child(self.hold_row(&palette, density))

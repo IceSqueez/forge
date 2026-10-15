@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    MenuPlacement, OverlayPosition, ToastKind, badge, body_family, card, confirm_modal,
-    fmt_relative_time, icon, menu_button, menu_divider, menu_item, mono_family, overlay, pad_tile,
-    page_frame, status_dot, tr,
+    MenuPlacement, OverlayPosition, SectionLabel, ToastKind, badge, body_family, card,
+    confirm_modal, fmt_relative_time, icon, menu_button, menu_divider, menu_item, mono_family,
+    overlay, pad_tile, page_frame, status_dot, tr,
 };
 use forge_discord::{DiscordClient, DiscordSendHealth, WebhookPost};
 use forge_runtime::EventBus;
@@ -60,9 +60,6 @@ const STAT_HINT_MT: Pixels = px(2.0);
 const COLUMN_GAP: Pixels = px(12.0);
 const COLUMN_FLEX: f32 = 1.0;
 
-const SECTION_LABEL_FS: Pixels = px(9.5);
-const SECTION_LABEL_MT: Pixels = px(4.0);
-const SECTION_LABEL_MB: Pixels = px(8.0);
 const SECTION_HINT_FS: Pixels = px(10.0);
 const LIST_GAP: Pixels = px(6.0);
 
@@ -652,11 +649,11 @@ impl DiscordScreenView {
             .w_full()
             .flex()
             .flex_col()
-            .child(section_label(
-                &tr!("discord_section_bindings"),
-                palette,
-                hint,
-            ))
+            .child(
+                SectionLabel::new(tr!("discord_section_bindings"), palette)
+                    .row()
+                    .trailing(Some(hint)),
+            )
             .child(list)
             .into_any_element()
     }
@@ -813,7 +810,11 @@ impl DiscordScreenView {
             .w_full()
             .flex()
             .flex_col()
-            .child(section_label(&tr!("discord_section_posts"), palette, hint))
+            .child(
+                SectionLabel::new(tr!("discord_section_posts"), palette)
+                    .row()
+                    .trailing(Some(hint)),
+            )
             .child(list)
             .into_any_element()
     }
@@ -1041,24 +1042,6 @@ fn stat_card(
             .full_height(),
         1.0,
     )
-}
-
-fn section_label(label: &str, palette: &ForgePalette, right: AnyElement) -> impl IntoElement {
-    div()
-        .w_full()
-        .mt(SECTION_LABEL_MT)
-        .mb(SECTION_LABEL_MB)
-        .flex()
-        .items_center()
-        .justify_between()
-        .child(
-            div()
-                .font_family(mono_family())
-                .text_size(SECTION_LABEL_FS)
-                .text_color(palette.text_muted)
-                .child(SharedString::from(label.to_uppercase())),
-        )
-        .child(right)
 }
 
 impl EventEmitter<NavRequested> for DiscordScreenView {}

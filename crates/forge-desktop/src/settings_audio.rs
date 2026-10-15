@@ -5,7 +5,7 @@ use forge_audio::{
     refresh_output_devices, stored_output_device,
 };
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, Radius, SectionLabel, Spacing,
     body_family, drive_overlay_focus, dropdown, dropdown_list, dropdown_row, icon, radius, spacing,
     tr, with_alpha,
 };
@@ -262,16 +262,6 @@ impl SettingsAudioView {
             )
     }
 
-    fn section_label(&self, key: &'static str, palette: &ForgePalette) -> impl IntoElement {
-        div()
-            .py(spacing(Spacing::Xs, Density::Cozy))
-            .px(spacing(Spacing::Md, Density::Cozy))
-            .font_family(forge_components::mono_family())
-            .text_size(FONT_XXS)
-            .text_color(palette.text_muted)
-            .child(tr!(key))
-    }
-
     fn device_section(
         &self,
         palette: &ForgePalette,
@@ -482,9 +472,9 @@ impl Render for SettingsAudioView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Md, density))
-            .child(self.section_label("settings_audio_output_devices", &palette))
+            .child(SectionLabel::new(tr!("settings_audio_output_devices"), &palette).padded())
             .child(self.device_section(&palette, density, cx))
-            .child(self.section_label("settings_audio_test_section", &palette))
+            .child(SectionLabel::new(tr!("settings_audio_test_section"), &palette).padded())
             .child(self.standalone_test(&palette, density, cx));
 
         if let Some(message) = &self.test_error {

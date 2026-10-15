@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, ForgePalette, Icon, InputEvent, OverlayPosition, SearchState, TextInput,
-    body_family, ghost_button_with_icon, icon, modal, mono_family, overlay, primary_button,
-    secondary_button, segment, segmented, tr, with_alpha,
+    BORDER_THIN, FONT_SECTION_LABEL, ForgePalette, Icon, InputEvent, OverlayPosition, SearchState,
+    TextInput, body_family, ghost_button_with_icon, icon, modal, mono_family, overlay,
+    primary_button, secondary_button, segment, segmented, tr, with_alpha,
 };
 use forge_storage::ActionRepo;
 use forge_types::{ActionId, TriggerInstanceId};
@@ -21,7 +21,6 @@ const BODY_PAD_V: Pixels = px(16.0);
 const BODY_PAD_H: Pixels = px(18.0);
 const BODY_MAX_H: Pixels = px(460.0);
 
-const SECTION_LABEL_FS: Pixels = px(9.5);
 const SECTION_LABEL_MB: Pixels = px(8.0);
 const SIGNAL_MB: Pixels = px(16.0);
 const SIGNAL_GAP: Pixels = px(10.0);
@@ -377,7 +376,7 @@ impl HotkeyActionModal {
             .child(
                 div()
                     .font_family(mono_family())
-                    .text_size(SECTION_LABEL_FS)
+                    .text_size(FONT_SECTION_LABEL)
                     .text_color(palette.text_muted)
                     .child(SharedString::from(
                         tr!("hotkeys_modal_section_action").to_uppercase(),
@@ -585,7 +584,7 @@ fn section_caption(label: &str, palette: &ForgePalette) -> impl IntoElement {
         .w_full()
         .mb(SECTION_LABEL_MB)
         .font_family(mono_family())
-        .text_size(SECTION_LABEL_FS)
+        .text_size(FONT_SECTION_LABEL)
         .text_color(palette.text_muted)
         .child(SharedString::from(label.to_uppercase()))
 }

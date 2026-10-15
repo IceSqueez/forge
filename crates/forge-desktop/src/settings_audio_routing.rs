@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use forge_audio::{AudioRoute, AudioSink};
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
-    body_family, drive_overlay_focus, dropdown, dropdown_list, dropdown_row, icon, mono_family,
-    radius, segment, segmented, setting_row, spacing, tr, with_alpha,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, Radius, SectionLabel, Spacing,
+    body_family, drive_overlay_focus, dropdown, dropdown_list, dropdown_row, icon, radius, segment,
+    segmented, setting_row, spacing, tr, with_alpha,
 };
 use forge_runtime::OverlayServiceHandle;
 use forge_storage::{OverlayId, OverlayRepo, SettingsRepo};
@@ -304,16 +304,6 @@ impl SettingsAudioRoutingView {
             )
     }
 
-    fn section_label(&self, key: &'static str, palette: &ForgePalette) -> impl IntoElement {
-        div()
-            .py(spacing(Spacing::Xs, Density::Cozy))
-            .px(spacing(Spacing::Md, Density::Cozy))
-            .font_family(mono_family())
-            .text_size(FONT_XXS)
-            .text_color(palette.text_muted)
-            .child(tr!(key))
-    }
-
     fn route_control(
         &self,
         domain: AudioDomain,
@@ -534,7 +524,7 @@ impl SettingsAudioRoutingView {
             div()
                 .flex()
                 .flex_col()
-                .child(self.section_label("settings_audio_routing_in_effect", palette))
+                .child(SectionLabel::new(tr!("settings_audio_routing_in_effect"), palette).padded())
                 .child(
                     div()
                         .flex()
@@ -650,7 +640,9 @@ impl Render for SettingsAudioRoutingView {
                     &palette,
                     density,
                 ))
-                .child(self.section_label("settings_audio_routing_destination", &palette))
+                .child(
+                    SectionLabel::new(tr!("settings_audio_routing_destination"), &palette).padded(),
+                )
                 .child(self.destination_section(&palette, density, cx))
                 .children(self.in_effect_section(&palette, density));
 

@@ -99,6 +99,7 @@ pub fn modal_width(s: ModalSize) -> Pixels {
 pub const BORDER_THIN: Pixels = px(1.0);
 pub const BORDER_ACCENT: Pixels = px(1.0);
 
+pub const FONT_SECTION_LABEL: Pixels = px(9.5);
 pub const FONT_XXS: Pixels = px(10.5);
 pub const FONT_XS: Pixels = px(12.0);
 pub const FONT_SM: Pixels = px(14.0);

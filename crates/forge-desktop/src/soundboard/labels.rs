@@ -1,9 +1,7 @@
-use forge_components::{ForgePalette, mono_family};
-use gpui::{Pixels, SharedString, div, prelude::*, px};
+use forge_components::{FONT_SECTION_LABEL, ForgePalette, mono_family};
+use gpui::{SharedString, div, prelude::*, px};
 
 use super::HOTKEY_FS;
-
-const SECTION_LABEL_FS: Pixels = px(9.5);
 
 pub(super) fn section_label(
     label: impl Into<SharedString>,
@@ -11,7 +9,7 @@ pub(super) fn section_label(
 ) -> impl IntoElement {
     div()
         .font_family(mono_family())
-        .text_size(SECTION_LABEL_FS)
+        .text_size(FONT_SECTION_LABEL)
         .text_color(palette.text_muted)
         .child(label.into())
 }

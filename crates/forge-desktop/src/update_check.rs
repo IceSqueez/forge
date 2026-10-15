@@ -36,7 +36,6 @@ pub const NOTIFY_DEFAULT: bool = true;
 
 const BOOT_SETTLE_DELAY: Duration = Duration::from_secs(15);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
-const UPDATE_TOAST_DURATION: Duration = Duration::from_secs(12);
 
 const GITHUB_ANON_REQUEST_BUDGET: u32 = 60;
 const GITHUB_ANON_WINDOW: Duration = Duration::from_secs(60 * 60);
@@ -173,7 +172,7 @@ pub enum UpdateNotice {
 pub fn should_notify(
     current: &str,
     latest: &str,
-    dismissed_for: Option<&str>,
+    skipped: Option<&str>,
     enabled: bool,
     obs_live: bool,
 ) -> Option<UpdateNotice> {
@@ -185,7 +184,7 @@ pub fn should_notify(
     if !is_newer(&current, &latest) {
         return None;
     }
-    if dismissed_for
+    if skipped
         .and_then(parse_version)
         .is_some_and(|seen| seen >= latest)
     {
@@ -200,7 +199,7 @@ pub fn should_notify(
 
 struct Probe {
     enabled: bool,
-    dismissed: Option<String>,
+    skipped: Option<String>,
     release: Option<Release>,
 }
 
@@ -231,7 +230,7 @@ pub fn start_update_check(
         let Some(notice) = should_notify(
             CURRENT_VERSION,
             &release.tag,
-            probe.dismissed.as_deref(),
+            probe.skipped.as_deref(),
             probe.enabled,
             obs_busy(&obs),
         ) else {
@@ -255,19 +254,19 @@ async fn probe(backend: Arc<dyn DataProvider>) -> Probe {
     if !enabled {
         return Probe {
             enabled,
-            dismissed: None,
+            skipped: None,
             release: None,
         };
     }
-    let dismissed = repo
-        .get_string(reserved_keys::UPDATES_DISMISSED_VERSION)
+    let skipped = repo
+        .get_string(reserved_keys::UPDATES_SKIPPED_VERSION)
         .await
         .ok()
         .flatten();
     let release = fetch_latest_release().await;
     Probe {
         enabled,
-        dismissed,
+        skipped,
         release,
     }
 }
@@ -360,12 +359,13 @@ fn raise_update_toast(
     cx: &mut App,
 ) {
     let url = release.url.clone();
+    let tag = release.tag.clone();
     let open_handle = rt_handle.clone();
-    cx.push_toast_full(
+    cx.push_toast_with_secondary(
         ToastKind::Info,
         tr!("update_toast_available", version = release.tag.as_str()),
         Some(Icon::Sparkles),
-        Some(ToastAction::new(
+        ToastAction::new(
             tr!("update_toast_open_action"),
             move |_window, _app: &mut App| {
                 detached(
@@ -374,16 +374,21 @@ fn raise_update_toast(
                     open_path(url.clone()),
                 );
             },
-        )),
-        UPDATE_TOAST_DURATION,
+        ),
+        ToastAction::new(
+            tr!("update_toast_skip_action"),
+            move |_window, _app: &mut App| {
+                remember_skipped(tag.clone(), Arc::clone(&backend), &rt_handle);
+            },
+        ),
+        Duration::ZERO,
     );
-    remember_notified(release.tag, backend, &rt_handle);
 }
 
-fn remember_notified(tag: String, backend: Arc<dyn DataProvider>, rt_handle: &Handle) {
-    detached(rt_handle, "remember the notified version", async move {
+fn remember_skipped(tag: String, backend: Arc<dyn DataProvider>, rt_handle: &Handle) {
+    detached(rt_handle, "remember the skipped version", async move {
         let repo = backend as Arc<dyn SettingsRepo>;
-        repo.set_string(reserved_keys::UPDATES_DISMISSED_VERSION, &tag)
+        repo.set_string(reserved_keys::UPDATES_SKIPPED_VERSION, &tag)
             .await
     });
 }

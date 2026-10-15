@@ -249,12 +249,13 @@ settings_version_title = Version & updates
 settings_version_license = Open-source · MIT OR Apache-2.0
 settings_version_check_updates = Check for updates
 settings_version_notify_label = Notify about new versions
-settings_version_notify_hint = Shows a one-off toast when a newer release is published. Never while OBS is streaming or recording.
+settings_version_notify_hint = Shows a toast at launch whenever a newer release is out, until you skip that version. Never while OBS is streaming or recording.
 
 ## Update notification
 
 update_toast_available = forge { $version } is available
-update_toast_open_action = Open release
+update_toast_open_action = Download
+update_toast_skip_action = Skip this version
 
 ## Settings → Storage pane
 

@@ -28,6 +28,7 @@ impl Toasts {
         message: SharedString,
         icon: Option<Icon>,
         action: Option<ToastAction>,
+        secondary_action: Option<ToastAction>,
     ) -> u64 {
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
@@ -37,6 +38,7 @@ impl Toasts {
             message,
             icon,
             action,
+            secondary_action,
         });
         id
     }
@@ -75,6 +77,16 @@ pub trait PushToast {
         action: Option<ToastAction>,
         duration: Duration,
     );
+
+    fn push_toast_with_secondary(
+        &mut self,
+        kind: ToastKind,
+        message: impl Into<SharedString>,
+        icon: Option<Icon>,
+        action: ToastAction,
+        secondary_action: ToastAction,
+        duration: Duration,
+    );
 }
 
 impl PushToast for App {
@@ -96,18 +108,50 @@ impl PushToast for App {
         action: Option<ToastAction>,
         duration: Duration,
     ) {
-        let id = self
-            .global_mut::<Toasts>()
-            .append(kind, message.into(), icon, action);
-
-        if duration.is_zero() {
-            return;
-        }
-
-        self.spawn(async move |cx| {
-            cx.background_executor().timer(duration).await;
-            cx.update(|cx| cx.global_mut::<Toasts>().dismiss(id));
-        })
-        .detach();
+        push_toast_parts(self, kind, message.into(), icon, action, None, duration);
     }
+
+    fn push_toast_with_secondary(
+        &mut self,
+        kind: ToastKind,
+        message: impl Into<SharedString>,
+        icon: Option<Icon>,
+        action: ToastAction,
+        secondary_action: ToastAction,
+        duration: Duration,
+    ) {
+        push_toast_parts(
+            self,
+            kind,
+            message.into(),
+            icon,
+            Some(action),
+            Some(secondary_action),
+            duration,
+        );
+    }
+}
+
+fn push_toast_parts(
+    cx: &mut App,
+    kind: ToastKind,
+    message: SharedString,
+    icon: Option<Icon>,
+    action: Option<ToastAction>,
+    secondary_action: Option<ToastAction>,
+    duration: Duration,
+) {
+    let id = cx
+        .global_mut::<Toasts>()
+        .append(kind, message, icon, action, secondary_action);
+
+    if duration.is_zero() {
+        return;
+    }
+
+    cx.spawn(async move |cx| {
+        cx.background_executor().timer(duration).await;
+        cx.update(|cx| cx.global_mut::<Toasts>().dismiss(id));
+    })
+    .detach();
 }

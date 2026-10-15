@@ -59,7 +59,7 @@ pub mod reserved_keys {
     pub const DIAGNOSTICS_LOG_LEVEL: &str = "diagnostics.log_level";
     pub const UPDATES_NOTIFY: &str = "updates.notify";
     pub const STAY_AWAKE: &str = "app.stay_awake";
-    pub const UPDATES_DISMISSED_VERSION: &str = "updates.dismissed_version";
+    pub const UPDATES_SKIPPED_VERSION: &str = "updates.skipped_version";
     pub const CREDENTIALS_KEY_LOSS: &str = "credentials.key_loss_stranded";
     pub const INTEGRATION_ENABLED_PREFIX: &str = "integration.enabled.";
     pub const RETIRED_MIDI_ENABLED: &str = "midi.enabled";
@@ -131,7 +131,7 @@ pub mod disclosure {
             | reserved_keys::SOUNDBOARD_ALSO_HEADPHONES
             | reserved_keys::UPDATES_NOTIFY
             | reserved_keys::STAY_AWAKE
-            | reserved_keys::UPDATES_DISMISSED_VERSION
+            | reserved_keys::UPDATES_SKIPPED_VERSION
             | reserved_keys::CREDENTIALS_KEY_LOSS
             | reserved_keys::RETIRED_MIDI_ENABLED
             | reserved_keys::RETIRED_HOTKEY_ENABLED => Verbatim,

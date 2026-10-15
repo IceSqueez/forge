@@ -76,6 +76,7 @@ pub struct ToastData {
     pub message: SharedString,
     pub icon: Option<Icon>,
     pub action: Option<ToastAction>,
+    pub secondary_action: Option<ToastAction>,
 }
 
 impl ToastData {
@@ -86,6 +87,7 @@ impl ToastData {
             message: message.into(),
             icon: None,
             action: None,
+            secondary_action: None,
         }
     }
 }
@@ -99,12 +101,16 @@ pub struct ToastCard {
     action_label: Option<SharedString>,
     action_id: Option<ElementId>,
     on_action: Option<ToastHandler>,
+    secondary_id: Option<ElementId>,
+    secondary_label: Option<SharedString>,
+    on_secondary: Option<ToastHandler>,
     dismiss_id: Option<ElementId>,
     on_dismiss: Option<ToastHandler>,
     card_bg: Rgba,
     border: Rgba,
     message_color: Rgba,
     action_color: Rgba,
+    secondary_color: Rgba,
     dismiss_color: Rgba,
     accent: Rgba,
 }
@@ -123,12 +129,16 @@ pub fn toast_card(
         action_label: None,
         action_id: None,
         on_action: None,
+        secondary_id: None,
+        secondary_label: None,
+        on_secondary: None,
         dismiss_id: None,
         on_dismiss: None,
         card_bg: palette.elevated,
         border: palette.border_input,
         message_color: palette.text_primary,
         action_color: palette.brand,
+        secondary_color: palette.text_muted,
         dismiss_color: palette.text_faint,
         accent: kind.accent(palette),
     }
@@ -151,6 +161,19 @@ impl ToastCard {
         self.action_id = Some(id.into());
         self.action_label = Some(label.into());
         self.on_action = Some(Box::new(handler));
+        self
+    }
+
+    #[must_use]
+    pub fn secondary_action(
+        mut self,
+        id: impl Into<ElementId>,
+        label: impl Into<SharedString>,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.secondary_id = Some(id.into());
+        self.secondary_label = Some(label.into());
+        self.on_secondary = Some(Box::new(handler));
         self
     }
 
@@ -191,6 +214,27 @@ impl RenderOnce for ToastCard {
                     .text_color(self.message_color)
                     .child(self.message.clone()),
             );
+
+        if let (Some(id), Some(label), Some(handler)) = (
+            self.secondary_id.take(),
+            self.secondary_label.take(),
+            self.on_secondary.take(),
+        ) {
+            content = content.child(
+                div()
+                    .id(id)
+                    .flex_none()
+                    .py(pad(Spacing::Xxs))
+                    .px(pad(Spacing::Xs))
+                    .rounded(radius(Radius::Sm))
+                    .cursor_pointer()
+                    .font_family(body_family())
+                    .text_size(FONT_SM)
+                    .text_color(self.secondary_color)
+                    .on_click(handler)
+                    .child(label),
+            );
+        }
 
         if let (Some(id), Some(label), Some(handler)) = (
             self.action_id.take(),

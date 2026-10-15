@@ -1060,6 +1060,19 @@ impl AppShell {
                     },
                 );
             }
+            if let Some(secondary) = &data.secondary_action {
+                card = card.secondary_action(
+                    ("toast-secondary", id as usize),
+                    secondary.label.clone(),
+                    move |_, window, cx: &mut App| {
+                        if let Some(data) = cx.global_mut::<Toasts>().take(id)
+                            && let Some(secondary) = data.secondary_action
+                        {
+                            (secondary.on_action)(window, cx);
+                        }
+                    },
+                );
+            }
             column = column.child(card);
         }
 

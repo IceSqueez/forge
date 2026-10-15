@@ -6,6 +6,7 @@ use forge_types::EventId;
 
 use crate::backend::HotkeyId;
 use crate::client::HotkeyClient;
+use crate::event_kinds;
 use crate::payload_fields;
 
 pub(crate) struct Hold {
@@ -24,7 +25,7 @@ pub(crate) fn open(client: &HotkeyClient, id: HotkeyId, combo: String, timestamp
 
     let event = Event::new(
         EventSource::Hotkey,
-        "hotkey.global.pressed",
+        event_kinds::GLOBAL_PRESSED,
         serde_json::json!({
             (payload_fields::COMBO): combo,
             (payload_fields::ID): id.0,
@@ -113,7 +114,7 @@ fn publish_release(
 
     client.publisher.publish(Event::caused_by(
         EventSource::Hotkey,
-        "hotkey.global.released",
+        event_kinds::GLOBAL_RELEASED,
         serde_json::json!({
             (payload_fields::COMBO): hold.combo,
             (payload_fields::ID): id.0,

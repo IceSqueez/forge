@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use forge_components::{BreadcrumbCrumb, Icon, ToastKind, body_family, icon, page_frame, tr};
 use forge_events::Event;
-use forge_hotkey::HotkeyClient;
+use forge_hotkey::{HotkeyClient, event_kinds};
 use forge_runtime::EventBus;
 use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
 use forge_storage::{DataProvider, SettingsRepo, StorageError};
@@ -15,8 +15,7 @@ use crate::async_bridge::{self, BridgeFlow, drain_events};
 use crate::combo_capture::ComboCapture;
 use crate::combo_conflict::{ClipKey, clip_keys, combo_holder};
 use crate::hotkey_bindings::{
-    BindingRow, HOTKEY_EVENT_PREFIX, HOTKEY_PRESSED_KIND, HotkeyEdge, conflict_count,
-    load_bindings, registered_combos,
+    BindingRow, HotkeyEdge, conflict_count, load_bindings, registered_combos,
 };
 use crate::hotkey_sync::HotkeyReconciler;
 use crate::hub_crumb::hub_crumb;
@@ -135,7 +134,7 @@ impl HotkeysScreenView {
             drain_events(&bus, cx, move |batch, cx| {
                 if !batch
                     .iter()
-                    .any(|event| event.kind.starts_with(HOTKEY_EVENT_PREFIX))
+                    .any(|event| event.kind.starts_with(event_kinds::PREFIX))
                 {
                     return BridgeFlow::Continue;
                 }
@@ -151,7 +150,7 @@ impl HotkeysScreenView {
     fn on_hotkey_events(&mut self, batch: &[Event], cx: &mut Context<Self>) {
         for event in batch {
             match event.kind.as_str() {
-                HOTKEY_PRESSED_KIND => {
+                event_kinds::GLOBAL_PRESSED => {
                     if let Some(combo) = event.payload.get(COMBO_FIELD).and_then(|v| v.as_str()) {
                         self.last_fired = Some(LastFired {
                             combo: combo.to_owned(),

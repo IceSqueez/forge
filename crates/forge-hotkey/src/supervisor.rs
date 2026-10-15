@@ -10,6 +10,7 @@ use tokio::time::MissedTickBehavior;
 use crate::backend::{BackendSessionEvent, HotkeyEdge, HotkeyFiredEvent, HotkeyId};
 use crate::client::{EnableFailure, HotkeyClient};
 use crate::combo::HotkeyCombo;
+use crate::event_kinds;
 use crate::health::{
     BACKEND_METRIC_INDEX, backend_health_value, build_trigger_delta, registered_count_health_value,
 };
@@ -200,7 +201,7 @@ fn emit_enable_failed(client: &Arc<HotkeyClient>, failures: &[EnableFailure]) {
         .collect();
     client.publisher.publish(Event::new(
         EventSource::Hotkey,
-        "hotkey.engine.enable_failed",
+        event_kinds::ENGINE_ENABLE_FAILED,
         serde_json::json!({ (payload_fields::COMBOS): combos }),
     ));
 }
@@ -217,9 +218,9 @@ fn known_combos(client: &Arc<HotkeyClient>) -> Vec<(HotkeyId, HotkeyCombo)> {
 
 fn emit_engine_state_change(client: &Arc<HotkeyClient>, enabled: bool) {
     let kind = if enabled {
-        "hotkey.engine.enabled"
+        event_kinds::ENGINE_ENABLED
     } else {
-        "hotkey.engine.disabled"
+        event_kinds::ENGINE_DISABLED
     };
     client
         .publisher
@@ -241,7 +242,7 @@ fn emit_engine_state_change(client: &Arc<HotkeyClient>, enabled: bool) {
 pub(crate) fn emit_registered(client: &HotkeyClient, combo_str: &str, id_u32: u32) {
     client.publisher.publish(Event::new(
         EventSource::Hotkey,
-        "hotkey.registered",
+        event_kinds::REGISTERED,
         serde_json::json!({ (payload_fields::COMBO): combo_str, (payload_fields::ID): id_u32 }),
     ));
 
@@ -265,7 +266,7 @@ pub(crate) fn emit_registered(client: &HotkeyClient, combo_str: &str, id_u32: u3
 pub(crate) fn emit_unregistered(client: &HotkeyClient, combo_str: &str, id_u32: u32) {
     client.publisher.publish(Event::new(
         EventSource::Hotkey,
-        "hotkey.unregistered",
+        event_kinds::UNREGISTERED,
         serde_json::json!({ (payload_fields::COMBO): combo_str, (payload_fields::ID): id_u32 }),
     ));
 
@@ -298,7 +299,7 @@ pub(crate) fn emit_portal_unavailable(client: &HotkeyClient, detail: &str) {
 fn emit_portal_event(client: &HotkeyClient, reason: &str, detail: &str) {
     client.publisher.publish(Event::new(
         EventSource::Hotkey,
-        "hotkey.portal.unavailable",
+        event_kinds::PORTAL_UNAVAILABLE,
         serde_json::json!({
             (payload_fields::portal::REASON): reason,
             (payload_fields::portal::DETAIL): detail,

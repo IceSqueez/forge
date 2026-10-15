@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use forge_hotkey::event_kinds;
 use forge_hotkey::{DEFAULT_HOLD_CEILING_SECS, HotkeyClient, HotkeyCombo, HotkeyId};
 use forge_platform_core::{BuiltinHealth, HealthValue};
 use forge_storage::{DataProvider, SettingsRepo, StorageError};
@@ -12,9 +13,6 @@ use gpui::Keystroke;
 use crate::hotkey_sync::HotkeyReconciler;
 
 pub const HOTKEY_HOLD_CEILING_KEY: &str = "hotkey.hold_ceiling_secs";
-pub const HOTKEY_PRESSED_KIND: &str = "hotkey.global.pressed";
-pub const HOTKEY_RELEASED_KIND: &str = "hotkey.global.released";
-pub const HOTKEY_EVENT_PREFIX: &str = "hotkey.";
 
 pub const COMBO_FIELD: &str = "combo";
 const CONFLICTS_METRIC: &str = "CONFLICTS";
@@ -29,15 +27,15 @@ pub enum HotkeyEdge {
 impl HotkeyEdge {
     pub fn kind_id(self) -> &'static str {
         match self {
-            HotkeyEdge::Press => HOTKEY_PRESSED_KIND,
-            HotkeyEdge::Release => HOTKEY_RELEASED_KIND,
+            HotkeyEdge::Press => event_kinds::GLOBAL_PRESSED,
+            HotkeyEdge::Release => event_kinds::GLOBAL_RELEASED,
         }
     }
 
     pub fn from_kind(kind_id: &str) -> Option<Self> {
         match kind_id {
-            HOTKEY_PRESSED_KIND => Some(HotkeyEdge::Press),
-            HOTKEY_RELEASED_KIND => Some(HotkeyEdge::Release),
+            event_kinds::GLOBAL_PRESSED => Some(HotkeyEdge::Press),
+            event_kinds::GLOBAL_RELEASED => Some(HotkeyEdge::Release),
             _ => None,
         }
     }

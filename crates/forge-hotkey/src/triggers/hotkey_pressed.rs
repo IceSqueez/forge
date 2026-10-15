@@ -8,6 +8,7 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::event_kinds;
 use crate::payload_fields as fields;
 
 pub struct HotkeyPressedDescriptor;
@@ -69,12 +70,12 @@ impl TriggerKindDescriptor for HotkeyPressedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Hotkey),
-            kind_prefix: Some("hotkey.".to_owned()),
+            kind_prefix: Some(event_kinds::PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != "hotkey.global.pressed" {
+        if event.kind != event_kinds::GLOBAL_PRESSED {
             return false;
         }
         if event.source != EventSource::Hotkey {

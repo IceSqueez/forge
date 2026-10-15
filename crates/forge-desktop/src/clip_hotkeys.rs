@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventSource, EventsError};
-use forge_hotkey::HotkeyCombo;
+use forge_hotkey::{HotkeyCombo, event_kinds};
 use forge_runtime::EventSubscription;
 use forge_soundboard::SoundboardPlayer;
 use forge_storage::{SoundboardClipsRepo, StorageError, StoredClip};
@@ -11,7 +11,6 @@ use forge_types::ClipId;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-use crate::hotkey_bindings::HOTKEY_PRESSED_KIND;
 use crate::hotkey_sync::HotkeyReconciler;
 
 pub const CLIP_COMBO_FIELD: &str = "hotkey";
@@ -112,7 +111,7 @@ impl SoundboardClipsRepo for HotkeySyncedClipsRepo {
 }
 
 pub fn pressed_combo(event: &Event) -> Option<&str> {
-    if event.source != EventSource::Hotkey || event.kind != HOTKEY_PRESSED_KIND {
+    if event.source != EventSource::Hotkey || event.kind != event_kinds::GLOBAL_PRESSED {
         return None;
     }
     event.payload.get(PRESSED_COMBO_KEY)?.as_str()

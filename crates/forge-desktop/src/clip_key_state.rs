@@ -2,16 +2,13 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
-use forge_hotkey::HotkeyCombo;
+use forge_hotkey::{HotkeyCombo, event_kinds};
 use forge_storage::{DataProvider, StoredClip};
 use forge_types::ClipId;
 
 use crate::combo_conflict::{Claimant, ComboHolder, ComboHolders, clip_keys};
 use crate::hotkey_bindings::{BindingRow, load_bindings, registered_combos};
 use crate::hotkey_sync::HotkeyReconciler;
-
-const REGISTERED_KIND: &str = "hotkey.registered";
-const UNREGISTERED_KIND: &str = "hotkey.unregistered";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PadKey {
@@ -54,7 +51,10 @@ pub fn canonical_combo(raw: &str) -> String {
 
 pub fn changes_registrations(event: &Event) -> bool {
     event.source == EventSource::Hotkey
-        && matches!(event.kind.as_str(), REGISTERED_KIND | UNREGISTERED_KIND)
+        && matches!(
+            event.kind.as_str(),
+            event_kinds::REGISTERED | event_kinds::UNREGISTERED
+        )
 }
 
 pub struct ClipKeyState {

@@ -3,6 +3,7 @@ use crate::chat::subscriber::{
     SubscribeError, SubscribePass, mark_revoked, subscribe_all_with_base_url,
 };
 use crate::credentials_manager::TwitchCredentialsManager;
+use crate::event_kinds;
 use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
 use forge_events::{Event, EventPublisher, EventSource};
@@ -656,7 +657,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.chat.message",
+            event_kinds::CHANNEL_CHAT_MESSAGE,
             forge_payload,
         ));
     }
@@ -707,7 +708,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.subscribe",
+            event_kinds::CHANNEL_SUBSCRIBE,
             forge_payload,
         ));
     }
@@ -775,7 +776,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.subscription.message",
+            event_kinds::CHANNEL_SUBSCRIPTION_MESSAGE,
             forge_payload,
         ));
     }
@@ -831,7 +832,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.subscription.gift",
+            event_kinds::CHANNEL_SUBSCRIPTION_GIFT,
             forge_payload,
         ));
     }
@@ -880,7 +881,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.cheer",
+            event_kinds::CHANNEL_CHEER,
             forge_payload,
         ));
     }
@@ -948,7 +949,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.raid",
+            event_kinds::CHANNEL_RAID,
             forge_payload,
         ));
     }
@@ -1041,7 +1042,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.channel_points_custom_reward_redemption.add",
+            event_kinds::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_REDEMPTION_ADD,
             forge_payload,
         ));
     }
@@ -1089,7 +1090,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.chat.message_delete",
+            event_kinds::CHANNEL_CHAT_MESSAGE_DELETE,
             forge_payload,
         ));
     }
@@ -1122,7 +1123,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.chat.clear",
+            event_kinds::CHANNEL_CHAT_CLEAR,
             forge_payload,
         ));
     }
@@ -1162,7 +1163,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.follow",
+            event_kinds::CHANNEL_FOLLOW,
             forge_payload,
         ));
     }
@@ -1214,7 +1215,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.stream.online",
+            event_kinds::STREAM_ONLINE,
             forge_payload,
         ));
     }
@@ -1246,7 +1247,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.stream.offline",
+            event_kinds::STREAM_OFFLINE,
             forge_payload,
         ));
     }
@@ -1301,7 +1302,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.hype_train.begin",
+            event_kinds::CHANNEL_HYPE_TRAIN_BEGIN,
             forge_payload,
         ));
     }
@@ -1344,7 +1345,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.hype_train.progress",
+            event_kinds::CHANNEL_HYPE_TRAIN_PROGRESS,
             forge_payload,
         ));
     }
@@ -1392,7 +1393,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.hype_train.end",
+            event_kinds::CHANNEL_HYPE_TRAIN_END,
             forge_payload,
         ));
     }
@@ -1468,7 +1469,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.charity_campaign.donate",
+            event_kinds::CHANNEL_CHARITY_CAMPAIGN_DONATE,
             forge_payload,
         ));
     }
@@ -1481,7 +1482,7 @@ impl ChatSession {
         let forge_payload = build_charity_lifecycle_payload(event_data);
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.charity_campaign.start",
+            event_kinds::CHANNEL_CHARITY_CAMPAIGN_START,
             forge_payload,
         ));
     }
@@ -1494,7 +1495,7 @@ impl ChatSession {
         let forge_payload = build_charity_lifecycle_payload(event_data);
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.charity_campaign.progress",
+            event_kinds::CHANNEL_CHARITY_CAMPAIGN_PROGRESS,
             forge_payload,
         ));
     }
@@ -1507,7 +1508,7 @@ impl ChatSession {
         let forge_payload = build_charity_lifecycle_payload(event_data);
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.charity_campaign.stop",
+            event_kinds::CHANNEL_CHARITY_CAMPAIGN_STOP,
             forge_payload,
         ));
     }
@@ -1594,7 +1595,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.ban",
+            event_kinds::CHANNEL_BAN,
             forge_payload,
         ));
     }
@@ -1648,7 +1649,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.unban",
+            event_kinds::CHANNEL_UNBAN,
             forge_payload,
         ));
     }
@@ -1678,7 +1679,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.moderator.add",
+            event_kinds::CHANNEL_MODERATOR_ADD,
             serde_json::json!({
                 (moderator_fields::USER): {
                     (moderator_fields::USER_ID): user_id,
@@ -1714,7 +1715,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.moderator.remove",
+            event_kinds::CHANNEL_MODERATOR_REMOVE,
             serde_json::json!({
                 (moderator_fields::USER): {
                     (moderator_fields::USER_ID): user_id,
@@ -1750,7 +1751,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.vip.add",
+            event_kinds::CHANNEL_VIP_ADD,
             serde_json::json!({
                 (vip_fields::USER): {
                     (vip_fields::USER_ID): user_id,
@@ -1786,7 +1787,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.vip.remove",
+            event_kinds::CHANNEL_VIP_REMOVE,
             serde_json::json!({
                 (vip_fields::USER): {
                     (vip_fields::USER_ID): user_id,
@@ -1832,7 +1833,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.unban_request.create",
+            event_kinds::CHANNEL_UNBAN_REQUEST_CREATE,
             serde_json::json!({
                 (unban_request_fields::REQUEST_ID): request_id,
                 (unban_request_fields::USER): {
@@ -1900,7 +1901,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.unban_request.resolve",
+            event_kinds::CHANNEL_UNBAN_REQUEST_RESOLVE,
             serde_json::json!({
                 (unban_request_fields::REQUEST_ID): request_id,
                 (unban_request_fields::USER): {
@@ -1949,7 +1950,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.shield_mode.begin",
+            event_kinds::CHANNEL_SHIELD_MODE_BEGIN,
             serde_json::json!({
                 (shield_fields::MODERATOR): {
                     (shield_fields::MODERATOR_ID): moderator_id,
@@ -1991,7 +1992,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.shield_mode.end",
+            event_kinds::CHANNEL_SHIELD_MODE_END,
             serde_json::json!({
                 (shield_fields::MODERATOR): {
                     (shield_fields::MODERATOR_ID): moderator_id,
@@ -2037,7 +2038,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.shoutout.create",
+            event_kinds::CHANNEL_SHOUTOUT_CREATE,
             serde_json::json!({
                 (shoutout_fields::TO_BROADCASTER): {
                     (shoutout_fields::BROADCASTER_ID): to_id,
@@ -2084,7 +2085,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.shoutout.receive",
+            event_kinds::CHANNEL_SHOUTOUT_RECEIVE,
             serde_json::json!({
                 (shoutout_fields::FROM_BROADCASTER): {
                     (shoutout_fields::BROADCASTER_ID): from_id,
@@ -2133,7 +2134,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.suspicious_user.message",
+            event_kinds::CHANNEL_SUSPICIOUS_USER_MESSAGE,
             serde_json::json!({
                 (suspicious_fields::USER): {
                     (suspicious_fields::USER_ID): user_id,
@@ -2171,7 +2172,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.warning.acknowledge",
+            event_kinds::CHANNEL_WARNING_ACKNOWLEDGE,
             serde_json::json!({
                 (warning_fields::USER): {
                     (warning_fields::USER_ID): user_id,
@@ -2232,7 +2233,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.warning.send",
+            event_kinds::CHANNEL_WARNING_SEND,
             serde_json::json!({
                 (warning_fields::USER): {
                     (warning_fields::USER_ID): user_id,
@@ -2282,7 +2283,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.poll.begin",
+            event_kinds::CHANNEL_POLL_BEGIN,
             serde_json::json!({
                 (poll_fields::POLL): {
                     (poll_fields::POLL_ID): poll_id,
@@ -2317,7 +2318,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.poll.progress",
+            event_kinds::CHANNEL_POLL_PROGRESS,
             serde_json::json!({
                 (poll_fields::POLL): {
                     (poll_fields::POLL_ID): poll_id,
@@ -2360,7 +2361,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.poll.end",
+            event_kinds::CHANNEL_POLL_END,
             serde_json::json!({
                 (poll_fields::POLL): {
                     (poll_fields::POLL_ID): poll_id,
@@ -2405,7 +2406,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.prediction.begin",
+            event_kinds::CHANNEL_PREDICTION_BEGIN,
             serde_json::json!({
                 (prediction_fields::PREDICTION): {
                     (prediction_fields::PREDICTION_ID): prediction_id,
@@ -2440,7 +2441,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.prediction.progress",
+            event_kinds::CHANNEL_PREDICTION_PROGRESS,
             serde_json::json!({
                 (prediction_fields::PREDICTION): {
                     (prediction_fields::PREDICTION_ID): prediction_id,
@@ -2476,7 +2477,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.prediction.lock",
+            event_kinds::CHANNEL_PREDICTION_LOCK,
             serde_json::json!({
                 (prediction_fields::PREDICTION): {
                     (prediction_fields::PREDICTION_ID): prediction_id,
@@ -2522,7 +2523,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.prediction.end",
+            event_kinds::CHANNEL_PREDICTION_END,
             serde_json::json!({
                 (prediction_fields::PREDICTION): {
                     (prediction_fields::PREDICTION_ID): prediction_id,
@@ -2573,7 +2574,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.goal.begin",
+            event_kinds::CHANNEL_GOAL_BEGIN,
             serde_json::json!({
                 (goal_fields::GOAL): {
                     (goal_fields::GOAL_ID): goal_id,
@@ -2634,7 +2635,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.goal.end",
+            event_kinds::CHANNEL_GOAL_END,
             serde_json::json!({
                 (goal_fields::GOAL): {
                     (goal_fields::GOAL_ID): goal_id,
@@ -2678,7 +2679,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.channel_points_custom_reward.add",
+            event_kinds::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_ADD,
             serde_json::json!({
                 (reward_fields::REWARD): {
                     (reward_fields::REWARD_ID): reward_id,
@@ -2721,7 +2722,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.channel_points_custom_reward.update",
+            event_kinds::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_UPDATE,
             serde_json::json!({
                 (reward_fields::REWARD): {
                     (reward_fields::REWARD_ID): reward_id,
@@ -2764,7 +2765,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.channel_points_custom_reward.remove",
+            event_kinds::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_REMOVE,
             serde_json::json!({
                 (reward_fields::REWARD): {
                     (reward_fields::REWARD_ID): reward_id,
@@ -2839,7 +2840,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.channel_points_custom_reward_redemption.update",
+            event_kinds::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_REDEMPTION_UPDATE,
             serde_json::json!({
                 (channel_points_fields::REDEMPTION): {
                     (channel_points_fields::REDEMPTION_ID): redemption_id,
@@ -2919,7 +2920,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.automod.message.hold",
+            event_kinds::AUTOMOD_MESSAGE_HOLD,
             serde_json::json!({
                 (automod_fields::AUTOMOD): {
                     (automod_fields::MESSAGE_ID): message_id,
@@ -2982,7 +2983,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.chat_settings.update",
+            event_kinds::CHANNEL_CHAT_SETTINGS_UPDATE,
             serde_json::json!({
                 (chat_mod_fields::SETTINGS): {
                     (chat_mod_fields::EMOTE_MODE): emote_mode,
@@ -3017,7 +3018,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.guest_star_session.begin",
+            event_kinds::CHANNEL_GUEST_STAR_SESSION_BEGIN,
             serde_json::json!({
                 (guest_star_fields::SESSION): {
                     (guest_star_fields::SESSION_ID): session_id,
@@ -3052,7 +3053,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.guest_star_session.end",
+            event_kinds::CHANNEL_GUEST_STAR_SESSION_END,
             serde_json::json!({
                 (guest_star_fields::SESSION): {
                     (guest_star_fields::SESSION_ID): session_id,
@@ -3090,7 +3091,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.guest_star_settings.update",
+            event_kinds::CHANNEL_GUEST_STAR_SETTINGS_UPDATE,
             serde_json::json!({
                 (guest_star_fields::SETTINGS): {
                     (guest_star_fields::SLOT_COUNT): slot_count,
@@ -3163,7 +3164,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.guest_star_guest.update",
+            event_kinds::CHANNEL_GUEST_STAR_GUEST_UPDATE,
             serde_json::json!({
                 (guest_star_fields::SESSION_ID_FIELD): session_id,
                 (guest_star_fields::SLOT_ID_FIELD): slot_id,
@@ -3208,7 +3209,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.automod.settings.update",
+            event_kinds::AUTOMOD_SETTINGS_UPDATE,
             serde_json::json!({
                 (automod_fields::MODERATOR): {
                     (automod_fields::MODERATOR_ID): moderator_id,
@@ -3255,7 +3256,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.automod.terms.update",
+            event_kinds::AUTOMOD_TERMS_UPDATE,
             serde_json::json!({
                 (automod_fields::MODERATOR): {
                     (automod_fields::MODERATOR_ID): moderator_id,
@@ -3341,7 +3342,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.automod.message.update",
+            event_kinds::AUTOMOD_MESSAGE_UPDATE,
             serde_json::json!({
                 (automod_fields::AUTOMOD): {
                     (automod_fields::MESSAGE_ID): message_id,
@@ -3400,7 +3401,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.shared_chat.begin",
+            event_kinds::CHANNEL_SHARED_CHAT_BEGIN,
             serde_json::json!({
                 (shared_chat_fields::SHARED_CHAT): { (shared_chat_fields::SESSION_ID): session_id },
                 (shared_chat_fields::HOST): {
@@ -3442,7 +3443,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.shared_chat.update",
+            event_kinds::CHANNEL_SHARED_CHAT_UPDATE,
             serde_json::json!({
                 (shared_chat_fields::SHARED_CHAT): { (shared_chat_fields::SESSION_ID): session_id },
                 (shared_chat_fields::HOST): {
@@ -3484,7 +3485,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.shared_chat.end",
+            event_kinds::CHANNEL_SHARED_CHAT_END,
             serde_json::json!({
                 (shared_chat_fields::SHARED_CHAT): { (shared_chat_fields::SESSION_ID): session_id },
                 (shared_chat_fields::HOST): {
@@ -3526,7 +3527,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.update",
+            event_kinds::CHANNEL_UPDATE,
             serde_json::json!({
                 (channel_update_fields::CHANNEL): {
                     (channel_update_fields::TITLE): title,
@@ -3579,7 +3580,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.ad_break.begin",
+            event_kinds::CHANNEL_AD_BREAK_BEGIN,
             serde_json::json!({
                 (ad_break_fields::AD_BREAK): {
                     (ad_break_fields::DURATION_SECONDS): duration_seconds,
@@ -3641,7 +3642,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.channel.channel_points_automatic_reward_redemption.add",
+            event_kinds::CHANNEL_CHANNEL_POINTS_AUTOMATIC_REWARD_REDEMPTION_ADD,
             serde_json::json!({
                 (automatic_reward_fields::REDEMPTION): {
                     (automatic_reward_fields::REDEMPTION_ID): redemption_id,
@@ -3696,7 +3697,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.user.whisper.message",
+            event_kinds::USER_WHISPER_MESSAGE,
             serde_json::json!({
                 (whisper_fields::USER): {
                     (whisper_fields::USER_ID): from_user_id,
@@ -3742,7 +3743,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "twitch.user.update",
+            event_kinds::USER_UPDATE,
             serde_json::json!({
                 (user_fields::USER): {
                     (user_fields::USER_ID): user_id,

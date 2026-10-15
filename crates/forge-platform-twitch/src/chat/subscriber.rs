@@ -1,3 +1,4 @@
+use crate::event_kinds;
 use crate::subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_types::OAuthToken;
@@ -633,7 +634,7 @@ async fn subscribe_one(
             {
                 ctx.bus.publish(Event::new(
                     EventSource::Twitch,
-                    "twitch.eventsub.subscription.created",
+                    event_kinds::EVENTSUB_SUBSCRIPTION_CREATED,
                     serde_json::json!({
                         "type": sub.subscription_type,
                         "subscription_id": sub.id,

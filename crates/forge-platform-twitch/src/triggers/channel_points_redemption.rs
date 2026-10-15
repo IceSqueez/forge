@@ -1,3 +1,4 @@
+use crate::event_kinds;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -99,7 +100,7 @@ impl TriggerKindDescriptor for ChannelPointsRedemptionDescriptor {
         EventFilter {
             source: Some(EventSource::Twitch),
             kind_prefix: Some(
-                "twitch.channel.channel_points_custom_reward_redemption.add".to_owned(),
+                event_kinds::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_REDEMPTION_ADD.to_owned(),
             ),
         }
     }

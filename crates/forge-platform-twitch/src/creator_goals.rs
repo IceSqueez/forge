@@ -1,12 +1,12 @@
 use forge_events::{Event, EventPublisher, EventSource};
 use tracing::debug;
 
+use crate::event_kinds;
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
 use crate::payload_fields::goal as goal_fields;
 
 const GOALS_PATH: &str = "/helix/goals";
 const BROADCASTER_ID_PARAM: &str = "broadcaster_id";
-const GOAL_PROGRESS_KIND: &str = "twitch.channel.goal.progress";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GoalProgressOrigin {
@@ -39,7 +39,7 @@ pub(crate) fn goal_progress_event(goal: &serde_json::Value, origin: GoalProgress
 
     Event::new(
         EventSource::Twitch,
-        GOAL_PROGRESS_KIND,
+        event_kinds::CHANNEL_GOAL_PROGRESS,
         serde_json::json!({
             (goal_fields::GOAL): {
                 (goal_fields::GOAL_ID): goal_id,

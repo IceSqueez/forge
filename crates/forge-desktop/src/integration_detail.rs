@@ -124,16 +124,6 @@ const VIEWER_DELTA_WINDOW: Duration = Duration::from_secs(15 * 60);
 const VIEWER_RING_CAP: usize = 256;
 const DETAIL_TICK: Duration = Duration::from_secs(30);
 const HISTORY_LIMIT: u32 = 50;
-const TWITCH_LIFECYCLE_KINDS: [&str; 8] = [
-    "twitch.channel.poll.begin",
-    "twitch.channel.poll.progress",
-    "twitch.channel.poll.end",
-    "twitch.channel.prediction.begin",
-    "twitch.channel.prediction.progress",
-    "twitch.channel.prediction.lock",
-    "twitch.channel.prediction.end",
-    "twitch.channel.raid",
-];
 
 pub struct ObsSignedOut;
 pub struct VTubeSignedOut;
@@ -1514,7 +1504,8 @@ pub(crate) fn rebuilds_descriptors(event: &Event) -> bool {
         EventSource::Obs => event
             .kind
             .starts_with(forge_obs::event_kinds::CONNECTION_PREFIX),
-        EventSource::Twitch => TWITCH_LIFECYCLE_KINDS.contains(&event.kind.as_str()),
+        EventSource::Twitch => forge_platform_twitch::event_kinds::DESCRIPTOR_REBUILDING_KINDS
+            .contains(&event.kind.as_str()),
         _ => false,
     }
 }

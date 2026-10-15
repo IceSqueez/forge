@@ -1,3 +1,4 @@
+use crate::event_kinds;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -57,7 +58,7 @@ impl TriggerKindDescriptor for AutomaticRewardRedeemedDescriptor {
         EventFilter {
             source: Some(EventSource::Twitch),
             kind_prefix: Some(
-                "twitch.channel.channel_points_automatic_reward_redemption.add".to_owned(),
+                event_kinds::CHANNEL_CHANNEL_POINTS_AUTOMATIC_REWARD_REDEMPTION_ADD.to_owned(),
             ),
         }
     }

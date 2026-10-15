@@ -1,3 +1,4 @@
+use crate::event_kinds;
 use forge_events::{DeliveryLane, Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ChatTriggerFamily, EventFilter, FIRST_CHATTERS_ONLY, FormField,
@@ -54,7 +55,7 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("twitch.channel.chat.message".to_owned()),
+            kind_prefix: Some(event_kinds::CHANNEL_CHAT_MESSAGE.to_owned()),
         }
     }
 

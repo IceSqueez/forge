@@ -1,3 +1,4 @@
+use crate::event_kinds;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -54,7 +55,7 @@ impl TriggerKindDescriptor for ModeratorAddedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("twitch.channel.moderator.add".to_owned()),
+            kind_prefix: Some(event_kinds::CHANNEL_MODERATOR_ADD.to_owned()),
         }
     }
 

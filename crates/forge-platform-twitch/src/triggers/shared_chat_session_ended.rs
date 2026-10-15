@@ -1,3 +1,4 @@
+use crate::event_kinds;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
@@ -57,7 +58,7 @@ impl TriggerKindDescriptor for SharedChatSessionEndedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("twitch.channel.shared_chat.end".to_owned()),
+            kind_prefix: Some(event_kinds::CHANNEL_SHARED_CHAT_END.to_owned()),
         }
     }
 

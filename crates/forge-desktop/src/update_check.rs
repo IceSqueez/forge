@@ -290,14 +290,13 @@ mod tests {
     use std::path::PathBuf;
 
     use forge_update::{
-        Artifact, ArtifactKind, InstallKind, InstallLayout, ManualReason, Platform, Sha256Digest,
-        UpdatableInstall, UpdateOffer,
+        Artifact, ArtifactKind, GithubRepo, InstallKind, InstallLayout, ManualReason, Platform,
+        PublishedRelease, Sha256Digest, UpdatableInstall, UpdateOffer,
     };
 
     use super::{
-        CURRENT_VERSION, FoundUpdate, REPO_URL, Release, UpdateNotice, any_output_active,
-        display_version, latest_release_url, parse_version, release_from_json, release_page_url,
-        should_notify, update_candidate,
+        CURRENT_VERSION, FoundUpdate, REPO_URL, UpdateNotice, any_output_active, display_version,
+        parse_version, should_notify, update_candidate,
     };
 
     fn status(active: bool) -> HealthMetric {
@@ -333,141 +332,17 @@ mod tests {
     }
 
     #[test]
-    fn release_from_json_takes_the_trimmed_tag_and_page_of_a_published_release() {
-        for body in [
-            r#"{"tag_name":" v0.6.0 ","html_url":" https://example.invalid/r ","draft":false}"#,
-            r#"{"tag_name":"v0.6.0","html_url":"https://example.invalid/r"}"#,
-        ] {
-            assert_eq!(
-                release_from_json(body),
-                Some(Release {
-                    tag: "v0.6.0".to_owned(),
-                    url: "https://example.invalid/r".to_owned(),
-                }),
-                "for {body:?}",
-            );
-        }
-    }
-
-    #[test]
-    fn release_from_json_rejects_a_draft_a_missing_field_and_a_body_that_is_not_an_object() {
-        for body in [
-            r#"{"tag_name":"v0.6.0","html_url":"https://example.invalid/r","draft":true}"#,
-            r#"{"html_url":"https://example.invalid/r"}"#,
-            r#"{"tag_name":"v0.6.0"}"#,
-            r#"{"tag_name":"   ","html_url":"https://example.invalid/r"}"#,
-            r#"{"tag_name":"v0.6.0","html_url":""}"#,
-            r#"{"tag_name":42,"html_url":"https://example.invalid/r"}"#,
-            r#"["v0.6.0"]"#,
-            r#""v0.6.0""#,
-            "null",
-            "{not json",
-            "",
-        ] {
-            assert_eq!(release_from_json(body), None, "accepted {body:?}");
-        }
-    }
-
-    #[test]
-    fn latest_release_url_reaches_the_api_whatever_the_web_url_spelling() {
-        for repo in [
-            "https://github.com/nova/forge",
-            "https://github.com/nova/forge.git",
-            "https://github.com/nova/forge/",
-            "https://github.com/nova/forge.git/",
-            "  https://github.com/nova/forge  ",
-        ] {
-            assert_eq!(
-                latest_release_url(repo).as_deref(),
-                Some("https://api.github.com/repos/nova/forge/releases/latest"),
-                "for {repo:?}",
-            );
-        }
-    }
-
-    #[test]
-    fn latest_release_url_is_none_for_anything_but_a_github_web_url() {
-        for repo in [
-            "https://gitlab.com/nova/forge",
-            "http://github.com/nova/forge",
-            "git@github.com:nova/forge.git",
-            "https://github.com/",
-            "https://github.com//",
-            "",
-        ] {
-            assert_eq!(latest_release_url(repo), None, "accepted {repo:?}");
-        }
-    }
-
-    #[test]
     fn the_manifest_version_and_repository_both_feed_the_check() {
         assert!(
             parse_version(CURRENT_VERSION).is_some(),
             "unparseable {CURRENT_VERSION:?}",
         );
         assert!(
-            latest_release_url(REPO_URL).is_some(),
-            "no release api url from {REPO_URL:?}",
-        );
-        assert!(
-            release_page_url(REPO_URL, CURRENT_VERSION).is_some(),
+            GithubRepo::parse(REPO_URL)
+                .and_then(|repo| repo.release_page_url(CURRENT_VERSION))
+                .is_some(),
             "no release page url from {REPO_URL:?}",
         );
-    }
-
-    #[test]
-    fn release_page_url_opens_the_v_tag_page_whatever_the_version_and_web_url_spelling() {
-        for (repo, version, expected) in [
-            (
-                "https://github.com/nova/forge",
-                "0.7.1",
-                "https://github.com/nova/forge/releases/tag/v0.7.1",
-            ),
-            (
-                "https://github.com/nova/forge",
-                "v0.7.1",
-                "https://github.com/nova/forge/releases/tag/v0.7.1",
-            ),
-            (
-                "https://github.com/nova/forge.git",
-                " v0.7.1 ",
-                "https://github.com/nova/forge/releases/tag/v0.7.1",
-            ),
-            (
-                "https://github.com/nova/forge/",
-                "0.7.1",
-                "https://github.com/nova/forge/releases/tag/v0.7.1",
-            ),
-            (
-                "https://github.com/nova/forge.git/",
-                "0.8.0-rc.1",
-                "https://github.com/nova/forge/releases/tag/v0.8.0-rc.1",
-            ),
-        ] {
-            assert_eq!(
-                release_page_url(repo, version).as_deref(),
-                Some(expected),
-                "for {repo:?} {version:?}",
-            );
-        }
-    }
-
-    #[test]
-    fn release_page_url_is_none_without_a_github_repo_or_a_version() {
-        for (repo, version) in [
-            ("https://gitlab.com/nova/forge", "0.7.1"),
-            ("git@github.com:nova/forge.git", "0.7.1"),
-            ("https://github.com/", "0.7.1"),
-            ("https://github.com/nova/forge", ""),
-            ("https://github.com/nova/forge", "v"),
-            ("https://github.com/nova/forge", "   "),
-        ] {
-            assert_eq!(
-                release_page_url(repo, version),
-                None,
-                "accepted {repo:?} {version:?}",
-            );
-        }
     }
 
     #[test]
@@ -662,9 +537,9 @@ mod tests {
 
     #[test]
     fn every_other_combination_falls_back_to_a_download_link() {
-        let unsigned = FoundUpdate::Unsigned(Release {
+        let unsigned = FoundUpdate::Unsigned(PublishedRelease {
             tag: "v0.9.0".to_owned(),
-            url: OFFER_PAGE.to_owned(),
+            page_url: OFFER_PAGE.to_owned(),
         });
         for (label, found, install, platform) in [
             (
@@ -719,9 +594,9 @@ mod tests {
 
     #[test]
     fn signed_and_unsigned_offers_of_one_release_show_the_same_version() {
-        let unsigned = FoundUpdate::Unsigned(Release {
+        let unsigned = FoundUpdate::Unsigned(PublishedRelease {
             tag: "v0.9.0".to_owned(),
-            url: OFFER_PAGE.to_owned(),
+            page_url: OFFER_PAGE.to_owned(),
         });
         let signed = signed(linux_offer());
 

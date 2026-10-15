@@ -11,7 +11,7 @@ use gpui::{
     Window, div, prelude::*, px,
 };
 
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 
 const MODAL_W: Pixels = px(440.0);
 

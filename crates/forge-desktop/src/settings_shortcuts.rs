@@ -16,8 +16,8 @@ use gpui::{
 use crate::actions::{SHORTCUTS, ShortcutEntry, shortcut_entry};
 use crate::async_bridge;
 use crate::hotkey_bindings::{load_hold_ceiling, save_hold_ceiling};
-use crate::presentation::ActivePresentation;
 use crate::shortcut_overrides::{ChordVerdict, ShortcutOverrides, save_overrides};
+use forge_components::ActivePresentation;
 
 const CEILING_MIN_SECS: u64 = 1;
 const CEILING_MAX_SECS: u64 = 3600;

@@ -13,9 +13,9 @@ use gpui::{
 
 use crate::integrations::ObsInstallSeed;
 use crate::obs_credentials_form::{DEFAULT_PORT, ObsConnected, ObsCredentialsForm, ObsSubmit};
-use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
+use forge_components::ActivePresentation;
 use forge_components::grow_cell;
 
 const BODY_PAD_V: Pixels = px(18.0);

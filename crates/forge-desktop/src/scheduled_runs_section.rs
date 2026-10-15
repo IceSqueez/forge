@@ -17,7 +17,6 @@ use gpui::{
 use time::{OffsetDateTime, UtcOffset};
 
 use crate::async_bridge;
-use crate::presentation::ActivePresentation;
 use crate::queues::running_pill;
 use crate::scheduled_run_labels::{
     Countdown, OutcomeTone, Span, countdown, countdown_label, local_stamp, outcome_badge_key,
@@ -26,6 +25,7 @@ use crate::scheduled_run_labels::{
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::window_presence::PresenceGate;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 const RECENT_LIMIT: usize = 20;

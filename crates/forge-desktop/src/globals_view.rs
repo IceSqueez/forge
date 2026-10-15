@@ -28,7 +28,7 @@ use gpui::{
 
 use crate::async_bridge;
 use crate::globals::{Global, Globals, GlobalsFilter, variant_kind_color};
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 const EDITOR_KINDS: [VariantKind; 7] = [

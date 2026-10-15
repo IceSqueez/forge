@@ -18,8 +18,8 @@ use crate::audio_routes::{
     AudioDomain, RouteFallback, RoutePlan, load_audio_routes, plan_route, resolve_destination,
     set_destination, set_route,
 };
-use crate::presentation::ActivePresentation;
 use crate::settings_audio::test_tone;
+use forge_components::ActivePresentation;
 
 const EVERY_ROUTE: [(AudioRoute, &str); 3] = [
     (AudioRoute::Local, "settings_audio_route_local"),

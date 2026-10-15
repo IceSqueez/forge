@@ -13,8 +13,8 @@ use gpui::{
 use std::sync::Arc;
 
 use crate::async_bridge;
-use crate::presentation::ActivePresentation;
 use crate::unsaved_work::UnsavedWork;
+use forge_components::ActivePresentation;
 
 use super::OverlaysView;
 use super::editor_state::EditorMode;

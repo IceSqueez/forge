@@ -20,9 +20,9 @@ use crate::hotkey_bindings::{
 use crate::hotkey_sync::HotkeyReconciler;
 use crate::hub_crumb::hub_crumb;
 use crate::integration_supervisor::IntegrationSlot;
-use crate::presentation::ActivePresentation;
 use crate::shortcut_overrides::{ShortcutOverrides, save_overrides};
 use crate::sidebar::NavRequested;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 mod action_modal;

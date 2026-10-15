@@ -6,8 +6,8 @@ use crate::config_form::{
     FILL_VAL_FS, FoldContext, collect_field_values, fold_config_field, render_config_row,
     set_picked_value, sparse_overrides,
 };
-use crate::presentation::ActivePresentation;
 use crate::triggers_screen::platform_dot_color;
+use forge_components::ActivePresentation;
 use forge_components::{
     BORDER_THIN, Density, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition,
     Picker, PickerEvent, Radius, Spacing, TextInput, body_family, ghost_button_with_icon, modal,

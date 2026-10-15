@@ -25,8 +25,8 @@ use crate::diagnostic_bundle::{self, Bundle, BundleInput, RUN_HISTORY_LIMIT};
 use crate::integrations::BuiltinRegistry;
 use crate::log_archive;
 use crate::log_tail::{LogLine, LogTail};
-use crate::presentation::ActivePresentation;
 use crate::window_presence::PresenceGate;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 const TAIL_REFRESH: Duration = Duration::from_secs(2);

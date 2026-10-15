@@ -1,5 +1,5 @@
 use super::*;
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 use forge_components::{
     Density, FONT_XS, ForgePalette, Icon, InputEvent, Spacing, TextInput, body_family, icon,
     mono_family, spacing, tr,

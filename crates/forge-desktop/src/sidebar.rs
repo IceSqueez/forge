@@ -11,8 +11,8 @@ use gpui::{
 use crate::integration_catalog::{core_features, declarations, look_of};
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
 use crate::platforms::PlatformConnectivity;
-use crate::presentation::{ActivePresentation, Presentation};
 use crate::screen::Screen;
+use forge_components::{ActivePresentation, Presentation};
 
 const SIDEBAR_WIDTH: Pixels = px(210.0);
 const SIDEBAR_MIN: Pixels = px(170.0);

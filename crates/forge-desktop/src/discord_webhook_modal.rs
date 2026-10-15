@@ -9,8 +9,8 @@ use gpui::{
     Window, div, prelude::*, px,
 };
 
-use crate::presentation::ActivePresentation;
 use crate::toasts::copy_to_clipboard;
+use forge_components::ActivePresentation;
 
 const BODY_PAD_V: Pixels = px(16.0);
 const BODY_PAD_H: Pixels = px(18.0);

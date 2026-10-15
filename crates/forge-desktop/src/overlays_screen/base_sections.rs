@@ -21,7 +21,7 @@ use super::property_panel::{
 use super::sizing_section::{is_source_box_key, with_source_box};
 use crate::async_bridge;
 use crate::config_form::{ChoiceDropdown, ConfigField, ConfigFieldHandlers, render_config_control};
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 
 const LOOK_FIELD_KEY: &str = "look";
 const ROW_GAP: Pixels = px(8.0);

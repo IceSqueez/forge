@@ -5,8 +5,8 @@ use crate::awake_state::{AwakeState, AwakeTone};
 use crate::event_loss::{EventLoss, breakdown, consumer_label, tier_label};
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::platforms::PlatformConnectivity;
-use crate::presentation::{ActivePresentation, Presentation};
 use crate::runtime_status::RuntimeStatus;
+use forge_components::{ActivePresentation, Presentation};
 
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 

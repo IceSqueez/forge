@@ -20,8 +20,8 @@ use gpui::{
 };
 
 use crate::async_bridge;
-use crate::presentation::ActivePresentation;
 use crate::speak_state::{NowSpeaking, QueueItem, SessionStats, SpeakState};
+use forge_components::ActivePresentation;
 
 const VOL_SLIDER_W: Pixels = px(90.0);
 const TEST_INPUT_W: Pixels = px(160.0);

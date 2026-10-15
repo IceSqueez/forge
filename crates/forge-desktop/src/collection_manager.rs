@@ -18,7 +18,7 @@ use crate::async_bridge;
 use crate::collection_form::{CollectionForm, CollectionFormEvent};
 use crate::collection_list::{CollectionList, CollectionListEvent, ListLoad};
 use crate::collection_text::{collection_failure_message, localized_collection_text};
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 const MANAGER_WIDTH: gpui::Pixels = px(560.0);

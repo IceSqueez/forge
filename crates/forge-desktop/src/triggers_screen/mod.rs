@@ -20,9 +20,9 @@ use crate::collection_options::ChoiceOptions;
 use crate::config_form::{CollectionChoices, ConfigField};
 use crate::integration_switch::{IntegrationSwitch, SwitchWatch};
 use crate::integrations::BuiltinRegistry;
-use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 mod collection_choices;

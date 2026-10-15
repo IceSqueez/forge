@@ -24,8 +24,8 @@ use crate::discord_webhooks::{
 };
 use crate::hub_crumb::hub_crumb;
 use crate::integration_supervisor::IntegrationSlot;
-use crate::presentation::ActivePresentation;
 use crate::sidebar::NavRequested;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::{grow_cell, stat_card};
 

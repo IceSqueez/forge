@@ -15,7 +15,7 @@ use gpui::{
 
 use crate::async_bridge::{self, ErrorSink, EventBatch};
 use crate::integrations::VTubeInstallSeed;
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 use forge_components::grow_cell;
 
 pub const VTUBE_AUTO_RECONNECT_KEY: &str = "vtube.auto_reconnect";

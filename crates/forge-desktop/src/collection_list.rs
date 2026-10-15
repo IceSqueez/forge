@@ -10,8 +10,8 @@ use gpui::{
 };
 
 use crate::collection_text::localized_collection_text;
-use crate::presentation::ActivePresentation;
 use crate::toasts::copy_to_clipboard;
+use forge_components::ActivePresentation;
 use forge_components::{FIELD_FONT, failure_note, failure_with_retry, field_frame};
 
 const LIST_GAP: gpui::Pixels = px(6.0);

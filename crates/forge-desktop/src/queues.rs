@@ -23,10 +23,10 @@ use gpui::{
 };
 
 use crate::async_bridge;
-use crate::presentation::ActivePresentation;
 use crate::queue_health::QueueHealth;
 use crate::scheduled_runs_section::ScheduledRunsView;
 use crate::sidebar::NavRequested;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 const BADGE_RADIUS: Pixels = px(8.0);

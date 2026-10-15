@@ -35,10 +35,10 @@ use time::format_description::well_known::Rfc3339;
 
 use crate::async_bridge::{self, BridgeFlow, drain_events};
 use crate::globals::variant_kind_color;
-use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::unsaved_work::UnsavedWork;
+use forge_components::ActivePresentation;
 
 const LEFT_PANE_W: Pixels = px(200.0);
 const CODE_LINE_HEIGHT: Pixels = px(19.8);

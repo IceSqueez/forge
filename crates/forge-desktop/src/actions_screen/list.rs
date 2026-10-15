@@ -1,6 +1,6 @@
 use super::*;
 use crate::async_bridge;
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::{
     BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_XS, FONT_XXS, ForgePalette, Icon,

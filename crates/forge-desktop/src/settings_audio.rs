@@ -13,10 +13,10 @@ use forge_storage::{DataProvider, SettingsRepo};
 use gpui::{AnyElement, ClickEvent, Context, Entity, FocusHandle, Window, div, prelude::*, px};
 
 use crate::async_bridge;
-use crate::presentation::ActivePresentation;
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_audio_routing::SettingsAudioRoutingView;
 use crate::settings_voice_gate::SettingsVoiceGateView;
+use forge_components::ActivePresentation;
 
 const TEST_TONE_SAMPLE_RATE: u32 = 22_050;
 

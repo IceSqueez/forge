@@ -16,9 +16,9 @@ use crate::integration_disabled::{disclaimer_block, hero_card};
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
 use crate::integration_supervisor::{IntegrationSlot, LifecycleState};
 use crate::integrations_hub::card_status_badge;
-use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 const BODY_PAD_V: Pixels = px(18.0);

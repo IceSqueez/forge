@@ -32,8 +32,8 @@ use crate::chat_feed::{ChatFeed, ChatMessage};
 use crate::chat_viewer_messages::{ViewerMessages, stored_author};
 use crate::home_stats::HomeStats;
 use crate::integration_lifecycle::IntegrationLifecycle;
-use crate::presentation::ActivePresentation;
 use crate::window_presence::PresenceGate;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 mod ban_labels;

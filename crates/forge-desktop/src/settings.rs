@@ -15,7 +15,7 @@ use gpui::{
 
 use crate::async_bridge::{self, ErrorSink};
 use crate::awake_state::AwakeState;
-use crate::presentation::{ActiveLanguage, ActivePresentation, Presentation};
+use crate::presentation::ActiveLanguage;
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_audio::SettingsAudioView;
 use crate::settings_diagnostics::SettingsDiagnosticsView;
@@ -23,6 +23,7 @@ use crate::settings_scripting::SettingsScriptingView;
 use crate::settings_shortcuts::SettingsShortcutsView;
 use crate::settings_storage::SettingsStorageView;
 use crate::settings_websocket::SettingsWebSocketView;
+use forge_components::{ActivePresentation, Presentation};
 
 const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
 

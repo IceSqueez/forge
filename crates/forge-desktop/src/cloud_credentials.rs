@@ -22,7 +22,7 @@ use gpui::{
 
 use crate::async_bridge;
 use crate::cloud_tts_boot;
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 const RESULT_DOT: Pixels = px(6.0);

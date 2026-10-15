@@ -19,8 +19,8 @@ use gpui::{
 
 use crate::async_bridge::{self, ErrorSink};
 use crate::overlay_build_failure::OverlayBuildFailure;
-use crate::presentation::ActivePresentation;
 use crate::server_restart::restart_ignoring_disabled;
+use forge_components::ActivePresentation;
 
 const BEARER_CREDENTIAL_ID: &str = "server:bearer";
 const LAN_PHRASE: &str = "expose to LAN";

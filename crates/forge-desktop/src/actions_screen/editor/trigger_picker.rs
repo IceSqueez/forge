@@ -1,7 +1,7 @@
 use super::*;
 use crate::async_bridge;
-use crate::presentation::ActivePresentation;
 use crate::triggers_screen::platform_dot_color;
+use forge_components::ActivePresentation;
 use forge_components::{
     ForgePalette, GlyphArt, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent,
     GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon,

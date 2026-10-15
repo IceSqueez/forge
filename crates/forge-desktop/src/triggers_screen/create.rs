@@ -7,7 +7,7 @@ use crate::config_form::{
     FILL_VAL_FS, FoldContext, collect_field_values, fold_config_field, render_config_row,
     set_picked_value, sparse_overrides,
 };
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 use forge_components::{
     BORDER_THIN, Density, FONT_XXS, ForgePalette, GlyphArt, GridPicker, GridPickerArt,
     GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState,

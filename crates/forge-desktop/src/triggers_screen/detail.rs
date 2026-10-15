@@ -8,7 +8,7 @@ use crate::config_form::{
     set_picked_value, sparse_overrides,
 };
 use crate::integration_switch::{category_inactive_badge, inactive_badge};
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 use forge_components::{
     Density, FONT_XXS, Icon, InputEvent, Picker, PickerEvent, Radius, ResizeEdge, ResizeRange,
     Spacing, TextInput, body_family, ghost_button_with_icon, icon, install_resize, mono_family,

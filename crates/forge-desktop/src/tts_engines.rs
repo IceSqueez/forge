@@ -19,7 +19,7 @@ use gpui::{
 
 use crate::async_bridge::{self, ErrorSink};
 use crate::cloud_credentials::{CloudCredentialsView, CloudEngineKind, CloudEngineRegistered};
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 
 const RAIL_W: Pixels = px(240.0);
 const TILE: Pixels = px(36.0);

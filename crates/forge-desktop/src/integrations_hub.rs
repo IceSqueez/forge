@@ -29,9 +29,9 @@ use crate::integration_references::{IntegrationReferences, tally_references};
 use crate::integration_supervisor::{IntegrationSupervisor, LifecycleState};
 use crate::integrations::BuiltinRegistry;
 use crate::platforms::PlatformConnectivity;
-use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 mod welcome;

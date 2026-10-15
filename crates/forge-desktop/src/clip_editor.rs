@@ -17,11 +17,11 @@ use crate::combo_capture::{CapturedKey, ComboCapture, captured_key, warn_if_typi
 use crate::combo_conflict::{Claimant, ComboHolder, ComboHolders, conflict_prompt};
 use crate::hotkey_action_modal::keycaps;
 use crate::integration_switch::{IntegrationSwitch, SwitchWatch, integration_name};
-use crate::presentation::ActivePresentation;
 use crate::soundboard::hotkeys_notice::hotkeys_integration;
 use crate::soundboard::{
     CATEGORY_ORDER, audio_dialog_extensions, category_color, category_label, field_lite_label,
 };
+use forge_components::ActivePresentation;
 
 const MODAL_W: Pixels = px(440.0);
 const LABEL_FS: Pixels = px(11.5);

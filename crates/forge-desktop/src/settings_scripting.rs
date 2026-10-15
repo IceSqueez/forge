@@ -17,7 +17,7 @@ use gpui::{
 };
 
 use crate::async_bridge;
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 
 struct ScriptingSnapshot {
     allowed_domains: Vec<String>,

@@ -12,7 +12,7 @@ use super::adoption::{LibraryBadge, library_badge};
 use super::categories::category_color;
 use super::playback::{readout_total, time_readout};
 use super::{SoundClip, SoundboardView};
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 
 pub(super) const GRID_GAP: Pixels = px(10.0);
 const PADS_PER_ROW: usize = 4;

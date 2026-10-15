@@ -10,7 +10,7 @@ use gpui::{
 
 use crate::actions::{ShortcutEntry, chord_caps};
 use crate::hotkey_action_modal::keycaps;
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 
 const MODAL_W: Pixels = px(440.0);
 const BODY_PAD_V: Pixels = px(16.0);

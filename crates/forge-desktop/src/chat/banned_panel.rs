@@ -29,8 +29,8 @@ use crate::integration_disabled::disclaimer_line;
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::integration_supervisor::LifecycleState;
 use crate::integrations::BuiltinRegistry;
-use crate::presentation::ActivePresentation;
 use crate::scheduled_run_labels::system_offset_at;
+use forge_components::ActivePresentation;
 
 const BAN_RELIST_DEBOUNCE: Duration = Duration::from_millis(750);
 pub(crate) const UNBAN_RELIST_SUPPRESSION: Duration = Duration::from_secs(5);

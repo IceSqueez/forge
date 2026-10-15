@@ -14,7 +14,6 @@ use gpui::{
 };
 
 use crate::hub_crumb::{core_category, hub_crumb};
-use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::speak_state::SpeakState;
@@ -22,6 +21,7 @@ use crate::tts_dashboard::TtsDashboardView;
 use crate::tts_engines::TtsEnginesView;
 use crate::tts_filters::TtsFiltersView;
 use crate::voice_aliases::VoiceAliasesView;
+use forge_components::ActivePresentation;
 
 const TAB_PAD_V: Pixels = px(7.0);
 const TAB_PAD_H: Pixels = px(14.0);

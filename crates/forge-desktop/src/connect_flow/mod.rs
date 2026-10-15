@@ -15,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 use crate::async_bridge::{self, ErrorSink};
 use crate::integration_supervisor::IntegrationSlot;
 use crate::integrations::BuiltinObject;
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 
 use device_code::{TwitchDeviceState, TwitchFlowHandle};
 use local_callback::{KickFlowHandle, LocalCallbackFlowPhase, YoutubeFlowHandle};

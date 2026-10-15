@@ -32,6 +32,7 @@ pub mod page_frame;
 pub mod palette;
 pub mod picker;
 pub mod platform_hero;
+pub mod presentation;
 pub mod progress_bar;
 pub mod radio_row;
 pub mod resize_handle;
@@ -126,6 +127,7 @@ pub use palette::{
 };
 pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels, bind_picker_keys};
 pub use platform_hero::{PlatformHero, platform_hero};
+pub use presentation::{ActivePresentation, Presentation};
 pub use progress_bar::{ProgressBar, clamped_fraction, progress_bar};
 pub use radio_row::{RadioRow, radio_row, radio_row_label};
 pub use resize_handle::{ResizeEdge, ResizeRange, install_resize};

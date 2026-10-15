@@ -10,7 +10,7 @@ use crate::async_bridge::{self, ErrorSink};
 use crate::donation_services::{
     DONATELLO_POLL_INTERVAL_KEY, DonationService, stored_donatello_poll_interval,
 };
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 
 mod problem;
 mod render;

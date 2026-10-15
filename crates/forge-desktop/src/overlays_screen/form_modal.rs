@@ -8,7 +8,7 @@ use gpui::{
     Window, div, prelude::*, px,
 };
 
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 use forge_components::grow_cell;
 
 const MODAL_W: Pixels = px(520.0);

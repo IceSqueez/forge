@@ -1,7 +1,7 @@
 use super::step_presentation::{sub_category_label, sub_category_slug};
 use super::*;
 use crate::actions_screen::sub_action_modal::{SubFormLaunch, SubFormTarget};
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 use forge_components::{
     ForgePalette, GlyphArt, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent,
     GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, tr,

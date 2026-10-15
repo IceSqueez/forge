@@ -25,7 +25,7 @@ use gpui::{
 };
 
 use crate::async_bridge;
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 
 const STAGE_CIRCLE: Pixels = px(22.0);
 const PIPELINE_PAD_Y: Pixels = px(18.0);

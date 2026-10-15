@@ -26,7 +26,6 @@ use crate::home_stats::{HomeStats, Integration};
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::log_tail::LogTail;
 use crate::platforms::PlatformConnectivity;
-use crate::presentation::{ActivePresentation, Presentation};
 use crate::queue_health::QueueHealth;
 use crate::runtime_handles::RuntimeHandles;
 use crate::runtime_status::RuntimeStatus;
@@ -37,6 +36,7 @@ use crate::topics::Topics;
 use crate::update_flow::UpdateFlow;
 use crate::window_presence::PresenceGate;
 use forge_components::PushToast;
+use forge_components::{ActivePresentation, Presentation};
 use forge_speak_queue::{SpeakError, SpeakEventStream};
 
 const LOSS_REPAINT_INTERVAL: Duration = Duration::from_millis(250);

@@ -18,10 +18,10 @@ use gpui::{
 };
 
 use crate::async_bridge;
-use crate::presentation::ActivePresentation;
 use crate::settings_audio::DeviceRow;
 use crate::voice_gate::VoiceGateOwner;
 use crate::window_presence::PresenceGate;
+use forge_components::ActivePresentation;
 
 const METER_WIDTH: Pixels = px(72.0);
 const METER_HEIGHT: Pixels = px(6.0);

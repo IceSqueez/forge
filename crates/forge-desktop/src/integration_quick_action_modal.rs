@@ -20,7 +20,7 @@ use tokio::runtime::Handle;
 
 use crate::async_bridge;
 use crate::integration_quick_actions::accent_color;
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 use forge_components::{
     FIELD_FONT, choice_trigger, failure_with_retry, field_column, field_frame, int_entry_invalid,
     int_range_hint, parse_int_in_range, toggle_row,

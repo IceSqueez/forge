@@ -2,7 +2,7 @@ use super::*;
 use crate::actions::{ListActivate, ListSelectNext, ListSelectPrev};
 use crate::async_bridge;
 use crate::integration_switch::{category_inactive_badge, inactive_badge};
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::{
     BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_XXS, ForgePalette, Icon, InlineEditEvent,

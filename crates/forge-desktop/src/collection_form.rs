@@ -13,7 +13,7 @@ use gpui::{
 };
 
 use crate::collection_text::localized_collection_text;
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 use forge_components::{
     choice_trigger, failure_note, field_column, int_entry_invalid, int_range_hint,
     parse_int_in_range, toggle_row,

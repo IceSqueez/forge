@@ -33,7 +33,7 @@ use crate::config_form::{
     collect_field_values, fold_config_field, render_config_control, resolve_dependent_choices,
     set_picked_value, sparse_overrides,
 };
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 
 const PANE_W: Pixels = px(246.0);
 const PANE_PAD: Pixels = px(14.0);
@@ -812,8 +812,8 @@ pub(crate) mod tests {
     use super::super::look_change::look_summary;
     use super::super::sizing_section::is_source_box_key;
     use super::*;
-    use crate::presentation::Presentation;
     use crate::test_support::{StubEventLog, pump, runtime, test_backend};
+    use forge_components::Presentation;
 
     const OVERLAY: &str = "alert-one";
     const KIND: &str = "overlay.alert";

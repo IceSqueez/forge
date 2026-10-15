@@ -1340,7 +1340,7 @@ pub(crate) fn error_toasts(cx: &gpui::App) -> usize {
 
 pub(crate) fn install_presentation(cx: &mut gpui::TestAppContext) {
     cx.update(|cx| {
-        cx.set_global(crate::presentation::Presentation::new(
+        cx.set_global(forge_components::Presentation::new(
             forge_components::ThemeId::ForgeDefault,
             forge_components::Density::Cozy,
         ))

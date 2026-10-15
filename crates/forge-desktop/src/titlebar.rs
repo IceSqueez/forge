@@ -4,7 +4,7 @@ use gpui::{
     Pixels, Window, WindowControlArea, div, prelude::*, px,
 };
 
-use crate::presentation::{ActivePresentation, Presentation};
+use forge_components::{ActivePresentation, Presentation};
 
 pub const TITLEBAR_HEIGHT: Pixels = px(32.0);
 const TITLEBAR_PAD_H: Pixels = px(14.0);

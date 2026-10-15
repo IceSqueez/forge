@@ -4,11 +4,11 @@ use crate::config_form::CollectionChoices;
 use crate::integration_switch::SwitchWatch;
 use crate::integrations::BuiltinRegistry;
 use crate::obs_catalog_options::ObsCatalogField;
-use crate::presentation::ActivePresentation;
 use crate::run_history_modal::RunHistoryModal;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::vtube_catalog_options::VTubeCatalogField;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::{
     BreadcrumbCrumb, Confirm, Density, ForgePalette, GridPicker, Icon, InlineEdit, OverlayPosition,

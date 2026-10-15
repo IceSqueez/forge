@@ -24,9 +24,9 @@ use crate::clip_editor::ClipEditor;
 use crate::clip_key_state::{ClipKeyState, changes_registrations};
 use crate::clip_playback::clip_id_of;
 use crate::hub_crumb::{core_category, hub_crumb};
-use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
+use forge_components::ActivePresentation;
 
 mod adoption;
 mod categories;

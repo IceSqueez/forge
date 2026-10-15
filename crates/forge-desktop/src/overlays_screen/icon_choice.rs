@@ -26,7 +26,7 @@ use super::property_panel::{IconPickRequested, IconPickResult, OverlayPropertyPa
 use crate::async_bridge::{self, DialogFilter};
 use crate::clip_messages::refusal_message;
 use crate::config_form::{CHOICE_GLYPH, CHOICE_PAD_H, CHOICE_PAD_V, FILL_VAL_FS};
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 
 pub(super) const NO_ICON_ID: &str = "forge-icon-none";
 pub(super) const IMPORT_ICON_ID: &str = "forge-icon-import";

@@ -26,7 +26,7 @@ use gpui::{
 
 use crate::async_bridge;
 use crate::data_backup;
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 const BACKUP_TOAST_DURATION: Duration = Duration::from_secs(10);

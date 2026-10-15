@@ -18,10 +18,10 @@ use crate::event_loss::EventLoss;
 use crate::event_loss_card::event_loss_card;
 use crate::home_stats::{ConnectionsTally, HomeEvent, HomeStats, Integration, ObsHealth};
 use crate::integration_lifecycle::IntegrationLifecycle;
-use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::shell::refresh_dashboard_stats;
 use crate::sidebar::NavRequested;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 const BODY_PAD_V: Pixels = px(22.0);

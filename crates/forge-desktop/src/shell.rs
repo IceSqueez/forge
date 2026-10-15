@@ -43,7 +43,6 @@ use crate::navigation_guard::{LeaveDialogHandlers, LeaveTarget, NavigationGuard,
 use crate::obs_connect::ObsConnectView;
 use crate::obs_credentials_form::ObsConnected;
 use crate::overlays_screen::{OverlaysLaunch, OverlaysView};
-use crate::presentation::{ActivePresentation, Presentation};
 use crate::queues::QueuesView;
 use crate::runtime_handles::RuntimeHandles;
 use crate::runtime_status::RuntimeStatus;
@@ -62,6 +61,7 @@ use crate::unsaved_work::{UnsavedWork, UnsavedWorkHandle};
 use crate::update_flow::{CloseDecision, UpdateFlowEvent};
 use crate::vtube_connect::VTubeConnectView;
 use crate::vtube_connect_form::VTubeConnected;
+use forge_components::{ActivePresentation, Presentation};
 
 fn settled_kinds(states: &LifecycleStates) -> HashMap<IntegrationId, Discriminant<LifecycleState>> {
     states

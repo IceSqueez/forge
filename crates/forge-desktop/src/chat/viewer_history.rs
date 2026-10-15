@@ -18,7 +18,7 @@ use super::{body_export_text, platform_display_name};
 use crate::chat_author::AuthorKey;
 use crate::chat_feed::{ChatFeed, ChatMessage};
 use crate::chat_viewer_messages::{ViewerMessages, stored_author};
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 
 const HISTORY_PAGE_SIZE: usize = 100;
 const HISTORY_PREFETCH_ROWS: usize = 25;

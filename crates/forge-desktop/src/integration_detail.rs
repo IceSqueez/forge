@@ -45,11 +45,11 @@ use crate::integrations::{BuiltinObject, ObsInstallSeed, VTubeInstallSeed};
 use crate::obs_credentials_form::ObsConnected;
 use crate::obs_settings_modal::{ObsSettingsModal, ObsSettingsModalEvent};
 use crate::platforms::PlatformConnectivity;
-use crate::presentation::ActivePresentation;
 use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal, RunHistoryOpenIntegration};
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::window_presence::PresenceGate;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 struct ActiveConnect {

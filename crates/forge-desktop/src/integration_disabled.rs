@@ -19,9 +19,9 @@ use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
 use crate::integration_references::IntegrationReferences;
 use crate::integration_supervisor::{IntegrationSlot, LifecycleState};
 use crate::integrations_hub::{card_status_badge, load_references};
-use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
+use forge_components::ActivePresentation;
 use forge_components::grow_cell;
 
 const BODY_PAD_V: Pixels = px(18.0);

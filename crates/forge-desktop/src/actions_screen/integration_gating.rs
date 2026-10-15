@@ -125,12 +125,12 @@ pub(super) mod tests {
 
     use super::*;
     use crate::integration_supervisor::{LifecycleState, LifecycleStates};
-    use crate::presentation::Presentation;
     use crate::test_support::{
         StubActions, StubEventLog, StubHistory, StubOverlays, action_running, lifecycle_switch,
         owned_sub_actions, owned_triggers, runtime, step, stub_catalog, switch_lifecycle,
         test_backend,
     };
+    use forge_components::Presentation;
 
     const OBS_SCENE: &str = "obs.scene.set";
     const OBS_SCENE_CHANGED: &str = "obs.scene.changed";

@@ -1,6 +1,6 @@
 use crate::actions_screen::parse_variable_segments;
 use crate::integration_switch::integration_name;
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 use forge_components::highlight::Language;
 use forge_components::{
     Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition, Radius,

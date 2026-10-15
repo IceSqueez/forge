@@ -20,7 +20,7 @@ use gpui::{
 use crate::actions::{LIST_CONTEXT, ListActivate, ListSelectNext, ListSelectPrev};
 use crate::async_bridge;
 use crate::event_log::{EventFilter, EventItem, EventLog};
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 const INSPECTOR_INITIAL: f32 = 300.0;

@@ -169,13 +169,13 @@ use gpui::{
 
 use crate::actions::{bind_list_keys, register_shell_key_bindings};
 use crate::log_tail::LogTail;
-use crate::presentation::Presentation;
 use crate::root::{RootView, run_boot};
 use crate::screen::Screen;
 use crate::settings::{NAV_WIDTH, PANE_MIN_WIDTH};
 use crate::shutdown::{RUNTIME_SHUTDOWN_BUDGET, RuntimeSlot, silence_logging};
 use crate::sidebar::SIDEBAR_MAX;
 use crate::titlebar::TITLEBAR_HEIGHT;
+use forge_components::Presentation;
 
 const SHELL_MIN_CONTENT_HEIGHT: Pixels = px(480.0);
 

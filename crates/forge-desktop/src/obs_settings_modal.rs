@@ -12,7 +12,7 @@ use gpui::{
 
 use crate::integrations::ObsInstallSeed;
 use crate::obs_credentials_form::{ObsConnected, ObsCredentialsForm, ObsSubmit};
-use crate::presentation::ActivePresentation;
+use forge_components::ActivePresentation;
 
 const MODAL_WIDTH: Pixels = px(460.0);
 const FOOTER_GAP: Pixels = px(12.0);

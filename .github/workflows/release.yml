@@ -10,9 +10,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # No `test` job here: tags are cut from `main`, where CI has already
-  # validated `cargo test --workspace --locked`. Re-running the test suite
-  # would burn ~5 min/release for zero added signal.
+  checks:
+    name: Checks
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   build:
     name: Build
     uses: ./.github/workflows/_build-matrix.yml
@@ -26,7 +29,7 @@ jobs:
 
   publish:
     name: Publish
-    needs: [build]
+    needs: [checks, build]
     runs-on: ubuntu-latest
     # The update signing key lives only in this environment (restricted to
     # v* tags); the build matrix never sees it.
@@ -136,6 +139,7 @@ jobs:
             echo ""
             git log ${{ steps.prev_tag.outputs.range }}HEAD --oneline --no-merges \
               | grep -v "^.*chore: Release" \
+              | grep -v "^.*chore(release): " \
               | grep -v "^.*docs(changelog)" \
               | sed 's/^[a-f0-9]* /- /'
           } > RELEASE_NOTES.md

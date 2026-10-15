@@ -98,7 +98,6 @@ mod platforms;
 mod presentation;
 mod queue_health;
 mod queues;
-mod quick_action_field_rows;
 mod remote_audio;
 mod root;
 mod routed_sink;

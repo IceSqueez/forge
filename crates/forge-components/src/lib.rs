@@ -15,6 +15,7 @@ pub mod dropdown;
 pub mod error_row;
 pub mod fonts;
 pub mod footer;
+pub mod form_field;
 pub mod glyph;
 pub mod grid_picker;
 pub mod highlight;
@@ -84,6 +85,10 @@ pub use dropdown::{
 pub use error_row::error_row;
 pub use fonts::embedded_fonts;
 pub use footer::{FOOTER_HEIGHT, app_footer, footer_alert, footer_indicator, split_version_stage};
+pub use form_field::{
+    FIELD_FONT, choice_trigger, failure_note, failure_with_retry, field_column, field_frame,
+    int_entry_invalid, int_range_hint, parse_int_in_range, toggle_row,
+};
 pub use glyph::{GlyphArt, glyph_art};
 pub use grid_picker::{
     GridItemQuery, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent, GridPickerGroup,

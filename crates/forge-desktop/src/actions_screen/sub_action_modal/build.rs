@@ -4,7 +4,7 @@ use super::*;
 use crate::amount_scale::AmountScale;
 use crate::config_field_label::localized_label;
 use crate::config_form::{code_field_editor, dependent_options};
-use crate::quick_action_field_rows::int_entry_invalid;
+use forge_components::int_entry_invalid;
 use forge_components::{FONT_SM, InputEvent};
 use forge_registry::{CodeLanguage, FormField};
 use forge_types::{SubActionConfig, Variant, normalize_var_name};

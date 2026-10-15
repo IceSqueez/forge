@@ -19,8 +19,8 @@ use crate::collection_options::{
 use crate::donation_services::donation_provider_options;
 use crate::obs_catalog_options::{ObsCatalogField, ObsCatalogList};
 use crate::presentation::ActivePresentation;
-use crate::quick_action_field_rows::int_entry_invalid;
 use crate::vtube_catalog_options::{VTubeCatalogField, VTubeCatalogList};
+use forge_components::int_entry_invalid;
 use forge_runtime::triggers::DONATION_PROVIDER_OPTIONS_KEY;
 use forge_types::Variant;
 use gpui::{

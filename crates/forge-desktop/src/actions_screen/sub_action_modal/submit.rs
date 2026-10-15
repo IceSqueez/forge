@@ -1,6 +1,6 @@
 use super::field::{SubFormField, field_gate, field_values, is_var_key};
 use super::*;
-use crate::quick_action_field_rows::int_entry_invalid;
+use forge_components::int_entry_invalid;
 use forge_types::{Variant, normalize_var_name};
 
 impl EditSubActionForm {

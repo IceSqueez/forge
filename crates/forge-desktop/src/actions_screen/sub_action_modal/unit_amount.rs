@@ -1,8 +1,8 @@
 use super::field::SubFormField;
 use super::*;
 use crate::amount_scale::{AmountScale, AmountSeed};
-use crate::quick_action_field_rows::int_entry_invalid;
 use forge_components::InputEvent;
+use forge_components::int_entry_invalid;
 use forge_types::SubActionConfig;
 
 impl SubFormField {

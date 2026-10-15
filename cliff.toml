@@ -50,6 +50,7 @@ commit_parsers = [
   { message = "^chore\\(merge\\)", skip = true },
   { message = "^chore\\(init\\)", skip = true },
   { message = "^chore\\(release\\): prepare for", skip = true },
+  { message = "^chore\\(release\\): [0-9]", skip = true },
   { message = "^chore\\(version\\)", skip = true },
   { message = "^docs\\(changelog\\)", skip = true },
 

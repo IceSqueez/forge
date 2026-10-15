@@ -138,7 +138,7 @@ mod tests {
 
     use super::*;
     use crate::combo_conflict::ClipKey;
-    use crate::hotkey_bindings::{BindingHalf, HOTKEY_PRESSED_KIND};
+    use crate::hotkey_bindings::BindingHalf;
     use crate::test_support::sandboxed_backend;
 
     const TEST_KEY: [u8; 32] = [0x11; 32];
@@ -238,10 +238,10 @@ mod tests {
     #[test]
     fn only_a_hotkey_registration_change_refreshes_the_key_badges() {
         for (source, kind, expected) in [
-            (EventSource::Hotkey, REGISTERED_KIND, true),
-            (EventSource::Hotkey, UNREGISTERED_KIND, true),
-            (EventSource::Hotkey, HOTKEY_PRESSED_KIND, false),
-            (EventSource::Midi, REGISTERED_KIND, false),
+            (EventSource::Hotkey, event_kinds::REGISTERED, true),
+            (EventSource::Hotkey, event_kinds::UNREGISTERED, true),
+            (EventSource::Hotkey, event_kinds::GLOBAL_PRESSED, false),
+            (EventSource::Midi, event_kinds::REGISTERED, false),
         ] {
             let event = Event::new(source, kind, json!({ "combo": "F9" }));
 

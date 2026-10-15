@@ -273,8 +273,8 @@ mod tests {
 
     use super::*;
     use crate::clip_hotkeys::HotkeySyncedClipsRepo;
-    use crate::hotkey_bindings::{HOTKEY_PRESSED_KIND, HOTKEY_RELEASED_KIND};
     use crate::test_support::{Sandboxed, sandboxed_backend};
+    use forge_hotkey::event_kinds;
 
     const OTHER_KIND: &str = "midi.note_on";
     const TEST_KEY: [u8; 32] = [0x11; 32];
@@ -407,7 +407,7 @@ mod tests {
 
     #[test]
     fn a_hotkey_trigger_is_saved_with_its_combo_in_canonical_form() {
-        for kind in [HOTKEY_PRESSED_KIND, HOTKEY_RELEASED_KIND] {
+        for kind in [event_kinds::GLOBAL_PRESSED, event_kinds::GLOBAL_RELEASED] {
             let saved = canonicalized(&instance(kind, Some("shift+ctrl+f5"))).unwrap();
 
             assert_eq!(stored_combo(&saved), Some("Ctrl+Shift+F5"), "kind {kind}");
@@ -416,7 +416,7 @@ mod tests {
 
     #[test]
     fn an_unparseable_hotkey_combo_is_refused_as_a_validation_failure_on_the_combo_field() {
-        let refused = canonicalized(&instance(HOTKEY_PRESSED_KIND, Some("Ctrl+XYZ")));
+        let refused = canonicalized(&instance(event_kinds::GLOBAL_PRESSED, Some("Ctrl+XYZ")));
 
         assert!(
             matches!(refused, Err(StorageError::ValidationFailed { ref field, .. }) if field == COMBO_FIELD),
@@ -429,9 +429,9 @@ mod tests {
         for (kind, combo) in [
             (OTHER_KIND, Some("f5")),
             (OTHER_KIND, Some("Ctrl+XYZ")),
-            (HOTKEY_PRESSED_KIND, Some("")),
-            (HOTKEY_PRESSED_KIND, Some("   ")),
-            (HOTKEY_PRESSED_KIND, None),
+            (event_kinds::GLOBAL_PRESSED, Some("")),
+            (event_kinds::GLOBAL_PRESSED, Some("   ")),
+            (event_kinds::GLOBAL_PRESSED, None),
         ] {
             let original = instance(kind, combo);
 
@@ -447,7 +447,10 @@ mod tests {
 
         synced
             .repo
-            .save(&instance(HOTKEY_PRESSED_KIND, Some("shift+ctrl+f5")))
+            .save(&instance(
+                event_kinds::GLOBAL_PRESSED,
+                Some("shift+ctrl+f5"),
+            ))
             .await
             .unwrap();
 
@@ -457,7 +460,7 @@ mod tests {
     #[tokio::test]
     async fn changing_a_triggers_combo_moves_the_registration_to_the_new_combo() {
         let synced = synced().await;
-        let original = instance(HOTKEY_PRESSED_KIND, Some("F5"));
+        let original = instance(event_kinds::GLOBAL_PRESSED, Some("F5"));
         synced.repo.save(&original).await.unwrap();
 
         synced.repo.save(&with_combo(original, "F6")).await.unwrap();
@@ -469,7 +472,7 @@ mod tests {
     async fn removing_the_last_trigger_on_a_combo_releases_its_registration() {
         for removal in ["delete", "archive"] {
             let synced = synced().await;
-            let trigger = instance(HOTKEY_PRESSED_KIND, Some("F5"));
+            let trigger = instance(event_kinds::GLOBAL_PRESSED, Some("F5"));
             synced.repo.save(&trigger).await.unwrap();
 
             let removed = match removal {
@@ -485,7 +488,7 @@ mod tests {
     #[tokio::test]
     async fn restoring_an_archived_hotkey_trigger_registers_its_combo_again() {
         let synced = synced().await;
-        let trigger = instance(HOTKEY_PRESSED_KIND, Some("F5"));
+        let trigger = instance(event_kinds::GLOBAL_PRESSED, Some("F5"));
         synced.repo.save(&trigger).await.unwrap();
         synced.repo.archive(trigger.id).await.unwrap();
 
@@ -497,11 +500,11 @@ mod tests {
     #[tokio::test]
     async fn removing_one_half_of_a_hold_keeps_the_registration_the_other_half_uses() {
         let synced = synced().await;
-        let press = instance(HOTKEY_PRESSED_KIND, Some("F5"));
+        let press = instance(event_kinds::GLOBAL_PRESSED, Some("F5"));
         synced.repo.save(&press).await.unwrap();
         synced
             .repo
-            .save(&instance(HOTKEY_RELEASED_KIND, Some("f5")))
+            .save(&instance(event_kinds::GLOBAL_RELEASED, Some("f5")))
             .await
             .unwrap();
 
@@ -519,7 +522,7 @@ mod tests {
     #[tokio::test]
     async fn disabling_a_hotkey_trigger_keeps_its_registration() {
         let synced = synced().await;
-        let trigger = instance(HOTKEY_PRESSED_KIND, Some("F5"));
+        let trigger = instance(event_kinds::GLOBAL_PRESSED, Some("F5"));
         synced.repo.save(&trigger).await.unwrap();
 
         synced.repo.set_enabled(trigger.id, false).await.unwrap();
@@ -529,8 +532,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_refused_write_leaves_the_client_registrations_untouched() {
-        let unparseable = instance(HOTKEY_PRESSED_KIND, Some("Ctrl+XYZ"));
-        let valid = instance(HOTKEY_PRESSED_KIND, Some("F9"));
+        let unparseable = instance(event_kinds::GLOBAL_PRESSED, Some("Ctrl+XYZ"));
+        let valid = instance(event_kinds::GLOBAL_PRESSED, Some("F9"));
         let failure = || StorageError::Connection {
             reason: "disk gone".to_owned(),
         };
@@ -569,7 +572,7 @@ mod tests {
     #[tokio::test]
     async fn a_combo_the_os_refuses_is_still_stored_but_left_unregistered() {
         let synced = synced().await;
-        let trigger = instance(HOTKEY_PRESSED_KIND, Some("f7"));
+        let trigger = instance(event_kinds::GLOBAL_PRESSED, Some("f7"));
         synced
             .backend
             .fail_next_register(&HotkeyCombo::parse("F7").unwrap());
@@ -590,13 +593,13 @@ mod tests {
             .fail_next_register(&HotkeyCombo::parse("F7").unwrap());
         synced
             .repo
-            .save(&instance(HOTKEY_PRESSED_KIND, Some("F7")))
+            .save(&instance(event_kinds::GLOBAL_PRESSED, Some("F7")))
             .await
             .unwrap();
 
         synced
             .repo
-            .save(&instance(HOTKEY_PRESSED_KIND, Some("F8")))
+            .save(&instance(event_kinds::GLOBAL_PRESSED, Some("F8")))
             .await
             .unwrap();
 
@@ -657,7 +660,7 @@ mod tests {
     async fn a_trigger_write_leaves_the_combos_clips_are_bound_to_registered() {
         let synced = synced().await;
         synced.clips.save(&clip(Some("F9"))).await.unwrap();
-        let trigger = instance(HOTKEY_PRESSED_KIND, Some("F5"));
+        let trigger = instance(event_kinds::GLOBAL_PRESSED, Some("F5"));
         synced.repo.save(&trigger).await.unwrap();
 
         synced.repo.delete(trigger.id).await.unwrap();
@@ -670,7 +673,7 @@ mod tests {
         let synced = synced().await;
         synced
             .repo
-            .save(&instance(HOTKEY_PRESSED_KIND, Some("F5")))
+            .save(&instance(event_kinds::GLOBAL_PRESSED, Some("F5")))
             .await
             .unwrap();
         let bound = clip(Some("F9"));
@@ -686,7 +689,7 @@ mod tests {
         let synced = synced().await;
         synced
             .stored
-            .save(&instance(HOTKEY_PRESSED_KIND, Some("F5")))
+            .save(&instance(event_kinds::GLOBAL_PRESSED, Some("F5")))
             .await
             .unwrap();
         for combo in ["f5", "shift+f6"] {
@@ -845,7 +848,7 @@ mod tests {
         let stored = storage_repo(&storage);
         let stored_clips = clips_repo(&storage);
         stored
-            .save(&instance(HOTKEY_PRESSED_KIND, Some("F5")))
+            .save(&instance(event_kinds::GLOBAL_PRESSED, Some("F5")))
             .await
             .unwrap();
         let entered = Arc::new(Notify::new());
@@ -937,7 +940,7 @@ mod tests {
         );
         synced
             .stored
-            .save(&instance(HOTKEY_PRESSED_KIND, Some("F5")))
+            .save(&instance(event_kinds::GLOBAL_PRESSED, Some("F5")))
             .await
             .unwrap();
 
@@ -946,7 +949,7 @@ mod tests {
         let started_at_boot = engine_starts_within(&engine, 1, STILL_WAITING).await;
         synced
             .repo
-            .save(&instance(HOTKEY_PRESSED_KIND, Some("F6")))
+            .save(&instance(event_kinds::GLOBAL_PRESSED, Some("F6")))
             .await
             .unwrap();
         let started_on_new_binding = engine_starts_within(&engine, 1, EVENT_DEADLINE).await;

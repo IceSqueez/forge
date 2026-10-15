@@ -168,7 +168,6 @@ mod tests {
     use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
     use super::*;
-    use crate::hotkey_bindings::HOTKEY_RELEASED_KIND;
     use crate::test_support::StubEventLog;
 
     const EVENT_DEADLINE: Duration = Duration::from_secs(30);
@@ -252,7 +251,7 @@ mod tests {
         fn press(&self, combo: &str) {
             self.bus.publish(Event::new(
                 EventSource::Hotkey,
-                HOTKEY_PRESSED_KIND,
+                event_kinds::GLOBAL_PRESSED,
                 json!({ PRESSED_COMBO_KEY: combo }),
             ));
         }
@@ -274,26 +273,31 @@ mod tests {
         for (source, kind, payload, expected) in [
             (
                 EventSource::Hotkey,
-                HOTKEY_PRESSED_KIND,
+                event_kinds::GLOBAL_PRESSED,
                 json!({ "combo": "F9" }),
                 Some("F9"),
             ),
             (
                 EventSource::Hotkey,
-                HOTKEY_RELEASED_KIND,
+                event_kinds::GLOBAL_RELEASED,
                 json!({ "combo": "F9" }),
                 None,
             ),
             (
                 EventSource::Midi,
-                HOTKEY_PRESSED_KIND,
+                event_kinds::GLOBAL_PRESSED,
                 json!({ "combo": "F9" }),
                 None,
             ),
-            (EventSource::Hotkey, HOTKEY_PRESSED_KIND, json!({}), None),
             (
                 EventSource::Hotkey,
-                HOTKEY_PRESSED_KIND,
+                event_kinds::GLOBAL_PRESSED,
+                json!({}),
+                None,
+            ),
+            (
+                EventSource::Hotkey,
+                event_kinds::GLOBAL_PRESSED,
                 json!({ "combo": 9 }),
                 None,
             ),

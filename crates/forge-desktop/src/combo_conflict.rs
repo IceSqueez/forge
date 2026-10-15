@@ -173,8 +173,9 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::*;
-    use crate::hotkey_bindings::{BindingHalf, COMBO_FIELD, HOTKEY_PRESSED_KIND};
+    use crate::hotkey_bindings::{BindingHalf, COMBO_FIELD};
     use crate::test_support::{Sandboxed, sandboxed_backend};
+    use forge_hotkey::event_kinds;
 
     const TEST_KEY: [u8; 32] = [0x11; 32];
 
@@ -417,7 +418,7 @@ mod tests {
         async fn seed_trigger(&self, combo: &str) {
             let instance = TriggerInstance {
                 id: TriggerInstanceId::new(),
-                kind_id: HOTKEY_PRESSED_KIND.to_owned(),
+                kind_id: event_kinds::GLOBAL_PRESSED.to_owned(),
                 name: combo.to_owned(),
                 overrides: BTreeMap::from([(
                     COMBO_FIELD.to_owned(),

@@ -722,9 +722,9 @@ mod tests {
     #[tokio::test]
     async fn load_bindings_keeps_both_hotkey_edges_and_drops_everything_else() {
         let backend = provider().await;
-        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
-        seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("Ctrl+F2")).await;
-        seed_instance(&backend, HOTKEY_PRESSED_KIND, None).await;
+        seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
+        seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("Ctrl+F2")).await;
+        seed_instance(&backend, event_kinds::GLOBAL_PRESSED, None).await;
         seed_instance(&backend, OTHER_KIND, Some("Ctrl+F3")).await;
 
         let rows = load_bindings(Arc::clone(&backend), Vec::new())
@@ -739,7 +739,7 @@ mod tests {
     async fn load_bindings_sorts_rows_by_combo() {
         let backend = provider().await;
         for combo in ["Meta+B", "Alt+C", "Ctrl+A"] {
-            seed_instance(&backend, HOTKEY_PRESSED_KIND, Some(combo)).await;
+            seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some(combo)).await;
         }
 
         let rows = load_bindings(Arc::clone(&backend), Vec::new())
@@ -753,8 +753,8 @@ mod tests {
     #[tokio::test]
     async fn load_bindings_marks_a_row_registered_only_when_the_client_holds_its_combo() {
         let backend = provider().await;
-        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
-        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F2")).await;
+        seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
+        seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F2")).await;
 
         let rows = load_bindings(
             Arc::clone(&backend),
@@ -774,8 +774,8 @@ mod tests {
     async fn load_bindings_resolves_the_linked_action_and_leaves_unlinked_rows_bare() {
         let backend = provider().await;
         let action = seed_action(&backend, "Play sound").await;
-        let bound = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
-        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F2")).await;
+        let bound = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
+        seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F2")).await;
         backend
             .trigger_instance_repo()
             .link_action(action, bound, 0)
@@ -797,7 +797,7 @@ mod tests {
     async fn cleanup_stale_combo_instances_unlinks_the_action_before_deleting_the_instance() {
         let backend = provider().await;
         let action = seed_action(&backend, "Play sound").await;
-        let instance = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
         backend
             .trigger_instance_repo()
             .link_action(action, instance, 0)
@@ -821,7 +821,8 @@ mod tests {
     #[tokio::test]
     async fn cleanup_stale_combo_instances_spares_other_combos_and_other_trigger_kinds() {
         let backend = provider().await;
-        let other_combo = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F2")).await;
+        let other_combo =
+            seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F2")).await;
         let other_kind = seed_instance(&backend, OTHER_KIND, Some("Ctrl+F1")).await;
 
         cleanup_stale_combo_instances(&backend, "Ctrl+F1")
@@ -838,7 +839,7 @@ mod tests {
         let backend = provider().await;
         let old_action = seed_action(&backend, "Old").await;
         let new_action = seed_action(&backend, "New").await;
-        let instance = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
         let repo = backend.trigger_instance_repo();
         repo.link_action(old_action, instance, 0).await.unwrap();
 
@@ -853,12 +854,12 @@ mod tests {
     async fn relink_action_leaves_the_existing_link_in_place_when_the_action_is_unchanged() {
         let backend = provider().await;
         let action = seed_action(&backend, "Play sound").await;
-        let instance = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
         let repo = backend.trigger_instance_repo();
         repo.link_action(action, instance, 0).await.unwrap();
         let mut expected = vec![instance];
         for (offset, combo) in ["Ctrl+F2", "Ctrl+F3"].into_iter().enumerate() {
-            let sibling = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some(combo)).await;
+            let sibling = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some(combo)).await;
             repo.link_action(action, sibling, offset as i64 + 1)
                 .await
                 .unwrap();
@@ -888,12 +889,12 @@ mod tests {
         let action = seed_action(&backend, "Play sound").await;
         let repo = backend.trigger_instance_repo();
         for (position, combo) in ["Ctrl+F2", "Ctrl+F3"].into_iter().enumerate() {
-            let existing = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some(combo)).await;
+            let existing = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some(combo)).await;
             repo.link_action(action, existing, position as i64)
                 .await
                 .unwrap();
         }
-        let instance = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
 
         relink_action(Arc::clone(&backend), instance, action)
             .await
@@ -970,10 +971,14 @@ mod tests {
     #[tokio::test]
     async fn load_bindings_yields_one_row_per_combo_keyed_by_the_press_half_when_there_is_one() {
         let backend = provider().await;
-        let hold_press = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
-        let hold_release = seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("Ctrl+F1")).await;
-        let press_only = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F2")).await;
-        let release_only = seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("Ctrl+F3")).await;
+        let hold_press =
+            seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
+        let hold_release =
+            seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("Ctrl+F1")).await;
+        let press_only =
+            seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F2")).await;
+        let release_only =
+            seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("Ctrl+F3")).await;
 
         let rows = load_bindings(Arc::clone(&backend), Vec::new())
             .await
@@ -1001,8 +1006,8 @@ mod tests {
     #[tokio::test]
     async fn load_bindings_reads_a_hold_with_a_disabled_release_half_as_off() {
         let backend = provider().await;
-        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
-        seed_disabled_instance(&backend, HOTKEY_RELEASED_KIND, "Ctrl+F1").await;
+        seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
+        seed_disabled_instance(&backend, event_kinds::GLOBAL_RELEASED, "Ctrl+F1").await;
 
         let rows = load_bindings(Arc::clone(&backend), Vec::new())
             .await
@@ -1017,8 +1022,8 @@ mod tests {
     #[tokio::test]
     async fn cleanup_stale_combo_instances_prunes_both_edges_of_the_combo() {
         let backend = provider().await;
-        let press = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
-        let release = seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("Ctrl+F1")).await;
+        let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
+        let release = seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("Ctrl+F1")).await;
 
         cleanup_stale_combo_instances(&backend, "Ctrl+F1")
             .await
@@ -1035,8 +1040,8 @@ mod tests {
     #[tokio::test]
     async fn remove_combo_edge_drops_only_the_named_edge() {
         let backend = provider().await;
-        let press = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
-        let release = seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("Ctrl+F1")).await;
+        let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
+        let release = seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("Ctrl+F1")).await;
 
         remove_combo_edge(&backend, "Ctrl+F1", HotkeyEdge::Press)
             .await
@@ -1052,8 +1057,8 @@ mod tests {
         let backend = provider().await;
         let start = seed_action(&backend, "Start").await;
         let stop = seed_action(&backend, "Stop").await;
-        let press = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
-        let release = seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("Ctrl+F1")).await;
+        let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
+        let release = seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("Ctrl+F1")).await;
         let repo = backend.trigger_instance_repo();
         repo.link_action(start, press, 0).await.unwrap();
         repo.link_action(stop, release, 0).await.unwrap();
@@ -1069,8 +1074,8 @@ mod tests {
     #[tokio::test]
     async fn set_binding_enabled_applies_to_every_instance_it_is_given() {
         let backend = provider().await;
-        let press = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
-        let release = seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("Ctrl+F1")).await;
+        let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
+        let release = seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("Ctrl+F1")).await;
 
         set_binding_enabled(Arc::clone(&backend), vec![press, release], false)
             .await
@@ -1087,7 +1092,7 @@ mod tests {
     #[tokio::test]
     async fn set_binding_edge_rewrites_the_kind_and_keeps_the_combo_override() {
         let backend = provider().await;
-        let instance = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
 
         set_binding_edge(Arc::clone(&backend), instance, HotkeyEdge::Release)
             .await
@@ -1099,7 +1104,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(stored.kind_id, HOTKEY_RELEASED_KIND);
+        assert_eq!(stored.kind_id, event_kinds::GLOBAL_RELEASED);
         assert_eq!(
             combo_of(&stored).map(String::as_str),
             Some("Ctrl+F1"),
@@ -1183,10 +1188,10 @@ mod tests {
     #[test]
     fn persisted_hotkey_combos_yields_one_entry_per_combo_across_both_edges() {
         let instances = [
-            instance_literal(HOTKEY_PRESSED_KIND, Some("Ctrl+F1")),
-            instance_literal(HOTKEY_RELEASED_KIND, Some("Ctrl+F1")),
-            instance_literal(HOTKEY_RELEASED_KIND, Some("Ctrl+F2")),
-            instance_literal(HOTKEY_PRESSED_KIND, None),
+            instance_literal(event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")),
+            instance_literal(event_kinds::GLOBAL_RELEASED, Some("Ctrl+F1")),
+            instance_literal(event_kinds::GLOBAL_RELEASED, Some("Ctrl+F2")),
+            instance_literal(event_kinds::GLOBAL_PRESSED, None),
             instance_literal(OTHER_KIND, Some("Ctrl+F3")),
         ];
 
@@ -1203,9 +1208,9 @@ mod tests {
     #[test]
     fn persisted_hotkey_combos_folds_hand_typed_spellings_into_the_canonical_combo() {
         let instances = [
-            instance_literal(HOTKEY_PRESSED_KIND, Some("f5")),
-            instance_literal(HOTKEY_RELEASED_KIND, Some("F5")),
-            instance_literal(HOTKEY_PRESSED_KIND, Some("shift+ctrl+1")),
+            instance_literal(event_kinds::GLOBAL_PRESSED, Some("f5")),
+            instance_literal(event_kinds::GLOBAL_RELEASED, Some("F5")),
+            instance_literal(event_kinds::GLOBAL_PRESSED, Some("shift+ctrl+1")),
         ];
 
         let combos = persisted_hotkey_combos(&instances);
@@ -1217,8 +1222,8 @@ mod tests {
     #[tokio::test]
     async fn load_bindings_joins_a_hand_typed_half_with_its_canonical_partner_in_one_row() {
         let backend = provider().await;
-        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("f5")).await;
-        seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("F5")).await;
+        seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("f5")).await;
+        seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("F5")).await;
 
         let rows = load_bindings(Arc::clone(&backend), vec![(HotkeyId(1), "F5".to_owned())])
             .await
@@ -1234,7 +1239,7 @@ mod tests {
     #[tokio::test]
     async fn cleanup_stale_combo_instances_also_removes_a_hand_typed_spelling_of_the_combo() {
         let backend = provider().await;
-        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("f5")).await;
+        seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("f5")).await;
 
         cleanup_stale_combo_instances(&backend, "F5").await.unwrap();
 
@@ -1332,7 +1337,7 @@ mod tests {
     #[tokio::test]
     async fn rebind_combo_registers_the_new_combo_before_releasing_the_old_one() {
         let backend = provider().await;
-        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("F1")).await;
+        seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
         let rig = reconciled(&backend).await;
         let old_id = rig.id_of("F1");
         let before = rig.recorder.calls().len();
@@ -1362,7 +1367,7 @@ mod tests {
     #[tokio::test]
     async fn rebind_combo_keeps_the_old_binding_live_and_stored_when_the_new_combo_is_refused() {
         let backend = provider().await;
-        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("F1")).await;
+        seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
         let rig = reconciled(&backend).await;
         let old_id = rig.id_of("F1");
         rig.recorder
@@ -1387,7 +1392,10 @@ mod tests {
         let stored = backend.trigger_instance_repo().list_all().await.unwrap();
         assert_eq!(
             stored_combos(&stored),
-            [(HOTKEY_PRESSED_KIND.to_owned(), Some("F1".to_owned()))]
+            [(
+                event_kinds::GLOBAL_PRESSED.to_owned(),
+                Some("F1".to_owned())
+            )]
         );
     }
 
@@ -1395,8 +1403,8 @@ mod tests {
     async fn rebind_combo_moves_both_halves_of_a_hold_and_keeps_their_action_links() {
         let backend = provider().await;
         let action = seed_action(&backend, "Push to talk").await;
-        let press = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("F1")).await;
-        seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("F1")).await;
+        let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
+        seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("F1")).await;
         let repo = backend.trigger_instance_repo();
         repo.link_action(action, press, 0).await.unwrap();
         let rig = reconciled(&backend).await;
@@ -1414,8 +1422,14 @@ mod tests {
         assert_eq!(
             stored_combos(&stored),
             [
-                (HOTKEY_PRESSED_KIND.to_owned(), Some("F2".to_owned())),
-                (HOTKEY_RELEASED_KIND.to_owned(), Some("F2".to_owned())),
+                (
+                    event_kinds::GLOBAL_PRESSED.to_owned(),
+                    Some("F2".to_owned())
+                ),
+                (
+                    event_kinds::GLOBAL_RELEASED.to_owned(),
+                    Some("F2".to_owned())
+                ),
             ]
         );
         assert_eq!(repo.actions_using(press).await.unwrap(), [action]);
@@ -1424,7 +1438,7 @@ mod tests {
     #[tokio::test]
     async fn rebind_combo_to_the_same_combo_leaves_the_client_and_storage_alone() {
         let backend = provider().await;
-        let press = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("F1")).await;
+        let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
         let rig = reconciled(&backend).await;
         let before = rig.recorder.calls();
 
@@ -1460,7 +1474,10 @@ mod tests {
         let stored = backend.trigger_instance_repo().list_all().await.unwrap();
         assert_eq!(
             stored_combos(&stored),
-            [(HOTKEY_PRESSED_KIND.to_owned(), Some("F3".to_owned()))]
+            [(
+                event_kinds::GLOBAL_PRESSED.to_owned(),
+                Some("F3".to_owned())
+            )]
         );
         assert_eq!(rig.registered(), ["F3"]);
     }
@@ -1490,8 +1507,8 @@ mod tests {
     #[tokio::test]
     async fn delete_binding_releases_a_combo_nothing_else_binds() {
         let backend = provider().await;
-        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("F5")).await;
-        seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("F5")).await;
+        seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F5")).await;
+        seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("F5")).await;
         let rig = reconciled(&backend).await;
 
         delete_binding(
@@ -1508,7 +1525,7 @@ mod tests {
     #[tokio::test]
     async fn delete_binding_keeps_the_registration_a_clip_is_still_bound_to() {
         let backend = provider().await;
-        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("F5")).await;
+        seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F5")).await;
         seed_clip_on(&backend, "F5").await;
         let rig = reconciled(&backend).await;
 
@@ -1526,7 +1543,7 @@ mod tests {
     #[tokio::test]
     async fn rebind_combo_off_a_combo_a_clip_uses_keeps_that_combo_registered() {
         let backend = provider().await;
-        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("F1")).await;
+        seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
         seed_clip_on(&backend, "F1").await;
         let rig = reconciled(&backend).await;
 

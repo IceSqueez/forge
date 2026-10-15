@@ -13,8 +13,8 @@ use gpui::{
 };
 
 use super::{Busy, DonationSettingsView, JarSource, Outcome, jar_title};
-use crate::builtin_sections::{card_shell, divider};
 use crate::presentation::ActivePresentation;
+use forge_components::{card_shell, divider};
 
 const STATUS_DOT: Pixels = px(6.0);
 const EYE_GLYPH: Pixels = px(12.0);

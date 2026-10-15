@@ -16,7 +16,6 @@ use gpui::{
 use time::OffsetDateTime;
 
 use crate::async_bridge::{self, BridgeFlow, drain_events};
-use crate::builtin_sections::grow_cell;
 use crate::discord_webhook_modal::{
     DiscordWebhookModal, DiscordWebhookModalEvent, WebhookDraft, WebhookModalLaunch,
 };
@@ -28,6 +27,7 @@ use crate::integration_supervisor::IntegrationSlot;
 use crate::presentation::ActivePresentation;
 use crate::sidebar::NavRequested;
 use forge_components::PushToast;
+use forge_components::grow_cell;
 
 const SCROLL_PAD_X: Pixels = px(22.0);
 const SCROLL_PAD_Y: Pixels = px(18.0);

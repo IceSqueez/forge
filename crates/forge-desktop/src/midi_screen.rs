@@ -17,7 +17,6 @@ use gpui::{
 };
 
 use crate::async_bridge::{self, BridgeFlow, ErrorSink, drain_events};
-use crate::builtin_sections::grow_cell;
 use crate::hub_crumb::hub_crumb;
 use crate::integration_supervisor::{IntegrationSlot, LifecycleState};
 use crate::midi_mapping_modal::{
@@ -27,6 +26,7 @@ use crate::midi_signal::{MIDI_INPUT_PREFIX, MidiSignal, kind_color, note_name};
 use crate::presentation::ActivePresentation;
 use crate::sidebar::NavRequested;
 use forge_components::PushToast;
+use forge_components::grow_cell;
 
 pub const MIDI_KNOWN_DEVICES_KEY: &str = "midi.known_devices";
 

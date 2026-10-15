@@ -14,7 +14,6 @@ use gpui::{
     SharedString, Subscription, Window, div, prelude::*, px, relative,
 };
 
-use crate::builtin_sections::grow_cell;
 use crate::integration_catalog::{declaration_of, disclaimer_of, look_of};
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
 use crate::integration_references::IntegrationReferences;
@@ -23,6 +22,7 @@ use crate::integrations_hub::{card_status_badge, load_references};
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
+use forge_components::grow_cell;
 
 const BODY_PAD_V: Pixels = px(18.0);
 const BODY_PAD_H: Pixels = px(22.0);

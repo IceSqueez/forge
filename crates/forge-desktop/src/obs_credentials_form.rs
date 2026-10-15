@@ -12,9 +12,9 @@ use gpui::{
 };
 
 use crate::async_bridge::{self, ErrorSink};
-use crate::builtin_sections::grow_cell;
 use crate::integrations::ObsInstallSeed;
 use crate::presentation::ActivePresentation;
+use forge_components::grow_cell;
 
 pub const OBS_AUTO_RECONNECT_KEY: &str = "obs.auto_reconnect";
 pub const OBS_CONNECT_ON_LAUNCH_KEY: &str = "obs.connect_on_launch";

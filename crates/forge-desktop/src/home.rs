@@ -3,14 +3,14 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, Radius, Spacing, ToastKind, body_family, card, empty_state,
-    ghost_button_with_icon, icon, mono_family, page_frame, pulse_dot, radius, spacing, sparkline,
-    status_dot, tr,
+    ghost_button_with_icon, grow_cell, icon, mono_family, page_frame, pulse_dot, radius, spacing,
+    sparkline, status_dot, tr,
 };
 use forge_registry::TriggerRegistry;
 use forge_storage::DataProvider;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba,
-    Subscription, Window, div, prelude::*, px, relative,
+    Subscription, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
@@ -972,14 +972,6 @@ impl HomeView {
     }
 }
 
-fn grow_col(grow: f32, child: impl IntoElement) -> impl IntoElement {
-    let mut col = div().min_w(px(0.0)).child(child);
-    let style = col.style();
-    style.flex_grow = Some(grow);
-    style.flex_basis = Some(relative(0.0).into());
-    col
-}
-
 async fn import_action(dp: Arc<dyn DataProvider>) -> Result<String, String> {
     let filter = async_bridge::DialogFilter {
         name: "JSON".to_owned(),
@@ -1086,8 +1078,8 @@ impl Render for HomeView {
             .w_full()
             .flex()
             .gap(spacing(Spacing::Sm, density))
-            .child(grow_col(RECENT_GROW, recent_card))
-            .child(grow_col(GLANCE_GROW, glance_card));
+            .child(grow_cell(recent_card, RECENT_GROW))
+            .child(grow_cell(glance_card, GLANCE_GROW));
 
         let content = div()
             .w_full()

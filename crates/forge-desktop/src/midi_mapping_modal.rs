@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SearchState, TextInput,
-    body_family, dropdown, dropdown_list, dropdown_row, field_label, ghost_button_with_icon, icon,
-    modal, mono_family, overlay, primary_button, secondary_button, tr, with_alpha,
+    body_family, dropdown, dropdown_list, dropdown_row, field_label, ghost_button_with_icon,
+    grow_cell, icon, modal, mono_family, overlay, primary_button, secondary_button, tr, with_alpha,
 };
 use forge_storage::ActionRepo;
 use forge_types::{ActionId, TriggerInstanceId};
@@ -547,9 +547,12 @@ impl MidiMappingModal {
             .flex()
             .items_end()
             .gap(GRID_GAP)
-            .child(weighted(self.render_input_display(palette, cx), INPUT_FLEX))
-            .child(weighted(self.render_type_select(palette, cx), TYPE_FLEX))
-            .child(weighted(channel, CHANNEL_FLEX))
+            .child(grow_cell(
+                self.render_input_display(palette, cx),
+                INPUT_FLEX,
+            ))
+            .child(grow_cell(self.render_type_select(palette, cx), TYPE_FLEX))
+            .child(grow_cell(channel, CHANNEL_FLEX))
             .child(div().flex_none().child(relearn));
 
         let mut column = div()
@@ -777,14 +780,6 @@ impl MidiMappingModal {
             )
             .into_any_element()
     }
-}
-
-fn weighted(el: impl IntoElement, grow: f32) -> gpui::Div {
-    let mut cell = div().min_w(px(0.0)).child(el);
-    let style = cell.style();
-    style.flex_grow = Some(grow);
-    style.flex_basis = Some(gpui::relative(0.0).into());
-    cell
 }
 
 fn section_caption(label: &str, palette: &ForgePalette) -> impl IntoElement {

@@ -1,6 +1,7 @@
 use forge_components::{
     BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
-    body_family, icon, mono_family, radius, spacing, status_dot, tr, with_alpha,
+    body_family, card_shell, divider, grow_cell, icon, mono_family, radius, spacing, status_dot,
+    tr, with_alpha,
 };
 use forge_platform_core::{
     ActiveRow, BannerLevel, ContentList, ContentListItem, DetailSection, HealthBar, HealthLevel,
@@ -88,34 +89,6 @@ fn body(s: impl Into<SharedString>, size: gpui::Pixels, color: Rgba) -> Div {
         .text_size(size)
         .text_color(color)
         .child(s.into())
-}
-
-pub(crate) fn divider(palette: &ForgePalette) -> Div {
-    div()
-        .w_full()
-        .flex_none()
-        .h(BORDER_THIN)
-        .bg(palette.border_regular)
-}
-
-pub(crate) fn card_shell(palette: &ForgePalette) -> Div {
-    div()
-        .w_full()
-        .flex()
-        .flex_col()
-        .overflow_hidden()
-        .rounded(radius(Radius::Md))
-        .border(BORDER_THIN)
-        .border_color(palette.border_regular)
-        .bg(palette.elevated)
-}
-
-pub(crate) fn grow_cell(el: impl IntoElement, grow: f32) -> Div {
-    let mut cell = div().min_w(px(0.0)).child(el);
-    let style = cell.style();
-    style.flex_grow = Some(grow);
-    style.flex_basis = Some(relative(0.0).into());
-    cell
 }
 
 pub fn content_sections(

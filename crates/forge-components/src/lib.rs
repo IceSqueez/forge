@@ -61,8 +61,9 @@ pub use buttons::{
     icon_button, primary_button, primary_button_with_icon, secondary_button,
 };
 pub use cards::{
-    Card, EmptyState, PadTile, RowCard, ToolbarRow, card, empty_state, field_hint, field_label,
-    field_title, metric_card, nav_card, pad_tile, row_card, setting_row, stat_row, toolbar_row,
+    Card, EmptyState, PadTile, RowCard, ToolbarRow, card, card_shell, divider, empty_state,
+    field_hint, field_label, field_title, grow_cell, metric_card, nav_card, pad_tile, row_card,
+    setting_row, stat_row, toolbar_row,
 };
 pub use chat_gap_row::chat_gap_row;
 pub use chat_row::{

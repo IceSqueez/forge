@@ -1,5 +1,5 @@
 use gpui::{
-    AnyElement, App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement,
+    AnyElement, App, ClickEvent, Div, ElementId, FontWeight, InteractiveElement, IntoElement,
     ParentElement, Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled,
     Window, div, px, relative,
 };
@@ -1037,6 +1037,34 @@ impl RenderOnce for ToolbarRow {
 
         root.child(self.left).child(self.right)
     }
+}
+
+pub fn divider(palette: &ForgePalette) -> Div {
+    div()
+        .w_full()
+        .flex_none()
+        .h(BORDER_THIN)
+        .bg(palette.border_regular)
+}
+
+pub fn card_shell(palette: &ForgePalette) -> Div {
+    div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .overflow_hidden()
+        .rounded(radius(Radius::Md))
+        .border(BORDER_THIN)
+        .border_color(palette.border_regular)
+        .bg(palette.elevated)
+}
+
+pub fn grow_cell(el: impl IntoElement, grow: f32) -> Div {
+    let mut cell = div().min_w(px(0.0)).child(el);
+    let style = cell.style();
+    style.flex_grow = Some(grow);
+    style.flex_basis = Some(relative(0.0).into());
+    cell
 }
 
 #[cfg(test)]

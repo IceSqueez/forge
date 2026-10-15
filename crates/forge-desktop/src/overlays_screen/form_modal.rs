@@ -8,8 +8,8 @@ use gpui::{
     Window, div, prelude::*, px,
 };
 
-use crate::builtin_sections::grow_cell;
 use crate::presentation::ActivePresentation;
+use forge_components::grow_cell;
 
 const MODAL_W: Pixels = px(520.0);
 const BODY_PAD_V: Pixels = px(16.0);

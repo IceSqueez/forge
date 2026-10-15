@@ -1,5 +1,6 @@
 use forge_components::{
-    FONT_SM, FONT_XXS, ForgePalette, body_family, card, fmt_relative_time, mono_family, tr,
+    FONT_SM, FONT_XXS, ForgePalette, body_family, card, fmt_relative_time, grow_cell, mono_family,
+    tr,
 };
 use gpui::{AnyElement, Pixels, SharedString, div, prelude::*, px};
 
@@ -117,14 +118,11 @@ fn stat_card(
                 .child(hint),
         );
 
-    let mut cell = div().min_w(px(0.0)).child(
+    grow_cell(
         card(body, palette)
             .padding_xy(STAT_PAD_V, STAT_PAD_H)
             .full_width()
             .full_height(),
-    );
-    let style = cell.style();
-    style.flex_grow = Some(1.0);
-    style.flex_basis = Some(gpui::relative(0.0).into());
-    cell
+        1.0,
+    )
 }

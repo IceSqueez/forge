@@ -11,12 +11,12 @@ use gpui::{
     Subscription, Window, div, prelude::*, px,
 };
 
-use crate::builtin_sections::grow_cell;
 use crate::integrations::ObsInstallSeed;
 use crate::obs_credentials_form::{DEFAULT_PORT, ObsConnected, ObsCredentialsForm, ObsSubmit};
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
+use forge_components::grow_cell;
 
 const BODY_PAD_V: Pixels = px(18.0);
 const BODY_PAD_H: Pixels = px(22.0);

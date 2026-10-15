@@ -6,15 +6,15 @@ use forge_components::{
     BORDER_ACCENT, BORDER_THIN, BulletItem, BulletKind, Density, FONT_LG, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SaveState, Spacing,
     TextArea, TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, field_hint, field_title,
-    ghost_button_with_icon, icon, mono_family, overlay, radio_row, radius, save_indicator,
-    setting_row, spacing, toggle, tr, type_to_confirm,
+    ghost_button_with_icon, grow_cell, icon, mono_family, overlay, radio_row, radius,
+    save_indicator, setting_row, spacing, toggle, tr, type_to_confirm,
 };
 use forge_runtime::OverlayServiceHandle;
 use forge_server::{ServerHandle, ServerSettings};
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SettingsRepo};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, Focusable, FontWeight, Pixels, Rgba,
-    SharedString, Subscription, Window, div, prelude::*, px, relative,
+    SharedString, Subscription, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge::{self, ErrorSink};
@@ -1281,9 +1281,9 @@ impl Render for SettingsWebSocketView {
             .flex_wrap()
             .items_start()
             .gap(spacing(Spacing::Md, density))
-            .child(weighted(1.0, self.port_column(&palette, density)).min_w(PORT_COLUMN_MIN_W))
+            .child(grow_cell(self.port_column(&palette, density), 1.0).min_w(PORT_COLUMN_MIN_W))
             .child(
-                weighted(1.6, self.token_column(&palette, density, cx)).min_w(TOKEN_COLUMN_MIN_W),
+                grow_cell(self.token_column(&palette, density, cx), 1.6).min_w(TOKEN_COLUMN_MIN_W),
             );
 
         let mut root = div()
@@ -1421,14 +1421,6 @@ fn lan_bind_bullets() -> Vec<BulletItem> {
 
 fn hline(color: Rgba) -> Div {
     div().w_full().h(BORDER_THIN).bg(color)
-}
-
-fn weighted(grow: f32, child: impl IntoElement) -> Div {
-    let mut cell = div().min_w(px(0.0)).child(child);
-    let style = cell.style();
-    style.flex_grow = Some(grow);
-    style.flex_basis = Some(relative(0.0).into());
-    cell
 }
 
 fn mask_token(token: &str) -> String {

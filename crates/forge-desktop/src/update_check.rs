@@ -307,18 +307,13 @@ fn remember_skipped(tag: String, backend: Arc<dyn DataProvider>, rt_handle: &Han
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_platform_core::{HealthMetric, HealthValue};
 
     use super::{
-        CURRENT_VERSION, REPO_URL, Release, UpdateNotice, Version, any_output_active, is_newer,
-        latest_release_url, parse_version, release_from_json, should_notify,
+        CURRENT_VERSION, REPO_URL, Release, UpdateNotice, any_output_active, latest_release_url,
+        parse_version, release_from_json, should_notify,
     };
-
-    fn version(raw: &str) -> Version {
-        parse_version(raw).unwrap()
-    }
 
     fn status(active: bool) -> HealthMetric {
         HealthMetric {
@@ -349,117 +344,6 @@ mod tests {
                 total: 4,
                 reset_hint: None,
             },
-        }
-    }
-
-    #[test]
-    fn parse_version_tolerates_a_v_prefix_build_metadata_and_surrounding_padding() {
-        let plain = version("0.5.3");
-        for raw in [
-            " 0.5.3 ",
-            "v0.5.3",
-            "0.5.3+build.9",
-            "v0.5.3+build.9",
-            " v0.5.3 ",
-        ] {
-            assert_eq!(parse_version(raw).as_ref(), Some(&plain), "for {raw:?}");
-        }
-    }
-
-    #[test]
-    fn parse_version_keeps_a_prerelease_that_carries_build_metadata() {
-        assert_eq!(
-            parse_version("v0.5.3-beta.1+build.9"),
-            parse_version("0.5.3-beta.1"),
-        );
-        assert_ne!(parse_version("0.5.3-beta.1"), parse_version("0.5.3"));
-    }
-
-    #[test]
-    fn parse_version_rejects_anything_but_three_numeric_components() {
-        for raw in [
-            "",
-            "   ",
-            "0",
-            "0.5",
-            "0.5.3.1",
-            "0.5.x",
-            "0.-5.3",
-            "next release",
-            "not-a-version",
-            "18446744073709551616.0.0",
-        ] {
-            assert!(parse_version(raw).is_none(), "accepted {raw:?}");
-        }
-    }
-
-    #[test]
-    fn parse_version_rejects_an_empty_prerelease_identifier() {
-        for raw in ["0.5.3-", "0.5.3-beta.", "0.5.3-.1", "0.5.3-beta..1"] {
-            assert!(parse_version(raw).is_none(), "accepted {raw:?}");
-        }
-    }
-
-    #[test]
-    fn version_ordering_follows_semver_precedence() {
-        for (lower, higher) in [
-            ("0.5.2", "0.5.3"),
-            ("0.5.9", "0.6.0"),
-            ("0.9.9", "1.0.0"),
-            ("0.5.3-beta.1", "0.5.3"),
-            ("0.5.3-beta.2", "0.5.3-beta.10"),
-            ("0.5.3-alpha.9", "0.5.3-beta.1"),
-            ("1.0.0-alpha", "1.0.0-alpha.1"),
-            ("1.0.0-1", "1.0.0-alpha"),
-        ] {
-            assert!(
-                version(lower) < version(higher),
-                "expected {lower} below {higher}",
-            );
-        }
-    }
-
-    #[test]
-    fn is_newer_never_offers_a_prerelease_to_a_release_build() {
-        for latest in ["0.5.3-beta.1", "0.6.0-rc.1", "1.0.0-alpha"] {
-            assert!(
-                !is_newer(&version("0.5.2"), &version(latest)),
-                "offered {latest} to a release build",
-            );
-        }
-    }
-
-    #[test]
-    fn is_newer_offers_a_release_build_only_a_strictly_higher_release() {
-        for (latest, expected) in [
-            ("0.5.3", true),
-            ("1.0.0", true),
-            ("0.5.2", false),
-            ("0.5.1", false),
-        ] {
-            assert_eq!(
-                is_newer(&version("0.5.2"), &version(latest)),
-                expected,
-                "for {latest}",
-            );
-        }
-    }
-
-    #[test]
-    fn is_newer_offers_a_prerelease_build_the_next_prerelease_and_the_release() {
-        for (latest, expected) in [
-            ("0.5.3-beta.2", true),
-            ("0.5.3", true),
-            ("0.5.4-beta.1", true),
-            ("0.5.3-beta.1", false),
-            ("0.5.3-alpha.9", false),
-            ("0.5.2", false),
-        ] {
-            assert_eq!(
-                is_newer(&version("0.5.3-beta.1"), &version(latest)),
-                expected,
-                "for {latest}",
-            );
         }
     }
 

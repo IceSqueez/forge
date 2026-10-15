@@ -33,6 +33,7 @@ members = [
   "crates/forge-tts-nsspeech",
   "crates/forge-tts-cloud",
   "crates/forge-speak-queue",
+  "crates/forge-update",
   "crates/forge-components",
   "crates/forge-desktop",
 ]
@@ -89,6 +90,7 @@ mockall = { version = "0.15" }
 wiremock = { version = "0.6" }
 
 sha2 = { version = "0.11" }
+minisign-verify = { version = "0.3" }
 base64 = { version = "0.23" }
 subtle = { version = "2.6" }
 arc-swap = { version = "1.9" }

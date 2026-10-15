@@ -1,15 +1,13 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::Event;
-use forge_platform_core::{
-    BuiltinHealth, HealthMetric, HealthValue, RateLimiter, TokenBucketRateLimiter, acquire_or_wait,
-};
+use forge_platform_core::{BuiltinHealth, HealthMetric, HealthValue};
 use forge_runtime::{EventBus, EventSubscription};
 use forge_storage::{DataProvider, SettingsRepo, get_bool_setting, reserved_keys};
 use forge_update::{
-    InstallKind, ManifestSource, ManualReason, Platform, TrustedKeys, UpdateClient, UpdateOffer,
-    check_for_update, detect_install, is_newer, parse_version,
+    GithubRepo, InstallKind, ManualReason, Platform, PublishedRelease, TrustedKeys, UpdateClient,
+    UpdateOffer, check_for_update, detect_install, fetch_latest_release, is_newer, parse_version,
 };
 use gpui::{AsyncApp, Entity};
 use tokio::runtime::Handle;
@@ -20,17 +18,6 @@ use crate::update_flow::{InstallTarget, UpdateCandidate, UpdateFlow};
 
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const REPO_URL: &str = env!("CARGO_PKG_REPOSITORY");
-const USER_AGENT_VALUE: &str = concat!("forge/", env!("CARGO_PKG_VERSION"));
-
-const GITHUB_WEB_PREFIX: &str = "https://github.com/";
-const GITHUB_API_REPOS: &str = "https://api.github.com/repos/";
-const LATEST_RELEASE_PATH: &str = "/releases/latest";
-const RELEASE_TAG_PATH: &str = "/releases/tag/v";
-const GIT_SUFFIX: &str = ".git";
-
-const TAG_FIELD: &str = "tag_name";
-const HTML_URL_FIELD: &str = "html_url";
-const DRAFT_FIELD: &str = "draft";
 
 const STREAM_STOPPED_KIND: &str = "obs.streaming.stopped";
 const RECORD_STOPPED_KIND: &str = "obs.recording.stopped";
@@ -38,60 +25,6 @@ const RECORD_STOPPED_KIND: &str = "obs.recording.stopped";
 pub const NOTIFY_DEFAULT: bool = true;
 
 const BOOT_SETTLE_DELAY: Duration = Duration::from_secs(15);
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
-
-const GITHUB_ANON_REQUEST_BUDGET: u32 = 60;
-const GITHUB_ANON_WINDOW: Duration = Duration::from_secs(60 * 60);
-const CHECK_WEIGHT: u32 = 1;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Release {
-    pub tag: String,
-    pub url: String,
-}
-
-pub fn release_from_json(body: &str) -> Option<Release> {
-    let value: serde_json::Value = serde_json::from_str(body).ok()?;
-    if value
-        .get(DRAFT_FIELD)
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false)
-    {
-        return None;
-    }
-    let tag = value.get(TAG_FIELD)?.as_str()?.trim().to_owned();
-    let url = value.get(HTML_URL_FIELD)?.as_str()?.trim().to_owned();
-    if tag.is_empty() || url.is_empty() {
-        return None;
-    }
-    Some(Release { tag, url })
-}
-
-fn repo_slug(repo_url: &str) -> Option<&str> {
-    let slug = repo_url
-        .trim()
-        .strip_prefix(GITHUB_WEB_PREFIX)?
-        .trim_end_matches('/');
-    let slug = slug.strip_suffix(GIT_SUFFIX).unwrap_or(slug);
-    (!slug.is_empty()).then_some(slug)
-}
-
-pub fn latest_release_url(repo_url: &str) -> Option<String> {
-    let slug = repo_slug(repo_url)?;
-    Some(format!("{GITHUB_API_REPOS}{slug}{LATEST_RELEASE_PATH}"))
-}
-
-pub fn release_page_url(repo_url: &str, version: &str) -> Option<String> {
-    let slug = repo_slug(repo_url)?;
-    let version = version.trim();
-    let version = version.strip_prefix('v').unwrap_or(version);
-    if version.is_empty() {
-        return None;
-    }
-    Some(format!(
-        "{GITHUB_WEB_PREFIX}{slug}{RELEASE_TAG_PATH}{version}"
-    ))
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateNotice {
@@ -135,7 +68,7 @@ pub fn display_version(raw: &str) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FoundUpdate {
     Signed(UpdateOffer),
-    Unsigned(Release),
+    Unsigned(PublishedRelease),
 }
 
 impl FoundUpdate {
@@ -155,7 +88,7 @@ pub fn update_candidate(
     match found {
         FoundUpdate::Unsigned(release) => UpdateCandidate {
             version: display_version(&release.tag),
-            release_page: release.url,
+            release_page: release.page_url,
             install: None,
         },
         FoundUpdate::Signed(offer) => {
@@ -264,30 +197,36 @@ async fn probe(backend: Arc<dyn DataProvider>) -> Probe {
 }
 
 async fn find_update() -> Option<FoundUpdate> {
-    match check_signed().await {
+    let repo = GithubRepo::parse(REPO_URL)?;
+    let client = match UpdateClient::for_github() {
+        Ok(client) => client,
+        Err(error) => {
+            tracing::debug!(error = %error, "update check could not start");
+            return None;
+        }
+    };
+    match check_signed(&client, &repo).await {
         SignedCheck::Offer(offer) => Some(FoundUpdate::Signed(offer)),
         SignedCheck::UpToDate => None,
-        SignedCheck::Unavailable => fetch_latest_release().await.map(FoundUpdate::Unsigned),
+        SignedCheck::Unavailable => latest_release(&client, &repo)
+            .await
+            .map(FoundUpdate::Unsigned),
     }
 }
 
-async fn check_signed() -> SignedCheck {
-    let (Some(source), Some(running)) = (
-        ManifestSource::github_latest(REPO_URL),
-        parse_version(CURRENT_VERSION),
-    ) else {
+async fn check_signed(client: &UpdateClient, repo: &GithubRepo) -> SignedCheck {
+    let Some(running) = parse_version(CURRENT_VERSION) else {
         return SignedCheck::Unavailable;
     };
-    let prepared =
-        TrustedKeys::production().and_then(|keys| Ok((keys, UpdateClient::for_github()?)));
-    let (keys, client) = match prepared {
-        Ok(prepared) => prepared,
+    let keys = match TrustedKeys::production() {
+        Ok(keys) => keys,
         Err(error) => {
             tracing::debug!(error = %error, "signed update check could not start");
             return SignedCheck::Unavailable;
         }
     };
-    match check_for_update(&client, &source, &keys, &running).await {
+    let source = repo.latest_manifest_source();
+    match check_for_update(client, &source, &keys, &running).await {
         Ok(Some(offer)) => SignedCheck::Offer(offer),
         Ok(None) => SignedCheck::UpToDate,
         Err(error) => {
@@ -297,54 +236,11 @@ async fn check_signed() -> SignedCheck {
     }
 }
 
-fn github_limiter() -> &'static TokenBucketRateLimiter {
-    static LIMITER: OnceLock<TokenBucketRateLimiter> = OnceLock::new();
-    LIMITER
-        .get_or_init(|| TokenBucketRateLimiter::new(GITHUB_ANON_REQUEST_BUDGET, GITHUB_ANON_WINDOW))
-}
-
-async fn fetch_latest_release() -> Option<Release> {
-    let url = latest_release_url(REPO_URL)?;
-    let limiter: &dyn RateLimiter = github_limiter();
-    if let Err(error) = acquire_or_wait(limiter, CHECK_WEIGHT).await {
-        tracing::debug!(error = %error, "update check declined by the rate limiter");
-        return None;
-    }
-
-    let client = match reqwest::Client::builder().timeout(REQUEST_TIMEOUT).build() {
-        Ok(client) => client,
+async fn latest_release(client: &UpdateClient, repo: &GithubRepo) -> Option<PublishedRelease> {
+    match fetch_latest_release(client, repo).await {
+        Ok(release) => release,
         Err(error) => {
-            let error = error.without_url();
-            tracing::debug!(error = %error, "update check could not build a client");
-            return None;
-        }
-    };
-
-    let response = match client
-        .get(url)
-        .header(reqwest::header::USER_AGENT, USER_AGENT_VALUE)
-        .send()
-        .await
-    {
-        Ok(response) => response,
-        Err(error) => {
-            let error = error.without_url();
-            tracing::debug!(error = %error, "update check request failed");
-            return None;
-        }
-    };
-
-    let status = response.status();
-    if !status.is_success() {
-        tracing::debug!(status = %status, "update check answered with a non-success status");
-        return None;
-    }
-
-    match response.text().await {
-        Ok(body) => release_from_json(&body),
-        Err(error) => {
-            let error = error.without_url();
-            tracing::debug!(error = %error, "update check response could not be read");
+            tracing::debug!(error = %error, "latest release lookup failed");
             None
         }
     }

@@ -6,14 +6,14 @@ use forge_components::{Icon, ToastAction, ToastKind, tr};
 use forge_platform_core::paths;
 use forge_storage::DataProvider;
 use forge_update::{
-    ApplyFailure, DatabaseRestore, RollbackReason, UpdateError, UpdateReport, take_update_report,
-    write_health_marker,
+    ApplyFailure, DatabaseRestore, GithubRepo, RollbackReason, UpdateError, UpdateReport,
+    take_update_report, write_health_marker,
 };
 use gpui::{App, AsyncApp};
 use tokio::runtime::Handle;
 
 use crate::async_bridge::{detached, open_path};
-use crate::update_check::{CURRENT_VERSION, REPO_URL, release_page_url, remember_skipped};
+use crate::update_check::{CURRENT_VERSION, REPO_URL, remember_skipped};
 use forge_components::PushToast;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -185,7 +185,7 @@ fn raise_report_toast(
 }
 
 fn download_action(version: &str, rt_handle: Handle) -> ToastAction {
-    let page = release_page_url(REPO_URL, version);
+    let page = GithubRepo::parse(REPO_URL).and_then(|repo| repo.release_page_url(version));
     ToastAction::new(
         tr!("update_toast_open_action"),
         move |_window, _app: &mut App| {

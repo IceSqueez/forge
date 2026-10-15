@@ -6,6 +6,7 @@ mod database;
 mod digest;
 mod download;
 mod error;
+mod github;
 mod health;
 mod http;
 mod install;
@@ -33,6 +34,7 @@ pub use download::{
     StagedArtifact, download_artifact, progress_channel, staged_path,
 };
 pub use error::UpdateError;
+pub use github::{GithubRepo, PublishedRelease, fetch_latest_release, parse_latest_release};
 pub use health::{HEALTH_MARKER_FILE, HealthMarker, read_health_marker, write_health_marker};
 pub use http::UpdateClient;
 pub use install::{

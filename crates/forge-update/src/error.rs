@@ -20,6 +20,8 @@ pub enum UpdateError {
     UntrustedSignature,
     #[error("the update manifest is malformed: {0}")]
     MalformedManifest(String),
+    #[error("the latest release description is malformed: {0}")]
+    MalformedRelease(String),
     #[error("update manifest format {0} is not supported")]
     UnsupportedManifestFormat(u32),
     #[error("the update signature carries no signed version")]

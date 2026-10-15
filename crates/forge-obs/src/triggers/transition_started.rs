@@ -1,3 +1,4 @@
+use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -56,12 +57,12 @@ impl TriggerKindDescriptor for TransitionStartedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("obs.transition.".to_owned()),
+            kind_prefix: Some(event_kinds::TRANSITION_PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "obs.transition.started"
+        event.kind == event_kinds::TRANSITION_STARTED
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {

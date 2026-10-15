@@ -1,3 +1,4 @@
+use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -56,12 +57,12 @@ impl TriggerKindDescriptor for SourceSceneItemCreatedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("obs.source.".to_owned()),
+            kind_prefix: Some(event_kinds::SOURCE_PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "obs.source.scene_item_created"
+        event.kind == event_kinds::SOURCE_SCENE_ITEM_CREATED
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {

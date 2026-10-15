@@ -1,3 +1,4 @@
+use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -68,12 +69,12 @@ impl TriggerKindDescriptor for AudioSourceVolumeChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("obs.audio.".to_owned()),
+            kind_prefix: Some(event_kinds::AUDIO_PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != "obs.audio.source_volume_changed" {
+        if event.kind != event_kinds::AUDIO_SOURCE_VOLUME_CHANGED {
             return false;
         }
         source_name_matches(config, event)

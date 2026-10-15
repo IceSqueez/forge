@@ -1,3 +1,4 @@
+use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -54,19 +55,19 @@ impl TriggerKindDescriptor for RecordStatusChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("obs.recording.".to_owned()),
+            kind_prefix: Some(event_kinds::RECORDING_PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
         matches!(
             event.kind.as_str(),
-            "obs.recording.starting"
-                | "obs.recording.started"
-                | "obs.recording.stopping"
-                | "obs.recording.stopped"
-                | "obs.recording.paused"
-                | "obs.recording.resumed"
+            event_kinds::RECORDING_STARTING
+                | event_kinds::RECORDING_STARTED
+                | event_kinds::RECORDING_STOPPING
+                | event_kinds::RECORDING_STOPPED
+                | event_kinds::RECORDING_PAUSED
+                | event_kinds::RECORDING_RESUMED
         )
     }
 

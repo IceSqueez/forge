@@ -1,3 +1,4 @@
+use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -56,12 +57,12 @@ impl TriggerKindDescriptor for ConnectionAuthFailedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("obs.connection.".to_owned()),
+            kind_prefix: Some(event_kinds::CONNECTION_PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "obs.connection.auth_failed"
+        event.kind == event_kinds::CONNECTION_AUTH_FAILED
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {

@@ -1,3 +1,4 @@
+use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -67,12 +68,12 @@ impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("obs.scene.".to_owned()),
+            kind_prefix: Some(event_kinds::SCENE_PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != "obs.scene.changed" {
+        if event.kind != event_kinds::SCENE_CHANGED {
             return false;
         }
         match config.get("scene") {

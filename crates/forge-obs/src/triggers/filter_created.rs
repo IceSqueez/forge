@@ -1,3 +1,4 @@
+use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -57,12 +58,12 @@ impl TriggerKindDescriptor for FilterCreatedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("obs.filter.".to_owned()),
+            kind_prefix: Some(event_kinds::FILTER_PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "obs.filter.created"
+        event.kind == event_kinds::FILTER_CREATED
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {

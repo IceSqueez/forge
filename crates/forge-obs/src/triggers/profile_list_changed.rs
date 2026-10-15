@@ -1,3 +1,4 @@
+use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -56,12 +57,12 @@ impl TriggerKindDescriptor for ProfileListChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("obs.profile.".to_owned()),
+            kind_prefix: Some(event_kinds::PROFILE_PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "obs.profile.list_changed"
+        event.kind == event_kinds::PROFILE_LIST_CHANGED
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {

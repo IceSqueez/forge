@@ -1,3 +1,4 @@
+use crate::event_kinds;
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
@@ -54,12 +55,12 @@ impl TriggerKindDescriptor for StudioEnabledDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("obs.studio.".to_owned()),
+            kind_prefix: Some(event_kinds::STUDIO_PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "obs.studio.enabled"
+        event.kind == event_kinds::STUDIO_ENABLED
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -86,7 +87,7 @@ pub(crate) fn build_studio_arg_stack(event: &Event) -> ArgStack {
     let mut stack = ArgStack::new();
     stack = stack.set(
         "obs.studio.enabled".to_owned(),
-        Variant::Bool(event.kind == "obs.studio.enabled"),
+        Variant::Bool(event.kind == event_kinds::STUDIO_ENABLED),
     );
     stack
 }

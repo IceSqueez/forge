@@ -150,7 +150,7 @@ mod tests {
     use forge_storage::StorageError;
     use forge_storage::credentials::MockCredentialsRepo;
 
-    use super::AuthState;
+    use super::{AuthState, masked_token};
 
     const FIRST_TOKEN: &str = "first-token";
 
@@ -245,5 +245,32 @@ mod tests {
             auth.set_reads_required(reads_required);
             assert_eq!(auth.admits_session(bearer, overlay), admitted, "{case}");
         }
+    }
+
+    #[test]
+    fn masked_token_reveals_only_the_last_four_characters_and_never_the_body() {
+        let masked = masked_token("fg_supersecretvalue9c4a");
+        assert!(masked.ends_with("9c4a"), "masked = {masked}");
+        assert!(!masked.contains("supersecret"), "masked = {masked}");
+    }
+
+    #[test]
+    fn masked_token_keeps_tokens_not_longer_than_the_tail_whole() {
+        for token in ["a", "abc", "abcd"] {
+            let masked = masked_token(token);
+            assert!(masked.ends_with(token), "token {token} masked to {masked}");
+        }
+    }
+
+    #[test]
+    fn masked_token_splits_multibyte_tokens_on_character_boundaries() {
+        let masked = masked_token("префікс-тікт");
+        assert!(masked.ends_with("тікт"), "masked = {masked}");
+        assert!(!masked.contains("префікс"), "masked = {masked}");
+    }
+
+    #[test]
+    fn masked_token_renders_a_placeholder_for_an_empty_token() {
+        assert_eq!(masked_token(""), "-");
     }
 }

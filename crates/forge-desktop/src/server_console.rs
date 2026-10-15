@@ -2145,40 +2145,6 @@ mod tests {
     }
 
     #[test]
-    fn mask_token_keeps_only_the_last_four_characters() {
-        let token = "fg_supersecretvalue9c4a";
-        let masked = mask_token(token);
-        assert!(masked.ends_with("9c4a"), "masked = {masked}");
-        assert!(
-            !masked.contains("supersecret"),
-            "masked token leaks its body: {masked}"
-        );
-    }
-
-    #[test]
-    fn mask_token_handles_tokens_shorter_than_the_revealed_tail() {
-        for (token, expected_tail) in [("a", "a"), ("abc", "abc"), ("abcd", "abcd")] {
-            let masked = mask_token(token);
-            assert!(
-                masked.ends_with(expected_tail),
-                "token {token} masked to {masked}"
-            );
-        }
-    }
-
-    #[test]
-    fn mask_token_splits_multibyte_tokens_on_character_boundaries() {
-        let masked = mask_token("префікс-тікт");
-        assert!(masked.ends_with("тікт"), "masked = {masked}");
-        assert!(!masked.contains("префікс"), "masked = {masked}");
-    }
-
-    #[test]
-    fn mask_token_renders_a_placeholder_when_no_token_is_stored() {
-        assert_eq!(mask_token(""), "-");
-    }
-
-    #[test]
     fn scan_overlay_root_puts_directories_first_and_flags_only_those_with_an_entry_document() {
         const PAGE: &[u8] = b"<!doctype html>";
         const NOTE: &[u8] = b"notes";

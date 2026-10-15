@@ -40,7 +40,6 @@ ulid = { workspace = true }
 
 [dev-dependencies]
 forge-storage = { path = "../forge-storage", features = ["test-mocks"] }
-forge-obs = { path = "../forge-obs" }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
 wiremock = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

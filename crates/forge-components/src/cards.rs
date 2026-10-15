@@ -646,21 +646,6 @@ impl RenderOnce for RowCard {
     }
 }
 
-const NAV_CHEVRON: Pixels = px(16.0);
-
-pub fn nav_card(
-    leading: impl IntoElement,
-    body: impl IntoElement,
-    palette: &ForgePalette,
-) -> RowCard {
-    row_card(body, palette)
-        .leading(leading)
-        .trailing(icon(Icon::ChevronRight, NAV_CHEVRON, palette.text_faint))
-        .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md))
-        .idle_background(palette.elevated)
-        .align_top()
-}
-
 type PadClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 #[derive(Clone, Copy, PartialEq, Eq)]

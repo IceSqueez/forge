@@ -1,22 +1,25 @@
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, TextInput, body_family, icon,
-    mono_family, pulse_dot, radius, spinner, toggle, tr, with_alpha,
+    ActivePresentation, ForgePalette, Icon, TextInput, body_family, pulse_dot, tr,
 };
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_runtime::EventBus;
-use forge_storage::{CredentialsRepo, SettingsRepo, get_bool_setting, set_bool_setting};
+use forge_storage::{CredentialsRepo, SettingsRepo};
 use forge_vtube::{PLUGIN_NAME, VTubeClient, VTubeConfig, VTubeProbeResult};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, Focusable, FontWeight, Pixels, Rgba,
-    SharedString, Subscription, Window, div, prelude::*, px,
+    AnyElement, Context, Entity, EventEmitter, Focusable, Pixels, Rgba, Subscription, Window, div,
+    prelude::*, px,
 };
 
-use crate::async_bridge::{self, ErrorSink, EventBatch};
+use crate::async_bridge::{self, EventBatch};
+use crate::connect_scaffold::{
+    AttemptStatus, ConnectFlag, ConnectFlagSpec, ConnectFlags, EndpointFields, FIELD_BLOCK_GAP,
+    FormButtons, StripContent, StripLook, box_frame, endpoint_input, endpoint_row, field_label,
+    flag_rows, form_buttons, mono_box_text, outcome_strip, persist_flag, read_endpoint,
+    strip_frame, strip_icon,
+};
 use crate::integrations::VTubeInstallSeed;
-use forge_components::ActivePresentation;
-use forge_components::grow_cell;
 
 pub const VTUBE_AUTO_RECONNECT_KEY: &str = "vtube.auto_reconnect";
 pub const VTUBE_CONNECT_ON_LAUNCH_KEY: &str = "vtube.connect_on_launch";
@@ -27,84 +30,38 @@ pub(crate) const DEFAULT_PORT: u16 = 8001;
 const CONNECTION_CHANGED: &str = "vtube.connection.changed";
 const REASON_AWAITING_APPROVAL: &str = "awaiting_approval";
 
-const TOGGLE_GLYPH: Pixels = px(14.0);
-
-const FIELD_LABEL_SIZE: Pixels = px(11.0);
-const FIELD_LABEL_GAP: Pixels = px(6.0);
-const FIELD_GAP: Pixels = px(10.0);
-const FIELD_BLOCK_GAP: Pixels = px(12.0);
-const BOX_PAD_V: Pixels = px(7.0);
-const BOX_PAD_H: Pixels = px(11.0);
-const BOX_RADIUS: Pixels = px(7.0);
-const BOX_TEXT_SIZE: Pixels = px(12.0);
-
-const TOGGLE_ROW_PAD_V: Pixels = px(8.0);
-const TOGGLE_ROW_GAP: Pixels = px(10.0);
-const TOGGLE_LABEL_SIZE: Pixels = px(12.5);
-const TOGGLE_HINT_SIZE: Pixels = px(11.0);
-
-const STRIP_MARGIN: Pixels = px(12.0);
-const IDLE_PAD_V: Pixels = px(8.0);
-const IDLE_PAD_H: Pixels = px(11.0);
-const IDLE_GAP: Pixels = px(9.0);
-const IDLE_GLYPH: Pixels = px(13.0);
 const IDLE_TEXT_SIZE: Pixels = px(11.0);
-const ACTIVE_PAD_V: Pixels = px(10.0);
-const ACTIVE_PAD_H: Pixels = px(12.0);
-const ACTIVE_GAP: Pixels = px(10.0);
 const ACTIVE_DOT: Pixels = px(8.0);
-const ACTIVE_TITLE_SIZE: Pixels = px(11.5);
 
-const BUTTON_ROW_GAP: Pixels = px(8.0);
-const BUTTON_PAD_V: Pixels = px(8.0);
-const GHOST_PAD_H: Pixels = px(14.0);
-const PRIMARY_PAD_H: Pixels = px(16.0);
-const BUTTON_GAP: Pixels = px(5.0);
-const BUTTON_GLYPH: Pixels = px(13.0);
-const BUSY_OPACITY: f32 = 0.6;
+const IDLE_LOOK: StripLook = StripLook {
+    gap: px(9.0),
+    pad_v: px(8.0),
+    pad_h: px(11.0),
+};
+const ACTIVE_LOOK: StripLook = StripLook {
+    gap: px(10.0),
+    pad_v: px(10.0),
+    pad_h: px(12.0),
+};
 
-const HOST_CELL_GROW: f32 = 16.0;
-const PORT_CELL_GROW: f32 = 10.0;
+const FLAGS: ConnectFlagSpec = ConnectFlagSpec {
+    auto_reconnect_key: VTUBE_AUTO_RECONNECT_KEY,
+    connect_on_launch_key: VTUBE_CONNECT_ON_LAUNCH_KEY,
+    auto_reconnect_id: "vtube-connect-auto-reconnect",
+    connect_on_launch_id: "vtube-connect-on-launch",
+    auto_reconnect_label_key: "vtube_connect_auto_reconnect_label",
+    auto_reconnect_hint_key: "vtube_connect_auto_reconnect_hint",
+    connect_on_launch_label_key: "vtube_connect_on_launch_label",
+    connect_on_launch_hint_key: "vtube_connect_on_launch_hint",
+    save_failed_key: "vtube_connect_settings_save_failed",
+};
 
 pub struct VTubeConnected;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum VTubeFlag {
-    AutoReconnect,
-    ConnectOnLaunch,
-}
-
-impl VTubeFlag {
-    fn key(self) -> &'static str {
-        match self {
-            VTubeFlag::AutoReconnect => VTUBE_AUTO_RECONNECT_KEY,
-            VTubeFlag::ConnectOnLaunch => VTUBE_CONNECT_ON_LAUNCH_KEY,
-        }
-    }
-
-    fn element_id(self) -> &'static str {
-        match self {
-            VTubeFlag::AutoReconnect => "vtube-connect-auto-reconnect",
-            VTubeFlag::ConnectOnLaunch => "vtube-connect-on-launch",
-        }
-    }
-}
-
-struct ToggleRowSpec {
-    glyph: Icon,
-    tint: Rgba,
-    label: String,
-    hint: String,
-    on: bool,
-    flag: VTubeFlag,
-    last: bool,
-}
 
 struct Prefill {
     host: String,
     port: String,
-    auto_reconnect: bool,
-    connect_on_launch: bool,
+    flags: ConnectFlags,
 }
 
 struct FormValues {
@@ -114,10 +71,8 @@ struct FormValues {
 
 enum Status {
     Idle,
-    Busy(String),
     AwaitingApproval,
-    Success { title: String, detail: String },
-    Failure { title: String, detail: String },
+    Attempt(AttemptStatus),
 }
 
 enum ConnectOutcome {
@@ -135,8 +90,7 @@ pub struct VTubeConnectForm {
     seed: VTubeInstallSeed,
     host: Entity<TextInput>,
     port: Entity<TextInput>,
-    auto_reconnect: bool,
-    connect_on_launch: bool,
+    flags: ConnectFlags,
     status: Status,
     testing: bool,
     connecting: bool,
@@ -156,20 +110,8 @@ impl VTubeConnectForm {
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
-        let host = cx.new(|cx| {
-            TextInput::new(DEFAULT_HOST, cx)
-                .plain()
-                .mono()
-                .with_palette(palette)
-                .with_font_size(BOX_TEXT_SIZE)
-        });
-        let port = cx.new(|cx| {
-            TextInput::new(SharedString::from(DEFAULT_PORT.to_string()), cx)
-                .plain()
-                .mono()
-                .with_palette(palette)
-                .with_font_size(BOX_TEXT_SIZE)
-        });
+        let host = cx.new(|cx| endpoint_input(DEFAULT_HOST, palette, cx));
+        let port = cx.new(|cx| endpoint_input(DEFAULT_PORT.to_string(), palette, cx));
 
         let subs = vec![
             cx.observe(&host, |_, _, cx| cx.notify()),
@@ -185,8 +127,7 @@ impl VTubeConnectForm {
             seed,
             host,
             port,
-            auto_reconnect: true,
-            connect_on_launch: true,
+            flags: ConnectFlags::default(),
             status: Status::Idle,
             testing: false,
             connecting: false,
@@ -216,24 +157,17 @@ impl VTubeConnectForm {
             .update(cx, |input, cx| input.set_content(prefill.host, cx));
         self.port
             .update(cx, |input, cx| input.set_content(prefill.port, cx));
-        self.auto_reconnect = prefill.auto_reconnect;
-        self.connect_on_launch = prefill.connect_on_launch;
+        self.flags = prefill.flags;
         cx.notify();
     }
 
     fn read_form(&mut self, cx: &mut Context<Self>) -> Option<FormValues> {
-        let host = self.host.read(cx).content().trim().to_owned();
-        let host = if host.is_empty() {
-            DEFAULT_HOST.to_owned()
-        } else {
-            host
-        };
-        let raw_port = self.port.read(cx).content().trim().to_owned();
-        let port = if raw_port.is_empty() {
-            Some(DEFAULT_PORT)
-        } else {
-            raw_port.parse::<u16>().ok().filter(|p| *p != 0)
-        };
+        let (host, port) = read_endpoint(
+            self.host.read(cx).content(),
+            self.port.read(cx).content(),
+            DEFAULT_HOST,
+            DEFAULT_PORT,
+        );
 
         match port {
             Some(port) => {
@@ -244,43 +178,25 @@ impl VTubeConnectForm {
             None => {
                 self.port
                     .update(cx, |input, cx| input.set_invalid(true, cx));
-                self.status = Status::Failure {
+                self.status = Status::Attempt(AttemptStatus::Failure {
                     title: tr!("vtube_connect_error_title"),
                     detail: tr!("vtube_connect_error_invalid_port"),
-                };
+                });
                 cx.notify();
                 None
             }
         }
     }
 
-    fn on_toggle_flag(&mut self, flag: VTubeFlag, cx: &mut Context<Self>) {
-        let value = match flag {
-            VTubeFlag::AutoReconnect => {
-                self.auto_reconnect = !self.auto_reconnect;
-                if let Some(client) = self.seed.live() {
-                    client.set_auto_reconnect(self.auto_reconnect);
-                }
-                self.auto_reconnect
-            }
-            VTubeFlag::ConnectOnLaunch => {
-                self.connect_on_launch = !self.connect_on_launch;
-                self.connect_on_launch
-            }
-        };
-        self.persist_flag(flag.key(), value, cx);
+    fn on_toggle_flag(&mut self, flag: ConnectFlag, cx: &mut Context<Self>) {
+        let value = self.flags.flip(flag);
+        if flag == ConnectFlag::AutoReconnect
+            && let Some(client) = self.seed.live()
+        {
+            client.set_auto_reconnect(value);
+        }
+        persist_flag(&self.rt_handle, &self.settings, &FLAGS, flag, value, cx);
         cx.notify();
-    }
-
-    fn persist_flag(&self, key: &'static str, value: bool, cx: &mut Context<Self>) {
-        let settings = Arc::clone(&self.settings);
-        async_bridge::report_failure(
-            &self.rt_handle,
-            async move { set_bool_setting(&*settings, key, value).await },
-            ErrorSink::Toast,
-            tr!("vtube_connect_settings_save_failed"),
-            cx,
-        );
     }
 
     fn on_test(&mut self, cx: &mut Context<Self>) {
@@ -291,7 +207,7 @@ impl VTubeConnectForm {
             return;
         };
         self.testing = true;
-        self.status = Status::Busy(tr!("vtube_connect_testing"));
+        self.status = Status::Attempt(AttemptStatus::Busy(tr!("vtube_connect_testing")));
         async_bridge::run_async(
             &self.rt_handle,
             async move { forge_vtube::probe_connection(&form.host, form.port).await },
@@ -307,8 +223,8 @@ impl VTubeConnectForm {
         cx: &mut Context<Self>,
     ) {
         self.testing = false;
-        self.status = match result {
-            Ok(report) => Status::Success {
+        self.status = Status::Attempt(match result {
+            Ok(report) => AttemptStatus::Success {
                 title: tr!("vtube_connect_test_successful"),
                 detail: tr!(
                     "vtube_connect_test_detail",
@@ -317,11 +233,11 @@ impl VTubeConnectForm {
                     auth = authorization_label(report.already_authenticated)
                 ),
             },
-            Err(error) => Status::Failure {
+            Err(error) => AttemptStatus::Failure {
                 title: tr!("vtube_connect_test_failed"),
                 detail: friendly_vtube_error(&error),
             },
-        };
+        });
         cx.notify();
     }
 
@@ -333,7 +249,7 @@ impl VTubeConnectForm {
             return;
         };
         self.connecting = true;
-        self.status = Status::Busy(tr!("vtube_connect_connecting"));
+        self.status = Status::Attempt(AttemptStatus::Busy(tr!("vtube_connect_connecting")));
 
         let config = VTubeConfig {
             endpoint: format!("ws://{}:{}/", form.host, form.port),
@@ -380,22 +296,36 @@ impl VTubeConnectForm {
                 false
             }
             ConnectOutcome::Connected => {
-                client.set_auto_reconnect(self.auto_reconnect);
+                client.set_auto_reconnect(self.flags.auto_reconnect);
                 self.seed.install(client);
                 self.connecting = false;
                 self.status = Status::Idle;
-                self.persist_flag(VTUBE_AUTO_RECONNECT_KEY, self.auto_reconnect, cx);
-                self.persist_flag(VTUBE_CONNECT_ON_LAUNCH_KEY, self.connect_on_launch, cx);
+                persist_flag(
+                    &self.rt_handle,
+                    &self.settings,
+                    &FLAGS,
+                    ConnectFlag::AutoReconnect,
+                    self.flags.auto_reconnect,
+                    cx,
+                );
+                persist_flag(
+                    &self.rt_handle,
+                    &self.settings,
+                    &FLAGS,
+                    ConnectFlag::ConnectOnLaunch,
+                    self.flags.connect_on_launch,
+                    cx,
+                );
                 cx.emit(VTubeConnected);
                 true
             }
             ConnectOutcome::Failed(reason) => {
                 self.rt_handle.spawn(async move { client.shutdown().await });
                 self.connecting = false;
-                self.status = Status::Failure {
+                self.status = Status::Attempt(AttemptStatus::Failure {
                     title: tr!("vtube_connect_failed"),
                     detail: failure_detail(&reason),
-                };
+                });
                 true
             }
         };
@@ -403,223 +333,23 @@ impl VTubeConnectForm {
         settled
     }
 
-    fn toggle_row(
-        &self,
-        spec: ToggleRowSpec,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let flag = spec.flag;
-        let control = toggle(spec.on, palette).on_click(
-            flag.element_id(),
-            cx.listener(move |this, _: &ClickEvent, _, cx| this.on_toggle_flag(flag, cx)),
-        );
-
-        let labels = div()
-            .flex()
-            .flex_col()
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(TOGGLE_LABEL_SIZE)
-                    .text_color(palette.text_primary)
-                    .child(spec.label),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(TOGGLE_HINT_SIZE)
-                    .text_color(palette.text_faint)
-                    .child(spec.hint),
-            );
-
-        let mut row = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .py(TOGGLE_ROW_PAD_V)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(TOGGLE_ROW_GAP)
-                    .child(icon(spec.glyph, TOGGLE_GLYPH, spec.tint))
-                    .child(labels),
-            )
-            .child(control);
-        if !spec.last {
-            row = row
-                .border_b(BORDER_THIN)
-                .border_color(palette.border_regular);
-        }
-        row.into_any_element()
-    }
-
     fn status_strip(&self, palette: &ForgePalette) -> AnyElement {
-        let (accent, indicator, title, detail, detail_tint): (
-            Rgba,
-            AnyElement,
-            String,
-            Option<String>,
-            Rgba,
-        ) = match &self.status {
-            Status::Idle => return self.idle_strip(palette),
-            Status::Busy(label) => (
-                palette.border_regular,
-                spinner(
-                    SharedString::from("vtube-connect-status-spin"),
-                    Icon::Loader2,
-                    IDLE_GLYPH,
-                    palette.text_muted,
-                )
-                .into_any_element(),
-                label.clone(),
-                None,
-                palette.text_muted,
+        match &self.status {
+            Status::Idle => idle_strip(palette),
+            Status::AwaitingApproval => outcome_strip(
+                StripContent {
+                    accent: palette.warning,
+                    indicator: pulsing_dot(palette.warning),
+                    title: tr!("vtube_connect_awaiting_title"),
+                    detail: Some((tr!("vtube_connect_awaiting_hint"), palette.text_faint)),
+                },
+                ACTIVE_LOOK,
+                palette,
             ),
-            Status::AwaitingApproval => (
-                palette.warning,
-                pulsing_dot(palette.warning),
-                tr!("vtube_connect_awaiting_title"),
-                Some(tr!("vtube_connect_awaiting_hint")),
-                palette.text_faint,
-            ),
-            Status::Success { title, detail } => (
-                palette.success,
-                icon(Icon::Check, IDLE_GLYPH, palette.success).into_any_element(),
-                title.clone(),
-                Some(detail.clone()),
-                palette.text_muted,
-            ),
-            Status::Failure { title, detail } => (
-                palette.random,
-                icon(Icon::AlertTriangle, IDLE_GLYPH, palette.random).into_any_element(),
-                title.clone(),
-                Some(detail.clone()),
-                palette.text_muted,
-            ),
-        };
-
-        let mut text = div().flex_1().min_w(px(0.0)).flex().flex_col().child(
-            div()
-                .font_family(body_family())
-                .font_weight(FontWeight::MEDIUM)
-                .text_size(ACTIVE_TITLE_SIZE)
-                .text_color(palette.text_primary)
-                .child(title),
-        );
-        if let Some(detail) = detail {
-            text = text.child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XXS)
-                    .text_color(detail_tint)
-                    .child(detail),
-            );
+            Status::Attempt(attempt) => {
+                attempt.strip("vtube-connect-status-spin", ACTIVE_LOOK, palette)
+            }
         }
-
-        strip_frame(palette)
-            .gap(ACTIVE_GAP)
-            .py(ACTIVE_PAD_V)
-            .px(ACTIVE_PAD_H)
-            .border_color(accent)
-            .child(indicator)
-            .child(text)
-            .into_any_element()
-    }
-
-    fn idle_strip(&self, palette: &ForgePalette) -> AnyElement {
-        strip_frame(palette)
-            .gap(IDLE_GAP)
-            .py(IDLE_PAD_V)
-            .px(IDLE_PAD_H)
-            .border_color(palette.border_regular)
-            .child(icon(Icon::Clock, IDLE_GLYPH, palette.text_faint))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(IDLE_TEXT_SIZE)
-                    .text_color(palette.text_muted)
-                    .child(tr!("vtube_connect_idle_hint")),
-            )
-            .into_any_element()
-    }
-
-    fn buttons(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        let busy = self.busy();
-
-        let test = div()
-            .id("vtube-connect-test")
-            .flex_1()
-            .flex()
-            .items_center()
-            .justify_center()
-            .gap(BUTTON_GAP)
-            .py(BUTTON_PAD_V)
-            .px(GHOST_PAD_H)
-            .rounded(radius(Radius::Sm))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .when(!busy, |el| {
-                el.cursor_pointer()
-                    .hover(|s| s.border_color(palette.border_input))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.on_test(cx)))
-            })
-            .when(busy, |el| el.opacity(BUSY_OPACITY))
-            .child(icon(
-                Icon::PlugConnected,
-                BUTTON_GLYPH,
-                palette.text_secondary,
-            ))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_secondary)
-                    .child(tr!("vtube_connect_btn_test")),
-            );
-
-        let label = if self.connecting {
-            tr!("vtube_connect_btn_authorizing")
-        } else {
-            tr!("vtube_connect_btn_connect")
-        };
-        let connect = div()
-            .id("vtube-connect-submit")
-            .flex_1()
-            .flex()
-            .items_center()
-            .justify_center()
-            .gap(BUTTON_GAP)
-            .py(BUTTON_PAD_V)
-            .px(PRIMARY_PAD_H)
-            .rounded(radius(Radius::Sm))
-            .bg(palette.brand)
-            .when(!busy, |el| {
-                el.cursor_pointer()
-                    .hover(|s| s.bg(with_alpha(palette.brand, 0.85)))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.on_connect(cx)))
-            })
-            .when(busy, |el| el.opacity(BUSY_OPACITY))
-            .child(icon(Icon::Plug, BUTTON_GLYPH, palette.shell))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_size(FONT_XS)
-                    .text_color(palette.shell)
-                    .child(label),
-            );
-
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(BUTTON_ROW_GAP)
-            .child(test)
-            .child(connect)
-            .into_any_element()
     }
 }
 
@@ -627,71 +357,52 @@ impl Render for VTubeConnectForm {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
 
-        let host_focused = self.host.focus_handle(cx).is_focused(window);
-        let port_focused = self.port.focus_handle(cx).is_focused(window);
-
-        let host_field = div()
-            .flex()
-            .flex_col()
-            .child(field_label(tr!("vtube_connect_field_host"), &palette))
-            .child(input_box(host_focused, &palette).child(self.host.clone()));
-        let port_field = div()
-            .flex()
-            .flex_col()
-            .child(field_label(tr!("vtube_connect_field_port"), &palette))
-            .child(input_box(port_focused, &palette).child(self.port.clone()));
-
-        let endpoint_row = div()
-            .w_full()
-            .flex()
-            .items_start()
-            .gap(FIELD_GAP)
-            .mb(FIELD_BLOCK_GAP)
-            .child(grow_cell(host_field, HOST_CELL_GROW))
-            .child(grow_cell(port_field, PORT_CELL_GROW));
+        let endpoint = endpoint_row(
+            EndpointFields {
+                host_label: tr!("vtube_connect_field_host"),
+                port_label: tr!("vtube_connect_field_port"),
+                host: &self.host,
+                port: &self.port,
+                host_focused: self.host.focus_handle(cx).is_focused(window),
+                port_focused: self.port.focus_handle(cx).is_focused(window),
+            },
+            &palette,
+        );
 
         let plugin_field = div()
             .w_full()
             .flex()
             .flex_col()
             .mb(FIELD_BLOCK_GAP)
-            .child(field_label(tr!("vtube_connect_field_plugin"), &palette))
+            .child(field_label(
+                tr!("vtube_connect_field_plugin"),
+                None,
+                &palette,
+            ))
             .child(
                 box_frame(&palette)
                     .border_color(palette.border_input)
-                    .child(
-                        div()
-                            .font_family(mono_family())
-                            .text_size(BOX_TEXT_SIZE)
-                            .text_color(palette.text_primary)
-                            .child(PLUGIN_NAME),
-                    ),
+                    .child(mono_box_text(PLUGIN_NAME, &palette)),
             );
 
-        let auto_reconnect_row = self.toggle_row(
-            ToggleRowSpec {
-                glyph: Icon::Refresh,
-                tint: palette.info,
-                label: tr!("vtube_connect_auto_reconnect_label"),
-                hint: tr!("vtube_connect_auto_reconnect_hint"),
-                on: self.auto_reconnect,
-                flag: VTubeFlag::AutoReconnect,
-                last: false,
+        let flag_rows = flag_rows(&FLAGS, self.flags, &palette, Self::on_toggle_flag, cx);
+        let submit_label = if self.connecting {
+            tr!("vtube_connect_btn_authorizing")
+        } else {
+            tr!("vtube_connect_btn_connect")
+        };
+        let buttons = form_buttons(
+            FormButtons {
+                test_id: "vtube-connect-test",
+                submit_id: "vtube-connect-submit",
+                test_label: tr!("vtube_connect_btn_test"),
+                submit_glyph: Icon::Plug,
+                submit_label,
+                disabled: self.busy(),
             },
             &palette,
-            cx,
-        );
-        let launch_row = self.toggle_row(
-            ToggleRowSpec {
-                glyph: Icon::Bolt,
-                tint: palette.warning,
-                label: tr!("vtube_connect_on_launch_label"),
-                hint: tr!("vtube_connect_on_launch_hint"),
-                on: self.connect_on_launch,
-                flag: VTubeFlag::ConnectOnLaunch,
-                last: true,
-            },
-            &palette,
+            Self::on_test,
+            Self::on_connect,
             cx,
         );
 
@@ -699,55 +410,26 @@ impl Render for VTubeConnectForm {
             .w_full()
             .flex()
             .flex_col()
-            .child(endpoint_row)
+            .child(endpoint)
             .child(plugin_field)
-            .child(auto_reconnect_row)
-            .child(launch_row)
+            .children(flag_rows)
             .child(self.status_strip(&palette))
-            .child(self.buttons(&palette, cx))
+            .child(buttons)
     }
 }
 
-fn field_label(label: String, palette: &ForgePalette) -> impl IntoElement {
-    div()
-        .w_full()
-        .mb(FIELD_LABEL_GAP)
-        .font_family(mono_family())
-        .text_size(FIELD_LABEL_SIZE)
-        .text_color(palette.text_muted)
-        .child(label)
-}
-
-fn box_frame(palette: &ForgePalette) -> gpui::Div {
-    div()
-        .w_full()
-        .flex()
-        .items_center()
-        .py(BOX_PAD_V)
-        .px(BOX_PAD_H)
-        .rounded(BOX_RADIUS)
-        .border(BORDER_THIN)
-        .bg(palette.shell)
-}
-
-fn input_box(focused: bool, palette: &ForgePalette) -> gpui::Div {
-    let border = if focused {
-        palette.border_active
-    } else {
-        palette.border_input
-    };
-    box_frame(palette).border_color(border)
-}
-
-fn strip_frame(palette: &ForgePalette) -> gpui::Div {
-    div()
-        .w_full()
-        .flex()
-        .items_center()
-        .my(STRIP_MARGIN)
-        .rounded(BOX_RADIUS)
-        .border(BORDER_THIN)
-        .bg(palette.shell)
+fn idle_strip(palette: &ForgePalette) -> AnyElement {
+    strip_frame(IDLE_LOOK, palette)
+        .border_color(palette.border_regular)
+        .child(strip_icon(Icon::Clock, palette.text_faint))
+        .child(
+            div()
+                .font_family(body_family())
+                .text_size(IDLE_TEXT_SIZE)
+                .text_color(palette.text_muted)
+                .child(tr!("vtube_connect_idle_hint")),
+        )
+        .into_any_element()
 }
 
 fn pulsing_dot(tint: Rgba) -> AnyElement {
@@ -825,11 +507,9 @@ async fn load_prefill(
     Prefill {
         host,
         port: port.to_string(),
-        auto_reconnect: get_bool_setting(&*settings, VTUBE_AUTO_RECONNECT_KEY, true).await,
-        connect_on_launch: get_bool_setting(&*settings, VTUBE_CONNECT_ON_LAUNCH_KEY, true).await,
+        flags: ConnectFlags::load(&*settings, &FLAGS).await,
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

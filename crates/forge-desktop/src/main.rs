@@ -31,6 +31,7 @@ mod combo_conflict;
 mod config_field_label;
 mod config_form;
 mod connect_flow;
+mod connect_scaffold;
 mod data_backup;
 mod detail_route;
 mod diagnostic_bundle;

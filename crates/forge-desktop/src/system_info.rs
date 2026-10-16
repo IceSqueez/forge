@@ -487,11 +487,12 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
+    use forge_audio::{DeviceId, DeviceInfo, OutputDevice};
     use forge_update::{InstallKind, InstallLayout, ManualReason, UpdatableInstall};
 
     use super::{
-        AudioOutput, DisplaySize, GpuFacts, HostFacts, IdentityScrubber, InfoField, SystemInfo,
-        WindowFacts, directory_size, format_bytes, install_label,
+        AudioOutputs, DisplaySize, GpuFacts, HostFacts, IdentityScrubber, InfoField, SpeechOutput,
+        SystemInfo, WindowFacts, directory_size, format_bytes, install_label,
     };
 
     const KIB: u64 = 1024;
@@ -551,19 +552,30 @@ mod tests {
             cpu_model: Some("Ryzen 9".to_owned()),
             logical_cores: Some(32),
             total_memory_bytes: Some(64 * GIB),
-            audio_outputs: Some(vec![
-                AudioOutput {
-                    name: "Speakers".to_owned(),
-                    is_default: true,
+            audio_outputs: Some(AudioOutputs {
+                device_count: 2,
+                speech: SpeechOutput::SystemDefault {
+                    device: Some("Speakers".to_owned()),
                 },
-                AudioOutput {
-                    name: "HDMI".to_owned(),
-                    is_default: false,
-                },
-            ]),
+            }),
             data_dir_bytes: Some(3 * MIB / 2),
             identity: IdentityScrubber::default(),
         }
+    }
+
+    fn device(id: &str, name: &str, is_default: bool) -> DeviceInfo {
+        DeviceInfo {
+            id: DeviceId::new(id),
+            name: name.to_owned(),
+            is_default,
+        }
+    }
+
+    fn speakers_and_hdmi() -> Vec<DeviceInfo> {
+        vec![
+            device("hw:1", "HDMI", false),
+            device("hw:0", "Speakers", true),
+        ]
     }
 
     fn report_line(report: &str, label: &str) -> String {
@@ -587,6 +599,19 @@ mod tests {
             (GIB, "1.0 GiB"),
             (5 * GIB / 2, "2.5 GiB"),
             (TIB, "1.0 TiB"),
+        ] {
+            assert_eq!(format_bytes(bytes), expected, "{bytes}");
+        }
+    }
+
+    #[test]
+    fn format_bytes_moves_to_the_next_unit_when_rounding_reaches_1024() {
+        for (bytes, expected) in [
+            (1_048_524, "1023.9 KiB"),
+            (1_048_525, "1.0 MiB"),
+            (MIB - 1, "1.0 MiB"),
+            (GIB - 1, "1.0 GiB"),
+            (TIB - 1, "1.0 TiB"),
         ] {
             assert_eq!(format_bytes(bytes), expected, "{bytes}");
         }
@@ -648,6 +673,18 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn directory_size_follows_a_root_symlink_to_its_target_directory() {
+        let target = tempfile::tempdir().expect("target");
+        fs::write(target.path().join("forge.db"), [0u8; 9]).expect("target file");
+        let parent = tempfile::tempdir().expect("parent");
+        let link = parent.path().join("data");
+        std::os::unix::fs::symlink(target.path(), &link).expect("root symlink");
+
+        assert_eq!(directory_size(&link), Some(9));
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn directory_size_survives_a_symlink_loop() {
         let root = tempfile::tempdir().expect("tempdir");
         fs::write(root.path().join("own.db"), [0u8; 4]).expect("own file");
@@ -684,6 +721,23 @@ mod tests {
                 "{identities:?}",
             );
         }
+    }
+
+    #[test]
+    fn scrubber_does_not_rescan_an_inserted_marker_for_a_shorter_identity() {
+        let scrubber = scrubber(&["ted", "/home/ted"]);
+
+        assert_eq!(
+            scrubber.scrub("/home/ted/x and Ted"),
+            "[redacted]/x and [redacted]",
+        );
+    }
+
+    #[test]
+    fn scrubber_keeps_markers_intact_when_an_identity_is_part_of_the_marker() {
+        let scrubber = scrubber(&["red", "alice"]);
+
+        assert_eq!(scrubber.scrub("alice red"), "[redacted] [redacted]");
     }
 
     #[test]
@@ -752,9 +806,7 @@ mod tests {
             "GPU: Radeon RX (radv Mesa 25.2)".to_owned(),
             format!("GPU backend: {backend}"),
             "Displays: 2: 2560x1440, 1920x1080 (window scale 1.5)".to_owned(),
-            "Audio outputs:".to_owned(),
-            "  - Speakers (default)".to_owned(),
-            "  - HDMI".to_owned(),
+            "Audio outputs: 2 devices; forge uses: system default (Speakers)".to_owned(),
             "Data folder size: 1.5 MiB".to_owned(),
         ]
         .join("\n");
@@ -798,24 +850,141 @@ mod tests {
     }
 
     #[test]
-    fn report_says_none_for_an_empty_audio_list_and_inlines_a_single_output() {
-        for (outputs, expected) in [
-            (Vec::new(), "Audio outputs: none"),
-            (
-                vec![AudioOutput {
-                    name: "Headset".to_owned(),
-                    is_default: false,
-                }],
-                "Audio outputs: Headset",
-            ),
+    fn report_says_none_without_devices_and_uses_singular_for_one_device() {
+        let headset = SpeechOutput::Chosen {
+            device: "Headset".to_owned(),
+        };
+        for (device_count, expected) in [
+            (0, "Audio outputs: none"),
+            (1, "Audio outputs: 1 device; forge uses: Headset"),
         ] {
             let host = HostFacts {
-                audio_outputs: Some(outputs),
+                audio_outputs: Some(AudioOutputs {
+                    device_count,
+                    speech: headset.clone(),
+                }),
                 ..full_host()
             };
             let report = info(full_window(), host).to_report_text();
 
             assert_eq!(report_line(&report, "Audio outputs"), expected);
+        }
+    }
+
+    #[test]
+    fn report_describes_the_speech_output_for_every_resolution() {
+        for (speech, expected) in [
+            (
+                SpeechOutput::SystemDefault {
+                    device: Some("Speakers".to_owned()),
+                },
+                "system default (Speakers)",
+            ),
+            (
+                SpeechOutput::SystemDefault { device: None },
+                "system default",
+            ),
+            (
+                SpeechOutput::Chosen {
+                    device: "Headset".to_owned(),
+                },
+                "Headset",
+            ),
+            (
+                SpeechOutput::ChosenMissing {
+                    fallback: Some("Speakers".to_owned()),
+                },
+                "system default (Speakers) - chosen device not connected",
+            ),
+            (
+                SpeechOutput::ChosenMissing { fallback: None },
+                "system default - chosen device not connected",
+            ),
+            (SpeechOutput::Unknown, "unknown"),
+        ] {
+            let host = HostFacts {
+                audio_outputs: Some(AudioOutputs {
+                    device_count: 2,
+                    speech,
+                }),
+                ..full_host()
+            };
+            let report = info(full_window(), host).to_report_text();
+
+            assert_eq!(
+                report_line(&report, "Audio outputs"),
+                format!("Audio outputs: 2 devices; forge uses: {expected}"),
+            );
+        }
+    }
+
+    #[test]
+    fn speech_output_resolves_the_preference_against_connected_devices() {
+        let speakers = || Some("Speakers".to_owned());
+        let by_id = |id: &str| OutputDevice::ById { id: id.to_owned() };
+        let by_name = |name: &str| OutputDevice::ByName {
+            name: name.to_owned(),
+        };
+        for (preference, devices, expected) in [
+            (None, speakers_and_hdmi(), SpeechOutput::Unknown),
+            (
+                Some(OutputDevice::Default),
+                speakers_and_hdmi(),
+                SpeechOutput::SystemDefault { device: speakers() },
+            ),
+            (
+                Some(OutputDevice::Default),
+                Vec::new(),
+                SpeechOutput::SystemDefault { device: None },
+            ),
+            (
+                Some(by_id("hw:1")),
+                speakers_and_hdmi(),
+                SpeechOutput::Chosen {
+                    device: "HDMI".to_owned(),
+                },
+            ),
+            (
+                Some(by_id("hw:9")),
+                speakers_and_hdmi(),
+                SpeechOutput::ChosenMissing {
+                    fallback: speakers(),
+                },
+            ),
+            (
+                Some(by_id("HDMI")),
+                speakers_and_hdmi(),
+                SpeechOutput::ChosenMissing {
+                    fallback: speakers(),
+                },
+            ),
+            (
+                Some(by_name("HDMI")),
+                speakers_and_hdmi(),
+                SpeechOutput::Chosen {
+                    device: "HDMI".to_owned(),
+                },
+            ),
+            (
+                Some(by_name("USB Headset")),
+                speakers_and_hdmi(),
+                SpeechOutput::ChosenMissing {
+                    fallback: speakers(),
+                },
+            ),
+            (
+                Some(by_id("hw:1")),
+                Vec::new(),
+                SpeechOutput::ChosenMissing { fallback: None },
+            ),
+            (None, Vec::new(), SpeechOutput::Unknown),
+        ] {
+            assert_eq!(
+                SpeechOutput::resolve(preference.as_ref(), &devices),
+                expected,
+                "{preference:?} with {} devices",
+                devices.len(),
+            );
         }
     }
 
@@ -917,16 +1086,12 @@ mod tests {
                 os_version: Some(format!("{leak}-1")),
                 kernel: Some(format!("6.1-{leak}")),
                 cpu_model: Some(format!("{leak} CPU")),
-                audio_outputs: Some(vec![
-                    AudioOutput {
-                        name: format!("{leak} speakers"),
-                        is_default: true,
+                audio_outputs: Some(AudioOutputs {
+                    device_count: 2,
+                    speech: SpeechOutput::Chosen {
+                        device: format!("{leak}'s headset"),
                     },
-                    AudioOutput {
-                        name: format!("{leak}'s headset"),
-                        is_default: false,
-                    },
-                ]),
+                }),
                 identity: scrubber(&["boxofalice"]),
                 ..full_host()
             },
@@ -940,6 +1105,6 @@ mod tests {
             !report.to_ascii_lowercase().contains("boxofalice"),
             "{report}"
         );
-        assert_eq!(report.matches("[redacted]").count(), 11, "{report}");
+        assert_eq!(report.matches("[redacted]").count(), 10, "{report}");
     }
 }

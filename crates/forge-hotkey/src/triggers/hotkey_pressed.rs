@@ -48,7 +48,7 @@ impl TriggerKindDescriptor for HotkeyPressedDescriptor {
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![FormField::Text {
-            key: "combo",
+            key: crate::COMBO_FIELD,
             label: "Hotkey combo",
             placeholder: "e.g. Ctrl+Shift+1",
         }]
@@ -56,7 +56,7 @@ impl TriggerKindDescriptor for HotkeyPressedDescriptor {
 
     fn condition_display(&self, config: &TriggerConfig) -> String {
         config
-            .get("combo")
+            .get(crate::COMBO_FIELD)
             .and_then(|v| {
                 if let Variant::String(s) = v {
                     Some(s.clone())

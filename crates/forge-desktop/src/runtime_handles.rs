@@ -58,7 +58,7 @@ pub struct RuntimeHandles {
     pub speech_sink: Arc<dyn forge_audio::AudioSink>,
     pub audio_router: Arc<AudioRouter>,
     pub hotkey_client: Option<Arc<forge_hotkey::HotkeyClient>>,
-    pub hotkey_reconciler: Option<Arc<crate::hotkey_sync::HotkeyReconciler>>,
+    pub hotkey_reconciler: Option<Arc<forge_hotkey::HotkeyReconciler>>,
     pub soundboard_player: Arc<forge_soundboard::SoundboardPlayer>,
     pub voice_gate: Arc<VoiceGateOwner>,
     pub stay_awake: forge_awake::StayAwake,

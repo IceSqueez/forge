@@ -14,16 +14,14 @@ use crate::actions::SHORTCUTS;
 use crate::async_bridge::{self, BridgeFlow, drain_events};
 use crate::combo_capture::ComboCapture;
 use crate::combo_conflict::{ClipKey, clip_keys, combo_holder};
-use crate::hotkey_bindings::{
-    BindingRow, HotkeyEdge, conflict_count, load_bindings, registered_combos,
-};
-use crate::hotkey_sync::HotkeyReconciler;
 use crate::hub_crumb::hub_crumb;
 use crate::integrations::BuiltinObject;
 use crate::shortcut_overrides::{ShortcutOverrides, save_overrides};
 use crate::sidebar::NavRequested;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_hotkey::HotkeyReconciler;
+use forge_hotkey::{BindingRow, HotkeyEdge, conflict_count, load_bindings, registered_combos};
 use forge_runtime::IntegrationSlot;
 
 mod action_modal;

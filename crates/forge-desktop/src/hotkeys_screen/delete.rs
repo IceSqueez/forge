@@ -5,7 +5,7 @@ use forge_types::TriggerInstanceId;
 use gpui::{AnyElement, ClickEvent, Context, prelude::*};
 
 use super::HotkeysScreenView;
-use crate::hotkey_bindings::{HotkeyEdge, delete_binding, delete_binding_half};
+use forge_hotkey::{HotkeyEdge, delete_binding, delete_binding_half};
 
 #[derive(Clone, Copy)]
 pub(super) enum DeleteScope {

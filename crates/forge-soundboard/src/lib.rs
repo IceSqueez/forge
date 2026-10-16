@@ -5,6 +5,7 @@ pub mod bus_event_sink;
 pub mod cpal_factory;
 pub mod duration;
 pub mod error;
+pub mod hotkey_dispatch;
 pub mod library;
 pub mod player;
 pub mod settings;
@@ -18,6 +19,7 @@ pub use bus_event_sink::BusAudioEventSink;
 pub use cpal_factory::CpalSinkFactory;
 pub use duration::probe_clip_duration_secs;
 pub use error::SoundboardError;
+pub use hotkey_dispatch::{clips_bound_to, pressed_combo, spawn_clip_hotkey_dispatcher};
 pub use library::{
     AdoptionStep, AdoptionVerdict, ClipAvailability, ClipLibrary, ClipRefusal, ClipSource,
     SourcePlan, choose_source, clip_source_referrer, final_refusal, plan_adoption, plan_source,

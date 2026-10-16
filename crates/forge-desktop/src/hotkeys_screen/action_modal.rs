@@ -6,7 +6,7 @@ use super::capture::Capture;
 use crate::hotkey_action_modal::{
     ActionModalLaunch, BindingDraft, HotkeyActionModal, HotkeyActionModalEvent,
 };
-use crate::hotkey_bindings::HotkeyEdge;
+use forge_hotkey::HotkeyEdge;
 
 pub(super) struct OpenModal {
     pub(super) view: Entity<HotkeyActionModal>,

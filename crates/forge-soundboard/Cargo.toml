@@ -15,6 +15,7 @@ forge-events = { path = "../forge-events" }
 forge-audio = { path = "../forge-audio" }
 forge-storage = { path = "../forge-storage" }
 forge-runtime = { path = "../forge-runtime" }
+forge-hotkey = { path = "../forge-hotkey" }
 async-trait = { workspace = true }
 futures = { workspace = true }
 thiserror = { workspace = true }
@@ -25,4 +26,7 @@ time = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+forge-hotkey = { path = "../forge-hotkey", features = ["testing"] }
+forge-storage = { path = "../forge-storage", features = ["test-mocks"] }
+forge-storage-sqlite = { path = "../forge-storage-sqlite" }
 tempfile = { workspace = true }

@@ -5,9 +5,9 @@ use forge_storage::{DataProvider, StoredClip};
 use forge_types::{ClipId, TriggerInstanceId};
 use gpui::{AnyElement, ClickEvent, Context, SharedString, prelude::*};
 
-use crate::clip_hotkeys::{HotkeySyncedClipsRepo, clear_clip_combo, stored_combo};
-use crate::hotkey_bindings::{BindingRow, delete_binding};
-use crate::hotkey_sync::HotkeyReconciler;
+use forge_hotkey::HotkeyReconciler;
+use forge_hotkey::{BindingRow, delete_binding};
+use forge_hotkey::{HotkeySyncedClipsRepo, clear_clip_combo, stored_combo};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClipKey {

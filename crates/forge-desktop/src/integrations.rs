@@ -18,11 +18,11 @@ use tokio::task::JoinHandle;
 
 use crate::donation_factories::{wire_donatello, wire_monobank};
 use crate::donation_services::{DonationServices, restore_donatello_poll_interval};
-use crate::hotkey_sync::HotkeyReconciler;
 use crate::integration_factories::{
     wire_discord, wire_hotkey, wire_kick, wire_midi, wire_obs, wire_twitch, wire_vtube,
     wire_youtube,
 };
+use forge_hotkey::HotkeyReconciler;
 use forge_runtime::{IntegrationFactory, IntegrationObjects, TaskGroup};
 
 const CHAT_SEND_QUEUE_CAPACITY: usize = 64;

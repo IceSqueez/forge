@@ -28,7 +28,6 @@ use crate::event_feed::EventFeedView;
 use crate::first_run;
 use crate::globals_view::GlobalsView;
 use crate::home::HomeView;
-use crate::hotkey_sync::{HotkeyReconciler, HotkeySyncedTriggerRepo};
 use crate::hotkeys_screen::HotkeysScreenView;
 use crate::integration_detail::{IntegrationDetail, ObsSignedOut, VTubeSignedOut};
 use crate::integration_disabled::{DisabledLaunch, IntegrationDisabledView};
@@ -61,6 +60,7 @@ use crate::update_flow::{CloseDecision, UpdateFlowEvent};
 use crate::vtube_connect::VTubeConnectView;
 use crate::vtube_connect_form::VTubeConnected;
 use forge_components::{ActivePresentation, Presentation};
+use forge_hotkey::{HotkeyReconciler, HotkeySyncedTriggerRepo};
 use forge_runtime::{LifecycleState, LifecycleStates};
 
 fn settled_kinds(states: &LifecycleStates) -> HashMap<IntegrationId, Discriminant<LifecycleState>> {

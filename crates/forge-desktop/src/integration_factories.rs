@@ -18,9 +18,6 @@ use forge_types::{IntegrationId, PlatformId};
 use futures_util::future::BoxFuture;
 use tokio::sync::mpsc;
 
-use crate::clip_hotkeys::clip_bindings_of;
-use crate::hotkey_bindings::persisted_hotkey_combos;
-use crate::hotkey_sync::HotkeyReconciler;
 use crate::integrations::{
     BuiltinObject, ObsInstallSeed, VTubeInstallSeed, creds_of, kick_builtin_object, publisher,
     spawn_chat_send_bridge, spawn_connect, spawn_event_bridge, twitch_builtin_object,
@@ -28,6 +25,9 @@ use crate::integrations::{
 };
 use crate::obs_credentials_form::{OBS_AUTO_RECONNECT_KEY, OBS_CONNECT_ON_LAUNCH_KEY};
 use crate::vtube_connect_form::{VTUBE_AUTO_RECONNECT_KEY, VTUBE_CONNECT_ON_LAUNCH_KEY};
+use forge_hotkey::HotkeyReconciler;
+use forge_hotkey::clip_bindings_of;
+use forge_hotkey::persisted_hotkey_combos;
 
 const CONNECT_GUARD: Duration = Duration::from_secs(5);
 const KICK_API_BUDGET_CAPACITY: u32 = 60;
@@ -816,7 +816,7 @@ pub(crate) async fn wire_hotkey(
 ) -> (HotkeyFactory, Arc<HotkeyReconciler>) {
     let settings = Arc::clone(backend) as Arc<dyn SettingsRepo>;
     let config = forge_hotkey::HotkeyConfig {
-        hold_ceiling_secs: crate::hotkey_bindings::load_hold_ceiling(settings.as_ref()).await,
+        hold_ceiling_secs: forge_hotkey::load_hold_ceiling(settings.as_ref()).await,
         ..forge_hotkey::HotkeyConfig::default()
     };
     let client = forge_hotkey::HotkeyClient::new(config, publisher(bus), main_thread).await;

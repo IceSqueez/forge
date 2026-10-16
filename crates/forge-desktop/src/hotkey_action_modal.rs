@@ -13,8 +13,8 @@ use gpui::{
 };
 
 use crate::async_bridge;
-use crate::hotkey_bindings::{HotkeyEdge, combo_keys};
 use forge_components::ActivePresentation;
+use forge_hotkey::{HotkeyEdge, combo_keys};
 
 const MODAL_W: Pixels = px(520.0);
 const BODY_PAD_V: Pixels = px(16.0);

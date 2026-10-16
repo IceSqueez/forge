@@ -7,8 +7,8 @@ use forge_storage::{DataProvider, StoredClip};
 use forge_types::ClipId;
 
 use crate::combo_conflict::{Claimant, ComboHolder, ComboHolders, clip_keys};
-use crate::hotkey_bindings::{BindingRow, load_bindings, registered_combos};
-use crate::hotkey_sync::HotkeyReconciler;
+use forge_hotkey::HotkeyReconciler;
+use forge_hotkey::{BindingRow, load_bindings, registered_combos};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PadKey {

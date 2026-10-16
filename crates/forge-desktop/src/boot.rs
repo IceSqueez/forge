@@ -35,7 +35,6 @@ use forge_storage_sqlite::SqliteBackend;
 use forge_types::{LatestValueReader, Shared};
 
 use crate::audio_router::{AudioRouter, AudioRouterParts};
-use crate::clip_hotkeys::{HotkeySyncedClipsRepo, spawn_clip_hotkey_dispatcher};
 use crate::integrations::build_integrations;
 use crate::log_tail::LogTail;
 use crate::overlay_build_failure::OverlayBuildFailure;
@@ -45,7 +44,9 @@ use crate::runtime_handles::RuntimeHandles;
 use crate::speak_boot::{build_speak_queue, build_speech_output};
 use crate::speak_bridge::SpeakBridge;
 use crate::voice_gate::{VoiceGateOwner, config_from_settings};
+use forge_hotkey::HotkeySyncedClipsRepo;
 use forge_runtime::IntegrationSupervisor;
+use forge_soundboard::spawn_clip_hotkey_dispatcher;
 
 pub enum BootFailure {
     UpgradeRequired { expected: u32, found: u32 },
@@ -424,7 +425,7 @@ pub async fn build_runtime(
         &integrations.hotkey_reconciler,
         supervisor.slot(&forge_hotkey::HOTKEY_INTEGRATION.id),
     ) {
-        reconciler.enable_engine_on_new_bindings(engine);
+        reconciler.enable_engine_on_new_bindings(move || engine.request_enable());
     }
     let stream_live = spawn_stream_live_signal(
         &live_viewers,

@@ -7,9 +7,7 @@ use gpui::Context;
 use super::HotkeysScreenView;
 use crate::async_bridge::{self, ErrorSink};
 use crate::hotkey_action_modal::BindingDraft;
-use crate::hotkey_bindings::{
-    do_bind, rebind_combo, relink_action, set_binding_edge, set_binding_enabled,
-};
+use forge_hotkey::{do_bind, rebind_combo, relink_action, set_binding_edge, set_binding_enabled};
 
 impl HotkeysScreenView {
     pub(super) fn persist_draft(&mut self, draft: BindingDraft, cx: &mut Context<Self>) {

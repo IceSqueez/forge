@@ -12,7 +12,7 @@ use super::row_style::{
     SCOPE_BADGE_FS, TARGET_FS,
 };
 use crate::hotkey_action_modal::keycaps;
-use crate::hotkey_bindings::{BindingRow, HotkeyEdge};
+use forge_hotkey::{BindingRow, HotkeyEdge};
 
 const STOP_TARGET_MAX_W: Pixels = px(180.0);
 

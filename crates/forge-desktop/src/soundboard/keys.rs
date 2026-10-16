@@ -5,7 +5,7 @@ use gpui::{AnyElement, Context, Pixels, div, prelude::*, px};
 use super::{HOTKEY_FS, SoundboardView};
 use crate::async_bridge;
 use crate::clip_key_state::{PadKey, canonical_combo};
-use crate::hotkey_sync::HotkeyReconciler;
+use forge_hotkey::HotkeyReconciler;
 
 const HOTKEY_RADIUS: Pixels = px(4.0);
 const HOTKEY_PAD_X: Pixels = px(6.0);

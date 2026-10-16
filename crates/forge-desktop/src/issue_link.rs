@@ -201,7 +201,9 @@ mod tests {
     use percent_encoding::percent_decode_str;
 
     use super::{
-        FIELD_BACKTRACE, ISSUE_URL_MAX_BYTES, IssueForm, backtrace_truncated_marker, encode,
+        CRASH_REPORT_FILE_NAME, FIELD_BACKTRACE, FIELD_CRASH, FIELD_SYSTEM_INFO, FIELD_VERSION,
+        ISSUE_URL_MAX_BYTES, IssueForm, SYSTEM_INFO_FILE_NAME, backtrace_truncated_marker, encode,
+        field_truncated_marker,
     };
     use crate::crash_record::CrashRecord;
 
@@ -363,6 +365,126 @@ mod tests {
             form
         };
         assert_eq!(without_backtrace(&fitted), without_backtrace(&form));
+    }
+
+    fn emoji_cyrillic_message() -> String {
+        "\u{1F399}\u{439}".repeat(500)
+    }
+
+    fn oversized_crash_form(system_info: &str) -> IssueForm {
+        let record = CrashRecord {
+            message: emoji_cyrillic_message(),
+            ..crash_record(backtrace_truncated_marker())
+        };
+        IssueForm::crash(&record, system_info)
+    }
+
+    fn assert_header_unchanged(fitted: &IssueForm, original: &IssueForm) {
+        assert_eq!(fitted.template, original.template);
+        assert_eq!(fitted.title, original.title);
+        assert_eq!(value(fitted, FIELD_VERSION), value(original, FIELD_VERSION));
+    }
+
+    fn assert_url_is_valid_utf8_within_cap(form: &IssueForm) {
+        let url = form.url(REPO);
+        assert!(url.len() <= ISSUE_URL_MAX_BYTES, "{}", url.len());
+        let pairs = query(&url);
+        assert_eq!(
+            pairs.len(),
+            form.fields.len() + 1 + usize::from(form.title.is_some())
+        );
+    }
+
+    #[test]
+    fn fitted_trims_a_long_emoji_cyrillic_crash_message_with_the_crash_marker() {
+        let form = oversized_crash_form("OS: Linux");
+        assert!(form.url(REPO).len() > ISSUE_URL_MAX_BYTES);
+        let fitted = form.clone().fitted(REPO, ISSUE_URL_MAX_BYTES);
+        assert_url_is_valid_utf8_within_cap(&fitted);
+        assert!(
+            value(&fitted, FIELD_CRASH).ends_with(&field_truncated_marker(CRASH_REPORT_FILE_NAME))
+        );
+        assert_header_unchanged(&fitted, &form);
+    }
+
+    #[test]
+    fn fitted_trims_only_system_info_when_the_crash_text_already_fits() {
+        let form = IssueForm::crash(
+            &crash_record(backtrace_truncated_marker()),
+            &"\u{e9}".repeat(5000),
+        );
+        let fitted = form.clone().fitted(REPO, ISSUE_URL_MAX_BYTES);
+        assert_url_is_valid_utf8_within_cap(&fitted);
+        let system_info = value(&fitted, FIELD_SYSTEM_INFO);
+        let kept = system_info
+            .strip_suffix(&field_truncated_marker(SYSTEM_INFO_FILE_NAME))
+            .unwrap();
+        assert!(!kept.is_empty());
+        assert!(value(&form, FIELD_SYSTEM_INFO).starts_with(kept));
+        assert_eq!(value(&fitted, FIELD_CRASH), value(&form, FIELD_CRASH));
+        assert_eq!(
+            value(&fitted, FIELD_BACKTRACE),
+            backtrace_truncated_marker()
+        );
+        assert_header_unchanged(&fitted, &form);
+    }
+
+    #[test]
+    fn fitted_trims_the_crash_after_system_info_alone_cannot_free_enough() {
+        let form = oversized_crash_form(&"\u{e9}".repeat(5000));
+        let fitted = form.clone().fitted(REPO, ISSUE_URL_MAX_BYTES);
+        assert_url_is_valid_utf8_within_cap(&fitted);
+        assert_eq!(
+            value(&fitted, FIELD_SYSTEM_INFO),
+            field_truncated_marker(SYSTEM_INFO_FILE_NAME)
+        );
+        assert!(
+            value(&fitted, FIELD_CRASH).ends_with(&field_truncated_marker(CRASH_REPORT_FILE_NAME))
+        );
+        assert_header_unchanged(&fitted, &form);
+    }
+
+    #[test]
+    fn fitted_problem_form_names_system_info_in_its_marker_never_crash() {
+        let form = IssueForm::problem("v0.6.2 (abc1234)".to_owned(), &"\u{e9}".repeat(5000));
+        let fitted = form.clone().fitted(REPO, ISSUE_URL_MAX_BYTES);
+        assert_url_is_valid_utf8_within_cap(&fitted);
+        let system_info = value(&fitted, FIELD_SYSTEM_INFO);
+        assert!(system_info.ends_with(&field_truncated_marker(SYSTEM_INFO_FILE_NAME)));
+        assert!(!system_info.contains(CRASH_REPORT_FILE_NAME));
+        assert_header_unchanged(&fitted, &form);
+    }
+
+    #[test]
+    fn fitted_cuts_four_byte_system_info_on_character_boundaries() {
+        let original = "\u{1F399}".repeat(2000);
+        let form = IssueForm::problem("v1".to_owned(), &original);
+        let fitted = form.fitted(REPO, ISSUE_URL_MAX_BYTES);
+        assert_url_is_valid_utf8_within_cap(&fitted);
+        let kept = value(&fitted, FIELD_SYSTEM_INFO)
+            .strip_suffix(&field_truncated_marker(SYSTEM_INFO_FILE_NAME))
+            .unwrap();
+        assert!(!kept.is_empty());
+        assert!(original.starts_with(kept));
+    }
+
+    #[test]
+    fn fitted_leaves_only_the_marker_when_the_cap_consumes_the_whole_field() {
+        let tight = 10;
+        let problem = IssueForm::problem("v1".to_owned(), &"x".repeat(50)).fitted(REPO, tight);
+        assert_eq!(
+            value(&problem, FIELD_SYSTEM_INFO),
+            field_truncated_marker(SYSTEM_INFO_FILE_NAME)
+        );
+        let crash = oversized_crash_form(&"x".repeat(50)).fitted(REPO, tight);
+        assert_eq!(
+            value(&crash, FIELD_SYSTEM_INFO),
+            field_truncated_marker(SYSTEM_INFO_FILE_NAME)
+        );
+        assert_eq!(
+            value(&crash, FIELD_CRASH),
+            field_truncated_marker(CRASH_REPORT_FILE_NAME)
+        );
     }
 
     #[test]

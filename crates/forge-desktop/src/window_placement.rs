@@ -269,3 +269,402 @@ impl WindowPlacementRecorder {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    const PRIMARY_ID: u64 = 1;
+    const SECONDARY_ID: u64 = 2;
+    const PRIMARY_UUID: &str = "primary-display";
+    const SECONDARY_UUID: &str = "secondary-display";
+    const UNKNOWN_UUID: &str = "unplugged-display";
+    const PRIMARY_WIDTH: f32 = 1920.0;
+    const PRIMARY_HEIGHT: f32 = 1080.0;
+    const PRIMARY_TOP_BAR: f32 = 32.0;
+    const SECONDARY_WIDTH: f32 = 2560.0;
+    const SECONDARY_HEIGHT: f32 = 1440.0;
+    const WINDOW_WIDTH: f32 = 800.0;
+    const WINDOW_HEIGHT: f32 = 600.0;
+
+    fn rect(x: f32, y: f32, width: f32, height: f32) -> Bounds<Pixels> {
+        Bounds::new(point(px(x), px(y)), size(px(width), px(height)))
+    }
+
+    fn primary() -> DisplayArea {
+        DisplayArea {
+            id: DisplayId::new(PRIMARY_ID),
+            uuid: Some(PRIMARY_UUID.to_string()),
+            bounds: rect(0.0, 0.0, PRIMARY_WIDTH, PRIMARY_HEIGHT),
+            visible: rect(
+                0.0,
+                PRIMARY_TOP_BAR,
+                PRIMARY_WIDTH,
+                PRIMARY_HEIGHT - PRIMARY_TOP_BAR,
+            ),
+        }
+    }
+
+    fn secondary() -> DisplayArea {
+        let area = rect(PRIMARY_WIDTH, 0.0, SECONDARY_WIDTH, SECONDARY_HEIGHT);
+        DisplayArea {
+            id: DisplayId::new(SECONDARY_ID),
+            uuid: Some(SECONDARY_UUID.to_string()),
+            bounds: area,
+            visible: area,
+        }
+    }
+
+    fn two_displays() -> Vec<DisplayArea> {
+        vec![primary(), secondary()]
+    }
+
+    fn placement(
+        mode: WindowMode,
+        bounds: Bounds<Pixels>,
+        display_uuid: Option<&str>,
+    ) -> WindowPlacement {
+        WindowPlacement {
+            mode,
+            x: bounds.origin.x.as_f32(),
+            y: bounds.origin.y.as_f32(),
+            width: bounds.size.width.as_f32(),
+            height: bounds.size.height.as_f32(),
+            display_uuid: display_uuid.map(str::to_string),
+        }
+    }
+
+    fn windowed(bounds: Bounds<Pixels>, display_uuid: Option<&str>) -> WindowPlacement {
+        placement(WindowMode::Windowed, bounds, display_uuid)
+    }
+
+    fn restored_windowed(bounds: Bounds<Pixels>, display_id: u64) -> Option<RestoredPlacement> {
+        Some(RestoredPlacement {
+            bounds: WindowBounds::Windowed(bounds),
+            display_id: Some(DisplayId::new(display_id)),
+        })
+    }
+
+    #[test]
+    fn restore_with_honored_origin_places_window_on_its_saved_display() {
+        let partly_off_right_x = PRIMARY_WIDTH - WINDOW_WIDTH / 2.0;
+        let one_pixel_overlap_x = PRIMARY_WIDTH - 1.0;
+        let flush_right_x = PRIMARY_WIDTH - WINDOW_WIDTH;
+        let oversized_width = SECONDARY_WIDTH + WINDOW_WIDTH;
+        let oversized_height = SECONDARY_HEIGHT + WINDOW_HEIGHT;
+        let cases = [
+            (
+                "inside the secondary display keeps exact bounds",
+                windowed(
+                    rect(2000.0, 100.0, WINDOW_WIDTH, WINDOW_HEIGHT),
+                    Some(SECONDARY_UUID),
+                ),
+                restored_windowed(
+                    rect(2000.0, 100.0, WINDOW_WIDTH, WINDOW_HEIGHT),
+                    SECONDARY_ID,
+                ),
+            ),
+            (
+                "partly off the right edge is pulled back inside",
+                windowed(
+                    rect(partly_off_right_x, 100.0, WINDOW_WIDTH, WINDOW_HEIGHT),
+                    Some(PRIMARY_UUID),
+                ),
+                restored_windowed(
+                    rect(flush_right_x, 100.0, WINDOW_WIDTH, WINDOW_HEIGHT),
+                    PRIMARY_ID,
+                ),
+            ),
+            (
+                "one pixel of overlap still restores on the display",
+                windowed(
+                    rect(one_pixel_overlap_x, 100.0, WINDOW_WIDTH, WINDOW_HEIGHT),
+                    Some(PRIMARY_UUID),
+                ),
+                restored_windowed(
+                    rect(flush_right_x, 100.0, WINDOW_WIDTH, WINDOW_HEIGHT),
+                    PRIMARY_ID,
+                ),
+            ),
+            (
+                "under the top bar is pushed down into the visible area",
+                windowed(
+                    rect(100.0, 0.0, WINDOW_WIDTH, WINDOW_HEIGHT),
+                    Some(PRIMARY_UUID),
+                ),
+                restored_windowed(
+                    rect(100.0, PRIMARY_TOP_BAR, WINDOW_WIDTH, WINDOW_HEIGHT),
+                    PRIMARY_ID,
+                ),
+            ),
+            (
+                "partly off the top left corner is pulled back inside",
+                windowed(
+                    rect(-100.0, -100.0, WINDOW_WIDTH, WINDOW_HEIGHT),
+                    Some(PRIMARY_UUID),
+                ),
+                restored_windowed(
+                    rect(0.0, PRIMARY_TOP_BAR, WINDOW_WIDTH, WINDOW_HEIGHT),
+                    PRIMARY_ID,
+                ),
+            ),
+            (
+                "larger than the visible area is fitted to it",
+                windowed(
+                    rect(PRIMARY_WIDTH, 0.0, oversized_width, oversized_height),
+                    Some(SECONDARY_UUID),
+                ),
+                restored_windowed(
+                    rect(PRIMARY_WIDTH, 0.0, SECONDARY_WIDTH, SECONDARY_HEIGHT),
+                    SECONDARY_ID,
+                ),
+            ),
+        ];
+        for (name, saved, expected) in cases {
+            assert_eq!(
+                restore_placement(&saved, &two_displays(), true),
+                expected,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn restore_with_honored_origin_rejects_unplaceable_saved_display() {
+        let cases = [
+            (
+                "rect lies on another display than the saved one",
+                windowed(
+                    rect(2000.0, 100.0, WINDOW_WIDTH, WINDOW_HEIGHT),
+                    Some(PRIMARY_UUID),
+                ),
+            ),
+            (
+                "rect only touches the saved display edge",
+                windowed(
+                    rect(PRIMARY_WIDTH, 100.0, WINDOW_WIDTH, WINDOW_HEIGHT),
+                    Some(PRIMARY_UUID),
+                ),
+            ),
+            (
+                "saved display is no longer connected",
+                windowed(
+                    rect(100.0, 100.0, WINDOW_WIDTH, WINDOW_HEIGHT),
+                    Some(UNKNOWN_UUID),
+                ),
+            ),
+            (
+                "no saved display",
+                windowed(rect(100.0, 100.0, WINDOW_WIDTH, WINDOW_HEIGHT), None),
+            ),
+        ];
+        for (name, saved) in cases {
+            assert_eq!(
+                restore_placement(&saved, &two_displays(), true),
+                None,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn restore_without_honored_origin_zeroes_origin_and_fits_size() {
+        let wider_than_primary = PRIMARY_WIDTH + WINDOW_WIDTH / 2.0;
+        let taller_than_primary = PRIMARY_HEIGHT;
+        let primary_visible_height = PRIMARY_HEIGHT - PRIMARY_TOP_BAR;
+        let cases = [
+            (
+                "saved display bounds the size, not the first display",
+                windowed(
+                    rect(2000.0, 300.0, wider_than_primary, taller_than_primary),
+                    Some(SECONDARY_UUID),
+                ),
+                two_displays(),
+                rect(0.0, 0.0, wider_than_primary, taller_than_primary),
+            ),
+            (
+                "unknown saved display falls back to the first display",
+                windowed(
+                    rect(500.0, 300.0, wider_than_primary, taller_than_primary),
+                    Some(UNKNOWN_UUID),
+                ),
+                two_displays(),
+                rect(0.0, 0.0, PRIMARY_WIDTH, primary_visible_height),
+            ),
+            (
+                "no saved display falls back to the first display",
+                windowed(
+                    rect(500.0, 300.0, wider_than_primary, taller_than_primary),
+                    None,
+                ),
+                two_displays(),
+                rect(0.0, 0.0, PRIMARY_WIDTH, primary_visible_height),
+            ),
+            (
+                "fitting size keeps the saved size",
+                windowed(
+                    rect(500.0, 300.0, WINDOW_WIDTH, WINDOW_HEIGHT),
+                    Some(PRIMARY_UUID),
+                ),
+                two_displays(),
+                rect(0.0, 0.0, WINDOW_WIDTH, WINDOW_HEIGHT),
+            ),
+            (
+                "no displays keeps the saved size",
+                windowed(
+                    rect(500.0, 300.0, wider_than_primary, taller_than_primary),
+                    Some(PRIMARY_UUID),
+                ),
+                Vec::new(),
+                rect(0.0, 0.0, wider_than_primary, taller_than_primary),
+            ),
+        ];
+        for (name, saved, displays, expected) in cases {
+            assert_eq!(
+                restore_placement(&saved, &displays, false),
+                Some(RestoredPlacement {
+                    bounds: WindowBounds::Windowed(expected),
+                    display_id: None,
+                }),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn restore_rejects_non_finite_or_non_positive_geometry() {
+        let valid = windowed(
+            rect(100.0, 100.0, WINDOW_WIDTH, WINDOW_HEIGHT),
+            Some(PRIMARY_UUID),
+        );
+        let cases = [
+            (
+                "nan x",
+                WindowPlacement {
+                    x: f32::NAN,
+                    ..valid.clone()
+                },
+            ),
+            (
+                "infinite y",
+                WindowPlacement {
+                    y: f32::INFINITY,
+                    ..valid.clone()
+                },
+            ),
+            (
+                "nan width",
+                WindowPlacement {
+                    width: f32::NAN,
+                    ..valid.clone()
+                },
+            ),
+            (
+                "infinite height",
+                WindowPlacement {
+                    height: f32::INFINITY,
+                    ..valid.clone()
+                },
+            ),
+            (
+                "negative infinite width",
+                WindowPlacement {
+                    width: f32::NEG_INFINITY,
+                    ..valid.clone()
+                },
+            ),
+            (
+                "zero width",
+                WindowPlacement {
+                    width: 0.0,
+                    ..valid.clone()
+                },
+            ),
+            (
+                "zero height",
+                WindowPlacement {
+                    height: 0.0,
+                    ..valid.clone()
+                },
+            ),
+            (
+                "negative width",
+                WindowPlacement {
+                    width: -1.0,
+                    ..valid.clone()
+                },
+            ),
+            (
+                "negative height",
+                WindowPlacement {
+                    height: -1.0,
+                    ..valid.clone()
+                },
+            ),
+        ];
+        for (name, saved) in cases {
+            for origin_honored in [true, false] {
+                assert_eq!(
+                    restore_placement(&saved, &two_displays(), origin_honored),
+                    None,
+                    "{name}, origin_honored={origin_honored}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn restore_maps_each_mode_to_its_window_bounds_variant() {
+        let bounds = rect(100.0, 100.0, WINDOW_WIDTH, WINDOW_HEIGHT);
+        let cases = [
+            (WindowMode::Windowed, WindowBounds::Windowed(bounds)),
+            (WindowMode::Maximized, WindowBounds::Maximized(bounds)),
+            (WindowMode::Fullscreen, WindowBounds::Fullscreen(bounds)),
+        ];
+        for (mode, expected) in cases {
+            let saved = placement(mode, bounds, Some(PRIMARY_UUID));
+            let restored =
+                restore_placement(&saved, &two_displays(), true).map(|restored| restored.bounds);
+            assert_eq!(restored, Some(expected), "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn capture_then_restore_round_trips_every_window_bounds_variant() {
+        let bounds = rect(2000.0, 100.0, WINDOW_WIDTH, WINDOW_HEIGHT);
+        for original in [
+            WindowBounds::Windowed(bounds),
+            WindowBounds::Maximized(bounds),
+            WindowBounds::Fullscreen(bounds),
+        ] {
+            let captured = WindowPlacement::capture(original, Some(SECONDARY_UUID.to_string()));
+            assert_eq!(
+                restore_placement(&captured, &two_displays(), true),
+                Some(RestoredPlacement {
+                    bounds: original,
+                    display_id: Some(DisplayId::new(SECONDARY_ID)),
+                }),
+                "{original:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn placement_json_uses_snake_case_mode_and_round_trips() {
+        let bounds = rect(-1280.0, 50.5, WINDOW_WIDTH, WINDOW_HEIGHT);
+        let cases = [
+            (WindowMode::Windowed, "windowed", Some(PRIMARY_UUID)),
+            (WindowMode::Maximized, "maximized", None),
+            (WindowMode::Fullscreen, "fullscreen", Some(SECONDARY_UUID)),
+        ];
+        for (mode, wire_name, display_uuid) in cases {
+            let saved = placement(mode, bounds, display_uuid);
+            let json = serde_json::to_value(&saved).expect("placement serializes");
+            assert_eq!(json["mode"], wire_name, "{mode:?}");
+            let back: WindowPlacement =
+                serde_json::from_value(json).expect("placement deserializes");
+            assert_eq!(back, saved, "{mode:?}");
+        }
+    }
+}

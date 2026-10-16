@@ -57,3 +57,46 @@ pub fn canonical_clip(clip: &StoredClip) -> Result<StoredClip, StorageError> {
     };
     Ok(canonical)
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::OutputDevice;
+    use time::OffsetDateTime;
+
+    use super::*;
+
+    fn clip(hotkey: Option<&str>) -> StoredClip {
+        StoredClip {
+            id: ClipId::new(),
+            name: "airhorn".to_owned(),
+            file_path: "/clips/airhorn.wav".into(),
+            volume: 1.0,
+            output_device: OutputDevice::Default,
+            hotkey: hotkey.map(str::to_owned),
+            created_at: OffsetDateTime::now_utc(),
+            category: String::new(),
+            loop_playback: false,
+            duration_secs: None,
+            builtin_id: None,
+        }
+    }
+
+    #[test]
+    fn clip_bindings_group_every_clip_on_a_combo_under_its_canonical_spelling() {
+        let typed = clip(Some("f9"));
+        let canonical = clip(Some("F9"));
+        let clips = [
+            typed.clone(),
+            canonical.clone(),
+            clip(None),
+            clip(Some("  ")),
+        ];
+
+        let bindings = clip_bindings_of(&clips);
+
+        assert_eq!(
+            bindings,
+            ClipBindings::from([("F9".to_owned(), vec![typed.id, canonical.id])])
+        );
+    }
+}

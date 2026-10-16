@@ -318,3 +318,64 @@ pub async fn relink_action(
         .await
         .map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+    use crate::event_kinds;
+
+    async fn backend() -> (Arc<dyn DataProvider>, tempfile::TempDir) {
+        let media_root = tempfile::tempdir().expect("a temporary media root");
+        let backend = forge_storage_sqlite::SqliteBackend::open_for_test(
+            "sqlite::memory:",
+            [0x11; 32],
+            media_root.path().to_owned(),
+            None,
+        )
+        .await
+        .expect("an in-memory backend");
+        (Arc::new(backend), media_root)
+    }
+
+    async fn seed_instance(
+        backend: &Arc<dyn DataProvider>,
+        kind_id: &str,
+        combo: &str,
+    ) -> TriggerInstanceId {
+        let mut instance = binding_instance(combo.to_owned(), HotkeyEdge::Press);
+        instance.kind_id = kind_id.to_owned();
+        backend
+            .trigger_instance_repo()
+            .save(&instance)
+            .await
+            .unwrap();
+        instance.id
+    }
+
+    #[tokio::test]
+    async fn remove_combo_edge_drops_only_the_named_edge() {
+        let (backend, _media_root) = backend().await;
+        let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, "Ctrl+F1").await;
+        let release = seed_instance(&backend, event_kinds::GLOBAL_RELEASED, "Ctrl+F1").await;
+
+        remove_combo_edge(&backend, "Ctrl+F1", HotkeyEdge::Press)
+            .await
+            .unwrap();
+
+        let repo = backend.trigger_instance_repo();
+        assert!(repo.get(press).await.unwrap().is_none());
+        assert!(repo.get(release).await.unwrap().is_some());
+    }
+
+    #[test]
+    fn binding_instance_leaves_both_edges_without_a_cooldown() {
+        for edge in [HotkeyEdge::Press, HotkeyEdge::Release] {
+            assert_eq!(
+                binding_instance("Ctrl+F1".to_owned(), edge).cooldown_secs,
+                0,
+                "a {edge:?} binding must not be rate-limited"
+            );
+        }
+    }
+}

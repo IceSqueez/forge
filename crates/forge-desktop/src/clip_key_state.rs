@@ -138,8 +138,8 @@ mod tests {
 
     use super::*;
     use crate::combo_conflict::ClipKey;
-    use crate::hotkey_bindings::BindingHalf;
     use crate::test_support::sandboxed_backend;
+    use forge_hotkey::BindingHalf;
 
     const TEST_KEY: [u8; 32] = [0x11; 32];
 

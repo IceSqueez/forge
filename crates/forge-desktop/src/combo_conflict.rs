@@ -173,9 +173,9 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::*;
-    use crate::hotkey_bindings::{BindingHalf, COMBO_FIELD};
     use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_hotkey::event_kinds;
+    use forge_hotkey::{BindingHalf, COMBO_FIELD};
 
     const TEST_KEY: [u8; 32] = [0x11; 32];
 

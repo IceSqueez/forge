@@ -120,3 +120,105 @@ pub fn conflict_count(client: &HotkeyClient) -> usize {
         })
         .unwrap_or(0)
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    fn test_half(action: Option<(ActionId, &str)>) -> BindingHalf {
+        BindingHalf {
+            instance_id: TriggerInstanceId::new(),
+            enabled: true,
+            action: action.map(|(id, name)| (id, name.to_owned())),
+        }
+    }
+
+    fn test_row(press: Option<BindingHalf>, release: Option<BindingHalf>) -> BindingRow {
+        let key = press
+            .as_ref()
+            .or(release.as_ref())
+            .map(|half| half.instance_id)
+            .expect("a row always carries at least one half");
+        BindingRow {
+            key,
+            combo: "Ctrl+F1".to_owned(),
+            registered: true,
+            press,
+            release,
+        }
+    }
+
+    #[test]
+    fn combo_keys_yields_one_cap_per_token_and_never_an_empty_cap() {
+        let cases: [(&str, Vec<&str>); 4] = [
+            ("Ctrl+Shift+F5", vec!["Ctrl", "Shift", "F5"]),
+            ("A", vec!["A"]),
+            ("Ctrl+", vec!["Ctrl"]),
+            ("", vec![]),
+        ];
+
+        for (combo, expected) in cases {
+            assert_eq!(combo_keys(combo), expected, "wrong caps for {combo:?}");
+        }
+    }
+
+    #[test]
+    fn binding_row_shape_drives_the_badge_and_the_free_edge() {
+        let cases = [
+            (
+                "press only",
+                test_row(Some(test_half(None)), None),
+                (false, false, Some(HotkeyEdge::Release)),
+            ),
+            (
+                "release only",
+                test_row(None, Some(test_half(None))),
+                (false, true, Some(HotkeyEdge::Press)),
+            ),
+            (
+                "both halves",
+                test_row(Some(test_half(None)), Some(test_half(None))),
+                (true, false, None),
+            ),
+        ];
+
+        for (case, row, expected) in cases {
+            assert_eq!(
+                (row.is_hold(), row.is_release_edge(), row.free_edge()),
+                expected,
+                "wrong (hold, release-edge, free-edge) for a {case} row"
+            );
+        }
+    }
+
+    #[test]
+    fn binding_row_primary_action_reads_the_press_half_whenever_the_row_has_one() {
+        let start = ActionId::new();
+        let stop = ActionId::new();
+        let cases = [
+            (
+                "a hold reports the press half's action",
+                test_row(
+                    Some(test_half(Some((start, "Start")))),
+                    Some(test_half(Some((stop, "Stop")))),
+                ),
+                Some((start, "Start".to_owned())),
+            ),
+            (
+                "a release-only row reports its own action",
+                test_row(None, Some(test_half(Some((stop, "Stop"))))),
+                Some((stop, "Stop".to_owned())),
+            ),
+            (
+                "an unlinked press half is not backfilled from the release half",
+                test_row(Some(test_half(None)), Some(test_half(Some((stop, "Stop"))))),
+                None,
+            ),
+        ];
+
+        for (case, row, expected) in cases {
+            assert_eq!(row.primary_action().cloned(), expected, "wrong when {case}");
+        }
+    }
+}

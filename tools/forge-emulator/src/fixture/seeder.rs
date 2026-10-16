@@ -10,7 +10,6 @@ use forge_types::{
     Action, ActionId, ExecutionMode, OAuthToken, PermissionRung, PlatformScope, Queue, QueueId,
     SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
 };
-use rand::Rng as _;
 
 use super::data_dir::{DATA_DIR_VARIABLE, ForgeDataDir, KEY_FILE_VARIABLE};
 use super::port::free_loopback_port;
@@ -37,7 +36,6 @@ const VTUBE_HOST: &str = "127.0.0.1";
 const VTUBE_API_VERSION: &str = "1.0";
 const CHAT_COMMAND_TRIGGER_KIND: &str = "twitch.chat.command";
 const TWITCH_TOKEN_LIFETIME: Duration = Duration::from_secs(10 * 365 * 24 * 60 * 60);
-const BEARER_TOKEN_BYTES: usize = 32;
 const KICK_TOKEN_LIFETIME: time::Duration = time::Duration::days(3650);
 const KICK_TOKEN_EXPIRED_AGO: time::Duration = time::Duration::hours(1);
 const YOUTUBE_TOKEN_LIFETIME: time::Duration = time::Duration::days(3650);
@@ -51,7 +49,7 @@ pub async fn seed_forge_environment(fixture: &Fixture) -> Result<SeedReport, Emu
         std::env::var_os(KEY_FILE_VARIABLE),
     )?;
     let port = free_loopback_port()?;
-    let bearer_token = generate_bearer_token();
+    let bearer_token = forge_server::generate_token();
 
     let database = paths::data_dir().join(DATABASE_FILE);
     let url = format!("sqlite://{}?mode=rwc", database.display());
@@ -513,12 +511,6 @@ async fn seed_triggered_action(
         action_id: action.id,
         trigger_instance_id: instance.id,
     })
-}
-
-fn generate_bearer_token() -> String {
-    let mut bytes = [0u8; BEARER_TOKEN_BYTES];
-    rand::rng().fill_bytes(&mut bytes);
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn storage_error(e: StorageError) -> EmulatorError {

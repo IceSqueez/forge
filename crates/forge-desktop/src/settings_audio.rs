@@ -14,7 +14,9 @@ use gpui::{AnyElement, ClickEvent, Context, Entity, FocusHandle, Window, div, pr
 
 use crate::async_bridge;
 use crate::runtime_handles::RuntimeHandles;
+use crate::settings::SettingsSection;
 use crate::settings_audio_routing::SettingsAudioRoutingView;
+use crate::settings_pane_header::SettingsPaneHeader;
 use crate::settings_voice_gate::SettingsVoiceGateView;
 use forge_components::ActivePresentation;
 
@@ -501,10 +503,16 @@ impl Render for SettingsAudioView {
         div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(output_card)
-            .child(self.routing.clone())
-            .child(self.voice_gate.clone())
+            .child(SettingsPaneHeader::new(SettingsSection::Audio))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(spacing(Spacing::Md, density))
+                    .child(output_card)
+                    .child(self.routing.clone())
+                    .child(self.voice_gate.clone()),
+            )
     }
 }
 

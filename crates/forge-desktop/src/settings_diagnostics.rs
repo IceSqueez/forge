@@ -2,10 +2,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
-    ConfirmTone, Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, ModalSize,
-    OverlayPosition, Spacing, ToastKind, body_family, card, confirm_modal, field_hint,
-    ghost_button, ghost_button_with_icon, icon, modal, mono_family, overlay, primary_button,
-    segment, segmented, setting_row, spacing, tr,
+    ConfirmTone, Density, FONT_SM, FONT_XS, ForgePalette, Icon, ModalSize, OverlayPosition,
+    Spacing, ToastKind, body_family, card, confirm_modal, field_hint, ghost_button,
+    ghost_button_with_icon, icon, modal, mono_family, overlay, primary_button, segment, segmented,
+    setting_row, spacing, tr,
 };
 use forge_storage::{
     DEFAULT_DIAGNOSTIC_LOG_LEVEL, DataProvider, SettingsRepo, diagnostic_log_level, disclosure,
@@ -25,6 +25,8 @@ use crate::diagnostic_bundle::{self, Bundle, BundleInput, RUN_HISTORY_LIMIT};
 use crate::integrations::BuiltinRegistry;
 use crate::log_archive;
 use crate::log_tail::{LogLine, LogTail};
+use crate::settings::SettingsSection;
+use crate::settings_pane_header::SettingsPaneHeader;
 use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
@@ -319,35 +321,6 @@ impl SettingsDiagnosticsView {
         cx.notify();
     }
 
-    fn header(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(spacing(Spacing::Xs, density))
-                    .child(icon(Icon::Bug, px(18.0), palette.brand))
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_size(FONT_LG)
-                            .text_color(palette.text_primary)
-                            .child(tr!("settings_diagnostics_section_title")),
-                    ),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_muted)
-                    .child(tr!("settings_diagnostics_subtitle")),
-            )
-    }
-
     fn actions(
         &self,
         palette: &ForgePalette,
@@ -592,7 +565,6 @@ impl Render for SettingsDiagnosticsView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Md, density))
-            .child(self.header(&palette, density))
             .child(self.level_card(&palette, density, cx))
             .child(self.actions(&palette, density, cx))
             .child(
@@ -604,6 +576,10 @@ impl Render for SettingsDiagnosticsView {
         div()
             .flex()
             .flex_col()
+            .child(
+                SettingsPaneHeader::new(SettingsSection::Diagnostics)
+                    .subtitle(tr!("settings_diagnostics_subtitle")),
+            )
             .child(body)
             .children(self.clear_overlay(&palette, cx))
             .children(self.export_overlay(&palette, density, cx))

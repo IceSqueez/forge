@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, Density, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, Picker, PickerEvent, PickerItem, PickerLabels, Radius, Spacing, ThemeId,
-    badge, body_family, card, dropdown, field_hint, field_label, field_title,
-    ghost_button_with_icon, icon, mono_family, page_frame, primary_button_with_icon, radius,
-    set_body_family, set_mono_family, setting_row, spacing, toggle, tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    Picker, PickerEvent, PickerItem, PickerLabels, Radius, Spacing, ThemeId, badge, body_family,
+    card, dropdown, field_hint, field_label, field_title, ghost_button_with_icon, icon,
+    mono_family, page_frame, radius, set_body_family, set_mono_family, setting_row, spacing,
+    toggle, tr, with_alpha,
 };
 use forge_storage::{Language, SettingsRepo, reserved_keys};
 use gpui::{
@@ -19,6 +19,7 @@ use crate::presentation::ActiveLanguage;
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_audio::SettingsAudioView;
 use crate::settings_diagnostics::SettingsDiagnosticsView;
+use crate::settings_pane_header::SettingsPaneHeader;
 use crate::settings_scripting::SettingsScriptingView;
 use crate::settings_shortcuts::SettingsShortcutsView;
 use crate::settings_storage::SettingsStorageView;
@@ -27,8 +28,23 @@ use forge_components::{ActivePresentation, Presentation};
 
 const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
 
-pub const NAV_WIDTH: Pixels = px(200.0);
+pub const NAV_WIDTH: Pixels = px(210.0);
 pub const PANE_MIN_WIDTH: Pixels = px(360.0);
+
+const NAV_PAD_V: Pixels = px(12.0);
+const NAV_PAD_H: Pixels = px(8.0);
+const NAV_GROUP_GAP: Pixels = px(10.0);
+const NAV_GROUP_LABEL_FONT: Pixels = px(10.0);
+const NAV_GROUP_LABEL_PAD_V: Pixels = px(6.0);
+const NAV_GROUP_LABEL_MB: Pixels = px(4.0);
+const NAV_ROW_PAD_V: Pixels = px(7.0);
+const NAV_ROW_PAD_H: Pixels = px(10.0);
+const NAV_ROW_GAP: Pixels = px(10.0);
+const NAV_ROW_MB: Pixels = px(2.0);
+const NAV_ROW_FONT: Pixels = px(12.5);
+const NAV_ROW_ICON: Pixels = px(14.0);
+const PANE_PAD_V: Pixels = px(20.0);
+const PANE_PAD_H: Pixels = px(24.0);
 
 const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
     (
@@ -45,7 +61,6 @@ const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
         &[
             SettingsSection::Audio,
             SettingsSection::Scripting,
-            SettingsSection::Queues,
             SettingsSection::Storage,
             SettingsSection::WebSocket,
         ],
@@ -64,7 +79,6 @@ pub enum SettingsSection {
     Shortcuts,
     Audio,
     Scripting,
-    Queues,
     Storage,
     WebSocket,
     Version,
@@ -72,7 +86,7 @@ pub enum SettingsSection {
 }
 
 impl SettingsSection {
-    fn label(self) -> String {
+    pub(crate) fn label(self) -> String {
         match self {
             SettingsSection::General => tr!("settings_nav_general"),
             SettingsSection::Appearance => tr!("settings_nav_appearance"),
@@ -80,7 +94,6 @@ impl SettingsSection {
             SettingsSection::Shortcuts => tr!("settings_nav_shortcuts"),
             SettingsSection::Audio => tr!("settings_nav_audio"),
             SettingsSection::Scripting => tr!("settings_scripting_title"),
-            SettingsSection::Queues => tr!("settings_queues_section_title"),
             SettingsSection::Storage => tr!("settings_storage_section_title"),
             SettingsSection::WebSocket => tr!("settings_ws_title"),
             SettingsSection::Version => tr!("settings_version_title"),
@@ -88,18 +101,17 @@ impl SettingsSection {
         }
     }
 
-    fn icon(self) -> Icon {
+    pub(crate) fn icon(self) -> Icon {
         match self {
             SettingsSection::General => Icon::Settings,
-            SettingsSection::Appearance => Icon::Photo,
-            SettingsSection::Language => Icon::Globe,
+            SettingsSection::Appearance => Icon::Palette,
+            SettingsSection::Language => Icon::Language,
             SettingsSection::Shortcuts => Icon::Keyboard,
             SettingsSection::Audio => Icon::Volume,
-            SettingsSection::Scripting => Icon::Terminal,
-            SettingsSection::Queues => Icon::Notebook,
-            SettingsSection::Storage => Icon::Folder,
-            SettingsSection::WebSocket => Icon::Server,
-            SettingsSection::Version => Icon::Diamond,
+            SettingsSection::Scripting => Icon::Code,
+            SettingsSection::Storage => Icon::Database,
+            SettingsSection::WebSocket => Icon::Network,
+            SettingsSection::Version => Icon::InfoCircle,
             SettingsSection::Diagnostics => Icon::Bug,
         }
     }
@@ -112,7 +124,6 @@ impl SettingsSection {
             SettingsSection::Shortcuts => "shortcuts",
             SettingsSection::Audio => "audio",
             SettingsSection::Scripting => "scripting",
-            SettingsSection::Queues => "queues",
             SettingsSection::Storage => "storage",
             SettingsSection::WebSocket => "websocket",
             SettingsSection::Version => "version",
@@ -212,7 +223,7 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&awake, |_, _, cx| cx.notify()).detach();
-        let section = preselect.unwrap_or(SettingsSection::Appearance);
+        let section = preselect.unwrap_or(NAV_GROUPS[0].1[0]);
         let audio =
             cx.new(|cx| SettingsAudioView::new(&handles, section == SettingsSection::Audio, cx));
         let scripting = cx.new(|cx| {
@@ -519,42 +530,27 @@ impl SettingsView {
         );
     }
 
-    fn render_status(&self, palette: &ForgePalette) -> impl IntoElement + use<> {
-        div()
-            .flex()
-            .items_center()
-            .gap(px(5.0))
-            .child(icon(Icon::CircleCheck, FONT_XS, palette.success))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.success)
-                    .child(tr!("widget_save_all_saved")),
-            )
-    }
-
     fn render_nav(
         &self,
         palette: &ForgePalette,
-        density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let mut list = div().flex().flex_col().gap(spacing(Spacing::Xxs, density));
+        let mut list = div().flex().flex_col().gap(NAV_GROUP_GAP);
         for (group, sections) in NAV_GROUPS {
-            list = list.child(
+            let mut block = div().flex().flex_col().child(
                 div()
-                    .px(spacing(Spacing::Xs, density))
-                    .pt(spacing(Spacing::Xs, density))
-                    .pb(px(4.0))
+                    .px(NAV_ROW_PAD_H)
+                    .py(NAV_GROUP_LABEL_PAD_V)
+                    .mb(NAV_GROUP_LABEL_MB)
                     .font_family(mono_family())
-                    .text_size(FONT_XXS)
+                    .text_size(NAV_GROUP_LABEL_FONT)
                     .text_color(palette.text_faint)
                     .child(tr!(group)),
             );
             for &section in sections {
-                list = list.child(self.nav_button(section, palette, density, cx));
+                block = block.child(self.nav_row(section, palette, cx));
             }
+            list = list.child(block);
         }
 
         div()
@@ -568,28 +564,50 @@ impl SettingsView {
             .bg(palette.shell)
             .border_r(BORDER_THIN)
             .border_color(palette.border_regular)
-            .py(spacing(Spacing::Sm, density))
-            .px(spacing(Spacing::Xs, density))
+            .py(NAV_PAD_V)
+            .px(NAV_PAD_H)
             .child(list)
     }
 
-    fn nav_button(
+    fn nav_row(
         &self,
         section: SettingsSection,
         palette: &ForgePalette,
-        density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let active = self.section == section;
-        let button = if active {
-            primary_button_with_icon(section.icon(), section.label(), palette)
+        let (text_color, icon_color) = if active {
+            (palette.text_primary, palette.brand)
         } else {
-            ghost_button_with_icon(section.icon(), section.label(), palette)
+            (palette.text_secondary, palette.text_secondary)
         };
-        button.full_width().density(density).on_click(
-            section.key(),
-            cx.listener(move |this, _: &ClickEvent, _, cx| this.select_section(section, cx)),
-        )
+        let hover_bg = palette.elevated;
+        let row = div()
+            .id(SharedString::from(format!(
+                "settings-nav-{}",
+                section.key()
+            )))
+            .flex()
+            .items_center()
+            .gap(NAV_ROW_GAP)
+            .px(NAV_ROW_PAD_H)
+            .py(NAV_ROW_PAD_V)
+            .mb(NAV_ROW_MB)
+            .rounded(radius(Radius::Sm))
+            .cursor_pointer()
+            .font_family(body_family())
+            .text_size(NAV_ROW_FONT)
+            .text_color(text_color)
+            .child(icon(section.icon(), NAV_ROW_ICON, icon_color))
+            .child(section.label())
+            .on_click(
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.select_section(section, cx)),
+            );
+        if active {
+            row.bg(palette.surface_overlay)
+        } else {
+            row.hover(move |style| style.bg(hover_bg))
+        }
     }
 
     fn render_pane(
@@ -606,7 +624,6 @@ impl SettingsView {
             SettingsSection::Audio => self.audio.clone().into_any_element(),
             SettingsSection::Scripting => self.scripting.clone().into_any_element(),
             SettingsSection::WebSocket => self.websocket.clone().into_any_element(),
-            SettingsSection::Queues => self.queues_pane(palette, density),
             SettingsSection::Storage => self.storage.clone().into_any_element(),
             SettingsSection::Version => self.version_pane(palette, density, cx),
             SettingsSection::Diagnostics => self.diagnostics.clone().into_any_element(),
@@ -619,7 +636,8 @@ impl SettingsView {
             .h_full()
             .overflow_y_scroll()
             .bg(palette.base)
-            .p(spacing(Spacing::Lg, density))
+            .py(PANE_PAD_V)
+            .px(PANE_PAD_H)
             .child(content)
     }
 
@@ -629,8 +647,6 @@ impl SettingsView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let header = pane_header(Icon::LayoutGrid, tr!("settings_appearance_title"), palette);
-
         let mut theme_grid = div().flex().flex_row().gap(spacing(Spacing::Sm, density));
         let active = cx.theme();
         for theme in ThemeId::ALL {
@@ -701,11 +717,16 @@ impl SettingsView {
         div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(header)
-            .child(theme_block)
-            .child(density_block)
-            .child(fonts_block)
+            .child(SettingsPaneHeader::new(SettingsSection::Appearance))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(spacing(Spacing::Md, density))
+                    .child(theme_block)
+                    .child(density_block)
+                    .child(fonts_block),
+            )
             .into_any_element()
     }
 
@@ -909,12 +930,6 @@ impl SettingsView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let subtitle = div()
-            .font_family(body_family())
-            .text_size(FONT_SM)
-            .text_color(palette.text_muted)
-            .child(tr!("settings_language_subtitle"));
-
         let list = div()
             .flex()
             .flex_col()
@@ -925,13 +940,10 @@ impl SettingsView {
         div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(pane_header(
-                Icon::Globe,
-                tr!("settings_language_title"),
-                palette,
-            ))
-            .child(subtitle)
+            .child(
+                SettingsPaneHeader::new(SettingsSection::Language)
+                    .subtitle(tr!("settings_language_subtitle")),
+            )
             .child(list)
             .into_any_element()
     }
@@ -1058,12 +1070,7 @@ impl SettingsView {
         div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(pane_header(
-                Icon::InfoCircle,
-                tr!("settings_version_title"),
-                palette,
-            ))
+            .child(SettingsPaneHeader::new(SettingsSection::Version))
             .child(card(identity, palette))
             .into_any_element()
     }
@@ -1088,42 +1095,8 @@ impl SettingsView {
         div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(pane_header(
-                Icon::Settings,
-                tr!("settings_nav_general"),
-                palette,
-            ))
+            .child(SettingsPaneHeader::new(SettingsSection::General))
             .child(card(stay_awake_row, palette))
-            .into_any_element()
-    }
-
-    fn queues_pane(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        let workers = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(0);
-
-        let body = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(info_row(
-                tr!("settings_queues_workers_label"),
-                workers.to_string(),
-                palette,
-            ))
-            .child(field_hint(tr!("settings_queues_managed_hint"), palette));
-
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(pane_header(
-                Icon::Notebook,
-                tr!("settings_queues_section_title"),
-                palette,
-            ))
-            .child(card(body, palette))
             .into_any_element()
     }
 }
@@ -1133,8 +1106,7 @@ impl Render for SettingsView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let status = self.render_status(&palette);
-        let nav = self.render_nav(&palette, density, cx);
+        let nav = self.render_nav(&palette, cx);
         let pane = self.render_pane(&palette, density, cx);
 
         let body = div()
@@ -1153,60 +1125,10 @@ impl Render for SettingsView {
             ],
             &palette,
         )
-        .header_right(status)
         .body(body);
 
         div().size_full().flex().flex_col().child(frame)
     }
-}
-
-fn pane_header(
-    glyph: Icon,
-    title: impl Into<SharedString>,
-    palette: &ForgePalette,
-) -> impl IntoElement {
-    let title: SharedString = title.into();
-    div()
-        .flex()
-        .items_center()
-        .gap(spacing(Spacing::Xs, Density::Cozy))
-        .child(icon(glyph, px(18.0), palette.brand))
-        .child(
-            div()
-                .font_family(body_family())
-                .font_weight(FontWeight::MEDIUM)
-                .text_size(FONT_LG)
-                .text_color(palette.text_primary)
-                .child(title),
-        )
-}
-
-fn info_row(
-    label: impl Into<SharedString>,
-    value: impl Into<SharedString>,
-    palette: &ForgePalette,
-) -> impl IntoElement {
-    let label: SharedString = label.into();
-    let value: SharedString = value.into();
-    div()
-        .flex()
-        .items_center()
-        .justify_between()
-        .py(spacing(Spacing::Xs, Density::Cozy))
-        .child(
-            div()
-                .font_family(body_family())
-                .text_size(FONT_SM)
-                .text_color(palette.text_primary)
-                .child(label),
-        )
-        .child(
-            div()
-                .font_family(mono_family())
-                .text_size(FONT_SM)
-                .text_color(palette.text_muted)
-                .child(value),
-        )
 }
 
 fn section_divider(palette: &ForgePalette, density: Density) -> gpui::Div {

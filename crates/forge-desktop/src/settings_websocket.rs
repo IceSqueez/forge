@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_ACCENT, BORDER_THIN, BulletItem, BulletKind, Density, FONT_LG, FONT_SM, FONT_XS,
-    FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SaveState, Spacing,
-    TextArea, TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, field_hint, field_title,
+    BORDER_ACCENT, BORDER_THIN, BulletItem, BulletKind, Density, FONT_SM, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SaveState, Spacing, TextArea,
+    TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, field_hint, field_title,
     ghost_button_with_icon, grow_cell, icon, mono_family, overlay, radio_row, radius,
     save_indicator, setting_row, spacing, toggle, tr, type_to_confirm,
 };
@@ -20,6 +20,8 @@ use gpui::{
 use crate::async_bridge::{self, ErrorSink};
 use crate::overlay_build_failure::OverlayBuildFailure;
 use crate::server_restart::restart_ignoring_disabled;
+use crate::settings::SettingsSection;
+use crate::settings_pane_header::SettingsPaneHeader;
 use forge_components::ActivePresentation;
 
 const BEARER_CREDENTIAL_ID: &str = "server:bearer";
@@ -734,30 +736,11 @@ impl SettingsWebSocketView {
         );
     }
 
-    fn header_row(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(icon(Icon::Server, px(20.0), palette.brand))
-            .child(
-                div()
-                    .min_w(px(0.0))
-                    .font_family(body_family())
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_size(FONT_LG)
-                    .text_color(palette.text_primary)
-                    .child(tr!("settings_ws_title")),
-            )
-            .child(div().flex_1().min_w(px(0.0)))
-            .child(self.restart_button(palette, cx))
-            .child(
+    fn header(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> SettingsPaneHeader {
+        SettingsPaneHeader::new(SettingsSection::WebSocket)
+            .subtitle(tr!("settings_ws_subtitle"))
+            .trailing(self.restart_button(palette, cx))
+            .trailing(
                 div()
                     .flex()
                     .min_w(px(0.0))
@@ -1286,18 +1269,10 @@ impl Render for SettingsWebSocketView {
                 grow_cell(self.token_column(&palette, density, cx), 1.6).min_w(TOKEN_COLUMN_MIN_W),
             );
 
-        let mut root = div()
+        let body = div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Md, density))
-            .child(self.header_row(&palette, density, cx))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_muted)
-                    .child(tr!("settings_ws_subtitle")),
-            )
             .children(crate::server_unavailable::unavailable_banner(cx, &palette))
             .child(setting_row(
                 tr!("settings_ws_enable_label"),
@@ -1317,6 +1292,11 @@ impl Render for SettingsWebSocketView {
             .child(hline(palette.border_regular))
             .child(self.overlay_section(&palette, density, cx));
 
+        let mut root = div()
+            .flex()
+            .flex_col()
+            .child(self.header(&palette, cx))
+            .child(body);
         if let Some(modal) = &self.lan_modal {
             root = root.child(self.lan_overlay(modal.clone(), &palette, cx));
         }

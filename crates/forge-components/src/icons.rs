@@ -194,6 +194,9 @@ tabler_icons! {
     Apps => "apps.svg",
     PlugOff => "plug-off.svg",
     Power => "power.svg",
+    Palette => "palette.svg",
+    Language => "language.svg",
+    Database => "database.svg",
 }
 
 impl Icon {
@@ -306,6 +309,9 @@ impl Icon {
             "plug" | "outlet" => Icon::Plug,
             "plug-off" => Icon::PlugOff,
             "power" => Icon::Power,
+            "palette" => Icon::Palette,
+            "language" => Icon::Language,
+            "database" => Icon::Database,
             "plug-connected" => Icon::PlugConnected,
             "chart-line" | "chart" | "graph" | "line-chart" => Icon::ChartLine,
             "arrow-right" => Icon::ArrowRight,

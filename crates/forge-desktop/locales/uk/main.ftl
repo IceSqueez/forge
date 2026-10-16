@@ -167,7 +167,6 @@ home_connections_summary = { $active } активних · { $disconnected } в�
 
 ## Налаштування → панель зовнішнього вигляду
 
-settings_appearance_title = Зовнішній вигляд
 settings_appearance_theme_label = Тема
 settings_theme_active = АКТИВНА
 settings_appearance_density_label = Щільність інтерфейсу
@@ -195,7 +194,6 @@ settings_theme_desc_light_mode = Світлий режим
 
 ## Налаштування → панель мови
 
-settings_language_title = Мова
 settings_language_subtitle = Оберіть, якою мовою Forge говоритиме з вами
 
 ## Налаштування → бічна навігація
@@ -319,13 +317,9 @@ settings_storage_history_retention_hint = Скільки днів зберіга
 
 ## Налаштування → панель черг
 
-settings_queues_section_title = Черги та потоки
-settings_queues_workers_label = Робочі потоки
-settings_queues_managed_hint = Ліміти паралелізму та прапорці блокування керуються на екрані Черги.
 
 ## Налаштування → панель гарячих клавіш (ярлики)
 
-settings_shortcuts_title = Клавіатурні скорочення
 settings_shortcuts_subtitle = Ці скорочення працюють лише тоді, коли вікно forge у фокусі. Системні комбінації - у розділі «Хоткеї».
 settings_shortcuts_action_nav_home = Перейти на Хаб
 settings_shortcuts_action_nav_live_chat = Відкрити живий чат

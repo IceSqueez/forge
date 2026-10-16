@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, InputEvent, Radius,
-    SaveState, Spacing, TextInput, body_family, icon, primary_button, radius, save_indicator,
-    setting_row, spacing, toggle, tr, with_alpha,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, InputEvent, Radius, SaveState,
+    Spacing, TextInput, body_family, icon, primary_button, radius, save_indicator, setting_row,
+    spacing, toggle, tr, with_alpha,
 };
 use forge_script::{
     EngineConfig, ScriptHttpConfig, load_script_engine_config, load_script_http_config,
@@ -17,6 +17,8 @@ use gpui::{
 };
 
 use crate::async_bridge;
+use crate::settings::SettingsSection;
+use crate::settings_pane_header::SettingsPaneHeader;
 use forge_components::ActivePresentation;
 
 struct ScriptingSnapshot {
@@ -283,30 +285,14 @@ impl SettingsScriptingView {
         cx.notify();
     }
 
-    fn header_row(&self, palette: &ForgePalette) -> impl IntoElement {
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .child(icon(Icon::FileCode, px(20.0), palette.brand))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_size(FONT_LG)
-                    .min_w(px(0.0))
-                    .text_color(palette.text_primary)
-                    .child(tr!("settings_scripting_title")),
-            )
-            .child(div().flex_1().min_w(px(0.0)))
-            .child(
-                div()
-                    .flex()
-                    .min_w(px(0.0))
-                    .overflow_hidden()
-                    .child(save_indicator(&self.save_state, palette)),
-            )
+    fn header(&self, palette: &ForgePalette) -> SettingsPaneHeader {
+        SettingsPaneHeader::new(SettingsSection::Scripting).trailing(
+            div()
+                .flex()
+                .min_w(px(0.0))
+                .overflow_hidden()
+                .child(save_indicator(&self.save_state, palette)),
+        )
     }
 
     fn domains_block(
@@ -526,14 +512,15 @@ impl Render for SettingsScriptingView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.save(cx)),
         );
 
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Lg, density))
-            .child(self.header_row(&palette))
-            .child(engine_section)
-            .child(http_section)
-            .child(div().child(save_btn))
+        div().flex().flex_col().child(self.header(&palette)).child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(spacing(Spacing::Lg, density))
+                .child(engine_section)
+                .child(http_section)
+                .child(div().child(save_btn)),
+        )
     }
 }
 

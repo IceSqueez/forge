@@ -159,7 +159,6 @@ home_connections_summary = { $active } active · { $disconnected } disconnected
 
 ## Settings → Appearance pane
 
-settings_appearance_title = Appearance
 settings_appearance_theme_label = Theme
 settings_theme_active = ACTIVE
 settings_appearance_density_label = Interface density
@@ -187,7 +186,6 @@ settings_theme_desc_light_mode = Light mode
 
 ## Settings → Language pane
 
-settings_language_title = Language
 settings_language_subtitle = Choose how Forge talks to you
 
 ## Settings → navigation sidebar
@@ -309,13 +307,9 @@ settings_storage_history_retention_hint = How many days of action run history to
 
 ## Settings → Queues pane
 
-settings_queues_section_title = Queues & threading
-settings_queues_workers_label = Worker threads
-settings_queues_managed_hint = Per-queue concurrency limits and blocking flags are managed on the Queues screen.
 
 ## Settings → Shortcuts pane
 
-settings_shortcuts_title = Keyboard shortcuts
 settings_shortcuts_subtitle = These shortcuts work only while the forge window is focused. System-wide combinations live under Hotkeys.
 settings_shortcuts_action_nav_home = Go to Hub
 settings_shortcuts_action_nav_live_chat = Open Live Chat

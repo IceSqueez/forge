@@ -1,20 +1,22 @@
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, ConfirmTone, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    InputEvent, OverlayPosition, Radius, Spacing, TextInput, body_family, confirm_modal, error_row,
-    ghost_button, icon, mono_family, overlay, radius, spacing, toggle, tr, with_alpha,
+    BORDER_THIN, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, InputEvent,
+    OverlayPosition, Radius, Spacing, TextInput, body_family, confirm_modal, error_row,
+    ghost_button, mono_family, overlay, radius, spacing, toggle, tr, with_alpha,
 };
 use forge_hotkey::{DEFAULT_HOLD_CEILING_SECS, HotkeyClient};
 use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
 use forge_storage::{DataProvider, SettingsRepo};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FontWeight, Keystroke, Pixels, SharedString,
-    Subscription, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, Keystroke, Pixels, SharedString, Subscription, Window,
+    div, prelude::*, px,
 };
 
 use crate::actions::{SHORTCUTS, ShortcutEntry, shortcut_entry};
 use crate::async_bridge;
+use crate::settings::SettingsSection;
+use crate::settings_pane_header::SettingsPaneHeader;
 use crate::shortcut_overrides::{ChordVerdict, ShortcutOverrides, save_overrides};
 use forge_components::ActivePresentation;
 use forge_hotkey::{load_hold_ceiling, save_hold_ceiling};
@@ -297,35 +299,6 @@ impl SettingsShortcutsView {
             }
         }
         cx.notify();
-    }
-
-    fn header(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(spacing(Spacing::Xs, density))
-                    .child(icon(Icon::Keyboard, px(18.0), palette.brand))
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_size(FONT_LG)
-                            .text_color(palette.text_primary)
-                            .child(tr!("settings_shortcuts_title")),
-                    ),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_muted)
-                    .child(tr!("settings_shortcuts_subtitle")),
-            )
     }
 
     fn error_banner(&self, palette: &ForgePalette) -> Option<AnyElement> {
@@ -618,11 +591,7 @@ impl Render for SettingsShortcutsView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.reset_all(cx)),
         );
 
-        let mut body = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(self.header(&palette, density));
+        let mut body = div().flex().flex_col().gap(spacing(Spacing::Md, density));
 
         if let Some(banner) = self.error_banner(&palette) {
             body = body.child(banner);
@@ -634,7 +603,15 @@ impl Render for SettingsShortcutsView {
             .child(self.hold_ceiling_section(&palette, density, cx))
             .child(div().child(reset_all));
 
-        let mut root = div().relative().size_full().child(body);
+        let header = SettingsPaneHeader::new(SettingsSection::Shortcuts)
+            .subtitle(tr!("settings_shortcuts_subtitle"));
+        let mut root = div()
+            .relative()
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(header)
+            .child(body);
         if let Some(conflict) = &self.conflict {
             let overlay = self.conflict_overlay(conflict, &palette, cx);
             root = root.child(overlay);

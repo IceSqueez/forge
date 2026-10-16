@@ -3,9 +3,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
-    Density, FONT_LG, FONT_SM, ForgePalette, Icon, InputEvent, Spacing, TextInput, ToastAction,
-    ToastKind, body_family, card, field_hint, field_title, icon, mono_family, primary_button,
-    segment, segmented, spacing, tr,
+    Density, FONT_SM, ForgePalette, InputEvent, Spacing, TextInput, ToastAction, ToastKind,
+    body_family, card, field_hint, field_title, mono_family, primary_button, segment, segmented,
+    spacing, tr,
 };
 use forge_runtime::ChatHistoryRetentionHandle;
 use forge_storage::{
@@ -20,12 +20,13 @@ use forge_storage::{
     set_chat_history_per_viewer_limit, set_event_log_retention_days,
 };
 use gpui::{
-    ClickEvent, Context, Entity, FontWeight, Pixels, SharedString, Subscription, Window, div,
-    prelude::*, px,
+    ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
 use crate::data_backup;
+use crate::settings::SettingsSection;
+use crate::settings_pane_header::SettingsPaneHeader;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
@@ -503,12 +504,7 @@ impl Render for SettingsStorageView {
         div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(pane_header(
-                Icon::Folder,
-                tr!("settings_storage_section_title"),
-                &palette,
-            ))
+            .child(SettingsPaneHeader::new(SettingsSection::Storage))
             .child(card(body, &palette))
     }
 }
@@ -564,26 +560,6 @@ fn parse_history_retention_days(raw: &str) -> Option<u32> {
     raw.trim().parse::<u32>().ok().filter(|v| {
         (MIN_ACTION_HISTORY_RETENTION_DAYS..=MAX_ACTION_HISTORY_RETENTION_DAYS).contains(v)
     })
-}
-
-fn pane_header(
-    glyph: Icon,
-    title: impl Into<SharedString>,
-    palette: &ForgePalette,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .items_center()
-        .gap(spacing(Spacing::Xs, Density::Cozy))
-        .child(icon(glyph, px(18.0), palette.brand))
-        .child(
-            div()
-                .font_family(body_family())
-                .font_weight(FontWeight::MEDIUM)
-                .text_size(FONT_LG)
-                .text_color(palette.text_primary)
-                .child(title.into()),
-        )
 }
 
 fn info_row(

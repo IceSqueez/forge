@@ -447,4 +447,26 @@ mod tests {
 
         assert_eq!(drain(&mut writes), Vec::<SettingWrite>::new());
     }
+
+    #[test]
+    fn a_donation_trigger_is_served_by_every_shipped_donation_service_and_nothing_else() {
+        for (kind_id, expected) in [
+            (
+                DONATION_RECEIVED_KIND,
+                HashSet::from([
+                    IntegrationId::new("donatello"),
+                    IntegrationId::new("monobank"),
+                ]),
+            ),
+            ("twitch.chat", HashSet::new()),
+        ] {
+            assert_eq!(
+                category_members(kind_id)
+                    .into_iter()
+                    .collect::<HashSet<_>>(),
+                expected,
+                "{kind_id}"
+            );
+        }
+    }
 }

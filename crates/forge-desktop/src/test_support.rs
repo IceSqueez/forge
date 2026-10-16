@@ -1126,29 +1126,6 @@ pub(crate) fn step(kind_id: &str, enabled: bool) -> forge_types::SubActionStep {
     }
 }
 
-pub(crate) fn container(
-    body: Vec<forge_types::SubActionStep>,
-    enabled: bool,
-) -> forge_types::SubActionStep {
-    let encoded = body
-        .into_iter()
-        .map(|nested| {
-            Variant::Object(forge_types::SubActionConfig::from([
-                ("kind_id".to_owned(), Variant::String(nested.kind_id)),
-                ("config".to_owned(), Variant::Object(nested.config)),
-                ("enabled".to_owned(), Variant::Bool(nested.enabled)),
-            ]))
-        })
-        .collect();
-    forge_types::SubActionStep {
-        config: forge_types::SubActionConfig::from([(
-            NESTED_CHAIN_KEY.to_owned(),
-            Variant::Array(encoded),
-        )]),
-        ..step(NESTING_KIND, enabled)
-    }
-}
-
 pub(crate) fn action_running(name: &str, steps: Vec<forge_types::SubActionStep>) -> Action {
     Action {
         id: ActionId::new(),

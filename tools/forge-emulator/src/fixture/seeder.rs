@@ -1,9 +1,9 @@
 use std::time::{Duration, SystemTime};
 
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
-use forge_platform_core::paths;
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_server::ServerSettings;
+use forge_storage::paths;
 use forge_storage::{CredentialId, DataProvider, SettingsRepo, StorageError};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{

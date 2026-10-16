@@ -39,9 +39,7 @@ impl Workspace {
     }
 
     fn backups(&self) -> PathBuf {
-        self.dir
-            .path()
-            .join(forge_platform_core::paths::BACKUPS_DIR_NAME)
+        self.dir.path().join(forge_storage::paths::BACKUPS_DIR_NAME)
     }
 
     fn snapshots(&self) -> Vec<PathBuf> {

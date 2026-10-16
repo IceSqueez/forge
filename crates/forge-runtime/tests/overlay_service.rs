@@ -10,13 +10,13 @@ use forge_overlay::{
     AudioAnnouncement, CONFIG_FILE, GENERATOR_VERSION, MARKUP_FILE, OverlayKindRegistry,
     RESERVED_DIRECTORY, STYLE_FILE, announcement_content, register_builtin_kinds,
 };
-use forge_platform_core::paths;
 use forge_runtime::overlay_service::OVERLAY_TEST_FIRE_KIND;
 use forge_runtime::{
     EventBus, MaterializePass, NullEventLogRepo, OverlayConnectFanout, OverlayConnectListener,
     OverlayDefinitionChanges, OverlayDelivery, OverlayDispatch, OverlayFrameSink, OverlayReceivers,
     OverlayServiceError, OverlayServiceHandle,
 };
+use forge_storage::paths;
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,

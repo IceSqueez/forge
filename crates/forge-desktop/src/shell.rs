@@ -324,8 +324,11 @@ impl AppShell {
                 let preselect = *preselect;
                 let awake = topics.awake.clone();
                 let update_flow = topics.update_flow.clone();
-                cx.new(|cx| SettingsView::new(handles, awake, update_flow, preselect, cx))
-                    .into()
+                let problem_report = topics.problem_report.clone();
+                cx.new(|cx| {
+                    SettingsView::new(handles, awake, update_flow, problem_report, preselect, cx)
+                })
+                .into()
             }
             Screen::Queues => {
                 let queue_health = topics.queue_health.clone();
@@ -1149,7 +1152,8 @@ impl Render for AppShell {
             .child(body)
             .when(!welcome, |root| root.child(self.chrome.footer.clone()));
 
-        root.children(self.leave_confirm(cx))
+        root.child(self.topics.problem_report.clone())
+            .children(self.leave_confirm(cx))
             .children(toast_layer(&cx.palette(), cx))
     }
 }

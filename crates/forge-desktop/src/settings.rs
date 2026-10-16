@@ -16,6 +16,7 @@ use gpui::{
 use crate::async_bridge::{self, ErrorSink};
 use crate::awake_state::AwakeState;
 use crate::presentation::ActiveLanguage;
+use crate::problem_report::ProblemReport;
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_about::SettingsAboutView;
 use crate::settings_audio::SettingsAudioView;
@@ -231,6 +232,7 @@ impl SettingsView {
         handles: Arc<RuntimeHandles>,
         awake: Entity<AwakeState>,
         update_flow: Entity<UpdateFlow>,
+        problem_report: Entity<ProblemReport>,
         preselect: Option<SettingsSection>,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -266,8 +268,13 @@ impl SettingsView {
                 cx,
             )
         });
-        let about = cx.new(|_| {
-            SettingsAboutView::new(Arc::clone(&handles.backend), handles.rt_handle.clone())
+        let about = cx.new(|cx| {
+            SettingsAboutView::new(
+                Arc::clone(&handles.backend),
+                handles.rt_handle.clone(),
+                problem_report,
+                cx,
+            )
         });
         let diagnostics = cx.new(|cx| {
             SettingsDiagnosticsView::new(

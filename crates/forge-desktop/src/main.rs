@@ -8,6 +8,7 @@ mod audio_routes;
 mod awake_state;
 mod boot;
 mod builtin_sections;
+mod bundle_preview;
 mod chat;
 mod chat_author;
 mod chat_drawer;
@@ -32,6 +33,8 @@ mod config_field_label;
 mod config_form;
 mod connect_flow;
 mod connect_scaffold;
+mod crash_hook;
+mod crash_record;
 mod data_backup;
 mod detail_route;
 mod diagnostic_bundle;
@@ -71,6 +74,7 @@ mod integration_quick_actions;
 mod integration_switch;
 mod integrations;
 mod integrations_hub;
+mod issue_link;
 mod latest_labels;
 mod log_archive;
 mod log_level;
@@ -93,6 +97,7 @@ mod picker_favorites;
 mod platform_visuals;
 mod platforms;
 mod presentation;
+mod problem_report;
 mod queue_health;
 mod queues;
 mod remote_audio;
@@ -328,6 +333,7 @@ fn main() {
         update_launch::StartDecision::Boot { deferred_error } => deferred_error,
         update_launch::StartDecision::Exit(code) => std::process::exit(code),
     };
+    crash_hook::install(paths::crashes_dir());
 
     let initial_screen = match parse_startup_request(std::env::args().skip(1)) {
         Ok(StartupRequest::Open(screen)) => screen,

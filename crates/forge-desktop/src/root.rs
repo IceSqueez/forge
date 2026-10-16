@@ -27,12 +27,14 @@ use crate::home_stats::{HomeStats, Integration};
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::log_tail::LogTail;
 use crate::platforms::PlatformConnectivity;
+use crate::problem_report::ProblemReport;
 use crate::queue_health::QueueHealth;
 use crate::runtime_handles::RuntimeHandles;
 use crate::runtime_status::RuntimeStatus;
 use crate::screen::Screen;
 use crate::shell::AppShell;
 use crate::speak_state::SpeakState;
+use crate::system_info::WindowFacts;
 use crate::topics::Topics;
 use crate::update_flow::UpdateFlow;
 use crate::window_presence::PresenceGate;
@@ -187,6 +189,8 @@ pub fn run_boot(
                 let backend_for_updates = Arc::clone(&handles.backend);
                 let rt_handle_for_updates = handles.rt_handle.clone();
                 let mut flow_for_updates = None;
+                let mut report_for_crashes = None;
+                let mut window_facts = None;
                 let credentials_key_loss = handles.credentials_key_loss;
                 let applied = window.update(cx, |root, window, cx| {
                     crate::i18n::install_language(handles.startup_language);
@@ -215,6 +219,15 @@ pub fn run_boot(
                         )
                     });
                     flow_for_updates = Some(update_flow.clone());
+                    let problem_report = cx.new(|_| {
+                        ProblemReport::new(
+                            Arc::clone(&handles.backend),
+                            handles.builtins.clone(),
+                            handles.rt_handle.clone(),
+                        )
+                    });
+                    report_for_crashes = Some(problem_report.clone());
+                    window_facts = Some(WindowFacts::read(window, cx));
                     let topics = Topics::new(
                         chat_feed,
                         home_stats,
@@ -227,6 +240,7 @@ pub fn run_boot(
                         awake,
                         integration_lifecycle,
                         update_flow,
+                        problem_report,
                     );
                     let shell = cx.new(|cx| {
                         AppShell::new(
@@ -260,7 +274,9 @@ pub fn run_boot(
                     root.mark_ready(shell, handles);
                     cx.notify();
                 });
-                if let (Ok(()), Some(update_flow)) = (applied, flow_for_updates) {
+                if let (Ok(()), Some(update_flow), Some(problem_report)) =
+                    (applied, flow_for_updates, report_for_crashes)
+                {
                     if let Some(loss) = credentials_key_loss {
                         cx.update(|cx| raise_credentials_key_loss_toast(loss, cx));
                     }
@@ -299,6 +315,12 @@ pub fn run_boot(
                         Arc::clone(&backend_for_updates),
                         rt_handle_for_updates.clone(),
                     );
+                    crate::problem_report::start_crash_notice(
+                        cx,
+                        problem_report,
+                        rt_handle_for_updates.clone(),
+                    );
+                    let rt_handle_for_snapshot = rt_handle_for_updates.clone();
                     crate::update_check::start_update_check(
                         cx,
                         backend_for_updates,
@@ -306,6 +328,18 @@ pub fn run_boot(
                         boot_report,
                         update_flow,
                     );
+                    if let Some(window_facts) = window_facts {
+                        cx.spawn(async move |_| {
+                            crate::crash_hook::snapshot_system_info(
+                                window_facts,
+                                &rt_handle_for_snapshot,
+                            )
+                            .await;
+                            #[cfg(debug_assertions)]
+                            crate::crash_hook::panic_if_requested();
+                        })
+                        .detach();
+                    }
                     if let Some(events) = speak_events {
                         start_speak_bridge(cx, speak_for_bridge, events);
                     }

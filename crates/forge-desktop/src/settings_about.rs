@@ -6,10 +6,11 @@ use forge_components::{
     field_hint, ghost_button_with_icon, setting_rows, setting_value_row, spacing, spinner, tr,
 };
 use forge_storage::{DataProvider, SettingsRepo};
-use gpui::{ClickEvent, Context, Window, div, prelude::*};
+use gpui::{ClickEvent, Context, Entity, Window, div, prelude::*};
 use tokio::runtime::Handle;
 
 use crate::async_bridge;
+use crate::problem_report::{ProblemReport, ReportSubject};
 use crate::system_info::{HostFacts, InfoField, SystemInfo, WindowFacts};
 use crate::toasts::copy_to_clipboard;
 
@@ -22,16 +23,30 @@ enum AboutState {
 pub struct SettingsAboutView {
     backend: Arc<dyn DataProvider>,
     rt_handle: Handle,
+    problem_report: Entity<ProblemReport>,
     state: AboutState,
 }
 
 impl SettingsAboutView {
-    pub fn new(backend: Arc<dyn DataProvider>, rt_handle: Handle) -> Self {
+    pub fn new(
+        backend: Arc<dyn DataProvider>,
+        rt_handle: Handle,
+        problem_report: Entity<ProblemReport>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        cx.observe(&problem_report, |_, _, cx| cx.notify()).detach();
         Self {
             backend,
             rt_handle,
+            problem_report,
             state: AboutState::NotStarted,
         }
+    }
+
+    fn report_problem(&mut self, window: &Window, cx: &mut Context<Self>) {
+        self.problem_report.update(cx, |report, cx| {
+            report.start(ReportSubject::Problem, window, cx)
+        });
     }
 
     fn start_collection(&mut self, window: &Window, cx: &mut Context<Self>) {
@@ -80,7 +95,9 @@ impl SettingsAboutView {
         host: HostFacts,
         cx: &mut Context<Self>,
     ) {
-        self.state = AboutState::Ready(Box::new(SystemInfo::assemble(window_facts, host)));
+        let info = SystemInfo::assemble(window_facts, host);
+        crate::crash_hook::remember_system_info(info.to_report_text());
+        self.state = AboutState::Ready(Box::new(info));
         cx.notify();
     }
 
@@ -159,9 +176,22 @@ impl Render for SettingsAboutView {
                 "settings-about-copy",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.copy_report(cx)),
             );
+        let report =
+            ghost_button_with_icon(Icon::Bug, tr!("settings_about_report_problem"), &palette)
+                .busy(self.problem_report.read(cx).is_busy())
+                .on_click(
+                    "settings-about-report-problem",
+                    cx.listener(|this, _: &ClickEvent, window, cx| this.report_problem(window, cx)),
+                );
+        let actions = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
+            .child(report)
+            .child(copy);
         let header = SectionLabel::new(tr!("settings_about_system_title"), &palette)
             .row()
-            .trailing(Some(copy.into_any_element()));
+            .trailing(Some(actions.into_any_element()));
 
         let body = div()
             .w_full()

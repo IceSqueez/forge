@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use forge_platform_core::HealthValue;
 use forge_runtime::COMMAND_LINE_TARGET;
+use forge_storage::{DataProvider, SettingsRepo, disclosure};
 use forge_types::redaction::STAMP;
 use forge_types::run_disclosure::{
     DisclosedOutcome, DisclosedRun, DisclosedStep, DisclosedStepOutcome, DisclosedTrigger,
@@ -16,6 +18,8 @@ use crate::integrations::BuiltinRegistry;
 use crate::log_archive;
 
 pub const RUN_HISTORY_LIMIT: u32 = 25;
+
+pub const BUNDLE_FILE_NAME: &str = "forge-diagnostics.txt";
 
 const TOTAL_BUDGET: usize = 4 * 1024 * 1024;
 
@@ -92,6 +96,33 @@ fn health_shape(value: &HealthValue) -> String {
         HealthValue::Pair { .. } => "pair".to_owned(),
         HealthValue::Ratio { used, total, .. } => format!("ratio({used}/{total})"),
     }
+}
+
+pub fn log_dir() -> PathBuf {
+    forge_storage::paths::data_dir().join("logs")
+}
+
+pub async fn gather_input(
+    backend: Arc<dyn DataProvider>,
+    integrations: Vec<IntegrationFacts>,
+    level: LogLevel,
+    env_overridden: bool,
+) -> Result<BundleInput, String> {
+    let history = backend.history_repo();
+    let settings = backend as Arc<dyn SettingsRepo>;
+    let stored = settings.load_all().await.map_err(|e| e.to_string())?;
+    let runs = history
+        .recent(RUN_HISTORY_LIMIT)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(BundleInput {
+        log_dir: log_dir(),
+        level,
+        env_overridden,
+        integrations,
+        config: disclosure::render_all(&stored),
+        runs: runs.iter().map(DisclosedRun::from).collect(),
+    })
 }
 
 pub fn assemble(input: &BundleInput) -> Result<Bundle, String> {

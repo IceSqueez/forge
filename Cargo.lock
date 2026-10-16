@@ -2589,6 +2589,7 @@ dependencies = [
  "jiff",
  "log",
  "open",
+ "percent-encoding",
  "rand 0.10.3",
  "regex",
  "reqwest",

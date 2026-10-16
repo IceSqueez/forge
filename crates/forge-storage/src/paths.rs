@@ -18,6 +18,10 @@ pub const TTS_DIR_NAME: &str = "tts";
 
 pub const BACKUPS_DIR_NAME: &str = "backups";
 
+pub const CRASHES_DIR_NAME: &str = "crashes";
+
+pub const PROBLEM_REPORTS_DIR_NAME: &str = "reports";
+
 #[allow(clippy::expect_used)]
 fn base_dirs() -> BaseDirs {
     BaseDirs::new().expect("home directory must be discoverable on supported platforms")
@@ -50,6 +54,14 @@ pub fn media_dir() -> PathBuf {
 
 pub fn assets_dir() -> PathBuf {
     data_dir().join(ASSETS_DIR_NAME)
+}
+
+pub fn crashes_dir() -> PathBuf {
+    data_dir().join(CRASHES_DIR_NAME)
+}
+
+pub fn problem_reports_dir() -> PathBuf {
+    data_dir().join(PROBLEM_REPORTS_DIR_NAME)
 }
 
 #[cfg(test)]

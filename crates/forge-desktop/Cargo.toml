@@ -59,6 +59,7 @@ gpui = { workspace = true }
 gpui_platform = { workspace = true }
 jiff = { workspace = true }
 open = { workspace = true }
+percent-encoding = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }

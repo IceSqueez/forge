@@ -8,6 +8,7 @@ use crate::globals::Globals;
 use crate::home_stats::HomeStats;
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::platforms::PlatformConnectivity;
+use crate::problem_report::ProblemReport;
 use crate::queue_health::QueueHealth;
 use crate::speak_state::SpeakState;
 use crate::update_flow::UpdateFlow;
@@ -24,6 +25,7 @@ pub struct Topics {
     pub awake: Entity<AwakeState>,
     pub integration_lifecycle: Entity<IntegrationLifecycle>,
     pub update_flow: Entity<UpdateFlow>,
+    pub problem_report: Entity<ProblemReport>,
 }
 
 impl Topics {
@@ -40,6 +42,7 @@ impl Topics {
         awake: Entity<AwakeState>,
         integration_lifecycle: Entity<IntegrationLifecycle>,
         update_flow: Entity<UpdateFlow>,
+        problem_report: Entity<ProblemReport>,
     ) -> Self {
         Self {
             chat_feed,
@@ -53,6 +56,7 @@ impl Topics {
             awake,
             integration_lifecycle,
             update_flow,
+            problem_report,
         }
     }
 }

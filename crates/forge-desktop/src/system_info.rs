@@ -153,6 +153,20 @@ pub struct HostFacts {
 
 impl HostFacts {
     pub fn collect(data_dir: &Path, speech_preference: Option<OutputDevice>) -> Self {
+        let audio_outputs = forge_audio::list_output_devices()
+            .ok()
+            .map(|devices| AudioOutputs {
+                device_count: devices.len(),
+                speech: SpeechOutput::resolve(speech_preference.as_ref(), &devices),
+            });
+        Self {
+            audio_outputs,
+            data_dir_bytes: directory_size(data_dir),
+            ..Self::collect_static()
+        }
+    }
+
+    pub fn collect_static() -> Self {
         let system = System::new_with_specifics(
             RefreshKind::new()
                 .with_cpu(CpuRefreshKind::new())
@@ -165,12 +179,6 @@ impl HostFacts {
             .filter(|brand| !brand.is_empty());
         let logical_cores = (!cpus.is_empty()).then_some(cpus.len());
         let total_memory_bytes = Some(system.total_memory()).filter(|bytes| *bytes > 0);
-        let audio_outputs = forge_audio::list_output_devices()
-            .ok()
-            .map(|devices| AudioOutputs {
-                device_count: devices.len(),
-                speech: SpeechOutput::resolve(speech_preference.as_ref(), &devices),
-            });
         Self {
             install: Some(detect_install()),
             os_name: System::name(),
@@ -179,8 +187,8 @@ impl HostFacts {
             cpu_model,
             logical_cores,
             total_memory_bytes,
-            audio_outputs,
-            data_dir_bytes: directory_size(data_dir),
+            audio_outputs: None,
+            data_dir_bytes: None,
             identity: IdentityScrubber::current(),
         }
     }

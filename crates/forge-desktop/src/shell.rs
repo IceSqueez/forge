@@ -323,7 +323,8 @@ impl AppShell {
                 let handles = Arc::clone(handles);
                 let preselect = *preselect;
                 let awake = topics.awake.clone();
-                cx.new(|cx| SettingsView::new(handles, awake, preselect, cx))
+                let update_flow = topics.update_flow.clone();
+                cx.new(|cx| SettingsView::new(handles, awake, update_flow, preselect, cx))
                     .into()
             }
             Screen::Queues => {

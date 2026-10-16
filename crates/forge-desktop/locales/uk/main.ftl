@@ -254,6 +254,12 @@ settings_diagnostics_level_error = Error
 settings_version_title = Версія та оновлення
 settings_version_license = Відкритий код · MIT OR Apache-2.0
 settings_version_check_updates = Перевірити оновлення
+settings_version_checking = Перевірка оновлень...
+settings_version_up_to_date = У вас остання версія forge - перевірено о { $time }
+settings_version_update_found = Знайдено оновлення - v{ $version }
+settings_version_update_downloading = Знайдено оновлення - v{ $version }, завантажується
+settings_version_check_failed = Не вдалося перевірити оновлення
+settings_version_open_releases = Відкрити сторінку релізів
 
 ## Сповіщення про оновлення
 

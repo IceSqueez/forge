@@ -246,6 +246,12 @@ settings_diagnostics_level_error = Error
 settings_version_title = Version & updates
 settings_version_license = Open-source · MIT OR Apache-2.0
 settings_version_check_updates = Check for updates
+settings_version_checking = Checking for updates...
+settings_version_up_to_date = forge is up to date - checked at { $time }
+settings_version_update_found = Update found - v{ $version }
+settings_version_update_downloading = Update found - v{ $version }, downloading
+settings_version_check_failed = Could not check for updates
+settings_version_open_releases = Open releases page
 
 ## Update notification
 

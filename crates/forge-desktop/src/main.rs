@@ -116,6 +116,7 @@ mod settings_pane_header;
 mod settings_scripting;
 mod settings_shortcuts;
 mod settings_storage;
+mod settings_update_status;
 mod settings_voice_gate;
 mod settings_websocket;
 mod shell;

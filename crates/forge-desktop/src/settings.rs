@@ -23,7 +23,10 @@ use crate::settings_pane_header::SettingsPaneHeader;
 use crate::settings_scripting::SettingsScriptingView;
 use crate::settings_shortcuts::SettingsShortcutsView;
 use crate::settings_storage::SettingsStorageView;
+use crate::settings_update_status::{UpdateCheckStatus, status_line};
 use crate::settings_websocket::SettingsWebSocketView;
+use crate::update_check::{CheckResult, run_update_check};
+use crate::update_flow::UpdateFlow;
 use forge_components::{ActivePresentation, Presentation};
 
 const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
@@ -195,6 +198,8 @@ pub struct SettingsView {
     section: SettingsSection,
     handles: Arc<RuntimeHandles>,
     awake: Entity<AwakeState>,
+    update_flow: Entity<UpdateFlow>,
+    update_check: UpdateCheckStatus,
     language: Language,
     audio: Entity<SettingsAudioView>,
     scripting: Entity<SettingsScriptingView>,
@@ -223,6 +228,7 @@ impl SettingsView {
     pub fn new(
         handles: Arc<RuntimeHandles>,
         awake: Entity<AwakeState>,
+        update_flow: Entity<UpdateFlow>,
         preselect: Option<SettingsSection>,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -272,6 +278,8 @@ impl SettingsView {
             section,
             handles,
             awake,
+            update_flow,
+            update_check: UpdateCheckStatus::Idle,
             language: cx.global::<ActiveLanguage>().0,
             audio,
             scripting,
@@ -525,6 +533,27 @@ impl SettingsView {
     }
 
     fn check_for_updates(&mut self, cx: &mut Context<Self>) {
+        if self.update_check.is_checking() {
+            return;
+        }
+        self.update_check = UpdateCheckStatus::Checking;
+        let backend = Arc::clone(&self.handles.backend);
+        let rt_handle = self.handles.rt_handle.clone();
+        let flow = self.update_flow.clone();
+        cx.spawn(async move |this, cx| {
+            let result = run_update_check(cx, backend, &rt_handle, None, &flow).await;
+            let _ = this.update(cx, |view, cx| view.finish_update_check(result, cx));
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn finish_update_check(&mut self, result: CheckResult, cx: &mut Context<Self>) {
+        self.update_check = UpdateCheckStatus::from_result(result);
+        cx.notify();
+    }
+
+    fn open_releases_page(&mut self, cx: &mut Context<Self>) {
         async_bridge::open_external(
             &self.handles.rt_handle,
             RELEASES_URL,
@@ -969,21 +998,39 @@ impl SettingsView {
             .gap(spacing(Spacing::Md, density))
             .child(tile)
             .child(
-                div().flex().flex_col().gap(px(4.0)).child(name_line).child(
-                    div()
-                        .font_family(body_family())
-                        .text_size(FONT_XS)
-                        .text_color(palette.text_muted)
-                        .child(tr!("settings_version_license")),
-                ),
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.0))
+                    .child(name_line)
+                    .child(
+                        div()
+                            .font_family(body_family())
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_muted)
+                            .child(tr!("settings_version_license")),
+                    )
+                    .children(status_line(&self.update_check, palette)),
             )
             .child(div().flex_1())
+            .children(self.update_check.offers_release_page().then(|| {
+                ghost_button_with_icon(
+                    Icon::ExternalLink,
+                    tr!("settings_version_open_releases"),
+                    palette,
+                )
+                .on_click(
+                    "settings-open-releases",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.open_releases_page(cx)),
+                )
+            }))
             .child(
                 ghost_button_with_icon(
                     Icon::Refresh,
                     tr!("settings_version_check_updates"),
                     palette,
                 )
+                .busy(self.update_check.is_checking())
                 .on_click(
                     "settings-check-updates",
                     cx.listener(|this, _: &ClickEvent, _, cx| this.check_for_updates(cx)),

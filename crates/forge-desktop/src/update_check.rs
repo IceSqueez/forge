@@ -7,8 +7,10 @@ use forge_update::{
     UpdateOffer, check_for_update, detect_install, fetch_latest_release, is_newer, parse_version,
 };
 use gpui::{AsyncApp, Entity, Task};
+use time::OffsetDateTime;
 use tokio::runtime::Handle;
 
+use crate::scheduled_run_labels::system_offset_at;
 use crate::update_flow::{InstallTarget, UpdateCandidate, UpdateFlow};
 
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -105,10 +107,25 @@ enum SignedCheck {
     Unavailable,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CheckOutcome {
+    Found(FoundUpdate),
+    UpToDate,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CheckResult {
+    NothingNew { checked_at: OffsetDateTime },
+    Found { version: String, plan: UpdatePlan },
+    Failed,
+}
+
 struct Probe {
     rolled_back: Option<String>,
-    found: Option<FoundUpdate>,
+    outcome: CheckOutcome,
     install: InstallKind,
+    checked_at: OffsetDateTime,
 }
 
 pub fn start_update_check(
@@ -121,41 +138,59 @@ pub fn start_update_check(
     cx.spawn(async move |cx| {
         let reported = boot_report.await;
         cx.background_executor().timer(BOOT_SETTLE_DELAY).await;
-
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        rt_handle.spawn(async move {
-            let _ = tx.send(probe(backend).await);
-        });
-        let Ok(probe) = rx.await else {
-            return;
-        };
-        let Some(found) = probe.found else {
-            return;
-        };
-
-        let version = found.version();
-        let mut candidate = update_candidate(found, &probe.install, Platform::running());
-        let Some(plan) = plan_update(
-            CURRENT_VERSION,
-            &version,
-            candidate.install.is_some(),
-            probe.rolled_back.as_deref(),
-            reported.as_deref(),
-        ) else {
-            return;
-        };
-
-        match plan {
-            UpdatePlan::Download => {
-                flow.update(cx, |flow, cx| flow.download(candidate, cx));
-            }
-            UpdatePlan::Offer => {
-                candidate.install = None;
-                flow.update(cx, |flow, cx| flow.offer(candidate, cx));
-            }
-        }
+        run_update_check(cx, backend, &rt_handle, reported, &flow).await;
     })
     .detach();
+}
+
+pub async fn run_update_check(
+    cx: &mut AsyncApp,
+    backend: Arc<dyn DataProvider>,
+    rt_handle: &Handle,
+    reported_this_launch: Option<String>,
+    flow: &Entity<UpdateFlow>,
+) -> CheckResult {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    rt_handle.spawn(async move {
+        let _ = tx.send(probe(backend).await);
+    });
+    let Ok(probe) = rx.await else {
+        return CheckResult::Failed;
+    };
+    let found = match probe.outcome {
+        CheckOutcome::Found(found) => found,
+        CheckOutcome::UpToDate => {
+            return CheckResult::NothingNew {
+                checked_at: probe.checked_at,
+            };
+        }
+        CheckOutcome::Failed => return CheckResult::Failed,
+    };
+
+    let version = found.version();
+    let mut candidate = update_candidate(found, &probe.install, Platform::running());
+    let Some(plan) = plan_update(
+        CURRENT_VERSION,
+        &version,
+        candidate.install.is_some(),
+        probe.rolled_back.as_deref(),
+        reported_this_launch.as_deref(),
+    ) else {
+        return CheckResult::NothingNew {
+            checked_at: probe.checked_at,
+        };
+    };
+
+    match plan {
+        UpdatePlan::Download => {
+            flow.update(cx, |flow, cx| flow.download(candidate, cx));
+        }
+        UpdatePlan::Offer => {
+            candidate.install = None;
+            flow.update(cx, |flow, cx| flow.offer(candidate, cx));
+        }
+    }
+    CheckResult::Found { version, plan }
 }
 
 async fn probe(backend: Arc<dyn DataProvider>) -> Probe {
@@ -165,32 +200,34 @@ async fn probe(backend: Arc<dyn DataProvider>) -> Probe {
         .await
         .ok()
         .flatten();
-    let found = find_update().await;
+    let outcome = find_update().await;
     let install = tokio::task::spawn_blocking(detect_install)
         .await
         .unwrap_or(InstallKind::ManualOnly(ManualReason::UnknownExecutable));
+    let now = OffsetDateTime::now_utc();
     Probe {
         rolled_back,
-        found,
+        outcome,
         install,
+        checked_at: now.to_offset(system_offset_at(now)),
     }
 }
 
-async fn find_update() -> Option<FoundUpdate> {
-    let repo = GithubRepo::parse(REPO_URL)?;
+async fn find_update() -> CheckOutcome {
+    let Some(repo) = GithubRepo::parse(REPO_URL) else {
+        return CheckOutcome::Failed;
+    };
     let client = match UpdateClient::for_github() {
         Ok(client) => client,
         Err(error) => {
             tracing::debug!(error = %error, "update check could not start");
-            return None;
+            return CheckOutcome::Failed;
         }
     };
     match check_signed(&client, &repo).await {
-        SignedCheck::Offer(offer) => Some(FoundUpdate::Signed(offer)),
-        SignedCheck::UpToDate => None,
-        SignedCheck::Unavailable => latest_release(&client, &repo)
-            .await
-            .map(FoundUpdate::Unsigned),
+        SignedCheck::Offer(offer) => CheckOutcome::Found(FoundUpdate::Signed(offer)),
+        SignedCheck::UpToDate => CheckOutcome::UpToDate,
+        SignedCheck::Unavailable => latest_release(&client, &repo).await,
     }
 }
 
@@ -216,12 +253,13 @@ async fn check_signed(client: &UpdateClient, repo: &GithubRepo) -> SignedCheck {
     }
 }
 
-async fn latest_release(client: &UpdateClient, repo: &GithubRepo) -> Option<PublishedRelease> {
+async fn latest_release(client: &UpdateClient, repo: &GithubRepo) -> CheckOutcome {
     match fetch_latest_release(client, repo).await {
-        Ok(release) => release,
+        Ok(Some(release)) => CheckOutcome::Found(FoundUpdate::Unsigned(release)),
+        Ok(None) => CheckOutcome::UpToDate,
         Err(error) => {
             tracing::debug!(error = %error, "latest release lookup failed");
-            None
+            CheckOutcome::Failed
         }
     }
 }

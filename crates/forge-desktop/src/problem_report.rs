@@ -25,11 +25,12 @@ use crate::bundle_preview::{export_statement, statement_row};
 use crate::crash_record::{self, CrashRecord, PendingCrash};
 use crate::diagnostic_bundle::{self, BUNDLE_FILE_NAME, Bundle};
 use crate::integrations::BuiltinRegistry;
-use crate::issue_link::{CRASH_REPORT_FILE_NAME, ISSUE_URL_MAX_BYTES, IssueForm};
+use crate::issue_link::{
+    CRASH_REPORT_FILE_NAME, ISSUE_URL_MAX_BYTES, IssueForm, SYSTEM_INFO_FILE_NAME,
+};
 use crate::system_info::{HostFacts, InfoField, SystemInfo, WindowFacts};
 use crate::update_check::REPO_URL;
 
-pub const SYSTEM_INFO_FILE_NAME: &str = "system-info.txt";
 const REPORT_FOLDER_PREFIX: &str = "report-";
 const PREVIEW_WIDTH: Pixels = px(600.0);
 const ISSUE_TEXT_MAX_HEIGHT: Pixels = px(220.0);

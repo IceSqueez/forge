@@ -10,8 +10,13 @@ pub const FIELD_CRASH: &str = "crash";
 pub const FIELD_SYSTEM_INFO: &str = "system-info";
 pub const FIELD_BACKTRACE: &str = "backtrace";
 pub const CRASH_REPORT_FILE_NAME: &str = "crash.txt";
+pub const SYSTEM_INFO_FILE_NAME: &str = "system-info.txt";
 
 const CRASH_TITLE_PREFIX: &str = "Crash: ";
+const TRIM_ORDER: [(&str, &str); 2] = [
+    (FIELD_SYSTEM_INFO, SYSTEM_INFO_FILE_NAME),
+    (FIELD_CRASH, CRASH_REPORT_FILE_NAME),
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IssueField {
@@ -89,6 +94,20 @@ impl IssueForm {
     }
 
     pub fn fitted(self, repo_url: &str, max_bytes: usize) -> Self {
+        let mut form = self.with_fitted_backtrace(repo_url, max_bytes);
+        for (id, full_text_file) in TRIM_ORDER {
+            let url_len = form.url(repo_url).len();
+            if url_len <= max_bytes {
+                break;
+            }
+            if let Some(field) = form.fields.iter_mut().find(|field| field.id == id) {
+                trim_to_free(&mut field.value, url_len - max_bytes, full_text_file);
+            }
+        }
+        form
+    }
+
+    fn with_fitted_backtrace(self, repo_url: &str, max_bytes: usize) -> Self {
         if self.url(repo_url).len() <= max_bytes {
             return self;
         }
@@ -142,6 +161,26 @@ fn truncated_backtrace(kept: &[String]) -> String {
     }
     text.push_str(&backtrace_truncated_marker());
     text
+}
+
+fn trim_to_free(value: &mut String, excess_encoded_bytes: usize, full_text_file: &str) {
+    let marker = field_truncated_marker(full_text_file);
+    let needed = excess_encoded_bytes + encode(&marker).len();
+    let mut freed = 0;
+    let mut cut = value.len();
+    for (index, ch) in value.char_indices().rev() {
+        if freed >= needed {
+            break;
+        }
+        freed += encode(ch.encode_utf8(&mut [0; 4])).len();
+        cut = index;
+    }
+    value.truncate(cut);
+    value.push_str(&marker);
+}
+
+pub fn field_truncated_marker(full_text_file: &str) -> String {
+    format!("... [truncated - the full text is in {full_text_file} in the saved report folder]")
 }
 
 pub fn backtrace_truncated_marker() -> String {

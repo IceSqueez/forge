@@ -34,7 +34,6 @@ use crate::integration_detail::{IntegrationDetail, ObsSignedOut, VTubeSignedOut}
 use crate::integration_disabled::{DisabledLaunch, IntegrationDisabledView};
 use crate::integration_failed::{IntegrationFailedView, SignInRequested};
 use crate::integration_lifecycle::IntegrationLifecycle;
-use crate::integration_supervisor::{LifecycleState, LifecycleStates};
 use crate::integration_switch::IntegrationSwitch;
 use crate::integrations::{obs_builtin_object, vtube_builtin_object};
 use crate::integrations_hub::{HubLaunch, IntegrationsHubView};
@@ -62,6 +61,7 @@ use crate::update_flow::{CloseDecision, UpdateFlowEvent};
 use crate::vtube_connect::VTubeConnectView;
 use crate::vtube_connect_form::VTubeConnected;
 use forge_components::{ActivePresentation, Presentation};
+use forge_runtime::{LifecycleState, LifecycleStates};
 
 fn settled_kinds(states: &LifecycleStates) -> HashMap<IntegrationId, Discriminant<LifecycleState>> {
     states

@@ -9,7 +9,8 @@ use tokio::sync::{Mutex, watch};
 
 use crate::clip_hotkeys::{ClipBindings, clip_bindings_of};
 use crate::hotkey_bindings::{COMBO_FIELD, HotkeyEdge, persisted_hotkey_combos};
-use crate::integration_supervisor::IntegrationSlot;
+use crate::integrations::BuiltinObject;
+use forge_runtime::IntegrationSlot;
 
 pub struct HotkeyReconciler {
     client: Arc<HotkeyClient>,
@@ -18,7 +19,7 @@ pub struct HotkeyReconciler {
     serial: Mutex<()>,
     clip_bindings: watch::Sender<Arc<ClipBindings>>,
     known_combos: std::sync::Mutex<Option<BTreeSet<String>>>,
-    engine: OnceLock<IntegrationSlot>,
+    engine: OnceLock<IntegrationSlot<BuiltinObject>>,
 }
 
 impl HotkeyReconciler {
@@ -39,7 +40,7 @@ impl HotkeyReconciler {
         })
     }
 
-    pub fn enable_engine_on_new_bindings(&self, engine: IntegrationSlot) {
+    pub fn enable_engine_on_new_bindings(&self, engine: IntegrationSlot<BuiltinObject>) {
         let _ = self.engine.set(engine);
     }
 

@@ -8,12 +8,13 @@ use gpui::{App, Context, Entity, IntoElement, SharedString, Subscription};
 
 use crate::integration_catalog::{declaration_of, declarations};
 use crate::integration_lifecycle::IntegrationLifecycle;
-use crate::integration_supervisor::IntegrationSupervisor;
+use crate::integrations::BuiltinObject;
+use forge_runtime::IntegrationSupervisor;
 
 #[derive(Clone)]
 pub struct IntegrationSwitch {
     lifecycle: Entity<IntegrationLifecycle>,
-    supervisor: IntegrationSupervisor,
+    supervisor: IntegrationSupervisor<BuiltinObject>,
 }
 
 pub struct SwitchWatch {
@@ -38,7 +39,10 @@ impl ClosedGate {
 }
 
 impl IntegrationSwitch {
-    pub fn new(lifecycle: Entity<IntegrationLifecycle>, supervisor: IntegrationSupervisor) -> Self {
+    pub fn new(
+        lifecycle: Entity<IntegrationLifecycle>,
+        supervisor: IntegrationSupervisor<BuiltinObject>,
+    ) -> Self {
         Self {
             lifecycle,
             supervisor,

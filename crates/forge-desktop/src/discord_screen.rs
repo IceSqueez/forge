@@ -23,11 +23,12 @@ use crate::discord_webhooks::{
     DISCORD_EVENT_PREFIX, WebhookRow, distinct_linked_actions, load_webhooks, name_is_taken,
 };
 use crate::hub_crumb::hub_crumb;
-use crate::integration_supervisor::IntegrationSlot;
+use crate::integrations::BuiltinObject;
 use crate::sidebar::NavRequested;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::{grow_cell, stat_card};
+use forge_runtime::IntegrationSlot;
 
 const SCROLL_PAD_X: Pixels = px(22.0);
 const SCROLL_PAD_Y: Pixels = px(18.0);
@@ -101,7 +102,7 @@ struct DeletePrompt {
 
 pub struct DiscordScreenView {
     client: Arc<DiscordClient>,
-    integration: Option<IntegrationSlot>,
+    integration: Option<IntegrationSlot<BuiltinObject>>,
     action_repo: Arc<dyn ActionRepo>,
     rt_handle: tokio::runtime::Handle,
     webhooks: Vec<WebhookRow>,
@@ -117,7 +118,7 @@ pub struct DiscordScreenView {
 impl DiscordScreenView {
     pub fn new(
         client: Arc<DiscordClient>,
-        integration: Option<IntegrationSlot>,
+        integration: Option<IntegrationSlot<BuiltinObject>>,
         action_repo: Arc<dyn ActionRepo>,
         bus: Arc<EventBus>,
         rt_handle: tokio::runtime::Handle,

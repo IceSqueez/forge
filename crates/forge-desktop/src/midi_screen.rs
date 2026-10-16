@@ -20,7 +20,7 @@ use gpui::{
 
 use crate::async_bridge::{self, BridgeFlow, ErrorSink, drain_events};
 use crate::hub_crumb::hub_crumb;
-use crate::integration_supervisor::{IntegrationSlot, LifecycleState};
+use crate::integrations::BuiltinObject;
 use crate::midi_mapping_modal::{
     MappingDraft, MappingModalLaunch, MidiMappingModal, MidiMappingModalEvent,
 };
@@ -29,6 +29,7 @@ use crate::sidebar::NavRequested;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::grow_cell;
+use forge_runtime::{IntegrationSlot, LifecycleState};
 
 pub const MIDI_KNOWN_DEVICES_KEY: &str = "midi.known_devices";
 
@@ -301,7 +302,7 @@ struct OpenModal {
 pub struct MidiScreenView {
     sink: Arc<SwitchableMidiSink>,
     client: Option<Arc<MidiClient>>,
-    integration: Option<IntegrationSlot>,
+    integration: Option<IntegrationSlot<BuiltinObject>>,
     trigger_repo: Arc<dyn TriggerInstanceRepo>,
     action_repo: Arc<dyn ActionRepo>,
     settings_repo: Arc<dyn SettingsRepo>,
@@ -327,7 +328,7 @@ impl MidiScreenView {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         sink: Arc<SwitchableMidiSink>,
-        integration: Option<IntegrationSlot>,
+        integration: Option<IntegrationSlot<BuiltinObject>>,
         trigger_repo: Arc<dyn TriggerInstanceRepo>,
         action_repo: Arc<dyn ActionRepo>,
         settings_repo: Arc<dyn SettingsRepo>,
@@ -400,7 +401,10 @@ impl MidiScreenView {
         })
     }
 
-    fn spawn_lifecycle_bridge(integration: &IntegrationSlot, cx: &mut Context<Self>) -> Task<()> {
+    fn spawn_lifecycle_bridge(
+        integration: &IntegrationSlot<BuiltinObject>,
+        cx: &mut Context<Self>,
+    ) -> Task<()> {
         let id = integration.id().clone();
         let mut lifecycle = integration.watch();
         let mut last = lifecycle.current().remove(&id);

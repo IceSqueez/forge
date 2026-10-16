@@ -1,15 +1,17 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_platform_core::{
     BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, DonationProvider,
     PlatformEndpoints, QuickActions, SectionIcon,
 };
-use forge_runtime::DonationIngest;
+use forge_runtime::{
+    DEFAULT_TEARDOWN_GRACE, DonationIngest, IntegrationFactory, RunningIntegration, TaskGroup,
+};
 use forge_storage::{CredentialsRepo, DataProvider, StorageError, has_credentials_for};
 use forge_types::IntegrationId;
 
-use crate::integration_supervisor::{IntegrationFactory, RunningIntegration, TaskGroup};
 use crate::integrations::{BuiltinObject, creds_of};
 
 const DONATION_ICON: &str = "coin";
@@ -42,16 +44,20 @@ impl<P> DonationFactory<P> {
 }
 
 #[async_trait]
-impl<P: DonationIntegration + 'static> IntegrationFactory for DonationFactory<P> {
+impl<P: DonationIntegration + 'static> IntegrationFactory<BuiltinObject> for DonationFactory<P> {
     fn id(&self) -> IntegrationId {
         DonationProvider::provider(self.provider.as_ref()).clone()
+    }
+
+    fn teardown_grace(&self) -> Duration {
+        DEFAULT_TEARDOWN_GRACE
     }
 
     async fn is_configured(&self) -> Result<bool, StorageError> {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
 
-    async fn start(&self) -> Result<RunningIntegration, String> {
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
         if let Err(failure) = self.provider.reconnect().await {
             tracing::warn!(integration = %self.id(), failure = ?failure, "donation polling could not be resumed");
         }

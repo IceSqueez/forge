@@ -1,7 +1,7 @@
 use super::*;
 use crate::home_stats::Integration;
 use crate::integration_lifecycle::IntegrationLifecycle;
-use crate::integration_supervisor::LifecycleState;
+use forge_runtime::LifecycleState;
 
 pub(crate) fn platform_integration(platform: Platform) -> Integration {
     match platform {

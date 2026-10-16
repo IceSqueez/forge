@@ -3,7 +3,7 @@ use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
 
 use super::{HotkeysScreenView, LABEL_FS};
 use crate::async_bridge::{self, ErrorSink};
-use crate::integration_supervisor::LifecycleState;
+use forge_runtime::LifecycleState;
 
 const HERO_PAD_V: Pixels = px(14.0);
 const HERO_PAD_H: Pixels = px(18.0);

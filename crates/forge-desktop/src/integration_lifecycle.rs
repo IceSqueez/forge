@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use forge_platform_core::ConnectionAffordance;
 use forge_types::IntegrationId;
 
-use crate::integration_supervisor::{LifecycleState, LifecycleStates};
+use forge_runtime::{LifecycleState, LifecycleStates};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CardStatus {

@@ -26,13 +26,13 @@ use crate::integration_catalog::{
 use crate::integration_disable_modal::{DisablePrompt, render_disable_modal};
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
 use crate::integration_references::{IntegrationReferences, tally_references};
-use crate::integration_supervisor::{IntegrationSupervisor, LifecycleState};
-use crate::integrations::BuiltinRegistry;
+use crate::integrations::{BuiltinObject, BuiltinRegistry};
 use crate::platforms::PlatformConnectivity;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_runtime::{IntegrationSupervisor, LifecycleState};
 
 mod welcome;
 
@@ -71,7 +71,7 @@ const OPEN_GAP: Pixels = px(3.0);
 const OPEN_CHEVRON: Pixels = px(12.0);
 
 pub struct HubLaunch {
-    pub supervisor: IntegrationSupervisor,
+    pub supervisor: IntegrationSupervisor<BuiltinObject>,
     pub builtins: BuiltinRegistry,
     pub backend: Arc<dyn DataProvider>,
     pub sub_actions: Arc<SubActionRegistry>,

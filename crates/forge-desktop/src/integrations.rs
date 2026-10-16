@@ -23,7 +23,7 @@ use crate::integration_factories::{
     wire_discord, wire_hotkey, wire_kick, wire_midi, wire_obs, wire_twitch, wire_vtube,
     wire_youtube,
 };
-use crate::integration_supervisor::{IntegrationFactory, TaskGroup};
+use forge_runtime::{IntegrationFactory, IntegrationObjects, TaskGroup};
 
 const CHAT_SEND_QUEUE_CAPACITY: usize = 64;
 
@@ -71,9 +71,23 @@ impl BuiltinRegistry {
     }
 }
 
+impl IntegrationObjects<BuiltinObject> for BuiltinRegistry {
+    fn install(&self, object: BuiltinObject) {
+        BuiltinRegistry::install(self, object);
+    }
+
+    fn remove(&self, id: &IntegrationId) {
+        BuiltinRegistry::remove(self, id);
+    }
+
+    fn get(&self, id: &IntegrationId) -> Option<BuiltinObject> {
+        BuiltinRegistry::get(self, id)
+    }
+}
+
 pub struct Integrations {
     pub builtins: BuiltinRegistry,
-    pub factories: Vec<Arc<dyn IntegrationFactory>>,
+    pub factories: Vec<Arc<dyn IntegrationFactory<BuiltinObject>>>,
     pub obs_install_seed: ObsInstallSeed,
     pub vtube_install_seed: VTubeInstallSeed,
     pub discord_client: Arc<forge_discord::DiscordClient>,
@@ -267,7 +281,7 @@ pub async fn build_integrations(
     register_platform_triggers(triggers);
     let midi_kinds = kinds_owned_by(triggers, &forge_midi::MIDI_INTEGRATION.id);
 
-    let mut factories: Vec<Arc<dyn IntegrationFactory>> = Vec::new();
+    let mut factories: Vec<Arc<dyn IntegrationFactory<BuiltinObject>>> = Vec::new();
     if let Some(twitch) = wire_twitch(sub_actions, backend, bus, endpoints) {
         factories.push(Arc::new(twitch));
     }

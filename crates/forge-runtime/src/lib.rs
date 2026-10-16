@@ -22,6 +22,7 @@ mod event_log_writer;
 mod event_ring;
 mod first_chat_ledger;
 pub mod integration_gate;
+pub mod integration_supervisor;
 pub mod latest;
 mod latest_overlay_feed;
 pub mod live_viewers;
@@ -72,6 +73,11 @@ pub use engine_voice_ref::{EngineVoiceError, EngineVoiceRef};
 pub use event_log_bridge::spawn_event_log_bridge;
 pub use first_chat_ledger::FirstChatLedger;
 pub use integration_gate::IntegrationGate;
+pub use integration_supervisor::{
+    DEFAULT_TEARDOWN_GRACE, IntegrationFactory, IntegrationObjects, IntegrationSlot,
+    IntegrationSupervisor, LifecycleState, LifecycleStates, LifecycleWatch, RunningIntegration,
+    TaskGroup,
+};
 pub use latest::{
     LatestResetError, LatestValues, register_latest_sub_actions, spawn_latest_projector,
 };

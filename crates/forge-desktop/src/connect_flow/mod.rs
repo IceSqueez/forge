@@ -13,9 +13,9 @@ use gpui::{AnyElement, Context, EventEmitter, Rgba, Window, div, prelude::*, px}
 use tokio_util::sync::CancellationToken;
 
 use crate::async_bridge::{self, ErrorSink};
-use crate::integration_supervisor::IntegrationSlot;
 use crate::integrations::BuiltinObject;
 use forge_components::ActivePresentation;
+use forge_runtime::IntegrationSlot;
 
 use device_code::{TwitchDeviceState, TwitchFlowHandle};
 use local_callback::{KickFlowHandle, LocalCallbackFlowPhase, YoutubeFlowHandle};
@@ -30,9 +30,9 @@ pub struct ConnectFlowLaunch {
     pub display_name: String,
     pub rt_handle: tokio::runtime::Handle,
     pub credentials: Arc<dyn CredentialsRepo>,
-    pub twitch_slot: Option<IntegrationSlot>,
-    pub kick_slot: Option<IntegrationSlot>,
-    pub youtube_slot: Option<IntegrationSlot>,
+    pub twitch_slot: Option<IntegrationSlot<BuiltinObject>>,
+    pub kick_slot: Option<IntegrationSlot<BuiltinObject>>,
+    pub youtube_slot: Option<IntegrationSlot<BuiltinObject>>,
     pub endpoints: PlatformEndpoints,
 }
 
@@ -41,9 +41,9 @@ pub struct ConnectFlow {
     display_name: String,
     rt_handle: tokio::runtime::Handle,
     credentials: Arc<dyn CredentialsRepo>,
-    twitch_slot: Option<IntegrationSlot>,
-    kick_slot: Option<IntegrationSlot>,
-    youtube_slot: Option<IntegrationSlot>,
+    twitch_slot: Option<IntegrationSlot<BuiltinObject>>,
+    kick_slot: Option<IntegrationSlot<BuiltinObject>>,
+    youtube_slot: Option<IntegrationSlot<BuiltinObject>>,
     endpoints: PlatformEndpoints,
     phase: LocalCallbackFlowPhase,
     auth_url: Option<String>,

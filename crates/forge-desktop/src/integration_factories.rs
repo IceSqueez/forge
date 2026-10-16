@@ -7,7 +7,9 @@ use forge_platform_core::{
     ChatPlatform, PlatformEndpoints, RateLimiter, SectionIcon, TokenBucketRateLimiter,
 };
 use forge_registry::SubActionRegistry;
-use forge_runtime::EventBus;
+use forge_runtime::{
+    DEFAULT_TEARDOWN_GRACE, EventBus, IntegrationFactory, RunningIntegration, TaskGroup,
+};
 use forge_storage::{
     BanLedgerRepo, CredentialsRepo, DataProvider, SettingsRepo, SoundboardClipsRepo, StorageError,
     TriggerInstanceRepo, get_bool_setting, has_credentials_for,
@@ -19,7 +21,6 @@ use tokio::sync::mpsc;
 use crate::clip_hotkeys::clip_bindings_of;
 use crate::hotkey_bindings::persisted_hotkey_combos;
 use crate::hotkey_sync::HotkeyReconciler;
-use crate::integration_supervisor::{IntegrationFactory, RunningIntegration, TaskGroup};
 use crate::integrations::{
     BuiltinObject, ObsInstallSeed, VTubeInstallSeed, creds_of, kick_builtin_object, publisher,
     spawn_chat_send_bridge, spawn_connect, spawn_event_bridge, twitch_builtin_object,
@@ -33,7 +34,7 @@ const KICK_API_BUDGET_CAPACITY: u32 = 60;
 const KICK_API_BUDGET_WINDOW: Duration = Duration::from_secs(60);
 const KICK_POLLER_QUEUE_CAPACITY: usize = 256;
 
-fn idle_with_tasks(tasks: TaskGroup) -> RunningIntegration {
+fn idle_with_tasks(tasks: TaskGroup) -> RunningIntegration<BuiltinObject> {
     RunningIntegration::idle().with_teardown(Box::pin(async move { tasks.abort_all() }))
 }
 
@@ -98,16 +99,20 @@ pub(crate) fn wire_twitch(
 }
 
 #[async_trait]
-impl IntegrationFactory for TwitchFactory {
+impl IntegrationFactory<BuiltinObject> for TwitchFactory {
     fn id(&self) -> IntegrationId {
         forge_platform_twitch::TWITCH_INTEGRATION.id
+    }
+
+    fn teardown_grace(&self) -> Duration {
+        forge_platform_twitch::chat::SHUTDOWN_GRACE
     }
 
     async fn is_configured(&self) -> Result<bool, StorageError> {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
 
-    async fn start(&self) -> Result<RunningIntegration, String> {
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
         let stored = forge_platform_twitch::credentials::load(self.creds.as_ref())
             .await
             .ok()
@@ -267,16 +272,20 @@ pub(crate) fn wire_youtube(
 }
 
 #[async_trait]
-impl IntegrationFactory for YoutubeFactory {
+impl IntegrationFactory<BuiltinObject> for YoutubeFactory {
     fn id(&self) -> IntegrationId {
         forge_platform_youtube::YOUTUBE_INTEGRATION.id
+    }
+
+    fn teardown_grace(&self) -> Duration {
+        DEFAULT_TEARDOWN_GRACE
     }
 
     async fn is_configured(&self) -> Result<bool, StorageError> {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
 
-    async fn start(&self) -> Result<RunningIntegration, String> {
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
         let Some(stored) = self.manager.load().await.map_err(|e| e.to_string())? else {
             return Ok(RunningIntegration::idle());
         };
@@ -415,16 +424,20 @@ pub(crate) fn wire_kick(
 }
 
 #[async_trait]
-impl IntegrationFactory for KickFactory {
+impl IntegrationFactory<BuiltinObject> for KickFactory {
     fn id(&self) -> IntegrationId {
         forge_platform_kick::KICK_INTEGRATION.id
+    }
+
+    fn teardown_grace(&self) -> Duration {
+        DEFAULT_TEARDOWN_GRACE
     }
 
     async fn is_configured(&self) -> Result<bool, StorageError> {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
 
-    async fn start(&self) -> Result<RunningIntegration, String> {
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
         let chat_platform: Arc<dyn ChatPlatform> = Arc::clone(&self.platform) as _;
         let mut tasks = spawn_chat_send_bridge(
             Arc::clone(&self.bus),
@@ -524,16 +537,20 @@ impl ObsFactory {
 }
 
 #[async_trait]
-impl IntegrationFactory for ObsFactory {
+impl IntegrationFactory<BuiltinObject> for ObsFactory {
     fn id(&self) -> IntegrationId {
         forge_obs::OBS_INTEGRATION.id
+    }
+
+    fn teardown_grace(&self) -> Duration {
+        DEFAULT_TEARDOWN_GRACE
     }
 
     async fn is_configured(&self) -> Result<bool, StorageError> {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
 
-    async fn start(&self) -> Result<RunningIntegration, String> {
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
         let seed = self.seed.clone();
         let running = RunningIntegration::idle().with_teardown(Box::pin({
             let seed = seed.clone();
@@ -594,16 +611,20 @@ impl VTubeFactory {
 }
 
 #[async_trait]
-impl IntegrationFactory for VTubeFactory {
+impl IntegrationFactory<BuiltinObject> for VTubeFactory {
     fn id(&self) -> IntegrationId {
         forge_vtube::VTUBE_INTEGRATION.id
+    }
+
+    fn teardown_grace(&self) -> Duration {
+        DEFAULT_TEARDOWN_GRACE
     }
 
     async fn is_configured(&self) -> Result<bool, StorageError> {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
 
-    async fn start(&self) -> Result<RunningIntegration, String> {
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
         let seed = self.seed.clone();
         let running = RunningIntegration::idle().with_teardown(Box::pin({
             let seed = seed.clone();
@@ -664,16 +685,20 @@ impl DiscordFactory {
 }
 
 #[async_trait]
-impl IntegrationFactory for DiscordFactory {
+impl IntegrationFactory<BuiltinObject> for DiscordFactory {
     fn id(&self) -> IntegrationId {
         forge_discord::DISCORD_INTEGRATION.id
+    }
+
+    fn teardown_grace(&self) -> Duration {
+        DEFAULT_TEARDOWN_GRACE
     }
 
     async fn is_configured(&self) -> Result<bool, StorageError> {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
 
-    async fn start(&self) -> Result<RunningIntegration, String> {
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
         let client = Arc::clone(&self.client);
         Ok(RunningIntegration::idle().with_object(BuiltinObject {
             icon: SectionIcon::new("brand-discord"),
@@ -726,9 +751,13 @@ impl MidiFactory {
 }
 
 #[async_trait]
-impl IntegrationFactory for MidiFactory {
+impl IntegrationFactory<BuiltinObject> for MidiFactory {
     fn id(&self) -> IntegrationId {
         forge_midi::MIDI_INTEGRATION.id
+    }
+
+    fn teardown_grace(&self) -> Duration {
+        DEFAULT_TEARDOWN_GRACE
     }
 
     async fn is_configured(&self) -> Result<bool, StorageError> {
@@ -740,7 +769,7 @@ impl IntegrationFactory for MidiFactory {
             .any(|instance| self.owned_kinds.contains(&instance.kind_id)))
     }
 
-    async fn start(&self) -> Result<RunningIntegration, String> {
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
         let client = forge_midi::MidiClient::start_with_midir(
             forge_midi::MidiConfig::default(),
             publisher(&self.bus),
@@ -815,9 +844,13 @@ impl HotkeyFactory {
 }
 
 #[async_trait]
-impl IntegrationFactory for HotkeyFactory {
+impl IntegrationFactory<BuiltinObject> for HotkeyFactory {
     fn id(&self) -> IntegrationId {
         forge_hotkey::HOTKEY_INTEGRATION.id
+    }
+
+    fn teardown_grace(&self) -> Duration {
+        DEFAULT_TEARDOWN_GRACE
     }
 
     async fn is_configured(&self) -> Result<bool, StorageError> {
@@ -828,7 +861,7 @@ impl IntegrationFactory for HotkeyFactory {
         Ok(!clip_bindings_of(&self.clips.list().await?).is_empty())
     }
 
-    async fn start(&self) -> Result<RunningIntegration, String> {
+    async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, String> {
         let failures = self.client.enable().await.map_err(|e| e.to_string())?;
         if !failures.is_empty() {
             tracing::warn!(

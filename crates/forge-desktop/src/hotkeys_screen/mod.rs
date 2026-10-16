@@ -19,11 +19,12 @@ use crate::hotkey_bindings::{
 };
 use crate::hotkey_sync::HotkeyReconciler;
 use crate::hub_crumb::hub_crumb;
-use crate::integration_supervisor::IntegrationSlot;
+use crate::integrations::BuiltinObject;
 use crate::shortcut_overrides::{ShortcutOverrides, save_overrides};
 use crate::sidebar::NavRequested;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_runtime::IntegrationSlot;
 
 mod action_modal;
 mod app_row;
@@ -66,7 +67,7 @@ struct LastFired {
 pub struct HotkeysScreenView {
     client: Arc<HotkeyClient>,
     reconciler: Arc<HotkeyReconciler>,
-    engine: Option<IntegrationSlot>,
+    engine: Option<IntegrationSlot<BuiltinObject>>,
     backend: Arc<dyn DataProvider>,
     settings_repo: Arc<dyn SettingsRepo>,
     rt_handle: tokio::runtime::Handle,
@@ -91,7 +92,7 @@ pub struct HotkeysScreenView {
 impl HotkeysScreenView {
     pub fn new(
         reconciler: Arc<HotkeyReconciler>,
-        engine: Option<IntegrationSlot>,
+        engine: Option<IntegrationSlot<BuiltinObject>>,
         backend: Arc<dyn DataProvider>,
         settings_repo: Arc<dyn SettingsRepo>,
         bus: Arc<EventBus>,

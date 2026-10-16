@@ -1,8 +1,8 @@
 use forge_types::IntegrationId;
 
 use crate::integration_lifecycle::IntegrationLifecycle;
-use crate::integration_supervisor::LifecycleState;
 use crate::screen::Screen;
+use forge_runtime::LifecycleState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DetailRoute {

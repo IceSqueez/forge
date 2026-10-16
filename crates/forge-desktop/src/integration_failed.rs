@@ -14,12 +14,13 @@ use crate::hub_crumb::hub_crumb;
 use crate::integration_catalog::declaration_of;
 use crate::integration_disabled::{disclaimer_block, hero_card};
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
-use crate::integration_supervisor::{IntegrationSlot, LifecycleState};
+use crate::integrations::BuiltinObject;
 use crate::integrations_hub::card_status_badge;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_runtime::{IntegrationSlot, LifecycleState};
 
 const BODY_PAD_V: Pixels = px(18.0);
 const BODY_PAD_H: Pixels = px(22.0);
@@ -33,7 +34,7 @@ pub struct IntegrationFailedView {
     id: IntegrationId,
     declaration: Option<IntegrationDeclaration>,
     lifecycle: Entity<IntegrationLifecycle>,
-    slot: Option<IntegrationSlot>,
+    slot: Option<IntegrationSlot<BuiltinObject>>,
     rt_handle: tokio::runtime::Handle,
     _lifecycle_observer: Subscription,
 }
@@ -48,7 +49,7 @@ impl IntegrationFailedView {
     pub fn new(
         id: IntegrationId,
         lifecycle: Entity<IntegrationLifecycle>,
-        slot: Option<IntegrationSlot>,
+        slot: Option<IntegrationSlot<BuiltinObject>>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {

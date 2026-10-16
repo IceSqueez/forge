@@ -3,8 +3,8 @@ use std::sync::Arc;
 use forge_storage::{SettingsRepo, StorageError};
 
 use crate::integration_lifecycle::is_desired_on;
-use crate::integration_supervisor::LifecycleStates;
 use crate::screen::Screen;
+use forge_runtime::LifecycleStates;
 
 pub const FIRST_RUN_COMPLETED_KEY: &str = "integrations.first_run_completed";
 const COMPLETED: &str = "true";

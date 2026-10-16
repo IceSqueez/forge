@@ -11,10 +11,10 @@ use forge_runtime::{
 use forge_storage::{CredentialsKeyLoss, DataProvider, Language};
 
 use crate::audio_router::AudioRouter;
-use crate::integration_supervisor::IntegrationSupervisor;
-use crate::integrations::{BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed};
+use crate::integrations::{BuiltinObject, BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed};
 use crate::log_tail::LogTail;
 use crate::voice_gate::VoiceGateOwner;
+use forge_runtime::IntegrationSupervisor;
 
 #[allow(dead_code)]
 pub struct RuntimeHandles {
@@ -41,7 +41,7 @@ pub struct RuntimeHandles {
     pub stream_live: StreamLiveHandle,
     pub chat_history_retention: ChatHistoryRetentionHandle,
     pub builtins: BuiltinRegistry,
-    pub integrations: IntegrationSupervisor,
+    pub integrations: IntegrationSupervisor<BuiltinObject>,
     pub obs_install_seed: ObsInstallSeed,
     pub vtube_install_seed: VTubeInstallSeed,
     pub discord_client: Arc<forge_discord::DiscordClient>,

@@ -35,7 +35,6 @@ use forge_types::{LatestValueReader, Shared};
 
 use crate::audio_router::{AudioRouter, AudioRouterParts};
 use crate::clip_hotkeys::{HotkeySyncedClipsRepo, spawn_clip_hotkey_dispatcher};
-use crate::integration_supervisor::IntegrationSupervisor;
 use crate::integrations::build_integrations;
 use crate::log_tail::LogTail;
 use crate::overlay_build_failure::OverlayBuildFailure;
@@ -45,6 +44,7 @@ use crate::runtime_handles::RuntimeHandles;
 use crate::speak_boot::{build_speak_queue, build_speech_output};
 use crate::speak_bridge::SpeakBridge;
 use crate::voice_gate::{VoiceGateOwner, config_from_settings};
+use forge_runtime::IntegrationSupervisor;
 
 pub enum BootFailure {
     UpgradeRequired { expected: u32, found: u32 },
@@ -409,7 +409,7 @@ pub async fn build_runtime(
         integrations.factories,
         Arc::clone(&backend) as Arc<dyn SettingsRepo>,
         action_engine.integration_gate().clone(),
-        integrations.builtins.clone(),
+        Arc::new(integrations.builtins.clone()),
         live_viewers.clone(),
     );
     donations.recover_unannounced().await;

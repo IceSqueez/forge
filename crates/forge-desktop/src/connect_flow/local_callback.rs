@@ -16,8 +16,8 @@ use gpui::{
 use tokio_util::sync::CancellationToken;
 
 use super::{ConnectFlow, status_dot};
-use crate::integration_supervisor::IntegrationSlot;
 use crate::integrations::BuiltinObject;
+use forge_runtime::IntegrationSlot;
 
 pub(super) type YoutubeFlowHandle =
     Arc<tokio::sync::Mutex<Option<forge_platform_youtube::GoogleAuthFlow>>>;
@@ -211,7 +211,7 @@ impl ConnectFlow {
 
     fn activate(
         &mut self,
-        slot: Option<IntegrationSlot>,
+        slot: Option<IntegrationSlot<BuiltinObject>>,
         platform_name: &'static str,
         cx: &mut Context<Self>,
     ) {

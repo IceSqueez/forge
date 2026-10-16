@@ -27,10 +27,10 @@ use super::viewer_actions::{ViewerAction, ViewerTarget};
 use crate::async_bridge::{self, EventBatch};
 use crate::integration_disabled::disclaimer_line;
 use crate::integration_lifecycle::IntegrationLifecycle;
-use crate::integration_supervisor::LifecycleState;
 use crate::integrations::BuiltinRegistry;
 use crate::scheduled_run_labels::system_offset_at;
 use forge_components::ActivePresentation;
+use forge_runtime::LifecycleState;
 
 const BAN_RELIST_DEBOUNCE: Duration = Duration::from_millis(750);
 pub(crate) const UNBAN_RELIST_SUPPRESSION: Duration = Duration::from_secs(5);
@@ -953,10 +953,10 @@ pub(super) mod tests {
     use crate::i18n::{install_language, message_in};
     use crate::integration_disabled::disclaimer_line;
     use crate::integration_lifecycle::IntegrationLifecycle;
-    use crate::integration_supervisor::LifecycleState;
     use crate::integrations::{BuiltinObject, BuiltinRegistry};
     use crate::test_support::{StubActions, StubEventLog, pump, runtime, switch_lifecycle};
     use crate::unavailable_builtin::unavailable_builtin;
+    use forge_runtime::LifecycleState;
 
     const UNBAN_KIND: &str = "twitch.moderation.unban_user";
     const SETTLE_ROUNDS: usize = 4;

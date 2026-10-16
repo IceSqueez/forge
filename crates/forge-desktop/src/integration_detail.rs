@@ -40,7 +40,6 @@ use crate::in_flight_steps::InFlightSteps;
 use crate::integration_catalog::{declaration_of, is_donation_service, look_of};
 use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
 use crate::integration_quick_actions::accent_color;
-use crate::integration_supervisor::IntegrationSlot;
 use crate::integrations::{BuiltinObject, ObsInstallSeed, VTubeInstallSeed};
 use crate::obs_credentials_form::ObsConnected;
 use crate::obs_settings_modal::{ObsSettingsModal, ObsSettingsModalEvent};
@@ -51,6 +50,7 @@ use crate::sidebar::NavRequested;
 use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_runtime::IntegrationSlot;
 
 struct ActiveConnect {
     view: Entity<ConnectFlow>,
@@ -77,10 +77,10 @@ pub struct IntegrationDetail {
     history: Arc<dyn HistoryRepo>,
     trigger_registry: Arc<TriggerRegistry>,
     bus: Arc<dyn EventPublisher>,
-    twitch_slot: Option<IntegrationSlot>,
+    twitch_slot: Option<IntegrationSlot<BuiltinObject>>,
     endpoints: PlatformEndpoints,
-    kick_slot: Option<IntegrationSlot>,
-    youtube_slot: Option<IntegrationSlot>,
+    kick_slot: Option<IntegrationSlot<BuiltinObject>>,
+    youtube_slot: Option<IntegrationSlot<BuiltinObject>>,
     obs_install_seed: ObsInstallSeed,
     vtube_install_seed: VTubeInstallSeed,
     connect: Option<ActiveConnect>,
@@ -146,9 +146,9 @@ impl IntegrationDetail {
         bus: Arc<dyn EventPublisher>,
         event_bus: Arc<EventBus>,
         live_viewers: LiveViewerAggregatorHandle,
-        twitch_slot: Option<IntegrationSlot>,
-        kick_slot: Option<IntegrationSlot>,
-        youtube_slot: Option<IntegrationSlot>,
+        twitch_slot: Option<IntegrationSlot<BuiltinObject>>,
+        kick_slot: Option<IntegrationSlot<BuiltinObject>>,
+        youtube_slot: Option<IntegrationSlot<BuiltinObject>>,
         endpoints: PlatformEndpoints,
         obs_install_seed: ObsInstallSeed,
         vtube_install_seed: VTubeInstallSeed,
@@ -942,7 +942,7 @@ impl IntegrationDetail {
         self.open_connect_flow(platform, cx);
     }
 
-    fn slot_of(&self, platform: PlatformId) -> Option<IntegrationSlot> {
+    fn slot_of(&self, platform: PlatformId) -> Option<IntegrationSlot<BuiltinObject>> {
         match platform {
             PlatformId::Twitch => self.twitch_slot.clone(),
             PlatformId::YouTube => self.youtube_slot.clone(),

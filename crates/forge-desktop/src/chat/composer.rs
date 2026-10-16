@@ -13,8 +13,8 @@ use super::send_plan::{
 };
 use crate::home_stats::HomeStats;
 use crate::integration_lifecycle::IntegrationLifecycle;
-use crate::integration_supervisor::LifecycleState;
 use forge_components::PushToast;
+use forge_runtime::LifecycleState;
 
 pub struct ChatComposer {
     input: Entity<InputBar>,

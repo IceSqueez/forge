@@ -17,12 +17,13 @@ use gpui::{
 use crate::integration_catalog::{declaration_of, disclaimer_of, look_of};
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
 use crate::integration_references::IntegrationReferences;
-use crate::integration_supervisor::{IntegrationSlot, LifecycleState};
+use crate::integrations::BuiltinObject;
 use crate::integrations_hub::{card_status_badge, load_references};
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use forge_components::ActivePresentation;
 use forge_components::grow_cell;
+use forge_runtime::{IntegrationSlot, LifecycleState};
 
 const BODY_PAD_V: Pixels = px(18.0);
 const BODY_PAD_H: Pixels = px(22.0);
@@ -59,7 +60,7 @@ const KEPT_ROW_GAP: Pixels = px(8.0);
 const KEPT_ICON: Pixels = px(12.0);
 
 pub struct DisabledLaunch {
-    pub slot: Option<IntegrationSlot>,
+    pub slot: Option<IntegrationSlot<BuiltinObject>>,
     pub backend: Arc<dyn DataProvider>,
     pub sub_actions: Arc<SubActionRegistry>,
     pub triggers: Arc<TriggerRegistry>,

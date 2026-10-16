@@ -50,6 +50,13 @@ body:
     validations:
       required: true
   - type: textarea
+    id: system-info
+    attributes:
+      label: System info
+      description: In Forge, open Settings, About and copy the system info, or use "Report a problem" to fill this in.
+    validations:
+      required: false
+  - type: textarea
     id: logs
     attributes:
       label: Relevant log output

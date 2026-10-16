@@ -1,0 +1,47 @@
+name: Crash report
+description: Forge closed unexpectedly - send the details it saved
+title: "Crash: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a crash! When you use "Report" in Forge, the fields below are filled in for you. Please check them for anything you do not want to share before submitting. The full crash text is also saved as `crash.txt` in the report folder Forge opened.
+  - type: input
+    id: version
+    attributes:
+      label: Forge version
+      description: Version and build commit of the Forge that crashed.
+      placeholder: "v0.6.2 (abc1234)"
+    validations:
+      required: true
+  - type: textarea
+    id: what-were-you-doing
+    attributes:
+      label: What were you doing?
+      description: What you were doing in Forge (or on stream) right before it closed.
+      placeholder: I clicked Save on an action while the speak queue was playing.
+    validations:
+      required: false
+  - type: textarea
+    id: crash
+    attributes:
+      label: Crash details
+      description: The crash message, where it happened, the thread and the time.
+    validations:
+      required: true
+  - type: textarea
+    id: system-info
+    attributes:
+      label: System info
+      description: Operating system, hardware and audio setup at the time of the crash.
+    validations:
+      required: false
+  - type: textarea
+    id: backtrace
+    attributes:
+      label: Backtrace
+      description: The call stack at the moment of the crash. A long backtrace may be shortened here; attach `crash.txt` from the report folder for the full text.
+      render: shell
+    validations:
+      required: false

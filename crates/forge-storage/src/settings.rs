@@ -58,6 +58,7 @@ pub mod reserved_keys {
     pub const SOUNDBOARD_ALSO_HEADPHONES: &str = "soundboard.also_headphones";
     pub const DIAGNOSTICS_LOG_LEVEL: &str = "diagnostics.log_level";
     pub const STAY_AWAKE: &str = "app.stay_awake";
+    pub const WINDOW_PLACEMENT: &str = "app.window_placement";
     pub const UPDATES_ROLLED_BACK_VERSION: &str = "updates.rolled_back_version";
     pub const UPDATES_LEFTOVER_INSTALL_NOTICED: &str = "updates.leftover_install_noticed";
     pub const CREDENTIALS_KEY_LOSS: &str = "credentials.key_loss_stranded";
@@ -141,7 +142,8 @@ pub mod disclosure {
             | reserved_keys::KEYBOARD_SHORTCUTS
             | reserved_keys::PICKER_FAVORITES_SUB_ACTIONS
             | reserved_keys::PICKER_FAVORITES_TRIGGERS
-            | reserved_keys::PICKER_FAVORITES_ICONS => Kind,
+            | reserved_keys::PICKER_FAVORITES_ICONS
+            | reserved_keys::WINDOW_PLACEMENT => Kind,
 
             reserved_keys::SERVER_BIND_ADDRESS
             | reserved_keys::SERVER_OVERLAY_ROOT

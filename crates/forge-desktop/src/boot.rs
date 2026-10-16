@@ -29,7 +29,7 @@ use forge_soundboard::{
 use forge_storage::paths;
 use forge_storage::{
     CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo, StorageError,
-    UserGlobalsRepo, reserved_keys,
+    UserGlobalsRepo, get_json_setting, reserved_keys,
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{LatestValueReader, Shared};
@@ -44,6 +44,7 @@ use crate::runtime_handles::RuntimeHandles;
 use crate::speak_boot::{build_speak_queue, build_speech_output};
 use crate::speak_bridge::SpeakBridge;
 use crate::voice_gate::{VoiceGateOwner, config_from_settings};
+use crate::window_placement::WindowPlacement;
 use forge_hotkey::HotkeySyncedClipsRepo;
 use forge_runtime::IntegrationSupervisor;
 use forge_soundboard::spawn_clip_hotkey_dispatcher;
@@ -70,6 +71,7 @@ pub struct PersistedAppearance {
 
 pub struct BootStorage {
     pub appearance: PersistedAppearance,
+    pub window_placement: Option<WindowPlacement>,
     pub backend: Option<Arc<dyn DataProvider>>,
 }
 
@@ -79,13 +81,16 @@ pub fn open_boot_storage(rt_handle: &tokio::runtime::Handle) -> BootStorage {
         let opened = match open_backend().await {
             Ok(backend) => {
                 let appearance = load_appearance(backend.as_ref()).await;
-                (appearance, Some(backend))
+                let window_placement =
+                    get_json_setting(backend.as_ref(), reserved_keys::WINDOW_PLACEMENT).await;
+                (appearance, window_placement, Some(backend))
             }
-            Err(_) => (PersistedAppearance::default(), None),
+            Err(_) => (PersistedAppearance::default(), None, None),
         };
         let _ = tx.send(opened);
     });
-    let (appearance, backend) = rx.recv_timeout(APPEARANCE_READ_BUDGET).unwrap_or_default();
+    let (appearance, window_placement, backend) =
+        rx.recv_timeout(APPEARANCE_READ_BUDGET).unwrap_or_default();
     tracing::info!(
         theme = ?appearance.theme,
         density = ?appearance.density,
@@ -93,6 +98,7 @@ pub fn open_boot_storage(rt_handle: &tokio::runtime::Handle) -> BootStorage {
     );
     BootStorage {
         appearance,
+        window_placement,
         backend,
     }
 }

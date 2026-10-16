@@ -153,6 +153,7 @@ mod voice_gate;
 mod vtube_catalog_options;
 mod vtube_connect;
 mod vtube_connect_form;
+mod window_placement;
 mod window_presence;
 
 use forge_components::{
@@ -161,8 +162,8 @@ use forge_components::{
 };
 use forge_storage::paths;
 use gpui::{
-    App, AppContext, Bounds, Pixels, QuitMode, SharedString, TitlebarOptions, WindowBounds,
-    WindowOptions, point, px, size,
+    App, AppContext, Pixels, QuitMode, SharedString, TitlebarOptions, WindowOptions, point, px,
+    size,
 };
 
 use crate::actions::{bind_list_keys, register_shell_key_bindings};
@@ -426,12 +427,13 @@ fn main() {
             )])]);
         }
 
+        let (window_bounds, display_id) = crate::window_placement::initial_window_bounds(
+            boot_storage.window_placement.as_ref(),
+            cx,
+        );
         let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-                None,
-                size(px(1080.0), px(720.0)),
-                cx,
-            ))),
+            window_bounds: Some(window_bounds),
+            display_id,
             titlebar: Some(TitlebarOptions {
                 title: Some(SharedString::from("forge")),
                 appears_transparent: true,
@@ -449,8 +451,20 @@ fn main() {
         let log_tail_for_root = log_tail.clone();
         let endpoints_for_root = endpoints.clone();
         let initial_screen_for_root = initial_screen.clone();
+        let placement_storage = boot_storage.backend.clone().map(|backend| {
+            (
+                backend,
+                rt_handle.clone(),
+                boot_storage.window_placement.clone(),
+            )
+        });
         let window = match cx.open_window(options, move |window, cx| {
             crate::window_presence::track_window_presence(window, cx);
+            if let Some((backend, rt_handle, persisted)) = placement_storage {
+                crate::window_placement::track_window_placement(
+                    window, backend, rt_handle, persisted, cx,
+                );
+            }
             cx.new(|cx| {
                 RootView::new(
                     rt_handle_for_root.clone(),

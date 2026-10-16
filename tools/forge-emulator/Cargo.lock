@@ -1282,7 +1282,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "forge-audio"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "cpal",
@@ -1300,7 +1300,7 @@ dependencies = [
 
 [[package]]
 name = "forge-discord"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "forge-events",
@@ -1320,7 +1320,7 @@ dependencies = [
 
 [[package]]
 name = "forge-donatello"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "forge-platform-core",
@@ -1381,7 +1381,7 @@ dependencies = [
 
 [[package]]
 name = "forge-events"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "forge-types",
  "serde",
@@ -1393,7 +1393,7 @@ dependencies = [
 
 [[package]]
 name = "forge-monobank"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "forge-platform-core",
@@ -1412,7 +1412,7 @@ dependencies = [
 
 [[package]]
 name = "forge-obs"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "forge-events",
@@ -1434,7 +1434,7 @@ dependencies = [
 
 [[package]]
 name = "forge-overlay"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "forge-registry",
  "forge-types",
@@ -1447,7 +1447,7 @@ dependencies = [
 
 [[package]]
 name = "forge-platform-core"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -1468,7 +1468,7 @@ dependencies = [
 
 [[package]]
 name = "forge-platform-kick"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "forge-events",
@@ -1493,7 +1493,7 @@ dependencies = [
 
 [[package]]
 name = "forge-platform-twitch"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "forge-events",
@@ -1518,7 +1518,7 @@ dependencies = [
 
 [[package]]
 name = "forge-platform-youtube"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "forge-events",
@@ -1540,7 +1540,7 @@ dependencies = [
 
 [[package]]
 name = "forge-registry"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "forge-events",
@@ -1553,7 +1553,7 @@ dependencies = [
 
 [[package]]
 name = "forge-runtime"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "arboard",
  "arc-swap",
@@ -1586,7 +1586,7 @@ dependencies = [
 
 [[package]]
 name = "forge-script"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "forge-events",
@@ -1604,7 +1604,7 @@ dependencies = [
 
 [[package]]
 name = "forge-server"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "arc-swap",
  "axum",
@@ -1631,7 +1631,7 @@ dependencies = [
 
 [[package]]
 name = "forge-storage"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "directories",
@@ -1648,7 +1648,7 @@ dependencies = [
 
 [[package]]
 name = "forge-storage-sqlite"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "aes-gcm",
  "async-trait",
@@ -1671,7 +1671,7 @@ dependencies = [
 
 [[package]]
 name = "forge-tts-core"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "forge-audio",
@@ -1683,7 +1683,7 @@ dependencies = [
 
 [[package]]
 name = "forge-tts-pipeline"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "forge-types",
  "lingua",
@@ -1697,7 +1697,7 @@ dependencies = [
 
 [[package]]
 name = "forge-types"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1708,7 +1708,7 @@ dependencies = [
 
 [[package]]
 name = "forge-voice"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "forge-tts-core",
  "forge-tts-pipeline",
@@ -1723,7 +1723,7 @@ dependencies = [
 
 [[package]]
 name = "forge-vtube"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "forge-events",

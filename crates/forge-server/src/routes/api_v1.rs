@@ -363,10 +363,10 @@ mod tests {
 
     #[tokio::test]
     async fn get_info_with_bearer_returns_200_with_version() {
-        let (handle, addr) = make_test_server(false, "tok").await;
+        let (handle, addr) = make_test_server(false, "fg_tok").await;
         let resp = reqwest::Client::new()
             .get(format!("http://{addr}/api/v1/info"))
-            .header("Authorization", "Bearer tok")
+            .header("Authorization", "Bearer fg_tok")
             .send()
             .await
             .expect("request");
@@ -378,7 +378,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_info_without_bearer_returns_401_when_reads_required() {
-        let (handle, addr) = make_test_server(true, "tok").await;
+        let (handle, addr) = make_test_server(true, "fg_tok").await;
         let resp = reqwest::get(format!("http://{addr}/api/v1/info"))
             .await
             .expect("request");
@@ -388,7 +388,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_info_without_bearer_returns_200_when_reads_not_required() {
-        let (handle, addr) = make_test_server(false, "tok").await;
+        let (handle, addr) = make_test_server(false, "fg_tok").await;
         let resp = reqwest::get(format!("http://{addr}/api/v1/info"))
             .await
             .expect("request");
@@ -400,10 +400,10 @@ mod tests {
 
     #[tokio::test]
     async fn get_globals_with_bearer_returns_200() {
-        let (handle, addr) = make_test_server(false, "tok").await;
+        let (handle, addr) = make_test_server(false, "fg_tok").await;
         let resp = reqwest::Client::new()
             .get(format!("http://{addr}/api/v1/globals"))
-            .header("Authorization", "Bearer tok")
+            .header("Authorization", "Bearer fg_tok")
             .send()
             .await
             .expect("request");
@@ -415,10 +415,10 @@ mod tests {
 
     #[tokio::test]
     async fn post_set_global_with_bearer_returns_200() {
-        let (handle, addr) = make_test_server(false, "tok").await;
+        let (handle, addr) = make_test_server(false, "fg_tok").await;
         let resp = reqwest::Client::new()
             .post(format!("http://{addr}/api/v1/globals/foo"))
-            .header("Authorization", "Bearer tok")
+            .header("Authorization", "Bearer fg_tok")
             .json(&serde_json::json!({ "value": 42 }))
             .send()
             .await
@@ -429,7 +429,7 @@ mod tests {
 
     #[tokio::test]
     async fn post_set_global_without_bearer_returns_401() {
-        let (handle, addr) = make_test_server(false, "tok").await;
+        let (handle, addr) = make_test_server(false, "fg_tok").await;
         let resp = reqwest::Client::new()
             .post(format!("http://{addr}/api/v1/globals/foo"))
             .json(&serde_json::json!({ "value": 42 }))

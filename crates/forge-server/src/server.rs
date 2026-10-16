@@ -961,7 +961,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn post_without_auth_returns_401() {
-        let creds = MemCreds::with_token("secret-token");
+        let creds = MemCreds::with_token("fg_secret-token");
         let (handle, addr) = make_server(false, creds).await;
         let url = format!("http://{}/api/v1/actions/test-id:do", addr);
         let resp = reqwest::Client::new()
@@ -977,12 +977,12 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn post_with_valid_bearer_passes_auth() {
-        let creds = MemCreds::with_token("secret-token");
+        let creds = MemCreds::with_token("fg_secret-token");
         let (handle, addr) = make_server(false, creds).await;
         let url = format!("http://{}/api/v1/actions/test-id:do", addr);
         let resp = reqwest::Client::new()
             .post(&url)
-            .header("Authorization", "Bearer secret-token")
+            .header("Authorization", "Bearer fg_secret-token")
             .send()
             .await
             .expect("HTTP request");
@@ -995,7 +995,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn post_with_wrong_bearer_returns_401() {
-        let creds = MemCreds::with_token("secret-token");
+        let creds = MemCreds::with_token("fg_secret-token");
         let (handle, addr) = make_server(false, creds).await;
         let url = format!("http://{}/api/v1/actions/test-id:do", addr);
         let resp = reqwest::Client::new()
@@ -1010,7 +1010,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn get_without_auth_returns_401_when_reads_required() {
-        let creds = MemCreds::with_token("secret-token");
+        let creds = MemCreds::with_token("fg_secret-token");
         let (handle, addr) = make_server(true, creds).await;
         let url = format!("http://{}/api/v1/info", addr);
         let resp = reqwest::get(&url).await.expect("HTTP request");
@@ -1020,12 +1020,12 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn get_with_valid_auth_passes_when_reads_required() {
-        let creds = MemCreds::with_token("secret-token");
+        let creds = MemCreds::with_token("fg_secret-token");
         let (handle, addr) = make_server(true, creds).await;
         let url = format!("http://{}/api/v1/info", addr);
         let resp = reqwest::Client::new()
             .get(&url)
-            .header("Authorization", "Bearer secret-token")
+            .header("Authorization", "Bearer fg_secret-token")
             .send()
             .await
             .expect("HTTP request");
@@ -1035,13 +1035,13 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn token_regenerate_rejects_old_and_accepts_new() {
-        let creds = MemCreds::with_token("old-token");
+        let creds = MemCreds::with_token("fg_old-token");
         let (handle, addr, auth) = make_server_with_shared_auth(false, Arc::clone(&creds)).await;
         let url = format!("http://{}/api/v1/actions/test-id:do", addr);
 
         let resp = reqwest::Client::new()
             .post(&url)
-            .header("Authorization", "Bearer old-token")
+            .header("Authorization", "Bearer fg_old-token")
             .send()
             .await
             .expect("request");
@@ -1054,7 +1054,7 @@ pub(crate) mod tests {
 
         let resp = reqwest::Client::new()
             .post(&url)
-            .header("Authorization", "Bearer old-token")
+            .header("Authorization", "Bearer fg_old-token")
             .send()
             .await
             .expect("request");
@@ -1552,7 +1552,7 @@ pub(crate) mod tests {
     use axum::extract::ws::close_code;
     use tokio_tungstenite::tungstenite::Message as ClientMessage;
 
-    const BEARER_TOKEN: &str = "bearer-under-test";
+    const BEARER_TOKEN: &str = "fg_bearer-under-test";
     const FOREIGN_HOST: &str = "evil.example";
     const ADDED_ORIGIN_HOST: &str = "dash.test";
     const PRE_AUTH_LIMIT: usize = 16 * 1024;

@@ -152,9 +152,90 @@ mod tests {
     use forge_storage::StorageError;
     use forge_storage::credentials::MockCredentialsRepo;
 
-    use super::{AuthState, masked_token};
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
-    const FIRST_TOKEN: &str = "first-token";
+    use super::{AuthState, TOKEN_BYTE_LEN, TOKEN_PREFIX, generate_token, masked_token};
+
+    const FIRST_TOKEN: &str = "fg_first-token";
+
+    type Slot = Arc<Mutex<Option<String>>>;
+    type WriteLog = Arc<Mutex<Vec<String>>>;
+
+    fn slot_backed_repo(initial: Option<&str>) -> (MockCredentialsRepo, Slot, WriteLog) {
+        let slot: Slot = Arc::new(Mutex::new(initial.map(str::to_owned)));
+        let writes: WriteLog = Arc::new(Mutex::new(Vec::new()));
+        let mut creds = MockCredentialsRepo::new();
+        let read = Arc::clone(&slot);
+        creds
+            .expect_load()
+            .returning(move |_| Ok(read.lock().expect("lock").clone()));
+        let write = Arc::clone(&slot);
+        let log = Arc::clone(&writes);
+        creds.expect_store().returning(move |_, token| {
+            *write.lock().expect("lock") = Some(token.to_owned());
+            log.lock().expect("lock").push(token.to_owned());
+            Ok(())
+        });
+        (creds, slot, writes)
+    }
+
+    #[test]
+    fn generated_token_carries_the_prefix_and_a_url_safe_body_of_the_full_entropy_length() {
+        let token = generate_token();
+
+        let body = token.strip_prefix(TOKEN_PREFIX).expect("prefix");
+        let decoded = URL_SAFE_NO_PAD.decode(body).expect("url-safe no-pad body");
+        assert_eq!(decoded.len(), TOKEN_BYTE_LEN);
+    }
+
+    #[tokio::test]
+    async fn load_keeps_a_stored_prefixed_token_and_writes_nothing() {
+        let (creds, _slot, writes) = slot_backed_repo(Some("fg_already-issued"));
+
+        let auth = AuthState::load(false, &creds).await.expect("load");
+
+        assert!(auth.verify("fg_already-issued").await);
+        assert!(writes.lock().expect("lock").is_empty());
+    }
+
+    #[tokio::test]
+    async fn load_replaces_an_unprefixed_stored_token_and_rejects_the_old_value() {
+        let (creds, slot, writes) = slot_backed_repo(Some("legacy-unprefixed"));
+
+        let auth = AuthState::load(false, &creds).await.expect("load");
+
+        let persisted = slot.lock().expect("lock").clone().expect("persisted");
+        assert!(persisted.starts_with(TOKEN_PREFIX));
+        assert_eq!(writes.lock().expect("lock").len(), 1);
+        assert!(auth.verify(&persisted).await);
+        assert!(!auth.verify("legacy-unprefixed").await);
+    }
+
+    #[tokio::test]
+    async fn load_with_nothing_stored_mints_and_persists_a_prefixed_token() {
+        let (creds, slot, writes) = slot_backed_repo(None);
+
+        let auth = AuthState::load(false, &creds).await.expect("load");
+
+        let persisted = slot.lock().expect("lock").clone().expect("persisted");
+        assert!(persisted.starts_with(TOKEN_PREFIX));
+        assert_eq!(writes.lock().expect("lock").len(), 1);
+        assert!(auth.verify(&persisted).await);
+    }
+
+    #[tokio::test]
+    async fn regenerated_token_is_prefixed_and_survives_a_fresh_load() {
+        let (creds, _slot, writes) = slot_backed_repo(Some(FIRST_TOKEN));
+        let auth = AuthState::load(false, &creds).await.expect("load");
+
+        let regenerated = auth.regenerate(&creds).await.expect("regenerate");
+
+        assert!(regenerated.starts_with(TOKEN_PREFIX));
+        let reloaded = AuthState::load(false, &creds).await.expect("reload");
+        assert!(reloaded.verify(&regenerated).await);
+        assert!(!reloaded.verify(FIRST_TOKEN).await);
+        assert_eq!(writes.lock().expect("lock").as_slice(), [regenerated]);
+    }
 
     #[tokio::test]
     async fn load_treats_an_undecryptable_stored_bearer_as_absent_and_mints_a_working_token() {
@@ -254,6 +335,24 @@ mod tests {
         let masked = masked_token("fg_supersecretvalue9c4a");
         assert!(masked.ends_with("9c4a"), "masked = {masked}");
         assert!(!masked.contains("supersecret"), "masked = {masked}");
+    }
+
+    #[test]
+    fn masked_generated_token_shows_the_prefix_and_last_four_but_never_the_body() {
+        let token = generate_token();
+        let body = token.strip_prefix(TOKEN_PREFIX).expect("prefix");
+
+        let masked = masked_token(&token);
+
+        assert!(masked.starts_with("fg_•••••"), "masked = {masked}");
+        assert!(
+            masked.ends_with(&token[token.len() - 4..]),
+            "masked = {masked}"
+        );
+        assert!(
+            !masked.contains(&body[..body.len() - 4]),
+            "masked = {masked}"
+        );
     }
 
     #[test]

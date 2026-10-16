@@ -666,7 +666,8 @@ fn level_color(level: Level, palette: &ForgePalette) -> Rgba {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::{Bundle, LogLevel, StatementTone, export_statement, level_label_key};
+    use super::{Bundle, LogLevel, export_statement, level_label_key};
+    use crate::bundle_preview::StatementTone;
     use crate::log_level::SELECTABLE;
 
     #[test]

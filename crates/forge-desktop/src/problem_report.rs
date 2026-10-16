@@ -492,3 +492,170 @@ fn raise_crash_toast(
         Duration::ZERO,
     );
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::fs;
+    use std::path::PathBuf;
+
+    use forge_types::LogLevel;
+    use time::{Date, Month, OffsetDateTime, Time};
+
+    use super::{
+        ReportDraft, ReportFolderContents, ReportSubject, SYSTEM_INFO_FILE_NAME,
+        report_folder_name, write_report_folder,
+    };
+    use crate::crash_record::{CrashRecord, PendingCrash};
+    use crate::diagnostic_bundle::{BUNDLE_FILE_NAME, Bundle};
+    use crate::issue_link::{CRASH_REPORT_FILE_NAME, FIELD_VERSION, ISSUE_URL_MAX_BYTES};
+    use crate::system_info::{HostFacts, IdentityScrubber, SystemInfo, WindowFacts};
+    use crate::update_check::REPO_URL;
+
+    fn contents(crash_text: Option<&str>) -> ReportFolderContents {
+        ReportFolderContents {
+            bundle_text: "bundle".to_owned(),
+            system_info: "OS: Arch Linux".to_owned(),
+            crash_text: crash_text.map(str::to_owned),
+        }
+    }
+
+    fn system_info() -> SystemInfo {
+        SystemInfo {
+            forge_version: "0.6.2".to_owned(),
+            build_commit: "abc1234".to_owned(),
+            release_build: true,
+            window: WindowFacts {
+                gpu: None,
+                displays: Vec::new(),
+                scale_factor: None,
+            },
+            host: HostFacts {
+                install: None,
+                os_name: None,
+                os_version: None,
+                kernel: None,
+                cpu_model: None,
+                logical_cores: None,
+                total_memory_bytes: None,
+                audio_outputs: None,
+                data_dir_bytes: None,
+                identity: IdentityScrubber::default(),
+            },
+        }
+    }
+
+    fn bundle() -> Bundle {
+        Bundle {
+            text: "bundle".to_owned(),
+            script_lines: 0,
+            command_lines: 0,
+            elided_bytes: 0,
+        }
+    }
+
+    fn sorted_names(folder: &std::path::Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(folder)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn report_folder_name_is_a_zero_padded_utc_timestamp() {
+        let now = OffsetDateTime::new_utc(
+            Date::from_calendar_date(2026, Month::January, 2).unwrap(),
+            Time::from_hms(3, 4, 5).unwrap(),
+        );
+        assert_eq!(report_folder_name(now), "report-20260102-030405");
+    }
+
+    #[test]
+    fn crash_report_folder_holds_bundle_system_info_and_crash_text() {
+        let temp = tempfile::tempdir().unwrap();
+        let folder = temp.path().join("reports").join("report-1");
+        let written = write_report_folder(&folder, &contents(Some("crash text"))).unwrap();
+        assert_eq!(written, folder);
+        assert_eq!(
+            fs::read_to_string(folder.join(CRASH_REPORT_FILE_NAME)).unwrap(),
+            "crash text"
+        );
+        let mut expected = vec![
+            BUNDLE_FILE_NAME.to_owned(),
+            CRASH_REPORT_FILE_NAME.to_owned(),
+            SYSTEM_INFO_FILE_NAME.to_owned(),
+        ];
+        expected.sort();
+        assert_eq!(sorted_names(&folder), expected);
+    }
+
+    #[test]
+    fn problem_report_folder_has_no_crash_text() {
+        let temp = tempfile::tempdir().unwrap();
+        let folder = temp.path().join("report-1");
+        write_report_folder(&folder, &contents(None)).unwrap();
+        let mut expected = vec![
+            BUNDLE_FILE_NAME.to_owned(),
+            SYSTEM_INFO_FILE_NAME.to_owned(),
+        ];
+        expected.sort();
+        assert_eq!(sorted_names(&folder), expected);
+    }
+
+    #[test]
+    fn write_report_folder_fails_when_the_folder_path_is_a_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let blocked: PathBuf = temp.path().join("report-1");
+        fs::write(&blocked, "not a folder").unwrap();
+        assert!(write_report_folder(&blocked, &contents(None)).is_err());
+    }
+
+    #[test]
+    fn crash_draft_fits_an_oversized_backtrace_into_the_issue_url() {
+        let backtrace = (0..2000)
+            .map(|frame| format!("{frame:>4}: forge::module_{frame}::function_{frame}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let pending = PendingCrash {
+            path: PathBuf::from("crash.json"),
+            record: CrashRecord {
+                message: "boom".to_owned(),
+                location: None,
+                thread: None,
+                backtrace,
+                forge_version: "0.6.2".to_owned(),
+                build_commit: "abc1234".to_owned(),
+                occurred_at_utc: "2026-10-16T10:00:00Z".to_owned(),
+                process_id: 7,
+                system_info: None,
+            },
+        };
+        let draft = ReportDraft::new(
+            ReportSubject::Crash(Box::new(pending)),
+            bundle(),
+            LogLevel::Info,
+            &system_info(),
+        );
+        assert!(draft.form.url(REPO_URL).len() <= ISSUE_URL_MAX_BYTES);
+    }
+
+    #[test]
+    fn problem_draft_prefills_the_running_forge_version() {
+        let draft = ReportDraft::new(
+            ReportSubject::Problem,
+            bundle(),
+            LogLevel::Info,
+            &system_info(),
+        );
+        let version = draft
+            .form
+            .fields
+            .iter()
+            .find(|field| field.id == FIELD_VERSION)
+            .unwrap();
+        assert_eq!(version.value, "v0.6.2 (abc1234)");
+    }
+}

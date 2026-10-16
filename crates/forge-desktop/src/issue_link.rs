@@ -153,3 +153,196 @@ pub fn backtrace_truncated_marker() -> String {
 pub fn encode(text: &str) -> String {
     utf8_percent_encode(text, NON_ALPHANUMERIC).to_string()
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::path::Path;
+
+    use percent_encoding::percent_decode_str;
+
+    use super::{
+        FIELD_BACKTRACE, ISSUE_URL_MAX_BYTES, IssueForm, backtrace_truncated_marker, encode,
+    };
+    use crate::crash_record::CrashRecord;
+
+    const REPO: &str = "https://github.com/owner/forge";
+
+    fn crash_record(backtrace: String) -> CrashRecord {
+        CrashRecord {
+            message: "boom\nsecond line".to_owned(),
+            location: Some("crates/forge-desktop/src/root.rs:42:9".to_owned()),
+            thread: Some("main".to_owned()),
+            backtrace,
+            forge_version: "0.6.2".to_owned(),
+            build_commit: "abc1234".to_owned(),
+            occurred_at_utc: "2026-10-16T10:00:00Z".to_owned(),
+            process_id: 7,
+            system_info: None,
+        }
+    }
+
+    fn long_backtrace() -> String {
+        (0..2000)
+            .map(|frame| format!("{frame:>4}: forge::module_{frame}::function_{frame}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn query(url: &str) -> Vec<(String, String)> {
+        let (_, query) = url.split_once('?').unwrap();
+        query
+            .split('&')
+            .map(|pair| {
+                let (key, value) = pair.split_once('=').unwrap();
+                let decode =
+                    |part: &str| percent_decode_str(part).decode_utf8().unwrap().into_owned();
+                (decode(key), decode(value))
+            })
+            .collect()
+    }
+
+    fn value<'a>(form: &'a IssueForm, id: &str) -> &'a str {
+        &form
+            .fields
+            .iter()
+            .find(|field| field.id == id)
+            .unwrap()
+            .value
+    }
+
+    fn template_field_ids(template: &str) -> Vec<String> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../.github/ISSUE_TEMPLATE")
+            .join(template);
+        std::fs::read_to_string(&path)
+            .unwrap()
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("id: "))
+            .map(str::to_owned)
+            .collect()
+    }
+
+    #[test]
+    fn every_prefilled_field_id_exists_in_its_issue_template() {
+        let forms = [
+            IssueForm::crash(&crash_record("  0: main".to_owned()), "OS: Linux"),
+            IssueForm::problem("v0.6.2 (abc1234)".to_owned(), "OS: Linux"),
+        ];
+        for form in forms {
+            let ids = template_field_ids(form.template);
+            for field in &form.fields {
+                assert!(
+                    ids.iter().any(|id| id == field.id),
+                    "{} has no field with id {}",
+                    form.template,
+                    field.id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn url_round_trips_reserved_characters_newlines_and_unicode() {
+        let tricky = "a&b=c#d+e%f?g/h\nline two\r\nУкраїна 🎙";
+        let url = IssueForm::problem("v0.6.2 (abc1234)".to_owned(), tricky).url(REPO);
+        assert_eq!(
+            query(&url),
+            vec![
+                ("template".to_owned(), "bug_report.yml".to_owned()),
+                ("version".to_owned(), "v0.6.2 (abc1234)".to_owned()),
+                ("system-info".to_owned(), tricky.to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn url_targets_the_new_issue_page_even_with_a_trailing_slash() {
+        let url = IssueForm::problem("v1".to_owned(), "").url(&format!("{REPO}/"));
+        assert!(url.starts_with(&format!("{REPO}/issues/new?")), "{url}");
+    }
+
+    #[test]
+    fn crash_url_carries_the_summary_as_title() {
+        let form = IssueForm::crash(&crash_record("  0: main".to_owned()), "OS: Linux");
+        let pairs = query(&form.url(REPO));
+        assert!(pairs.contains(&("title".to_owned(), "Crash: boom".to_owned())));
+    }
+
+    #[test]
+    fn problem_url_leaves_the_title_to_the_template() {
+        let pairs = query(&IssueForm::problem("v1".to_owned(), "").url(REPO));
+        assert!(pairs.iter().all(|(key, _)| key != "title"));
+    }
+
+    #[test]
+    fn fitted_leaves_a_form_under_the_cap_untouched() {
+        let form = IssueForm::crash(&crash_record("  0: main".to_owned()), "OS: Linux");
+        assert_eq!(form.clone().fitted(REPO, ISSUE_URL_MAX_BYTES), form);
+    }
+
+    #[test]
+    fn fitted_brings_an_oversized_crash_url_under_the_cap() {
+        let form = IssueForm::crash(&crash_record(long_backtrace()), "OS: Linux");
+        assert!(form.url(REPO).len() > ISSUE_URL_MAX_BYTES);
+        let fitted = form.fitted(REPO, ISSUE_URL_MAX_BYTES);
+        assert!(fitted.url(REPO).len() <= ISSUE_URL_MAX_BYTES);
+    }
+
+    #[test]
+    fn fitted_keeps_whole_leading_backtrace_lines_then_the_marker() {
+        let backtrace = long_backtrace();
+        let form = IssueForm::crash(&crash_record(backtrace.clone()), "OS: Linux");
+        let fitted = form.fitted(REPO, ISSUE_URL_MAX_BYTES);
+        let trimmed = value(&fitted, FIELD_BACKTRACE);
+        let kept = trimmed
+            .strip_suffix(&backtrace_truncated_marker())
+            .unwrap()
+            .trim_end_matches('\n');
+        assert!(!kept.is_empty());
+        assert!(backtrace.starts_with(&format!("{kept}\n")), "{kept}");
+    }
+
+    #[test]
+    fn fitted_keeps_as_many_backtrace_lines_as_the_cap_allows() {
+        let backtrace = long_backtrace();
+        let form = IssueForm::crash(&crash_record(backtrace.clone()), "OS: Linux");
+        let fitted = form.fitted(REPO, ISSUE_URL_MAX_BYTES);
+        let kept_lines = value(&fitted, FIELD_BACKTRACE).lines().count() - 1;
+        let next_line = backtrace.lines().nth(kept_lines).unwrap();
+        let grown = fitted.url(REPO).len() + encode(&format!("{next_line}\n")).len();
+        assert!(grown > ISSUE_URL_MAX_BYTES);
+    }
+
+    #[test]
+    fn fitted_trims_nothing_but_the_backtrace() {
+        let form = IssueForm::crash(&crash_record(long_backtrace()), "OS: Linux");
+        let fitted = form.clone().fitted(REPO, ISSUE_URL_MAX_BYTES);
+        let without_backtrace = |form: &IssueForm| {
+            let mut form = form.clone();
+            form.fields.retain(|field| field.id != FIELD_BACKTRACE);
+            form
+        };
+        assert_eq!(without_backtrace(&fitted), without_backtrace(&form));
+    }
+
+    #[test]
+    fn preview_lists_every_field_in_form_order_without_a_title() {
+        let form = IssueForm::problem("v1".to_owned(), "OS: Linux");
+        assert_eq!(
+            form.preview_text(),
+            "version:\nv1\n\nsystem-info:\nOS: Linux"
+        );
+    }
+
+    #[test]
+    fn preview_puts_the_crash_title_first_and_the_backtrace_last() {
+        let preview =
+            IssueForm::crash(&crash_record("  0: main".to_owned()), "OS: Linux").preview_text();
+        assert!(
+            preview.starts_with("title:\nCrash: boom\n\nversion:\n"),
+            "{preview}"
+        );
+        assert!(preview.ends_with("\n\nbacktrace:\n  0: main"), "{preview}");
+    }
+}

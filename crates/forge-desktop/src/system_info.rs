@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use forge_audio::{DeviceInfo, OutputDevice, pick_default_output_device};
 use forge_update::{InstallKind, InstallLayout, ManualReason, detect_install, is_release_build};
 use gpui::{App, Window};
 use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
@@ -9,6 +10,7 @@ pub const BUILD_COMMIT: &str = env!("FORGE_BUILD_COMMIT");
 
 const BYTES_PER_KIB: u64 = 1024;
 const BYTE_UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
+const ONE_DECIMAL_SCALE: f64 = 10.0;
 const MIN_SCRUBBED_IDENTITY_LEN: usize = 3;
 const REDACTED: &str = "[redacted]";
 const UNKNOWN: &str = "unknown";
@@ -70,9 +72,69 @@ impl WindowFacts {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AudioOutput {
-    pub name: String,
-    pub is_default: bool,
+pub enum SpeechOutput {
+    SystemDefault { device: Option<String> },
+    Chosen { device: String },
+    ChosenMissing { fallback: Option<String> },
+    Unknown,
+}
+
+impl SpeechOutput {
+    pub fn resolve(preference: Option<&OutputDevice>, devices: &[DeviceInfo]) -> Self {
+        let Some(preference) = preference else {
+            return SpeechOutput::Unknown;
+        };
+        let chosen = match preference {
+            OutputDevice::Default => {
+                return SpeechOutput::SystemDefault {
+                    device: default_device_name(devices),
+                };
+            }
+            OutputDevice::ById { id } => devices.iter().find(|device| device.id.as_str() == id),
+            OutputDevice::ByName { name } => devices.iter().find(|device| &device.name == name),
+        };
+        match chosen {
+            Some(device) => SpeechOutput::Chosen {
+                device: device.name.clone(),
+            },
+            None => SpeechOutput::ChosenMissing {
+                fallback: default_device_name(devices),
+            },
+        }
+    }
+
+    fn describe(&self) -> String {
+        match self {
+            SpeechOutput::SystemDefault { device } => system_default_label(device.as_deref()),
+            SpeechOutput::Chosen { device } => device.clone(),
+            SpeechOutput::ChosenMissing { fallback } => format!(
+                "{} - chosen device not connected",
+                system_default_label(fallback.as_deref())
+            ),
+            SpeechOutput::Unknown => UNKNOWN.to_owned(),
+        }
+    }
+}
+
+fn default_device_name(devices: &[DeviceInfo]) -> Option<String> {
+    let default_id = pick_default_output_device(devices)?;
+    devices
+        .iter()
+        .find(|device| device.id == default_id)
+        .map(|device| device.name.clone())
+}
+
+fn system_default_label(device: Option<&str>) -> String {
+    match device {
+        Some(device) => format!("system default ({device})"),
+        None => "system default".to_owned(),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioOutputs {
+    pub device_count: usize,
+    pub speech: SpeechOutput,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -84,13 +146,13 @@ pub struct HostFacts {
     pub cpu_model: Option<String>,
     pub logical_cores: Option<usize>,
     pub total_memory_bytes: Option<u64>,
-    pub audio_outputs: Option<Vec<AudioOutput>>,
+    pub audio_outputs: Option<AudioOutputs>,
     pub data_dir_bytes: Option<u64>,
     pub identity: IdentityScrubber,
 }
 
 impl HostFacts {
-    pub fn collect(data_dir: &Path) -> Self {
+    pub fn collect(data_dir: &Path, speech_preference: Option<OutputDevice>) -> Self {
         let system = System::new_with_specifics(
             RefreshKind::new()
                 .with_cpu(CpuRefreshKind::new())
@@ -103,15 +165,12 @@ impl HostFacts {
             .filter(|brand| !brand.is_empty());
         let logical_cores = (!cpus.is_empty()).then_some(cpus.len());
         let total_memory_bytes = Some(system.total_memory()).filter(|bytes| *bytes > 0);
-        let audio_outputs = forge_audio::list_output_devices().ok().map(|devices| {
-            devices
-                .into_iter()
-                .map(|device| AudioOutput {
-                    name: device.name,
-                    is_default: device.is_default,
-                })
-                .collect()
-        });
+        let audio_outputs = forge_audio::list_output_devices()
+            .ok()
+            .map(|devices| AudioOutputs {
+                device_count: devices.len(),
+                speech: SpeechOutput::resolve(speech_preference.as_ref(), &devices),
+            });
         Self {
             install: Some(detect_install()),
             os_name: System::name(),
@@ -158,21 +217,30 @@ impl IdentityScrubber {
     }
 
     pub fn scrub(&self, text: &str) -> String {
-        let mut scrubbed = text.to_owned();
-        for needle in &self.needles {
-            let lowered = scrubbed.to_ascii_lowercase();
-            let mut result = String::with_capacity(scrubbed.len());
-            let mut cursor = 0;
-            while let Some(offset) = lowered[cursor..].find(needle.as_str()) {
-                let start = cursor + offset;
-                result.push_str(&scrubbed[cursor..start]);
-                result.push_str(REDACTED);
-                cursor = start + needle.len();
+        let lowered = text.to_ascii_lowercase();
+        let mut scrubbed = String::with_capacity(text.len());
+        let mut copied_until = 0;
+        let mut position = 0;
+        while let Some(rest) = lowered.get(position..).filter(|rest| !rest.is_empty()) {
+            match self.longest_needle_at_start_of(rest) {
+                Some(needle_len) => {
+                    scrubbed.push_str(&text[copied_until..position]);
+                    scrubbed.push_str(REDACTED);
+                    position += needle_len;
+                    copied_until = position;
+                }
+                None => position += rest.chars().next().map_or(1, char::len_utf8),
             }
-            result.push_str(&scrubbed[cursor..]);
-            scrubbed = result;
         }
+        scrubbed.push_str(&text[copied_until..]);
         scrubbed
+    }
+
+    fn longest_needle_at_start_of(&self, text: &str) -> Option<usize> {
+        self.needles
+            .iter()
+            .find(|needle| text.starts_with(needle.as_str()))
+            .map(String::len)
     }
 }
 
@@ -320,22 +388,15 @@ impl SystemInfo {
 
     fn audio_value(&self) -> Option<String> {
         let outputs = self.host.audio_outputs.as_ref()?;
-        if outputs.is_empty() {
-            return Some("none".to_owned());
-        }
-        Some(
-            outputs
-                .iter()
-                .map(|output| {
-                    if output.is_default {
-                        format!("{} (default)", output.name)
-                    } else {
-                        output.name.clone()
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
-        )
+        let count = match outputs.device_count {
+            0 => return Some("none".to_owned()),
+            1 => "1 device".to_owned(),
+            many => format!("{many} devices"),
+        };
+        Some(format!(
+            "{count}; forge uses: {}",
+            outputs.speech.describe()
+        ))
     }
 }
 
@@ -380,7 +441,7 @@ pub fn format_bytes(bytes: u64) -> String {
     let divisor = BYTES_PER_KIB as f64;
     let mut value = bytes as f64;
     let mut unit = 0;
-    while value >= divisor && unit + 1 < BYTE_UNITS.len() {
+    while rounded_to_one_decimal(value) >= divisor && unit + 1 < BYTE_UNITS.len() {
         value /= divisor;
         unit += 1;
     }
@@ -391,8 +452,12 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 }
 
+fn rounded_to_one_decimal(value: f64) -> f64 {
+    (value * ONE_DECIMAL_SCALE).round() / ONE_DECIMAL_SCALE
+}
+
 pub fn directory_size(root: &Path) -> Option<u64> {
-    if !fs::symlink_metadata(root).ok()?.is_dir() {
+    if !fs::metadata(root).ok()?.is_dir() {
         return None;
     }
     let mut total: u64 = 0;

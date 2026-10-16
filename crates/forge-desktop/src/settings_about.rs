@@ -1,7 +1,11 @@
+use std::sync::Arc;
+
+use forge_audio::{OutputDevice, stored_output_device};
 use forge_components::{
     ActivePresentation, FONT_XS, ForgePalette, Icon, SectionLabel, Spacing, body_family, card,
     field_hint, ghost_button_with_icon, setting_rows, setting_value_row, spacing, spinner, tr,
 };
+use forge_storage::{DataProvider, SettingsRepo};
 use gpui::{ClickEvent, Context, Window, div, prelude::*};
 use tokio::runtime::Handle;
 
@@ -16,13 +20,15 @@ enum AboutState {
 }
 
 pub struct SettingsAboutView {
+    backend: Arc<dyn DataProvider>,
     rt_handle: Handle,
     state: AboutState,
 }
 
 impl SettingsAboutView {
-    pub fn new(rt_handle: Handle) -> Self {
+    pub fn new(backend: Arc<dyn DataProvider>, rt_handle: Handle) -> Self {
         Self {
+            backend,
             rt_handle,
             state: AboutState::NotStarted,
         }
@@ -34,10 +40,35 @@ impl SettingsAboutView {
         }
         self.state = AboutState::Collecting;
         let window_facts = WindowFacts::read(window, cx);
+        let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                match settings.audio_output_device_id().await {
+                    Ok(stored_id) => Some(stored_output_device(stored_id)),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "failed to read audio output device for system info");
+                        None
+                    }
+                }
+            },
+            move |this, speech_preference, cx| {
+                this.collect_host_facts(window_facts, speech_preference, cx)
+            },
+            cx,
+        );
+    }
+
+    fn collect_host_facts(
+        &mut self,
+        window_facts: WindowFacts,
+        speech_preference: Option<OutputDevice>,
+        cx: &mut Context<Self>,
+    ) {
         let data_dir = forge_storage::paths::data_dir();
         async_bridge::run_blocking(
             &self.rt_handle,
-            move || HostFacts::collect(&data_dir),
+            move || HostFacts::collect(&data_dir, speech_preference),
             move |this, host, cx| this.finish_collection(window_facts, host, cx),
             cx,
         );

@@ -266,7 +266,9 @@ impl SettingsView {
                 cx,
             )
         });
-        let about = cx.new(|_| SettingsAboutView::new(handles.rt_handle.clone()));
+        let about = cx.new(|_| {
+            SettingsAboutView::new(Arc::clone(&handles.backend), handles.rt_handle.clone())
+        });
         let diagnostics = cx.new(|cx| {
             SettingsDiagnosticsView::new(
                 handles.log_tail.clone(),

@@ -600,3 +600,263 @@ async fn load_scripting_settings(repo: Arc<dyn SettingsRepo>) -> ScriptingSnapsh
         get_bool_setting(repo.as_ref(), reserved_keys::CORE_HTTP_ALLOW_LOCAL, false).await;
     snapshot_from(http, engine, core_allow_local)
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+mod tests {
+    use gpui::TestAppContext;
+
+    use super::*;
+    use crate::test_support::{TestBackend, install_presentation, pump, test_backend};
+
+    #[test]
+    fn stored_value_from_text_accepts_inclusive_range_bounds() {
+        for (setting, text, stored) in [
+            (NumericSetting::OpLimit, "1000", 1_000),
+            (NumericSetting::OpLimit, "10000000", 10_000_000),
+            (NumericSetting::EngineTimeoutMs, "50", 50),
+            (NumericSetting::EngineTimeoutMs, "10000", 10_000),
+            (NumericSetting::MaxCalls, "1", 1),
+            (NumericSetting::MaxCalls, "100", 100),
+            (NumericSetting::HttpTimeoutMs, "100", 100),
+            (NumericSetting::HttpTimeoutMs, "30000", 30_000),
+            (NumericSetting::MaxResponseKib, "1", 1_024),
+            (NumericSetting::MaxResponseKib, "10240", 10_485_760),
+        ] {
+            assert_eq!(
+                setting.stored_value_from_text(text),
+                Some(stored),
+                "{setting:?} {text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn stored_value_from_text_rejects_one_past_either_bound() {
+        for setting in NumericSetting::ALL {
+            let range = setting.range();
+            for outside in [range.start() - 1, range.end() + 1] {
+                assert_eq!(
+                    setting.stored_value_from_text(&outside.to_string()),
+                    None,
+                    "{setting:?} {outside}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn stored_value_from_text_rejects_text_that_is_not_an_unsigned_integer() {
+        for setting in NumericSetting::ALL {
+            for text in [
+                "",
+                "   ",
+                "abc",
+                "-5",
+                "12.5",
+                "1e3",
+                "1 000",
+                "18446744073709551616",
+            ] {
+                assert_eq!(
+                    setting.stored_value_from_text(text),
+                    None,
+                    "{setting:?} {text:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn stored_value_from_text_ignores_surrounding_whitespace() {
+        for (setting, text, stored) in [
+            (NumericSetting::MaxCalls, " 42 \t", 42),
+            (NumericSetting::MaxResponseKib, "\n2048 ", 2_097_152),
+        ] {
+            assert_eq!(setting.stored_value_from_text(text), Some(stored));
+        }
+    }
+
+    #[test]
+    fn display_from_stored_converts_bytes_to_kib_only_for_max_response() {
+        for (setting, stored, shown) in [
+            (NumericSetting::MaxResponseKib, 2_097_152, 2_048),
+            (NumericSetting::OpLimit, 250_000, 250_000),
+            (NumericSetting::EngineTimeoutMs, 2_048, 2_048),
+            (NumericSetting::MaxCalls, 2_048, 2_048),
+            (NumericSetting::HttpTimeoutMs, 2_048, 2_048),
+        ] {
+            assert_eq!(setting.display_from_stored(stored), shown, "{setting:?}");
+        }
+    }
+
+    #[test]
+    fn typed_value_reads_back_unchanged_after_storage_conversion() {
+        for setting in NumericSetting::ALL {
+            let range = setting.range();
+            let middle = (range.start() + range.end()) / 2;
+            for typed in [*range.start(), middle, *range.end()] {
+                let stored = setting
+                    .stored_value_from_text(&typed.to_string())
+                    .expect("in-range value");
+                assert_eq!(
+                    setting.display_from_stored(stored),
+                    typed,
+                    "{setting:?} {typed}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn default_values_display_as_valid_entries() {
+        for (setting, stored) in snapshot_defaults().stored_numbers {
+            let shown = setting.display_from_stored(stored).to_string();
+            assert_eq!(
+                setting.stored_value_from_text(&shown),
+                Some(stored),
+                "{setting:?} default {stored} shows {shown:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn every_persisted_bound_loads_back_into_its_own_field() {
+        for at_upper_bound in [false, true] {
+            let (backend, _writes) = test_backend();
+            let mut typed_by_setting = Vec::new();
+            for (offset, setting) in (0u64..).zip(NumericSetting::ALL) {
+                let range = setting.range();
+                let typed = if at_upper_bound {
+                    range.end() - offset
+                } else {
+                    range.start() + offset
+                };
+                let stored = setting
+                    .stored_value_from_text(&typed.to_string())
+                    .expect("in-range value");
+                backend
+                    .set_string(setting.storage_key(), &stored.to_string())
+                    .await
+                    .unwrap();
+                typed_by_setting.push((setting, typed));
+            }
+
+            let snapshot = load_scripting_settings(backend as Arc<dyn SettingsRepo>).await;
+
+            for (setting, typed) in typed_by_setting {
+                let (_, stored) = snapshot
+                    .stored_numbers
+                    .iter()
+                    .find(|(s, _)| *s == setting)
+                    .copied()
+                    .expect("setting present in snapshot");
+                assert_eq!(setting.display_from_stored(stored), typed, "{setting:?}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn loaded_snapshot_carries_the_core_allow_local_switch() {
+        let (backend, _writes) = test_backend();
+        set_bool_setting(backend.as_ref(), reserved_keys::CORE_HTTP_ALLOW_LOCAL, true)
+            .await
+            .unwrap();
+
+        let snapshot = load_scripting_settings(backend as Arc<dyn SettingsRepo>).await;
+
+        assert!(snapshot.core_allow_local);
+    }
+
+    fn paused_runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .start_paused(true)
+            .build()
+            .expect("paused current-thread runtime")
+    }
+
+    fn mounted_view(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        backend: Arc<TestBackend>,
+    ) -> Entity<SettingsScriptingView> {
+        install_presentation(cx);
+        let handle = rt.handle().clone();
+        let view =
+            cx.new(|cx| SettingsScriptingView::new(backend as Arc<dyn DataProvider>, handle, cx));
+        pump(rt);
+        cx.run_until_parked();
+        view
+    }
+
+    fn commit(
+        cx: &mut TestAppContext,
+        view: &Entity<SettingsScriptingView>,
+        setting: NumericSetting,
+        text: &str,
+    ) {
+        view.update(cx, |this, cx| this.commit_numeric(setting, text, cx));
+    }
+
+    fn outlast_debounce(rt: &tokio::runtime::Runtime) {
+        rt.block_on(async { tokio::time::sleep(SLIDER_PERSIST_DEBOUNCE * 2).await });
+    }
+
+    fn is_invalid(
+        cx: &mut TestAppContext,
+        view: &Entity<SettingsScriptingView>,
+        setting: NumericSetting,
+    ) -> bool {
+        view.read_with(cx, |this, _| {
+            this.numeric
+                .iter()
+                .find(|f| f.setting == setting)
+                .expect("field for setting")
+                .invalid
+        })
+    }
+
+    #[gpui::test]
+    fn out_of_range_entry_flags_the_field_and_persists_nothing(cx: &mut TestAppContext) {
+        let rt = paused_runtime();
+        let (backend, mut writes) = test_backend();
+        let view = mounted_view(cx, &rt, backend);
+
+        commit(cx, &view, NumericSetting::MaxCalls, "101");
+        outlast_debounce(&rt);
+
+        assert!(is_invalid(cx, &view, NumericSetting::MaxCalls));
+        assert!(writes.try_recv().is_err());
+    }
+
+    #[gpui::test]
+    fn valid_entry_persists_the_stored_value_under_its_key(cx: &mut TestAppContext) {
+        let rt = paused_runtime();
+        let (backend, mut writes) = test_backend();
+        let view = mounted_view(cx, &rt, backend);
+
+        commit(cx, &view, NumericSetting::MaxResponseKib, "2048");
+        outlast_debounce(&rt);
+
+        assert_eq!(
+            writes.try_recv().expect("debounced write"),
+            (
+                reserved_keys::SCRIPT_HTTP_MAX_RESPONSE_BYTES.to_owned(),
+                "2097152".to_owned()
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn valid_entry_after_an_invalid_one_clears_the_flag(cx: &mut TestAppContext) {
+        let rt = paused_runtime();
+        let (backend, _writes) = test_backend();
+        let view = mounted_view(cx, &rt, backend);
+
+        commit(cx, &view, NumericSetting::HttpTimeoutMs, "99");
+        commit(cx, &view, NumericSetting::HttpTimeoutMs, "100");
+
+        assert!(!is_invalid(cx, &view, NumericSetting::HttpTimeoutMs));
+    }
+}

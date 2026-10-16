@@ -1048,14 +1048,10 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn connect_failure_emits_connect_failed_reason_with_detail() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        drop(listener);
-
         let publisher = MockPublisher::new();
         let creds = MockCreds::new();
         let cfg = VTubeConfig {
-            endpoint: format!("ws://{addr}"),
+            endpoint: "ws://127.0.0.1:0".to_owned(),
         };
         let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
 

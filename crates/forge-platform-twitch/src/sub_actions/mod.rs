@@ -471,20 +471,9 @@ pub(crate) mod test_support {
     }
 
     pub(crate) fn unreachable_twitch_endpoints() -> PlatformEndpoints {
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
         endpoints_with(&[
-            (
-                EndpointSurface::TwitchApi,
-                &format!("http://127.0.0.1:{port}"),
-            ),
-            (
-                EndpointSurface::TwitchEventSubSocket,
-                &format!("ws://127.0.0.1:{port}"),
-            ),
+            (EndpointSurface::TwitchApi, "http://127.0.0.1:0"),
+            (EndpointSurface::TwitchEventSubSocket, "ws://127.0.0.1:0"),
         ])
     }
 }

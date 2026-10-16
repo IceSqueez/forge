@@ -140,8 +140,5 @@ pub fn client() -> UpdateClient {
 }
 
 pub async fn refused_url() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    drop(listener);
-    format!("http://{addr}/forge.AppImage?token={SECRET}")
+    format!("http://127.0.0.1:0/forge.AppImage?token={SECRET}")
 }

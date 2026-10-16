@@ -686,11 +686,6 @@ pub(crate) mod tests {
     async fn the_helix_refresher_asks_for_reauth_only_when_the_refresh_is_rejected() {
         use crate::helix::{HelixError, HelixTokenRefresher};
 
-        let closed_port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
         let cases = [
             (Some(reqwest::StatusCode::BAD_REQUEST), false),
             (Some(reqwest::StatusCode::SERVICE_UNAVAILABLE), true),
@@ -708,7 +703,7 @@ pub(crate) mod tests {
                         .await;
                     format!("{}/token", server.uri())
                 }
-                None => format!("http://127.0.0.1:{closed_port}/token"),
+                None => "http://127.0.0.1:0/token".to_owned(),
             };
             let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(3600));
             let mgr = TwitchCredentialsManager::with_endpoint(

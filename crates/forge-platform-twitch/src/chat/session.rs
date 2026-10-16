@@ -6645,7 +6645,7 @@ mod tests {
     fn session_welcome_over_failing_token_endpoint()
     -> (FrameAction, Vec<crate::log_capture::CapturedLine>) {
         crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
-            let server = wiremock::MockServer::start().await;
+            let server = wiremock::MockServer::builder().start().await;
             wiremock::Mock::given(wiremock::matchers::method("POST"))
                 .and(wiremock::matchers::path("/token"))
                 .respond_with(wiremock::ResponseTemplate::new(503).set_body_json(
@@ -6966,10 +6966,7 @@ mod tests {
     }
 
     fn unreachable_ws_url() -> String {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-        drop(listener);
-        format!("ws://{addr}")
+        "ws://127.0.0.1:0".to_owned()
     }
 
     struct RunningSession {

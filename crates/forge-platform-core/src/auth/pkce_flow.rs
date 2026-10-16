@@ -263,6 +263,8 @@ mod tests {
     use wiremock::matchers::{body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    const FRESH_PORT_ATTEMPTS: usize = 16;
+
     fn config(authorize_endpoint: String, token_endpoint: String) -> PkceClientConfig {
         PkceClientConfig {
             client_id: "test_client".to_owned(),
@@ -347,18 +349,29 @@ mod tests {
 
     #[tokio::test]
     async fn start_binds_the_configured_preferred_port_into_the_redirect_uri() {
-        let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = probe.local_addr().unwrap().port();
-        drop(probe);
-
-        let mut cfg = config(
-            "https://example.com/authorize".to_owned(),
-            "https://example.com/token".to_owned(),
+        let mut bound = None;
+        for _ in 0..FRESH_PORT_ATTEMPTS {
+            let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = probe.local_addr().unwrap().port();
+            drop(probe);
+            let mut cfg = config(
+                "https://example.com/authorize".to_owned(),
+                "https://example.com/token".to_owned(),
+            );
+            cfg.preferred_port = Some(port);
+            match PkceFlow::new(cfg).start(&[]).await {
+                Err(PlatformError::LoopbackPortInUse { .. }) => {}
+                outcome => {
+                    bound = Some((port, outcome.unwrap().auth_url));
+                    break;
+                }
+            }
+        }
+        assert!(
+            bound.is_some(),
+            "no free port obtained after {FRESH_PORT_ATTEMPTS} attempts"
         );
-        cfg.preferred_port = Some(port);
-        let mut flow = PkceFlow::new(cfg);
-
-        let url = flow.start(&[]).await.unwrap().auth_url;
+        let (port, url) = bound.unwrap();
 
         let redirect_uri = reqwest::Url::parse(&query_param(&url, "redirect_uri")).unwrap();
         assert_eq!(redirect_uri.port(), Some(port));

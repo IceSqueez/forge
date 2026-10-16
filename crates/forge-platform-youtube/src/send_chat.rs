@@ -478,7 +478,7 @@ mod tests {
 
     #[tokio::test]
     async fn delete_returns_quota_exhausted_without_issuing_http_call() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
 
         Mock::given(method("DELETE"))
             .and(path("/liveChat/messages"))

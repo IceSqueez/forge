@@ -356,6 +356,8 @@ mod tests {
         assert!(d.redirect_uri().ends_with(CALLBACK_PATH));
     }
 
+    const FRESH_PORT_ATTEMPTS: usize = 16;
+
     async fn released_ephemeral_port() -> u16 {
         let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = probe.local_addr().unwrap().port();
@@ -365,8 +367,22 @@ mod tests {
 
     #[tokio::test]
     async fn bind_with_preferred_port_exposes_that_exact_port_in_the_redirect_uri() {
-        let port = released_ephemeral_port().await;
-        let d = LocalCallbackDriver::bind(Some(port)).await.unwrap();
+        let mut bound = None;
+        for _ in 0..FRESH_PORT_ATTEMPTS {
+            let port = released_ephemeral_port().await;
+            match LocalCallbackDriver::bind(Some(port)).await {
+                Err(PlatformError::LoopbackPortInUse { .. }) => {}
+                outcome => {
+                    bound = Some((port, outcome.unwrap()));
+                    break;
+                }
+            }
+        }
+        assert!(
+            bound.is_some(),
+            "no free port obtained after {FRESH_PORT_ATTEMPTS} attempts"
+        );
+        let (port, d) = bound.unwrap();
         let uri = reqwest::Url::parse(d.redirect_uri()).unwrap();
         assert_eq!(uri.port(), Some(port));
     }

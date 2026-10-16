@@ -1311,18 +1311,10 @@ pub(crate) mod tests {
         assert_eq!(remaining, 4);
     }
 
-    fn closed_loopback_port() -> u16 {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.local_addr().unwrap().port()
-    }
-
     #[tokio::test]
     async fn no_request_path_error_display_echoes_the_webhook_secret() {
         const SECRET: &str = "SECRET_WEBHOOK_TOKEN";
-        let unreachable = format!(
-            "http://127.0.0.1:{}/api/webhooks/123/{SECRET}",
-            closed_loopback_port()
-        );
+        let unreachable = format!("http://127.0.0.1:0/api/webhooks/123/{SECRET}");
         let malformed = format!("http://[::1/api/webhooks/123/{SECRET}");
         for url in [unreachable, malformed] {
             let creds = MockCreds::new();

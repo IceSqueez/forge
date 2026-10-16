@@ -292,10 +292,11 @@ mod tests {
         RunContext::leaf(stack, 0, EventId::new(), publisher)
     }
 
-    fn temp_file(name: &str, bytes: &[u8]) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!("forge-discord-test-{name}"));
+    fn temp_file(name: &str, bytes: &[u8]) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(format!("forge-discord-test-{name}"));
         std::fs::write(&path, bytes).unwrap();
-        path
+        (dir, path)
     }
 
     #[tokio::test]
@@ -333,7 +334,7 @@ mod tests {
         let runner = SendFileRunner::new(Arc::clone(&sink) as Arc<dyn DiscordSink>);
         let stack = ArgStack::new();
         let publisher = NoopPublisher;
-        let path = temp_file("clip-a.png", &[0xDE, 0xAD, 0xBE, 0xEF]);
+        let (_dir, path) = temp_file("clip-a.png", &[0xDE, 0xAD, 0xBE, 0xEF]);
         let cfg = config(path.to_str().unwrap(), "   ");
         let (telemetry, _) = runner.execute(&cfg, &ctx(&stack, &publisher)).await;
         assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
@@ -342,7 +343,6 @@ mod tests {
         assert_eq!(c.file_name, "forge-discord-test-clip-a.png");
         assert_eq!(c.webhook_name, "alerts");
         assert!(c.content.is_none(), "blank caption must become None");
-        std::fs::remove_file(&path).ok();
     }
 
     #[tokio::test]
@@ -351,12 +351,11 @@ mod tests {
         let runner = SendFileRunner::new(Arc::clone(&sink) as Arc<dyn DiscordSink>);
         let stack = ArgStack::new();
         let publisher = NoopPublisher;
-        let path = temp_file("clip-b.png", &[1, 2, 3]);
+        let (_dir, path) = temp_file("clip-b.png", &[1, 2, 3]);
         let cfg = config(path.to_str().unwrap(), "look at this");
         let (_telemetry, _) = runner.execute(&cfg, &ctx(&stack, &publisher)).await;
         let c = sink.captured().expect("sink must be called");
         assert_eq!(c.content.as_deref(), Some("look at this"));
-        std::fs::remove_file(&path).ok();
     }
 
     #[tokio::test]
@@ -365,10 +364,9 @@ mod tests {
         let runner = SendFileRunner::new(Arc::clone(&sink) as Arc<dyn DiscordSink>);
         let stack = ArgStack::new();
         let publisher = NoopPublisher;
-        let path = temp_file("clip-c.png", &[9]);
+        let (_dir, path) = temp_file("clip-c.png", &[9]);
         let cfg = config(path.to_str().unwrap(), "cap");
         let (telemetry, _) = runner.execute(&cfg, &ctx(&stack, &publisher)).await;
         assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
-        std::fs::remove_file(&path).ok();
     }
 }

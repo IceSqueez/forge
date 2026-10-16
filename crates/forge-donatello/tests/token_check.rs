@@ -96,7 +96,7 @@ async fn verify_token_maps_each_failure_answer_to_its_error() {
 
 #[tokio::test]
 async fn verify_token_rejects_a_blank_or_unsendable_token_without_a_request() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(200))
         .expect(0)
@@ -174,7 +174,7 @@ async fn too_many_requests_answer_feeds_the_retry_after_into_the_shared_limiter(
 
 #[tokio::test]
 async fn exhausted_client_budget_sends_no_request() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(200))
         .expect(0)
@@ -193,13 +193,8 @@ async fn exhausted_client_budget_sends_no_request() {
 
 #[tokio::test]
 async fn unreachable_service_is_a_network_error() {
-    let port = {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.local_addr().unwrap().port()
-    };
-
     let result = provider(
-        &format!("http://127.0.0.1:{port}"),
+        "http://127.0.0.1:0",
         Arc::default(),
         ScriptedLimiter::open(),
     )
@@ -214,10 +209,6 @@ async fn unreachable_service_is_a_network_error() {
 
 #[tokio::test]
 async fn no_failure_renders_the_token() {
-    let closed_port = {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.local_addr().unwrap().port()
-    };
     let mut errors = Vec::new();
     for response in [
         ResponseTemplate::new(401),
@@ -230,7 +221,7 @@ async fn no_failure_renders_the_token() {
     }
     errors.push(
         provider(
-            &format!("http://127.0.0.1:{closed_port}"),
+            "http://127.0.0.1:0",
             Arc::default(),
             ScriptedLimiter::open(),
         )

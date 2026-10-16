@@ -43,7 +43,7 @@ async fn verify_against(response: ResponseTemplate) -> Result<Vec<MonobankJar>, 
 }
 
 async fn mute_server() -> MockServer {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(200))
         .expect(0)
@@ -383,13 +383,8 @@ async fn token_and_jar_problems_need_the_user_while_transient_failures_do_not() 
 
 #[tokio::test]
 async fn unreachable_service_is_a_network_error() {
-    let port = {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.local_addr().unwrap().port()
-    };
-
     let result = provider(
-        &format!("http://127.0.0.1:{port}"),
+        "http://127.0.0.1:0",
         Arc::default(),
         Limits::open().shared(),
     )
@@ -404,10 +399,6 @@ async fn unreachable_service_is_a_network_error() {
 
 #[tokio::test]
 async fn no_failure_renders_the_token() {
-    let closed_port = {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.local_addr().unwrap().port()
-    };
     let mut errors = Vec::new();
     for response in [
         ResponseTemplate::new(401),
@@ -420,7 +411,7 @@ async fn no_failure_renders_the_token() {
     }
     errors.push(
         provider(
-            &format!("http://127.0.0.1:{closed_port}"),
+            "http://127.0.0.1:0",
             Arc::default(),
             Limits::open().shared(),
         )

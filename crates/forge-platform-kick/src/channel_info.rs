@@ -258,10 +258,7 @@ mod tests {
 
     #[tokio::test]
     async fn transport_failure_reason_omits_the_request_url() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
-        let endpoint = format!("http://127.0.0.1:{port}");
+        let endpoint = "http://127.0.0.1:0".to_owned();
 
         let http = reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(1))
@@ -273,9 +270,5 @@ mod tests {
             panic!("expected ChannelInfoUnavailable, got {err:?}");
         };
         assert!(!reason.contains("127.0.0.1"), "url leaked into {reason:?}");
-        assert!(
-            !reason.contains(&port.to_string()),
-            "url leaked into {reason:?}"
-        );
     }
 }

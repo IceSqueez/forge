@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, InputEvent, Radius, SaveState,
-    Spacing, TextInput, body_family, icon, primary_button, radius, save_indicator, setting_row,
-    spacing, toggle, tr, with_alpha,
+    Density, FONT_SM, FONT_XS, ForgePalette, Icon, InputEvent, Radius, SaveState, SettingRow,
+    Spacing, TextInput, body_family, icon, icon_button, primary_button, radius, save_indicator,
+    setting_block, setting_groups, setting_row, setting_rows, spacing, toggle, tr,
 };
 use forge_script::{
     EngineConfig, ScriptHttpConfig, load_script_engine_config, load_script_http_config,
@@ -12,14 +12,15 @@ use forge_storage::{
     DataProvider, SettingsRepo, get_bool_setting, reserved_keys, set_bool_setting, set_json_setting,
 };
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FontWeight, SharedString, Subscription, Window, div,
-    prelude::*, px, relative,
+    ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
 use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 use forge_components::ActivePresentation;
+
+const NUMERIC_INPUT_WIDTH: Pixels = px(120.0);
 
 struct ScriptingSnapshot {
     allowed_domains: Vec<String>,
@@ -295,34 +296,6 @@ impl SettingsScriptingView {
         )
     }
 
-    fn domains_block(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(tr!("settings_scripting_allowed_domains_label")),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(tr!("settings_scripting_allowed_domains_hint")),
-            )
-            .child(self.domain_list(palette, density, cx))
-    }
-
     fn domain_list(
         &self,
         palette: &ForgePalette,
@@ -338,21 +311,10 @@ impl SettingsScriptingView {
             chips = chips.child(self.domain_chip(idx, domain, palette, cx));
         }
 
-        let add_btn = div()
-            .id("settings-scripting-domain-add")
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_center()
-            .px(spacing(Spacing::Xs, density))
-            .py(spacing(Spacing::Xs, density))
-            .rounded(radius(Radius::Sm))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .cursor_pointer()
-            .hover(|style| style.bg(with_alpha(palette.brand, 0.08)))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.add_domain(cx)))
-            .child(icon(Icon::Plus, FONT_SM, palette.text_secondary));
+        let add_btn = icon_button(Icon::Plus, palette).on_click(
+            "settings-scripting-domain-add",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.add_domain(cx)),
+        );
 
         let input_row = div()
             .flex()
@@ -420,62 +382,56 @@ impl Render for SettingsScriptingView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let engine_section = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, density))
-            .child(section_header(
-                tr!("settings_scripting_engine_section"),
-                &palette,
-            ))
-            .child(section_rule(&palette))
-            .child(labeled_row(
+        let engine_rows = setting_rows(&palette)
+            .row(numeric_row(
                 tr!("settings_scripting_op_limit_label"),
                 tr!("settings_scripting_op_limit_hint"),
-                self.op_limit.clone().into_any_element(),
+                &self.op_limit,
                 &palette,
                 density,
             ))
-            .child(labeled_row(
+            .row(numeric_row(
                 tr!("settings_scripting_engine_timeout_label"),
                 tr!("settings_scripting_engine_timeout_hint"),
-                self.engine_timeout.clone().into_any_element(),
+                &self.engine_timeout,
                 &palette,
                 density,
-            ));
-
-        let mut http_section = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, density))
-            .child(section_header(
-                tr!("settings_scripting_http_section"),
-                &palette,
             ))
-            .child(section_rule(&palette))
-            .child(self.domains_block(&palette, density, cx))
-            .child(labeled_row(
+            .in_card(&palette);
+
+        let http_rows = setting_rows(&palette)
+            .row(
+                setting_row(
+                    tr!("settings_scripting_allowed_domains_label"),
+                    Some(tr!("settings_scripting_allowed_domains_hint").into()),
+                    self.domain_list(&palette, density, cx),
+                    &palette,
+                    density,
+                )
+                .stacked(),
+            )
+            .row(numeric_row(
                 tr!("settings_scripting_max_calls_label"),
                 tr!("settings_scripting_max_calls_hint"),
-                self.max_calls.clone().into_any_element(),
+                &self.max_calls,
                 &palette,
                 density,
             ))
-            .child(labeled_row(
+            .row(numeric_row(
                 tr!("settings_scripting_http_timeout_label"),
                 tr!("settings_scripting_http_timeout_hint"),
-                self.http_timeout.clone().into_any_element(),
+                &self.http_timeout,
                 &palette,
                 density,
             ))
-            .child(labeled_row(
+            .row(numeric_row(
                 tr!("settings_scripting_max_response_label"),
                 tr!("settings_scripting_max_response_hint"),
-                self.max_response_kib.clone().into_any_element(),
+                &self.max_response_kib,
                 &palette,
                 density,
             ))
-            .child(setting_row(
+            .row(setting_row(
                 tr!("settings_scripting_allow_local_label"),
                 Some(tr!("settings_scripting_allow_local_description").into()),
                 toggle(self.allow_local, &palette).on_click(
@@ -485,7 +441,7 @@ impl Render for SettingsScriptingView {
                 &palette,
                 density,
             ))
-            .child(setting_row(
+            .row(setting_row(
                 tr!("settings_scripting_core_allow_local_label"),
                 Some(tr!("settings_scripting_core_allow_local_description").into()),
                 toggle(self.core_allow_local, &palette).on_click(
@@ -494,12 +450,17 @@ impl Render for SettingsScriptingView {
                 ),
                 &palette,
                 density,
-            ));
+            ))
+            .in_card(&palette);
 
+        let mut http_content = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(http_rows);
         if self.allow_local || self.core_allow_local {
-            http_section = http_section.child(
+            http_content = http_content.child(
                 div()
-                    .py(px(4.0))
                     .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.random)
@@ -512,15 +473,27 @@ impl Render for SettingsScriptingView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.save(cx)),
         );
 
-        div().flex().flex_col().child(self.header(&palette)).child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(spacing(Spacing::Lg, density))
-                .child(engine_section)
-                .child(http_section)
-                .child(div().child(save_btn)),
-        )
+        div()
+            .flex()
+            .flex_col()
+            .child(self.header(&palette))
+            .child(setting_groups([
+                setting_block(
+                    tr!("settings_scripting_engine_section"),
+                    None,
+                    engine_rows,
+                    &palette,
+                )
+                .into_any_element(),
+                setting_block(
+                    tr!("settings_scripting_http_section"),
+                    None,
+                    http_content,
+                    &palette,
+                )
+                .into_any_element(),
+                div().flex().child(save_btn).into_any_element(),
+            ]))
     }
 }
 
@@ -541,64 +514,20 @@ fn numeric_input(
     })
 }
 
-fn section_header(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
-    div()
-        .font_family(body_family())
-        .font_weight(FontWeight::MEDIUM)
-        .text_size(FONT_SM)
-        .text_color(palette.text_primary)
-        .child(label.into())
-}
-
-fn section_rule(palette: &ForgePalette) -> impl IntoElement {
-    div().h(BORDER_THIN).w_full().bg(palette.border_regular)
-}
-
-fn labeled_row(
+fn numeric_row(
     label: impl Into<SharedString>,
     hint: impl Into<SharedString>,
-    control: AnyElement,
+    input: &Entity<TextInput>,
     palette: &ForgePalette,
     density: Density,
-) -> impl IntoElement {
-    div()
-        .w_full()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(spacing(Spacing::Md, density))
-        .child(
-            div()
-                .flex_grow(1.0)
-                .flex_shrink(1.0)
-                .flex_basis(relative(4.0))
-                .min_w(px(0.0))
-                .flex()
-                .flex_col()
-                .gap(spacing(Spacing::Xxs, density))
-                .child(
-                    div()
-                        .font_family(body_family())
-                        .text_size(FONT_SM)
-                        .text_color(palette.text_primary)
-                        .child(label.into()),
-                )
-                .child(
-                    div()
-                        .font_family(body_family())
-                        .text_size(FONT_XS)
-                        .text_color(palette.text_muted)
-                        .child(hint.into()),
-                ),
-        )
-        .child(
-            div()
-                .flex_grow(1.0)
-                .flex_shrink(1.0)
-                .flex_basis(relative(3.0))
-                .min_w(px(0.0))
-                .child(control),
-        )
+) -> SettingRow {
+    setting_row(
+        label,
+        Some(hint.into()),
+        div().w(NUMERIC_INPUT_WIDTH).child(input.clone()),
+        palette,
+        density,
+    )
 }
 
 async fn load_scripting_settings(repo: Arc<dyn SettingsRepo>) -> Result<ScriptingSnapshot, String> {

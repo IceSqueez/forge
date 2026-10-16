@@ -712,7 +712,12 @@ fn note_row(
                 .flex_none()
                 .child(icon(Icon::InfoCircle, NOTE_GLYPH, palette.info)),
         )
-        .child(field_hint(text.into(), palette))
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .child(field_hint(text.into(), palette)),
+        )
 }
 
 fn log_row(line: &LogLine, palette: &ForgePalette, density: Density) -> impl IntoElement {

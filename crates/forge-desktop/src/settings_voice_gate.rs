@@ -7,9 +7,9 @@ use forge_audio::{
 };
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, Radius,
-    SectionLabel, Spacing, TextInput, body_family, drive_overlay_focus, dropdown, dropdown_list,
-    dropdown_row, ghost_button, icon, mono_family, radius, setting_row, spacing, toggle, tr,
-    with_alpha,
+    SettingRow, Spacing, TextInput, body_family, drive_overlay_focus, dropdown, dropdown_list,
+    dropdown_row, ghost_button, icon, icon_button, mono_family, radius, setting_block, setting_row,
+    setting_rows, spacing, toggle, tr,
 };
 use forge_storage::{DataProvider, SettingsRepo, VoiceGateSettings};
 use gpui::{
@@ -348,29 +348,6 @@ impl SettingsVoiceGateView {
         }
     }
 
-    fn card_header(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
-        let tile = div()
-            .size(px(30.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(radius(Radius::Lg))
-            .bg(with_alpha(palette.brand, 0.12))
-            .child(icon(Icon::Microphone2, px(16.0), palette.brand));
-        div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Md, density))
-            .child(tile)
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(tr!("settings_voice_gate_title")),
-            )
-    }
-
     fn device_section(
         &self,
         palette: &ForgePalette,
@@ -436,21 +413,10 @@ impl SettingsVoiceGateView {
             field = field.child(self.picker_overlay(palette, cx));
         }
 
-        let refresh_btn = div()
-            .id("settings-voice-gate-refresh")
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_center()
-            .px(spacing(Spacing::Xs, Density::Cozy))
-            .py(spacing(Spacing::Xxs, Density::Cozy))
-            .rounded(radius(Radius::Sm))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .cursor_pointer()
-            .hover(|style| style.bg(with_alpha(palette.border_regular, 0.08)))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)))
-            .child(icon(Icon::Refresh, px(12.0), palette.text_secondary));
+        let refresh_btn = icon_button(Icon::Refresh, palette).on_click(
+            "settings-voice-gate-refresh",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)),
+        );
 
         div()
             .w_full()
@@ -493,7 +459,7 @@ impl SettingsVoiceGateView {
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    ) -> SettingRow {
         let control = div()
             .flex()
             .flex_row()
@@ -545,8 +511,23 @@ impl SettingsVoiceGateView {
             )
     }
 
-    fn hold_row(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
-        let hint = if self.hold_invalid {
+    fn hold_row(&self, palette: &ForgePalette, density: Density) -> SettingRow {
+        let row = setting_row(
+            tr!("settings_voice_gate_hold_label"),
+            Some(self.hold_hint().into()),
+            div().w(HOLD_INPUT_WIDTH).child(self.hold_input.clone()),
+            palette,
+            density,
+        );
+        if self.hold_invalid {
+            row.hint_color(palette.random)
+        } else {
+            row
+        }
+    }
+
+    fn hold_hint(&self) -> String {
+        if self.hold_invalid {
             tr!(
                 "settings_voice_gate_hold_range",
                 min = HOLD_MIN_MS.to_string(),
@@ -554,14 +535,7 @@ impl SettingsVoiceGateView {
             )
         } else {
             tr!("settings_voice_gate_hold_hint")
-        };
-        setting_row(
-            tr!("settings_voice_gate_hold_label"),
-            Some(hint.into()),
-            div().w(HOLD_INPUT_WIDTH).child(self.hold_input.clone()),
-            palette,
-            density,
-        )
+        }
     }
 
     fn state_line(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> impl IntoElement {
@@ -581,7 +555,6 @@ impl SettingsVoiceGateView {
         };
         let unavailable = matches!(self.gate_state, Some(VoiceGateState::Unavailable(_)));
         let mut line = div()
-            .px(spacing(Spacing::Md, Density::Cozy))
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, Density::Cozy))
@@ -614,11 +587,8 @@ impl Render for SettingsVoiceGateView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let mut content = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(setting_row(
+        let rows = setting_rows(&palette)
+            .row(setting_row(
                 tr!("settings_voice_gate_enable_label"),
                 Some(tr!("settings_voice_gate_enable_hint").into()),
                 toggle(self.enabled, &palette).on_click(
@@ -628,10 +598,25 @@ impl Render for SettingsVoiceGateView {
                 &palette,
                 density,
             ))
-            .child(SectionLabel::new(tr!("settings_voice_gate_input_devices"), &palette).padded())
-            .child(self.device_section(&palette, density, cx))
-            .child(self.threshold_row(&palette, density, cx))
-            .child(self.hold_row(&palette, density))
+            .row(
+                setting_row(
+                    tr!("settings_voice_gate_input_devices"),
+                    None,
+                    self.device_section(&palette, density, cx),
+                    &palette,
+                    density,
+                )
+                .stacked(),
+            )
+            .row(self.threshold_row(&palette, density, cx))
+            .row(self.hold_row(&palette, density))
+            .in_card(&palette);
+
+        let mut content = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(rows)
             .child(self.state_line(&palette, cx));
 
         if let Some(message) = &self.persist_error {
@@ -644,17 +629,7 @@ impl Render for SettingsVoiceGateView {
             );
         }
 
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .p(spacing(Spacing::Md, density))
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .bg(palette.elevated)
-            .child(self.card_header(&palette, density))
-            .child(content)
+        setting_block(tr!("settings_voice_gate_title"), None, content, &palette)
     }
 }
 

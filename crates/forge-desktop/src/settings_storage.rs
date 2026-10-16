@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
-    Density, FONT_SM, ForgePalette, InputEvent, Spacing, TextInput, ToastAction, ToastKind,
-    body_family, card, field_hint, field_title, mono_family, primary_button, segment, segmented,
+    Density, FONT_SM, ForgePalette, InputEvent, SettingRow, Spacing, TextInput, ToastAction,
+    ToastKind, primary_button, segment, segmented, setting_row, setting_rows, setting_value_row,
     spacing, tr,
 };
 use forge_runtime::ChatHistoryRetentionHandle;
@@ -31,7 +31,7 @@ use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 const BACKUP_TOAST_DURATION: Duration = Duration::from_secs(10);
-const LIMIT_INPUT_MAX_W: Pixels = px(200.0);
+const LIMIT_INPUT_W: Pixels = px(120.0);
 const PER_VIEWER_PRESETS: [u32; 3] = [25, 50, 100];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -240,7 +240,7 @@ impl SettingsStorageView {
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    ) -> SettingRow {
         let choice = per_viewer_choice(self.per_viewer_limit, self.custom_selected);
         let mut segments: Vec<_> = PER_VIEWER_PRESETS
             .iter()
@@ -278,33 +278,25 @@ impl SettingsStorageView {
         if choice == PerViewerChoice::Custom {
             controls = controls.child(
                 div()
-                    .w(LIMIT_INPUT_MAX_W)
-                    .min_w(LIMIT_INPUT_MAX_W)
-                    .max_w(LIMIT_INPUT_MAX_W)
+                    .w(LIMIT_INPUT_W)
+                    .min_w(LIMIT_INPUT_W)
+                    .max_w(LIMIT_INPUT_W)
                     .child(self.per_viewer_input.clone()),
             );
         }
 
-        let mut field = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(field_title(
-                tr!("settings_storage_per_viewer_limit_label"),
-                palette,
-            ))
-            .child(field_hint(
-                tr!("settings_storage_per_viewer_limit_hint"),
-                palette,
-            ))
-            .child(controls);
-        if choice == PerViewerChoice::Unlimited {
-            field = field.child(field_hint(
-                tr!("settings_storage_per_viewer_limit_unlimited_hint"),
-                palette,
-            ));
-        }
-        field
+        let hint = if choice == PerViewerChoice::Unlimited {
+            tr!("settings_storage_per_viewer_limit_unlimited_hint")
+        } else {
+            tr!("settings_storage_per_viewer_limit_hint")
+        };
+        setting_row(
+            tr!("settings_storage_per_viewer_limit_label"),
+            Some(hint.into()),
+            controls,
+            palette,
+            density,
+        )
     }
 
     fn commit_display(&mut self, cx: &mut Context<Self>) {
@@ -428,21 +420,21 @@ impl SettingsStorageView {
         cx.notify();
     }
 
-    fn limit_field(
+    fn limit_row(
         &self,
         label: impl Into<SharedString>,
         hint: impl Into<SharedString>,
         input: Entity<TextInput>,
         palette: &ForgePalette,
         density: Density,
-    ) -> impl IntoElement {
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(field_title(label, palette))
-            .child(field_hint(hint, palette))
-            .child(div().max_w(LIMIT_INPUT_MAX_W).child(input))
+    ) -> SettingRow {
+        setting_row(
+            label,
+            Some(hint.into()),
+            div().w(LIMIT_INPUT_W).child(input),
+            palette,
+            density,
+        )
     }
 }
 
@@ -464,33 +456,36 @@ impl Render for SettingsStorageView {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.backup_now(cx)),
             );
 
-        let body = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(info_row(
+        let rows = setting_rows(&palette)
+            .row(setting_value_row(
                 tr!("settings_storage_db_path_label"),
                 db_path.display().to_string(),
                 &palette,
+                density,
             ))
-            .child(backup_btn)
-            .child(field_hint(tr!("settings_storage_backup_hint"), &palette))
-            .child(self.per_viewer_field(&palette, density, cx))
-            .child(self.limit_field(
+            .row(setting_row(
+                tr!("settings_storage_backup_label"),
+                Some(tr!("settings_storage_backup_hint").into()),
+                backup_btn,
+                &palette,
+                density,
+            ))
+            .row(self.per_viewer_field(&palette, density, cx))
+            .row(self.limit_row(
                 tr!("settings_storage_display_limit_label"),
                 tr!("settings_storage_display_limit_hint"),
                 self.display_input.clone(),
                 &palette,
                 density,
             ))
-            .child(self.limit_field(
+            .row(self.limit_row(
                 tr!("settings_storage_retention_label"),
                 tr!("settings_storage_retention_hint"),
                 self.retention_input.clone(),
                 &palette,
                 density,
             ))
-            .child(self.limit_field(
+            .row(self.limit_row(
                 tr!("settings_storage_history_retention_label"),
                 tr!(
                     "settings_storage_history_retention_hint",
@@ -499,13 +494,14 @@ impl Render for SettingsStorageView {
                 self.history_retention_input.clone(),
                 &palette,
                 density,
-            ));
+            ))
+            .in_card(&palette);
 
         div()
             .flex()
             .flex_col()
             .child(SettingsPaneHeader::new(SettingsSection::Storage))
-            .child(card(body, &palette))
+            .child(rows)
     }
 }
 
@@ -560,32 +556,6 @@ fn parse_history_retention_days(raw: &str) -> Option<u32> {
     raw.trim().parse::<u32>().ok().filter(|v| {
         (MIN_ACTION_HISTORY_RETENTION_DAYS..=MAX_ACTION_HISTORY_RETENTION_DAYS).contains(v)
     })
-}
-
-fn info_row(
-    label: impl Into<SharedString>,
-    value: impl Into<SharedString>,
-    palette: &ForgePalette,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .items_center()
-        .justify_between()
-        .py(spacing(Spacing::Xs, Density::Cozy))
-        .child(
-            div()
-                .font_family(body_family())
-                .text_size(FONT_SM)
-                .text_color(palette.text_primary)
-                .child(label.into()),
-        )
-        .child(
-            div()
-                .font_family(mono_family())
-                .text_size(FONT_SM)
-                .text_color(palette.text_muted)
-                .child(value.into()),
-        )
 }
 
 #[cfg(test)]

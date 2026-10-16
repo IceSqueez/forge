@@ -88,36 +88,6 @@ pub fn field_hint(text: impl Into<SharedString>, palette: &ForgePalette) -> impl
         .child(text.into())
 }
 
-const SETTING_LABEL_GAP: Pixels = px(2.0);
-
-pub fn setting_row(
-    title: impl Into<SharedString>,
-    hint: Option<SharedString>,
-    control: impl IntoElement,
-    palette: &ForgePalette,
-    density: Density,
-) -> impl IntoElement {
-    let mut labels = div()
-        .flex()
-        .flex_col()
-        .flex_1()
-        .min_w(px(0.0))
-        .gap(SETTING_LABEL_GAP)
-        .child(field_title(title, palette));
-    if let Some(hint) = hint {
-        labels = labels.child(field_hint(hint, palette));
-    }
-
-    div()
-        .w_full()
-        .flex()
-        .items_center()
-        .justify_between()
-        .gap(spacing(Spacing::Md, density))
-        .child(labels)
-        .child(div().flex().flex_none().child(control))
-}
-
 const METRIC_LINE_GAP: Pixels = px(4.0);
 
 #[derive(IntoElement)]

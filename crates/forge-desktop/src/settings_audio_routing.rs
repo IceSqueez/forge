@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use forge_audio::{AudioRoute, AudioSink};
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, Radius, SectionLabel, Spacing,
-    body_family, drive_overlay_focus, dropdown, dropdown_list, dropdown_row, icon, radius, segment,
-    segmented, setting_row, spacing, tr, with_alpha,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, Radius, SettingRow, Spacing,
+    body_family, drive_overlay_focus, dropdown, dropdown_list, dropdown_row,
+    ghost_button_with_icon, icon, radius, segment, segmented, setting_block, setting_row,
+    setting_rows, spacing, tr,
 };
 use forge_runtime::OverlayServiceHandle;
 use forge_storage::{OverlayId, OverlayRepo, SettingsRepo};
@@ -281,29 +282,6 @@ impl SettingsAudioRoutingView {
             .unwrap_or_else(|| SharedString::from(id.as_str().to_owned()))
     }
 
-    fn card_header(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
-        let tile = div()
-            .size(px(30.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(radius(Radius::Lg))
-            .bg(with_alpha(palette.accent_teal, 0.12))
-            .child(icon(Icon::Broadcast, px(16.0), palette.accent_teal));
-        div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Md, density))
-            .child(tile)
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(tr!("settings_audio_routing_title")),
-            )
-    }
-
     fn route_control(
         &self,
         domain: AudioDomain,
@@ -438,33 +416,12 @@ impl SettingsAudioRoutingView {
         } else {
             tr!("settings_audio_routing_test")
         };
-        let mut button = div()
-            .id("settings-audio-routing-test")
-            .flex()
-            .flex_none()
-            .items_center()
-            .gap(px(4.0))
-            .px(spacing(Spacing::Sm, Density::Cozy))
-            .py(spacing(Spacing::Xxs, Density::Cozy))
-            .rounded(radius(Radius::Sm))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .child(icon(Icon::PlayerPlay, px(11.0), palette.text_secondary))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_secondary)
-                    .child(label),
-            );
-        if !self.testing {
-            let hover = with_alpha(palette.border_regular, 0.08);
-            button = button
-                .cursor_pointer()
-                .hover(move |style| style.bg(hover))
-                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.test_on_overlay(cx)));
-        }
-        button
+        ghost_button_with_icon(Icon::PlayerPlay, label, palette)
+            .disabled(self.testing)
+            .on_click(
+                "settings-audio-routing-test",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.test_on_overlay(cx)),
+            )
     }
 
     fn picker_overlay(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
@@ -514,39 +471,37 @@ impl SettingsAudioRoutingView {
             }))
     }
 
-    fn in_effect_section(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-    ) -> Option<impl IntoElement> {
+    fn in_effect_row(&self, palette: &ForgePalette, density: Density) -> Option<SettingRow> {
         let in_effect = self.in_effect.as_ref()?;
+        let lines = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, density))
+            .child(self.in_effect_line(
+                tr!("settings_audio_routing_speech_label"),
+                &in_effect.speech,
+                palette,
+                density,
+            ))
+            .child(self.in_effect_line(
+                tr!("settings_audio_routing_clips_label"),
+                &in_effect.clips,
+                palette,
+                density,
+            ));
         Some(
-            div()
-                .flex()
-                .flex_col()
-                .child(SectionLabel::new(tr!("settings_audio_routing_in_effect"), palette).padded())
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(spacing(Spacing::Xxs, density))
-                        .child(self.in_effect_row(
-                            tr!("settings_audio_routing_speech_label"),
-                            &in_effect.speech,
-                            palette,
-                            density,
-                        ))
-                        .child(self.in_effect_row(
-                            tr!("settings_audio_routing_clips_label"),
-                            &in_effect.clips,
-                            palette,
-                            density,
-                        )),
-                ),
+            setting_row(
+                tr!("settings_audio_routing_in_effect"),
+                None,
+                lines,
+                palette,
+                density,
+            )
+            .stacked(),
         )
     }
 
-    fn in_effect_row(
+    fn in_effect_line(
         &self,
         label: String,
         plan: &RoutePlan,
@@ -608,7 +563,7 @@ impl Render for SettingsAudioRoutingView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let mut content = div().flex().flex_col().gap(spacing(Spacing::Md, density));
+        let mut content = div().flex().flex_col().gap(spacing(Spacing::Xs, density));
 
         if self.loading {
             content = content.child(
@@ -625,26 +580,37 @@ impl Render for SettingsAudioRoutingView {
                 &palette,
             ));
         } else {
-            content = content
-                .child(setting_row(
+            let rows = setting_rows(&palette)
+                .row(setting_row(
                     tr!("settings_audio_routing_speech_label"),
                     Some(tr!("settings_audio_routing_speech_hint").into()),
                     self.route_control(AudioDomain::Speech, &palette, cx),
                     &palette,
                     density,
                 ))
-                .child(setting_row(
+                .row(setting_row(
                     tr!("settings_audio_routing_clips_label"),
                     Some(tr!("settings_audio_routing_clips_hint").into()),
                     self.route_control(AudioDomain::Clips, &palette, cx),
                     &palette,
                     density,
                 ))
-                .child(
-                    SectionLabel::new(tr!("settings_audio_routing_destination"), &palette).padded(),
+                .row(
+                    setting_row(
+                        tr!("settings_audio_routing_destination"),
+                        None,
+                        self.destination_section(&palette, density, cx),
+                        &palette,
+                        density,
+                    )
+                    .stacked(),
                 )
-                .child(self.destination_section(&palette, density, cx))
-                .children(self.in_effect_section(&palette, density));
+                .rows(
+                    self.in_effect_row(&palette, density)
+                        .map(IntoElement::into_any_element),
+                )
+                .in_card(&palette);
+            content = content.child(rows);
 
             if let Some(message) = &self.test_error {
                 content = content.child(self.error_text(
@@ -662,17 +628,7 @@ impl Render for SettingsAudioRoutingView {
             }
         }
 
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .p(spacing(Spacing::Md, density))
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .bg(palette.elevated)
-            .child(self.card_header(&palette, density))
-            .child(content)
+        setting_block(tr!("settings_audio_routing_title"), None, content, &palette)
     }
 }
 

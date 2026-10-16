@@ -5,16 +5,16 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_ACCENT, BORDER_THIN, BulletItem, BulletKind, Density, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SaveState, Spacing, TextArea,
-    TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, field_hint, field_title,
-    ghost_button_with_icon, grow_cell, icon, mono_family, overlay, radio_row, radius,
-    save_indicator, setting_row, spacing, toggle, tr, type_to_confirm,
+    TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, field_title, ghost_button_with_icon,
+    grow_cell, icon, mono_family, overlay, radio_row, radius, save_indicator, setting_block,
+    setting_row, setting_rows, setting_sections, spacing, toggle, tr, type_to_confirm,
 };
 use forge_runtime::OverlayServiceHandle;
 use forge_server::{ServerHandle, ServerSettings};
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SettingsRepo};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Div, Entity, Focusable, FontWeight, Pixels, Rgba,
-    SharedString, Subscription, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, Focusable, FontWeight, Pixels, SharedString,
+    Subscription, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge::{self, ErrorSink};
@@ -755,17 +755,17 @@ impl SettingsWebSocketView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(field_title(tr!("settings_ws_bind_section_title"), palette))
-            .child(field_hint(
-                tr!("settings_ws_bind_section_subtitle"),
-                palette,
-            ))
-            .child(self.bind_card(BindChoice::Localhost, palette, density, cx))
-            .child(self.bind_card(BindChoice::Lan, palette, density, cx))
+        setting_block(
+            tr!("settings_ws_bind_section_title"),
+            Some(tr!("settings_ws_bind_section_subtitle").into()),
+            div()
+                .flex()
+                .flex_col()
+                .gap(spacing(Spacing::Xs, density))
+                .child(self.bind_card(BindChoice::Localhost, palette, density, cx))
+                .child(self.bind_card(BindChoice::Lan, palette, density, cx)),
+            palette,
+        )
     }
 
     fn bind_card(
@@ -924,27 +924,26 @@ impl SettingsWebSocketView {
             );
         }
 
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(field_title(
-                tr!("settings_ws_origins_section_title"),
-                palette,
-            ))
-            .child(field_hint(tr!("settings_ws_origins_subtitle"), palette))
-            .child(self.origins_input.clone())
-            .child(footer.child(div().flex_1().min_w(px(0.0))).child(apply))
+        setting_block(
+            tr!("settings_ws_origins_section_title"),
+            Some(tr!("settings_ws_origins_subtitle").into()),
+            div()
+                .flex()
+                .flex_col()
+                .gap(spacing(Spacing::Xs, density))
+                .child(self.origins_input.clone())
+                .child(footer.child(div().flex_1().min_w(px(0.0))).child(apply)),
+            palette,
+        )
     }
 
-    fn port_column(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(field_title(tr!("settings_ws_port_section_title"), palette))
-            .child(field_hint(tr!("settings_ws_port_subtitle"), palette))
-            .child(self.port_input.clone())
+    fn port_column(&self, palette: &ForgePalette) -> impl IntoElement {
+        setting_block(
+            tr!("settings_ws_port_section_title"),
+            Some(tr!("settings_ws_port_subtitle").into()),
+            self.port_input.clone(),
+            palette,
+        )
     }
 
     fn token_column(
@@ -1048,27 +1047,13 @@ impl SettingsWebSocketView {
                     ),
             );
 
-        let regenerate = div()
-            .id("settings-ws-token-regen")
-            .flex()
-            .flex_none()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, density))
-            .py(px(7.0))
-            .px(spacing(Spacing::Sm, Density::Cozy))
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .cursor_pointer()
-            .child(icon(Icon::Refresh, px(12.0), palette.warning))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.warning)
-                    .child(tr!("server_btn_regenerate")),
-            )
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.regenerate_token(cx)));
+        let regenerate =
+            ghost_button_with_icon(Icon::Refresh, tr!("server_btn_regenerate"), palette)
+                .ink(palette.warning)
+                .on_click(
+                    "settings-ws-token-regen",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.regenerate_token(cx)),
+                );
 
         div()
             .w_full()
@@ -1085,83 +1070,39 @@ impl SettingsWebSocketView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(field_title(tr!("settings_ws_auth_section_title"), palette))
-            .child(field_hint(
-                tr!("settings_ws_auth_section_subtitle"),
-                palette,
-            ))
-            .child(self.auth_row(
-                "settings-ws-auth-ws",
-                Icon::Lock,
-                palette.success,
-                tr!("settings_ws_auth_require_ws_label"),
-                tr!("settings_ws_auth_require_ws_sublabel"),
-                self.require_ws_token,
-                palette,
-                density,
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_require_ws_token(cx)),
-            ))
-            .child(hline(palette.border_regular))
-            .child(self.auth_row(
-                "settings-ws-auth-cors",
-                Icon::AlertTriangle,
-                palette.warning,
-                tr!("settings_ws_auth_cors_label"),
-                tr!("settings_ws_auth_cors_sublabel"),
-                self.cors_any_origin,
-                palette,
-                density,
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_cors(cx)),
-            ))
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn auth_row(
-        &self,
-        id: &'static str,
-        glyph: Icon,
-        glyph_color: Rgba,
-        label: impl Into<SharedString>,
-        sublabel: impl Into<SharedString>,
-        value: bool,
-        palette: &ForgePalette,
-        density: Density,
-        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    ) -> impl IntoElement {
-        let labels = div()
-            .flex_1()
-            .min_w(px(0.0))
-            .flex()
-            .flex_col()
-            .gap(px(2.0))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(label.into()),
+        let rows = setting_rows(palette)
+            .row(
+                setting_row(
+                    tr!("settings_ws_auth_require_ws_label"),
+                    Some(tr!("settings_ws_auth_require_ws_sublabel").into()),
+                    toggle(self.require_ws_token, palette).on_click(
+                        "settings-ws-auth-ws",
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_require_ws_token(cx)),
+                    ),
+                    palette,
+                    density,
+                )
+                .leading(Icon::Lock, palette.success),
             )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child(sublabel.into()),
+            .row(
+                setting_row(
+                    tr!("settings_ws_auth_cors_label"),
+                    Some(tr!("settings_ws_auth_cors_sublabel").into()),
+                    toggle(self.cors_any_origin, palette).on_click(
+                        "settings-ws-auth-cors",
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_cors(cx)),
+                    ),
+                    palette,
+                    density,
+                )
+                .leading(Icon::AlertTriangle, palette.warning),
             );
-
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .py(px(8.0))
-            .child(icon(glyph, px(14.0), glyph_color))
-            .child(labels)
-            .child(toggle(value, palette).on_click(id, handler))
+        setting_block(
+            tr!("settings_ws_auth_section_title"),
+            Some(tr!("settings_ws_auth_section_subtitle").into()),
+            rows,
+            palette,
+        )
     }
 
     fn overlay_section(
@@ -1264,33 +1205,40 @@ impl Render for SettingsWebSocketView {
             .flex_wrap()
             .items_start()
             .gap(spacing(Spacing::Md, density))
-            .child(grow_cell(self.port_column(&palette, density), 1.0).min_w(PORT_COLUMN_MIN_W))
+            .child(grow_cell(self.port_column(&palette), 1.0).min_w(PORT_COLUMN_MIN_W))
             .child(
                 grow_cell(self.token_column(&palette, density, cx), 1.6).min_w(TOKEN_COLUMN_MIN_W),
             );
+
+        let enable_row = setting_rows(&palette).row(
+            setting_row(
+                tr!("settings_ws_enable_label"),
+                Some(tr!("settings_ws_enable_description").into()),
+                self.lifecycle_controls(&palette, density, cx),
+                &palette,
+                density,
+            )
+            .leading(Icon::Power, palette.success),
+        );
 
         let body = div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Md, density))
             .children(crate::server_unavailable::unavailable_banner(cx, &palette))
-            .child(setting_row(
-                tr!("settings_ws_enable_label"),
-                Some(tr!("settings_ws_enable_description").into()),
-                self.lifecycle_controls(&palette, density, cx),
+            .child(setting_sections(
+                [
+                    enable_row.into_any_element(),
+                    self.bind_section(&palette, density, cx).into_any_element(),
+                    self.origins_section(&palette, density, cx)
+                        .into_any_element(),
+                    port_token.into_any_element(),
+                    self.auth_section(&palette, density, cx).into_any_element(),
+                    self.overlay_section(&palette, density, cx)
+                        .into_any_element(),
+                ],
                 &palette,
-                density,
-            ))
-            .child(hline(palette.border_regular))
-            .child(self.bind_section(&palette, density, cx))
-            .child(hline(palette.border_regular))
-            .child(self.origins_section(&palette, density, cx))
-            .child(hline(palette.border_regular))
-            .child(port_token)
-            .child(hline(palette.border_regular))
-            .child(self.auth_section(&palette, density, cx))
-            .child(hline(palette.border_regular))
-            .child(self.overlay_section(&palette, density, cx));
+            ));
 
         let mut root = div()
             .flex()
@@ -1397,10 +1345,6 @@ fn lan_bind_bullets() -> Vec<BulletItem> {
         ),
         BulletItem::new(BulletKind::Info, tr!("settings_ws_lan_bullet_firewall")),
     ]
-}
-
-fn hline(color: Rgba) -> Div {
-    div().w_full().h(BORDER_THIN).bg(color)
 }
 
 #[cfg(test)]

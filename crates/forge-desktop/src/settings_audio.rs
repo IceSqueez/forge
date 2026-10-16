@@ -5,9 +5,9 @@ use forge_audio::{
     refresh_output_devices, stored_output_device,
 };
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, Radius, SectionLabel, Spacing,
-    body_family, drive_overlay_focus, dropdown, dropdown_list, dropdown_row, icon, radius, spacing,
-    tr, with_alpha,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, Radius, Spacing, body_family,
+    drive_overlay_focus, dropdown, dropdown_list, dropdown_row, ghost_button_with_icon, icon,
+    icon_button, radius, setting_block, setting_groups, setting_row, setting_rows, spacing, tr,
 };
 use forge_storage::{DataProvider, SettingsRepo};
 use gpui::{AnyElement, ClickEvent, Context, Entity, FocusHandle, Window, div, prelude::*, px};
@@ -241,29 +241,6 @@ impl SettingsAudioView {
         }
     }
 
-    fn screen_header(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
-        let tile = div()
-            .size(px(30.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(radius(Radius::Lg))
-            .bg(with_alpha(palette.info, 0.12))
-            .child(icon(Icon::Volume, px(16.0), palette.info));
-        div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Md, density))
-            .child(tile)
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(tr!("settings_audio_title")),
-            )
-    }
-
     fn device_section(
         &self,
         palette: &ForgePalette,
@@ -329,42 +306,21 @@ impl SettingsAudioView {
             field = field.child(self.picker_overlay(palette, cx));
         }
 
-        let refresh_btn = div()
-            .id("settings-audio-refresh")
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_center()
-            .px(spacing(Spacing::Xs, Density::Cozy))
-            .py(spacing(Spacing::Xxs, Density::Cozy))
-            .rounded(radius(Radius::Sm))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .cursor_pointer()
-            .hover(|style| style.bg(with_alpha(palette.border_regular, 0.08)))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)))
-            .child(icon(Icon::Refresh, px(12.0), palette.text_secondary));
+        let refresh_btn = icon_button(Icon::Refresh, palette).on_click(
+            "settings-audio-refresh",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)),
+        );
 
-        let test_btn = div()
-            .id("settings-audio-test-inline")
-            .flex()
-            .items_center()
-            .gap(px(4.0))
-            .px(spacing(Spacing::Sm, Density::Cozy))
-            .py(spacing(Spacing::Xxs, Density::Cozy))
-            .rounded(radius(Radius::Sm))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .cursor_pointer()
-            .hover(|style| style.bg(with_alpha(palette.border_regular, 0.08)))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.test_tone(cx)))
-            .child(icon(Icon::PlayerPlay, px(11.0), palette.text_secondary))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_secondary)
-                    .child(tr!("widget_device_test")),
+        let test_label = if self.test_playing {
+            tr!("settings_audio_test_playing")
+        } else {
+            tr!("widget_device_test")
+        };
+        let test_btn = ghost_button_with_icon(Icon::PlayerPlay, test_label, palette)
+            .disabled(self.test_playing)
+            .on_click(
+                "settings-audio-test-inline",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.test_tone(cx)),
             );
 
         div()
@@ -404,45 +360,6 @@ impl SettingsAudioView {
             .into_any_element()
     }
 
-    fn standalone_test(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let label = if self.test_playing {
-            tr!("settings_audio_test_playing")
-        } else {
-            tr!("settings_audio_test_tone")
-        };
-        let mut button = div()
-            .id("settings-audio-test")
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Sm, density))
-            .px(spacing(Spacing::Sm, Density::Cozy))
-            .py(spacing(Spacing::Xxs, Density::Cozy))
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .child(icon(Icon::Volume, px(12.0), palette.info))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.info)
-                    .child(label),
-            );
-        if !self.test_playing {
-            let hover = with_alpha(palette.info, 0.08);
-            button = button
-                .cursor_pointer()
-                .hover(move |style| style.bg(hover))
-                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.test_tone(cx)));
-        }
-        button.into_any_element()
-    }
-
     fn error_text(
         &self,
         key: &'static str,
@@ -470,49 +387,42 @@ impl Render for SettingsAudioView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let mut content = div()
+        let output_rows = setting_rows(&palette)
+            .row(
+                setting_row(
+                    tr!("settings_audio_output_devices"),
+                    None,
+                    self.device_section(&palette, density, cx),
+                    &palette,
+                    density,
+                )
+                .stacked(),
+            )
+            .in_card(&palette);
+
+        let mut output = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(SectionLabel::new(tr!("settings_audio_output_devices"), &palette).padded())
-            .child(self.device_section(&palette, density, cx))
-            .child(SectionLabel::new(tr!("settings_audio_test_section"), &palette).padded())
-            .child(self.standalone_test(&palette, density, cx));
-
+            .gap(spacing(Spacing::Xs, density))
+            .child(output_rows);
         if let Some(message) = &self.test_error {
-            content =
-                content.child(self.error_text("settings_audio_test_error", message, &palette));
+            output = output.child(self.error_text("settings_audio_test_error", message, &palette));
         }
         if let Some(message) = &self.persist_error {
-            content =
-                content.child(self.error_text("settings_audio_persist_error", message, &palette));
+            output =
+                output.child(self.error_text("settings_audio_persist_error", message, &palette));
         }
-
-        let output_card = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .p(spacing(Spacing::Md, density))
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .bg(palette.elevated)
-            .child(self.screen_header(&palette, density))
-            .child(content);
 
         div()
             .flex()
             .flex_col()
             .child(SettingsPaneHeader::new(SettingsSection::Audio))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(spacing(Spacing::Md, density))
-                    .child(output_card)
-                    .child(self.routing.clone())
-                    .child(self.voice_gate.clone()),
-            )
+            .child(setting_groups([
+                setting_block(tr!("settings_audio_title"), None, output, &palette)
+                    .into_any_element(),
+                self.routing.clone().into_any_element(),
+                self.voice_gate.clone().into_any_element(),
+            ]))
     }
 }
 

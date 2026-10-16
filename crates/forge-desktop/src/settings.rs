@@ -3,9 +3,9 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
     Picker, PickerEvent, PickerItem, PickerLabels, Radius, Spacing, ThemeId, badge, body_family,
-    card, dropdown, field_hint, field_label, field_title, ghost_button_with_icon, icon,
-    mono_family, page_frame, radius, set_body_family, set_mono_family, setting_row, spacing,
-    toggle, tr, with_alpha,
+    card, dropdown, field_hint, field_label, ghost_button_with_icon, icon, mono_family, page_frame,
+    radius, set_body_family, set_mono_family, setting_block, setting_row, setting_rows,
+    setting_sections, spacing, toggle, tr, with_alpha,
 };
 use forge_storage::{Language, SettingsRepo, reserved_keys};
 use gpui::{
@@ -45,6 +45,10 @@ const NAV_ROW_FONT: Pixels = px(12.5);
 const NAV_ROW_ICON: Pixels = px(14.0);
 const PANE_PAD_V: Pixels = px(20.0);
 const PANE_PAD_H: Pixels = px(24.0);
+const CHOICE_LABEL_GAP: Pixels = px(2.0);
+const CHOICE_PAD_V: Pixels = px(8.0);
+const CHOICE_ACTIVE_FILL: f32 = 0.12;
+const CHOICE_ACTIVE_EDGE: f32 = 0.5;
 
 const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
     (
@@ -652,13 +656,12 @@ impl SettingsView {
         for theme in ThemeId::ALL {
             theme_grid = theme_grid.child(self.theme_card(theme, active == theme, palette, cx));
         }
-        let theme_block = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(field_title(tr!("settings_appearance_theme_label"), palette))
-            .child(field_hint(tr!("settings_appearance_theme_hint"), palette))
-            .child(theme_grid);
+        let theme_block = setting_block(
+            tr!("settings_appearance_theme_label"),
+            Some(tr!("settings_appearance_theme_hint").into()),
+            theme_grid,
+            palette,
+        );
 
         let mut density_rows = div().flex().flex_col().gap(spacing(Spacing::Xxs, density));
         let current_density = cx.density();
@@ -670,63 +673,49 @@ impl SettingsView {
                 cx,
             ));
         }
-        let density_block = section_divider(palette, density).child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(spacing(Spacing::Xs, density))
-                .child(field_title(
-                    tr!("settings_appearance_density_label"),
-                    palette,
-                ))
-                .child(field_hint(
-                    tr!("settings_appearance_density_subtitle"),
-                    palette,
-                ))
-                .child(density_rows),
+        let density_block = setting_block(
+            tr!("settings_appearance_density_label"),
+            Some(tr!("settings_appearance_density_subtitle").into()),
+            density_rows,
+            palette,
         );
 
-        let fonts_block = section_divider(palette, density).child(
+        let fonts_block = setting_block(
+            tr!("settings_appearance_fonts_label"),
+            None,
             div()
                 .flex()
-                .flex_col()
+                .flex_row()
                 .gap(spacing(Spacing::Sm, density))
-                .child(field_title(tr!("settings_appearance_fonts_label"), palette))
-                .child(
-                    div()
-                        .flex()
-                        .flex_row()
-                        .gap(spacing(Spacing::Sm, density))
-                        .child(self.font_field(
-                            tr!("settings_appearance_font_interface").into(),
-                            FontTarget::Body,
-                            body_family(),
-                            palette,
-                            cx,
-                        ))
-                        .child(self.font_field(
-                            tr!("settings_appearance_font_monospace").into(),
-                            FontTarget::Mono,
-                            mono_family(),
-                            palette,
-                            cx,
-                        )),
-                ),
+                .child(self.font_field(
+                    tr!("settings_appearance_font_interface").into(),
+                    FontTarget::Body,
+                    body_family(),
+                    palette,
+                    cx,
+                ))
+                .child(self.font_field(
+                    tr!("settings_appearance_font_monospace").into(),
+                    FontTarget::Mono,
+                    mono_family(),
+                    palette,
+                    cx,
+                )),
+            palette,
         );
 
         div()
             .flex()
             .flex_col()
             .child(SettingsPaneHeader::new(SettingsSection::Appearance))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(spacing(Spacing::Md, density))
-                    .child(theme_block)
-                    .child(density_block)
-                    .child(fonts_block),
-            )
+            .child(setting_sections(
+                [
+                    theme_block.into_any_element(),
+                    density_block.into_any_element(),
+                    fonts_block.into_any_element(),
+                ],
+                palette,
+            ))
             .into_any_element()
     }
 
@@ -879,49 +868,14 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let (label, hint) = density_meta(density);
-        let labels = div()
-            .flex()
-            .flex_col()
-            .gap(px(2.0))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(label),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(hint),
-            );
-
-        let mut row = div()
-            .id(SharedString::from(format!(
-                "settings-density-{}",
-                density_key(density)
-            )))
-            .flex()
-            .items_center()
-            .justify_between()
-            .px(spacing(Spacing::Sm, Density::Cozy))
-            .py(px(8.0))
-            .rounded(radius(Radius::Sm))
-            .cursor_pointer()
-            .on_click(
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.select_density(density, cx)),
-            )
-            .child(labels);
-        if active {
-            row = row
-                .bg(with_alpha(palette.brand, 0.12))
-                .border(BORDER_THIN)
-                .border_color(with_alpha(palette.brand, 0.5))
-                .child(icon(Icon::CircleCheck, FONT_SM, palette.brand));
-        }
-        row
+        choice_row(
+            SharedString::from(format!("settings-density-{}", density_key(density))),
+            label.into(),
+            field_hint(hint, palette).into_any_element(),
+            active,
+            palette,
+        )
+        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select_density(density, cx)))
     }
 
     fn language_pane(
@@ -933,7 +887,7 @@ impl SettingsView {
         let list = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xs, density))
+            .gap(spacing(Spacing::Xxs, density))
             .child(self.language_option_row("English", "en-US", Language::En, palette, cx))
             .child(self.language_option_row("Українська", "uk-UA", Language::Uk, palette, cx));
 
@@ -956,45 +910,14 @@ impl SettingsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let is_selected = self.language == lang;
-
-        let chip = div()
-            .px(px(8.0))
-            .py(px(3.0))
-            .rounded(radius(Radius::Sm))
-            .bg(palette.surface_overlay)
-            .font_family(mono_family())
-            .text_size(FONT_XS)
-            .text_color(palette.text_primary)
-            .child(bcp47);
-
-        let mut row = div()
-            .id(SharedString::from(format!("settings-language-{lang}")))
-            .flex()
-            .items_center()
-            .justify_between()
-            .w_full()
-            .py(px(10.0))
-            .rounded(radius(Radius::Sm))
-            .cursor_pointer()
-            .on_click(
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.select_language(lang, cx)),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(native_label),
-            )
-            .child(chip);
-        if is_selected {
-            row = row
-                .bg(with_alpha(palette.brand, 0.12))
-                .border(BORDER_THIN)
-                .border_color(with_alpha(palette.brand, 0.5));
-        }
-        row
+        choice_row(
+            SharedString::from(format!("settings-language-{lang}")),
+            native_label.into(),
+            field_hint(bcp47, palette).into_any_element(),
+            self.language == lang,
+            palette,
+        )
+        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select_language(lang, cx)))
     }
 
     fn version_pane(
@@ -1096,7 +1019,7 @@ impl SettingsView {
             .flex()
             .flex_col()
             .child(SettingsPaneHeader::new(SettingsSection::General))
-            .child(card(stay_awake_row, palette))
+            .child(setting_rows(palette).row(stay_awake_row).in_card(palette))
             .into_any_element()
     }
 }
@@ -1131,12 +1054,44 @@ impl Render for SettingsView {
     }
 }
 
-fn section_divider(palette: &ForgePalette, density: Density) -> gpui::Div {
-    div()
+fn choice_row(
+    id: SharedString,
+    label: SharedString,
+    detail: AnyElement,
+    active: bool,
+    palette: &ForgePalette,
+) -> gpui::Stateful<gpui::Div> {
+    let labels = div()
         .flex()
         .flex_col()
-        .gap(spacing(Spacing::Sm, density))
-        .pt(spacing(Spacing::Md, density))
-        .border_t(BORDER_THIN)
-        .border_color(palette.border_regular)
+        .gap(CHOICE_LABEL_GAP)
+        .child(
+            div()
+                .font_family(body_family())
+                .text_size(FONT_XS)
+                .text_color(palette.text_primary)
+                .child(label),
+        )
+        .child(detail);
+
+    let row = div()
+        .id(id)
+        .flex()
+        .items_center()
+        .justify_between()
+        .px(spacing(Spacing::Sm, Density::Cozy))
+        .py(CHOICE_PAD_V)
+        .rounded(radius(Radius::Sm))
+        .border(BORDER_THIN)
+        .cursor_pointer()
+        .child(labels);
+    if active {
+        row.bg(with_alpha(palette.brand, CHOICE_ACTIVE_FILL))
+            .border_color(with_alpha(palette.brand, CHOICE_ACTIVE_EDGE))
+            .child(icon(Icon::CircleCheck, FONT_SM, palette.brand))
+    } else {
+        let hover = palette.elevated;
+        row.border_color(gpui::transparent_black())
+            .hover(move |style| style.bg(hover))
+    }
 }

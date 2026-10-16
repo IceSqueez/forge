@@ -40,6 +40,7 @@ pub mod save_state;
 pub mod search_state;
 pub mod section_label;
 pub mod segmented;
+pub mod setting_list;
 pub mod side_sheet;
 pub mod slider;
 pub mod sparkline;
@@ -64,8 +65,8 @@ pub use buttons::{
 };
 pub use cards::{
     Card, EmptyState, PadTile, RowCard, ToolbarRow, card, card_shell, divider, empty_state,
-    field_hint, field_label, field_title, grow_cell, metric_card, pad_tile, row_card, setting_row,
-    stat_card, stat_row, toolbar_row,
+    field_hint, field_label, field_title, grow_cell, metric_card, pad_tile, row_card, stat_card,
+    stat_row, toolbar_row,
 };
 pub use chat_gap_row::chat_gap_row;
 pub use chat_row::{ChatBody, ChatRow, ChatRowView, PlatformMark, RoleBadge, chat_row};
@@ -132,6 +133,10 @@ pub use save_state::{SaveState, save_indicator};
 pub use search_state::SearchState;
 pub use section_label::{SectionLabel, section_label};
 pub use segmented::{Segment, SegmentedControl, segment, segmented};
+pub use setting_list::{
+    SettingRow, SettingRows, setting_block, setting_groups, setting_row, setting_rows,
+    setting_sections, setting_value_row,
+};
 pub use side_sheet::{SheetPosition, SheetWidth, SideSheet, side_sheet};
 pub use slider::{Slider, slider};
 pub use sparkline::{Sparkline, sparkline};

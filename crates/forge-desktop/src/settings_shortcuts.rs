@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, InputEvent,
-    OverlayPosition, Radius, Spacing, TextInput, body_family, confirm_modal, error_row,
-    ghost_button, mono_family, overlay, radius, spacing, toggle, tr, with_alpha,
+    OverlayPosition, Radius, SettingRow, Spacing, TextInput, body_family, confirm_modal, error_row,
+    ghost_button, mono_family, overlay, radius, setting_block, setting_groups, setting_row,
+    setting_rows, spacing, toggle, tr, with_alpha,
 };
 use forge_hotkey::{DEFAULT_HOLD_CEILING_SECS, HotkeyClient};
 use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
@@ -313,7 +314,7 @@ impl SettingsShortcutsView {
             .rounded(radius(Radius::Sm))
             .bg(palette.surface_overlay)
             .font_family(mono_family())
-            .text_size(FONT_XS)
+            .text_size(FONT_XXS)
             .text_color(palette.text_primary)
             .child(label.into())
             .into_any_element()
@@ -325,13 +326,7 @@ impl SettingsShortcutsView {
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
-        let label = div()
-            .font_family(body_family())
-            .text_size(FONT_SM)
-            .text_color(palette.text_primary)
-            .child(tr!(entry.label_key));
-
+    ) -> SettingRow {
         let mut controls = div()
             .flex()
             .items_center()
@@ -388,63 +383,32 @@ impl SettingsShortcutsView {
             }
         }
 
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .w_full()
-            .py(px(6.0))
-            .border_b(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .child(label)
-            .child(controls)
+        setting_row(tr!(entry.label_key), None, controls, palette, density)
     }
 
     fn fixed_section(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
-        let heading = div()
-            .font_family(mono_family())
-            .text_size(FONT_XXS)
-            .text_color(palette.text_faint)
-            .child(tr!("settings_shortcuts_fixed_section"));
-
-        let fixed_row = |label: SharedString, chord: &'static str, this: &Self| {
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .w_full()
-                .child(
-                    div()
-                        .font_family(body_family())
-                        .text_size(FONT_SM)
-                        .text_color(palette.text_secondary)
-                        .child(label),
-                )
-                .child(this.chord_chip(chord, palette))
-        };
-
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(heading)
-            .child(fixed_row(
-                tr!("settings_shortcuts_fixed_enter").into(),
-                "Enter",
-                self,
+        let rows = setting_rows(palette)
+            .row(setting_row(
+                tr!("settings_shortcuts_fixed_enter"),
+                None,
+                self.chord_chip("Enter", palette),
+                palette,
+                density,
             ))
-            .child(fixed_row(
-                tr!("settings_shortcuts_fixed_escape").into(),
-                "Esc",
-                self,
-            ))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child(tr!("settings_shortcuts_fixed_note")),
-            )
+            .row(setting_row(
+                tr!("settings_shortcuts_fixed_escape"),
+                None,
+                self.chord_chip("Esc", palette),
+                palette,
+                density,
+            ));
+
+        setting_block(
+            tr!("settings_shortcuts_fixed_section"),
+            Some(tr!("settings_shortcuts_fixed_note").into()),
+            rows,
+            palette,
+        )
     }
 
     fn hold_ceiling_section(
@@ -453,12 +417,6 @@ impl SettingsShortcutsView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let heading = div()
-            .font_family(mono_family())
-            .text_size(FONT_XXS)
-            .text_color(palette.text_faint)
-            .child(tr!("settings_hold_ceiling_section"));
-
         let mut controls = div()
             .flex()
             .items_center()
@@ -491,7 +449,27 @@ impl SettingsShortcutsView {
             );
         }
 
-        let hint = if self.hold_ceiling_invalid {
+        let mut row = setting_row(
+            tr!("settings_hold_ceiling_label"),
+            Some(self.hold_ceiling_hint().into()),
+            controls,
+            palette,
+            density,
+        );
+        if self.hold_ceiling_invalid {
+            row = row.hint_color(palette.random);
+        }
+
+        setting_block(
+            tr!("settings_hold_ceiling_section"),
+            None,
+            setting_rows(palette).row(row),
+            palette,
+        )
+    }
+
+    fn hold_ceiling_hint(&self) -> String {
+        if self.hold_ceiling_invalid {
             tr!(
                 "settings_hold_ceiling_invalid",
                 min = CEILING_MIN_SECS as i64,
@@ -499,40 +477,7 @@ impl SettingsShortcutsView {
             )
         } else {
             tr!("settings_hold_ceiling_hint")
-        };
-        let hint_ink = if self.hold_ceiling_invalid {
-            palette.random
-        } else {
-            palette.text_faint
-        };
-
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(heading)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .w_full()
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_SM)
-                            .text_color(palette.text_primary)
-                            .child(tr!("settings_hold_ceiling_label")),
-                    )
-                    .child(controls),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(hint_ink)
-                    .child(hint),
-            )
+        }
     }
 
     fn conflict_overlay(
@@ -581,9 +526,9 @@ impl Render for SettingsShortcutsView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let mut list = div().flex().flex_col();
+        let mut list = setting_rows(&palette);
         for entry in SHORTCUTS {
-            list = list.child(self.entry_row(entry, &palette, density, cx));
+            list = list.row(self.entry_row(entry, &palette, density, cx));
         }
 
         let reset_all = ghost_button(tr!("settings_shortcuts_reset_all"), &palette).on_click(
@@ -591,20 +536,21 @@ impl Render for SettingsShortcutsView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.reset_all(cx)),
         );
 
-        let mut body = div().flex().flex_col().gap(spacing(Spacing::Md, density));
-
+        let mut groups: Vec<AnyElement> = Vec::new();
         if let Some(banner) = self.error_banner(&palette) {
-            body = body.child(banner);
+            groups.push(banner);
         }
-
-        body = body
-            .child(list)
-            .child(self.fixed_section(&palette, density))
-            .child(self.hold_ceiling_section(&palette, density, cx))
-            .child(div().child(reset_all));
+        groups.push(list.into_any_element());
+        groups.push(self.fixed_section(&palette, density).into_any_element());
+        groups.push(
+            self.hold_ceiling_section(&palette, density, cx)
+                .into_any_element(),
+        );
+        let body = setting_groups(groups);
 
         let header = SettingsPaneHeader::new(SettingsSection::Shortcuts)
-            .subtitle(tr!("settings_shortcuts_subtitle"));
+            .subtitle(tr!("settings_shortcuts_subtitle"))
+            .trailing(reset_all);
         let mut root = div()
             .relative()
             .size_full()

@@ -1,10 +1,11 @@
+use crate::platform_visuals::BadgeKind;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
-use forge_components::{BadgeKind, ChatBody, Platform, tr};
-use forge_events::{Event, EventSource};
+use forge_components::{ChatBody, tr};
+use forge_events::Event;
 use forge_types::{
     ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
-    ChatSource, ChatViewer, EventId, UnifiedChatRow, UserBadge,
+    ChatViewer, EventId, PlatformId, UnifiedChatRow, UserBadge,
 };
 use gpui::{Rgba, SharedString};
 use time::OffsetDateTime;
@@ -22,7 +23,7 @@ pub struct ChatMessage {
     pub event_id: EventId,
     pub timestamp: SharedString,
     pub received_at: OffsetDateTime,
-    pub platform: Platform,
+    pub platform: PlatformId,
     pub badges: Vec<BadgeKind>,
     pub username: SharedString,
     pub author_id: Option<SharedString>,
@@ -69,7 +70,7 @@ impl ChatMessage {
             event_id: row.event_id,
             timestamp: format_clock(row.received_at.unix_timestamp()).into(),
             received_at: row.received_at,
-            platform: platform_of(row.source),
+            platform: row.source,
             badges: row.badges.iter().filter_map(badge_kind).collect(),
             username: row.author.clone().into(),
             author_id: row.author_id.clone().map(SharedString::from),
@@ -301,7 +302,7 @@ impl ChatFeed {
         }
         if let Some(value) = event.payload.get(ChatModerationPayload::KEY)
             && let Ok(payload) = serde_json::from_value::<ChatModerationPayload>(value.clone())
-            && let Some(platform) = chat_source(event.source).map(platform_of)
+            && let Some(platform) = event.source.to_platform_id()
         {
             return match payload.action {
                 ChatModerationAction::DeleteMessage { message_id } => {
@@ -332,7 +333,7 @@ impl ChatFeed {
     }
 
     pub fn annotates_rows(event: &Event) -> bool {
-        let moderation = chat_source(event.source).is_some()
+        let moderation = event.source.to_platform_id().is_some()
             && event.payload.get(ChatModerationPayload::KEY).is_some();
         let run_mark = event.caused_by.is_some()
             && matches!(
@@ -343,7 +344,7 @@ impl ChatFeed {
     }
 
     pub fn is_message(event: &Event) -> bool {
-        chat_source(event.source).is_some() && event.payload.get(ChatPayload::KEY).is_some()
+        event.source.to_platform_id().is_some() && event.payload.get(ChatPayload::KEY).is_some()
     }
 
     pub fn set_triggered(&mut self, event_id: EventId, action_name: &str) -> bool {
@@ -390,11 +391,11 @@ impl ChatFeed {
         self.moderate_where(|m| m.id == msg_id)
     }
 
-    pub fn mark_user(&mut self, platform: Platform, username: &str) -> bool {
+    pub fn mark_user(&mut self, platform: PlatformId, username: &str) -> bool {
         self.moderate_where(|m| m.platform == platform && m.username.eq_ignore_ascii_case(username))
     }
 
-    pub fn clear_platform(&mut self, platform: Platform) -> bool {
+    pub fn clear_platform(&mut self, platform: PlatformId) -> bool {
         self.moderate_where(|m| m.platform == platform)
     }
 
@@ -410,7 +411,7 @@ impl ChatFeed {
     }
 
     pub fn message_from_event(event: &Event) -> Option<ChatMessage> {
-        let source = chat_source(event.source)?;
+        let source = event.source.to_platform_id()?;
         let chat_value = event.payload.get(ChatPayload::KEY)?;
         let payload: ChatPayload = serde_json::from_value(chat_value.clone()).ok()?;
         let row = row_from_payload(source, event, payload);
@@ -424,27 +425,7 @@ impl ChatFeed {
     }
 }
 
-pub(crate) fn chat_source(src: EventSource) -> Option<ChatSource> {
-    match src {
-        EventSource::Twitch => Some(ChatSource::Twitch),
-        EventSource::YouTube => Some(ChatSource::YouTube),
-        EventSource::Kick => Some(ChatSource::Kick),
-        EventSource::Core
-        | EventSource::Rhai
-        | EventSource::Http
-        | EventSource::Obs
-        | EventSource::VTube
-        | EventSource::Discord
-        | EventSource::Midi
-        | EventSource::Hotkey
-        | EventSource::Timer
-        | EventSource::Server
-        | EventSource::Audio
-        | EventSource::Donation => None,
-    }
-}
-
-fn row_from_payload(source: ChatSource, event: &Event, payload: ChatPayload) -> UnifiedChatRow {
+fn row_from_payload(source: PlatformId, event: &Event, payload: ChatPayload) -> UnifiedChatRow {
     let author_color = payload
         .author_color
         .as_deref()
@@ -471,14 +452,6 @@ fn rgb_channels([r, g, b]: [u8; 3]) -> Rgba {
         g: f32::from(g) / 255.0,
         b: f32::from(b) / 255.0,
         a: 1.0,
-    }
-}
-
-pub(crate) fn platform_of(source: ChatSource) -> Platform {
-    match source {
-        ChatSource::Twitch => Platform::Twitch,
-        ChatSource::YouTube => Platform::YouTube,
-        ChatSource::Kick => Platform::Kick,
     }
 }
 

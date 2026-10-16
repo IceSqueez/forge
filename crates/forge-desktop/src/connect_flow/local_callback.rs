@@ -255,7 +255,7 @@ impl ConnectFlow {
     }
 
     pub(super) fn connect_status(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        let accent = super::platform_accent(self.platform, palette);
+        let accent = crate::platform_visuals::platform_color(self.platform, palette);
         let (indicator, label, color): (AnyElement, String, Rgba) = match self.phase {
             LocalCallbackFlowPhase::Starting | LocalCallbackFlowPhase::Waiting => (
                 spinner("oauth-status-spin", Icon::Loader2, px(11.0), accent).into_any_element(),

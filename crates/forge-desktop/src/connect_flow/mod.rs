@@ -1,11 +1,10 @@
+use crate::platform_visuals::{platform_color, platform_letter};
 mod device_code;
 mod local_callback;
 
 use std::sync::Arc;
 
-use forge_components::{
-    Density, ForgePalette, PlatformKind, Spacing, platform_color, platform_hero, spacing, tr,
-};
+use forge_components::{Density, ForgePalette, Spacing, platform_hero, spacing, tr};
 use forge_platform_core::PlatformEndpoints;
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
@@ -137,7 +136,7 @@ impl Render for ConnectFlow {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
-        let accent = platform_accent(self.platform, &palette);
+        let accent = platform_color(self.platform, &palette);
         let (letter, desc) = connect_copy(self.platform);
         let hero = platform_hero(letter, accent, self.display_name.clone(), desc, &palette)
             .density(density);
@@ -157,20 +156,13 @@ impl Render for ConnectFlow {
     }
 }
 
-fn platform_accent(platform: PlatformId, palette: &ForgePalette) -> Rgba {
-    match platform {
-        PlatformId::Twitch => platform_color(PlatformKind::Twitch, palette),
-        PlatformId::YouTube => platform_color(PlatformKind::YouTube, palette),
-        PlatformId::Kick => platform_color(PlatformKind::Kick, palette),
-    }
-}
-
 fn connect_copy(platform: PlatformId) -> (&'static str, String) {
-    match platform {
-        PlatformId::Twitch => ("T", tr!("twitch_description")),
-        PlatformId::Kick => ("K", tr!("kick_description")),
-        PlatformId::YouTube => ("Y", tr!("youtube_description")),
-    }
+    let description = match platform {
+        PlatformId::Twitch => tr!("twitch_description"),
+        PlatformId::Kick => tr!("kick_description"),
+        PlatformId::YouTube => tr!("youtube_description"),
+    };
+    (platform_letter(platform), description)
 }
 
 fn status_dot(color: Rgba) -> impl IntoElement {

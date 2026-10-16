@@ -3,7 +3,8 @@ use forge_platform_core::{
     BanDuration, BanEntry, BanListOutcome, BanListSource, BanListUnavailable, BanPage,
     BanPageToken, UnbanAbility, UnbanRefusal,
 };
-use forge_storage::{BAN_LEDGER_LIST_CAP, BanLedgerEntry, ViewerPlatform};
+use forge_storage::{BAN_LEDGER_LIST_CAP, BanLedgerEntry};
+use forge_types::PlatformId;
 use time::OffsetDateTime;
 
 use crate::builtin::YoutubeIntegrationBundle;
@@ -37,7 +38,7 @@ impl BanListSource for YoutubeIntegrationBundle {
         match platform
             .ban_ledger()
             .list_active(
-                ViewerPlatform::YouTube,
+                PlatformId::YouTube,
                 broadcaster_channel_id,
                 OffsetDateTime::now_utc(),
                 BAN_LEDGER_LIST_CAP,

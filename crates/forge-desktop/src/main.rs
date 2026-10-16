@@ -89,6 +89,7 @@ mod overlay_frame_sink;
 mod overlay_speech_failure;
 mod overlays_screen;
 mod picker_favorites;
+mod platform_visuals;
 mod platforms;
 mod presentation;
 mod queue_health;

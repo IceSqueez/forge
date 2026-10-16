@@ -2,12 +2,13 @@ use super::*;
 use crate::home_stats::Integration;
 use crate::integration_lifecycle::IntegrationLifecycle;
 use forge_runtime::LifecycleState;
+use forge_types::PlatformId;
 
-pub(crate) fn platform_integration(platform: Platform) -> Integration {
+pub(crate) fn platform_integration(platform: PlatformId) -> Integration {
     match platform {
-        Platform::Twitch => Integration::Twitch,
-        Platform::YouTube => Integration::YouTube,
-        Platform::Kick => Integration::Kick,
+        PlatformId::Twitch => Integration::Twitch,
+        PlatformId::YouTube => Integration::YouTube,
+        PlatformId::Kick => Integration::Kick,
     }
 }
 
@@ -36,7 +37,7 @@ impl ChatView {
         self
     }
 
-    pub(crate) fn platform_enabled(&self, platform: Platform, cx: &App) -> bool {
+    pub(crate) fn platform_enabled(&self, platform: PlatformId, cx: &App) -> bool {
         match &self.lifecycle {
             Some(lifecycle) => lifecycle
                 .read(cx)
@@ -45,7 +46,7 @@ impl ChatView {
         }
     }
 
-    pub(crate) fn platform_running(&self, platform: Platform, cx: &App) -> bool {
+    pub(crate) fn platform_running(&self, platform: PlatformId, cx: &App) -> bool {
         match &self.lifecycle {
             Some(lifecycle) => {
                 lifecycle

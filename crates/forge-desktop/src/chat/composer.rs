@@ -1,9 +1,10 @@
+use crate::platform_visuals::{send_target, send_target_id, send_target_platforms};
 use std::sync::Arc;
 
-use forge_components::{ForgePalette, InputBar, InputBarEvent, Platform, ToastKind, tr};
+use forge_components::{ForgePalette, InputBar, InputBarEvent, ToastKind, tr};
 use forge_runtime::EventBus;
-use forge_types::EventId;
-use gpui::{AppContext, Context, Entity, IntoElement, Render, Subscription, Window};
+use forge_types::{EventId, PlatformId};
+use gpui::{AppContext, Context, Entity, IntoElement, Render, SharedString, Subscription, Window};
 
 use super::platform_display_name;
 use super::platform_gate::platform_integration;
@@ -34,7 +35,13 @@ impl ChatComposer {
         palette: ForgePalette,
         cx: &mut Context<Self>,
     ) -> Self {
-        let input = cx.new(|cx| InputBar::new(tr!("chat_send_placeholder_connected"), palette, cx));
+        let targets = PlatformId::ALL
+            .into_iter()
+            .map(|platform| (send_target(platform, &palette), true))
+            .collect();
+        let input = cx.new(|cx| {
+            InputBar::new(tr!("chat_send_placeholder_connected"), palette, cx).with_targets(targets)
+        });
         let subscriptions = vec![
             cx.subscribe(&input, Self::on_input_event),
             cx.observe(&home_stats, |this, _, cx| this.refresh_reach(cx)),
@@ -77,7 +84,7 @@ impl ChatComposer {
     fn current_reach(&self, cx: &Context<Self>) -> PlatformReach {
         let stats = self.home_stats.read(cx);
         let lifecycle = self.lifecycle.as_ref().map(|lifecycle| lifecycle.read(cx));
-        let enabled: Vec<Platform> = [Platform::Twitch, Platform::YouTube, Platform::Kick]
+        let enabled: Vec<PlatformId> = PlatformId::ALL
             .into_iter()
             .filter(|platform| {
                 lifecycle.is_none_or(|lifecycle| {
@@ -108,7 +115,12 @@ impl ChatComposer {
     }
 
     fn apply_reach(&mut self, cx: &mut Context<Self>) {
-        let selectable = self.reach.selectable();
+        let selectable: Vec<SharedString> = self
+            .reach
+            .selectable()
+            .into_iter()
+            .map(send_target_id)
+            .collect();
         self.input
             .update(cx, |bar, cx| bar.set_available_targets(&selectable, cx));
         self.refresh_targets(cx);
@@ -116,7 +128,7 @@ impl ChatComposer {
     }
 
     fn refresh_targets(&mut self, cx: &mut Context<Self>) {
-        let effective = self.input.read(cx).effective_targets();
+        let effective = send_target_platforms(&self.input.read(cx).effective_targets());
         let limit = self.reach.char_limit(&effective);
         let placeholder = match (self.reach.selectable().is_empty(), effective.as_slice()) {
             (true, _) => tr!("chat_send_placeholder_offline"),
@@ -139,7 +151,9 @@ impl ChatComposer {
         cx: &mut Context<Self>,
     ) {
         match event {
-            InputBarEvent::Send { text, targets } => self.send(text, targets, cx),
+            InputBarEvent::Send { text, targets } => {
+                self.send(text, &send_target_platforms(targets), cx)
+            }
             InputBarEvent::TargetsChanged => {
                 self.refresh_targets(cx);
                 cx.notify();
@@ -148,7 +162,7 @@ impl ChatComposer {
         }
     }
 
-    fn send(&mut self, text: &str, targets: &[Platform], cx: &mut Context<Self>) {
+    fn send(&mut self, text: &str, targets: &[PlatformId], cx: &mut Context<Self>) {
         if self.is_sending() {
             return;
         }

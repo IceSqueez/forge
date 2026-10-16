@@ -2,13 +2,12 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 
 use forge_events::Event;
-use forge_storage::{StorageError, ViewerPlatform, ViewerRepo};
+use forge_storage::{StorageError, ViewerRepo};
 use forge_types::ChatViewer;
-
-use crate::viewer_tracker::viewer_platform;
+use forge_types::PlatformId;
 
 pub struct FirstChatLedger {
-    seen: Mutex<HashSet<(ViewerPlatform, String)>>,
+    seen: Mutex<HashSet<(PlatformId, String)>>,
 }
 
 impl FirstChatLedger {
@@ -28,7 +27,7 @@ impl FirstChatLedger {
         if event.replay {
             return;
         }
-        let Some(platform) = viewer_platform(event.source) else {
+        let Some(platform) = event.source.to_platform_id() else {
             return;
         };
         let Some(mut viewer) = ChatViewer::read(&event.payload) else {

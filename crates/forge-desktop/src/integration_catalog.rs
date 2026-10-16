@@ -1,6 +1,7 @@
-use forge_components::{ForgePalette, HubTileGlyph, Icon, PlatformKind, platform_color};
+use crate::platform_visuals::platform_color;
+use forge_components::{ForgePalette, HubTileGlyph, Icon};
 use forge_platform_core::{IntegrationCategory, IntegrationDeclaration};
-use forge_types::IntegrationId;
+use forge_types::{IntegrationId, PlatformId};
 use gpui::Rgba;
 
 use crate::screen::Screen;
@@ -102,17 +103,17 @@ pub fn look_of(id: &IntegrationId, palette: &ForgePalette) -> IntegrationLook {
         "twitch" => (
             Some("T"),
             Icon::Broadcast,
-            platform_color(PlatformKind::Twitch, palette),
+            platform_color(PlatformId::Twitch, palette),
         ),
         "youtube" => (
             Some("Y"),
             Icon::Broadcast,
-            platform_color(PlatformKind::YouTube, palette),
+            platform_color(PlatformId::YouTube, palette),
         ),
         "kick" => (
             Some("K"),
             Icon::Broadcast,
-            platform_color(PlatformKind::Kick, palette),
+            platform_color(PlatformId::Kick, palette),
         ),
         "donatello" => (Some("D"), Icon::Coin, palette.accent_pink_light),
         "monobank" => (Some("M"), Icon::Coin, palette.text_secondary),

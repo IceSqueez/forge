@@ -3,7 +3,8 @@ use forge_platform_core::{
     BanDuration, BanEntry, BanListOutcome, BanListSource, BanListUnavailable, BanPage,
     BanPageToken, UnbanAbility,
 };
-use forge_storage::{BAN_LEDGER_LIST_CAP, BanLedgerEntry, ViewerPlatform};
+use forge_storage::{BAN_LEDGER_LIST_CAP, BanLedgerEntry};
+use forge_types::PlatformId;
 use time::OffsetDateTime;
 
 use crate::builtin::KickIntegrationBundle;
@@ -37,7 +38,7 @@ impl BanListSource for KickIntegrationBundle {
             .platform()
             .ban_ledger()
             .list_active(
-                ViewerPlatform::Kick,
+                PlatformId::Kick,
                 &broadcaster_user_id.to_string(),
                 OffsetDateTime::now_utc(),
                 BAN_LEDGER_LIST_CAP,

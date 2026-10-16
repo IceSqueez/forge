@@ -1639,6 +1639,18 @@ kick_description = Чат, підписки, хости - гібрид: офіц
 
 ## Живий чат - заголовок / фільтри
 
+chat_badge_owner = OWNER
+chat_badge_mod = MOD
+chat_badge_vip = VIP
+chat_badge_sub = SUB
+chat_badge_bot = BOT
+chat_badge_partner = PARTNER
+chat_badge_prime = PRIME
+chat_badge_founder = FOUNDER
+chat_badge_turbo = TURBO
+chat_badge_hype = HYPE
+chat_badge_bits = BITS
+chat_badge_bits_leader = BITS LEADER
 chat_breadcrumb_audience = Аудиторія
 chat_breadcrumb_chat = Чат
 chat_filter_all = Всі

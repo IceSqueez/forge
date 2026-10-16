@@ -1,7 +1,7 @@
 use forge_components::{
-    Density, FONT_SM, FONT_XS, ForgePalette, InputEvent, OverlayPosition, Platform, PlatformKind,
-    Spacing, TextInput, body_family, field_label, modal, mono_family, overlay, primary_button,
-    secondary_button, segment, segmented, spacing, toggle, tr,
+    Density, FONT_SM, FONT_XS, ForgePalette, InputEvent, OverlayPosition, Spacing, TextInput,
+    body_family, field_label, modal, mono_family, overlay, primary_button, secondary_button,
+    segment, segmented, spacing, toggle, tr,
 };
 use forge_storage::{AliasId, VoiceAlias};
 use forge_types::PlatformId;
@@ -16,70 +16,70 @@ use forge_components::ActivePresentation;
 const MODAL_W: Pixels = px(440.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PlatformScope {
+pub(crate) enum AliasScope {
     Any,
     Twitch,
     YouTube,
     Kick,
 }
 
-impl PlatformScope {
-    pub(crate) const ALL: [PlatformScope; 4] = [
-        PlatformScope::Any,
-        PlatformScope::Twitch,
-        PlatformScope::YouTube,
-        PlatformScope::Kick,
+impl AliasScope {
+    pub(crate) const ALL: [AliasScope; 4] = [
+        AliasScope::Any,
+        AliasScope::Twitch,
+        AliasScope::YouTube,
+        AliasScope::Kick,
     ];
 
     pub(crate) fn token(self) -> Option<&'static str> {
         match self {
-            PlatformScope::Any => None,
-            PlatformScope::Twitch => Some(PlatformId::Twitch.as_str()),
-            PlatformScope::YouTube => Some(PlatformId::YouTube.as_str()),
-            PlatformScope::Kick => Some(PlatformId::Kick.as_str()),
+            AliasScope::Any => None,
+            AliasScope::Twitch => Some(PlatformId::Twitch.as_str()),
+            AliasScope::YouTube => Some(PlatformId::YouTube.as_str()),
+            AliasScope::Kick => Some(PlatformId::Kick.as_str()),
         }
     }
 
-    pub(crate) fn from_token(token: &str) -> Option<PlatformScope> {
-        PlatformScope::ALL
+    pub(crate) fn from_token(token: &str) -> Option<AliasScope> {
+        AliasScope::ALL
             .into_iter()
             .find(|scope| scope.token() == Some(token))
     }
 
     pub(crate) fn label(self) -> String {
         match self {
-            PlatformScope::Any => tr!("tts_aliases_platform_any"),
-            PlatformScope::Twitch => "Twitch".to_owned(),
-            PlatformScope::YouTube => "YouTube".to_owned(),
-            PlatformScope::Kick => "Kick".to_owned(),
+            AliasScope::Any => tr!("tts_aliases_platform_any"),
+            AliasScope::Twitch => "Twitch".to_owned(),
+            AliasScope::YouTube => "YouTube".to_owned(),
+            AliasScope::Kick => "Kick".to_owned(),
         }
     }
 
-    pub(crate) fn kind(self) -> Option<PlatformKind> {
+    pub(crate) fn kind(self) -> Option<PlatformId> {
         match self {
-            PlatformScope::Any => None,
-            PlatformScope::Twitch => Some(PlatformKind::Twitch),
-            PlatformScope::YouTube => Some(PlatformKind::YouTube),
-            PlatformScope::Kick => Some(PlatformKind::Kick),
+            AliasScope::Any => None,
+            AliasScope::Twitch => Some(PlatformId::Twitch),
+            AliasScope::YouTube => Some(PlatformId::YouTube),
+            AliasScope::Kick => Some(PlatformId::Kick),
         }
     }
 }
 
-pub(crate) fn platform_scope(platform: Platform) -> PlatformScope {
+pub(crate) fn platform_scope(platform: PlatformId) -> AliasScope {
     match platform {
-        Platform::Twitch => PlatformScope::Twitch,
-        Platform::YouTube => PlatformScope::YouTube,
-        Platform::Kick => PlatformScope::Kick,
+        PlatformId::Twitch => AliasScope::Twitch,
+        PlatformId::YouTube => AliasScope::YouTube,
+        PlatformId::Kick => AliasScope::Kick,
     }
 }
 
-pub(crate) fn split_alias_key(key: &str) -> (PlatformScope, &str) {
+pub(crate) fn split_alias_key(key: &str) -> (AliasScope, &str) {
     key.split_once(':')
-        .and_then(|(token, name)| PlatformScope::from_token(token).map(|scope| (scope, name)))
-        .unwrap_or((PlatformScope::Any, key))
+        .and_then(|(token, name)| AliasScope::from_token(token).map(|scope| (scope, name)))
+        .unwrap_or((AliasScope::Any, key))
 }
 
-pub(crate) fn alias_key(scope: PlatformScope, name: &str) -> String {
+pub(crate) fn alias_key(scope: AliasScope, name: &str) -> String {
     match scope.token() {
         Some(token) => format!("{token}:{name}"),
         None => name.to_owned(),
@@ -117,7 +117,7 @@ const ENGINE_OPTIONS: [EngineOption; 4] = [
 pub(crate) struct AliasIdentity {
     pub key: String,
     pub name: String,
-    pub platform: PlatformScope,
+    pub platform: AliasScope,
 }
 
 #[derive(Default)]
@@ -149,7 +149,7 @@ pub(crate) enum AliasFormEvent {
 
 pub(crate) struct AliasForm {
     editing: Option<AliasId>,
-    platform: PlatformScope,
+    platform: AliasScope,
     locked_key: Option<String>,
     viewer: Entity<TextInput>,
     voice: Entity<TextInput>,
@@ -178,7 +178,7 @@ impl AliasForm {
                 identity.name,
                 locked.then_some(identity.key),
             ),
-            None => (PlatformScope::Any, String::new(), None),
+            None => (AliasScope::Any, String::new(), None),
         };
         let viewer = text_field(
             tr!("tts_aliases_form_viewer_placeholder"),
@@ -259,7 +259,7 @@ impl AliasForm {
         cx.notify();
     }
 
-    fn set_platform(&mut self, platform: PlatformScope, cx: &mut Context<Self>) {
+    fn set_platform(&mut self, platform: AliasScope, cx: &mut Context<Self>) {
         if self.locked_key.is_some() {
             return;
         }
@@ -307,7 +307,7 @@ impl Render for AliasForm {
         );
 
         let locked = self.locked_key.is_some();
-        let platform_segments = PlatformScope::ALL
+        let platform_segments = AliasScope::ALL
             .into_iter()
             .map(|scope| {
                 segment(

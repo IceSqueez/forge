@@ -1,21 +1,22 @@
+use crate::platform_visuals::{
+    BadgeKind, badge_color, badge_label, platform_color, platform_mark, role_badge,
+};
 use std::collections::{BTreeMap, VecDeque};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
-    BORDER_THIN, BadgeKind, BreadcrumbCrumb, ChatBody, ChatRow, ChipGlyph, Density, FONT_MD,
-    FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuPlacement, Platform,
-    PlatformKind, Radius, ResizeEdge, ResizeRange, SearchState, Spacing, TextInput, ToastKind,
-    avatar_tile, badge, badge_color, badge_label, body_family, chat_gap_row, chat_row, chip,
-    context_menu, empty_state, hash_accent, icon, install_resize, menu_button, menu_divider,
-    menu_header, menu_item, mono_family, page_frame, platform_color, radius, spacing, status_dot,
-    tr,
+    BORDER_THIN, BreadcrumbCrumb, ChatBody, ChatRow, ChipGlyph, Density, FONT_MD, FONT_SM, FONT_XS,
+    FONT_XXS, ForgePalette, Icon, InputEvent, MenuPlacement, Radius, ResizeEdge, ResizeRange,
+    SearchState, Spacing, TextInput, ToastKind, avatar_tile, badge, body_family, chat_gap_row,
+    chat_row, chip, context_menu, empty_state, hash_accent, icon, install_resize, menu_button,
+    menu_divider, menu_header, menu_item, mono_family, page_frame, radius, spacing, status_dot, tr,
 };
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::SpeakQueueHandle;
 use forge_storage::{ChatAuthorTally, ChatHistoryRepo, Viewer, ViewerRepo, VoiceAliasRepo};
-use forge_types::{Shared, SubActionStep, Variant, is_bot_account};
+use forge_types::{PlatformId, Shared, SubActionStep, Variant, is_bot_account};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, ListAlignment, ListState,
     MouseButton, MouseDownEvent, Pixels, Point, Rgba, SharedString, Subscription, Window, div,
@@ -101,7 +102,7 @@ fn build_reply_step(username: &str, message: &str, parent_message_id: &str) -> S
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlatformFilter {
     All,
-    Single(Platform),
+    Single(PlatformId),
 }
 
 #[derive(Clone)]
@@ -204,11 +205,11 @@ struct ViewerHistoryHost {
     _dismissed: Subscription,
 }
 
-fn platform_display_name(platform: Platform) -> &'static str {
+fn platform_display_name(platform: PlatformId) -> &'static str {
     match platform {
-        Platform::Twitch => "Twitch",
-        Platform::YouTube => "YouTube",
-        Platform::Kick => "Kick",
+        PlatformId::Twitch => "Twitch",
+        PlatformId::YouTube => "YouTube",
+        PlatformId::Kick => "Kick",
     }
 }
 
@@ -787,7 +788,7 @@ impl ChatView {
             cx.notify();
             return;
         };
-        if target.viewer.platform != Platform::Twitch {
+        if target.viewer.platform != PlatformId::Twitch {
             cx.notify();
             return;
         }
@@ -822,7 +823,7 @@ impl ChatView {
         let username = target.username;
         self.dispatch_quick_action(
             step,
-            platform_gate::platform_integration(Platform::Twitch)
+            platform_gate::platform_integration(PlatformId::Twitch)
                 .id_str()
                 .to_owned(),
             format!("Reply to {username}"),
@@ -856,7 +857,7 @@ impl ChatView {
         let target = self.user_menu.as_ref()?;
         let position = target.position;
         let viewer = &target.viewer;
-        let can_reply = viewer.platform == Platform::Twitch;
+        let can_reply = viewer.platform == PlatformId::Twitch;
         let view = cx.entity();
 
         let mut items = vec![menu_header(SharedString::from(viewer.name.clone()))];
@@ -1054,11 +1055,7 @@ impl ChatView {
         } else if !msg.username.is_empty() {
             hash_accent(&msg.username, palette)
         } else {
-            match msg.platform {
-                Platform::Twitch => platform_color(PlatformKind::Twitch, palette),
-                Platform::YouTube => platform_color(PlatformKind::YouTube, palette),
-                Platform::Kick => platform_color(PlatformKind::Kick, palette),
-            }
+            platform_color(msg.platform, palette)
         }
     }
 
@@ -1082,19 +1079,19 @@ impl ChatView {
             (
                 "chat-chip-twitch",
                 "Twitch".to_owned(),
-                PlatformFilter::Single(Platform::Twitch),
+                PlatformFilter::Single(PlatformId::Twitch),
                 palette.brand,
             ),
             (
                 "chat-chip-youtube",
                 "YouTube".to_owned(),
-                PlatformFilter::Single(Platform::YouTube),
+                PlatformFilter::Single(PlatformId::YouTube),
                 palette.random,
             ),
             (
                 "chat-chip-kick",
                 "Kick".to_owned(),
-                PlatformFilter::Single(Platform::Kick),
+                PlatformFilter::Single(PlatformId::Kick),
                 palette.info,
             ),
         ];
@@ -1208,8 +1205,12 @@ impl ChatView {
             let data = ChatRow {
                 id: msg.id.clone(),
                 timestamp: msg.timestamp.clone(),
-                platform: msg.platform,
-                badges: msg.badges.clone(),
+                platform: platform_mark(msg.platform, &pal),
+                badges: msg
+                    .badges
+                    .iter()
+                    .map(|&kind| role_badge(kind, &pal))
+                    .collect(),
                 username: msg.username.clone(),
                 username_color: Self::username_color(msg, &pal),
                 body: msg.body.clone(),

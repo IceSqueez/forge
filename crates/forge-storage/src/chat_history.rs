@@ -1,8 +1,9 @@
 use std::fmt;
 
 use async_trait::async_trait;
+use forge_types::PlatformId;
 use forge_types::redaction::Redacted;
-use forge_types::unified_chat::{ChatSource, UnifiedChatRow};
+use forge_types::unified_chat::UnifiedChatRow;
 use time::OffsetDateTime;
 
 use crate::StorageError;
@@ -11,7 +12,7 @@ pub const AUTHORLESS_CHAT_HISTORY_RETAINED: usize = 2000;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct ChatAuthorKey {
-    pub source: ChatSource,
+    pub source: PlatformId,
     pub author_id: String,
 }
 
@@ -76,12 +77,12 @@ pub trait ChatHistoryRepo: Send + Sync {
 
     async fn mark_user_messages_moderated(
         &self,
-        source: ChatSource,
+        source: PlatformId,
         author: &str,
         timeout: bool,
     ) -> Result<u64, StorageError>;
 
-    async fn clear_platform(&self, source: ChatSource) -> Result<u64, StorageError>;
+    async fn clear_platform(&self, source: PlatformId) -> Result<u64, StorageError>;
 }
 
 #[cfg(test)]

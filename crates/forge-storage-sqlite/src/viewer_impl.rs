@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use forge_storage::{StorageError, Viewer, ViewerMessage, ViewerPlatform, ViewerRepo};
+use forge_storage::{StorageError, Viewer, ViewerMessage, ViewerRepo};
+use forge_types::PlatformId;
 use time::OffsetDateTime;
 
 use crate::batch::insert_rows;
@@ -38,7 +39,7 @@ struct ViewerRow {
 }
 
 fn row_to_viewer(row: ViewerRow) -> Result<Viewer, StorageError> {
-    let platform = ViewerPlatform::parse(&row.platform).ok_or_else(|| {
+    let platform = PlatformId::parse(&row.platform).ok_or_else(|| {
         StorageError::from(SqliteStorageError::Decode(format!(
             "unknown platform `{}`",
             row.platform
@@ -80,7 +81,7 @@ impl ViewerRepo for SqliteViewerRepo {
 
     async fn get(
         &self,
-        platform: ViewerPlatform,
+        platform: PlatformId,
         viewer_id: &str,
     ) -> Result<Option<Viewer>, StorageError> {
         let row: Option<ViewerRow> = sqlx::query_as(
@@ -99,7 +100,7 @@ impl ViewerRepo for SqliteViewerRepo {
 
     async fn record_message(
         &self,
-        platform: ViewerPlatform,
+        platform: PlatformId,
         viewer_id: &str,
         username: &str,
     ) -> Result<(), StorageError> {
@@ -180,7 +181,7 @@ impl ViewerRepo for SqliteViewerRepo {
 
     async fn set_custom_greeting(
         &self,
-        platform: ViewerPlatform,
+        platform: PlatformId,
         viewer_id: &str,
         enabled: bool,
     ) -> Result<bool, StorageError> {

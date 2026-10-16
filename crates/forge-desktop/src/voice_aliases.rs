@@ -1,3 +1,4 @@
+use crate::platform_visuals::platform_color;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -5,8 +6,8 @@ use forge_components::{
     BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_XS, FONT_XXS,
     ForgePalette, Icon, OverlayPosition, Radius, SearchState, Spacing, ToastKind, avatar_tile,
     badge, body_family, card, column, confirm_modal, data_table, empty_state, hash_accent, icon,
-    mono_family, overlay, platform_color, primary_button_with_icon, radius, segment, segmented,
-    spacing, status_dot, toolbar_row, tr, virtual_table, with_alpha,
+    mono_family, overlay, primary_button_with_icon, radius, segment, segmented, spacing,
+    status_dot, toolbar_row, tr, virtual_table, with_alpha,
 };
 use forge_speak_queue::{
     EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
@@ -23,7 +24,7 @@ use gpui::{
 
 use crate::async_bridge;
 use crate::voice_alias_form::{
-    AliasForm, AliasFormEvent, AliasIdentity, AliasValues, PlatformScope, alias_key, fmt_field,
+    AliasForm, AliasFormEvent, AliasIdentity, AliasScope, AliasValues, alias_key, fmt_field,
     split_alias_key,
 };
 use crate::voice_alias_store::save_alias;
@@ -94,7 +95,7 @@ struct AliasRow {
     id: AliasId,
     viewer_id: String,
     viewer_name: String,
-    platform: PlatformScope,
+    platform: AliasScope,
     engine_id: String,
     engine_label: String,
     voice_id: String,
@@ -903,9 +904,7 @@ fn row_from_alias(a: VoiceAlias) -> AliasRow {
     let voice = a.voice_id.0;
     let (platform, _) = split_alias_key(&a.viewer_id);
     let viewer_name = match a.viewer_name.split_once(':') {
-        Some((token, name)) if PlatformScope::from_token(token) == Some(platform) => {
-            name.to_owned()
-        }
+        Some((token, name)) if AliasScope::from_token(token) == Some(platform) => name.to_owned(),
         _ => a.viewer_name,
     };
     AliasRow {

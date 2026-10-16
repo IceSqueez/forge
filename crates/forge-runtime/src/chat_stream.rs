@@ -1,8 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_types::{
-    ChatModerationAction, ChatModerationPayload, ChatPayload, ChatSource, ChatViewer,
+    ChatModerationAction, ChatModerationPayload, ChatPayload, ChatViewer, PlatformId,
     UnifiedChatRow,
 };
 use time::OffsetDateTime;
@@ -12,7 +12,7 @@ const DEDUP_WINDOW: usize = 500;
 pub(crate) enum ChatRecord {
     Row(UnifiedChatRow),
     Moderation {
-        source: ChatSource,
+        source: PlatformId,
         action: ChatModerationAction,
         at: OffsetDateTime,
     },
@@ -20,7 +20,7 @@ pub(crate) enum ChatRecord {
 
 #[derive(Default)]
 pub(crate) struct ChatRecordMapper {
-    dedup: HashMap<ChatSource, VecDeque<String>>,
+    dedup: HashMap<PlatformId, VecDeque<String>>,
 }
 
 impl ChatRecordMapper {
@@ -36,28 +36,8 @@ impl ChatRecordMapper {
     }
 }
 
-pub(crate) fn event_source_to_chat_source(src: EventSource) -> Option<ChatSource> {
-    match src {
-        EventSource::Twitch => Some(ChatSource::Twitch),
-        EventSource::YouTube => Some(ChatSource::YouTube),
-        EventSource::Kick => Some(ChatSource::Kick),
-        EventSource::Core
-        | EventSource::Rhai
-        | EventSource::Http
-        | EventSource::Obs
-        | EventSource::VTube
-        | EventSource::Discord
-        | EventSource::Midi
-        | EventSource::Hotkey
-        | EventSource::Timer
-        | EventSource::Server
-        | EventSource::Audio
-        | EventSource::Donation => None,
-    }
-}
-
-fn try_map_moderation_event(ev: &Event) -> Option<(ChatSource, ChatModerationAction)> {
-    let source = event_source_to_chat_source(ev.source)?;
+fn try_map_moderation_event(ev: &Event) -> Option<(PlatformId, ChatModerationAction)> {
+    let source = ev.source.to_platform_id()?;
     let value = ev.payload.get(ChatModerationPayload::KEY)?;
     let payload: ChatModerationPayload = serde_json::from_value(value.clone()).ok()?;
     Some((source, payload.action))
@@ -65,9 +45,9 @@ fn try_map_moderation_event(ev: &Event) -> Option<(ChatSource, ChatModerationAct
 
 fn try_map_chat_event(
     ev: &Event,
-    dedup: &mut HashMap<ChatSource, VecDeque<String>>,
+    dedup: &mut HashMap<PlatformId, VecDeque<String>>,
 ) -> Option<UnifiedChatRow> {
-    let source = event_source_to_chat_source(ev.source)?;
+    let source = ev.source.to_platform_id()?;
     let chat_value = ev.payload.get(ChatPayload::KEY)?;
     let payload: ChatPayload = serde_json::from_value(chat_value.clone()).ok()?;
 

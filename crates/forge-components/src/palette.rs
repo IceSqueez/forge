@@ -67,21 +67,6 @@ pub fn accent_swatch(name: &str, palette: &ForgePalette) -> Option<Rgba> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlatformKind {
-    Twitch,
-    YouTube,
-    Kick,
-}
-
-pub fn platform_color(kind: PlatformKind, palette: &ForgePalette) -> Rgba {
-    match kind {
-        PlatformKind::Twitch => palette.platform_twitch,
-        PlatformKind::YouTube => palette.platform_youtube,
-        PlatformKind::Kick => palette.platform_kick,
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ThemeId {
     #[default]

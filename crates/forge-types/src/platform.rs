@@ -20,6 +20,12 @@ impl PlatformId {
         }
     }
 
+    pub fn parse(raw: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|platform| platform.as_str() == raw)
+    }
+
     pub fn from_wire(raw: &str) -> Option<Self> {
         let raw = raw.trim();
         Self::ALL

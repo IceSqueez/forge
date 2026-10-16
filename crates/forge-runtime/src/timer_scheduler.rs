@@ -10,7 +10,7 @@ use tracing::warn;
 
 use crate::bus::{Delivery, EventBus, EventSubscription};
 use crate::catalog::{Catalog, CatalogSnapshot};
-use crate::chat_stream::{ChatRecord, ChatRecordMapper, event_source_to_chat_source};
+use crate::chat_stream::{ChatRecord, ChatRecordMapper};
 use crate::delivery::TIMER_SCHEDULER;
 use crate::own_chat_echoes::{CHAT_SENT_KIND, OwnChatEchoes};
 use crate::stream_live::StreamLiveHandle;
@@ -187,7 +187,7 @@ impl TimerScheduler {
     }
 
     fn retract_own_message(&mut self, event: &Event, now: Instant) {
-        let Some(source) = event_source_to_chat_source(event.source) else {
+        let Some(source) = event.source.to_platform_id() else {
             return;
         };
         let Some(message) = event.payload.get("message").and_then(|v| v.as_str()) else {

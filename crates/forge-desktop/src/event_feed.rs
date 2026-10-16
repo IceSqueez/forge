@@ -1,16 +1,17 @@
+use crate::platform_visuals::platform_color;
 use std::collections::{HashMap, HashSet};
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
-    PlatformKind, Radius, SearchState, SheetWidth, Spacing, TextInput, ToastKind, badge,
-    body_family, chip, empty_state, header_status, icon, mono_family, page_frame, platform_color,
-    radius, spacing, status_dot, tr, with_alpha,
+    Radius, SearchState, SheetWidth, Spacing, TextInput, ToastKind, badge, body_family, chip,
+    empty_state, header_status, icon, mono_family, page_frame, radius, spacing, status_dot, tr,
+    with_alpha,
 };
 use std::sync::Arc;
 
 use forge_events::EventSource;
 use forge_runtime::{BusError, EventBus};
-use forge_types::EventId;
+use forge_types::{EventId, PlatformId};
 use gpui::{
     AnyElement, ClickEvent, Context, Div, Entity, FocusHandle, Pixels, Rgba, ScrollStrategy,
     ScrollWheelEvent, Stateful, Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
@@ -1213,9 +1214,9 @@ fn source_label(source: EventSource) -> &'static str {
 
 fn source_color(source: EventSource, palette: &ForgePalette) -> Rgba {
     match source {
-        EventSource::Twitch => platform_color(PlatformKind::Twitch, palette),
-        EventSource::YouTube => platform_color(PlatformKind::YouTube, palette),
-        EventSource::Kick => platform_color(PlatformKind::Kick, palette),
+        EventSource::Twitch => platform_color(PlatformId::Twitch, palette),
+        EventSource::YouTube => platform_color(PlatformId::YouTube, palette),
+        EventSource::Kick => platform_color(PlatformId::Kick, palette),
         EventSource::Obs => palette.success,
         EventSource::VTube => palette.warning,
         EventSource::Timer => palette.warning,

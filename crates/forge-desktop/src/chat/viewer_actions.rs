@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
-use forge_components::Platform;
-use forge_types::{SubActionStep, Variant};
+use forge_types::{PlatformId, SubActionStep, Variant};
 
 use super::platform_gate::platform_integration;
 use crate::chat_author::{AuthorHandle, AuthorKey};
@@ -39,7 +38,7 @@ pub(crate) enum ViewerAction {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ViewerTarget {
-    pub platform: Platform,
+    pub platform: PlatformId,
     pub name: String,
     pub viewer_id: Option<String>,
 }
@@ -87,9 +86,9 @@ impl ViewerTarget {
 
     pub fn step(&self, action: &ViewerAction) -> Option<SubActionStep> {
         let (kind_id, config) = match self.platform {
-            Platform::Twitch => self.twitch_step(action)?,
-            Platform::YouTube => self.youtube_step(action)?,
-            Platform::Kick => self.kick_step(action)?,
+            PlatformId::Twitch => self.twitch_step(action)?,
+            PlatformId::YouTube => self.youtube_step(action)?,
+            PlatformId::Kick => self.kick_step(action)?,
         };
         Some(SubActionStep {
             kind_id: kind_id.to_owned(),

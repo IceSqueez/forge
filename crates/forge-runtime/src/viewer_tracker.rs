@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use forge_events::{Event, EventSource};
-use forge_storage::{ViewerMessage, ViewerPlatform, ViewerRepo};
+use forge_events::Event;
+use forge_storage::{ViewerMessage, ViewerRepo};
 use forge_types::ChatViewer;
 
 use crate::bus::EventBus;
@@ -57,33 +57,13 @@ fn viewer_message(event: &Event) -> Option<ViewerMessage> {
     if event.replay {
         return None;
     }
-    let platform = viewer_platform(event.source)?;
+    let platform = event.source.to_platform_id()?;
     let viewer = ChatViewer::read(&event.payload)?;
     Some(ViewerMessage {
         platform,
         viewer_id: viewer.id,
         username: viewer.name,
     })
-}
-
-pub(crate) fn viewer_platform(source: EventSource) -> Option<ViewerPlatform> {
-    match source {
-        EventSource::Twitch => Some(ViewerPlatform::Twitch),
-        EventSource::YouTube => Some(ViewerPlatform::YouTube),
-        EventSource::Kick => Some(ViewerPlatform::Kick),
-        EventSource::Core
-        | EventSource::Rhai
-        | EventSource::Http
-        | EventSource::Obs
-        | EventSource::VTube
-        | EventSource::Discord
-        | EventSource::Midi
-        | EventSource::Hotkey
-        | EventSource::Timer
-        | EventSource::Server
-        | EventSource::Audio
-        | EventSource::Donation => None,
-    }
 }
 
 #[cfg(test)]

@@ -1,10 +1,11 @@
+use crate::platform_visuals::platform_color;
+use forge_types::PlatformId;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Platform, PlatformKind, Radius,
-    Spacing, body_family, empty_state, ghost_button, mono_family, platform_color, radius,
-    secondary_button, spacing, status_dot, tr,
+    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
+    empty_state, ghost_button, mono_family, radius, secondary_button, spacing, status_dot, tr,
 };
 use forge_platform_core::{
     BanDuration, BanEntry, BanListOutcome, BanListSource, BanListUnavailable, BanPageToken,
@@ -34,7 +35,7 @@ use forge_runtime::LifecycleState;
 
 const BAN_RELIST_DEBOUNCE: Duration = Duration::from_millis(750);
 pub(crate) const UNBAN_RELIST_SUPPRESSION: Duration = Duration::from_secs(5);
-const PLATFORM_ORDER: [Platform; 3] = [Platform::Twitch, Platform::YouTube, Platform::Kick];
+const PLATFORM_ORDER: [PlatformId; 3] = [PlatformId::Twitch, PlatformId::YouTube, PlatformId::Kick];
 const GROUP_DOT: Pixels = px(6.0);
 const NAME_COLUMN_W: Pixels = px(160.0);
 const MODERATOR_COLUMN_W: Pixels = px(130.0);
@@ -69,7 +70,7 @@ impl BanRow {
         }
     }
 
-    fn target(&self, platform: Platform) -> ViewerTarget {
+    fn target(&self, platform: PlatformId) -> ViewerTarget {
         ViewerTarget {
             platform,
             name: self.entry.name.clone(),
@@ -77,7 +78,7 @@ impl BanRow {
         }
     }
 
-    pub fn can_unban(&self, platform: Platform) -> bool {
+    pub fn can_unban(&self, platform: PlatformId) -> bool {
         self.entry.unban == UnbanAbility::Allowed
             && self.unban != UnbanState::Running
             && self.target(platform).supports(&ViewerAction::Unban)
@@ -112,10 +113,10 @@ impl ListResult {
     }
 }
 
-pub(crate) fn lists_only_what_forge_saw(platform: Platform) -> bool {
+pub(crate) fn lists_only_what_forge_saw(platform: PlatformId) -> bool {
     match platform {
-        Platform::Twitch => false,
-        Platform::YouTube | Platform::Kick => true,
+        PlatformId::Twitch => false,
+        PlatformId::YouTube | PlatformId::Kick => true,
     }
 }
 
@@ -152,7 +153,7 @@ pub(crate) async fn list_pages(
 }
 
 pub(crate) struct BanGroup {
-    pub platform: Platform,
+    pub platform: PlatformId,
     pub status: GroupStatus,
     pub rows: Vec<BanRow>,
     pub next: Option<BanPageToken>,
@@ -167,7 +168,7 @@ pub(crate) struct BanGroup {
 }
 
 impl BanGroup {
-    fn new(platform: Platform) -> Self {
+    fn new(platform: PlatformId) -> Self {
         Self {
             platform,
             status: GroupStatus::Loading,
@@ -325,7 +326,7 @@ impl BannedPanel {
         })
     }
 
-    fn platform_running(&self, platform: Platform, cx: &App) -> bool {
+    fn platform_running(&self, platform: PlatformId, cx: &App) -> bool {
         match &self.lifecycle {
             Some(lifecycle) => {
                 lifecycle
@@ -337,20 +338,20 @@ impl BannedPanel {
         }
     }
 
-    fn source_for(&self, platform: Platform) -> Option<Arc<dyn BanListSource>> {
+    fn source_for(&self, platform: PlatformId) -> Option<Arc<dyn BanListSource>> {
         self.builtins
             .get(&platform_integration(platform).builtin_id())
             .and_then(|object| object.ban_list)
     }
 
-    fn group_mut(&mut self, platform: Platform) -> Option<&mut BanGroup> {
+    fn group_mut(&mut self, platform: PlatformId) -> Option<&mut BanGroup> {
         self.groups
             .iter_mut()
             .find(|group| group.platform == platform)
     }
 
     fn sync_platforms(&mut self, cx: &mut Context<Self>) {
-        let shown: Vec<Platform> = PLATFORM_ORDER
+        let shown: Vec<PlatformId> = PLATFORM_ORDER
             .into_iter()
             .filter(|platform| {
                 self.platform_running(*platform, cx) && self.source_for(*platform).is_some()
@@ -368,7 +369,7 @@ impl BannedPanel {
     pub fn set_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
         self.visible = visible;
         if visible {
-            let stale: Vec<Platform> = self
+            let stale: Vec<PlatformId> = self
                 .groups
                 .iter()
                 .filter(|group| group.stale || lists_only_what_forge_saw(group.platform))
@@ -381,13 +382,13 @@ impl BannedPanel {
         cx.notify();
     }
 
-    pub(crate) fn note_moderated(&mut self, platform: Platform, cx: &mut Context<Self>) {
+    pub(crate) fn note_moderated(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
         if lists_only_what_forge_saw(platform) {
             self.schedule_relist(platform, cx);
         }
     }
 
-    fn relist(&mut self, platform: Platform, cx: &mut Context<Self>) {
+    fn relist(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
         if self.visible {
             self.list_group(platform, None, cx);
         } else if self.source_for(platform).is_some() {
@@ -395,7 +396,7 @@ impl BannedPanel {
         }
     }
 
-    fn schedule_relist(&mut self, platform: Platform, cx: &mut Context<Self>) {
+    fn schedule_relist(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
         if !self.visible {
             self.relist(platform, cx);
             return;
@@ -409,8 +410,8 @@ impl BannedPanel {
         }
     }
 
-    fn ensure_group(&mut self, platform: Platform) -> &mut BanGroup {
-        let rank = |platform: Platform| {
+    fn ensure_group(&mut self, platform: PlatformId) -> &mut BanGroup {
+        let rank = |platform: PlatformId| {
             PLATFORM_ORDER
                 .iter()
                 .position(|candidate| *candidate == platform)
@@ -437,7 +438,7 @@ impl BannedPanel {
 
     fn list_group(
         &mut self,
-        platform: Platform,
+        platform: PlatformId,
         after: Option<BanPageToken>,
         cx: &mut Context<Self>,
     ) {
@@ -482,7 +483,7 @@ impl BannedPanel {
 
     pub(crate) fn apply_listed(
         &mut self,
-        platform: Platform,
+        platform: PlatformId,
         request_id: u64,
         appending: bool,
         result: ListResult,
@@ -500,7 +501,7 @@ impl BannedPanel {
         cx.notify();
     }
 
-    fn load_more(&mut self, platform: Platform, cx: &mut Context<Self>) {
+    fn load_more(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
         let Some(next) = self
             .group_mut(platform)
             .filter(|group| !group.loading_more)
@@ -511,14 +512,14 @@ impl BannedPanel {
         self.list_group(platform, Some(next), cx);
     }
 
-    fn retry(&mut self, platform: Platform, cx: &mut Context<Self>) {
+    fn retry(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
         if let Some(group) = self.group_mut(platform) {
             group.status = GroupStatus::Loading;
         }
         self.list_group(platform, None, cx);
     }
 
-    fn unban(&mut self, platform: Platform, viewer_id: String, cx: &mut Context<Self>) {
+    fn unban(&mut self, platform: PlatformId, viewer_id: String, cx: &mut Context<Self>) {
         let Some(row) = self
             .group_mut(platform)
             .and_then(|group| group.row_mut(&viewer_id))
@@ -556,7 +557,7 @@ impl BannedPanel {
 
     pub(crate) fn apply_unban(
         &mut self,
-        platform: Platform,
+        platform: PlatformId,
         viewer_id: &str,
         outcome: Result<(), String>,
         cx: &mut Context<Self>,
@@ -595,11 +596,7 @@ impl BannedPanel {
         palette: &ForgePalette,
         density: Density,
     ) -> AnyElement {
-        let kind = match group.platform {
-            Platform::Twitch => PlatformKind::Twitch,
-            Platform::YouTube => PlatformKind::YouTube,
-            Platform::Kick => PlatformKind::Kick,
-        };
+        let kind = group.platform;
         let count = match group.status {
             GroupStatus::Loaded => group.rows.len().to_string(),
             GroupStatus::Loading | GroupStatus::Unavailable(_) => String::new(),
@@ -632,7 +629,7 @@ impl BannedPanel {
     }
 
     fn render_group_notes(
-        platform: Platform,
+        platform: PlatformId,
         palette: &ForgePalette,
         density: Density,
     ) -> Option<AnyElement> {
@@ -698,7 +695,7 @@ impl BannedPanel {
 
     fn render_row(
         &self,
-        platform: Platform,
+        platform: PlatformId,
         row: &BanRow,
         palette: &ForgePalette,
         density: Density,
@@ -927,7 +924,7 @@ pub(super) mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
-    use forge_components::{Density, Platform, ThemeId};
+    use forge_components::{Density, ThemeId};
     use forge_events::{Event, EventSource};
     use forge_platform_core::{
         BanDuration, BanEntry, BanListOutcome, BanListSource, BanListUnavailable, BanPage,
@@ -940,6 +937,7 @@ pub(super) mod tests {
     use forge_runtime::{ActionCancelRegistry, ActionEngineHandle, EventBus, spawn_action_engine};
     use forge_storage::Language;
     use forge_storage::history::MockHistoryRepo;
+    use forge_types::PlatformId;
     use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
     use gpui::{AppContext as _, Entity, TestAppContext};
 
@@ -1080,7 +1078,7 @@ pub(super) mod tests {
     }
 
     fn loaded(ids: &[&str], next: Option<&str>) -> BanGroup {
-        let mut group = BanGroup::new(Platform::Twitch);
+        let mut group = BanGroup::new(PlatformId::Twitch);
         group.apply(false, page(ids, next));
         group
     }
@@ -1176,7 +1174,7 @@ pub(super) mod tests {
         cx.run_until_parked();
     }
 
-    fn shown(cx: &mut TestAppContext, panel: &Entity<BannedPanel>) -> Vec<Platform> {
+    fn shown(cx: &mut TestAppContext, panel: &Entity<BannedPanel>) -> Vec<PlatformId> {
         panel.read_with(cx, |panel, _| {
             panel.groups.iter().map(|group| group.platform).collect()
         })
@@ -1187,7 +1185,7 @@ pub(super) mod tests {
             panel
                 .groups
                 .iter()
-                .find(|group| group.platform == Platform::Twitch)
+                .find(|group| group.platform == PlatformId::Twitch)
                 .map(ids)
                 .unwrap_or_default()
         })
@@ -1202,7 +1200,7 @@ pub(super) mod tests {
             panel
                 .groups
                 .iter()
-                .find(|group| group.platform == Platform::Twitch)
+                .find(|group| group.platform == PlatformId::Twitch)
                 .and_then(|group| {
                     group
                         .rows
@@ -1314,50 +1312,50 @@ pub(super) mod tests {
         let refused = UnbanAbility::Refused(UnbanRefusal::BannedOutsideForge);
         for (platform, viewer_id, ability, state, expected) in [
             (
-                Platform::Twitch,
+                PlatformId::Twitch,
                 "1",
                 UnbanAbility::Allowed,
                 UnbanState::Idle,
                 true,
             ),
             (
-                Platform::Twitch,
+                PlatformId::Twitch,
                 "1",
                 UnbanAbility::Allowed,
                 UnbanState::Failed("x".to_owned()),
                 true,
             ),
             (
-                Platform::Twitch,
+                PlatformId::Twitch,
                 "1",
                 UnbanAbility::Allowed,
                 UnbanState::Running,
                 false,
             ),
-            (Platform::Twitch, "1", refused, UnbanState::Idle, false),
+            (PlatformId::Twitch, "1", refused, UnbanState::Idle, false),
             (
-                Platform::Twitch,
+                PlatformId::Twitch,
                 "",
                 UnbanAbility::Allowed,
                 UnbanState::Idle,
                 false,
             ),
             (
-                Platform::YouTube,
+                PlatformId::YouTube,
                 "UCabc",
                 UnbanAbility::Allowed,
                 UnbanState::Idle,
                 true,
             ),
             (
-                Platform::Kick,
+                PlatformId::Kick,
                 "4242",
                 UnbanAbility::Allowed,
                 UnbanState::Idle,
                 true,
             ),
             (
-                Platform::Kick,
+                PlatformId::Kick,
                 "kick_user",
                 UnbanAbility::Allowed,
                 UnbanState::Idle,
@@ -1399,7 +1397,7 @@ pub(super) mod tests {
 
         let panel = mount.open(cx, &rt);
 
-        assert_eq!(shown(cx, &panel), [Platform::Twitch]);
+        assert_eq!(shown(cx, &panel), [PlatformId::Twitch]);
         assert_eq!(twitch.asked(), [None]);
         assert_eq!(youtube.calls(), 0);
     }
@@ -1419,7 +1417,7 @@ pub(super) mod tests {
 
         assert_eq!(
             shown(cx, &panel),
-            [Platform::Twitch, Platform::YouTube, Platform::Kick]
+            [PlatformId::Twitch, PlatformId::YouTube, PlatformId::Kick]
         );
     }
 
@@ -1455,7 +1453,7 @@ pub(super) mod tests {
         )]))
         .open(cx, &rt);
 
-        panel.update(cx, |panel, cx| panel.load_more(Platform::Twitch, cx));
+        panel.update(cx, |panel, cx| panel.load_more(PlatformId::Twitch, cx));
         settle(cx, &rt);
 
         assert_eq!(twitch.asked(), [None, Some("p2".to_owned())]);
@@ -1471,7 +1469,7 @@ pub(super) mod tests {
             Some(Arc::clone(&last)),
         )]))
         .open(cx, &rt);
-        panel.update(cx, |panel, cx| panel.load_more(Platform::Twitch, cx));
+        panel.update(cx, |panel, cx| panel.load_more(PlatformId::Twitch, cx));
         settle(cx, &rt);
         assert_eq!(last.calls(), 1);
 
@@ -1482,8 +1480,8 @@ pub(super) mod tests {
         )]))
         .open(cx, &rt);
         panel.update(cx, |panel, cx| {
-            panel.load_more(Platform::Twitch, cx);
-            panel.load_more(Platform::Twitch, cx);
+            panel.load_more(PlatformId::Twitch, cx);
+            panel.load_more(PlatformId::Twitch, cx);
         });
         settle(cx, &rt);
         assert_eq!(paged.calls(), 2);
@@ -1501,12 +1499,18 @@ pub(super) mod tests {
         let current = panel.read_with(cx, |panel, _| panel.groups[0].request_id);
 
         panel.update(cx, |panel, cx| {
-            panel.apply_listed(Platform::Twitch, current - 1, false, page(&["9"], None), cx);
+            panel.apply_listed(
+                PlatformId::Twitch,
+                current - 1,
+                false,
+                page(&["9"], None),
+                cx,
+            );
         });
         assert_eq!(twitch_ids(cx, &panel), ["1"]);
 
         panel.update(cx, |panel, cx| {
-            panel.apply_listed(Platform::Twitch, current, false, page(&["9"], None), cx);
+            panel.apply_listed(PlatformId::Twitch, current, false, page(&["9"], None), cx);
         });
         assert_eq!(twitch_ids(cx, &panel), ["9"]);
     }
@@ -1528,7 +1532,7 @@ pub(super) mod tests {
             GroupStatus::Unavailable(BanListUnavailable::Transport)
         );
 
-        panel.update(cx, |panel, cx| panel.retry(Platform::Twitch, cx));
+        panel.update(cx, |panel, cx| panel.retry(PlatformId::Twitch, cx));
         settle(cx, &rt);
 
         assert_eq!(twitch.asked(), [None, None]);
@@ -1699,7 +1703,9 @@ pub(super) mod tests {
 
     fn unban(cx: &mut TestAppContext, panel: &Entity<BannedPanel>, viewer_id: &str) {
         let viewer_id = viewer_id.to_owned();
-        panel.update(cx, |panel, cx| panel.unban(Platform::Twitch, viewer_id, cx));
+        panel.update(cx, |panel, cx| {
+            panel.unban(PlatformId::Twitch, viewer_id, cx)
+        });
     }
 
     #[gpui::test]
@@ -1798,7 +1804,7 @@ pub(super) mod tests {
     fn group_of<R>(
         cx: &mut TestAppContext,
         panel: &Entity<BannedPanel>,
-        platform: Platform,
+        platform: PlatformId,
         read: impl FnOnce(&BanGroup) -> R,
     ) -> R {
         panel.read_with(cx, |panel, _| {
@@ -1962,7 +1968,7 @@ pub(super) mod tests {
             (until, vec!["1", "2"], false),
             (until + Duration::from_secs(1), vec!["1", "2"], false),
         ] {
-            let mut group = BanGroup::new(Platform::Kick);
+            let mut group = BanGroup::new(PlatformId::Kick);
             group.recently_unbanned = vec![("1".to_owned(), until)];
 
             let shown = match group.without_recent_unbans(page(&["1", "2"], None), now) {
@@ -1989,9 +1995,9 @@ pub(super) mod tests {
     fn each_ban_group_notes_what_its_platform_list_can_and_cannot_show() {
         let palette = ThemeId::ForgeDefault.palette();
         for (platform, seen_by_forge, disclaimer) in [
-            (Platform::Twitch, false, false),
-            (Platform::YouTube, true, false),
-            (Platform::Kick, true, true),
+            (PlatformId::Twitch, false, false),
+            (PlatformId::YouTube, true, false),
+            (PlatformId::Kick, true, true),
         ] {
             let notes = BannedPanel::render_group_notes(platform, &palette, Density::Cozy);
             let kick_disclaimer =
@@ -2020,7 +2026,7 @@ pub(super) mod tests {
         quiet_past_debounce(cx, &rt);
 
         assert_eq!(twitch.calls(), 1);
-        assert!(group_of(cx, &panel, Platform::Twitch, |group| group.stale));
+        assert!(group_of(cx, &panel, PlatformId::Twitch, |group| group.stale));
     }
 
     #[gpui::test]
@@ -2045,7 +2051,7 @@ pub(super) mod tests {
 
         assert_eq!((twitch.calls(), kick.calls()), (2, 2));
         assert_eq!(twitch_ids(cx, &panel), ["2"]);
-        assert!(!group_of(cx, &panel, Platform::Twitch, |group| group.stale));
+        assert!(!group_of(cx, &panel, PlatformId::Twitch, |group| group.stale));
     }
 
     #[gpui::test]
@@ -2060,7 +2066,7 @@ pub(super) mod tests {
         quiet_past_debounce(cx, &rt);
 
         assert_eq!(twitch.calls(), 1);
-        assert!(group_of(cx, &panel, Platform::Twitch, |group| group.stale));
+        assert!(group_of(cx, &panel, PlatformId::Twitch, |group| group.stale));
     }
 
     #[gpui::test]
@@ -2104,7 +2110,7 @@ pub(super) mod tests {
             outcome(&["3", "4"], Some("p3")),
         ]);
         let (panel, bus) = with_bus(cx, &rt, &[(Integration::Twitch, Some(Arc::clone(&twitch)))]);
-        panel.update(cx, |panel, cx| panel.load_more(Platform::Twitch, cx));
+        panel.update(cx, |panel, cx| panel.load_more(PlatformId::Twitch, cx));
         settle(cx, &rt);
 
         bus.publish(ban_event("twitch.channel.ban"));
@@ -2114,7 +2120,7 @@ pub(super) mod tests {
         assert_eq!(twitch.asked(), [None, p2.clone(), None, p2]);
         assert_eq!(twitch_ids(cx, &panel), ["1", "2", "3", "4"]);
         assert_eq!(
-            group_of(cx, &panel, Platform::Twitch, |group| group.next.clone()),
+            group_of(cx, &panel, PlatformId::Twitch, |group| group.next.clone()),
             Some(BanPageToken::new("p3"))
         );
     }
@@ -2139,9 +2145,9 @@ pub(super) mod tests {
         cx.executor()
             .advance_clock(UNBAN_RELIST_SUPPRESSION - Duration::from_millis(1));
 
-        panel.update(cx, |panel, cx| panel.retry(Platform::Twitch, cx));
+        panel.update(cx, |panel, cx| panel.retry(PlatformId::Twitch, cx));
         settle(cx, &rt);
-        panel.update(cx, |panel, cx| panel.load_more(Platform::Twitch, cx));
+        panel.update(cx, |panel, cx| panel.load_more(PlatformId::Twitch, cx));
         settle(cx, &rt);
 
         assert_eq!(twitch_ids(cx, &panel), ["1002", "1003"]);
@@ -2165,7 +2171,7 @@ pub(super) mod tests {
         settle(cx, &rt);
         cx.executor().advance_clock(UNBAN_RELIST_SUPPRESSION);
 
-        panel.update(cx, |panel, cx| panel.retry(Platform::Twitch, cx));
+        panel.update(cx, |panel, cx| panel.retry(PlatformId::Twitch, cx));
         settle(cx, &rt);
 
         assert_eq!(twitch_ids(cx, &panel), ["1001", "1002"]);

@@ -1,8 +1,9 @@
+use crate::platform_visuals::BadgeKind;
 use std::collections::HashMap;
 
-use forge_components::{BadgeKind, ForgePalette, Platform, fmt_short_date, tr};
+use forge_components::{ForgePalette, fmt_short_date, tr};
 use forge_platform_core::FollowStatus;
-use forge_types::IntegrationId;
+use forge_types::{IntegrationId, PlatformId};
 use gpui::{Context, Rgba, SharedString, Task};
 
 use super::platform_gate::platform_integration;
@@ -26,15 +27,15 @@ pub(crate) fn follow_request(key: &AuthorKey) -> Option<FollowRequest> {
     })
 }
 
-pub(crate) fn shows_follow(platform: Platform) -> bool {
+pub(crate) fn shows_follow(platform: PlatformId) -> bool {
     match platform {
-        Platform::Twitch | Platform::YouTube => true,
-        Platform::Kick => false,
+        PlatformId::Twitch | PlatformId::YouTube => true,
+        PlatformId::Kick => false,
     }
 }
 
 pub(crate) fn follow_display(
-    platform: Platform,
+    platform: PlatformId,
     role: Option<BadgeKind>,
     status: Option<FollowStatus>,
     palette: &ForgePalette,

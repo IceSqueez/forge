@@ -1,9 +1,8 @@
 use std::time::Duration;
 
-use forge_components::Platform;
 use forge_events::{Event, EventSource};
 use forge_runtime::{Delivery, EventSubscription};
-use forge_types::EventId;
+use forge_types::{EventId, PlatformId};
 
 use super::platform_gate::platform_integration;
 use crate::home_stats::Integration;
@@ -17,31 +16,31 @@ const TWITCH_MAX_MESSAGE_CHARS: usize = 500;
 const YOUTUBE_MAX_MESSAGE_CHARS: usize = 200;
 const KICK_MAX_MESSAGE_CHARS: usize = 500;
 
-pub(crate) fn max_message_chars(platform: Platform) -> usize {
+pub(crate) fn max_message_chars(platform: PlatformId) -> usize {
     match platform {
-        Platform::Twitch => TWITCH_MAX_MESSAGE_CHARS,
-        Platform::YouTube => YOUTUBE_MAX_MESSAGE_CHARS,
-        Platform::Kick => KICK_MAX_MESSAGE_CHARS,
+        PlatformId::Twitch => TWITCH_MAX_MESSAGE_CHARS,
+        PlatformId::YouTube => YOUTUBE_MAX_MESSAGE_CHARS,
+        PlatformId::Kick => KICK_MAX_MESSAGE_CHARS,
     }
 }
 
-fn platform_of_channel(channel: &str) -> Option<Platform> {
+fn platform_of_channel(channel: &str) -> Option<PlatformId> {
     match Integration::from_id(channel)? {
-        Integration::Twitch => Some(Platform::Twitch),
-        Integration::YouTube => Some(Platform::YouTube),
-        Integration::Kick => Some(Platform::Kick),
+        Integration::Twitch => Some(PlatformId::Twitch),
+        Integration::YouTube => Some(PlatformId::YouTube),
+        Integration::Kick => Some(PlatformId::Kick),
         Integration::Obs | Integration::VTube => None,
     }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct PlatformReach {
-    pub enabled: Vec<Platform>,
-    pub connected: Vec<Platform>,
+    pub enabled: Vec<PlatformId>,
+    pub connected: Vec<PlatformId>,
 }
 
 impl PlatformReach {
-    pub(crate) fn selectable(&self) -> Vec<Platform> {
+    pub(crate) fn selectable(&self) -> Vec<PlatformId> {
         self.enabled
             .iter()
             .copied()
@@ -49,9 +48,9 @@ impl PlatformReach {
             .collect()
     }
 
-    pub(crate) fn route(&self, effective: &[Platform]) -> SendRoute {
+    pub(crate) fn route(&self, effective: &[PlatformId]) -> SendRoute {
         let selectable = self.selectable();
-        let chosen: Vec<Platform> = effective
+        let chosen: Vec<PlatformId> = effective
             .iter()
             .copied()
             .filter(|platform| selectable.contains(platform))
@@ -65,14 +64,14 @@ impl PlatformReach {
         }
     }
 
-    pub(crate) fn recipients(&self, route: &SendRoute) -> Vec<Platform> {
+    pub(crate) fn recipients(&self, route: &SendRoute) -> Vec<PlatformId> {
         match route {
             SendRoute::Broadcast => self.selectable(),
             SendRoute::Targeted(platforms) => platforms.clone(),
         }
     }
 
-    pub(crate) fn char_limit(&self, effective: &[Platform]) -> Option<usize> {
+    pub(crate) fn char_limit(&self, effective: &[PlatformId]) -> Option<usize> {
         self.recipients(&self.route(effective))
             .into_iter()
             .map(max_message_chars)
@@ -83,14 +82,14 @@ impl PlatformReach {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SendRoute {
     Broadcast,
-    Targeted(Vec<Platform>),
+    Targeted(Vec<PlatformId>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SendPlan {
     pub message: String,
     pub route: SendRoute,
-    pub recipients: Vec<Platform>,
+    pub recipients: Vec<PlatformId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,7 +102,7 @@ pub(crate) enum SendRefusal {
 
 pub(crate) fn plan_send(
     text: &str,
-    effective: &[Platform],
+    effective: &[PlatformId],
     reach: &PlatformReach,
 ) -> Result<SendPlan, SendRefusal> {
     let message = text.trim();
@@ -166,7 +165,7 @@ pub(crate) enum DeliveryResult {
 pub(crate) fn delivery_response(
     event: &Event,
     requests: &[EventId],
-) -> Option<(Platform, DeliveryResult)> {
+) -> Option<(PlatformId, DeliveryResult)> {
     let caused_by = event.caused_by?;
     if !requests.contains(&caused_by) {
         return None;
@@ -194,11 +193,11 @@ pub(crate) fn delivery_response(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SendReport {
     pub message: String,
-    pub results: Vec<(Platform, DeliveryResult)>,
+    pub results: Vec<(PlatformId, DeliveryResult)>,
 }
 
 impl SendReport {
-    pub(crate) fn unanswered(message: String, recipients: &[Platform]) -> Self {
+    pub(crate) fn unanswered(message: String, recipients: &[PlatformId]) -> Self {
         Self {
             message,
             results: recipients
@@ -208,7 +207,7 @@ impl SendReport {
         }
     }
 
-    pub(crate) fn record(&mut self, platform: Platform, result: DeliveryResult) -> bool {
+    pub(crate) fn record(&mut self, platform: PlatformId, result: DeliveryResult) -> bool {
         match self.results.iter_mut().find(|(recipient, current)| {
             *recipient == platform && *current == DeliveryResult::NoResponse
         }) {
@@ -232,7 +231,7 @@ impl SendReport {
             .any(|(_, result)| *result == DeliveryResult::Delivered)
     }
 
-    pub(crate) fn problems(&self) -> impl Iterator<Item = &(Platform, DeliveryResult)> {
+    pub(crate) fn problems(&self) -> impl Iterator<Item = &(PlatformId, DeliveryResult)> {
         self.results
             .iter()
             .filter(|(_, result)| *result != DeliveryResult::Delivered)

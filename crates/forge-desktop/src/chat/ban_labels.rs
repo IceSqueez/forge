@@ -1,26 +1,27 @@
-use forge_components::{Platform, fmt_relative_time, tr};
+use forge_components::{fmt_relative_time, tr};
 use forge_events::Event;
 use forge_platform_core::{BanDuration, BanListUnavailable, UnbanRefusal};
+use forge_types::PlatformId;
 use time::{OffsetDateTime, UtcOffset};
 
 use crate::chat_drawer::DASH;
 use crate::scheduled_run_labels::local_stamp;
 
-const BAN_CHANGE_KINDS: [(&str, Platform); 4] = [
-    ("twitch.channel.ban", Platform::Twitch),
-    ("twitch.channel.unban", Platform::Twitch),
-    ("youtube.channel.user_banned", Platform::YouTube),
-    ("kick.moderation.banned", Platform::Kick),
+const BAN_CHANGE_KINDS: [(&str, PlatformId); 4] = [
+    ("twitch.channel.ban", PlatformId::Twitch),
+    ("twitch.channel.unban", PlatformId::Twitch),
+    ("youtube.channel.user_banned", PlatformId::YouTube),
+    ("kick.moderation.banned", PlatformId::Kick),
 ];
 
-pub(crate) fn ban_change_platform(kind: &str) -> Option<Platform> {
+pub(crate) fn ban_change_platform(kind: &str) -> Option<PlatformId> {
     BAN_CHANGE_KINDS
         .iter()
         .find(|(change, _)| *change == kind)
         .map(|(_, platform)| *platform)
 }
 
-pub(crate) fn changed_platforms(events: &[Event]) -> Vec<Platform> {
+pub(crate) fn changed_platforms(events: &[Event]) -> Vec<PlatformId> {
     let mut platforms = Vec::new();
     for platform in events
         .iter()

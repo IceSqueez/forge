@@ -1,11 +1,14 @@
+use crate::platform_visuals::platform_color;
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, Confirm, Density, ForgePalette, InlineEdit, PlatformKind,
-    SearchState, TextInput, ToastKind, page_frame, platform_color, tr,
+    BORDER_THIN, BreadcrumbCrumb, Confirm, Density, ForgePalette, InlineEdit, SearchState,
+    TextInput, ToastKind, page_frame, tr,
 };
 use forge_registry::TriggerRegistry;
 use forge_runtime::EventBus;
 use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, reserved_keys};
-use forge_types::{ActionId, PermissionRung, TriggerConfig, TriggerInstance, TriggerInstanceId};
+use forge_types::{
+    ActionId, PermissionRung, PlatformId, TriggerConfig, TriggerInstance, TriggerInstanceId,
+};
 use gpui::{
     App, Context, Entity, EventEmitter, FocusHandle, Pixels, Point, Rgba, SharedString,
     Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
@@ -147,9 +150,9 @@ impl Platform {
 
     fn dot(self, palette: &ForgePalette) -> Rgba {
         match self {
-            Platform::Twitch => platform_color(PlatformKind::Twitch, palette),
-            Platform::Youtube => platform_color(PlatformKind::YouTube, palette),
-            Platform::Kick => platform_color(PlatformKind::Kick, palette),
+            Platform::Twitch => platform_color(PlatformId::Twitch, palette),
+            Platform::Youtube => platform_color(PlatformId::YouTube, palette),
+            Platform::Kick => platform_color(PlatformId::Kick, palette),
             Platform::Obs | Platform::Vtube => palette.accent_teal,
             Platform::Midi => palette.random,
             Platform::Hotkey => palette.warning,

@@ -100,7 +100,7 @@ pub use tts_filters::{
     BlocklistMode, FilterRule, FilterRuleKind, TtsFiltersRepo, TtsPipelineSettings, UrlMode,
 };
 pub use user_globals::{UserGlobalEntry, UserGlobalsRepo};
-pub use viewer::{Viewer, ViewerMessage, ViewerPlatform, ViewerRepo};
+pub use viewer::{Viewer, ViewerMessage, ViewerRepo};
 pub use voice_aliases::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias, VoiceAliasRepo};
 
 #[cfg(feature = "test-mocks")]

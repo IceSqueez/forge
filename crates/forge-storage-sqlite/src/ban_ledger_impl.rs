@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use forge_storage::{
     BAN_LEDGER_LIST_CAP, BanLedgerEntry, BanLedgerKey, BanLedgerRepo, BanOrigin, StorageError,
-    ViewerPlatform, merge_ban_entry,
+    merge_ban_entry,
 };
+use forge_types::PlatformId;
 use time::OffsetDateTime;
 
 use crate::epoch::{from_epoch_ms, to_epoch_ms};
@@ -35,7 +36,7 @@ struct BanLedgerRow {
 }
 
 fn decode_row(row: BanLedgerRow) -> Result<BanLedgerEntry, SqliteStorageError> {
-    let platform = ViewerPlatform::parse(&row.platform).ok_or_else(|| {
+    let platform = PlatformId::parse(&row.platform).ok_or_else(|| {
         SqliteStorageError::Decode(format!("invalid ban ledger platform '{}'", row.platform))
     })?;
     let origin = BanOrigin::parse(&row.origin).ok_or_else(|| {
@@ -177,7 +178,7 @@ impl BanLedgerRepo for SqliteBanLedgerRepo {
 
     async fn list_active(
         &self,
-        platform: ViewerPlatform,
+        platform: PlatformId,
         channel_id: &str,
         now: OffsetDateTime,
         limit: usize,

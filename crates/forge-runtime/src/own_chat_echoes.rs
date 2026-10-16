@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::time::Duration;
 
-use forge_types::{ChatSegment, ChatSource, UnifiedChatRow};
+use forge_types::{ChatSegment, PlatformId, UnifiedChatRow};
 use tokio::time::Instant;
 
 pub(crate) const CHAT_SENT_KIND: &str = "chat.send";
@@ -23,13 +23,13 @@ struct SourceLedger {
 
 #[derive(Default)]
 pub(crate) struct OwnChatEchoes {
-    ledgers: HashMap<ChatSource, SourceLedger>,
+    ledgers: HashMap<PlatformId, SourceLedger>,
 }
 
 impl OwnChatEchoes {
     pub(crate) fn record_sent(
         &mut self,
-        source: ChatSource,
+        source: PlatformId,
         message: &str,
         now: Instant,
     ) -> Option<Instant> {
@@ -88,7 +88,7 @@ impl OwnChatEchoes {
         );
     }
 
-    fn ledger(&mut self, source: ChatSource, now: Instant) -> &mut SourceLedger {
+    fn ledger(&mut self, source: PlatformId, now: Instant) -> &mut SourceLedger {
         let ledger = self.ledgers.entry(source).or_default();
         let fresh = |seen: &Seen| now.saturating_duration_since(seen.at) <= ECHO_WINDOW;
         ledger.sent_awaiting_echo.retain(fresh);

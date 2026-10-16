@@ -1,5 +1,5 @@
-use forge_components::Platform;
-use forge_storage::ViewerPlatform;
+use forge_types::PlatformId;
+
 use gpui::SharedString;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -10,13 +10,13 @@ pub enum AuthorHandle {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AuthorKey {
-    pub platform: Platform,
+    pub platform: PlatformId,
     pub handle: AuthorHandle,
 }
 
 impl AuthorKey {
     pub fn resolve(
-        platform: Platform,
+        platform: PlatformId,
         viewer_id: Option<&SharedString>,
         name: &SharedString,
     ) -> Option<Self> {
@@ -30,14 +30,14 @@ impl AuthorKey {
         Some(Self { platform, handle })
     }
 
-    pub fn by_viewer_id(platform: Platform, viewer_id: &str) -> Self {
+    pub fn by_viewer_id(platform: PlatformId, viewer_id: &str) -> Self {
         Self {
             platform,
             handle: AuthorHandle::ViewerId(SharedString::from(viewer_id.to_owned())),
         }
     }
 
-    pub fn by_name(platform: Platform, name: &str) -> Self {
+    pub fn by_name(platform: PlatformId, name: &str) -> Self {
         Self {
             platform,
             handle: AuthorHandle::Name(SharedString::from(name.to_owned())),
@@ -57,14 +57,6 @@ impl AuthorKey {
             AuthorHandle::Name(name) => ("name", name),
         };
         SharedString::from(format!("{prefix}-{:?}-{kind}-{value}", self.platform))
-    }
-}
-
-pub fn viewer_platform(platform: &ViewerPlatform) -> Platform {
-    match platform {
-        ViewerPlatform::Twitch => Platform::Twitch,
-        ViewerPlatform::YouTube => Platform::YouTube,
-        ViewerPlatform::Kick => Platform::Kick,
     }
 }
 

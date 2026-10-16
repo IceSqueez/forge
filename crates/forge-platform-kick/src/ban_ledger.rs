@@ -1,4 +1,5 @@
-use forge_storage::{BanLedgerEntry, BanLedgerKey, BanOrigin, ViewerPlatform};
+use forge_storage::{BanLedgerEntry, BanLedgerKey, BanOrigin};
+use forge_types::PlatformId;
 use serde_json::Value;
 use time::{Duration, OffsetDateTime};
 
@@ -8,7 +9,7 @@ pub(crate) const USER_BANNED_EVENT_KIND: &str = "kick.moderation.banned";
 
 pub(crate) fn ban_ledger_key(broadcaster_user_id: u64, viewer_user_id: &str) -> BanLedgerKey {
     BanLedgerKey {
-        platform: ViewerPlatform::Kick,
+        platform: PlatformId::Kick,
         channel_id: broadcaster_user_id.to_string(),
         viewer_id: viewer_user_id.to_owned(),
     }

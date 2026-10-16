@@ -1,4 +1,5 @@
-use forge_storage::{BanLedgerEntry, BanLedgerKey, BanOrigin, ViewerPlatform};
+use forge_storage::{BanLedgerEntry, BanLedgerKey, BanOrigin};
+use forge_types::PlatformId;
 use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
 use time::{Duration, OffsetDateTime};
@@ -11,7 +12,7 @@ pub(crate) fn ban_ledger_key(
     viewer_channel_id: &str,
 ) -> BanLedgerKey {
     BanLedgerKey {
-        platform: ViewerPlatform::YouTube,
+        platform: PlatformId::YouTube,
         channel_id: broadcaster_channel_id.to_owned(),
         viewer_id: viewer_channel_id.to_owned(),
     }

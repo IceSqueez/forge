@@ -68,9 +68,7 @@ pub use cards::{
     stat_card, stat_row, toolbar_row,
 };
 pub use chat_gap_row::chat_gap_row;
-pub use chat_row::{
-    BadgeKind, ChatBody, ChatRow, ChatRowView, Platform, badge_color, badge_label, chat_row,
-};
+pub use chat_row::{ChatBody, ChatRow, ChatRowView, PlatformMark, RoleBadge, chat_row};
 pub use chip::{Chip, ChipGlyph, chip};
 pub use code_editor::{CodeEditor, SaveCode, bind_code_editor_keys};
 pub use confirm::{ConfirmModal, ConfirmTone, confirm_modal};
@@ -102,7 +100,7 @@ pub use hub_card::{
 };
 pub use icons::{Icon, IconAssets, icon, spinner};
 pub use inline_edit::{InlineEdit, InlineEditEvent, inline_edit};
-pub use input_bar::{InputBar, InputBarEvent, platform_bit};
+pub use input_bar::{InputBar, InputBarEvent, SendTarget};
 pub use integration_gating::{
     IntegrationDisabledNotice, health_tile, integration_disabled_notice,
     integration_disabled_reason, integration_inactive_badge,
@@ -122,8 +120,7 @@ pub use overlay::{
 };
 pub use page_frame::{HeaderStat, PageFrame, header_stat, header_stats, header_status, page_frame};
 pub use palette::{
-    FORGE_DEFAULT, ForgePalette, LATTE, PlatformKind, TOKYO_NIGHT, ThemeId, accent_swatch,
-    platform_color, with_alpha,
+    FORGE_DEFAULT, ForgePalette, LATTE, TOKYO_NIGHT, ThemeId, accent_swatch, with_alpha,
 };
 pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels, bind_picker_keys};
 pub use platform_hero::{PlatformHero, platform_hero};

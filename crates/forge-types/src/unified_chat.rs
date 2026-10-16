@@ -3,6 +3,7 @@ use std::fmt;
 use time::OffsetDateTime;
 
 use crate::EventId;
+use crate::PlatformId;
 use crate::redaction::{Redacted, RedactedText};
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -143,19 +144,11 @@ impl ChatViewer {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "lowercase")]
-pub enum ChatSource {
-    Twitch,
-    YouTube,
-    Kick,
-}
-
 #[derive(Clone, Serialize, Deserialize)]
 pub struct UnifiedChatRow {
     pub id: String,
     pub event_id: EventId,
-    pub source: ChatSource,
+    pub source: PlatformId,
     #[serde(with = "time::serde::rfc3339")]
     pub received_at: OffsetDateTime,
     pub author: String,

@@ -3,10 +3,10 @@ use forge_storage::{
     AUTHORLESS_CHAT_HISTORY_RETAINED, ChatAuthorKey, ChatAuthorPage, ChatAuthorTally,
     ChatHistoryCursor, ChatHistoryRepo, StorageError,
 };
-use forge_types::EventId;
 use forge_types::unified_chat::{
-    ChatEventDetail, ChatSegment, ChatSource, ModerationMarks, UnifiedChatRow, UserBadge,
+    ChatEventDetail, ChatSegment, ModerationMarks, UnifiedChatRow, UserBadge,
 };
+use forge_types::{EventId, PlatformId};
 
 use crate::batch::insert_rows;
 use crate::epoch::{from_epoch_ms, to_epoch_ms};
@@ -18,7 +18,7 @@ fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, S
         .map_err(|e| SqliteStorageError::Decode(format!("invalid {label} '{s}': {e}")))
 }
 
-fn encode_source(source: ChatSource) -> Result<String, StorageError> {
+fn encode_source(source: PlatformId) -> Result<String, StorageError> {
     Ok(serde_json::to_string(&source)
         .map_err(StorageError::Serialization)?
         .trim_matches('"')
@@ -97,7 +97,7 @@ struct SequencedChatHistoryRow {
 
 fn decode_row(row: ChatHistoryRow) -> Result<UnifiedChatRow, SqliteStorageError> {
     let event_id: EventId = parse_id(&row.event_id, "event id")?;
-    let source: ChatSource = parse_id(&row.source, "chat source")?;
+    let source: PlatformId = parse_id(&row.source, "chat source")?;
     let received_at = from_epoch_ms(row.received_at)?;
     let author_color: Option<[u8; 3]> = row
         .author_color
@@ -402,7 +402,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
 
     async fn mark_user_messages_moderated(
         &self,
-        source: ChatSource,
+        source: PlatformId,
         author: &str,
         timeout: bool,
     ) -> Result<u64, StorageError> {
@@ -434,7 +434,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
         Ok(result.rows_affected())
     }
 
-    async fn clear_platform(&self, source: ChatSource) -> Result<u64, StorageError> {
+    async fn clear_platform(&self, source: PlatformId) -> Result<u64, StorageError> {
         let source_str = encode_source(source)?;
 
         let result = sqlx::query(

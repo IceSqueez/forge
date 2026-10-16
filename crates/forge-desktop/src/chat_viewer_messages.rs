@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use forge_components::Platform;
 use forge_storage::{ChatAuthorKey, ChatAuthorTally};
-use forge_types::ChatSource;
 use time::Duration;
 
 use crate::chat_author::{AuthorHandle, AuthorKey};
@@ -11,18 +9,10 @@ use crate::chat_feed::{ChatFeed, ChatMessage};
 pub(crate) fn stored_author(key: &AuthorKey) -> Option<ChatAuthorKey> {
     match &key.handle {
         AuthorHandle::ViewerId(id) => Some(ChatAuthorKey {
-            source: chat_source(key.platform),
+            source: key.platform,
             author_id: id.to_string(),
         }),
         AuthorHandle::Name(_) => None,
-    }
-}
-
-fn chat_source(platform: Platform) -> ChatSource {
-    match platform {
-        Platform::Twitch => ChatSource::Twitch,
-        Platform::YouTube => ChatSource::YouTube,
-        Platform::Kick => ChatSource::Kick,
     }
 }
 

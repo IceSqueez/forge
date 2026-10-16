@@ -352,7 +352,7 @@ impl ConnectFlow {
         palette: &ForgePalette,
         density: Density,
     ) -> AnyElement {
-        let accent = super::platform_accent(PlatformId::Twitch, palette);
+        let accent = crate::platform_visuals::platform_color(PlatformId::Twitch, palette);
         let phase = self
             .twitch_device
             .as_ref()

@@ -4,7 +4,7 @@ use gpui::{
     Subscription, Window, div, px,
 };
 
-use crate::chat_row::Platform;
+use crate::chat_row::PlatformMark;
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::text_input::{InputEvent, TextInput};
@@ -13,19 +13,24 @@ use crate::tokens::{
     spacing,
 };
 
-pub fn platform_bit(platform: Platform) -> u8 {
-    match platform {
-        Platform::Twitch => 1 << 0,
-        Platform::YouTube => 1 << 1,
-        Platform::Kick => 1 << 2,
-    }
+#[derive(Debug, Clone, PartialEq)]
+pub struct SendTarget {
+    pub id: SharedString,
+    pub mark: PlatformMark,
+}
+
+#[derive(Debug, Clone)]
+struct TargetSlot {
+    target: SendTarget,
+    active: bool,
+    available: bool,
 }
 
 #[derive(Clone, Debug)]
 pub enum InputBarEvent {
     Send {
         text: SharedString,
-        targets: Vec<Platform>,
+        targets: Vec<SharedString>,
     },
     EmojiToggled,
     TargetsChanged,
@@ -46,7 +51,6 @@ const HINT_GAP: gpui::Pixels = px(4.0);
 const HINT_ROW_GAP: gpui::Pixels = px(14.0);
 const TARGET_GROUP_GAP: gpui::Pixels = px(4.0);
 const WRAP_PAD_X: gpui::Pixels = px(14.0);
-const ALL_PLATFORM_BITS: u8 = 0b111;
 
 const EMOJIS: &[&str] = &[
     "😀",
@@ -123,8 +127,7 @@ const EMOJIS: &[&str] = &[
 
 pub struct InputBar {
     field: Entity<TextInput>,
-    targets: Vec<(Platform, bool)>,
-    available: u8,
+    targets: Vec<TargetSlot>,
     max_chars: Option<usize>,
     emoji_open: bool,
     palette: ForgePalette,
@@ -151,12 +154,7 @@ impl InputBar {
 
         Self {
             field,
-            targets: vec![
-                (Platform::Twitch, true),
-                (Platform::YouTube, true),
-                (Platform::Kick, true),
-            ],
-            available: ALL_PLATFORM_BITS,
+            targets: Vec::new(),
             max_chars: None,
             emoji_open: false,
             palette,
@@ -166,47 +164,52 @@ impl InputBar {
         }
     }
 
-    pub fn with_targets(mut self, targets: Vec<(Platform, bool)>) -> Self {
-        self.targets = targets;
+    pub fn with_targets(mut self, targets: Vec<(SendTarget, bool)>) -> Self {
+        self.targets = targets
+            .into_iter()
+            .map(|(target, active)| TargetSlot {
+                target,
+                active,
+                available: true,
+            })
+            .collect();
         self
     }
 
-    pub fn selected_targets(&self) -> Vec<Platform> {
+    pub fn selected_targets(&self) -> Vec<SharedString> {
         self.targets
             .iter()
-            .filter(|(_, active)| *active)
-            .map(|(platform, _)| *platform)
+            .filter(|slot| slot.active)
+            .map(|slot| slot.target.id.clone())
             .collect()
-    }
-
-    pub fn targets_bitset(&self) -> u8 {
-        self.targets
-            .iter()
-            .filter(|(_, active)| *active)
-            .fold(0, |acc, (platform, _)| acc | platform_bit(*platform))
     }
 
     pub fn any_target_selected(&self) -> bool {
-        self.targets.iter().any(|(_, active)| *active)
+        self.targets.iter().any(|slot| slot.active)
     }
 
-    pub fn is_available(&self, platform: Platform) -> bool {
-        self.available & platform_bit(platform) != 0
+    pub fn is_available(&self, id: &str) -> bool {
+        self.targets
+            .iter()
+            .any(|slot| slot.available && slot.target.id == id)
     }
 
-    pub fn effective_targets(&self) -> Vec<Platform> {
-        self.selected_targets()
-            .into_iter()
-            .filter(|platform| self.is_available(*platform))
+    pub fn effective_targets(&self) -> Vec<SharedString> {
+        self.targets
+            .iter()
+            .filter(|slot| slot.active && slot.available)
+            .map(|slot| slot.target.id.clone())
             .collect()
     }
 
-    pub fn set_available_targets(&mut self, available: &[Platform], cx: &mut Context<Self>) {
-        let bits = available
-            .iter()
-            .fold(0, |acc, platform| acc | platform_bit(*platform));
-        if self.available != bits {
-            self.available = bits;
+    pub fn set_available_targets(&mut self, available: &[SharedString], cx: &mut Context<Self>) {
+        let mut changed = false;
+        for slot in &mut self.targets {
+            let next = available.contains(&slot.target.id);
+            changed |= slot.available != next;
+            slot.available = next;
+        }
+        if changed {
             cx.notify();
         }
     }
@@ -275,13 +278,8 @@ impl InputBar {
     }
 
     fn toggle_target(&mut self, idx: usize, cx: &mut Context<Self>) {
-        let available = self.available;
-        if let Some(entry) = self
-            .targets
-            .get_mut(idx)
-            .filter(|(platform, _)| available & platform_bit(*platform) != 0)
-        {
-            entry.1 = !entry.1;
+        if let Some(slot) = self.targets.get_mut(idx).filter(|slot| slot.available) {
+            slot.active = !slot.active;
         }
         cx.emit(InputBarEvent::TargetsChanged);
         cx.notify();
@@ -305,16 +303,15 @@ impl InputBar {
     fn render_target(
         &self,
         idx: usize,
-        platform: Platform,
-        active: bool,
+        slot: TargetSlot,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let p = self.palette;
-        let available = self.is_available(platform);
-        let lit = active && available;
+        let available = slot.available;
+        let lit = slot.active && available;
         let letter_color = match (available, lit) {
             (false, _) => p.text_extreme_faint,
-            (true, true) => platform.color(&p),
+            (true, true) => slot.target.mark.color,
             (true, false) => p.text_faint,
         };
 
@@ -338,7 +335,7 @@ impl InputBar {
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(TARGET_LETTER_SIZE)
                 .text_color(letter_color)
-                .child(SharedString::from(platform.letter())),
+                .child(slot.target.mark.letter),
         );
         if lit {
             tile = tile.bg(p.surface_overlay);
@@ -475,8 +472,8 @@ impl Render for InputBar {
             .flex()
             .items_center()
             .gap(TARGET_GROUP_GAP);
-        for (idx, (platform, active)) in strip.into_iter().enumerate() {
-            targets_group = targets_group.child(self.render_target(idx, platform, active, cx));
+        for (idx, slot) in strip.into_iter().enumerate() {
+            targets_group = targets_group.child(self.render_target(idx, slot, cx));
         }
 
         let composer = div()

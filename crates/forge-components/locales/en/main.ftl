@@ -100,30 +100,6 @@ widget_field_range_open = Allowed: { $min } or more
 
 widget_grid_picker_no_match = Nothing matches “{ $query }”
 
-widget_badge_owner = OWNER
-
-widget_badge_mod = MOD
-
-widget_badge_vip = VIP
-
-widget_badge_sub = SUB
-
-widget_badge_bot = BOT
-
-widget_badge_partner = PARTNER
-
-widget_badge_prime = PRIME
-
-widget_badge_founder = FOUNDER
-
-widget_badge_turbo = TURBO
-
-widget_badge_hype = HYPE
-
-widget_badge_bits = BITS
-
-widget_badge_bits_leader = BITS LEADER
-
 widget_grid_picker_match_one = 1 match for “{ $query }”
 
 widget_grid_picker_match_many = { $total } matches for “{ $query }”

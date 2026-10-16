@@ -1,9 +1,8 @@
 use super::*;
-use forge_components::{
-    FONT_XS, ForgePalette, Icon, PlatformKind, mono_family, platform_color, tr,
-};
+use crate::platform_visuals::platform_color;
+use forge_components::{FONT_XS, ForgePalette, Icon, mono_family, tr};
 use forge_registry::SubActionCategory;
-use forge_types::{SubActionStep, Variant};
+use forge_types::{PlatformId, SubActionStep, Variant};
 use gpui::{AnyElement, Rgba, div};
 
 pub(in crate::actions_screen) fn sub_action_summary(
@@ -184,8 +183,8 @@ pub(in crate::actions_screen) fn sub_category_color(
         SubActionCategory::Tts | SubActionCategory::Audio => palette.success,
         SubActionCategory::Globals => palette.warning,
         SubActionCategory::Files => palette.random,
-        SubActionCategory::YouTube => platform_color(PlatformKind::YouTube, palette),
-        SubActionCategory::Kick => platform_color(PlatformKind::Kick, palette),
+        SubActionCategory::YouTube => platform_color(PlatformId::YouTube, palette),
+        SubActionCategory::Kick => platform_color(PlatformId::Kick, palette),
         SubActionCategory::Obs => palette.text_secondary,
         SubActionCategory::VTube => palette.accent_teal,
         SubActionCategory::Discord

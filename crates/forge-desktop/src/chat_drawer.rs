@@ -1,10 +1,11 @@
+use crate::platform_visuals::BadgeKind;
 use std::collections::HashMap;
 
-use forge_components::{BadgeKind, ForgePalette, fmt_relative_time, hash_accent};
+use forge_components::{ForgePalette, fmt_relative_time, hash_accent};
 use forge_storage::Viewer;
 use gpui::{Rgba, SharedString};
 
-use crate::chat_author::{AuthorKey, viewer_platform};
+use crate::chat_author::AuthorKey;
 use crate::chat_feed::{AuthorActivity, AuthorIndex};
 use crate::chat_viewer_messages::ViewerMessages;
 
@@ -51,7 +52,7 @@ impl ViewerDirectory {
     pub fn new(viewers: Vec<Viewer>) -> Self {
         let mut by_key = HashMap::with_capacity(viewers.len());
         for (ix, viewer) in viewers.iter().enumerate() {
-            let platform = viewer_platform(&viewer.platform);
+            let platform = viewer.platform;
             by_key
                 .entry(AuthorKey::by_viewer_id(platform, &viewer.viewer_id))
                 .or_insert(ix);

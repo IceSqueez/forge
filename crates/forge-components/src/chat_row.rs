@@ -7,7 +7,6 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{BORDER_THIN, FONT_XS, FONT_XXS, body_family, mono_family};
-use crate::tr;
 
 const ROW_GAP: Pixels = px(8.0);
 const LINE1_GAP: Pixels = px(6.0);
@@ -64,79 +63,16 @@ const REPLY_GAP: Pixels = px(4.0);
 const REPLY_ICON: Pixels = px(11.0);
 const REPLY_SNIPPET_MAX: usize = 80;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BadgeKind {
-    Moderator,
-    Vip,
-    Subscriber,
-    Bot,
-    Broadcaster,
-    Partner,
-    Premium,
-    Founder,
-    Turbo,
-    HypeTrain,
-    Bits,
-    BitsLeader,
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlatformMark {
+    pub letter: SharedString,
+    pub color: Rgba,
 }
 
-pub fn badge_color(kind: BadgeKind, palette: &ForgePalette) -> Rgba {
-    match kind {
-        BadgeKind::Broadcaster => palette.warning,
-        BadgeKind::Moderator => palette.success,
-        BadgeKind::Vip => palette.brand,
-        BadgeKind::Subscriber => palette.bits,
-        BadgeKind::Bot => palette.info,
-        BadgeKind::Partner => palette.accent_teal,
-        BadgeKind::Premium => palette.accent_pink_light,
-        BadgeKind::Founder => palette.accent_pink_light,
-        BadgeKind::Turbo => palette.brand,
-        BadgeKind::HypeTrain => palette.warning,
-        BadgeKind::Bits => palette.bits,
-        BadgeKind::BitsLeader => palette.bits,
-    }
-}
-
-pub fn badge_label(kind: BadgeKind) -> String {
-    match kind {
-        BadgeKind::Broadcaster => tr!("widget_badge_owner"),
-        BadgeKind::Moderator => tr!("widget_badge_mod"),
-        BadgeKind::Vip => tr!("widget_badge_vip"),
-        BadgeKind::Subscriber => tr!("widget_badge_sub"),
-        BadgeKind::Bot => tr!("widget_badge_bot"),
-        BadgeKind::Partner => tr!("widget_badge_partner"),
-        BadgeKind::Premium => tr!("widget_badge_prime"),
-        BadgeKind::Founder => tr!("widget_badge_founder"),
-        BadgeKind::Turbo => tr!("widget_badge_turbo"),
-        BadgeKind::HypeTrain => tr!("widget_badge_hype"),
-        BadgeKind::Bits => tr!("widget_badge_bits"),
-        BadgeKind::BitsLeader => tr!("widget_badge_bits_leader"),
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Platform {
-    Twitch,
-    YouTube,
-    Kick,
-}
-
-impl Platform {
-    pub(crate) fn color(self, palette: &ForgePalette) -> Rgba {
-        match self {
-            Platform::Twitch => palette.brand,
-            Platform::YouTube => palette.random,
-            Platform::Kick => palette.info,
-        }
-    }
-
-    pub(crate) fn letter(self) -> &'static str {
-        match self {
-            Platform::Twitch => "T",
-            Platform::YouTube => "Y",
-            Platform::Kick => "K",
-        }
-    }
+#[derive(Debug, Clone, PartialEq)]
+pub struct RoleBadge {
+    pub label: SharedString,
+    pub color: Rgba,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,8 +104,8 @@ pub enum ChatBody {
 pub struct ChatRow {
     pub id: SharedString,
     pub timestamp: SharedString,
-    pub platform: Platform,
-    pub badges: Vec<BadgeKind>,
+    pub platform: PlatformMark,
+    pub badges: Vec<RoleBadge>,
     pub username: SharedString,
     pub username_color: Rgba,
     pub body: ChatBody,
@@ -216,12 +152,12 @@ fn time_el(ts: SharedString, palette: &ForgePalette) -> impl IntoElement {
         .child(ts)
 }
 
-fn platform_tile(platform: Platform, palette: &ForgePalette) -> impl IntoElement {
+fn platform_tile(platform: &PlatformMark, palette: &ForgePalette) -> impl IntoElement {
     div()
         .flex_none()
         .size(PLATFORM_TILE)
         .rounded(PLATFORM_CORNER)
-        .bg(platform.color(palette))
+        .bg(platform.color)
         .flex()
         .items_center()
         .justify_center()
@@ -231,7 +167,7 @@ fn platform_tile(platform: Platform, palette: &ForgePalette) -> impl IntoElement
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(PLATFORM_GLYPH)
                 .text_color(palette.shell)
-                .child(platform.letter()),
+                .child(platform.letter.clone()),
         )
 }
 
@@ -303,8 +239,8 @@ fn command_pill(command: SharedString, palette: &ForgePalette) -> impl IntoEleme
         .child(command)
 }
 
-fn role_badge(kind: BadgeKind, palette: &ForgePalette) -> impl IntoElement {
-    let c = badge_color(kind, palette);
+fn role_badge(badge: &RoleBadge) -> impl IntoElement {
+    let c = badge.color;
     div()
         .flex_none()
         .py(ROLE_BADGE_PAD_V)
@@ -317,10 +253,10 @@ fn role_badge(kind: BadgeKind, palette: &ForgePalette) -> impl IntoElement {
         .font_weight(FontWeight::SEMIBOLD)
         .text_size(ROLE_BADGE_FONT)
         .text_color(c)
-        .child(badge_label(kind))
+        .child(badge.label.clone())
 }
 
-fn role_badges(badges: &[BadgeKind], palette: &ForgePalette) -> Option<impl IntoElement> {
+fn role_badges(badges: &[RoleBadge]) -> Option<impl IntoElement> {
     if badges.is_empty() {
         return None;
     }
@@ -331,7 +267,7 @@ fn role_badges(badges: &[BadgeKind], palette: &ForgePalette) -> Option<impl Into
             .flex()
             .items_center()
             .gap(ROLE_BADGE_GAP)
-            .children(badges.iter().map(|&kind| role_badge(kind, palette))),
+            .children(badges.iter().map(role_badge)),
     )
 }
 
@@ -459,14 +395,14 @@ fn standard_row(
         .items_center()
         .gap(ROW_GAP)
         .child(time_el(data.timestamp.clone(), palette))
-        .child(platform_tile(data.platform, palette))
+        .child(platform_tile(&data.platform, palette))
         .child(username_el(
             data.username.clone(),
             data.username_color,
             click,
         ))
         .child(message_el(text, color, data.moderated))
-        .children(role_badges(&data.badges, palette));
+        .children(role_badges(&data.badges));
     div()
         .id(data.id.clone())
         .flex()
@@ -496,14 +432,14 @@ fn command_row(
         .items_center()
         .gap(ROW_GAP)
         .child(time_el(data.timestamp.clone(), palette))
-        .child(platform_tile(data.platform, palette))
+        .child(platform_tile(&data.platform, palette))
         .child(username_el(
             data.username.clone(),
             data.username_color,
             click,
         ))
         .child(command_pill(command, palette))
-        .children(role_badges(&data.badges, palette));
+        .children(role_badges(&data.badges));
     let second = triggered.map(|t| {
         div().pl(CMD_SECOND_INSET).flex().child(pill_badge(
             palette.elevated,

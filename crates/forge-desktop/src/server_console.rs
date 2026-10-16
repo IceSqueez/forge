@@ -1,11 +1,13 @@
+use crate::platform_visuals::platform_color;
 use forge_components::breadcrumb::BreadcrumbCrumb;
 use forge_components::{
     BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, OverlayPosition, PlatformKind, Radius, Spacing, body_family, card, column,
-    confirm_modal, data_table, empty_state, fmt_bytes, fmt_number, fmt_uptime_short,
-    ghost_button_with_icon, header_status, icon, metric_card, mono_family, overlay, page_frame,
-    platform_color, radius, spacing, sparkline, status_dot, tooltip_builder, tr, virtual_table,
+    ForgePalette, Icon, OverlayPosition, Radius, Spacing, body_family, card, column, confirm_modal,
+    data_table, empty_state, fmt_bytes, fmt_number, fmt_uptime_short, ghost_button_with_icon,
+    header_status, icon, metric_card, mono_family, overlay, page_frame, radius, spacing, sparkline,
+    status_dot, tooltip_builder, tr, virtual_table,
 };
+use forge_types::PlatformId;
 use std::ffi::OsStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -1668,9 +1670,9 @@ const SUBSCRIBE_ALL_LABEL: &str = "*all";
 
 fn color_for_source(source: EventSource, palette: &ForgePalette) -> Rgba {
     match source {
-        EventSource::Twitch => platform_color(PlatformKind::Twitch, palette),
-        EventSource::YouTube => platform_color(PlatformKind::YouTube, palette),
-        EventSource::Kick => platform_color(PlatformKind::Kick, palette),
+        EventSource::Twitch => platform_color(PlatformId::Twitch, palette),
+        EventSource::YouTube => platform_color(PlatformId::YouTube, palette),
+        EventSource::Kick => platform_color(PlatformId::Kick, palette),
         EventSource::Core => palette.warning,
         EventSource::Rhai => palette.warning,
         EventSource::Http => palette.random,

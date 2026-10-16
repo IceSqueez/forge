@@ -390,7 +390,7 @@ pub(crate) mod tests {
 
         async fn list_active(
             &self,
-            _platform: forge_storage::ViewerPlatform,
+            _platform: forge_types::PlatformId,
             _channel_id: &str,
             _now: OffsetDateTime,
             _limit: usize,
@@ -542,7 +542,7 @@ pub(crate) mod tests {
 
             let stored = ledger
                 .stored(&forge_storage::BanLedgerKey {
-                    platform: forge_storage::ViewerPlatform::Kick,
+                    platform: forge_types::PlatformId::Kick,
                     channel_id: "42".to_owned(),
                     viewer_id: "77".to_owned(),
                 })

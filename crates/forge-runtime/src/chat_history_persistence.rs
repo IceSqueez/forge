@@ -8,7 +8,7 @@ use forge_storage::{
     UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT, chat_history_per_viewer_limit,
     clamp_chat_history_per_viewer_limit,
 };
-use forge_types::{ChatModerationAction, ChatSource, UnifiedChatRow};
+use forge_types::{ChatModerationAction, PlatformId, UnifiedChatRow};
 use time::OffsetDateTime;
 use tokio::sync::watch;
 
@@ -77,7 +77,7 @@ pub fn spawn_chat_history_persistence(
 }
 
 struct RecentModeration {
-    source: ChatSource,
+    source: PlatformId,
     action: ChatModerationAction,
     at: OffsetDateTime,
 }
@@ -216,7 +216,7 @@ impl ChatHistorySink {
 
 async fn apply_moderation(
     repo: &dyn ChatHistoryRepo,
-    source: ChatSource,
+    source: PlatformId,
     action: &ChatModerationAction,
 ) {
     let outcome = match action {

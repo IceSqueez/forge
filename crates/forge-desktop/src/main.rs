@@ -109,6 +109,7 @@ mod server_console;
 mod server_restart;
 mod server_unavailable;
 mod settings;
+mod settings_about;
 mod settings_audio;
 mod settings_audio_routing;
 mod settings_diagnostics;
@@ -128,6 +129,7 @@ mod speak_boot;
 mod speak_bridge;
 mod speak_state;
 mod stay_awake;
+mod system_info;
 #[cfg(test)]
 mod test_support;
 mod titlebar;

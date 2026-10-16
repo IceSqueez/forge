@@ -4,8 +4,8 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
     Picker, PickerEvent, PickerItem, PickerLabels, Radius, Spacing, ThemeId, badge, body_family,
     card, dropdown, field_hint, field_label, ghost_button_with_icon, icon, mono_family, page_frame,
-    radius, set_body_family, set_mono_family, setting_block, setting_row, setting_rows,
-    setting_sections, spacing, toggle, tr, with_alpha,
+    radius, set_body_family, set_mono_family, setting_block, setting_groups, setting_row,
+    setting_rows, setting_sections, spacing, toggle, tr, with_alpha,
 };
 use forge_storage::{Language, SettingsRepo, reserved_keys};
 use gpui::{
@@ -17,6 +17,7 @@ use crate::async_bridge::{self, ErrorSink};
 use crate::awake_state::AwakeState;
 use crate::presentation::ActiveLanguage;
 use crate::runtime_handles::RuntimeHandles;
+use crate::settings_about::SettingsAboutView;
 use crate::settings_audio::SettingsAudioView;
 use crate::settings_diagnostics::SettingsDiagnosticsView;
 use crate::settings_pane_header::SettingsPaneHeader;
@@ -74,7 +75,7 @@ const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
     ),
     (
         "settings_nav_group_about",
-        &[SettingsSection::Version, SettingsSection::Diagnostics],
+        &[SettingsSection::About, SettingsSection::Diagnostics],
     ),
 ];
 
@@ -88,7 +89,7 @@ pub enum SettingsSection {
     Scripting,
     Storage,
     WebSocket,
-    Version,
+    About,
     Diagnostics,
 }
 
@@ -103,7 +104,7 @@ impl SettingsSection {
             SettingsSection::Scripting => tr!("settings_scripting_title"),
             SettingsSection::Storage => tr!("settings_storage_section_title"),
             SettingsSection::WebSocket => tr!("settings_ws_title"),
-            SettingsSection::Version => tr!("settings_version_title"),
+            SettingsSection::About => tr!("settings_about_title"),
             SettingsSection::Diagnostics => tr!("settings_diagnostics_section_title"),
         }
     }
@@ -118,7 +119,7 @@ impl SettingsSection {
             SettingsSection::Scripting => Icon::Code,
             SettingsSection::Storage => Icon::Database,
             SettingsSection::WebSocket => Icon::Network,
-            SettingsSection::Version => Icon::InfoCircle,
+            SettingsSection::About => Icon::InfoCircle,
             SettingsSection::Diagnostics => Icon::Bug,
         }
     }
@@ -133,7 +134,7 @@ impl SettingsSection {
             SettingsSection::Scripting => "scripting",
             SettingsSection::Storage => "storage",
             SettingsSection::WebSocket => "websocket",
-            SettingsSection::Version => "version",
+            SettingsSection::About => "about",
             SettingsSection::Diagnostics => "diagnostics",
         }
     }
@@ -201,6 +202,7 @@ pub struct SettingsView {
     update_flow: Entity<UpdateFlow>,
     update_check: UpdateCheckStatus,
     language: Language,
+    about: Entity<SettingsAboutView>,
     audio: Entity<SettingsAudioView>,
     scripting: Entity<SettingsScriptingView>,
     websocket: Entity<SettingsWebSocketView>,
@@ -264,6 +266,7 @@ impl SettingsView {
                 cx,
             )
         });
+        let about = cx.new(|_| SettingsAboutView::new(handles.rt_handle.clone()));
         let diagnostics = cx.new(|cx| {
             SettingsDiagnosticsView::new(
                 handles.log_tail.clone(),
@@ -281,6 +284,7 @@ impl SettingsView {
             update_flow,
             update_check: UpdateCheckStatus::Idle,
             language: cx.global::<ActiveLanguage>().0,
+            about,
             audio,
             scripting,
             websocket,
@@ -658,7 +662,7 @@ impl SettingsView {
             SettingsSection::Scripting => self.scripting.clone().into_any_element(),
             SettingsSection::WebSocket => self.websocket.clone().into_any_element(),
             SettingsSection::Storage => self.storage.clone().into_any_element(),
-            SettingsSection::Version => self.version_pane(palette, density, cx),
+            SettingsSection::About => self.about_pane(palette, density, cx),
             SettingsSection::Diagnostics => self.diagnostics.clone().into_any_element(),
         };
 
@@ -949,7 +953,7 @@ impl SettingsView {
         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select_language(lang, cx)))
     }
 
-    fn version_pane(
+    fn about_pane(
         &self,
         palette: &ForgePalette,
         density: Density,
@@ -1040,8 +1044,11 @@ impl SettingsView {
         div()
             .flex()
             .flex_col()
-            .child(SettingsPaneHeader::new(SettingsSection::Version))
-            .child(card(identity, palette))
+            .child(SettingsPaneHeader::new(SettingsSection::About))
+            .child(setting_groups([
+                card(identity, palette).into_any_element(),
+                self.about.clone().into_any_element(),
+            ]))
             .into_any_element()
     }
 

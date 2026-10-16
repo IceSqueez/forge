@@ -2596,6 +2596,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sys-locale",
+ "sysinfo",
  "tar",
  "tempfile",
  "time",

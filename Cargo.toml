@@ -187,6 +187,7 @@ fluent = { version = "0.17" }
 fluent-langneg = { version = "0.13" }
 unic-langid = { version = "0.9" }
 sys-locale = { version = "0.3" }
+sysinfo = { version = "0.31.4", default-features = false, features = ["system"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

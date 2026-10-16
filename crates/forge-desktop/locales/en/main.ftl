@@ -241,9 +241,24 @@ settings_diagnostics_level_info = Info
 settings_diagnostics_level_warn = Warn
 settings_diagnostics_level_error = Error
 
-## Settings → Version pane
+## Settings → About pane
 
-settings_version_title = Version & updates
+settings_about_title = About
+settings_about_system_title = System info
+settings_about_system_hint = Paste this into a bug report. It never includes host or user names, paths or network addresses.
+settings_about_collecting = Collecting system info...
+settings_about_unknown = unknown
+settings_about_field_forge = forge
+settings_about_field_build = Build
+settings_about_field_os = OS
+settings_about_field_kernel = Kernel
+settings_about_field_cpu = CPU
+settings_about_field_memory = Memory
+settings_about_field_gpu = GPU
+settings_about_field_gpu_backend = GPU backend
+settings_about_field_displays = Displays
+settings_about_field_audio_outputs = Audio outputs
+settings_about_field_data_dir = Data folder size
 settings_version_license = Open-source · MIT OR Apache-2.0
 settings_version_check_updates = Check for updates
 settings_version_checking = Checking for updates...

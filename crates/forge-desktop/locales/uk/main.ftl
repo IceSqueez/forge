@@ -251,7 +251,22 @@ settings_diagnostics_level_error = Error
 
 ## Налаштування → панель версії
 
-settings_version_title = Версія та оновлення
+settings_about_title = Про програму
+settings_about_system_title = Інформація про систему
+settings_about_system_hint = Вставте це у звіт про помилку. Тут ніколи немає імен комп'ютера чи користувача, шляхів або мережевих адрес.
+settings_about_collecting = Збираємо інформацію про систему...
+settings_about_unknown = невідомо
+settings_about_field_forge = forge
+settings_about_field_build = Збірка
+settings_about_field_os = ОС
+settings_about_field_kernel = Ядро
+settings_about_field_cpu = Процесор
+settings_about_field_memory = Пам'ять
+settings_about_field_gpu = Відеокарта
+settings_about_field_gpu_backend = Графічний бекенд
+settings_about_field_displays = Дисплеї
+settings_about_field_audio_outputs = Аудіовиходи
+settings_about_field_data_dir = Розмір теки даних
 settings_version_license = Відкритий код · MIT OR Apache-2.0
 settings_version_check_updates = Перевірити оновлення
 settings_version_checking = Перевірка оновлень...

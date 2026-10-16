@@ -240,9 +240,9 @@ mod tests {
     use gpui::TestAppContext;
 
     use super::*;
-    use crate::integration_supervisor::LifecycleStates;
     use crate::test_support::{error_toasts, hub_crumb_targets, runtime};
     use forge_components::Toasts;
+    use forge_runtime::LifecycleStates;
 
     fn failed(id: &IntegrationId) -> LifecycleStates {
         LifecycleStates::from([(id.clone(), LifecycleState::Failed("boom".to_owned()))])

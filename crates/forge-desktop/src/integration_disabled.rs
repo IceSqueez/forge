@@ -549,12 +549,12 @@ mod tests {
 
     use super::*;
     use crate::integration_references::ReferencingAction;
-    use crate::integration_supervisor::LifecycleStates;
     use crate::test_support::{
         Sandboxed, idle_supervisor, link, owned_sub_actions, owned_triggers, pump, runtime,
         sandboxed_provider, seed_action, seed_trigger, step, test_backend,
     };
     use forge_components::Presentation;
+    use forge_runtime::LifecycleStates;
 
     const OBS_SCENE: &str = "obs.scene.set";
     const TWITCH_CHAT: &str = "twitch.chat";
@@ -598,7 +598,7 @@ mod tests {
         rt: &tokio::runtime::Runtime,
         storage: &Sandboxed<Arc<dyn DataProvider>>,
         id: IntegrationId,
-        slot: Option<IntegrationSlot>,
+        slot: Option<IntegrationSlot<BuiltinObject>>,
     ) -> Entity<IntegrationDisabledView> {
         let launch = DisabledLaunch {
             slot,

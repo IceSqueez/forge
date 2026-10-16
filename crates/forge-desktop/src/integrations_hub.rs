@@ -869,13 +869,13 @@ mod tests {
     use tokio::sync::mpsc::UnboundedReceiver;
 
     use super::*;
-    use crate::integration_supervisor::LifecycleStates;
     use crate::test_support::{
         ClickArea, Sandboxed, SettingWrite, click_grid, error_toasts, idle_supervisor,
         install_presentation, link, nav_log, owned_sub_actions, owned_triggers, pump, runtime,
         sandboxed_provider, seed_action, seed_trigger, step, test_backend,
     };
     use forge_components::Toasts;
+    use forge_runtime::LifecycleStates;
 
     const OBS_SCENE: &str = "obs.scene.set";
     const TWITCH_CHAT: &str = "twitch.chat";

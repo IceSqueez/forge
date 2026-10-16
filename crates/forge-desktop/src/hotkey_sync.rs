@@ -895,16 +895,19 @@ mod tests {
     struct CountingEngine(std::sync::atomic::AtomicUsize);
 
     #[async_trait]
-    impl crate::integration_supervisor::IntegrationFactory for CountingEngine {
+    impl forge_runtime::IntegrationFactory<BuiltinObject> for CountingEngine {
         fn id(&self) -> forge_types::IntegrationId {
             forge_hotkey::HOTKEY_INTEGRATION.id
+        }
+        fn teardown_grace(&self) -> Duration {
+            forge_runtime::DEFAULT_TEARDOWN_GRACE
         }
         async fn is_configured(&self) -> Result<bool, StorageError> {
             Ok(false)
         }
-        async fn start(&self) -> Result<crate::integration_supervisor::RunningIntegration, String> {
+        async fn start(&self) -> Result<forge_runtime::RunningIntegration<BuiltinObject>, String> {
             self.0.fetch_add(1, Ordering::SeqCst);
-            Ok(crate::integration_supervisor::RunningIntegration::idle())
+            Ok(forge_runtime::RunningIntegration::idle())
         }
     }
 
@@ -927,11 +930,11 @@ mod tests {
         let synced = synced().await;
         let engine = Arc::new(CountingEngine(std::sync::atomic::AtomicUsize::new(0)));
         let provider: &Arc<dyn DataProvider> = &synced.storage;
-        let supervisor = crate::integration_supervisor::IntegrationSupervisor::launch(
-            vec![Arc::clone(&engine) as Arc<dyn crate::integration_supervisor::IntegrationFactory>],
+        let supervisor = forge_runtime::IntegrationSupervisor::launch(
+            vec![Arc::clone(&engine) as Arc<dyn forge_runtime::IntegrationFactory<BuiltinObject>>],
             Arc::clone(provider) as Arc<dyn forge_storage::SettingsRepo>,
             forge_runtime::IntegrationGate::new(),
-            crate::integrations::BuiltinRegistry::default(),
+            Arc::new(crate::integrations::BuiltinRegistry::default()),
             forge_runtime::spawn_live_viewer_aggregator(),
         );
         synced.reconciler.enable_engine_on_new_bindings(

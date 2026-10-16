@@ -151,8 +151,8 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::*;
-    use crate::integration_supervisor::{IntegrationSupervisor, LifecycleState};
     use crate::test_support::test_backend;
+    use forge_runtime::{IntegrationSupervisor, LifecycleState};
 
     const SETTLE: Duration = Duration::from_secs(5);
 
@@ -270,7 +270,7 @@ mod tests {
         fn publish(&self, _event: Event) {}
     }
 
-    fn supervised(service: &Arc<FakeService>) -> IntegrationSupervisor {
+    fn supervised(service: &Arc<FakeService>) -> IntegrationSupervisor<BuiltinObject> {
         let (backend, _writes) = test_backend();
         let mut ledger = MockDonationRepo::new();
         ledger.expect_has_donations_from().returning(|_| Ok(true));
@@ -285,15 +285,19 @@ mod tests {
             ingest,
         };
         IntegrationSupervisor::launch(
-            vec![Arc::new(factory) as Arc<dyn crate::integration_supervisor::IntegrationFactory>],
+            vec![Arc::new(factory) as Arc<dyn forge_runtime::IntegrationFactory<BuiltinObject>>],
             backend as Arc<dyn SettingsRepo>,
             forge_runtime::IntegrationGate::new(),
-            crate::integrations::BuiltinRegistry::default(),
+            Arc::new(crate::integrations::BuiltinRegistry::default()),
             forge_runtime::spawn_live_viewer_aggregator(),
         )
     }
 
-    async fn switch(supervisor: &IntegrationSupervisor, id: &IntegrationId, enabled: bool) {
+    async fn switch(
+        supervisor: &IntegrationSupervisor<BuiltinObject>,
+        id: &IntegrationId,
+        enabled: bool,
+    ) {
         let state = supervisor
             .slot(id)
             .expect("the factory has a slot")

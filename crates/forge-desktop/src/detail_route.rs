@@ -30,7 +30,7 @@ pub fn is_detail_of(current: &Screen, id: &IntegrationId) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::integration_supervisor::LifecycleStates;
+    use forge_runtime::LifecycleStates;
 
     #[test]
     fn the_detail_route_follows_the_integration_lifecycle_state() {

@@ -167,11 +167,11 @@ mod tests {
     use gpui::{AppContext, TestAppContext};
 
     use super::*;
-    use crate::integration_supervisor::{LifecycleState, LifecycleStates};
     use crate::test_support::{
         SettingWrite, idle_supervisor, lifecycle_switch, pump, runtime, switch_lifecycle,
         test_backend,
     };
+    use forge_runtime::{LifecycleState, LifecycleStates};
 
     fn obs() -> IntegrationId {
         IntegrationId::new("obs")

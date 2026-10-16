@@ -84,8 +84,8 @@ mod tests {
 
     use super::*;
     use crate::actions_screen::integration_gating::tests::{Rig, detail, obs};
-    use crate::integration_supervisor::LifecycleState;
     use crate::test_support::{nav_log, step};
+    use forge_runtime::LifecycleState;
 
     #[gpui::test]
     fn opening_an_integration_from_run_history_closes_the_modal_and_navigates_there(

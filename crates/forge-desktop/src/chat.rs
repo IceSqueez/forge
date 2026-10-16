@@ -2252,11 +2252,11 @@ mod tests {
     use crate::home_stats::{HomeStats, Integration};
     use crate::i18n::install_language;
     use crate::integration_lifecycle::IntegrationLifecycle;
-    use crate::integration_supervisor::{LifecycleState, LifecycleStates};
     use crate::test_support::{
         StubActions, StubEventLog, StubHistory, install_presentation, runtime, switch_lifecycle,
     };
     use forge_components::Toasts;
+    use forge_runtime::{LifecycleState, LifecycleStates};
 
     const CAP: usize = 5;
     const OVERFLOW: usize = 8;

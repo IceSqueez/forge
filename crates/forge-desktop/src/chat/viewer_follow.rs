@@ -176,9 +176,9 @@ mod tests {
     use crate::chat_drawer::DASH;
     use crate::home_stats::Integration;
     use crate::integration_lifecycle::IntegrationLifecycle;
-    use crate::integration_supervisor::LifecycleState;
     use crate::integrations::{BuiltinObject, BuiltinRegistry};
     use crate::test_support::{pump, runtime, switch_lifecycle};
+    use forge_runtime::LifecycleState;
 
     struct StubBuiltin {
         id: IntegrationId,

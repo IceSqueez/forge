@@ -585,11 +585,11 @@ mod tests {
     use forge_types::IntegrationId;
 
     use super::*;
-    use crate::integration_supervisor::{LifecycleState, LifecycleStates};
     use crate::test_support::{
         StubActions, lifecycle_switch, owned_triggers, runtime, switch_lifecycle, test_backend,
     };
     use forge_components::Presentation;
+    use forge_runtime::{LifecycleState, LifecycleStates};
 
     const TWITCH_CHAT: &str = "twitch.chat";
 

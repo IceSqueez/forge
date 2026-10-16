@@ -963,9 +963,9 @@ mod tests {
     fn the_key_notice_follows_the_hotkeys_integration_switching_off_and_on(
         cx: &mut TestAppContext,
     ) {
-        use crate::integration_supervisor::{LifecycleState, LifecycleStates};
         use crate::soundboard::hotkeys_notice::hotkeys_integration;
         use crate::test_support::{lifecycle_switch, runtime, switch_lifecycle};
+        use forge_runtime::{LifecycleState, LifecycleStates};
 
         crate::i18n::install_language(Language::En);
         cx.update(|cx| cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy)));

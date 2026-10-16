@@ -1184,17 +1184,23 @@ pub(crate) const STORAGE_KEY: [u8; 32] = [0x11; 32];
 pub(crate) struct IdleFactory(pub(crate) forge_types::IntegrationId);
 
 #[async_trait::async_trait]
-impl crate::integration_supervisor::IntegrationFactory for IdleFactory {
+impl forge_runtime::IntegrationFactory<crate::integrations::BuiltinObject> for IdleFactory {
     fn id(&self) -> forge_types::IntegrationId {
         self.0.clone()
+    }
+
+    fn teardown_grace(&self) -> std::time::Duration {
+        forge_runtime::DEFAULT_TEARDOWN_GRACE
     }
 
     async fn is_configured(&self) -> Result<bool, StorageError> {
         Ok(true)
     }
 
-    async fn start(&self) -> Result<crate::integration_supervisor::RunningIntegration, String> {
-        Ok(crate::integration_supervisor::RunningIntegration::idle())
+    async fn start(
+        &self,
+    ) -> Result<forge_runtime::RunningIntegration<crate::integrations::BuiltinObject>, String> {
+        Ok(forge_runtime::RunningIntegration::idle())
     }
 }
 
@@ -1202,18 +1208,20 @@ pub(crate) fn idle_supervisor(
     rt: &tokio::runtime::Runtime,
     settings: Arc<dyn SettingsRepo>,
     ids: &[forge_types::IntegrationId],
-) -> crate::integration_supervisor::IntegrationSupervisor {
+) -> forge_runtime::IntegrationSupervisor<crate::integrations::BuiltinObject> {
     let _entered = rt.enter();
-    crate::integration_supervisor::IntegrationSupervisor::launch(
+    forge_runtime::IntegrationSupervisor::launch(
         ids.iter()
             .map(|id| {
                 Arc::new(IdleFactory(id.clone()))
-                    as Arc<dyn crate::integration_supervisor::IntegrationFactory>
+                    as Arc<
+                        dyn forge_runtime::IntegrationFactory<crate::integrations::BuiltinObject>,
+                    >
             })
             .collect(),
         settings,
         forge_runtime::IntegrationGate::new(),
-        crate::integrations::BuiltinRegistry::default(),
+        Arc::new(crate::integrations::BuiltinRegistry::default()),
         forge_runtime::spawn_live_viewer_aggregator(),
     )
 }
@@ -1275,7 +1283,7 @@ pub(crate) async fn link(
 pub(crate) fn lifecycle_switch(
     cx: &mut gpui::TestAppContext,
     rt: &tokio::runtime::Runtime,
-    initial: crate::integration_supervisor::LifecycleStates,
+    initial: forge_runtime::LifecycleStates,
 ) -> (
     gpui::Entity<crate::integration_lifecycle::IntegrationLifecycle>,
     crate::integration_switch::IntegrationSwitch,
@@ -1295,7 +1303,7 @@ pub(crate) fn lifecycle_switch(
 pub(crate) fn switch_lifecycle(
     cx: &mut gpui::TestAppContext,
     lifecycle: &gpui::Entity<crate::integration_lifecycle::IntegrationLifecycle>,
-    states: crate::integration_supervisor::LifecycleStates,
+    states: forge_runtime::LifecycleStates,
 ) {
     lifecycle.update(cx, |lifecycle, cx| {
         lifecycle.replace(states);

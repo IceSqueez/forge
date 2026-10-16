@@ -548,7 +548,7 @@ mod tests {
 
     use super::*;
     use crate::integration_catalog::declaration_of;
-    use crate::integration_supervisor::{LifecycleState, LifecycleStates};
+    use forge_runtime::{LifecycleState, LifecycleStates};
 
     enum Row {
         Label(&'static str),

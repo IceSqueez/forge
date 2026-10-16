@@ -74,8 +74,8 @@ mod tests {
     use forge_types::IntegrationId;
 
     use super::*;
-    use crate::integration_supervisor::LifecycleState;
     use crate::test_support::{SettingWrite, runtime, test_backend};
+    use forge_runtime::LifecycleState;
 
     fn states(state: LifecycleState) -> LifecycleStates {
         LifecycleStates::from([

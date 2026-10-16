@@ -1,9 +1,88 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.6.2] - 2026-10-16
+### ⚙️ Miscellaneous Tasks
+- *(issues)* Add a crash issue form and a system info field to bug reports
+
+### 🐛 Bug Fixes
+- *(ui)* Translate the kit's chat badges and picker search results
+- *(settings)* Report only the speech output device and scrub identities in one pass
+- *(diagnostics)* Keep every prefilled issue link under the URL size cap
+- *(server)* Issue fg_ prefixed bearer tokens and replace unprefixed ones
+- *(emulator)* Seed the server token with the server's own generator
+
+### 🚀 Features
+- *(ui)* Restore window size, position, monitor and state on launch
+- *(settings)* Use design nav rows and one pane header, drop the queues pane
+- *(settings)* Render every pane with one row, block and card style
+- *(settings)* Autosave scripting limits with inline range errors
+- *(settings)* Run a real update check from the version pane
+- *(settings)* Grow the version pane into About with copyable system info
+- *(diagnostics)* Record crashes and report them as prefilled GitHub issues
+
+### 🚜 Refactor
+- *(ui)* Move the card shell, divider and grow cell helpers into the kit
+- *(ui)* Replace the per-screen section label copies with one kit label
+- *(ui)* Highlight the globals inspector JSON with the kit highlighter
+- *(ui)* Share one stat card from the kit across hotkeys and discord
+- *(server)* Own the bearer token display mask in the server crate
+- *(storage)* Share one set of epoch millisecond helpers across sqlite repos
+- *(ui)* Drop the unused nav card from the kit
+- *(ui)* Move the shared form field rows into the kit
+- *(i18n)* Ship the kit's strings in the kit's own catalogs
+- *(server)* Build overlay URLs next to the route that serves them
+- *(storage)* Name the backed-up data files and folders after their owners
+- *(obs)* Own the OBS event kind ids the UI listens for
+- *(obs)* Match and emit every OBS event kind through one set of ids
+- *(twitch)* Match and emit every Twitch event kind through one set of ids
+- *(midi)* Own the MIDI event kind ids in the MIDI crate
+- *(hotkeys)* Own the hotkey event kind ids in the hotkey crate
+- *(runtime)* Take the stream-live signal as a plain watch receiver
+- *(ui)* Keep the active theme, palette and density global in the kit
+- *(runtime)* Supervise integrations from the runtime with a per-factory teardown grace
+- *(storage)* Own the data directory layout in the storage crate
+- *(actions)* Let runners declare their outputs and analyze steps in the registry
+- *(hotkey)* Own hotkey bindings in the hotkey crate and clip hotkeys in the soundboard
+- *(chat)* Model every platform as PlatformId and keep platform visuals out of the kit
+- *(ui)* Share one connect page scaffold between OBS and VTube Studio
+
+### 🛠️ Build
+- *(test)* Allow a cold Windows test run to finish within the job timeout
+- *(runtime)* Drop the OBS crate from the runtime's dependencies
+
+### 🧪 Testing
+- *(server)* Move the token mask tests with the mask
+- *(ui)* Move the integer range entry tests with the kit form fields
+- *(i18n)* Check the app and kit catalogs as one merged bundle
+- *(server)* Move the overlay URL tests with the URL builder
+- *(hotkeys)* Refer to the hotkey event kinds through the hotkey crate
+- *(runtime)* Drive the stream-live signal with a plain watch channel
+- *(ui)* Import the presentation global from the kit
+- *(youtube)* Stop follow lookups racing other tests for a freed port
+- *(solution)* Never reuse a freed port as an unreachable test endpoint
+- *(runtime)* Cover the integration supervisor with runtime-local fakes
+- *(storage)* Import the data directory layout from the storage crate
+- *(actions)* Cover the step analyzer and reference tally in the registry
+- *(hotkey)* Cover hotkey bindings and clip dispatch in their new crates
+- *(chat)* Check platform ids and platform visuals after the enum merge
+- *(ui)* Cover window placement restore, clamping and mode mapping
+- *(settings)* Cover scripting limit parsing, range errors and autosave
+- *(settings)* Cover update check status, system info report and scrubbing
+- *(settings)* Cover speech output resolution, single-pass scrubbing and unit rounding
+- *(diagnostics)* Cover crash records, issue links and report folders
+- *(diagnostics)* Cover system info and crash trimming in issue links
+- *(server)* Cover prefixed bearer token minting, stale token replacement and masking
+
 ## [0.6.1] - 2026-10-15
+### ⚙️ Miscellaneous Tasks
+- *(emulator)* Sync the lockfile to the 0.6.1 crates
+
 ### 🐛 Bug Fixes
 - *(net)* Screen script and egress hosts with one public-address rule
+
+### 📚 Documentation
+- *(release)* Release v0.6.1
 
 ### 🚀 Features
 - *(updates)* Keep the update toast until acted on and let a version be skipped
@@ -22,6 +101,9 @@ All notable changes to this project will be documented in this file.
 ### 🛠️ Build
 - *(emulator)* Sync the emulator lockfile to 0.6.0
 - *(release)* Sign an update manifest and ship per-user and app-bundle payloads
+- *(release)* Run the full check suite before publishing a tag
+- *(release)* Name the release commit chore(release) and keep it out of notes
+- *(release)* Sync the emulator lockfile when bumping the version
 
 ### 🧪 Testing
 - *(updates)* Cover skipped-version notify and the sticky two-action toast
@@ -35,6 +117,7 @@ All notable changes to this project will be documented in this file.
 - *(updates)* Move release lookup tests to the update crate and cover them
 - *(net)* Cover shared public-host screening and bracketed IPv6 egress
 - *(updates)* Cover the automatic update plan, silent retry and rollback memory
+- *(update)* Gate the unix-only bundle helpers off Windows builds
 
 ## [0.6.0] - 2026-10-14
 ### ⚙️ Miscellaneous Tasks

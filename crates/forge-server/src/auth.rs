@@ -11,6 +11,7 @@ use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use crate::ServerError;
 
 const TOKEN_BYTE_LEN: usize = 64;
+const TOKEN_PREFIX: &str = "fg_";
 
 pub struct AuthState {
     bearer_token: Arc<RwLock<String>>,
@@ -35,9 +36,10 @@ impl AuthState {
             }
             Err(e) => return Err(e.into()),
         };
-        let token = match stored {
+        let token = match stored.filter(|t| t.starts_with(TOKEN_PREFIX)) {
             Some(t) => t,
             None => {
+                tracing::info!("no usable prefixed server token stored; issuing a new token");
                 let t = generate_token();
                 creds.store(&id, &t).await?;
                 t
@@ -119,7 +121,7 @@ impl From<StorageError> for ServerError {
 
 const MASKED_TAIL_LEN: usize = 4;
 const EMPTY_TOKEN_PLACEHOLDER: &str = "-";
-const MASKED_TOKEN_PREFIX: &str = "fg_•••••";
+const MASKED_BODY: &str = "•••••";
 
 pub fn masked_token(token: &str) -> String {
     if token.is_empty() {
@@ -133,13 +135,13 @@ pub fn masked_token(token: &str) -> String {
         .into_iter()
         .rev()
         .collect();
-    format!("{MASKED_TOKEN_PREFIX}{tail}")
+    format!("{TOKEN_PREFIX}{MASKED_BODY}{tail}")
 }
 
-fn generate_token() -> String {
+pub fn generate_token() -> String {
     let mut bytes = [0u8; TOKEN_BYTE_LEN];
     rand::rng().fill_bytes(&mut bytes);
-    URL_SAFE_NO_PAD.encode(bytes)
+    format!("{TOKEN_PREFIX}{}", URL_SAFE_NO_PAD.encode(bytes))
 }
 
 #[cfg(test)]

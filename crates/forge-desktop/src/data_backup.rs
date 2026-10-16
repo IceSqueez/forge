@@ -8,11 +8,9 @@ use flate2::write::GzEncoder;
 use forge_storage::DataProvider;
 use time::OffsetDateTime;
 
-pub use forge_platform_core::paths::BACKUPS_DIR_NAME;
-use forge_platform_core::paths::{
-    ASSETS_DIR_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME, TTS_DIR_NAME,
-};
 use forge_storage::DATABASE_FILE_NAME;
+pub use forge_storage::paths::BACKUPS_DIR_NAME;
+use forge_storage::paths::{ASSETS_DIR_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME, TTS_DIR_NAME};
 use forge_storage_sqlite::crypto::CREDENTIALS_KEY_FILE_NAME;
 
 const ARCHIVE_ROOT: &str = "forge";

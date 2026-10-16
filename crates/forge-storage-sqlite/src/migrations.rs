@@ -1,7 +1,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use forge_platform_core::paths::BACKUPS_DIR_NAME;
+use forge_storage::paths::BACKUPS_DIR_NAME;
 use rand::rand_core::Rng;
 use sqlx::SqliteConnection;
 use time::OffsetDateTime;

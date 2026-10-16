@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{Icon, ToastAction, ToastKind, tr};
-use forge_platform_core::paths;
+use forge_storage::paths;
 use forge_storage::{DataProvider, SettingsRepo, reserved_keys};
 use forge_update::{
     ApplyFailure, DatabaseRestore, GithubRepo, RollbackReason, UpdateError, UpdateReport,

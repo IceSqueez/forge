@@ -393,10 +393,7 @@ impl SettingsStorageView {
         cx.notify();
         async_bridge::run_async(
             &self.rt_handle,
-            data_backup::run_backup(
-                Arc::clone(&self.backend),
-                forge_platform_core::paths::data_dir(),
-            ),
+            data_backup::run_backup(Arc::clone(&self.backend), forge_storage::paths::data_dir()),
             |this, result, cx| this.apply_backup_result(result, cx),
             cx,
         );
@@ -453,7 +450,7 @@ impl Render for SettingsStorageView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let db_path = forge_platform_core::paths::data_dir().join("forge.db");
+        let db_path = forge_storage::paths::data_dir().join("forge.db");
         let backup_label = if self.backing_up {
             tr!("settings_storage_backup_btn_busy")
         } else {

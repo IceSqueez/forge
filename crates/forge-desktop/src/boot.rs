@@ -6,7 +6,7 @@ use forge_audio::AudioSink;
 use forge_components::{Density, ThemeId};
 use forge_events::EventPublisher;
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
-use forge_platform_core::{PlatformEndpoints, paths};
+use forge_platform_core::PlatformEndpoints;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionCancelRegistry, ActionEngineHandle, Catalog, CatchUpSettle, Config, CoreSubActionDeps,
@@ -26,6 +26,7 @@ use forge_soundboard::{
     BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
     load_soundboard_settings,
 };
+use forge_storage::paths;
 use forge_storage::{
     CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo, StorageError,
     UserGlobalsRepo, reserved_keys,

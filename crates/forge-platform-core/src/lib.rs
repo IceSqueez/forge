@@ -16,7 +16,6 @@ pub mod follow_lookup;
 pub mod integration;
 pub mod live_viewers;
 pub mod net;
-pub mod paths;
 pub mod poll;
 pub mod rate_limit;
 pub use auth::AuthFlow;

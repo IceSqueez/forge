@@ -1451,7 +1451,6 @@ version = "0.6.1"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
- "directories",
  "forge-events",
  "forge-storage",
  "forge-types",
@@ -1635,6 +1634,7 @@ name = "forge-storage"
 version = "0.6.1"
 dependencies = [
  "async-trait",
+ "directories",
  "forge-events",
  "forge-types",
  "forge-voice",
@@ -1653,7 +1653,6 @@ dependencies = [
  "aes-gcm",
  "async-trait",
  "forge-events",
- "forge-platform-core",
  "forge-storage",
  "forge-tts-core",
  "forge-types",

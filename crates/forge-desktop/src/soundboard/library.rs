@@ -26,7 +26,7 @@ impl SoundboardView {
         async_bridge::run_blocking(
             &self.rt_handle,
             move || {
-                let data_dir = forge_platform_core::paths::data_dir();
+                let data_dir = forge_storage::paths::data_dir();
                 let available = builtin_availability(&data_dir);
                 available
                     .into_iter()
@@ -59,7 +59,7 @@ impl SoundboardView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let data_dir = forge_platform_core::paths::data_dir();
+                let data_dir = forge_storage::paths::data_dir();
                 let Some(path) = resolve_builtin_path(&data_dir, &builtin_id) else {
                     return Err(SoundboardError::SourceMissing(name));
                 };

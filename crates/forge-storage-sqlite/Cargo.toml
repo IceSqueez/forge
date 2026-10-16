@@ -13,7 +13,6 @@ workspace = true
 forge-types = { path = "../forge-types" }
 forge-storage = { path = "../forge-storage" }
 forge-events = { path = "../forge-events" }
-forge-platform-core = { path = "../forge-platform-core" }
 forge-tts-core = { path = "../forge-tts-core" }
 forge-voice = { path = "../forge-voice" }
 serde = { workspace = true }

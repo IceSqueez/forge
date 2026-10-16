@@ -6,9 +6,10 @@ use forge_components::{
     Density, FONT_LG, FONT_SM, ForgePalette, Icon, Radius, Spacing, ToastKind, body_family, card,
     icon, mono_family, primary_button, radius, secondary_button, spacing, tr,
 };
-use forge_platform_core::{CONNECTION_STATE_CHANGED_KIND, PlatformEndpoints, paths};
+use forge_platform_core::{CONNECTION_STATE_CHANGED_KIND, PlatformEndpoints};
 use forge_runtime::{EventSubscription, LiveViewerAggregatorHandle, LossWatch, QueueDepthWatch};
 use forge_storage::CredentialsKeyLoss;
+use forge_storage::paths;
 use futures_util::StreamExt as _;
 use gpui::{
     AnyElement, App, AppContext, AsyncApp, Context, Entity, Window, WindowHandle, div, prelude::*,

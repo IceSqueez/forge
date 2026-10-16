@@ -160,7 +160,7 @@ use forge_components::{
     FOOTER_HEIGHT, IconAssets, bind_code_editor_keys, bind_picker_keys, bind_text_area_keys,
     bind_text_input_keys,
 };
-use forge_platform_core::paths;
+use forge_storage::paths;
 use gpui::{
     App, AppContext, Bounds, Pixels, QuitMode, SharedString, TitlebarOptions, WindowBounds,
     WindowOptions, point, px, size,

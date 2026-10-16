@@ -12,10 +12,10 @@ use forge_overlay::{
     latest_content, materialize_overlay, read_overlay_source, remove_overlay_directory,
     sample_content, sample_context, show_timing, take_speech, upgrade_config, write_overlay_source,
 };
-use forge_platform_core::paths;
 use forge_registry::{
     CancelSignal, KindPlatformContract, SubActionRegistry, TriggerRegistry, declared_variables,
 };
+use forge_storage::paths;
 use forge_storage::{
     OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, StorageError,
     reserved_keys,

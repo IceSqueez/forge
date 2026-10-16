@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use forge_audio::{DeviceSink, NullAudioEventSink, OutputDeviceHandle, stored_output_device};
 use forge_events::EventPublisher;
-use forge_platform_core::paths;
 use forge_runtime::EventBus;
 use forge_speak_queue::{PipelineConfigHandle, QueueConfig, QueueDeps, SpeakEventStream};
+use forge_storage::paths;
 use forge_storage::{CredentialsRepo, DataProvider};
 use forge_tts_core::{EngineId, TtsEngineFactory, TtsRegistry};
 use forge_tts_espeak::EspeakEngineFactory;

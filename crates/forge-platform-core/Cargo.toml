@@ -14,7 +14,6 @@ forge-types = { path = "../forge-types" }
 forge-events = { path = "../forge-events" }
 forge-storage = { path = "../forge-storage" }
 async-trait = { workspace = true }
-directories = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
 reqwest = { workspace = true }

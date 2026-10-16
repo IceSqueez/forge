@@ -178,7 +178,7 @@ impl SettingsDiagnosticsView {
     }
 
     fn log_dir() -> std::path::PathBuf {
-        forge_platform_core::paths::data_dir().join("logs")
+        forge_storage::paths::data_dir().join("logs")
     }
 
     fn open_log_dir(&mut self, cx: &mut Context<Self>) {

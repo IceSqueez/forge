@@ -3,7 +3,7 @@ use std::fs::OpenOptions;
 use std::path::Path;
 use std::sync::Mutex;
 
-use forge_platform_core::paths;
+use forge_storage::paths;
 use forge_storage::{DATABASE_FILE_NAME, database_unit_file_names};
 use forge_update::{
     DatabaseUnit, LaunchRole, SchemaProbe, StartAction, SupervisorContext, SupervisorOutcome,

@@ -206,7 +206,7 @@ mod tests {
     use super::*;
     use crate::SqliteBackend;
     use crate::test_support::{Sandboxed, sandboxed_backend};
-    use forge_storage::ViewerPlatform;
+    use forge_types::PlatformId;
 
     async fn open() -> Sandboxed<SqliteBackend> {
         sandboxed_backend([0xab; 32]).await
@@ -216,14 +216,10 @@ mod tests {
     async fn record_message_creates_viewer() {
         let backend = open().await;
         let repo = backend.viewer_repo_impl();
-        repo.record_message(ViewerPlatform::Twitch, "u1", "Alice")
+        repo.record_message(PlatformId::Twitch, "u1", "Alice")
             .await
             .unwrap();
-        let v = repo
-            .get(ViewerPlatform::Twitch, "u1")
-            .await
-            .unwrap()
-            .unwrap();
+        let v = repo.get(PlatformId::Twitch, "u1").await.unwrap().unwrap();
         assert_eq!(v.username, "Alice");
         assert!(!v.custom_greeting);
     }
@@ -232,17 +228,13 @@ mod tests {
     async fn record_message_updates_username() {
         let backend = open().await;
         let repo = backend.viewer_repo_impl();
-        repo.record_message(ViewerPlatform::Twitch, "u1", "Old")
+        repo.record_message(PlatformId::Twitch, "u1", "Old")
             .await
             .unwrap();
-        repo.record_message(ViewerPlatform::Twitch, "u1", "New")
+        repo.record_message(PlatformId::Twitch, "u1", "New")
             .await
             .unwrap();
-        let v = repo
-            .get(ViewerPlatform::Twitch, "u1")
-            .await
-            .unwrap()
-            .unwrap();
+        let v = repo.get(PlatformId::Twitch, "u1").await.unwrap().unwrap();
         assert_eq!(v.username, "New");
     }
 
@@ -251,7 +243,7 @@ mod tests {
         let backend = open().await;
         let repo = backend.viewer_repo_impl();
         for (viewer_id, last_seen_ms) in [("u1", 1_000_i64), ("u2", 2_000_i64)] {
-            repo.record_message(ViewerPlatform::Twitch, viewer_id, viewer_id)
+            repo.record_message(PlatformId::Twitch, viewer_id, viewer_id)
                 .await
                 .unwrap();
             sqlx::query("UPDATE viewers SET last_seen_at = ? WHERE viewer_id = ?")
@@ -270,19 +262,15 @@ mod tests {
     async fn set_custom_greeting_toggles_flag() {
         let backend = open().await;
         let repo = backend.viewer_repo_impl();
-        repo.record_message(ViewerPlatform::Twitch, "u1", "A")
+        repo.record_message(PlatformId::Twitch, "u1", "A")
             .await
             .unwrap();
         assert!(
-            repo.set_custom_greeting(ViewerPlatform::Twitch, "u1", true)
+            repo.set_custom_greeting(PlatformId::Twitch, "u1", true)
                 .await
                 .unwrap()
         );
-        let v = repo
-            .get(ViewerPlatform::Twitch, "u1")
-            .await
-            .unwrap()
-            .unwrap();
+        let v = repo.get(PlatformId::Twitch, "u1").await.unwrap().unwrap();
         assert!(v.custom_greeting);
     }
 
@@ -292,7 +280,7 @@ mod tests {
         let repo = backend.viewer_repo_impl();
         assert!(
             !repo
-                .set_custom_greeting(ViewerPlatform::Twitch, "ghost", true)
+                .set_custom_greeting(PlatformId::Twitch, "ghost", true)
                 .await
                 .unwrap()
         );

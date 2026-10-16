@@ -75,10 +75,10 @@ pub(crate) fn optional_label(value: Option<&str>) -> String {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use forge_components::Platform;
     use forge_events::{Event, EventSource};
     use forge_platform_core::{BanDuration, BanListUnavailable};
     use forge_storage::Language;
+    use forge_types::PlatformId;
     use time::{OffsetDateTime, UtcOffset};
 
     use super::{
@@ -96,10 +96,10 @@ mod tests {
     #[test]
     fn ban_change_platform_recognises_only_the_ban_and_unban_kinds_of_each_platform() {
         for (kind, expected) in [
-            ("twitch.channel.ban", Some(Platform::Twitch)),
-            ("twitch.channel.unban", Some(Platform::Twitch)),
-            ("youtube.channel.user_banned", Some(Platform::YouTube)),
-            ("kick.moderation.banned", Some(Platform::Kick)),
+            ("twitch.channel.ban", Some(PlatformId::Twitch)),
+            ("twitch.channel.unban", Some(PlatformId::Twitch)),
+            ("youtube.channel.user_banned", Some(PlatformId::YouTube)),
+            ("kick.moderation.banned", Some(PlatformId::Kick)),
             ("twitch.channel.ban.extra", None),
             ("twitch.channel", None),
             ("TWITCH.CHANNEL.BAN", None),
@@ -123,7 +123,7 @@ mod tests {
 
         assert_eq!(
             changed_platforms(&batch),
-            [Platform::Kick, Platform::Twitch]
+            [PlatformId::Kick, PlatformId::Twitch]
         );
     }
 

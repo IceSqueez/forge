@@ -4,14 +4,14 @@ use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, NullEventLogRepo, spawn_viewer_tracker};
-use forge_storage::ViewerPlatform;
 use forge_storage::viewer::MockViewerRepo;
+use forge_types::PlatformId;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
 
 const RECV_TIMEOUT: Duration = Duration::from_secs(30);
 
-type Recorded = (ViewerPlatform, String, String);
+type Recorded = (PlatformId, String, String);
 
 fn bus() -> Arc<EventBus> {
     EventBus::new(Arc::new(NullEventLogRepo))
@@ -45,7 +45,7 @@ fn tracker_recording_into(tx: mpsc::UnboundedSender<Recorded>) -> MockViewerRepo
     repo.expect_record_messages().returning(move |messages| {
         for message in messages {
             let _ = tx.send((
-                message.platform.clone(),
+                message.platform,
                 message.viewer_id.clone(),
                 message.username.clone(),
             ));
@@ -63,25 +63,25 @@ async fn records_chat_activity_for_each_live_platforms_real_chat_kind() {
     spawn_viewer_tracker(Arc::clone(&bus), Arc::new(tracker_recording_into(tx)));
     wait_until_subscribed().await;
 
-    let cases: [(EventSource, &str, ViewerPlatform, &str, &str); 3] = [
+    let cases: [(EventSource, &str, PlatformId, &str, &str); 3] = [
         (
             EventSource::Twitch,
             "twitch.channel.chat.message",
-            ViewerPlatform::Twitch,
+            PlatformId::Twitch,
             "t1",
             "alice",
         ),
         (
             EventSource::YouTube,
             "youtube.chat.message",
-            ViewerPlatform::YouTube,
+            PlatformId::YouTube,
             "y1",
             "bob",
         ),
         (
             EventSource::Kick,
             "kick.chat.message.sent",
-            ViewerPlatform::Kick,
+            PlatformId::Kick,
             "k1",
             "carol",
         ),
@@ -153,10 +153,6 @@ async fn skips_events_that_are_not_recordable_chat_messages() {
     let recorded = timeout(RECV_TIMEOUT, rx.recv()).await.unwrap().unwrap();
     assert_eq!(
         recorded,
-        (
-            ViewerPlatform::Twitch,
-            "ok".to_string(),
-            "sentinel".to_string()
-        )
+        (PlatformId::Twitch, "ok".to_string(), "sentinel".to_string())
     );
 }

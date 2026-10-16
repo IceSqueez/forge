@@ -456,8 +456,9 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
 mod tests {
     use forge_storage::ChatHistoryRepo;
     use forge_types::EventId;
+    use forge_types::PlatformId;
     use forge_types::unified_chat::{
-        ChatEventDetail, ChatSegment, ChatSource, ModerationMarks, UnifiedChatRow, UserBadge,
+        ChatEventDetail, ChatSegment, ModerationMarks, UnifiedChatRow, UserBadge,
     };
     use time::OffsetDateTime;
 
@@ -478,7 +479,7 @@ mod tests {
         UnifiedChatRow {
             id: id.to_string(),
             event_id: EventId::new(),
-            source: ChatSource::Twitch,
+            source: PlatformId::Twitch,
             received_at: OffsetDateTime::from_unix_timestamp(unix_secs).unwrap(),
             author: "user".to_string(),
             author_id: None,
@@ -503,7 +504,7 @@ mod tests {
         let row = UnifiedChatRow {
             id: "rich-1".to_string(),
             event_id: EventId::new(),
-            source: ChatSource::YouTube,
+            source: PlatformId::YouTube,
             received_at: OffsetDateTime::from_unix_timestamp(1_700_000_123).unwrap(),
             author: "Стрімер".to_string(),
             author_id: None,
@@ -559,7 +560,7 @@ mod tests {
         assert_eq!(ids, ["e", "d", "c"]);
     }
 
-    fn row_full(id: &str, source: ChatSource, author: &str, secs: i64) -> UnifiedChatRow {
+    fn row_full(id: &str, source: PlatformId, author: &str, secs: i64) -> UnifiedChatRow {
         UnifiedChatRow {
             source,
             author: author.to_string(),
@@ -640,21 +641,21 @@ mod tests {
             ),
         ] {
             let repo = make_repo().await;
-            repo.append(&row_full("v1", ChatSource::Twitch, "victim", 100))
+            repo.append(&row_full("v1", PlatformId::Twitch, "victim", 100))
                 .await
                 .unwrap();
-            repo.append(&row_full("v2", ChatSource::Twitch, "victim", 100))
+            repo.append(&row_full("v2", PlatformId::Twitch, "victim", 100))
                 .await
                 .unwrap();
-            repo.append(&row_full("by", ChatSource::Twitch, "bystander", 100))
+            repo.append(&row_full("by", PlatformId::Twitch, "bystander", 100))
                 .await
                 .unwrap();
-            repo.append(&row_full("yt", ChatSource::YouTube, "victim", 100))
+            repo.append(&row_full("yt", PlatformId::YouTube, "victim", 100))
                 .await
                 .unwrap();
 
             let affected = repo
-                .mark_user_messages_moderated(ChatSource::Twitch, "victim", timeout)
+                .mark_user_messages_moderated(PlatformId::Twitch, "victim", timeout)
                 .await
                 .unwrap();
 
@@ -685,17 +686,17 @@ mod tests {
     #[tokio::test]
     async fn clear_platform_marks_only_that_source_deleted() {
         let repo = make_repo().await;
-        repo.append(&row_full("t1", ChatSource::Twitch, "a", 100))
+        repo.append(&row_full("t1", PlatformId::Twitch, "a", 100))
             .await
             .unwrap();
-        repo.append(&row_full("t2", ChatSource::Twitch, "b", 100))
+        repo.append(&row_full("t2", PlatformId::Twitch, "b", 100))
             .await
             .unwrap();
-        repo.append(&row_full("y1", ChatSource::YouTube, "c", 100))
+        repo.append(&row_full("y1", PlatformId::YouTube, "c", 100))
             .await
             .unwrap();
 
-        let affected = repo.clear_platform(ChatSource::Twitch).await.unwrap();
+        let affected = repo.clear_platform(PlatformId::Twitch).await.unwrap();
 
         assert_eq!(affected, 2);
         assert_eq!(
@@ -714,7 +715,7 @@ mod tests {
 
     fn authored(
         id: &str,
-        source: ChatSource,
+        source: PlatformId,
         author_id: Option<&str>,
         is_event: bool,
     ) -> UnifiedChatRow {
@@ -726,7 +727,7 @@ mod tests {
         }
     }
 
-    fn key(source: ChatSource, author_id: &str) -> ChatAuthorKey {
+    fn key(source: PlatformId, author_id: &str) -> ChatAuthorKey {
         ChatAuthorKey {
             source,
             author_id: author_id.to_owned(),
@@ -756,7 +757,7 @@ mod tests {
             .map(|i| {
                 authored(
                     &format!("{prefix}{i}"),
-                    ChatSource::Twitch,
+                    PlatformId::Twitch,
                     Some(prefix),
                     false,
                 )
@@ -784,13 +785,13 @@ mod tests {
         for (id, secs) in [("m1", 400), ("m2", 300), ("m3", 200), ("m4", 100)] {
             repo.append(&UnifiedChatRow {
                 received_at: OffsetDateTime::from_unix_timestamp(secs).unwrap(),
-                ..authored(id, ChatSource::Twitch, Some("42"), false)
+                ..authored(id, PlatformId::Twitch, Some("42"), false)
             })
             .await
             .unwrap();
         }
 
-        let ids = ids_by_author(&repo, &key(ChatSource::Twitch, "42"), 3).await;
+        let ids = ids_by_author(&repo, &key(PlatformId::Twitch, "42"), 3).await;
 
         assert_eq!(ids, ["m4", "m3", "m2"]);
     }
@@ -801,21 +802,21 @@ mod tests {
         append_all(
             &repo,
             &[
-                authored("mine", ChatSource::Twitch, Some("42"), false),
-                authored("my_event", ChatSource::Twitch, Some("42"), true),
-                authored("other_author", ChatSource::Twitch, Some("43"), false),
+                authored("mine", PlatformId::Twitch, Some("42"), false),
+                authored("my_event", PlatformId::Twitch, Some("42"), true),
+                authored("other_author", PlatformId::Twitch, Some("43"), false),
                 authored(
                     "same_id_other_source",
-                    ChatSource::YouTube,
+                    PlatformId::YouTube,
                     Some("42"),
                     false,
                 ),
-                authored("authorless", ChatSource::Twitch, None, false),
+                authored("authorless", PlatformId::Twitch, None, false),
             ],
         )
         .await;
 
-        let ids = ids_by_author(&repo, &key(ChatSource::Twitch, "42"), 10).await;
+        let ids = ids_by_author(&repo, &key(PlatformId::Twitch, "42"), 10).await;
 
         assert_eq!(ids, ["mine"]);
     }
@@ -832,7 +833,7 @@ mod tests {
             append_all(&repo, &messages_of("a", stored)).await;
 
             let deleted = repo
-                .apply_retention(&[key(ChatSource::Twitch, "a")], 3)
+                .apply_retention(&[key(PlatformId::Twitch, "a")], 3)
                 .await
                 .unwrap();
 
@@ -849,13 +850,13 @@ mod tests {
         append_all(
             &repo,
             &[
-                authored("yt0", ChatSource::YouTube, Some("a"), false),
-                authored("yt1", ChatSource::YouTube, Some("a"), false),
+                authored("yt0", PlatformId::YouTube, Some("a"), false),
+                authored("yt1", PlatformId::YouTube, Some("a"), false),
             ],
         )
         .await;
 
-        repo.apply_retention(&[key(ChatSource::Twitch, "a")], 1)
+        repo.apply_retention(&[key(PlatformId::Twitch, "a")], 1)
             .await
             .unwrap();
 
@@ -881,14 +882,14 @@ mod tests {
         append_all(
             &repo,
             &[
-                authored("event_old", ChatSource::Twitch, Some("a"), true),
-                authored("msg_old", ChatSource::Twitch, Some("a"), false),
-                authored("msg_new", ChatSource::Twitch, Some("a"), false),
+                authored("event_old", PlatformId::Twitch, Some("a"), true),
+                authored("msg_old", PlatformId::Twitch, Some("a"), false),
+                authored("msg_new", PlatformId::Twitch, Some("a"), false),
             ],
         )
         .await;
 
-        repo.apply_retention(&[key(ChatSource::Twitch, "a")], 1)
+        repo.apply_retention(&[key(PlatformId::Twitch, "a")], 1)
             .await
             .unwrap();
 
@@ -897,7 +898,7 @@ mod tests {
 
     fn authorless_rows(count: usize) -> Vec<UnifiedChatRow> {
         (0..count)
-            .map(|i| authored(&format!("n{i:05}"), ChatSource::Twitch, None, false))
+            .map(|i| authored(&format!("n{i:05}"), PlatformId::Twitch, None, false))
             .collect()
     }
 
@@ -924,8 +925,8 @@ mod tests {
         append_all(
             &repo,
             &[
-                authored("authored_event", ChatSource::Twitch, Some("a"), true),
-                authored("authored_message", ChatSource::Twitch, Some("a"), false),
+                authored("authored_event", PlatformId::Twitch, Some("a"), true),
+                authored("authored_message", PlatformId::Twitch, Some("a"), false),
             ],
         )
         .await;
@@ -953,32 +954,32 @@ mod tests {
         vec![
             UnifiedChatRow {
                 received_at: at_secs(300),
-                ..authored("mine_newest", ChatSource::Twitch, Some("42"), false)
+                ..authored("mine_newest", PlatformId::Twitch, Some("42"), false)
             },
             UnifiedChatRow {
                 received_at: at_secs(100),
-                ..authored("mine_oldest", ChatSource::Twitch, Some("42"), false)
+                ..authored("mine_oldest", PlatformId::Twitch, Some("42"), false)
             },
             UnifiedChatRow {
                 received_at: at_secs(900),
-                ..authored("my_event", ChatSource::Twitch, Some("42"), true)
+                ..authored("my_event", PlatformId::Twitch, Some("42"), true)
             },
             UnifiedChatRow {
                 received_at: at_secs(900),
-                ..authored("other_author", ChatSource::Twitch, Some("43"), false)
+                ..authored("other_author", PlatformId::Twitch, Some("43"), false)
             },
             UnifiedChatRow {
                 received_at: at_secs(900),
                 ..authored(
                     "same_id_other_source",
-                    ChatSource::YouTube,
+                    PlatformId::YouTube,
                     Some("42"),
                     false,
                 )
             },
             UnifiedChatRow {
                 received_at: at_secs(900),
-                ..authored("authorless", ChatSource::Twitch, None, false)
+                ..authored("authorless", PlatformId::Twitch, None, false)
             },
         ]
     }
@@ -1013,7 +1014,7 @@ mod tests {
         append_all(&repo, &mixed_authors()).await;
 
         let page = repo
-            .author_page(&key(ChatSource::Twitch, "42"), None, 10)
+            .author_page(&key(PlatformId::Twitch, "42"), None, 10)
             .await
             .unwrap();
 
@@ -1035,7 +1036,7 @@ mod tests {
         append_all(&repo, &messages_of("a", 2)).await;
 
         let page = repo
-            .author_page(&key(ChatSource::Twitch, "ghost"), None, 10)
+            .author_page(&key(PlatformId::Twitch, "ghost"), None, 10)
             .await
             .unwrap();
 
@@ -1059,7 +1060,7 @@ mod tests {
             let repo = make_repo().await;
             append_all(&repo, &messages_of("a", stored)).await;
 
-            let pages = every_page(&repo, &key(ChatSource::Twitch, "a"), limit).await;
+            let pages = every_page(&repo, &key(PlatformId::Twitch, "a"), limit).await;
 
             let sizes: Vec<usize> = pages.iter().map(|page| page.rows.len()).collect();
             assert_eq!(sizes, expected_sizes, "stored={stored}");
@@ -1073,16 +1074,16 @@ mod tests {
             append_all(
                 &repo,
                 &[
-                    authored(&format!("a{ix}"), ChatSource::Twitch, Some("a"), false),
-                    authored(&format!("e{ix}"), ChatSource::Twitch, Some("a"), true),
-                    authored(&format!("b{ix}"), ChatSource::Twitch, Some("b"), false),
-                    authored(&format!("y{ix}"), ChatSource::YouTube, Some("a"), false),
+                    authored(&format!("a{ix}"), PlatformId::Twitch, Some("a"), false),
+                    authored(&format!("e{ix}"), PlatformId::Twitch, Some("a"), true),
+                    authored(&format!("b{ix}"), PlatformId::Twitch, Some("b"), false),
+                    authored(&format!("y{ix}"), PlatformId::YouTube, Some("a"), false),
                 ],
             )
             .await;
         }
 
-        let pages = every_page(&repo, &key(ChatSource::Twitch, "a"), 2).await;
+        let pages = every_page(&repo, &key(PlatformId::Twitch, "a"), 2).await;
 
         assert_eq!(
             page_ids(&pages),
@@ -1095,7 +1096,7 @@ mod tests {
         let repo = make_repo().await;
         append_all(&repo, &messages_of("a", 5)).await;
 
-        let pages = every_page(&repo, &key(ChatSource::Twitch, "a"), 2).await;
+        let pages = every_page(&repo, &key(PlatformId::Twitch, "a"), 2).await;
 
         let tallies: Vec<u64> = pages.iter().map(|page| page.tally.messages).collect();
         assert_eq!(tallies, [5, 5, 5]);
@@ -1105,11 +1106,11 @@ mod tests {
     async fn author_page_after_retention_counts_and_lists_only_the_rows_the_prune_kept() {
         let repo = make_repo().await;
         append_all(&repo, &messages_of("a", 6)).await;
-        repo.apply_retention(&[key(ChatSource::Twitch, "a")], 3)
+        repo.apply_retention(&[key(PlatformId::Twitch, "a")], 3)
             .await
             .unwrap();
 
-        let pages = every_page(&repo, &key(ChatSource::Twitch, "a"), 10).await;
+        let pages = every_page(&repo, &key(PlatformId::Twitch, "a"), 10).await;
 
         assert_eq!(
             (pages[0].tally.messages, page_ids(&pages)),
@@ -1124,7 +1125,7 @@ mod tests {
     async fn an_older_page_asked_after_a_prune_removed_its_rows_is_empty_and_final() {
         let repo = make_repo().await;
         append_all(&repo, &messages_of("a", 6)).await;
-        let author = key(ChatSource::Twitch, "a");
+        let author = key(PlatformId::Twitch, "a");
         let first = repo.author_page(&author, None, 3).await.unwrap();
         repo.apply_retention(std::slice::from_ref(&author), 3)
             .await
@@ -1143,13 +1144,13 @@ mod tests {
         let repo = make_repo().await;
         repo.append(&UnifiedChatRow {
             received_at: at_secs(100) + time::Duration::nanoseconds(1_999_999),
-            ..authored("m1", ChatSource::Twitch, Some("42"), false)
+            ..authored("m1", PlatformId::Twitch, Some("42"), false)
         })
         .await
         .unwrap();
 
         let tallies = repo
-            .author_tallies(&[key(ChatSource::Twitch, "42")])
+            .author_tallies(&[key(PlatformId::Twitch, "42")])
             .await
             .unwrap();
 
@@ -1164,9 +1165,9 @@ mod tests {
         let repo = make_repo().await;
         append_all(&repo, &mixed_authors()).await;
         let asked = [
-            key(ChatSource::YouTube, "42"),
-            key(ChatSource::Twitch, "ghost"),
-            key(ChatSource::Twitch, "42"),
+            key(PlatformId::YouTube, "42"),
+            key(PlatformId::Twitch, "ghost"),
+            key(PlatformId::Twitch, "42"),
         ];
 
         let tallies = repo.author_tallies(&asked).await.unwrap();

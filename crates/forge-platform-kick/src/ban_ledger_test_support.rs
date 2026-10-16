@@ -2,9 +2,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use forge_storage::{
-    BanLedgerEntry, BanLedgerKey, BanLedgerRepo, StorageError, ViewerPlatform, merge_ban_entry,
-};
+use forge_storage::{BanLedgerEntry, BanLedgerKey, BanLedgerRepo, StorageError, merge_ban_entry};
+use forge_types::PlatformId;
 use time::OffsetDateTime;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,7 +94,7 @@ impl BanLedgerRepo for MemoryBanLedger {
 
     async fn list_active(
         &self,
-        platform: ViewerPlatform,
+        platform: PlatformId,
         channel_id: &str,
         now: OffsetDateTime,
         limit: usize,

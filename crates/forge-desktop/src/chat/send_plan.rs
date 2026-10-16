@@ -269,10 +269,10 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use forge_components::Platform;
     use forge_events::{Event, EventSource};
     use forge_runtime::{EventBus, NullEventLogRepo};
     use forge_types::EventId;
+    use forge_types::PlatformId;
 
     use super::{
         CHAT_SEND_FAILED_KIND, CHAT_SEND_REQUEST_KIND, CHAT_SENT_KIND, DeliveryResult,
@@ -280,12 +280,12 @@ mod tests {
         delivery_response, max_message_chars, plan_send,
     };
 
-    const T: Platform = Platform::Twitch;
-    const Y: Platform = Platform::YouTube;
-    const K: Platform = Platform::Kick;
+    const T: PlatformId = PlatformId::Twitch;
+    const Y: PlatformId = PlatformId::YouTube;
+    const K: PlatformId = PlatformId::Kick;
     const LONG_WAIT: Duration = Duration::from_secs(3600);
 
-    fn reach(enabled: &[Platform], connected: &[Platform]) -> PlatformReach {
+    fn reach(enabled: &[PlatformId], connected: &[PlatformId]) -> PlatformReach {
         PlatformReach {
             enabled: enabled.to_vec(),
             connected: connected.to_vec(),

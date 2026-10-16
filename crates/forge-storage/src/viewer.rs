@@ -53,26 +53,3 @@ pub trait ViewerRepo: Send + Sync {
         enabled: bool,
     ) -> Result<bool, StorageError>;
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn _trait_is_dyn_safe(_: &dyn ViewerRepo) {}
-
-    #[test]
-    fn platform_roundtrip() {
-        for p in [
-            ViewerPlatform::Twitch,
-            ViewerPlatform::YouTube,
-            ViewerPlatform::Kick,
-        ] {
-            assert_eq!(ViewerPlatform::parse(p.as_str()), Some(p));
-        }
-    }
-
-    #[test]
-    fn platform_parse_unknown_is_none() {
-        assert_eq!(ViewerPlatform::parse("discord"), None);
-    }
-}

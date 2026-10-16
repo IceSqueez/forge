@@ -428,7 +428,7 @@ mod tests {
         UnifiedChatRow {
             id: "test-id".to_string(),
             event_id: EventId::new(),
-            source: ChatSource::Twitch,
+            source: PlatformId::Twitch,
             received_at: OffsetDateTime::now_utc(),
             author: "testuser".to_string(),
             author_id: None,
@@ -794,17 +794,6 @@ mod tests {
         let row_json = to_string(&row_with_planted_content()).unwrap();
         let back: UnifiedChatRow = from_str(&row_json).unwrap();
         assert_eq!(to_string(&back).unwrap(), row_json);
-    }
-
-    #[test]
-    fn chat_source_serde_snake_case() {
-        assert_eq!(to_string(&ChatSource::Twitch).unwrap(), r#""twitch""#);
-        assert_eq!(to_string(&ChatSource::YouTube).unwrap(), r#""youtube""#);
-        assert_eq!(to_string(&ChatSource::Kick).unwrap(), r#""kick""#);
-        let src: ChatSource = from_str(r#""twitch""#).unwrap();
-        assert_eq!(src, ChatSource::Twitch);
-        let src: ChatSource = from_str(r#""youtube""#).unwrap();
-        assert_eq!(src, ChatSource::YouTube);
     }
 
     #[test]

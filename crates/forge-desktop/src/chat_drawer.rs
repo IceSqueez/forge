@@ -159,8 +159,10 @@ pub(crate) fn current_name(
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
-    use forge_components::{BadgeKind, ChatBody, FORGE_DEFAULT, Platform};
-    use forge_storage::{Viewer, ViewerPlatform};
+    use crate::platform_visuals::BadgeKind;
+    use forge_components::{ChatBody, FORGE_DEFAULT};
+    use forge_storage::Viewer;
+    use forge_types::PlatformId;
     use time::{Duration, OffsetDateTime};
 
     use super::{
@@ -172,7 +174,7 @@ mod tests {
     use crate::chat_viewer_messages::ViewerMessages;
 
     fn key(name: &str) -> AuthorKey {
-        AuthorKey::by_name(Platform::Twitch, name)
+        AuthorKey::by_name(PlatformId::Twitch, name)
     }
 
     fn feed_of(messages: &[ChatMessage]) -> ChatFeed {
@@ -207,7 +209,7 @@ mod tests {
             event_id: forge_types::EventId::new(),
             timestamp: "".into(),
             received_at: OffsetDateTime::now_utc(),
-            platform: Platform::Twitch,
+            platform: PlatformId::Twitch,
             badges,
             username: username.into(),
             author_id: None,
@@ -227,7 +229,7 @@ mod tests {
     ) -> Viewer {
         Viewer {
             viewer_id: "id".into(),
-            platform: ViewerPlatform::Twitch,
+            platform: PlatformId::Twitch,
             username: username.into(),
             first_seen_at,
             last_seen_at,
@@ -336,7 +338,7 @@ mod tests {
             (Some(key("alice")), &alice_then_bob[..], Some(key("alice"))),
             (Some(key("ghost")), &alice_then_bob[..], Some(key("bob"))),
             (
-                Some(AuthorKey::by_name(Platform::Kick, "alice")),
+                Some(AuthorKey::by_name(PlatformId::Kick, "alice")),
                 &alice_then_bob[..],
                 Some(key("bob")),
             ),
@@ -379,7 +381,7 @@ mod tests {
         assert!(directory.get(&key("bob")).is_none());
     }
 
-    fn stored(platform: ViewerPlatform, viewer_id: &str, username: &str) -> Viewer {
+    fn stored(platform: PlatformId, viewer_id: &str, username: &str) -> Viewer {
         Viewer {
             viewer_id: viewer_id.into(),
             platform,
@@ -391,7 +393,7 @@ mod tests {
         }
     }
 
-    fn spoken(platform: Platform, viewer_id: &str, username: &str) -> ChatMessage {
+    fn spoken(platform: PlatformId, viewer_id: &str, username: &str) -> ChatMessage {
         ChatMessage {
             platform,
             author_id: Some(viewer_id.to_owned().into()),
@@ -402,18 +404,21 @@ mod tests {
     #[test]
     fn viewer_directory_finds_a_viewer_by_platform_and_id_or_platform_and_username_only() {
         let directory = ViewerDirectory::new(vec![
-            stored(ViewerPlatform::Twitch, "t1", "alice"),
-            stored(ViewerPlatform::Kick, "k1", "bob"),
+            stored(PlatformId::Twitch, "t1", "alice"),
+            stored(PlatformId::Kick, "k1", "bob"),
         ]);
         for (key, expected) in [
-            (AuthorKey::by_viewer_id(Platform::Twitch, "t1"), Some("t1")),
-            (AuthorKey::by_name(Platform::Twitch, "alice"), Some("t1")),
-            (AuthorKey::by_viewer_id(Platform::Kick, "k1"), Some("k1")),
-            (AuthorKey::by_name(Platform::Kick, "bob"), Some("k1")),
-            (AuthorKey::by_viewer_id(Platform::Kick, "t1"), None),
-            (AuthorKey::by_name(Platform::YouTube, "alice"), None),
-            (AuthorKey::by_viewer_id(Platform::Twitch, "alice"), None),
-            (AuthorKey::by_name(Platform::Twitch, "t1"), None),
+            (
+                AuthorKey::by_viewer_id(PlatformId::Twitch, "t1"),
+                Some("t1"),
+            ),
+            (AuthorKey::by_name(PlatformId::Twitch, "alice"), Some("t1")),
+            (AuthorKey::by_viewer_id(PlatformId::Kick, "k1"), Some("k1")),
+            (AuthorKey::by_name(PlatformId::Kick, "bob"), Some("k1")),
+            (AuthorKey::by_viewer_id(PlatformId::Kick, "t1"), None),
+            (AuthorKey::by_name(PlatformId::YouTube, "alice"), None),
+            (AuthorKey::by_viewer_id(PlatformId::Twitch, "alice"), None),
+            (AuthorKey::by_name(PlatformId::Twitch, "t1"), None),
         ] {
             assert_eq!(
                 directory.get(&key).map(|viewer| viewer.viewer_id.as_str()),
@@ -425,12 +430,11 @@ mod tests {
 
     #[test]
     fn a_renamed_viewer_card_shows_the_chat_name_and_the_message_count_found_by_id() {
-        let feed = feed_of(&[spoken(Platform::Twitch, "t1", "alice_new")]);
-        let directory =
-            ViewerDirectory::new(vec![stored(ViewerPlatform::Twitch, "t1", "alice_old")]);
+        let feed = feed_of(&[spoken(PlatformId::Twitch, "t1", "alice_new")]);
+        let directory = ViewerDirectory::new(vec![stored(PlatformId::Twitch, "t1", "alice_old")]);
 
         let summary = author_summary(
-            &AuthorKey::by_viewer_id(Platform::Twitch, "t1"),
+            &AuthorKey::by_viewer_id(PlatformId::Twitch, "t1"),
             feed.authors(),
             &directory,
             &ledger_of(&feed),
@@ -446,19 +450,25 @@ mod tests {
 
     #[test]
     fn current_name_prefers_the_chat_name_then_the_stored_name_then_the_name_key() {
-        let feed = feed_of(&[spoken(Platform::Twitch, "t1", "alice_new")]);
+        let feed = feed_of(&[spoken(PlatformId::Twitch, "t1", "alice_new")]);
         let directory = ViewerDirectory::new(vec![
-            stored(ViewerPlatform::Twitch, "t1", "alice_old"),
-            stored(ViewerPlatform::Twitch, "t2", "bob"),
+            stored(PlatformId::Twitch, "t1", "alice_old"),
+            stored(PlatformId::Twitch, "t2", "bob"),
         ]);
         for (key, expected) in [
             (
-                AuthorKey::by_viewer_id(Platform::Twitch, "t1"),
+                AuthorKey::by_viewer_id(PlatformId::Twitch, "t1"),
                 Some("alice_new"),
             ),
-            (AuthorKey::by_viewer_id(Platform::Twitch, "t2"), Some("bob")),
-            (AuthorKey::by_name(Platform::Twitch, "carol"), Some("carol")),
-            (AuthorKey::by_viewer_id(Platform::Twitch, "t3"), None),
+            (
+                AuthorKey::by_viewer_id(PlatformId::Twitch, "t2"),
+                Some("bob"),
+            ),
+            (
+                AuthorKey::by_name(PlatformId::Twitch, "carol"),
+                Some("carol"),
+            ),
+            (AuthorKey::by_viewer_id(PlatformId::Twitch, "t3"), None),
         ] {
             assert_eq!(
                 current_name(&key, feed.authors(), &directory).as_deref(),

@@ -122,20 +122,20 @@ impl ViewerMessages {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
-    use forge_components::{ChatBody, Platform};
+    use forge_components::ChatBody;
     use forge_storage::{ChatAuthorKey, ChatAuthorTally};
-    use forge_types::{ChatSource, EventId};
+    use forge_types::{EventId, PlatformId};
     use time::{Duration, OffsetDateTime};
 
     use super::{ViewerMessages, stored_author};
     use crate::chat_author::AuthorKey;
     use crate::chat_feed::{ChatFeed, ChatMessage};
 
-    type Author = (Platform, Option<&'static str>, &'static str);
+    type Author = (PlatformId, Option<&'static str>, &'static str);
 
-    const ANN: Author = (Platform::Twitch, Some("42"), "ann");
-    const BOB: Author = (Platform::Twitch, Some("7"), "bob");
-    const ANN_BY_NAME: Author = (Platform::Kick, None, "ann");
+    const ANN: Author = (PlatformId::Twitch, Some("42"), "ann");
+    const BOB: Author = (PlatformId::Twitch, Some("7"), "bob");
+    const ANN_BY_NAME: Author = (PlatformId::Kick, None, "ann");
 
     fn base() -> OffsetDateTime {
         OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap()
@@ -221,18 +221,18 @@ mod tests {
     fn stored_author_asks_by_viewer_id_on_the_viewers_platform_and_skips_name_only_keys() {
         let cases = [
             (
-                AuthorKey::by_viewer_id(Platform::Twitch, "42"),
-                Some((ChatSource::Twitch, "42")),
+                AuthorKey::by_viewer_id(PlatformId::Twitch, "42"),
+                Some((PlatformId::Twitch, "42")),
             ),
             (
-                AuthorKey::by_viewer_id(Platform::YouTube, "UCx"),
-                Some((ChatSource::YouTube, "UCx")),
+                AuthorKey::by_viewer_id(PlatformId::YouTube, "UCx"),
+                Some((PlatformId::YouTube, "UCx")),
             ),
             (
-                AuthorKey::by_viewer_id(Platform::Kick, "9"),
-                Some((ChatSource::Kick, "9")),
+                AuthorKey::by_viewer_id(PlatformId::Kick, "9"),
+                Some((PlatformId::Kick, "9")),
             ),
-            (AuthorKey::by_name(Platform::Kick, "ann"), None),
+            (AuthorKey::by_name(PlatformId::Kick, "ann"), None),
         ];
         for (key, expected) in cases {
             let expected = expected.map(|(source, id)| ChatAuthorKey {
@@ -308,7 +308,7 @@ mod tests {
             line("m1", 10, ANN),
             event,
             line("b1", 30, BOB),
-            line("y1", 40, (Platform::YouTube, Some("42"), "ann")),
+            line("y1", 40, (PlatformId::YouTube, Some("42"), "ann")),
         ]);
 
         let ledger = absorbed(&feed);

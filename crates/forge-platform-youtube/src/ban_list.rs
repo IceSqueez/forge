@@ -114,7 +114,7 @@ mod tests {
         let banned_at = OffsetDateTime::now_utc() - Duration::minutes(5);
         BanLedgerEntry {
             key: BanLedgerKey {
-                platform: ViewerPlatform::YouTube,
+                platform: PlatformId::YouTube,
                 channel_id: channel_id.to_owned(),
                 viewer_id: viewer_id.to_owned(),
             },

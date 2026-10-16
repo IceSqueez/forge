@@ -255,9 +255,10 @@ impl Render for ChatComposer {
 mod tests {
     use std::sync::Arc;
 
-    use forge_components::{FORGE_DEFAULT, Platform, ToastKind, tr};
+    use forge_components::{FORGE_DEFAULT, ToastKind, tr};
     use forge_events::{Event, EventSource};
     use forge_runtime::{EventBus, NullEventLogRepo};
+    use forge_types::PlatformId;
     use gpui::{AppContext as _, Entity, TestAppContext, VisualTestContext};
 
     use super::super::platform_display_name;
@@ -319,7 +320,7 @@ mod tests {
     fn send(composer: &Entity<ChatComposer>, vcx: &mut VisualTestContext, text: &str) {
         vcx.update(|_window, cx| {
             composer.update(cx, |composer, cx| {
-                composer.send(text, &[Platform::Twitch], cx);
+                composer.send(text, &[PlatformId::Twitch], cx);
             });
         });
         vcx.run_until_parked();
@@ -397,7 +398,7 @@ mod tests {
             type_text(&composer, vcx, typed);
             let report = SendReport {
                 message: "hello".to_owned(),
-                results: vec![(Platform::Twitch, result.clone())],
+                results: vec![(PlatformId::Twitch, result.clone())],
             };
 
             vcx.update(|_window, cx| {
@@ -420,8 +421,11 @@ mod tests {
         let report = SendReport {
             message: "hello".to_owned(),
             results: vec![
-                (Platform::Twitch, DeliveryResult::Delivered),
-                (Platform::Kick, DeliveryResult::Failed("banned".to_owned())),
+                (PlatformId::Twitch, DeliveryResult::Delivered),
+                (
+                    PlatformId::Kick,
+                    DeliveryResult::Failed("banned".to_owned()),
+                ),
             ],
         };
 
@@ -433,7 +437,7 @@ mod tests {
             error_toasts(vcx),
             vec![tr!(
                 "chat_send_failed",
-                platform = platform_display_name(Platform::Kick),
+                platform = platform_display_name(PlatformId::Kick),
                 error = "banned".to_owned()
             )]
         );
@@ -496,8 +500,8 @@ mod tests {
         assert_eq!(
             reach,
             PlatformReach {
-                enabled: vec![Platform::Twitch, Platform::YouTube, Platform::Kick],
-                connected: vec![Platform::Twitch],
+                enabled: vec![PlatformId::Twitch, PlatformId::YouTube, PlatformId::Kick],
+                connected: vec![PlatformId::Twitch],
             }
         );
     }
@@ -525,7 +529,7 @@ mod tests {
 
         let reach = vcx
             .update(|_window, cx| composer.update(cx, |composer, cx| composer.current_reach(cx)));
-        assert_eq!(reach.enabled, vec![Platform::Twitch, Platform::YouTube]);
+        assert_eq!(reach.enabled, vec![PlatformId::Twitch, PlatformId::YouTube]);
         assert!(reach.connected.is_empty());
     }
 }

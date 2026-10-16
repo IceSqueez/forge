@@ -478,12 +478,12 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-    use forge_components::{ChatBody, FORGE_DEFAULT, Platform};
+    use forge_components::{ChatBody, FORGE_DEFAULT};
     use forge_storage::chat_history::MockChatHistoryRepo;
     use forge_storage::{
         ChatAuthorKey, ChatAuthorPage, ChatAuthorTally, ChatHistoryCursor, StorageError,
     };
-    use forge_types::{ChatSegment, ChatSource, EventId, ModerationMarks, UnifiedChatRow};
+    use forge_types::{ChatSegment, EventId, ModerationMarks, PlatformId, UnifiedChatRow};
     use gpui::{AppContext as _, Entity, TestAppContext};
     use time::OffsetDateTime;
 
@@ -499,10 +499,10 @@ mod tests {
     use crate::chat_viewer_messages::ViewerMessages;
     use crate::test_support::{pump, runtime};
 
-    type Author = (Platform, Option<&'static str>, &'static str);
+    type Author = (PlatformId, Option<&'static str>, &'static str);
 
-    const ANN: Author = (Platform::Twitch, Some("42"), "ann");
-    const BOB: Author = (Platform::Twitch, Some("7"), "bob");
+    const ANN: Author = (PlatformId::Twitch, Some("42"), "ann");
+    const BOB: Author = (PlatformId::Twitch, Some("7"), "bob");
 
     fn key_of((platform, id, name): Author) -> AuthorKey {
         match id {
@@ -534,7 +534,7 @@ mod tests {
         UnifiedChatRow {
             id: id.to_owned(),
             event_id: EventId::new(),
-            source: ChatSource::Twitch,
+            source: PlatformId::Twitch,
             received_at: OffsetDateTime::from_unix_timestamp(at).unwrap(),
             author: name.to_owned(),
             author_id: author_id.map(str::to_owned),
@@ -563,7 +563,7 @@ mod tests {
 
     fn query_of((_, author_id, _): Author) -> ChatAuthorKey {
         ChatAuthorKey {
-            source: ChatSource::Twitch,
+            source: PlatformId::Twitch,
             author_id: author_id.unwrap().to_owned(),
         }
     }
@@ -703,7 +703,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let rt = runtime();
-        let by_name: Author = (Platform::Twitch, None, "ann");
+        let by_name: Author = (PlatformId::Twitch, None, "ann");
         let (_feed, history) = mount_history(
             cx,
             &rt,
@@ -795,7 +795,7 @@ mod tests {
             line("m2", 2, ANN),
             moderated(line("b1", 3, BOB)),
             moderated(line("", 4, ANN)),
-            moderated(line("y1", 5, (Platform::YouTube, Some("42"), "ann"))),
+            moderated(line("y1", 5, (PlatformId::YouTube, Some("42"), "ann"))),
         ]);
 
         let found = moderated_ids_by(&feed, &key_of(ANN));
@@ -810,7 +810,7 @@ mod tests {
     }
 
     fn viewer(viewer_id: &str) -> AuthorKey {
-        AuthorKey::by_viewer_id(Platform::Twitch, viewer_id)
+        AuthorKey::by_viewer_id(PlatformId::Twitch, viewer_id)
     }
 
     fn counting_repo() -> (MockChatHistoryRepo, Arc<AtomicUsize>) {

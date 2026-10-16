@@ -546,11 +546,12 @@ fn format_clock(unix_secs: i64) -> String {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
-    use forge_components::{BadgeKind, ChatBody, Platform};
+    use crate::platform_visuals::BadgeKind;
+    use forge_components::ChatBody;
     use forge_events::{Event, EventSource};
     use forge_types::{
         ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
-        ChatSegment, ChatSource, ChatViewer, EventId, ModerationMarks, UnifiedChatRow, UserBadge,
+        ChatSegment, ChatViewer, EventId, ModerationMarks, PlatformId, UnifiedChatRow, UserBadge,
     };
     use time::OffsetDateTime;
 
@@ -565,7 +566,7 @@ mod tests {
             event_id,
             timestamp: "00:00:00".into(),
             received_at: OffsetDateTime::from_unix_timestamp(0).unwrap(),
-            platform: Platform::Twitch,
+            platform: PlatformId::Twitch,
             badges: vec![],
             username: "user".into(),
             author_id: None,
@@ -598,7 +599,7 @@ mod tests {
         Event::new(EventSource::Twitch, "chat.message", envelope)
     }
 
-    fn feed_row(id: &str, source: ChatSource, author: &str) -> UnifiedChatRow {
+    fn feed_row(id: &str, source: PlatformId, author: &str) -> UnifiedChatRow {
         UnifiedChatRow {
             id: id.to_string(),
             source,
@@ -623,7 +624,7 @@ mod tests {
         UnifiedChatRow {
             id: "id".to_string(),
             event_id: EventId::new(),
-            source: ChatSource::Twitch,
+            source: PlatformId::Twitch,
             received_at: OffsetDateTime::from_unix_timestamp(0).unwrap(),
             author: "user".to_string(),
             author_id: None,
@@ -864,12 +865,12 @@ mod tests {
         let mut feed = ChatFeed::new();
         feed.push(ChatMessage::from_row(&feed_row(
             "m1",
-            ChatSource::Twitch,
+            PlatformId::Twitch,
             "alice",
         )));
         feed.push(ChatMessage::from_row(&feed_row(
             "m2",
-            ChatSource::Twitch,
+            PlatformId::Twitch,
             "bob",
         )));
 
@@ -884,21 +885,21 @@ mod tests {
         let mut feed = ChatFeed::new();
         feed.push(ChatMessage::from_row(&feed_row(
             "same",
-            ChatSource::Twitch,
+            PlatformId::Twitch,
             "Alice",
         )));
         feed.push(ChatMessage::from_row(&feed_row(
             "other-name",
-            ChatSource::Twitch,
+            PlatformId::Twitch,
             "Bob",
         )));
         feed.push(ChatMessage::from_row(&feed_row(
             "other-platform",
-            ChatSource::YouTube,
+            PlatformId::YouTube,
             "Alice",
         )));
 
-        feed.mark_user(Platform::Twitch, "alice");
+        feed.mark_user(PlatformId::Twitch, "alice");
 
         assert!(
             moderated_by_id(&feed, "same"),
@@ -919,16 +920,16 @@ mod tests {
         let mut feed = ChatFeed::new();
         feed.push(ChatMessage::from_row(&feed_row(
             "tw",
-            ChatSource::Twitch,
+            PlatformId::Twitch,
             "a",
         )));
         feed.push(ChatMessage::from_row(&feed_row(
             "yt",
-            ChatSource::YouTube,
+            PlatformId::YouTube,
             "b",
         )));
 
-        feed.clear_platform(Platform::Twitch);
+        feed.clear_platform(PlatformId::Twitch);
 
         assert!(moderated_by_id(&feed, "tw"));
         assert!(!moderated_by_id(&feed, "yt"));
@@ -1214,17 +1215,17 @@ mod tests {
         let mut feed = feed_with_capacity(10);
         feed.push(ChatMessage::from_row(&feed_row(
             "tw1",
-            ChatSource::Twitch,
+            PlatformId::Twitch,
             "alice",
         )));
         feed.push(ChatMessage::from_row(&feed_row(
             "tw2",
-            ChatSource::Twitch,
+            PlatformId::Twitch,
             "bob",
         )));
         feed.push(ChatMessage::from_row(&feed_row(
             "yt1",
-            ChatSource::YouTube,
+            PlatformId::YouTube,
             "carol",
         )));
 
@@ -1233,21 +1234,21 @@ mod tests {
         assert!(!feed.mark_deleted("tw1"), "already moderated");
 
         assert!(
-            !feed.mark_user(Platform::YouTube, "bob"),
+            !feed.mark_user(PlatformId::YouTube, "bob"),
             "bob is on Twitch"
         );
-        assert!(feed.mark_user(Platform::Twitch, "BOB"));
+        assert!(feed.mark_user(PlatformId::Twitch, "BOB"));
         assert!(
-            !feed.mark_user(Platform::Twitch, "bob"),
+            !feed.mark_user(PlatformId::Twitch, "bob"),
             "already moderated"
         );
 
-        assert!(!feed.clear_platform(Platform::Kick), "no Kick rows");
+        assert!(!feed.clear_platform(PlatformId::Kick), "no Kick rows");
         assert!(
-            !feed.clear_platform(Platform::Twitch),
+            !feed.clear_platform(PlatformId::Twitch),
             "every Twitch row is already moderated"
         );
-        assert!(feed.clear_platform(Platform::YouTube));
+        assert!(feed.clear_platform(PlatformId::YouTube));
     }
 
     struct XorShift(u64);
@@ -1314,7 +1315,7 @@ mod tests {
     fn author_index_matches_a_from_scratch_scan_after_any_push_evict_seed_sequence() {
         const NAMES: [&str; 6] = ["alice", "bob", "carol", "dave", "Alice", ""];
         const VIEWER_IDS: [Option<&str>; 4] = [None, Some("u1"), Some("u2"), Some("")];
-        const PLATFORMS: [Platform; 2] = [Platform::Twitch, Platform::Kick];
+        const PLATFORMS: [PlatformId; 2] = [PlatformId::Twitch, PlatformId::Kick];
         const BADGES: [BadgeKind; 3] =
             [BadgeKind::Moderator, BadgeKind::Vip, BadgeKind::Subscriber];
         for seed in 1..=24_u64 {

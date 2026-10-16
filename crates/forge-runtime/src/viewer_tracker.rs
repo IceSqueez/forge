@@ -71,7 +71,7 @@ fn viewer_message(event: &Event) -> Option<ViewerMessage> {
 mod tests {
     use std::time::Duration;
 
-    use forge_events::Event;
+    use forge_events::{Event, EventSource};
     use forge_storage::viewer::MockViewerRepo;
     use tokio::sync::mpsc;
 

@@ -225,7 +225,8 @@ mod tests {
     use super::*;
     use crate::ban_ledger_test_support::{LedgerOp, MemoryBanLedger};
     use forge_platform_core::RateLimitOutcome;
-    use forge_storage::{BanLedgerEntry, BanOrigin, ViewerPlatform};
+    use forge_storage::{BanLedgerEntry, BanOrigin};
+    use forge_types::PlatformId;
     use std::time::Duration;
     use wiremock::matchers::{body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -410,7 +411,7 @@ mod tests {
 
     fn target_key() -> BanLedgerKey {
         BanLedgerKey {
-            platform: ViewerPlatform::Kick,
+            platform: PlatformId::Kick,
             channel_id: "42".to_owned(),
             viewer_id: "99".to_owned(),
         }

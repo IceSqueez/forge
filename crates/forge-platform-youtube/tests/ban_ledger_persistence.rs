@@ -9,8 +9,9 @@ use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
 use forge_platform_youtube::{
     LiveChatIdHandle, SharedQuota, YoutubeBroadcaster, YoutubeModeration,
 };
-use forge_storage::{BanLedgerKey, DataProvider, ViewerPlatform};
+use forge_storage::{BanLedgerKey, DataProvider};
 use forge_storage_sqlite::SqliteBackend;
+use forge_types::PlatformId;
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
 use wiremock::matchers::{method, path, query_param};
@@ -96,7 +97,7 @@ async fn forge_issued_ban_can_be_lifted_after_a_restart() {
         .unwrap();
 
     let key = BanLedgerKey {
-        platform: ViewerPlatform::YouTube,
+        platform: PlatformId::YouTube,
         channel_id: BROADCASTER.to_owned(),
         viewer_id: VIEWER.to_owned(),
     };

@@ -55,7 +55,7 @@ mod tests {
 
     use super::*;
 
-    fn known(platform: ViewerPlatform, viewer_id: &str) -> Viewer {
+    fn known(platform: PlatformId, viewer_id: &str) -> Viewer {
         Viewer {
             viewer_id: viewer_id.to_owned(),
             platform,
@@ -98,7 +98,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_viewer_from_the_persisted_history_is_never_first_even_when_the_line_claims_it() {
-        let ledger = ledger_knowing(vec![known(ViewerPlatform::Kick, "42")]).await;
+        let ledger = ledger_knowing(vec![known(PlatformId::Kick, "42")]).await;
         assert_eq!(
             stamped(&ledger, line(EventSource::Kick, "42", true)),
             Some(false)
@@ -107,7 +107,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_same_viewer_id_on_another_platform_is_a_different_viewer() {
-        let ledger = ledger_knowing(vec![known(ViewerPlatform::Twitch, "42")]).await;
+        let ledger = ledger_knowing(vec![known(PlatformId::Twitch, "42")]).await;
         let flags: Vec<Option<bool>> = [EventSource::YouTube, EventSource::Kick]
             .into_iter()
             .map(|source| stamped(&ledger, line(source, "42", false)))

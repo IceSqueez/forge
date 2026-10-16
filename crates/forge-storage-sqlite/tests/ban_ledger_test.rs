@@ -1,9 +1,8 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use forge_storage::{
-    BAN_LEDGER_LIST_CAP, BanLedgerEntry, BanLedgerKey, BanLedgerRepo, BanOrigin, ViewerPlatform,
-};
+use forge_storage::{BAN_LEDGER_LIST_CAP, BanLedgerEntry, BanLedgerKey, BanLedgerRepo, BanOrigin};
 use forge_storage_sqlite::{MIGRATIONS, SqliteBanLedgerRepo, apply_migrations, connect};
+use forge_types::PlatformId;
 use sqlx::SqlitePool;
 use tempfile::TempDir;
 use time::{Duration, OffsetDateTime};
@@ -39,7 +38,7 @@ fn at(seconds: i64) -> OffsetDateTime {
     OffsetDateTime::from_unix_timestamp(1_790_000_000 + seconds).expect("a valid instant")
 }
 
-fn key(platform: ViewerPlatform, channel_id: &str, viewer_id: &str) -> BanLedgerKey {
+fn key(platform: PlatformId, channel_id: &str, viewer_id: &str) -> BanLedgerKey {
     BanLedgerKey {
         platform,
         channel_id: channel_id.to_owned(),
@@ -61,7 +60,7 @@ fn ban(key: BanLedgerKey, banned_at: OffsetDateTime, term: Option<Duration>) -> 
 }
 
 fn kick(viewer_id: &str) -> BanLedgerKey {
-    key(ViewerPlatform::Kick, CHANNEL, viewer_id)
+    key(PlatformId::Kick, CHANNEL, viewer_id)
 }
 
 async fn raw_row_count(pool: &SqlitePool) -> i64 {
@@ -114,7 +113,7 @@ async fn upsert_merges_an_observed_continuation_with_the_stored_row() {
 #[tokio::test]
 async fn upsert_lazily_deletes_expired_rows_of_every_key_and_keeps_active_ones() {
     let ledger = ledger().await;
-    let other_channel = key(ViewerPlatform::Twitch, "elsewhere", "v2");
+    let other_channel = key(PlatformId::Twitch, "elsewhere", "v2");
     for entry in [
         ban(kick("expired"), at(0), Some(TEN_MINUTES)),
         ban(other_channel, at(0), Some(TEN_MINUTES)),
@@ -169,7 +168,7 @@ async fn list_active_skips_expired_bans_and_orders_newest_first_then_by_viewer_i
 
     let listed = ledger
         .repo
-        .list_active(ViewerPlatform::Kick, CHANNEL, at(300), usize::MAX)
+        .list_active(PlatformId::Kick, CHANNEL, at(300), usize::MAX)
         .await
         .unwrap();
 
@@ -209,7 +208,7 @@ async fn list_active_clamps_the_limit_to_the_cap() {
     ] {
         let listed = ledger
             .repo
-            .list_active(ViewerPlatform::Kick, CHANNEL, at(0), limit)
+            .list_active(PlatformId::Kick, CHANNEL, at(0), limit)
             .await
             .unwrap();
         assert_eq!(listed.len(), expected, "{label}");
@@ -220,8 +219,8 @@ async fn list_active_clamps_the_limit_to_the_cap() {
 async fn ledger_keys_are_isolated_by_platform_and_channel() {
     let ledger = ledger().await;
     let kick_here = kick("shared_viewer");
-    let kick_other_channel = key(ViewerPlatform::Kick, "other_channel", "shared_viewer");
-    let youtube_here = key(ViewerPlatform::YouTube, CHANNEL, "shared_viewer");
+    let kick_other_channel = key(PlatformId::Kick, "other_channel", "shared_viewer");
+    let youtube_here = key(PlatformId::YouTube, CHANNEL, "shared_viewer");
     for entry_key in [&kick_here, &kick_other_channel, &youtube_here] {
         ledger
             .repo
@@ -234,12 +233,12 @@ async fn ledger_keys_are_isolated_by_platform_and_channel() {
 
     let remaining_kick = ledger
         .repo
-        .list_active(ViewerPlatform::Kick, "other_channel", at(0), usize::MAX)
+        .list_active(PlatformId::Kick, "other_channel", at(0), usize::MAX)
         .await
         .unwrap();
     let remaining_youtube = ledger
         .repo
-        .list_active(ViewerPlatform::YouTube, CHANNEL, at(0), usize::MAX)
+        .list_active(PlatformId::YouTube, CHANNEL, at(0), usize::MAX)
         .await
         .unwrap();
     assert_eq!(

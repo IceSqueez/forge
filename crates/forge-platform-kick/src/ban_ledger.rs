@@ -107,7 +107,7 @@ mod tests {
             entry,
             Some(BanLedgerEntry {
                 key: BanLedgerKey {
-                    platform: ViewerPlatform::Kick,
+                    platform: PlatformId::Kick,
                     channel_id: "42".to_owned(),
                     viewer_id: "77".to_owned(),
                 },

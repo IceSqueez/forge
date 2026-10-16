@@ -94,7 +94,6 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use forge_components::Platform;
     use forge_events::{Event, EventSource};
     use forge_registry::{
         FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionRegistry,
@@ -103,6 +102,7 @@ mod tests {
     use forge_runtime::{ActionCancelRegistry, ActionEngineHandle, EventBus, spawn_action_engine};
     use forge_storage::chat_history::MockChatHistoryRepo;
     use forge_storage::history::MockHistoryRepo;
+    use forge_types::PlatformId;
     use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
     use gpui::{Entity, TestAppContext};
 
@@ -316,7 +316,7 @@ mod tests {
         }
     }
 
-    fn target(platform: Platform) -> ViewerTarget {
+    fn target(platform: PlatformId) -> ViewerTarget {
         ViewerTarget {
             platform,
             name: "viewer".to_owned(),
@@ -324,7 +324,7 @@ mod tests {
         }
     }
 
-    fn ban(cx: &mut TestAppContext, view: &Entity<ChatView>, platform: Platform) {
+    fn ban(cx: &mut TestAppContext, view: &Entity<ChatView>, platform: PlatformId) {
         view.update(cx, |view, cx| view.ban_viewer(target(platform), cx));
     }
 
@@ -344,13 +344,13 @@ mod tests {
         settle(cx, &rt);
         assert_eq!((m.youtube.calls(), m.kick.calls()), (1, 1));
 
-        ban(cx, &m.view, Platform::YouTube);
+        ban(cx, &m.view, PlatformId::YouTube);
         settle(cx, &rt);
         assert_eq!(m.youtube.calls(), 1);
         settle_past_debounce(cx, &rt);
         assert_eq!((m.youtube.calls(), m.kick.calls()), (2, 1));
 
-        ban(cx, &m.view, Platform::Kick);
+        ban(cx, &m.view, PlatformId::Kick);
         settle_past_debounce(cx, &rt);
         assert_eq!((m.youtube.calls(), m.kick.calls()), (2, 2));
     }
@@ -363,7 +363,7 @@ mod tests {
         settle(cx, &rt);
 
         m.view.update(cx, |view, cx| {
-            view.timeout_viewer(target(Platform::Kick), cx)
+            view.timeout_viewer(target(PlatformId::Kick), cx)
         });
         settle_past_debounce(cx, &rt);
 
@@ -377,8 +377,8 @@ mod tests {
         show(cx, &m.view, ChatTab::Banned);
         settle(cx, &rt);
 
-        ban(cx, &m.view, Platform::YouTube);
-        ban(cx, &m.view, Platform::Kick);
+        ban(cx, &m.view, PlatformId::YouTube);
+        ban(cx, &m.view, PlatformId::Kick);
         settle_past_debounce(cx, &rt);
 
         assert_eq!((m.youtube.calls(), m.kick.calls()), (1, 1));
@@ -393,7 +393,7 @@ mod tests {
         show(cx, &m.view, ChatTab::Banned);
         settle(cx, &rt);
 
-        ban(cx, &m.view, Platform::Twitch);
+        ban(cx, &m.view, PlatformId::Twitch);
         settle_past_debounce(cx, &rt);
 
         assert_eq!(m.twitch.calls(), 1);
@@ -409,7 +409,7 @@ mod tests {
         settle(cx, &rt);
         show(cx, &m.view, ChatTab::Feed);
 
-        ban(cx, &m.view, Platform::YouTube);
+        ban(cx, &m.view, PlatformId::YouTube);
         settle_past_debounce(cx, &rt);
         assert_eq!(m.youtube.calls(), 1);
 
@@ -424,8 +424,8 @@ mod tests {
         let rt = runtime();
         let m = moderated_view(cx, &rt, SubActionOutcome::Success);
 
-        ban(cx, &m.view, Platform::YouTube);
-        ban(cx, &m.view, Platform::Kick);
+        ban(cx, &m.view, PlatformId::YouTube);
+        ban(cx, &m.view, PlatformId::Kick);
         settle_past_debounce(cx, &rt);
 
         assert_eq!((m.youtube.calls(), m.kick.calls()), (0, 0));

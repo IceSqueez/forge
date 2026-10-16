@@ -2237,7 +2237,7 @@ impl Render for ChatView {
 mod tests {
     use std::sync::Arc;
 
-    use forge_components::{ChatBody, FORGE_DEFAULT, Platform};
+    use forge_components::{ChatBody, FORGE_DEFAULT};
     use forge_registry::SubActionRegistry;
     use forge_runtime::{ActionCancelRegistry, EventBus, spawn_action_engine};
     use forge_storage::Language;
@@ -2245,6 +2245,7 @@ mod tests {
     use forge_storage::viewer::MockViewerRepo;
     use forge_storage::voice_aliases::MockVoiceAliasRepo;
     use forge_types::EventId;
+    use forge_types::PlatformId;
     use gpui::{App, AppContext as _, Context, Entity, TestAppContext, VisualTestContext};
     use time::OffsetDateTime;
 
@@ -2268,7 +2269,7 @@ mod tests {
             event_id: EventId::new(),
             timestamp: "00:00:00".into(),
             received_at: OffsetDateTime::from_unix_timestamp(0).unwrap(),
-            platform: Platform::Twitch,
+            platform: PlatformId::Twitch,
             badges: vec![],
             username: format!("user{ix}").into(),
             author_id: None,
@@ -2449,9 +2450,9 @@ mod tests {
         view.read_with(cx, |view, cx| {
             [
                 PlatformFilter::All,
-                PlatformFilter::Single(Platform::Twitch),
-                PlatformFilter::Single(Platform::YouTube),
-                PlatformFilter::Single(Platform::Kick),
+                PlatformFilter::Single(PlatformId::Twitch),
+                PlatformFilter::Single(PlatformId::YouTube),
+                PlatformFilter::Single(PlatformId::Kick),
             ]
             .map(|filter| view.filter_offered(filter, cx))
         })
@@ -2496,7 +2497,7 @@ mod tests {
         let (_feed, view) =
             mount_gated(cx, rt, Some(lifecycle.clone()), MockChatHistoryRepo::new());
         view.update(cx, |view, cx| {
-            view.set_platform_filter(PlatformFilter::Single(Platform::Kick), cx)
+            view.set_platform_filter(PlatformFilter::Single(PlatformId::Kick), cx)
         });
         (lifecycle, view)
     }
@@ -2533,7 +2534,7 @@ mod tests {
         );
 
         assert!(view.read_with(cx, |view, _| {
-            view.platform_filter == PlatformFilter::Single(Platform::Kick)
+            view.platform_filter == PlatformFilter::Single(PlatformId::Kick)
         }));
     }
 
@@ -2546,7 +2547,7 @@ mod tests {
             last_received_at: OffsetDateTime::from_unix_timestamp(0).unwrap(),
         };
         crate::chat_drawer::summary_from_activity(
-            &crate::chat_author::AuthorKey::by_name(Platform::Twitch, username),
+            &crate::chat_author::AuthorKey::by_name(PlatformId::Twitch, username),
             &activity,
             1,
             &FORGE_DEFAULT,

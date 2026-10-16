@@ -163,9 +163,10 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use forge_components::{Platform, ToastKind, tr};
+    use forge_components::{ToastKind, tr};
     use forge_storage::voice_aliases::MockVoiceAliasRepo;
     use forge_storage::{AliasId, StorageError, VoiceAlias};
+    use forge_types::PlatformId;
     use forge_voice::{AliasState, EngineId, VoiceId};
     use gpui::{Entity, TestAppContext, VisualTestContext};
 
@@ -181,7 +182,7 @@ mod tests {
 
     fn id_keyed_viewer() -> ViewerTarget {
         ViewerTarget::new(
-            &AuthorKey::by_viewer_id(Platform::Twitch, "141981764"),
+            &AuthorKey::by_viewer_id(PlatformId::Twitch, "141981764"),
             "alice",
         )
     }
@@ -409,7 +410,8 @@ mod tests {
             Ok(alias.clone())
         });
         let (view, vcx) = mount_in_window(cx, &rt, repo);
-        let name_only = ViewerTarget::new(&AuthorKey::by_name(Platform::Twitch, "alice"), "alice");
+        let name_only =
+            ViewerTarget::new(&AuthorKey::by_name(PlatformId::Twitch, "alice"), "alice");
 
         vcx.update(|window, cx| {
             view.update(cx, |view, cx| {

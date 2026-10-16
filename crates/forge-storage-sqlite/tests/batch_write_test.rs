@@ -4,16 +4,14 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
-use forge_storage::{
-    ChatHistoryRepo, EventLogRepo, HistoryRepo, ViewerMessage, ViewerPlatform, ViewerRepo,
-};
+use forge_storage::{ChatHistoryRepo, EventLogRepo, HistoryRepo, ViewerMessage, ViewerRepo};
 use forge_storage_sqlite::{
     SqliteChatHistoryRepo, SqliteEventLogRepo, SqliteHistoryRepo, SqliteViewerRepo,
     apply_migrations, connect,
 };
 use forge_types::{
-    ActionId, ChatSource, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
-    ModerationMarks, UnifiedChatRow,
+    ActionId, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome, ModerationMarks,
+    PlatformId, UnifiedChatRow,
 };
 use sqlx::SqlitePool;
 use time::OffsetDateTime;
@@ -61,7 +59,7 @@ fn chat_row(id: &str, author: &str) -> UnifiedChatRow {
     UnifiedChatRow {
         id: id.to_string(),
         event_id: EventId::new(),
-        source: ChatSource::Twitch,
+        source: PlatformId::Twitch,
         received_at: OffsetDateTime::now_utc(),
         author: author.to_string(),
         author_id: None,
@@ -91,7 +89,7 @@ fn run(action_id: ActionId) -> ExecutionContext {
 
 fn message(viewer_id: &str, username: &str) -> ViewerMessage {
     ViewerMessage {
-        platform: ViewerPlatform::Twitch,
+        platform: PlatformId::Twitch,
         viewer_id: viewer_id.to_string(),
         username: username.to_string(),
     }
@@ -246,11 +244,11 @@ async fn a_chat_message_already_stored_keeps_its_row_and_the_rest_of_the_batch_l
 async fn a_viewer_batch_keeps_the_latest_name_and_the_first_seen_time() {
     let pool = pool().await;
     let repo = SqliteViewerRepo::new(pool.clone());
-    repo.record_message(ViewerPlatform::Twitch, "v1", "old-name")
+    repo.record_message(PlatformId::Twitch, "v1", "old-name")
         .await
         .unwrap();
     let first_seen = repo
-        .get(ViewerPlatform::Twitch, "v1")
+        .get(PlatformId::Twitch, "v1")
         .await
         .unwrap()
         .unwrap()
@@ -264,11 +262,7 @@ async fn a_viewer_batch_keeps_the_latest_name_and_the_first_seen_time() {
     .await
     .unwrap();
 
-    let v1 = repo
-        .get(ViewerPlatform::Twitch, "v1")
-        .await
-        .unwrap()
-        .unwrap();
+    let v1 = repo.get(PlatformId::Twitch, "v1").await.unwrap().unwrap();
     assert_eq!(
         (v1.username.as_str(), v1.first_seen_at,),
         ("new-name", first_seen)

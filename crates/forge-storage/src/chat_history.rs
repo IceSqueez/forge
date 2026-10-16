@@ -87,14 +87,14 @@ pub trait ChatHistoryRepo: Send + Sync {
 
 #[cfg(test)]
 mod tests {
-    use forge_types::unified_chat::ChatSource;
+    use forge_types::PlatformId;
 
     use super::ChatAuthorKey;
 
     #[test]
     fn chat_author_key_debug_hides_the_author_id_but_keeps_the_source() {
         let key = ChatAuthorKey {
-            source: ChatSource::Kick,
+            source: PlatformId::Kick,
             author_id: "SENTINEL_VIEWER_ID".to_owned(),
         };
 

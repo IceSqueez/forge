@@ -538,8 +538,8 @@ fn form_to_alias(form: &AliasForm, cx: &App) -> VoiceAlias {
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
-    use forge_components::Platform;
     use forge_storage::Language;
+    use forge_types::PlatformId;
     use gpui::{Entity, EntityInputHandler, Subscription, TestAppContext};
 
     use super::*;
@@ -556,7 +556,7 @@ mod tests {
         submitted: Entity<Submitted>,
     }
 
-    fn identity(key: &str, name: &str, platform: PlatformScope) -> AliasIdentity {
+    fn identity(key: &str, name: &str, platform: AliasScope) -> AliasIdentity {
         AliasIdentity {
             key: key.to_owned(),
             name: name.to_owned(),
@@ -608,7 +608,7 @@ mod tests {
             let mounted = mount(
                 cx,
                 None,
-                Some(identity("twitch:141981764", "alice", PlatformScope::Twitch)),
+                Some(identity("twitch:141981764", "alice", AliasScope::Twitch)),
                 locked,
                 AliasValues::default(),
             );
@@ -629,10 +629,8 @@ mod tests {
     fn a_new_alias_typed_by_hand_is_keyed_by_the_trimmed_name_on_the_picked_platform(
         cx: &mut TestAppContext,
     ) {
-        for (platform, viewer_id) in [
-            (PlatformScope::Any, "Зірка"),
-            (PlatformScope::Kick, "kick:Зірка"),
-        ] {
+        for (platform, viewer_id) in [(AliasScope::Any, "Зірка"), (AliasScope::Kick, "kick:Зірка")]
+        {
             let mounted = mount(cx, None, None, false, AliasValues::default());
             type_viewer(cx, &mounted, "  Зірка ");
             mounted
@@ -657,7 +655,7 @@ mod tests {
             let mounted = mount(
                 cx,
                 None,
-                Some(identity("twitch:141981764", "alice", PlatformScope::Twitch)),
+                Some(identity("twitch:141981764", "alice", AliasScope::Twitch)),
                 locked,
                 AliasValues::default(),
             );
@@ -683,18 +681,18 @@ mod tests {
 
     #[gpui::test]
     fn a_locked_form_keeps_its_platform_when_another_is_picked(cx: &mut TestAppContext) {
-        for (locked, kept) in [(true, PlatformScope::Twitch), (false, PlatformScope::Kick)] {
+        for (locked, kept) in [(true, AliasScope::Twitch), (false, AliasScope::Kick)] {
             let mounted = mount(
                 cx,
                 None,
-                Some(identity("twitch:141981764", "alice", PlatformScope::Twitch)),
+                Some(identity("twitch:141981764", "alice", AliasScope::Twitch)),
                 locked,
                 AliasValues::default(),
             );
 
             mounted
                 .form
-                .update(cx, |form, cx| form.set_platform(PlatformScope::Kick, cx));
+                .update(cx, |form, cx| form.set_platform(AliasScope::Kick, cx));
 
             assert_eq!(
                 mounted.form.read_with(cx, |form, _| form.platform),
@@ -724,7 +722,7 @@ mod tests {
             Some(identity(
                 &existing.viewer_id,
                 &existing.viewer_name,
-                platform_scope(Platform::YouTube),
+                platform_scope(PlatformId::YouTube),
             )),
             true,
             AliasValues::of(existing),
@@ -774,7 +772,7 @@ mod tests {
 
     #[test]
     fn alias_key_round_trips_through_split_for_every_platform_scope() {
-        for scope in PlatformScope::ALL {
+        for scope in AliasScope::ALL {
             for name in ["Alice", "Зірка", "user_42"] {
                 let key = alias_key(scope, name);
 
@@ -786,7 +784,7 @@ mod tests {
     #[test]
     fn split_alias_key_keeps_an_unknown_prefix_as_part_of_a_bare_name() {
         for key in ["discord:Alice", ":Alice", "Twitch:Alice"] {
-            assert_eq!(split_alias_key(key), (PlatformScope::Any, key), "{key:?}");
+            assert_eq!(split_alias_key(key), (AliasScope::Any, key), "{key:?}");
         }
     }
 }

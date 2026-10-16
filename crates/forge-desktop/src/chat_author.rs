@@ -65,7 +65,7 @@ impl AuthorKey {
 mod tests {
     use std::collections::HashSet;
 
-    use forge_components::Platform;
+    use forge_types::PlatformId;
     use gpui::SharedString;
 
     use super::{AuthorHandle, AuthorKey};
@@ -85,14 +85,14 @@ mod tests {
         ] {
             let viewer_id = viewer_id.map(SharedString::from);
             let resolved = AuthorKey::resolve(
-                Platform::Kick,
+                PlatformId::Kick,
                 viewer_id.as_ref(),
                 &SharedString::from(name),
             );
             assert_eq!(
                 resolved,
                 expected.map(|handle| AuthorKey {
-                    platform: Platform::Kick,
+                    platform: PlatformId::Kick,
                     handle,
                 }),
                 "viewer_id={viewer_id:?} name={name:?}"
@@ -103,11 +103,11 @@ mod tests {
     #[test]
     fn element_ids_differ_across_platform_and_handle_kind_for_the_same_text() {
         let keys = [
-            AuthorKey::by_viewer_id(Platform::Twitch, "alice"),
-            AuthorKey::by_name(Platform::Twitch, "alice"),
-            AuthorKey::by_viewer_id(Platform::Kick, "alice"),
-            AuthorKey::by_name(Platform::Kick, "alice"),
-            AuthorKey::by_name(Platform::YouTube, "alice"),
+            AuthorKey::by_viewer_id(PlatformId::Twitch, "alice"),
+            AuthorKey::by_name(PlatformId::Twitch, "alice"),
+            AuthorKey::by_viewer_id(PlatformId::Kick, "alice"),
+            AuthorKey::by_name(PlatformId::Kick, "alice"),
+            AuthorKey::by_name(PlatformId::YouTube, "alice"),
         ];
         let ids: HashSet<SharedString> = keys.iter().map(|key| key.element_id("row")).collect();
         assert_eq!(ids.len(), keys.len());

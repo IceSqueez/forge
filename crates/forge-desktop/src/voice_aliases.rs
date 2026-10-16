@@ -1243,13 +1243,13 @@ mod tests {
     #[test]
     fn row_shows_the_viewer_name_without_the_platform_prefix() {
         for (viewer_id, viewer_name, platform, shown) in [
-            ("twitch:Alice", "Alice", PlatformScope::Twitch, "Alice"),
-            ("kick:Alice", "kick:Alice", PlatformScope::Kick, "Alice"),
-            ("Alice", "Alice", PlatformScope::Any, "Alice"),
+            ("twitch:Alice", "Alice", AliasScope::Twitch, "Alice"),
+            ("kick:Alice", "kick:Alice", AliasScope::Kick, "Alice"),
+            ("Alice", "Alice", AliasScope::Any, "Alice"),
             (
                 "youtube:Alice",
                 "kick:Alice",
-                PlatformScope::YouTube,
+                AliasScope::YouTube,
                 "kick:Alice",
             ),
         ] {

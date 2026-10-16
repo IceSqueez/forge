@@ -179,7 +179,7 @@ mod tests {
     }
 
     fn row(
-        platform: ViewerPlatform,
+        platform: PlatformId,
         channel_id: &str,
         viewer_id: &str,
         expires_in: Option<Duration>,
@@ -219,14 +219,14 @@ mod tests {
     async fn list_bans_pages_every_active_broadcaster_row_as_unbannable() {
         let ledger = Arc::new(MemoryBanLedger::default());
         let issued = row(
-            ViewerPlatform::Kick,
+            PlatformId::Kick,
             "42",
             "100",
             None,
             BanOrigin::IssuedByForge,
         );
         let observed = row(
-            ViewerPlatform::Kick,
+            PlatformId::Kick,
             "42",
             "200",
             Some(Duration::hours(1)),
@@ -235,21 +235,21 @@ mod tests {
         ledger.seed(issued.clone());
         ledger.seed(observed.clone());
         ledger.seed(row(
-            ViewerPlatform::Kick,
+            PlatformId::Kick,
             "43",
             "300",
             None,
             BanOrigin::Observed,
         ));
         ledger.seed(row(
-            ViewerPlatform::Twitch,
+            PlatformId::Twitch,
             "42",
             "400",
             None,
             BanOrigin::Observed,
         ));
         ledger.seed(row(
-            ViewerPlatform::Kick,
+            PlatformId::Kick,
             "42",
             "500",
             Some(Duration::minutes(-1)),
@@ -294,14 +294,14 @@ mod tests {
     async fn list_bans_follows_an_account_switch() {
         let ledger = Arc::new(MemoryBanLedger::default());
         ledger.seed(row(
-            ViewerPlatform::Kick,
+            PlatformId::Kick,
             "42",
             "100",
             None,
             BanOrigin::Observed,
         ));
         ledger.seed(row(
-            ViewerPlatform::Kick,
+            PlatformId::Kick,
             "43",
             "300",
             None,
@@ -348,7 +348,7 @@ mod tests {
                 failing.map_or_else(MemoryBanLedger::default, MemoryBanLedger::failing_on),
             );
             ledger.seed(row(
-                ViewerPlatform::Kick,
+                PlatformId::Kick,
                 "42",
                 "100",
                 None,

@@ -1,7 +1,8 @@
 #![allow(clippy::expect_used)]
 
-use forge_storage::{ViewerMessage, ViewerPlatform, ViewerRepo};
+use forge_storage::{ViewerMessage, ViewerRepo};
 use forge_storage_sqlite::{MIGRATIONS, SqliteViewerRepo, apply_migrations, connect};
+use forge_types::PlatformId;
 use sqlx::SqlitePool;
 use tempfile::TempDir;
 
@@ -40,7 +41,7 @@ async fn dropping_the_counter_removes_the_column_and_keeps_every_other_field() {
         .await
         .expect("columns");
     let viewer = SqliteViewerRepo::new(pool)
-        .get(ViewerPlatform::Twitch, "42")
+        .get(PlatformId::Twitch, "42")
         .await
         .expect("read")
         .expect("the existing viewer");
@@ -69,7 +70,7 @@ async fn recording_messages_after_the_drop_updates_name_and_last_seen_but_not_fi
     let repo = SqliteViewerRepo::new(pool);
 
     repo.record_messages(&[ViewerMessage {
-        platform: ViewerPlatform::Twitch,
+        platform: PlatformId::Twitch,
         viewer_id: "42".to_owned(),
         username: "ann_renamed".to_owned(),
     }])
@@ -77,7 +78,7 @@ async fn recording_messages_after_the_drop_updates_name_and_last_seen_but_not_fi
     .expect("record");
 
     let viewer = repo
-        .get(ViewerPlatform::Twitch, "42")
+        .get(PlatformId::Twitch, "42")
         .await
         .expect("read")
         .expect("the viewer");

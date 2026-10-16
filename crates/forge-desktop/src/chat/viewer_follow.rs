@@ -158,7 +158,8 @@ impl ChatView {
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use forge_components::{BadgeKind, FORGE_DEFAULT, Platform, fmt_short_date, tr};
+    use crate::platform_visuals::BadgeKind;
+    use forge_components::{FORGE_DEFAULT, fmt_short_date, tr};
     use forge_platform_core::{
         BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
         DetailSection, FollowLookup, FollowStatus, HeaderAction, HealthMetric, HealthStream,
@@ -167,6 +168,7 @@ mod tests {
     use forge_storage::chat_history::MockChatHistoryRepo;
     use forge_storage::voice_aliases::MockVoiceAliasRepo;
     use forge_types::IntegrationId;
+    use forge_types::PlatformId;
     use gpui::{AppContext as _, Entity, TestAppContext};
     use time::OffsetDateTime;
 
@@ -331,8 +333,8 @@ mod tests {
     #[test]
     fn follow_request_targets_the_platform_builtin_with_the_bare_viewer_id() {
         let cases = [
-            (Platform::Twitch, "42", "twitch"),
-            (Platform::YouTube, "UCabc", "youtube"),
+            (PlatformId::Twitch, "42", "twitch"),
+            (PlatformId::YouTube, "UCabc", "youtube"),
         ];
         for (platform, id, builtin) in cases {
             let request = follow_request(&AuthorKey::by_viewer_id(platform, id)).unwrap();
@@ -344,9 +346,9 @@ mod tests {
     #[test]
     fn follow_request_is_skipped_for_kick_and_name_only_authors() {
         let skipped = [
-            AuthorKey::by_viewer_id(Platform::Kick, "9"),
-            AuthorKey::by_name(Platform::Twitch, "ann"),
-            AuthorKey::by_name(Platform::YouTube, "ann"),
+            AuthorKey::by_viewer_id(PlatformId::Kick, "9"),
+            AuthorKey::by_name(PlatformId::Twitch, "ann"),
+            AuthorKey::by_name(PlatformId::YouTube, "ann"),
         ];
         for key in skipped {
             assert!(follow_request(&key).is_none(), "{key:?}");
@@ -381,7 +383,7 @@ mod tests {
             (None, DASH.to_owned(), p.text_faint),
         ];
         for (status, text, color) in cases {
-            let (shown, tone) = follow_display(Platform::Twitch, None, status, &p).unwrap();
+            let (shown, tone) = follow_display(PlatformId::Twitch, None, status, &p).unwrap();
             assert_eq!(shown.as_ref(), text, "{status:?}");
             assert_eq!(tone, color, "{status:?}");
         }
@@ -395,9 +397,13 @@ mod tests {
             Some(FollowStatus::NotFollowing),
             Some(FollowStatus::Hidden),
         ] {
-            let (shown, tone) =
-                follow_display(Platform::YouTube, Some(BadgeKind::Broadcaster), status, &p)
-                    .unwrap();
+            let (shown, tone) = follow_display(
+                PlatformId::YouTube,
+                Some(BadgeKind::Broadcaster),
+                status,
+                &p,
+            )
+            .unwrap();
             assert_eq!(shown.as_ref(), "\u{221e}");
             assert_eq!(tone, p.text_primary);
         }
@@ -408,13 +414,13 @@ mod tests {
         let p = FORGE_DEFAULT;
         for role in [None, Some(BadgeKind::Broadcaster)] {
             let status = Some(FollowStatus::FollowedSince(since()));
-            assert!(follow_display(Platform::Kick, role, status, &p).is_none());
+            assert!(follow_display(PlatformId::Kick, role, status, &p).is_none());
         }
     }
 
     #[test]
     fn settle_caches_every_definitive_status_and_stops_requesting() {
-        let key = AuthorKey::by_viewer_id(Platform::Twitch, "42");
+        let key = AuthorKey::by_viewer_id(PlatformId::Twitch, "42");
         for status in [
             FollowStatus::FollowedSince(since()),
             FollowStatus::NotFollowing,
@@ -434,7 +440,7 @@ mod tests {
 
     #[test]
     fn settle_never_caches_unavailable_and_allows_a_retry() {
-        let key = AuthorKey::by_viewer_id(Platform::Twitch, "42");
+        let key = AuthorKey::by_viewer_id(PlatformId::Twitch, "42");
         let mut lookups = FollowLookups {
             pending: Some(key.clone()),
             ..FollowLookups::default()
@@ -448,8 +454,8 @@ mod tests {
 
     #[test]
     fn settle_drops_a_result_for_a_key_that_is_not_pending() {
-        let stale = AuthorKey::by_viewer_id(Platform::Twitch, "42");
-        let current = AuthorKey::by_viewer_id(Platform::Twitch, "7");
+        let stale = AuthorKey::by_viewer_id(PlatformId::Twitch, "42");
+        let current = AuthorKey::by_viewer_id(PlatformId::Twitch, "7");
         let mut lookups = FollowLookups {
             pending: Some(current.clone()),
             ..FollowLookups::default()
@@ -463,7 +469,7 @@ mod tests {
 
     #[test]
     fn settle_with_nothing_pending_is_dropped() {
-        let key = AuthorKey::by_viewer_id(Platform::Twitch, "42");
+        let key = AuthorKey::by_viewer_id(PlatformId::Twitch, "42");
         let mut lookups = FollowLookups::default();
 
         assert!(!lookups.settle(key.clone(), FollowStatus::Hidden));
@@ -478,7 +484,7 @@ mod tests {
         let rt = runtime();
         let lookup = RecordingLookup::answering(FollowStatus::FollowedSince(since()));
         let (_feed, view) = mount_following(cx, &rt, &lookup, None);
-        let key = AuthorKey::by_viewer_id(Platform::Twitch, "42");
+        let key = AuthorKey::by_viewer_id(PlatformId::Twitch, "42");
 
         open(cx, &view, &key);
         settle(cx, &rt);
@@ -499,7 +505,7 @@ mod tests {
         open(
             cx,
             &view,
-            &AuthorKey::by_viewer_id(Platform::YouTube, "UCabc"),
+            &AuthorKey::by_viewer_id(PlatformId::YouTube, "UCabc"),
         );
         settle(cx, &rt);
 
@@ -511,7 +517,7 @@ mod tests {
         let rt = runtime();
         let lookup = RecordingLookup::answering(FollowStatus::Hidden);
         let (_feed, view) = mount_following(cx, &rt, &lookup, None);
-        let key = AuthorKey::by_viewer_id(Platform::Twitch, "42");
+        let key = AuthorKey::by_viewer_id(PlatformId::Twitch, "42");
 
         open(cx, &view, &key);
         settle(cx, &rt);
@@ -526,7 +532,7 @@ mod tests {
         let rt = runtime();
         let lookup = RecordingLookup::answering(FollowStatus::NotFollowing);
         let (_feed, view) = mount_following(cx, &rt, &lookup, None);
-        let key = AuthorKey::by_viewer_id(Platform::Twitch, "42");
+        let key = AuthorKey::by_viewer_id(PlatformId::Twitch, "42");
 
         open(cx, &view, &key);
         open(cx, &view, &key);
@@ -540,7 +546,7 @@ mod tests {
         let rt = runtime();
         let lookup = RecordingLookup::answering(FollowStatus::Unavailable);
         let (_feed, view) = mount_following(cx, &rt, &lookup, None);
-        let key = AuthorKey::by_viewer_id(Platform::Twitch, "42");
+        let key = AuthorKey::by_viewer_id(PlatformId::Twitch, "42");
 
         open(cx, &view, &key);
         settle(cx, &rt);
@@ -572,8 +578,8 @@ mod tests {
         let lookup = RecordingLookup::answering(FollowStatus::NotFollowing);
         let (_feed, view) = mount_following(cx, &rt, &lookup, None);
 
-        open(cx, &view, &AuthorKey::by_viewer_id(Platform::Kick, "9"));
-        open(cx, &view, &AuthorKey::by_name(Platform::Twitch, "ann"));
+        open(cx, &view, &AuthorKey::by_viewer_id(PlatformId::Kick, "9"));
+        open(cx, &view, &AuthorKey::by_name(PlatformId::Twitch, "ann"));
         settle(cx, &rt);
 
         assert!(lookup.asked().is_empty());
@@ -589,7 +595,11 @@ mod tests {
         line.badges = vec![BadgeKind::Broadcaster];
         crate::chat::tests::push_each(cx, &feed, vec![line]);
 
-        open(cx, &view, &AuthorKey::by_viewer_id(Platform::Twitch, "42"));
+        open(
+            cx,
+            &view,
+            &AuthorKey::by_viewer_id(PlatformId::Twitch, "42"),
+        );
         settle(cx, &rt);
 
         assert!(lookup.asked().is_empty());
@@ -610,7 +620,11 @@ mod tests {
         });
         let (_feed, view) = mount_following(cx, &rt, &lookup, Some(lifecycle));
 
-        open(cx, &view, &AuthorKey::by_viewer_id(Platform::Twitch, "42"));
+        open(
+            cx,
+            &view,
+            &AuthorKey::by_viewer_id(PlatformId::Twitch, "42"),
+        );
         settle(cx, &rt);
 
         assert!(lookup.asked().is_empty());
@@ -627,7 +641,7 @@ mod tests {
             )]))
         });
         let (_feed, view) = mount_following(cx, &rt, &lookup, Some(lifecycle.clone()));
-        let key = AuthorKey::by_viewer_id(Platform::Twitch, "42");
+        let key = AuthorKey::by_viewer_id(PlatformId::Twitch, "42");
         open(cx, &view, &key);
         settle(cx, &rt);
         assert!(lookup.asked().is_empty());
@@ -654,13 +668,13 @@ mod tests {
         });
 
         view.update(vcx, |view, cx| {
-            view.select_viewer(AuthorKey::by_viewer_id(Platform::Twitch, "1"), cx)
+            view.select_viewer(AuthorKey::by_viewer_id(PlatformId::Twitch, "1"), cx)
         });
         vcx.run_until_parked();
         pump(&rt);
         vcx.run_until_parked();
         view.update_in(vcx, |view, window, cx| {
-            view.open_whisper(AuthorKey::by_viewer_id(Platform::Twitch, "2"), window, cx)
+            view.open_whisper(AuthorKey::by_viewer_id(PlatformId::Twitch, "2"), window, cx)
         });
         vcx.run_until_parked();
         pump(&rt);

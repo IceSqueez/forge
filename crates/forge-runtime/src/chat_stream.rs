@@ -135,7 +135,7 @@ mod tests {
 
         assert_eq!(
             (row.id.as_str(), row.source, row.event_id, row.received_at),
-            ("msg-1", ChatSource::Twitch, event.id, event.timestamp)
+            ("msg-1", PlatformId::Twitch, event.id, event.timestamp)
         );
     }
 
@@ -261,7 +261,7 @@ mod tests {
 
         assert_eq!(
             (source, mapped, at),
-            (ChatSource::Kick, action, event.timestamp)
+            (PlatformId::Kick, action, event.timestamp)
         );
     }
 }

@@ -144,7 +144,7 @@ mod tests {
     const SECOND: Duration = Duration::from_secs(1);
     const MILLI: Duration = Duration::from_millis(1);
 
-    fn row_on(source: ChatSource, segments: Vec<ChatSegment>) -> UnifiedChatRow {
+    fn row_on(source: PlatformId, segments: Vec<ChatSegment>) -> UnifiedChatRow {
         UnifiedChatRow {
             id: "row".to_owned(),
             event_id: EventId::new(),
@@ -168,14 +168,14 @@ mod tests {
     }
 
     fn twitch_row(body: &str) -> UnifiedChatRow {
-        row_on(ChatSource::Twitch, vec![text(body)])
+        row_on(PlatformId::Twitch, vec![text(body)])
     }
 
     #[test]
     fn an_echo_after_its_send_is_recognised_exactly_once() {
         let t0 = Instant::now();
         let mut echoes = OwnChatEchoes::default();
-        echoes.record_sent(ChatSource::Twitch, "follow the channel", t0);
+        echoes.record_sent(PlatformId::Twitch, "follow the channel", t0);
 
         let echo = echoes.is_own_echo(&twitch_row("follow the channel"), t0 + SECOND);
         let copy = echoes.is_own_echo(&twitch_row("follow the channel"), t0 + 2 * SECOND);
@@ -189,7 +189,7 @@ mod tests {
         let mut echoes = OwnChatEchoes::default();
         echoes.is_own_echo(&twitch_row("follow the channel"), t0);
 
-        let counted_at = echoes.record_sent(ChatSource::Twitch, "follow the channel", t0 + SECOND);
+        let counted_at = echoes.record_sent(PlatformId::Twitch, "follow the channel", t0 + SECOND);
 
         assert_eq!(counted_at, Some(t0));
     }
@@ -199,9 +199,9 @@ mod tests {
         let t0 = Instant::now();
         let mut echoes = OwnChatEchoes::default();
         echoes.is_own_echo(&twitch_row("gg"), t0);
-        echoes.record_sent(ChatSource::Twitch, "gg", t0);
+        echoes.record_sent(PlatformId::Twitch, "gg", t0);
 
-        assert_eq!(echoes.record_sent(ChatSource::Twitch, "gg", t0), None);
+        assert_eq!(echoes.record_sent(PlatformId::Twitch, "gg", t0), None);
     }
 
     #[test]
@@ -221,10 +221,10 @@ mod tests {
         ] {
             let t0 = Instant::now();
             let mut echoes = OwnChatEchoes::default();
-            echoes.record_sent(ChatSource::Twitch, sent, t0);
+            echoes.record_sent(PlatformId::Twitch, sent, t0);
 
             assert_eq!(
-                echoes.is_own_echo(&row_on(ChatSource::Twitch, segments), t0),
+                echoes.is_own_echo(&row_on(PlatformId::Twitch, segments), t0),
                 expected,
                 "sent {sent:?}"
             );
@@ -235,7 +235,7 @@ mod tests {
     fn a_send_matches_only_rows_from_its_own_platform() {
         let t0 = Instant::now();
         let mut echoes = OwnChatEchoes::default();
-        echoes.record_sent(ChatSource::Kick, "gg", t0);
+        echoes.record_sent(PlatformId::Kick, "gg", t0);
 
         assert!(!echoes.is_own_echo(&twitch_row("gg"), t0));
     }
@@ -244,9 +244,9 @@ mod tests {
     fn a_blank_send_never_hides_a_row() {
         let t0 = Instant::now();
         let mut echoes = OwnChatEchoes::default();
-        echoes.record_sent(ChatSource::Twitch, " \n ", t0);
+        echoes.record_sent(PlatformId::Twitch, " \n ", t0);
 
-        assert!(!echoes.is_own_echo(&row_on(ChatSource::Twitch, vec![]), t0));
+        assert!(!echoes.is_own_echo(&row_on(PlatformId::Twitch, vec![]), t0));
     }
 
     #[test]
@@ -254,7 +254,7 @@ mod tests {
         for (elapsed, expected) in [(60 * SECOND, true), (60 * SECOND + MILLI, false)] {
             let t0 = Instant::now();
             let mut echoes = OwnChatEchoes::default();
-            echoes.record_sent(ChatSource::Twitch, "gg", t0);
+            echoes.record_sent(PlatformId::Twitch, "gg", t0);
 
             assert_eq!(
                 echoes.is_own_echo(&twitch_row("gg"), t0 + elapsed),
@@ -273,7 +273,7 @@ mod tests {
 
             assert_eq!(
                 echoes
-                    .record_sent(ChatSource::Twitch, "gg", t0 + elapsed)
+                    .record_sent(PlatformId::Twitch, "gg", t0 + elapsed)
                     .is_some(),
                 expected,
                 "after {elapsed:?}"
@@ -286,7 +286,7 @@ mod tests {
         let t0 = Instant::now();
         let mut echoes = OwnChatEchoes::default();
         for n in 0..=TRACKED_MESSAGES_PER_SOURCE {
-            echoes.record_sent(ChatSource::Twitch, &format!("reminder {n}"), t0);
+            echoes.record_sent(PlatformId::Twitch, &format!("reminder {n}"), t0);
         }
 
         let oldest = echoes.is_own_echo(&twitch_row("reminder 0"), t0);

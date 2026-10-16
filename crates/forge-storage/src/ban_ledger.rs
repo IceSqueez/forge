@@ -157,7 +157,7 @@ mod tests {
     use super::{
         BAN_TERM_MATCH_TOLERANCE, BanLedgerEntry, BanLedgerKey, BanOrigin, merge_ban_entry,
     };
-    use crate::ViewerPlatform;
+    use forge_types::PlatformId;
 
     const TEN_MINUTES: Duration = Duration::minutes(10);
 
@@ -173,7 +173,7 @@ mod tests {
     ) -> BanLedgerEntry {
         BanLedgerEntry {
             key: BanLedgerKey {
-                platform: ViewerPlatform::Kick,
+                platform: PlatformId::Kick,
                 channel_id: "channel".to_owned(),
                 viewer_id: "viewer".to_owned(),
             },
@@ -367,7 +367,7 @@ mod tests {
     fn ban_ledger_debug_hides_viewer_identity_reason_moderator_and_ban_id() {
         let entry = BanLedgerEntry {
             key: BanLedgerKey {
-                platform: ViewerPlatform::Kick,
+                platform: PlatformId::Kick,
                 channel_id: "channel".to_owned(),
                 viewer_id: "SENTINEL_VIEWER_ID".to_owned(),
             },

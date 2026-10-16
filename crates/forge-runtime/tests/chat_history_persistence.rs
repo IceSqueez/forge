@@ -12,7 +12,7 @@ use forge_storage::{
     SettingsRepo, StorageError, UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT,
 };
 use forge_types::{
-    ChatModerationAction, ChatModerationPayload, ChatPayload, ChatSource, ModerationMarks,
+    ChatModerationAction, ChatModerationPayload, ChatPayload, ModerationMarks, PlatformId,
 };
 use tokio::sync::{Notify, mpsc};
 use tokio::time::{Duration, timeout};
@@ -249,8 +249,8 @@ async fn retention_uses_the_default_limit_when_the_start_read_fails_or_stalls() 
 #[derive(Debug, PartialEq)]
 enum Call {
     Delete(String),
-    User(ChatSource, String, bool),
-    Clear(ChatSource),
+    User(PlatformId, String, bool),
+    Clear(PlatformId),
 }
 
 #[tokio::test]
@@ -310,8 +310,8 @@ async fn each_moderation_action_routes_to_its_repo_method_with_its_source() {
         calls,
         vec![
             Call::Delete("abc".to_string()),
-            Call::User(ChatSource::Twitch, "bob".to_string(), true),
-            Call::Clear(ChatSource::Kick),
+            Call::User(PlatformId::Twitch, "bob".to_string(), true),
+            Call::Clear(PlatformId::Kick),
         ]
     );
 }
@@ -386,14 +386,14 @@ impl ChatHistoryRepo for StuckChatHistory {
 
     async fn mark_user_messages_moderated(
         &self,
-        _: ChatSource,
+        _: PlatformId,
         _: &str,
         _: bool,
     ) -> Result<u64, StorageError> {
         Ok(0)
     }
 
-    async fn clear_platform(&self, _: ChatSource) -> Result<u64, StorageError> {
+    async fn clear_platform(&self, _: PlatformId) -> Result<u64, StorageError> {
         Ok(0)
     }
 }

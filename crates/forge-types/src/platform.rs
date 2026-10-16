@@ -105,6 +105,24 @@ mod tests {
     }
 
     #[test]
+    fn parse_accepts_only_exact_canonical_ids() {
+        for (raw, expected) in [
+            ("twitch", Some(PlatformId::Twitch)),
+            ("youtube", Some(PlatformId::YouTube)),
+            ("kick", Some(PlatformId::Kick)),
+            ("Twitch", None),
+            ("KICK", None),
+            (" twitch", None),
+            ("kick\n", None),
+            ("you_tube", None),
+            ("", None),
+            ("trovo", None),
+        ] {
+            assert_eq!(PlatformId::parse(raw), expected, "raw {raw:?}");
+        }
+    }
+
+    #[test]
     fn resolve_chat_target_reads_blank_as_broadcast_and_normalizes_known_platforms() {
         for (raw, expected) in [
             ("", None),

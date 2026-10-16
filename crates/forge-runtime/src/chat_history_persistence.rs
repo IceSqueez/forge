@@ -293,7 +293,7 @@ mod tests {
         }
     }
 
-    fn row(id: &str, source: ChatSource, author: &str, received_at: OffsetDateTime) -> ChatRecord {
+    fn row(id: &str, source: PlatformId, author: &str, received_at: OffsetDateTime) -> ChatRecord {
         ChatRecord::Row(UnifiedChatRow {
             id: id.to_string(),
             event_id: forge_types::EventId::new(),
@@ -310,7 +310,7 @@ mod tests {
         })
     }
 
-    fn mark(source: ChatSource, action: ChatModerationAction, at: OffsetDateTime) -> ChatRecord {
+    fn mark(source: PlatformId, action: ChatModerationAction, at: OffsetDateTime) -> ChatRecord {
         ChatRecord::Moderation { source, action, at }
     }
 
@@ -352,8 +352,8 @@ mod tests {
         flush(
             &mut rig.sink,
             vec![
-                row("m1", ChatSource::Twitch, "bob", now),
-                mark(ChatSource::Twitch, delete("m1"), now),
+                row("m1", PlatformId::Twitch, "bob", now),
+                mark(PlatformId::Twitch, delete("m1"), now),
             ],
         )
         .await;
@@ -367,13 +367,13 @@ mod tests {
         let now = OffsetDateTime::now_utc();
         flush(
             &mut rig.sink,
-            vec![mark(ChatSource::Twitch, delete("m1"), now)],
+            vec![mark(PlatformId::Twitch, delete("m1"), now)],
         )
         .await;
 
         flush(
             &mut rig.sink,
-            vec![row("m1", ChatSource::Twitch, "bob", now)],
+            vec![row("m1", PlatformId::Twitch, "bob", now)],
         )
         .await;
 
@@ -389,15 +389,15 @@ mod tests {
                 user_name: "bob".to_string(),
                 timeout,
             };
-            flush(&mut rig.sink, vec![mark(ChatSource::Twitch, removal, at)]).await;
+            flush(&mut rig.sink, vec![mark(PlatformId::Twitch, removal, at)]).await;
 
             flush(
                 &mut rig.sink,
                 vec![
-                    row("before", ChatSource::Twitch, "bob", at - MINUTE),
-                    row("after", ChatSource::Twitch, "bob", at + MINUTE),
-                    row("other-user", ChatSource::Twitch, "alice", at - MINUTE),
-                    row("other-source", ChatSource::Kick, "bob", at - MINUTE),
+                    row("before", PlatformId::Twitch, "bob", at - MINUTE),
+                    row("after", PlatformId::Twitch, "bob", at + MINUTE),
+                    row("other-user", PlatformId::Twitch, "alice", at - MINUTE),
+                    row("other-source", PlatformId::Kick, "bob", at - MINUTE),
                 ],
             )
             .await;
@@ -432,7 +432,7 @@ mod tests {
         flush(
             &mut rig.sink,
             vec![mark(
-                ChatSource::YouTube,
+                PlatformId::YouTube,
                 ChatModerationAction::ClearChat,
                 at,
             )],
@@ -442,9 +442,9 @@ mod tests {
         flush(
             &mut rig.sink,
             vec![
-                row("before", ChatSource::YouTube, "bob", at - MINUTE),
-                row("after", ChatSource::YouTube, "bob", at + MINUTE),
-                row("other-source", ChatSource::Twitch, "bob", at - MINUTE),
+                row("before", PlatformId::YouTube, "bob", at - MINUTE),
+                row("after", PlatformId::YouTube, "bob", at + MINUTE),
+                row("other-source", PlatformId::Twitch, "bob", at - MINUTE),
             ],
         )
         .await;
@@ -468,15 +468,15 @@ mod tests {
         let mut rig = rig().await;
         let now = OffsetDateTime::now_utc();
         let marks = (0..=MODERATION_MEMORY)
-            .map(|i| mark(ChatSource::Twitch, delete(&format!("d{i}")), now))
+            .map(|i| mark(PlatformId::Twitch, delete(&format!("d{i}")), now))
             .collect();
         flush(&mut rig.sink, marks).await;
 
         flush(
             &mut rig.sink,
             vec![
-                row("d0", ChatSource::Twitch, "bob", now),
-                row("d1", ChatSource::Twitch, "bob", now),
+                row("d0", PlatformId::Twitch, "bob", now),
+                row("d1", PlatformId::Twitch, "bob", now),
             ],
         )
         .await;
@@ -502,7 +502,7 @@ mod tests {
         flush(
             &mut sink,
             (0..3)
-                .map(|i| row(&format!("m{i}"), ChatSource::Twitch, "bob", now))
+                .map(|i| row(&format!("m{i}"), PlatformId::Twitch, "bob", now))
                 .collect(),
         )
         .await;
@@ -515,7 +515,7 @@ mod tests {
         assert_eq!(unwritten, Some(3));
     }
 
-    fn by(id: &str, source: ChatSource, viewer: Option<&str>) -> ChatRecord {
+    fn by(id: &str, source: PlatformId, viewer: Option<&str>) -> ChatRecord {
         let ChatRecord::Row(mut written) = row(id, source, "name", OffsetDateTime::now_utc())
         else {
             unreachable!("row always builds a chat row");
@@ -524,7 +524,7 @@ mod tests {
         ChatRecord::Row(written)
     }
 
-    fn key(source: ChatSource, viewer: &str) -> ChatAuthorKey {
+    fn key(source: PlatformId, viewer: &str) -> ChatAuthorKey {
         ChatAuthorKey {
             source,
             author_id: viewer.to_string(),
@@ -551,11 +551,11 @@ mod tests {
     #[tokio::test]
     async fn retention_covers_each_distinct_viewer_of_the_written_batch_once() {
         let authors = retained_authors(vec![
-            by("a", ChatSource::Twitch, Some("u1")),
-            by("b", ChatSource::Twitch, Some("u1")),
-            by("c", ChatSource::Kick, Some("u1")),
-            by("d", ChatSource::YouTube, Some("u2")),
-            by("e", ChatSource::Twitch, None),
+            by("a", PlatformId::Twitch, Some("u1")),
+            by("b", PlatformId::Twitch, Some("u1")),
+            by("c", PlatformId::Kick, Some("u1")),
+            by("d", PlatformId::YouTube, Some("u2")),
+            by("e", PlatformId::Twitch, None),
         ])
         .await;
 
@@ -564,9 +564,9 @@ mod tests {
             (
                 3,
                 HashSet::from([
-                    key(ChatSource::Twitch, "u1"),
-                    key(ChatSource::Kick, "u1"),
-                    key(ChatSource::YouTube, "u2"),
+                    key(PlatformId::Twitch, "u1"),
+                    key(PlatformId::Kick, "u1"),
+                    key(PlatformId::YouTube, "u2"),
                 ])
             )
         );
@@ -575,8 +575,8 @@ mod tests {
     #[tokio::test]
     async fn a_batch_without_viewer_ids_still_runs_retention_for_the_authorless_bound() {
         let authors = retained_authors(vec![
-            by("a", ChatSource::Twitch, None),
-            by("b", ChatSource::Kick, None),
+            by("a", PlatformId::Twitch, None),
+            by("b", PlatformId::Kick, None),
         ])
         .await;
 
@@ -605,13 +605,13 @@ mod tests {
         let mut retained = Vec::new();
         for limit in [UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT, 25] {
             handle.set_per_viewer_limit(limit);
-            flush(&mut sink, vec![by("m", ChatSource::Twitch, Some("u1"))]).await;
+            flush(&mut sink, vec![by("m", PlatformId::Twitch, Some("u1"))]).await;
             retained.push(rx.try_recv().unwrap());
         }
 
         assert_eq!(
             retained,
-            vec![(Vec::new(), 0), (vec![key(ChatSource::Twitch, "u1")], 25),]
+            vec![(Vec::new(), 0), (vec![key(PlatformId::Twitch, "u1")], 25),]
         );
     }
 
@@ -710,14 +710,14 @@ mod tests {
 
         async fn mark_user_messages_moderated(
             &self,
-            _: ChatSource,
+            _: PlatformId,
             _: &str,
             _: bool,
         ) -> Result<u64, StorageError> {
             Ok(0)
         }
 
-        async fn clear_platform(&self, _: ChatSource) -> Result<u64, StorageError> {
+        async fn clear_platform(&self, _: PlatformId) -> Result<u64, StorageError> {
             Ok(0)
         }
     }
@@ -735,7 +735,7 @@ mod tests {
             let repo = ScriptedRepo::new(append, Outcome::Succeeds);
             let mut sink = sink_over(repo.clone(), &EventBus::new(Arc::new(NullEventLogRepo)));
 
-            flush(&mut sink, vec![by("m", ChatSource::Twitch, Some("u1"))]).await;
+            flush(&mut sink, vec![by("m", PlatformId::Twitch, Some("u1"))]).await;
 
             assert_eq!(repo.retention_runs(), 0, "append {append:?}");
         }
@@ -748,10 +748,10 @@ mod tests {
             let repo = ScriptedRepo::new(Outcome::Succeeds, retention);
             let mut sink = sink_over(repo.clone(), &bus);
 
-            flush(&mut sink, vec![by("first", ChatSource::Twitch, Some("u1"))]).await;
+            flush(&mut sink, vec![by("first", PlatformId::Twitch, Some("u1"))]).await;
             flush(
                 &mut sink,
-                vec![by("second", ChatSource::Twitch, Some("u1"))],
+                vec![by("second", PlatformId::Twitch, Some("u1"))],
             )
             .await;
 
@@ -816,14 +816,14 @@ mod tests {
 
         async fn mark_user_messages_moderated(
             &self,
-            _: ChatSource,
+            _: PlatformId,
             _: &str,
             _: bool,
         ) -> Result<u64, StorageError> {
             Ok(0)
         }
 
-        async fn clear_platform(&self, _: ChatSource) -> Result<u64, StorageError> {
+        async fn clear_platform(&self, _: PlatformId) -> Result<u64, StorageError> {
             Ok(0)
         }
     }
@@ -841,9 +841,9 @@ mod tests {
         let now = OffsetDateTime::now_utc();
         let (tx, rx) = tokio::sync::mpsc::channel(4);
         for record in [
-            row("before", ChatSource::Twitch, "bob", now),
-            mark(ChatSource::Twitch, delete("elsewhere"), now),
-            row("after", ChatSource::Twitch, "bob", now),
+            row("before", PlatformId::Twitch, "bob", now),
+            mark(PlatformId::Twitch, delete("elsewhere"), now),
+            row("after", PlatformId::Twitch, "bob", now),
         ] {
             tx.send(record).await.unwrap();
         }

@@ -9,8 +9,8 @@ use gpui::{
     StyledText, div, prelude::*, px,
 };
 
-use crate::integration_references::IntegrationReferences;
 use crate::integrations_hub::IntegrationsHubView;
+use forge_registry::IntegrationReferences;
 
 const BODY_PAD_V: Pixels = px(14.0);
 const BODY_PAD_H: Pixels = px(18.0);

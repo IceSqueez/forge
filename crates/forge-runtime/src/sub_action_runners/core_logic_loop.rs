@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ChainExecutor, ChainSignal, CodeLanguage, ControlSignal, FormField, RegistryError, RunContext,
-    StepTimer, StopMark, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ChainExecutor, ChainSignal, CodeLanguage, ControlSignal, FormField, LOOP_KIND_ID,
+    RegistryError, RunContext, StepTimer, StopMark, SubActionCategory, SubActionConfigExt,
+    SubActionIo, SubActionRunner,
 };
 use forge_types::{
     ArgStack, EventId, SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry,
@@ -17,6 +18,10 @@ const MAX_COUNT: i64 = 1000;
 const MAX_WHILE_ITERATIONS: i64 = 1_000_000;
 const MAX_FOREACH_ITERATIONS: i64 = 10_000;
 const MAX_RECORDED_ITERATIONS: i64 = 100;
+const LOOP_INDEX_VAR: &str = "loop.index";
+const LOOP_ITEM_VAR: &str = "loop.item";
+const LOOP_ITERATIONS_COMPLETED_VAR: &str = "loop.iterations_completed";
+const LOOP_EXIT_REASON_VAR: &str = "loop.exit_reason";
 
 pub struct CoreLogicLoopRunner {
     gate: Arc<ConditionGate>,
@@ -68,7 +73,7 @@ async fn run_body(
 #[async_trait]
 impl SubActionRunner for CoreLogicLoopRunner {
     fn id(&self) -> &str {
-        "core.logic.loop"
+        LOOP_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -141,6 +146,17 @@ impl SubActionRunner for CoreLogicLoopRunner {
         Ok(())
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            fixed_outputs: vec![
+                LOOP_ITERATIONS_COMPLETED_VAR.to_owned(),
+                LOOP_EXIT_REASON_VAR.to_owned(),
+            ],
+            body_locals: vec![LOOP_INDEX_VAR.to_owned(), LOOP_ITEM_VAR.to_owned()],
+            ..SubActionIo::default()
+        }
+    }
+
     async fn execute(
         &self,
         config: &SubActionConfig,
@@ -194,8 +210,8 @@ impl SubActionRunner for CoreLogicLoopRunner {
                     }
                     current
                         .clone()
-                        .set("loop.index".to_owned(), Variant::Int(iterations))
-                        .set("loop.item".to_owned(), item.clone())
+                        .set(LOOP_INDEX_VAR.to_owned(), Variant::Int(iterations))
+                        .set(LOOP_ITEM_VAR.to_owned(), item.clone())
                 }
                 "while" => {
                     if iterations >= max_iterations {
@@ -216,7 +232,7 @@ impl SubActionRunner for CoreLogicLoopRunner {
                     }
                     current
                         .clone()
-                        .set("loop.index".to_owned(), Variant::Int(iterations))
+                        .set(LOOP_INDEX_VAR.to_owned(), Variant::Int(iterations))
                 }
                 _ => {
                     if iterations >= count {
@@ -224,7 +240,7 @@ impl SubActionRunner for CoreLogicLoopRunner {
                     }
                     current
                         .clone()
-                        .set("loop.index".to_owned(), Variant::Int(iterations))
+                        .set(LOOP_INDEX_VAR.to_owned(), Variant::Int(iterations))
                 }
             };
 
@@ -283,11 +299,11 @@ impl SubActionRunner for CoreLogicLoopRunner {
 
         let stack = current
             .set(
-                "loop.iterations_completed".to_owned(),
+                LOOP_ITERATIONS_COMPLETED_VAR.to_owned(),
                 Variant::Int(iterations),
             )
             .set(
-                "loop.exit_reason".to_owned(),
+                LOOP_EXIT_REASON_VAR.to_owned(),
                 Variant::String(exit_reason.to_owned()),
             );
 

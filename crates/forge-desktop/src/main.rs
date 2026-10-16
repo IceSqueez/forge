@@ -69,7 +69,6 @@ mod integration_failed;
 mod integration_lifecycle;
 mod integration_quick_action_modal;
 mod integration_quick_actions;
-mod integration_references;
 mod integration_switch;
 mod integrations;
 mod integrations_hub;

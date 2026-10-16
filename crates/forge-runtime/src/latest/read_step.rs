@@ -107,6 +107,7 @@ impl SubActionRunner for LatestGetRunner {
                 kind: VariantKind::Object,
                 label: "Latest value".to_owned(),
             }],
+            ..SubActionIo::default()
         }
     }
 

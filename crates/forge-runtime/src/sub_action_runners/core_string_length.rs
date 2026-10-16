@@ -75,6 +75,7 @@ impl SubActionRunner for CoreStringLengthRunner {
                 kind: VariantKind::Int,
                 label: "String length".to_owned(),
             }],
+            ..SubActionIo::default()
         }
     }
 

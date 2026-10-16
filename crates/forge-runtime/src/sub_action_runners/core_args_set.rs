@@ -1,9 +1,11 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
+
+const NAME_KEY: &str = "name";
 
 pub struct CoreArgsSetRunner;
 
@@ -35,7 +37,7 @@ impl SubActionRunner for CoreArgsSetRunner {
 
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
-        cfg.insert("name".to_owned(), Variant::String(String::new()));
+        cfg.insert(NAME_KEY.to_owned(), Variant::String(String::new()));
         cfg.insert("value".to_owned(), Variant::String(String::new()));
         cfg
     }
@@ -43,7 +45,7 @@ impl SubActionRunner for CoreArgsSetRunner {
     fn config_fields(&self) -> Vec<FormField> {
         vec![
             FormField::Text {
-                key: "name",
+                key: NAME_KEY,
                 label: "Variable Name",
                 placeholder: "my_var",
             },
@@ -56,7 +58,18 @@ impl SubActionRunner for CoreArgsSetRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("name").map(|_| ())
+        config.require_str(NAME_KEY).map(|_| ())
+    }
+
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            produces: vec![ProducedVariable {
+                output_name_key: NAME_KEY.to_owned(),
+                kind: VariantKind::String,
+                label: "Argument value".to_owned(),
+            }],
+            ..SubActionIo::default()
+        }
     }
 
     async fn execute(
@@ -66,7 +79,7 @@ impl SubActionRunner for CoreArgsSetRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, "core.args.set");
 
-        let name_template = config.str("name").unwrap_or_default();
+        let name_template = config.str(NAME_KEY).unwrap_or_default();
         let name = forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(name_template));
 
         let value = match config.get("value") {

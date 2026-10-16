@@ -6,7 +6,7 @@ use forge_components::{
     page_frame, primary_button_with_icon, radius, tr,
 };
 use forge_platform_core::{ConnectionAffordance, IntegrationDeclaration};
-use forge_registry::{SubActionRegistry, TriggerRegistry};
+use forge_registry::{IntegrationReferences, SubActionRegistry, TriggerRegistry};
 use forge_storage::{CredentialsRepo, DataProvider, has_credentials_for};
 use forge_types::IntegrationId;
 use gpui::{
@@ -16,7 +16,6 @@ use gpui::{
 
 use crate::integration_catalog::{declaration_of, disclaimer_of, look_of};
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
-use crate::integration_references::IntegrationReferences;
 use crate::integrations::BuiltinObject;
 use crate::integrations_hub::{card_status_badge, load_references};
 use crate::screen::Screen;

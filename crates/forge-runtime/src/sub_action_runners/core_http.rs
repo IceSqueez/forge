@@ -5,7 +5,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_registry::{
     DurationBounds, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionRunner,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_storage::{SettingsRepo, get_bool_setting, reserved_keys};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
@@ -14,6 +14,10 @@ use crate::egress::{EgressClient, EgressRequest, EgressResponse, HttpMethod};
 
 const TIMEOUT_MIN_MS: i64 = 100;
 const TIMEOUT_MAX_MS: i64 = 60_000;
+
+const HTTP_STATUS_CODE_VAR: &str = "http.status_code";
+const HTTP_HEADERS_VAR: &str = "http.headers";
+const HTTP_BODY_VAR: &str = "http.body";
 
 pub struct CoreHttpRunner {
     method: HttpMethod,
@@ -201,6 +205,17 @@ impl SubActionRunner for CoreHttpRunner {
         }
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            fixed_outputs: vec![
+                HTTP_STATUS_CODE_VAR.to_owned(),
+                HTTP_HEADERS_VAR.to_owned(),
+                HTTP_BODY_VAR.to_owned(),
+            ],
+            ..SubActionIo::default()
+        }
+    }
+
     async fn execute(
         &self,
         config: &SubActionConfig,
@@ -322,10 +337,10 @@ fn apply_response(arg_stack: &ArgStack, response: EgressResponse, parse_as: &str
     let stack = arg_stack
         .clone()
         .set(
-            "http.status_code".to_owned(),
+            HTTP_STATUS_CODE_VAR.to_owned(),
             Variant::Int(response.status as i64),
         )
-        .set("http.headers".to_owned(), Variant::Object(header_map));
+        .set(HTTP_HEADERS_VAR.to_owned(), Variant::Object(header_map));
 
     match parse_as {
         "ignore" => stack,
@@ -334,9 +349,9 @@ fn apply_response(arg_stack: &ArgStack, response: EgressResponse, parse_as: &str
                 .ok()
                 .and_then(|v| Variant::from_json(v).ok());
             let body = parsed.unwrap_or(Variant::String(response.body));
-            stack.set("http.body".to_owned(), body)
+            stack.set(HTTP_BODY_VAR.to_owned(), body)
         }
-        _ => stack.set("http.body".to_owned(), Variant::String(response.body)),
+        _ => stack.set(HTTP_BODY_VAR.to_owned(), Variant::String(response.body)),
     }
 }
 

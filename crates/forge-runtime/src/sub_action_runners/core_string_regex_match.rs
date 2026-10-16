@@ -97,6 +97,7 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
                     label: "Capture groups".to_owned(),
                 },
             ],
+            ..SubActionIo::default()
         }
     }
 

@@ -68,6 +68,7 @@ impl SubActionRunner for CoreStringFormatRunner {
                 kind: VariantKind::String,
                 label: "Formatted string".to_owned(),
             }],
+            ..SubActionIo::default()
         }
     }
 

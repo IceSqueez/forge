@@ -6,6 +6,9 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
+const TIME_FORMATTED_VAR: &str = "time.formatted";
+const TIME_UNIX_SECONDS_VAR: &str = "time.unix_seconds";
+
 pub struct CoreTimeNowRunner;
 
 #[async_trait]
@@ -76,6 +79,11 @@ impl SubActionRunner for CoreTimeNowRunner {
                 kind: VariantKind::Datetime,
                 label: "Current time".to_owned(),
             }],
+            fixed_outputs: vec![
+                TIME_FORMATTED_VAR.to_owned(),
+                TIME_UNIX_SECONDS_VAR.to_owned(),
+            ],
+            ..SubActionIo::default()
         }
     }
 
@@ -122,9 +130,9 @@ impl SubActionRunner for CoreTimeNowRunner {
             .arg_stack
             .clone()
             .set(into_var, Variant::Datetime(now))
-            .set("time.formatted".to_owned(), Variant::String(formatted))
+            .set(TIME_FORMATTED_VAR.to_owned(), Variant::String(formatted))
             .set(
-                "time.unix_seconds".to_owned(),
+                TIME_UNIX_SECONDS_VAR.to_owned(),
                 Variant::Int(now.unix_timestamp()),
             );
 

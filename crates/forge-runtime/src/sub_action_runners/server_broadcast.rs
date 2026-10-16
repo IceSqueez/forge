@@ -5,9 +5,11 @@ use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    SubActionIo, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+
+const BROADCAST_DELIVERED_COUNT_VAR: &str = "broadcast.delivered_count";
 
 pub struct ServerBroadcastRunner {
     publisher: Arc<dyn EventPublisher>,
@@ -82,6 +84,13 @@ impl SubActionRunner for ServerBroadcastRunner {
         config.require_str("event_name").map(|_| ())
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            fixed_outputs: vec![BROADCAST_DELIVERED_COUNT_VAR.to_owned()],
+            ..SubActionIo::default()
+        }
+    }
+
     async fn execute(
         &self,
         config: &SubActionConfig,
@@ -108,7 +117,7 @@ impl SubActionRunner for ServerBroadcastRunner {
             let new_stack = ctx
                 .arg_stack
                 .clone()
-                .set("broadcast.delivered_count".to_owned(), Variant::Int(0));
+                .set(BROADCAST_DELIVERED_COUNT_VAR.to_owned(), Variant::Int(0));
             (SubActionOutcome::Success, Some(new_stack))
         };
 

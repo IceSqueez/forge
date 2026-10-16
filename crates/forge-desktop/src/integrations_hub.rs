@@ -10,7 +10,7 @@ use forge_platform_core::{
     ConnectionAffordance, ControlFailure, ControlOutcome, IntegrationCategory,
     IntegrationDeclaration,
 };
-use forge_registry::{SubActionRegistry, TriggerRegistry};
+use forge_registry::{IntegrationReferences, SubActionRegistry, TriggerRegistry, tally_references};
 use forge_storage::{DataProvider, StorageError};
 use forge_types::{Action, IntegrationId, TriggerInstance, TriggerInstanceId};
 use gpui::{
@@ -25,7 +25,7 @@ use crate::integration_catalog::{
 };
 use crate::integration_disable_modal::{DisablePrompt, render_disable_modal};
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
-use crate::integration_references::{IntegrationReferences, tally_references};
+use crate::integration_switch::category_members;
 use crate::integrations::{BuiltinObject, BuiltinRegistry};
 use crate::platforms::PlatformConnectivity;
 use crate::screen::Screen;
@@ -677,7 +677,13 @@ pub(crate) async fn load_references(
     triggers: &TriggerRegistry,
 ) -> Result<HashMap<IntegrationId, IntegrationReferences>, StorageError> {
     let (actions, wired) = wired_triggers(backend).await?;
-    Ok(tally_references(&actions, &wired, sub_actions, triggers))
+    Ok(tally_references(
+        &actions,
+        &wired,
+        sub_actions,
+        triggers,
+        &category_members,
+    ))
 }
 
 pub(crate) fn card_status_badge(

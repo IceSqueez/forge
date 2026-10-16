@@ -1,4 +1,4 @@
-use forge_runtime::{CASE_CHAIN_KEY, decode_steps};
+use forge_registry::{CASE_CHAIN_KEY, decode_steps};
 use forge_types::{SubActionConfig, SubActionStep, Variant};
 
 pub(super) const UI_MAX_NESTING_DEPTH: usize = 8;

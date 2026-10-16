@@ -75,6 +75,7 @@ impl SubActionRunner for CoreRandomPickRunner {
                 kind: VariantKind::String,
                 label: "Picked item".to_owned(),
             }],
+            ..SubActionIo::default()
         }
     }
 

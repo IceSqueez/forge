@@ -85,6 +85,7 @@ impl SubActionRunner for CoreFileReadRunner {
                 kind: VariantKind::Array,
                 label: "File contents".to_owned(),
             }],
+            ..SubActionIo::default()
         }
     }
 

@@ -92,6 +92,7 @@ impl SubActionRunner for CoreFileListRunner {
                 kind: VariantKind::Array,
                 label: "Directory entries".to_owned(),
             }],
+            ..SubActionIo::default()
         }
     }
 

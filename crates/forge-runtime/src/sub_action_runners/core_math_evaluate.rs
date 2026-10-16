@@ -1,10 +1,14 @@
 use async_trait::async_trait;
 use forge_registry::{
-    CodeLanguage, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionRunner,
+    CodeLanguage, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
+    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_script::{BoundExpression, EngineConfig, MathEvaluator};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+};
+
+const INTO_VAR_KEY: &str = "into_var";
 
 pub struct CoreMathEvaluateRunner {
     evaluator: MathEvaluator,
@@ -56,7 +60,10 @@ impl SubActionRunner for CoreMathEvaluateRunner {
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
         cfg.insert("expression".to_owned(), Variant::String(String::new()));
-        cfg.insert("into_var".to_owned(), Variant::String("result".to_owned()));
+        cfg.insert(
+            INTO_VAR_KEY.to_owned(),
+            Variant::String("result".to_owned()),
+        );
         cfg.insert("result_type".to_owned(), Variant::String("auto".to_owned()));
         cfg
     }
@@ -69,7 +76,7 @@ impl SubActionRunner for CoreMathEvaluateRunner {
                 language: CodeLanguage::Rhai,
             },
             FormField::Text {
-                key: "into_var",
+                key: INTO_VAR_KEY,
                 label: "Output Variable",
                 placeholder: "result",
             },
@@ -85,6 +92,17 @@ impl SubActionRunner for CoreMathEvaluateRunner {
         config.require_str("expression").map(|_| ())
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            produces: vec![ProducedVariable {
+                output_name_key: INTO_VAR_KEY.to_owned(),
+                kind: VariantKind::Float,
+                label: "Result".to_owned(),
+            }],
+            ..SubActionIo::default()
+        }
+    }
+
     async fn execute(
         &self,
         config: &SubActionConfig,
@@ -94,8 +112,9 @@ impl SubActionRunner for CoreMathEvaluateRunner {
 
         let expression = config.str("expression").unwrap_or_default();
 
-        let into_var =
-            forge_types::strip_var_decoration(config.str_nonempty("into_var").unwrap_or("result"));
+        let into_var = forge_types::strip_var_decoration(
+            config.str_nonempty(INTO_VAR_KEY).unwrap_or("result"),
+        );
 
         let result_type = config.str("result_type").unwrap_or("auto");
 

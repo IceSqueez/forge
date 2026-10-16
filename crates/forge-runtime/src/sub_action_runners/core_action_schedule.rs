@@ -257,6 +257,7 @@ impl SubActionRunner for CoreActionScheduleRunner {
                     label: "Scheduled run id".to_owned(),
                 },
             ],
+            ..SubActionIo::default()
         }
     }
 

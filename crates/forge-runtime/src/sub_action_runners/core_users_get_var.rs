@@ -2,13 +2,17 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_storage::{GlobalsRepo, UserGlobalsRepo};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+};
 
 use super::core_users_shared::resolve_broadcaster_id;
+
+const INTO_VAR_KEY: &str = "into_var";
 
 pub struct CoreUsersGetVarRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -57,7 +61,7 @@ impl SubActionRunner for CoreUsersGetVarRunner {
             Variant::String("%user_login%".to_owned()),
         );
         cfg.insert("var_name".to_owned(), Variant::String(String::new()));
-        cfg.insert("into_var".to_owned(), Variant::String(String::new()));
+        cfg.insert(INTO_VAR_KEY.to_owned(), Variant::String(String::new()));
         cfg.insert("default_value".to_owned(), Variant::String(String::new()));
         cfg
     }
@@ -75,7 +79,7 @@ impl SubActionRunner for CoreUsersGetVarRunner {
                 placeholder: "points",
             },
             FormField::Text {
-                key: "into_var",
+                key: INTO_VAR_KEY,
                 label: "Output Variable",
                 placeholder: "result",
             },
@@ -91,8 +95,19 @@ impl SubActionRunner for CoreUsersGetVarRunner {
         config
             .require_str("user_login")
             .and(config.require_str("var_name"))
-            .and(config.require_str("into_var"))
+            .and(config.require_str(INTO_VAR_KEY))
             .map(|_| ())
+    }
+
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            produces: vec![ProducedVariable {
+                output_name_key: INTO_VAR_KEY.to_owned(),
+                kind: VariantKind::String,
+                label: "User variable value".to_owned(),
+            }],
+            ..SubActionIo::default()
+        }
     }
 
     async fn execute(
@@ -106,8 +121,9 @@ impl SubActionRunner for CoreUsersGetVarRunner {
 
         let user_id = resolve(config.str("user_login").unwrap_or_default());
         let var_name = resolve(config.str("var_name").unwrap_or_default());
-        let into_var =
-            forge_types::strip_var_decoration(&resolve(config.str("into_var").unwrap_or_default()));
+        let into_var = forge_types::strip_var_decoration(&resolve(
+            config.str(INTO_VAR_KEY).unwrap_or_default(),
+        ));
         let default_raw = resolve(config.str("default_value").unwrap_or_default());
         let broadcaster_id = resolve_broadcaster_id(ctx.arg_stack, self.globals.as_ref()).await;
 

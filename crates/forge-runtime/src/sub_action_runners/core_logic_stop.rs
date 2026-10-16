@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ControlSignal, FormField, RegistryError, RunContext, StepTimer, StopMark, SubActionCategory,
-    SubActionConfigExt, SubActionRunner,
+    ControlSignal, FormField, RegistryError, RunContext, STOP_KIND_ID, StepTimer, StopMark,
+    SubActionCategory, SubActionConfigExt, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
@@ -10,7 +10,7 @@ pub struct CoreLogicStopRunner;
 #[async_trait]
 impl SubActionRunner for CoreLogicStopRunner {
     fn id(&self) -> &str {
-        "core.logic.stop"
+        STOP_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {

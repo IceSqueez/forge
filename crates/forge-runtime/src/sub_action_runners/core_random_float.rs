@@ -106,6 +106,7 @@ impl SubActionRunner for CoreRandomFloatRunner {
                 kind: VariantKind::Float,
                 label: "Random float".to_owned(),
             }],
+            ..SubActionIo::default()
         }
     }
 

@@ -6,39 +6,40 @@ use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
     health_tile, icon, mono_family, radius, row_card, spacing, tooltip_lines_builder, tr,
 };
+use forge_registry::{Finding, HealthSeverity, StepHealth};
 use forge_types::SubActionStep;
 use gpui::{AnyElement, ClickEvent, Context, FontWeight, Rgba, SharedString, div, px};
 
-fn analyzer_finding_message(finding: &analyzer::Finding) -> SharedString {
+fn analyzer_finding_message(finding: &Finding) -> SharedString {
     let text = match finding {
-        analyzer::Finding::UnknownVariable(name) => {
+        Finding::UnknownVariable(name) => {
             tr!("action_editor_health_unknown_var", name = name.clone())
         }
-        analyzer::Finding::ProducedLater(name) => {
+        Finding::ProducedLater(name) => {
             tr!("action_editor_health_produced_later", name = name.clone())
         }
-        analyzer::Finding::IsolatedSibling(name) => {
+        Finding::IsolatedSibling(name) => {
             tr!("action_editor_health_isolated_sibling", name = name.clone())
         }
-        analyzer::Finding::SomeTriggersOnly(name) => {
+        Finding::SomeTriggersOnly(name) => {
             tr!("action_editor_health_some_triggers", name = name.clone())
         }
-        analyzer::Finding::LastRunFailed(message) => {
+        Finding::LastRunFailed(message) => {
             tr!(
                 "action_editor_health_last_run_failed",
                 message = message.clone()
             )
         }
-        analyzer::Finding::ControlFlowInConcurrentAction => {
+        Finding::ControlFlowInConcurrentAction => {
             tr!("action_editor_health_control_flow_concurrent")
         }
-        analyzer::Finding::IntegrationDisabled(owner) => {
+        Finding::IntegrationDisabled(owner) => {
             tr!(
                 "action_editor_health_integration_disabled",
                 name = integration_name(owner).to_string()
             )
         }
-        analyzer::Finding::IntegrationFailed(owner) => {
+        Finding::IntegrationFailed(owner) => {
             tr!(
                 "action_editor_health_integration_failed",
                 name = integration_name(owner).to_string()
@@ -127,15 +128,15 @@ impl ScreenActionsView {
 
     fn render_health_dot(
         &self,
-        health: &analyzer::StepHealth,
+        health: &StepHealth,
         i: usize,
         palette: &ForgePalette,
     ) -> AnyElement {
         let severity = health.severity();
         let color = match severity {
-            analyzer::HealthSeverity::Green => palette.success,
-            analyzer::HealthSeverity::Yellow => palette.warning,
-            analyzer::HealthSeverity::Red => palette.random,
+            HealthSeverity::Green => palette.success,
+            HealthSeverity::Yellow => palette.warning,
+            HealthSeverity::Red => palette.random,
         };
         let gate_title = if health.disabled_integration().is_some() {
             Some(tr!("action_editor_health_disabled"))
@@ -150,9 +151,9 @@ impl ScreenActionsView {
                 Icon::Heartbeat,
                 color,
                 match severity {
-                    analyzer::HealthSeverity::Green => tr!("action_editor_health_ok").into(),
-                    analyzer::HealthSeverity::Yellow => tr!("action_editor_health_warn").into(),
-                    analyzer::HealthSeverity::Red => tr!("action_editor_health_error").into(),
+                    HealthSeverity::Green => tr!("action_editor_health_ok").into(),
+                    HealthSeverity::Yellow => tr!("action_editor_health_warn").into(),
+                    HealthSeverity::Red => tr!("action_editor_health_error").into(),
                 },
             ),
         };

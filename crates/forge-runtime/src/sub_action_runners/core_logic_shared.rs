@@ -1,51 +1,8 @@
-use forge_registry::{ChainSignal, ControlSignal, RunContext};
-use forge_types::{SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry, Variant};
-
-pub const CASE_CHAIN_KEY: &str = "chain";
+use forge_registry::{ChainSignal, ControlSignal, RunContext, decode_steps};
+use forge_types::{SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry};
 
 pub(super) fn decode_chain(config: &SubActionConfig, key: &str) -> Vec<SubActionStep> {
     decode_steps(config.get(key))
-}
-
-pub fn decode_steps(value: Option<&Variant>) -> Vec<SubActionStep> {
-    let Some(steps) = value.and_then(Variant::as_array) else {
-        return Vec::new();
-    };
-    steps
-        .iter()
-        .filter_map(|step| {
-            let obj = step.as_object()?;
-            let kind_id = obj.get("kind_id").and_then(Variant::as_str)?.to_owned();
-            let config = match obj.get("config") {
-                Some(Variant::Object(map)) => map.clone(),
-                _ => SubActionConfig::new(),
-            };
-            let enabled = obj
-                .get("enabled")
-                .and_then(Variant::as_bool)
-                .unwrap_or(true);
-            let continue_on_error = obj
-                .get("continue_on_error")
-                .and_then(Variant::as_bool)
-                .unwrap_or(false);
-            let condition = obj
-                .get("condition")
-                .and_then(Variant::as_str)
-                .map(str::to_owned);
-            let label = obj
-                .get("label")
-                .and_then(Variant::as_str)
-                .map(str::to_owned);
-            Some(SubActionStep {
-                kind_id,
-                config,
-                enabled,
-                continue_on_error,
-                condition,
-                label,
-            })
-        })
-        .collect()
 }
 
 pub(super) fn propagate(signal: ChainSignal, ctx: &RunContext<'_>) -> SubActionOutcome {

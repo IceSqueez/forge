@@ -97,6 +97,7 @@ impl SubActionRunner for CoreStringSubstringRunner {
                 kind: VariantKind::String,
                 label: "Substring".to_owned(),
             }],
+            ..SubActionIo::default()
         }
     }
 

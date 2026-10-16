@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ControlSignal, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner,
+    BREAK_LOOP_KIND_ID, ControlSignal, FormField, RegistryError, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
@@ -10,7 +10,7 @@ pub struct CoreLogicBreakLoopRunner;
 #[async_trait]
 impl SubActionRunner for CoreLogicBreakLoopRunner {
     fn id(&self) -> &str {
-        "core.logic.break_loop"
+        BREAK_LOOP_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {

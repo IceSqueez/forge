@@ -2,10 +2,12 @@ use async_trait::async_trait;
 use base64::Engine as _;
 use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    SubActionIo, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 use tokio::io::AsyncWriteExt as _;
+
+const FILE_BYTES_WRITTEN_VAR: &str = "file.bytes_written";
 
 pub struct CoreFileWriteRunner;
 
@@ -77,6 +79,13 @@ impl SubActionRunner for CoreFileWriteRunner {
         config.require_str("path").map(|_| ())
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            fixed_outputs: vec![FILE_BYTES_WRITTEN_VAR.to_owned()],
+            ..SubActionIo::default()
+        }
+    }
+
     async fn execute(
         &self,
         config: &SubActionConfig,
@@ -105,7 +114,7 @@ impl SubActionRunner for CoreFileWriteRunner {
                     Err(reason) => (SubActionOutcome::Failed(reason), None),
                     Ok(bytes_written) => {
                         let stack = ctx.arg_stack.clone().set(
-                            "file.bytes_written".to_owned(),
+                            FILE_BYTES_WRITTEN_VAR.to_owned(),
                             Variant::Int(bytes_written as i64),
                         );
                         (SubActionOutcome::Success, Some(stack))

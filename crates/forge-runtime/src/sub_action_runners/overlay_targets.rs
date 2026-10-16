@@ -1,7 +1,5 @@
-use forge_registry::{FormField, SubActionRegistry};
+use forge_registry::{SubActionRegistry, nested_chains};
 use forge_types::{SubActionConfig, SubActionStep, Variant};
-
-use super::core_logic_shared::{CASE_CHAIN_KEY, decode_steps};
 
 pub const OVERLAY_SEND_KIND_ID: &str = "overlay.send";
 pub const OVERLAY_TARGET_KEY: &str = "overlay_id";
@@ -79,28 +77,4 @@ fn holds_variable_token(target: &str) -> bool {
         rest = tail;
     }
     false
-}
-
-fn nested_chains(step: &SubActionStep, registry: &SubActionRegistry) -> Vec<Vec<SubActionStep>> {
-    let Some(runner) = registry.get(&step.kind_id) else {
-        return Vec::new();
-    };
-    let mut chains = Vec::new();
-    for field in runner.config_fields() {
-        match field {
-            FormField::SubChain { key, .. } => {
-                chains.push(decode_steps(step.config.get(key)));
-            }
-            FormField::CaseList { key, .. } => {
-                let cases = step.config.get(key).and_then(Variant::as_array);
-                for case in cases.into_iter().flatten() {
-                    chains.push(decode_steps(
-                        case.as_object().and_then(|case| case.get(CASE_CHAIN_KEY)),
-                    ));
-                }
-            }
-            _ => {}
-        }
-    }
-    chains
 }

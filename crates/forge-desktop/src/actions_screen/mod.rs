@@ -51,7 +51,6 @@ mod sub_action_modal;
 mod test_run;
 mod test_trigger;
 
-pub(crate) use analyzer::nested_chains;
 pub(crate) use editor::parse_variable_segments;
 
 const LEFT_PANEL_W: Pixels = px(290.0);
@@ -236,7 +235,7 @@ pub struct ScreenActionsView {
     add_trigger: Option<AddTriggerStage>,
     nav_path: Vec<nav::NavFrame>,
     case_fields: BTreeMap<(usize, usize), CaseField>,
-    step_health: Vec<analyzer::StepHealth>,
+    step_health: Vec<forge_registry::StepHealth>,
     integrations: Option<SwitchWatch>,
     _search_sub: Subscription,
 }
@@ -582,7 +581,7 @@ impl ScreenActionsView {
     fn recompute_step_health(&mut self) {
         self.step_health = match &self.detail {
             Some(detail) => {
-                let mut health = analyzer::analyze(
+                let mut health = forge_registry::analyze(
                     &detail.action,
                     &detail.trigger_instances,
                     &detail.last_step_outcomes,
@@ -590,13 +589,13 @@ impl ScreenActionsView {
                     &self.trigger_registry,
                 );
                 if let Some(integrations) = &self.integrations {
-                    analyzer::flag_switched_off(
+                    forge_registry::flag_switched_off(
                         &detail.action.sub_actions,
                         &self.sub_action_registry,
                         integrations.off(),
                         &mut health,
                     );
-                    analyzer::flag_failed(
+                    forge_registry::flag_failed(
                         &detail.action.sub_actions,
                         &self.sub_action_registry,
                         integrations.failed(),

@@ -88,6 +88,7 @@ impl SubActionRunner for CoreActionCancelScheduledRunner {
                 kind: VariantKind::Bool,
                 label: "Scheduled run cancelled".to_owned(),
             }],
+            ..SubActionIo::default()
         }
     }
 

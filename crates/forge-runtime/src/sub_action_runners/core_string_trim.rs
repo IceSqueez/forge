@@ -75,6 +75,7 @@ impl SubActionRunner for CoreStringTrimRunner {
                 kind: VariantKind::String,
                 label: "Trimmed string".to_owned(),
             }],
+            ..SubActionIo::default()
         }
     }
 

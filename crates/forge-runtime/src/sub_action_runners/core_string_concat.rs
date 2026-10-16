@@ -74,6 +74,7 @@ impl SubActionRunner for CoreStringConcatRunner {
                 kind: VariantKind::String,
                 label: "Concatenated string".to_owned(),
             }],
+            ..SubActionIo::default()
         }
     }
 

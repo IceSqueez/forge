@@ -66,6 +66,7 @@ impl SubActionRunner for CoreRandomBoolRunner {
                 kind: VariantKind::Bool,
                 label: "Random boolean".to_owned(),
             }],
+            ..SubActionIo::default()
         }
     }
 

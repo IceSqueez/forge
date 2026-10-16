@@ -103,6 +103,7 @@ impl SubActionRunner for CoreTimeAddRunner {
                 kind: VariantKind::Datetime,
                 label: "Shifted datetime".to_owned(),
             }],
+            ..SubActionIo::default()
         }
     }
 

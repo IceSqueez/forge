@@ -1,11 +1,11 @@
 use async_trait::async_trait;
 use forge_registry::{
-    CodeLanguage, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionRunner,
+    CASE_CHAIN_KEY, CodeLanguage, FormField, RegistryError, RunContext, StepTimer,
+    SubActionCategory, SubActionConfigExt, SubActionRunner, decode_steps,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionStep, SubActionTelemetry, Variant};
 
-use super::core_logic_shared::{CASE_CHAIN_KEY, decode_chain, decode_steps, propagate, retag};
+use super::core_logic_shared::{decode_chain, propagate, retag};
 
 pub struct CoreLogicSwitchCaseRunner;
 

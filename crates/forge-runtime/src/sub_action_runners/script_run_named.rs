@@ -4,19 +4,24 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionIo, SubActionRunner,
 };
 use forge_script::{
     Engine, ForgeApi, ScriptError, ScriptHttpClient, build_scope_for_contract,
     load_script_engine_config, load_script_http_config,
 };
 use forge_storage::{ExecutionStatus, GlobalsRepo, ScriptRepo, SettingsRepo};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+};
 use serde_json::json;
 use time::OffsetDateTime;
 
 use crate::scheduled_runs::SchedulingContext;
 use crate::script_registry::ScriptRegistry;
+
+const TARGET_VAR_KEY: &str = "target_var";
 
 pub struct ScriptRunNamedRunner {
     registry: Arc<ScriptRegistry>,
@@ -73,7 +78,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
         cfg.insert("script_name".to_owned(), Variant::String(String::new()));
-        cfg.insert("target_var".to_owned(), Variant::String(String::new()));
+        cfg.insert(TARGET_VAR_KEY.to_owned(), Variant::String(String::new()));
         cfg
     }
 
@@ -85,7 +90,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
                 options_key: "script.names",
             },
             FormField::Text {
-                key: "target_var",
+                key: TARGET_VAR_KEY,
                 label: "Output Variable",
                 placeholder: "script_result",
             },
@@ -94,6 +99,17 @@ impl SubActionRunner for ScriptRunNamedRunner {
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         config.require_str("script_name").map(|_| ())
+    }
+
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            produces: vec![ProducedVariable {
+                output_name_key: TARGET_VAR_KEY.to_owned(),
+                kind: VariantKind::String,
+                label: "Script result".to_owned(),
+            }],
+            ..SubActionIo::default()
+        }
     }
 
     async fn execute(
@@ -107,7 +123,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
         let name_template = config.str("script_name").unwrap_or_default();
         let name = ctx.arg_stack.interpolate(name_template);
 
-        let target_var_template = config.str("target_var").unwrap_or_default();
+        let target_var_template = config.str(TARGET_VAR_KEY).unwrap_or_default();
         let target_var =
             forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(target_var_template));
 

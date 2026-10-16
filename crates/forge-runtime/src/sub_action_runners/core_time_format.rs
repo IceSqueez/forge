@@ -79,6 +79,7 @@ impl SubActionRunner for CoreTimeFormatRunner {
                 kind: VariantKind::String,
                 label: "Formatted datetime".to_owned(),
             }],
+            ..SubActionIo::default()
         }
     }
 

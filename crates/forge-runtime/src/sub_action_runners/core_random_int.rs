@@ -96,6 +96,7 @@ impl SubActionRunner for CoreRandomIntRunner {
                 kind: VariantKind::Int,
                 label: "Random integer".to_owned(),
             }],
+            ..SubActionIo::default()
         }
     }
 

@@ -2,11 +2,15 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_storage::GlobalsRepo;
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+};
+
+const INTO_ARG_KEY: &str = "into_arg";
 
 pub struct CoreGlobalsGetRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -47,7 +51,7 @@ impl SubActionRunner for CoreGlobalsGetRunner {
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
         cfg.insert("name".to_owned(), Variant::String(String::new()));
-        cfg.insert("into_arg".to_owned(), Variant::String(String::new()));
+        cfg.insert(INTO_ARG_KEY.to_owned(), Variant::String(String::new()));
         cfg
     }
 
@@ -59,7 +63,7 @@ impl SubActionRunner for CoreGlobalsGetRunner {
                 options_key: "global.names",
             },
             FormField::Text {
-                key: "into_arg",
+                key: INTO_ARG_KEY,
                 label: "Output Variable",
                 placeholder: "result",
             },
@@ -69,8 +73,19 @@ impl SubActionRunner for CoreGlobalsGetRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         config
             .require_str("name")
-            .and(config.require_str("into_arg"))
+            .and(config.require_str(INTO_ARG_KEY))
             .map(|_| ())
+    }
+
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            produces: vec![ProducedVariable {
+                output_name_key: INTO_ARG_KEY.to_owned(),
+                kind: VariantKind::String,
+                label: "Global value".to_owned(),
+            }],
+            ..SubActionIo::default()
+        }
     }
 
     async fn execute(
@@ -81,7 +96,7 @@ impl SubActionRunner for CoreGlobalsGetRunner {
         let timer = StepTimer::start(ctx, "core.globals.get");
 
         let name_template = config.str("name").unwrap_or_default();
-        let into_template = config.str("into_arg").unwrap_or_default();
+        let into_template = config.str(INTO_ARG_KEY).unwrap_or_default();
 
         let resolved_name =
             forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(name_template));

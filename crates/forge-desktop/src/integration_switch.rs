@@ -145,6 +145,17 @@ pub fn required_category(kind_id: &str) -> Option<IntegrationCategory> {
     (kind_id == DONATION_RECEIVED_KIND).then_some(IntegrationCategory::DONATIONS)
 }
 
+pub fn category_members(kind_id: &str) -> Vec<IntegrationId> {
+    let Some(category) = required_category(kind_id) else {
+        return Vec::new();
+    };
+    declarations()
+        .into_iter()
+        .filter(|declaration| declaration.category == category)
+        .map(|declaration| declaration.id)
+        .collect()
+}
+
 pub fn category_inactive_badge(
     category: IntegrationCategory,
     palette: &ForgePalette,

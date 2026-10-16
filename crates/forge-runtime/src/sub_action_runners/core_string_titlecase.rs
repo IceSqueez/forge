@@ -69,6 +69,7 @@ impl SubActionRunner for CoreStringTitlecaseRunner {
                 kind: VariantKind::String,
                 label: "Title-cased string".to_owned(),
             }],
+            ..SubActionIo::default()
         }
     }
 

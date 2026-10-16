@@ -4,7 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_registry::{
     CancelSignal, CodeLanguage, DurationBounds, FormField, RegistryError, RunContext, StepTimer,
-    SubActionCategory, SubActionConfigExt, SubActionRunner,
+    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 use tokio::time::Instant;
@@ -16,6 +16,9 @@ const POLL_MAX_MS: i64 = 30_000;
 const TIMEOUT_MIN_MS: i64 = 100;
 const TIMEOUT_MAX_MS: i64 = 600_000;
 const CANCEL_POLL_MS: u64 = 50;
+
+const WAIT_ELAPSED_MS_VAR: &str = "wait.elapsed_ms";
+const WAIT_TIMED_OUT_VAR: &str = "wait.timed_out";
 
 pub struct CoreLogicWaitUntilRunner {
     gate: Arc<ConditionGate>,
@@ -91,6 +94,16 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
         config.require_str("condition").map(|_| ())
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            fixed_outputs: vec![
+                WAIT_ELAPSED_MS_VAR.to_owned(),
+                WAIT_TIMED_OUT_VAR.to_owned(),
+            ],
+            ..SubActionIo::default()
+        }
+    }
+
     async fn execute(
         &self,
         config: &SubActionConfig,
@@ -139,8 +152,8 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
         let stack = ctx
             .arg_stack
             .clone()
-            .set("wait.elapsed_ms".to_owned(), Variant::Int(elapsed_ms))
-            .set("wait.timed_out".to_owned(), Variant::Bool(timed_out));
+            .set(WAIT_ELAPSED_MS_VAR.to_owned(), Variant::Int(elapsed_ms))
+            .set(WAIT_TIMED_OUT_VAR.to_owned(), Variant::Bool(timed_out));
 
         (timer.success(), Some(stack))
     }

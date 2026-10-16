@@ -77,6 +77,7 @@ impl SubActionRunner for CoreClipboardReadRunner {
                 kind: VariantKind::String,
                 label: "Clipboard text".to_owned(),
             }],
+            ..SubActionIo::default()
         }
     }
 

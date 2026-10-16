@@ -779,7 +779,7 @@ triggers_create_btn = Створити
 
 ## Налаштування → панель скриптів
 
-settings_scripting_title = Скрипти (Rhai)
+settings_scripting_title = Скрипти та HTTP
 settings_scripting_engine_section = Ліміти рушія
 settings_scripting_op_limit_label = Ліміт операцій
 settings_scripting_op_limit_hint = Діапазон 1 000 - 10 000 000 (за замовчуванням 100 000)
@@ -797,9 +797,12 @@ settings_scripting_max_response_label = Максимальний розмір в
 settings_scripting_max_response_hint = Діапазон 1 - 10 240 (за замовчуванням 1 024 КіБ = 1 МіБ)
 settings_scripting_allow_local_label = Дозволити localhost / приватні IP
 settings_scripting_allow_local_description = Вимикає захист від SSRF. Вмикайте лише для локальної розробки.
-settings_scripting_core_allow_local_label = Дозволити localhost / приватні IP (HTTP-дія)
+settings_scripting_core_allow_local_label = Дозволити localhost / приватні IP
 settings_scripting_core_allow_local_description = Вимикає захист від SSRF для дії HTTP-запиту. Вмикайте лише для локальної розробки.
 settings_scripting_ssrf_warning = УВАГА - вимикає захист від SSRF. Вмикайте лише для локальної розробки.
+settings_scripting_http_action_section = HTTP-дія
+settings_scripting_range_error = Дозволено: { $min } - { $max }
+settings_scripting_persist_failed = Не вдалося зберегти налаштування скриптів та HTTP. Після перезапуску повернеться попереднє значення.
 
 ## Actions trigger picker - category labels
 

@@ -1,9 +1,10 @@
+use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 use forge_components::{
-    Density, FONT_SM, FONT_XS, ForgePalette, Icon, InputEvent, Radius, SaveState, SettingRow,
-    Spacing, TextInput, body_family, icon, icon_button, primary_button, radius, save_indicator,
-    setting_block, setting_groups, setting_row, setting_rows, spacing, toggle, tr,
+    Density, FONT_SM, FONT_XS, ForgePalette, Icon, InputEvent, Radius, SettingRow, Spacing,
+    TextInput, body_family, icon, icon_button, radius, setting_block, setting_groups, setting_row,
+    setting_rows, spacing, toggle, tr,
 };
 use forge_script::{
     EngineConfig, ScriptHttpConfig, load_script_engine_config, load_script_http_config,
@@ -12,36 +13,123 @@ use forge_storage::{
     DataProvider, SettingsRepo, get_bool_setting, reserved_keys, set_bool_setting, set_json_setting,
 };
 use gpui::{
-    ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
+    prelude::*, px,
 };
 
-use crate::async_bridge;
+use crate::async_bridge::{self, Debounced, ErrorSink, SLIDER_PERSIST_DEBOUNCE};
 use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 use forge_components::ActivePresentation;
 
 const NUMERIC_INPUT_WIDTH: Pixels = px(120.0);
+const BYTES_PER_KIB: u64 = 1024;
+
+const OP_LIMIT_RANGE: RangeInclusive<u64> = 1_000..=10_000_000;
+const ENGINE_TIMEOUT_MS_RANGE: RangeInclusive<u64> = 50..=10_000;
+const MAX_CALLS_RANGE: RangeInclusive<u64> = 1..=100;
+const HTTP_TIMEOUT_MS_RANGE: RangeInclusive<u64> = 100..=30_000;
+const MAX_RESPONSE_KIB_RANGE: RangeInclusive<u64> = 1..=10_240;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum NumericSetting {
+    OpLimit,
+    EngineTimeoutMs,
+    MaxCalls,
+    HttpTimeoutMs,
+    MaxResponseKib,
+}
+
+impl NumericSetting {
+    const ALL: [NumericSetting; 5] = [
+        NumericSetting::OpLimit,
+        NumericSetting::EngineTimeoutMs,
+        NumericSetting::MaxCalls,
+        NumericSetting::HttpTimeoutMs,
+        NumericSetting::MaxResponseKib,
+    ];
+
+    pub fn range(self) -> RangeInclusive<u64> {
+        match self {
+            NumericSetting::OpLimit => OP_LIMIT_RANGE,
+            NumericSetting::EngineTimeoutMs => ENGINE_TIMEOUT_MS_RANGE,
+            NumericSetting::MaxCalls => MAX_CALLS_RANGE,
+            NumericSetting::HttpTimeoutMs => HTTP_TIMEOUT_MS_RANGE,
+            NumericSetting::MaxResponseKib => MAX_RESPONSE_KIB_RANGE,
+        }
+    }
+
+    pub fn storage_key(self) -> &'static str {
+        match self {
+            NumericSetting::OpLimit => reserved_keys::SCRIPT_OP_LIMIT,
+            NumericSetting::EngineTimeoutMs => reserved_keys::SCRIPT_TIMEOUT_MS,
+            NumericSetting::MaxCalls => reserved_keys::SCRIPT_HTTP_MAX_CALLS,
+            NumericSetting::HttpTimeoutMs => reserved_keys::SCRIPT_HTTP_TIMEOUT_MS,
+            NumericSetting::MaxResponseKib => reserved_keys::SCRIPT_HTTP_MAX_RESPONSE_BYTES,
+        }
+    }
+
+    pub fn stored_value_from_text(self, text: &str) -> Option<u64> {
+        let value = text
+            .trim()
+            .parse::<u64>()
+            .ok()
+            .filter(|v| self.range().contains(v))?;
+        Some(match self {
+            NumericSetting::MaxResponseKib => value * BYTES_PER_KIB,
+            _ => value,
+        })
+    }
+
+    pub fn display_from_stored(self, stored: u64) -> u64 {
+        match self {
+            NumericSetting::MaxResponseKib => stored / BYTES_PER_KIB,
+            _ => stored,
+        }
+    }
+
+    fn label(self) -> String {
+        match self {
+            NumericSetting::OpLimit => tr!("settings_scripting_op_limit_label"),
+            NumericSetting::EngineTimeoutMs => tr!("settings_scripting_engine_timeout_label"),
+            NumericSetting::MaxCalls => tr!("settings_scripting_max_calls_label"),
+            NumericSetting::HttpTimeoutMs => tr!("settings_scripting_http_timeout_label"),
+            NumericSetting::MaxResponseKib => tr!("settings_scripting_max_response_label"),
+        }
+    }
+
+    fn hint(self) -> String {
+        match self {
+            NumericSetting::OpLimit => tr!("settings_scripting_op_limit_hint"),
+            NumericSetting::EngineTimeoutMs => tr!("settings_scripting_engine_timeout_hint"),
+            NumericSetting::MaxCalls => tr!("settings_scripting_max_calls_hint"),
+            NumericSetting::HttpTimeoutMs => tr!("settings_scripting_http_timeout_hint"),
+            NumericSetting::MaxResponseKib => tr!("settings_scripting_max_response_hint"),
+        }
+    }
+
+    fn range_error(self) -> String {
+        let range = self.range();
+        tr!(
+            "settings_scripting_range_error",
+            min = range.start().to_string(),
+            max = range.end().to_string()
+        )
+    }
+}
+
+struct NumericField {
+    setting: NumericSetting,
+    input: Entity<TextInput>,
+    debounce: Debounced,
+    invalid: bool,
+}
 
 struct ScriptingSnapshot {
     allowed_domains: Vec<String>,
-    max_calls_per_script: u32,
-    http_timeout_ms: u32,
     allow_local: bool,
     core_allow_local: bool,
-    max_response_bytes: u32,
-    op_limit: u64,
-    engine_timeout_ms: u64,
-}
-
-struct SavePayload {
-    allowed_domains: Vec<String>,
-    max_calls: u32,
-    http_timeout_ms: u32,
-    allow_local: bool,
-    core_allow_local: bool,
-    max_response_bytes: u32,
-    op_limit: u64,
-    engine_timeout_ms: u64,
+    stored_numbers: [(NumericSetting, u64); 5],
 }
 
 pub struct SettingsScriptingView {
@@ -50,13 +138,7 @@ pub struct SettingsScriptingView {
     allowed_domains: Vec<String>,
     allow_local: bool,
     core_allow_local: bool,
-    loading: bool,
-    save_state: SaveState,
-    op_limit: Entity<TextInput>,
-    engine_timeout: Entity<TextInput>,
-    max_calls: Entity<TextInput>,
-    http_timeout: Entity<TextInput>,
-    max_response_kib: Entity<TextInput>,
+    numeric: Vec<NumericField>,
     domain_draft: Entity<TextInput>,
     _subs: Vec<Subscription>,
 }
@@ -68,39 +150,38 @@ impl SettingsScriptingView {
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
-        let http = ScriptHttpConfig::default();
-        let engine = EngineConfig::default();
+        let defaults = snapshot_defaults();
 
-        let op_limit = numeric_input("100000", &engine.op_limit.to_string(), palette, cx);
-        let engine_timeout = numeric_input("500", &engine.wall_time_ms.to_string(), palette, cx);
-        let max_calls = numeric_input("10", &http.max_calls_per_script.to_string(), palette, cx);
-        let http_timeout = numeric_input("5000", &http.timeout_ms.to_string(), palette, cx);
-        let max_response_kib = numeric_input(
-            "1024",
-            &(http.max_response_bytes / 1024).to_string(),
-            palette,
-            cx,
-        );
+        let mut subs = Vec::new();
+        let mut numeric = Vec::with_capacity(NumericSetting::ALL.len());
+        for (setting, stored) in defaults.stored_numbers {
+            let input = cx.new(|cx| {
+                let mut input = TextInput::new("", cx)
+                    .with_palette(palette)
+                    .with_font_size(FONT_SM);
+                input.set_content(setting.display_from_stored(stored).to_string(), cx);
+                input
+            });
+            subs.push(
+                cx.subscribe(&input, move |this, _input, event: &InputEvent, cx| {
+                    if let InputEvent::Changed(text) | InputEvent::Submitted(text) = event {
+                        this.commit_numeric(setting, text.as_ref(), cx);
+                    }
+                }),
+            );
+            numeric.push(NumericField {
+                setting,
+                input,
+                debounce: Debounced::new(SLIDER_PERSIST_DEBOUNCE),
+                invalid: false,
+            });
+        }
+
         let domain_draft = cx.new(|cx| {
             TextInput::new(tr!("settings_scripting_domains_placeholder"), cx)
                 .with_palette(palette)
                 .with_font_size(FONT_SM)
         });
-
-        let mut subs = Vec::new();
-        for input in [
-            &op_limit,
-            &engine_timeout,
-            &max_calls,
-            &http_timeout,
-            &max_response_kib,
-        ] {
-            subs.push(cx.subscribe(input, |this, _input, event: &InputEvent, cx| {
-                if let InputEvent::Changed(_) = event {
-                    this.mark_unsaved(cx);
-                }
-            }));
-        }
         subs.push(
             cx.subscribe(&domain_draft, |this, _input, event: &InputEvent, cx| {
                 if let InputEvent::Submitted(_) = event {
@@ -112,16 +193,10 @@ impl SettingsScriptingView {
         let mut view = Self {
             backend,
             rt_handle,
-            allowed_domains: http.allowed_domains,
-            allow_local: http.allow_local,
-            core_allow_local: false,
-            loading: false,
-            save_state: SaveState::default(),
-            op_limit,
-            engine_timeout,
-            max_calls,
-            http_timeout,
-            max_response_kib,
+            allowed_domains: defaults.allowed_domains,
+            allow_local: defaults.allow_local,
+            core_allow_local: defaults.core_allow_local,
+            numeric,
             domain_draft,
             _subs: subs,
         };
@@ -129,53 +204,91 @@ impl SettingsScriptingView {
         view
     }
 
-    fn mark_unsaved(&mut self, cx: &mut Context<Self>) {
-        self.save_state.mark_dirty();
-        cx.notify();
+    fn settings_repo(&self) -> Arc<dyn SettingsRepo> {
+        Arc::clone(&self.backend) as Arc<dyn SettingsRepo>
     }
 
     fn load(&mut self, cx: &mut Context<Self>) {
-        self.loading = true;
-        self.save_state = SaveState::Saved;
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         async_bridge::run_async(
             &self.rt_handle,
-            load_scripting_settings(repo),
-            |this, result, cx| this.apply_loaded(result, cx),
+            load_scripting_settings(self.settings_repo()),
+            |this, snapshot, cx| this.apply_loaded(snapshot, cx),
             cx,
         );
-        cx.notify();
     }
 
-    fn apply_loaded(&mut self, result: Result<ScriptingSnapshot, String>, cx: &mut Context<Self>) {
-        self.loading = false;
-        match result {
-            Ok(snap) => {
-                self.allowed_domains = snap.allowed_domains;
-                self.allow_local = snap.allow_local;
-                self.core_allow_local = snap.core_allow_local;
-                self.op_limit
-                    .update(cx, |i, cx| i.set_content(snap.op_limit.to_string(), cx));
-                self.engine_timeout.update(cx, |i, cx| {
-                    i.set_content(snap.engine_timeout_ms.to_string(), cx)
+    fn apply_loaded(&mut self, snapshot: ScriptingSnapshot, cx: &mut Context<Self>) {
+        self.allowed_domains = snapshot.allowed_domains;
+        self.allow_local = snapshot.allow_local;
+        self.core_allow_local = snapshot.core_allow_local;
+        for (setting, stored) in snapshot.stored_numbers {
+            if let Some(field) = self.numeric.iter_mut().find(|f| f.setting == setting) {
+                field.invalid = false;
+                let text = setting.display_from_stored(stored).to_string();
+                field.input.update(cx, |input, cx| {
+                    input.set_content(text, cx);
+                    input.set_invalid(false, cx);
                 });
-                self.max_calls.update(cx, |i, cx| {
-                    i.set_content(snap.max_calls_per_script.to_string(), cx)
-                });
-                self.http_timeout.update(cx, |i, cx| {
-                    i.set_content(snap.http_timeout_ms.to_string(), cx)
-                });
-                self.max_response_kib.update(cx, |i, cx| {
-                    i.set_content((snap.max_response_bytes / 1024).to_string(), cx)
-                });
-                self.save_state = SaveState::Saved;
-            }
-            Err(message) => {
-                tracing::warn!(error = %message, "failed to load scripting settings");
-                self.save_state = SaveState::Error(message.into());
             }
         }
         cx.notify();
+    }
+
+    fn commit_numeric(&mut self, setting: NumericSetting, text: &str, cx: &mut Context<Self>) {
+        let parsed = setting.stored_value_from_text(text);
+        let repo = self.settings_repo();
+        let handle = self.rt_handle.clone();
+        let Some(field) = self.numeric.iter_mut().find(|f| f.setting == setting) else {
+            return;
+        };
+        field.invalid = parsed.is_none();
+        let invalid = field.invalid;
+        field
+            .input
+            .update(cx, |input, cx| input.set_invalid(invalid, cx));
+        if let Some(stored) = parsed {
+            field.debounce.schedule_reporting(
+                &handle,
+                tr!("settings_scripting_persist_failed"),
+                async move {
+                    repo.set_string(setting.storage_key(), &stored.to_string())
+                        .await
+                },
+                ErrorSink::Toast,
+                cx,
+            );
+        }
+        cx.notify();
+    }
+
+    fn persist_domains(&self, cx: &mut Context<Self>) {
+        let repo = self.settings_repo();
+        let domains = self.allowed_domains.clone();
+        async_bridge::report_failure(
+            &self.rt_handle,
+            async move {
+                set_json_setting(
+                    repo.as_ref(),
+                    reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS,
+                    &domains,
+                )
+                .await
+            },
+            ErrorSink::Toast,
+            tr!("settings_scripting_persist_failed"),
+            cx,
+        );
+    }
+
+    fn persist_bool(&self, key: &'static str, value: bool, cx: &mut Context<Self>) {
+        let repo = self.settings_repo();
+        async_bridge::report_failure(
+            &self.rt_handle,
+            async move { set_bool_setting(repo.as_ref(), key, value).await },
+            ErrorSink::Toast,
+            tr!("settings_scripting_persist_failed"),
+            cx,
+        );
     }
 
     fn add_domain(&mut self, cx: &mut Context<Self>) {
@@ -183,7 +296,7 @@ impl SettingsScriptingView {
         if !draft.is_empty() && !self.allowed_domains.contains(&draft) {
             self.allowed_domains.push(draft);
             self.domain_draft.update(cx, |i, cx| i.clear(cx));
-            self.save_state.mark_dirty();
+            self.persist_domains(cx);
         }
         cx.notify();
     }
@@ -191,109 +304,51 @@ impl SettingsScriptingView {
     fn remove_domain(&mut self, index: usize, cx: &mut Context<Self>) {
         if index < self.allowed_domains.len() {
             self.allowed_domains.remove(index);
-            self.save_state.mark_dirty();
+            self.persist_domains(cx);
         }
         cx.notify();
     }
 
     fn toggle_allow_local(&mut self, cx: &mut Context<Self>) {
         self.allow_local = !self.allow_local;
-        self.save_state.mark_dirty();
+        self.persist_bool(reserved_keys::SCRIPT_HTTP_ALLOW_LOCAL, self.allow_local, cx);
         cx.notify();
     }
 
     fn toggle_core_allow_local(&mut self, cx: &mut Context<Self>) {
         self.core_allow_local = !self.core_allow_local;
-        self.save_state.mark_dirty();
-        cx.notify();
-    }
-
-    fn save(&mut self, cx: &mut Context<Self>) {
-        let max_calls = self
-            .max_calls
-            .read(cx)
-            .content()
-            .parse::<u32>()
-            .ok()
-            .filter(|v| (1..=100).contains(v))
-            .unwrap_or(10);
-        let http_timeout_ms = self
-            .http_timeout
-            .read(cx)
-            .content()
-            .parse::<u32>()
-            .ok()
-            .filter(|v| (100..=30_000).contains(v))
-            .unwrap_or(5_000);
-        let max_response_bytes = self
-            .max_response_kib
-            .read(cx)
-            .content()
-            .parse::<u32>()
-            .ok()
-            .map(|kib| kib.saturating_mul(1024))
-            .filter(|v| (1024..=10_485_760).contains(v))
-            .unwrap_or(1_048_576);
-        let engine_defaults = EngineConfig::default();
-        let op_limit = self
-            .op_limit
-            .read(cx)
-            .content()
-            .parse::<u64>()
-            .ok()
-            .filter(|v| (1_000..=10_000_000).contains(v))
-            .unwrap_or(engine_defaults.op_limit);
-        let engine_timeout_ms = self
-            .engine_timeout
-            .read(cx)
-            .content()
-            .parse::<u64>()
-            .ok()
-            .filter(|v| (50..=10_000).contains(v))
-            .unwrap_or(engine_defaults.wall_time_ms);
-
-        let payload = SavePayload {
-            allowed_domains: self.allowed_domains.clone(),
-            max_calls,
-            http_timeout_ms,
-            allow_local: self.allow_local,
-            core_allow_local: self.core_allow_local,
-            max_response_bytes,
-            op_limit,
-            engine_timeout_ms,
-        };
-
-        self.save_state = SaveState::Saving;
-
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        async_bridge::run_async(
-            &self.rt_handle,
-            do_save(repo, payload),
-            |this, result, cx| this.apply_save_result(result, cx),
+        self.persist_bool(
+            reserved_keys::CORE_HTTP_ALLOW_LOCAL,
+            self.core_allow_local,
             cx,
         );
         cx.notify();
     }
 
-    fn apply_save_result(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
-        match result {
-            Ok(()) => self.save_state = SaveState::Saved,
-            Err(message) => {
-                tracing::warn!(error = %message, "failed to save scripting settings");
-                self.save_state = SaveState::Error(message.into());
-            }
-        }
-        cx.notify();
-    }
-
-    fn header(&self, palette: &ForgePalette) -> SettingsPaneHeader {
-        SettingsPaneHeader::new(SettingsSection::Scripting).trailing(
-            div()
-                .flex()
-                .min_w(px(0.0))
-                .overflow_hidden()
-                .child(save_indicator(&self.save_state, palette)),
-        )
+    fn numeric_row(
+        &self,
+        setting: NumericSetting,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> Option<SettingRow> {
+        let field = self.numeric.iter().find(|f| f.setting == setting)?;
+        let hint = if field.invalid {
+            setting.range_error()
+        } else {
+            setting.hint()
+        };
+        let row = setting_row(
+            setting.label(),
+            Some(SharedString::from(hint)),
+            div().w(NUMERIC_INPUT_WIDTH).child(field.input.clone()),
+            palette,
+            density,
+        );
+        Some(if field.invalid {
+            row.hint_color(palette.random)
+        } else {
+            row
+        })
     }
 
     fn domain_list(
@@ -375,6 +430,98 @@ impl SettingsScriptingView {
                     .child(icon(Icon::X, px(11.0), palette.text_muted)),
             )
     }
+
+    fn engine_block(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+        let rows = setting_rows(palette)
+            .rows(
+                [NumericSetting::OpLimit, NumericSetting::EngineTimeoutMs]
+                    .into_iter()
+                    .filter_map(|s| self.numeric_row(s, palette, density))
+                    .map(IntoElement::into_any_element),
+            )
+            .in_card(palette);
+        setting_block(
+            tr!("settings_scripting_engine_section"),
+            None,
+            rows,
+            palette,
+        )
+        .into_any_element()
+    }
+
+    fn script_http_block(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let rows = setting_rows(palette)
+            .row(
+                setting_row(
+                    tr!("settings_scripting_allowed_domains_label"),
+                    Some(tr!("settings_scripting_allowed_domains_hint").into()),
+                    self.domain_list(palette, density, cx),
+                    palette,
+                    density,
+                )
+                .stacked(),
+            )
+            .rows(
+                [
+                    NumericSetting::MaxCalls,
+                    NumericSetting::HttpTimeoutMs,
+                    NumericSetting::MaxResponseKib,
+                ]
+                .into_iter()
+                .filter_map(|s| self.numeric_row(s, palette, density))
+                .map(IntoElement::into_any_element),
+            )
+            .row(setting_row(
+                tr!("settings_scripting_allow_local_label"),
+                Some(tr!("settings_scripting_allow_local_description").into()),
+                toggle(self.allow_local, palette).on_click(
+                    "settings-scripting-allow-local",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_allow_local(cx)),
+                ),
+                palette,
+                density,
+            ))
+            .in_card(palette);
+        setting_block(
+            tr!("settings_scripting_http_section"),
+            None,
+            with_ssrf_warning(rows, self.allow_local, palette, density),
+            palette,
+        )
+        .into_any_element()
+    }
+
+    fn http_action_block(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let rows = setting_rows(palette)
+            .row(setting_row(
+                tr!("settings_scripting_core_allow_local_label"),
+                Some(tr!("settings_scripting_core_allow_local_description").into()),
+                toggle(self.core_allow_local, palette).on_click(
+                    "settings-scripting-core-allow-local",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_core_allow_local(cx)),
+                ),
+                palette,
+                density,
+            ))
+            .in_card(palette);
+        setting_block(
+            tr!("settings_scripting_http_action_section"),
+            None,
+            with_ssrf_warning(rows, self.core_allow_local, palette, density),
+            palette,
+        )
+        .into_any_element()
+    }
 }
 
 impl Render for SettingsScriptingView {
@@ -382,219 +529,74 @@ impl Render for SettingsScriptingView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let engine_rows = setting_rows(&palette)
-            .row(numeric_row(
-                tr!("settings_scripting_op_limit_label"),
-                tr!("settings_scripting_op_limit_hint"),
-                &self.op_limit,
-                &palette,
-                density,
-            ))
-            .row(numeric_row(
-                tr!("settings_scripting_engine_timeout_label"),
-                tr!("settings_scripting_engine_timeout_hint"),
-                &self.engine_timeout,
-                &palette,
-                density,
-            ))
-            .in_card(&palette);
-
-        let http_rows = setting_rows(&palette)
-            .row(
-                setting_row(
-                    tr!("settings_scripting_allowed_domains_label"),
-                    Some(tr!("settings_scripting_allowed_domains_hint").into()),
-                    self.domain_list(&palette, density, cx),
-                    &palette,
-                    density,
-                )
-                .stacked(),
-            )
-            .row(numeric_row(
-                tr!("settings_scripting_max_calls_label"),
-                tr!("settings_scripting_max_calls_hint"),
-                &self.max_calls,
-                &palette,
-                density,
-            ))
-            .row(numeric_row(
-                tr!("settings_scripting_http_timeout_label"),
-                tr!("settings_scripting_http_timeout_hint"),
-                &self.http_timeout,
-                &palette,
-                density,
-            ))
-            .row(numeric_row(
-                tr!("settings_scripting_max_response_label"),
-                tr!("settings_scripting_max_response_hint"),
-                &self.max_response_kib,
-                &palette,
-                density,
-            ))
-            .row(setting_row(
-                tr!("settings_scripting_allow_local_label"),
-                Some(tr!("settings_scripting_allow_local_description").into()),
-                toggle(self.allow_local, &palette).on_click(
-                    "settings-scripting-allow-local",
-                    cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_allow_local(cx)),
-                ),
-                &palette,
-                density,
-            ))
-            .row(setting_row(
-                tr!("settings_scripting_core_allow_local_label"),
-                Some(tr!("settings_scripting_core_allow_local_description").into()),
-                toggle(self.core_allow_local, &palette).on_click(
-                    "settings-scripting-core-allow-local",
-                    cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_core_allow_local(cx)),
-                ),
-                &palette,
-                density,
-            ))
-            .in_card(&palette);
-
-        let mut http_content = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(http_rows);
-        if self.allow_local || self.core_allow_local {
-            http_content = http_content.child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.random)
-                    .child(tr!("settings_scripting_ssrf_warning")),
-            );
-        }
-
-        let save_btn = primary_button(tr!("common_save"), &palette).on_click(
-            "settings-scripting-save",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.save(cx)),
-        );
-
         div()
             .flex()
             .flex_col()
-            .child(self.header(&palette))
+            .child(SettingsPaneHeader::new(SettingsSection::Scripting))
             .child(setting_groups([
-                setting_block(
-                    tr!("settings_scripting_engine_section"),
-                    None,
-                    engine_rows,
-                    &palette,
-                )
-                .into_any_element(),
-                setting_block(
-                    tr!("settings_scripting_http_section"),
-                    None,
-                    http_content,
-                    &palette,
-                )
-                .into_any_element(),
-                div().flex().child(save_btn).into_any_element(),
+                self.engine_block(&palette, density),
+                self.script_http_block(&palette, density, cx),
+                self.http_action_block(&palette, density, cx),
             ]))
     }
 }
 
-fn numeric_input(
-    placeholder: &'static str,
-    seed: &str,
-    palette: ForgePalette,
-    cx: &mut Context<SettingsScriptingView>,
-) -> Entity<TextInput> {
-    cx.new(|cx| {
-        let mut input = TextInput::new(placeholder, cx)
-            .with_palette(palette)
-            .with_font_size(FONT_SM);
-        if !seed.is_empty() {
-            input.set_content(seed.to_owned(), cx);
-        }
-        input
-    })
-}
-
-fn numeric_row(
-    label: impl Into<SharedString>,
-    hint: impl Into<SharedString>,
-    input: &Entity<TextInput>,
+fn with_ssrf_warning(
+    rows: impl IntoElement,
+    allow_local: bool,
     palette: &ForgePalette,
     density: Density,
-) -> SettingRow {
-    setting_row(
-        label,
-        Some(hint.into()),
-        div().w(NUMERIC_INPUT_WIDTH).child(input.clone()),
-        palette,
-        density,
-    )
+) -> impl IntoElement {
+    let mut content = div()
+        .flex()
+        .flex_col()
+        .gap(spacing(Spacing::Xs, density))
+        .child(rows);
+    if allow_local {
+        content = content.child(
+            div()
+                .font_family(body_family())
+                .text_size(FONT_XS)
+                .text_color(palette.random)
+                .child(tr!("settings_scripting_ssrf_warning")),
+        );
+    }
+    content
 }
 
-async fn load_scripting_settings(repo: Arc<dyn SettingsRepo>) -> Result<ScriptingSnapshot, String> {
+fn snapshot_from(
+    http: ScriptHttpConfig,
+    engine: EngineConfig,
+    core_allow_local: bool,
+) -> ScriptingSnapshot {
+    ScriptingSnapshot {
+        stored_numbers: [
+            (NumericSetting::OpLimit, engine.op_limit),
+            (NumericSetting::EngineTimeoutMs, engine.wall_time_ms),
+            (
+                NumericSetting::MaxCalls,
+                u64::from(http.max_calls_per_script),
+            ),
+            (NumericSetting::HttpTimeoutMs, u64::from(http.timeout_ms)),
+            (
+                NumericSetting::MaxResponseKib,
+                u64::from(http.max_response_bytes),
+            ),
+        ],
+        allowed_domains: http.allowed_domains,
+        allow_local: http.allow_local,
+        core_allow_local,
+    }
+}
+
+fn snapshot_defaults() -> ScriptingSnapshot {
+    snapshot_from(ScriptHttpConfig::default(), EngineConfig::default(), false)
+}
+
+async fn load_scripting_settings(repo: Arc<dyn SettingsRepo>) -> ScriptingSnapshot {
     let http = load_script_http_config(repo.as_ref()).await;
     let engine = load_script_engine_config(repo.as_ref()).await;
     let core_allow_local =
         get_bool_setting(repo.as_ref(), reserved_keys::CORE_HTTP_ALLOW_LOCAL, false).await;
-    Ok(ScriptingSnapshot {
-        allowed_domains: http.allowed_domains,
-        max_calls_per_script: http.max_calls_per_script,
-        http_timeout_ms: http.timeout_ms,
-        allow_local: http.allow_local,
-        core_allow_local,
-        max_response_bytes: http.max_response_bytes,
-        op_limit: engine.op_limit,
-        engine_timeout_ms: engine.wall_time_ms,
-    })
-}
-
-async fn do_save(repo: Arc<dyn SettingsRepo>, p: SavePayload) -> Result<(), String> {
-    set_json_setting(
-        repo.as_ref(),
-        reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS,
-        &p.allowed_domains,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    repo.set_string(
-        reserved_keys::SCRIPT_HTTP_MAX_CALLS,
-        &p.max_calls.to_string(),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    repo.set_string(
-        reserved_keys::SCRIPT_HTTP_TIMEOUT_MS,
-        &p.http_timeout_ms.to_string(),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    set_bool_setting(
-        repo.as_ref(),
-        reserved_keys::SCRIPT_HTTP_ALLOW_LOCAL,
-        p.allow_local,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    set_bool_setting(
-        repo.as_ref(),
-        reserved_keys::CORE_HTTP_ALLOW_LOCAL,
-        p.core_allow_local,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    repo.set_string(
-        reserved_keys::SCRIPT_HTTP_MAX_RESPONSE_BYTES,
-        &p.max_response_bytes.to_string(),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    repo.set_string(reserved_keys::SCRIPT_OP_LIMIT, &p.op_limit.to_string())
-        .await
-        .map_err(|e| e.to_string())?;
-    repo.set_string(
-        reserved_keys::SCRIPT_TIMEOUT_MS,
-        &p.engine_timeout_ms.to_string(),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    Ok(())
+    snapshot_from(http, engine, core_allow_local)
 }

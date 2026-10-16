@@ -765,7 +765,7 @@ triggers_create_btn = Create
 
 ## Settings → Scripting pane
 
-settings_scripting_title = Scripting (Rhai)
+settings_scripting_title = Scripting & HTTP
 settings_scripting_engine_section = Engine limits
 settings_scripting_op_limit_label = Op-count limit
 settings_scripting_op_limit_hint = Range 1 000 - 10 000 000 (default 100 000)
@@ -783,9 +783,12 @@ settings_scripting_max_response_label = Max response size (KiB)
 settings_scripting_max_response_hint = Range 1 - 10 240 (default 1 024 KiB = 1 MiB)
 settings_scripting_allow_local_label = Allow localhost / private IPs
 settings_scripting_allow_local_description = Disables SSRF protections. Only enable for local development.
-settings_scripting_core_allow_local_label = Allow localhost / private IPs (HTTP action)
+settings_scripting_core_allow_local_label = Allow localhost / private IPs
 settings_scripting_core_allow_local_description = Disables SSRF protections for the HTTP request action. Only enable for local development.
 settings_scripting_ssrf_warning = WARNING - disables SSRF protections. Only enable for local development.
+settings_scripting_http_action_section = HTTP action
+settings_scripting_range_error = Allowed: { $min } - { $max }
+settings_scripting_persist_failed = Could not save the Scripting & HTTP setting. It will revert on restart.
 
 ## Actions trigger picker - category labels
 

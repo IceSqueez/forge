@@ -1,13 +1,19 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+mod legacy_fixture;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use forge_storage::{DataProvider, DatabaseFileSchema, EXPECTED_SCHEMA_VERSION};
-use forge_storage_sqlite::{
-    SqliteBackend, SqliteDatabaseFileSchema, SqliteStorageError, apply_migrations, connect_pools,
-    read_applied_schema_version,
+use forge_storage::{
+    CredentialId, CredentialsRepo, DataProvider, DatabaseFileSchema, EXPECTED_SCHEMA_VERSION,
+    StoredDatabase, StoredSchema,
 };
+use forge_storage_sqlite::{
+    SqliteBackend, SqliteCredentialsRepo, SqliteDatabaseFileSchema, SqliteStorageError,
+    apply_migrations, connect_pools, inspect_database_file, read_applied_schema_version,
+};
+use legacy_fixture::{LEGACY_HEAD, legacy_db};
 use tempfile::TempDir;
 
 const TEST_KEY: [u8; 32] = [0x5a; 32];
@@ -142,4 +148,94 @@ fn garbage_file_yields_error_without_panicking() {
     let found = read_applied_schema_version(&db);
 
     assert!(matches!(found, Err(SqliteStorageError::Sqlx(_))));
+}
+
+fn inspected(db: &Path) -> StoredDatabase {
+    inspect_database_file(db).unwrap().unwrap()
+}
+
+#[test]
+fn inspect_reports_a_migrated_database_as_current_without_credentials() {
+    let dir = tempfile::tempdir().unwrap();
+    migrate_and_shut_down(&dir);
+
+    assert_eq!(
+        inspected(&db_in(&dir)),
+        StoredDatabase {
+            schema: StoredSchema::Current {
+                version: EXPECTED_SCHEMA_VERSION
+            },
+            holds_credentials: false,
+        }
+    );
+}
+
+#[test]
+fn inspect_reports_holding_credentials_once_one_is_stored() {
+    let dir = tempfile::tempdir().unwrap();
+    migrate_and_shut_down(&dir);
+    runtime().block_on(async {
+        let pool = forge_storage_sqlite::connect(&url_of(&db_in(&dir)))
+            .await
+            .unwrap();
+        SqliteCredentialsRepo::new_with_key(pool.clone(), TEST_KEY)
+            .store(&CredentialId::new("twitch:broadcaster"), "token")
+            .await
+            .unwrap();
+        pool.close().await;
+    });
+
+    assert!(inspected(&db_in(&dir)).holds_credentials);
+}
+
+#[test]
+fn inspect_classifies_legacy_journals_by_completeness() {
+    for (up_to, expected) in [
+        (
+            LEGACY_HEAD - 2,
+            StoredSchema::PreBaseline {
+                found: u32::try_from(LEGACY_HEAD - 2).unwrap(),
+            },
+        ),
+        (
+            LEGACY_HEAD,
+            StoredSchema::AdoptableLegacy {
+                version: u32::try_from(LEGACY_HEAD).unwrap(),
+            },
+        ),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let db = db_in(&dir);
+        runtime().block_on(async { legacy_db(&db, up_to).await.close().await });
+
+        assert_eq!(
+            inspected(&db).schema,
+            expected,
+            "legacy chain up to {up_to}"
+        );
+    }
+}
+
+#[test]
+fn inspect_reports_tables_without_a_journal_as_unrecognized() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db_in(&dir);
+    runtime().block_on(async {
+        let pools = connect_pools(&url_of(&db)).await.unwrap();
+        sqlx::query("CREATE TABLE unrelated (id INTEGER PRIMARY KEY)")
+            .execute(pools.writer())
+            .await
+            .unwrap();
+        pools.close().await;
+    });
+
+    assert_eq!(inspected(&db).schema, StoredSchema::Unrecognized);
+}
+
+#[test]
+fn inspect_of_a_missing_file_is_none_and_creates_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+
+    assert!(matches!(inspect_database_file(&db_in(&dir)), Ok(None)));
+    assert!(entries(&dir).is_empty());
 }

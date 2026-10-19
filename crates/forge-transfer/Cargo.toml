@@ -21,3 +21,7 @@ thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 ulid = { workspace = true }
+
+[dev-dependencies]
+forge-storage-sqlite = { path = "../forge-storage-sqlite" }
+tempfile = { workspace = true }

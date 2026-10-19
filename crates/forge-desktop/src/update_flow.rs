@@ -358,7 +358,7 @@ impl UpdateFlow {
         match result {
             Ok(()) => {
                 if let Some(exit) = cx.try_global::<ExitHandoff>() {
-                    exit.arm(self.data_dir.clone());
+                    exit.arm_update(self.data_dir.clone());
                 }
                 tracing::info!(version = %candidate.version, ?mode, "update handed off");
                 self.stage = UpdateStage::HandedOff { candidate, mode };

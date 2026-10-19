@@ -107,6 +107,7 @@ mod restore_confirm;
 mod restore_flow;
 mod restore_passphrase_modal;
 mod restore_problem;
+mod restore_relaunch;
 mod root;
 mod routed_sink;
 mod run_history_modal;
@@ -222,6 +223,14 @@ fn parse_startup_request(mut args: impl Iterator<Item = String>) -> Result<Start
                 );
             }
             forge_update::CANDIDATE_FLAG => {}
+            restore_relaunch::PREVIOUS_INSTANCE_FLAG => {
+                args.next().ok_or_else(|| {
+                    format!(
+                        "{} requires a value",
+                        restore_relaunch::PREVIOUS_INSTANCE_FLAG
+                    )
+                })?;
+            }
             other => return Err(format!("unrecognized argument: {other}")),
         }
     }
@@ -356,6 +365,17 @@ fn main() {
     let (log_guard, log_tail) = init_tracing();
     if let Some(error) = deferred_update_error {
         tracing::warn!(error = %error, "pending update could not be resumed at start");
+    }
+
+    if let Some(previous) = restore_relaunch::previous_instance(std::env::args().skip(1)) {
+        if restore_relaunch::await_previous_exit(previous) {
+            tracing::info!(previous, "previous forge instance exited");
+        } else {
+            tracing::warn!(
+                previous,
+                "previous forge instance still running after the wait"
+            );
+        }
     }
 
     let endpoints = match forge_platform_core::PlatformEndpoints::from_env() {

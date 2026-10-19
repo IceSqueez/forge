@@ -8,6 +8,7 @@ use gpui::{App, Context, Entity, EventEmitter, Global};
 use tokio::runtime::Handle;
 
 use crate::async_bridge::run_async;
+use crate::update_exit::ExitHandoff;
 use crate::update_flow::UpdateFlow;
 
 pub enum RestoreCloseEvent {
@@ -51,6 +52,9 @@ impl RestoreClose {
 
     pub fn request(&mut self, staged: StagedRestore, cx: &mut Context<Self>) {
         self.pending = Some(staged);
+        if let Some(exit) = cx.try_global::<ExitHandoff>() {
+            exit.arm_restore();
+        }
         cx.emit(RestoreCloseEvent::CloseRequested);
         cx.notify();
     }
@@ -59,6 +63,9 @@ impl RestoreClose {
         let Some(staged) = self.pending.take() else {
             return;
         };
+        if let Some(exit) = cx.try_global::<ExitHandoff>() {
+            exit.disarm_restore();
+        }
         let data_dir = self.data_dir.clone();
         run_async(
             &self.rt_handle,

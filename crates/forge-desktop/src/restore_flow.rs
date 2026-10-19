@@ -11,6 +11,7 @@ use gpui::{ClickEvent, Context, Entity, Subscription, Window, div, prelude::*};
 use tokio::runtime::Handle;
 
 use crate::async_bridge::{self, DIALOG_CANCELLED, DialogFilter};
+use crate::import_busy::{busy_overlay, refuse_while_busy};
 use crate::restore_close::RestoreClose;
 use crate::restore_confirm::{ConfirmCard, ConfirmFacts};
 use crate::restore_passphrase_modal::{RestorePassphraseEvent, RestorePassphraseModal};
@@ -100,6 +101,7 @@ impl RestoreFlow {
 
     pub fn open(&mut self, bundle: PathBuf, cx: &mut Context<Self>) {
         if self.is_busy() {
+            refuse_while_busy(cx);
             return;
         }
         self.read(bundle, cx);
@@ -330,10 +332,13 @@ impl Render for RestoreFlow {
                 )
                 .into_any_element()
             }
-            RestoreStep::Idle
-            | RestoreStep::Picking
-            | RestoreStep::Reading
-            | RestoreStep::Staging => div().into_any_element(),
+            RestoreStep::Reading | RestoreStep::Staging => busy_overlay(
+                "restore-busy",
+                tr!("import_busy_restore_title"),
+                tr!("import_busy_restore_detail"),
+                &cx.palette(),
+            ),
+            RestoreStep::Idle | RestoreStep::Picking => div().into_any_element(),
         }
     }
 }

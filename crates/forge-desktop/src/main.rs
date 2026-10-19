@@ -62,6 +62,7 @@ mod hotkey_bindings;
 mod hotkeys_screen;
 mod hub_crumb;
 mod i18n;
+mod import_busy;
 mod in_flight_steps;
 mod instance_lock;
 mod integration_catalog;
@@ -157,6 +158,7 @@ mod test_support;
 mod titlebar;
 mod toasts;
 mod topics;
+mod transfer_flows;
 mod triggers_screen;
 mod tts;
 mod tts_dashboard;
@@ -421,6 +423,11 @@ fn main() {
                 std::process::exit(1);
             }
         };
+    if instance_lock.is_some()
+        && let Err(err) = forge_transfer::sweep_import_staging(&paths::data_dir())
+    {
+        tracing::warn!(error = %err, "leftover import staging could not be removed");
+    }
 
     let rt = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,

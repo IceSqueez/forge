@@ -12,9 +12,11 @@ use forge_transfer::{
 use gpui::{App, ClickEvent, Context, EventEmitter, Window, div, prelude::*};
 
 use crate::async_bridge;
+use crate::import_busy::{busy_overlay, refuse_while_busy};
 use crate::pack_import_live::{LiveRefresh, SetupLiveHandles, refresh_setup_live, voice_baseline};
 use crate::pack_services::PackServices;
 use crate::restore_close::RestoreClose;
+use crate::restore_problem::RestoreProblem;
 use crate::setup_confirm::{SetupConfirmCard, SetupCount, setup_counts};
 
 const SETUP_TOAST_DURATION: Duration = Duration::from_secs(10);
@@ -89,6 +91,7 @@ impl SetupImportFlow {
 
     pub fn open(&mut self, bundle: PathBuf, cx: &mut Context<Self>) {
         if self.is_busy() {
+            refuse_while_busy(cx);
             return;
         }
         self.step = SetupImportStep::Staging;
@@ -98,7 +101,7 @@ impl SetupImportFlow {
             async move {
                 stage_setup(bundle, data_dir)
                     .await
-                    .map_err(|error| error.to_string())
+                    .map_err(|error| RestoreProblem::of(&error).message())
             },
             |this, result, cx| this.staged(result, cx),
             cx,
@@ -335,10 +338,19 @@ async fn discard_quietly(staged: StagedSetup) {
 
 impl Render for SetupImportFlow {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let SetupImportStep::Confirming(confirming) = &self.step else {
-            return div().into_any_element();
-        };
         let palette = cx.palette();
+        let confirming = match &self.step {
+            SetupImportStep::Confirming(confirming) => confirming,
+            SetupImportStep::Staging => {
+                return busy_overlay(
+                    "setup-import-busy",
+                    tr!("import_busy_setup_title"),
+                    tr!("import_busy_setup_detail"),
+                    &palette,
+                );
+            }
+            SetupImportStep::Idle => return div().into_any_element(),
+        };
         let density = cx.density();
         let card = SetupConfirmCard {
             counts: &confirming.counts,

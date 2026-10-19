@@ -1,13 +1,30 @@
 use forge_components::tr;
-use forge_transfer::TransferError;
+use forge_transfer::{BundleKind, TransferError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RestoreProblem {
     NotABundle,
     UnknownKind,
-    NewerFormat { found: u32, supported: u32 },
-    NewerSchema { found: u32, supported: u32 },
-    SchemaTooOld { found: u32, release: &'static str },
+    KindMismatch {
+        expected: BundleKind,
+        found: BundleKind,
+    },
+    NewerDocuments {
+        found: u32,
+        supported: u32,
+    },
+    NewerFormat {
+        found: u32,
+        supported: u32,
+    },
+    NewerSchema {
+        found: u32,
+        supported: u32,
+    },
+    SchemaTooOld {
+        found: u32,
+        release: &'static str,
+    },
     UnrecognizedDatabase,
     UnknownEncryption,
     WrongPassphrase,
@@ -24,6 +41,15 @@ impl RestoreProblem {
         match error {
             TransferError::NotABundle => Self::NotABundle,
             TransferError::UnknownKind { .. } => Self::UnknownKind,
+            TransferError::KindMismatch { expected, found } => Self::KindMismatch {
+                expected: *expected,
+                found: *found,
+            },
+            TransferError::NewerPackDocuments { found, supported }
+            | TransferError::NewerSetupDocuments { found, supported } => Self::NewerDocuments {
+                found: *found,
+                supported: *supported,
+            },
             TransferError::NewerFormat { found, supported } => Self::NewerFormat {
                 found: *found,
                 supported: *supported,
@@ -59,6 +85,16 @@ impl RestoreProblem {
         match self {
             Self::NotABundle => tr!("restore_problem_not_a_bundle"),
             Self::UnknownKind => tr!("restore_problem_unknown_kind"),
+            Self::KindMismatch { expected, found } => tr!(
+                "restore_problem_kind_mismatch",
+                found = kind_name(*found),
+                expected = kind_name(*expected)
+            ),
+            Self::NewerDocuments { found, supported } => tr!(
+                "restore_problem_newer_documents",
+                found = found.to_string(),
+                supported = supported.to_string()
+            ),
             Self::NewerFormat { found, supported } => tr!(
                 "restore_problem_newer_format",
                 found = found.to_string(),
@@ -84,6 +120,14 @@ impl RestoreProblem {
             Self::Unavailable => tr!("restore_problem_unavailable"),
             Self::Failed(error) => tr!("restore_problem_failed", error = error.as_str()),
         }
+    }
+}
+
+fn kind_name(kind: BundleKind) -> String {
+    match kind {
+        BundleKind::Full => tr!("bundle_kind_full"),
+        BundleKind::Pack => tr!("bundle_kind_pack"),
+        BundleKind::Setup => tr!("bundle_kind_setup"),
     }
 }
 

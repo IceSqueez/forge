@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_components::{PushToast, ToastAction, ToastKind, tr};
+use forge_components::{ActivePresentation, PushToast, ToastAction, ToastKind, tr};
 use forge_transfer::{
     PackImportOutcome, PackImportPlan, PackImportRequest, StagedPack, TransferError,
     apply_pack_import, backups_dir, discard_staged_pack, plan_pack_import, stage_pack,
@@ -10,9 +10,11 @@ use forge_transfer::{
 use gpui::{Context, Entity, EventEmitter, Subscription, Window, div, prelude::*};
 
 use crate::async_bridge;
+use crate::import_busy::{busy_overlay, refuse_while_busy};
 use crate::pack_import_live::{LiveRefresh, LiveTargets, refresh_live};
 use crate::pack_import_modal::{PackHeader, PackImportModal, PackImportModalEvent, carry_choices};
 use crate::pack_services::PackServices;
+use crate::restore_problem::RestoreProblem;
 
 const PACK_TOAST_DURATION: Duration = Duration::from_secs(10);
 const STICKY: Duration = Duration::ZERO;
@@ -111,6 +113,7 @@ impl PackImportFlow {
 
     pub fn open(&mut self, bundle: PathBuf, cx: &mut Context<Self>) {
         if self.is_busy() {
+            refuse_while_busy(cx);
             return;
         }
         self.step = PackImportStep::Planning;
@@ -314,7 +317,7 @@ async fn stage_and_plan(
 ) -> Result<Planned, String> {
     let staged = stage_pack(bundle, data_dir)
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| RestoreProblem::of(&error).message())?;
     match services.load_source().await {
         Ok(source) => {
             let plan = plan_pack_import(&staged, &source.inventory, services.registries(&source));
@@ -388,7 +391,7 @@ async fn discard_quietly(staged: StagedPack) {
 }
 
 impl Render for PackImportFlow {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         match &self.step {
             PackImportStep::Previewing(preview) => div()
                 .absolute()
@@ -397,7 +400,13 @@ impl Render for PackImportFlow {
                 .size_full()
                 .child(preview.modal.clone())
                 .into_any_element(),
-            PackImportStep::Idle | PackImportStep::Planning => div().into_any_element(),
+            PackImportStep::Planning => busy_overlay(
+                "pack-import-busy",
+                tr!("import_busy_pack_title"),
+                tr!("import_busy_pack_detail"),
+                &cx.palette(),
+            ),
+            PackImportStep::Idle => div().into_any_element(),
         }
     }
 }

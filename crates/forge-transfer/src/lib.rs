@@ -23,6 +23,7 @@ mod safety_snapshot;
 mod setup;
 mod snapshot;
 mod stage;
+mod staging_sweep;
 
 pub use error::TransferError;
 pub use full_writer::{BackupDestination, FullBackupRequest, write_full_backup};
@@ -68,3 +69,4 @@ pub use stage::{
     RESTORE_STAGING_DIR_NAME, StageRequest, StagedRestore, discard_staged_restore,
     restore_staging_root, stage_full_restore,
 };
+pub use staging_sweep::sweep_import_staging;

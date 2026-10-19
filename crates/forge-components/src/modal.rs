@@ -4,7 +4,7 @@ use gpui::{
     Window, div, px,
 };
 
-use crate::icons::{Icon, icon};
+use crate::icons::{Icon, icon, spinner};
 use crate::palette::ForgePalette;
 use crate::text_input::{FocusNextField, FocusPreviousField};
 use crate::tokens::{
@@ -286,4 +286,30 @@ impl RenderOnce for Modal {
             .child(body)
             .children(footer)
     }
+}
+
+const BUSY_GLYPH: Pixels = px(16.0);
+
+pub fn busy_modal(
+    id: impl Into<ElementId>,
+    title: impl Into<SharedString>,
+    detail: impl Into<SharedString>,
+    palette: &ForgePalette,
+) -> Modal {
+    let body = div()
+        .w_full()
+        .flex()
+        .items_center()
+        .gap(pad(Spacing::Sm))
+        .child(spinner(id, Icon::Loader2, BUSY_GLYPH, palette.brand))
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .font_family(body_family())
+                .text_size(FONT_XS)
+                .text_color(palette.text_muted)
+                .child(detail.into()),
+        );
+    modal(title, body, palette).size(ModalSize::Sm)
 }

@@ -115,7 +115,7 @@ pub use menu::{
     ContextMenu, MenuButton, MenuEntry, MenuItem, MenuPlacement, context_menu, menu_button,
     menu_divider, menu_header, menu_item,
 };
-pub use modal::{Modal, modal};
+pub use modal::{Modal, busy_modal, modal};
 pub use overlay::{
     AnchoredPopover, Overlay, OverlayPosition, anchored_popover, drive_overlay_focus, overlay,
 };

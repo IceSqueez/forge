@@ -55,6 +55,7 @@ use crate::settings::SettingsView;
 use crate::sidebar::NavRequested;
 use crate::soundboard::SoundboardView;
 use crate::topics::Topics;
+use crate::transfer_flows::{TransferFlows, TransferRoute};
 use crate::triggers_screen::TriggersRegistryView;
 use crate::tts::TtsView;
 use crate::unavailable_builtin::unavailable_builtin;
@@ -133,6 +134,16 @@ impl AppShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let transfers = cx.new(|cx| {
+            TransferFlows::new(
+                topics.home_stats.clone(),
+                PackServices::of(&handles),
+                forge_storage::paths::data_dir(),
+                cx,
+            )
+            .with_setup_live(SetupLiveHandles::of(&handles), cx)
+        });
+        cx.set_global(TransferRoute(transfers));
         let screen = initial_screen;
         let RoutedContent {
             view: content,
@@ -241,7 +252,6 @@ impl AppShell {
                         cx,
                     )
                     .with_lifecycle(home_lifecycle, cx)
-                    .with_setup_live(SetupLiveHandles::of(handles), cx)
                 });
                 cx.subscribe(&home, |this, _home, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);

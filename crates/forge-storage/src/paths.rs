@@ -64,6 +64,21 @@ pub fn problem_reports_dir() -> PathBuf {
     data_dir().join(PROBLEM_REPORTS_DIR_NAME)
 }
 
+pub const CREDENTIALS_KEY_FILE_NAME: &str = "credentials-key";
+
+const CREDENTIALS_KEY_FILE_ENV: &str = "FORGE_CREDENTIAL_KEY_FILE";
+
+pub fn credentials_key_path_in(data_dir: &std::path::Path) -> PathBuf {
+    match std::env::var_os(CREDENTIALS_KEY_FILE_ENV) {
+        Some(overridden) => PathBuf::from(overridden),
+        None => data_dir.join(CREDENTIALS_KEY_FILE_NAME),
+    }
+}
+
+pub fn credentials_key_path() -> PathBuf {
+    credentials_key_path_in(&data_dir())
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

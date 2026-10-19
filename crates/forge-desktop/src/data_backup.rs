@@ -10,8 +10,10 @@ use time::OffsetDateTime;
 
 use forge_storage::DATABASE_FILE_NAME;
 pub use forge_storage::paths::BACKUPS_DIR_NAME;
-use forge_storage::paths::{ASSETS_DIR_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME, TTS_DIR_NAME};
-use forge_storage_sqlite::crypto::CREDENTIALS_KEY_FILE_NAME;
+use forge_storage::paths::{
+    ASSETS_DIR_NAME, CREDENTIALS_KEY_FILE_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME, TTS_DIR_NAME,
+    credentials_key_path_in,
+};
 
 const ARCHIVE_ROOT: &str = "forge";
 const ARCHIVE_EXTENSION: &str = "tar.gz";
@@ -99,7 +101,7 @@ pub fn write_archive(data_dir: &Path, db_snapshot: &Path, dest: &Path) -> io::Re
     let root = Path::new(ARCHIVE_ROOT);
     builder.append_path_with_name(db_snapshot, root.join(DATABASE_FILE_NAME))?;
 
-    let key = data_dir.join(CREDENTIALS_KEY_FILE_NAME);
+    let key = credentials_key_path_in(data_dir);
     if key.is_file() {
         builder.append_path_with_name(&key, root.join(CREDENTIALS_KEY_FILE_NAME))?;
     }

@@ -5,6 +5,7 @@ use crate::category::TriggerCategory;
 use crate::evaluator::EventFilter;
 use crate::form::FormField;
 use crate::kind_platform_contract::KindPlatformContract;
+use crate::references::ReferenceField;
 use crate::refinement::FormRefinement;
 use crate::variables::{ActorDeclaration, TriggerVariables};
 
@@ -26,6 +27,9 @@ pub trait TriggerKindDescriptor: Send + Sync {
     fn config_fields(&self) -> Vec<FormField>;
     fn config_refinement(&self) -> Option<FormRefinement> {
         None
+    }
+    fn declared_references(&self) -> Vec<ReferenceField> {
+        Vec::new()
     }
     fn condition_display(&self, config: &TriggerConfig) -> String;
     fn event_filter(&self) -> EventFilter;

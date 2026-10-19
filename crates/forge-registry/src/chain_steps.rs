@@ -4,6 +4,8 @@ use crate::form::FormField;
 use crate::registry::SubActionRegistry;
 
 pub const CASE_CHAIN_KEY: &str = "chain";
+pub const STEP_KIND_KEY: &str = "kind_id";
+pub const STEP_CONFIG_KEY: &str = "config";
 
 pub fn decode_steps(value: Option<&Variant>) -> Vec<SubActionStep> {
     let Some(steps) = value.and_then(Variant::as_array) else {
@@ -13,8 +15,8 @@ pub fn decode_steps(value: Option<&Variant>) -> Vec<SubActionStep> {
         .iter()
         .filter_map(|step| {
             let obj = step.as_object()?;
-            let kind_id = obj.get("kind_id").and_then(Variant::as_str)?.to_owned();
-            let config = match obj.get("config") {
+            let kind_id = obj.get(STEP_KIND_KEY).and_then(Variant::as_str)?.to_owned();
+            let config = match obj.get(STEP_CONFIG_KEY) {
                 Some(Variant::Object(map)) => map.clone(),
                 _ => SubActionConfig::new(),
             };

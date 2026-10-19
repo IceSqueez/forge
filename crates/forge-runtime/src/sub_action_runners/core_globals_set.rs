@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
+use forge_registry::references::GLOBAL_OPTIONS_KEY;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    FormField, ReferenceField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionRunner,
 };
 use forge_storage::GlobalsRepo;
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
@@ -70,6 +71,13 @@ impl SubActionRunner for CoreGlobalsSetRunner {
                 label: "Persist across restarts",
             },
         ]
+    }
+
+    fn declared_references(&self) -> Vec<ReferenceField> {
+        vec![ReferenceField {
+            key: "name",
+            options_key: GLOBAL_OPTIONS_KEY,
+        }]
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {

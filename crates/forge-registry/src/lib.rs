@@ -15,6 +15,7 @@ pub mod io;
 pub mod kind_platform_contract;
 pub mod merge;
 pub mod message_emotes;
+pub mod references;
 pub mod refinement;
 pub mod registry;
 pub mod run_context;
@@ -29,7 +30,9 @@ pub use chain::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
     RunningAction, StopMark, TelemetrySink,
 };
-pub use chain_steps::{CASE_CHAIN_KEY, decode_steps, nested_chains};
+pub use chain_steps::{
+    CASE_CHAIN_KEY, STEP_CONFIG_KEY, STEP_KIND_KEY, decode_steps, nested_chains,
+};
 pub use config_ext::SubActionConfigExt;
 pub use descriptor::{ChatTriggerFamily, TriggerKindDescriptor};
 pub use duration_bounds::{
@@ -49,6 +52,11 @@ pub use io::{ProducedVariable, SubActionIo};
 pub use kind_platform_contract::KindPlatformContract;
 pub use merge::effective_config;
 pub use message_emotes::{MESSAGE_EMOTES_VARIABLE, chat_emote_codes, message_emote_codes};
+pub use references::{
+    ConfigReference, ExternalNamespace, InternalNamespace, LocationSegment, ReferenceCatalog,
+    ReferenceField, ReferenceKey, ReferenceListing, ReferenceLocation, ReferenceNamespace,
+    ReferenceRemap, ReferenceScope, UnknownKind,
+};
 pub use refinement::{FormRefinement, FormSchemaSource, refined_fields};
 pub use registry::{
     OwnedSubActionRegistration, OwnedTriggerRegistration, SubActionRegistry, TriggerRegistry,

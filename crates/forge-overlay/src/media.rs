@@ -5,9 +5,7 @@ use crate::descriptor::OverlayConfig;
 use crate::error::OverlayError;
 use crate::icons::curated_icon;
 
-pub const CLIP_REFERENCE_PREFIX: &str = "clip:";
-
-pub const IMAGE_REFERENCE_PREFIX: &str = "image:";
+pub use forge_registry::references::{CLIP_REFERENCE_PREFIX, IMAGE_REFERENCE_PREFIX};
 
 pub const GENERATED_MEDIA_DIRECTORY: &str = "forge-media";
 

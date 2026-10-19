@@ -12,6 +12,9 @@ pub enum RegistryError {
     #[error("sub-action nesting depth {0} exceeds the configured bound")]
     DepthExceeded(u32),
 
+    #[error("remapped {namespace} reference is not a valid id: {value}")]
+    InvalidRemap { namespace: String, value: String },
+
     #[error("runner initialization failed: {0}")]
     RunnerInit(String),
 }

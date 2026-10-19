@@ -48,8 +48,8 @@ pub const CLIP_MEDIA_TYPE: &str = "clip_media_type";
 pub const CLIP_DURATION_MS: &str = "clip_duration_ms";
 pub const COMMAND: &str = "command";
 
-pub const SOUND_OPTIONS_KEY: &str = "soundboard.clips";
-pub const ICON_OPTIONS_KEY: &str = "overlay.icons";
+pub const SOUND_OPTIONS_KEY: &str = forge_registry::references::OVERLAY_SOUND_OPTIONS_KEY;
+pub const ICON_OPTIONS_KEY: &str = forge_registry::references::OVERLAY_ICON_OPTIONS_KEY;
 
 pub const DEFAULT_ICON: &str = "star-filled";
 

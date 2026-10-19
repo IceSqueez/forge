@@ -7,6 +7,7 @@ use crate::category::SubActionCategory;
 use crate::error::RegistryError;
 use crate::form::FormField;
 use crate::io::SubActionIo;
+use crate::references::ReferenceField;
 use crate::refinement::FormRefinement;
 use crate::run_context::RunContext;
 
@@ -22,6 +23,9 @@ pub trait SubActionRunner: Send + Sync {
     fn config_fields(&self) -> Vec<FormField>;
     fn config_refinement(&self) -> Option<FormRefinement> {
         None
+    }
+    fn declared_references(&self) -> Vec<ReferenceField> {
+        Vec::new()
     }
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError>;
     async fn execute(

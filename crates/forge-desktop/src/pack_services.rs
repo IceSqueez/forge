@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{FormSchemaSource, SubActionRegistry, TriggerRegistry};
-use forge_runtime::OverlayServiceHandle;
+use forge_runtime::{OverlayServiceHandle, QueueSchedulerHandle, ScriptRegistry};
 use forge_storage::DataProvider;
 use forge_transfer::{ClosureRegistries, PackInventory, load_pack_inventory};
 use tokio::runtime::Handle;
@@ -17,6 +17,8 @@ pub struct PackServices {
     pub triggers: Arc<TriggerRegistry>,
     pub overlay_kinds: Arc<OverlayKindRegistry>,
     pub overlays: OverlayServiceHandle,
+    pub scheduler: QueueSchedulerHandle,
+    pub scripts: Arc<ScriptRegistry>,
     pub rt_handle: Handle,
 }
 
@@ -34,6 +36,8 @@ impl PackServices {
             triggers: Arc::clone(&handles.trigger_registry),
             overlay_kinds: Arc::clone(&handles.overlay_kinds),
             overlays: handles.overlays.clone(),
+            scheduler: handles.scheduler.clone(),
+            scripts: Arc::clone(&handles.script_registry),
             rt_handle: handles.rt_handle.clone(),
         }
     }

@@ -20,11 +20,12 @@ use crate::event_loss_card::event_loss_card;
 use crate::home_stats::{ConnectionsTally, HomeEvent, HomeStats, Integration, ObsHealth};
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::pack_export::PackExportFlow;
-use crate::pack_import_flow::PackImportFlow;
+use crate::pack_import_flow::{PackImportFlow, PackImported};
 use crate::pack_services::PackServices;
 use crate::restore_flow::{LEGACY_ARCHIVE_DIALOG_EXTENSION, RestoreFlow};
 use crate::restore_problem::RestoreProblem;
 use crate::screen::Screen;
+use crate::shell::refresh_dashboard_stats;
 use crate::sidebar::NavRequested;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
@@ -98,7 +99,7 @@ pub struct HomeView {
     pack_export: Entity<PackExportFlow>,
     pack_import: Entity<PackImportFlow>,
     export_menu_open: bool,
-    _transfer_obs: [Subscription; 4],
+    _transfer_obs: [Subscription; 5],
     _stats_obs: Subscription,
     _loss_obs: Subscription,
     _lifecycle_obs: Option<Subscription>,
@@ -125,12 +126,13 @@ impl HomeView {
             )
         });
         let pack_export = cx.new(|_| PackExportFlow::new(pack.clone()));
-        let pack_import = cx.new(|_| PackImportFlow::new(pack, data_dir));
+        let pack_import = cx.new(|_| PackImportFlow::new(pack.clone(), data_dir));
         let transfer_obs = [
             cx.observe(&restore, |_, _, cx| cx.notify()),
             cx.observe(&backup, |_, _, cx| cx.notify()),
             cx.observe(&pack_export, |_, _, cx| cx.notify()),
             cx.observe(&pack_import, |_, _, cx| cx.notify()),
+            Self::refresh_stats_on_import(&pack_import, &stats, &pack, cx),
         ];
         Self {
             stats,
@@ -147,6 +149,28 @@ impl HomeView {
             _loss_obs: loss_obs,
             _lifecycle_obs: None,
         }
+    }
+
+    fn refresh_stats_on_import(
+        flow: &Entity<PackImportFlow>,
+        stats: &Entity<HomeStats>,
+        pack: &PackServices,
+        cx: &mut Context<Self>,
+    ) -> Subscription {
+        let stats = stats.clone();
+        let backend = Arc::clone(&pack.backend);
+        let triggers = Arc::clone(&pack.triggers);
+        let rt_handle = pack.rt_handle.clone();
+        cx.subscribe(flow, move |_, _, _: &PackImported, cx| {
+            let stats = stats.clone();
+            let backend = Arc::clone(&backend);
+            let triggers = Arc::clone(&triggers);
+            let rt_handle = rt_handle.clone();
+            cx.spawn(async move |_, cx| {
+                refresh_dashboard_stats(stats, backend, triggers, rt_handle, cx).await;
+            })
+            .detach();
+        })
     }
 
     #[must_use]
@@ -1207,6 +1231,7 @@ impl Render for HomeView {
             .child(page_frame(vec![BreadcrumbCrumb::leaf(tr!("nav_home"))], &palette).body(body))
             .child(self.backup.clone())
             .child(self.pack_export.clone())
+            .child(self.pack_import.clone())
             .child(self.restore.clone())
     }
 }

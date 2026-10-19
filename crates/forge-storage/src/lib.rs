@@ -18,6 +18,7 @@ pub mod paths;
 pub mod provider;
 pub mod queue;
 pub mod scheduled_run;
+pub mod schema_file;
 pub mod script;
 pub mod settings;
 pub mod soundboard;
@@ -76,6 +77,7 @@ pub use scheduled_run::{
     SUPERSEDED_REASON, ScheduledRun, ScheduledRunId, ScheduledRunOutcome, ScheduledRunPlacement,
     ScheduledRunRepo, ScheduledRunSpec, ScheduledRunState,
 };
+pub use schema_file::DatabaseFileSchema;
 pub use script::{ScriptRecord, ScriptRepo, ScriptTelemetry};
 pub use settings::{
     CredentialsKeyLoss, DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,

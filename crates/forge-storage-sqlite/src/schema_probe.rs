@@ -47,3 +47,14 @@ async fn read_version(path: &Path) -> Result<Option<u32>, SqliteStorageError> {
         })
         .transpose()
 }
+
+pub struct SqliteDatabaseFileSchema;
+
+impl forge_storage::DatabaseFileSchema for SqliteDatabaseFileSchema {
+    fn applied_schema_version(
+        &self,
+        database_file: &Path,
+    ) -> Result<Option<u32>, forge_storage::StorageError> {
+        read_applied_schema_version(database_file).map_err(forge_storage::StorageError::from)
+    }
+}

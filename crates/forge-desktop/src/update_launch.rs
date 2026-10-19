@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use forge_storage::paths;
-use forge_storage::{DATABASE_FILE_NAME, database_unit_file_names};
+use forge_storage::{DATABASE_FILE_NAME, DatabaseFileSchema, database_unit_file_names};
 use forge_update::{
     DatabaseUnit, LaunchRole, SchemaProbe, StartAction, SupervisorContext, SupervisorOutcome,
     SupervisorSettings, SystemClock, SystemProcessHost, UpdateError, launch_role,
@@ -58,7 +58,8 @@ struct StoredSchemaVersion;
 
 impl SchemaProbe for StoredSchemaVersion {
     fn current_schema_version(&self, data_dir: &Path) -> Option<u32> {
-        forge_storage_sqlite::read_applied_schema_version(&data_dir.join(DATABASE_FILE_NAME))
+        forge_storage_sqlite::SqliteDatabaseFileSchema
+            .applied_schema_version(&data_dir.join(DATABASE_FILE_NAME))
             .ok()
             .flatten()
     }

@@ -52,7 +52,9 @@ pub use pool::{SqlitePools, connect, connect_pools};
 pub use provider::SqliteBackend;
 pub use queue_impl::SqliteQueueRepo;
 pub use scheduled_run_impl::SqliteScheduledRunRepo;
-pub use schema_probe::{SqliteDatabaseFileSchema, read_applied_schema_version};
+pub use schema_probe::{
+    SqliteDatabaseFileSchema, inspect_database_file, read_applied_schema_version,
+};
 pub use script_impl::SqliteScriptRepo;
 pub use settings_impl::SqliteSettingsRepo;
 pub use soundboard_impl::SqliteSoundboardClipsRepo;

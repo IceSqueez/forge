@@ -77,7 +77,7 @@ pub use scheduled_run::{
     SUPERSEDED_REASON, ScheduledRun, ScheduledRunId, ScheduledRunOutcome, ScheduledRunPlacement,
     ScheduledRunRepo, ScheduledRunSpec, ScheduledRunState,
 };
-pub use schema_file::DatabaseFileSchema;
+pub use schema_file::{DatabaseFileSchema, StoredDatabase, StoredSchema};
 pub use script::{ScriptRecord, ScriptRepo, ScriptTelemetry};
 pub use settings::{
     CredentialsKeyLoss, DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,

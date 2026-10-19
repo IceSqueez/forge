@@ -3,9 +3,10 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use forge_storage::{DataProvider, EXPECTED_SCHEMA_VERSION};
+use forge_storage::{DataProvider, DatabaseFileSchema, EXPECTED_SCHEMA_VERSION};
 use forge_storage_sqlite::{
-    SqliteBackend, SqliteStorageError, apply_migrations, connect_pools, read_applied_schema_version,
+    SqliteBackend, SqliteDatabaseFileSchema, SqliteStorageError, apply_migrations, connect_pools,
+    read_applied_schema_version,
 };
 use tempfile::TempDir;
 
@@ -75,6 +76,17 @@ fn freshly_migrated_backend_reports_expected_schema_version() {
     migrate_and_shut_down(&dir);
 
     let found = read_applied_schema_version(&db_in(&dir));
+
+    assert!(matches!(found, Ok(Some(v)) if v == EXPECTED_SCHEMA_VERSION));
+}
+
+#[test]
+fn database_file_schema_port_reports_the_migrated_version() {
+    let dir = tempfile::tempdir().unwrap();
+    migrate_and_shut_down(&dir);
+    let probe: &dyn DatabaseFileSchema = &SqliteDatabaseFileSchema;
+
+    let found = probe.applied_schema_version(&db_in(&dir));
 
     assert!(matches!(found, Ok(Some(v)) if v == EXPECTED_SCHEMA_VERSION));
 }

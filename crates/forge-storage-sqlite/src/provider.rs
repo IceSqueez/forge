@@ -616,3 +616,53 @@ impl DataProvider for SqliteBackend {
         self.pool.close().await;
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use forge_storage::DataProvider;
+
+    use super::SqliteBackend;
+
+    #[tokio::test]
+    async fn export_completes_while_the_writer_holds_an_open_transaction_and_omits_its_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let url = format!(
+            "sqlite://{}",
+            dir.path().join(forge_storage::DATABASE_FILE_NAME).display()
+        );
+        let backend =
+            SqliteBackend::open_for_test(&url, [0xab; 32], dir.path().join("media"), None)
+                .await
+                .unwrap();
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('committed', 'v')")
+            .execute(backend.pool.writer())
+            .await
+            .unwrap();
+        let mut open_write = backend.pool.writer().begin().await.unwrap();
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('uncommitted', 'v')")
+            .execute(&mut *open_write)
+            .await
+            .unwrap();
+        let export_path = dir.path().join("export.db");
+
+        backend
+            .export(&export_path)
+            .await
+            .expect("export must not wait for the writer connection");
+        open_write.rollback().await.unwrap();
+        backend.shutdown().await;
+
+        let exported = crate::connect(&format!("sqlite://{}", export_path.display()))
+            .await
+            .unwrap();
+        let keys: Vec<String> = sqlx::query_scalar(
+            "SELECT key FROM settings WHERE key IN ('committed', 'uncommitted')",
+        )
+        .fetch_all(&exported)
+        .await
+        .unwrap();
+        exported.close().await;
+        assert_eq!(keys, vec!["committed".to_string()]);
+    }
+}

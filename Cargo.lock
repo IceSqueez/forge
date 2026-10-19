@@ -3305,6 +3305,7 @@ dependencies = [
  "flate2",
  "forge-storage",
  "forge-storage-sqlite",
+ "forge-update",
  "serde",
  "serde_json",
  "sha2 0.11.0",

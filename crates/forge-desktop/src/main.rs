@@ -7,6 +7,7 @@ mod audio_router;
 mod audio_routes;
 mod awake_state;
 mod boot;
+mod boot_restore;
 mod builtin_sections;
 mod bundle_preview;
 mod chat;
@@ -375,6 +376,16 @@ fn main() {
         }
     };
 
+    let restore_outcome =
+        match boot_restore::settle_pending_restore(&paths::data_dir(), instance_lock.is_some()) {
+            Ok(outcome) => outcome,
+            Err(err) => {
+                tracing::error!(error = %err, "pending restore could not be settled; exiting");
+                drop(log_guard);
+                std::process::exit(1);
+            }
+        };
+
     let rt = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,
         Err(err) => {
@@ -400,6 +411,7 @@ fn main() {
 
     application.run(move |cx: &mut App| {
         cx.set_global(slot_for_app);
+        cx.set_global(boot_restore::BootRestore(restore_outcome));
         cx.set_global(exit_for_app);
         if let Err(err) = cx
             .text_system()

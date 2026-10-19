@@ -7,6 +7,7 @@ pub const BUNDLE_EXTENSION: &str = "forgebundle";
 pub const LEGACY_ARCHIVE_EXTENSION: &str = "tar.gz";
 
 const FILE_PREFIX: &str = "forge-backup";
+const PRE_RESTORE_PREFIX: &str = "forge-pre-restore";
 const SUFFIX_LEN: usize = 6;
 const PARTIAL_EXTENSION: &str = "partial";
 const CIPHERTEXT_EXTENSION: &str = "payload.partial";
@@ -17,8 +18,12 @@ pub fn backups_dir(data_dir: &Path) -> PathBuf {
 }
 
 pub fn backup_file_stem(now: OffsetDateTime, suffix: &str) -> String {
+    stamped_stem(FILE_PREFIX, now, suffix)
+}
+
+fn stamped_stem(prefix: &str, now: OffsetDateTime, suffix: &str) -> String {
     format!(
-        "{FILE_PREFIX}-{:04}{:02}{:02}-{:02}{:02}{:02}Z-{suffix}",
+        "{prefix}-{:04}{:02}{:02}-{:02}{:02}{:02}Z-{suffix}",
         now.year(),
         u8::from(now.month()),
         now.day(),
@@ -37,6 +42,14 @@ pub fn unique_suffix() -> String {
 
 pub(crate) fn fresh_stem() -> String {
     backup_file_stem(OffsetDateTime::now_utc(), &unique_suffix())
+}
+
+pub(crate) fn fresh_pre_restore_dir(data_dir: &Path) -> PathBuf {
+    backups_dir(data_dir).join(stamped_stem(
+        PRE_RESTORE_PREFIX,
+        OffsetDateTime::now_utc(),
+        &unique_suffix(),
+    ))
 }
 
 pub(crate) fn snapshot_path(data_dir: &Path, stem: &str) -> PathBuf {

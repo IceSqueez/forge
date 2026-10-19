@@ -76,6 +76,21 @@ pub enum TransferError {
     #[error("the operation was interrupted: {reason}")]
     Interrupted { reason: String },
 
+    #[error("an update is ready or being installed; finish or dismiss it before restoring")]
+    UpdateInProgress,
+
+    #[error("a restore is already pending")]
+    RestoreAlreadyPending,
+
+    #[error("the staged restore is not inside this data folder")]
+    ForeignStaging,
+
+    #[error("a restore bookkeeping file is unreadable: {reason}")]
+    MalformedRecord { reason: String },
+
+    #[error("'{path}' is in the way of the restore")]
+    RestoreBlocked { path: String },
+
     #[error(transparent)]
     Storage(#[from] StorageError),
 

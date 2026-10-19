@@ -25,6 +25,23 @@ pub enum TransferError {
     #[error("the pack needs a name")]
     PackNameRequired,
 
+    #[error("the pack has no item {item}")]
+    UnknownPackItem { item: String },
+
+    #[error("{item} has no conflict, so it is always imported")]
+    PackResolutionNotAllowed { item: String },
+
+    #[error("forge data changed since the pack preview was built; review the preview again")]
+    PackPlanStale,
+
+    #[error("action '{action}' needs a queue that neither the pack nor this forge has")]
+    PackActionWithoutQueue { action: String },
+
+    #[error(
+        "the pack import failed ({cause}) and could not be fully undone ({failure}); restore the safety backup"
+    )]
+    PackRollbackIncomplete { cause: String, failure: String },
+
     #[error("this file uses bundle format {found}; this forge reads up to format {supported}")]
     NewerFormat { found: u32, supported: u32 },
 

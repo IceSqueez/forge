@@ -18,6 +18,7 @@ mod restore_apply;
 mod restore_journal;
 mod restore_marker;
 mod restore_outcome;
+mod safety_snapshot;
 mod snapshot;
 mod stage;
 
@@ -37,11 +38,14 @@ pub use naming::{
 };
 pub use pack::{
     ActionDocument, ClipDocument, ClipSourceDocument, ClosureRegistries, DocumentConfig,
-    GlobalDocument, MediaDocument, OverlayDocument, OverlayFileDocument, PACK_DOCUMENTS_VERSION,
-    PACK_ROOT, PACK_STAGING_DIR_NAME, PackDocuments, PackExportRequest, PackInventory,
-    PackManifest, PackMetadata, PackReference, PackSelection, QueueDocument, ScriptDocument,
-    StagedPack, StepDocument, TriggerDocument, discard_staged_pack, load_pack_inventory,
-    pack_staging_root, resolve_pack_closure, stage_pack, write_pack,
+    ExecutableContent, GlobalDocument, MediaDocument, OverlayDocument, OverlayFileDocument,
+    PACK_DOCUMENTS_VERSION, PACK_ROOT, PACK_STAGING_DIR_NAME, PackConflict, PackDocuments,
+    PackExportRequest, PackImportLimit, PackImportOutcome, PackImportPlan, PackImportRequest,
+    PackInventory, PackItemKey, PackItemKind, PackManifest, PackMetadata, PackPlanItem,
+    PackReference, PackResolution, PackSelection, PackWarning, PackWrittenItem, QueueDocument,
+    ScriptDocument, StagedPack, StepDocument, TriggerDocument, apply_pack_import,
+    discard_staged_pack, load_pack_inventory, pack_staging_root, plan_pack_import,
+    resolve_pack_closure, stage_pack, write_pack,
 };
 pub use passphrase::{MIN_PASSPHRASE_CHARS, Passphrase};
 pub use reader::{BundleSummary, read_bundle_kind, read_bundle_summary};

@@ -8,6 +8,7 @@ pub const LEGACY_ARCHIVE_EXTENSION: &str = "tar.gz";
 
 const FILE_PREFIX: &str = "forge-backup";
 const PRE_RESTORE_PREFIX: &str = "forge-pre-restore";
+const PRE_PACK_PREFIX: &str = "forge-pre-pack";
 const SUFFIX_LEN: usize = 6;
 const PARTIAL_EXTENSION: &str = "partial";
 const CIPHERTEXT_EXTENSION: &str = "payload.partial";
@@ -50,6 +51,10 @@ pub(crate) fn fresh_pre_restore_dir(data_dir: &Path) -> PathBuf {
         OffsetDateTime::now_utc(),
         &unique_suffix(),
     ))
+}
+
+pub(crate) fn fresh_pre_pack_stem() -> String {
+    stamped_stem(PRE_PACK_PREFIX, OffsetDateTime::now_utc(), &unique_suffix())
 }
 
 pub(crate) fn snapshot_path(data_dir: &Path, stem: &str) -> PathBuf {

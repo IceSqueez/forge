@@ -21,11 +21,11 @@ use crate::pack::manifest::PackReference;
 pub struct ClosureRegistries<'a> {
     pub sub_actions: &'a SubActionRegistry,
     pub triggers: &'a TriggerRegistry,
-    pub schema: Option<&'a dyn FormSchemaSource>,
+    pub schema: Option<&'a (dyn FormSchemaSource + Sync)>,
 }
 
 impl<'a> ClosureRegistries<'a> {
-    fn catalog(&self) -> ReferenceCatalog<'a> {
+    pub(crate) fn catalog(&self) -> ReferenceCatalog<'a> {
         let catalog = ReferenceCatalog::new(self.sub_actions, self.triggers);
         match self.schema {
             Some(schema) => catalog.with_schema(schema),

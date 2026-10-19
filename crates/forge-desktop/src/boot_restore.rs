@@ -1,14 +1,76 @@
 use std::path::Path;
+use std::time::Duration;
 
+use forge_components::{PushToast, ToastAction, ToastKind, tr};
 use forge_transfer::{
-    RestoreDeferral, RestoreOutcome, TransferError, apply_pending_restore, restore_in_flight,
-    restore_pending,
+    RestoreDeferral, RestoreOutcome, RestoreRollback, TransferError, apply_pending_restore,
+    restore_in_flight, restore_pending,
 };
-use gpui::Global;
+use gpui::{App, Global};
 
-pub(crate) struct BootRestore(#[expect(dead_code)] pub RestoreOutcome);
+const STICKY: Duration = Duration::ZERO;
+
+pub(crate) struct BootRestore(pub RestoreOutcome);
 
 impl Global for BootRestore {}
+
+pub(crate) fn raise_boot_restore_toast(cx: &mut App) {
+    if cx.try_global::<BootRestore>().is_none() {
+        return;
+    }
+    let BootRestore(outcome) = cx.remove_global::<BootRestore>();
+    match outcome {
+        RestoreOutcome::NonePending => {}
+        RestoreOutcome::Applied {
+            pre_restore_snapshot,
+        } => {
+            let shown = pre_restore_snapshot.display().to_string();
+            cx.push_toast_full(
+                ToastKind::Success,
+                tr!("restore_boot_applied", path = shown.as_str()),
+                None,
+                Some(ToastAction::new(
+                    tr!("settings_storage_backup_reveal"),
+                    move |_window, app| app.reveal_path(&pre_restore_snapshot),
+                )),
+                STICKY,
+            );
+        }
+        RestoreOutcome::RolledBack { reason } => cx.push_toast_full(
+            ToastKind::Error,
+            tr!(
+                "restore_boot_rolled_back",
+                reason = rollback_reason(&reason)
+            ),
+            None,
+            None,
+            STICKY,
+        ),
+        RestoreOutcome::Deferred { reason } => cx.push_toast_full(
+            ToastKind::Warn,
+            tr!("restore_boot_deferred", reason = deferral_reason(reason)),
+            None,
+            None,
+            STICKY,
+        ),
+    }
+}
+
+pub(crate) fn rollback_reason(reason: &RestoreRollback) -> String {
+    match reason {
+        RestoreRollback::Interrupted => tr!("restore_rollback_interrupted"),
+        RestoreRollback::StagingMissing => tr!("restore_rollback_staging_missing"),
+        RestoreRollback::MarkerUnreadable => tr!("restore_rollback_marker_unreadable"),
+        RestoreRollback::Failed { error } => error.clone(),
+    }
+}
+
+pub(crate) fn deferral_reason(reason: RestoreDeferral) -> String {
+    match reason {
+        RestoreDeferral::UpdateInProgress => tr!("restore_deferral_update"),
+        RestoreDeferral::InstanceLockUnavailable => tr!("restore_deferral_instance_lock"),
+    }
+}
 
 pub(crate) fn settle_pending_restore(
     data_dir: &Path,

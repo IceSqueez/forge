@@ -258,6 +258,15 @@ impl UpdateFlow {
         cx.notify();
     }
 
+    pub fn has_staged_update(&self) -> bool {
+        matches!(
+            self.stage,
+            UpdateStage::Ready { .. }
+                | UpdateStage::HandingOff { .. }
+                | UpdateStage::HandedOff { .. }
+        )
+    }
+
     pub fn request_restart(&mut self, cx: &mut Context<Self>) {
         if !matches!(self.stage, UpdateStage::Ready { .. }) {
             return;

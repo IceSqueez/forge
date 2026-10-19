@@ -42,6 +42,7 @@ use crate::obs_connect::ObsConnectView;
 use crate::obs_credentials_form::ObsConnected;
 use crate::overlays_screen::{OverlaysLaunch, OverlaysView};
 use crate::queues::QueuesView;
+use crate::restore_close::{RestoreClose, RestoreCloseEvent, RestoreRoute};
 use crate::runtime_handles::RuntimeHandles;
 use crate::runtime_status::RuntimeStatus;
 use crate::scheduled_runs_section::ScheduledRunsView;
@@ -169,6 +170,22 @@ impl AppShell {
             },
         )
         .detach();
+
+        let restore_close = cx.new(|_| {
+            RestoreClose::new(
+                topics.update_flow.clone(),
+                forge_storage::paths::data_dir(),
+                handles.rt_handle.clone(),
+            )
+        });
+        cx.subscribe(
+            &restore_close,
+            |this, _close, event: &RestoreCloseEvent, cx| match event {
+                RestoreCloseEvent::CloseRequested => this.request_close(cx),
+            },
+        )
+        .detach();
+        cx.set_global(RestoreRoute(restore_close));
 
         Self::spawn_lifecycle_bridge(&handles, topics.integration_lifecycle.clone(), cx);
 
@@ -980,6 +997,9 @@ impl AppShell {
         self.topics
             .update_flow
             .update(cx, |flow, cx| flow.abort_restart(cx));
+        if let Some(restore_close) = RestoreClose::route(cx) {
+            restore_close.update(cx, |close, cx| close.abort(cx));
+        }
         cx.notify();
     }
 

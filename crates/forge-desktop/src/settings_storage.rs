@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use forge_components::{
     Density, FONT_SM, ForgePalette, InputEvent, SettingRow, Spacing, TextInput, ToastAction,
-    ToastKind, primary_button, segment, segmented, setting_row, setting_rows, setting_value_row,
-    spacing, tr,
+    ToastKind, primary_button, secondary_button, segment, segmented, setting_row, setting_rows,
+    setting_value_row, spacing, tr,
 };
 use forge_runtime::ChatHistoryRetentionHandle;
 use forge_storage::{
@@ -26,6 +26,7 @@ use gpui::{
 
 use crate::async_bridge;
 use crate::backup_passphrase_modal::{BackupPassphraseEvent, BackupPassphraseModal};
+use crate::restore_flow::RestoreFlow;
 use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 use forge_components::ActivePresentation;
@@ -78,6 +79,7 @@ pub struct SettingsStorageView {
     history_retention_days: u32,
     backing_up: bool,
     passphrase_prompt: Option<PassphrasePrompt>,
+    restore: Entity<RestoreFlow>,
 
     per_viewer_input: Entity<TextInput>,
     display_input: Entity<TextInput>,
@@ -117,7 +119,11 @@ impl SettingsStorageView {
                 .with_font_size(FONT_SM)
         });
 
+        let restore =
+            cx.new(|_| RestoreFlow::new(rt_handle.clone(), forge_storage::paths::data_dir()));
+
         let subs = vec![
+            cx.observe(&restore, |_, _, cx| cx.notify()),
             cx.subscribe(&per_viewer_input, |this, _input, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Submitted(_) | InputEvent::Blurred(_)) {
                     this.commit_custom_per_viewer(cx);
@@ -154,6 +160,7 @@ impl SettingsStorageView {
             history_retention_days: default_history_retention,
             backing_up: false,
             passphrase_prompt: None,
+            restore,
             per_viewer_input,
             display_input,
             retention_input,
@@ -386,8 +393,16 @@ impl SettingsStorageView {
             .update(cx, |i, cx| i.set_content(days.to_string(), cx));
     }
 
-    fn open_passphrase_prompt(&mut self, cx: &mut Context<Self>) {
+    fn start_restore(&mut self, cx: &mut Context<Self>) {
         if self.backing_up || self.passphrase_prompt.is_some() {
+            return;
+        }
+        self.restore.update(cx, |restore, cx| restore.start(cx));
+        cx.notify();
+    }
+
+    fn open_passphrase_prompt(&mut self, cx: &mut Context<Self>) {
+        if self.backing_up || self.passphrase_prompt.is_some() || self.restore.read(cx).is_busy() {
             return;
         }
         let modal = cx.new(BackupPassphraseModal::new);
@@ -491,12 +506,33 @@ impl Render for SettingsStorageView {
         } else {
             tr!("settings_storage_backup_btn")
         };
+        let restore = self.restore.read(cx);
+        let (restore_busy, restore_preparing) = (restore.is_busy(), restore.is_preparing());
         let backup_btn = primary_button(backup_label, &palette)
             .busy(self.backing_up)
+            .disabled(restore_busy)
             .on_click(
                 "settings-db-backup",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.open_passphrase_prompt(cx)),
             );
+        let restore_label = if restore_preparing {
+            tr!("settings_storage_restore_btn_busy")
+        } else {
+            tr!("settings_storage_restore_btn")
+        };
+        let restore_btn = secondary_button(restore_label, &palette)
+            .busy(restore_preparing)
+            .disabled(self.backing_up || restore_busy)
+            .on_click(
+                "settings-db-restore",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.start_restore(cx)),
+            );
+        let backup_controls = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
+            .child(restore_btn)
+            .child(backup_btn);
 
         let rows = setting_rows(&palette)
             .row(setting_value_row(
@@ -508,7 +544,7 @@ impl Render for SettingsStorageView {
             .row(setting_row(
                 tr!("settings_storage_backup_label"),
                 Some(tr!("settings_storage_backup_hint").into()),
-                backup_btn,
+                backup_controls,
                 &palette,
                 density,
             ))
@@ -550,6 +586,7 @@ impl Render for SettingsStorageView {
                     .as_ref()
                     .map(|prompt| prompt.modal.clone()),
             )
+            .child(self.restore.clone())
     }
 }
 

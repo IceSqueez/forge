@@ -177,16 +177,31 @@ pub struct DialogFilter {
     pub extensions: Vec<&'static str>,
 }
 
-pub async fn pick_file(filter: Option<DialogFilter>) -> Result<PathBuf, String> {
-    let mut dialog = rfd::AsyncFileDialog::new();
-    if let Some(filter) = filter {
-        dialog = dialog.add_filter(filter.name, &filter.extensions);
+fn file_dialog(filter: Option<DialogFilter>) -> rfd::AsyncFileDialog {
+    let dialog = rfd::AsyncFileDialog::new();
+    match filter {
+        Some(filter) => dialog.add_filter(filter.name, &filter.extensions),
+        None => dialog,
     }
+}
+
+async fn pick_with(dialog: rfd::AsyncFileDialog) -> Result<PathBuf, String> {
     dialog
         .pick_file()
         .await
         .map(|handle| handle.path().to_path_buf())
         .ok_or_else(|| DIALOG_CANCELLED.to_owned())
+}
+
+pub async fn pick_file(filter: Option<DialogFilter>) -> Result<PathBuf, String> {
+    pick_with(file_dialog(filter)).await
+}
+
+pub async fn pick_file_in(
+    filter: Option<DialogFilter>,
+    directory: PathBuf,
+) -> Result<PathBuf, String> {
+    pick_with(file_dialog(filter).set_directory(directory)).await
 }
 
 pub async fn pick_folder() -> Result<PathBuf, String> {

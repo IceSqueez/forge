@@ -277,6 +277,7 @@ pub fn run_boot(
                 if let (Ok(()), Some(update_flow), Some(problem_report)) =
                     (applied, flow_for_updates, report_for_crashes)
                 {
+                    cx.update(crate::boot_restore::raise_boot_restore_toast);
                     if let Some(loss) = credentials_key_loss {
                         cx.update(|cx| raise_credentials_key_loss_toast(loss, cx));
                     }

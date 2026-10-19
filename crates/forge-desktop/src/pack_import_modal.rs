@@ -686,3 +686,229 @@ impl Render for PackImportModal {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+mod tests {
+    use std::cell::RefCell;
+    use std::path::PathBuf;
+    use std::rc::Rc;
+
+    use forge_storage::Language;
+    use forge_transfer::{PackImportPlan, PackItemKey, PackItemKind, PackResolution};
+    use gpui::{AppContext, Entity, TestAppContext};
+
+    use super::{PackHeader, PackImportModal, PackImportModalEvent, carry_choices, grouped_items};
+    use crate::i18n::install_language;
+    use crate::test_support::pack_flow::{
+        PackWorld, export_pack, pack_world, queue_named, seed_queued_action, stage_into,
+    };
+    use crate::test_support::runtime;
+
+    struct Planned {
+        rt: tokio::runtime::Runtime,
+        _world: PackWorld,
+        bundle: PathBuf,
+        plan: PackImportPlan,
+        action: PackItemKey,
+        queue: PackItemKey,
+    }
+
+    fn reimported_into_its_source() -> Planned {
+        let rt = runtime();
+        let world = pack_world(&rt);
+        let queue = queue_named("Alerts");
+        let action = seed_queued_action(&rt, &world, "Greeter", &queue);
+        let bundle = export_pack(&rt, &world, &[action]);
+        let (_staged, plan) = stage_into(&rt, &world, &bundle);
+        Planned {
+            rt,
+            _world: world,
+            bundle,
+            plan,
+            action: PackItemKey {
+                kind: PackItemKind::Action,
+                id: action.to_string(),
+            },
+            queue: PackItemKey {
+                kind: PackItemKind::Queue,
+                id: queue.id.to_string(),
+            },
+        }
+    }
+
+    impl PackImportModal {
+        pub(crate) fn shown_failure(&self) -> Option<String> {
+            self.failure.clone()
+        }
+    }
+
+    fn resolution_of(plan: &PackImportPlan, key: &PackItemKey) -> Option<PackResolution> {
+        plan.items()
+            .iter()
+            .find(|item| &item.key == key)
+            .and_then(|item| item.resolution)
+    }
+
+    fn header() -> PackHeader {
+        PackHeader {
+            name: "Alerts pack".to_owned(),
+            author: String::new(),
+            description: String::new(),
+        }
+    }
+
+    fn mount(cx: &mut TestAppContext, plan: PackImportPlan) -> Entity<PackImportModal> {
+        install_language(Language::En);
+        cx.new(|_| PackImportModal::new(header(), plan))
+    }
+
+    fn event_log(
+        cx: &mut TestAppContext,
+        modal: &Entity<PackImportModal>,
+    ) -> Rc<RefCell<Vec<&'static str>>> {
+        let log = Rc::new(RefCell::new(Vec::new()));
+        let sink = Rc::clone(&log);
+        cx.update(|cx| {
+            cx.subscribe(modal, move |_, event: &PackImportModalEvent, _| {
+                sink.borrow_mut().push(match event {
+                    PackImportModalEvent::Confirmed => "confirmed",
+                    PackImportModalEvent::Cancelled => "cancelled",
+                });
+            })
+            .detach();
+        });
+        log
+    }
+
+    #[test]
+    fn carried_choices_land_on_matching_keys_and_untouched_items_keep_their_defaults() {
+        let previous_source = reimported_into_its_source();
+        let mut previous = previous_source.plan.clone();
+        previous
+            .set_resolution(&previous_source.action, PackResolution::Replace)
+            .unwrap();
+        let mut fresh = previous_source.plan.clone();
+
+        carry_choices(&previous, &mut fresh);
+
+        assert_eq!(
+            (
+                resolution_of(&fresh, &previous_source.action),
+                resolution_of(&fresh, &previous_source.queue),
+            ),
+            (Some(PackResolution::Replace), Some(PackResolution::Skip))
+        );
+    }
+
+    #[test]
+    fn a_carried_choice_for_an_item_that_no_longer_conflicts_is_dropped() {
+        let planned = reimported_into_its_source();
+        let mut previous = planned.plan.clone();
+        previous
+            .set_resolution(&planned.action, PackResolution::Replace)
+            .unwrap();
+        let empty_target = pack_world(&planned.rt);
+        let (_staged, mut fresh) = stage_into(&planned.rt, &empty_target, &planned.bundle);
+        let untouched = fresh.clone();
+
+        carry_choices(&previous, &mut fresh);
+
+        assert_eq!(fresh, untouched);
+    }
+
+    #[test]
+    fn the_preview_groups_items_in_display_order_regardless_of_plan_order() {
+        let planned = reimported_into_its_source();
+
+        let kinds: Vec<PackItemKind> = grouped_items(&planned.plan)
+            .iter()
+            .map(|group| group.kind)
+            .collect();
+
+        assert_eq!(kinds, vec![PackItemKind::Action, PackItemKind::Queue]);
+    }
+
+    #[gpui::test]
+    fn a_choice_made_while_applying_is_ignored(cx: &mut TestAppContext) {
+        let planned = reimported_into_its_source();
+        let modal = mount(cx, planned.plan.clone());
+
+        modal.update(cx, |modal, cx| {
+            modal.begin_apply(cx);
+            modal.choose(&planned.action, PackResolution::Replace, cx);
+        });
+
+        let chosen = modal.read_with(cx, |modal, _| resolution_of(modal.plan(), &planned.action));
+        assert_eq!(chosen, Some(PackResolution::Skip));
+    }
+
+    #[gpui::test]
+    fn a_failed_apply_shows_the_error_and_unlocks_the_choices(cx: &mut TestAppContext) {
+        let planned = reimported_into_its_source();
+        let modal = mount(cx, planned.plan.clone());
+
+        modal.update(cx, |modal, cx| {
+            modal.begin_apply(cx);
+            modal.fail("disk full".to_owned(), cx);
+        });
+
+        let state = modal.read_with(cx, |modal, _| (modal.is_applying(), modal.failure.clone()));
+        assert_eq!(state, (false, Some("disk full".to_owned())));
+    }
+
+    #[gpui::test]
+    fn changing_a_choice_after_a_failure_clears_the_error(cx: &mut TestAppContext) {
+        let planned = reimported_into_its_source();
+        let modal = mount(cx, planned.plan.clone());
+        modal.update(cx, |modal, cx| modal.fail("disk full".to_owned(), cx));
+
+        modal.update(cx, |modal, cx| {
+            modal.choose(&planned.action, PackResolution::Replace, cx)
+        });
+
+        let state = modal.read_with(cx, |modal, _| {
+            (
+                modal.failure.clone(),
+                resolution_of(modal.plan(), &planned.action),
+            )
+        });
+        assert_eq!(state, (None, Some(PackResolution::Replace)));
+    }
+
+    #[gpui::test]
+    fn confirm_and_cancel_are_swallowed_while_applying(cx: &mut TestAppContext) {
+        let planned = reimported_into_its_source();
+        let modal = mount(cx, planned.plan.clone());
+        let log = event_log(cx, &modal);
+
+        modal.update(cx, |modal, cx| {
+            modal.begin_apply(cx);
+            modal.confirm(cx);
+            modal.cancel(cx);
+        });
+        cx.run_until_parked();
+
+        assert!(log.borrow().is_empty(), "{:?}", log.borrow());
+    }
+
+    #[gpui::test]
+    fn a_replan_replaces_the_plan_and_unlocks_the_choices(cx: &mut TestAppContext) {
+        let planned = reimported_into_its_source();
+        let modal = mount(cx, planned.plan.clone());
+        let mut replanned = planned.plan.clone();
+        replanned
+            .set_resolution(&planned.queue, PackResolution::Replace)
+            .unwrap();
+
+        modal.update(cx, |modal, cx| {
+            modal.begin_apply(cx);
+            modal.replan(replanned.clone(), cx);
+        });
+
+        let state = modal.read_with(cx, |modal, _| {
+            (modal.is_applying(), modal.plan() == &replanned)
+        });
+        assert_eq!(state, (false, true));
+    }
+}

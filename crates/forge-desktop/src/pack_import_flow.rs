@@ -401,3 +401,394 @@ impl Render for PackImportFlow {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+mod tests {
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    use forge_components::{ToastKind, Toasts};
+    use forge_storage::Language;
+    use forge_transfer::{
+        PackImportOutcome, PackImportPlan, PackItemKey, PackItemKind, PackResolution, StagedPack,
+    };
+    use gpui::{AppContext, Entity, TestAppContext};
+
+    use super::{
+        Applied, PACK_TOAST_DURATION, PackImportFlow, PackImportStep, PackImported, Planned,
+        apply_staged, discard_staged_pack,
+    };
+    use crate::i18n::install_language;
+    use crate::pack_import_live::LiveRefresh;
+    use crate::test_support::pack_flow::{
+        PackWorld, export_pack, pack_world, queue_named, seed_queued_action, stage_into,
+    };
+    use crate::test_support::{install_presentation, runtime};
+
+    const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
+    const PAST_ANY_TOAST_TIMER: Duration = Duration::from_secs(120);
+
+    struct Rig {
+        rt: tokio::runtime::Runtime,
+        world: PackWorld,
+        flow: Entity<PackImportFlow>,
+    }
+
+    fn rig(cx: &mut TestAppContext) -> Rig {
+        install_language(Language::En);
+        install_presentation(cx);
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let world = pack_world(&rt);
+        let services = world.services.clone();
+        let data_dir = world.data_dir();
+        let flow = cx.new(|_| PackImportFlow::new(services, data_dir));
+        Rig { rt, world, flow }
+    }
+
+    fn staged_reimport(rig: &Rig) -> (StagedPack, PackImportPlan) {
+        let queue = queue_named("Alerts");
+        let action = seed_queued_action(&rig.rt, &rig.world, "Greeter", &queue);
+        let bundle = export_pack(&rig.rt, &rig.world, &[action]);
+        stage_into(&rig.rt, &rig.world, &bundle)
+    }
+
+    fn previewing(cx: &mut TestAppContext, rig: &Rig) -> PathBuf {
+        let (staged, plan) = staged_reimport(rig);
+        let staging = staged.staging_dir().to_path_buf();
+        rig.flow.update(cx, |flow, cx| {
+            flow.planned(Ok(Planned { staged, plan }), cx)
+        });
+        staging
+    }
+
+    fn take_staged_as_apply_does(cx: &mut TestAppContext, rig: &Rig) -> StagedPack {
+        rig.flow.update(cx, |flow, cx| {
+            let PackImportStep::Previewing(preview) = &mut flow.step else {
+                panic!("the flow is not previewing");
+            };
+            preview.modal.update(cx, |modal, cx| modal.begin_apply(cx));
+            preview
+                .staged
+                .take()
+                .expect("the preview holds the staged pack")
+        })
+    }
+
+    fn settle_until(
+        cx: &mut TestAppContext,
+        rig: &Rig,
+        done: impl Fn(&mut TestAppContext) -> bool,
+    ) {
+        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
+        while std::time::Instant::now() < deadline {
+            rig.rt
+                .block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
+            cx.run_until_parked();
+            if done(cx) {
+                return;
+            }
+        }
+        panic!("the pack import never settled");
+    }
+
+    fn step(cx: &mut TestAppContext, rig: &Rig) -> &'static str {
+        rig.flow.read_with(cx, |flow, _| match &flow.step {
+            PackImportStep::Idle => "idle",
+            PackImportStep::Planning => "planning",
+            PackImportStep::Previewing(preview) if preview.staged.is_some() => "previewing",
+            PackImportStep::Previewing(_) => "previewing-without-staging",
+        })
+    }
+
+    fn modal_state(cx: &mut TestAppContext, rig: &Rig) -> (bool, Option<String>, PackImportPlan) {
+        rig.flow.read_with(cx, |flow, cx| {
+            let PackImportStep::Previewing(preview) = &flow.step else {
+                panic!("the flow is not previewing");
+            };
+            let modal = preview.modal.read(cx);
+            (
+                modal.is_applying(),
+                modal.shown_failure(),
+                modal.plan().clone(),
+            )
+        })
+    }
+
+    fn toasts(cx: &mut TestAppContext) -> Vec<(ToastKind, String, bool)> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|toast| {
+                    (
+                        toast.kind,
+                        toast.message.to_string(),
+                        toast.action.is_some(),
+                    )
+                })
+                .collect()
+        })
+    }
+
+    fn outcome() -> PackImportOutcome {
+        PackImportOutcome {
+            safety_snapshot: None,
+            written: Vec::new(),
+            skipped: Vec::new(),
+        }
+    }
+
+    #[gpui::test]
+    fn a_planning_failure_returns_to_idle_with_an_error_toast(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        rig.flow.update(cx, |flow, cx| {
+            flow.step = PackImportStep::Planning;
+            flow.planned(Err("not a pack".to_owned()), cx);
+        });
+
+        let kinds: Vec<ToastKind> = toasts(cx).into_iter().map(|toast| toast.0).collect();
+        assert_eq!((step(cx, &rig), kinds), ("idle", vec![ToastKind::Error]));
+    }
+
+    #[gpui::test]
+    fn cancelling_the_preview_discards_the_staged_pack(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        let staging = previewing(cx, &rig);
+
+        rig.flow.update(cx, |flow, cx| flow.cancel(cx));
+        settle_until(cx, &rig, |_| !staging.exists());
+
+        assert_eq!(step(cx, &rig), "idle");
+    }
+
+    #[gpui::test]
+    fn dropping_the_flow_mid_preview_discards_the_staged_pack(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        let staging = previewing(cx, &rig);
+        let Rig { rt, world, flow } = rig;
+
+        cx.update(move |_| drop(flow));
+        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
+        while staging.exists() && std::time::Instant::now() < deadline {
+            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
+        }
+        drop(world);
+
+        assert!(!staging.exists(), "{staging:?} survived the flow");
+    }
+
+    #[gpui::test]
+    fn confirming_the_preview_applies_the_pack_and_discards_staging(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        let staging = previewing(cx, &rig);
+        let imported = std::rc::Rc::new(std::cell::Cell::new(false));
+        let seen = std::rc::Rc::clone(&imported);
+        cx.update(|cx| {
+            cx.subscribe(&rig.flow, move |_, _: &PackImported, _| seen.set(true))
+                .detach();
+        });
+
+        rig.flow.update(cx, |flow, cx| flow.apply(cx));
+        settle_until(cx, &rig, |cx| step(cx, &rig) == "idle" && !staging.exists());
+
+        let kinds: Vec<ToastKind> = toasts(cx).into_iter().map(|toast| toast.0).collect();
+        assert_eq!((kinds, imported.get()), (vec![ToastKind::Success], true));
+    }
+
+    #[gpui::test]
+    fn a_failed_apply_shows_the_error_in_the_modal_and_keeps_staging(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        let staging = previewing(cx, &rig);
+        let staged = take_staged_as_apply_does(cx, &rig);
+
+        rig.flow.update(cx, |flow, cx| {
+            flow.applied(
+                Applied::Failed {
+                    staged,
+                    message: "disk full".to_owned(),
+                },
+                cx,
+            )
+        });
+
+        let (applying, failure, _) = modal_state(cx, &rig);
+        assert_eq!(
+            (
+                step(cx, &rig),
+                applying,
+                failure.is_some_and(|shown| shown.contains("disk full")),
+                staging.exists()
+            ),
+            ("previewing", false, true, true)
+        );
+    }
+
+    #[gpui::test]
+    fn after_a_failed_apply_confirming_again_starts_a_fresh_apply(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        previewing(cx, &rig);
+        let staged = take_staged_as_apply_does(cx, &rig);
+        rig.flow.update(cx, |flow, cx| {
+            flow.applied(
+                Applied::Failed {
+                    staged,
+                    message: "disk full".to_owned(),
+                },
+                cx,
+            )
+        });
+
+        rig.flow.update(cx, |flow, cx| flow.apply(cx));
+
+        let (applying, _, _) = modal_state(cx, &rig);
+        assert_eq!(
+            (step(cx, &rig), applying),
+            ("previewing-without-staging", true)
+        );
+    }
+
+    #[gpui::test]
+    fn a_stale_plan_is_swapped_into_the_modal_with_a_warning_and_staging_kept(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = rig(cx);
+        let staging = previewing(cx, &rig);
+        let staged = take_staged_as_apply_does(cx, &rig);
+        let (_, _, mut replanned) = modal_state(cx, &rig);
+        let first = replanned.items()[0].key.clone();
+        replanned
+            .set_resolution(&first, PackResolution::Replace)
+            .unwrap();
+
+        rig.flow.update(cx, |flow, cx| {
+            flow.applied(
+                Applied::Stale {
+                    staged,
+                    plan: replanned.clone(),
+                },
+                cx,
+            )
+        });
+
+        let (applying, _, shown) = modal_state(cx, &rig);
+        let kinds: Vec<ToastKind> = toasts(cx).into_iter().map(|toast| toast.0).collect();
+        assert_eq!(
+            (
+                step(cx, &rig),
+                applying,
+                shown == replanned,
+                kinds,
+                staging.exists()
+            ),
+            ("previewing", false, true, vec![ToastKind::Warn], true)
+        );
+    }
+
+    #[test]
+    fn a_stale_apply_replans_and_keeps_the_choices_whose_items_still_conflict() {
+        let rt = runtime();
+        let source = pack_world(&rt);
+        let queue = queue_named("Alerts");
+        let action = seed_queued_action(&rt, &source, "Greeter", &queue);
+        let bundle = export_pack(&rt, &source, &[action]);
+        let target = pack_world(&rt);
+        rt.block_on(target.provider().queue_repo().save(&queue_named("Alerts")))
+            .unwrap();
+        let (staged, mut plan) = stage_into(&rt, &target, &bundle);
+        let queue_key = PackItemKey {
+            kind: PackItemKind::Queue,
+            id: queue.id.to_string(),
+        };
+        plan.set_resolution(&queue_key, PackResolution::Replace)
+            .unwrap();
+        seed_queued_action(&rt, &target, "Greeter", &queue_named("Elsewhere"));
+
+        let applied = rt.block_on(apply_staged(
+            target.services.clone(),
+            target.data_dir(),
+            staged,
+            plan,
+        ));
+
+        let Applied::Stale { plan, .. } = applied else {
+            panic!("the changed store did not make the plan stale");
+        };
+        let carried = plan
+            .items()
+            .iter()
+            .find(|item| item.key == queue_key)
+            .and_then(|item| item.resolution);
+        assert_eq!(carried, Some(PackResolution::Replace));
+    }
+
+    #[gpui::test]
+    fn a_success_toast_stays_until_dismissed_only_when_a_restart_is_needed(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = rig(cx);
+        let mut survived = Vec::new();
+
+        for live in [LiveRefresh::Applied, LiveRefresh::NeedsRestart] {
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            rig.flow.update(cx, |flow, cx| {
+                flow.applied(
+                    Applied::Done {
+                        outcome: outcome(),
+                        live,
+                    },
+                    cx,
+                )
+            });
+            cx.executor()
+                .advance_clock(PACK_TOAST_DURATION + PAST_ANY_TOAST_TIMER);
+            cx.run_until_parked();
+            survived.push((live, toasts(cx).len()));
+        }
+
+        assert_eq!(
+            survived,
+            vec![(LiveRefresh::Applied, 0), (LiveRefresh::NeedsRestart, 1)]
+        );
+    }
+
+    #[gpui::test]
+    fn an_incomplete_rollback_leaves_a_sticky_error_offering_the_snapshot_only_if_taken(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = rig(cx);
+        let mut shown = Vec::new();
+
+        for snapshot_taken in [true, false] {
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            previewing(cx, &rig);
+            let staged = take_staged_as_apply_does(cx, &rig);
+            rig.rt.block_on(discard_staged_pack(staged)).unwrap();
+            rig.flow.update(cx, |flow, cx| {
+                flow.applied(
+                    Applied::RollbackIncomplete {
+                        message: "rollback failed".to_owned(),
+                        snapshot_taken,
+                    },
+                    cx,
+                )
+            });
+            cx.executor().advance_clock(PAST_ANY_TOAST_TIMER);
+            cx.run_until_parked();
+            let summary: Vec<(ToastKind, bool)> = toasts(cx)
+                .into_iter()
+                .map(|(kind, _, action)| (kind, action))
+                .collect();
+            shown.push((step(cx, &rig), summary));
+        }
+
+        assert_eq!(
+            shown,
+            vec![
+                ("idle", vec![(ToastKind::Error, true)]),
+                ("idle", vec![(ToastKind::Error, false)]),
+            ]
+        );
+    }
+}

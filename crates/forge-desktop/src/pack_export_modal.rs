@@ -737,3 +737,261 @@ impl Render for PackExportModal {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use forge_storage::Language;
+    use forge_transfer::{PackSelection, load_pack_inventory, resolve_pack_closure};
+    use forge_types::ActionId;
+    use gpui::{AppContext, Entity, TestAppContext};
+
+    use super::{PackExportModal, SourceState, action_choices, ordered_roots};
+    use crate::i18n::install_language;
+    use crate::test_support::pack_flow::{PackWorld, pack_world, queue_named, seed_queued_action};
+    use crate::test_support::{install_presentation, runtime};
+
+    struct Rig {
+        rt: tokio::runtime::Runtime,
+        world: PackWorld,
+        greeter: ActionId,
+        farewell: ActionId,
+        modal: Entity<PackExportModal>,
+    }
+
+    fn rig(cx: &mut TestAppContext, preselect: impl FnOnce(ActionId) -> Vec<ActionId>) -> Rig {
+        install_language(Language::En);
+        install_presentation(cx);
+        let rt = runtime();
+        let world = pack_world(&rt);
+        let greeter = seed_queued_action(&rt, &world, "Greeter", &queue_named("Alerts"));
+        let farewell = seed_queued_action(&rt, &world, "Farewell", &queue_named("Outro"));
+        let stopped = runtime();
+        let detached = world.with_runtime(&stopped);
+        drop(stopped);
+        let preselected = preselect(greeter);
+        let modal = cx.new(|cx| PackExportModal::new(detached, preselected, cx));
+        let source = rt.block_on(world.services.load_source());
+        modal.update(cx, |modal, cx| modal.source_loaded(source, cx));
+        let rig = Rig {
+            rt,
+            world,
+            greeter,
+            farewell,
+            modal,
+        };
+        deliver_closure(cx, &rig);
+        rig
+    }
+
+    fn current_ticket(modal: &PackExportModal) -> u64 {
+        (0..=u64::from(u16::MAX))
+            .find(|ticket| modal.generation.is_current(*ticket))
+            .expect("the generation stays small in a test")
+    }
+
+    fn deliver_closure(cx: &mut TestAppContext, rig: &Rig) {
+        let (ticket, roots) = rig.modal.read_with(cx, |modal, _| {
+            let SourceState::Ready(ready) = &modal.source else {
+                panic!("the inventory is not loaded");
+            };
+            (
+                current_ticket(modal),
+                ordered_roots(&ready.choices, &modal.selected),
+            )
+        });
+        if roots.is_empty() {
+            return;
+        }
+        let source = rig.rt.block_on(rig.world.services.load_source()).unwrap();
+        let closure = resolve_pack_closure(
+            &source.inventory,
+            rig.world.services.registries(&source),
+            &roots,
+        )
+        .map_err(|error| error.to_string());
+        rig.modal
+            .update(cx, |modal, cx| modal.resolved(ticket, closure, cx));
+    }
+
+    fn closure_actions(cx: &mut TestAppContext, rig: &Rig) -> Option<BTreeSet<ActionId>> {
+        rig.modal.read_with(cx, |modal, _| {
+            modal
+                .closure
+                .as_ref()
+                .map(|closure| closure.actions.clone())
+        })
+    }
+
+    fn name_pack(cx: &mut TestAppContext, rig: &Rig, name: &str) {
+        let field = rig.modal.read_with(cx, |modal, _| modal.name.clone());
+        field.update(cx, |field, cx| field.set_content(name.to_owned(), cx));
+    }
+
+    fn can_export(cx: &mut TestAppContext, rig: &Rig) -> bool {
+        rig.modal.update(cx, |modal, cx| modal.can_export(cx))
+    }
+
+    #[test]
+    fn action_choices_are_listed_alphabetically_ignoring_case() {
+        let rt = runtime();
+        let world = pack_world(&rt);
+        let queue = queue_named("Alerts");
+        for name in ["beta", "Alpha", "gamma", "Delta"] {
+            seed_queued_action(&rt, &world, name, &queue);
+        }
+        let inventory = rt
+            .block_on(load_pack_inventory(world.provider().as_ref()))
+            .unwrap();
+
+        let names: Vec<String> = action_choices(&inventory)
+            .into_iter()
+            .map(|choice| choice.name)
+            .collect();
+
+        assert_eq!(names, ["Alpha", "beta", "Delta", "gamma"]);
+    }
+
+    #[gpui::test]
+    fn the_action_editor_entry_opens_with_its_action_selected_and_resolved(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = rig(cx, |greeter| vec![greeter]);
+
+        assert_eq!(
+            closure_actions(cx, &rig),
+            Some(BTreeSet::from([rig.greeter]))
+        );
+    }
+
+    #[gpui::test]
+    fn a_preselected_action_that_no_longer_exists_is_dropped(cx: &mut TestAppContext) {
+        let rig = rig(cx, |_| vec![ActionId::new()]);
+
+        let state = rig.modal.read_with(cx, |modal, _| {
+            (
+                modal.selected.is_empty(),
+                modal.closure.is_none(),
+                modal.resolving,
+            )
+        });
+        assert_eq!(state, (true, true, false));
+    }
+
+    #[gpui::test]
+    fn changing_the_selection_holds_export_until_the_new_closure_arrives(cx: &mut TestAppContext) {
+        let rig = rig(cx, |greeter| vec![greeter]);
+        name_pack(cx, &rig, "Alerts pack");
+
+        rig.modal
+            .update(cx, |modal, cx| modal.toggle(rig.farewell, cx));
+
+        assert!(!can_export(cx, &rig));
+    }
+
+    #[gpui::test]
+    fn selecting_another_action_grows_the_closure_summary(cx: &mut TestAppContext) {
+        let rig = rig(cx, |greeter| vec![greeter]);
+
+        rig.modal
+            .update(cx, |modal, cx| modal.toggle(rig.farewell, cx));
+        deliver_closure(cx, &rig);
+
+        assert_eq!(
+            closure_actions(cx, &rig),
+            Some(BTreeSet::from([rig.greeter, rig.farewell]))
+        );
+    }
+
+    #[gpui::test]
+    fn deselecting_the_last_action_clears_the_closure_summary(cx: &mut TestAppContext) {
+        let rig = rig(cx, |greeter| vec![greeter]);
+
+        rig.modal
+            .update(cx, |modal, cx| modal.toggle(rig.greeter, cx));
+
+        let state = rig
+            .modal
+            .read_with(cx, |modal, _| (modal.closure.is_none(), modal.resolving));
+        assert_eq!(state, (true, false));
+    }
+
+    #[gpui::test]
+    fn a_closure_result_for_an_earlier_selection_is_discarded(cx: &mut TestAppContext) {
+        let rig = rig(cx, |greeter| vec![greeter]);
+        let earlier = rig.modal.read_with(cx, |modal, _| current_ticket(modal));
+        rig.modal
+            .update(cx, |modal, cx| modal.toggle(rig.farewell, cx));
+        let stale = PackSelection {
+            actions: BTreeSet::from([rig.greeter]),
+            ..PackSelection::default()
+        };
+
+        rig.modal
+            .update(cx, |modal, cx| modal.resolved(earlier, Ok(stale), cx));
+        let still_resolving = rig.modal.read_with(cx, |modal, _| modal.resolving);
+        deliver_closure(cx, &rig);
+
+        assert_eq!(
+            (still_resolving, closure_actions(cx, &rig)),
+            (true, Some(BTreeSet::from([rig.greeter, rig.farewell])))
+        );
+    }
+
+    #[gpui::test]
+    fn a_failed_closure_blocks_export_and_keeps_the_reason(cx: &mut TestAppContext) {
+        let rig = rig(cx, |greeter| vec![greeter]);
+        name_pack(cx, &rig, "Alerts pack");
+        rig.modal
+            .update(cx, |modal, cx| modal.toggle(rig.farewell, cx));
+        let ticket = rig.modal.read_with(cx, |modal, _| current_ticket(modal));
+
+        rig.modal.update(cx, |modal, cx| {
+            modal.resolved(ticket, Err("unreadable action".to_owned()), cx)
+        });
+
+        let failure = rig
+            .modal
+            .read_with(cx, |modal, _| modal.closure_failure.clone());
+        assert_eq!(
+            (can_export(cx, &rig), failure.as_deref()),
+            (false, Some("unreadable action"))
+        );
+    }
+
+    #[gpui::test]
+    fn export_is_refused_while_the_pack_name_is_blank(cx: &mut TestAppContext) {
+        let rig = rig(cx, |greeter| vec![greeter]);
+
+        name_pack(cx, &rig, "   ");
+
+        assert!(!can_export(cx, &rig));
+    }
+
+    #[gpui::test]
+    fn export_is_refused_with_no_action_selected(cx: &mut TestAppContext) {
+        let rig = rig(cx, |_| Vec::new());
+
+        name_pack(cx, &rig, "Alerts pack");
+
+        assert!(!can_export(cx, &rig));
+    }
+
+    #[gpui::test]
+    fn the_draft_carries_the_trimmed_name_and_the_resolved_closure(cx: &mut TestAppContext) {
+        let rig = rig(cx, |greeter| vec![greeter]);
+        name_pack(cx, &rig, "  Alerts pack  ");
+
+        let draft = rig
+            .modal
+            .update(cx, |modal, cx| modal.take_draft(cx))
+            .expect("a named pack with a selected action exports");
+
+        assert_eq!(
+            (draft.metadata.name.as_str(), draft.selection.actions),
+            ("Alerts pack", BTreeSet::from([rig.greeter]))
+        );
+    }
+}

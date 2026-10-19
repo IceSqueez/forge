@@ -1,6 +1,7 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 mod config_references;
+pub(crate) mod pack_flow;
 mod pack_transfer;
 
 use std::collections::HashMap;

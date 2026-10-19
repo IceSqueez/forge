@@ -192,3 +192,125 @@ impl Render for PackExportFlow {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+mod tests {
+    use forge_components::{ToastKind, Toasts};
+    use forge_storage::Language;
+    use forge_transfer::{BUNDLE_EXTENSION, PackMetadata, PackSelection, load_pack_inventory};
+    use gpui::{AppContext, Entity, TestAppContext};
+
+    use super::{PackExportFlow, PackExportStep, pack_file_name};
+    use crate::async_bridge::DIALOG_CANCELLED;
+    use crate::i18n::install_language;
+    use crate::pack_export_modal::{PackDraft, PackExportModalEvent};
+    use crate::test_support::pack_flow::pack_world;
+    use crate::test_support::{install_presentation, runtime};
+
+    struct Rig {
+        rt: tokio::runtime::Runtime,
+        world: crate::test_support::pack_flow::PackWorld,
+        flow: Entity<PackExportFlow>,
+    }
+
+    fn rig(cx: &mut TestAppContext) -> Rig {
+        install_language(Language::En);
+        install_presentation(cx);
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let world = pack_world(&rt);
+        let stopped = runtime();
+        let detached = world.with_runtime(&stopped);
+        drop(stopped);
+        let flow = cx.new(|_| PackExportFlow::new(detached));
+        Rig { rt, world, flow }
+    }
+
+    fn draft(rig: &Rig) -> PackDraft {
+        PackDraft {
+            inventory: rig
+                .rt
+                .block_on(load_pack_inventory(rig.world.provider().as_ref()))
+                .unwrap(),
+            selection: PackSelection::default(),
+            metadata: PackMetadata {
+                name: "Alerts pack".to_owned(),
+                author: String::new(),
+                description: String::new(),
+            },
+        }
+    }
+
+    fn step(cx: &mut TestAppContext, rig: &Rig) -> &'static str {
+        rig.flow.read_with(cx, |flow, _| match &flow.step {
+            PackExportStep::Idle => "idle",
+            PackExportStep::Editing(_) => "editing",
+            PackExportStep::ChoosingFile => "choosing-file",
+            PackExportStep::Writing => "writing",
+        })
+    }
+
+    #[test]
+    fn pack_file_names_collapse_separators_and_fall_back_when_nothing_is_left() {
+        let cases = [
+            ("Alerts pack", "Alerts-pack"),
+            ("  Stream -- Alerts!  ", "Stream-Alerts"),
+            ("../../etc/passwd", "etc-passwd"),
+            ("Сповіщення 2", "Сповіщення-2"),
+            ("!!!", "pack"),
+            ("", "pack"),
+        ];
+
+        for (pack_name, stem) in cases {
+            assert_eq!(
+                pack_file_name(pack_name),
+                format!("{stem}.{BUNDLE_EXTENSION}"),
+                "{pack_name:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn cancelling_the_export_modal_returns_the_flow_to_idle(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        rig.flow.update(cx, |flow, cx| flow.start(Vec::new(), cx));
+        let modal = rig.flow.read_with(cx, |flow, _| match &flow.step {
+            PackExportStep::Editing(editing) => editing.modal.clone(),
+            _ => panic!("the export modal did not open"),
+        });
+
+        modal.update(cx, |_, cx| cx.emit(PackExportModalEvent::Cancelled));
+        cx.run_until_parked();
+
+        assert_eq!(step(cx, &rig), "idle");
+    }
+
+    #[gpui::test]
+    fn a_dismissed_save_dialog_is_silent_but_a_failing_one_is_reported(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        let mut outcomes = Vec::new();
+
+        for dialog_error in [DIALOG_CANCELLED, "portal unavailable"] {
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            let draft = draft(&rig);
+            rig.flow.update(cx, |flow, cx| {
+                flow.step = PackExportStep::ChoosingFile;
+                flow.file_chosen(Err(dialog_error.to_owned()), draft, cx);
+            });
+            let toasts: Vec<ToastKind> = cx.update(|cx| {
+                cx.global::<Toasts>()
+                    .items()
+                    .iter()
+                    .map(|toast| toast.kind)
+                    .collect()
+            });
+            outcomes.push((step(cx, &rig), toasts));
+        }
+
+        assert_eq!(
+            outcomes,
+            vec![("idle", Vec::new()), ("idle", vec![ToastKind::Error])]
+        );
+    }
+}

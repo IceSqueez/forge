@@ -1235,3 +1235,94 @@ impl Render for HomeView {
             .child(self.restore.clone())
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+mod tests {
+    use std::path::PathBuf;
+
+    use forge_components::{ToastKind, Toasts};
+    use forge_storage::Language;
+    use forge_transfer::{BundleKind, read_bundle_kind};
+    use gpui::{AppContext, Entity, TestAppContext};
+
+    use super::HomeView;
+    use crate::event_loss::EventLoss;
+    use crate::home_stats::HomeStats;
+    use crate::i18n::install_language;
+    use crate::test_support::pack_flow::{PackWorld, pack_world};
+    use crate::test_support::{install_presentation, runtime};
+
+    struct Rig {
+        rt: tokio::runtime::Runtime,
+        _world: PackWorld,
+        home: Entity<HomeView>,
+    }
+
+    fn rig(cx: &mut TestAppContext) -> Rig {
+        install_language(Language::En);
+        install_presentation(cx);
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let world = pack_world(&rt);
+        let stopped = runtime();
+        let detached = world.with_runtime(&stopped);
+        drop(stopped);
+        let stats = cx.new(|_| HomeStats::new());
+        let event_loss = cx.new(|_| EventLoss::new());
+        let home = cx.new(|cx| HomeView::new(stats, event_loss, detached, cx));
+        Rig {
+            rt,
+            _world: world,
+            home,
+        }
+    }
+
+    fn busy_flows(cx: &mut TestAppContext, rig: &Rig) -> (bool, bool) {
+        rig.home.read_with(cx, |home, cx| {
+            (
+                home.restore.read(cx).is_busy(),
+                home.pack_import.read(cx).is_busy(),
+            )
+        })
+    }
+
+    #[gpui::test]
+    fn a_full_backup_opens_restore_and_a_pack_opens_the_pack_import(cx: &mut TestAppContext) {
+        let mut routed = Vec::new();
+
+        for kind in [BundleKind::Full, BundleKind::Pack] {
+            let rig = rig(cx);
+            rig.home.update(cx, |home, cx| {
+                home.route_import(PathBuf::from("picked.forgebundle"), Ok(kind), cx)
+            });
+            routed.push(busy_flows(cx, &rig));
+        }
+
+        assert_eq!(routed, vec![(true, false), (false, true)]);
+    }
+
+    #[gpui::test]
+    fn a_json_file_is_refused_with_an_error_and_opens_no_flow(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        let dir = tempfile::tempdir().unwrap();
+        let json = dir.path().join("action.json");
+        std::fs::write(&json, br#"{"name":"Greeter"}"#).unwrap();
+        let kind = rig.rt.block_on(read_bundle_kind(json.clone()));
+
+        rig.home
+            .update(cx, |home, cx| home.route_import(json, kind, cx));
+
+        let kinds: Vec<ToastKind> = cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|toast| toast.kind)
+                .collect()
+        });
+        assert_eq!(
+            (busy_flows(cx, &rig), kinds),
+            ((false, false), vec![ToastKind::Error])
+        );
+    }
+}

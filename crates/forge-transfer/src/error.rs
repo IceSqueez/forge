@@ -1,5 +1,7 @@
 use forge_storage::StorageError;
 
+use crate::manifest::BundleKind;
+
 #[derive(Debug, thiserror::Error)]
 pub enum TransferError {
     #[error("this file is not a forge bundle or backup")]
@@ -7,6 +9,21 @@ pub enum TransferError {
 
     #[error("this file holds an unknown kind of forge data ('{kind}')")]
     UnknownKind { kind: String },
+
+    #[error("this file is a forge {found}, not a {expected}")]
+    KindMismatch {
+        expected: BundleKind,
+        found: BundleKind,
+    },
+
+    #[error("this pack uses document format {found}; this forge reads up to format {supported}")]
+    NewerPackDocuments { found: u32, supported: u32 },
+
+    #[error("the pack has no actions to export")]
+    EmptyPack,
+
+    #[error("the pack needs a name")]
+    PackNameRequired,
 
     #[error("this file uses bundle format {found}; this forge reads up to format {supported}")]
     NewerFormat { found: u32, supported: u32 },

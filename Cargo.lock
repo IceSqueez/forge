@@ -3305,8 +3305,11 @@ version = "0.6.2"
 dependencies = [
  "age",
  "flate2",
+ "forge-overlay",
+ "forge-registry",
  "forge-storage",
  "forge-storage-sqlite",
+ "forge-types",
  "forge-update",
  "serde",
  "serde_json",

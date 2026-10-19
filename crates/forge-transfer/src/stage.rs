@@ -11,7 +11,7 @@ use forge_storage::{
 use crate::encryption::decrypt_from;
 use crate::error::TransferError;
 use crate::extract::Extractor;
-use crate::layout::ARCHIVE_ROOT;
+use crate::layout::{ARCHIVE_ROOT, ArchiveScope};
 use crate::limits::MAX_FULL_MANIFEST_BYTES;
 use crate::manifest::{
     ENCRYPTED_PAYLOAD_ENTRY_NAME, FullManifest, MANIFEST_ENTRY_NAME, check_schema, parse_full,
@@ -116,7 +116,8 @@ fn stage(request: &StageRequest, staging_dir: &Path) -> Result<BundleSummary, Tr
             extract_encrypted(&mut payload, passphrase, staging_dir)?;
         }
         BundleSummary::LegacyUnencrypted => {
-            let mut extractor = Extractor::new(staging_dir.to_path_buf(), None);
+            let mut extractor =
+                Extractor::new(staging_dir.to_path_buf(), ArchiveScope::Backup, None);
             extractor.extract(&mut first)?;
             drop(first);
             for entry in entries.by_ref() {
@@ -149,8 +150,11 @@ fn extract_encrypted(
             .map_err(TransferError::damaged)?;
         let manifest = read_full_manifest(&mut first)?;
         drop(first);
-        let mut extractor =
-            Extractor::new(staging_dir.to_path_buf(), Some(manifest.contents.clone()));
+        let mut extractor = Extractor::new(
+            staging_dir.to_path_buf(),
+            ArchiveScope::Backup,
+            Some(manifest.contents.clone()),
+        );
         for entry in entries {
             extractor.extract(&mut entry.map_err(TransferError::damaged)?)?;
         }

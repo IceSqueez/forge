@@ -12,7 +12,10 @@ workspace = true
 [dependencies]
 age = { workspace = true }
 flate2 = { workspace = true }
+forge-overlay = { path = "../forge-overlay" }
+forge-registry = { path = "../forge-registry" }
 forge-storage = { path = "../forge-storage" }
+forge-types = { path = "../forge-types" }
 forge-update = { path = "../forge-update" }
 serde = { workspace = true }
 serde_json = { workspace = true }

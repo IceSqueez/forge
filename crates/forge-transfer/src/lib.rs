@@ -9,6 +9,7 @@ mod limits;
 mod manifest;
 mod naming;
 mod outer;
+mod pack;
 mod passphrase;
 mod payload;
 mod private_file;
@@ -25,7 +26,7 @@ pub use full_writer::{BackupDestination, FullBackupRequest, write_full_backup};
 pub use layout::{ARCHIVE_ROOT, INCLUDED_DIRS};
 pub use limits::{
     ENCRYPT_SCRYPT_WORK_FACTOR, MAX_ARCHIVE_ENTRIES, MAX_DECRYPT_SCRYPT_WORK_FACTOR,
-    MAX_ENTRY_BYTES, MAX_UNPACKED_BYTES,
+    MAX_ENTRY_BYTES, MAX_PACK_DOCUMENTS_BYTES, MAX_UNPACKED_BYTES,
 };
 pub use manifest::{
     BUNDLE_FORMAT_VERSION, BundleKind, ContentEntry, ENCRYPTED_PAYLOAD_ENTRY_NAME,
@@ -34,8 +35,16 @@ pub use manifest::{
 pub use naming::{
     BUNDLE_EXTENSION, LEGACY_ARCHIVE_EXTENSION, backup_file_stem, backups_dir, unique_suffix,
 };
+pub use pack::{
+    ActionDocument, ClipDocument, ClipSourceDocument, ClosureRegistries, DocumentConfig,
+    GlobalDocument, MediaDocument, OverlayDocument, OverlayFileDocument, PACK_DOCUMENTS_VERSION,
+    PACK_ROOT, PACK_STAGING_DIR_NAME, PackDocuments, PackExportRequest, PackInventory,
+    PackManifest, PackMetadata, PackReference, PackSelection, QueueDocument, ScriptDocument,
+    StagedPack, StepDocument, TriggerDocument, discard_staged_pack, load_pack_inventory,
+    pack_staging_root, resolve_pack_closure, stage_pack, write_pack,
+};
 pub use passphrase::{MIN_PASSPHRASE_CHARS, Passphrase};
-pub use reader::{BundleSummary, read_bundle_summary};
+pub use reader::{BundleSummary, read_bundle_kind, read_bundle_summary};
 pub use restore_apply::apply_pending_restore;
 pub use restore_journal::{RESTORE_JOURNAL_FILE, restore_in_flight};
 pub use restore_marker::{

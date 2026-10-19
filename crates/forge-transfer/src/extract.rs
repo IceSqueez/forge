@@ -4,13 +4,14 @@ use std::path::{Path, PathBuf};
 
 use crate::digest::DigestingReader;
 use crate::error::TransferError;
-use crate::layout::{EntryShape, confined_relative_path, entry_name};
+use crate::layout::{ArchiveScope, EntryShape, confined_relative_path, entry_name};
 use crate::limits::{MAX_ARCHIVE_ENTRIES, MAX_ENTRY_BYTES, MAX_UNPACKED_BYTES};
 use crate::manifest::ContentEntry;
 use crate::private_file::create_private;
 
 pub(crate) struct Extractor {
     root: PathBuf,
+    scope: ArchiveScope,
     expected: Option<HashMap<String, ContentEntry>>,
     written: HashSet<String>,
     unpacked_bytes: u64,
@@ -18,9 +19,14 @@ pub(crate) struct Extractor {
 }
 
 impl Extractor {
-    pub(crate) fn new(root: PathBuf, expected: Option<Vec<ContentEntry>>) -> Self {
+    pub(crate) fn new(
+        root: PathBuf,
+        scope: ArchiveScope,
+        expected: Option<Vec<ContentEntry>>,
+    ) -> Self {
         Self {
             root,
+            scope,
             expected: expected.map(|contents| {
                 contents
                     .into_iter()
@@ -55,7 +61,7 @@ impl Extractor {
                 reason: "only regular files and folders are allowed",
             });
         };
-        let relative = confined_relative_path(&raw, shape)?;
+        let relative = confined_relative_path(&raw, shape, self.scope)?;
         match shape {
             EntryShape::Dir => {
                 std::fs::create_dir_all(self.root.join(&relative))?;

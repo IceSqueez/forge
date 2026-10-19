@@ -6,6 +6,7 @@ use forge_storage::paths::{
 };
 
 use crate::error::TransferError;
+use crate::pack::layout::{PACK_ROOT, is_pack_scope};
 
 pub const ARCHIVE_ROOT: &str = "forge";
 
@@ -16,8 +17,8 @@ pub const INCLUDED_DIRS: [&str; 4] = [
     ASSETS_DIR_NAME,
 ];
 
-const ARCHIVE_SEPARATOR: &str = "/";
-const FORBIDDEN_NAME_CHARS: [char; 2] = [':', '\\'];
+pub(crate) const ARCHIVE_SEPARATOR: &str = "/";
+pub(crate) const FORBIDDEN_NAME_CHARS: [char; 2] = [':', '\\'];
 
 pub(crate) fn database_entry() -> String {
     archive_path([DATABASE_FILE_NAME])
@@ -40,9 +41,32 @@ pub(crate) enum EntryShape {
     Dir,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ArchiveScope {
+    Backup,
+    Pack,
+}
+
+impl ArchiveScope {
+    fn root(self) -> &'static str {
+        match self {
+            Self::Backup => ARCHIVE_ROOT,
+            Self::Pack => PACK_ROOT,
+        }
+    }
+
+    fn admits(self, rest: &[&str], shape: EntryShape) -> bool {
+        match self {
+            Self::Backup => is_backup_scope(rest, shape),
+            Self::Pack => is_pack_scope(rest, shape),
+        }
+    }
+}
+
 pub(crate) fn confined_relative_path(
     raw: &Path,
     shape: EntryShape,
+    scope: ArchiveScope,
 ) -> Result<PathBuf, TransferError> {
     let shown = raw.to_string_lossy().into_owned();
     let unsafe_entry = |reason| TransferError::UnsafeEntry {
@@ -69,11 +93,11 @@ pub(crate) fn confined_relative_path(
     let Some((&root, rest)) = segments.split_first() else {
         return Err(unsafe_entry("path is empty"));
     };
-    if root != ARCHIVE_ROOT {
+    if root != scope.root() {
         return Err(unsafe_entry("path is outside the forge folder"));
     }
-    if !is_backup_scope(rest, shape) {
-        return Err(unsafe_entry("path is not part of a forge backup"));
+    if !scope.admits(rest, shape) {
+        return Err(unsafe_entry("path is not part of this kind of forge file"));
     }
     Ok(segments.iter().collect())
 }

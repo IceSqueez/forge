@@ -54,7 +54,7 @@ fn walk(data_dir: &Path, relative: &Path, out: &mut Vec<PayloadFile>) -> Result<
     Ok(())
 }
 
-fn digested(source: &Path, path: String) -> Result<PayloadFile, TransferError> {
+pub(crate) fn digested(source: &Path, path: String) -> Result<PayloadFile, TransferError> {
     let (size, sha256_hex) = digest_reader(File::open(source)?)?;
     Ok(PayloadFile {
         source: source.to_path_buf(),

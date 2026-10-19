@@ -104,6 +104,10 @@ pub trait ActionRepo: Send + Sync {
     async fn restore(&self, _id: ActionId) -> Result<bool, StorageError> {
         Err(StorageError::NotReady)
     }
+
+    async fn list_archived(&self) -> Result<Vec<Action>, StorageError> {
+        Ok(Vec::new())
+    }
 }
 
 #[cfg(test)]

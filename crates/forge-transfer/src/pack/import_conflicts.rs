@@ -9,6 +9,7 @@ pub(crate) struct DetectedItem {
     pub(crate) key: PackItemKey,
     pub(crate) name: String,
     pub(crate) conflict: PackConflict,
+    pub(crate) archived: bool,
 }
 
 impl DetectedItem {
@@ -17,7 +18,13 @@ impl DetectedItem {
             key: PackItemKey { kind, id },
             name: name.to_owned(),
             conflict,
+            archived: false,
         }
+    }
+
+    fn archived_local(mut self, archived: bool) -> Self {
+        self.archived = archived;
+        self
     }
 }
 
@@ -72,12 +79,19 @@ pub(crate) fn detect_conflicts(
         ));
     }
     for global in &documents.globals {
-        detected.push(DetectedItem::new(
-            PackItemKind::Global,
-            global.name.clone(),
-            &global.name,
-            conflict_of(inventory.globals.contains_key(&global.name), None),
-        ));
+        let archived = inventory.archived_globals.contains_key(&global.name);
+        detected.push(
+            DetectedItem::new(
+                PackItemKind::Global,
+                global.name.clone(),
+                &global.name,
+                conflict_of(
+                    archived || inventory.globals.contains_key(&global.name),
+                    None,
+                ),
+            )
+            .archived_local(archived),
+        );
     }
     for clip in &documents.clips {
         let named = inventory
@@ -109,15 +123,19 @@ pub(crate) fn detect_conflicts(
         ));
     }
     for trigger in &documents.triggers {
-        detected.push(DetectedItem::new(
-            PackItemKind::Trigger,
-            trigger.id.to_string(),
-            &trigger.name,
-            conflict_of(
-                inventory.triggers.contains_key(&trigger.id),
-                trigger_name_match(trigger, inventory),
-            ),
-        ));
+        let archived = inventory.archived_triggers.contains_key(&trigger.id);
+        detected.push(
+            DetectedItem::new(
+                PackItemKind::Trigger,
+                trigger.id.to_string(),
+                &trigger.name,
+                conflict_of(
+                    archived || inventory.triggers.contains_key(&trigger.id),
+                    trigger_name_match(trigger, inventory),
+                ),
+            )
+            .archived_local(archived),
+        );
     }
     for action in &documents.actions {
         let named = inventory
@@ -125,12 +143,19 @@ pub(crate) fn detect_conflicts(
             .values()
             .find(|local| local.name == action.name)
             .map(|local| local.id.to_string());
-        detected.push(DetectedItem::new(
-            PackItemKind::Action,
-            action.id.to_string(),
-            &action.name,
-            conflict_of(inventory.actions.contains_key(&action.id), named),
-        ));
+        let archived = inventory.archived_actions.contains_key(&action.id);
+        detected.push(
+            DetectedItem::new(
+                PackItemKind::Action,
+                action.id.to_string(),
+                &action.name,
+                conflict_of(
+                    archived || inventory.actions.contains_key(&action.id),
+                    named,
+                ),
+            )
+            .archived_local(archived),
+        );
     }
     detected
 }

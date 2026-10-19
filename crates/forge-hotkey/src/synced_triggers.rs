@@ -132,6 +132,10 @@ impl TriggerInstanceRepo for HotkeySyncedTriggerRepo {
         self.sync().await;
         Ok(restored)
     }
+
+    async fn list_archived(&self) -> Result<Vec<TriggerInstance>, StorageError> {
+        self.inner.list_archived().await
+    }
 }
 
 #[cfg(test)]

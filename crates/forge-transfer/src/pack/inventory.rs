@@ -11,11 +11,14 @@ use crate::error::TransferError;
 #[derive(Debug, Clone, Default)]
 pub struct PackInventory {
     pub(crate) actions: BTreeMap<ActionId, Action>,
+    pub(crate) archived_actions: BTreeMap<ActionId, Action>,
     pub(crate) action_triggers: BTreeMap<ActionId, Vec<TriggerInstanceId>>,
     pub(crate) triggers: BTreeMap<TriggerInstanceId, TriggerInstance>,
+    pub(crate) archived_triggers: BTreeMap<TriggerInstanceId, TriggerInstance>,
     pub(crate) queues: BTreeMap<QueueId, Queue>,
     pub(crate) scripts: BTreeMap<String, ScriptRecord>,
     pub(crate) globals: BTreeMap<String, GlobalEntry>,
+    pub(crate) archived_globals: BTreeMap<String, GlobalEntry>,
     pub(crate) clips: BTreeMap<ClipId, StoredClip>,
     pub(crate) clip_media: BTreeMap<ClipId, MediaBlobId>,
     pub(crate) overlays: BTreeMap<OverlayId, OverlayDefinition>,
@@ -26,12 +29,25 @@ impl PackInventory {
     pub fn actions(&self) -> impl Iterator<Item = &Action> {
         self.actions.values()
     }
+
+    pub(crate) fn stored_action(&self, id: &ActionId) -> Option<Stored<Action>> {
+        stored(&self.actions, &self.archived_actions, id)
+    }
+
+    pub(crate) fn stored_trigger(&self, id: &TriggerInstanceId) -> Option<Stored<TriggerInstance>> {
+        stored(&self.triggers, &self.archived_triggers, id)
+    }
+
+    pub(crate) fn stored_global(&self, name: &str) -> Option<Stored<GlobalEntry>> {
+        stored(&self.globals, &self.archived_globals, name)
+    }
 }
 
 pub async fn load_pack_inventory(
     provider: &dyn DataProvider,
 ) -> Result<PackInventory, TransferError> {
-    let actions = provider.action_repo().list().await?;
+    let action_repo = provider.action_repo();
+    let actions = action_repo.list().await?;
     let trigger_repo = provider.trigger_instance_repo();
     let mut action_triggers = BTreeMap::new();
     for action in &actions {
@@ -51,13 +67,18 @@ pub async fn load_pack_inventory(
             .into_iter()
             .map(|action| (action.id, action))
             .collect(),
+        archived_actions: keyed(action_repo.list_archived().await?, |action| action.id),
         action_triggers,
         triggers: keyed(trigger_repo.list_all().await?, |trigger| trigger.id),
+        archived_triggers: keyed(trigger_repo.list_archived().await?, |trigger| trigger.id),
         queues: keyed(provider.queue_repo().list().await?, |queue| queue.id),
         scripts: keyed(ScriptRepo::list(provider).await?, |script| {
             script.name.clone()
         }),
         globals: keyed(GlobalsRepo::list(provider).await?, |global| {
+            global.name.clone()
+        }),
+        archived_globals: keyed(GlobalsRepo::list_archived(provider).await?, |global| {
             global.name.clone()
         }),
         clips: keyed(clips, |clip| clip.id),
@@ -67,6 +88,31 @@ pub async fn load_pack_inventory(
         }),
         media: keyed(media_repo.list().await?, |blob| blob.id.clone()),
     })
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Stored<T> {
+    pub(crate) row: T,
+    pub(crate) archived: bool,
+}
+
+fn stored<K, Q, T>(live: &BTreeMap<K, T>, archived: &BTreeMap<K, T>, key: &Q) -> Option<Stored<T>>
+where
+    K: Ord + std::borrow::Borrow<Q>,
+    Q: Ord + ?Sized,
+    T: Clone,
+{
+    live.get(key)
+        .map(|row| Stored {
+            row: row.clone(),
+            archived: false,
+        })
+        .or_else(|| {
+            archived.get(key).map(|row| Stored {
+                row: row.clone(),
+                archived: true,
+            })
+        })
 }
 
 fn keyed<K: Ord, V>(values: Vec<V>, key: impl Fn(&V) -> K) -> BTreeMap<K, V> {

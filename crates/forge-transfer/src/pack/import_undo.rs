@@ -22,6 +22,7 @@ pub(crate) enum Undo {
     Global {
         name: String,
         previous: Option<GlobalEntry>,
+        archived: bool,
     },
     Clip {
         id: ClipId,
@@ -43,10 +44,12 @@ pub(crate) enum Undo {
     Trigger {
         id: TriggerInstanceId,
         previous: Option<TriggerInstance>,
+        archived: bool,
     },
     Action {
         id: ActionId,
         previous: Option<Action>,
+        archived: bool,
     },
     Link {
         action: ActionId,
@@ -103,10 +106,22 @@ async fn revert(provider: &dyn DataProvider, undo: Undo) -> Result<(), String> {
                 .map(drop)
                 .map_err(storage),
         },
-        Undo::Global { name, previous } => match previous {
-            Some(entry) => GlobalsRepo::set(provider, &name, entry.value, entry.persisted)
-                .await
-                .map_err(storage),
+        Undo::Global {
+            name,
+            previous,
+            archived,
+        } => match previous {
+            Some(entry) => {
+                GlobalsRepo::set(provider, &name, entry.value, entry.persisted)
+                    .await
+                    .map_err(storage)?;
+                if archived {
+                    GlobalsRepo::archive(provider, &name)
+                        .await
+                        .map_err(storage)?;
+                }
+                Ok(())
+            }
             None => GlobalsRepo::delete(provider, &name)
                 .await
                 .map(drop)
@@ -151,17 +166,37 @@ async fn revert(provider: &dyn DataProvider, undo: Undo) -> Result<(), String> {
                 _ => Ok(()),
             },
         },
-        Undo::Trigger { id, previous } => {
+        Undo::Trigger {
+            id,
+            previous,
+            archived,
+        } => {
             let repo = provider.trigger_instance_repo();
             match previous {
-                Some(trigger) => repo.save(&trigger).await.map_err(storage),
+                Some(trigger) => {
+                    repo.save(&trigger).await.map_err(storage)?;
+                    if archived {
+                        repo.archive(id).await.map_err(storage)?;
+                    }
+                    Ok(())
+                }
                 None => repo.delete(id).await.map(drop).map_err(storage),
             }
         }
-        Undo::Action { id, previous } => {
+        Undo::Action {
+            id,
+            previous,
+            archived,
+        } => {
             let repo = provider.action_repo();
             match previous {
-                Some(action) => repo.save(&action).await.map_err(storage),
+                Some(action) => {
+                    repo.save(&action).await.map_err(storage)?;
+                    if archived {
+                        repo.archive(id).await.map_err(storage)?;
+                    }
+                    Ok(())
+                }
                 None => repo.delete(id).await.map(drop).map_err(storage),
             }
         }

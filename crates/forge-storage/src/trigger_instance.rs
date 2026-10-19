@@ -44,4 +44,8 @@ pub trait TriggerInstanceRepo: Send + Sync {
     async fn restore(&self, _id: TriggerInstanceId) -> Result<bool, StorageError> {
         Err(StorageError::NotReady)
     }
+
+    async fn list_archived(&self) -> Result<Vec<TriggerInstance>, StorageError> {
+        Ok(Vec::new())
+    }
 }

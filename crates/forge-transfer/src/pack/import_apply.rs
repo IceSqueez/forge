@@ -67,10 +67,11 @@ pub async fn apply_pack_import(
     let inventory = load_pack_inventory(provider.as_ref()).await?;
     let detected = detect_conflicts(staged.documents(), &inventory);
     let unchanged = detected.len() == plan.items().len()
-        && detected
-            .iter()
-            .zip(plan.items())
-            .all(|(now, planned)| now.key == planned.key && now.conflict == planned.conflict);
+        && detected.iter().zip(plan.items()).all(|(now, planned)| {
+            now.key == planned.key
+                && now.conflict == planned.conflict
+                && now.archived == planned.archived
+        });
     if !unchanged {
         return Err(TransferError::PackPlanStale);
     }
@@ -258,12 +259,12 @@ impl<'a> PackImport<'_, 'a> {
                 .map(|overlay| overlay.display_name.clone()),
             PackItemKind::Trigger => ulid_id::<TriggerInstanceId>(local_id)
                 .ok()
-                .and_then(|id| inventory.triggers.get(&id))
-                .map(|trigger| trigger.name.clone()),
+                .and_then(|id| inventory.stored_trigger(&id))
+                .map(|stored| stored.row.name),
             PackItemKind::Action => ulid_id::<ActionId>(local_id)
                 .ok()
-                .and_then(|id| inventory.actions.get(&id))
-                .map(|action| action.name.clone()),
+                .and_then(|id| inventory.stored_action(&id))
+                .map(|stored| stored.row.name),
         }
     }
 
@@ -494,8 +495,9 @@ impl<'a> PackImport<'_, 'a> {
             };
             let previous = target
                 .replaces()
-                .then(|| self.inventory.globals.get(&target.name).cloned())
+                .then(|| self.inventory.stored_global(&target.name))
                 .flatten();
+            let archived = previous.as_ref().is_some_and(|stored| stored.archived);
             GlobalsRepo::set(
                 self.provider,
                 &target.name,
@@ -505,7 +507,8 @@ impl<'a> PackImport<'_, 'a> {
             .await?;
             self.undo.push(Undo::Global {
                 name: target.name.clone(),
-                previous,
+                previous: previous.map(|stored| stored.row),
+                archived,
             });
             self.record_written(item, target.name.clone(), &target);
         }
@@ -745,13 +748,18 @@ impl<'a> PackImport<'_, 'a> {
                 .rewrite_trigger_instance(&mut trigger, &self.remap);
             let previous = target
                 .replaces()
-                .then(|| self.inventory.triggers.get(&trigger.id).cloned())
+                .then(|| self.inventory.stored_trigger(&trigger.id))
                 .flatten();
+            let archived = previous.as_ref().is_some_and(|stored| stored.archived);
             repo.save(&trigger).await?;
             self.undo.push(Undo::Trigger {
                 id: trigger.id,
-                previous,
+                previous: previous.map(|stored| stored.row),
+                archived,
             });
+            if archived {
+                repo.restore(trigger.id).await?;
+            }
             self.written_triggers.insert(trigger.id);
             self.record_written(item, trigger.id.to_string(), &target);
         }
@@ -785,15 +793,17 @@ impl<'a> PackImport<'_, 'a> {
             }
             let previous = target
                 .replaces()
-                .then(|| self.inventory.actions.get(&action.id).cloned())
+                .then(|| self.inventory.stored_action(&action.id))
                 .flatten();
-            repo.save(&action).await?;
+            let archived = previous.as_ref().is_some_and(|stored| stored.archived);
             let created = previous.is_none();
+            repo.save(&action).await?;
             self.undo.push(Undo::Action {
                 id: action.id,
-                previous,
+                previous: previous.map(|stored| stored.row),
+                archived,
             });
-            if created {
+            if created || archived {
                 repo.restore(action.id).await?;
             }
             linkable.push((action.id, document));

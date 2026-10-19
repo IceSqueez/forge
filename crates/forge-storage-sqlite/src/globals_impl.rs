@@ -241,6 +241,18 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         decode_entries(rows)
     }
 
+    async fn list_archived(&self) -> Result<Vec<GlobalEntry>, StorageError> {
+        let rows: Vec<GlobalRow> = sqlx::query_as(
+            "SELECT name, value, persisted, reads, writes, created_at, last_modified \
+             FROM globals WHERE archived_at IS NOT NULL",
+        )
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        decode_entries(rows)
+    }
+
     async fn archive(&self, name: &str) -> Result<bool, StorageError> {
         let now_ms = epoch_ms_now();
         let result = sqlx::query(

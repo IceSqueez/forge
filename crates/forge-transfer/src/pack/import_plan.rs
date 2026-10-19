@@ -78,6 +78,7 @@ pub struct PackPlanItem {
     pub key: PackItemKey,
     pub name: String,
     pub conflict: PackConflict,
+    pub archived: bool,
     pub resolution: Option<PackResolution>,
 }
 
@@ -168,6 +169,7 @@ pub fn plan_pack_import(
             key: detected.key,
             name: detected.name,
             conflict: detected.conflict,
+            archived: detected.archived,
         })
         .collect();
     let review = review_pack(staged, registries);

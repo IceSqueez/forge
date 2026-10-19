@@ -421,6 +421,20 @@ impl ActionRepo for SqliteActionRepo {
         Ok(archived.then_some(cancelled_runs))
     }
 
+    async fn list_archived(&self) -> Result<Vec<Action>, StorageError> {
+        let rows: Vec<ActionRow> = sqlx::query_as(
+            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
+             FROM actions WHERE archived_at IS NOT NULL ORDER BY name",
+        )
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        rows.into_iter()
+            .map(|row| decode_row(row).map_err(StorageError::from))
+            .collect()
+    }
+
     async fn restore(&self, id: ActionId) -> Result<bool, StorageError> {
         let id_str = id.to_string();
         let result = sqlx::query(

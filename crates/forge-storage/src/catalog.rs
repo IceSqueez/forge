@@ -242,6 +242,10 @@ impl ActionRepo for RevisingActionRepo {
             .after(async move { inner.restore(id).await })
             .await
     }
+
+    async fn list_archived(&self) -> Result<Vec<Action>, StorageError> {
+        self.inner.list_archived().await
+    }
 }
 
 pub struct RevisingTriggerInstanceRepo {
@@ -356,6 +360,10 @@ impl TriggerInstanceRepo for RevisingTriggerInstanceRepo {
         self.revision
             .after(async move { inner.restore(id).await })
             .await
+    }
+
+    async fn list_archived(&self) -> Result<Vec<TriggerInstance>, StorageError> {
+        self.inner.list_archived().await
     }
 }
 

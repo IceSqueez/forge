@@ -327,11 +327,22 @@ settings_storage_section_title = Сховище та резервні копії
 settings_storage_db_path_label = База даних
 settings_storage_backup_label = Резервна копія
 settings_storage_backup_btn = Резервна копія зараз
-settings_storage_backup_hint = Зберігає всю теку даних - базу, ключ облікових даних, медіа, оверлеї, голоси й ресурси - одним архівом у теці резервних копій. Архів містить ключ, що розшифровує збережені входи: тримайте його в таємниці.
+settings_storage_backup_hint = Зберігає всю теку даних - базу, ключ облікових даних, медіа, оверлеї, голоси й ресурси - одним файлом, зашифрованим паролем, у теці резервних копій.
 settings_storage_backup_btn_busy = Створюю копію...
 settings_storage_backup_done = Копію збережено: { $path }
 settings_storage_backup_failed = Не вдалося створити копію: { $error }
 settings_storage_backup_reveal = Показати
+settings_storage_passphrase_title = Шифрування копії
+settings_storage_passphrase_subtitle = Пароль запитується для кожної копії окремо
+settings_storage_passphrase_warning = forge ніколи не зберігає цей пароль. Якщо ви його забудете, ніхто не зможе його відновити, і ця копія стане непридатною.
+settings_storage_passphrase_label = Пароль
+settings_storage_passphrase_placeholder = Введіть пароль
+settings_storage_passphrase_hint = Щонайменше { $min } символів
+settings_storage_passphrase_too_short = Потрібно щонайменше { $min } символів
+settings_storage_passphrase_confirm_label = Повторіть пароль
+settings_storage_passphrase_confirm_placeholder = Введіть його ще раз
+settings_storage_passphrase_mismatch = Паролі не збігаються
+settings_storage_passphrase_confirm_btn = Створити копію
 credentials_key_loss_toast =
     { $count ->
         [one] Ключ облікових даних зник - { $count } збережений вхід неможливо прочитати. Увійдіть знову на екранах платформ.

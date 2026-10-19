@@ -19,7 +19,6 @@ mod restore_marker;
 mod restore_outcome;
 mod snapshot;
 mod stage;
-mod unencrypted_writer;
 
 pub use error::TransferError;
 pub use full_writer::{BackupDestination, FullBackupRequest, write_full_backup};
@@ -48,4 +47,3 @@ pub use stage::{
     RESTORE_STAGING_DIR_NAME, StageRequest, StagedRestore, discard_staged_restore,
     restore_staging_root, stage_full_restore,
 };
-pub use unencrypted_writer::write_unencrypted_backup;

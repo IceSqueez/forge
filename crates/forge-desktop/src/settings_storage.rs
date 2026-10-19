@@ -19,11 +19,13 @@ use forge_storage::{
     event_log_retention_days, set_action_history_retention_days, set_chat_history_display_limit,
     set_chat_history_per_viewer_limit, set_event_log_retention_days,
 };
+use forge_transfer::{BackupDestination, FullBackupRequest, Passphrase};
 use gpui::{
     ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
+use crate::backup_passphrase_modal::{BackupPassphraseEvent, BackupPassphraseModal};
 use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 use forge_components::ActivePresentation;
@@ -59,6 +61,11 @@ struct StoredLimits {
     action_history_retention: u32,
 }
 
+struct PassphrasePrompt {
+    modal: Entity<BackupPassphraseModal>,
+    _sub: Subscription,
+}
+
 pub struct SettingsStorageView {
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
@@ -70,6 +77,7 @@ pub struct SettingsStorageView {
     retention_days: u32,
     history_retention_days: u32,
     backing_up: bool,
+    passphrase_prompt: Option<PassphrasePrompt>,
 
     per_viewer_input: Entity<TextInput>,
     display_input: Entity<TextInput>,
@@ -145,6 +153,7 @@ impl SettingsStorageView {
             retention_days: DEFAULT_EVENT_LOG_RETENTION_DAYS,
             history_retention_days: default_history_retention,
             backing_up: false,
+            passphrase_prompt: None,
             per_viewer_input,
             display_input,
             retention_input,
@@ -377,7 +386,33 @@ impl SettingsStorageView {
             .update(cx, |i, cx| i.set_content(days.to_string(), cx));
     }
 
-    fn backup_now(&mut self, cx: &mut Context<Self>) {
+    fn open_passphrase_prompt(&mut self, cx: &mut Context<Self>) {
+        if self.backing_up || self.passphrase_prompt.is_some() {
+            return;
+        }
+        let modal = cx.new(BackupPassphraseModal::new);
+        let sub = cx.subscribe(
+            &modal,
+            |this, modal, event: &BackupPassphraseEvent, cx| match event {
+                BackupPassphraseEvent::Confirmed => {
+                    let passphrase = modal.update(cx, |modal, cx| modal.take_passphrase(cx));
+                    this.passphrase_prompt = None;
+                    if let Some(passphrase) = passphrase {
+                        this.backup_now(passphrase, cx);
+                    }
+                    cx.notify();
+                }
+                BackupPassphraseEvent::Cancelled => {
+                    this.passphrase_prompt = None;
+                    cx.notify();
+                }
+            },
+        );
+        self.passphrase_prompt = Some(PassphrasePrompt { modal, _sub: sub });
+        cx.notify();
+    }
+
+    fn backup_now(&mut self, passphrase: Passphrase, cx: &mut Context<Self>) {
         if self.backing_up {
             return;
         }
@@ -386,10 +421,12 @@ impl SettingsStorageView {
         async_bridge::run_async(
             &self.rt_handle,
             {
-                let backup = forge_transfer::write_unencrypted_backup(
-                    Arc::clone(&self.backend),
-                    forge_storage::paths::data_dir(),
-                );
+                let backup = forge_transfer::write_full_backup(FullBackupRequest {
+                    provider: Arc::clone(&self.backend),
+                    data_dir: forge_storage::paths::data_dir(),
+                    destination: BackupDestination::BackupsDir,
+                    passphrase,
+                });
                 async move { backup.await.map_err(|e| e.to_string()) }
             },
             |this, result, cx| this.apply_backup_result(result, cx),
@@ -458,7 +495,7 @@ impl Render for SettingsStorageView {
             .busy(self.backing_up)
             .on_click(
                 "settings-db-backup",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.backup_now(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.open_passphrase_prompt(cx)),
             );
 
         let rows = setting_rows(&palette)
@@ -503,10 +540,16 @@ impl Render for SettingsStorageView {
             .in_card(&palette);
 
         div()
+            .min_h_full()
             .flex()
             .flex_col()
             .child(SettingsPaneHeader::new(SettingsSection::Storage))
             .child(rows)
+            .children(
+                self.passphrase_prompt
+                    .as_ref()
+                    .map(|prompt| prompt.modal.clone()),
+            )
     }
 }
 

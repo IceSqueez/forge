@@ -319,11 +319,22 @@ settings_storage_section_title = Storage & backups
 settings_storage_db_path_label = Database
 settings_storage_backup_label = Backup
 settings_storage_backup_btn = Backup now
-settings_storage_backup_hint = Saves the whole data folder - database, credentials key, media, overlays, voices and assets - as one archive in the backups folder. The archive holds the key that decrypts your saved logins: keep it private.
+settings_storage_backup_hint = Saves the whole data folder - database, credentials key, media, overlays, voices and assets - as one passphrase-encrypted file in the backups folder.
 settings_storage_backup_btn_busy = Backing up...
 settings_storage_backup_done = Backup saved to { $path }
 settings_storage_backup_failed = Backup failed: { $error }
 settings_storage_backup_reveal = Reveal
+settings_storage_passphrase_title = Encrypt backup
+settings_storage_passphrase_subtitle = A new passphrase is asked for every backup
+settings_storage_passphrase_warning = forge never stores this passphrase. If you forget it, nobody can recover it and this backup becomes unusable.
+settings_storage_passphrase_label = Passphrase
+settings_storage_passphrase_placeholder = Enter a passphrase
+settings_storage_passphrase_hint = At least { $min } characters
+settings_storage_passphrase_too_short = Use at least { $min } characters
+settings_storage_passphrase_confirm_label = Confirm passphrase
+settings_storage_passphrase_confirm_placeholder = Enter it again
+settings_storage_passphrase_mismatch = Passphrases do not match
+settings_storage_passphrase_confirm_btn = Create backup
 credentials_key_loss_toast =
     { $count ->
         [one] The credentials key was missing - { $count } saved login can't be read. Sign in again on the Platforms screens.

@@ -23,6 +23,7 @@ pub(crate) use step_presentation::parse_variable_segments;
 pub(super) use step_presentation::{step_glyph, sub_action_summary, sub_category_color};
 
 use cards::inline_warning_card;
+pub(super) use export::PackExportHost;
 
 impl ScreenActionsView {
     pub(super) fn current_chain(&self) -> Vec<SubActionStep> {

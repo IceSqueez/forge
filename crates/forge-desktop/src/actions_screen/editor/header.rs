@@ -99,7 +99,7 @@ impl ScreenActionsView {
                 menu_item(
                     SharedString::from("actions-header-menu-export"),
                     tr!("action_editor_export"),
-                    cx.listener(move |this, _: &ClickEvent, _, cx| this.export_json(cx)),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.export_pack(cx)),
                 )
                 .icon(Icon::Download)
                 .into(),

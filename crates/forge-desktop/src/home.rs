@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_components::{
@@ -7,8 +7,7 @@ use forge_components::{
     dropdown_surface, empty_state, ghost_button_with_icon, grow_cell, icon, mono_family,
     page_frame, pulse_dot, radius, spacing, sparkline, status_dot, tr,
 };
-use forge_registry::TriggerRegistry;
-use forge_storage::DataProvider;
+use forge_transfer::{BundleKind, read_bundle_kind};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba,
     Subscription, Window, div, prelude::*, px,
@@ -20,9 +19,12 @@ use crate::event_loss::EventLoss;
 use crate::event_loss_card::event_loss_card;
 use crate::home_stats::{ConnectionsTally, HomeEvent, HomeStats, Integration, ObsHealth};
 use crate::integration_lifecycle::IntegrationLifecycle;
+use crate::pack_export::PackExportFlow;
+use crate::pack_import_flow::PackImportFlow;
+use crate::pack_services::PackServices;
 use crate::restore_flow::{LEGACY_ARCHIVE_DIALOG_EXTENSION, RestoreFlow};
+use crate::restore_problem::RestoreProblem;
 use crate::screen::Screen;
-use crate::shell::refresh_dashboard_stats;
 use crate::sidebar::NavRequested;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
@@ -73,28 +75,6 @@ const GLANCE_GROW: f32 = 1.0;
 
 const EXPORT_MENU_W: Pixels = px(180.0);
 
-const ACTION_JSON_EXTENSION: &str = "json";
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ImportRoute {
-    ActionJson,
-    Bundle,
-}
-
-impl ImportRoute {
-    pub(crate) fn of(path: &Path) -> Self {
-        let is_json = path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| ext.eq_ignore_ascii_case(ACTION_JSON_EXTENSION));
-        if is_json {
-            ImportRoute::ActionJson
-        } else {
-            ImportRoute::Bundle
-        }
-    }
-}
-
 struct JumpCard {
     id: &'static str,
     glyph: Icon,
@@ -111,14 +91,14 @@ struct JumpCard {
 pub struct HomeView {
     stats: Entity<HomeStats>,
     event_loss: Entity<EventLoss>,
-    backend: Arc<dyn DataProvider>,
-    trigger_registry: Arc<TriggerRegistry>,
     rt_handle: tokio::runtime::Handle,
     lifecycle: Option<Entity<IntegrationLifecycle>>,
     restore: Entity<RestoreFlow>,
     backup: Entity<BackupFlow>,
+    pack_export: Entity<PackExportFlow>,
+    pack_import: Entity<PackImportFlow>,
     export_menu_open: bool,
-    _transfer_obs: [Subscription; 2],
+    _transfer_obs: [Subscription; 4],
     _stats_obs: Subscription,
     _loss_obs: Subscription,
     _lifecycle_obs: Option<Subscription>,
@@ -128,36 +108,39 @@ impl HomeView {
     pub fn new(
         stats: Entity<HomeStats>,
         event_loss: Entity<EventLoss>,
-        backend: Arc<dyn DataProvider>,
-        trigger_registry: Arc<TriggerRegistry>,
-        rt_handle: tokio::runtime::Handle,
+        pack: PackServices,
         cx: &mut Context<Self>,
     ) -> Self {
+        let rt_handle = pack.rt_handle.clone();
         let stats_obs = cx.observe(&stats, |_, _, cx| cx.notify());
         let loss_obs = cx.observe(&event_loss, |_, _, cx| cx.notify());
         let data_dir = forge_storage::paths::data_dir();
         let restore = cx.new(|_| RestoreFlow::new(rt_handle.clone(), data_dir.clone()));
         let backup = cx.new(|_| {
             BackupFlow::new(
-                Arc::clone(&backend),
+                Arc::clone(&pack.backend),
                 rt_handle.clone(),
-                data_dir,
+                data_dir.clone(),
                 BackupTarget::ChosenFile,
             )
         });
+        let pack_export = cx.new(|_| PackExportFlow::new(pack.clone()));
+        let pack_import = cx.new(|_| PackImportFlow::new(pack, data_dir));
         let transfer_obs = [
             cx.observe(&restore, |_, _, cx| cx.notify()),
             cx.observe(&backup, |_, _, cx| cx.notify()),
+            cx.observe(&pack_export, |_, _, cx| cx.notify()),
+            cx.observe(&pack_import, |_, _, cx| cx.notify()),
         ];
         Self {
             stats,
             event_loss,
-            backend,
-            trigger_registry,
             rt_handle,
             lifecycle: None,
             restore,
             backup,
+            pack_export,
+            pack_import,
             export_menu_open: false,
             _transfer_obs: transfer_obs,
             _stats_obs: stats_obs,
@@ -193,7 +176,10 @@ impl HomeView {
     }
 
     fn transfer_busy(&self, cx: &App) -> bool {
-        self.restore.read(cx).is_busy() || self.backup.read(cx).is_busy()
+        self.restore.read(cx).is_busy()
+            || self.backup.read(cx).is_busy()
+            || self.pack_export.read(cx).is_busy()
+            || self.pack_import.read(cx).is_busy()
     }
 
     fn request_import(&mut self, cx: &mut Context<Self>) {
@@ -205,7 +191,6 @@ impl HomeView {
             extensions: vec![
                 forge_transfer::BUNDLE_EXTENSION,
                 LEGACY_ARCHIVE_DIALOG_EXTENSION,
-                ACTION_JSON_EXTENSION,
             ],
         };
         async_bridge::spawn_dialog(
@@ -218,12 +203,15 @@ impl HomeView {
 
     fn import_picked(&mut self, result: Result<PathBuf, String>, cx: &mut Context<Self>) {
         match result {
-            Ok(path) => match ImportRoute::of(&path) {
-                ImportRoute::ActionJson => self.import_action_json(path, cx),
-                ImportRoute::Bundle => self
-                    .restore
-                    .update(cx, |restore, cx| restore.open(path, cx)),
-            },
+            Ok(path) => {
+                let bundle = path.clone();
+                async_bridge::run_async(
+                    &self.rt_handle,
+                    async move { read_bundle_kind(bundle).await },
+                    move |this, kind, cx| this.route_import(path, kind, cx),
+                    cx,
+                );
+            }
             Err(message) if message == DIALOG_CANCELLED => {}
             Err(message) => {
                 tracing::warn!(error = %message, "import file picker failed");
@@ -236,37 +224,25 @@ impl HomeView {
         cx.notify();
     }
 
-    fn import_action_json(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        let dp = Arc::clone(&self.backend);
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(import_action(dp, path).await);
-        });
-        let stats = self.stats.clone();
-        let backend = Arc::clone(&self.backend);
-        let trigger_registry = Arc::clone(&self.trigger_registry);
-        let rt_handle = self.rt_handle.clone();
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(name)) => {
-                let _ = this.update(cx, |_this, cx| {
-                    cx.push_toast(
-                        ToastKind::Success,
-                        tr!("home_import_success", name = name.as_str()),
-                    );
-                });
-                refresh_dashboard_stats(stats, backend, trigger_registry, rt_handle, cx).await;
+    fn route_import(
+        &mut self,
+        path: PathBuf,
+        kind: Result<BundleKind, forge_transfer::TransferError>,
+        cx: &mut Context<Self>,
+    ) {
+        match kind {
+            Ok(BundleKind::Full) => self
+                .restore
+                .update(cx, |restore, cx| restore.open(path, cx)),
+            Ok(BundleKind::Pack) => self
+                .pack_import
+                .update(cx, |pack_import, cx| pack_import.open(path, cx)),
+            Err(error) => {
+                tracing::warn!(%error, "import bundle kind unreadable");
+                cx.push_toast(ToastKind::Error, RestoreProblem::of(&error).message());
             }
-            Ok(Err(e)) => {
-                let _ = this.update(cx, |_this, cx| {
-                    cx.push_toast(
-                        ToastKind::Error,
-                        tr!("home_import_failed", error = e.as_str()),
-                    );
-                });
-            }
-            Err(_) => {}
-        })
-        .detach();
+        }
+        cx.notify();
     }
 
     fn toggle_export_menu(&mut self, cx: &mut Context<Self>) {
@@ -287,13 +263,31 @@ impl HomeView {
         cx.notify();
     }
 
+    fn export_pack(&mut self, cx: &mut Context<Self>) {
+        self.export_menu_open = false;
+        if !self.transfer_busy(cx) {
+            self.pack_export
+                .update(cx, |pack_export, cx| pack_export.start(Vec::new(), cx));
+        }
+        cx.notify();
+    }
+
     fn render_export_menu(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let view = cx.entity();
-        let rows = dropdown_surface(palette).w(EXPORT_MENU_W).child(
-            dropdown_row("home-export-full", tr!("home_export_full"), palette)
-                .icon(Some(Icon::Lock))
-                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export_full_backup(cx))),
-        );
+        let rows = dropdown_surface(palette)
+            .w(EXPORT_MENU_W)
+            .child(
+                dropdown_row("home-export-full", tr!("home_export_full"), palette)
+                    .icon(Some(Icon::Lock))
+                    .on_click(
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.export_full_backup(cx)),
+                    ),
+            )
+            .child(
+                dropdown_row("home-export-pack", tr!("home_export_pack"), palette)
+                    .icon(Some(Icon::Category))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export_pack(cx))),
+            );
         dropdown(div().flex().justify_end().child(rows))
             .on_dismiss(move |_window, cx| {
                 view.update(cx, |this, cx| this.close_export_menu(cx));
@@ -1108,37 +1102,6 @@ impl HomeView {
     }
 }
 
-async fn import_action(dp: Arc<dyn DataProvider>, path: PathBuf) -> Result<String, String> {
-    let bytes = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
-    let mut action: forge_types::Action =
-        serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-
-    action.id = forge_types::ActionId::new();
-
-    let queue_repo = dp.queue_repo();
-    let queue_present = queue_repo
-        .get(action.queue_id)
-        .await
-        .map_err(|e| e.to_string())?
-        .is_some();
-    if !queue_present {
-        let fallback = queue_repo
-            .list()
-            .await
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .next()
-            .ok_or_else(|| "no queue available to import into".to_owned())?;
-        action.queue_id = fallback.id;
-    }
-
-    dp.action_repo()
-        .save(&action)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(action.name)
-}
-
 impl EventEmitter<NavRequested> for HomeView {}
 
 impl Render for HomeView {
@@ -1243,6 +1206,7 @@ impl Render for HomeView {
             .size_full()
             .child(page_frame(vec![BreadcrumbCrumb::leaf(tr!("nav_home"))], &palette).body(body))
             .child(self.backup.clone())
+            .child(self.pack_export.clone())
             .child(self.restore.clone())
     }
 }

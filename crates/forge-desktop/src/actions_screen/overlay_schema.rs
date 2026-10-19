@@ -5,20 +5,20 @@ use forge_overlay::{ConfigSection, ContentFeed, OverlayKindRegistry};
 use forge_registry::{FormField, FormSchemaSource};
 use forge_runtime::CONTENT_SCHEMA_KEY;
 
-pub(super) struct OverlayContentSchema {
+pub(crate) struct OverlayContentSchema {
     kinds: Arc<OverlayKindRegistry>,
     kind_by_identity: HashMap<String, String>,
 }
 
 impl OverlayContentSchema {
-    pub(super) fn new(kinds: Arc<OverlayKindRegistry>) -> Self {
+    pub(crate) fn new(kinds: Arc<OverlayKindRegistry>) -> Self {
         Self {
             kinds,
             kind_by_identity: HashMap::new(),
         }
     }
 
-    pub(super) fn with_identities(&self, kind_by_identity: HashMap<String, String>) -> Self {
+    pub(crate) fn with_identities(&self, kind_by_identity: HashMap<String, String>) -> Self {
         Self {
             kinds: Arc::clone(&self.kinds),
             kind_by_identity,

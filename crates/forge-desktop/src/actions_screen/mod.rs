@@ -44,7 +44,7 @@ mod files_root_note;
 mod integration_gating;
 mod list;
 mod nav;
-mod overlay_schema;
+pub(crate) mod overlay_schema;
 mod run_history;
 mod step_validation;
 mod sub_action_modal;
@@ -237,6 +237,7 @@ pub struct ScreenActionsView {
     case_fields: BTreeMap<(usize, usize), CaseField>,
     step_health: Vec<forge_registry::StepHealth>,
     integrations: Option<SwitchWatch>,
+    pack_export: Option<editor::PackExportHost>,
     _search_sub: Subscription,
 }
 
@@ -326,6 +327,7 @@ impl ScreenActionsView {
             case_fields: BTreeMap::new(),
             step_health: Vec::new(),
             integrations: None,
+            pack_export: None,
             _search_sub: search_sub,
         };
         view.reload(cx);
@@ -735,6 +737,7 @@ impl Render for ScreenActionsView {
             .children(sub_modal)
             .children(grid_picker)
             .children(trigger_grid)
+            .children(self.pack_export.as_ref().map(|host| host.flow.clone()))
     }
 }
 

@@ -31,7 +31,7 @@ use forge_components::PushToast;
 use forge_components::grow_cell;
 use forge_runtime::{IntegrationSlot, LifecycleState};
 
-pub const MIDI_KNOWN_DEVICES_KEY: &str = "midi.known_devices";
+pub const MIDI_KNOWN_DEVICES_KEY: &str = forge_storage::settings::reserved_keys::MIDI_KNOWN_DEVICES;
 
 const SCROLL_PAD_X: Pixels = px(22.0);
 const SCROLL_PAD_Y: Pixels = px(18.0);

@@ -261,6 +261,12 @@ impl HomeView {
             Ok(BundleKind::Pack) => self
                 .pack_import
                 .update(cx, |pack_import, cx| pack_import.open(path, cx)),
+            Ok(BundleKind::Setup) => {
+                let unsupported = forge_transfer::TransferError::UnknownKind {
+                    kind: BundleKind::Setup.as_str().to_owned(),
+                };
+                cx.push_toast(ToastKind::Error, RestoreProblem::of(&unsupported).message());
+            }
             Err(error) => {
                 tracing::warn!(%error, "import bundle kind unreadable");
                 cx.push_toast(ToastKind::Error, RestoreProblem::of(&error).message());

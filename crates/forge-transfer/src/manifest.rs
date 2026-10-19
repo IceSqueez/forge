@@ -12,16 +12,19 @@ pub const ENCRYPTED_PAYLOAD_ENTRY_NAME: &str = "payload.age";
 pub enum BundleKind {
     Full,
     Pack,
+    Setup,
 }
 
 impl BundleKind {
     const FULL_WIRE: &str = "full";
     const PACK_WIRE: &str = "pack";
+    const SETUP_WIRE: &str = "setup";
 
     fn from_wire(kind: &str) -> Option<Self> {
         match kind {
             Self::FULL_WIRE => Some(Self::Full),
             Self::PACK_WIRE => Some(Self::Pack),
+            Self::SETUP_WIRE => Some(Self::Setup),
             _ => None,
         }
     }
@@ -30,6 +33,7 @@ impl BundleKind {
         match self {
             Self::Full => Self::FULL_WIRE,
             Self::Pack => Self::PACK_WIRE,
+            Self::Setup => Self::SETUP_WIRE,
         }
     }
 }
@@ -39,6 +43,7 @@ impl std::fmt::Display for BundleKind {
         f.write_str(match self {
             Self::Full => "full backup",
             Self::Pack => "pack",
+            Self::Setup => "setup",
         })
     }
 }

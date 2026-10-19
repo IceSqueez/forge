@@ -12,7 +12,8 @@ use gpui::{App, Entity};
 use crate::integration_catalog::declarations;
 use crate::platforms::PlatformConnectivity;
 
-pub const DONATELLO_POLL_INTERVAL_KEY: &str = "donations.donatello.poll_interval_secs";
+pub const DONATELLO_POLL_INTERVAL_KEY: &str =
+    forge_storage::settings::reserved_keys::DONATELLO_POLL_INTERVAL_SECS;
 
 #[derive(Clone, Default)]
 pub struct DonationServices {

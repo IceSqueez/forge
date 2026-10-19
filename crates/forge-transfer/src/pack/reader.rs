@@ -1,17 +1,15 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
-
+use crate::document_bundle::{
+    DocumentManifest, carried_file, check_bundled_files, documents_version, stage_document_bundle,
+};
 use crate::error::TransferError;
-use crate::extract::Extractor;
-use crate::layout::{ARCHIVE_SEPARATOR, ArchiveScope};
-use crate::limits::{MAX_PACK_DOCUMENTS_BYTES, MAX_PACK_MANIFEST_BYTES};
-use crate::manifest::MANIFEST_ENTRY_NAME;
+use crate::layout::ArchiveScope;
+use crate::manifest::ContentEntry;
 use crate::naming::fresh_stem;
-use crate::outer::{open_outer, read_bounded};
-use crate::pack::documents::{ClipSourceDocument, PACK_DOCUMENTS_VERSION, PackDocuments};
-use crate::pack::layout::documents_entry;
+use crate::pack::documents::{PACK_DOCUMENTS_VERSION, PackDocuments};
+use crate::pack::layout::PACK_LAYOUT;
 use crate::pack::manifest::{PackManifest, parse_pack};
 use crate::snapshot::run_blocking;
 
@@ -38,13 +36,12 @@ impl StagedPack {
     }
 
     pub fn file(&self, pack_path: &str) -> Option<PathBuf> {
-        let carried = pack_path != documents_entry()
-            && self
-                .manifest
-                .contents
-                .iter()
-                .any(|entry| entry.path == pack_path);
-        carried.then(|| staged_path(&self.staging_dir, pack_path))
+        carried_file(
+            &self.staging_dir,
+            &self.manifest.contents,
+            PACK_LAYOUT,
+            pack_path,
+        )
     }
 }
 
@@ -77,106 +74,31 @@ fn stage(
     bundle: &Path,
     staging_dir: &Path,
 ) -> Result<(PackManifest, PackDocuments), TransferError> {
-    std::fs::create_dir_all(staging_dir)?;
-    let mut archive = open_outer(bundle)?;
-    let mut entries = archive.entries().map_err(|_| TransferError::NotABundle)?;
-    let mut first = entries
-        .next()
-        .ok_or(TransferError::NotABundle)?
-        .map_err(|_| TransferError::NotABundle)?;
-    let is_manifest = first.header().entry_type().is_file()
-        && first
-            .path()
-            .map_err(|_| TransferError::NotABundle)?
-            .as_ref()
-            == Path::new(MANIFEST_ENTRY_NAME);
-    if !is_manifest {
-        return Err(TransferError::NotABundle);
-    }
-    let size = first.size();
-    let manifest = parse_pack(&read_bounded(&mut first, size, MAX_PACK_MANIFEST_BYTES)?)?;
-    drop(first);
-
-    let documents_path = documents_entry();
-    let documents_size = manifest
-        .contents
-        .iter()
-        .find(|entry| entry.path == documents_path)
-        .map(|entry| entry.size)
-        .ok_or_else(|| TransferError::ContentsMismatch {
-            path: documents_path.clone(),
-        })?;
-    if documents_size > MAX_PACK_DOCUMENTS_BYTES {
-        return Err(TransferError::EntryTooLarge {
-            path: documents_path,
-            size: documents_size,
-            limit: MAX_PACK_DOCUMENTS_BYTES,
-        });
-    }
-
-    let mut extractor = Extractor::new(
-        staging_dir.to_path_buf(),
+    let staged = stage_document_bundle(
+        bundle,
+        staging_dir,
+        PACK_LAYOUT,
         ArchiveScope::Pack,
-        Some(manifest.contents.clone()),
-    );
-    for entry in entries {
-        extractor.extract(&mut entry.map_err(TransferError::damaged)?)?;
-    }
-    extractor.finish()?;
-
-    let bytes = std::fs::read(staged_path(staging_dir, &documents_path))?;
-    let documents = parse_documents(&bytes)?;
-    check_bundled_files(&manifest, &documents)?;
-    Ok((manifest, documents))
+        parse_pack,
+    )?;
+    let documents = parse_documents(&staged.documents)?;
+    check_bundled_files(&staged.manifest.contents, PACK_LAYOUT, &documents)?;
+    Ok((staged.manifest, documents))
 }
 
-#[derive(Deserialize)]
-struct DocumentsHead {
-    version: u32,
+impl DocumentManifest for PackManifest {
+    fn contents(&self) -> &[ContentEntry] {
+        &self.contents
+    }
 }
 
 fn parse_documents(bytes: &[u8]) -> Result<PackDocuments, TransferError> {
-    let head: DocumentsHead = serde_json::from_slice(bytes).map_err(TransferError::damaged)?;
-    if head.version > PACK_DOCUMENTS_VERSION {
+    let version = documents_version(bytes)?;
+    if version > PACK_DOCUMENTS_VERSION {
         return Err(TransferError::NewerPackDocuments {
-            found: head.version,
+            found: version,
             supported: PACK_DOCUMENTS_VERSION,
         });
     }
     serde_json::from_slice(bytes).map_err(TransferError::damaged)
-}
-
-fn check_bundled_files(
-    manifest: &PackManifest,
-    documents: &PackDocuments,
-) -> Result<(), TransferError> {
-    let documents_path = documents_entry();
-    let carried = |path: &str| {
-        path != documents_path && manifest.contents.iter().any(|entry| entry.path == path)
-    };
-    if let Some(missing) = documents.bundled_files().find(|path| !carried(path)) {
-        return Err(TransferError::ContentsMismatch {
-            path: missing.to_owned(),
-        });
-    }
-    let dangling_clip = documents.clips.iter().any(|clip| match &clip.source {
-        ClipSourceDocument::Media { media_id } => {
-            !documents.media.iter().any(|media| &media.id == media_id)
-        }
-        ClipSourceDocument::File { .. } | ClipSourceDocument::Missing => false,
-    });
-    if dangling_clip {
-        return Err(TransferError::damaged(
-            "a sound clip refers to media the pack does not carry",
-        ));
-    }
-    Ok(())
-}
-
-fn staged_path(staging_dir: &Path, pack_path: &str) -> PathBuf {
-    pack_path
-        .split(ARCHIVE_SEPARATOR)
-        .fold(staging_dir.to_path_buf(), |path, segment| {
-            path.join(segment)
-        })
 }

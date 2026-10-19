@@ -21,8 +21,10 @@ use crate::connect_scaffold::{
 };
 use crate::integrations::VTubeInstallSeed;
 
-pub const VTUBE_AUTO_RECONNECT_KEY: &str = "vtube.auto_reconnect";
-pub const VTUBE_CONNECT_ON_LAUNCH_KEY: &str = "vtube.connect_on_launch";
+pub const VTUBE_AUTO_RECONNECT_KEY: &str =
+    forge_storage::settings::reserved_keys::VTUBE_AUTO_RECONNECT;
+pub const VTUBE_CONNECT_ON_LAUNCH_KEY: &str =
+    forge_storage::settings::reserved_keys::VTUBE_CONNECT_ON_LAUNCH;
 
 pub(crate) const DEFAULT_HOST: &str = "localhost";
 pub(crate) const DEFAULT_PORT: u16 = 8001;

@@ -16,8 +16,9 @@ use crate::connect_scaffold::{
 };
 use crate::integrations::ObsInstallSeed;
 
-pub const OBS_AUTO_RECONNECT_KEY: &str = "obs.auto_reconnect";
-pub const OBS_CONNECT_ON_LAUNCH_KEY: &str = "obs.connect_on_launch";
+pub const OBS_AUTO_RECONNECT_KEY: &str = forge_storage::settings::reserved_keys::OBS_AUTO_RECONNECT;
+pub const OBS_CONNECT_ON_LAUNCH_KEY: &str =
+    forge_storage::settings::reserved_keys::OBS_CONNECT_ON_LAUNCH;
 
 pub(crate) const DEFAULT_HOST: &str = "localhost";
 pub(crate) const DEFAULT_PORT: u16 = 4455;

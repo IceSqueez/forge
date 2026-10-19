@@ -82,7 +82,7 @@ impl UndoJournal {
     }
 }
 
-async fn revert(provider: &dyn DataProvider, undo: Undo) -> Result<(), String> {
+pub(crate) async fn revert(provider: &dyn DataProvider, undo: Undo) -> Result<(), String> {
     let storage = |e: StorageError| e.to_string();
     let file = |e: io::Error| e.to_string();
     match undo {

@@ -1,4 +1,5 @@
 mod digest;
+mod document_bundle;
 mod durable_fs;
 mod encryption;
 mod error;
@@ -19,6 +20,7 @@ mod restore_journal;
 mod restore_marker;
 mod restore_outcome;
 mod safety_snapshot;
+mod setup;
 mod snapshot;
 mod stage;
 
@@ -56,6 +58,12 @@ pub use restore_marker::{
     restore_pending,
 };
 pub use restore_outcome::{RestoreDeferral, RestoreOutcome, RestoreRollback};
+pub use setup::{
+    ClipHotkeyDocument, SETUP_DOCUMENTS_VERSION, SETUP_ROOT, SETUP_STAGING_DIR_NAME,
+    SetupDocuments, SetupExportRequest, SetupImportOutcome, SetupImportRequest, SetupLivePart,
+    SetupManifest, SetupQueueChanges, StagedSetup, TtsDocument, VoicesDocument, apply_setup_import,
+    discard_staged_setup, setup_staging_root, stage_setup, write_setup,
+};
 pub use stage::{
     RESTORE_STAGING_DIR_NAME, StageRequest, StagedRestore, discard_staged_restore,
     restore_staging_root, stage_full_restore,

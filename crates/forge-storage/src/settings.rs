@@ -65,7 +65,17 @@ pub mod reserved_keys {
     pub const INTEGRATION_ENABLED_PREFIX: &str = "integration.enabled.";
     pub const RETIRED_MIDI_ENABLED: &str = "midi.enabled";
     pub const RETIRED_HOTKEY_ENABLED: &str = "hotkey.enabled";
+    pub const OBS_AUTO_RECONNECT: &str = "obs.auto_reconnect";
+    pub const OBS_CONNECT_ON_LAUNCH: &str = "obs.connect_on_launch";
+    pub const VTUBE_AUTO_RECONNECT: &str = "vtube.auto_reconnect";
+    pub const VTUBE_CONNECT_ON_LAUNCH: &str = "vtube.connect_on_launch";
+    pub const MIDI_KNOWN_DEVICES: &str = "midi.known_devices";
+    pub const HOTKEY_HOLD_CEILING_SECS: &str = "hotkey.hold_ceiling_secs";
+    pub const DONATELLO_POLL_INTERVAL_SECS: &str = "donations.donatello.poll_interval_secs";
+    pub const VOICE_ASSIGNMENT_STRATEGY: &str = "voice:strategy";
 }
+
+pub mod portability;
 
 pub const DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT: u32 = 500;
 pub const DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 50;

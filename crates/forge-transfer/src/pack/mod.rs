@@ -1,17 +1,18 @@
-mod closure;
-mod documents;
+pub(crate) mod closure;
+pub(crate) mod documents;
 mod import_apply;
 mod import_conflicts;
-mod import_convert;
+pub(crate) mod import_convert;
 mod import_names;
 mod import_plan;
 mod import_review;
-mod import_undo;
-mod inventory;
+pub(crate) mod import_undo;
+pub(crate) mod inventory;
 pub(crate) mod layout;
-mod manifest;
+pub(crate) mod manifest;
+pub(crate) mod overlay_files;
 mod reader;
-mod writer;
+pub(crate) mod writer;
 
 pub use closure::{ClosureRegistries, PackSelection, resolve_pack_closure};
 pub use documents::{

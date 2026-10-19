@@ -8,7 +8,7 @@ use forge_storage::DataProvider;
 use forge_storage::paths::credentials_key_path_in;
 
 use crate::error::TransferError;
-use crate::naming::{LEGACY_ARCHIVE_EXTENSION, backups_dir, fresh_pre_pack_stem, partial_path};
+use crate::naming::{LEGACY_ARCHIVE_EXTENSION, backups_dir, partial_path};
 use crate::payload::{append_verified, collect_payload};
 use crate::private_file::create_private;
 use crate::snapshot::with_database_snapshot;
@@ -16,8 +16,8 @@ use crate::snapshot::with_database_snapshot;
 pub(crate) async fn write_safety_snapshot(
     provider: &Arc<dyn DataProvider>,
     data_dir: &Path,
+    stem: String,
 ) -> Result<PathBuf, TransferError> {
-    let stem = fresh_pre_pack_stem();
     let destination = backups_dir(data_dir).join(format!("{stem}.{LEGACY_ARCHIVE_EXTENSION}"));
     let work_dir = data_dir.to_path_buf();
     let output = destination.clone();

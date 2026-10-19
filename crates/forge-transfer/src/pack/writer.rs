@@ -1,18 +1,15 @@
 use std::collections::BTreeSet;
-use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use flate2::Compression;
-use flate2::write::GzEncoder;
 use forge_registry::InternalNamespace;
 use forge_storage::{DataProvider, MediaBlob, MediaBlobId, StorageError};
 use time::OffsetDateTime;
 
-use crate::digest::digest_reader;
+use crate::document_bundle::{encode_documents, write_document_bundle};
 use crate::error::TransferError;
 use crate::full_writer::FORGE_VERSION;
-use crate::manifest::{BUNDLE_FORMAT_VERSION, BundleKind, ContentEntry, MANIFEST_ENTRY_NAME};
+use crate::manifest::{BUNDLE_FORMAT_VERSION, BundleKind, ContentEntry};
 use crate::naming::partial_path;
 use crate::pack::closure::PackSelection;
 use crate::pack::documents::{
@@ -21,10 +18,9 @@ use crate::pack::documents::{
     ScriptDocument, TriggerDocument,
 };
 use crate::pack::inventory::PackInventory;
-use crate::pack::layout::{clip_entry, documents_entry, media_entry, overlay_entry, safe_segments};
+use crate::pack::layout::{DocumentLayout, PACK_LAYOUT, safe_segments};
 use crate::pack::manifest::{PackManifest, PackReference};
-use crate::payload::{PayloadFile, append_bytes, append_verified, digested};
-use crate::private_file::create_private;
+use crate::payload::{PayloadFile, digested};
 use crate::snapshot::run_blocking;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,7 +72,7 @@ pub async fn write_pack(request: PackExportRequest) -> Result<PathBuf, TransferE
     written.map(|()| destination)
 }
 
-async fn resolve_media(
+pub(crate) async fn resolve_media(
     provider: &dyn DataProvider,
     inventory: &PackInventory,
     selection: &mut PackSelection,
@@ -120,32 +116,25 @@ struct PackAssembly {
 impl PackAssembly {
     fn write(self, destination: &Path) -> Result<(), TransferError> {
         let mut files = Vec::new();
-        let documents = self.documents(&mut files)?;
-        let documents_bytes = serde_json::to_vec(&documents).map_err(std::io::Error::from)?;
-        let (size, sha256_hex) = digest_reader(documents_bytes.as_slice())?;
-        let mut contents = vec![ContentEntry {
-            path: documents_entry(),
-            size,
-            sha256_hex,
-        }];
+        let documents = DocumentSource {
+            inventory: &self.inventory,
+            selection: &self.selection,
+            media: &self.media,
+            overlay_root: &self.overlay_root,
+            layout: PACK_LAYOUT,
+        }
+        .collect(&mut files)?;
+        let (documents_bytes, documents_entry) = encode_documents(&documents, PACK_LAYOUT)?;
+        let mut contents = vec![documents_entry];
         contents.extend(files.iter().map(|file| file.entry.clone()));
         let manifest = self.manifest(contents);
-        let manifest_bytes = serde_json::to_vec(&manifest).map_err(std::io::Error::from)?;
-
-        let partial = partial_path(destination);
-        let sink = BufWriter::new(create_private(&partial)?);
-        let mut builder = tar::Builder::new(GzEncoder::new(sink, Compression::default()));
-        append_bytes(&mut builder, MANIFEST_ENTRY_NAME, &manifest_bytes)?;
-        append_bytes(&mut builder, &documents_entry(), &documents_bytes)?;
-        for file in &files {
-            append_verified(&mut builder, file)?;
-        }
-        let mut sink = builder.into_inner()?.finish()?;
-        sink.flush()?;
-        sink.get_ref().sync_all()?;
-        drop(sink);
-        std::fs::rename(&partial, destination)?;
-        Ok(())
+        write_document_bundle(
+            destination,
+            &manifest,
+            PACK_LAYOUT,
+            &documents_bytes,
+            &files,
+        )
     }
 
     fn manifest(&self, contents: Vec<ContentEntry>) -> PackManifest {
@@ -175,14 +164,28 @@ impl PackAssembly {
             contents,
         }
     }
+}
 
-    fn documents(&self, files: &mut Vec<PayloadFile>) -> Result<PackDocuments, TransferError> {
-        let inventory = &self.inventory;
-        let selection = &self.selection;
+pub(crate) struct DocumentSource<'a> {
+    pub(crate) inventory: &'a PackInventory,
+    pub(crate) selection: &'a PackSelection,
+    pub(crate) media: &'a [(MediaBlob, PathBuf)],
+    pub(crate) overlay_root: &'a Path,
+    pub(crate) layout: DocumentLayout,
+}
+
+impl DocumentSource<'_> {
+    pub(crate) fn collect(
+        &self,
+        files: &mut Vec<PayloadFile>,
+    ) -> Result<PackDocuments, TransferError> {
+        let inventory = self.inventory;
+        let selection = self.selection;
+        let layout = self.layout;
         let mut media = Vec::new();
         let mut carried_media = BTreeSet::new();
         for (index, (blob, source)) in self.media.iter().enumerate() {
-            let file = media_entry(index);
+            let file = layout.media_entry(index);
             files.push(digested(source, file.clone())?);
             carried_media.insert(blob.id.clone());
             media.push(MediaDocument::of(blob, file));
@@ -201,7 +204,7 @@ impl PackAssembly {
                     media_id: blob.as_str().to_owned(),
                 },
                 None if clip.file_path.is_file() => {
-                    let file = clip_entry(clips.len());
+                    let file = layout.clip_entry(clips.len());
                     files.push(digested(&clip.file_path, file.clone())?);
                     ClipSourceDocument::File {
                         file,
@@ -235,7 +238,7 @@ impl PackAssembly {
                     if !is_regular_file(&source) {
                         continue;
                     }
-                    let file = overlay_entry(index, &segments);
+                    let file = layout.overlay_entry(index, &segments);
                     files.push(digested(&source, file.clone())?);
                     carried.push(OverlayFileDocument {
                         name: name.clone(),

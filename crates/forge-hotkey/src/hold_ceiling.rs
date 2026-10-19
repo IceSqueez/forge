@@ -2,7 +2,8 @@ use forge_storage::{SettingsRepo, StorageError};
 
 use crate::config::DEFAULT_HOLD_CEILING_SECS;
 
-pub const HOTKEY_HOLD_CEILING_KEY: &str = "hotkey.hold_ceiling_secs";
+pub const HOTKEY_HOLD_CEILING_KEY: &str =
+    forge_storage::settings::reserved_keys::HOTKEY_HOLD_CEILING_SECS;
 const CEILING_OFF: u64 = 0;
 
 pub async fn load_hold_ceiling(repo: &dyn SettingsRepo) -> Option<u64> {

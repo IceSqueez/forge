@@ -6,7 +6,8 @@ use forge_storage::paths::{
 };
 
 use crate::error::TransferError;
-use crate::pack::layout::{PACK_ROOT, is_pack_scope};
+use crate::pack::layout::{PACK_LAYOUT, is_documents_scope};
+use crate::setup::layout::SETUP_LAYOUT;
 
 pub const ARCHIVE_ROOT: &str = "forge";
 
@@ -45,20 +46,22 @@ pub(crate) enum EntryShape {
 pub(crate) enum ArchiveScope {
     Backup,
     Pack,
+    Setup,
 }
 
 impl ArchiveScope {
     fn root(self) -> &'static str {
         match self {
             Self::Backup => ARCHIVE_ROOT,
-            Self::Pack => PACK_ROOT,
+            Self::Pack => PACK_LAYOUT.root(),
+            Self::Setup => SETUP_LAYOUT.root(),
         }
     }
 
     fn admits(self, rest: &[&str], shape: EntryShape) -> bool {
         match self {
             Self::Backup => is_backup_scope(rest, shape),
-            Self::Pack => is_pack_scope(rest, shape),
+            Self::Pack | Self::Setup => is_documents_scope(rest, shape),
         }
     }
 }

@@ -9,32 +9,49 @@ const OVERLAYS_DIR: &str = "overlays";
 const CURRENT_DIR: &str = ".";
 const PARENT_DIR: &str = "..";
 
-pub(crate) fn documents_entry() -> String {
-    pack_path([DOCUMENTS_FILE])
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DocumentLayout {
+    root: &'static str,
 }
 
-pub(crate) fn media_entry(index: usize) -> String {
-    pack_path([MEDIA_DIR, &index.to_string()])
-}
+pub(crate) const PACK_LAYOUT: DocumentLayout = DocumentLayout::rooted_at(PACK_ROOT);
 
-pub(crate) fn clip_entry(index: usize) -> String {
-    pack_path([CLIPS_DIR, &index.to_string()])
-}
+impl DocumentLayout {
+    pub(crate) const fn rooted_at(root: &'static str) -> Self {
+        Self { root }
+    }
 
-pub(crate) fn overlay_entry(index: usize, file_segments: &[&str]) -> String {
-    let index = index.to_string();
-    pack_path(
-        [OVERLAYS_DIR, index.as_str()]
-            .into_iter()
-            .chain(file_segments.iter().copied()),
-    )
-}
+    pub(crate) fn root(self) -> &'static str {
+        self.root
+    }
 
-fn pack_path<'a>(segments: impl IntoIterator<Item = &'a str>) -> String {
-    std::iter::once(PACK_ROOT)
-        .chain(segments)
-        .collect::<Vec<_>>()
-        .join(ARCHIVE_SEPARATOR)
+    pub(crate) fn documents_entry(self) -> String {
+        self.path([DOCUMENTS_FILE])
+    }
+
+    pub(crate) fn media_entry(self, index: usize) -> String {
+        self.path([MEDIA_DIR, &index.to_string()])
+    }
+
+    pub(crate) fn clip_entry(self, index: usize) -> String {
+        self.path([CLIPS_DIR, &index.to_string()])
+    }
+
+    pub(crate) fn overlay_entry(self, index: usize, file_segments: &[&str]) -> String {
+        let index = index.to_string();
+        self.path(
+            [OVERLAYS_DIR, index.as_str()]
+                .into_iter()
+                .chain(file_segments.iter().copied()),
+        )
+    }
+
+    fn path<'a>(self, segments: impl IntoIterator<Item = &'a str>) -> String {
+        std::iter::once(self.root)
+            .chain(segments)
+            .collect::<Vec<_>>()
+            .join(ARCHIVE_SEPARATOR)
+    }
 }
 
 pub(crate) fn safe_segments(name: &str) -> Option<Vec<&str>> {
@@ -48,7 +65,7 @@ pub(crate) fn safe_segments(name: &str) -> Option<Vec<&str>> {
     safe.then_some(segments)
 }
 
-pub(crate) fn is_pack_scope(rest: &[&str], shape: EntryShape) -> bool {
+pub(crate) fn is_documents_scope(rest: &[&str], shape: EntryShape) -> bool {
     match (rest, shape) {
         ([], EntryShape::Dir) => true,
         ([name], EntryShape::File) => *name == DOCUMENTS_FILE,

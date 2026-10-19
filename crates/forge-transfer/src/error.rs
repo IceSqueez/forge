@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use forge_storage::StorageError;
 
 use crate::manifest::BundleKind;
@@ -38,9 +40,27 @@ pub enum TransferError {
     PackActionWithoutQueue { action: String },
 
     #[error(
-        "the pack import failed ({cause}) and could not be fully undone ({failure}); restore the safety backup"
+        "the pack import failed ({cause}) and could not be fully undone ({failure}){}",
+        safety_backup_hint(.snapshot.as_deref())
     )]
-    PackRollbackIncomplete { cause: String, failure: String },
+    PackRollbackIncomplete {
+        cause: String,
+        failure: String,
+        snapshot: Option<PathBuf>,
+    },
+
+    #[error("this setup uses document format {found}; this forge reads up to format {supported}")]
+    NewerSetupDocuments { found: u32, supported: u32 },
+
+    #[error(
+        "the setup import failed ({cause}) and could not be fully undone ({failure}); restore the safety backup at {}",
+        .snapshot.display()
+    )]
+    SetupRollbackIncomplete {
+        cause: String,
+        failure: String,
+        snapshot: PathBuf,
+    },
 
     #[error("this file uses bundle format {found}; this forge reads up to format {supported}")]
     NewerFormat { found: u32, supported: u32 },
@@ -133,6 +153,12 @@ pub enum TransferError {
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+}
+
+fn safety_backup_hint(snapshot: Option<&Path>) -> String {
+    snapshot.map_or_else(String::new, |path| {
+        format!("; restore the safety backup at {}", path.display())
+    })
 }
 
 impl TransferError {

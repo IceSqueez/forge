@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use forge_storage::settings::reserved_keys;
 use forge_storage::{
     AliasId, AssignmentStrategy, IgnoreProfile, StorageError, VoiceAlias, VoiceAliasRepo,
 };
@@ -156,7 +157,8 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
 
     async fn get_strategy(&self) -> Result<AssignmentStrategy, StorageError> {
         let row: Option<(Option<String>,)> =
-            sqlx::query_as("SELECT value FROM settings WHERE key = 'voice:strategy'")
+            sqlx::query_as("SELECT value FROM settings WHERE key = ?")
+                .bind(reserved_keys::VOICE_ASSIGNMENT_STRATEGY)
                 .fetch_optional(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
@@ -170,9 +172,10 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
     async fn set_strategy(&self, strategy: &AssignmentStrategy) -> Result<(), StorageError> {
         let json = serde_json::to_string(strategy).map_err(StorageError::Serialization)?;
         sqlx::query(
-            "INSERT INTO settings(key, value) VALUES('voice:strategy', ?)
+            "INSERT INTO settings(key, value) VALUES(?, ?)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         )
+        .bind(reserved_keys::VOICE_ASSIGNMENT_STRATEGY)
         .bind(&json)
         .execute(self.db.writer())
         .await

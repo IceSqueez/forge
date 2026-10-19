@@ -93,3 +93,117 @@ pub fn portability_of(stored_key: &str) -> SettingPortability {
 pub fn is_portable(stored_key: &str) -> bool {
     portability_of(stored_key) == Portable
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+
+    const SETTINGS_SOURCE: &str = include_str!("../settings.rs");
+
+    fn reserved_key_values() -> Vec<String> {
+        let block = SETTINGS_SOURCE
+            .split_once("pub mod reserved_keys {")
+            .and_then(|(_, rest)| rest.split_once("\n}"))
+            .map(|(block, _)| block)
+            .unwrap_or_default();
+        block
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("pub const "))
+            .filter_map(|declaration| declaration.split_once("= \""))
+            .filter_map(|(_, value)| value.split_once("\";"))
+            .map(|(value, _)| value.to_owned())
+            .collect()
+    }
+
+    fn classified() -> BTreeMap<&'static str, usize> {
+        let mut counts = BTreeMap::new();
+        for (key, _) in CLASSIFIED_KEYS.iter().chain(CLASSIFIED_PREFIXES) {
+            *counts.entry(*key).or_insert(0) += 1;
+        }
+        counts
+    }
+
+    #[test]
+    fn every_reserved_key_is_classified_exactly_once() {
+        let reserved = reserved_key_values();
+        let classified = classified();
+
+        let unclassified: Vec<_> = reserved
+            .iter()
+            .filter(|key| !classified.contains_key(key.as_str()))
+            .collect();
+        let doubled: Vec<_> = classified.iter().filter(|(_, n)| **n > 1).collect();
+
+        assert!(reserved.len() > 50, "parsed only {reserved:?}");
+        assert_eq!((unclassified, doubled), (Vec::new(), Vec::new()));
+    }
+
+    #[test]
+    fn a_key_outside_the_catalog_is_machine_local() {
+        for key in [
+            "ui.last_note",
+            "",
+            "THEME",
+            "theme ",
+            " theme",
+            "tts.engine_params",
+            "integration.enabled",
+            "collections.twitch.rewards",
+        ] {
+            assert_eq!(portability_of(key), MachineLocal, "{key:?}");
+        }
+    }
+
+    #[test]
+    fn a_key_under_a_portable_prefix_is_portable() {
+        for key in [
+            "tts.engine_params.piper",
+            "tts.engine_params.",
+            "integration.enabled.twitch",
+        ] {
+            assert!(is_portable(key), "{key:?}");
+        }
+    }
+
+    #[test]
+    fn window_devices_paths_update_state_and_stay_awake_never_travel() {
+        for key in [
+            key::WINDOW_PLACEMENT,
+            key::AUDIO_OUTPUT_DEVICE_ID,
+            key::AUDIO_VOICE_GATE_INPUT_DEVICE_ID,
+            key::SOUNDBOARD_OUTPUT_DEVICE,
+            key::MIDI_KNOWN_DEVICES,
+            key::SERVER_OVERLAY_ROOT,
+            key::UPDATES_ROLLED_BACK_VERSION,
+            key::UPDATES_LEFTOVER_INSTALL_NOTICED,
+            key::CREDENTIALS_KEY_LOSS,
+            key::STAY_AWAKE,
+        ] {
+            assert_eq!(portability_of(key), MachineLocal, "{key}");
+        }
+    }
+
+    #[test]
+    fn network_exposure_and_http_trust_settings_never_travel() {
+        for key in [
+            key::SERVER_BIND_ADDRESS,
+            key::SERVER_LAN_BIND_ENABLED,
+            key::SERVER_AUTH_REQUIRED_FOR_READS,
+            key::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN,
+            key::SERVER_OVERLAY_CORS_ANY_ORIGIN,
+            key::SERVER_ADDITIONAL_ORIGINS,
+            key::SCRIPT_HTTP_ALLOWED_DOMAINS,
+            key::SCRIPT_HTTP_ALLOW_LOCAL,
+            key::CORE_HTTP_ALLOW_LOCAL,
+        ] {
+            assert_eq!(portability_of(key), MachineLocal, "{key}");
+        }
+    }
+
+    #[test]
+    fn the_voice_strategy_row_is_left_to_its_repository() {
+        assert!(!is_portable(key::VOICE_ASSIGNMENT_STRATEGY));
+    }
+}

@@ -168,3 +168,41 @@ impl TransferError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::TransferError;
+
+    const SNAPSHOT: &str = "/data/backups/forge-pre-setup-20261019-a1b2c3.tar.gz";
+
+    #[test]
+    fn an_incomplete_rollback_names_the_safety_backup_when_one_was_taken() {
+        for error in [
+            TransferError::PackRollbackIncomplete {
+                cause: "cause".to_owned(),
+                failure: "failure".to_owned(),
+                snapshot: Some(PathBuf::from(SNAPSHOT)),
+            },
+            TransferError::SetupRollbackIncomplete {
+                cause: "cause".to_owned(),
+                failure: "failure".to_owned(),
+                snapshot: PathBuf::from(SNAPSHOT),
+            },
+        ] {
+            assert!(error.to_string().contains(SNAPSHOT), "{error}");
+        }
+    }
+
+    #[test]
+    fn an_incomplete_pack_rollback_without_a_snapshot_points_at_no_backup() {
+        let error = TransferError::PackRollbackIncomplete {
+            cause: "cause".to_owned(),
+            failure: "failure".to_owned(),
+            snapshot: None,
+        };
+
+        assert!(!error.to_string().contains("safety backup"), "{error}");
+    }
+}

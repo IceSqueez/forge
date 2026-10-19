@@ -30,12 +30,12 @@ use ulid::Ulid;
 use crate::integrations::tests::every_registry_entry;
 use crate::test_support::STORAGE_KEY;
 
-const QUEUE_NAME: &str = "Alerts queue";
+pub(super) const QUEUE_NAME: &str = "Alerts queue";
 const SCRIPT_NAME: &str = "greet";
 const SCRIPT_BODY: &str = "let greeting = 1;";
-const GLOBAL_NAME: &str = "score";
+pub(super) const GLOBAL_NAME: &str = "score";
 const CLIP_NAME: &str = "Ding";
-const OVERLAY_NAME: &str = "Alert box";
+pub(super) const OVERLAY_NAME: &str = "Alert box";
 const OVERLAY_KIND: &str = "overlay.alert";
 const OVERRIDE_FILE: &str = "custom.css";
 const OVERRIDE_BYTES: &[u8] = b"body { color: red; }";
@@ -46,18 +46,18 @@ const SCENE: &str = "Live";
 const SCENE_STEP: &str = "obs.scenes.set_preview";
 const HTTP_STEP: &str = "core.http.get";
 const SCRIPT_STEP: &str = "script.run.named";
-const SECRET_TOKEN: &str = "secret-broadcaster-token-7f3a";
-const SECRET_SETTING: &str = "secret-setting-value-91bc";
+pub(super) const SECRET_TOKEN: &str = "secret-broadcaster-token-7f3a";
+pub(super) const SECRET_SETTING: &str = "secret-setting-value-91bc";
 
 type Config = BTreeMap<String, Variant>;
 
-struct Registries {
+pub(super) struct Registries {
     triggers: TriggerRegistry,
     sub_actions: SubActionRegistry,
 }
 
 impl Registries {
-    async fn real() -> Self {
+    pub(super) async fn real() -> Self {
         let (triggers, sub_actions) = every_registry_entry().await;
         Self {
             triggers,
@@ -65,7 +65,7 @@ impl Registries {
         }
     }
 
-    fn closure(&self) -> ClosureRegistries<'_> {
+    pub(super) fn closure(&self) -> ClosureRegistries<'_> {
         ClosureRegistries {
             sub_actions: &self.sub_actions,
             triggers: &self.triggers,
@@ -78,13 +78,13 @@ impl Registries {
     }
 }
 
-struct Store {
+pub(super) struct Store {
     dir: TempDir,
-    provider: Arc<dyn DataProvider>,
+    pub(super) provider: Arc<dyn DataProvider>,
 }
 
 impl Store {
-    async fn open() -> Self {
+    pub(super) async fn open() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let url = format!("sqlite://{}", dir.path().join(DATABASE_FILE_NAME).display());
         let backend =
@@ -98,11 +98,11 @@ impl Store {
         }
     }
 
-    fn data_dir(&self) -> &Path {
+    pub(super) fn data_dir(&self) -> &Path {
         self.dir.path()
     }
 
-    fn overlay_root(&self) -> PathBuf {
+    pub(super) fn overlay_root(&self) -> PathBuf {
         self.dir.path().join(OVERLAYS_DIR_NAME)
     }
 
@@ -114,7 +114,7 @@ impl Store {
         self.provider.trigger_instance_repo().get(id).await.unwrap()
     }
 
-    async fn linked(&self, action: ActionId) -> Vec<TriggerInstanceId> {
+    pub(super) async fn linked(&self, action: ActionId) -> Vec<TriggerInstanceId> {
         self.provider
             .trigger_instance_repo()
             .list_for_action(action)
@@ -263,7 +263,7 @@ async fn state_of(store: &Store) -> StoreState {
     }
 }
 
-fn files_under(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+pub(super) fn files_under(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     let mut out = Vec::new();
     let mut pending = vec![root.to_path_buf()];
     while let Some(dir) = pending.pop() {
@@ -340,21 +340,21 @@ fn last_action_id() -> ActionId {
     ActionId::from(Ulid::from_parts((1 << 48) - 1, u128::MAX >> 48))
 }
 
-struct Fixture {
-    root: ActionId,
-    helper: ActionId,
-    unrelated: ActionId,
-    root_trigger: TriggerInstanceId,
-    helper_trigger: TriggerInstanceId,
-    toggled_trigger: TriggerInstanceId,
-    queue: QueueId,
-    clip: ClipId,
-    overlay: OverlayId,
-    ding: MediaBlobId,
-    icon: MediaBlobId,
+pub(super) struct Fixture {
+    pub(super) root: ActionId,
+    pub(super) helper: ActionId,
+    pub(super) unrelated: ActionId,
+    pub(super) root_trigger: TriggerInstanceId,
+    pub(super) helper_trigger: TriggerInstanceId,
+    pub(super) toggled_trigger: TriggerInstanceId,
+    pub(super) queue: QueueId,
+    pub(super) clip: ClipId,
+    pub(super) overlay: OverlayId,
+    pub(super) ding: MediaBlobId,
+    pub(super) icon: MediaBlobId,
 }
 
-async fn seed(store: &Store) -> Fixture {
+pub(super) async fn seed(store: &Store) -> Fixture {
     let p = store.provider.as_ref();
     let now = OffsetDateTime::now_utc();
     let queue = Queue {

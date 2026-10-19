@@ -1506,3 +1506,66 @@ pub(crate) fn install_tracing_interest_floor() {
         tracing::callsite::rebuild_interest_cache();
     });
 }
+
+struct CurrentSchemaDatabase;
+
+impl forge_storage::DatabaseFileSchema for CurrentSchemaDatabase {
+    fn applied_schema_version(&self, _: &std::path::Path) -> Result<Option<u32>, StorageError> {
+        Ok(None)
+    }
+
+    fn inspect(
+        &self,
+        _: &std::path::Path,
+    ) -> Result<Option<forge_storage::StoredDatabase>, StorageError> {
+        Ok(Some(forge_storage::StoredDatabase {
+            schema: forge_storage::StoredSchema::Current {
+                version: forge_storage::EXPECTED_SCHEMA_VERSION,
+            },
+            holds_credentials: false,
+        }))
+    }
+}
+
+fn legacy_backup_bundle(dir: &std::path::Path) -> std::path::PathBuf {
+    use std::io::Write;
+
+    let database = b"restored database";
+    let mut builder = tar::Builder::new(Vec::new());
+    let mut header = tar::Header::new_gnu();
+    header.set_entry_type(tar::EntryType::Regular);
+    header.set_size(database.len() as u64);
+    header.set_mode(0o600);
+    builder
+        .append_data(
+            &mut header,
+            format!(
+                "{}/{}",
+                forge_transfer::ARCHIVE_ROOT,
+                forge_storage::DATABASE_FILE_NAME
+            ),
+            &database[..],
+        )
+        .unwrap();
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    gz.write_all(&builder.into_inner().unwrap()).unwrap();
+    let bundle = dir.join("legacy.tar.gz");
+    std::fs::write(&bundle, gz.finish().unwrap()).unwrap();
+    bundle
+}
+
+pub(crate) fn staged_restore_in(
+    rt: &tokio::runtime::Runtime,
+    data_dir: &std::path::Path,
+) -> forge_transfer::StagedRestore {
+    let bundles = tempfile::TempDir::new().unwrap();
+    rt.block_on(forge_transfer::stage_full_restore(
+        forge_transfer::StageRequest {
+            bundle: legacy_backup_bundle(bundles.path()),
+            data_dir: data_dir.to_path_buf(),
+            passphrase: None,
+            database_schema: Arc::new(CurrentSchemaDatabase),
+        },
+    ))
+    .unwrap()
+}

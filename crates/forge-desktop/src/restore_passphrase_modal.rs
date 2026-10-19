@@ -172,3 +172,123 @@ impl Render for RestorePassphraseModal {
         )
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use forge_storage::Language;
+    use gpui::{AppContext, Entity, TestAppContext};
+
+    use super::{RestorePassphraseEvent, RestorePassphraseModal};
+    use crate::i18n::install_language;
+    use crate::restore_problem::RestoreProblem;
+    use crate::test_support::install_presentation;
+
+    pub(crate) fn type_passphrase(
+        cx: &mut TestAppContext,
+        modal: &Entity<RestorePassphraseModal>,
+        text: &str,
+    ) {
+        modal.update(cx, |modal, cx| {
+            modal
+                .passphrase
+                .update(cx, |input, cx| input.set_content(text.to_owned(), cx));
+        });
+    }
+
+    fn modal_with_events(
+        cx: &mut TestAppContext,
+    ) -> (
+        Entity<RestorePassphraseModal>,
+        Rc<RefCell<Vec<&'static str>>>,
+    ) {
+        install_language(Language::En);
+        install_presentation(cx);
+        let modal = cx.new(RestorePassphraseModal::new);
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let sink = Rc::clone(&events);
+        cx.update(|cx| {
+            cx.subscribe(&modal, move |_, event: &RestorePassphraseEvent, _| {
+                sink.borrow_mut().push(match event {
+                    RestorePassphraseEvent::Submitted => "submitted",
+                    RestorePassphraseEvent::Cancelled => "cancelled",
+                });
+            })
+            .detach();
+        });
+        (modal, events)
+    }
+
+    fn take(cx: &mut TestAppContext, modal: &Entity<RestorePassphraseModal>) -> bool {
+        modal.update(cx, |modal, cx| modal.take_passphrase(cx).is_some())
+    }
+
+    #[gpui::test]
+    fn an_empty_passphrase_is_neither_submitted_nor_taken(cx: &mut TestAppContext) {
+        let (modal, events) = modal_with_events(cx);
+
+        modal.update(cx, |modal, cx| modal.submit(cx));
+        cx.run_until_parked();
+
+        assert_eq!((take(cx, &modal), events.borrow().len()), (false, 0));
+    }
+
+    #[gpui::test]
+    fn taking_the_passphrase_clears_the_field(cx: &mut TestAppContext) {
+        let (modal, _) = modal_with_events(cx);
+        type_passphrase(cx, &modal, "correct horse battery");
+
+        let taken = take(cx, &modal);
+
+        let left = modal.update(cx, |modal, cx| {
+            modal.passphrase.read(cx).content().to_owned()
+        });
+        assert_eq!((taken, left), (true, String::new()));
+    }
+
+    #[gpui::test]
+    fn a_taken_passphrase_blocks_submit_and_cancel_until_a_problem_returns(
+        cx: &mut TestAppContext,
+    ) {
+        let (modal, events) = modal_with_events(cx);
+        type_passphrase(cx, &modal, "correct horse battery");
+        take(cx, &modal);
+        type_passphrase(cx, &modal, "typed while checking");
+
+        modal.update(cx, |modal, cx| {
+            modal.submit(cx);
+            modal.cancel(cx);
+        });
+        cx.run_until_parked();
+
+        assert_eq!(events.borrow().len(), 0);
+    }
+
+    #[gpui::test]
+    fn a_wrong_passphrase_reopens_the_field_for_another_try(cx: &mut TestAppContext) {
+        let (modal, events) = modal_with_events(cx);
+        type_passphrase(cx, &modal, "correct horse battery");
+        take(cx, &modal);
+
+        modal.update(cx, |modal, cx| {
+            modal.show_problem(RestoreProblem::WrongPassphrase, cx)
+        });
+        type_passphrase(cx, &modal, "second attempt here");
+        modal.update(cx, |modal, cx| modal.submit(cx));
+        cx.run_until_parked();
+
+        assert_eq!(*events.borrow(), vec!["submitted"]);
+    }
+
+    #[gpui::test]
+    fn cancelling_an_idle_prompt_reports_cancelled(cx: &mut TestAppContext) {
+        let (modal, events) = modal_with_events(cx);
+
+        modal.update(cx, |modal, cx| modal.cancel(cx));
+        cx.run_until_parked();
+
+        assert_eq!(*events.borrow(), vec!["cancelled"]);
+    }
+}

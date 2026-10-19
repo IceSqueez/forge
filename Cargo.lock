@@ -2783,6 +2783,7 @@ name = "forge-desktop"
 version = "0.6.2"
 dependencies = [
  "async-trait",
+ "flate2",
  "fluent",
  "fluent-langneg",
  "forge-audio",
@@ -2835,6 +2836,7 @@ dependencies = [
  "serde_json",
  "sys-locale",
  "sysinfo",
+ "tar",
  "tempfile",
  "time",
  "tokio",

@@ -558,6 +558,7 @@ mod tests {
     use forge_update::CANDIDATE_FLAG;
 
     use super::{FLAG_SCREEN, StartupRequest, parse_startup_request};
+    use crate::restore_relaunch::PREVIOUS_INSTANCE_FLAG;
     use crate::screen::Screen;
 
     fn parse(args: &[&str]) -> Result<StartupRequest, String> {
@@ -617,5 +618,43 @@ mod tests {
                 "{args:?} gave {message:?}"
             );
         }
+    }
+
+    #[test]
+    fn the_restore_relaunch_flag_and_its_value_start_as_if_absent() {
+        let name = Screen::accepted_cli_names()[0];
+        for (with_flag, without_flag) in [
+            (vec![PREVIOUS_INSTANCE_FLAG, "4242"], vec![]),
+            (vec![PREVIOUS_INSTANCE_FLAG, "not-a-pid"], vec![]),
+            (
+                vec![PREVIOUS_INSTANCE_FLAG, "4242", FLAG_SCREEN, name],
+                vec![FLAG_SCREEN, name],
+            ),
+            (
+                vec![FLAG_SCREEN, name, PREVIOUS_INSTANCE_FLAG, "4242"],
+                vec![FLAG_SCREEN, name],
+            ),
+        ] {
+            let expected = opened(&without_flag);
+            assert!(expected.is_some(), "baseline {without_flag:?} did not open");
+            assert_eq!(opened(&with_flag), expected, "for {with_flag:?}");
+        }
+    }
+
+    #[test]
+    fn the_restore_relaunch_flag_without_a_value_is_a_usage_error() {
+        let message = parse(&[
+            FLAG_SCREEN,
+            Screen::accepted_cli_names()[0],
+            PREVIOUS_INSTANCE_FLAG,
+        ])
+        .err();
+
+        assert!(
+            message.as_deref().is_some_and(
+                |m| m.contains(PREVIOUS_INSTANCE_FLAG) && m.contains("requires a value")
+            ),
+            "{message:?}"
+        );
     }
 }

@@ -86,3 +86,152 @@ impl RestoreProblem {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_storage::Language;
+    use forge_transfer::TransferError;
+
+    use super::RestoreProblem;
+    use crate::i18n::install_language;
+
+    #[test]
+    fn every_integrity_failure_is_reported_as_a_damaged_backup() {
+        for error in [
+            TransferError::Damaged {
+                reason: "truncated".to_owned(),
+            },
+            TransferError::UnsafeEntry {
+                path: "../escape".to_owned(),
+                reason: "parent component",
+            },
+            TransferError::EntryTooLarge {
+                path: "forge/forge.db".to_owned(),
+                size: 2,
+                limit: 1,
+            },
+            TransferError::ArchiveTooLarge { limit: 1 },
+            TransferError::TooManyEntries { limit: 1 },
+            TransferError::DigestMismatch {
+                path: "forge/forge.db".to_owned(),
+            },
+            TransferError::ContentsMismatch {
+                path: "forge/media".to_owned(),
+            },
+            TransferError::MissingDatabase,
+            TransferError::ExcessiveWorkFactor {
+                required: 30,
+                cap: 20,
+            },
+        ] {
+            assert_eq!(
+                RestoreProblem::of(&error),
+                RestoreProblem::Damaged,
+                "{error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_wrong_passphrase_is_never_reported_as_damage() {
+        install_language(Language::En);
+
+        let problem = RestoreProblem::of(&TransferError::WrongPassphrase);
+
+        assert_eq!(
+            (
+                problem.clone(),
+                problem.message() == RestoreProblem::Damaged.message()
+            ),
+            (RestoreProblem::WrongPassphrase, false)
+        );
+    }
+
+    #[test]
+    fn refusals_the_user_can_act_on_keep_their_own_class() {
+        for (error, expected) in [
+            (TransferError::NotABundle, RestoreProblem::NotABundle),
+            (
+                TransferError::UnknownKind {
+                    kind: "theme".to_owned(),
+                },
+                RestoreProblem::UnknownKind,
+            ),
+            (
+                TransferError::UnrecognizedDatabase,
+                RestoreProblem::UnrecognizedDatabase,
+            ),
+            (
+                TransferError::UnknownEncryption {
+                    scheme: "rot13".to_owned(),
+                    version: 9,
+                },
+                RestoreProblem::UnknownEncryption,
+            ),
+            (
+                TransferError::MissingCredentialsKey,
+                RestoreProblem::MissingCredentialsKey,
+            ),
+            (
+                TransferError::UpdateInProgress,
+                RestoreProblem::UpdateInProgress,
+            ),
+            (
+                TransferError::RestoreAlreadyPending,
+                RestoreProblem::RestoreAlreadyPending,
+            ),
+        ] {
+            assert_eq!(RestoreProblem::of(&error), expected, "{error:?}");
+        }
+    }
+
+    #[test]
+    fn version_refusals_name_the_found_and_supported_versions() {
+        install_language(Language::En);
+        for (error, wanted) in [
+            (
+                TransferError::NewerFormat {
+                    found: 7,
+                    supported: 3,
+                },
+                ["7", "3"],
+            ),
+            (
+                TransferError::NewerSchema {
+                    found: 91,
+                    supported: 58,
+                },
+                ["91", "58"],
+            ),
+            (
+                TransferError::SchemaNotAdoptable {
+                    found: 12,
+                    release: "0.4.2",
+                },
+                ["12", "0.4.2"],
+            ),
+        ] {
+            let message = RestoreProblem::of(&error).message();
+            assert!(
+                wanted.iter().all(|part| message.contains(part)),
+                "{error:?} gave {message:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn unclassified_errors_surface_their_own_description() {
+        install_language(Language::En);
+        let error = TransferError::RestoreBlocked {
+            path: "media-in-the-way".to_owned(),
+        };
+
+        let problem = RestoreProblem::of(&error);
+
+        assert!(
+            matches!(&problem, RestoreProblem::Failed(text) if text == &error.to_string())
+                && problem.message().contains("media-in-the-way"),
+            "{problem:?}"
+        );
+    }
+}

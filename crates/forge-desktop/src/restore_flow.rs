@@ -327,3 +327,289 @@ impl Render for RestoreFlow {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use forge_components::Toasts;
+    use forge_storage::{DataProvider, Language};
+    use gpui::{AppContext, Entity, TestAppContext};
+    use tempfile::TempDir;
+
+    use super::{RestoreFlow, RestoreStep};
+    use crate::async_bridge::DIALOG_CANCELLED;
+    use crate::i18n::install_language;
+    use crate::restore_close::RestoreClose;
+    use crate::restore_passphrase_modal::tests::type_passphrase;
+    use crate::restore_problem::RestoreProblem;
+    use crate::test_support::{
+        error_toasts, install_presentation, pump, runtime, staged_restore_in, test_backend,
+    };
+    use crate::update_exit::ExitHandoff;
+    use crate::update_flow::UpdateFlow;
+
+    struct Harness {
+        flow: Entity<RestoreFlow>,
+        data: TempDir,
+        rt: tokio::runtime::Runtime,
+    }
+
+    fn harness(cx: &mut TestAppContext) -> Harness {
+        install_language(Language::En);
+        install_presentation(cx);
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let data = TempDir::new().unwrap();
+        let handle = rt.handle().clone();
+        let data_dir = data.path().to_path_buf();
+        let flow = cx.new(|_| RestoreFlow::new(handle, data_dir));
+        Harness { flow, data, rt }
+    }
+
+    fn finish_background_work(rt: tokio::runtime::Runtime) {
+        pump(&rt);
+        drop(rt);
+    }
+
+    fn step(cx: &mut TestAppContext, h: &Harness) -> &'static str {
+        h.flow.read_with(cx, |flow, _| match &flow.step {
+            RestoreStep::Idle => "idle",
+            RestoreStep::Picking => "picking",
+            RestoreStep::Reading => "reading",
+            RestoreStep::Passphrase(_) => "passphrase",
+            RestoreStep::Staging => "staging",
+            RestoreStep::Confirming(_) => "confirming",
+        })
+    }
+
+    fn confirmation(cx: &mut TestAppContext, h: &Harness) -> (bool, Option<RestoreProblem>) {
+        h.flow.read_with(cx, |flow, _| match &flow.step {
+            RestoreStep::Confirming(step) => (step.recording, step.problem.clone()),
+            _ => panic!("the flow is not confirming"),
+        })
+    }
+
+    fn confirming(cx: &mut TestAppContext, h: &Harness) -> PathBuf {
+        let staged = staged_restore_in(&h.rt, h.data.path());
+        let staging = staged.staging_dir().to_path_buf();
+        h.flow.update(cx, |flow, cx| {
+            flow.step = RestoreStep::Staging;
+            flow.staged(Ok(staged), cx);
+        });
+        staging
+    }
+
+    fn mark_recording(cx: &mut TestAppContext, h: &Harness) {
+        h.flow.update(cx, |flow, _| {
+            if let RestoreStep::Confirming(step) = &mut flow.step {
+                step.recording = true;
+            }
+        });
+    }
+
+    fn close_route(cx: &mut TestAppContext, h: &Harness) -> (Entity<RestoreClose>, ExitHandoff) {
+        let exit = ExitHandoff::new(None);
+        cx.update(|cx| cx.set_global(exit.clone()));
+        let (backend, _) = test_backend();
+        let handle = h.rt.handle().clone();
+        let data_dir = h.data.path().to_path_buf();
+        let close = cx.new(|cx| {
+            let update_flow = cx.new(|_| {
+                UpdateFlow::new(
+                    backend as Arc<dyn DataProvider>,
+                    handle.clone(),
+                    data_dir.clone(),
+                )
+            });
+            RestoreClose::new(update_flow, data_dir, handle)
+        });
+        (close, exit)
+    }
+
+    #[gpui::test]
+    fn a_closed_picker_is_silent_but_a_failed_picker_is_reported(cx: &mut TestAppContext) {
+        for (result, expected_errors) in [(DIALOG_CANCELLED, 0), ("portal is unavailable", 1)] {
+            let h = harness(cx);
+            h.flow.update(cx, |flow, cx| {
+                flow.step = RestoreStep::Picking;
+                flow.picked(Err(result.to_owned()), cx);
+            });
+
+            assert_eq!(
+                (step(cx, &h), cx.update(|cx| error_toasts(cx))),
+                ("idle", expected_errors),
+                "{result}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_staging_failure_returns_to_idle_with_an_error(cx: &mut TestAppContext) {
+        let h = harness(cx);
+
+        h.flow.update(cx, |flow, cx| {
+            flow.step = RestoreStep::Staging;
+            flow.staged(Err(RestoreProblem::Damaged), cx);
+        });
+
+        assert_eq!(
+            (step(cx, &h), cx.update(|cx| error_toasts(cx))),
+            ("idle", 1)
+        );
+    }
+
+    #[gpui::test]
+    fn a_wrong_passphrase_keeps_the_prompt_open_for_another_try(cx: &mut TestAppContext) {
+        let h = harness(cx);
+        h.flow.update(cx, |flow, cx| {
+            flow.ask_passphrase(PathBuf::from("/backups/forge.forgebundle"), cx)
+        });
+        let modal = h.flow.read_with(cx, |flow, _| match &flow.step {
+            RestoreStep::Passphrase(step) => step.modal.clone(),
+            _ => panic!("no passphrase prompt"),
+        });
+        type_passphrase(cx, &modal, "correct horse battery");
+        modal.update(cx, |modal, cx| modal.take_passphrase(cx));
+
+        h.flow.update(cx, |flow, cx| {
+            flow.staged(Err(RestoreProblem::WrongPassphrase), cx)
+        });
+        type_passphrase(cx, &modal, "second attempt here");
+
+        assert_eq!(
+            (
+                step(cx, &h),
+                modal.update(cx, |modal, cx| modal.can_submit(cx)),
+                cx.update(|cx| error_toasts(cx)),
+            ),
+            ("passphrase", true, 0)
+        );
+    }
+
+    #[gpui::test]
+    fn cancelling_the_passphrase_prompt_returns_to_idle(cx: &mut TestAppContext) {
+        let h = harness(cx);
+        h.flow.update(cx, |flow, cx| {
+            flow.ask_passphrase(PathBuf::from("/backups/forge.forgebundle"), cx)
+        });
+        let modal = h.flow.read_with(cx, |flow, _| match &flow.step {
+            RestoreStep::Passphrase(step) => step.modal.clone(),
+            _ => panic!("no passphrase prompt"),
+        });
+
+        modal.update(cx, |_, cx| {
+            cx.emit(crate::restore_passphrase_modal::RestorePassphraseEvent::Cancelled)
+        });
+        cx.run_until_parked();
+
+        assert_eq!(step(cx, &h), "idle");
+    }
+
+    #[gpui::test]
+    fn a_staging_that_lands_after_the_flow_went_idle_is_discarded(cx: &mut TestAppContext) {
+        let h = harness(cx);
+        let staged = staged_restore_in(&h.rt, h.data.path());
+        let staging = staged.staging_dir().to_path_buf();
+
+        h.flow.update(cx, |flow, cx| flow.staged(Ok(staged), cx));
+        let idle = step(cx, &h);
+        finish_background_work(h.rt);
+
+        assert_eq!((idle, staging.exists()), ("idle", false));
+    }
+
+    #[gpui::test]
+    fn cancelling_the_confirmation_discards_the_staging(cx: &mut TestAppContext) {
+        let h = harness(cx);
+        let staging = confirming(cx, &h);
+
+        h.flow.update(cx, |flow, cx| flow.cancel_confirm(cx));
+        let idle = step(cx, &h);
+        finish_background_work(h.rt);
+
+        assert_eq!((idle, staging.exists()), ("idle", false));
+    }
+
+    #[gpui::test]
+    fn cancelling_while_the_restore_is_being_recorded_is_ignored(cx: &mut TestAppContext) {
+        let h = harness(cx);
+        let staging = confirming(cx, &h);
+        mark_recording(cx, &h);
+
+        h.flow.update(cx, |flow, cx| flow.cancel_confirm(cx));
+        let still = step(cx, &h);
+        finish_background_work(h.rt);
+
+        assert_eq!((still, staging.exists()), ("confirming", true));
+    }
+
+    #[gpui::test]
+    fn closing_settings_mid_confirmation_discards_the_staging(cx: &mut TestAppContext) {
+        let h = harness(cx);
+        let staging = confirming(cx, &h);
+        let Harness {
+            flow,
+            data: _data,
+            rt,
+        } = h;
+
+        drop(flow);
+        cx.update(|_| {});
+        cx.run_until_parked();
+        finish_background_work(rt);
+
+        assert!(!staging.exists());
+    }
+
+    #[gpui::test]
+    fn confirming_without_a_close_route_reports_restore_unavailable(cx: &mut TestAppContext) {
+        let h = harness(cx);
+        confirming(cx, &h);
+
+        h.flow.update(cx, |flow, cx| flow.confirm(cx));
+
+        assert_eq!(
+            confirmation(cx, &h),
+            (false, Some(RestoreProblem::Unavailable))
+        );
+    }
+
+    #[gpui::test]
+    fn a_recorded_restore_is_handed_to_the_close_route_intact(cx: &mut TestAppContext) {
+        let h = harness(cx);
+        let staging = confirming(cx, &h);
+        mark_recording(cx, &h);
+        let (close, exit) = close_route(cx, &h);
+
+        h.flow
+            .update(cx, |flow, cx| flow.recorded(close.clone(), Ok(()), cx));
+        let after = (step(cx, &h), exit.restore_is_armed());
+        finish_background_work(h.rt);
+
+        assert_eq!((after, staging.exists()), (("idle", true), true));
+    }
+
+    #[gpui::test]
+    fn a_failed_recording_reopens_the_confirmation_with_the_problem(cx: &mut TestAppContext) {
+        let h = harness(cx);
+        confirming(cx, &h);
+        mark_recording(cx, &h);
+        let (close, exit) = close_route(cx, &h);
+
+        h.flow.update(cx, |flow, cx| {
+            flow.recorded(
+                close.clone(),
+                Err(RestoreProblem::RestoreAlreadyPending),
+                cx,
+            )
+        });
+
+        assert_eq!(
+            (confirmation(cx, &h), exit.restore_is_armed()),
+            ((false, Some(RestoreProblem::RestoreAlreadyPending)), false)
+        );
+    }
+}

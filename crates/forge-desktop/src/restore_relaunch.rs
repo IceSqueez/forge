@@ -103,3 +103,63 @@ fn is_running(pid: Pid) -> bool {
         .process(pid)
         .is_some_and(|process| process.status() != ProcessStatus::Zombie)
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::process::{Command, Stdio};
+
+    use super::{PREVIOUS_INSTANCE_FLAG, await_previous_exit, previous_instance};
+
+    fn previous(args: &[&str]) -> Option<u32> {
+        previous_instance(args.iter().map(|arg| (*arg).to_owned()))
+    }
+
+    #[test]
+    fn the_previous_instance_is_read_from_the_value_after_the_flag() {
+        for (args, expected) in [
+            (vec![PREVIOUS_INSTANCE_FLAG, "4242"], Some(4242)),
+            (
+                vec!["--screen", "home", PREVIOUS_INSTANCE_FLAG, "17"],
+                Some(17),
+            ),
+            (
+                vec![PREVIOUS_INSTANCE_FLAG, "17", "--screen", "home"],
+                Some(17),
+            ),
+            (vec![PREVIOUS_INSTANCE_FLAG, "4294967295"], Some(u32::MAX)),
+        ] {
+            assert_eq!(previous(&args), expected, "{args:?}");
+        }
+    }
+
+    #[test]
+    fn a_missing_or_unusable_pid_yields_no_previous_instance() {
+        for args in [
+            vec![],
+            vec!["--screen", "home"],
+            vec![PREVIOUS_INSTANCE_FLAG],
+            vec![PREVIOUS_INSTANCE_FLAG, "forge"],
+            vec![PREVIOUS_INSTANCE_FLAG, ""],
+            vec![PREVIOUS_INSTANCE_FLAG, "-1"],
+            vec![PREVIOUS_INSTANCE_FLAG, "4294967296"],
+            vec!["4242"],
+        ] {
+            assert_eq!(previous(&args), None, "{args:?}");
+        }
+    }
+
+    #[test]
+    fn an_already_exited_previous_instance_is_not_waited_for() {
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--list")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        child.wait().unwrap();
+
+        assert!(await_previous_exit(child.id()));
+    }
+}

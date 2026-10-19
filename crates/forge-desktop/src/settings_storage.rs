@@ -24,7 +24,6 @@ use gpui::{
 };
 
 use crate::async_bridge;
-use crate::data_backup;
 use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 use forge_components::ActivePresentation;
@@ -386,7 +385,13 @@ impl SettingsStorageView {
         cx.notify();
         async_bridge::run_async(
             &self.rt_handle,
-            data_backup::run_backup(Arc::clone(&self.backend), forge_storage::paths::data_dir()),
+            {
+                let backup = forge_transfer::write_unencrypted_backup(
+                    Arc::clone(&self.backend),
+                    forge_storage::paths::data_dir(),
+                );
+                async move { backup.await.map_err(|e| e.to_string()) }
+            },
             |this, result, cx| this.apply_backup_result(result, cx),
             cx,
         );

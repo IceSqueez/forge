@@ -35,7 +35,6 @@ mod connect_flow;
 mod connect_scaffold;
 mod crash_hook;
 mod crash_record;
-mod data_backup;
 mod detail_route;
 mod diagnostic_bundle;
 mod discord_screen;

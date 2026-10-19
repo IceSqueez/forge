@@ -36,6 +36,7 @@ forge-speak-queue = { path = "../forge-speak-queue" }
 forge-storage = { path = "../forge-storage" }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
 forge-tts-core = { path = "../forge-tts-core" }
+forge-transfer = { path = "../forge-transfer" }
 forge-tts-cloud = { path = "../forge-tts-cloud", features = [
   "azure",
   "elevenlabs",
@@ -51,7 +52,6 @@ forge-types = { path = "../forge-types" }
 forge-update = { path = "../forge-update" }
 forge-voice = { path = "../forge-voice" }
 forge-vtube = { path = "../forge-vtube" }
-flate2 = { workspace = true }
 fluent = { workspace = true }
 fluent-langneg = { workspace = true }
 futures-util = { workspace = true }
@@ -68,7 +68,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sys-locale = { workspace = true }
 sysinfo = { workspace = true }
-tar = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }

@@ -3,10 +3,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_storage::DataProvider;
+use forge_transfer::{backup_file_stem, backups_dir, unique_suffix};
 use forge_update::{ApplyMode, HandoffPlan, HandoffRequest, StagedArtifact, UpdatableInstall};
 use time::OffsetDateTime;
 
-use crate::data_backup::{backup_file_stem, backups_dir, unique_suffix};
 use crate::update_check::CURRENT_VERSION;
 
 pub const HANDOFF_PREPARE_BUDGET: Duration = Duration::from_secs(30);

@@ -17,7 +17,7 @@ use forge_transfer::{
     ENCRYPTED_PAYLOAD_ENTRY_NAME, EncryptionScheme, FullBackupRequest, FullManifest,
     MANIFEST_ENTRY_NAME, MAX_DECRYPT_SCRYPT_WORK_FACTOR, Passphrase, PublicManifest, StageRequest,
     StagedRestore, TransferError, discard_staged_restore, read_bundle_summary,
-    restore_staging_root, stage_full_restore, write_full_backup, write_unencrypted_backup,
+    restore_staging_root, stage_full_restore, write_full_backup,
 };
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
@@ -392,23 +392,6 @@ async fn full_backup_round_trip_stages_the_backup_scope_byte_for_byte() {
             },
             holds_credentials: true,
         })
-    );
-}
-
-#[tokio::test]
-async fn unencrypted_backup_stages_as_a_legacy_backup() {
-    let live = LiveData::new().await;
-    let archive = write_unencrypted_backup(live.provider.clone(), live.data_dir())
-        .await
-        .unwrap();
-    live.provider.shutdown().await;
-
-    let staged = stage_real(archive, live.data_dir(), None).await;
-
-    assert_eq!(staged.summary(), &BundleSummary::LegacyUnencrypted);
-    assert_eq!(
-        staged_payload_without_database(&staged),
-        live.expected_payload()
     );
 }
 

@@ -240,3 +240,66 @@ impl Render for BackupPassphraseModal {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chars(c: char, n: usize) -> String {
+        std::iter::repeat_n(c, n).collect()
+    }
+
+    #[test]
+    fn passphrase_one_below_the_minimum_is_too_short_and_at_the_minimum_is_valid() {
+        let below = chars('a', MIN_PASSPHRASE_CHARS - 1);
+        let at = chars('a', MIN_PASSPHRASE_CHARS);
+
+        let (below, at) = (
+            PassphraseCheck::of(&below, &below),
+            PassphraseCheck::of(&at, &at),
+        );
+
+        assert_eq!(
+            (below.is_valid(), below.shows_too_short(), at.is_valid()),
+            (false, true, true)
+        );
+    }
+
+    #[test]
+    fn passphrase_length_counts_cyrillic_characters_not_bytes() {
+        let below = chars('ж', MIN_PASSPHRASE_CHARS - 1);
+        let at = chars('ж', MIN_PASSPHRASE_CHARS);
+
+        assert_eq!(
+            (
+                PassphraseCheck::of(&below, &below).is_valid(),
+                PassphraseCheck::of(&at, &at).is_valid(),
+            ),
+            (false, true)
+        );
+    }
+
+    #[test]
+    fn mismatched_confirmation_blocks_confirm_and_shows_the_hint() {
+        let passphrase = chars('a', MIN_PASSPHRASE_CHARS);
+        let confirmation = chars('b', MIN_PASSPHRASE_CHARS);
+
+        let check = PassphraseCheck::of(&passphrase, &confirmation);
+
+        assert_eq!((check.is_valid(), check.shows_mismatch()), (false, true));
+    }
+
+    #[test]
+    fn empty_confirmation_blocks_confirm_without_showing_the_mismatch_hint() {
+        let check = PassphraseCheck::of(&chars('a', MIN_PASSPHRASE_CHARS), "");
+
+        assert_eq!((check.is_valid(), check.shows_mismatch()), (false, false));
+    }
+
+    #[test]
+    fn empty_passphrase_blocks_confirm_without_showing_the_too_short_hint() {
+        let check = PassphraseCheck::of("", "");
+
+        assert_eq!((check.is_valid(), check.shows_too_short()), (false, false));
+    }
+}

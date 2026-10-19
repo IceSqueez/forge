@@ -243,3 +243,133 @@ impl Render for SetupExportFlow {
             .into_any_element()
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+mod tests {
+    use std::time::Duration;
+
+    use forge_components::{ToastKind, Toasts};
+    use forge_storage::Language;
+    use forge_transfer::{BundleKind, read_bundle_kind};
+    use gpui::{AppContext, Entity, TestAppContext};
+
+    use super::{SetupExportFlow, SetupExportStep, setup_file_name};
+    use crate::async_bridge::DIALOG_CANCELLED;
+    use crate::i18n::install_language;
+    use crate::test_support::pack_flow::{PackWorld, pack_world};
+    use crate::test_support::{install_presentation, runtime};
+
+    const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
+
+    struct Rig {
+        rt: tokio::runtime::Runtime,
+        world: PackWorld,
+        flow: Entity<SetupExportFlow>,
+    }
+
+    fn rig(cx: &mut TestAppContext) -> Rig {
+        install_language(Language::En);
+        install_presentation(cx);
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let world = pack_world(&rt);
+        let services = world.services.clone();
+        let flow = cx.new(|_| SetupExportFlow::new(services));
+        Rig { rt, world, flow }
+    }
+
+    fn step(cx: &mut TestAppContext, rig: &Rig) -> SetupExportStep {
+        rig.flow.read_with(cx, |flow, _| flow.step)
+    }
+
+    fn toasts(cx: &mut TestAppContext) -> Vec<(ToastKind, bool)> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|toast| (toast.kind, toast.action.is_some()))
+                .collect()
+        })
+    }
+
+    #[gpui::test]
+    fn a_closed_save_dialog_ends_quietly_and_a_broken_one_reports_an_error(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = rig(cx);
+        let mut ended = Vec::new();
+
+        for message in [DIALOG_CANCELLED, "portal unavailable"] {
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            rig.flow.update(cx, |flow, cx| {
+                flow.step = SetupExportStep::ChoosingFile;
+                flow.file_chosen(Err(message.to_owned()), cx);
+            });
+            ended.push((step(cx, &rig), toasts(cx)));
+        }
+
+        assert_eq!(
+            ended,
+            vec![
+                (SetupExportStep::Idle, vec![]),
+                (SetupExportStep::Idle, vec![(ToastKind::Error, false)]),
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn a_chosen_destination_receives_a_setup_and_a_toast_offers_to_reveal_it(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = rig(cx);
+        let destination = rig.world.data_dir().join(setup_file_name());
+
+        rig.flow.update(cx, |flow, cx| {
+            flow.step = SetupExportStep::ChoosingFile;
+            flow.file_chosen(Ok(destination.clone()), cx);
+        });
+        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
+        while step(cx, &rig) != SetupExportStep::Idle && std::time::Instant::now() < deadline {
+            rig.rt
+                .block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
+            cx.run_until_parked();
+        }
+
+        let kind = rig.rt.block_on(read_bundle_kind(destination)).unwrap();
+        assert_eq!(
+            (kind, toasts(cx)),
+            (BundleKind::Setup, vec![(ToastKind::Success, true)])
+        );
+    }
+
+    #[gpui::test]
+    fn a_failed_write_reports_an_error_and_frees_the_flow(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        rig.flow.update(cx, |flow, cx| {
+            flow.step = SetupExportStep::Writing;
+            flow.written(Err("disk full".to_owned()), cx);
+        });
+
+        assert_eq!(
+            (step(cx, &rig), toasts(cx)),
+            (SetupExportStep::Idle, vec![(ToastKind::Error, false)])
+        );
+    }
+
+    #[gpui::test]
+    fn while_writing_neither_a_new_start_nor_a_dismiss_interrupts_the_export(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = rig(cx);
+        rig.flow
+            .update(cx, |flow, _| flow.step = SetupExportStep::Writing);
+
+        rig.flow.update(cx, |flow, cx| {
+            flow.start(cx);
+            flow.dismiss(cx);
+        });
+
+        assert_eq!(step(cx, &rig), SetupExportStep::Writing);
+    }
+}

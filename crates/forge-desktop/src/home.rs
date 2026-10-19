@@ -1327,20 +1327,21 @@ mod tests {
         }
     }
 
-    fn busy_flows(cx: &mut TestAppContext, rig: &Rig) -> (bool, bool) {
+    fn busy_flows(cx: &mut TestAppContext, rig: &Rig) -> (bool, bool, bool) {
         rig.home.read_with(cx, |home, cx| {
             (
                 home.restore.read(cx).is_busy(),
                 home.pack_import.read(cx).is_busy(),
+                home.setup_import.read(cx).is_busy(),
             )
         })
     }
 
     #[gpui::test]
-    fn a_full_backup_opens_restore_and_a_pack_opens_the_pack_import(cx: &mut TestAppContext) {
+    fn each_bundle_kind_opens_its_own_import_flow(cx: &mut TestAppContext) {
         let mut routed = Vec::new();
 
-        for kind in [BundleKind::Full, BundleKind::Pack] {
+        for kind in [BundleKind::Full, BundleKind::Pack, BundleKind::Setup] {
             let rig = rig(cx);
             rig.home.update(cx, |home, cx| {
                 home.route_import(PathBuf::from("picked.forgebundle"), Ok(kind), cx)
@@ -1348,7 +1349,14 @@ mod tests {
             routed.push(busy_flows(cx, &rig));
         }
 
-        assert_eq!(routed, vec![(true, false), (false, true)]);
+        assert_eq!(
+            routed,
+            vec![
+                (true, false, false),
+                (false, true, false),
+                (false, false, true)
+            ]
+        );
     }
 
     #[gpui::test]
@@ -1371,7 +1379,7 @@ mod tests {
         });
         assert_eq!(
             (busy_flows(cx, &rig), kinds),
-            ((false, false), vec![ToastKind::Error])
+            ((false, false, false), vec![ToastKind::Error])
         );
     }
 }

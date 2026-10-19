@@ -367,3 +367,416 @@ impl Render for SetupImportFlow {
             .into_any_element()
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+mod tests {
+    use std::cell::Cell;
+    use std::collections::BTreeSet;
+    use std::path::PathBuf;
+    use std::rc::Rc;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use forge_components::{ToastKind, Toasts};
+    use forge_storage::{AliasId, Language, VoiceAlias};
+    use forge_transfer::{
+        PackItemKind, SetupExportRequest, SetupImportOutcome, SetupQueueChanges, StagedSetup,
+        write_setup,
+    };
+    use forge_voice::{AliasState, EngineId, VoiceId};
+    use gpui::{AppContext, Entity, TestAppContext};
+    use ulid::Ulid;
+
+    use super::{
+        SETUP_TOAST_DURATION, SetupApplied, SetupImportFlow, SetupImportStep, SetupImported,
+    };
+    use crate::i18n::install_language;
+    use crate::pack_import_live::LiveRefresh;
+    use crate::setup_confirm::{SetupCount, SetupPart};
+    use crate::test_support::pack_flow::{PackWorld, pack_world, queue_named, seed_queued_action};
+    use crate::test_support::{install_presentation, runtime};
+
+    const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
+    const PAST_ANY_TOAST_TIMER: Duration = Duration::from_secs(120);
+    const SNAPSHOT_NAME: &str = "forge-pre-setup-snapshot.forgebundle";
+
+    struct Rig {
+        rt: tokio::runtime::Runtime,
+        world: PackWorld,
+        flow: Entity<SetupImportFlow>,
+    }
+
+    fn rig(cx: &mut TestAppContext) -> Rig {
+        install_language(Language::En);
+        install_presentation(cx);
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let world = pack_world(&rt);
+        let services = world.services.clone();
+        let data_dir = world.data_dir();
+        let flow = cx.new(|_| SetupImportFlow::new(services, data_dir));
+        Rig { rt, world, flow }
+    }
+
+    fn exported_setup(rig: &Rig) -> PathBuf {
+        let queue = queue_named("Alerts");
+        seed_queued_action(&rig.rt, &rig.world, "Greeter", &queue);
+        seed_queued_action(&rig.rt, &rig.world, "Farewell", &queue);
+        seed_queued_action(&rig.rt, &rig.world, "Shoutout", &queue);
+        rig.rt.block_on(async {
+            rig.world
+                .provider()
+                .voice_alias_repo()
+                .upsert(&VoiceAlias {
+                    id: AliasId::new(),
+                    viewer_id: "twitch:viewer".to_owned(),
+                    viewer_name: "viewer".to_owned(),
+                    engine_id: EngineId("piper".to_owned()),
+                    voice_id: VoiceId("amy".to_owned()),
+                    pitch_semitones: None,
+                    rate_multiplier: None,
+                    state: AliasState::Active,
+                })
+                .await
+                .unwrap();
+            write_setup(SetupExportRequest {
+                provider: Arc::clone(rig.world.provider()),
+                overlay_root: rig.world.overlay_root(),
+                destination: rig
+                    .world
+                    .data_dir()
+                    .join(format!("{}.forgebundle", Ulid::generate())),
+            })
+            .await
+            .unwrap()
+        })
+    }
+
+    fn settle_until(
+        cx: &mut TestAppContext,
+        rig: &Rig,
+        done: impl Fn(&mut TestAppContext) -> bool,
+    ) {
+        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
+        while std::time::Instant::now() < deadline {
+            rig.rt
+                .block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
+            cx.run_until_parked();
+            if done(cx) {
+                return;
+            }
+        }
+        panic!("the setup import never settled");
+    }
+
+    fn step(cx: &mut TestAppContext, rig: &Rig) -> &'static str {
+        rig.flow.read_with(cx, |flow, _| match &flow.step {
+            SetupImportStep::Idle => "idle",
+            SetupImportStep::Staging => "staging",
+            SetupImportStep::Confirming(confirming) if confirming.is_applying() => "applying",
+            SetupImportStep::Confirming(_) => "confirming",
+        })
+    }
+
+    fn staging_dir(cx: &mut TestAppContext, rig: &Rig) -> PathBuf {
+        rig.flow.read_with(cx, |flow, _| {
+            let SetupImportStep::Confirming(confirming) = &flow.step else {
+                panic!("the flow is not confirming");
+            };
+            confirming
+                .staged
+                .as_ref()
+                .expect("the confirmation holds the staged setup")
+                .staging_dir()
+                .to_path_buf()
+        })
+    }
+
+    fn confirming(cx: &mut TestAppContext, rig: &Rig) -> PathBuf {
+        let bundle = exported_setup(rig);
+        rig.flow.update(cx, |flow, cx| flow.open(bundle, cx));
+        settle_until(cx, rig, |cx| step(cx, rig) == "confirming");
+        staging_dir(cx, rig)
+    }
+
+    fn take_staged_as_confirm_does(cx: &mut TestAppContext, rig: &Rig) -> StagedSetup {
+        rig.flow.update(cx, |flow, _| {
+            let SetupImportStep::Confirming(confirming) = &mut flow.step else {
+                panic!("the flow is not confirming");
+            };
+            confirming
+                .staged
+                .take()
+                .expect("the confirmation holds the staged setup")
+        })
+    }
+
+    fn toasts(cx: &mut TestAppContext) -> Vec<(ToastKind, String, bool)> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|toast| {
+                    (
+                        toast.kind,
+                        toast.message.to_string(),
+                        toast.action.is_some(),
+                    )
+                })
+                .collect()
+        })
+    }
+
+    fn toast_kinds(cx: &mut TestAppContext) -> Vec<ToastKind> {
+        toasts(cx).into_iter().map(|toast| toast.0).collect()
+    }
+
+    fn outcome(restart_recommended: bool, cleanup_failures: Vec<String>) -> SetupImportOutcome {
+        SetupImportOutcome {
+            safety_snapshot: PathBuf::from(SNAPSHOT_NAME),
+            refresh: BTreeSet::new(),
+            queues: SetupQueueChanges::default(),
+            restart_recommended,
+            cleanup_failures,
+        }
+    }
+
+    fn count_of(counts: &[SetupCount], part: SetupPart) -> usize {
+        counts
+            .iter()
+            .find(|count| count.part == part)
+            .map(|count| count.count)
+            .expect("every setup part is counted")
+    }
+
+    #[gpui::test]
+    fn opening_a_setup_stages_it_and_counts_what_it_replaces(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        confirming(cx, &rig);
+        let stored_queues = rig
+            .rt
+            .block_on(rig.world.provider().queue_repo().list())
+            .unwrap()
+            .len();
+
+        let counted = rig.flow.read_with(cx, |flow, _| {
+            let SetupImportStep::Confirming(confirming) = &flow.step else {
+                panic!("the flow is not confirming");
+            };
+            [
+                SetupPart::Item(PackItemKind::Action),
+                SetupPart::Item(PackItemKind::Queue),
+                SetupPart::Item(PackItemKind::Trigger),
+                SetupPart::VoiceAliases,
+                SetupPart::ClipHotkeys,
+            ]
+            .map(|part| count_of(&confirming.counts, part))
+        });
+
+        assert_eq!(counted, [3, stored_queues, 0, 1, 0]);
+    }
+
+    #[gpui::test]
+    fn a_file_that_cannot_be_staged_returns_to_idle_with_an_error_toast(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        let junk = rig.world.data_dir().join("junk.forgebundle");
+        std::fs::write(&junk, b"not a bundle").unwrap();
+
+        rig.flow.update(cx, |flow, cx| flow.open(junk, cx));
+        settle_until(cx, &rig, |cx| step(cx, &rig) == "idle");
+
+        assert_eq!(toast_kinds(cx), vec![ToastKind::Error]);
+    }
+
+    #[gpui::test]
+    fn cancelling_the_confirmation_discards_the_staged_setup(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        let staging = confirming(cx, &rig);
+
+        rig.flow.update(cx, |flow, cx| flow.cancel(cx));
+        settle_until(cx, &rig, |_| !staging.exists());
+
+        assert_eq!(step(cx, &rig), "idle");
+    }
+
+    #[gpui::test]
+    fn cancelling_while_the_import_applies_keeps_the_confirmation_open(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        confirming(cx, &rig);
+        rig.flow.update(cx, |flow, cx| flow.confirm(cx));
+
+        rig.flow.update(cx, |flow, cx| flow.cancel(cx));
+
+        assert_eq!(step(cx, &rig), "applying");
+    }
+
+    #[gpui::test]
+    fn dropping_the_flow_mid_confirmation_discards_the_staged_setup(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        let staging = confirming(cx, &rig);
+        let Rig { rt, world, flow } = rig;
+
+        cx.update(move |_| drop(flow));
+        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
+        while staging.exists() && std::time::Instant::now() < deadline {
+            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
+        }
+        drop(world);
+
+        assert!(!staging.exists(), "{staging:?} survived the flow");
+    }
+
+    fn queue_exists(rig: &Rig, name: &str) -> bool {
+        rig.rt
+            .block_on(rig.world.provider().queue_repo().list())
+            .unwrap()
+            .iter()
+            .any(|queue| queue.name == name)
+    }
+
+    #[gpui::test]
+    fn confirming_replaces_the_configuration_emits_imported_and_discards_staging(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = rig(cx);
+        let staging = confirming(cx, &rig);
+        seed_queued_action(&rig.rt, &rig.world, "Added later", &queue_named("Later"));
+        let imported = Rc::new(Cell::new(false));
+        let seen = Rc::clone(&imported);
+        cx.update(|cx| {
+            cx.subscribe(&rig.flow, move |_, _: &SetupImported, _| seen.set(true))
+                .detach();
+        });
+
+        rig.flow.update(cx, |flow, cx| flow.confirm(cx));
+        settle_until(cx, &rig, |cx| step(cx, &rig) == "idle" && !staging.exists());
+
+        assert_eq!(
+            (queue_exists(&rig, "Later"), imported.get(), toast_kinds(cx)),
+            (false, true, vec![ToastKind::Success])
+        );
+    }
+
+    #[gpui::test]
+    fn a_failed_import_shows_the_error_in_the_card_and_keeps_staging(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        let staging = confirming(cx, &rig);
+        let staged = take_staged_as_confirm_does(cx, &rig);
+
+        rig.flow.update(cx, |flow, cx| {
+            flow.applied(
+                SetupApplied::Failed {
+                    staged: Box::new(staged),
+                    message: "disk full".to_owned(),
+                },
+                cx,
+            )
+        });
+
+        let failure = rig.flow.read_with(cx, |flow, _| match &flow.step {
+            SetupImportStep::Confirming(confirming) => confirming.failure.clone(),
+            SetupImportStep::Idle | SetupImportStep::Staging => None,
+        });
+        assert_eq!(
+            (
+                step(cx, &rig),
+                failure.is_some_and(|shown| shown.contains("disk full")),
+                staging.exists()
+            ),
+            ("confirming", true, true)
+        );
+    }
+
+    #[gpui::test]
+    fn the_success_toast_stays_with_a_restart_offer_only_when_a_restart_is_needed(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = rig(cx);
+        let mut survived = Vec::new();
+
+        for (restart_recommended, live) in [
+            (false, LiveRefresh::Applied),
+            (true, LiveRefresh::Applied),
+            (false, LiveRefresh::NeedsRestart),
+        ] {
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            rig.flow.update(cx, |flow, cx| {
+                flow.applied(
+                    SetupApplied::Done {
+                        outcome: outcome(restart_recommended, Vec::new()),
+                        live,
+                    },
+                    cx,
+                )
+            });
+            cx.executor()
+                .advance_clock(SETUP_TOAST_DURATION + PAST_ANY_TOAST_TIMER);
+            cx.run_until_parked();
+            let left: Vec<(ToastKind, bool)> = toasts(cx)
+                .into_iter()
+                .map(|(kind, _, action)| (kind, action))
+                .collect();
+            survived.push(left);
+        }
+
+        assert_eq!(
+            survived,
+            vec![
+                vec![],
+                vec![(ToastKind::Success, true)],
+                vec![(ToastKind::Success, true)],
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn leftover_files_after_an_import_add_a_warning(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+
+        rig.flow.update(cx, |flow, cx| {
+            flow.applied(
+                SetupApplied::Done {
+                    outcome: outcome(false, vec!["staging/leftover".to_owned()]),
+                    live: LiveRefresh::Applied,
+                },
+                cx,
+            )
+        });
+
+        assert_eq!(toast_kinds(cx), vec![ToastKind::Success, ToastKind::Warn]);
+    }
+
+    #[gpui::test]
+    fn an_incomplete_rollback_leaves_a_sticky_error_naming_the_snapshot(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        confirming(cx, &rig);
+        let staged = take_staged_as_confirm_does(cx, &rig);
+        rig.rt
+            .block_on(super::discard_staged_setup(staged))
+            .unwrap();
+        let snapshot = rig.world.data_dir().join(SNAPSHOT_NAME);
+
+        rig.flow.update(cx, |flow, cx| {
+            flow.applied(
+                SetupApplied::RollbackIncomplete {
+                    message: "rollback failed".to_owned(),
+                    snapshot: snapshot.clone(),
+                },
+                cx,
+            )
+        });
+        cx.executor().advance_clock(PAST_ANY_TOAST_TIMER);
+        cx.run_until_parked();
+
+        let shown = snapshot.display().to_string();
+        let toasts: Vec<(ToastKind, bool, bool)> = toasts(cx)
+            .into_iter()
+            .map(|(kind, message, action)| (kind, message.contains(&shown), action))
+            .collect();
+        assert_eq!(
+            (step(cx, &rig), toasts),
+            ("idle", vec![(ToastKind::Error, true, true)])
+        );
+    }
+}

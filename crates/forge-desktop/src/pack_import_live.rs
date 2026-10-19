@@ -298,14 +298,30 @@ fn same_ignore_profile(before: &IgnoreProfile, after: &IgnoreProfile) -> bool {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
-    use forge_storage::{OverlayId, ScriptRecord, ScriptRepo};
-    use forge_transfer::{PackItemKey, PackItemKind, PackWrittenItem};
-    use forge_types::{ScriptContract, ScriptId};
+    use std::collections::BTreeSet;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use forge_hotkey::{HotkeyConfig, HotkeyReconciler};
+    use forge_speak_queue::PipelineConfigHandle;
+    use forge_storage::{
+        AliasId, OverlayId, ScriptRecord, ScriptRepo, StoredClip, TtsPipelineSettings, VoiceAlias,
+    };
+    use forge_transfer::{
+        PackItemKey, PackItemKind, PackWrittenItem, SetupImportOutcome, SetupLivePart,
+        SetupQueueChanges,
+    };
+    use forge_types::{ClipId, OutputDevice, ScriptContract, ScriptId, Shared};
+    use forge_voice::{AliasState, AssignmentStrategy, EngineId, IgnoreProfile, VoiceId};
     use time::OffsetDateTime;
 
-    use super::{LiveRefresh, LiveTargets, refresh_live};
+    use super::{
+        LiveRefresh, LiveTargets, SetupLiveHandles, VoiceBaseline, refresh_live,
+        refresh_setup_live, voice_baseline,
+    };
     use crate::test_support::pack_flow::{PackWorld, pack_world, queue_named};
-    use crate::test_support::runtime;
+    use crate::test_support::{LiveAliases, live_alias, runtime, spawn_speak_queue};
 
     const KNOWN_OVERLAY_KIND: &str = "overlay.blank";
     const RETIRED_OVERLAY_KIND: &str = "overlay.retired";
@@ -507,6 +523,305 @@ mod tests {
         assert_eq!(
             (live, healthy_dir.is_dir()),
             (LiveRefresh::NeedsRestart, true)
+        );
+    }
+
+    const SPEECH_QUEUE_DEADLINE: Duration = Duration::from_secs(30);
+    const IMPORTED_BOT: &str = "imported-bot";
+
+    struct SilentPublisher;
+
+    impl forge_events::EventPublisher for SilentPublisher {
+        fn publish(&self, _: forge_events::Event) {}
+    }
+
+    fn setup_outcome(parts: &[SetupLivePart], queues: SetupQueueChanges) -> SetupImportOutcome {
+        SetupImportOutcome {
+            safety_snapshot: PathBuf::from("forge-pre-setup.forgebundle"),
+            refresh: parts.iter().copied().collect::<BTreeSet<_>>(),
+            queues,
+            restart_recommended: false,
+            cleanup_failures: Vec::new(),
+        }
+    }
+
+    fn refresh_setup(
+        rt: &tokio::runtime::Runtime,
+        world: &PackWorld,
+        live: &SetupLiveHandles,
+        outcome: &SetupImportOutcome,
+        baseline: Option<&VoiceBaseline>,
+    ) -> LiveRefresh {
+        rt.block_on(refresh_setup_live(&world.services, live, outcome, baseline))
+    }
+
+    fn voice_alias(viewer_id: &str) -> VoiceAlias {
+        VoiceAlias {
+            id: AliasId::new(),
+            viewer_id: viewer_id.to_owned(),
+            viewer_name: viewer_id.to_owned(),
+            engine_id: EngineId("piper".to_owned()),
+            voice_id: VoiceId("amy".to_owned()),
+            pitch_semitones: None,
+            rate_multiplier: None,
+            state: AliasState::Active,
+        }
+    }
+
+    fn excluding(locale: &str) -> IgnoreProfile {
+        IgnoreProfile {
+            excluded_voice_ids: Vec::new(),
+            excluded_locales: vec![locale.to_owned()],
+        }
+    }
+
+    fn store_ignore_profile(
+        rt: &tokio::runtime::Runtime,
+        world: &PackWorld,
+        profile: &IgnoreProfile,
+    ) {
+        rt.block_on(
+            world
+                .provider()
+                .voice_alias_repo()
+                .set_ignore_profile(profile),
+        )
+        .unwrap();
+    }
+
+    fn strategy_applied(resolver: &LiveAliases, strategy: &AssignmentStrategy) -> bool {
+        resolver.read().unwrap().strategy == *strategy
+    }
+
+    #[test]
+    fn setup_queue_changes_add_change_and_remove_scheduler_queues() {
+        let rt = runtime();
+        let world = pack_world(&rt);
+        let scheduler = &world.services.scheduler;
+        let mut changed = queue_named("Changed");
+        let removed = queue_named("Removed");
+        rt.block_on(scheduler.register(changed.clone())).unwrap();
+        rt.block_on(scheduler.register(removed.clone())).unwrap();
+        changed.concurrency = 4;
+        let added = queue_named("Added");
+        let outcome = setup_outcome(
+            &[SetupLivePart::Queues],
+            SetupQueueChanges {
+                added: vec![added.clone()],
+                changed: vec![changed.clone()],
+                removed: vec![removed.id],
+            },
+        );
+
+        let live = refresh_setup(&rt, &world, &SetupLiveHandles::default(), &outcome, None);
+        let states = rt.block_on(scheduler.queue_states()).unwrap();
+        let running: BTreeSet<_> = states.keys().copied().collect();
+
+        assert_eq!(
+            (live, running),
+            (LiveRefresh::Applied, BTreeSet::from([added.id, changed.id]))
+        );
+    }
+
+    #[test]
+    fn setup_queue_changes_the_scheduler_cannot_take_need_a_restart() {
+        let stopped = runtime();
+        let world = pack_world(&stopped);
+        drop(stopped);
+        let rt = runtime();
+        let outcome = setup_outcome(
+            &[SetupLivePart::Queues],
+            SetupQueueChanges {
+                removed: vec![queue_named("Removed").id],
+                ..SetupQueueChanges::default()
+            },
+        );
+
+        let live = refresh_setup(&rt, &world, &SetupLiveHandles::default(), &outcome, None);
+
+        assert_eq!(live, LiveRefresh::NeedsRestart);
+    }
+
+    #[test]
+    fn a_setup_overlay_of_a_kind_missing_from_this_build_does_not_need_a_restart() {
+        let rt = runtime();
+        let world = pack_world(&rt);
+        let healthy = stored_overlay(&rt, &world, KNOWN_OVERLAY_KIND);
+        stored_overlay(&rt, &world, RETIRED_OVERLAY_KIND);
+        let outcome = setup_outcome(&[SetupLivePart::Overlays], SetupQueueChanges::default());
+
+        let live = refresh_setup(&rt, &world, &SetupLiveHandles::default(), &outcome, None);
+        let healthy_dir = world.overlay_root().join(healthy.as_str());
+
+        assert_eq!((live, healthy_dir.is_dir()), (LiveRefresh::Applied, true));
+    }
+
+    #[test]
+    fn setup_hotkeys_reconcile_the_imported_clip_hotkeys() {
+        let rt = runtime();
+        let world = pack_world(&rt);
+        let clip = ClipId::new();
+        rt.block_on(world.provider().soundboard_clips_repo().save(&StoredClip {
+            id: clip,
+            name: "Airhorn".to_owned(),
+            file_path: PathBuf::from("airhorn.ogg"),
+            volume: 1.0,
+            output_device: OutputDevice::Default,
+            hotkey: Some("F9".to_owned()),
+            created_at: OffsetDateTime::now_utc(),
+            category: String::new(),
+            loop_playback: false,
+            duration_secs: None,
+            builtin_id: None,
+        }))
+        .unwrap();
+        let reconciler = rt.block_on(async {
+            let (client, _recorder) = forge_hotkey::testing::test_client(
+                HotkeyConfig::default(),
+                Arc::new(SilentPublisher),
+            );
+            HotkeyReconciler::new(
+                client,
+                world.provider().trigger_instance_repo(),
+                world.provider().soundboard_clips_repo(),
+            )
+        });
+        let live = SetupLiveHandles {
+            hotkeys: Some(Arc::clone(&reconciler)),
+            ..SetupLiveHandles::default()
+        };
+        let outcome = setup_outcome(&[SetupLivePart::Hotkeys], SetupQueueChanges::default());
+
+        let refreshed = refresh_setup(&rt, &world, &live, &outcome, None);
+        let bound: Vec<ClipId> = reconciler
+            .clip_bindings()
+            .borrow()
+            .values()
+            .flatten()
+            .copied()
+            .collect();
+
+        assert_eq!((refreshed, bound), (LiveRefresh::Applied, vec![clip]));
+    }
+
+    #[test]
+    fn setup_speech_needs_a_restart_only_when_the_ignore_profile_changed_or_is_unknown() {
+        let rt = runtime();
+        let world = pack_world(&rt);
+        let stored = excluding("de-DE");
+        store_ignore_profile(&rt, &world, &stored);
+        let outcome = setup_outcome(&[SetupLivePart::Tts], SetupQueueChanges::default());
+        let mut refreshed = Vec::new();
+
+        for before in [
+            Some(stored.clone()),
+            Some(excluding("fr-FR")),
+            Some(IgnoreProfile {
+                excluded_voice_ids: vec![VoiceId("amy".to_owned())],
+                ..stored.clone()
+            }),
+            None,
+        ] {
+            let baseline = before.map(|ignore_profile| VoiceBaseline {
+                alias_ids: Vec::new(),
+                ignore_profile,
+            });
+            refreshed.push(refresh_setup(
+                &rt,
+                &world,
+                &SetupLiveHandles::default(),
+                &outcome,
+                baseline.as_ref(),
+            ));
+        }
+
+        assert_eq!(
+            refreshed,
+            vec![
+                LiveRefresh::Applied,
+                LiveRefresh::NeedsRestart,
+                LiveRefresh::NeedsRestart,
+                LiveRefresh::NeedsRestart,
+            ]
+        );
+    }
+
+    #[test]
+    fn setup_speech_swaps_the_previous_aliases_for_the_imported_ones_and_their_strategy() {
+        let rt = runtime();
+        let world = pack_world(&rt);
+        let previous = voice_alias("twitch:previous");
+        let imported = voice_alias("twitch:imported");
+        let voices = world.provider().voice_alias_repo();
+        rt.block_on(voices.upsert(&imported)).unwrap();
+        rt.block_on(voices.set_strategy(&AssignmentStrategy::Random))
+            .unwrap();
+        let (speak, _events, resolver) =
+            rt.block_on(async { spawn_speak_queue(vec![previous.clone()]) });
+        let baseline = VoiceBaseline {
+            alias_ids: vec![previous.id.clone()],
+            ignore_profile: IgnoreProfile::default(),
+        };
+        let live = SetupLiveHandles {
+            speak: Some(speak),
+            ..SetupLiveHandles::default()
+        };
+        let outcome = setup_outcome(&[SetupLivePart::Tts], SetupQueueChanges::default());
+
+        let refreshed = refresh_setup(&rt, &world, &live, &outcome, Some(&baseline));
+        rt.block_on(async {
+            tokio::time::timeout(SPEECH_QUEUE_DEADLINE, async {
+                while !strategy_applied(&resolver, &AssignmentStrategy::Random) {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+        })
+        .expect("the speech queue never applied the imported strategy");
+
+        assert_eq!(
+            (
+                refreshed,
+                live_alias(&resolver, "twitch:previous").is_some(),
+                live_alias(&resolver, "twitch:imported").map(|alias| alias.id),
+            ),
+            (LiveRefresh::Applied, false, Some(imported.id))
+        );
+    }
+
+    #[test]
+    fn setup_speech_publishes_the_imported_bot_accounts_and_filter_pipeline() {
+        let rt = runtime();
+        let world = pack_world(&rt);
+        rt.block_on(world.provider().tts_filters_repo().set_pipeline_settings(
+            &TtsPipelineSettings {
+                bot_accounts: vec![IMPORTED_BOT.to_owned()],
+                ..TtsPipelineSettings::default()
+            },
+        ))
+        .unwrap();
+        let baseline = rt
+            .block_on(voice_baseline(world.provider().as_ref()))
+            .unwrap();
+        let bot_accounts = Shared::new(Vec::<String>::new());
+        let pipeline = PipelineConfigHandle::new(forge_tts_pipeline::PipelineConfig::default());
+        let live = SetupLiveHandles {
+            pipeline_config: Some(pipeline.clone()),
+            bot_accounts: Some(bot_accounts.clone()),
+            ..SetupLiveHandles::default()
+        };
+        let outcome = setup_outcome(&[SetupLivePart::Tts], SetupQueueChanges::default());
+
+        let refreshed = refresh_setup(&rt, &world, &live, &outcome, Some(&baseline));
+
+        let imported = vec![IMPORTED_BOT.to_owned()];
+        assert_eq!(
+            (
+                refreshed,
+                bot_accounts.load().as_ref().clone(),
+                pipeline.load().skip_rules.bot_accounts.clone(),
+            ),
+            (LiveRefresh::Applied, imported.clone(), imported)
         );
     }
 }

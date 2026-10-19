@@ -275,4 +275,61 @@ mod tests {
             (true, vec![])
         );
     }
+
+    #[gpui::test]
+    fn restarting_arms_the_relaunch_and_asks_to_close(cx: &mut TestAppContext) {
+        let h = harness(cx);
+        let asked = Rc::new(Cell::new(0));
+        let sink = Rc::clone(&asked);
+        cx.update(|cx| {
+            cx.subscribe(
+                &h.close,
+                move |_, event: &RestoreCloseEvent, _| match event {
+                    RestoreCloseEvent::CloseRequested => sink.set(sink.get() + 1),
+                },
+            )
+            .detach();
+        });
+
+        h.close.update(cx, |close, cx| close.restart(cx));
+        cx.run_until_parked();
+
+        assert_eq!((h.exit.restore_is_armed(), asked.get()), (true, 1));
+    }
+
+    #[gpui::test]
+    fn a_restart_requested_over_a_pending_restore_keeps_the_restore_to_withdraw(
+        cx: &mut TestAppContext,
+    ) {
+        let h = harness(cx);
+        let staged = recorded_restore(&h);
+        let staging = staged.staging_dir().to_path_buf();
+        h.close.update(cx, |close, cx| close.request(staged, cx));
+        h.close.update(cx, |close, cx| close.restart(cx));
+
+        h.close.update(cx, |close, cx| close.abort(cx));
+        let toasts = settle_withdrawal(cx, &h);
+
+        assert_eq!((toasts, staging.exists()), (vec![ToastKind::Info], false));
+    }
+
+    #[gpui::test]
+    fn aborting_a_restart_disarms_the_relaunch_and_withdraws_nothing(cx: &mut TestAppContext) {
+        let h = harness(cx);
+        recorded_restore(&h);
+        h.close.update(cx, |close, cx| close.restart(cx));
+
+        h.close.update(cx, |close, cx| close.abort(cx));
+        pump(&h.rt);
+        cx.run_until_parked();
+
+        assert_eq!(
+            (
+                h.exit.is_disarmed(),
+                h.data.path().join(RESTORE_MARKER_FILE).exists(),
+                toast_kinds(cx)
+            ),
+            (true, true, vec![])
+        );
+    }
 }

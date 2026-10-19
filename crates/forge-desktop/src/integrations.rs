@@ -612,7 +612,7 @@ pub(crate) fn spawn_connect(
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use forge_events::EventStream;
     use forge_platform_core::ConnectionState;
@@ -1516,7 +1516,46 @@ mod tests {
         }
     }
 
-    async fn every_registry_entry() -> (TriggerRegistry, SubActionRegistry) {
+    struct SilentSoundPlayer;
+
+    #[async_trait::async_trait]
+    impl forge_runtime::SoundPlayer for SilentSoundPlayer {
+        async fn play(
+            &self,
+            _clip_id: forge_types::ClipId,
+            _output_device_override: Option<forge_types::OutputDevice>,
+        ) -> Result<(), forge_runtime::SoundPlayerError> {
+            Ok(())
+        }
+    }
+
+    struct SilentSpeaker;
+
+    #[async_trait::async_trait]
+    impl forge_runtime::SpeakDispatcher for SilentSpeaker {
+        async fn speak(
+            &self,
+            _text: String,
+            _voice: Option<String>,
+            _origin: forge_runtime::SpeechOrigin,
+        ) -> Result<(), forge_runtime::SpeakDispatchError> {
+            Ok(())
+        }
+    }
+
+    struct NoLatestValues;
+
+    impl forge_types::LatestValueReader for NoLatestValues {
+        fn latest(
+            &self,
+            _slot: &str,
+            _scope: forge_types::LatestScope<'_>,
+        ) -> Option<forge_types::LatestValue> {
+            None
+        }
+    }
+
+    pub(crate) async fn every_registry_entry() -> (TriggerRegistry, SubActionRegistry) {
         let media_root = tempfile::tempdir().unwrap();
         let backend: Arc<dyn DataProvider> = Arc::new(
             forge_storage_sqlite::SqliteBackend::open_for_test(
@@ -1559,6 +1598,29 @@ mod tests {
         register_twitch_runners(&mut sub_actions, &backend, &bus);
         register_youtube_runners(&mut sub_actions, &backend);
         register_kick_runners(&mut sub_actions, &backend);
+        forge_runtime::register_scheduled_run_sub_actions(
+            &mut sub_actions,
+            forge_runtime::ScheduledRunsCell::new(),
+        )
+        .unwrap();
+        forge_runtime::register_audio_sub_actions(
+            &mut sub_actions,
+            Arc::new(SilentSoundPlayer),
+            Arc::new(SilentSpeaker),
+            forge_runtime::TwitchEmoteLexicon::default(),
+        )
+        .unwrap();
+        forge_runtime::register_donation_sub_actions(
+            &mut sub_actions,
+            Arc::new(DonationIngest::new(
+                backend.donation_repo(),
+                publisher(&bus),
+                forge_types::Shared::new(String::new()),
+            )),
+        )
+        .unwrap();
+        forge_runtime::register_latest_sub_actions(&mut sub_actions, Arc::new(NoLatestValues))
+            .unwrap();
         (triggers, sub_actions)
     }
 

@@ -88,6 +88,9 @@ pub enum TransferError {
     #[error("a restore bookkeeping file is unreadable: {reason}")]
     MalformedRecord { reason: String },
 
+    #[error("an interrupted restore can only be finished while holding the single-instance lock")]
+    RestoreUnsettled,
+
     #[error("'{path}' is in the way of the restore")]
     RestoreBlocked { path: String },
 

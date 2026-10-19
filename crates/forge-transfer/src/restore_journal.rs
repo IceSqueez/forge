@@ -104,6 +104,10 @@ impl RestoreJournal {
     }
 }
 
+pub fn restore_in_flight(data_dir: &Path) -> Result<bool, TransferError> {
+    Ok(exists(&RestoreJournal::path_in(data_dir))?)
+}
+
 pub(crate) fn backup_scope_entries() -> Vec<String> {
     database_unit_file_names()
         .into_iter()

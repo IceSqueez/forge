@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use forge_transfer::{
-    RestoreDeferral, RestoreOutcome, TransferError, apply_pending_restore, restore_pending,
+    RestoreDeferral, RestoreOutcome, TransferError, apply_pending_restore, restore_in_flight,
+    restore_pending,
 };
 use gpui::Global;
 
@@ -15,6 +16,8 @@ pub(crate) fn settle_pending_restore(
 ) -> Result<RestoreOutcome, TransferError> {
     let outcome = if lock_acquired {
         apply_pending_restore(data_dir)?
+    } else if restore_in_flight(data_dir)? {
+        return Err(TransferError::RestoreUnsettled);
     } else if restore_pending(data_dir)? {
         RestoreOutcome::Deferred {
             reason: RestoreDeferral::InstanceLockUnavailable,

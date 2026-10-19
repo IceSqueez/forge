@@ -38,7 +38,7 @@ pub use naming::{
 pub use passphrase::{MIN_PASSPHRASE_CHARS, Passphrase};
 pub use reader::{BundleSummary, read_bundle_summary};
 pub use restore_apply::apply_pending_restore;
-pub use restore_journal::RESTORE_JOURNAL_FILE;
+pub use restore_journal::{RESTORE_JOURNAL_FILE, restore_in_flight};
 pub use restore_marker::{
     RESTORE_MARKER_FILE, UpdateActivity, cancel_pending_restore, record_pending_restore,
     restore_pending,

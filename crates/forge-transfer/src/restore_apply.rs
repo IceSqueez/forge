@@ -140,8 +140,8 @@ fn commit(data_dir: &Path, mut journal: RestoreJournal) -> Result<RestoreOutcome
         journal.advance(data_dir, RestorePhase::Committed)?;
     }
     RestoreMarker::clear(data_dir)?;
-    let _ = remove_dir_all_if_present(&journal.staging_dir);
     RestoreJournal::clear(data_dir)?;
+    let _ = remove_dir_all_if_present(&journal.staging_dir);
     Ok(RestoreOutcome::Applied {
         pre_restore_snapshot: journal.snapshot_dir,
     })
@@ -166,13 +166,8 @@ fn roll_back(
     journal: &RestoreJournal,
     reason: RestoreRollback,
 ) -> Result<RestoreOutcome, TransferError> {
-    let payload = journal.payload_dir();
-    for name in &journal.staged_entries {
-        let staged = payload.join(name);
-        let live = data_dir.join(name);
-        if exists(&live)? && !exists(&staged)? {
-            std::fs::rename(&live, &staged)?;
-        }
+    if exists(&journal.snapshot_dir)? {
+        return_placed_entries(data_dir, journal)?;
     }
     for name in backup_scope_entries() {
         let kept = journal.snapshot_dir.join(&name);
@@ -193,10 +188,23 @@ fn roll_back(
     sync_dir(data_dir)?;
     remove_file_if_present(&kept_key)?;
     let _ = std::fs::remove_dir(&journal.snapshot_dir);
+    sync_parent(&journal.snapshot_dir)?;
     RestoreMarker::clear(data_dir)?;
-    let _ = remove_dir_all_if_present(&journal.staging_dir);
     RestoreJournal::clear(data_dir)?;
+    let _ = remove_dir_all_if_present(&journal.staging_dir);
     Ok(RestoreOutcome::RolledBack { reason })
+}
+
+fn return_placed_entries(data_dir: &Path, journal: &RestoreJournal) -> Result<(), TransferError> {
+    let payload = journal.payload_dir();
+    for name in &journal.staged_entries {
+        let staged = payload.join(name);
+        let live = data_dir.join(name);
+        if exists(&live)? && !exists(&staged)? {
+            std::fs::rename(&live, &staged)?;
+        }
+    }
+    Ok(())
 }
 
 fn abandon(data_dir: &Path, reason: RestoreRollback) -> Result<RestoreOutcome, TransferError> {

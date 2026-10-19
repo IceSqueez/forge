@@ -21,10 +21,13 @@ use crate::home_stats::{ConnectionsTally, HomeEvent, HomeStats, Integration, Obs
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::pack_export::PackExportFlow;
 use crate::pack_import_flow::{PackImportFlow, PackImported};
+use crate::pack_import_live::SetupLiveHandles;
 use crate::pack_services::PackServices;
 use crate::restore_flow::{LEGACY_ARCHIVE_DIALOG_EXTENSION, RestoreFlow};
 use crate::restore_problem::RestoreProblem;
 use crate::screen::Screen;
+use crate::setup_export::SetupExportFlow;
+use crate::setup_import_flow::{SetupImportFlow, SetupImported};
 use crate::shell::refresh_dashboard_stats;
 use crate::sidebar::NavRequested;
 use forge_components::ActivePresentation;
@@ -98,8 +101,10 @@ pub struct HomeView {
     backup: Entity<BackupFlow>,
     pack_export: Entity<PackExportFlow>,
     pack_import: Entity<PackImportFlow>,
+    setup_export: Entity<SetupExportFlow>,
+    setup_import: Entity<SetupImportFlow>,
     export_menu_open: bool,
-    _transfer_obs: [Subscription; 5],
+    _transfer_obs: [Subscription; 8],
     _stats_obs: Subscription,
     _loss_obs: Subscription,
     _lifecycle_obs: Option<Subscription>,
@@ -126,13 +131,23 @@ impl HomeView {
             )
         });
         let pack_export = cx.new(|_| PackExportFlow::new(pack.clone()));
-        let pack_import = cx.new(|_| PackImportFlow::new(pack.clone(), data_dir));
+        let pack_import = cx.new(|_| PackImportFlow::new(pack.clone(), data_dir.clone()));
+        let setup_export = cx.new(|_| SetupExportFlow::new(pack.clone()));
+        let setup_import = cx.new(|_| SetupImportFlow::new(pack.clone(), data_dir));
         let transfer_obs = [
             cx.observe(&restore, |_, _, cx| cx.notify()),
             cx.observe(&backup, |_, _, cx| cx.notify()),
             cx.observe(&pack_export, |_, _, cx| cx.notify()),
             cx.observe(&pack_import, |_, _, cx| cx.notify()),
-            Self::refresh_stats_on_import(&pack_import, &stats, &pack, cx),
+            cx.observe(&setup_export, |_, _, cx| cx.notify()),
+            cx.observe(&setup_import, |_, _, cx| cx.notify()),
+            Self::refresh_stats_on::<PackImportFlow, PackImported>(&pack_import, &stats, &pack, cx),
+            Self::refresh_stats_on::<SetupImportFlow, SetupImported>(
+                &setup_import,
+                &stats,
+                &pack,
+                cx,
+            ),
         ];
         Self {
             stats,
@@ -143,6 +158,8 @@ impl HomeView {
             backup,
             pack_export,
             pack_import,
+            setup_export,
+            setup_import,
             export_menu_open: false,
             _transfer_obs: transfer_obs,
             _stats_obs: stats_obs,
@@ -151,17 +168,21 @@ impl HomeView {
         }
     }
 
-    fn refresh_stats_on_import(
-        flow: &Entity<PackImportFlow>,
+    fn refresh_stats_on<Flow, Done>(
+        flow: &Entity<Flow>,
         stats: &Entity<HomeStats>,
         pack: &PackServices,
         cx: &mut Context<Self>,
-    ) -> Subscription {
+    ) -> Subscription
+    where
+        Flow: EventEmitter<Done>,
+        Done: 'static,
+    {
         let stats = stats.clone();
         let backend = Arc::clone(&pack.backend);
         let triggers = Arc::clone(&pack.triggers);
         let rt_handle = pack.rt_handle.clone();
-        cx.subscribe(flow, move |_, _, _: &PackImported, cx| {
+        cx.subscribe(flow, move |_, _, _: &Done, cx| {
             let stats = stats.clone();
             let backend = Arc::clone(&backend);
             let triggers = Arc::clone(&triggers);
@@ -181,6 +202,13 @@ impl HomeView {
     ) -> Self {
         self._lifecycle_obs = Some(cx.observe(&lifecycle, |_, _, cx| cx.notify()));
         self.lifecycle = Some(lifecycle);
+        self
+    }
+
+    #[must_use]
+    pub fn with_setup_live(self, live: SetupLiveHandles, cx: &mut Context<Self>) -> Self {
+        self.setup_import
+            .update(cx, |setup_import, _| setup_import.set_live(live));
         self
     }
 
@@ -204,6 +232,8 @@ impl HomeView {
             || self.backup.read(cx).is_busy()
             || self.pack_export.read(cx).is_busy()
             || self.pack_import.read(cx).is_busy()
+            || self.setup_export.read(cx).is_busy()
+            || self.setup_import.read(cx).is_busy()
     }
 
     fn request_import(&mut self, cx: &mut Context<Self>) {
@@ -261,12 +291,9 @@ impl HomeView {
             Ok(BundleKind::Pack) => self
                 .pack_import
                 .update(cx, |pack_import, cx| pack_import.open(path, cx)),
-            Ok(BundleKind::Setup) => {
-                let unsupported = forge_transfer::TransferError::UnknownKind {
-                    kind: BundleKind::Setup.as_str().to_owned(),
-                };
-                cx.push_toast(ToastKind::Error, RestoreProblem::of(&unsupported).message());
-            }
+            Ok(BundleKind::Setup) => self
+                .setup_import
+                .update(cx, |setup_import, cx| setup_import.open(path, cx)),
             Err(error) => {
                 tracing::warn!(%error, "import bundle kind unreadable");
                 cx.push_toast(ToastKind::Error, RestoreProblem::of(&error).message());
@@ -302,6 +329,15 @@ impl HomeView {
         cx.notify();
     }
 
+    fn export_setup(&mut self, cx: &mut Context<Self>) {
+        self.export_menu_open = false;
+        if !self.transfer_busy(cx) {
+            self.setup_export
+                .update(cx, |setup_export, cx| setup_export.start(cx));
+        }
+        cx.notify();
+    }
+
     fn render_export_menu(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let view = cx.entity();
         let rows = dropdown_surface(palette)
@@ -317,6 +353,11 @@ impl HomeView {
                 dropdown_row("home-export-pack", tr!("home_export_pack"), palette)
                     .icon(Some(Icon::Category))
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export_pack(cx))),
+            )
+            .child(
+                dropdown_row("home-export-setup", tr!("home_export_setup"), palette)
+                    .icon(Some(Icon::Settings))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export_setup(cx))),
             );
         dropdown(div().flex().justify_end().child(rows))
             .on_dismiss(move |_window, cx| {
@@ -1238,6 +1279,8 @@ impl Render for HomeView {
             .child(self.backup.clone())
             .child(self.pack_export.clone())
             .child(self.pack_import.clone())
+            .child(self.setup_export.clone())
+            .child(self.setup_import.clone())
             .child(self.restore.clone())
     }
 }

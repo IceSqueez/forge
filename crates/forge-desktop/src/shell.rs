@@ -41,6 +41,7 @@ use crate::navigation_guard::{LeaveDialogHandlers, LeaveTarget, NavigationGuard,
 use crate::obs_connect::ObsConnectView;
 use crate::obs_credentials_form::ObsConnected;
 use crate::overlays_screen::{OverlaysLaunch, OverlaysView};
+use crate::pack_import_live::SetupLiveHandles;
 use crate::pack_services::PackServices;
 use crate::queues::QueuesView;
 use crate::restore_close::{RestoreClose, RestoreCloseEvent, RestoreRoute};
@@ -240,6 +241,7 @@ impl AppShell {
                         cx,
                     )
                     .with_lifecycle(home_lifecycle, cx)
+                    .with_setup_live(SetupLiveHandles::of(handles), cx)
                 });
                 cx.subscribe(&home, |this, _home, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);

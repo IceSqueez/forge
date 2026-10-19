@@ -1,8 +1,19 @@
-use forge_runtime::MembershipOutcome;
-use forge_storage::OverlayId;
-use forge_transfer::{PackItemKind, PackWrittenItem};
+use std::sync::Arc;
+
+use forge_hotkey::HotkeyReconciler;
+use forge_runtime::{MembershipOutcome, OverlayServiceError};
+use forge_speak_queue::{
+    PipelineConfigHandle, SpeakCommand, SpeakQueueHandle, build_config_lenient,
+};
+use forge_storage::{AliasId, DataProvider, OverlayId, StorageError};
+use forge_transfer::{
+    PackItemKind, PackWrittenItem, SetupImportOutcome, SetupLivePart, SetupQueueChanges,
+};
+use forge_types::{Queue, Shared};
+use forge_voice::IgnoreProfile;
 
 use crate::pack_services::PackServices;
+use crate::runtime_handles::RuntimeHandles;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct LiveTargets {
@@ -65,25 +76,29 @@ async fn refresh_queues(services: &PackServices, ids: &[String]) -> bool {
             live = false;
             continue;
         };
-        let outcome = match services.scheduler.register(queue.clone()).await {
-            Ok(MembershipOutcome::AlreadyRegistered) => {
-                services.scheduler.reconfigure(queue.clone()).await
-            }
-            other => other,
-        };
-        match outcome {
-            Ok(MembershipOutcome::Applied | MembershipOutcome::AlreadyRegistered) => {}
-            Ok(MembershipOutcome::NotFound) => {
-                tracing::warn!(queue = %id, "imported queue is unknown to the scheduler");
-                live = false;
-            }
-            Err(error) => {
-                tracing::warn!(queue = %id, %error, "imported queue could not go live");
-                live = false;
-            }
-        }
+        live &= bring_queue_live(services, queue).await;
     }
     live
+}
+
+async fn bring_queue_live(services: &PackServices, queue: &Queue) -> bool {
+    let outcome = match services.scheduler.register(queue.clone()).await {
+        Ok(MembershipOutcome::AlreadyRegistered) => {
+            services.scheduler.reconfigure(queue.clone()).await
+        }
+        other => other,
+    };
+    match outcome {
+        Ok(MembershipOutcome::Applied | MembershipOutcome::AlreadyRegistered) => true,
+        Ok(MembershipOutcome::NotFound) => {
+            tracing::warn!(queue = %queue.id, "imported queue is unknown to the scheduler");
+            false
+        }
+        Err(error) => {
+            tracing::warn!(queue = %queue.id, %error, "imported queue could not go live");
+            false
+        }
+    }
 }
 
 async fn refresh_scripts(services: &PackServices) -> bool {
@@ -105,6 +120,179 @@ async fn refresh_overlays(services: &PackServices, ids: &[OverlayId]) -> bool {
         }
     }
     live
+}
+
+#[derive(Clone, Default)]
+pub struct SetupLiveHandles {
+    pub hotkeys: Option<Arc<HotkeyReconciler>>,
+    pub speak: Option<SpeakQueueHandle>,
+    pub pipeline_config: Option<PipelineConfigHandle>,
+    pub bot_accounts: Option<Shared<Vec<String>>>,
+}
+
+impl SetupLiveHandles {
+    pub fn of(handles: &RuntimeHandles) -> Self {
+        Self {
+            hotkeys: handles.hotkey_reconciler.clone(),
+            speak: handles.speak.clone(),
+            pipeline_config: handles.pipeline_config.clone(),
+            bot_accounts: Some(handles.bot_accounts.clone()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct VoiceBaseline {
+    pub alias_ids: Vec<AliasId>,
+    pub ignore_profile: IgnoreProfile,
+}
+
+pub(crate) async fn voice_baseline(provider: &dyn DataProvider) -> Option<VoiceBaseline> {
+    let repo = provider.voice_alias_repo();
+    let read = async {
+        let aliases = repo.list().await?;
+        let ignore_profile = repo.get_ignore_profile().await?;
+        Ok::<_, StorageError>(VoiceBaseline {
+            alias_ids: aliases.into_iter().map(|alias| alias.id).collect(),
+            ignore_profile,
+        })
+    }
+    .await;
+    match read {
+        Ok(baseline) => Some(baseline),
+        Err(error) => {
+            tracing::warn!(%error, "voice settings could not be read before the setup import");
+            None
+        }
+    }
+}
+
+pub(crate) async fn refresh_setup_live(
+    services: &PackServices,
+    live: &SetupLiveHandles,
+    outcome: &SetupImportOutcome,
+    baseline: Option<&VoiceBaseline>,
+) -> LiveRefresh {
+    let mut applied = true;
+    for part in &outcome.refresh {
+        applied &= match part {
+            SetupLivePart::Queues => apply_queue_changes(services, &outcome.queues).await,
+            SetupLivePart::Scripts => refresh_scripts(services).await,
+            SetupLivePart::Overlays => materialize_stored_overlays(services).await,
+            SetupLivePart::Hotkeys => refresh_hotkeys(live).await,
+            SetupLivePart::Tts => refresh_tts(services, live, baseline).await,
+        };
+    }
+    if applied {
+        LiveRefresh::Applied
+    } else {
+        LiveRefresh::NeedsRestart
+    }
+}
+
+async fn apply_queue_changes(services: &PackServices, changes: &SetupQueueChanges) -> bool {
+    let mut live = true;
+    for queue in changes.added.iter().chain(&changes.changed) {
+        live &= bring_queue_live(services, queue).await;
+    }
+    for id in &changes.removed {
+        match services.scheduler.deregister(*id).await {
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(queue = %id, %error, "removed queue could not leave the scheduler");
+                live = false;
+            }
+        }
+    }
+    live
+}
+
+async fn materialize_stored_overlays(services: &PackServices) -> bool {
+    let overlays = match services.backend.overlay_repo().list().await {
+        Ok(overlays) => overlays,
+        Err(error) => {
+            tracing::warn!(%error, "imported overlays could not be read back");
+            return false;
+        }
+    };
+    let mut live = true;
+    for overlay in overlays {
+        match services.overlays.materialize(&overlay.id).await {
+            Ok(_) => {}
+            Err(OverlayServiceError::UnavailableKind { id, kind_id }) => {
+                tracing::info!(overlay = %id, %kind_id, "imported overlay type is not in this build");
+            }
+            Err(error) => {
+                tracing::warn!(overlay = %overlay.id, %error, "imported overlay could not be regenerated");
+                live = false;
+            }
+        }
+    }
+    live
+}
+
+async fn refresh_hotkeys(live: &SetupLiveHandles) -> bool {
+    if let Some(reconciler) = &live.hotkeys {
+        reconciler.reconcile().await;
+    }
+    true
+}
+
+async fn refresh_tts(
+    services: &PackServices,
+    live: &SetupLiveHandles,
+    baseline: Option<&VoiceBaseline>,
+) -> bool {
+    let Some(baseline) = baseline else {
+        return false;
+    };
+    let filters = services.backend.tts_filters_repo();
+    let voices = services.backend.voice_alias_repo();
+    let read = async {
+        let rules = filters.list_rules().await?;
+        let settings = filters.get_pipeline_settings().await?;
+        let aliases = voices.list().await?;
+        let strategy = voices.get_strategy().await?;
+        let ignore_profile = voices.get_ignore_profile().await?;
+        Ok::<_, StorageError>((rules, settings, aliases, strategy, ignore_profile))
+    }
+    .await;
+    let (rules, settings, aliases, strategy, ignore_profile) = match read {
+        Ok(read) => read,
+        Err(error) => {
+            tracing::warn!(%error, "imported speech settings could not be read back");
+            return false;
+        }
+    };
+    if let Some(bot_accounts) = &live.bot_accounts {
+        bot_accounts.store(settings.bot_accounts.clone());
+    }
+    if let Some(pipeline) = &live.pipeline_config {
+        pipeline.swap(build_config_lenient(&rules, &settings));
+    }
+    let mut applied = same_ignore_profile(&baseline.ignore_profile, &ignore_profile);
+    let Some(speak) = &live.speak else {
+        return applied;
+    };
+    let commands = baseline
+        .alias_ids
+        .iter()
+        .cloned()
+        .map(SpeakCommand::RemoveAlias)
+        .chain(aliases.into_iter().map(SpeakCommand::SetAlias))
+        .chain(std::iter::once(SpeakCommand::SetStrategy(strategy)));
+    for command in commands {
+        if let Err(error) = speak.send(command).await {
+            tracing::warn!(%error, "imported voice settings could not reach the speech queue");
+            applied = false;
+        }
+    }
+    applied
+}
+
+fn same_ignore_profile(before: &IgnoreProfile, after: &IgnoreProfile) -> bool {
+    before.excluded_voice_ids == after.excluded_voice_ids
+        && before.excluded_locales == after.excluded_locales
 }
 
 #[cfg(test)]

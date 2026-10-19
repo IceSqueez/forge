@@ -43,7 +43,7 @@ pub(crate) struct ConfirmCard<'a> {
     pub problem: Option<&'a RestoreProblem>,
 }
 
-fn fact(label: String, value: &str, palette: &ForgePalette) -> AnyElement {
+pub(crate) fn fact(label: String, value: &str, palette: &ForgePalette) -> AnyElement {
     div()
         .flex()
         .items_center()
@@ -65,7 +65,7 @@ fn fact(label: String, value: &str, palette: &ForgePalette) -> AnyElement {
         .into_any_element()
 }
 
-fn statement(
+pub(crate) fn statement(
     glyph: Icon,
     tint: Rgba,
     text: String,

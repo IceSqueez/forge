@@ -15,8 +15,13 @@ pub enum RestoreCloseEvent {
     CloseRequested,
 }
 
+enum PendingClose {
+    Restore(StagedRestore),
+    Restart,
+}
+
 pub struct RestoreClose {
-    pending: Option<StagedRestore>,
+    pending: Option<PendingClose>,
     update_flow: Entity<UpdateFlow>,
     data_dir: PathBuf,
     rt_handle: Handle,
@@ -51,7 +56,18 @@ impl RestoreClose {
     }
 
     pub fn request(&mut self, staged: StagedRestore, cx: &mut Context<Self>) {
-        self.pending = Some(staged);
+        self.arm(PendingClose::Restore(staged), cx);
+    }
+
+    pub fn restart(&mut self, cx: &mut Context<Self>) {
+        if matches!(self.pending, Some(PendingClose::Restore(_))) {
+            return;
+        }
+        self.arm(PendingClose::Restart, cx);
+    }
+
+    fn arm(&mut self, pending: PendingClose, cx: &mut Context<Self>) {
+        self.pending = Some(pending);
         if let Some(exit) = cx.try_global::<ExitHandoff>() {
             exit.arm_restore();
         }
@@ -60,12 +76,16 @@ impl RestoreClose {
     }
 
     pub fn abort(&mut self, cx: &mut Context<Self>) {
-        let Some(staged) = self.pending.take() else {
+        let Some(pending) = self.pending.take() else {
             return;
         };
         if let Some(exit) = cx.try_global::<ExitHandoff>() {
             exit.disarm_restore();
         }
+        let PendingClose::Restore(staged) = pending else {
+            cx.notify();
+            return;
+        };
         let data_dir = self.data_dir.clone();
         run_async(
             &self.rt_handle,

@@ -89,7 +89,7 @@ pub(crate) fn carry_choices(previous: &PackImportPlan, fresh: &mut PackImportPla
     }
 }
 
-fn kind_label(kind: PackItemKind) -> String {
+pub(crate) fn kind_label(kind: PackItemKind) -> String {
     match kind {
         PackItemKind::Action => tr!("pack_export_kind_actions"),
         PackItemKind::Trigger => tr!("pack_export_kind_triggers"),

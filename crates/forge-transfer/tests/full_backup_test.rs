@@ -572,8 +572,8 @@ async fn public_manifest_refusals_check_kind_then_format_then_schema_then_scheme
     let cases: [(&str, Vec<u8>, Expected); 5] = [
         (
             "unknown kind wins",
-            manifest_json("pack", newer_format, newer_schema, "argon2", 1),
-            |e| matches!(e, TransferError::UnknownKind { kind } if kind == "pack"),
+            manifest_json("not-a-kind", newer_format, newer_schema, "argon2", 1),
+            |e| matches!(e, TransferError::UnknownKind { kind } if kind == "not-a-kind"),
         ),
         (
             "newer format beats schema and scheme",

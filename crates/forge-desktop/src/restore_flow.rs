@@ -16,7 +16,7 @@ use crate::restore_confirm::{ConfirmCard, ConfirmFacts};
 use crate::restore_passphrase_modal::{RestorePassphraseEvent, RestorePassphraseModal};
 use crate::restore_problem::RestoreProblem;
 
-const LEGACY_ARCHIVE_DIALOG_EXTENSION: &str = "gz";
+pub(crate) const LEGACY_ARCHIVE_DIALOG_EXTENSION: &str = "gz";
 
 struct PassphraseStep {
     bundle: PathBuf,
@@ -86,20 +86,7 @@ impl RestoreFlow {
 
     fn picked(&mut self, result: Result<PathBuf, String>, cx: &mut Context<Self>) {
         match result {
-            Ok(bundle) => {
-                self.step = RestoreStep::Reading;
-                let path = bundle.clone();
-                async_bridge::run_async(
-                    &self.rt_handle,
-                    async move {
-                        read_bundle_summary(path)
-                            .await
-                            .map_err(|error| RestoreProblem::of(&error))
-                    },
-                    move |this, result, cx| this.summarized(bundle, result, cx),
-                    cx,
-                );
-            }
+            Ok(bundle) => self.read(bundle, cx),
             Err(message) => {
                 self.step = RestoreStep::Idle;
                 if message != DIALOG_CANCELLED {
@@ -109,6 +96,29 @@ impl RestoreFlow {
             }
         }
         cx.notify();
+    }
+
+    pub fn open(&mut self, bundle: PathBuf, cx: &mut Context<Self>) {
+        if self.is_busy() {
+            return;
+        }
+        self.read(bundle, cx);
+        cx.notify();
+    }
+
+    fn read(&mut self, bundle: PathBuf, cx: &mut Context<Self>) {
+        self.step = RestoreStep::Reading;
+        let path = bundle.clone();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                read_bundle_summary(path)
+                    .await
+                    .map_err(|error| RestoreProblem::of(&error))
+            },
+            move |this, result, cx| this.summarized(bundle, result, cx),
+            cx,
+        );
     }
 
     fn summarized(

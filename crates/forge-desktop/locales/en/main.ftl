@@ -50,6 +50,9 @@ nav_item_settings = Settings
 
 home_hero_tagline = Open-source stream automation, forged for streamers
 home_hero_import = Import
+home_hero_export = Export
+home_export_full = Full backup
+home_import_dialog_filter = forge files
 home_hero_new_action = New action
 home_import_success = Imported action “{ $name }”
 home_import_failed = Import failed: { $error }

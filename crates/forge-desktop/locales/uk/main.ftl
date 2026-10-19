@@ -50,6 +50,9 @@ nav_item_settings = Налаштування
 
 home_hero_tagline = Відкрита автоматизація стрімів, створена для стрімерів
 home_hero_import = Імпортувати
+home_hero_export = Експортувати
+home_export_full = Повна резервна копія
+home_import_dialog_filter = Файли forge
 home_hero_new_action = Нова дія
 home_import_success = Імпортовано дію «{ $name }»
 home_import_failed = Не вдалося імпортувати: { $error }

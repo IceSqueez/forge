@@ -1,11 +1,9 @@
-use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use forge_components::{
-    Density, FONT_SM, ForgePalette, InputEvent, SettingRow, Spacing, TextInput, ToastAction,
-    ToastKind, primary_button, secondary_button, segment, segmented, setting_row, setting_rows,
-    setting_value_row, spacing, tr,
+    Density, FONT_SM, ForgePalette, InputEvent, SettingRow, Spacing, TextInput, primary_button,
+    secondary_button, segment, segmented, setting_row, setting_rows, setting_value_row, spacing,
+    tr,
 };
 use forge_runtime::ChatHistoryRetentionHandle;
 use forge_storage::{
@@ -19,20 +17,17 @@ use forge_storage::{
     event_log_retention_days, set_action_history_retention_days, set_chat_history_display_limit,
     set_chat_history_per_viewer_limit, set_event_log_retention_days,
 };
-use forge_transfer::{BackupDestination, FullBackupRequest, Passphrase};
 use gpui::{
     ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
-use crate::backup_passphrase_modal::{BackupPassphraseEvent, BackupPassphraseModal};
+use crate::backup_flow::{BackupFlow, BackupTarget};
 use crate::restore_flow::RestoreFlow;
 use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 use forge_components::ActivePresentation;
-use forge_components::PushToast;
 
-const BACKUP_TOAST_DURATION: Duration = Duration::from_secs(10);
 const LIMIT_INPUT_W: Pixels = px(120.0);
 const PER_VIEWER_PRESETS: [u32; 3] = [25, 50, 100];
 
@@ -62,11 +57,6 @@ struct StoredLimits {
     action_history_retention: u32,
 }
 
-struct PassphrasePrompt {
-    modal: Entity<BackupPassphraseModal>,
-    _sub: Subscription,
-}
-
 pub struct SettingsStorageView {
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
@@ -77,8 +67,7 @@ pub struct SettingsStorageView {
     display_limit: u32,
     retention_days: u32,
     history_retention_days: u32,
-    backing_up: bool,
-    passphrase_prompt: Option<PassphrasePrompt>,
+    backup: Entity<BackupFlow>,
     restore: Entity<RestoreFlow>,
 
     per_viewer_input: Entity<TextInput>,
@@ -122,8 +111,18 @@ impl SettingsStorageView {
         let restore =
             cx.new(|_| RestoreFlow::new(rt_handle.clone(), forge_storage::paths::data_dir()));
 
+        let backup = cx.new(|_| {
+            BackupFlow::new(
+                Arc::clone(&backend),
+                rt_handle.clone(),
+                forge_storage::paths::data_dir(),
+                BackupTarget::BackupsDir,
+            )
+        });
+
         let subs = vec![
             cx.observe(&restore, |_, _, cx| cx.notify()),
+            cx.observe(&backup, |_, _, cx| cx.notify()),
             cx.subscribe(&per_viewer_input, |this, _input, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Submitted(_) | InputEvent::Blurred(_)) {
                     this.commit_custom_per_viewer(cx);
@@ -158,8 +157,7 @@ impl SettingsStorageView {
             display_limit: DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT,
             retention_days: DEFAULT_EVENT_LOG_RETENTION_DAYS,
             history_retention_days: default_history_retention,
-            backing_up: false,
-            passphrase_prompt: None,
+            backup,
             restore,
             per_viewer_input,
             display_input,
@@ -394,86 +392,18 @@ impl SettingsStorageView {
     }
 
     fn start_restore(&mut self, cx: &mut Context<Self>) {
-        if self.backing_up || self.passphrase_prompt.is_some() {
+        if self.backup.read(cx).is_busy() {
             return;
         }
         self.restore.update(cx, |restore, cx| restore.start(cx));
         cx.notify();
     }
 
-    fn open_passphrase_prompt(&mut self, cx: &mut Context<Self>) {
-        if self.backing_up || self.passphrase_prompt.is_some() || self.restore.read(cx).is_busy() {
+    fn start_backup(&mut self, cx: &mut Context<Self>) {
+        if self.restore.read(cx).is_busy() {
             return;
         }
-        let modal = cx.new(BackupPassphraseModal::new);
-        let sub = cx.subscribe(
-            &modal,
-            |this, modal, event: &BackupPassphraseEvent, cx| match event {
-                BackupPassphraseEvent::Confirmed => {
-                    let passphrase = modal.update(cx, |modal, cx| modal.take_passphrase(cx));
-                    this.passphrase_prompt = None;
-                    if let Some(passphrase) = passphrase {
-                        this.backup_now(passphrase, cx);
-                    }
-                    cx.notify();
-                }
-                BackupPassphraseEvent::Cancelled => {
-                    this.passphrase_prompt = None;
-                    cx.notify();
-                }
-            },
-        );
-        self.passphrase_prompt = Some(PassphrasePrompt { modal, _sub: sub });
-        cx.notify();
-    }
-
-    fn backup_now(&mut self, passphrase: Passphrase, cx: &mut Context<Self>) {
-        if self.backing_up {
-            return;
-        }
-        self.backing_up = true;
-        cx.notify();
-        async_bridge::run_async(
-            &self.rt_handle,
-            {
-                let backup = forge_transfer::write_full_backup(FullBackupRequest {
-                    provider: Arc::clone(&self.backend),
-                    data_dir: forge_storage::paths::data_dir(),
-                    destination: BackupDestination::BackupsDir,
-                    passphrase,
-                });
-                async move { backup.await.map_err(|e| e.to_string()) }
-            },
-            |this, result, cx| this.apply_backup_result(result, cx),
-            cx,
-        );
-    }
-
-    fn apply_backup_result(&mut self, result: Result<PathBuf, String>, cx: &mut Context<Self>) {
-        self.backing_up = false;
-        match result {
-            Ok(path) => {
-                tracing::info!(path = %path.display(), "data backup created");
-                let shown = path.display().to_string();
-                cx.push_toast_full(
-                    ToastKind::Success,
-                    tr!("settings_storage_backup_done", path = shown.as_str()),
-                    None,
-                    Some(ToastAction::new(
-                        tr!("settings_storage_backup_reveal"),
-                        move |_window, app| app.reveal_path(&path),
-                    )),
-                    BACKUP_TOAST_DURATION,
-                );
-            }
-            Err(message) => {
-                tracing::warn!(error = %message, "data backup failed");
-                cx.push_toast(
-                    ToastKind::Error,
-                    tr!("settings_storage_backup_failed", error = message.as_str()),
-                );
-            }
-        }
+        self.backup.update(cx, |backup, cx| backup.start(cx));
         cx.notify();
     }
 
@@ -501,7 +431,9 @@ impl Render for SettingsStorageView {
         let density = cx.density();
 
         let db_path = forge_storage::paths::data_dir().join("forge.db");
-        let backup_label = if self.backing_up {
+        let backing_up = self.backup.read(cx).is_writing();
+        let backup_busy = self.backup.read(cx).is_busy();
+        let backup_label = if backing_up {
             tr!("settings_storage_backup_btn_busy")
         } else {
             tr!("settings_storage_backup_btn")
@@ -509,11 +441,11 @@ impl Render for SettingsStorageView {
         let restore = self.restore.read(cx);
         let (restore_busy, restore_preparing) = (restore.is_busy(), restore.is_preparing());
         let backup_btn = primary_button(backup_label, &palette)
-            .busy(self.backing_up)
+            .busy(backing_up)
             .disabled(restore_busy)
             .on_click(
                 "settings-db-backup",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.open_passphrase_prompt(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.start_backup(cx)),
             );
         let restore_label = if restore_preparing {
             tr!("settings_storage_restore_btn_busy")
@@ -522,7 +454,7 @@ impl Render for SettingsStorageView {
         };
         let restore_btn = secondary_button(restore_label, &palette)
             .busy(restore_preparing)
-            .disabled(self.backing_up || restore_busy)
+            .disabled(backup_busy || restore_busy)
             .on_click(
                 "settings-db-restore",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.start_restore(cx)),
@@ -581,11 +513,7 @@ impl Render for SettingsStorageView {
             .flex_col()
             .child(SettingsPaneHeader::new(SettingsSection::Storage))
             .child(rows)
-            .children(
-                self.passphrase_prompt
-                    .as_ref()
-                    .map(|prompt| prompt.modal.clone()),
-            )
+            .child(self.backup.clone())
             .child(self.restore.clone())
     }
 }

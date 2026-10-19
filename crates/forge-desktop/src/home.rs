@@ -1,10 +1,11 @@
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, Radius, Spacing, ToastKind, body_family, card, empty_state,
-    ghost_button_with_icon, grow_cell, icon, mono_family, page_frame, pulse_dot, radius, spacing,
-    sparkline, status_dot, tr,
+    ForgePalette, Icon, Radius, Spacing, ToastKind, body_family, card, dropdown, dropdown_row,
+    dropdown_surface, empty_state, ghost_button_with_icon, grow_cell, icon, mono_family,
+    page_frame, pulse_dot, radius, spacing, sparkline, status_dot, tr,
 };
 use forge_registry::TriggerRegistry;
 use forge_storage::DataProvider;
@@ -13,11 +14,13 @@ use gpui::{
     Subscription, Window, div, prelude::*, px,
 };
 
-use crate::async_bridge;
+use crate::async_bridge::{self, DIALOG_CANCELLED, DialogFilter};
+use crate::backup_flow::{BackupFlow, BackupTarget};
 use crate::event_loss::EventLoss;
 use crate::event_loss_card::event_loss_card;
 use crate::home_stats::{ConnectionsTally, HomeEvent, HomeStats, Integration, ObsHealth};
 use crate::integration_lifecycle::IntegrationLifecycle;
+use crate::restore_flow::{LEGACY_ARCHIVE_DIALOG_EXTENSION, RestoreFlow};
 use crate::screen::Screen;
 use crate::shell::refresh_dashboard_stats;
 use crate::sidebar::NavRequested;
@@ -68,6 +71,30 @@ const GLANCE_HEADER_ICON: Pixels = px(14.0);
 const RECENT_GROW: f32 = 1.4;
 const GLANCE_GROW: f32 = 1.0;
 
+const EXPORT_MENU_W: Pixels = px(180.0);
+
+const ACTION_JSON_EXTENSION: &str = "json";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ImportRoute {
+    ActionJson,
+    Bundle,
+}
+
+impl ImportRoute {
+    pub(crate) fn of(path: &Path) -> Self {
+        let is_json = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case(ACTION_JSON_EXTENSION));
+        if is_json {
+            ImportRoute::ActionJson
+        } else {
+            ImportRoute::Bundle
+        }
+    }
+}
+
 struct JumpCard {
     id: &'static str,
     glyph: Icon,
@@ -88,6 +115,10 @@ pub struct HomeView {
     trigger_registry: Arc<TriggerRegistry>,
     rt_handle: tokio::runtime::Handle,
     lifecycle: Option<Entity<IntegrationLifecycle>>,
+    restore: Entity<RestoreFlow>,
+    backup: Entity<BackupFlow>,
+    export_menu_open: bool,
+    _transfer_obs: [Subscription; 2],
     _stats_obs: Subscription,
     _loss_obs: Subscription,
     _lifecycle_obs: Option<Subscription>,
@@ -104,6 +135,20 @@ impl HomeView {
     ) -> Self {
         let stats_obs = cx.observe(&stats, |_, _, cx| cx.notify());
         let loss_obs = cx.observe(&event_loss, |_, _, cx| cx.notify());
+        let data_dir = forge_storage::paths::data_dir();
+        let restore = cx.new(|_| RestoreFlow::new(rt_handle.clone(), data_dir.clone()));
+        let backup = cx.new(|_| {
+            BackupFlow::new(
+                Arc::clone(&backend),
+                rt_handle.clone(),
+                data_dir,
+                BackupTarget::ChosenFile,
+            )
+        });
+        let transfer_obs = [
+            cx.observe(&restore, |_, _, cx| cx.notify()),
+            cx.observe(&backup, |_, _, cx| cx.notify()),
+        ];
         Self {
             stats,
             event_loss,
@@ -111,6 +156,10 @@ impl HomeView {
             trigger_registry,
             rt_handle,
             lifecycle: None,
+            restore,
+            backup,
+            export_menu_open: false,
+            _transfer_obs: transfer_obs,
             _stats_obs: stats_obs,
             _loss_obs: loss_obs,
             _lifecycle_obs: None,
@@ -143,11 +192,55 @@ impl HomeView {
         cx.emit(NavRequested(screen));
     }
 
+    fn transfer_busy(&self, cx: &App) -> bool {
+        self.restore.read(cx).is_busy() || self.backup.read(cx).is_busy()
+    }
+
     fn request_import(&mut self, cx: &mut Context<Self>) {
+        if self.transfer_busy(cx) {
+            return;
+        }
+        let filter = DialogFilter {
+            name: tr!("home_import_dialog_filter"),
+            extensions: vec![
+                forge_transfer::BUNDLE_EXTENSION,
+                LEGACY_ARCHIVE_DIALOG_EXTENSION,
+                ACTION_JSON_EXTENSION,
+            ],
+        };
+        async_bridge::spawn_dialog(
+            &self.rt_handle,
+            async_bridge::pick_file(Some(filter)),
+            |this, result, cx| this.import_picked(result, cx),
+            cx,
+        );
+    }
+
+    fn import_picked(&mut self, result: Result<PathBuf, String>, cx: &mut Context<Self>) {
+        match result {
+            Ok(path) => match ImportRoute::of(&path) {
+                ImportRoute::ActionJson => self.import_action_json(path, cx),
+                ImportRoute::Bundle => self
+                    .restore
+                    .update(cx, |restore, cx| restore.open(path, cx)),
+            },
+            Err(message) if message == DIALOG_CANCELLED => {}
+            Err(message) => {
+                tracing::warn!(error = %message, "import file picker failed");
+                cx.push_toast(
+                    ToastKind::Error,
+                    tr!("home_import_failed", error = message.as_str()),
+                );
+            }
+        }
+        cx.notify();
+    }
+
+    fn import_action_json(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let dp = Arc::clone(&self.backend);
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
         self.rt_handle.spawn(async move {
-            let _ = tx.send(import_action(dp).await);
+            let _ = tx.send(import_action(dp, path).await);
         });
         let stats = self.stats.clone();
         let backend = Arc::clone(&self.backend);
@@ -164,9 +257,6 @@ impl HomeView {
                 refresh_dashboard_stats(stats, backend, trigger_registry, rt_handle, cx).await;
             }
             Ok(Err(e)) => {
-                if e == async_bridge::DIALOG_CANCELLED {
-                    return;
-                }
                 let _ = this.update(cx, |_this, cx| {
                     cx.push_toast(
                         ToastKind::Error,
@@ -177,6 +267,38 @@ impl HomeView {
             Err(_) => {}
         })
         .detach();
+    }
+
+    fn toggle_export_menu(&mut self, cx: &mut Context<Self>) {
+        self.export_menu_open = !self.export_menu_open && !self.transfer_busy(cx);
+        cx.notify();
+    }
+
+    fn close_export_menu(&mut self, cx: &mut Context<Self>) {
+        self.export_menu_open = false;
+        cx.notify();
+    }
+
+    fn export_full_backup(&mut self, cx: &mut Context<Self>) {
+        self.export_menu_open = false;
+        if !self.restore.read(cx).is_busy() {
+            self.backup.update(cx, |backup, cx| backup.start(cx));
+        }
+        cx.notify();
+    }
+
+    fn render_export_menu(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let view = cx.entity();
+        let rows = dropdown_surface(palette).w(EXPORT_MENU_W).child(
+            dropdown_row("home-export-full", tr!("home_export_full"), palette)
+                .icon(Some(Icon::Lock))
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export_full_backup(cx))),
+        );
+        dropdown(div().flex().justify_end().child(rows))
+            .on_dismiss(move |_window, cx| {
+                view.update(cx, |this, cx| this.close_export_menu(cx));
+            })
+            .into_any_element()
     }
 
     fn render_hero(
@@ -222,12 +344,25 @@ impl HomeView {
                     .child(tr!("home_hero_tagline")),
             );
 
+        let transfer_busy = self.transfer_busy(cx);
         let import_btn = ghost_button_with_icon(Icon::Download, tr!("home_hero_import"), palette)
             .density(density)
+            .disabled(transfer_busy)
             .on_click(
                 "home-import",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.request_import(cx)),
             );
+        let export_btn = ghost_button_with_icon(Icon::ArrowBarUp, tr!("home_hero_export"), palette)
+            .density(density)
+            .disabled(transfer_busy)
+            .on_click(
+                "home-export",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_export_menu(cx)),
+            );
+        let export_menu = self
+            .export_menu_open
+            .then(|| self.render_export_menu(palette, cx));
+        let export_control = div().relative().child(export_btn).children(export_menu);
         let new_action_btn =
             ghost_button_with_icon(Icon::Plus, tr!("home_hero_new_action"), palette)
                 .density(density)
@@ -241,6 +376,7 @@ impl HomeView {
             .items_center()
             .gap(spacing(Spacing::Xs, density))
             .child(import_btn)
+            .child(export_control)
             .child(new_action_btn);
 
         let inner = div()
@@ -972,12 +1108,7 @@ impl HomeView {
     }
 }
 
-async fn import_action(dp: Arc<dyn DataProvider>) -> Result<String, String> {
-    let filter = async_bridge::DialogFilter {
-        name: "JSON".to_owned(),
-        extensions: vec!["json"],
-    };
-    let path = async_bridge::pick_file(Some(filter)).await?;
+async fn import_action(dp: Arc<dyn DataProvider>, path: PathBuf) -> Result<String, String> {
     let bytes = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
     let mut action: forge_types::Action =
         serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
@@ -1107,6 +1238,11 @@ impl Render for HomeView {
                     .child(content),
             );
 
-        page_frame(vec![BreadcrumbCrumb::leaf(tr!("nav_home"))], &palette).body(body)
+        div()
+            .relative()
+            .size_full()
+            .child(page_frame(vec![BreadcrumbCrumb::leaf(tr!("nav_home"))], &palette).body(body))
+            .child(self.backup.clone())
+            .child(self.restore.clone())
     }
 }

@@ -598,7 +598,7 @@ impl DataProvider for SqliteBackend {
             reason: "non-utf8 export path".into(),
         })?;
 
-        crate::snapshot::checkpoint_then_vacuum_into(self.pool.writer(), path_str)
+        crate::snapshot::vacuum_into(self.pool.snapshot_source(), path_str)
             .await
             .map_err(|e| StorageError::Connection {
                 reason: e.to_string(),

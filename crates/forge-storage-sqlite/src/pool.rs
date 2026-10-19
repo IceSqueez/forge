@@ -34,6 +34,10 @@ impl SqlitePools {
         self.checkpointer.as_ref()
     }
 
+    pub(crate) fn snapshot_source(&self) -> &SqlitePool {
+        self.checkpointer.as_ref().unwrap_or(&self.writer)
+    }
+
     pub async fn close(&self) {
         if let Some(checkpointer) = &self.checkpointer {
             checkpointer.close().await;

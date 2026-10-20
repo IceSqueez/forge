@@ -3,6 +3,7 @@ use std::fmt;
 
 use time::OffsetDateTime;
 
+use crate::datetime_text::datetime_to_text;
 use crate::execution::{
     ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome, SubActionTelemetry,
 };
@@ -52,7 +53,7 @@ impl fmt::Display for DisclosedValue {
             Self::Int(v) => write!(f, "{v}"),
             Self::Float(v) => write!(f, "{v}"),
             Self::Bool(v) => write!(f, "{v}"),
-            Self::Datetime(v) => write!(f, "{v}"),
+            Self::Datetime(v) => f.write_str(&datetime_to_text(v)),
             Self::Text { chars } => write!(f, "{STAMP} len={chars}>"),
             Self::Array { items } => write!(f, "array({items})"),
             Self::Object { entries } => write!(f, "object({entries})"),

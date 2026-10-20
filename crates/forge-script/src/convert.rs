@@ -1,5 +1,4 @@
-use forge_types::Variant;
-use time::format_description::well_known::Rfc3339;
+use forge_types::{Variant, datetime_to_text};
 
 pub(crate) fn variant_to_dynamic(v: Variant) -> rhai::Dynamic {
     match v {
@@ -7,7 +6,7 @@ pub(crate) fn variant_to_dynamic(v: Variant) -> rhai::Dynamic {
         Variant::Float(f) => rhai::Dynamic::from(f),
         Variant::Bool(b) => rhai::Dynamic::from(b),
         Variant::String(s) => rhai::Dynamic::from(s),
-        Variant::Datetime(dt) => rhai::Dynamic::from(dt.format(&Rfc3339).unwrap_or_default()),
+        Variant::Datetime(dt) => rhai::Dynamic::from(datetime_to_text(&dt)),
         Variant::Array(arr) => {
             let a: rhai::Array = arr.into_iter().map(variant_to_dynamic).collect();
             rhai::Dynamic::from(a)

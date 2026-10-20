@@ -22,10 +22,7 @@ pub(crate) fn variant_to_wire_value(v: &Variant) -> serde_json::Value {
         Variant::Float(f) => serde_json::json!(f),
         Variant::Bool(b) => serde_json::json!(b),
         Variant::String(s) => serde_json::Value::String(s.clone()),
-        Variant::Datetime(dt) => serde_json::Value::String(
-            dt.format(&time::format_description::well_known::Rfc3339)
-                .unwrap_or_default(),
-        ),
+        Variant::Datetime(dt) => serde_json::Value::String(forge_types::datetime_to_text(dt)),
         Variant::Array(arr) => {
             serde_json::Value::Array(arr.iter().map(variant_to_wire_value).collect())
         }

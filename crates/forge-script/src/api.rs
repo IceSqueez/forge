@@ -328,15 +328,10 @@ fn http_error_to_rhai_error(e: HttpError) -> Box<EvalAltResult> {
 }
 
 fn build_time_module() -> Module {
-    use time::format_description::well_known::Rfc3339;
     let mut m = Module::new();
 
     m.set_native_fn("now", || -> Result<ImmutableString, Box<EvalAltResult>> {
-        let now = time::OffsetDateTime::now_utc();
-        let s = now
-            .format(&Rfc3339)
-            .map_err(|e| -> Box<EvalAltResult> { e.to_string().into() })?;
-        Ok(s.into())
+        Ok(forge_types::datetime_to_text(&time::OffsetDateTime::now_utc()).into())
     });
 
     m.set_native_fn("unix", || -> Result<i64, Box<EvalAltResult>> {

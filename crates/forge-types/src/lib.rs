@@ -1,5 +1,6 @@
 pub mod action;
 pub mod data_flow;
+pub mod datetime_text;
 pub mod donation;
 pub mod execution;
 pub mod ids;
@@ -27,6 +28,7 @@ pub mod vocabulary;
 
 pub use action::{Action, ExecutionMode};
 pub use data_flow::{DeclaredVariable, SynthesisHint, VariableSchema};
+pub use datetime_text::{datetime_from_text, datetime_to_text};
 pub use donation::{Donation, DonationOrigin, Donor, DonorVisibility};
 pub use execution::{
     ArgStack, ExecutionContext, ExecutionMetadata, ExecutionOutcome,

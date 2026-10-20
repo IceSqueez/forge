@@ -280,12 +280,11 @@ impl GlobalEditor {
             VariantKind::String => Ok(Variant::String(
                 self.value_input.read(cx).content().to_owned(),
             )),
-            VariantKind::Datetime => time::OffsetDateTime::parse(
-                self.value_input.read(cx).content().trim(),
-                &time::format_description::well_known::Rfc3339,
-            )
-            .map(Variant::Datetime)
-            .map_err(|_| tr!("globals_error_invalid_datetime").into()),
+            VariantKind::Datetime => {
+                forge_types::datetime_from_text(self.value_input.read(cx).content())
+                    .map(Variant::Datetime)
+                    .ok_or_else(|| tr!("globals_error_invalid_datetime").into())
+            }
             VariantKind::Array => parse_json_variant(
                 self.value_area.read(cx).content(),
                 true,
@@ -1751,10 +1750,7 @@ fn single_line_seed(value: &Variant) -> Option<String> {
         Variant::Int(n) => Some(n.to_string()),
         Variant::Float(f) => Some(f.to_string()),
         Variant::String(s) => Some(s.clone()),
-        Variant::Datetime(dt) => Some(
-            dt.format(&time::format_description::well_known::Rfc3339)
-                .unwrap_or_default(),
-        ),
+        Variant::Datetime(dt) => Some(forge_types::datetime_to_text(dt)),
         _ => None,
     }
 }

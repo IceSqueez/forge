@@ -3,8 +3,10 @@ use forge_registry::{
     FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
     SubActionConfigExt, SubActionIo, SubActionRunner,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind, datetime_to_text,
+};
+use time::OffsetDateTime;
 
 const TIME_FORMATTED_VAR: &str = "time.formatted";
 const TIME_UNIX_SECONDS_VAR: &str = "time.unix_seconds";
@@ -120,10 +122,7 @@ impl SubActionRunner for CoreTimeNowRunner {
                     );
                 }
             },
-            _ => match now.format(&Rfc3339) {
-                Ok(s) => s,
-                Err(e) => return (timer.failed(format!("time format error: {e}")), None),
-            },
+            _ => datetime_to_text(&now),
         };
 
         let new_stack = ctx

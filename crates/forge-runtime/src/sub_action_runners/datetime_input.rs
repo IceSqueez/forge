@@ -1,5 +1,5 @@
-use forge_types::Variant;
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use forge_types::{Variant, datetime_from_text};
+use time::OffsetDateTime;
 
 pub(crate) fn resolve_datetime(v: &Variant, stack_interp: &str) -> Result<OffsetDateTime, String> {
     if let Some(dt) = v.as_datetime() {
@@ -10,12 +10,13 @@ pub(crate) fn resolve_datetime(v: &Variant, stack_interp: &str) -> Result<Offset
             .map_err(|e| format!("unix timestamp out of range: {e}"));
     }
     let s = stack_interp.trim();
-    OffsetDateTime::parse(s, &Rfc3339).or_else(|_| {
-        s.parse::<i64>()
-            .ok()
-            .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok())
-            .ok_or_else(|| format!("cannot parse '{s}' as a datetime or unix timestamp"))
-    })
+    datetime_from_text(s)
+        .or_else(|| {
+            s.parse::<i64>()
+                .ok()
+                .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok())
+        })
+        .ok_or_else(|| format!("cannot parse '{s}' as a datetime or unix timestamp"))
 }
 
 #[cfg(test)]

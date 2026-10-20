@@ -31,7 +31,6 @@ use gpui::{
     Window, div, prelude::*, px, uniform_list,
 };
 use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
 
 use crate::async_bridge::{self, BridgeFlow, drain_events};
 use crate::globals::variant_kind_color;
@@ -157,9 +156,9 @@ fn parse_input_to_variant(name: &str, kind: VariantKind, raw: &str) -> Result<Va
             "a JSON object",
             OBJECT_INPUT_EXAMPLE,
         ),
-        VariantKind::Datetime => OffsetDateTime::parse(raw.trim(), &Rfc3339)
+        VariantKind::Datetime => forge_types::datetime_from_text(raw)
             .map(Variant::Datetime)
-            .map_err(|_| {
+            .ok_or_else(|| {
                 format!("`{name}` must be an RFC3339 timestamp, e.g. `{DATETIME_INPUT_EXAMPLE}`")
             }),
     }

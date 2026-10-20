@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
+use crate::datetime_text::datetime_to_text;
 use crate::redaction::RedactedText;
 
 const MAX_COLLECTION_LEN: usize = 10_000;
@@ -168,12 +169,7 @@ impl fmt::Display for Variant {
             Self::Float(v) => write!(f, "{v}"),
             Self::Bool(v) => write!(f, "{v}"),
             Self::String(v) => write!(f, "{v}"),
-            Self::Datetime(v) => {
-                let s = v
-                    .format(&time::format_description::well_known::Rfc3339)
-                    .unwrap_or_else(|_| v.to_string());
-                write!(f, "{s}")
-            }
+            Self::Datetime(v) => f.write_str(&datetime_to_text(v)),
             Self::Array(v) => write!(f, "[{} items]", v.len()),
             Self::Object(v) => write!(f, "{{{} keys}}", v.len()),
         }
@@ -311,10 +307,7 @@ impl Variant {
                 .unwrap_or(serde_json::Value::Null),
             Variant::Bool(b) => serde_json::Value::Bool(*b),
             Variant::String(s) => serde_json::Value::String(s.clone()),
-            Variant::Datetime(dt) => serde_json::Value::String(
-                dt.format(&time::format_description::well_known::Rfc3339)
-                    .unwrap_or_else(|_| dt.to_string()),
-            ),
+            Variant::Datetime(dt) => serde_json::Value::String(datetime_to_text(dt)),
             Variant::Array(items) => {
                 serde_json::Value::Array(items.iter().map(Variant::to_plain_json).collect())
             }

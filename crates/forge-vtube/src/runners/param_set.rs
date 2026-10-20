@@ -5,7 +5,8 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -101,14 +102,16 @@ impl SubActionRunner for ParamSetRunner {
         match config.get("param_id") {
             Some(Variant::String(_)) => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(
-                    "vtube.param.set: 'param_id' must be a string".to_owned(),
+                return Err(RegistryError::invalid_field(
+                    "param_id",
+                    ConfigReason::Required,
                 ));
             }
         }
         if !accepts_number(config.get("value")) {
-            return Err(RegistryError::InvalidConfig(
-                "vtube.param.set: 'value' must be a number".to_owned(),
+            return Err(RegistryError::invalid_field(
+                "value",
+                ConfigReason::NotANumber,
             ));
         }
         let hold_is_blank =
@@ -117,8 +120,9 @@ impl SubActionRunner for ParamSetRunner {
             && !hold_is_blank
             && !accepts_number(config.get("hold_secs"))
         {
-            return Err(RegistryError::InvalidConfig(
-                "vtube.param.set: 'hold_secs' must be a number".to_owned(),
+            return Err(RegistryError::invalid_field(
+                "hold_secs",
+                ConfigReason::NotANumber,
             ));
         }
         Ok(())

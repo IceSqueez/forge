@@ -6,7 +6,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
@@ -76,9 +77,10 @@ impl SubActionRunner for LookupCategoryRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("query") {
             Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'query' must be a non-empty string"
-            ))),
+            _ => Err(RegistryError::invalid_field(
+                "query",
+                ConfigReason::Required,
+            )),
         }
     }
 

@@ -6,7 +6,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
@@ -98,9 +99,10 @@ impl SubActionRunner for UpdateRewardRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         let reward_id = config.str("reward_id").unwrap_or_default();
         if reward_id.is_empty() {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'reward_id' must be a non-empty string"
-            )));
+            return Err(RegistryError::invalid_field(
+                "reward_id",
+                ConfigReason::Required,
+            ));
         }
 
         let title = config.str("title").unwrap_or_default();
@@ -108,8 +110,8 @@ impl SubActionRunner for UpdateRewardRunner {
         let description = config.str("description").unwrap_or_default();
 
         if title.is_empty() && cost.is_empty() && description.is_empty() {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: at least one of 'title', 'cost', or 'description' must be provided"
+            return Err(RegistryError::invalid_config(ConfigReason::Custom(
+                "set at least one of title, cost or description".to_owned(),
             )));
         }
 

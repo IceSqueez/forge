@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -189,29 +190,36 @@ impl SubActionRunner for StartPollRunner {
             _ => "",
         };
         if title.is_empty() {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'title' is required"
-            )));
+            return Err(RegistryError::invalid_field(
+                "title",
+                ConfigReason::Required,
+            ));
         }
         if title.chars().count() > MAX_TITLE_CHARS {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'title' must be ≤{MAX_TITLE_CHARS} characters"
-            )));
+            return Err(RegistryError::invalid_field(
+                "title",
+                ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_TITLE_CHARS)),
+            ));
         }
 
         let raw_choices = match config.get("choices") {
             Some(Variant::String(s)) => s.as_str(),
             _ => "",
         };
-        parse_choices(raw_choices)
-            .map_err(|msg| RegistryError::InvalidConfig(format!("{KIND_ID}: {msg}")))?;
+        parse_choices(raw_choices).map_err(|detail| {
+            RegistryError::invalid_field("choices", ConfigReason::InvalidFormat(detail))
+        })?;
 
         match config.get("duration_seconds") {
             Some(Variant::Int(n)) if *n >= MIN_DURATION_SECS && *n <= MAX_DURATION_SECS => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'duration_seconds' must be {MIN_DURATION_SECS}..={MAX_DURATION_SECS}"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "duration_seconds",
+                    ConfigReason::OutOfRange(ValueBounds::between(
+                        MIN_DURATION_SECS,
+                        MAX_DURATION_SECS,
+                    )),
+                ));
             }
         }
 

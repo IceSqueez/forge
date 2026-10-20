@@ -80,7 +80,7 @@ impl SubActionRunner for CoreQueueClearRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_queue_id(config, "core.queue.clear")
+        validate_queue_id(config)
     }
 
     async fn execute(

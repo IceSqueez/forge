@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
@@ -77,9 +77,7 @@ impl SubActionRunner for AliasSwitchRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         for key in ["alias_name", "engine_id", "voice_id"] {
             if config.str_nonempty(key).is_none() {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "tts.alias.switch_active: {key} is required"
-                )));
+                return Err(RegistryError::invalid_field(key, ConfigReason::Required));
             }
         }
         Ok(())

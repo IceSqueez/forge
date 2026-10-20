@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    DurationBounds, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionRunner,
+    ConfigReason, DurationBounds, FormField, RegistryError, RunContext, StepTimer,
+    SubActionCategory, SubActionConfigExt, SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
@@ -11,6 +11,8 @@ use super::os_ports::{DesktopNotice, NotifyPort, NotifyUrgency};
 
 const TIMEOUT_MIN_MS: i64 = 1000;
 const TIMEOUT_MAX_MS: i64 = 60000;
+const MIN_TITLE_CHARS: usize = 1;
+const MAX_TITLE_CHARS: usize = 100;
 
 pub struct CoreNotifyShowRunner {
     notify: Arc<dyn NotifyPort>,
@@ -92,9 +94,13 @@ impl SubActionRunner for CoreNotifyShowRunner {
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         let title_len = config.str("title").map(|s| s.chars().count()).unwrap_or(0);
-        if !(1..=100).contains(&title_len) {
-            return Err(RegistryError::InvalidConfig(
-                "core.notify.show: title length must be 1..=100".to_owned(),
+        if !(MIN_TITLE_CHARS..=MAX_TITLE_CHARS).contains(&title_len) {
+            return Err(RegistryError::invalid_field(
+                "title",
+                ConfigReason::LengthOutOfRange(ValueBounds::between(
+                    MIN_TITLE_CHARS,
+                    MAX_TITLE_CHARS,
+                )),
             ));
         }
         Ok(())

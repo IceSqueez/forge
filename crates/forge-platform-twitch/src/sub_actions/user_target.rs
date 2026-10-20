@@ -1,5 +1,5 @@
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{RegistryError, RunContext, SubActionConfigExt};
+use forge_registry::{ConfigReason, RegistryError, RunContext, SubActionConfigExt};
 
 use super::identity::resolve_user_id;
 use crate::helix::{HelixError, HelixTransport};
@@ -38,18 +38,14 @@ pub(crate) struct TargetKeys {
 }
 
 impl TargetKeys {
-    pub(crate) fn validate(
-        &self,
-        kind_id: &str,
-        config: &SubActionConfig,
-    ) -> Result<(), RegistryError> {
+    pub(crate) fn validate(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         if config.str_nonempty(self.id).is_some() || config.str_nonempty(self.login).is_some() {
             return Ok(());
         }
-        Err(RegistryError::InvalidConfig(format!(
-            "{kind_id}: '{}' or '{}' must be a non-empty string",
-            self.login, self.id
-        )))
+        Err(RegistryError::invalid_field(
+            self.login,
+            ConfigReason::Required,
+        ))
     }
 
     pub(crate) fn interpolate(

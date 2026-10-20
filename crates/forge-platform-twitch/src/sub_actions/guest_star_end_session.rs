@@ -79,7 +79,7 @@ impl SubActionRunner for GuestStarEndSessionRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_session_id(KIND_ID, config)
+        validate_session_id(config)
     }
 
     async fn execute(

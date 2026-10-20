@@ -4,7 +4,10 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+    ValueBounds,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -66,9 +69,13 @@ impl SubActionRunner for InsertAdBreakRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("duration_secs") {
             Some(Variant::Int(n)) if (MIN_DURATION_SECS..=MAX_DURATION_SECS).contains(n) => Ok(()),
-            _ => Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'duration_secs' must be {MIN_DURATION_SECS}..={MAX_DURATION_SECS}"
-            ))),
+            _ => Err(RegistryError::invalid_field(
+                "duration_secs",
+                ConfigReason::OutOfRange(ValueBounds::between(
+                    MIN_DURATION_SECS,
+                    MAX_DURATION_SECS,
+                )),
+            )),
         }
     }
 

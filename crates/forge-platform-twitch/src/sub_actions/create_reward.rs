@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -195,40 +196,45 @@ impl SubActionRunner for CreateRewardRunner {
             _ => "",
         };
         if title.is_empty() {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'title' is required"
-            )));
+            return Err(RegistryError::invalid_field(
+                "title",
+                ConfigReason::Required,
+            ));
         }
         if title.chars().count() > MAX_TITLE_CHARS {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'title' must be ≤{MAX_TITLE_CHARS} characters"
-            )));
+            return Err(RegistryError::invalid_field(
+                "title",
+                ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_TITLE_CHARS)),
+            ));
         }
 
         match config.get("cost") {
             Some(Variant::Int(n)) if *n >= 1 => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'cost' must be ≥1"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "cost",
+                    ConfigReason::OutOfRange(ValueBounds::at_least(1)),
+                ));
             }
         }
 
         if let Some(Variant::String(s)) = config.get("prompt")
             && s.chars().count() > MAX_PROMPT_CHARS
         {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'prompt' must be ≤{MAX_PROMPT_CHARS} characters"
-            )));
+            return Err(RegistryError::invalid_field(
+                "prompt",
+                ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_PROMPT_CHARS)),
+            ));
         }
 
         if let Some(Variant::String(s)) = config.get("background_color_hex")
             && !s.is_empty()
             && !is_valid_hex_color(s)
         {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'background_color_hex' must be empty or a '#RRGGBB' hex color"
-            )));
+            return Err(RegistryError::invalid_field(
+                "background_color_hex",
+                ConfigReason::InvalidFormat("expected a #RRGGBB color".to_owned()),
+            ));
         }
 
         Ok(())

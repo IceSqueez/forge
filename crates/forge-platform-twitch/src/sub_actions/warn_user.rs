@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -113,23 +114,26 @@ impl SubActionRunner for WarnUserRunner {
         match config.get("target_user_login") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'target_user_login' must be a non-empty string"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "target_user_login",
+                    ConfigReason::Required,
+                ));
             }
         }
         match config.get("reason") {
             Some(Variant::String(r)) if !r.is_empty() => {
                 if r.chars().count() > MAX_REASON_CHARS {
-                    return Err(RegistryError::InvalidConfig(format!(
-                        "{KIND_ID}: 'reason' must not exceed {MAX_REASON_CHARS} characters"
-                    )));
+                    return Err(RegistryError::invalid_field(
+                        "reason",
+                        ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_REASON_CHARS)),
+                    ));
                 }
             }
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'reason' is required and must be a non-empty string"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "reason",
+                    ConfigReason::Required,
+                ));
             }
         }
         Ok(())

@@ -104,7 +104,7 @@ impl SubActionRunner for UnbanUserRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        TARGET_KEYS.validate(KIND_ID, config)
+        TARGET_KEYS.validate(config)
     }
 
     async fn execute(

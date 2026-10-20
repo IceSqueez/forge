@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -112,17 +113,16 @@ impl SubActionRunner for MidiSendRunner {
         match config.get("port") {
             Some(Variant::String(_)) => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(
-                    "midi.send: 'port' must be a string".to_owned(),
-                ));
+                return Err(RegistryError::invalid_field("port", ConfigReason::Required));
             }
         }
         match config.get("message_kind") {
             Some(Variant::String(k))
                 if matches!(k.as_str(), "note_on" | "note_off" | "cc" | "raw") => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(
-                    "midi.send: 'message_kind' must be note_on|note_off|cc|raw".to_owned(),
+                return Err(RegistryError::invalid_field(
+                    "message_kind",
+                    ConfigReason::choices(["note_on", "note_off", "cc", "raw"]),
                 ));
             }
         }

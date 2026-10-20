@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -96,9 +97,10 @@ impl SubActionRunner for CreatePollRunner {
         match config.get("question") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'question' is required"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "question",
+                    ConfigReason::Required,
+                ));
             }
         }
 
@@ -106,9 +108,9 @@ impl SubActionRunner for CreatePollRunner {
             Some(Variant::String(s)) => s.as_str(),
             _ => "",
         };
-        parse_options(raw_options)
-            .map(|_| ())
-            .map_err(|msg| RegistryError::InvalidConfig(format!("{KIND_ID}: {msg}")))
+        parse_options(raw_options).map(|_| ()).map_err(|detail| {
+            RegistryError::invalid_field("options", ConfigReason::InvalidFormat(detail))
+        })
     }
 
     async fn execute(

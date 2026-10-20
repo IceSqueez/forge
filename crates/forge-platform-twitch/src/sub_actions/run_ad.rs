@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -86,9 +88,10 @@ impl SubActionRunner for RunAdRunner {
         match config.get("duration_seconds") {
             Some(Variant::String(s)) if ALLOWED_DURATIONS.contains(&s.as_str()) => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'duration_seconds' must be one of 30, 60, 90, 120, 150, 180"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "duration_seconds",
+                    ConfigReason::choices(["30", "60", "90", "120", "150", "180"]),
+                ));
             }
         }
         Ok(())

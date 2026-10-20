@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -22,6 +23,7 @@ const KIND_ID: &str = "twitch.moderation.timeout_user";
 const DEFAULT_DURATION_SECONDS: i64 = 600;
 const MIN_DURATION_SECONDS: i64 = 1;
 const MAX_DURATION_SECONDS: i64 = 1_209_600;
+const MAX_REASON_CHARS: usize = 500;
 
 pub struct TimeoutUserRunner {
     transport: Arc<dyn HelixTransport>,
@@ -124,20 +126,25 @@ impl SubActionRunner for TimeoutUserRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        TARGET_KEYS.validate(KIND_ID, config)?;
+        TARGET_KEYS.validate(config)?;
         if let Some(Variant::String(r)) = config.get("reason")
-            && r.chars().count() > 500
+            && r.chars().count() > MAX_REASON_CHARS
         {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'reason' must not exceed 500 characters"
-            )));
+            return Err(RegistryError::invalid_field(
+                "reason",
+                ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_REASON_CHARS)),
+            ));
         }
         if let Some(Variant::Int(d)) = config.get("duration_seconds")
             && !((MIN_DURATION_SECONDS..=MAX_DURATION_SECONDS).contains(d))
         {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'duration_seconds' must be between {MIN_DURATION_SECONDS} and {MAX_DURATION_SECONDS}"
-            )));
+            return Err(RegistryError::invalid_field(
+                "duration_seconds",
+                ConfigReason::OutOfRange(ValueBounds::between(
+                    MIN_DURATION_SECONDS,
+                    MAX_DURATION_SECONDS,
+                )),
+            ));
         }
         Ok(())
     }

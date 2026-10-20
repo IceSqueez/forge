@@ -71,7 +71,7 @@ impl SubActionRunner for CoreQueueResumeRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_queue_id(config, "core.queue.resume")
+        validate_queue_id(config)
     }
 
     async fn execute(

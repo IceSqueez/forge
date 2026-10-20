@@ -1,6 +1,8 @@
 use forge_registry::SubActionRunner;
 use forge_types::{SubActionConfig, Variant, variable_references};
 
+use super::config_problem_text::{config_problem_text, config_reason_text};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct StepRejection {
     pub field_key: Option<String>,
@@ -12,29 +14,20 @@ pub(super) fn step_rejection(
     config: &SubActionConfig,
     field_keys: &[String],
 ) -> Option<StepRejection> {
-    let error = runner.validate_config(config).err()?;
-    let raw = error.to_string();
-    let message = raw
-        .strip_prefix(runner.id())
-        .and_then(|rest| rest.strip_prefix(':'))
-        .map(str::trim_start)
-        .unwrap_or(&raw)
-        .to_owned();
-    let field_key = field_keys
-        .iter()
-        .find(|key| message_names_key(&message, key))
-        .cloned();
-    let deferred = match &field_key {
+    let problem = runner.validate_config(config).err()?.into_config_problem();
+    let deferred = match &problem.field {
         Some(key) => config.get(key).is_some_and(holds_variable_reference),
         None => config.values().any(holds_variable_reference),
     };
-    (!deferred).then_some(StepRejection { field_key, message })
-}
-
-fn message_names_key(message: &str, key: &str) -> bool {
-    message.contains(&format!("'{key}'"))
-        || message.contains(&format!("`{key}`"))
-        || message.starts_with(&format!("{key} "))
+    if deferred {
+        return None;
+    }
+    let field_key = problem.field.clone().filter(|key| field_keys.contains(key));
+    let message = match field_key {
+        Some(_) => config_reason_text(&problem.reason),
+        None => config_problem_text(&problem),
+    };
+    Some(StepRejection { field_key, message })
 }
 
 fn holds_variable_reference(value: &Variant) -> bool {

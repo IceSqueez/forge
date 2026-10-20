@@ -6,7 +6,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
@@ -107,17 +108,18 @@ impl SubActionRunner for UpdateInfoRunner {
         let has_tags = !tags_raw.is_empty();
 
         if !has_title && !has_category && !has_tags {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: at least one of 'title', 'category_id', or 'tags' must be provided"
+            return Err(RegistryError::invalid_config(ConfigReason::Custom(
+                "set at least one of title, category or tags".to_owned(),
             )));
         }
 
         if has_tags {
             let count = parse_tags(tags_raw).len();
             if count > MAX_TAGS {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: tags count {count} exceeds the maximum of {MAX_TAGS}"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "tags",
+                    ConfigReason::Custom(format!("at most {MAX_TAGS} tags are allowed")),
+                ));
             }
         }
 

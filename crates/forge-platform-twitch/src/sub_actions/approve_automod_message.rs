@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -44,15 +45,13 @@ pub(crate) fn automod_config_fields() -> Vec<FormField> {
     }]
 }
 
-pub(crate) fn validate_automod_config(
-    kind_id: &str,
-    config: &SubActionConfig,
-) -> Result<(), RegistryError> {
+pub(crate) fn validate_automod_config(config: &SubActionConfig) -> Result<(), RegistryError> {
     match config.get("message_id") {
         Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::InvalidConfig(format!(
-            "{kind_id}: 'message_id' is required"
-        ))),
+        _ => Err(RegistryError::invalid_field(
+            "message_id",
+            ConfigReason::Required,
+        )),
     }
 }
 
@@ -152,7 +151,7 @@ impl SubActionRunner for ApproveAutomodMessageRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_automod_config(KIND_ID, config)
+        validate_automod_config(config)
     }
 
     async fn execute(

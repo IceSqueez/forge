@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -269,44 +270,49 @@ impl SubActionRunner for UpdateRewardRunner {
         match config.get("reward_id") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'reward_id' is required"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "reward_id",
+                    ConfigReason::Required,
+                ));
             }
         }
 
         if let Some(title) = read_opt_str(config, "title") {
             let count = title.chars().count();
             if !(1..=MAX_TITLE_CHARS).contains(&count) {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'title' must be 1..={MAX_TITLE_CHARS} characters"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "title",
+                    ConfigReason::LengthOutOfRange(ValueBounds::between(1, MAX_TITLE_CHARS)),
+                ));
             }
         }
 
         if let Some(cost) = read_opt_int(config, "cost")
             && cost < 1
         {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'cost' must be ≥1"
-            )));
+            return Err(RegistryError::invalid_field(
+                "cost",
+                ConfigReason::OutOfRange(ValueBounds::at_least(1)),
+            ));
         }
 
         if let Some(prompt) = read_opt_str(config, "prompt")
             && prompt.chars().count() > MAX_PROMPT_CHARS
         {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'prompt' must be ≤{MAX_PROMPT_CHARS} characters"
-            )));
+            return Err(RegistryError::invalid_field(
+                "prompt",
+                ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_PROMPT_CHARS)),
+            ));
         }
 
         if let Some(hex) = read_opt_str(config, "background_color_hex")
             && !hex.is_empty()
             && !is_valid_hex_color(&hex)
         {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'background_color_hex' must be empty or a '#RRGGBB' hex color"
-            )));
+            return Err(RegistryError::invalid_field(
+                "background_color_hex",
+                ConfigReason::InvalidFormat("expected a #RRGGBB color".to_owned()),
+            ));
         }
 
         for key in &[
@@ -319,9 +325,10 @@ impl SubActionRunner for UpdateRewardRunner {
                 None => {}
                 Some(Variant::String(s)) if TOGGLE_OPTIONS.contains(&s.as_str()) => {}
                 _ => {
-                    return Err(RegistryError::InvalidConfig(format!(
-                        "{KIND_ID}: '{key}' must be one of: unchanged, on, off"
-                    )));
+                    return Err(RegistryError::invalid_field(
+                        *key,
+                        ConfigReason::choices(["unchanged", "on", "off"]),
+                    ));
                 }
             }
         }

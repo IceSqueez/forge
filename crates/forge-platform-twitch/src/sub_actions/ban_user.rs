@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -19,6 +20,7 @@ const TARGET_KEYS: TargetKeys = TargetKeys {
     login: "target_user_login",
 };
 const KIND_ID: &str = "twitch.moderation.ban_user";
+const MAX_REASON_CHARS: usize = 500;
 
 pub struct BanUserRunner {
     transport: Arc<dyn HelixTransport>,
@@ -106,13 +108,14 @@ impl SubActionRunner for BanUserRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        TARGET_KEYS.validate(KIND_ID, config)?;
+        TARGET_KEYS.validate(config)?;
         if let Some(Variant::String(r)) = config.get("reason")
-            && r.chars().count() > 500
+            && r.chars().count() > MAX_REASON_CHARS
         {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'reason' must not exceed 500 characters"
-            )));
+            return Err(RegistryError::invalid_field(
+                "reason",
+                ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_REASON_CHARS)),
+            ));
         }
         Ok(())
     }

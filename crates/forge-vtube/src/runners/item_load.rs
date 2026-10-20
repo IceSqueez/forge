@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -148,8 +149,9 @@ impl SubActionRunner for ItemLoadRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("file_name") {
             Some(Variant::String(_)) => Ok(()),
-            _ => Err(RegistryError::InvalidConfig(
-                "vtube.item.load: 'file_name' must be a string".to_owned(),
+            _ => Err(RegistryError::invalid_field(
+                "file_name",
+                ConfigReason::Required,
             )),
         }
     }

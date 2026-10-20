@@ -87,8 +87,8 @@ impl SubActionRunner for GuestStarInviteRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_session_id(KIND_ID, config)?;
-        validate_target_login(KIND_ID, config)
+        validate_session_id(config)?;
+        validate_target_login(config)
     }
 
     async fn execute(

@@ -1,6 +1,7 @@
 use super::cards::{add_row_button, empty_placeholder_card};
 use super::step_presentation::variable_text;
 use super::*;
+use crate::actions_screen::config_problem_text::config_problem_text;
 use crate::integration_switch::integration_name;
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
@@ -63,10 +64,10 @@ fn analyzer_finding_message(finding: &Finding) -> SharedString {
                 reason = reason.clone()
             )
         }
-        Finding::InvalidStepConfig(message) => {
+        Finding::InvalidStepConfig(problem) => {
             tr!(
                 "action_editor_health_invalid_step_config",
-                message = message.clone()
+                message = config_problem_text(problem)
             )
         }
     };

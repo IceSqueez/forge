@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -111,17 +112,19 @@ impl SubActionRunner for ReplyChatRunner {
         match config.get("message") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'message' must be a non-empty string"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "message",
+                    ConfigReason::Required,
+                ));
             }
         }
         match config.get("parent_message_id") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'parent_message_id' must be a non-empty string"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "parent_message_id",
+                    ConfigReason::Required,
+                ));
             }
         }
         Ok(())

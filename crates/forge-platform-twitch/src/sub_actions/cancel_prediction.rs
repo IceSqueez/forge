@@ -63,7 +63,7 @@ impl SubActionRunner for CancelPredictionRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_prediction_config(KIND_ID, config)
+        validate_prediction_config(config)
     }
 
     async fn execute(

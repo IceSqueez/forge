@@ -1,5 +1,5 @@
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, SubActionConfigExt};
+use forge_registry::{ConfigReason, FormField, RegistryError, SubActionConfigExt};
 use forge_types::Variant;
 
 use super::identity::{SelfIdentity, resolve_user_id};
@@ -39,27 +39,23 @@ pub(crate) fn with_target_login(mut config: SubActionConfig) -> SubActionConfig 
     config
 }
 
-pub(crate) fn validate_session_id(
-    kind_id: &str,
-    config: &SubActionConfig,
-) -> Result<(), RegistryError> {
+pub(crate) fn validate_session_id(config: &SubActionConfig) -> Result<(), RegistryError> {
     match config.get("session_id") {
         Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::InvalidConfig(format!(
-            "{kind_id}: 'session_id' is required"
-        ))),
+        _ => Err(RegistryError::invalid_field(
+            "session_id",
+            ConfigReason::Required,
+        )),
     }
 }
 
-pub(crate) fn validate_target_login(
-    kind_id: &str,
-    config: &SubActionConfig,
-) -> Result<(), RegistryError> {
+pub(crate) fn validate_target_login(config: &SubActionConfig) -> Result<(), RegistryError> {
     match config.get("target_user_login") {
         Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::InvalidConfig(format!(
-            "{kind_id}: 'target_user_login' is required"
-        ))),
+        _ => Err(RegistryError::invalid_field(
+            "target_user_login",
+            ConfigReason::Required,
+        )),
     }
 }
 

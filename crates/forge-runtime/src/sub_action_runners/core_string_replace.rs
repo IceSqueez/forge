@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigReason, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
+    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
@@ -87,7 +87,7 @@ impl SubActionRunner for CoreStringReplaceRunner {
         let is_regex = config.bool("is_regex").unwrap_or(false);
         if is_regex && !search.is_empty() {
             regex::Regex::new(search).map_err(|e| {
-                RegistryError::InvalidConfig(format!("core.string.replace: invalid regex: {e}"))
+                RegistryError::invalid_field("search", ConfigReason::InvalidFormat(e.to_string()))
             })?;
         }
         Ok(())

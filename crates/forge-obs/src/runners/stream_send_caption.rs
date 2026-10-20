@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -63,11 +64,13 @@ impl SubActionRunner for StreamSendCaptionRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("caption_text") {
             Some(Variant::String(s)) if !s.trim().is_empty() => Ok(()),
-            Some(Variant::String(_)) => Err(RegistryError::InvalidConfig(
-                "obs.stream.send_caption: 'caption_text' must not be empty".to_owned(),
+            Some(Variant::String(_)) => Err(RegistryError::invalid_field(
+                "caption_text",
+                ConfigReason::Required,
             )),
-            _ => Err(RegistryError::InvalidConfig(
-                "obs.stream.send_caption: 'caption_text' must be a string".to_owned(),
+            _ => Err(RegistryError::invalid_field(
+                "caption_text",
+                ConfigReason::Required,
             )),
         }
     }

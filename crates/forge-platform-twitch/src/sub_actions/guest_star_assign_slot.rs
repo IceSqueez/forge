@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -103,13 +105,14 @@ impl SubActionRunner for GuestStarAssignSlotRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_session_id(KIND_ID, config)?;
-        validate_target_login(KIND_ID, config)?;
+        validate_session_id(config)?;
+        validate_target_login(config)?;
         match config.get("slot_id") {
             Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'slot_id' is required"
-            ))),
+            _ => Err(RegistryError::invalid_field(
+                "slot_id",
+                ConfigReason::Required,
+            )),
         }
     }
 

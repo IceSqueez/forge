@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigReason, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
+    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind, datetime_to_text,
@@ -91,7 +91,12 @@ impl SubActionRunner for CoreTimeNowRunner {
         }
         resolve_time_pattern(config, CUSTOM_NOW_PATTERN_KEY)
             .and_then(|resolved| resolved.pattern().map(|_| ()))
-            .map_err(RegistryError::InvalidConfig)
+            .map_err(|detail| {
+                RegistryError::invalid_field(
+                    CUSTOM_NOW_PATTERN_KEY,
+                    ConfigReason::InvalidFormat(detail),
+                )
+            })
     }
 
     fn scope_io(&self) -> SubActionIo {

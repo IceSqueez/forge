@@ -6,7 +6,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
@@ -90,12 +91,13 @@ impl SubActionRunner for BanUserRunner {
         match config.get("user_id") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'user_id' must be a non-empty string"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "user_id",
+                    ConfigReason::Required,
+                ));
             }
         }
-        ban_reason::validate(KIND_ID, config)
+        ban_reason::validate(config)
     }
 
     async fn execute(

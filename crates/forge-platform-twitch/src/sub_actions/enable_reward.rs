@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -62,15 +63,13 @@ pub(crate) fn config_fields() -> Vec<FormField> {
     }]
 }
 
-pub(crate) fn validate_reward_id(
-    kind_id: &str,
-    config: &SubActionConfig,
-) -> Result<(), RegistryError> {
+pub(crate) fn validate_reward_id(config: &SubActionConfig) -> Result<(), RegistryError> {
     match config.get("reward_id") {
         Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::InvalidConfig(format!(
-            "{kind_id}: 'reward_id' is required"
-        ))),
+        _ => Err(RegistryError::invalid_field(
+            "reward_id",
+            ConfigReason::Required,
+        )),
     }
 }
 
@@ -143,7 +142,7 @@ impl SubActionRunner for EnableRewardRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_reward_id(KIND_ID, config)
+        validate_reward_id(config)
     }
 
     async fn execute(

@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -75,16 +76,19 @@ impl SubActionRunner for PostTextRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let ok = matches!(config.get("webhook_name"), Some(Variant::String(_)))
-            && matches!(config.get("content"), Some(Variant::String(_)));
-        if ok {
-            Ok(())
-        } else {
-            Err(RegistryError::InvalidConfig(
-                "discord.webhook.send_message: 'webhook_name' and 'content' must be strings"
-                    .to_owned(),
-            ))
+        if !matches!(config.get("webhook_name"), Some(Variant::String(_))) {
+            return Err(RegistryError::invalid_field(
+                "webhook_name",
+                ConfigReason::Required,
+            ));
         }
+        if !matches!(config.get("content"), Some(Variant::String(_))) {
+            return Err(RegistryError::invalid_field(
+                "content",
+                ConfigReason::Required,
+            ));
+        }
+        Ok(())
     }
 
     async fn execute(

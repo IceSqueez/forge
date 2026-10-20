@@ -63,7 +63,7 @@ impl SubActionRunner for CancelRedemptionRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_redemption_config(KIND_ID, config)
+        validate_redemption_config(config)
     }
 
     async fn execute(

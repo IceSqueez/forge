@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -74,8 +76,9 @@ impl SubActionRunner for ModelSetPhysicsRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("enabled") {
             Some(Variant::Bool(_)) | None => Ok(()),
-            _ => Err(RegistryError::InvalidConfig(
-                "vtube.model.set_physics: 'enabled' must be a bool".to_owned(),
+            _ => Err(RegistryError::invalid_field(
+                "enabled",
+                ConfigReason::Required,
             )),
         }
     }

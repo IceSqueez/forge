@@ -1,11 +1,13 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigReason, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
+    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner, ValueBounds,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
+
+const TO_END_INDEX: i64 = -1;
 
 pub struct CoreStringSubstringRunner;
 
@@ -39,7 +41,7 @@ impl SubActionRunner for CoreStringSubstringRunner {
         let mut cfg = SubActionConfig::new();
         cfg.insert("source".to_owned(), Variant::String(String::new()));
         cfg.insert("start_index".to_owned(), Variant::Int(0));
-        cfg.insert("end_index".to_owned(), Variant::Int(-1));
+        cfg.insert("end_index".to_owned(), Variant::Int(TO_END_INDEX));
         cfg.insert(
             "into_var".to_owned(),
             Variant::String("string.result".to_owned()),
@@ -63,7 +65,7 @@ impl SubActionRunner for CoreStringSubstringRunner {
             FormField::Integer {
                 key: "end_index",
                 label: "End Index (-1 = to end, exclusive)",
-                min: -1,
+                min: TO_END_INDEX,
                 max: i64::MAX,
             },
             FormField::Text {
@@ -77,14 +79,16 @@ impl SubActionRunner for CoreStringSubstringRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         let start = config.int("start_index").unwrap_or(0);
         if start < 0 {
-            return Err(RegistryError::InvalidConfig(
-                "core.string.substring: start_index must be >= 0".to_owned(),
+            return Err(RegistryError::invalid_field(
+                "start_index",
+                ConfigReason::OutOfRange(ValueBounds::at_least(0)),
             ));
         }
-        let end = config.int("end_index").unwrap_or(-1);
-        if end < -1 {
-            return Err(RegistryError::InvalidConfig(
-                "core.string.substring: end_index must be -1 (to end) or >= 0".to_owned(),
+        let end = config.int("end_index").unwrap_or(TO_END_INDEX);
+        if end < TO_END_INDEX {
+            return Err(RegistryError::invalid_field(
+                "end_index",
+                ConfigReason::OutOfRange(ValueBounds::at_least(TO_END_INDEX)),
             ));
         }
         Ok(())
@@ -114,7 +118,7 @@ impl SubActionRunner for CoreStringSubstringRunner {
 
         let start = config.int("start_index").unwrap_or(0).max(0) as usize;
 
-        let end_raw = config.int("end_index").unwrap_or(-1);
+        let end_raw = config.int("end_index").unwrap_or(TO_END_INDEX);
 
         let chars: Vec<char> = source.chars().collect();
         let char_count = chars.len();

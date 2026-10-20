@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -167,29 +168,36 @@ impl SubActionRunner for StartPredictionRunner {
             _ => "",
         };
         if title.is_empty() {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'title' is required"
-            )));
+            return Err(RegistryError::invalid_field(
+                "title",
+                ConfigReason::Required,
+            ));
         }
         if title.chars().count() > MAX_TITLE_CHARS {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'title' must be \u{2264}{MAX_TITLE_CHARS} characters"
-            )));
+            return Err(RegistryError::invalid_field(
+                "title",
+                ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_TITLE_CHARS)),
+            ));
         }
 
         let raw_outcomes = match config.get("outcomes") {
             Some(Variant::String(s)) => s.as_str(),
             _ => "",
         };
-        parse_outcomes(raw_outcomes)
-            .map_err(|msg| RegistryError::InvalidConfig(format!("{KIND_ID}: {msg}")))?;
+        parse_outcomes(raw_outcomes).map_err(|detail| {
+            RegistryError::invalid_field("outcomes", ConfigReason::InvalidFormat(detail))
+        })?;
 
         match config.get("prediction_window_seconds") {
             Some(Variant::Int(n)) if *n >= MIN_WINDOW_SECS && *n <= MAX_WINDOW_SECS => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'prediction_window_seconds' must be {MIN_WINDOW_SECS}..={MAX_WINDOW_SECS}"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "prediction_window_seconds",
+                    ConfigReason::OutOfRange(ValueBounds::between(
+                        MIN_WINDOW_SECS,
+                        MAX_WINDOW_SECS,
+                    )),
+                ));
             }
         }
 

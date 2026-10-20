@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -45,14 +46,14 @@ pub(crate) fn remove_blocked_term_config_fields() -> Vec<FormField> {
 }
 
 pub(crate) fn validate_remove_blocked_term_config(
-    kind_id: &str,
     config: &SubActionConfig,
 ) -> Result<(), RegistryError> {
     match config.get("term_id") {
         Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::InvalidConfig(format!(
-            "{kind_id}: 'term_id' is required"
-        ))),
+        _ => Err(RegistryError::invalid_field(
+            "term_id",
+            ConfigReason::Required,
+        )),
     }
 }
 
@@ -91,7 +92,7 @@ impl SubActionRunner for RemoveBlockedTermRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_remove_blocked_term_config(KIND_ID, config)
+        validate_remove_blocked_term_config(config)
     }
 
     async fn execute(

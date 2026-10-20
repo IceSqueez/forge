@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -88,19 +89,22 @@ impl SubActionRunner for UpdateTitleRunner {
         match config.get("title") {
             Some(Variant::String(s)) if !s.is_empty() && s.chars().count() <= MAX_TITLE_CHARS => {}
             Some(Variant::String(s)) if s.is_empty() => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'title' must not be empty"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "title",
+                    ConfigReason::Required,
+                ));
             }
             Some(Variant::String(_)) => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'title' must be ≤{MAX_TITLE_CHARS} characters"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "title",
+                    ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_TITLE_CHARS)),
+                ));
             }
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'title' must be a non-empty string"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "title",
+                    ConfigReason::Required,
+                ));
             }
         }
         Ok(())

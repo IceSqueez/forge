@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -78,8 +79,9 @@ impl SubActionRunner for SetInputSettingsRunner {
         let source_ok =
             matches!(config.get("source"), Some(Variant::String(s)) if !s.trim().is_empty());
         if !source_ok {
-            return Err(RegistryError::InvalidConfig(
-                "obs.sources.set_input_settings: 'source' must not be empty".to_owned(),
+            return Err(RegistryError::invalid_field(
+                "source",
+                ConfigReason::Required,
             ));
         }
 
@@ -91,8 +93,9 @@ impl SubActionRunner for SetInputSettingsRunner {
             }
         });
         if !json_ok {
-            return Err(RegistryError::InvalidConfig(
-                "obs.sources.set_input_settings: 'settings_json' must be valid JSON".to_owned(),
+            return Err(RegistryError::invalid_field(
+                "settings_json",
+                ConfigReason::InvalidFormat("not valid JSON".to_owned()),
             ));
         }
 

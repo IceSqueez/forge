@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use super::identity::SelfIdentity;
@@ -74,12 +76,13 @@ impl SubActionRunner for ResolvePredictionRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_prediction_config(KIND_ID, config)?;
+        validate_prediction_config(config)?;
         match config.get("winning_outcome_id") {
             Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'winning_outcome_id' is required"
-            ))),
+            _ => Err(RegistryError::invalid_field(
+                "winning_outcome_id",
+                ConfigReason::Required,
+            )),
         }
     }
 

@@ -62,7 +62,7 @@ impl SubActionRunner for DenyAutomodMessageRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_automod_config(KIND_ID, config)
+        validate_automod_config(config)
     }
 
     async fn execute(

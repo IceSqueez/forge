@@ -1,3 +1,5 @@
+use crate::config_problem::{ConfigProblem, ConfigReason};
+
 #[derive(Debug, thiserror::Error)]
 pub enum RegistryError {
     #[error("duplicate kind id: {0}")]
@@ -7,7 +9,7 @@ pub enum RegistryError {
     UnknownKindId(String),
 
     #[error("{0}")]
-    InvalidConfig(String),
+    InvalidConfig(ConfigProblem),
 
     #[error("sub-action nesting depth {0} exceeds the configured bound")]
     DepthExceeded(u32),
@@ -17,4 +19,21 @@ pub enum RegistryError {
 
     #[error("runner initialization failed: {0}")]
     RunnerInit(String),
+}
+
+impl RegistryError {
+    pub fn invalid_field(field: impl Into<String>, reason: ConfigReason) -> Self {
+        Self::InvalidConfig(ConfigProblem::field(field, reason))
+    }
+
+    pub fn invalid_config(reason: ConfigReason) -> Self {
+        Self::InvalidConfig(ConfigProblem::whole(reason))
+    }
+
+    pub fn into_config_problem(self) -> ConfigProblem {
+        match self {
+            Self::InvalidConfig(problem) => problem,
+            other => ConfigProblem::whole(ConfigReason::Custom(other.to_string())),
+        }
+    }
 }

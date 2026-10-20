@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -74,8 +75,9 @@ impl SubActionRunner for SetVolumeRunner {
         let source_ok =
             matches!(config.get("source"), Some(Variant::String(s)) if !s.trim().is_empty());
         if !source_ok {
-            return Err(RegistryError::InvalidConfig(
-                "obs.audio.set_volume: 'source' must not be empty".to_owned(),
+            return Err(RegistryError::invalid_field(
+                "source",
+                ConfigReason::Required,
             ));
         }
         let db_ok = config.get("volume_db").is_some_and(|v| match v {
@@ -84,8 +86,9 @@ impl SubActionRunner for SetVolumeRunner {
             _ => false,
         });
         if !db_ok {
-            return Err(RegistryError::InvalidConfig(
-                "obs.audio.set_volume: 'volume_db' must be a valid number".to_owned(),
+            return Err(RegistryError::invalid_field(
+                "volume_db",
+                ConfigReason::NotANumber,
             ));
         }
         Ok(())

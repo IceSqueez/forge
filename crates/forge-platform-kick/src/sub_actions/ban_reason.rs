@@ -1,5 +1,7 @@
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionConfigExt};
+use forge_registry::{
+    ConfigReason, FormField, RegistryError, RunContext, SubActionConfigExt, ValueBounds,
+};
 use forge_types::Variant;
 
 const REASON_KEY: &str = "reason";
@@ -17,16 +19,18 @@ pub(super) fn form_field() -> FormField {
     }
 }
 
-pub(super) fn validate(kind_id: &str, config: &SubActionConfig) -> Result<(), RegistryError> {
+pub(super) fn validate(config: &SubActionConfig) -> Result<(), RegistryError> {
     match config.get(REASON_KEY) {
         None => Ok(()),
         Some(Variant::String(reason)) if reason.chars().count() <= REASON_MAX_CHARS => Ok(()),
-        Some(Variant::String(_)) => Err(RegistryError::InvalidConfig(format!(
-            "{kind_id}: '{REASON_KEY}' must not exceed {REASON_MAX_CHARS} characters"
-        ))),
-        Some(_) => Err(RegistryError::InvalidConfig(format!(
-            "{kind_id}: '{REASON_KEY}' must be a string"
-        ))),
+        Some(Variant::String(_)) => Err(RegistryError::invalid_field(
+            REASON_KEY,
+            ConfigReason::LengthOutOfRange(ValueBounds::at_most(REASON_MAX_CHARS)),
+        )),
+        Some(_) => Err(RegistryError::invalid_field(
+            REASON_KEY,
+            ConfigReason::Required,
+        )),
     }
 }
 

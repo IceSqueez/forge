@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -44,25 +45,21 @@ pub(crate) fn blocked_term_config_fields() -> Vec<FormField> {
     }]
 }
 
-pub(crate) fn validate_blocked_term_config(
-    kind_id: &str,
-    config: &SubActionConfig,
-) -> Result<(), RegistryError> {
+pub(crate) fn validate_blocked_term_config(config: &SubActionConfig) -> Result<(), RegistryError> {
     match config.get("text") {
         Some(Variant::String(s))
             if s.chars().count() >= MIN_TERM_CHARS && s.chars().count() <= MAX_TERM_CHARS =>
         {
             Ok(())
         }
-        Some(Variant::String(s)) if s.is_empty() => Err(RegistryError::InvalidConfig(format!(
-            "{kind_id}: 'text' is required"
-        ))),
-        Some(Variant::String(_)) => Err(RegistryError::InvalidConfig(format!(
-            "{kind_id}: 'text' must be between {MIN_TERM_CHARS} and {MAX_TERM_CHARS} characters"
-        ))),
-        _ => Err(RegistryError::InvalidConfig(format!(
-            "{kind_id}: 'text' is required"
-        ))),
+        Some(Variant::String(s)) if s.is_empty() => {
+            Err(RegistryError::invalid_field("text", ConfigReason::Required))
+        }
+        Some(Variant::String(_)) => Err(RegistryError::invalid_field(
+            "text",
+            ConfigReason::LengthOutOfRange(ValueBounds::between(MIN_TERM_CHARS, MAX_TERM_CHARS)),
+        )),
+        _ => Err(RegistryError::invalid_field("text", ConfigReason::Required)),
     }
 }
 
@@ -101,7 +98,7 @@ impl SubActionRunner for AddBlockedTermRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_blocked_term_config(KIND_ID, config)
+        validate_blocked_term_config(config)
     }
 
     async fn execute(

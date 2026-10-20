@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
@@ -73,14 +73,13 @@ impl SubActionRunner for SpeakWithEngineRunner {
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         if config.str_nonempty("text").is_none() {
-            return Err(RegistryError::InvalidConfig(
-                "tts.speak.text_with_engine: text is required".to_owned(),
-            ));
+            return Err(RegistryError::invalid_field("text", ConfigReason::Required));
         }
         match config.str_nonempty("engine_id") {
             Some(_) => Ok(()),
-            None => Err(RegistryError::InvalidConfig(
-                "tts.speak.text_with_engine: engine_id is required".to_owned(),
+            None => Err(RegistryError::invalid_field(
+                "engine_id",
+                ConfigReason::Required,
             )),
         }
     }

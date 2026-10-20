@@ -6,7 +6,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
@@ -87,16 +88,17 @@ impl SubActionRunner for AcceptRedemptionRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         let raw = config.str("redemption_ids").unwrap_or_default();
         if raw.trim().is_empty() {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'redemption_ids' must not be empty"
-            )));
+            return Err(RegistryError::invalid_field(
+                "redemption_ids",
+                ConfigReason::Required,
+            ));
         }
         let ids = parse_ids(raw);
         if ids.len() > MAX_BATCH {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: config contains {} ids, maximum is {MAX_BATCH}",
-                ids.len()
-            )));
+            return Err(RegistryError::invalid_field(
+                "redemption_ids",
+                ConfigReason::Custom(format!("at most {MAX_BATCH} ids are allowed")),
+            ));
         }
         Ok(())
     }

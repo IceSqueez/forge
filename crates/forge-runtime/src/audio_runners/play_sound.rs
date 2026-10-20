@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionRunner,
 };
 use forge_types::{
     ArgStack, ClipId, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
@@ -64,8 +64,9 @@ impl SubActionRunner for PlaySoundRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.str_nonempty("clip_id") {
             Some(_) => Ok(()),
-            None => Err(RegistryError::InvalidConfig(
-                "soundboard.sound.play: clip_id is required".to_owned(),
+            None => Err(RegistryError::invalid_field(
+                "clip_id",
+                ConfigReason::Required,
             )),
         }
     }

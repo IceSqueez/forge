@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use forge_types::{SubActionConfig, Variant};
 
+use crate::config_problem::ConfigReason;
 use crate::error::RegistryError;
 
 pub trait SubActionConfigExt {
@@ -22,7 +23,7 @@ pub trait SubActionConfigExt {
 }
 
 fn missing(key: &str) -> RegistryError {
-    RegistryError::InvalidConfig(format!("field '{key}' is required"))
+    RegistryError::invalid_field(key, ConfigReason::Required)
 }
 
 impl SubActionConfigExt for SubActionConfig {

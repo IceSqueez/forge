@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRegistry, SubActionRunner,
+    ConfigReason, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
+    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRegistry, SubActionRunner,
 };
 use forge_types::{
     ArgStack, LATEST_DONATION_SLOT, LatestScope, LatestValueReader, SubActionConfig,
@@ -93,9 +93,10 @@ impl SubActionRunner for LatestGetRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         let slot = config.require_str(SLOT_KEY)?;
         if slot_declaration(slot).is_none() {
-            return Err(RegistryError::InvalidConfig(format!(
-                "unknown latest slot '{slot}'"
-            )));
+            return Err(RegistryError::invalid_field(
+                SLOT_KEY,
+                ConfigReason::Custom(format!("unknown latest slot '{slot}'")),
+            ));
         }
         Ok(())
     }

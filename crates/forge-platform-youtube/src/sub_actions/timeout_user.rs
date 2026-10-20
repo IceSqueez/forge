@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -78,16 +79,18 @@ impl SubActionRunner for TimeoutUserRunner {
         match config.get("channel_id") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'channel_id' must be a non-empty string"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "channel_id",
+                    ConfigReason::Required,
+                ));
             }
         }
         match config.get("duration_seconds") {
             Some(Variant::Int(n)) if (1..=86_400).contains(n) => Ok(()),
-            _ => Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'duration_seconds' must be between 1 and 86400"
-            ))),
+            _ => Err(RegistryError::invalid_field(
+                "duration_seconds",
+                ConfigReason::OutOfRange(ValueBounds::between(1, 86400)),
+            )),
         }
     }
 

@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -169,14 +170,15 @@ impl SubActionRunner for GuestStarUpdateSlotRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_session_id(KIND_ID, config)?;
+        validate_session_id(config)?;
 
         match config.get("slot_id") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'slot_id' is required"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "slot_id",
+                    ConfigReason::Required,
+                ));
             }
         }
 
@@ -185,9 +187,10 @@ impl SubActionRunner for GuestStarUpdateSlotRunner {
                 None => {}
                 Some(Variant::String(s)) if TOGGLE_OPTIONS.contains(&s.as_str()) => {}
                 _ => {
-                    return Err(RegistryError::InvalidConfig(format!(
-                        "{KIND_ID}: '{key}' must be one of: unchanged, on, off"
-                    )));
+                    return Err(RegistryError::invalid_field(
+                        *key,
+                        ConfigReason::choices(["unchanged", "on", "off"]),
+                    ));
                 }
             }
         }
@@ -195,9 +198,10 @@ impl SubActionRunner for GuestStarUpdateSlotRunner {
         if let Some(vol) = read_opt_int(config, "volume")
             && !(VOLUME_MIN..=VOLUME_MAX).contains(&vol)
         {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'volume' must be {VOLUME_MIN}..={VOLUME_MAX}"
-            )));
+            return Err(RegistryError::invalid_field(
+                "volume",
+                ConfigReason::OutOfRange(ValueBounds::between(VOLUME_MIN, VOLUME_MAX)),
+            ));
         }
 
         Ok(())

@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -108,17 +109,19 @@ impl SubActionRunner for EndPollRunner {
             _ => "",
         };
         if poll_id.is_empty() {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'poll_id' is required"
-            )));
+            return Err(RegistryError::invalid_field(
+                "poll_id",
+                ConfigReason::Required,
+            ));
         }
 
         match config.get("status") {
             Some(Variant::String(s)) if s == STATUS_TERMINATED || s == STATUS_ARCHIVED => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'status' must be '{STATUS_TERMINATED}' or '{STATUS_ARCHIVED}'"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "status",
+                    ConfigReason::choices([STATUS_TERMINATED, STATUS_ARCHIVED]),
+                ));
             }
         }
 

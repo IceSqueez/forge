@@ -71,7 +71,7 @@ impl SubActionRunner for CoreQueuePauseRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_queue_id(config, "core.queue.pause")
+        validate_queue_id(config)
     }
 
     async fn execute(

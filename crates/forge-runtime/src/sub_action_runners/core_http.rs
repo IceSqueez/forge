@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    DurationBounds, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigReason, DurationBounds, FormField, RegistryError, RunContext, StepTimer,
+    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_storage::{SettingsRepo, get_bool_setting, reserved_keys};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
@@ -198,10 +198,7 @@ impl SubActionRunner for CoreHttpRunner {
         if url_ok {
             Ok(())
         } else {
-            Err(RegistryError::InvalidConfig(format!(
-                "{}: url is required",
-                self.descriptor().id
-            )))
+            Err(RegistryError::invalid_field("url", ConfigReason::Required))
         }
     }
 

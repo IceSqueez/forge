@@ -6,7 +6,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -75,13 +76,16 @@ impl SubActionRunner for CaptureScreenshotRunner {
             matches!(config.get("source"), Some(Variant::String(s)) if !s.trim().is_empty());
         let path_ok =
             matches!(config.get("path"), Some(Variant::String(s)) if !s.trim().is_empty());
-        if source_ok && path_ok {
-            Ok(())
-        } else {
-            Err(RegistryError::InvalidConfig(
-                "obs.capture.screenshot: 'source' and 'path' must not be empty".to_owned(),
-            ))
+        if !source_ok {
+            return Err(RegistryError::invalid_field(
+                "source",
+                ConfigReason::Required,
+            ));
         }
+        if !path_ok {
+            return Err(RegistryError::invalid_field("path", ConfigReason::Required));
+        }
+        Ok(())
     }
 
     async fn execute(

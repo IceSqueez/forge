@@ -63,7 +63,7 @@ impl SubActionRunner for DisableRewardRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        validate_reward_id(KIND_ID, config)
+        validate_reward_id(config)
     }
 
     async fn execute(

@@ -6,6 +6,7 @@ use forge_types::{
 };
 
 use crate::chain_steps::nested_chains;
+use crate::config_problem::ConfigProblem;
 use crate::flow_kinds::{BREAK_LOOP_KIND_ID, CONTINUE_LOOP_KIND_ID, LOOP_KIND_ID, STOP_KIND_ID};
 use crate::form::FormField;
 use crate::registry::{SubActionRegistry, TriggerRegistry};
@@ -34,7 +35,7 @@ pub enum Finding {
         pattern: String,
         reason: String,
     },
-    InvalidStepConfig(String),
+    InvalidStepConfig(ConfigProblem),
 }
 
 impl Finding {
@@ -469,7 +470,7 @@ fn collect_pattern_findings(
         && runner.checks_config_while_editing()
         && let Err(error) = runner.validate_config(&step.config)
     {
-        out.push(Finding::InvalidStepConfig(error.to_string()));
+        out.push(Finding::InvalidStepConfig(error.into_config_problem()));
     }
     for chain in nested_chains(step, registry) {
         for nested in &chain {

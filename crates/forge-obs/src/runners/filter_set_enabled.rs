@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -80,14 +81,19 @@ impl SubActionRunner for FilterSetEnabledRunner {
             matches!(config.get("source"), Some(Variant::String(s)) if !s.trim().is_empty());
         let filter_ok =
             matches!(config.get("filter"), Some(Variant::String(s)) if !s.trim().is_empty());
-        if source_ok && filter_ok {
-            Ok(())
-        } else {
-            Err(RegistryError::InvalidConfig(
-                "obs.filter.set_enabled: 'source' and 'filter' must be non-empty strings"
-                    .to_owned(),
-            ))
+        if !source_ok {
+            return Err(RegistryError::invalid_field(
+                "source",
+                ConfigReason::Required,
+            ));
         }
+        if !filter_ok {
+            return Err(RegistryError::invalid_field(
+                "filter",
+                ConfigReason::Required,
+            ));
+        }
+        Ok(())
     }
 
     async fn execute(

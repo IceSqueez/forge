@@ -6,7 +6,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
@@ -16,6 +17,8 @@ use super::{ban_reason, display_name};
 use crate::moderation::KickModeration;
 
 const KIND_ID: &str = "kick.moderation.timeout";
+const MIN_TIMEOUT_MINUTES: i64 = 1;
+const MAX_TIMEOUT_MINUTES: i64 = 10080;
 
 pub struct TimeoutUserRunner {
     client: Arc<KickModeration>,
@@ -86,8 +89,8 @@ impl SubActionRunner for TimeoutUserRunner {
             FormField::Integer {
                 key: "duration_minutes",
                 label: "Duration (minutes)",
-                min: 1,
-                max: 10080,
+                min: MIN_TIMEOUT_MINUTES,
+                max: MAX_TIMEOUT_MINUTES,
             },
             ban_reason::form_field(),
         ]
@@ -97,21 +100,26 @@ impl SubActionRunner for TimeoutUserRunner {
         match config.get("user_id") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'user_id' must be a non-empty string"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "user_id",
+                    ConfigReason::Required,
+                ));
             }
         }
 
         match config.get("duration_minutes") {
-            Some(Variant::Int(n)) if (1..=10080).contains(n) => {}
+            Some(Variant::Int(n)) if (MIN_TIMEOUT_MINUTES..=MAX_TIMEOUT_MINUTES).contains(n) => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'duration_minutes' must be an integer 1-10080"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "duration_minutes",
+                    ConfigReason::OutOfRange(ValueBounds::between(
+                        MIN_TIMEOUT_MINUTES,
+                        MAX_TIMEOUT_MINUTES,
+                    )),
+                ));
             }
         }
-        ban_reason::validate(KIND_ID, config)
+        ban_reason::validate(config)
     }
 
     async fn execute(
@@ -143,7 +151,8 @@ impl SubActionRunner for TimeoutUserRunner {
                 "user_id '{resolved_uid}' is not a valid numeric id"
             )),
             Ok(target_id) => {
-                let duration_u32 = duration_minutes.clamp(1, 10080) as u32;
+                let duration_u32 =
+                    duration_minutes.clamp(MIN_TIMEOUT_MINUTES, MAX_TIMEOUT_MINUTES) as u32;
                 match (self.token_source)().await {
                     Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
                     Ok(token) => match (self.broadcaster_id_source)().await {

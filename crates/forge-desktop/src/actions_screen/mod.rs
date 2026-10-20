@@ -39,6 +39,7 @@ use std::sync::{Arc, RwLock};
 mod analyzer;
 mod branch;
 mod collection_choices;
+mod config_problem_text;
 mod delete_confirm_count;
 mod editor;
 mod files_root_note;

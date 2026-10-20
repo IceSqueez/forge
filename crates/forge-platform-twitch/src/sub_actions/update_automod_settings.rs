@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -203,9 +205,10 @@ impl SubActionRunner for UpdateAutomodSettingsRunner {
                 None => {}
                 Some(Variant::String(s)) if LEVEL_OPTIONS.contains(&s.as_str()) => {}
                 _ => {
-                    return Err(RegistryError::InvalidConfig(format!(
-                        "{KIND_ID}: '{key}' must be one of: unchanged, 0, 1, 2, 3, 4"
-                    )));
+                    return Err(RegistryError::invalid_field(
+                        key,
+                        ConfigReason::choices(["unchanged", "0", "1", "2", "3", "4"]),
+                    ));
                 }
             }
         }

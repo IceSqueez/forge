@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -104,18 +105,20 @@ impl SubActionRunner for SendAnnouncementRunner {
         match config.get("message") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'message' must be a non-empty string"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "message",
+                    ConfigReason::Required,
+                ));
             }
         }
         match config.get("color") {
             None => {}
             Some(Variant::String(c)) if COLORS.contains(&c.as_str()) => {}
             _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'color' must be one of blue, green, orange, purple, primary"
-                )));
+                return Err(RegistryError::invalid_field(
+                    "color",
+                    ConfigReason::choices(["blue", "green", "orange", "purple", "primary"]),
+                ));
             }
         }
         Ok(())

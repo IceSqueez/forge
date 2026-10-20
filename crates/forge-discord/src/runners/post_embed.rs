@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -83,8 +84,9 @@ impl SubActionRunner for PostEmbedRunner {
         if matches!(config.get("webhook_name"), Some(Variant::String(_))) {
             Ok(())
         } else {
-            Err(RegistryError::InvalidConfig(
-                "discord.webhook.send_embed: 'webhook_name' must be a string".to_owned(),
+            Err(RegistryError::invalid_field(
+                "webhook_name",
+                ConfigReason::Required,
             ))
         }
     }

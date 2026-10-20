@@ -3,6 +3,7 @@ pub mod category;
 pub mod chain;
 pub mod chain_steps;
 pub mod config_ext;
+pub mod config_problem;
 pub mod descriptor;
 pub mod duration_bounds;
 pub mod error;
@@ -35,6 +36,7 @@ pub use chain_steps::{
     CASE_CHAIN_KEY, STEP_CONFIG_KEY, STEP_KIND_KEY, decode_steps, nested_chains,
 };
 pub use config_ext::SubActionConfigExt;
+pub use config_problem::{ConfigProblem, ConfigReason, ValueBounds};
 pub use descriptor::{ChatTriggerFamily, TriggerKindDescriptor};
 pub use duration_bounds::{
     DURATION_UNIT_HOURS, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_MINUTES, DURATION_UNIT_SECONDS,

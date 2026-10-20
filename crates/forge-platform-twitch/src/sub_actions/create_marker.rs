@@ -5,7 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -116,9 +117,10 @@ impl SubActionRunner for CreateMarkerRunner {
         if let Some(Variant::String(s)) = config.get("description")
             && s.chars().count() > MAX_DESCRIPTION_CHARS
         {
-            return Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'description' must be ≤{MAX_DESCRIPTION_CHARS} characters"
-            )));
+            return Err(RegistryError::invalid_field(
+                "description",
+                ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_DESCRIPTION_CHARS)),
+            ));
         }
         Ok(())
     }

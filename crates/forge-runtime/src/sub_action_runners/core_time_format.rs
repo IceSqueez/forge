@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionConfigExt, SubActionIo, SubActionRunner,
+    ConfigReason, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
+    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
@@ -83,7 +83,12 @@ impl SubActionRunner for CoreTimeFormatRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         resolve_time_pattern(config, FORMAT_PATTERN_KEY)
             .and_then(|resolved| resolved.pattern().map(|_| ()))
-            .map_err(RegistryError::InvalidConfig)
+            .map_err(|detail| {
+                RegistryError::invalid_field(
+                    FORMAT_PATTERN_KEY,
+                    ConfigReason::InvalidFormat(detail),
+                )
+            })
     }
 
     fn scope_io(&self) -> SubActionIo {

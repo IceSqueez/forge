@@ -96,6 +96,7 @@ impl EditSubActionForm {
                     label,
                     gate,
                     value,
+                    ..
                 } => {
                     if !gate_on(gate) {
                         continue;

@@ -3,7 +3,10 @@ use super::unit_amount::build_unit_amount_field;
 use super::*;
 use crate::amount_scale::AmountScale;
 use crate::config_field_label::localized_label;
-use crate::config_form::{code_field_editor, dependent_options};
+use crate::config_form::{
+    code_field_editor, dependent_options, optional_gate_seed, optional_inner_seed,
+    optional_shares_key,
+};
 use forge_components::int_entry_invalid;
 use forge_components::{FONT_SM, InputEvent};
 use forge_registry::{CodeLanguage, FormField};
@@ -347,6 +350,7 @@ pub(super) fn push_form_field(
                 label: (*label).to_owned(),
                 gate,
                 value,
+                presence_gate: false,
             });
         }
         FormField::SubChain { label, .. } | FormField::CaseList { label, .. } => {
@@ -355,17 +359,17 @@ pub(super) fn push_form_field(
             });
         }
         FormField::Optional { key, label, inner } => {
-            let value = matches!(config.get(*key), Some(Variant::Bool(true)));
             out.push(SubFormField::Bool {
                 key: (*key).to_owned(),
                 label: (*label).to_owned(),
                 gate: gate.clone(),
-                value,
+                value: optional_gate_seed(key, inner, config),
+                presence_gate: optional_shares_key(key, inner),
             });
             push_form_field(
                 inner,
                 Some((*key).to_owned()),
-                config,
+                &optional_inner_seed(key, inner, config),
                 palette,
                 options_map,
                 out,

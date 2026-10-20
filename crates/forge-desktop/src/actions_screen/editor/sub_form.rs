@@ -81,6 +81,9 @@ impl ScreenActionsView {
                 .unwrap_or_default(),
         };
         config.extend(commit.overrides.iter().cloned());
+        for key in &commit.cleared {
+            config.remove(key);
+        }
         config
     }
 
@@ -98,6 +101,7 @@ impl ScreenActionsView {
             SubFormTarget::Edit(index) => {
                 let SubFormCommit {
                     overrides,
+                    cleared,
                     continue_on_error,
                     condition,
                     label,
@@ -108,6 +112,9 @@ impl ScreenActionsView {
                         if let Some(step) = chain.get_mut(index) {
                             for (key, value) in overrides {
                                 step.config.insert(key, value);
+                            }
+                            for key in &cleared {
+                                step.config.remove(key);
                             }
                             step.continue_on_error = continue_on_error;
                             step.condition = condition;

@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::RangeInclusive;
@@ -71,6 +72,7 @@ pub(crate) enum ConfigField {
         key: String,
         gate: Option<String>,
         value: bool,
+        presence_gate: bool,
     },
     Slide {
         key: String,
@@ -141,6 +143,7 @@ pub(crate) struct ChoiceDropdown<V: 'static> {
     pub(crate) active: Option<(String, Entity<Picker>)>,
 }
 
+#[derive(Clone, Copy)]
 pub(crate) enum ChoiceSupport<'a> {
     Text,
     Picker(&'a HashMap<String, Vec<(String, String)>>),
@@ -339,6 +342,7 @@ pub(crate) fn fold_config_field<V: 'static>(
                 key: (*key).to_owned(),
                 gate,
                 value: matches!(ctx.config.get(*key), Some(Variant::Bool(true))),
+                presence_gate: false,
             });
         }
         FormField::SubChain { key, .. } | FormField::CaseList { key, .. } => {
@@ -347,14 +351,49 @@ pub(crate) fn fold_config_field<V: 'static>(
             });
         }
         FormField::Optional { key, inner, .. } => {
-            let value = matches!(ctx.config.get(*key), Some(Variant::Bool(true)));
             out.push(ConfigField::Bool {
                 key: (*key).to_owned(),
                 gate: gate.clone(),
-                value,
+                value: optional_gate_seed(key, inner, ctx.config),
+                presence_gate: optional_shares_key(key, inner),
             });
-            fold_config_field(inner, Some((*key).to_owned()), ctx, out, cx);
+            let inner_config = optional_inner_seed(key, inner, ctx.config);
+            let inner_ctx = FoldContext {
+                config: &inner_config,
+                defaults: ctx.defaults,
+                palette: ctx.palette,
+                choices: ctx.choices,
+                on_committed: ctx.on_committed,
+            };
+            fold_config_field(inner, Some((*key).to_owned()), &inner_ctx, out, cx);
         }
+    }
+}
+
+pub(crate) fn optional_shares_key(key: &str, inner: &FormField) -> bool {
+    key == inner.key()
+}
+
+pub(crate) fn optional_gate_seed(key: &str, inner: &FormField, config: &FieldConfig) -> bool {
+    let stored = config.get(key);
+    if optional_shares_key(key, inner) {
+        stored.is_some_and(|value| !matches!(value, Variant::Bool(_)))
+    } else {
+        matches!(stored, Some(Variant::Bool(true)))
+    }
+}
+
+pub(crate) fn optional_inner_seed<'a>(
+    key: &str,
+    inner: &FormField,
+    config: &'a FieldConfig,
+) -> Cow<'a, FieldConfig> {
+    if optional_shares_key(key, inner) && matches!(config.get(key), Some(Variant::Bool(_))) {
+        let mut seed = config.clone();
+        seed.remove(key);
+        Cow::Owned(seed)
+    } else {
+        Cow::Borrowed(config)
     }
 }
 
@@ -846,8 +885,25 @@ pub(crate) fn collect_field_values(fields: &[ConfigField], buffer: &mut FieldCon
             .unwrap_or(true)
     };
 
+    let dropped_gates: Vec<&str> = fields
+        .iter()
+        .filter_map(|field| match field {
+            ConfigField::Bool {
+                key,
+                gate,
+                value: false,
+                presence_gate: true,
+            } if gate_on(gate) => Some(key.as_str()),
+            _ => None,
+        })
+        .collect();
+
     for field in fields {
         match field {
+            ConfigField::Bool {
+                presence_gate: true,
+                ..
+            } => {}
             ConfigField::Bool {
                 key, value, gate, ..
             } => {
@@ -936,6 +992,43 @@ pub(crate) fn collect_field_values(fields: &[ConfigField], buffer: &mut FieldCon
             }
             ConfigField::Hint { .. } => {}
         }
+    }
+
+    for field in fields {
+        if gated_by(field).is_some_and(|gate| dropped_gates.contains(&gate.as_str())) {
+            for key in stored_keys(field) {
+                buffer.remove(key);
+            }
+        }
+    }
+    for gate in dropped_gates {
+        buffer.remove(gate);
+    }
+}
+
+fn gated_by(field: &ConfigField) -> Option<&String> {
+    match field {
+        ConfigField::Input { gate, .. }
+        | ConfigField::Code { gate, .. }
+        | ConfigField::Bool { gate, .. }
+        | ConfigField::Slide { gate, .. }
+        | ConfigField::Swatch { gate, .. }
+        | ConfigField::Choice { gate, .. }
+        | ConfigField::UnitAmount { gate, .. } => gate.as_ref(),
+        ConfigField::Hint { .. } => None,
+    }
+}
+
+fn stored_keys(field: &ConfigField) -> Vec<&str> {
+    match field {
+        ConfigField::Input { key, .. }
+        | ConfigField::Code { key, .. }
+        | ConfigField::Bool { key, .. }
+        | ConfigField::Slide { key, .. }
+        | ConfigField::Swatch { key, .. }
+        | ConfigField::Choice { key, .. } => vec![key.as_str()],
+        ConfigField::UnitAmount { key, scale, .. } => scale.stored_keys(key),
+        ConfigField::Hint { .. } => Vec::new(),
     }
 }
 

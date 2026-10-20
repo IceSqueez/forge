@@ -53,6 +53,7 @@ pub(super) struct SubFormCommit {
     pub target: SubFormTarget,
     pub kind_id: String,
     pub overrides: Vec<(String, Variant)>,
+    pub cleared: Vec<String>,
     pub continue_on_error: bool,
     pub condition: Option<String>,
     pub label: Option<String>,

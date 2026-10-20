@@ -1,4 +1,4 @@
-use super::field::{SubFormField, field_gate, field_values, is_var_key};
+use super::field::{SubFormField, field_gate, field_keys, field_values, is_var_key};
 use super::*;
 use forge_components::int_entry_invalid;
 use forge_types::{Variant, normalize_var_name};
@@ -60,11 +60,36 @@ impl EditSubActionForm {
             .filter(|field| gate_on(field_gate(field)))
             .flat_map(|field| field_values(field, cx))
             .collect();
+        let dropped_gates: Vec<&String> = self
+            .fields
+            .iter()
+            .filter_map(|field| match field {
+                SubFormField::Bool {
+                    key,
+                    gate,
+                    value: false,
+                    presence_gate: true,
+                    ..
+                } if gate_on(gate.as_ref()) => Some(key),
+                _ => None,
+            })
+            .collect();
+        let mut cleared: Vec<String> = self
+            .fields
+            .iter()
+            .filter(|field| field_gate(field).is_some_and(|gate| dropped_gates.contains(&gate)))
+            .flat_map(field_keys)
+            .map(str::to_owned)
+            .collect();
+        cleared.extend(dropped_gates.into_iter().cloned());
+        cleared.sort();
+        cleared.dedup();
 
         cx.emit(SubFormEvent::Commit(SubFormCommit {
             target,
             kind_id,
             overrides,
+            cleared,
             continue_on_error,
             condition,
             label,

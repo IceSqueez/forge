@@ -34,6 +34,7 @@ pub(super) enum SubFormField {
         label: String,
         gate: Option<String>,
         value: bool,
+        presence_gate: bool,
     },
     Select {
         key: String,
@@ -179,6 +180,10 @@ fn field_value(field: &SubFormField, cx: &App) -> Option<(String, Variant)> {
             key.clone(),
             Variant::String(editor.read(cx).content().to_owned()),
         )),
+        SubFormField::Bool {
+            presence_gate: true,
+            ..
+        } => None,
         SubFormField::Bool { key, value, .. } => Some((key.clone(), Variant::Bool(*value))),
         SubFormField::Select { key, selected, .. } => {
             Some((key.clone(), Variant::String(selected.clone())))

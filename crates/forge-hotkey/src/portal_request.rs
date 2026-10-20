@@ -110,15 +110,15 @@ fn predicted_request_path(conn: &Connection, handle_token: &str) -> String {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zbus::zvariant::ObjectPath;
+    use zbus::ObjectPath;
 
-    fn results(key: &str, value: Value<'_>) -> HashMap<String, OwnedValue> {
-        HashMap::from([(key.to_owned(), OwnedValue::try_from(value).unwrap())])
+    fn results(key: &str, value: Variant<'_>) -> HashMap<String, OwnedVariant> {
+        HashMap::from([(key.to_owned(), OwnedVariant::try_from(value).unwrap())])
     }
 
     #[test]
     fn a_successful_response_yields_its_results() {
-        let outcome = PortalOutcome::Success(results("session_handle", Value::from("x")));
+        let outcome = PortalOutcome::Success(results("session_handle", Variant::from("x")));
 
         let out = outcome.into_results("CreateSession").unwrap();
 
@@ -143,10 +143,10 @@ mod tests {
     fn object_path_result_accepts_a_path_or_a_path_string_only() {
         let path = ObjectPath::try_from("/org/freedesktop/portal/desktop/session/1_2/t").unwrap();
         for (value, expected) in [
-            (Value::from(path.clone()), Some(path.as_str())),
-            (Value::from(path.as_str()), Some(path.as_str())),
-            (Value::from("not a path"), None),
-            (Value::from(7_u32), None),
+            (Variant::from(path.clone()), Some(path.as_str())),
+            (Variant::from(path.as_str()), Some(path.as_str())),
+            (Variant::from("not a path"), None),
+            (Variant::from(7_u32), None),
         ] {
             let found = object_path_result(&results("session_handle", value), "session_handle");
             assert_eq!(found.as_ref().map(|p| p.as_str()), expected);
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn object_path_result_is_none_when_the_key_is_missing() {
-        let found = object_path_result(&results("other", Value::from("/a")), "session_handle");
+        let found = object_path_result(&results("other", Variant::from("/a")), "session_handle");
 
         assert!(found.is_none());
     }

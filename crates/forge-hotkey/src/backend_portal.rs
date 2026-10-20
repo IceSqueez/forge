@@ -739,25 +739,24 @@ mod tests {
 
     fn message<B>(interface: &str, member: &str, body: &B) -> zbus::Message
     where
-        B: serde::Serialize + zbus::zvariant::DynamicType,
+        B: serde::Serialize + zbus::DynamicType,
     {
         zbus::Message::signal(PORTAL_OBJECT_PATH, interface, member)
-            .unwrap()
             .build(body)
             .unwrap()
     }
 
     fn bind_response(
-        shortcuts: Vec<(&str, HashMap<&str, Value<'_>>)>,
-    ) -> HashMap<String, OwnedValue> {
-        let mut results: HashMap<&str, Value<'_>> = HashMap::new();
-        results.insert(RESULT_SHORTCUTS, Value::from(shortcuts));
+        shortcuts: Vec<(&str, HashMap<&str, Variant<'_>>)>,
+    ) -> HashMap<String, OwnedVariant> {
+        let mut results: HashMap<&str, Variant<'_>> = HashMap::new();
+        results.insert(RESULT_SHORTCUTS, Variant::from(shortcuts));
         let msg = message(
             "org.freedesktop.portal.Request",
             "Response",
             &(0_u32, results),
         );
-        let (_code, decoded): (u32, HashMap<String, OwnedValue>) =
+        let (_code, decoded): (u32, HashMap<String, OwnedVariant>) =
             msg.body().deserialize().unwrap();
         decoded
     }
@@ -772,13 +771,13 @@ mod tests {
             (
                 "Ctrl+F1",
                 HashMap::from([
-                    (SHORTCUT_DESCRIPTION, Value::from("Ctrl+F1")),
-                    (SHORTCUT_TRIGGER_DESCRIPTION, Value::from("Ctrl + F1")),
+                    (SHORTCUT_DESCRIPTION, Variant::from("Ctrl+F1")),
+                    (SHORTCUT_TRIGGER_DESCRIPTION, Variant::from("Ctrl + F1")),
                 ]),
             ),
             (
                 "Alt+X",
-                HashMap::from([(SHORTCUT_DESCRIPTION, Value::from("Alt+X"))]),
+                HashMap::from([(SHORTCUT_DESCRIPTION, Variant::from("Alt+X"))]),
             ),
         ]);
 
@@ -796,7 +795,7 @@ mod tests {
     #[test]
     fn bound_triggers_is_empty_for_an_empty_subset_or_a_missing_shortcuts_key() {
         let empty_subset = bind_response(Vec::new());
-        let missing_key: HashMap<String, OwnedValue> = HashMap::new();
+        let missing_key: HashMap<String, OwnedVariant> = HashMap::new();
 
         for results in [empty_subset, missing_key] {
             assert!(bound_triggers(&results).is_empty());
@@ -821,14 +820,14 @@ mod tests {
 
         assert_eq!(
             props.get(SHORTCUT_PREFERRED_TRIGGER),
-            Some(&Value::from("CTRL+F1"))
+            Some(&Variant::from("CTRL+F1"))
         );
     }
 
     #[test]
     fn activated_and_deactivated_signals_map_to_press_and_release_of_the_shortcut() {
         let session = ObjectPath::try_from(SESSION).unwrap();
-        let options: HashMap<&str, Value<'_>> = HashMap::new();
+        let options: HashMap<&str, Variant<'_>> = HashMap::new();
         for (member, edge) in [
             (ACTIVATED_SIGNAL, HotkeyEdge::Press),
             (DEACTIVATED_SIGNAL, HotkeyEdge::Release),

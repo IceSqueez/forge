@@ -92,10 +92,9 @@ impl SubActionRunner for LookupStreamStatsRunner {
                         "kick.stream.viewer_count".to_owned(),
                         Variant::Int(snapshot.viewer_count as i64),
                     );
-                    stack = stack.set(
-                        "kick.stream.started_at".to_owned(),
-                        Variant::String(snapshot.started_at),
-                    );
+                    if let Some(started) = crate::timestamp::variant(snapshot.started_at) {
+                        stack = stack.set("kick.stream.started_at".to_owned(), started);
+                    }
                     stack = stack.set(
                         "kick.stream.category_id".to_owned(),
                         Variant::Int(snapshot.category_id as i64),

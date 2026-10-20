@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use forge_registry::{
-    CASE_CHAIN_KEY, CodeLanguage, FormField, RegistryError, RunContext, StepTimer,
+    CASE_CHAIN_KEY, CodeKind, CodeLanguage, FormField, RegistryError, RunContext, StepTimer,
     SubActionCategory, SubActionConfigExt, SubActionRunner, decode_steps,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionStep, SubActionTelemetry, Variant};
@@ -48,6 +48,7 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
                 key: "expression",
                 label: "Expression",
                 language: CodeLanguage::Rhai,
+                kind: CodeKind::Expression,
             },
             FormField::CaseList {
                 key: "cases",

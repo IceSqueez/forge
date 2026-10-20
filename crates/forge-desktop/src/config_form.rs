@@ -10,7 +10,7 @@ use forge_components::{
     PickerItem, PickerLabels, Radius, Spacing, TextInput, accent_swatch, body_family, dropdown,
     icon, mono_family, radius, slider, spacing, toggle, tr,
 };
-use forge_registry::{CodeLanguage, FormField};
+use forge_registry::{CodeKind, CodeLanguage, FormField};
 
 use crate::amount_scale::{AmountScale, AmountSeed};
 
@@ -211,9 +211,12 @@ pub(crate) fn fold_config_field<V: 'static>(
             ctx,
             cx,
         )),
-        FormField::Code { key, language, .. } => {
-            out.push(build_config_code(key, *language, gate, ctx, cx))
-        }
+        FormField::Code {
+            key,
+            language,
+            kind,
+            ..
+        } => out.push(build_config_code(key, *language, *kind, gate, ctx, cx)),
         FormField::Integer { key, min, max, .. } => {
             let optional = !ctx.defaults.contains_key(*key);
             let placeholder = if optional {
@@ -831,11 +834,12 @@ fn build_unit_amount<V: 'static>(
 fn build_config_code<V: 'static>(
     key: &str,
     language: CodeLanguage,
+    kind: CodeKind,
     gate: Option<String>,
     ctx: &FoldContext<'_, V>,
     cx: &mut Context<V>,
 ) -> ConfigField {
-    let editor = code_field_editor(language, read_text(ctx.config, key), *ctx.palette, cx);
+    let editor = code_field_editor(language, kind, read_text(ctx.config, key), *ctx.palette, cx);
     let on_committed = ctx.on_committed;
     let sub = cx.subscribe(&editor, move |view, _, event: &InputEvent, cx| {
         if matches!(event, InputEvent::Blurred(_)) {
@@ -852,6 +856,7 @@ fn build_config_code<V: 'static>(
 
 pub(crate) fn code_field_editor<V: 'static>(
     language: CodeLanguage,
+    kind: CodeKind,
     seed: String,
     palette: ForgePalette,
     cx: &mut Context<V>,
@@ -861,9 +866,11 @@ pub(crate) fn code_field_editor<V: 'static>(
         CodeLanguage::Json => Language::Json,
     };
     cx.new(|cx| {
-        let mut editor = CodeEditor::new(language, "", cx)
-            .with_palette(palette)
-            .with_field_rows(CODE_FIELD_ROWS);
+        let editor = CodeEditor::new(language, "", cx).with_palette(palette);
+        let mut editor = match kind {
+            CodeKind::Expression => editor.compact_field(),
+            CodeKind::Script => editor.with_field_rows(CODE_FIELD_ROWS),
+        };
         if !seed.is_empty() {
             editor.set_content(seed, cx);
         }

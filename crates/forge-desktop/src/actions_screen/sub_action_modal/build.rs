@@ -9,7 +9,7 @@ use crate::config_form::{
 };
 use forge_components::int_entry_invalid;
 use forge_components::{FONT_SM, InputEvent};
-use forge_registry::{CodeLanguage, FormField};
+use forge_registry::{CodeKind, CodeLanguage, FormField};
 use forge_types::{SubActionConfig, Variant, normalize_var_name};
 use std::ops::RangeInclusive;
 
@@ -169,21 +169,24 @@ fn build_area_field(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_code_field(
     key: &str,
     label: &str,
     gate: Option<String>,
     language: CodeLanguage,
+    kind: CodeKind,
     config: &SubActionConfig,
     palette: ForgePalette,
     cx: &mut Context<EditSubActionForm>,
 ) -> SubFormField {
-    let editor = code_field_editor(language, config_seed(config, key), palette, cx);
+    let editor = code_field_editor(language, kind, config_seed(config, key), palette, cx);
     SubFormField::Code {
         key: key.to_owned(),
         label: label.to_owned(),
         gate,
         language,
+        kind,
         editor,
     }
 }
@@ -228,8 +231,9 @@ pub(super) fn push_form_field(
             key,
             label,
             language,
+            kind,
         } => out.push(build_code_field(
-            key, label, gate, *language, config, palette, cx,
+            key, label, gate, *language, *kind, config, palette, cx,
         )),
         FormField::Integer {
             key,

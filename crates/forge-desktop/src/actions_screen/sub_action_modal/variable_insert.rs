@@ -2,7 +2,7 @@ use super::field::SubFormField;
 use super::*;
 use crate::globals::variant_kind_color;
 use forge_components::{
-    VariableEntry, VariableFormat, VariableGroup, VariablePicker, VariablePickerEvent,
+    CodeEditor, VariableEntry, VariableFormat, VariableGroup, VariablePicker, VariablePickerEvent,
     VariablePickerLabels, dropdown, ghost_button_with_icon,
 };
 use forge_registry::{ScopeOrigin, ScopedVariable};
@@ -18,11 +18,13 @@ const EN_DATETIME_PRESETS: [&str; 4] = ["MMMM d, HH:mm", "HH:mm", "MM/dd/yyyy", 
 pub(super) enum InsertTarget {
     Input(Entity<TextInput>),
     Area(Entity<TextArea>),
+    Code(Entity<CodeEditor>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum InsertMode {
     AtCaret,
+    AtCaretUnformatted,
     WholeValue,
 }
 
@@ -47,6 +49,12 @@ impl InsertTarget {
                 }
                 area.insert_at_caret(text, cx);
             }),
+            Self::Code(editor) => editor.update(cx, |editor, cx| {
+                if mode == InsertMode::WholeValue {
+                    editor.clear(cx);
+                }
+                editor.insert_at_caret(text, cx);
+            }),
         }
     }
 
@@ -54,6 +62,7 @@ impl InsertTarget {
         match self {
             Self::Input(input) => input.update(cx, |input, cx| input.focus(window, cx)),
             Self::Area(area) => area.update(cx, |area, cx| area.focus(window, cx)),
+            Self::Code(editor) => editor.update(cx, |editor, cx| editor.focus(window, cx)),
         }
     }
 }
@@ -132,16 +141,14 @@ impl EditSubActionForm {
     }
 
     pub(super) fn insert_mode_for(&self, key: &str) -> InsertMode {
-        let whole_value = self.fields.iter().any(|field| {
-            matches!(
-                field,
-                SubFormField::Input { key: k, datetime: true, .. } if k == key
-            )
+        let field = self.fields.iter().find(|field| match field {
+            SubFormField::Input { key: k, .. } | SubFormField::Code { key: k, .. } => k == key,
+            _ => false,
         });
-        if whole_value {
-            InsertMode::WholeValue
-        } else {
-            InsertMode::AtCaret
+        match field {
+            Some(SubFormField::Input { datetime: true, .. }) => InsertMode::WholeValue,
+            Some(SubFormField::Code { .. }) => InsertMode::AtCaretUnformatted,
+            _ => InsertMode::AtCaret,
         }
     }
 

@@ -4,8 +4,8 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::{
-    CodeLanguage, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    CodeKind, CodeLanguage, FormField, RegistryError, RunContext, SubActionCategory,
+    SubActionConfigExt, SubActionRunner,
 };
 use forge_script::{
     Engine, ForgeApi, ScriptError, ScriptHttpClient, build_scope_for_contract,
@@ -79,6 +79,7 @@ impl SubActionRunner for ScriptRunInlineRunner {
             key: "body",
             label: "Script Body",
             language: CodeLanguage::Rhai,
+            kind: CodeKind::Script,
         }]
     }
 

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use forge_registry::{
-    CodeLanguage, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
+    CodeKind, CodeLanguage, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
     SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_script::{BoundExpression, EngineConfig, MathEvaluator};
@@ -74,6 +74,7 @@ impl SubActionRunner for CoreMathEvaluateRunner {
                 key: "expression",
                 label: "Expression",
                 language: CodeLanguage::Rhai,
+                kind: CodeKind::Expression,
             },
             FormField::Text {
                 key: INTO_VAR_KEY,

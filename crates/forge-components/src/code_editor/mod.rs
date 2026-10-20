@@ -20,8 +20,8 @@ use crate::text_area::{
 };
 use crate::text_buffer::{EditKind, TextBuffer};
 use crate::text_edit::{offset_to_utf16, range_from_utf16, range_to_utf16};
-use crate::text_input::{FocusNextField, InputEvent};
-use crate::tokens::{BORDER_THIN, FONT_XS, Radius, mono_family, radius};
+use crate::text_input::{FocusNextField, FocusPreviousField, InputEvent};
+use crate::tokens::{BORDER_THIN, Density, FONT_XS, Radius, Spacing, mono_family, radius, spacing};
 
 use element::{CodeEditorElement, PAD_Y};
 use layout::{Geometry, Lines};
@@ -33,6 +33,7 @@ const ROW_CENTER: f32 = 0.5;
 const EDGE_INSET: Pixels = px(1.0);
 const SAVE_CHORD: &str = "secondary-s";
 const LEAVE_CHORD: &str = "escape";
+const COMPACT_FIELD_ROWS: RangeInclusive<usize> = 1..=4;
 
 actions!(forge_code_editor, [Indent, Outdent, SaveCode, LeaveEditor]);
 
@@ -56,6 +57,8 @@ pub struct CodeEditor {
     line_height: Pixels,
     gutter_marks: Vec<usize>,
     field_rows: Option<RangeInclusive<usize>>,
+    compact: bool,
+    rendered_rows: usize,
     last_bounds: Option<Bounds<Pixels>>,
     text_left: Pixels,
     scroll_offset: Pixels,
@@ -92,6 +95,8 @@ impl CodeEditor {
             line_height: FONT_XS * LINE_HEIGHT_RATIO,
             gutter_marks: Vec::new(),
             field_rows: None,
+            compact: false,
+            rendered_rows: 0,
             last_bounds: None,
             text_left: px(0.0),
             scroll_offset: px(0.0),
@@ -122,6 +127,12 @@ impl CodeEditor {
 
     pub fn with_field_rows(mut self, rows: RangeInclusive<usize>) -> Self {
         self.field_rows = Some(rows);
+        self
+    }
+
+    pub fn compact_field(mut self) -> Self {
+        self.field_rows = Some(COMPACT_FIELD_ROWS);
+        self.compact = true;
         self
     }
 
@@ -183,13 +194,42 @@ impl CodeEditor {
         cx.notify();
     }
 
+    pub fn insert_at_caret(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.preferred_x = None;
+        self.buffer.insert(text, EditKind::Standalone);
+        self.edited(cx);
+    }
+
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         window.focus(&self.focus_handle, cx);
     }
 
+    fn pad_y(&self) -> Pixels {
+        if self.compact {
+            spacing(Spacing::Xs, Density::Cozy)
+        } else {
+            PAD_Y
+        }
+    }
+
+    fn content_rows(&self) -> usize {
+        if self.compact {
+            self.geometry
+                .row_count(&self.lines)
+                .unwrap_or_else(|| self.lines.len())
+        } else {
+            self.lines.len()
+        }
+    }
+
+    fn rows_outgrew_render(&self) -> bool {
+        self.compact && self.content_rows() != self.rendered_rows
+    }
+
     fn field_height(&self, rows: &RangeInclusive<usize>) -> Pixels {
-        let shown = self.lines.len().max(*rows.start()).min(*rows.end());
-        self.line_height * shown as f32 + PAD_Y + PAD_Y + BORDER_THIN + BORDER_THIN
+        let shown = self.content_rows().max(*rows.start()).min(*rows.end());
+        let pad_y = self.pad_y();
+        self.line_height * shown as f32 + pad_y + pad_y + BORDER_THIN + BORDER_THIN
     }
 
     fn gutter_corner_radius(&self) -> Pixels {
@@ -258,18 +298,31 @@ impl CodeEditor {
     }
 
     fn insert_newline(&mut self, _: &InsertNewline, _: &mut Window, cx: &mut Context<Self>) {
+        if self.compact {
+            return;
+        }
         self.preferred_x = None;
         self.buffer.insert_newline_keeping_indent();
         self.edited(cx);
     }
 
-    fn indent(&mut self, _: &Indent, _: &mut Window, cx: &mut Context<Self>) {
+    fn indent(&mut self, _: &Indent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.compact {
+            self.focus_handle
+                .dispatch_action(&FocusNextField, window, cx);
+            return;
+        }
         self.preferred_x = None;
         self.buffer.indent(INDENT_UNIT);
         self.edited(cx);
     }
 
-    fn outdent(&mut self, _: &Outdent, _: &mut Window, cx: &mut Context<Self>) {
+    fn outdent(&mut self, _: &Outdent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.compact {
+            self.focus_handle
+                .dispatch_action(&FocusPreviousField, window, cx);
+            return;
+        }
         self.preferred_x = None;
         self.buffer.outdent(INDENT_UNIT);
         self.edited(cx);
@@ -404,7 +457,8 @@ impl CodeEditor {
         let view_height = self
             .last_bounds
             .map_or(px(0.0), |bounds| bounds.size.height);
-        (self.geometry.total() + PAD_Y + PAD_Y - view_height).max(px(0.0))
+        let pad_y = self.pad_y();
+        (self.geometry.total() + pad_y + pad_y - view_height).max(px(0.0))
     }
 
     fn shape_around(&mut self, index: usize, window: &mut Window) {
@@ -456,7 +510,7 @@ impl CodeEditor {
             return 0;
         };
         let x = position.x - bounds.left() - self.text_left;
-        let y = (position.y - bounds.top() - PAD_Y + self.scroll_offset).max(px(0.0));
+        let y = (position.y - bounds.top() - self.pad_y() + self.scroll_offset).max(px(0.0));
         self.geometry.offset_for_point(&self.lines, point(x, y))
     }
 }
@@ -536,7 +590,7 @@ impl EntityInputHandler for CodeEditor {
         let start = self.geometry.point_for_offset(&self.lines, range.start)?;
         let origin = point(
             bounds.left() + self.text_left + start.x,
-            bounds.top() + PAD_Y + start.y - self.scroll_offset,
+            bounds.top() + self.pad_y() + start.y - self.scroll_offset,
         );
         Some(Bounds::from_corners(
             origin,
@@ -616,6 +670,7 @@ impl Render for CodeEditor {
                     cx.propagate();
                 }
             })
+            .on_action(|_: &FocusPreviousField, window, cx| window.focus_prev(cx))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
@@ -627,6 +682,7 @@ impl Render for CodeEditor {
             .text_size(self.font_size)
             .text_color(self.palette.text_primary)
             .line_height(self.line_height);
+        self.rendered_rows = self.content_rows();
         let editor = match self.field_rows.as_ref().map(|rows| self.field_height(rows)) {
             Some(height) => editor
                 .h(height)

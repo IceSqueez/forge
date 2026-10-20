@@ -49,7 +49,9 @@ pub use first_chatter::{
     first_chatters_only_field, is_first_chat_message,
 };
 pub use flow_kinds::{BREAK_LOOP_KIND_ID, CONTINUE_LOOP_KIND_ID, LOOP_KIND_ID, STOP_KIND_ID};
-pub use form::{AmountUnit, CodeLanguage, ENGINE_VOICE_OPTIONS_KEY, FormField, UnitAmountBounds};
+pub use form::{
+    AmountUnit, CodeKind, CodeLanguage, ENGINE_VOICE_OPTIONS_KEY, FormField, UnitAmountBounds,
+};
 pub use integration_references::{IntegrationReferences, ReferencingAction, tally_references};
 pub use io::{ProducedVariable, SubActionIo};
 pub use kind_platform_contract::KindPlatformContract;

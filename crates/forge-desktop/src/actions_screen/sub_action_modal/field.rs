@@ -1,7 +1,7 @@
 use super::*;
 use crate::amount_scale::AmountScale;
 use forge_components::CodeEditor;
-use forge_registry::CodeLanguage;
+use forge_registry::{CodeKind, CodeLanguage};
 use forge_types::{Variant, normalize_var_name};
 use std::ops::RangeInclusive;
 
@@ -27,6 +27,7 @@ pub(super) enum SubFormField {
         label: String,
         gate: Option<String>,
         language: CodeLanguage,
+        kind: CodeKind,
         editor: Entity<CodeEditor>,
     },
     Bool {
@@ -76,7 +77,11 @@ impl SubFormField {
                 datetime,
                 ..
             } => integer.is_none() && !browse && !datetime && !is_var_key(key),
-            Self::Area { .. } => true,
+            Self::Area { .. }
+            | Self::Code {
+                kind: CodeKind::Expression,
+                ..
+            } => true,
             _ => false,
         }
     }

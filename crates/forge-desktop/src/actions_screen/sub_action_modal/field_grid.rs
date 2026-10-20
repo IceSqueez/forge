@@ -67,6 +67,7 @@ impl EditSubActionForm {
                     grid_items.push((false, self.with_variable_popover(key, block, cx)));
                 }
                 SubFormField::Code {
+                    key,
                     label,
                     gate,
                     language,
@@ -80,16 +81,17 @@ impl EditSubActionForm {
                         CodeLanguage::Rhai => "rhai",
                         CodeLanguage::Json => "json",
                     };
-                    grid_items.push((
-                        false,
-                        multiline_field(
-                            label,
-                            Some(tag),
-                            None,
-                            editor.clone().into_any_element(),
-                            palette,
-                        ),
-                    ));
+                    let button = field.accepts_variables().then(|| {
+                        self.variable_button(key, InsertTarget::Code(editor.clone()), palette, cx)
+                    });
+                    let block = multiline_field(
+                        label,
+                        Some(tag),
+                        button,
+                        editor.clone().into_any_element(),
+                        palette,
+                    );
+                    grid_items.push((false, self.with_variable_popover(key, block, cx)));
                 }
                 SubFormField::Bool {
                     key,

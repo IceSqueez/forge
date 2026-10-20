@@ -86,6 +86,11 @@ impl Geometry {
         self.top(index + 1)
     }
 
+    pub(super) fn row_count(&self, lines: &Lines) -> Option<usize> {
+        let metrics = self.metrics.as_ref()?;
+        Some(lines.lines().iter().map(|line| rows(line, metrics)).sum())
+    }
+
     pub(super) fn total(&self) -> Pixels {
         self.tops.last().copied().unwrap_or_default()
     }

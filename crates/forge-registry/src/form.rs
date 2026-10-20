@@ -11,6 +11,12 @@ pub enum CodeLanguage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodeKind {
+    Expression,
+    Script,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AmountUnit {
     pub value: &'static str,
     pub base_units: u64,
@@ -55,6 +61,7 @@ pub enum FormField {
         key: &'static str,
         label: &'static str,
         language: CodeLanguage,
+        kind: CodeKind,
     },
     Integer {
         key: &'static str,

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    CodeLanguage, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    CodeKind, CodeLanguage, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
     SubActionConfigExt, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
@@ -59,6 +59,7 @@ impl SubActionRunner for CoreLogicIfThenElseRunner {
                 key: "condition",
                 label: "Condition",
                 language: CodeLanguage::Rhai,
+                kind: CodeKind::Expression,
             },
             FormField::Toggle {
                 key: "treat_undefined_as_false",

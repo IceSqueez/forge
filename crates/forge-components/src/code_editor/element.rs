@@ -10,7 +10,7 @@ use gpui::{
 use super::CodeEditor;
 use super::layout::{LineShape, TextMetrics, line_end_point, row_segments};
 use crate::palette::{ForgePalette, with_alpha};
-use crate::tokens::BORDER_THIN;
+use crate::tokens::{BORDER_THIN, Density, Spacing, spacing};
 
 pub(super) const PAD_Y: Pixels = px(10.0);
 const TEXT_PAD_X: Pixels = px(14.0);
@@ -40,7 +40,7 @@ struct PaintLabel {
 pub(super) struct Frame {
     palette: ForgePalette,
     line_height: Pixels,
-    gutter: Bounds<Pixels>,
+    gutter: Option<Bounds<Pixels>>,
     gutter_corner_radius: Pixels,
     band: Option<Bounds<Pixels>>,
     selection: Vec<Bounds<Pixels>>,
@@ -87,10 +87,15 @@ impl CodeEditor {
         let advance = text_system
             .ch_advance(font_id, font_size)
             .unwrap_or(font_size * FALLBACK_ADVANCE_RATIO);
-        let digits = self.lines.len().to_string().len().max(MIN_GUTTER_DIGITS);
-        let gutter_width = GUTTER_PAD_L + advance * digits + GUTTER_PAD_R;
-        let text_left = gutter_width + TEXT_PAD_X;
-        let wrap_width = (bounds.size.width - text_left - TEXT_PAD_X).max(advance);
+        let (gutter_width, text_pad_x) = if self.compact {
+            (px(0.0), spacing(Spacing::Sm, Density::Cozy))
+        } else {
+            let digits = self.lines.len().to_string().len().max(MIN_GUTTER_DIGITS);
+            (GUTTER_PAD_L + advance * digits + GUTTER_PAD_R, TEXT_PAD_X)
+        };
+        let text_left = gutter_width + text_pad_x;
+        let wrap_width = (bounds.size.width - text_left - text_pad_x).max(advance);
+        let pad_y = self.pad_y();
         self.geometry.configure(
             TextMetrics {
                 font: font.clone(),
@@ -116,7 +121,7 @@ impl CodeEditor {
             scroll = self.scroll_to_caret(scroll, cursor, view_height);
         }
         for _ in 0..MAX_LAYOUT_PASSES {
-            let anchor = self.geometry.line_at_y(scroll - PAD_Y);
+            let anchor = self.geometry.line_at_y(scroll - pad_y);
             let anchor_shift = scroll - self.geometry.top(anchor);
             let mut changed = false;
             for index in self.visible_lines(scroll, view_height, OVERSCAN_LINES) {
@@ -147,13 +152,13 @@ impl CodeEditor {
         let viewport = Viewport {
             bounds,
             text_x: bounds.left() + text_left,
-            origin_y: bounds.top() + PAD_Y - scroll,
+            origin_y: bounds.top() + pad_y - scroll,
             line_height,
             advance,
             font,
             font_size,
         };
-        let band = focused.then(|| {
+        let band = (focused && !self.compact).then(|| {
             Bounds::from_corners(
                 point(
                     bounds.left(),
@@ -173,7 +178,8 @@ impl CodeEditor {
         Frame {
             palette: self.palette,
             line_height,
-            gutter: Bounds::new(bounds.origin, size(gutter_width, view_height)),
+            gutter: (!self.compact)
+                .then(|| Bounds::new(bounds.origin, size(gutter_width, view_height))),
             gutter_corner_radius: self.gutter_corner_radius(),
             band,
             selection: self.range_rows(&painted, self.buffer.selected_range(), &viewport, true),
@@ -215,13 +221,17 @@ impl CodeEditor {
                     )
                 })
                 .collect(),
-            labels: self.gutter_labels(
-                painted,
-                focused.then_some(caret_line),
-                gutter_width,
-                &viewport,
-                window,
-            ),
+            labels: if self.compact {
+                Vec::new()
+            } else {
+                self.gutter_labels(
+                    painted,
+                    focused.then_some(caret_line),
+                    gutter_width,
+                    &viewport,
+                    window,
+                )
+            },
             placeholder: self.placeholder_label(&viewport, window),
             cursor: cursor_bounds,
         }
@@ -234,7 +244,8 @@ impl CodeEditor {
         ) else {
             return scroll;
         };
-        let reveal_bottom = caret.y + metrics.line_height + PAD_Y + PAD_Y;
+        let pad_y = self.pad_y();
+        let reveal_bottom = caret.y + metrics.line_height + pad_y + pad_y;
         if caret.y < scroll {
             caret.y
         } else if reveal_bottom > scroll + view_height {
@@ -250,8 +261,9 @@ impl CodeEditor {
         view_height: Pixels,
         overscan: usize,
     ) -> RangeInclusive<usize> {
-        let first = self.geometry.line_at_y(scroll - PAD_Y);
-        let last = self.geometry.line_at_y(scroll - PAD_Y + view_height);
+        let pad_y = self.pad_y();
+        let first = self.geometry.line_at_y(scroll - pad_y);
+        let last = self.geometry.line_at_y(scroll - pad_y + view_height);
         let last_line = self.lines.len().saturating_sub(1);
         first.saturating_sub(overscan)..=(last + overscan).min(last_line)
     }
@@ -419,8 +431,13 @@ impl Element for CodeEditorElement {
         cx: &mut App,
     ) -> Self::PrepaintState {
         let focused = self.editor.read(cx).focus_handle.is_focused(window);
-        self.editor
-            .update(cx, |editor, _| editor.layout_frame(bounds, focused, window))
+        self.editor.update(cx, |editor, cx| {
+            let frame = editor.layout_frame(bounds, focused, window);
+            if editor.rows_outgrew_render() {
+                cx.notify();
+            }
+            frame
+        })
     }
 
     fn paint(
@@ -445,19 +462,21 @@ impl Element for CodeEditorElement {
 
         let palette = frame.palette;
         let line_height = frame.line_height;
-        window.paint_quad(fill(frame.gutter, palette.elevated).corner_radii(Corners {
-            top_left: frame.gutter_corner_radius,
-            top_right: px(0.0),
-            bottom_right: px(0.0),
-            bottom_left: frame.gutter_corner_radius,
-        }));
-        window.paint_quad(fill(
-            Bounds::new(
-                point(frame.gutter.right() - BORDER_THIN, frame.gutter.top()),
-                size(BORDER_THIN, frame.gutter.size.height),
-            ),
-            palette.border_regular,
-        ));
+        if let Some(gutter) = frame.gutter {
+            window.paint_quad(fill(gutter, palette.elevated).corner_radii(Corners {
+                top_left: frame.gutter_corner_radius,
+                top_right: px(0.0),
+                bottom_right: px(0.0),
+                bottom_left: frame.gutter_corner_radius,
+            }));
+            window.paint_quad(fill(
+                Bounds::new(
+                    point(gutter.right() - BORDER_THIN, gutter.top()),
+                    size(BORDER_THIN, gutter.size.height),
+                ),
+                palette.border_regular,
+            ));
+        }
         if let Some(band) = frame.band {
             window.paint_quad(fill(band, with_alpha(palette.brand, CURRENT_LINE_ALPHA)));
         }

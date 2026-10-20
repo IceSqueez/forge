@@ -116,9 +116,22 @@ impl SubActionRunner for BanUserRunner {
 mod tests {
     use futures::future::BoxFuture;
 
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
     use super::*;
+    use crate::ban_ledger_test_support::{
+        MemoryBanLedger, TEST_BROADCASTER_CHANNEL_ID, broadcaster_source,
+    };
     use crate::live_chat_id::LiveChatIdHandle;
     use crate::quota_state::SharedQuota;
+
+    struct NoopPublisher;
+    impl EventPublisher for NoopPublisher {
+        fn publish(&self, _: Event) {}
+    }
 
     fn runner() -> BanUserRunner {
         let source: Arc<
@@ -165,5 +178,71 @@ mod tests {
                 "case: {label}"
             );
         }
+    }
+
+    fn display_name_config(channel_id: &str, display_name: &str) -> SubActionConfig {
+        BTreeMap::from([
+            (
+                "channel_id".to_owned(),
+                Variant::String(channel_id.to_owned()),
+            ),
+            (
+                "display_name".to_owned(),
+                Variant::String(display_name.to_owned()),
+            ),
+        ])
+    }
+
+    #[test]
+    fn validate_config_accepts_a_hidden_display_name() {
+        assert!(
+            runner()
+                .validate_config(&display_name_config("UC1", "%user_name%"))
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_records_the_interpolated_display_name_in_the_ban_ledger() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/liveChat/bans"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"id": "ban-1"})),
+            )
+            .mount(&server)
+            .await;
+        let ledger = Arc::new(MemoryBanLedger::default());
+        let live_chat = LiveChatIdHandle::new();
+        live_chat.set(Some("lc-test".to_owned()));
+        let token: Arc<
+            dyn Fn() -> BoxFuture<'static, Result<String, forge_platform_core::PlatformError>>
+                + Send
+                + Sync,
+        > = Arc::new(|| Box::pin(async { Ok("tok".to_owned()) }));
+        let moderation = YoutubeModeration::new(
+            &crate::endpoints_test_support::unreachable_endpoints(),
+            token,
+            broadcaster_source(),
+            live_chat,
+            SharedQuota::default(),
+            Arc::clone(&ledger) as Arc<dyn forge_storage::BanLedgerRepo>,
+        )
+        .with_api_base(server.uri());
+        let stack = ArgStack::new()
+            .set("uid".to_owned(), Variant::String("UC-target".to_owned()))
+            .set("user_name".to_owned(), Variant::String("Alice".to_owned()));
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NoopPublisher);
+
+        let (telemetry, _) = BanUserRunner::new(Arc::new(moderation))
+            .execute(&display_name_config("%uid%", "%user_name%"), &ctx)
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let key = crate::ban_ledger::ban_ledger_key(TEST_BROADCASTER_CHANNEL_ID, "UC-target");
+        assert_eq!(
+            ledger.stored(&key).map(|entry| entry.viewer_name),
+            Some("Alice".to_owned())
+        );
     }
 }

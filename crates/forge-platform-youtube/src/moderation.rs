@@ -538,7 +538,7 @@ mod tests {
         mount_insert_ok(&server).await;
         let (moderation, _quota) = moderation_on(&server);
 
-        moderation.ban(TARGET_CHANNEL).await.unwrap();
+        moderation.ban(TARGET_CHANNEL, None).await.unwrap();
 
         let req = &server.received_requests().await.unwrap()[0];
         let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap();
@@ -559,7 +559,7 @@ mod tests {
         mount_insert_ok(&server).await;
         let (moderation, _quota) = moderation_on(&server);
 
-        moderation.timeout(TARGET_CHANNEL, 600).await.unwrap();
+        moderation.timeout(TARGET_CHANNEL, 600, None).await.unwrap();
 
         let req = &server.received_requests().await.unwrap()[0];
         let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap();
@@ -580,7 +580,7 @@ mod tests {
             .await;
         let (moderation, _quota) = moderation_on(&server);
 
-        moderation.ban(TARGET_CHANNEL).await.unwrap();
+        moderation.ban(TARGET_CHANNEL, None).await.unwrap();
         moderation.unban(TARGET_CHANNEL).await.unwrap();
 
         let delete = server
@@ -609,7 +609,7 @@ mod tests {
             .await;
         let (moderation, _quota) = moderation_on(&server);
 
-        let err = moderation.ban(TARGET_CHANNEL).await.unwrap_err();
+        let err = moderation.ban(TARGET_CHANNEL, None).await.unwrap_err();
         let msg = err.to_string();
 
         assert!(
@@ -632,7 +632,7 @@ mod tests {
         mount_insert_ok(&server).await;
         let (moderation, quota) = moderation_on(&server);
 
-        moderation.ban(TARGET_CHANNEL).await.unwrap();
+        moderation.ban(TARGET_CHANNEL, None).await.unwrap();
 
         assert_eq!(
             quota.lock().await.used_today,
@@ -903,8 +903,8 @@ mod tests {
 
     async fn issue(moderation: &YoutubeModeration, issue: &Issue) -> Result<(), PlatformError> {
         match issue {
-            Issue::Ban => moderation.ban(TARGET_CHANNEL).await,
-            Issue::Timeout(seconds) => moderation.timeout(TARGET_CHANNEL, *seconds).await,
+            Issue::Ban => moderation.ban(TARGET_CHANNEL, None).await,
+            Issue::Timeout(seconds) => moderation.timeout(TARGET_CHANNEL, *seconds, None).await,
         }
     }
 
@@ -958,20 +958,41 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn issued_ban_keeps_the_viewer_name_already_in_the_ledger() {
-        let server = MockServer::start().await;
-        mount_insert_ok(&server).await;
-        let ledger = seeded_ledger(stored_ban(None, BanOrigin::Observed));
-        let (moderation, _quota) =
-            moderation_with(&server, Arc::clone(&ledger), broadcaster_source());
+    async fn issued_ban_names_the_viewer_by_display_name_then_stored_name_then_channel_id() {
+        for issued in [Issue::Ban, Issue::Timeout(600)] {
+            for (stored, display_name, expected) in [
+                (false, Some("Alice"), "Alice"),
+                (false, None, TARGET_CHANNEL),
+                (true, None, "Troll"),
+                (true, Some("Alice"), "Alice"),
+            ] {
+                let server = MockServer::start().await;
+                mount_insert_ok(&server).await;
+                let ledger = Arc::new(MemoryBanLedger::default());
+                if stored {
+                    ledger.seed(stored_ban(None, BanOrigin::Observed));
+                }
+                let (moderation, _quota) =
+                    moderation_with(&server, Arc::clone(&ledger), broadcaster_source());
 
-        moderation.ban(TARGET_CHANNEL).await.unwrap();
+                match issued {
+                    Issue::Ban => moderation.ban(TARGET_CHANNEL, display_name).await,
+                    Issue::Timeout(seconds) => {
+                        moderation
+                            .timeout(TARGET_CHANNEL, seconds, display_name)
+                            .await
+                    }
+                }
+                .unwrap();
 
-        let row = ledger.stored(&target_key()).unwrap();
-        assert_eq!(
-            (row.viewer_name.as_str(), row.origin),
-            ("Troll", BanOrigin::IssuedByForge)
-        );
+                let row = ledger.stored(&target_key()).unwrap();
+                assert_eq!(
+                    (row.viewer_name.as_str(), row.origin),
+                    (expected, BanOrigin::IssuedByForge),
+                    "stored {stored}, display {display_name:?}"
+                );
+            }
+        }
     }
 
     #[tokio::test]
@@ -1009,7 +1030,7 @@ mod tests {
         let (moderation, _quota) =
             moderation_with(&server, Arc::clone(&ledger), broadcaster_source());
 
-        moderation.ban(TARGET_CHANNEL).await.unwrap();
+        moderation.ban(TARGET_CHANNEL, None).await.unwrap();
 
         assert_eq!(
             ledger
@@ -1135,7 +1156,7 @@ mod tests {
             Arc::clone(&ledger),
             switchable_broadcaster_source(Arc::clone(&account)),
         );
-        moderation.ban(TARGET_CHANNEL).await.unwrap();
+        moderation.ban(TARGET_CHANNEL, None).await.unwrap();
         *account.lock().unwrap() = YoutubeBroadcaster {
             channel_id: "UCsecond".to_owned(),
             channel_title: "Second".to_owned(),

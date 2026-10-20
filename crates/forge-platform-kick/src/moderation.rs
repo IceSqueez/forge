@@ -288,7 +288,7 @@ mod tests {
                 .mount(&server)
                 .await;
 
-            let result = moderation_on(&server).ban(99, 42, None, "tok").await;
+            let result = moderation_on(&server).ban(99, 42, None, None, "tok").await;
             assert!(result.is_ok(), "status {status} must map to Ok");
 
             let body = last_body(&server).await;
@@ -313,7 +313,7 @@ mod tests {
             .await;
 
         let result = moderation_on(&server)
-            .timeout(99, 42, 15, None, "tok")
+            .timeout(99, 42, 15, None, None, "tok")
             .await;
         assert!(result.is_ok());
 
@@ -347,7 +347,7 @@ mod tests {
                 .await;
 
             let err = moderation_on(&server)
-                .ban(99, 42, None, "tok")
+                .ban(99, 42, None, None, "tok")
                 .await
                 .unwrap_err();
             assert!(
@@ -366,7 +366,7 @@ mod tests {
             .await;
 
         let err = moderation_on(&server)
-            .ban(99, 42, None, "tok")
+            .ban(99, 42, None, None, "tok")
             .await
             .unwrap_err();
         assert!(matches!(
@@ -391,7 +391,7 @@ mod tests {
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
         .with_api_base(server.uri());
-        let err = client.ban(99, 42, None, "tok").await.unwrap_err();
+        let err = client.ban(99, 42, None, None, "tok").await.unwrap_err();
 
         assert!(matches!(err, PlatformError::RateLimitExhausted));
         assert!(
@@ -449,10 +449,14 @@ mod tests {
         reason: Option<&str>,
     ) -> Result<(), PlatformError> {
         match duration_minutes {
-            None => moderation.ban(TARGET, BROADCASTER, reason, "tok").await,
+            None => {
+                moderation
+                    .ban(TARGET, BROADCASTER, None, reason, "tok")
+                    .await
+            }
             Some(minutes) => {
                 moderation
-                    .timeout(TARGET, BROADCASTER, minutes, reason, "tok")
+                    .timeout(TARGET, BROADCASTER, minutes, None, reason, "tok")
                     .await
             }
         }
@@ -512,20 +516,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn issued_ban_keeps_the_name_of_an_already_known_viewer() {
-        let server = server_answering("POST", 200).await;
-        let ledger = Arc::new(MemoryBanLedger::default());
-        ledger.seed(standing_row("Troll", BanOrigin::Observed));
+    async fn issued_ban_names_the_viewer_by_display_name_then_stored_name_then_id() {
+        for duration_minutes in [None, Some(10)] {
+            for (stored_name, display_name, expected) in [
+                (None, Some("Alice"), "Alice"),
+                (None, None, "99"),
+                (Some("Troll"), None, "Troll"),
+                (Some("Troll"), Some("Alice"), "Alice"),
+            ] {
+                let server = server_answering("POST", 200).await;
+                let ledger = Arc::new(MemoryBanLedger::default());
+                if let Some(name) = stored_name {
+                    ledger.seed(standing_row(name, BanOrigin::Observed));
+                }
+                let moderation = moderation_over(&server, &ledger);
 
-        issue(&moderation_over(&server, &ledger), Some(10), None)
-            .await
-            .unwrap();
+                match duration_minutes {
+                    None => {
+                        moderation
+                            .ban(TARGET, BROADCASTER, display_name, None, "tok")
+                            .await
+                    }
+                    Some(minutes) => {
+                        moderation
+                            .timeout(TARGET, BROADCASTER, minutes, display_name, None, "tok")
+                            .await
+                    }
+                }
+                .unwrap();
 
-        let stored = ledger.stored(&target_key()).unwrap();
-        assert_eq!(
-            (stored.viewer_name.as_str(), stored.origin),
-            ("Troll", BanOrigin::IssuedByForge)
-        );
+                let stored = ledger.stored(&target_key()).unwrap();
+                assert_eq!(
+                    (stored.viewer_name.as_str(), stored.origin),
+                    (expected, BanOrigin::IssuedByForge),
+                    "duration {duration_minutes:?}, stored {stored_name:?}, display {display_name:?}"
+                );
+            }
+        }
     }
 
     #[tokio::test]

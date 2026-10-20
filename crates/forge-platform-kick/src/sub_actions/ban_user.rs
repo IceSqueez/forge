@@ -156,6 +156,7 @@ impl SubActionRunner for BanUserRunner {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::ban_ledger_test_support::MemoryBanLedger;
     use forge_events::{Event, EventPublisher};
     use forge_platform_core::{RateLimitOutcome, RateLimiter};
     use forge_types::EventId;
@@ -254,6 +255,11 @@ mod tests {
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![
             ("non-empty", config("777"), true),
             (
+                "hidden display name",
+                with_display_name(config("777"), "Alice"),
+                true,
+            ),
+            (
                 "reason at limit",
                 with_reason(config("777"), &"a".repeat(100)),
                 true,
@@ -311,5 +317,50 @@ mod tests {
                 "template {template:?}"
             );
         }
+    }
+
+    fn with_display_name(mut config: SubActionConfig, name: &str) -> SubActionConfig {
+        config.insert("display_name".to_owned(), Variant::String(name.to_owned()));
+        config
+    }
+
+    #[tokio::test]
+    async fn execute_records_the_interpolated_display_name_in_the_ban_ledger() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/moderation/bans"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        let ledger = Arc::new(MemoryBanLedger::default());
+        let client = KickModeration::new(
+            &crate::endpoints_test_support::unreachable_endpoints(),
+            Arc::new(GrantLimiter),
+            Arc::clone(&ledger) as Arc<dyn forge_storage::BanLedgerRepo>,
+        )
+        .with_api_base(server.uri());
+        let runner =
+            BanUserRunner::new(Arc::new(client), token_source(), broadcaster_id_source(42));
+        let stack = ArgStack::new()
+            .set("uid".to_owned(), Variant::String("777".to_owned()))
+            .set("user_name".to_owned(), Variant::String("Alice".to_owned()));
+
+        let (telemetry, _) = runner
+            .execute(
+                &with_display_name(config("%uid%"), "%user_name%"),
+                &make_ctx(&stack),
+            )
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let key = forge_storage::BanLedgerKey {
+            platform: forge_types::PlatformId::Kick,
+            channel_id: "42".to_owned(),
+            viewer_id: "777".to_owned(),
+        };
+        assert_eq!(
+            ledger.stored(&key).map(|entry| entry.viewer_name),
+            Some("Alice".to_owned())
+        );
     }
 }

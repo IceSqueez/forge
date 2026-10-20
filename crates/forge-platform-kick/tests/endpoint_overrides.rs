@@ -128,7 +128,7 @@ async fn public_api_override_carries_every_rest_client_to_the_override_host() {
     sender.send("hi", "tok", 7, false).await.ok();
     sender.delete("msg-1", "tok").await.ok();
     KickModeration::new(&endpoints, limiter(), ban_ledger())
-        .ban(9, 7, None, "tok")
+        .ban(9, 7, None, None, "tok")
         .await
         .ok();
     KickChannel::new(&endpoints, limiter())

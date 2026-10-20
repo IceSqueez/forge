@@ -84,7 +84,7 @@ async fn forge_issued_ban_can_be_lifted_after_a_restart() {
 
     let first_run = open_backend(dir.path()).await;
     moderation_over(&server, &first_run)
-        .ban(VIEWER)
+        .ban(VIEWER, None)
         .await
         .unwrap();
     first_run.shutdown().await;

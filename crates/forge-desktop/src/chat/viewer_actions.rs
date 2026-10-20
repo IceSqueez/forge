@@ -323,6 +323,7 @@ mod tests {
                 "youtube.moderation.timeout_user",
                 config(&[
                     ("channel_id", text("UCabc")),
+                    ("display_name", text("alice")),
                     ("duration_seconds", Variant::Int(600)),
                 ]),
             ),
@@ -330,7 +331,10 @@ mod tests {
                 by_id(PlatformId::YouTube, "UCabc"),
                 ViewerAction::Ban,
                 "youtube.moderation.ban_user",
-                config(&[("channel_id", text("UCabc"))]),
+                config(&[
+                    ("channel_id", text("UCabc")),
+                    ("display_name", text("alice")),
+                ]),
             ),
             (
                 by_id(PlatformId::YouTube, "UCabc"),
@@ -344,6 +348,7 @@ mod tests {
                 "kick.moderation.timeout",
                 config(&[
                     ("user_id", text("4242")),
+                    ("display_name", text("alice")),
                     ("duration_minutes", Variant::Int(10)),
                 ]),
             ),
@@ -351,7 +356,7 @@ mod tests {
                 by_id(PlatformId::Kick, "4242"),
                 ViewerAction::Ban,
                 "kick.moderation.ban",
-                config(&[("user_id", text("4242"))]),
+                config(&[("user_id", text("4242")), ("display_name", text("alice"))]),
             ),
             (
                 by_id(PlatformId::Kick, "4242"),
@@ -366,6 +371,22 @@ mod tests {
                 "{:?} {action:?}",
                 target.platform
             );
+        }
+    }
+
+    #[test]
+    fn a_nameless_viewer_still_gets_ban_and_timeout_steps_with_a_blank_display_name() {
+        for (platform, viewer_id) in [(PlatformId::YouTube, "UCabc"), (PlatformId::Kick, "4242")] {
+            let target = ViewerTarget::new(&AuthorKey::by_viewer_id(platform, viewer_id), "");
+            for action in [ViewerAction::Ban, ViewerAction::Timeout { seconds: 600 }] {
+                assert_eq!(
+                    target
+                        .step(&action)
+                        .and_then(|step| step.config.get("display_name").cloned()),
+                    Some(text("")),
+                    "{platform:?} {action:?}"
+                );
+            }
         }
     }
 

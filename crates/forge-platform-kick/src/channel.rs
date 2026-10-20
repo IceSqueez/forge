@@ -429,14 +429,57 @@ mod tests {
         assert_eq!(snapshot.broadcaster_user_id, 42);
         assert_eq!(snapshot.slug, "a-streamer");
         assert!(snapshot.is_live);
-        assert_eq!(
-            snapshot.started_at,
-            Some(crate::timestamp::tests::instant("2026-07-24T10:00:00Z"))
-        );
         assert_eq!(snapshot.stream_title, "Speedrun Night");
         assert_eq!(snapshot.category_id, 77);
         assert_eq!(snapshot.category_name, "Just Chatting");
         assert_eq!(snapshot.viewer_count, 1234);
+    }
+
+    #[tokio::test]
+    async fn stream_start_time_maps_to_started_at_without_dropping_live_stats() {
+        for (stream, expected, what) in [
+            (
+                serde_json::json!({ "is_live": true, "viewer_count": 31, "start_time": null }),
+                None,
+                "null",
+            ),
+            (
+                serde_json::json!({ "is_live": true, "viewer_count": 31 }),
+                None,
+                "missing key",
+            ),
+            (
+                serde_json::json!({ "is_live": true, "viewer_count": 31, "start_time": "" }),
+                None,
+                "empty string",
+            ),
+            (
+                serde_json::json!({
+                    "is_live": true,
+                    "viewer_count": 31,
+                    "start_time": "2026-07-24T10:00:00+02:00"
+                }),
+                Some(crate::timestamp::tests::instant("2026-07-24T08:00:00Z")),
+                "rfc 3339 with offset",
+            ),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/channels"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": [{ "stream_title": "t", "stream": stream }]
+                })))
+                .mount(&server)
+                .await;
+
+            let snapshot = channel_on(&server)
+                .get_channel("tok")
+                .await
+                .unwrap_or_else(|err| panic!("{what}: lookup must succeed, got {err:?}"));
+            assert_eq!(snapshot.started_at, expected, "{what}");
+            assert!(snapshot.is_live, "{what}");
+            assert_eq!(snapshot.viewer_count, 31, "{what}");
+        }
     }
 
     #[tokio::test]

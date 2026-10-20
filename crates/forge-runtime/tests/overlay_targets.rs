@@ -194,19 +194,31 @@ fn a_disabled_step_prunes_itself_and_everything_nested_under_it() {
 
 #[test]
 fn a_target_naming_a_variable_stays_unresolved_and_matches_no_overlay() {
-    let steps = vec![send("%overlay%", true)];
+    for (target, bare) in [("%overlay%", "overlay"), ("%a:HH%", "a")] {
+        let steps = vec![send(target, true)];
 
-    assert_eq!(
-        overlay_send_targets(&steps, &registry()),
-        vec![OverlaySendTarget::Unresolved("%overlay%".to_owned())],
-    );
-    assert!(!feeds_overlay(&steps, &registry(), "%overlay%"));
-    assert!(!feeds_overlay(&steps, &registry(), "overlay"));
+        assert_eq!(
+            overlay_send_targets(&steps, &registry()),
+            vec![OverlaySendTarget::Unresolved(target.to_owned())],
+            "{target:?}"
+        );
+        assert!(!feeds_overlay(&steps, &registry(), target), "{target:?}");
+        assert!(!feeds_overlay(&steps, &registry(), bare), "{target:?}");
+    }
 }
 
 #[test]
 fn a_percent_that_closes_no_variable_name_is_a_plain_identity() {
-    for identity in ["100%", "%%", "%", "% %", "50%%", "goal%box", "%goal-box"] {
+    for identity in [
+        "100%",
+        "%%",
+        "%",
+        "% %",
+        "% x %",
+        "50%%",
+        "goal%box",
+        "%goal-box",
+    ] {
         assert_eq!(
             overlay_send_targets(&[send(identity, true)], &registry()),
             vec![overlay(identity)],

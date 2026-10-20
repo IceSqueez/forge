@@ -4,12 +4,14 @@ use std::sync::Arc;
 
 use forge_events::{Event, EventPublisher};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, StepHealth, SubActionRegistry, TriggerCategory,
-    TriggerKindDescriptor, TriggerRegistry, TriggerVariables, analyze,
+    EventFilter, Finding, FormField, KindPlatformContract, StepHealth, SubActionRegistry,
+    SubActionRunner, TriggerCategory, TriggerKindDescriptor, TriggerRegistry, TriggerVariables,
+    analyze,
 };
 use forge_runtime::sub_action_runners::{
     CoreArgsSetRunner, CoreFileWriteRunner, CoreLogicLoopRunner, CoreLogicWaitUntilRunner,
-    CoreMathEvaluateRunner, CoreTimeNowRunner, ServerBroadcastRunner,
+    CoreMathEvaluateRunner, CoreTimeFormatRunner, CoreTimeNowRunner, CoreTimeParseRunner,
+    ServerBroadcastRunner,
 };
 use forge_runtime::{ConditionGate, Config};
 use forge_types::{
@@ -102,6 +104,10 @@ fn sub_actions() -> SubActionRegistry {
         .expect("the wait-until runner registers");
     reg.register(Box::new(CoreTimeNowRunner))
         .expect("the time runner registers");
+    reg.register(Box::new(CoreTimeFormatRunner))
+        .expect("the time format runner registers");
+    reg.register(Box::new(CoreTimeParseRunner))
+        .expect("the time parse runner registers");
     reg.register(Box::new(CoreFileWriteRunner))
         .expect("the file-write runner registers");
     reg.register(Box::new(ServerBroadcastRunner::new(Arc::new(
@@ -233,4 +239,119 @@ fn a_loop_body_sees_the_index_and_item_the_loop_sets_each_iteration() {
     let health = health_of(vec![step("core.logic.loop", &[("body", body)])]);
 
     assert_eq!(health, vec![StepHealth::default()]);
+}
+
+fn configured(runner: &dyn SubActionRunner, overrides: &[(&str, Variant)]) -> SubActionStep {
+    let mut config = runner.default_config();
+    for (key, value) in overrides {
+        config.insert((*key).to_owned(), value.clone());
+    }
+    SubActionStep {
+        config,
+        ..step(runner.id(), &[])
+    }
+}
+
+fn hour_of(name: &str) -> SubActionStep {
+    step("chat.send", &[("message", s(&format!("%{name}:HH%")))])
+}
+
+#[test]
+fn a_date_format_on_a_formatted_time_text_warns_while_a_captured_time_does_not() {
+    for (producer, expected, case) in [
+        (
+            configured(&CoreTimeFormatRunner, &[("into_var", s("shown"))]),
+            StepHealth {
+                findings: vec![Finding::DateFormatOnNonDatetime("shown".to_owned())],
+            },
+            "the text a format step writes",
+        ),
+        (
+            configured(&CoreTimeNowRunner, &[("into_var", s("shown"))]),
+            StepHealth::default(),
+            "the datetime a current-time step captures",
+        ),
+        (
+            configured(&CoreTimeParseRunner, &[("into_var", s("shown"))]),
+            StepHealth::default(),
+            "the datetime a parse step reads",
+        ),
+    ] {
+        let health = health_of(vec![producer, hour_of("shown")]);
+        assert_eq!(health[1], expected, "{case}");
+    }
+}
+
+#[test]
+fn a_time_step_with_an_unusable_pattern_reports_invalid_step_config() {
+    for (runner, overrides, case) in [
+        (
+            &CoreTimeFormatRunner as &dyn SubActionRunner,
+            vec![("format_string", s("qq"))],
+            "a format step with an invalid pattern",
+        ),
+        (
+            &CoreTimeFormatRunner,
+            vec![("format_string", s("[unix_timestamp]"))],
+            "a format step with an untranslatable legacy pattern",
+        ),
+        (
+            &CoreTimeParseRunner,
+            vec![("format", s("qq"))],
+            "a parse step with an invalid pattern",
+        ),
+        (
+            &CoreTimeNowRunner,
+            vec![("format", s("custom")), ("custom_format_string", s("qq"))],
+            "a custom current-time step with an invalid pattern",
+        ),
+    ] {
+        let placed = configured(runner, &overrides);
+        let message = runner
+            .validate_config(&placed.config)
+            .expect_err("the fixture config is invalid")
+            .to_string();
+        assert_eq!(
+            health_of(vec![placed]),
+            vec![StepHealth {
+                findings: vec![Finding::InvalidStepConfig(message)],
+            }],
+            "{case}"
+        );
+    }
+}
+
+#[test]
+fn a_usable_or_unused_time_pattern_raises_no_step_finding() {
+    for (runner, overrides, case) in [
+        (
+            &CoreTimeFormatRunner as &dyn SubActionRunner,
+            vec![("format_string", s("[day].[month].[year] [hour]:[minute]"))],
+            "a format step with a translatable legacy pattern",
+        ),
+        (
+            &CoreTimeParseRunner,
+            vec![("format", s("[year]-[month]-[day]"))],
+            "a parse step with a translatable legacy pattern",
+        ),
+        (
+            &CoreTimeNowRunner,
+            vec![
+                ("format", s("custom")),
+                ("custom_format_string", s("HH:mm")),
+            ],
+            "a custom current-time step with a valid pattern",
+        ),
+        (
+            &CoreTimeNowRunner,
+            vec![("format", s("iso8601")), ("custom_format_string", s("qq"))],
+            "a non-custom current-time step keeping a stale invalid pattern",
+        ),
+    ] {
+        assert_eq!(
+            health_of(vec![configured(runner, &overrides)]),
+            vec![StepHealth::default()],
+            "{case}"
+        );
+    }
 }

@@ -339,3 +339,45 @@ impl ScreenActionsView {
             .into_any_element()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_storage::Language;
+
+    use super::*;
+    use crate::i18n::install_language;
+
+    const NAME: &str = "NAME-7";
+    const PATTERN: &str = "PATTERN-7";
+    const REASON: &str = "REASON-7";
+
+    #[test]
+    fn date_findings_render_their_arguments_in_both_locales() {
+        for lang in [Language::En, Language::Uk] {
+            install_language(lang);
+            for (finding, carried) in [
+                (
+                    Finding::DateFormatOnNonDatetime(NAME.to_owned()),
+                    vec![NAME],
+                ),
+                (
+                    Finding::InvalidDatePattern {
+                        name: NAME.to_owned(),
+                        pattern: PATTERN.to_owned(),
+                        reason: REASON.to_owned(),
+                    },
+                    vec![NAME, PATTERN, REASON],
+                ),
+                (Finding::InvalidStepConfig(REASON.to_owned()), vec![REASON]),
+            ] {
+                let rendered = analyzer_finding_message(&finding);
+                for marker in carried {
+                    assert!(
+                        rendered.contains(marker),
+                        "{lang:?} {finding:?} dropped {marker}: {rendered}"
+                    );
+                }
+            }
+        }
+    }
+}

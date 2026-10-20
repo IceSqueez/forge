@@ -16,6 +16,8 @@ pub struct FakeRunner {
     pub id: &'static str,
     pub fields: Vec<FormField>,
     pub io: SubActionIo,
+    pub config_error: Option<&'static str>,
+    pub checks_while_editing: bool,
 }
 
 pub fn runner(id: &'static str) -> FakeRunner {
@@ -23,6 +25,8 @@ pub fn runner(id: &'static str) -> FakeRunner {
         id,
         fields: Vec::new(),
         io: SubActionIo::default(),
+        config_error: None,
+        checks_while_editing: false,
     }
 }
 
@@ -61,7 +65,14 @@ impl SubActionRunner for FakeRunner {
     }
 
     fn validate_config(&self, _: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+        match self.config_error {
+            Some(reason) => Err(RegistryError::InvalidConfig(reason.to_owned())),
+            None => Ok(()),
+        }
+    }
+
+    fn checks_config_while_editing(&self) -> bool {
+        self.checks_while_editing
     }
 
     fn scope_io(&self) -> SubActionIo {

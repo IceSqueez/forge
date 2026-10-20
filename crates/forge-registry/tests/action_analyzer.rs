@@ -5,13 +5,15 @@ mod fakes;
 use std::collections::HashSet;
 
 use forge_registry::{
-    ActorBlock, ActorIdentity, BREAK_LOOP_KIND_ID, CASE_CHAIN_KEY, CONTINUE_LOOP_KIND_ID, Finding,
-    FormField, HealthSeverity, LOOP_KIND_ID, LoginSlot, STOP_KIND_ID, StepHealth, SubActionIo,
-    SubActionRegistry, TriggerRegistry, TriggerVariables, analyze, flag_failed, flag_switched_off,
+    ActorBlock, ActorIdentity, BREAK_LOOP_KIND_ID, CASE_CHAIN_KEY, CONTINUE_LOOP_KIND_ID,
+    CodeLanguage, Finding, FormField, HealthSeverity, LOOP_KIND_ID, LoginSlot, ProducedVariable,
+    RegistryError, STOP_KIND_ID, StepHealth, SubActionIo, SubActionRegistry, TriggerRegistry,
+    TriggerVariables, analyze, flag_failed, flag_switched_off,
 };
 use forge_types::{
-    Action, ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, IntegrationId, PlatformId,
-    SubActionConfig, SubActionOutcome, SubActionStep, Variant, VariantKind,
+    Action, ActorRole, ActorSlot, CanonicalVariable, DatePattern, DeclaredVariable, IntegrationId,
+    PlatformId, SubActionConfig, SubActionOutcome, SubActionStep, TriggerInstance, Variant,
+    VariantKind,
 };
 
 use fakes::{FakeTrigger, action, encode_chain, runner, step, trigger_of};
@@ -661,4 +663,459 @@ fn analysis_without_a_trigger_seed_reports_no_variable_findings() {
     );
 
     assert_eq!(health, vec![StepHealth::default()]);
+}
+
+const STAMP: &str = "stamp";
+const STAMP_TRIGGER: &str = "stub.stamped";
+const OTHER_STAMP_TRIGGER: &str = "stub.stamped_again";
+const INT_STAMP_TRIGGER: &str = "stub.counted";
+const CODE_KIND: &str = "fake.code";
+const CODE_KEY: &str = "script";
+const CHECKED_KIND: &str = "fake.checked";
+const CHECK_FAILURE: &str = "the pattern names an unknown component";
+const INTO_VAR_KEY: &str = "into_var";
+
+fn stamp_as(kind: VariantKind) -> TriggerVariables {
+    TriggerVariables::new().event_specific(
+        DeclaredVariable {
+            name: STAMP.to_owned(),
+            kind,
+            label: "Stamp".to_owned(),
+            synthesis: None,
+        },
+        |_| Variant::Int(0),
+    )
+}
+
+fn string_stamp() -> TriggerVariables {
+    stamp_as(VariantKind::String)
+}
+
+fn int_stamp() -> TriggerVariables {
+    stamp_as(VariantKind::Int)
+}
+
+fn datetime_stamp() -> TriggerVariables {
+    stamp_as(VariantKind::Datetime)
+}
+
+fn producing(kind: VariantKind) -> SubActionIo {
+    SubActionIo {
+        produces: vec![ProducedVariable {
+            output_name_key: INTO_VAR_KEY.to_owned(),
+            kind,
+            label: "Output".to_owned(),
+        }],
+        ..SubActionIo::default()
+    }
+}
+
+fn stamp_fixed_output() -> SubActionIo {
+    SubActionIo {
+        fixed_outputs: vec![STAMP.to_owned()],
+        ..SubActionIo::default()
+    }
+}
+
+fn stamp_body_local() -> SubActionIo {
+    SubActionIo {
+        body_locals: vec![STAMP.to_owned()],
+        ..SubActionIo::default()
+    }
+}
+
+fn produce_stamp() -> SubActionStep {
+    step(
+        PRODUCER_KIND,
+        SubActionConfig::from([(INTO_VAR_KEY.to_owned(), Variant::String(STAMP.to_owned()))]),
+        true,
+    )
+}
+
+fn date_registry(io: SubActionIo) -> SubActionRegistry {
+    let mut reg = declaring_registry(io);
+    for nesting in [
+        fakes::FakeRunner {
+            fields: vec![sub_chain(THEN_CHAIN_KEY)],
+            ..runner(BRANCH_KIND)
+        },
+        fakes::FakeRunner {
+            fields: vec![sub_chain(LOOP_BODY_KEY)],
+            ..runner(LOOP_KIND_ID)
+        },
+        fakes::FakeRunner {
+            fields: vec![
+                FormField::CaseList {
+                    key: CASES_KEY,
+                    label: CASES_KEY,
+                },
+                sub_chain(DEFAULT_CHAIN_KEY),
+            ],
+            ..runner(SWITCH_KIND)
+        },
+        fakes::FakeRunner {
+            fields: vec![FormField::Code {
+                key: CODE_KEY,
+                label: CODE_KEY,
+                language: CodeLanguage::Rhai,
+            }],
+            ..runner(CODE_KIND)
+        },
+        fakes::FakeRunner {
+            config_error: Some(CHECK_FAILURE),
+            checks_while_editing: true,
+            ..runner(CHECKED_KIND)
+        },
+    ] {
+        reg.register(Box::new(nesting))
+            .expect("each date-analysis fake registers under its own id");
+    }
+    reg
+}
+
+fn stamp_triggers() -> TriggerRegistry {
+    triggers(&[
+        (STAMP_TRIGGER, string_stamp),
+        (OTHER_STAMP_TRIGGER, datetime_stamp),
+        (INT_STAMP_TRIGGER, int_stamp),
+        (CANONICAL_TRIGGER, canonical_actor_only),
+    ])
+}
+
+fn health_with(
+    steps: Vec<SubActionStep>,
+    instances: &[TriggerInstance],
+    io: SubActionIo,
+    trigger_registry: &TriggerRegistry,
+) -> Vec<StepHealth> {
+    analyze(
+        &action("dates", steps.clone()),
+        instances,
+        &vec![None; steps.len()],
+        &date_registry(io),
+        trigger_registry,
+    )
+}
+
+fn findings(list: Vec<Finding>) -> StepHealth {
+    StepHealth { findings: list }
+}
+
+fn not_datetime() -> StepHealth {
+    findings(vec![Finding::DateFormatOnNonDatetime(STAMP.to_owned())])
+}
+
+fn invalid_pattern(pattern: &str) -> Finding {
+    Finding::InvalidDatePattern {
+        name: STAMP.to_owned(),
+        pattern: pattern.to_owned(),
+        reason: DatePattern::parse(pattern)
+            .expect_err("the fixture pattern is invalid")
+            .to_string(),
+    }
+}
+
+fn formatted(pattern: &str) -> String {
+    format!("%{STAMP}:{pattern}%")
+}
+
+#[test]
+fn variable_findings_read_tokens_the_way_interpolation_does() {
+    for (template, expected, case) in [
+        (
+            "%stamp:HH:mm%",
+            StepHealth::default(),
+            "a formatted token resolves the name before its first colon",
+        ),
+        (
+            "% not_declared_anywhere %",
+            StepHealth::default(),
+            "a token padded with spaces is literal text",
+        ),
+        (
+            "%not_declared_anywhere:HH%",
+            findings(vec![Finding::UnknownVariable(
+                "not_declared_anywhere".to_owned(),
+            )]),
+            "a formatted token naming nothing is only an unknown variable",
+        ),
+    ] {
+        let health = health_with(
+            vec![consumer(template)],
+            &[trigger_of(OTHER_STAMP_TRIGGER)],
+            SubActionIo::default(),
+            &stamp_triggers(),
+        );
+        assert_eq!(health, vec![expected], "{case}");
+    }
+}
+
+#[test]
+fn a_code_field_is_scanned_neither_for_variables_nor_for_date_patterns() {
+    let script = step(
+        CODE_KIND,
+        SubActionConfig::from([(
+            CODE_KEY.to_owned(),
+            Variant::String("%not_declared_anywhere% %stamp:qq%".to_owned()),
+        )]),
+        true,
+    );
+
+    let health = health_with(
+        vec![script],
+        &[trigger_of(OTHER_STAMP_TRIGGER)],
+        SubActionIo::default(),
+        &stamp_triggers(),
+    );
+
+    assert_eq!(health, vec![StepHealth::default()]);
+}
+
+#[test]
+fn a_date_format_on_a_variable_every_source_declares_non_datetime_warns() {
+    for (steps, instances, io, case) in [
+        (
+            vec![consumer(&formatted("HH:mm"))],
+            vec![trigger_of(STAMP_TRIGGER)],
+            SubActionIo::default(),
+            "a string trigger variable",
+        ),
+        (
+            vec![consumer(&formatted("HH:mm"))],
+            vec![trigger_of(INT_STAMP_TRIGGER)],
+            SubActionIo::default(),
+            "an integer trigger variable",
+        ),
+        (
+            vec![produce_stamp(), consumer(&formatted("HH:mm"))],
+            vec![trigger_of(CANONICAL_TRIGGER)],
+            producing(VariantKind::String),
+            "a step output declared as a string",
+        ),
+    ] {
+        let health = health_with(steps, &instances, io, &stamp_triggers());
+        assert_eq!(health.last(), Some(&not_datetime()), "{case}");
+    }
+}
+
+#[test]
+fn a_date_format_on_a_variable_some_source_may_hold_a_datetime_is_silent() {
+    let consume = || consumer(&formatted("HH:mm"));
+    for (steps, instances, io, case) in [
+        (
+            vec![consume()],
+            vec![trigger_of(OTHER_STAMP_TRIGGER)],
+            SubActionIo::default(),
+            "a datetime trigger variable",
+        ),
+        (
+            vec![produce_stamp(), consume()],
+            vec![trigger_of(CANONICAL_TRIGGER)],
+            producing(VariantKind::Datetime),
+            "a step output declared as a datetime",
+        ),
+        (
+            vec![produce_stamp(), consume()],
+            vec![trigger_of(STAMP_TRIGGER)],
+            producing(VariantKind::Datetime),
+            "a string trigger variable a step overwrites with a datetime",
+        ),
+        (
+            vec![consume()],
+            vec![trigger_of(STAMP_TRIGGER), trigger_of(OTHER_STAMP_TRIGGER)],
+            SubActionIo::default(),
+            "a string from one trigger and a datetime from another",
+        ),
+        (
+            vec![plain(PRODUCER_KIND), consume()],
+            vec![trigger_of(CANONICAL_TRIGGER)],
+            stamp_fixed_output(),
+            "a fixed output with no declared kind",
+        ),
+        (
+            vec![nesting(SCOPED_KIND, SCOPED_BODY_KEY, &[consume()])],
+            vec![trigger_of(CANONICAL_TRIGGER)],
+            stamp_body_local(),
+            "a body local with no declared kind",
+        ),
+    ] {
+        let health = health_with(steps, &instances, io, &stamp_triggers());
+        assert_eq!(health.last(), Some(&StepHealth::default()), "{case}");
+    }
+}
+
+#[test]
+fn a_non_datetime_variable_formatted_twice_in_one_step_warns_once() {
+    let health = health_with(
+        vec![consumer("%stamp:HH% at %stamp:dd.MM%")],
+        &[trigger_of(STAMP_TRIGGER)],
+        SubActionIo::default(),
+        &stamp_triggers(),
+    );
+
+    assert_eq!(health, vec![not_datetime()]);
+}
+
+#[test]
+fn a_date_format_mismatch_is_not_judged_without_a_trigger_seed() {
+    let health = health_with(
+        vec![produce_stamp(), consumer(&formatted("HH:mm"))],
+        &[],
+        producing(VariantKind::String),
+        &stamp_triggers(),
+    );
+
+    assert_eq!(health, vec![StepHealth::default(); 2]);
+}
+
+#[test]
+fn an_invalid_inline_date_pattern_is_reported_with_or_without_triggers() {
+    for pattern in ["qq", "'HH", "HHH", "dddd", "ddd", "tt", ""] {
+        for (instances, seeded) in [
+            (Vec::new(), "without triggers"),
+            (
+                vec![trigger_of(OTHER_STAMP_TRIGGER)],
+                "with a declaring trigger",
+            ),
+        ] {
+            let health = health_with(
+                vec![consumer(&formatted(pattern))],
+                &instances,
+                SubActionIo::default(),
+                &stamp_triggers(),
+            );
+            assert_eq!(
+                health,
+                vec![findings(vec![invalid_pattern(pattern)])],
+                "{pattern:?} {seeded}"
+            );
+        }
+    }
+}
+
+#[test]
+fn an_invalid_pattern_on_a_non_datetime_variable_reports_both_findings() {
+    let health = health_with(
+        vec![consumer(&formatted("qq"))],
+        &[trigger_of(STAMP_TRIGGER)],
+        SubActionIo::default(),
+        &stamp_triggers(),
+    );
+
+    assert_eq!(
+        health,
+        vec![findings(vec![
+            Finding::DateFormatOnNonDatetime(STAMP.to_owned()),
+            invalid_pattern("qq"),
+        ])]
+    );
+}
+
+#[test]
+fn a_nested_invalid_date_pattern_is_reported_once_on_its_top_level_step() {
+    let bad = || consumer(&formatted("qq"));
+    for (placed, place) in [
+        (branch(vec![bad()]), "inside an if branch"),
+        (inside_loop(vec![bad()]), "inside a loop body"),
+        (inside_case(vec![bad()]), "inside a switch case"),
+        (inside_default(vec![bad()]), "inside a switch default"),
+        (
+            inside_case(vec![branch(vec![bad()])]),
+            "inside an if nested in a switch case",
+        ),
+    ] {
+        let health = health_with(
+            vec![consumer("fine"), placed],
+            &[],
+            SubActionIo::default(),
+            &stamp_triggers(),
+        );
+        assert_eq!(
+            health,
+            vec![StepHealth::default(), findings(vec![invalid_pattern("qq")])],
+            "{place}"
+        );
+    }
+}
+
+#[test]
+fn an_opted_in_runner_failing_validation_reports_invalid_step_config() {
+    let failing = || plain(CHECKED_KIND);
+    let expected = findings(vec![Finding::InvalidStepConfig(
+        RegistryError::InvalidConfig(CHECK_FAILURE.to_owned()).to_string(),
+    )]);
+    for (placed, place) in [
+        (failing(), "at the top level"),
+        (branch(vec![failing()]), "inside an if branch"),
+    ] {
+        let health = health_with(vec![placed], &[], SubActionIo::default(), &stamp_triggers());
+        assert_eq!(health, vec![expected.clone()], "{place}");
+    }
+}
+
+#[test]
+fn a_runner_that_does_not_opt_in_is_not_validated_while_editing() {
+    let mut reg = SubActionRegistry::new();
+    reg.register(Box::new(fakes::FakeRunner {
+        config_error: Some(CHECK_FAILURE),
+        ..runner(CHECKED_KIND)
+    }))
+    .expect("the failing fake registers");
+
+    let health = analyze(
+        &action("unchecked", vec![plain(CHECKED_KIND)]),
+        &[],
+        &[None],
+        &reg,
+        &triggers(&[]),
+    );
+
+    assert_eq!(health, vec![StepHealth::default()]);
+}
+
+#[test]
+fn a_disabled_step_raises_no_date_pattern_or_step_config_finding() {
+    let off = |mut step: SubActionStep| {
+        step.enabled = false;
+        step
+    };
+    for (placed, place) in [
+        (off(consumer(&formatted("qq"))), "a disabled consumer"),
+        (off(plain(CHECKED_KIND)), "a disabled opted-in step"),
+        (
+            branch(vec![off(consumer(&formatted("qq")))]),
+            "a disabled consumer inside a live branch",
+        ),
+        (
+            off(branch(vec![
+                consumer(&formatted("qq")),
+                plain(CHECKED_KIND),
+            ])),
+            "live steps inside a disabled branch",
+        ),
+    ] {
+        let health = health_with(vec![placed], &[], SubActionIo::default(), &stamp_triggers());
+        assert_eq!(health, vec![StepHealth::default()], "{place}");
+    }
+}
+
+#[test]
+fn date_pattern_and_step_config_errors_break_the_step_while_a_kind_mismatch_warns() {
+    for (finding, severity) in [
+        (invalid_pattern("qq"), HealthSeverity::Red),
+        (
+            Finding::InvalidStepConfig(CHECK_FAILURE.to_owned()),
+            HealthSeverity::Red,
+        ),
+        (
+            Finding::DateFormatOnNonDatetime(STAMP.to_owned()),
+            HealthSeverity::Yellow,
+        ),
+    ] {
+        assert_eq!(
+            findings(vec![finding.clone()]).severity(),
+            severity,
+            "{finding:?}"
+        );
+    }
 }

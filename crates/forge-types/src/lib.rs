@@ -1,5 +1,6 @@
 pub mod action;
 pub mod data_flow;
+pub mod date_pattern;
 pub mod datetime_text;
 pub mod donation;
 pub mod execution;
@@ -28,6 +29,10 @@ pub mod vocabulary;
 
 pub use action::{Action, ExecutionMode};
 pub use data_flow::{DeclaredVariable, SynthesisHint, VariableSchema};
+pub use date_pattern::{
+    DatePattern, DatePatternError, LegacyTranslation, NamesLanguage, PatternZone,
+    translate_legacy_pattern,
+};
 pub use datetime_text::{datetime_from_text, datetime_to_text};
 pub use donation::{Donation, DonationOrigin, Donor, DonorVisibility};
 pub use execution::{

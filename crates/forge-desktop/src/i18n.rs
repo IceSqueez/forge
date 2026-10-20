@@ -4,6 +4,7 @@ use std::sync::Arc;
 use fluent::{FluentBundle, FluentResource};
 use fluent_langneg::{NegotiationStrategy, negotiate_languages};
 use forge_storage::{Language, SettingsRepo};
+use forge_types::NamesLanguage;
 use unic_langid::LanguageIdentifier;
 
 const EN_MAIN_FTL: &str = include_str!("../locales/en/main.ftl");
@@ -92,6 +93,13 @@ pub async fn resolve_startup_language(
 }
 
 pub const ANONYMOUS_DONOR_KEY: &str = "donation_anonymous_donor";
+
+pub fn date_names_language(lang: Language) -> NamesLanguage {
+    match lang {
+        Language::En => NamesLanguage::En,
+        Language::Uk => NamesLanguage::Uk,
+    }
+}
 
 pub fn message_in(lang: Language, key: &str) -> String {
     let bundle = build_bundle(lang);

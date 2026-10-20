@@ -14,8 +14,22 @@ pub fn variable_references(template: &str) -> impl Iterator<Item = &str> {
 
 pub enum TemplatePiece<'a> {
     Literal(&'a str),
-    Reference { name: &'a str, raw: &'a str },
+    Reference {
+        name: &'a str,
+        format: Option<&'a str>,
+        raw: &'a str,
+    },
 }
+
+fn split_reference(body: &str) -> Option<(&str, Option<&str>)> {
+    if is_variable_reference(body) {
+        return Some((body, None));
+    }
+    let (name, format) = body.split_once(FORMAT_SEPARATOR)?;
+    is_variable_reference(name).then_some((name, Some(format)))
+}
+
+const FORMAT_SEPARATOR: char = ':';
 
 pub struct TemplatePieces<'a> {
     rest: &'a str,
@@ -45,11 +59,11 @@ impl<'a> Iterator for TemplatePieces<'a> {
             self.rest = "";
             return Some(TemplatePiece::Literal(rest));
         };
-        let name = &after[..close];
-        if is_variable_reference(name) {
+        if let Some((name, format)) = split_reference(&after[..close]) {
             self.rest = &after[close + 1..];
             return Some(TemplatePiece::Reference {
                 name,
+                format,
                 raw: &rest[..close + 2],
             });
         }

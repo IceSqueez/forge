@@ -10,11 +10,11 @@ use forge_platform_core::PlatformEndpoints;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionCancelRegistry, ActionEngineHandle, Catalog, CatchUpSettle, Config, CoreSubActionDeps,
-    DonationIngest, DonationOverlayAudience, EventBus, FirstChatLedger, LatestValues,
-    OverlayConnectFanout, OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary,
-    OverlayServiceCell, OverlayServiceHandle, QueueScheduler, ScheduledRunsCell,
-    ScheduledRunsParts, SchedulerCell, ScriptRegistry, ScriptScheduling, SoundPlayer,
-    SpeakDispatcher, SystemWallClock, TwitchEmoteLexicon, register_audio_sub_actions,
+    DateNamesHandle, DonationIngest, DonationOverlayAudience, EventBus, FirstChatLedger,
+    LatestValues, OverlayConnectFanout, OverlayConnectListener, OverlayFrameSink,
+    OverlayMediaLibrary, OverlayServiceCell, OverlayServiceHandle, QueueScheduler,
+    ScheduledRunsCell, ScheduledRunsParts, SchedulerCell, ScriptRegistry, ScriptScheduling,
+    SoundPlayer, SpeakDispatcher, SystemWallClock, TwitchEmoteLexicon, register_audio_sub_actions,
     register_core_sub_actions, register_core_triggers, register_donation_sub_actions,
     register_latest_sub_actions, register_scheduled_run_sub_actions, spawn_action_engine,
     spawn_chat_history_persistence, spawn_event_log_bridge, spawn_latest_overlay_feed,
@@ -211,6 +211,8 @@ pub async fn build_runtime(
     }
     spawn_viewer_tracker(Arc::clone(&bus), viewer_repo);
 
+    let date_names = DateNamesHandle;
+    date_names.set_language(crate::i18n::date_names_language(startup_language));
     let anonymous_donor = Shared::new(crate::i18n::message_in(
         startup_language,
         crate::i18n::ANONYMOUS_DONOR_KEY,
@@ -546,6 +548,7 @@ pub async fn build_runtime(
         backend,
         startup_language,
         anonymous_donor,
+        date_names,
         latest_values,
         credentials_key_loss,
         overlay_build_failure,

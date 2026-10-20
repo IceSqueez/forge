@@ -31,7 +31,7 @@ pub use action::{Action, ExecutionMode};
 pub use data_flow::{DeclaredVariable, SynthesisHint, VariableSchema};
 pub use date_pattern::{
     DatePattern, DatePatternError, LegacyTranslation, NamesLanguage, PatternZone,
-    translate_legacy_pattern,
+    current_names_language, set_current_names_language, translate_legacy_pattern,
 };
 pub use datetime_text::{datetime_from_text, datetime_to_text};
 pub use donation::{Donation, DonationOrigin, Donor, DonorVisibility};

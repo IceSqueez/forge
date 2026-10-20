@@ -1,3 +1,4 @@
+use crate::date_pattern::render_inline_pattern;
 use crate::ids::{ActionId, EventId};
 use crate::integration::IntegrationId;
 use crate::redaction::RedactedText;
@@ -215,13 +216,20 @@ impl ArgStack {
         for piece in TemplatePieces::new(template) {
             match piece {
                 TemplatePiece::Literal(text) => result.push_str(text),
-                TemplatePiece::Reference { name, raw } => match self.resolve(name) {
-                    Some(value) => result.push_str(&value.to_string()),
+                TemplatePiece::Reference { name, format, raw } => match self.resolve(name) {
+                    Some(value) => result.push_str(&render_reference(value, format)),
                     None => result.push_str(raw),
                 },
             }
         }
         result
+    }
+}
+
+fn render_reference(value: &Variant, format: Option<&str>) -> String {
+    match (value, format) {
+        (Variant::Datetime(at), Some(pattern)) => render_inline_pattern(*at, pattern),
+        _ => value.to_string(),
     }
 }
 

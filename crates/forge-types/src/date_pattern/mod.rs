@@ -1,3 +1,6 @@
+mod cache;
+mod current_language;
+mod inline;
 mod legacy;
 mod names;
 mod render;
@@ -7,6 +10,8 @@ use std::str::FromStr;
 
 use time::OffsetDateTime;
 
+pub use current_language::{current_names_language, set_current_names_language};
+pub(crate) use inline::render_inline_pattern;
 pub use legacy::{LegacyTranslation, translate_legacy_pattern};
 pub use names::NamesLanguage;
 pub use render::PatternZone;

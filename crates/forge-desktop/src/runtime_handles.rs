@@ -4,7 +4,7 @@ use forge_overlay::OverlayKindRegistry;
 use forge_platform_core::PlatformEndpoints;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionEngineHandle, ChatHistoryRetentionHandle, EventBus, LatestValues,
+    ActionEngineHandle, ChatHistoryRetentionHandle, DateNamesHandle, EventBus, LatestValues,
     LiveViewerAggregatorHandle, OverlayServiceHandle, QueueSchedulerHandle, ScheduledRunsHandle,
     ScriptRegistry, StreamLiveHandle, TimerSchedulerHandle, TriggerEvaluatorHandle,
 };
@@ -23,6 +23,7 @@ pub struct RuntimeHandles {
     pub backend: Arc<dyn DataProvider>,
     pub startup_language: Language,
     pub anonymous_donor: forge_types::Shared<String>,
+    pub date_names: DateNamesHandle,
     pub latest_values: LatestValues,
     pub credentials_key_loss: Option<CredentialsKeyLoss>,
     pub overlay_build_failure: Option<crate::overlay_build_failure::OverlayBuildFailure>,

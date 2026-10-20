@@ -12,6 +12,7 @@ pub mod condition;
 pub mod config;
 mod cooldown;
 pub mod dashboard;
+mod date_names;
 pub mod delivery;
 mod delivery_loss;
 mod donations;
@@ -63,6 +64,7 @@ pub use chain::{ChainEngine, ChainRun, ChainScope};
 pub use chat_history_persistence::{ChatHistoryRetentionHandle, spawn_chat_history_persistence};
 pub use condition::{ConditionError, ConditionGate};
 pub use config::Config;
+pub use date_names::DateNamesHandle;
 pub use delivery::CriticalSubscription;
 pub use delivery_loss::{ConsumerLoss, DeliveryTier, LossCount, LossWatch};
 pub use donations::{

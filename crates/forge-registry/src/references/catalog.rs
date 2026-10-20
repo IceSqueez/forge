@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use forge_types::{Action, TriggerInstance, Variant};
+use forge_types::{Action, TriggerInstance, Variant, variable_references};
 
 use crate::chain_steps::{CASE_CHAIN_KEY, STEP_CONFIG_KEY, STEP_KIND_KEY};
 use crate::form::FormField;
@@ -14,8 +14,6 @@ use crate::registry::{SubActionRegistry, TriggerRegistry};
 pub const ACTION_QUEUE_KEY: &str = "queue_id";
 pub const ACTION_STEPS_KEY: &str = "sub_actions";
 pub const TRIGGER_OVERRIDES_KEY: &str = "overrides";
-
-const INTERPOLATION_MARKER: char = '%';
 
 type ConfigMap = BTreeMap<String, Variant>;
 
@@ -249,7 +247,7 @@ fn push_value(
     listing.references.push(ConfigReference {
         namespace: decoded.namespace,
         value: decoded.value.to_owned(),
-        templated: raw.contains(INTERPOLATION_MARKER),
+        templated: variable_references(raw).next().is_some(),
         location: at.key(key),
         tag: decoded.tag,
     });

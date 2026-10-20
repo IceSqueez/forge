@@ -885,6 +885,7 @@ mod tests {
     struct Surroundings {
         neighbour: bool,
         dialog: bool,
+        compact: bool,
     }
 
     struct Host {
@@ -934,7 +935,14 @@ mod tests {
             surroundings: Surroundings,
         ) -> (Self, &mut VisualTestContext) {
             let (host, vcx) = cx.add_window_view(|_window, cx| Host {
-                editor: cx.new(|cx| CodeEditor::new(Language::Rhai, "", cx)),
+                editor: cx.new(|cx| {
+                    let editor = CodeEditor::new(Language::Rhai, "", cx);
+                    if surroundings.compact {
+                        editor.compact_field()
+                    } else {
+                        editor
+                    }
+                }),
                 neighbour: cx.focus_handle().tab_stop(true),
                 surroundings,
                 heard: Vec::new(),
@@ -981,6 +989,7 @@ mod tests {
         let surroundings = Surroundings {
             neighbour: true,
             dialog: true,
+            compact: false,
         };
         Hosted::bind_keys(cx);
         let (hosted, vcx) = Hosted::mount(cx, surroundings);
@@ -1004,7 +1013,12 @@ mod tests {
             (false, false, (true, false), vec![SHELL_FALLBACK]),
             (true, true, (false, true), vec![DISMISSED]),
         ] {
-            let (hosted, vcx) = Hosted::mount(cx, Surroundings { neighbour, dialog });
+            let surroundings = Surroundings {
+                neighbour,
+                dialog,
+                compact: false,
+            };
+            let (hosted, vcx) = Hosted::mount(cx, surroundings);
 
             vcx.simulate_keystrokes(LEAVE_CHORD);
 
@@ -1021,6 +1035,7 @@ mod tests {
         let surroundings = Surroundings {
             neighbour: false,
             dialog: false,
+            compact: false,
         };
         Hosted::bind_keys(cx);
         let (hosted, vcx) = Hosted::mount(cx, surroundings);
@@ -1063,5 +1078,123 @@ mod tests {
             });
             assert_eq!(height, LINE * shown + chrome, "{lines} lines");
         }
+    }
+
+    fn mount_beside_a_neighbour(
+        cx: &mut TestAppContext,
+        compact: bool,
+    ) -> (Hosted, &mut VisualTestContext) {
+        let surroundings = Surroundings {
+            neighbour: true,
+            dialog: false,
+            compact,
+        };
+        Hosted::mount(cx, surroundings)
+    }
+
+    #[gpui::test]
+    fn enter_breaks_the_line_in_a_script_editor_but_not_in_a_compact_field(
+        cx: &mut TestAppContext,
+    ) {
+        Hosted::bind_keys(cx);
+        for (compact, expected) in [(false, format!("\n{LOADED}")), (true, LOADED.to_owned())] {
+            let (hosted, vcx) = mount_beside_a_neighbour(cx, compact);
+
+            vcx.simulate_keystrokes("enter");
+
+            assert_eq!(
+                (hosted.content(vcx), hosted.focus_on(vcx)),
+                (expected, (true, false)),
+                "compact {compact}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn tab_in_a_compact_field_moves_focus_instead_of_indenting(cx: &mut TestAppContext) {
+        Hosted::bind_keys(cx);
+        for (keys, compact, content, focus) in [
+            (
+                "tab",
+                false,
+                format!("{INDENT_UNIT}{LOADED}"),
+                (true, false),
+            ),
+            ("tab", true, LOADED.to_owned(), (false, true)),
+            ("shift-tab", true, LOADED.to_owned(), (false, true)),
+        ] {
+            let (hosted, vcx) = mount_beside_a_neighbour(cx, compact);
+
+            vcx.simulate_keystrokes(keys);
+
+            assert_eq!(
+                (hosted.content(vcx), hosted.focus_on(vcx)),
+                (content, focus),
+                "{keys}, compact {compact}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_compact_field_keeps_pasted_lines_and_grows_with_its_rows_up_to_four(
+        cx: &mut TestAppContext,
+    ) {
+        const LINE: Pixels = px(10.0);
+        let lines = |count: usize| vec!["x"; count].join("\n");
+        for (pasted, shown) in [
+            (lines(1), 1.0),
+            (lines(2), 2.0),
+            (lines(4), 4.0),
+            (lines(5), 4.0),
+            (lines(12), 4.0),
+            ("x".repeat(2_000), 4.0),
+        ] {
+            let (editor, vcx) = cx.add_window_view(|_window, cx| {
+                CodeEditor::new(Language::Rhai, "", cx)
+                    .with_line_height(LINE)
+                    .compact_field()
+            });
+            vcx.update(|_window, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(pasted.clone()))
+            });
+
+            vcx.update(|window, cx| {
+                editor.update(cx, |editor, cx| editor.paste(&Paste, window, cx))
+            });
+            vcx.run_until_parked();
+
+            let (content, height, chrome) = vcx.update(|_window, cx| {
+                let editor = editor.read(cx);
+                let rows = editor.field_rows.clone().unwrap_or(0..=0);
+                let pad_y = editor.pad_y();
+                (
+                    editor.content().to_owned(),
+                    editor.field_height(&rows),
+                    pad_y + pad_y + BORDER_THIN + BORDER_THIN,
+                )
+            });
+            assert!(content == pasted, "paste of {} chars altered", pasted.len());
+            assert_eq!(height, LINE * shown + chrome, "{} chars", pasted.len());
+        }
+    }
+
+    #[gpui::test]
+    fn insert_at_caret_splices_the_text_at_the_caret_and_leaves_the_caret_after_it(
+        cx: &mut TestAppContext,
+    ) {
+        const TOKEN: &str = "%user_id%";
+        let (editor, vcx) = cx
+            .add_window_view(|_window, cx| CodeEditor::new(Language::Rhai, "", cx).compact_field());
+
+        let after = vcx.update(|_window, cx| {
+            editor.update(cx, |editor, cx| {
+                editor.set_content("a + b", cx);
+                editor.buffer.move_to(4);
+                editor.insert_at_caret(TOKEN, cx);
+                (editor.content().to_owned(), editor.buffer.cursor())
+            })
+        });
+
+        assert_eq!(after, (format!("a + {TOKEN}b"), 4 + TOKEN.len()));
     }
 }

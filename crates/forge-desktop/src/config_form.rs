@@ -2032,6 +2032,7 @@ mod tests {
             key: CODE_KEY,
             label: "Body",
             language,
+            kind: CodeKind::Script,
         }
     }
 

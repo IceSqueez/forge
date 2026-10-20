@@ -362,7 +362,7 @@ pub(super) mod tests {
     use forge_components::{
         FORGE_DEFAULT, Presentation, ThemeId, bind_picker_keys, bind_text_input_keys,
     };
-    use forge_registry::FormField;
+    use forge_registry::{CodeKind, CodeLanguage, FormField};
     use forge_storage::Language;
     use gpui::{TestAppContext, VisualTestContext};
 
@@ -374,6 +374,8 @@ pub(super) mod tests {
     const TITLE: &str = "title";
     const BODY: &str = "body";
     const MODE: &str = "mode";
+    const CONDITION: &str = "condition";
+    const SCRIPT: &str = "script";
     const FIXED_INSTANT_UNIX: i64 = 1_773_568_800;
 
     fn fixed_instant() -> OffsetDateTime {
@@ -561,6 +563,15 @@ pub(super) mod tests {
         }
     }
 
+    fn code(key: &'static str, kind: CodeKind) -> FormField {
+        FormField::Code {
+            key,
+            label: key,
+            language: CodeLanguage::Rhai,
+            kind,
+        }
+    }
+
     fn text_specs() -> Vec<FormField> {
         vec![
             text(MESSAGE),
@@ -642,6 +653,9 @@ pub(super) mod tests {
                     SubFormField::Area { key: k, area, .. } if k == key => {
                         Some(InsertTarget::Area(area.clone()))
                     }
+                    SubFormField::Code { key: k, editor, .. } if k == key => {
+                        Some(InsertTarget::Code(editor.clone()))
+                    }
                     _ => None,
                 })
                 .unwrap()
@@ -657,6 +671,7 @@ pub(super) mod tests {
         vcx.update(|_window, cx| match target {
             InsertTarget::Input(input) => input.read(cx).content().to_owned(),
             InsertTarget::Area(area) => area.read(cx).content().to_owned(),
+            InsertTarget::Code(editor) => editor.read(cx).content().to_owned(),
         })
     }
 
@@ -681,7 +696,7 @@ pub(super) mod tests {
     }
 
     #[gpui::test]
-    fn only_free_text_fields_accept_variables(cx: &mut TestAppContext) {
+    fn only_free_text_and_expression_fields_accept_variables(cx: &mut TestAppContext) {
         let specs = vec![
             text(MESSAGE),
             text("into_var"),
@@ -707,6 +722,8 @@ pub(super) mod tests {
                 key: "flag",
                 label: "flag",
             },
+            code(CONDITION, CodeKind::Expression),
+            code(SCRIPT, CodeKind::Script),
         ];
         let (form, vcx, _rt) = open_form(cx, specs, SubActionConfig::new());
 
@@ -716,15 +733,15 @@ pub(super) mod tests {
                 .iter()
                 .filter(|field| field.accepts_variables())
                 .filter_map(|field| match field {
-                    SubFormField::Input { key, .. } | SubFormField::Area { key, .. } => {
-                        Some(key.clone())
-                    }
+                    SubFormField::Input { key, .. }
+                    | SubFormField::Area { key, .. }
+                    | SubFormField::Code { key, .. } => Some(key.clone()),
                     _ => None,
                 })
                 .collect()
         });
 
-        assert_eq!(accepting, [MESSAGE, BODY]);
+        assert_eq!(accepting, [MESSAGE, BODY, CONDITION]);
     }
 
     #[gpui::test]
@@ -973,6 +990,23 @@ pub(super) mod tests {
         assert_eq!(
             (content_of(&form, vcx, MESSAGE), open_key(&form, vcx)),
             (String::new(), Some(MESSAGE.to_owned()))
+        );
+    }
+
+    #[gpui::test]
+    fn enter_on_a_datetime_variable_for_an_expression_field_inserts_its_plain_token(
+        cx: &mut TestAppContext,
+    ) {
+        let specs = vec![code(CONDITION, CodeKind::Expression)];
+        let (form, vcx, _rt) = open_form_in_scope(cx, specs, SubActionConfig::new(), stamp_scope());
+        open_picker(&form, vcx, CONDITION);
+
+        vcx.simulate_keystrokes("enter");
+        vcx.run_until_parked();
+
+        assert_eq!(
+            (content_of(&form, vcx, CONDITION), open_key(&form, vcx)),
+            ("%stamp%".to_owned(), None)
         );
     }
 

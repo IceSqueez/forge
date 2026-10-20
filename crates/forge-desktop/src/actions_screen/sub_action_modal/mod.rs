@@ -293,7 +293,7 @@ mod tests {
     use crate::amount_scale::AmountScale;
     use crate::test_support::runtime;
     use forge_components::Presentation;
-    use forge_registry::{CodeLanguage, UnitAmountBounds};
+    use forge_registry::{CodeKind, CodeLanguage, UnitAmountBounds};
 
     const REWARD_FIELD: &str = "reward_id";
     const OWNED_REWARDS: &str = "collections.twitch.rewards.manageable";
@@ -472,6 +472,7 @@ mod tests {
             key: CODE_FIELD,
             label: "Body",
             language,
+            kind: CodeKind::Script,
         }
     }
 

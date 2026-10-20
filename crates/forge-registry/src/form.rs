@@ -302,6 +302,7 @@ mod tests {
                     key: "body",
                     label: "Script",
                     language: CodeLanguage::Rhai,
+                    kind: CodeKind::Script,
                 },
                 "body",
             ),

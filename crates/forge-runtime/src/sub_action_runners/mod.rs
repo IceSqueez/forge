@@ -376,17 +376,81 @@ mod tests {
     use super::{
         CoreActionScheduleRunner, CoreHttpRunner, CoreLogicIfThenElseRunner, CoreLogicLoopRunner,
         CoreLogicSwitchCaseRunner, CoreLogicWaitRunner, CoreLogicWaitUntilRunner,
-        CoreNotifyShowRunner, SystemNotifyPort,
+        CoreNotifyShowRunner, CoreSubActionDeps, SystemNotifyPort, register_core_sub_actions,
     };
+    use crate::action_cancel::ActionCancelRegistry;
     use crate::condition::ConditionGate;
     use crate::config::Config;
     use crate::egress::{EgressClient, HttpMethod};
     use crate::scheduled_runs::ScheduledRunsCell;
     use crate::test_support::sandboxed_backend;
     use crate::triggers::TimerTickDescriptor;
-    use forge_registry::{DurationBounds, FormField, SubActionRunner, TriggerKindDescriptor};
-    use forge_storage::SettingsRepo;
+    use crate::{EventBus, NullEventLogRepo, OverlayServiceCell, SchedulerCell, ScriptRegistry};
+    use forge_events::EventPublisher;
+    use forge_registry::{
+        CodeKind, DurationBounds, FormField, SubActionRegistry, SubActionRunner,
+        TriggerKindDescriptor,
+    };
+    use forge_storage::{DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo, UserGlobalsRepo};
     use std::sync::Arc;
+
+    fn code_fields(fields: Vec<FormField>) -> Vec<(&'static str, CodeKind)> {
+        fields
+            .into_iter()
+            .flat_map(|field| match field {
+                FormField::Code { key, kind, .. } => vec![(key, kind)],
+                FormField::Optional { inner, .. } => code_fields(vec![*inner]),
+                _ => Vec::new(),
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn only_condition_and_value_fields_edit_as_expressions_and_the_inline_body_as_a_script() {
+        let backend = sandboxed_backend([0x23; 32]).await.map(Arc::new);
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let mut registry = SubActionRegistry::new();
+        register_core_sub_actions(
+            &mut registry,
+            CoreSubActionDeps {
+                globals: Arc::clone(&*backend) as Arc<dyn GlobalsRepo>,
+                user_globals: Arc::clone(&*backend) as Arc<dyn UserGlobalsRepo>,
+                scripts: Arc::new(ScriptRegistry::new()),
+                publisher: bus as Arc<dyn EventPublisher>,
+                settings: Arc::clone(&*backend) as Arc<dyn SettingsRepo>,
+                scheduler: SchedulerCell::new(),
+                trigger_instances: backend.trigger_instance_repo(),
+                actions: backend.action_repo(),
+                script_repo: Arc::clone(&*backend) as Arc<dyn ScriptRepo>,
+                cancel_registry: Arc::new(ActionCancelRegistry::new()),
+                overlays: OverlayServiceCell::new(),
+                config: Config::default(),
+            },
+        )
+        .unwrap();
+
+        let mut roster: Vec<(String, &str, CodeKind)> = registry
+            .all()
+            .flat_map(|runner| {
+                let kind_id = runner.id().to_owned();
+                code_fields(runner.config_fields())
+                    .into_iter()
+                    .map(move |(key, kind)| (kind_id.clone(), key, kind))
+            })
+            .collect();
+        roster.sort_by(|a, b| (&a.0, a.1).cmp(&(&b.0, b.1)));
+
+        let expected = [
+            ("core.logic.if_then_else", "condition", CodeKind::Expression),
+            ("core.logic.loop", "while_condition", CodeKind::Expression),
+            ("core.logic.switch_case", "expression", CodeKind::Expression),
+            ("core.logic.wait_until", "condition", CodeKind::Expression),
+            ("core.math.evaluate", "expression", CodeKind::Expression),
+            ("script.run.inline", "body", CodeKind::Script),
+        ]
+        .map(|(kind_id, key, kind)| (kind_id.to_owned(), key, kind));
+        assert_eq!(roster, expected);
+    }
 
     #[test]
     fn flow_control_composites_declare_nested_chain_fields() {

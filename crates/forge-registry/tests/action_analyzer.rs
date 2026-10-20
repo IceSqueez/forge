@@ -5,7 +5,7 @@ mod fakes;
 use std::collections::HashSet;
 
 use forge_registry::{
-    ActorBlock, ActorIdentity, BREAK_LOOP_KIND_ID, CASE_CHAIN_KEY, CONTINUE_LOOP_KIND_ID,
+    ActorBlock, ActorIdentity, BREAK_LOOP_KIND_ID, CASE_CHAIN_KEY, CONTINUE_LOOP_KIND_ID, CodeKind,
     CodeLanguage, ConfigProblem, ConfigReason, Finding, FormField, HealthSeverity, LOOP_KIND_ID,
     LoginSlot, ProducedVariable, STOP_KIND_ID, StepHealth, SubActionIo, SubActionRegistry,
     TriggerRegistry, TriggerVariables, analyze, flag_failed, flag_switched_off,
@@ -765,6 +765,7 @@ fn date_registry(io: SubActionIo) -> SubActionRegistry {
                 key: CODE_KEY,
                 label: CODE_KEY,
                 language: CodeLanguage::Rhai,
+                kind: CodeKind::Script,
             }],
             ..runner(CODE_KIND)
         },

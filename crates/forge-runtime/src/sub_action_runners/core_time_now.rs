@@ -81,6 +81,10 @@ impl SubActionRunner for CoreTimeNowRunner {
         ]
     }
 
+    fn checks_config_while_editing(&self) -> bool {
+        true
+    }
+
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         if config.str(FORMAT_KEY) != Some(CUSTOM_FORMAT) {
             return Ok(());

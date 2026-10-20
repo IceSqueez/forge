@@ -76,6 +76,10 @@ impl SubActionRunner for CoreTimeParseRunner {
         ]
     }
 
+    fn checks_config_while_editing(&self) -> bool {
+        true
+    }
+
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         resolve_time_pattern(config, PARSE_PATTERN_KEY)
             .and_then(|resolved| resolved.pattern().map(|_| ()))

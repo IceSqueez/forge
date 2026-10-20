@@ -1,8 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use forge_types::{
-    Action, ExecutionMode, IntegrationId, SubActionOutcome, SubActionStep, TriggerInstance,
-    Variant, normalize_var_name,
+    Action, ExecutionMode, IntegrationId, SubActionOutcome, SubActionStep, TemplatePiece,
+    TemplatePieces, TriggerInstance, Variant, VariantKind, normalize_var_name, shared_date_pattern,
 };
 
 use crate::chain_steps::nested_chains;
@@ -28,13 +28,24 @@ pub enum Finding {
     ControlFlowInConcurrentAction,
     IntegrationDisabled(IntegrationId),
     IntegrationFailed(IntegrationId),
+    DateFormatOnNonDatetime(String),
+    InvalidDatePattern {
+        name: String,
+        pattern: String,
+        reason: String,
+    },
+    InvalidStepConfig(String),
 }
 
 impl Finding {
     fn severity(&self) -> HealthSeverity {
         match self {
-            Finding::UnknownVariable(_) | Finding::LastRunFailed(_) => HealthSeverity::Red,
-            Finding::ProducedLater(_)
+            Finding::UnknownVariable(_)
+            | Finding::LastRunFailed(_)
+            | Finding::InvalidDatePattern { .. }
+            | Finding::InvalidStepConfig(_) => HealthSeverity::Red,
+            Finding::DateFormatOnNonDatetime(_)
+            | Finding::ProducedLater(_)
             | Finding::IsolatedSibling(_)
             | Finding::SomeTriggersOnly(_)
             | Finding::ControlFlowInConcurrentAction
@@ -134,11 +145,32 @@ fn gated_owner(
 struct TriggerSeed {
     all: HashSet<String>,
     some_only: HashSet<String>,
+    datetime_reach: DatetimeReach,
+}
+
+#[derive(Default)]
+struct DatetimeReach(HashMap<String, bool>);
+
+impl DatetimeReach {
+    fn note(&mut self, name: String, may_hold_datetime: bool) {
+        *self.0.entry(name).or_insert(false) |= may_hold_datetime;
+    }
+
+    fn never_datetime(&self, name: &str) -> bool {
+        self.0.get(name) == Some(&false)
+    }
+}
+
+#[derive(Default)]
+struct ConsumedReferences {
+    names: HashSet<String>,
+    formatted: BTreeSet<(String, String)>,
 }
 
 struct AnalyzeCtx<'a> {
     some_only: &'a HashSet<String>,
     produced_anywhere: &'a HashSet<String>,
+    datetime_reach: &'a DatetimeReach,
     sub_registry: &'a SubActionRegistry,
 }
 
@@ -155,11 +187,14 @@ pub fn analyze(
     sub_registry: &SubActionRegistry,
     trigger_registry: &TriggerRegistry,
 ) -> Vec<StepHealth> {
-    let seed = trigger_seed(triggers, trigger_registry);
+    let mut seed = trigger_seed(triggers, trigger_registry);
     let isolated = action.concurrent || action.execution_mode == ExecutionMode::RandomPick;
 
     let mut produced_anywhere = HashSet::new();
     collect_produced(&action.sub_actions, sub_registry, &mut produced_anywhere);
+    if let Some(seed) = seed.as_mut() {
+        collect_produced_kinds(&action.sub_actions, sub_registry, &mut seed.datetime_reach);
+    }
 
     let mut result: Vec<StepHealth> = Vec::with_capacity(action.sub_actions.len());
 
@@ -168,6 +203,7 @@ pub fn analyze(
             let ctx = AnalyzeCtx {
                 some_only: &seed.some_only,
                 produced_anywhere: &produced_anywhere,
+                datetime_reach: &seed.datetime_reach,
                 sub_registry,
             };
             if isolated {
@@ -194,6 +230,10 @@ pub fn analyze(
             }
         }
         None => result.resize(action.sub_actions.len(), StepHealth::default()),
+    }
+
+    for (step, health) in action.sub_actions.iter().zip(result.iter_mut()) {
+        collect_pattern_findings(step, sub_registry, &mut health.findings);
     }
 
     if action.concurrent {
@@ -248,14 +288,18 @@ fn trigger_seed(triggers: &[TriggerInstance], registry: &TriggerRegistry) -> Opt
         return None;
     }
     let mut schemas: Vec<HashSet<String>> = Vec::with_capacity(triggers.len());
+    let mut datetime_reach = DatetimeReach::default();
     for instance in triggers {
         let declared = declared_variables(registry.get(&instance.kind_id)?)?;
-        schemas.push(
-            declared
-                .into_iter()
-                .map(|variable| variable.declared.name)
-                .collect(),
-        );
+        let mut names = HashSet::with_capacity(declared.len());
+        for variable in declared {
+            datetime_reach.note(
+                variable.declared.name.clone(),
+                variable.declared.kind == VariantKind::Datetime,
+            );
+            names.insert(variable.declared.name);
+        }
+        schemas.push(names);
     }
     let mut all = HashSet::new();
     for names in &schemas {
@@ -266,7 +310,11 @@ fn trigger_seed(triggers: &[TriggerInstance], registry: &TriggerRegistry) -> Opt
         intersection.retain(|name| names.contains(name));
     }
     let some_only = all.difference(&intersection).cloned().collect();
-    Some(TriggerSeed { all, some_only })
+    Some(TriggerSeed {
+        all,
+        some_only,
+        datetime_reach,
+    })
 }
 
 fn analyze_step(
@@ -281,7 +329,20 @@ fn analyze_step(
         return (findings, HashSet::new());
     }
 
-    for var in consumed_vars(step, ctx.sub_registry) {
+    let consumed = consumed_references(step, ctx.sub_registry);
+    let resolvable = |name: &str| scope.contains(name) || ctx.produced_anywhere.contains(name);
+    let formatted_names: BTreeSet<&str> = consumed
+        .formatted
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect();
+    for name in formatted_names {
+        if resolvable(name) && ctx.datetime_reach.never_datetime(name) {
+            findings.push(Finding::DateFormatOnNonDatetime(name.to_owned()));
+        }
+    }
+
+    for var in consumed.names {
         if scope.contains(&var) {
             if ctx.some_only.contains(&var) && !produced_before.contains(&var) {
                 findings.push(Finding::SomeTriggersOnly(var));
@@ -351,6 +412,67 @@ fn collect_produced(
     }
 }
 
+fn collect_produced_kinds(
+    steps: &[SubActionStep],
+    registry: &SubActionRegistry,
+    out: &mut DatetimeReach,
+) {
+    for step in steps {
+        if !step.enabled {
+            continue;
+        }
+        if let Some(runner) = registry.get(&step.kind_id) {
+            let io = runner.scope_io();
+            for produced in io.produces {
+                if let Some(name) = step
+                    .config
+                    .get(&produced.output_name_key)
+                    .and_then(Variant::as_str)
+                    .and_then(normalize_var_name)
+                {
+                    out.note(name, produced.kind == VariantKind::Datetime);
+                }
+            }
+            for name in io.fixed_outputs.into_iter().chain(io.body_locals) {
+                out.note(name, true);
+            }
+        }
+        for chain in nested_chains(step, registry) {
+            collect_produced_kinds(&chain, registry, out);
+        }
+    }
+}
+
+fn collect_pattern_findings(
+    step: &SubActionStep,
+    registry: &SubActionRegistry,
+    out: &mut Vec<Finding>,
+) {
+    if !step.enabled {
+        return;
+    }
+    for (name, pattern) in consumed_references(step, registry).formatted {
+        if let Err(error) = shared_date_pattern(&pattern).as_ref() {
+            out.push(Finding::InvalidDatePattern {
+                name,
+                pattern,
+                reason: error.to_string(),
+            });
+        }
+    }
+    if let Some(runner) = registry.get(&step.kind_id)
+        && runner.checks_config_while_editing()
+        && let Err(error) = runner.validate_config(&step.config)
+    {
+        out.push(Finding::InvalidStepConfig(error.to_string()));
+    }
+    for chain in nested_chains(step, registry) {
+        for nested in &chain {
+            collect_pattern_findings(nested, registry, out);
+        }
+    }
+}
+
 fn step_output_names(step: &SubActionStep, registry: &SubActionRegistry) -> HashSet<String> {
     let mut out = HashSet::new();
     let Some(runner) = registry.get(&step.kind_id) else {
@@ -371,17 +493,17 @@ fn step_output_names(step: &SubActionStep, registry: &SubActionRegistry) -> Hash
     out
 }
 
-fn consumed_vars(step: &SubActionStep, registry: &SubActionRegistry) -> HashSet<String> {
+fn consumed_references(step: &SubActionStep, registry: &SubActionRegistry) -> ConsumedReferences {
     let mut excluded: HashSet<&'static str> = HashSet::new();
     if let Some(runner) = registry.get(&step.kind_id) {
         collect_excluded_keys(&runner.config_fields(), &mut excluded);
     }
-    let mut out = HashSet::new();
+    let mut out = ConsumedReferences::default();
     for (key, value) in &step.config {
         if excluded.contains(key.as_str()) {
             continue;
         }
-        collect_tokens_from_variant(value, &mut out);
+        collect_references_from_variant(value, &mut out);
     }
     out
 }
@@ -402,44 +524,30 @@ fn collect_excluded_keys(fields: &[FormField], out: &mut HashSet<&'static str>) 
     }
 }
 
-fn collect_tokens_from_variant(value: &Variant, out: &mut HashSet<String>) {
+fn collect_references_from_variant(value: &Variant, out: &mut ConsumedReferences) {
     match value {
-        Variant::String(text) => extract_tokens(text, out),
+        Variant::String(text) => collect_template_references(text, out),
         Variant::Array(items) => {
             for item in items {
-                collect_tokens_from_variant(item, out);
+                collect_references_from_variant(item, out);
             }
         }
         Variant::Object(map) => {
             for item in map.values() {
-                collect_tokens_from_variant(item, out);
+                collect_references_from_variant(item, out);
             }
         }
         _ => {}
     }
 }
 
-fn extract_tokens(template: &str, out: &mut HashSet<String>) {
-    let mut chars = template.chars();
-    while let Some(ch) = chars.next() {
-        if ch != '%' {
-            continue;
-        }
-        let mut key = String::new();
-        let mut closed = false;
-        for inner in chars.by_ref() {
-            if inner == '%' {
-                closed = true;
-                break;
+fn collect_template_references(template: &str, out: &mut ConsumedReferences) {
+    for piece in TemplatePieces::new(template) {
+        if let TemplatePiece::Reference { name, format, .. } = piece {
+            out.names.insert(name.to_owned());
+            if let Some(format) = format {
+                out.formatted.insert((name.to_owned(), format.to_owned()));
             }
-            key.push(inner);
-        }
-        if !closed {
-            break;
-        }
-        let name = key.trim();
-        if !name.is_empty() {
-            out.insert(name.to_owned());
         }
     }
 }

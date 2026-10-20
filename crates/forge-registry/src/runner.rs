@@ -28,6 +28,9 @@ pub trait SubActionRunner: Send + Sync {
         Vec::new()
     }
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError>;
+    fn checks_config_while_editing(&self) -> bool {
+        false
+    }
     async fn execute(
         &self,
         config: &SubActionConfig,

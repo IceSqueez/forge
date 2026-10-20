@@ -45,6 +45,30 @@ fn analyzer_finding_message(finding: &Finding) -> SharedString {
                 name = integration_name(owner).to_string()
             )
         }
+        Finding::DateFormatOnNonDatetime(name) => {
+            tr!(
+                "action_editor_health_date_format_not_datetime",
+                name = name.clone()
+            )
+        }
+        Finding::InvalidDatePattern {
+            name,
+            pattern,
+            reason,
+        } => {
+            tr!(
+                "action_editor_health_invalid_date_pattern",
+                name = name.clone(),
+                pattern = pattern.clone(),
+                reason = reason.clone()
+            )
+        }
+        Finding::InvalidStepConfig(message) => {
+            tr!(
+                "action_editor_health_invalid_step_config",
+                message = message.clone()
+            )
+        }
     };
     SharedString::from(text)
 }

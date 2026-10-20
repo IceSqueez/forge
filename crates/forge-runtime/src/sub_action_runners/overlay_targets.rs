@@ -1,5 +1,5 @@
 use forge_registry::{SubActionRegistry, nested_chains};
-use forge_types::{SubActionConfig, SubActionStep, Variant};
+use forge_types::{SubActionConfig, SubActionStep, Variant, variable_references};
 
 pub const OVERLAY_SEND_KIND_ID: &str = "overlay.send";
 pub const OVERLAY_TARGET_KEY: &str = "overlay_id";
@@ -66,15 +66,5 @@ fn target_of(config: &SubActionConfig) -> Option<OverlaySendTarget> {
 }
 
 fn holds_variable_token(target: &str) -> bool {
-    let mut rest = target;
-    while let Some((_, opened)) = rest.split_once('%') {
-        let Some((name, tail)) = opened.split_once('%') else {
-            return false;
-        };
-        if !name.trim().is_empty() {
-            return true;
-        }
-        rest = tail;
-    }
-    false
+    variable_references(target).next().is_some()
 }

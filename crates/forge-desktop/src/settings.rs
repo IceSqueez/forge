@@ -515,6 +515,9 @@ impl SettingsView {
         self.handles
             .anonymous_donor
             .store(tr!(crate::i18n::ANONYMOUS_DONOR_KEY));
+        self.handles
+            .date_names
+            .set_language(crate::i18n::date_names_language(lang));
         cx.set_global(ActiveLanguage(lang));
 
         let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;

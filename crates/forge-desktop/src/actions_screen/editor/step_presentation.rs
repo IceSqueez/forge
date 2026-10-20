@@ -1,9 +1,10 @@
 use super::select_options::CLIP_OPTIONS_KEY;
 use super::*;
+use crate::globals::variant_kind_color;
 use crate::platform_visuals::platform_color;
 use forge_components::{FONT_XS, ForgePalette, Icon, mono_family, tr};
 use forge_registry::SubActionCategory;
-use forge_types::{PlatformId, SubActionStep, Variant};
+use forge_types::{PlatformId, SubActionStep, Variant, VariantKind};
 use gpui::{AnyElement, Rgba, div};
 use std::collections::HashMap;
 
@@ -254,6 +255,41 @@ pub(crate) fn parse_variable_segments(s: &str) -> Vec<(&str, bool)> {
         .collect()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum VariableSegment<'a> {
+    Text(&'a str),
+    Variable(&'a str),
+    FormattedVariable { name: &'a str, pattern: &'a str },
+}
+
+pub(super) fn variable_segments(s: &str) -> Vec<VariableSegment<'_>> {
+    forge_types::TemplatePieces::new(s)
+        .map(|piece| match piece {
+            forge_types::TemplatePiece::Literal(text) => VariableSegment::Text(text),
+            forge_types::TemplatePiece::Reference {
+                name,
+                format: Some(pattern),
+                ..
+            } => VariableSegment::FormattedVariable { name, pattern },
+            forge_types::TemplatePiece::Reference { raw, .. } => VariableSegment::Variable(raw),
+        })
+        .collect()
+}
+
+fn formatted_variable_chip(name: &str, pattern: &str, palette: &ForgePalette) -> AnyElement {
+    div()
+        .flex()
+        .flex_none()
+        .child(div().text_color(palette.warning).child(format!("%{name}")))
+        .child(
+            div()
+                .text_color(variant_kind_color(VariantKind::Datetime, palette))
+                .child(format!(":{pattern}")),
+        )
+        .child(div().text_color(palette.warning).child("%"))
+        .into_any_element()
+}
+
 pub(super) fn variable_text(s: &str, palette: &ForgePalette) -> AnyElement {
     if s.is_empty() {
         return div()
@@ -268,13 +304,20 @@ pub(super) fn variable_text(s: &str, palette: &ForgePalette) -> AnyElement {
         .flex_wrap()
         .font_family(mono_family())
         .text_size(FONT_XS);
-    for (chunk, is_var) in parse_variable_segments(s) {
-        let color = if is_var {
-            palette.warning
-        } else {
-            palette.text_muted
-        };
-        row = row.child(div().text_color(color).child(chunk.to_owned()));
+    for segment in variable_segments(s) {
+        row = row.child(match segment {
+            VariableSegment::Text(text) => div()
+                .text_color(palette.text_muted)
+                .child(text.to_owned())
+                .into_any_element(),
+            VariableSegment::Variable(raw) => div()
+                .text_color(palette.warning)
+                .child(raw.to_owned())
+                .into_any_element(),
+            VariableSegment::FormattedVariable { name, pattern } => {
+                formatted_variable_chip(name, pattern, palette)
+            }
+        });
     }
     row.into_any_element()
 }

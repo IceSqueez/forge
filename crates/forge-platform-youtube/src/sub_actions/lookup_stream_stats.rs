@@ -145,6 +145,7 @@ mod tests {
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
     use crate::quota_state::SharedQuota;
+    use crate::timestamp::tests::instant;
 
     const TOKEN_SENTINEL: &str = "yt-stats-runner-token";
     const BODY_SENTINEL: &str = "yt-stats-response-body-sentinel";
@@ -211,15 +212,45 @@ mod tests {
         );
         assert_eq!(
             stack.get("youtube.stream.actual_start_time"),
-            Some(&Variant::String("2026-07-24T10:00:00Z".to_owned()))
+            Some(&Variant::Datetime(instant("2026-07-24T10:00:00Z")))
         );
         assert_eq!(
             stack.get("youtube.stream.scheduled_start_time"),
-            Some(&Variant::String("2026-07-24T09:30:00Z".to_owned()))
+            Some(&Variant::Datetime(instant("2026-07-24T09:30:00Z")))
         );
         assert_eq!(
             stack.get("youtube.stream.live_chat_id"),
             Some(&Variant::String("lc-abc".to_owned()))
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_leaves_a_not_yet_started_broadcast_start_time_unset() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/videos"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [{
+                    "liveStreamingDetails": {
+                        "scheduledStartTime": "2026-07-24T09:30:00Z",
+                        "activeLiveChatId": "lc-abc"
+                    }
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let runner = runner_on(&server, Some("bc"));
+        let (telemetry, produced) = runner
+            .execute(&BTreeMap::new(), &make_ctx(&ArgStack::new()))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let stack = produced.expect("stats lookup must produce an arg stack");
+        assert_eq!(stack.get("youtube.stream.actual_start_time"), None);
+        assert_eq!(
+            stack.get("youtube.stream.scheduled_start_time"),
+            Some(&Variant::Datetime(instant("2026-07-24T09:30:00Z")))
         );
     }
 

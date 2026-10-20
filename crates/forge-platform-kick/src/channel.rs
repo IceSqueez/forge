@@ -425,7 +425,10 @@ mod tests {
         assert_eq!(snapshot.broadcaster_user_id, 42);
         assert_eq!(snapshot.slug, "a-streamer");
         assert!(snapshot.is_live);
-        assert_eq!(snapshot.started_at, "2026-07-24T10:00:00Z");
+        assert_eq!(
+            snapshot.started_at,
+            Some(crate::timestamp::tests::instant("2026-07-24T10:00:00Z"))
+        );
         assert_eq!(snapshot.stream_title, "Speedrun Night");
         assert_eq!(snapshot.category_id, 77);
         assert_eq!(snapshot.category_name, "Just Chatting");
@@ -465,6 +468,7 @@ mod tests {
         assert_eq!(snapshot.category_name, "");
         assert_eq!(snapshot.viewer_count, 0);
         assert!(!snapshot.is_live);
+        assert_eq!(snapshot.started_at, None);
     }
 
     #[tokio::test]

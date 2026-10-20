@@ -550,7 +550,7 @@ mod tests {
             category_id,
             category_name: category_name.to_owned(),
             viewer_count: 0,
-            started_at: String::new(),
+            started_at: None,
         }
     }
 

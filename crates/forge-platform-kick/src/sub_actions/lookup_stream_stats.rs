@@ -195,7 +195,9 @@ mod tests {
         );
         assert_eq!(
             produced.get("kick.stream.started_at"),
-            Some(&Variant::String("2026-07-25T09:00:00Z".to_owned()))
+            Some(&Variant::Datetime(crate::timestamp::tests::instant(
+                "2026-07-25T09:00:00Z"
+            )))
         );
         assert_eq!(
             produced.get("kick.stream.category_id"),
@@ -224,6 +226,50 @@ mod tests {
             produced.unwrap().get("kick.stream.is_live"),
             Some(&Variant::Bool(false))
         );
+    }
+
+    #[tokio::test]
+    async fn a_blank_absent_or_unreadable_start_time_omits_only_the_started_at_variable() {
+        for (stream, what) in [
+            (
+                serde_json::json!({ "is_live": false, "viewer_count": 0, "start_time": "" }),
+                "offline blank",
+            ),
+            (
+                serde_json::json!({ "is_live": true, "viewer_count": 5 }),
+                "absent key",
+            ),
+            (
+                serde_json::json!({ "is_live": true, "viewer_count": 5, "start_time": "soon" }),
+                "garbage",
+            ),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/channels"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": [{ "stream_title": "t", "stream": stream }]
+                })))
+                .mount(&server)
+                .await;
+
+            let stack = ArgStack::new();
+            let (telemetry, produced) = runner_on(&server)
+                .execute(&BTreeMap::new(), &make_ctx(&stack))
+                .await;
+
+            assert_eq!(telemetry.outcome, SubActionOutcome::Success, "{what}");
+            let produced = produced.unwrap();
+            assert_eq!(produced.get("kick.stream.started_at"), None, "{what}");
+            assert!(
+                produced.get("kick.stream.viewer_count").is_some(),
+                "{what}: sibling variables must still be set"
+            );
+            assert!(
+                produced.get("kick.stream.is_live").is_some(),
+                "{what}: sibling variables must still be set"
+            );
+        }
     }
 
     #[tokio::test]

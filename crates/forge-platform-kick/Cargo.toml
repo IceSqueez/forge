@@ -34,3 +34,4 @@ reqwest = { workspace = true }
 wiremock = { workspace = true }
 forge-storage = { path = "../forge-storage", features = ["test-mocks"] }
 tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber = { workspace = true }

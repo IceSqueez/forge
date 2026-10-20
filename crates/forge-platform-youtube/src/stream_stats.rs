@@ -178,6 +178,7 @@ mod tests {
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
     use crate::quota_state::SharedQuota;
+    use crate::timestamp::tests::instant;
 
     const TOKEN_SENTINEL: &str = "yt-stats-secret-token";
 
@@ -239,16 +240,80 @@ mod tests {
         assert_eq!(map.get("concurrent_viewers"), Some(&Variant::Int(1234)));
         assert_eq!(
             map.get("actual_start_time"),
-            Some(&Variant::String("2026-07-24T10:00:00Z".to_owned()))
+            Some(&Variant::Datetime(instant("2026-07-24T10:00:00Z")))
         );
         assert_eq!(
             map.get("scheduled_start_time"),
-            Some(&Variant::String("2026-07-24T09:30:00Z".to_owned()))
+            Some(&Variant::Datetime(instant("2026-07-24T09:30:00Z")))
         );
         assert_eq!(
             map.get("live_chat_id"),
             Some(&Variant::String("lc-abc".to_owned()))
         );
+    }
+
+    #[tokio::test]
+    async fn fetch_omits_each_start_time_independently_when_absent_or_unreadable() {
+        let actual = Variant::Datetime(instant("2026-07-24T10:00:00Z"));
+        let scheduled = Variant::Datetime(instant("2026-07-24T09:30:00Z"));
+        for (details, expected_actual, expected_scheduled, what) in [
+            (
+                json!({ "scheduledStartTime": "2026-07-24T09:30:00Z" }),
+                None,
+                Some(&scheduled),
+                "upcoming broadcast without actualStartTime",
+            ),
+            (
+                json!({ "actualStartTime": "2026-07-24T10:00:00Z" }),
+                Some(&actual),
+                None,
+                "unscheduled broadcast without scheduledStartTime",
+            ),
+            (json!({}), None, None, "both absent"),
+            (
+                json!({ "actualStartTime": "", "scheduledStartTime": "soon" }),
+                None,
+                None,
+                "empty and garbage text",
+            ),
+            (
+                json!({ "actualStartTime": 1_784_887_200, "scheduledStartTime": null }),
+                None,
+                None,
+                "number and null",
+            ),
+        ] {
+            let mut details = details;
+            details["activeLiveChatId"] = json!("lc-abc");
+            details["concurrentViewers"] = json!("7");
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/videos"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(details_body(details)))
+                .mount(&server)
+                .await;
+
+            let result = stats_on(&server, Some("bc")).fetch().await.unwrap();
+            let Variant::Object(map) = result else {
+                panic!("{what}: expected Object, got {result:?}");
+            };
+            assert_eq!(map.get("actual_start_time"), expected_actual, "{what}");
+            assert_eq!(
+                map.get("scheduled_start_time"),
+                expected_scheduled,
+                "{what}"
+            );
+            assert_eq!(
+                map.get("live_chat_id"),
+                Some(&Variant::String("lc-abc".to_owned())),
+                "{what}"
+            );
+            assert_eq!(
+                map.get("concurrent_viewers"),
+                Some(&Variant::Int(7)),
+                "{what}"
+            );
+        }
     }
 
     #[tokio::test]

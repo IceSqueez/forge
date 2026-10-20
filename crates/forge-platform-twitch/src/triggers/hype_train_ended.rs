@@ -147,6 +147,7 @@ impl TriggerKindDescriptor for HypeTrainEndedDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::timestamp::tests::instant;
 
     fn end_event() -> Event {
         let payload = serde_json::json!({
@@ -186,11 +187,11 @@ mod tests {
         assert_eq!(stack.get("hype.total"), Some(&Variant::Int(9001)));
         assert_eq!(
             stack.get("hype.ended_at"),
-            Some(&Variant::String("2026-06-13T18:10:00Z".to_owned()))
+            Some(&instant("2026-06-13T18:10:00Z"))
         );
         assert_eq!(
             stack.get("hype.cooldown_ends_at"),
-            Some(&Variant::String("2026-06-13T19:10:00Z".to_owned()))
+            Some(&instant("2026-06-13T19:10:00Z"))
         );
     }
 }

@@ -97,6 +97,8 @@ fn follower_identity(event: &Event) -> ActorIdentity {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::timestamp::tests::instant;
+    use forge_types::Variant;
 
     fn follow_event() -> Event {
         Event::new(
@@ -124,7 +126,6 @@ mod tests {
             ("user_name", "NewFollower"),
             ("user_login", "new_follower"),
             ("user_platform", "twitch"),
-            ("followed_at", "2026-06-13T10:00:00Z"),
         ] {
             assert_eq!(
                 stack.get(name),
@@ -132,5 +133,9 @@ mod tests {
                 "'{name}'"
             );
         }
+        assert_eq!(
+            stack.get("followed_at"),
+            Some(&instant("2026-06-13T10:00:00Z"))
+        );
     }
 }

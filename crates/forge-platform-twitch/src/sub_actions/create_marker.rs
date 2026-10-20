@@ -200,6 +200,7 @@ mod tests {
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use crate::timestamp::tests::instant;
 
     fn marker_payload() -> serde_json::Value {
         serde_json::json!({
@@ -261,8 +262,46 @@ mod tests {
         assert_eq!(out.get("marker.position_seconds"), Some(&Variant::Int(244)));
         assert_eq!(
             out.get("marker.created_at"),
-            Some(&Variant::String("2026-06-13T12:00:00Z".to_owned()))
+            Some(&instant("2026-06-13T12:00:00Z"))
         );
+    }
+
+    #[tokio::test]
+    async fn a_marker_without_a_readable_creation_moment_still_succeeds_without_it() {
+        for created_at in [
+            None,
+            Some(serde_json::Value::Null),
+            Some(serde_json::json!("")),
+            Some(serde_json::json!("yesterday")),
+        ] {
+            let mut payload = marker_payload();
+            match &created_at {
+                Some(value) => payload["data"][0]["created_at"] = value.clone(),
+                None => {
+                    payload["data"][0]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("created_at");
+                }
+            }
+            let (_transport, runner) = runner_with(Ok(payload));
+            let stack = ArgStack::new();
+
+            let (telemetry, output) = runner.execute(&cfg("x"), &make_ctx(&stack)).await;
+
+            assert_eq!(
+                telemetry.outcome,
+                SubActionOutcome::Success,
+                "{created_at:?}"
+            );
+            let out = output.unwrap();
+            assert_eq!(out.get("marker.created_at"), None, "{created_at:?}");
+            assert_eq!(
+                out.get("marker.id"),
+                Some(&Variant::String("123".to_owned())),
+                "{created_at:?}"
+            );
+        }
     }
 
     #[tokio::test]

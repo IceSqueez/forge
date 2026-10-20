@@ -216,3 +216,55 @@ fn only_a_gift_count_is_floored_at_one_while_other_counts_keep_zero() {
         );
     }
 }
+
+fn plain_and_optional() -> TriggerVariables {
+    TriggerVariables::new()
+        .event_specific(declared("reason", VariantKind::String), |event| {
+            Variant::String(
+                event.payload["reason"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned(),
+            )
+        })
+        .event_specific_optional(declared("ends_at", VariantKind::Datetime), |event| {
+            event
+                .payload
+                .get("ends_at")
+                .map(|_| Variant::Datetime(time::OffsetDateTime::UNIX_EPOCH))
+        })
+}
+
+#[test]
+fn an_optional_variable_stays_declared_as_event_specific_alongside_a_plain_one() {
+    assert_eq!(
+        listed(&StubTrigger::declaring("stub.optional", plain_and_optional)),
+        vec![
+            ("reason".to_owned(), VariableStanding::EventSpecific),
+            ("ends_at".to_owned(), VariableStanding::EventSpecific),
+        ],
+    );
+}
+
+#[test]
+fn only_an_optional_variable_without_a_value_is_left_off_the_arg_stack() {
+    for (payload, reason, ends_at) in [
+        (
+            serde_json::json!({ "reason": "spam", "ends_at": "soon" }),
+            "spam",
+            Some(Variant::Datetime(time::OffsetDateTime::UNIX_EPOCH)),
+        ),
+        (serde_json::json!({}), "", None),
+    ] {
+        let event = Event::new(forge_events::EventSource::Core, "test.optional", payload);
+
+        let stack = plain_and_optional().arg_stack(&event);
+
+        assert_eq!(
+            stack.get("reason"),
+            Some(&Variant::String(reason.to_owned())),
+            "{event:?}"
+        );
+        assert_eq!(stack.get("ends_at"), ends_at.as_ref(), "{event:?}");
+    }
+}

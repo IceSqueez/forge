@@ -103,6 +103,8 @@ fn shield_moderator_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::timestamp::tests::instant;
+    use forge_types::Variant;
 
     fn shield_begin_event() -> Event {
         let payload = serde_json::json!({
@@ -139,7 +141,7 @@ mod tests {
         );
         assert_eq!(
             stack.get("started_at"),
-            Some(&Variant::String("2026-06-13T18:00:00Z".to_owned()))
+            Some(&instant("2026-06-13T18:00:00Z"))
         );
     }
 }

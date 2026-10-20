@@ -122,6 +122,7 @@ fn acting_moderator_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::timestamp::tests::instant;
     use crate::triggers::channel_timeout::ChannelTimeoutDescriptor;
 
     fn ban_event(is_permanent: bool) -> Event {
@@ -205,8 +206,21 @@ mod tests {
         );
         assert_eq!(
             stack.get("banned_at"),
-            Some(&Variant::String("2026-06-13T10:00:00Z".to_owned()))
+            Some(&instant("2026-06-13T10:00:00Z"))
         );
         assert_eq!(stack.get("ends_at"), None);
+    }
+
+    #[test]
+    fn a_permanent_ban_with_a_null_end_still_publishes_when_it_happened() {
+        let mut event = ban_event(true);
+        event.payload["ends_at"] = serde_json::Value::Null;
+
+        let stack = ChannelBanDescriptor.build_arg_stack(&event);
+
+        assert_eq!(
+            stack.get("banned_at"),
+            Some(&instant("2026-06-13T10:00:00Z"))
+        );
     }
 }

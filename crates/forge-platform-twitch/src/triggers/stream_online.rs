@@ -159,6 +159,7 @@ impl TriggerKindDescriptor for StreamOnlineDescriptor {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::timestamp::tests::instant;
 
     fn online_event() -> Event {
         Event::new(
@@ -191,7 +192,7 @@ mod tests {
         );
         assert_eq!(
             stack.get("started_at"),
-            Some(&Variant::String("2026-06-13T09:00:00Z".to_owned()))
+            Some(&instant("2026-06-13T09:00:00Z"))
         );
         assert_eq!(
             stack.get("broadcaster_login"),

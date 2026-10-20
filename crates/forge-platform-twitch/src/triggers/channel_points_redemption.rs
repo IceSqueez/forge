@@ -298,6 +298,7 @@ fn redemption_user_input(event: &Event) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::timestamp::tests::instant;
 
     fn redemption_config(reward_id: &str, reward_title: &str) -> TriggerConfig {
         let mut cfg = TriggerConfig::new();
@@ -380,7 +381,6 @@ mod tests {
             ("message_text", "play my song"),
             ("redemption.id", "redemption-42"),
             ("redemption.status", "unfulfilled"),
-            ("redeemed_at", "2026-06-13T10:00:00Z"),
             ("reward.id", "r1"),
             ("reward.title", "Hydrate"),
             ("reward.prompt", "Make the streamer drink water"),
@@ -391,6 +391,10 @@ mod tests {
                 "'{name}'"
             );
         }
+        assert_eq!(
+            stack.get("redeemed_at"),
+            Some(&instant("2026-06-13T10:00:00Z"))
+        );
         assert_eq!(stack.get("reward.cost"), Some(&Variant::Int(500)));
     }
 

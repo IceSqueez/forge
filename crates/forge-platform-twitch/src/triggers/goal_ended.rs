@@ -165,6 +165,7 @@ impl TriggerKindDescriptor for GoalEndedDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::timestamp::tests::instant;
 
     fn goal_end_event(is_achieved: bool) -> Event {
         let payload = serde_json::json!({
@@ -202,7 +203,7 @@ mod tests {
         assert_eq!(stack.get("goal.is_achieved"), Some(&Variant::Bool(true)));
         assert_eq!(
             stack.get("goal.ended_at"),
-            Some(&Variant::String("2026-06-13T19:00:00Z".to_owned()))
+            Some(&instant("2026-06-13T19:00:00Z"))
         );
     }
 

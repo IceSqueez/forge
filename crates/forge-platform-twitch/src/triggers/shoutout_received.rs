@@ -137,6 +137,7 @@ fn shoutout_channel_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::timestamp::tests::instant;
 
     fn shoutout_received_event() -> Event {
         let payload = serde_json::json!({
@@ -175,7 +176,7 @@ mod tests {
         assert_eq!(stack.get("viewer_count"), Some(&Variant::Int(7)));
         assert_eq!(
             stack.get("started_at"),
-            Some(&Variant::String("2026-06-13T19:30:00Z".to_owned()))
+            Some(&instant("2026-06-13T19:30:00Z"))
         );
     }
 }

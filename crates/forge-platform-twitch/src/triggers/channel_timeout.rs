@@ -131,6 +131,7 @@ fn acting_moderator_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::timestamp::tests::instant;
 
     fn timeout_event() -> Event {
         let payload = serde_json::json!({
@@ -168,11 +169,25 @@ mod tests {
         );
         assert_eq!(
             stack.get("banned_at"),
-            Some(&Variant::String("2026-06-13T10:00:00Z".to_owned()))
+            Some(&instant("2026-06-13T10:00:00Z"))
         );
-        assert_eq!(
-            stack.get("ends_at"),
-            Some(&Variant::String("2026-06-13T10:10:00Z".to_owned()))
-        );
+        assert_eq!(stack.get("ends_at"), Some(&instant("2026-06-13T10:10:00Z")));
+    }
+
+    #[test]
+    fn a_timeout_without_an_end_moment_omits_ends_at_and_keeps_banned_at() {
+        for ends_at in [serde_json::Value::Null, serde_json::json!("")] {
+            let mut event = timeout_event();
+            event.payload["ends_at"] = ends_at.clone();
+
+            let stack = ChannelTimeoutDescriptor.build_arg_stack(&event);
+
+            assert_eq!(stack.get("ends_at"), None, "{ends_at}");
+            assert_eq!(
+                stack.get("banned_at"),
+                Some(&instant("2026-06-13T10:00:00Z")),
+                "{ends_at}"
+            );
+        }
     }
 }

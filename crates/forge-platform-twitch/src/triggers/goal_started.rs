@@ -166,6 +166,7 @@ impl TriggerKindDescriptor for GoalStartedDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::timestamp::tests::instant;
 
     fn goal_begin_event() -> Event {
         let payload = serde_json::json!({
@@ -210,7 +211,7 @@ mod tests {
         assert_eq!(stack.get("goal.target_amount"), Some(&Variant::Int(1000)));
         assert_eq!(
             stack.get("goal.started_at"),
-            Some(&Variant::String("2026-06-13T18:00:00Z".to_owned()))
+            Some(&instant("2026-06-13T18:00:00Z"))
         );
     }
 }

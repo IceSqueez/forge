@@ -144,6 +144,7 @@ impl TriggerKindDescriptor for PollEndedDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::timestamp::tests::instant;
 
     fn poll_end_event() -> Event {
         let payload = serde_json::json!({
@@ -184,7 +185,7 @@ mod tests {
         );
         assert_eq!(
             stack.get("poll.ended_at"),
-            Some(&Variant::String("2026-06-13T18:10:00Z".to_owned()))
+            Some(&instant("2026-06-13T18:10:00Z"))
         );
     }
 }

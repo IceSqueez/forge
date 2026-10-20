@@ -189,6 +189,7 @@ pub(crate) fn build_choices_variant(event: &Event) -> Variant {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::timestamp::tests::instant;
 
     fn poll_begin_event() -> Event {
         let payload = serde_json::json!({
@@ -225,11 +226,11 @@ mod tests {
         );
         assert_eq!(
             stack.get("poll.started_at"),
-            Some(&Variant::String("2026-06-13T18:00:00Z".to_owned()))
+            Some(&instant("2026-06-13T18:00:00Z"))
         );
         assert_eq!(
             stack.get("poll.ends_at"),
-            Some(&Variant::String("2026-06-13T18:05:00Z".to_owned()))
+            Some(&instant("2026-06-13T18:05:00Z"))
         );
     }
 }

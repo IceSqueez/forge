@@ -155,7 +155,7 @@ fn a_canonical_name_is_declared_only_with_the_kind_the_vocabulary_gives_it() {
 }
 
 #[test]
-fn every_variable_a_platform_trigger_declares_is_set_with_the_kind_it_declares() {
+fn every_variable_a_platform_trigger_declares_is_set_with_its_kind_unless_it_is_an_absent_moment() {
     let registry = every_registered_trigger();
 
     for descriptor in registry.all() {
@@ -176,13 +176,16 @@ fn every_variable_a_platform_trigger_declares_is_set_with_the_kind_it_declares()
         let stack = descriptor.build_arg_stack(&event).snapshot();
 
         for declared in schema.variables {
-            let actual = stack.get(&declared.name).unwrap_or_else(|| {
-                panic!(
+            let Some(actual) = stack.get(&declared.name) else {
+                assert_eq!(
+                    declared.kind,
+                    VariantKind::Datetime,
                     "'{}' declares '{}' but never sets it",
                     descriptor.id(),
                     declared.name
-                )
-            });
+                );
+                continue;
+            };
             assert_eq!(
                 VariantKind::from_variant(actual),
                 declared.kind,

@@ -720,6 +720,7 @@ async fn run_through_engine(harness: &mut Harness, action: &Action) -> (EventId,
             action_id: action.id,
             trigger_event_id: trigger,
             trigger_kind: None,
+            manual_test: false,
             initial_args: ArgStack::new(),
         })
         .await

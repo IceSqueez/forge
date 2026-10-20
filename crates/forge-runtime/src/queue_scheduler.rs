@@ -1199,6 +1199,7 @@ mod tests {
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
                 trigger_kind: None,
+                manual_test: false,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -1250,6 +1251,7 @@ mod tests {
                     action_id: *a_id,
                     trigger_event_id: EventId::new(),
                     trigger_kind: None,
+                    manual_test: false,
                     initial_args: ArgStack::new(),
                     bypass_pause: false,
                 })
@@ -1298,6 +1300,7 @@ mod tests {
                 action_id: a_id,
                 trigger_event_id: trigger,
                 trigger_kind: None,
+                manual_test: false,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -1357,6 +1360,7 @@ mod tests {
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
                 trigger_kind: None,
+                manual_test: false,
                 initial_args: ArgStack::new(),
                 bypass_pause: true,
             })
@@ -1404,6 +1408,7 @@ mod tests {
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
                 trigger_kind: None,
+                manual_test: false,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -1508,6 +1513,7 @@ mod tests {
                 action_id: a_id,
                 trigger_event_id: trigger,
                 trigger_kind: None,
+                manual_test: false,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -1560,6 +1566,7 @@ mod tests {
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
                 trigger_kind: None,
+                manual_test: false,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -1608,6 +1615,7 @@ mod tests {
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
                 trigger_kind: None,
+                manual_test: false,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -1661,6 +1669,7 @@ mod tests {
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
                 trigger_kind: None,
+                manual_test: false,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -1732,6 +1741,7 @@ mod tests {
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
                 trigger_kind: None,
+                manual_test: false,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -1780,6 +1790,7 @@ mod tests {
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
                 trigger_kind: None,
+                manual_test: false,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -1836,6 +1847,7 @@ mod tests {
             action_id,
             trigger_event_id: EventId::new(),
             trigger_kind: None,
+            manual_test: false,
             initial_args: ArgStack::new(),
             bypass_pause: false,
         }

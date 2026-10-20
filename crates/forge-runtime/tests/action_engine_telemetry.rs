@@ -283,6 +283,7 @@ fn request(action_id: ActionId) -> ExecutionRequest {
         action_id,
         trigger_event_id: EventId::new(),
         trigger_kind: None,
+        manual_test: false,
         initial_args: ArgStack::new(),
     }
 }

@@ -209,6 +209,7 @@ fn req(queue_id: QueueId, action_id: ActionId) -> SchedulerRequest {
         action_id,
         trigger_event_id: EventId::new(),
         trigger_kind: None,
+        manual_test: false,
         initial_args: ArgStack::new(),
         bypass_pause: false,
     }

@@ -357,6 +357,7 @@ async fn instance_with_no_bound_actions_succeeds_and_dispatches_nothing() {
             action_id: barrier,
             trigger_event_id: EventId::new(),
             trigger_kind: None,
+            manual_test: false,
             initial_args: ArgStack::new(),
             bypass_pause: false,
         })
@@ -417,6 +418,7 @@ async fn fired_trigger_dispatches_disabled_action_but_engine_skips_it() {
             action_id: barrier,
             trigger_event_id: EventId::new(),
             trigger_kind: None,
+            manual_test: false,
             initial_args: ArgStack::new(),
             bypass_pause: false,
         })

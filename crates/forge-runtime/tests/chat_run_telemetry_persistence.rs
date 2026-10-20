@@ -167,6 +167,7 @@ async fn run_for_chat_and_follow(chat: &Event, follow: &Event) -> Persisted {
                 action_id: action.id,
                 trigger_event_id: root.id,
                 trigger_kind: None,
+                manual_test: false,
                 initial_args: ArgStack::new(),
             })
             .await

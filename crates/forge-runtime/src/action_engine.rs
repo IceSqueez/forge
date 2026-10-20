@@ -860,6 +860,7 @@ mod tests {
                     action_id,
                     trigger_event_id: EventId::new(),
                     trigger_kind: None,
+                    manual_test: false,
                     initial_args: ArgStack::new(),
                 })
                 .await
@@ -1466,6 +1467,7 @@ mod tests {
                     action_id: rig.action_id,
                     trigger_event_id,
                     trigger_kind: None,
+                    manual_test: false,
                     initial_args: ArgStack::new(),
                 },
                 CancelSignal::new(),
@@ -1801,6 +1803,7 @@ mod tests {
                     action_id: action.id,
                     trigger_event_id: EventId::new(),
                     trigger_kind: None,
+                    manual_test: false,
                     initial_args: ArgStack::new(),
                 })
                 .await

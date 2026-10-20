@@ -137,6 +137,7 @@ async fn spawn_pipeline() -> PipelineFixture {
                     action_id,
                     trigger_event_id: event.id,
                     trigger_kind: None,
+                    manual_test: false,
                     initial_args: ArgStack::new(),
                     bypass_pause: false,
                 };

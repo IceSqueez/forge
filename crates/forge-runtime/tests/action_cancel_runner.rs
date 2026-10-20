@@ -184,6 +184,7 @@ async fn cancel_runner_aborts_a_live_in_flight_execution() {
             action_id: target,
             trigger_event_id: EventId::new(),
             trigger_kind: None,
+            manual_test: false,
             initial_args: ArgStack::new(),
         })
         .await
@@ -238,6 +239,7 @@ async fn cancel_guard_deregisters_after_a_run_completes() {
             action_id: id,
             trigger_event_id: EventId::new(),
             trigger_kind: None,
+            manual_test: false,
             initial_args: ArgStack::new(),
         })
         .await

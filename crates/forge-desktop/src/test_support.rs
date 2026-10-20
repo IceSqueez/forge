@@ -862,6 +862,7 @@ pub(crate) fn hold_one_dispatch(
         action_id: ActionId::new(),
         trigger_event_id: EventId::new(),
         trigger_kind: None,
+        manual_test: false,
         initial_args: forge_types::ArgStack::new(),
         bypass_pause: false,
     }))

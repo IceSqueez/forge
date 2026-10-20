@@ -323,6 +323,7 @@ fn req(a: &Action) -> SchedulerRequest {
         action_id: a.id,
         trigger_event_id: EventId::new(),
         trigger_kind: None,
+        manual_test: false,
         initial_args: ArgStack::new(),
         bypass_pause: false,
     }

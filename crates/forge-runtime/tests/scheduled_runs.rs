@@ -254,6 +254,7 @@ impl Harness {
                     action_id: action.id,
                     trigger_event_id: EventId::new(),
                     trigger_kind: None,
+                    manual_test: false,
                     initial_args: ArgStack::new(),
                     bypass_pause: false,
                 })
@@ -629,6 +630,7 @@ async fn a_triggered_run_still_records_trigger_metadata() {
             action_id: action.id,
             trigger_event_id: trigger,
             trigger_kind: Some("twitch.channel.follow".to_owned()),
+            manual_test: false,
             initial_args: ArgStack::new(),
             bypass_pause: false,
         })

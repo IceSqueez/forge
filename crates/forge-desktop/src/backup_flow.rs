@@ -48,17 +48,12 @@ pub(crate) fn default_bundle_name(now: OffsetDateTime, suffix: &str) -> String {
 }
 
 impl BackupFlow {
-    pub fn new(
-        backend: Arc<dyn DataProvider>,
-        rt_handle: Handle,
-        data_dir: PathBuf,
-        target: BackupTarget,
-    ) -> Self {
+    pub fn new(backend: Arc<dyn DataProvider>, rt_handle: Handle, data_dir: PathBuf) -> Self {
         Self {
             backend,
             rt_handle,
             data_dir,
-            target,
+            target: BackupTarget::ChosenFile,
             step: BackupStep::Idle,
         }
     }
@@ -71,10 +66,11 @@ impl BackupFlow {
         matches!(self.step, BackupStep::ChoosingFile | BackupStep::Writing)
     }
 
-    pub fn start(&mut self, cx: &mut Context<Self>) {
+    pub fn start(&mut self, target: BackupTarget, cx: &mut Context<Self>) {
         if self.is_busy() {
             return;
         }
+        self.target = target;
         let modal = cx.new(BackupPassphraseModal::new);
         let sub = cx.subscribe(&modal, |this, modal, event: &BackupPassphraseEvent, cx| {
             match event {

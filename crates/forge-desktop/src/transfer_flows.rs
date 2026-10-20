@@ -49,7 +49,6 @@ impl TransferFlows {
                 Arc::clone(&pack.backend),
                 rt_handle.clone(),
                 data_dir.clone(),
-                BackupTarget::ChosenFile,
             )
         });
         let pack_export = cx.new(|_| PackExportFlow::new(pack.clone()));
@@ -205,10 +204,19 @@ impl TransferFlows {
     }
 
     pub fn export_full_backup(&mut self, cx: &mut Context<Self>) {
+        self.start_backup(BackupTarget::ChosenFile, cx);
+    }
+
+    pub fn backup_to_backups_dir(&mut self, cx: &mut Context<Self>) {
+        self.start_backup(BackupTarget::BackupsDir, cx);
+    }
+
+    fn start_backup(&mut self, target: BackupTarget, cx: &mut Context<Self>) {
         if self.is_busy(cx) {
             return;
         }
-        self.backup.update(cx, |backup, cx| backup.start(cx));
+        self.backup
+            .update(cx, |backup, cx| backup.start(target, cx));
         cx.notify();
     }
 

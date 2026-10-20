@@ -22,10 +22,9 @@ use gpui::{
 };
 
 use crate::async_bridge;
-use crate::backup_flow::{BackupFlow, BackupTarget};
-use crate::restore_flow::RestoreFlow;
 use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
+use crate::transfer_flows::TransferFlows;
 use forge_components::ActivePresentation;
 
 const LIMIT_INPUT_W: Pixels = px(120.0);
@@ -67,8 +66,7 @@ pub struct SettingsStorageView {
     display_limit: u32,
     retention_days: u32,
     history_retention_days: u32,
-    backup: Entity<BackupFlow>,
-    restore: Entity<RestoreFlow>,
+    transfers: Option<Entity<TransferFlows>>,
 
     per_viewer_input: Entity<TextInput>,
     display_input: Entity<TextInput>,
@@ -108,21 +106,9 @@ impl SettingsStorageView {
                 .with_font_size(FONT_SM)
         });
 
-        let restore =
-            cx.new(|_| RestoreFlow::new(rt_handle.clone(), forge_storage::paths::data_dir()));
+        let transfers = TransferFlows::route(cx);
 
-        let backup = cx.new(|_| {
-            BackupFlow::new(
-                Arc::clone(&backend),
-                rt_handle.clone(),
-                forge_storage::paths::data_dir(),
-                BackupTarget::BackupsDir,
-            )
-        });
-
-        let subs = vec![
-            cx.observe(&restore, |_, _, cx| cx.notify()),
-            cx.observe(&backup, |_, _, cx| cx.notify()),
+        let mut subs = vec![
             cx.subscribe(&per_viewer_input, |this, _input, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Submitted(_) | InputEvent::Blurred(_)) {
                     this.commit_custom_per_viewer(cx);
@@ -147,6 +133,9 @@ impl SettingsStorageView {
                 },
             ),
         ];
+        if let Some(transfers) = &transfers {
+            subs.push(cx.observe(transfers, |_, _, cx| cx.notify()));
+        }
 
         let mut view = Self {
             backend,
@@ -157,8 +146,7 @@ impl SettingsStorageView {
             display_limit: DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT,
             retention_days: DEFAULT_EVENT_LOG_RETENTION_DAYS,
             history_retention_days: default_history_retention,
-            backup,
-            restore,
+            transfers,
             per_viewer_input,
             display_input,
             retention_input,
@@ -392,18 +380,21 @@ impl SettingsStorageView {
     }
 
     fn start_restore(&mut self, cx: &mut Context<Self>) {
-        if self.backup.read(cx).is_busy() {
+        let Some(transfers) = self.transfers.clone() else {
+            return;
+        };
+        if transfers.read(cx).is_busy(cx) {
             return;
         }
-        self.restore.update(cx, |restore, cx| restore.start(cx));
+        let restore = transfers.read(cx).restore.clone();
+        restore.update(cx, |restore, cx| restore.start(cx));
         cx.notify();
     }
 
     fn start_backup(&mut self, cx: &mut Context<Self>) {
-        if self.restore.read(cx).is_busy() {
-            return;
+        if let Some(transfers) = self.transfers.clone() {
+            transfers.update(cx, |transfers, cx| transfers.backup_to_backups_dir(cx));
         }
-        self.backup.update(cx, |backup, cx| backup.start(cx));
         cx.notify();
     }
 
@@ -431,18 +422,31 @@ impl Render for SettingsStorageView {
         let density = cx.density();
 
         let db_path = forge_storage::paths::data_dir().join("forge.db");
-        let backing_up = self.backup.read(cx).is_writing();
-        let backup_busy = self.backup.read(cx).is_busy();
+        let (backup_flow, restore_flow, transfer_busy) = match &self.transfers {
+            Some(transfers) => {
+                let flows = transfers.read(cx);
+                (
+                    Some(flows.backup.clone()),
+                    Some(flows.restore.clone()),
+                    flows.is_busy(cx),
+                )
+            }
+            None => (None, None, true),
+        };
+        let backing_up = backup_flow
+            .as_ref()
+            .is_some_and(|backup| backup.read(cx).is_writing());
+        let restore_preparing = restore_flow
+            .as_ref()
+            .is_some_and(|restore| restore.read(cx).is_preparing());
         let backup_label = if backing_up {
             tr!("settings_storage_backup_btn_busy")
         } else {
             tr!("settings_storage_backup_btn")
         };
-        let restore = self.restore.read(cx);
-        let (restore_busy, restore_preparing) = (restore.is_busy(), restore.is_preparing());
         let backup_btn = primary_button(backup_label, &palette)
             .busy(backing_up)
-            .disabled(restore_busy)
+            .disabled(transfer_busy)
             .on_click(
                 "settings-db-backup",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.start_backup(cx)),
@@ -454,7 +458,7 @@ impl Render for SettingsStorageView {
         };
         let restore_btn = secondary_button(restore_label, &palette)
             .busy(restore_preparing)
-            .disabled(backup_busy || restore_busy)
+            .disabled(transfer_busy)
             .on_click(
                 "settings-db-restore",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.start_restore(cx)),
@@ -513,8 +517,8 @@ impl Render for SettingsStorageView {
             .flex_col()
             .child(SettingsPaneHeader::new(SettingsSection::Storage))
             .child(rows)
-            .child(self.backup.clone())
-            .child(self.restore.clone())
+            .children(backup_flow)
+            .children(restore_flow)
     }
 }
 

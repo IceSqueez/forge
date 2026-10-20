@@ -230,3 +230,191 @@ impl TransferFlows {
         cx.notify();
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+mod tests {
+    use std::path::{Path, PathBuf};
+    use std::time::Duration;
+
+    use forge_components::{ToastKind, Toasts};
+    use forge_storage::Language;
+    use forge_transfer::{BundleKind, read_bundle_kind, setup_staging_root};
+    use gpui::{AppContext, Entity, TestAppContext};
+
+    use super::{TransferFlows, TransferRoute};
+    use crate::event_loss::EventLoss;
+    use crate::home::HomeView;
+    use crate::home_stats::HomeStats;
+    use crate::i18n::install_language;
+    use crate::pack_services::PackServices;
+    use crate::test_support::pack_flow::{
+        PackWorld, export_pack, pack_world, queue_named, seed_queued_action,
+    };
+    use crate::test_support::{install_presentation, runtime};
+
+    const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
+
+    struct Rig {
+        rt: tokio::runtime::Runtime,
+        world: PackWorld,
+        services: PackServices,
+        flows: Entity<TransferFlows>,
+    }
+
+    fn rig_with(cx: &mut TestAppContext, background_runs: bool) -> Rig {
+        install_language(Language::En);
+        install_presentation(cx);
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let world = pack_world(&rt);
+        let services = if background_runs {
+            world.services.clone()
+        } else {
+            let stopped = runtime();
+            let detached = world.with_runtime(&stopped);
+            drop(stopped);
+            detached
+        };
+        let stats = cx.new(|_| HomeStats::new());
+        let data_dir = world.data_dir();
+        let pack = services.clone();
+        let flows = cx.new(|cx| TransferFlows::new(stats, pack, data_dir, cx));
+        Rig {
+            rt,
+            world,
+            services,
+            flows,
+        }
+    }
+
+    fn stalled_rig(cx: &mut TestAppContext) -> Rig {
+        rig_with(cx, false)
+    }
+
+    fn busy_flows(cx: &mut TestAppContext, rig: &Rig) -> (bool, bool, bool) {
+        rig.flows.read_with(cx, |flows, cx| {
+            (
+                flows.restore.read(cx).is_busy(),
+                flows.pack_import.read(cx).is_busy(),
+                flows.setup_import.read(cx).is_busy(),
+            )
+        })
+    }
+
+    fn toasts(cx: &mut TestAppContext) -> Vec<(ToastKind, String)> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|toast| {
+                    (
+                        toast.kind,
+                        toast.message.replace(['\u{2068}', '\u{2069}'], ""),
+                    )
+                })
+                .collect()
+        })
+    }
+
+    fn entries(dir: &Path) -> usize {
+        std::fs::read_dir(dir).map_or(0, |listing| listing.count())
+    }
+
+    #[gpui::test]
+    fn each_bundle_kind_opens_its_own_import_flow(cx: &mut TestAppContext) {
+        let mut routed = Vec::new();
+
+        for kind in [BundleKind::Full, BundleKind::Pack, BundleKind::Setup] {
+            let rig = stalled_rig(cx);
+            rig.flows.update(cx, |flows, cx| {
+                flows.route_import(PathBuf::from("picked.forgebundle"), Ok(kind), cx)
+            });
+            routed.push(busy_flows(cx, &rig));
+        }
+
+        assert_eq!(
+            routed,
+            vec![
+                (true, false, false),
+                (false, true, false),
+                (false, false, true)
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn a_json_file_is_refused_with_an_error_and_opens_no_flow(cx: &mut TestAppContext) {
+        let rig = stalled_rig(cx);
+        let dir = tempfile::tempdir().unwrap();
+        let json = dir.path().join("action.json");
+        std::fs::write(&json, br#"{"name":"Greeter"}"#).unwrap();
+        let kind = rig.rt.block_on(read_bundle_kind(json.clone()));
+
+        rig.flows
+            .update(cx, |flows, cx| flows.route_import(json, kind, cx));
+
+        let kinds: Vec<ToastKind> = toasts(cx).into_iter().map(|toast| toast.0).collect();
+        assert_eq!(
+            (busy_flows(cx, &rig), kinds),
+            ((false, false, false), vec![ToastKind::Error])
+        );
+    }
+
+    #[gpui::test]
+    fn a_running_import_of_any_kind_marks_the_transfers_busy(cx: &mut TestAppContext) {
+        let mut busy = Vec::new();
+
+        for kind in [BundleKind::Full, BundleKind::Pack, BundleKind::Setup] {
+            let rig = stalled_rig(cx);
+            let idle = rig.flows.read_with(cx, |flows, cx| flows.is_busy(cx));
+            rig.flows.update(cx, |flows, cx| {
+                flows.route_import(PathBuf::from("picked.forgebundle"), Ok(kind), cx)
+            });
+            let running = rig.flows.read_with(cx, |flows, cx| flows.is_busy(cx));
+            busy.push((idle, running));
+        }
+
+        assert_eq!(busy, vec![(false, true); 3]);
+    }
+
+    #[gpui::test]
+    fn an_import_result_lands_with_its_toast_and_cleanup_after_home_is_dropped(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = rig_with(cx, true);
+        cx.update(|cx| cx.set_global(TransferRoute(rig.flows.clone())));
+        let stats = cx.new(|_| HomeStats::new());
+        let event_loss = cx.new(|_| EventLoss::new());
+        let services = rig.services.clone();
+        let home = cx.new(|cx| HomeView::new(stats, event_loss, services, cx));
+        let queue = queue_named("Alerts");
+        let action = seed_queued_action(&rig.rt, &rig.world, "Greeter", &queue);
+        let pack_bundle = export_pack(&rig.rt, &rig.world, &[action]);
+        let route = cx.update(|cx| TransferFlows::route(cx).expect("the route is installed"));
+
+        route.update(cx, |flows, cx| {
+            flows.route_import(pack_bundle, Ok(BundleKind::Setup), cx)
+        });
+        cx.update(move |_| drop(home));
+        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
+        while toasts(cx).is_empty() && std::time::Instant::now() < deadline {
+            rig.rt
+                .block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
+            cx.run_until_parked();
+        }
+
+        let staging = setup_staging_root(&rig.world.data_dir());
+        let shown = toasts(cx);
+        assert!(
+            matches!(
+                shown.as_slice(),
+                [(ToastKind::Error, message)]
+                    if message.contains("This file is a forge pack, not a setup.")
+            ) && entries(&staging) == 0
+                && !rig.flows.read_with(cx, |flows, cx| flows.is_busy(cx)),
+            "toasts {shown:?}, {} staged setups left",
+            entries(&staging)
+        );
+    }
+}

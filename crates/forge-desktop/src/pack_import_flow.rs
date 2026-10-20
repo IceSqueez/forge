@@ -800,4 +800,20 @@ mod tests {
             ]
         );
     }
+
+    #[gpui::test]
+    fn opening_another_pack_while_previewing_warns_and_keeps_the_preview(cx: &mut TestAppContext) {
+        let rig = rig(cx);
+        let staging = previewing(cx, &rig);
+
+        rig.flow.update(cx, |flow, cx| {
+            flow.open(PathBuf::from("second.forgebundle"), cx)
+        });
+
+        let kinds: Vec<ToastKind> = toasts(cx).into_iter().map(|toast| toast.0).collect();
+        assert_eq!(
+            (kinds, step(cx, &rig), staging.exists()),
+            (vec![ToastKind::Warn], "previewing", true)
+        );
+    }
 }

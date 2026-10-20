@@ -627,4 +627,28 @@ mod tests {
             ((false, Some(RestoreProblem::RestoreAlreadyPending)), false)
         );
     }
+
+    #[gpui::test]
+    fn opening_another_backup_while_confirming_warns_and_keeps_the_confirmation(
+        cx: &mut TestAppContext,
+    ) {
+        let h = harness(cx);
+        let staging = confirming(cx, &h);
+
+        h.flow.update(cx, |flow, cx| {
+            flow.open(PathBuf::from("second.forgebundle"), cx)
+        });
+        let kinds: Vec<forge_components::ToastKind> = cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|toast| toast.kind)
+                .collect()
+        });
+
+        assert_eq!(
+            (kinds, step(cx, &h), staging.exists()),
+            (vec![forge_components::ToastKind::Warn], "confirming", true)
+        );
+    }
 }

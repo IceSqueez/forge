@@ -791,4 +791,21 @@ mod tests {
             ("idle", vec![(ToastKind::Error, true, true)])
         );
     }
+
+    #[gpui::test]
+    fn opening_another_setup_while_confirming_warns_and_keeps_the_confirmation(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = rig(cx);
+        let staging = confirming(cx, &rig);
+
+        rig.flow.update(cx, |flow, cx| {
+            flow.open(PathBuf::from("second.forgebundle"), cx)
+        });
+
+        assert_eq!(
+            (toast_kinds(cx), step(cx, &rig), staging_dir(cx, &rig)),
+            (vec![ToastKind::Warn], "confirming", staging)
+        );
+    }
 }

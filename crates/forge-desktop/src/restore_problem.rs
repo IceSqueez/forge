@@ -134,7 +134,7 @@ fn kind_name(kind: BundleKind) -> String {
 #[cfg(test)]
 mod tests {
     use forge_storage::Language;
-    use forge_transfer::TransferError;
+    use forge_transfer::{BundleKind, TransferError};
 
     use super::RestoreProblem;
     use crate::i18n::install_language;
@@ -224,6 +224,36 @@ mod tests {
                 TransferError::RestoreAlreadyPending,
                 RestoreProblem::RestoreAlreadyPending,
             ),
+            (
+                TransferError::KindMismatch {
+                    expected: BundleKind::Pack,
+                    found: BundleKind::Full,
+                },
+                RestoreProblem::KindMismatch {
+                    expected: BundleKind::Pack,
+                    found: BundleKind::Full,
+                },
+            ),
+            (
+                TransferError::NewerPackDocuments {
+                    found: 4,
+                    supported: 2,
+                },
+                RestoreProblem::NewerDocuments {
+                    found: 4,
+                    supported: 2,
+                },
+            ),
+            (
+                TransferError::NewerSetupDocuments {
+                    found: 6,
+                    supported: 5,
+                },
+                RestoreProblem::NewerDocuments {
+                    found: 6,
+                    supported: 5,
+                },
+            ),
         ] {
             assert_eq!(RestoreProblem::of(&error), expected, "{error:?}");
         }
@@ -246,6 +276,13 @@ mod tests {
                     supported: 58,
                 },
                 ["91", "58"],
+            ),
+            (
+                TransferError::NewerPackDocuments {
+                    found: 4,
+                    supported: 2,
+                },
+                ["4", "2"],
             ),
             (
                 TransferError::SchemaNotAdoptable {
@@ -276,6 +313,24 @@ mod tests {
             matches!(&problem, RestoreProblem::Failed(text) if text == &error.to_string())
                 && problem.message().contains("media-in-the-way"),
             "{problem:?}"
+        );
+    }
+
+    #[test]
+    fn a_kind_mismatch_names_the_kind_found_before_the_kind_expected() {
+        install_language(Language::En);
+        let error = TransferError::KindMismatch {
+            expected: BundleKind::Full,
+            found: BundleKind::Setup,
+        };
+
+        let message = RestoreProblem::of(&error)
+            .message()
+            .replace(['\u{2068}', '\u{2069}'], "");
+
+        assert!(
+            message.contains("a forge setup, not a full backup"),
+            "{message:?}"
         );
     }
 }

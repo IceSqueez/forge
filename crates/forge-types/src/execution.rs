@@ -371,6 +371,57 @@ mod tests {
         }
     }
 
+    fn mid_year_noon() -> OffsetDateTime {
+        time::Date::from_calendar_date(2026, time::Month::July, 1)
+            .unwrap()
+            .with_hms(12, 0, 0)
+            .unwrap()
+            .assume_utc()
+    }
+
+    #[test]
+    fn interpolate_ignores_a_format_on_values_that_are_not_datetimes() {
+        let stack = stack_with(&[
+            ("name", Variant::String("alice".to_string())),
+            ("count", Variant::Int(5)),
+        ]);
+        assert_eq!(stack.interpolate("%name:HH% %count:yyyy%"), "alice 5");
+    }
+
+    #[test]
+    fn interpolate_renders_a_datetime_with_an_invalid_format_in_canonical_form() {
+        let at = mid_year_noon();
+        let stack = stack_with(&[("at", Variant::Datetime(at))]);
+        for template in ["%at:qqq%", "%at:%", "%at:dddd%"] {
+            assert_eq!(
+                stack.interpolate(template),
+                crate::datetime_to_text(&at),
+                "template {template:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn interpolate_reprints_a_formatted_token_for_a_missing_variable_verbatim() {
+        let stack = stack_with(&[("at", Variant::Datetime(mid_year_noon()))]);
+        assert_eq!(
+            stack.interpolate("at %gone:HH:mm% then"),
+            "at %gone:HH:mm% then"
+        );
+    }
+
+    #[test]
+    fn interpolate_formats_a_datetime_reached_through_a_nested_path() {
+        let stack = stack_with(&[(
+            "obj",
+            Variant::Object(BTreeMap::from([(
+                "at".to_string(),
+                Variant::Datetime(mid_year_noon()),
+            )])),
+        )]);
+        assert_eq!(stack.interpolate("%obj.at:yyyy/MM%"), "2026/07");
+    }
+
     #[test]
     fn arg_stack_set_returns_new_layer() {
         let s1 = ArgStack::new();

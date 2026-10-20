@@ -60,3 +60,55 @@ pub(super) fn cached_pattern(pattern: &str) -> CachedPattern {
         newly_parsed: true,
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn filled_to_capacity() -> PatternCache {
+        let mut cache = PatternCache::default();
+        for index in 0..PATTERN_CACHE_CAPACITY {
+            let pattern = format!("'{index}' HH");
+            cache.insert(&pattern, Arc::new(DatePattern::parse(&pattern)));
+        }
+        cache
+    }
+
+    #[test]
+    fn cached_pattern_reports_newly_parsed_only_on_the_first_lookup() {
+        let pattern = "'first lookup probe' HH:mm";
+        assert!(cached_pattern(pattern).newly_parsed);
+        assert!(!cached_pattern(pattern).newly_parsed);
+    }
+
+    #[test]
+    fn cached_pattern_keeps_an_invalid_pattern_and_returns_the_same_error() {
+        let pattern = "'invalid probe' qqq";
+        let first = cached_pattern(pattern);
+        let second = cached_pattern(pattern);
+        assert!(first.parsed.is_err());
+        assert!(!second.newly_parsed);
+        assert!(Arc::ptr_eq(&first.parsed, &second.parsed));
+    }
+
+    #[test]
+    fn pattern_cache_at_capacity_keeps_every_entry() {
+        let cache = filled_to_capacity();
+        assert_eq!(cache.entries.len(), PATTERN_CACHE_CAPACITY);
+        assert!(cache.entries.contains_key("'0' HH"));
+    }
+
+    #[test]
+    fn pattern_cache_over_capacity_evicts_in_insertion_order() {
+        let mut cache = filled_to_capacity();
+        for pattern in ["'extra one' HH", "'extra two' HH"] {
+            cache.insert(pattern, Arc::new(DatePattern::parse(pattern)));
+        }
+        assert_eq!(cache.entries.len(), PATTERN_CACHE_CAPACITY);
+        assert!(!cache.entries.contains_key("'0' HH"));
+        assert!(!cache.entries.contains_key("'1' HH"));
+        assert!(cache.entries.contains_key("'2' HH"));
+        assert!(cache.entries.contains_key("'extra two' HH"));
+    }
+}

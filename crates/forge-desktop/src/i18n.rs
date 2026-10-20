@@ -135,6 +135,13 @@ mod tests {
     const MARKER: &str = "MARKER-7";
 
     #[test]
+    fn date_names_language_matches_the_ui_language_code() {
+        for lang in [Language::En, Language::Uk] {
+            assert_eq!(date_names_language(lang).code(), lang.to_string());
+        }
+    }
+
+    #[test]
     fn strings_added_for_toggles_queues_voice_gate_and_server_resolve_in_both_locales() {
         for lang in [Language::En, Language::Uk] {
             install_language(lang);

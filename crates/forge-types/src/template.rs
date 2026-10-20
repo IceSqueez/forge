@@ -90,12 +90,66 @@ mod tests {
             ("100%", vec![]),
             ("%%", vec![]),
             ("", vec![]),
+            ("%t:HH:mm% for %user%", vec!["t", "user"]),
+            ("%a.b:yyyy%", vec!["a.b"]),
         ] {
             assert_eq!(
                 variable_references(template).collect::<Vec<_>>(),
                 expected,
                 "template {template:?}"
             );
+        }
+    }
+
+    fn references(template: &str) -> Vec<(&str, Option<&str>, &str)> {
+        TemplatePieces::new(template)
+            .filter_map(|piece| match piece {
+                TemplatePiece::Reference { name, format, raw } => Some((name, format, raw)),
+                TemplatePiece::Literal(_) => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn template_pieces_split_a_formatted_token_at_its_first_colon() {
+        for (template, expected) in [
+            ("%t:HH:mm%", vec![("t", Some("HH:mm"), "%t:HH:mm%")]),
+            ("%a.b:yyyy%", vec![("a.b", Some("yyyy"), "%a.b:yyyy%")]),
+            ("%a:%", vec![("a", Some(""), "%a:%")]),
+            ("%a:b%user%", vec![("a", Some("b"), "%a:b%")]),
+            ("%user%", vec![("user", None, "%user%")]),
+            (
+                "at %t:H% by %user%",
+                vec![("t", Some("H"), "%t:H%"), ("user", None, "%user%")],
+            ),
+        ] {
+            assert_eq!(references(template), expected, "template {template:?}");
+        }
+    }
+
+    #[test]
+    fn template_pieces_keep_a_colon_body_literal_when_the_name_part_is_invalid() {
+        for template in ["%:x%", "%a b:x%", "% a:x%", "%a$b:x%", "%:%"] {
+            assert_eq!(references(template), vec![], "template {template:?}");
+        }
+    }
+
+    #[test]
+    fn template_pieces_reassemble_into_the_original_template() {
+        for template in [
+            "%t:HH:mm% done",
+            "%a:b%user%",
+            "%a b:x%user%",
+            "%:x% 50% %a:%",
+            "tail %open:HH",
+        ] {
+            let rebuilt: String = TemplatePieces::new(template)
+                .map(|piece| match piece {
+                    TemplatePiece::Literal(text) => text,
+                    TemplatePiece::Reference { raw, .. } => raw,
+                })
+                .collect();
+            assert_eq!(rebuilt, template);
         }
     }
 

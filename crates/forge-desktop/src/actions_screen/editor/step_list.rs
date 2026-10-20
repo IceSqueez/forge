@@ -384,7 +384,7 @@ mod tests {
                     vec![REASON],
                 ),
             ] {
-                let rendered = analyzer_finding_message(&finding);
+                let rendered = analyzer_finding_message(&finding, &[]);
                 for marker in carried {
                     assert!(
                         rendered.contains(marker),
@@ -393,5 +393,23 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn an_invalid_step_config_line_names_the_field_by_its_form_label() {
+        install_language(Language::En);
+        let fields = [FormField::Text {
+            key: "scene",
+            label: "Target scene",
+            placeholder: "",
+        }];
+        let finding = Finding::InvalidStepConfig(forge_registry::ConfigProblem::field(
+            "scene",
+            forge_registry::ConfigReason::Required,
+        ));
+
+        let rendered = analyzer_finding_message(&finding, &fields);
+
+        assert!(rendered.contains("Target scene"), "{rendered}");
     }
 }

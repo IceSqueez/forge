@@ -240,4 +240,79 @@ mod tests {
             );
         }
     }
+
+    fn labelled_form() -> Vec<FormField> {
+        vec![
+            FormField::Text {
+                key: "scene",
+                label: "Scene",
+                placeholder: "",
+            },
+            FormField::Integer {
+                key: "interval",
+                label: "Interval (minutes)",
+                min: 1,
+                max: 60,
+            },
+            FormField::Optional {
+                key: "only_live",
+                label: "Only while live",
+                inner: Box::new(FormField::Text {
+                    key: "pattern",
+                    label: "Match text",
+                    placeholder: "",
+                }),
+            },
+            FormField::UnitAmount {
+                key: "amount",
+                label: "Timeout length",
+                unit_key: "amount_unit",
+                bounds: forge_registry::UnitAmountBounds {
+                    min: 1,
+                    max_base_units: 60,
+                    units: &[],
+                },
+            },
+            FormField::Text {
+                key: "hint_only",
+                label: " (optional)",
+                placeholder: "",
+            },
+        ]
+    }
+
+    #[test]
+    fn form_field_label_names_any_declared_key_by_its_short_english_label() {
+        install_language(Language::En);
+        let fields = labelled_form();
+        for (key, expected) in [
+            ("scene", Some("Scene")),
+            ("interval", Some("Interval")),
+            ("only_live", Some("Only while live")),
+            ("pattern", Some("Match text")),
+            ("amount", Some("Timeout length")),
+            ("amount_unit", Some("Timeout length")),
+            ("hint_only", None),
+            ("not_on_form", None),
+        ] {
+            assert_eq!(
+                form_field_label(&fields, key).as_deref(),
+                expected,
+                "key {key:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn form_field_label_trims_the_hint_from_the_translated_label() {
+        install_language(Language::Uk);
+        let fields = labelled_form();
+        for (key, expected) in [("scene", "Сцена"), ("interval", "Інтервал")] {
+            assert_eq!(
+                form_field_label(&fields, key).as_deref(),
+                Some(expected),
+                "key {key:?}"
+            );
+        }
+    }
 }

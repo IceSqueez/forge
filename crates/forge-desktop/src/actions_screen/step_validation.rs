@@ -52,7 +52,7 @@ mod tests {
     const KIND: &str = "test.kind";
     const KEYS: [&str; 3] = ["id", "clip_id", "text"];
 
-    struct Verdict(Option<ConfigProblem>);
+    struct Verdict(Option<ConfigProblem>, Vec<FormField>);
 
     #[async_trait::async_trait]
     impl SubActionRunner for Verdict {
@@ -85,7 +85,7 @@ mod tests {
         }
 
         fn config_fields(&self) -> Vec<FormField> {
-            Vec::new()
+            self.1.clone()
         }
 
         fn validate_config(&self, _: &SubActionConfig) -> Result<(), RegistryError> {
@@ -116,8 +116,17 @@ mod tests {
     }
 
     fn rejection(problem: ConfigProblem, entries: &[(&str, &str)]) -> Option<StepRejection> {
+        rejection_on_form(problem, Vec::new(), entries)
+    }
+
+    fn rejection_on_form(
+        problem: ConfigProblem,
+        fields: Vec<FormField>,
+        entries: &[(&str, &str)],
+    ) -> Option<StepRejection> {
         install_language(Language::En);
-        step_rejection(&Verdict(Some(problem)), &config(entries), &keys()).map(|r| StepRejection {
+        let runner = Verdict(Some(problem), fields);
+        step_rejection(&runner, &config(entries), &keys()).map(|r| StepRejection {
             message: r
                 .message
                 .chars()
@@ -133,7 +142,11 @@ mod tests {
 
     #[test]
     fn a_config_the_runner_accepts_is_not_rejected() {
-        let verdict = step_rejection(&Verdict(None), &config(&[("clip_id", "")]), &keys());
+        let verdict = step_rejection(
+            &Verdict(None, Vec::new()),
+            &config(&[("clip_id", "")]),
+            &keys(),
+        );
 
         assert_eq!(verdict, None);
     }
@@ -158,6 +171,26 @@ mod tests {
             Some(StepRejection {
                 field_key: None,
                 message: "Must be a number (volume)".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_footer_problem_names_a_key_the_runner_declares_by_its_label() {
+        let volume = FormField::Slider {
+            key: "volume",
+            label: "Volume (0-100)",
+            min: 0,
+            max: 100,
+            unit: "%",
+        };
+        let problem = ConfigProblem::field("volume", ConfigReason::NotANumber);
+
+        assert_eq!(
+            rejection_on_form(problem, vec![volume], &[]),
+            Some(StepRejection {
+                field_key: None,
+                message: "Must be a number (Volume)".to_owned(),
             })
         );
     }

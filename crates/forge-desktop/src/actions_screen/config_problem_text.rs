@@ -89,7 +89,31 @@ mod tests {
 
     fn reason_in(language: Language, reason: ConfigReason) -> String {
         install_language(language);
-        plain(config_reason_text(&reason))
+        plain(config_reason_text(&reason, &[]))
+    }
+
+    fn count(bounds: ValueBounds) -> ConfigReason {
+        ConfigReason::CountOutOfRange(bounds)
+    }
+
+    fn form() -> Vec<FormField> {
+        vec![
+            FormField::Text {
+                key: "title",
+                label: "Stream title",
+                placeholder: "",
+            },
+            FormField::Text {
+                key: "category_id",
+                label: "Category ID (numeric)",
+                placeholder: "",
+            },
+            FormField::Text {
+                key: "scene",
+                label: "Scene",
+                placeholder: "",
+            },
+        ]
     }
 
     fn range(bounds: ValueBounds) -> ConfigReason {
@@ -139,6 +163,26 @@ mod tests {
                 "Invalid format: unknown letter q",
             ),
             (
+                ConfigReason::InvalidFormat("unknown letter q\n  at column 3\n".to_owned()),
+                "Invalid format: unknown letter q",
+            ),
+            (ConfigReason::NotText, "Must be text"),
+            (
+                count(ValueBounds::between(2, 10)),
+                "Must list 2 to 10 items",
+            ),
+            (count(ValueBounds::at_least(1)), "Must list at least 1 item"),
+            (
+                count(ValueBounds::at_least(2)),
+                "Must list at least 2 items",
+            ),
+            (count(ValueBounds::at_most(1)), "Must list at most 1 item"),
+            (
+                count(ValueBounds::at_most(25)),
+                "Must list at most 25 items",
+            ),
+            (count(UNBOUNDED), "Out of the allowed range"),
+            (
                 ConfigReason::Custom("pick a scene first".to_owned()),
                 "pick a scene first",
             ),
@@ -175,6 +219,11 @@ mod tests {
                 ConfigReason::InvalidFormat("q".to_owned()),
                 "Неправильний формат: q",
             ),
+            (ConfigReason::NotText, "Має бути текстом"),
+            (
+                count(ValueBounds::between(1, 5)),
+                "Має містити від 1 до 5 елементів",
+            ),
         ] {
             assert_eq!(
                 reason_in(Language::Uk, reason.clone()),
@@ -203,6 +252,42 @@ mod tests {
     }
 
     #[test]
+    fn ukrainian_count_bounds_pick_the_plural_form_of_the_count() {
+        for (n, at_least, at_most) in [
+            (1, "Щонайменше 1 елемент", "Щонайбільше 1 елемент"),
+            (2, "Щонайменше 2 елементи", "Щонайбільше 2 елементи"),
+            (5, "Щонайменше 5 елементів", "Щонайбільше 5 елементів"),
+        ] {
+            assert_eq!(
+                reason_in(Language::Uk, count(ValueBounds::at_least(n))),
+                at_least
+            );
+            assert_eq!(
+                reason_in(Language::Uk, count(ValueBounds::at_most(n))),
+                at_most
+            );
+        }
+    }
+
+    #[test]
+    fn any_of_required_names_each_field_by_its_form_label_or_its_key_when_off_the_form() {
+        let reason = ConfigReason::any_of(["title", "category_id", "tags"]);
+        for (language, expected) in [
+            (
+                Language::En,
+                "Fill in at least one of: Stream title, Category ID, tags",
+            ),
+            (
+                Language::Uk,
+                "Заповніть хоча б одне з полів: Stream title, Category ID, tags",
+            ),
+        ] {
+            install_language(language);
+            assert_eq!(plain(config_reason_text(&reason, &form())), expected);
+        }
+    }
+
+    #[test]
     fn english_length_bounds_pick_singular_only_for_one() {
         for (count, expected) in [
             (1, "Must be at most 1 character long"),
@@ -216,16 +301,20 @@ mod tests {
     }
 
     #[test]
-    fn a_problem_names_its_field_after_the_reason_and_a_whole_config_problem_does_not() {
+    fn a_problem_names_its_field_by_label_after_the_reason_and_a_whole_config_problem_does_not() {
         install_language(Language::En);
         for (problem, expected) in [
             (
                 ConfigProblem::field("scene", ConfigReason::Required),
-                "Required (scene)",
+                "Required (Scene)",
+            ),
+            (
+                ConfigProblem::field("volume", ConfigReason::Required),
+                "Required (volume)",
             ),
             (ConfigProblem::whole(ConfigReason::Required), "Required"),
         ] {
-            assert_eq!(plain(config_problem_text(&problem)), expected);
+            assert_eq!(plain(config_problem_text(&problem, &form())), expected);
         }
     }
 }

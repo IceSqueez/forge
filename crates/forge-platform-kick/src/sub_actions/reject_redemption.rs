@@ -161,6 +161,7 @@ mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
     use forge_platform_core::{RateLimitOutcome, RateLimiter};
+    use forge_registry::ConfigProblem;
     use forge_types::EventId;
     use std::time::Duration;
     use wiremock::matchers::{method, path};
@@ -275,28 +276,37 @@ mod tests {
         );
     }
 
+    fn ids(count: usize) -> String {
+        (0..count)
+            .map(|i| format!("r{i}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
     #[test]
-    fn validate_config_enforces_presence_and_batch_limit() {
+    fn validate_config_requires_ids_and_caps_the_batch_at_its_limit() {
         let runner = runner_offline();
-        let twenty_five = (0..25)
-            .map(|i| format!("r{i}"))
-            .collect::<Vec<_>>()
-            .join(",");
-        let twenty_six = (0..26)
-            .map(|i| format!("r{i}"))
-            .collect::<Vec<_>>()
-            .join(",");
-        let cases: Vec<(&str, String, bool)> = vec![
-            ("empty", String::new(), false),
-            ("whitespace", "   ".to_owned(), false),
-            ("single id", "rd_1".to_owned(), true),
-            ("25 ids at limit", twenty_five, true),
-            ("26 ids over limit", twenty_six, false),
-        ];
-        for (label, ids, expect_ok) in cases {
+        let problem = |reason| Some(ConfigProblem::field("redemption_ids", reason));
+        let over_limit = problem(ConfigReason::CountOutOfRange(ValueBounds::at_most(
+            MAX_BATCH,
+        )));
+        for (label, raw, expected) in [
+            ("empty", String::new(), problem(ConfigReason::Required)),
+            (
+                "whitespace",
+                "   ".to_owned(),
+                problem(ConfigReason::Required),
+            ),
+            ("single id", "rd_1".to_owned(), None),
+            ("at limit", ids(MAX_BATCH), None),
+            ("one over limit", ids(MAX_BATCH + 1), over_limit),
+        ] {
             assert_eq!(
-                runner.validate_config(&config(&ids)).is_ok(),
-                expect_ok,
+                runner
+                    .validate_config(&config(&raw))
+                    .err()
+                    .map(RegistryError::into_config_problem),
+                expected,
                 "case: {label}"
             );
         }

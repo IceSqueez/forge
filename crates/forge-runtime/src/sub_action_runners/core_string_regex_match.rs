@@ -165,6 +165,7 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
+    use forge_registry::ConfigReason;
     use forge_types::EventId;
 
     struct NullPublisher;

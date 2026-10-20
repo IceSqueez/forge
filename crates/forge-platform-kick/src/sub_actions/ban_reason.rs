@@ -85,17 +85,26 @@ mod tests {
     }
 
     #[test]
-    fn validate_keys_an_over_long_or_non_string_reason_to_the_reason_field() {
-        for (label, config) in [
-            ("one over limit", text(&"a".repeat(101))),
-            ("multibyte one over limit", text(&"ї".repeat(101))),
-            ("integer", reason_config(Variant::Int(7))),
+    fn validate_keys_an_over_long_or_non_text_reason_to_the_reason_field() {
+        let too_long = ConfigReason::LengthOutOfRange(ValueBounds::at_most(REASON_MAX_CHARS));
+        for (label, config, reason) in [
+            ("one over limit", text(&"a".repeat(101)), too_long.clone()),
+            ("multibyte one over limit", text(&"ї".repeat(101)), too_long),
+            (
+                "integer",
+                reason_config(Variant::Int(7)),
+                ConfigReason::NotText,
+            ),
+            (
+                "bool",
+                reason_config(Variant::Bool(true)),
+                ConfigReason::NotText,
+            ),
         ] {
-            let error = validate(&config).unwrap_err();
-            assert!(
-                matches!(&error, RegistryError::InvalidConfig(problem)
-                    if problem.field.as_deref() == Some(REASON_KEY)),
-                "case: {label}, got {error:?}"
+            assert_eq!(
+                validate(&config).unwrap_err().into_config_problem(),
+                forge_registry::ConfigProblem::field(REASON_KEY, reason),
+                "case: {label}"
             );
         }
     }

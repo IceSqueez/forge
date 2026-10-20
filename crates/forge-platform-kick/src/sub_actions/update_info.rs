@@ -359,10 +359,7 @@ mod tests {
 
         let runner = runner_on(&server);
         let stack = ArgStack::new();
-        let eleven = (1..=11)
-            .map(|n| format!("t{n}"))
-            .collect::<Vec<_>>()
-            .join(",");
+        let eleven = tags(11);
 
         let (telemetry, _) = runner
             .execute(&config("", "", &eleven), &make_ctx(&stack))
@@ -397,42 +394,44 @@ mod tests {
         );
     }
 
+    fn tags(count: usize) -> String {
+        (1..=count)
+            .map(|n| format!("t{n}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
     #[test]
     fn validate_config_asks_for_any_field_as_a_whole_and_keys_the_tag_cap_to_tags() {
         let runner = runner_offline();
-        let ten = (1..=10)
-            .map(|n| format!("t{n}"))
-            .collect::<Vec<_>>()
-            .join(",");
-        let eleven = (1..=11)
-            .map(|n| format!("t{n}"))
-            .collect::<Vec<_>>()
-            .join(",");
-
-        let cases: Vec<(&str, SubActionConfig, Option<Option<&str>>)> = vec![
-            ("all empty", config("", "", ""), Some(None)),
+        let none_set = forge_registry::ConfigProblem::whole(ConfigReason::any_of([
+            "title",
+            "category_id",
+            "tags",
+        ]));
+        let too_many_tags = forge_registry::ConfigProblem::field(
+            "tags",
+            ConfigReason::CountOutOfRange(ValueBounds::at_most(10)),
+        );
+        for (label, cfg, expected) in [
+            ("all empty", config("", "", ""), Some(none_set)),
             ("only title", config("t", "", ""), None),
             ("only category", config("", "1", ""), None),
             ("only tags", config("", "", "a,b"), None),
-            ("ten tags", config("", "", &ten), None),
-            ("eleven tags", config("", "", &eleven), Some(Some("tags"))),
-        ];
-
-        for (label, cfg, expected_field) in cases {
-            let problem = runner
-                .validate_config(&cfg)
-                .err()
-                .map(RegistryError::into_config_problem);
+            ("ten tags", config("", "", &tags(10)), None),
+            (
+                "eleven tags",
+                config("", "", &tags(11)),
+                Some(too_many_tags),
+            ),
+        ] {
             assert_eq!(
-                problem.as_ref().map(|p| p.field.as_deref()),
-                expected_field,
+                runner
+                    .validate_config(&cfg)
+                    .err()
+                    .map(RegistryError::into_config_problem),
+                expected,
                 "case: {label}"
-            );
-            assert!(
-                problem
-                    .as_ref()
-                    .is_none_or(|p| matches!(p.reason, ConfigReason::Custom(_))),
-                "case: {label}, got {problem:?}"
             );
         }
     }

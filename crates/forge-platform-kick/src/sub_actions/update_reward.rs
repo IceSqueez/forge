@@ -416,17 +416,29 @@ mod tests {
     #[test]
     fn validate_config_requires_reward_id_and_at_least_one_updatable_field() {
         let runner = runner_offline();
-        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
-            ("no reward_id", config("", "New", "", ""), false),
-            ("reward_id but no fields", config("rw_1", "", "", ""), false),
-            ("reward_id + title", config("rw_1", "New", "", ""), true),
-            ("reward_id + cost", config("rw_1", "", "500", ""), true),
-            ("reward_id + description", config("rw_1", "", "", "d"), true),
-        ];
-        for (label, cfg, expect_ok) in cases {
+        let no_reward = forge_registry::ConfigProblem::field("reward_id", ConfigReason::Required);
+        let no_update = forge_registry::ConfigProblem::whole(ConfigReason::any_of([
+            "title",
+            "cost",
+            "description",
+        ]));
+        for (label, cfg, expected) in [
+            ("no reward_id", config("", "New", "", ""), Some(no_reward)),
+            (
+                "reward_id but no fields",
+                config("rw_1", "", "", ""),
+                Some(no_update),
+            ),
+            ("reward_id + title", config("rw_1", "New", "", ""), None),
+            ("reward_id + cost", config("rw_1", "", "500", ""), None),
+            ("reward_id + description", config("rw_1", "", "", "d"), None),
+        ] {
             assert_eq!(
-                runner.validate_config(&cfg).is_ok(),
-                expect_ok,
+                runner
+                    .validate_config(&cfg)
+                    .err()
+                    .map(RegistryError::into_config_problem),
+                expected,
                 "case: {label}"
             );
         }

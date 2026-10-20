@@ -135,7 +135,7 @@ mod tests {
     use crate::error::RegistryError;
 
     #[test]
-    fn display_prefixes_the_field_or_the_word_value_before_each_reason() {
+    fn display_prefixes_the_field_the_word_value_or_the_word_step_before_each_reason() {
         let keyed = |reason| ConfigProblem::field("k", reason);
         for (problem, expected) in [
             (keyed(ConfigReason::Required), "'k' is required"),
@@ -175,6 +175,15 @@ mod tests {
                 "'k' must be at most 100 characters long",
             ),
             (keyed(ConfigReason::NotANumber), "'k' must be a number"),
+            (keyed(ConfigReason::NotText), "'k' must be text"),
+            (
+                keyed(ConfigReason::CountOutOfRange(ValueBounds::at_most(25))),
+                "'k' must list at most 25 items",
+            ),
+            (
+                ConfigProblem::whole(ConfigReason::any_of(["title", "cost"])),
+                "step needs at least one of: title, cost",
+            ),
             (
                 keyed(ConfigReason::choices(["public", "unlisted"])),
                 "'k' must be one of: public, unlisted",

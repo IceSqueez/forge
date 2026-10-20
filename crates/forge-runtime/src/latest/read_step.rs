@@ -310,7 +310,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_config_accepts_every_declared_slot_and_rejects_others() {
+    fn validate_config_accepts_every_declared_slot_and_lists_the_slots_for_any_other() {
         let runner = LatestGetRunner::new(Arc::new(Reader::default()));
         for slot in latest_slot_ids() {
             assert!(
@@ -318,12 +318,18 @@ mod tests {
                 "{slot}"
             );
         }
-        for slot in ["", "no_such_slot", "Donation"] {
-            assert!(
-                matches!(
-                    runner.validate_config(&config(slot, "", "latest")),
-                    Err(RegistryError::InvalidConfig(_))
-                ),
+        let listing = ConfigReason::choices(latest_slot_ids().iter().copied());
+        for (slot, reason) in [
+            ("", ConfigReason::Required),
+            ("no_such_slot", listing.clone()),
+            ("Donation", listing),
+        ] {
+            assert_eq!(
+                runner
+                    .validate_config(&config(slot, "", "latest"))
+                    .unwrap_err()
+                    .into_config_problem(),
+                forge_registry::ConfigProblem::field(SLOT_KEY, reason),
                 "{slot:?}"
             );
         }

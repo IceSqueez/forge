@@ -73,10 +73,15 @@ pub mod reserved_keys {
     pub const HOTKEY_HOLD_CEILING_SECS: &str = "hotkey.hold_ceiling_secs";
     pub const DONATELLO_POLL_INTERVAL_SECS: &str = "donations.donatello.poll_interval_secs";
     pub const VOICE_ASSIGNMENT_STRATEGY: &str = "voice:strategy";
+    pub const NOTIFICATIONS_ACTION_FAILURE_OS_NOTICE: &str =
+        "notifications.action_failure_os_notice";
+    pub const NOTIFICATIONS_CONNECTION_LOSS_SOUND: &str = "notifications.connection_loss_sound";
 }
 
 pub mod portability;
 
+pub const DEFAULT_NOTIFICATIONS_ACTION_FAILURE_OS_NOTICE: bool = true;
+pub const DEFAULT_NOTIFICATIONS_CONNECTION_LOSS_SOUND: bool = false;
 pub const DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT: u32 = 500;
 pub const DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 50;
 pub const UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 0;

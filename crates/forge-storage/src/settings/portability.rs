@@ -71,6 +71,8 @@ pub const CLASSIFIED_KEYS: &[(&str, SettingPortability)] = &[
     (key::HOTKEY_HOLD_CEILING_SECS, Portable),
     (key::DONATELLO_POLL_INTERVAL_SECS, Portable),
     (key::VOICE_ASSIGNMENT_STRATEGY, RepositoryOwned),
+    (key::NOTIFICATIONS_ACTION_FAILURE_OS_NOTICE, Portable),
+    (key::NOTIFICATIONS_CONNECTION_LOSS_SOUND, Portable),
 ];
 
 pub const CLASSIFIED_PREFIXES: &[(&str, SettingPortability)] = &[

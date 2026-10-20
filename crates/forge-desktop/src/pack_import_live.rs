@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+use std::hash::Hash;
 use std::sync::Arc;
 
 use forge_hotkey::HotkeyReconciler;
@@ -291,8 +293,12 @@ async fn refresh_tts(
 }
 
 fn same_ignore_profile(before: &IgnoreProfile, after: &IgnoreProfile) -> bool {
-    before.excluded_voice_ids == after.excluded_voice_ids
-        && before.excluded_locales == after.excluded_locales
+    same_members(&before.excluded_voice_ids, &after.excluded_voice_ids)
+        && same_members(&before.excluded_locales, &after.excluded_locales)
+}
+
+fn same_members<T: Eq + Hash>(before: &[T], after: &[T]) -> bool {
+    before.iter().collect::<HashSet<_>>() == after.iter().collect::<HashSet<_>>()
 }
 
 #[cfg(test)]

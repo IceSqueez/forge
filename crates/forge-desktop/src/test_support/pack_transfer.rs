@@ -1072,6 +1072,67 @@ async fn keep_both_leaves_integration_owned_references_as_exported() {
 }
 
 #[tokio::test]
+async fn keep_both_renames_a_global_with_a_literal_percent_but_never_a_templated_name() {
+    const PERCENT_GLOBAL: &str = "50% off";
+    const TEMPLATED_GLOBAL: &str = "%slot%";
+    let registries = Registries::real().await;
+    let source = Store::open().await;
+    let p = source.provider.as_ref();
+    let queue = Queue {
+        id: QueueId::new(),
+        name: QUEUE_NAME.to_owned(),
+        description: String::new(),
+        concurrency: 1,
+    };
+    p.queue_repo().save(&queue).await.unwrap();
+    for name in [PERCENT_GLOBAL, TEMPLATED_GLOBAL] {
+        GlobalsRepo::set(p, name, Variant::Int(1), true)
+            .await
+            .unwrap();
+    }
+    let root = action(
+        ActionId::new(),
+        "Sale",
+        queue.id,
+        [PERCENT_GLOBAL, TEMPLATED_GLOBAL]
+            .map(|name| {
+                step(
+                    "core.globals.set",
+                    config(&[("name", text(name)), ("value", text("2"))]),
+                )
+            })
+            .to_vec(),
+    );
+    p.action_repo().save(&root).await.unwrap();
+    let bundle = export_with(&source, &registries, &[root.id], |selection| {
+        selection.globals.insert(TEMPLATED_GLOBAL.to_owned());
+    })
+    .await;
+    let target = Store::open().await;
+    import(&target, &registries, &bundle, defaults)
+        .await
+        .unwrap();
+
+    let outcome = import(
+        &target,
+        &registries,
+        &bundle,
+        on_conflict(PackResolution::KeepBoth),
+    )
+    .await
+    .unwrap();
+    let copy = local_id(&outcome, PackItemKind::Action, &root.id.to_string());
+    let copied = target.action(copy.parse().unwrap()).await.unwrap();
+    let names: Vec<_> = copied
+        .sub_actions
+        .iter()
+        .filter_map(|step| step.config.get("name").and_then(Variant::as_str))
+        .collect();
+
+    assert_eq!(names, vec!["50% off (2)", TEMPLATED_GLOBAL]);
+}
+
+#[tokio::test]
 async fn keep_both_links_the_copied_trigger_to_the_copied_action_only() {
     let kept = keep_both_over_a_previous_import().await;
     let root = kept.new_root().await;

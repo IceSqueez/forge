@@ -451,14 +451,20 @@ async fn an_unregistered_top_level_step_or_trigger_kind_is_reported_at_the_root(
 }
 
 #[tokio::test]
-async fn a_value_built_from_variables_is_flagged_templated_and_a_plain_one_is_not() {
+async fn only_a_value_holding_a_real_variable_placeholder_is_flagged_templated() {
     let (triggers, sub_actions) = every_registry_entry().await;
     let catalog = ReferenceCatalog::new(&sub_actions, &triggers);
 
     for (raw, templated) in [
-        ("%target_action%", true),
-        ("prefix-%suffix%", true),
+        ("%user%", true),
+        ("prefix-%user%-x", true),
+        ("100% %name%", true),
         ("action-1", false),
+        ("%", false),
+        ("50%", false),
+        ("a%b", false),
+        ("% x %", false),
+        ("%%", false),
     ] {
         let listing =
             catalog.sub_action_references("core.action.run", &config(&[("action_id", text(raw))]));

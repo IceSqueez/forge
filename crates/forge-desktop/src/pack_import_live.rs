@@ -324,7 +324,7 @@ mod tests {
 
     use super::{
         LiveRefresh, LiveTargets, SetupLiveHandles, VoiceBaseline, refresh_live,
-        refresh_setup_live, voice_baseline,
+        refresh_setup_live, same_ignore_profile, voice_baseline,
     };
     use crate::test_support::pack_flow::{PackWorld, pack_world, queue_named};
     use crate::test_support::{LiveAliases, live_alias, runtime, spawn_speak_queue};
@@ -708,6 +708,52 @@ mod tests {
             .collect();
 
         assert_eq!((refreshed, bound), (LiveRefresh::Applied, vec![clip]));
+    }
+
+    fn profile(voices: &[&str], locales: &[&str]) -> IgnoreProfile {
+        IgnoreProfile {
+            excluded_voice_ids: voices.iter().map(|v| VoiceId((*v).to_owned())).collect(),
+            excluded_locales: locales.iter().map(|l| (*l).to_owned()).collect(),
+        }
+    }
+
+    #[test]
+    fn ignore_profiles_with_the_same_members_in_any_order_or_multiplicity_are_the_same() {
+        for (before, after) in [
+            (profile(&["amy", "joe"], &[]), profile(&["joe", "amy"], &[])),
+            (
+                profile(&[], &["de-DE", "fr-FR"]),
+                profile(&[], &["fr-FR", "de-DE"]),
+            ),
+            (profile(&[], &[]), profile(&[], &[])),
+            (profile(&["amy", "amy"], &[]), profile(&["amy"], &[])),
+            (profile(&[], &["de-DE", "de-DE"]), profile(&[], &["de-DE"])),
+        ] {
+            assert!(
+                same_ignore_profile(&before, &after) && same_ignore_profile(&after, &before),
+                "{before:?} vs {after:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ignore_profiles_with_different_voice_or_locale_members_differ() {
+        for (before, after) in [
+            (profile(&["amy"], &["de-DE"]), profile(&["joe"], &["de-DE"])),
+            (profile(&["amy"], &["de-DE"]), profile(&["amy"], &["fr-FR"])),
+            (profile(&[], &[]), profile(&["amy"], &[])),
+            (profile(&[], &[]), profile(&[], &["de-DE"])),
+            (profile(&["amy", "amy"], &[]), profile(&["amy", "joe"], &[])),
+            (
+                profile(&[], &["de-DE", "de-DE"]),
+                profile(&[], &["de-DE", "fr-FR"]),
+            ),
+        ] {
+            assert!(
+                !same_ignore_profile(&before, &after) && !same_ignore_profile(&after, &before),
+                "{before:?} vs {after:?}"
+            );
+        }
     }
 
     #[test]

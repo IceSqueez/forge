@@ -70,7 +70,7 @@ impl EditSubActionForm {
                 .into_any_element()
         } else if *datetime {
             let target_input = input.clone();
-            div()
+            let control = div()
                 .flex()
                 .items_center()
                 .gap(spacing(Spacing::Xs, Density::Cozy))
@@ -88,7 +88,9 @@ impl EditSubActionForm {
                         }),
                     ),
                 )
-                .into_any_element()
+                .child(self.variable_button(key, InsertTarget::Input(input.clone()), palette, cx))
+                .into_any_element();
+            self.with_variable_popover(key, control, cx)
         } else if field.accepts_variables() {
             let control = div()
                 .flex()

@@ -17,6 +17,7 @@ impl EditSubActionForm {
         pos: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
+        self.dismiss_variable_picker(cx);
         let palette = cx.palette();
         let initial = target_input.read(cx).content().to_owned();
         let labels = DateTimePickerLabels {

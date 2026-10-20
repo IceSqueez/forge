@@ -1,3 +1,4 @@
+use super::field::SubFormField;
 use super::*;
 use crate::globals::variant_kind_color;
 use forge_components::{
@@ -19,11 +20,33 @@ pub(super) enum InsertTarget {
     Area(Entity<TextArea>),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum InsertMode {
+    AtCaret,
+    WholeValue,
+}
+
+impl InsertMode {
+    pub(super) fn offers_formats(self) -> bool {
+        self == Self::AtCaret
+    }
+}
+
 impl InsertTarget {
-    fn insert(&self, text: &str, cx: &mut App) {
+    fn insert(&self, text: &str, mode: InsertMode, cx: &mut App) {
         match self {
-            Self::Input(input) => input.update(cx, |input, cx| input.insert_at_caret(text, cx)),
-            Self::Area(area) => area.update(cx, |area, cx| area.insert_at_caret(text, cx)),
+            Self::Input(input) => input.update(cx, |input, cx| {
+                if mode == InsertMode::WholeValue {
+                    input.clear(cx);
+                }
+                input.insert_at_caret(text, cx);
+            }),
+            Self::Area(area) => area.update(cx, |area, cx| {
+                if mode == InsertMode::WholeValue {
+                    area.clear(cx);
+                }
+                area.insert_at_caret(text, cx);
+            }),
         }
     }
 
@@ -38,6 +61,7 @@ impl InsertTarget {
 struct OpenVariablePicker {
     key: String,
     target: InsertTarget,
+    mode: InsertMode,
     picker: Entity<VariablePicker>,
     _sub: Subscription,
 }
@@ -75,6 +99,8 @@ impl EditSubActionForm {
             return;
         }
         self.select_picker = None;
+        self.datetime_picker = None;
+        let mode = self.insert_mode_for(&key);
         let palette = cx.palette();
         let groups = variable_groups(
             &self.variables.scope,
@@ -82,6 +108,11 @@ impl EditSubActionForm {
             OffsetDateTime::now_utc(),
             &palette,
         );
+        let groups = if mode.offers_formats() {
+            groups
+        } else {
+            without_formats(groups)
+        };
         let labels = VariablePickerLabels {
             placeholder: tr!("actions_var_picker_search").into(),
             empty: tr!("actions_var_picker_empty").into(),
@@ -93,10 +124,25 @@ impl EditSubActionForm {
         self.variables.open = Some(OpenVariablePicker {
             key,
             target,
+            mode,
             picker,
             _sub: sub,
         });
         cx.notify();
+    }
+
+    pub(super) fn insert_mode_for(&self, key: &str) -> InsertMode {
+        let whole_value = self.fields.iter().any(|field| {
+            matches!(
+                field,
+                SubFormField::Input { key: k, datetime: true, .. } if k == key
+            )
+        });
+        if whole_value {
+            InsertMode::WholeValue
+        } else {
+            InsertMode::AtCaret
+        }
     }
 
     fn on_variable_picker_event(
@@ -119,7 +165,7 @@ impl EditSubActionForm {
         cx: &mut Context<Self>,
     ) {
         if let Some(open) = self.variables.open.take() {
-            open.target.insert(token, cx);
+            open.target.insert(token, open.mode, cx);
             open.target.focus(window, cx);
         }
         cx.notify();
@@ -132,7 +178,7 @@ impl EditSubActionForm {
         cx.notify();
     }
 
-    fn dismiss_variable_picker(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn dismiss_variable_picker(&mut self, cx: &mut Context<Self>) {
         self.variables.open = None;
         cx.notify();
     }
@@ -242,6 +288,23 @@ pub(super) fn variable_groups(
                 title: title.into(),
                 entries,
             })
+        })
+        .collect()
+}
+
+pub(super) fn without_formats(groups: Vec<VariableGroup>) -> Vec<VariableGroup> {
+    groups
+        .into_iter()
+        .map(|group| VariableGroup {
+            entries: group
+                .entries
+                .into_iter()
+                .map(|entry| VariableEntry {
+                    formats: Vec::new(),
+                    ..entry
+                })
+                .collect(),
+            ..group
         })
         .collect()
 }

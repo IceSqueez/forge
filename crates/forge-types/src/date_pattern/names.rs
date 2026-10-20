@@ -214,3 +214,144 @@ static UK: CalendarNames = CalendarNames {
     before_noon: "дп",
     after_noon: "пп",
 };
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use time::{Date, Month, OffsetDateTime, UtcOffset};
+
+    use super::NamesLanguage;
+    use crate::date_pattern::{DatePattern, PatternZone};
+
+    fn noon(year: i32, month: Month, day: u8) -> OffsetDateTime {
+        Date::from_calendar_date(year, month, day)
+            .unwrap()
+            .with_hms(12, 0, 0)
+            .unwrap()
+            .assume_offset(UtcOffset::UTC)
+    }
+
+    fn render(pattern: &str, value: OffsetDateTime, language: NamesLanguage) -> String {
+        DatePattern::parse(pattern)
+            .unwrap()
+            .format(value, PatternZone::Utc, language)
+    }
+
+    #[test]
+    fn every_month_renders_in_each_width_and_form() {
+        let pattern = "MMM|MMMM|LLL|LLLL";
+        for (month, en, uk) in [
+            (
+                Month::January,
+                "Jan|January|Jan|January",
+                "січ.|січня|січ.|січень",
+            ),
+            (
+                Month::February,
+                "Feb|February|Feb|February",
+                "лют.|лютого|лют.|лютий",
+            ),
+            (
+                Month::March,
+                "Mar|March|Mar|March",
+                "бер.|березня|бер.|березень",
+            ),
+            (
+                Month::April,
+                "Apr|April|Apr|April",
+                "квіт.|квітня|квіт.|квітень",
+            ),
+            (Month::May, "May|May|May|May", "трав.|травня|трав.|травень"),
+            (
+                Month::June,
+                "Jun|June|Jun|June",
+                "черв.|червня|черв.|червень",
+            ),
+            (Month::July, "Jul|July|Jul|July", "лип.|липня|лип.|липень"),
+            (
+                Month::August,
+                "Aug|August|Aug|August",
+                "серп.|серпня|серп.|серпень",
+            ),
+            (
+                Month::September,
+                "Sep|September|Sep|September",
+                "вер.|вересня|вер.|вересень",
+            ),
+            (
+                Month::October,
+                "Oct|October|Oct|October",
+                "жовт.|жовтня|жовт.|жовтень",
+            ),
+            (
+                Month::November,
+                "Nov|November|Nov|November",
+                "лист.|листопада|лист.|листопад",
+            ),
+            (
+                Month::December,
+                "Dec|December|Dec|December",
+                "груд.|грудня|груд.|грудень",
+            ),
+        ] {
+            let value = noon(2026, month, 15);
+            assert_eq!(render(pattern, value, NamesLanguage::En), en, "{month}");
+            assert_eq!(render(pattern, value, NamesLanguage::Uk), uk, "{month}");
+        }
+    }
+
+    #[test]
+    fn every_weekday_renders_in_each_width_and_form() {
+        let pattern = "EEE|EEEE|ccc|cccc";
+        for (day, en, uk) in [
+            (5, "Mon|Monday|Mon|Monday", "пн|понеділок|пн|понеділок"),
+            (6, "Tue|Tuesday|Tue|Tuesday", "вт|вівторок|вт|вівторок"),
+            (7, "Wed|Wednesday|Wed|Wednesday", "ср|середа|ср|середа"),
+            (8, "Thu|Thursday|Thu|Thursday", "чт|четвер|чт|четвер"),
+            (9, "Fri|Friday|Fri|Friday", "пт|пʼятниця|пт|пʼятниця"),
+            (10, "Sat|Saturday|Sat|Saturday", "сб|субота|сб|субота"),
+            (11, "Sun|Sunday|Sun|Sunday", "нд|неділя|нд|неділя"),
+        ] {
+            let value = noon(2026, Month::January, day);
+            assert_eq!(render(pattern, value, NamesLanguage::En), en, "Jan {day}");
+            assert_eq!(render(pattern, value, NamesLanguage::Uk), uk, "Jan {day}");
+        }
+    }
+
+    #[test]
+    fn ukrainian_month_is_genitive_after_a_day_and_nominative_stand_alone() {
+        let value = noon(2026, Month::October, 20);
+        assert_eq!(
+            render("d MMMM | LLLL yyyy", value, NamesLanguage::Uk),
+            "20 жовтня | жовтень 2026"
+        );
+    }
+
+    #[test]
+    fn day_period_switches_at_noon_in_each_language() {
+        for (hour, minute, en, uk) in [
+            (0, 0, "AM", "дп"),
+            (11, 59, "AM", "дп"),
+            (12, 0, "PM", "пп"),
+            (23, 59, "PM", "пп"),
+        ] {
+            let value = Date::from_calendar_date(2026, Month::March, 7)
+                .unwrap()
+                .with_hms(hour, minute, 0)
+                .unwrap()
+                .assume_offset(UtcOffset::UTC);
+            assert_eq!(render("a", value, NamesLanguage::En), en, "{hour}:{minute}");
+            assert_eq!(render("a", value, NamesLanguage::Uk), uk, "{hour}:{minute}");
+        }
+    }
+
+    #[test]
+    fn language_codes_round_trip_and_reject_non_canonical_codes() {
+        for language in [NamesLanguage::En, NamesLanguage::Uk] {
+            assert_eq!(NamesLanguage::from_code(language.code()), Some(language));
+        }
+        for bad in ["EN", "Uk", "uk-UA", "en_US", "", " en", "ua"] {
+            assert_eq!(NamesLanguage::from_code(bad), None, "code {bad:?}");
+        }
+    }
+}

@@ -148,3 +148,169 @@ fn offset_hours_minutes(offset_seconds: i32) -> String {
     let minutes = magnitude % SECONDS_PER_HOUR / SECONDS_PER_MINUTE;
     format!("{sign}{hours:0TWO_DIGITS$}:{minutes:0TWO_DIGITS$}")
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use time::{Date, Month, OffsetDateTime, UtcOffset};
+
+    use crate::date_pattern::{DatePattern, NamesLanguage, PatternZone};
+
+    fn at(year: i32, month: Month, day: u8, hms: (u8, u8, u8), nanos: u32) -> OffsetDateTime {
+        Date::from_calendar_date(year, month, day)
+            .unwrap()
+            .with_hms_nano(hms.0, hms.1, hms.2, nanos)
+            .unwrap()
+            .assume_offset(UtcOffset::UTC)
+    }
+
+    fn utc_en(pattern: &str, value: OffsetDateTime) -> String {
+        DatePattern::parse(pattern)
+            .unwrap()
+            .format(value, PatternZone::Utc, NamesLanguage::En)
+    }
+
+    #[test]
+    fn every_spelling_renders_its_field_in_utc_english() {
+        let value = at(2026, Month::March, 7, (4, 5, 9), 123_456_789);
+        for (pattern, expected) in [
+            ("y", "2026"),
+            ("yy", "26"),
+            ("yyyy", "2026"),
+            ("M", "3"),
+            ("MM", "03"),
+            ("MMM", "Mar"),
+            ("MMMM", "March"),
+            ("LLL", "Mar"),
+            ("LLLL", "March"),
+            ("d", "7"),
+            ("dd", "07"),
+            ("EEE", "Sat"),
+            ("EEEE", "Saturday"),
+            ("ccc", "Sat"),
+            ("cccc", "Saturday"),
+            ("H", "4"),
+            ("HH", "04"),
+            ("h", "4"),
+            ("hh", "04"),
+            ("a", "AM"),
+            ("m", "5"),
+            ("mm", "05"),
+            ("s", "9"),
+            ("ss", "09"),
+            ("S", "1"),
+            ("SS", "12"),
+            ("SSS", "123"),
+            ("SSSS", "1234"),
+            ("SSSSS", "12345"),
+            ("SSSSSS", "123456"),
+            ("SSSSSSS", "1234567"),
+            ("SSSSSSSS", "12345678"),
+            ("SSSSSSSSS", "123456789"),
+            ("xxx", "+00:00"),
+        ] {
+            assert_eq!(utc_en(pattern, value), expected, "pattern {pattern:?}");
+        }
+    }
+
+    #[test]
+    fn two_digit_padding_leaves_two_digit_values_unchanged() {
+        let value = at(2026, Month::December, 31, (23, 59, 58), 0);
+        assert_eq!(
+            utc_en("M/MM d/dd H/HH h/hh m/mm s/ss", value),
+            "12/12 31/31 23/23 11/11 59/59 58/58"
+        );
+    }
+
+    #[test]
+    fn twelve_hour_clock_shows_twelve_at_midnight_and_noon() {
+        for (hour, minute, expected) in [
+            (0, 0, "12:00 AM / 12"),
+            (0, 59, "12:59 AM / 12"),
+            (1, 0, "1:00 AM / 01"),
+            (11, 59, "11:59 AM / 11"),
+            (12, 0, "12:00 PM / 12"),
+            (12, 59, "12:59 PM / 12"),
+            (13, 0, "1:00 PM / 01"),
+            (23, 59, "11:59 PM / 11"),
+        ] {
+            let value = at(2026, Month::March, 7, (hour, minute, 0), 0);
+            assert_eq!(utc_en("h:mm a / hh", value), expected, "{hour}:{minute}");
+        }
+    }
+
+    #[test]
+    fn two_digit_year_keeps_leading_zero_and_wraps_the_century() {
+        for (year, expected) in [
+            (2000, "00"),
+            (2009, "09"),
+            (2010, "10"),
+            (1999, "99"),
+            (-1, "99"),
+        ] {
+            let value = at(year, Month::January, 1, (0, 0, 0), 0);
+            assert_eq!(utc_en("yy", value), expected, "year {year}");
+        }
+    }
+
+    #[test]
+    fn negative_and_short_years_carry_a_leading_minus_and_padding() {
+        for (year, expected) in [
+            (-44, "-44 -0044"),
+            (-2026, "-2026 -2026"),
+            (0, "0 0000"),
+            (7, "7 0007"),
+            (9999, "9999 9999"),
+        ] {
+            let value = at(year, Month::January, 1, (0, 0, 0), 0);
+            assert_eq!(utc_en("y yyyy", value), expected, "year {year}");
+        }
+    }
+
+    #[test]
+    fn fraction_truncates_instead_of_rounding() {
+        for (nanos, pattern, expected) in [
+            (999_999_999, "S", "9"),
+            (999_999_999, "SSS", "999"),
+            (123_999_999, "SSS", "123"),
+            (5_000_000, "SS", "00"),
+            (5_000_000, "SSS", "005"),
+            (0, "SSSSSSSSS", "000000000"),
+            (1, "SSSSSSSSS", "000000001"),
+            (1, "SSSSSSSS", "00000000"),
+        ] {
+            let value = at(2026, Month::March, 7, (4, 5, 9), nanos);
+            assert_eq!(utc_en(pattern, value), expected, "{nanos} with {pattern}");
+        }
+    }
+
+    #[test]
+    fn utc_zone_converts_from_the_input_offset() {
+        for (offset_seconds, local_hms, expected) in [
+            (19_800, (1, 0, 0), "2026-03-07 19:30 +00:00"),
+            (-12_600, (22, 45, 0), "2026-03-09 02:15 +00:00"),
+            (0, (0, 0, 0), "2026-03-08 00:00 +00:00"),
+        ] {
+            let value = Date::from_calendar_date(2026, Month::March, 8)
+                .unwrap()
+                .with_hms(local_hms.0, local_hms.1, local_hms.2)
+                .unwrap()
+                .assume_offset(UtcOffset::from_whole_seconds(offset_seconds).unwrap());
+            assert_eq!(
+                utc_en("yyyy-MM-dd HH:mm xxx", value),
+                expected,
+                "offset {offset_seconds}"
+            );
+        }
+    }
+
+    #[test]
+    fn weekday_follows_the_utc_date_not_the_input_date() {
+        let value = Date::from_calendar_date(2026, Month::March, 9)
+            .unwrap()
+            .with_hms(1, 0, 0)
+            .unwrap()
+            .assume_offset(UtcOffset::from_hms(3, 0, 0).unwrap());
+        assert_eq!(utc_en("EEEE d", value), "Sunday 8");
+    }
+}

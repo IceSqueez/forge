@@ -188,3 +188,128 @@ fn field_for_spelling(spelling: &str) -> Option<DateField> {
         _ => return None,
     })
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use time::{Date, Month, UtcOffset};
+
+    use super::DatePatternError::{self, *};
+    use crate::date_pattern::{DatePattern, NamesLanguage, PatternZone};
+
+    fn render_utc(pattern: &str) -> String {
+        let value = Date::from_calendar_date(2026, Month::March, 7)
+            .unwrap()
+            .with_hms(4, 5, 9)
+            .unwrap()
+            .assume_offset(UtcOffset::UTC);
+        DatePattern::parse(pattern)
+            .unwrap()
+            .format(value, PatternZone::Utc, NamesLanguage::En)
+    }
+
+    fn length(letter: char, spelling: &str, position: usize) -> DatePatternError {
+        UnsupportedLength {
+            letter,
+            spelling: spelling.to_owned(),
+            position,
+        }
+    }
+
+    fn dot_net(spelling: &str, replacement: &'static str, position: usize) -> DatePatternError {
+        DotNetSpelling {
+            spelling: spelling.to_owned(),
+            replacement,
+            position,
+        }
+    }
+
+    #[test]
+    fn literal_text_and_quotes_render_verbatim() {
+        for (pattern, expected) in [
+            ("''", "'"),
+            ("'o''clock'", "o'clock"),
+            ("h 'o''clock'", "4 o'clock"),
+            ("HH''mm", "04'05"),
+            ("'it''s' HH", "it's 04"),
+            ("'yyyy MM'", "yyyy MM"),
+            ("HHmm", "0405"),
+            ("HH:mm:ss", "04:05:09"),
+            ("привіт HH", "привіт 04"),
+            ("dd.MM.yyyy, HH:mm", "07.03.2026, 04:05"),
+            ("'' ''", "' '"),
+        ] {
+            assert_eq!(render_utc(pattern), expected, "pattern {pattern:?}");
+        }
+    }
+
+    #[test]
+    fn parse_rejects_with_exact_variant_and_char_position() {
+        for (pattern, expected) in [
+            ("", Empty),
+            (
+                "Q",
+                UnsupportedLetter {
+                    letter: 'Q',
+                    position: 0,
+                },
+            ),
+            (
+                "yyyy-MM-dd Q",
+                UnsupportedLetter {
+                    letter: 'Q',
+                    position: 11,
+                },
+            ),
+            (
+                "привіт Q",
+                UnsupportedLetter {
+                    letter: 'Q',
+                    position: 7,
+                },
+            ),
+            (
+                "HH:mm G",
+                UnsupportedLetter {
+                    letter: 'G',
+                    position: 6,
+                },
+            ),
+            ("yyy", length('y', "yyy", 0)),
+            ("yyyyy", length('y', "yyyyy", 0)),
+            ("MMMMM", length('M', "MMMMM", 0)),
+            ("L", length('L', "L", 0)),
+            ("LL", length('L', "LL", 0)),
+            ("E", length('E', "E", 0)),
+            ("EEEEE", length('E', "EEEEE", 0)),
+            ("c", length('c', "c", 0)),
+            ("aa", length('a', "aa", 0)),
+            ("x", length('x', "x", 0)),
+            ("xx", length('x', "xx", 0)),
+            ("HHH", length('H', "HHH", 0)),
+            ("SSSSSSSSSS", length('S', "SSSSSSSSSS", 0)),
+            ("ss.SSSSSSSSSS", length('S', "SSSSSSSSSS", 3)),
+            ("dddd", dot_net("dddd", "EEEE", 0)),
+            ("ddd", dot_net("ddd", "EEE", 0)),
+            ("HH:mm tt", dot_net("tt", "a", 6)),
+            ("ddddd", length('d', "ddddd", 0)),
+            (
+                "t",
+                UnsupportedLetter {
+                    letter: 't',
+                    position: 0,
+                },
+            ),
+            ("'", UnterminatedQuote { position: 0 }),
+            ("HH 'abc", UnterminatedQuote { position: 3 }),
+            ("'abc''", UnterminatedQuote { position: 0 }),
+            ("привіт 'x", UnterminatedQuote { position: 7 }),
+        ] {
+            assert_eq!(
+                DatePattern::parse(pattern),
+                Err(expected),
+                "pattern {pattern:?}"
+            );
+        }
+    }
+}

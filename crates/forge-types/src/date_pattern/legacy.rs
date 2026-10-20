@@ -296,3 +296,147 @@ fn offset_hours_minutes(hour: &Component, rest: &[Item]) -> Result<(String, usiz
         Err(hour.untranslatable())
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use time::{Date, Month, OffsetDateTime, UtcOffset};
+
+    use super::{LegacyTranslation, translate_legacy_pattern};
+    use crate::date_pattern::{DatePattern, NamesLanguage, PatternZone};
+
+    fn sample_instants() -> Vec<OffsetDateTime> {
+        let at = |year: i32, month: Month, day: u8, hms: (u8, u8, u8), nanos: u32, offset: i32| {
+            Date::from_calendar_date(year, month, day)
+                .unwrap()
+                .with_hms_nano(hms.0, hms.1, hms.2, nanos)
+                .unwrap()
+                .assume_offset(UtcOffset::from_whole_seconds(offset).unwrap())
+        };
+        vec![
+            at(2026, Month::March, 7, (4, 5, 9), 123_456_789, 0),
+            at(2026, Month::October, 20, (14, 35, 59), 999_999_999, 0),
+            at(2000, Month::January, 1, (0, 0, 0), 0, 0),
+            at(2009, Month::December, 31, (12, 30, 1), 5_000_000, 0),
+            at(2026, Month::October, 21, (1, 15, 0), 0, 19_800),
+        ]
+    }
+
+    fn time_v2_output(legacy: &str, value: OffsetDateTime) -> String {
+        let description = time::format_description::parse_owned::<2>(legacy).unwrap();
+        value
+            .to_offset(UtcOffset::UTC)
+            .format(&description)
+            .unwrap()
+    }
+
+    #[test]
+    fn plain_and_quoted_patterns_are_not_legacy() {
+        for text in [
+            "HH:mm",
+            "dd.MM.yyyy",
+            "'[day]'",
+            "'[hour]:[minute]'",
+            "[day",
+            "[days]",
+            "[unknown]",
+            "[]",
+            "",
+            "day",
+        ] {
+            assert_eq!(
+                translate_legacy_pattern(text),
+                LegacyTranslation::NotLegacy,
+                "text {text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn translated_pattern_renders_like_time_v2_in_utc_english() {
+        for legacy in [
+            "[year]-[month]-[day] [hour]:[minute]:[second]",
+            "[day padding:none].[month padding:none].[year padding:none]",
+            "[day padding:zero]/[month padding:zero]/[year]",
+            "[hour repr:12]:[minute] [period]",
+            "[hour repr:12 padding:none] [period case:upper]",
+            "[hour repr:24 padding:none]:[minute padding:none]:[second padding:none]",
+            "[month repr:long] [day], [year]",
+            "[month repr:short] [day padding:none]",
+            "[month repr:short case_sensitive:false]",
+            "[month repr:numerical]",
+            "[weekday], [day] [month repr:long]",
+            "[weekday repr:short]",
+            "[weekday repr:long one_indexed:false case_sensitive:true]",
+            "[year repr:last_two]",
+            "[year repr:full base:calendar sign:automatic]",
+            "[hour]:[minute]:[second].[subsecond digits:3]",
+            "[subsecond digits:1] [subsecond digits:9]",
+            "[offset_hour sign:mandatory]:[offset_minute]",
+            "[offset_hour sign:mandatory padding:zero]:[offset_minute padding:zero]",
+            "at [hour]h [minute]m",
+            "it's [hour]",
+            "\\[[hour]\\] \\\\",
+            "[hour]'[minute]",
+            "[hour][minute]",
+            "[day] числа [month repr:long]",
+        ] {
+            let LegacyTranslation::Translated(pattern) = translate_legacy_pattern(legacy) else {
+                panic!(
+                    "{legacy:?} was not translated: {:?}",
+                    translate_legacy_pattern(legacy)
+                );
+            };
+            let parsed = DatePattern::parse(&pattern).unwrap();
+            for value in sample_instants() {
+                assert_eq!(
+                    parsed.format(value, PatternZone::Utc, NamesLanguage::En),
+                    time_v2_output(legacy, value),
+                    "{legacy:?} -> {pattern:?} at {value}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn untranslatable_component_is_reported_with_its_bracketed_text() {
+        for (legacy, component) in [
+            ("[day padding:space]", "[day padding:space]"),
+            ("[hour padding:space]:[minute]", "[hour padding:space]"),
+            ("[subsecond]", "[subsecond]"),
+            ("[subsecond digits:1+]", "[subsecond digits:1+]"),
+            ("[hour]:[minute] [period case:lower]", "[period case:lower]"),
+            ("[unix_timestamp]", "[unix_timestamp]"),
+            ("[year][optional [[month]]]", "[optional [[month]]]"),
+            ("[offset_hour]", "[offset_hour]"),
+            (
+                "[offset_hour sign:mandatory]",
+                "[offset_hour sign:mandatory]",
+            ),
+            (
+                "[offset_hour sign:mandatory][offset_minute]",
+                "[offset_hour sign:mandatory]",
+            ),
+            ("[weekday repr:monday]", "[weekday repr:monday]"),
+            (
+                "[year repr:last_two padding:none]",
+                "[year repr:last_two padding:none]",
+            ),
+            ("[year sign:mandatory]", "[year sign:mandatory]"),
+            ("[ordinal]", "[ordinal]"),
+            ("[week_number]", "[week_number]"),
+            ("[hour][hour]", "[hour][hour]"),
+            ("[hour]]", "]"),
+            ("[hour] [day", "[day"),
+            ("\\x[day]", "\\x[day]"),
+        ] {
+            assert_eq!(
+                translate_legacy_pattern(legacy),
+                LegacyTranslation::Untranslatable {
+                    component: component.to_owned()
+                },
+                "legacy {legacy:?}"
+            );
+        }
+    }
+}

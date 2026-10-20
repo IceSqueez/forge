@@ -283,6 +283,10 @@ mod tests {
 
     impl PlaySoundEditor {
         fn open(cx: &mut gpui::TestAppContext) -> Self {
+            Self::open_storing(cx, SubActionConfig::new())
+        }
+
+        fn open_storing(cx: &mut gpui::TestAppContext, stored: SubActionConfig) -> Self {
             crate::i18n::install_language(forge_storage::Language::En);
             let rt = runtime();
             let mut sub_actions = SubActionRegistry::new();
@@ -303,8 +307,10 @@ mod tests {
                 Arc::clone(&saves) as Arc<dyn ActionRepo>,
             );
             view.update(cx, |view, cx| {
+                let mut step = crate::test_support::step(PLAY_SOUND, true);
+                step.config = stored;
                 view.detail = Some(crate::actions_screen::integration_gating::tests::detail(
-                    vec![crate::test_support::step(PLAY_SOUND, true)],
+                    vec![step],
                 ));
                 view.open_edit_sub_action(0, cx);
             });
@@ -316,15 +322,22 @@ mod tests {
         }
 
         fn save(&self, cx: &mut gpui::TestAppContext, target: SubFormTarget, clip: &str) {
+            self.commit(
+                cx,
+                SubFormCommit {
+                    target,
+                    kind_id: PLAY_SOUND.to_owned(),
+                    overrides: vec![(CLIP_FIELD.to_owned(), Variant::String(clip.to_owned()))],
+                    cleared: Vec::new(),
+                    continue_on_error: false,
+                    condition: None,
+                    label: None,
+                },
+            );
+        }
+
+        fn commit(&self, cx: &mut gpui::TestAppContext, commit: SubFormCommit) {
             let form = self.form(cx).unwrap();
-            let commit = SubFormCommit {
-                target,
-                kind_id: PLAY_SOUND.to_owned(),
-                overrides: vec![(CLIP_FIELD.to_owned(), Variant::String(clip.to_owned()))],
-                continue_on_error: false,
-                condition: None,
-                label: None,
-            };
             form.update(cx, |_, cx| cx.emit(SubFormEvent::Commit(commit)));
             for _ in 0..3 {
                 pump(&self.rt);
@@ -361,6 +374,7 @@ mod tests {
             target: SubFormTarget::Edit(0),
             kind_id: PLAY_SOUND.to_owned(),
             overrides: vec![(CLIP_FIELD.to_owned(), Variant::String(String::new()))],
+            cleared: Vec::new(),
             continue_on_error: false,
             condition: None,
             label: None,
@@ -398,5 +412,57 @@ mod tests {
             (editor.form(cx).is_none(), stored),
             (true, Some(Variant::String(clip)))
         );
+    }
+
+    #[gpui::test]
+    fn a_cleared_key_is_absent_from_the_saved_step_whether_stored_or_overridden(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        const COOLDOWN: &str = "cooldown_amount";
+        const COOLDOWN_UNIT: &str = "cooldown_unit";
+        for (target, case) in [
+            (SubFormTarget::Edit(0), "edit"),
+            (SubFormTarget::Add, "add"),
+        ] {
+            let stored: SubActionConfig = [
+                (COOLDOWN.to_owned(), Variant::Int(300)),
+                (
+                    COOLDOWN_UNIT.to_owned(),
+                    Variant::String("minutes".to_owned()),
+                ),
+            ]
+            .into_iter()
+            .collect();
+            let editor = PlaySoundEditor::open_storing(cx, stored);
+            let clip = Variant::String(ClipId::new().to_string());
+
+            editor.commit(
+                cx,
+                SubFormCommit {
+                    target,
+                    kind_id: PLAY_SOUND.to_owned(),
+                    overrides: vec![
+                        (CLIP_FIELD.to_owned(), clip.clone()),
+                        (COOLDOWN.to_owned(), Variant::Int(5)),
+                    ],
+                    cleared: vec![COOLDOWN.to_owned(), COOLDOWN_UNIT.to_owned()],
+                    continue_on_error: false,
+                    condition: None,
+                    label: None,
+                },
+            );
+
+            let saved = editor
+                .saves
+                .saved()
+                .last()
+                .and_then(|action| action.sub_actions.last().cloned())
+                .map(|step| step.config);
+            assert_eq!(
+                saved,
+                Some([(CLIP_FIELD.to_owned(), clip)].into_iter().collect()),
+                "{case}"
+            );
+        }
     }
 }

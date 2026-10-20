@@ -1574,6 +1574,23 @@ mod tests {
         config: &FieldConfig,
         typed: &str,
     ) -> (gpui::Entity<Host>, Vec<ConfigField>) {
+        let (host, fields) = fold_untouched(cx, spec, defaults, config);
+        host.update(cx, |_, cx| {
+            for field in &fields {
+                if let ConfigField::Input { input, .. } = field {
+                    input.update(cx, |field, cx| field.set_content(typed.to_owned(), cx));
+                }
+            }
+        });
+        (host, fields)
+    }
+
+    fn fold_untouched(
+        cx: &mut gpui::TestAppContext,
+        spec: &FormField,
+        defaults: &FieldConfig,
+        config: &FieldConfig,
+    ) -> (gpui::Entity<Host>, Vec<ConfigField>) {
         let host = cx.update(|cx| cx.new(|_| Host));
         let fields = host.update(cx, |_, cx| {
             let palette = forge_components::ThemeId::ForgeDefault.palette();
@@ -1586,11 +1603,6 @@ mod tests {
             };
             let mut fields = Vec::new();
             fold_config_field(spec, None, &ctx, &mut fields, cx);
-            for field in &fields {
-                if let ConfigField::Input { input, .. } = field {
-                    input.update(cx, |field, cx| field.set_content(typed.to_owned(), cx));
-                }
-            }
             fields
         });
         (host, fields)
@@ -1752,20 +1764,181 @@ mod tests {
         );
     }
 
+    const DEVICE_KEY: &str = "device";
+    const NOTE_GATE: &str = "use_note";
+
+    fn optional_text_spec(key: &'static str) -> FormField {
+        FormField::Optional {
+            key,
+            label: "Device",
+            inner: Box::new(FormField::Text {
+                key,
+                label: "Device",
+                placeholder: "",
+            }),
+        }
+    }
+
+    fn same_key_amount_spec() -> FormField {
+        FormField::Optional {
+            key: AMOUNT_KEY,
+            label: "Amount",
+            inner: Box::new(unit_amount_spec()),
+        }
+    }
+
+    fn toggle_of(fields: &[ConfigField], key: &str) -> bool {
+        fields
+            .iter()
+            .find_map(|field| match field {
+                ConfigField::Bool { key: k, value, .. } if k == key => Some(*value),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("an optional builds its toggle"))
+    }
+
+    fn flip_toggle(fields: &mut [ConfigField], key: &str) {
+        for field in fields {
+            if let ConfigField::Bool { key: k, value, .. } = field
+                && k == key
+            {
+                *value = !*value;
+            }
+        }
+    }
+
     #[gpui::test]
-    fn an_optional_number_sharing_its_key_with_its_own_gate_erases_that_gate_when_emptied(
+    fn a_same_key_optional_keeps_its_stored_value_through_an_untouched_save(
         cx: &mut gpui::TestAppContext,
     ) {
-        let gated_on = config(&[(NOTE_KEY, Variant::Bool(true))]);
-        let (_host, fields) = build(
-            cx,
-            &optional_integer_spec(NOTE_KEY),
-            &FieldConfig::new(),
-            &gated_on,
-            "",
-        );
+        for (spec, stored) in [
+            (
+                optional_integer_spec(NOTE_KEY),
+                config(&[(NOTE_KEY, Variant::Int(48))]),
+            ),
+            (
+                optional_integer_spec(NOTE_KEY),
+                config(&[(NOTE_KEY, Variant::Int(0))]),
+            ),
+            (
+                optional_text_spec(DEVICE_KEY),
+                config(&[(DEVICE_KEY, Variant::String("Launchkey".into()))]),
+            ),
+            (
+                same_key_amount_spec(),
+                config(&[
+                    (AMOUNT_KEY, Variant::Int(2)),
+                    (AMOUNT_UNIT_KEY, Variant::String("minutes".into())),
+                ]),
+            ),
+        ] {
+            let (_host, fields) = fold_untouched(cx, &spec, &FieldConfig::new(), &stored);
 
-        assert_eq!(collected(cx, &fields, &gated_on), FieldConfig::new());
+            assert_eq!(
+                (
+                    toggle_of(&fields, spec.key()),
+                    collected(cx, &fields, &stored)
+                ),
+                (true, stored.clone()),
+                "stored {stored:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn switching_a_same_key_optional_off_removes_its_keys_and_writes_no_toggle(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let unrelated = (NOTE_GATE, Variant::String("kept".into()));
+        for (spec, gated) in [
+            (
+                optional_integer_spec(NOTE_KEY),
+                vec![(NOTE_KEY, Variant::Int(48))],
+            ),
+            (
+                optional_text_spec(DEVICE_KEY),
+                vec![(DEVICE_KEY, Variant::String("Launchkey".into()))],
+            ),
+            (
+                same_key_amount_spec(),
+                vec![
+                    (AMOUNT_KEY, Variant::Int(2)),
+                    (AMOUNT_UNIT_KEY, Variant::String("minutes".into())),
+                ],
+            ),
+        ] {
+            let mut entries = gated;
+            entries.push(unrelated.clone());
+            let stored = config(&entries);
+            let (_host, mut fields) = fold_untouched(cx, &spec, &FieldConfig::new(), &stored);
+            flip_toggle(&mut fields, spec.key());
+
+            assert_eq!(
+                collected(cx, &fields, &stored),
+                config(std::slice::from_ref(&unrelated)),
+                "gate {}",
+                spec.key()
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_same_key_optional_holding_a_toggle_opens_off_and_saves_without_the_key(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for stored in [Variant::Bool(true), Variant::Bool(false)] {
+            let seeded = config(&[(NOTE_KEY, stored.clone())]);
+            let (_host, fields) = fold_untouched(
+                cx,
+                &optional_integer_spec(NOTE_KEY),
+                &FieldConfig::new(),
+                &seeded,
+            );
+
+            assert_eq!(
+                (
+                    toggle_of(&fields, NOTE_KEY),
+                    collected(cx, &fields, &seeded)
+                ),
+                (false, FieldConfig::new()),
+                "stored {stored:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_distinct_key_optional_writes_its_own_toggle_and_keeps_the_inner_value_when_off(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let spec = FormField::Optional {
+            key: NOTE_GATE,
+            label: "Use note",
+            inner: Box::new(integer_spec(NOTE_KEY)),
+        };
+        for (stored_toggle, flipped, saved_toggle) in [
+            (true, false, true),
+            (false, false, false),
+            (true, true, false),
+            (false, true, true),
+        ] {
+            let seeded = config(&[
+                (NOTE_GATE, Variant::Bool(stored_toggle)),
+                (NOTE_KEY, Variant::Int(48)),
+            ]);
+            let (_host, mut fields) = fold_untouched(cx, &spec, &FieldConfig::new(), &seeded);
+            if flipped {
+                flip_toggle(&mut fields, NOTE_GATE);
+            }
+
+            assert_eq!(
+                collected(cx, &fields, &seeded),
+                config(&[
+                    (NOTE_GATE, Variant::Bool(saved_toggle)),
+                    (NOTE_KEY, Variant::Int(48)),
+                ]),
+                "stored {stored_toggle}, flipped {flipped}"
+            );
+        }
     }
 
     fn dynamic_select(options_key: &'static str) -> FormField {

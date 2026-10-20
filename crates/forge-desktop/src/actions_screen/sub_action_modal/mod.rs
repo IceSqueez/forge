@@ -833,38 +833,316 @@ mod tests {
         }
     }
 
+    fn cooldown_integer() -> FormField {
+        FormField::Integer {
+            key: COOLDOWN_FIELD,
+            label: "Global Cooldown Seconds",
+            min: 1,
+            max: i64::MAX,
+        }
+    }
+
+    fn cooldown_duration() -> FormField {
+        FormField::Duration {
+            key: COOLDOWN_FIELD,
+            label: "Global Cooldown",
+            bounds: forge_registry::DurationBounds::in_seconds(0, i64::MAX),
+        }
+    }
+
+    fn cooldown_text() -> FormField {
+        FormField::Text {
+            key: COOLDOWN_FIELD,
+            label: "Global Cooldown",
+            placeholder: "",
+        }
+    }
+
+    fn same_key_amount() -> FormField {
+        FormField::Optional {
+            key: AMOUNT_FIELD,
+            label: "Delay",
+            inner: Box::new(unit_amount_spec(false)),
+        }
+    }
+
+    fn stored_cooldown(stored: Option<Variant>) -> SubActionConfig {
+        stored
+            .map(|value| (COOLDOWN_FIELD.to_owned(), value))
+            .into_iter()
+            .collect()
+    }
+
+    fn submitted_commit(
+        specs: Vec<FormField>,
+        config: SubActionConfig,
+        flipped_toggle: Option<&str>,
+        cx: &mut TestAppContext,
+    ) -> Option<SubFormCommit> {
+        let (form, vcx, _rt) = open_launch(cx, launch_with(specs, config));
+        let heard = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let sink = std::rc::Rc::clone(&heard);
+        let _subscription = vcx.update(|_window, cx| {
+            cx.subscribe(&form, move |_, event: &SubFormEvent, _| {
+                if let SubFormEvent::Commit(commit) = event {
+                    *sink.borrow_mut() = Some(commit.clone());
+                }
+            })
+        });
+        if let Some(flipped) = flipped_toggle {
+            vcx.update(|_window, cx| {
+                form.update(cx, |form, _| {
+                    for field in &mut form.fields {
+                        if let SubFormField::Bool { key, value, .. } = field
+                            && key == flipped
+                        {
+                            *value = !*value;
+                        }
+                    }
+                })
+            });
+        }
+        vcx.update(|_window, cx| form.update(cx, |form, cx| form.submit(cx)));
+        heard.borrow_mut().take()
+    }
+
+    fn opened_state(
+        spec: FormField,
+        config: SubActionConfig,
+        key: &str,
+        cx: &mut TestAppContext,
+    ) -> (bool, String) {
+        let (form, vcx, _rt) = open_launch(cx, launch_with(vec![spec], config));
+        vcx.update(|_window, cx| {
+            let fields = &form.read(cx).fields;
+            let toggle = fields
+                .iter()
+                .find_map(|field| match field {
+                    SubFormField::Bool { key: k, value, .. } if k == key => Some(*value),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("an optional builds its toggle"));
+            let shown = fields
+                .iter()
+                .find_map(|field| match field {
+                    SubFormField::Input { key: k, input, .. }
+                    | SubFormField::UnitAmount { key: k, input, .. }
+                        if k == key =>
+                    {
+                        Some(input.read(cx).content().to_owned())
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("an optional builds its inner field"));
+            (toggle, shown)
+        })
+    }
+
     #[gpui::test]
-    fn a_same_key_optional_duration_commits_what_the_same_key_optional_integer_did(
+    fn a_same_key_optional_holding_a_value_opens_on_showing_that_value(cx: &mut TestAppContext) {
+        for (inner, stored, shown) in [
+            (cooldown_integer(), Variant::Int(300), "300"),
+            (cooldown_integer(), Variant::Int(1), "1"),
+            (cooldown_duration(), Variant::Int(0), "0"),
+            (
+                cooldown_text(),
+                Variant::String("Launchkey".to_owned()),
+                "Launchkey",
+            ),
+            (cooldown_text(), Variant::String(String::new()), ""),
+        ] {
+            assert_eq!(
+                opened_state(
+                    same_key_optional(inner),
+                    stored_cooldown(Some(stored.clone())),
+                    COOLDOWN_FIELD,
+                    cx
+                ),
+                (true, shown.to_owned()),
+                "stored {stored:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_same_key_optional_holding_a_value_commits_it_back_unchanged(cx: &mut TestAppContext) {
+        for (inner, stored) in [
+            (cooldown_integer(), Variant::Int(300)),
+            (cooldown_duration(), Variant::Int(0)),
+            (cooldown_duration(), Variant::Int(3_600)),
+            (cooldown_duration(), Variant::Int(90)),
+            (cooldown_text(), Variant::String("Launchkey".to_owned())),
+        ] {
+            let commit = submitted_commit(
+                vec![same_key_optional(inner)],
+                stored_cooldown(Some(stored.clone())),
+                None,
+                cx,
+            )
+            .unwrap_or_else(|| panic!("an untouched stored value must not block Save"));
+            assert_eq!(
+                (commit.overrides, commit.cleared),
+                (
+                    vec![(COOLDOWN_FIELD.to_owned(), stored.clone())],
+                    Vec::new()
+                ),
+                "stored {stored:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_same_key_optional_holding_a_toggle_or_nothing_opens_off_with_an_empty_field(
         cx: &mut TestAppContext,
     ) {
-        let integer = same_key_optional(FormField::Integer {
-            key: COOLDOWN_FIELD,
-            label: "Global Cooldown Seconds (0 = disabled)",
-            min: 0,
-            max: i64::MAX,
-        });
-        let duration = same_key_optional(FormField::Duration {
-            key: COOLDOWN_FIELD,
-            label: "Global Cooldown (0 = disabled)",
-            bounds: forge_registry::DurationBounds::in_seconds(0, i64::MAX),
-        });
-        for stored in [
-            None,
-            Some(Variant::Bool(true)),
-            Some(Variant::Bool(false)),
-            Some(Variant::Int(0)),
-            Some(Variant::Int(300)),
-            Some(Variant::Int(3_600)),
+        for inner in [cooldown_integer(), cooldown_duration(), cooldown_text()] {
+            for stored in [None, Some(Variant::Bool(true)), Some(Variant::Bool(false))] {
+                assert_eq!(
+                    opened_state(
+                        same_key_optional(inner.clone()),
+                        stored_cooldown(stored.clone()),
+                        COOLDOWN_FIELD,
+                        cx
+                    ),
+                    (false, String::new()),
+                    "inner {:?}, stored {stored:?}",
+                    inner.key()
+                );
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn saving_a_same_key_optional_holding_a_toggle_clears_the_key_instead_of_blocking(
+        cx: &mut TestAppContext,
+    ) {
+        for inner in [cooldown_integer(), cooldown_duration(), cooldown_text()] {
+            for stored in [Variant::Bool(true), Variant::Bool(false)] {
+                let commit = submitted_commit(
+                    vec![same_key_optional(inner.clone())],
+                    stored_cooldown(Some(stored.clone())),
+                    None,
+                    cx,
+                )
+                .unwrap_or_else(|| panic!("a stored toggle must not block Save"));
+                assert_eq!(
+                    (commit.overrides, commit.cleared),
+                    (Vec::new(), vec![COOLDOWN_FIELD.to_owned()]),
+                    "stored {stored:?}"
+                );
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn switching_a_same_key_optional_off_clears_its_keys_and_commits_no_toggle(
+        cx: &mut TestAppContext,
+    ) {
+        for (spec, stored, cleared) in [
+            (
+                same_key_optional(cooldown_integer()),
+                stored_cooldown(Some(Variant::Int(300))),
+                vec![COOLDOWN_FIELD],
+            ),
+            (
+                same_key_optional(cooldown_duration()),
+                stored_cooldown(Some(Variant::Int(3_600))),
+                vec![COOLDOWN_FIELD],
+            ),
+            (
+                same_key_amount(),
+                stored_amount(Variant::Int(2), Some("minutes")),
+                vec![AMOUNT_FIELD, UNIT_FIELD],
+            ),
         ] {
-            let config: SubActionConfig = stored
-                .clone()
-                .map(|value| (COOLDOWN_FIELD.to_owned(), value))
-                .into_iter()
-                .collect();
+            let gate = spec.key().to_owned();
+            let commit = submitted_commit(vec![spec], stored, Some(&gate), cx)
+                .unwrap_or_else(|| panic!("switching an optional off must not block Save"));
             assert_eq!(
-                submitted_overrides(vec![duration.clone()], config.clone(), cx),
-                submitted_overrides(vec![integer.clone()], config, cx),
-                "stored {stored:?}"
+                (commit.overrides, commit.cleared),
+                (
+                    Vec::new(),
+                    cleared.iter().map(|key| (*key).to_owned()).collect()
+                ),
+                "gate {gate}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn switching_a_same_key_optional_on_commits_what_was_typed(cx: &mut TestAppContext) {
+        let (form, vcx, _rt) = open_launch(
+            cx,
+            launch_with(
+                vec![same_key_optional(cooldown_integer())],
+                stored_cooldown(Some(Variant::Bool(false))),
+            ),
+        );
+        let heard = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let sink = std::rc::Rc::clone(&heard);
+        let _subscription = vcx.update(|_window, cx| {
+            cx.subscribe(&form, move |_, event: &SubFormEvent, _| {
+                if let SubFormEvent::Commit(commit) = event {
+                    *sink.borrow_mut() = Some(commit.clone());
+                }
+            })
+        });
+        vcx.update(|_window, cx| {
+            form.update(cx, |form, cx| {
+                for field in &mut form.fields {
+                    match field {
+                        SubFormField::Bool { value, .. } => *value = true,
+                        SubFormField::Input { input, .. } => {
+                            input.update(cx, |input, cx| input.set_content("45".to_owned(), cx));
+                        }
+                        _ => {}
+                    }
+                }
+                form.submit(cx);
+            })
+        });
+
+        let commit = heard
+            .borrow_mut()
+            .take()
+            .unwrap_or_else(|| panic!("45 is in range, so Save must commit"));
+        assert_eq!(
+            (commit.overrides, commit.cleared),
+            (
+                vec![(COOLDOWN_FIELD.to_owned(), Variant::Int(45))],
+                Vec::new()
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn a_distinct_key_toggle_commits_its_own_bool_and_clears_nothing(cx: &mut TestAppContext) {
+        for (stored_toggle, flipped, committed_toggle) in [
+            (true, false, true),
+            (false, false, false),
+            (true, true, false),
+            (false, true, true),
+        ] {
+            let config: SubActionConfig = [
+                (COUNT_GATE.to_owned(), Variant::Bool(stored_toggle)),
+                (COUNT_FIELD.to_owned(), Variant::Int(5)),
+            ]
+            .into_iter()
+            .collect();
+            let commit = submitted_commit(
+                vec![count_spec(true)],
+                config,
+                flipped.then_some(COUNT_GATE),
+                cx,
+            )
+            .unwrap_or_else(|| panic!("an in-range count must not block Save"));
+            assert_eq!(
+                (
+                    override_for(&commit.overrides, COUNT_GATE),
+                    commit.cleared.is_empty()
+                ),
+                (Some(&Variant::Bool(committed_toggle)), true),
+                "stored {stored_toggle}, flipped {flipped}"
             );
         }
     }

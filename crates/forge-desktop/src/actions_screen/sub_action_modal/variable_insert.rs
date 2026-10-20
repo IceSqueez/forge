@@ -351,7 +351,7 @@ fn variable_entry(
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
-mod tests {
+pub(super) mod tests {
     use forge_components::{
         FORGE_DEFAULT, Presentation, ThemeId, bind_picker_keys, bind_text_input_keys,
     };
@@ -373,7 +373,7 @@ mod tests {
         OffsetDateTime::from_unix_timestamp(FIXED_INSTANT_UNIX).unwrap()
     }
 
-    fn scoped(
+    pub(in crate::actions_screen::sub_action_modal) fn scoped(
         name: &str,
         kind: Option<VariantKind>,
         origin: ScopeOrigin,
@@ -566,7 +566,9 @@ mod tests {
         ]
     }
 
-    fn stored(pairs: &[(&str, &str)]) -> SubActionConfig {
+    pub(in crate::actions_screen::sub_action_modal) fn stored(
+        pairs: &[(&str, &str)],
+    ) -> SubActionConfig {
         pairs
             .iter()
             .map(|(key, value)| ((*key).to_owned(), Variant::String((*value).to_owned())))
@@ -582,6 +584,25 @@ mod tests {
         &mut VisualTestContext,
         tokio::runtime::Runtime,
     ) {
+        let scope = vec![scoped(
+            "user",
+            Some(VariantKind::String),
+            ScopeOrigin::Trigger,
+            false,
+        )];
+        open_form_in_scope(cx, specs, config, scope)
+    }
+
+    pub(in crate::actions_screen::sub_action_modal) fn open_form_in_scope(
+        cx: &mut TestAppContext,
+        specs: Vec<FormField>,
+        config: SubActionConfig,
+        scope: Vec<ScopedVariable>,
+    ) -> (
+        Entity<EditSubActionForm>,
+        &mut VisualTestContext,
+        tokio::runtime::Runtime,
+    ) {
         crate::i18n::install_language(Language::En);
         cx.update(|cx| {
             cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
@@ -591,12 +612,6 @@ mod tests {
         let rt = runtime();
         let handle = rt.handle().clone();
         let launch = launch_with(specs, config);
-        let scope = vec![scoped(
-            "user",
-            Some(VariantKind::String),
-            ScopeOrigin::Trigger,
-            false,
-        )];
         let (form, vcx) = cx.add_window_view(move |_window, cx| {
             EditSubActionForm::new(launch, handle, cx).with_variable_scope(scope)
         });
@@ -626,7 +641,7 @@ mod tests {
         })
     }
 
-    fn content_of(
+    pub(in crate::actions_screen::sub_action_modal) fn content_of(
         form: &Entity<EditSubActionForm>,
         vcx: &mut VisualTestContext,
         key: &str,
@@ -782,24 +797,258 @@ mod tests {
         open_picker(&form, vcx, MESSAGE);
         vcx.simulate_keystrokes("enter");
         vcx.run_until_parked();
+
+        assert_eq!(
+            committed(&form, vcx, MESSAGE),
+            Some(Variant::String("hi %user%".to_owned()))
+        );
+    }
+
+    pub(in crate::actions_screen::sub_action_modal) const WHEN: &str = "when";
+    const STORED_INSTANT: &str = "2026-10-04T12:00:00Z";
+
+    pub(in crate::actions_screen::sub_action_modal) fn when_spec() -> FormField {
+        FormField::DateTime {
+            key: WHEN,
+            label: WHEN,
+        }
+    }
+
+    fn stamp_scope() -> Vec<ScopedVariable> {
+        vec![scoped(
+            "stamp",
+            Some(VariantKind::Datetime),
+            ScopeOrigin::Trigger,
+            false,
+        )]
+    }
+
+    fn committed(
+        form: &Entity<EditSubActionForm>,
+        vcx: &mut VisualTestContext,
+        key: &str,
+    ) -> Option<Variant> {
         let heard = std::rc::Rc::new(std::cell::RefCell::new(None));
         let sink = std::rc::Rc::clone(&heard);
         let _subscription = vcx.update(|_window, cx| {
-            cx.subscribe(&form, move |_, event: &SubFormEvent, _| {
+            cx.subscribe(form, move |_, event: &SubFormEvent, _| {
                 if let SubFormEvent::Commit(commit) = event {
                     *sink.borrow_mut() = Some(commit.overrides.clone());
                 }
             })
         });
-
         vcx.update(|_window, cx| form.update(cx, |form, cx| form.submit(cx)));
-
-        let committed = heard.borrow().as_ref().and_then(|overrides| {
+        heard.borrow().as_ref().and_then(|overrides| {
             overrides
                 .iter()
-                .find(|(key, _)| key == MESSAGE)
+                .find(|(k, _)| k == key)
                 .map(|(_, value)| value.clone())
+        })
+    }
+
+    #[test]
+    fn without_formats_clears_every_submenu_and_keeps_the_rest_of_each_entry() {
+        let mut scope = stamp_scope();
+        scope.push(scoped(
+            "made",
+            Some(VariantKind::Int),
+            ScopeOrigin::EarlierStep,
+            false,
+        ));
+        let original = groups(&scope);
+        let outline = |groups: &[VariableGroup]| {
+            groups
+                .iter()
+                .map(|group| {
+                    let entries: Vec<_> = group
+                        .entries
+                        .iter()
+                        .map(|entry| (entry.name.clone(), entry.token.clone(), entry.tag.clone()))
+                        .collect();
+                    (group.title.clone(), entries)
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let stripped = without_formats(original.clone());
+
+        let any_formats = |groups: &[VariableGroup]| {
+            groups
+                .iter()
+                .flat_map(|group| &group.entries)
+                .any(|entry| !entry.formats.is_empty())
+        };
+        assert_eq!(
+            (
+                outline(&stripped),
+                any_formats(&original),
+                any_formats(&stripped)
+            ),
+            (outline(&original), true, false)
+        );
+    }
+
+    #[gpui::test]
+    fn only_a_datetime_field_takes_a_variable_as_its_whole_value(cx: &mut TestAppContext) {
+        let specs = vec![
+            when_spec(),
+            text(MESSAGE),
+            FormField::TextArea {
+                key: BODY,
+                label: BODY,
+            },
+            FormField::Integer {
+                key: "count",
+                label: "count",
+                min: 0,
+                max: 9,
+            },
+            FormField::FilePicker {
+                key: "file",
+                label: "file",
+            },
+        ];
+        let (form, vcx, _rt) = open_form(cx, specs, SubActionConfig::new());
+
+        let whole_value: Vec<(&str, bool)> = vcx.update(|_window, cx| {
+            [WHEN, MESSAGE, BODY, "count", "file", "missing"]
+                .into_iter()
+                .map(|key| {
+                    (
+                        key,
+                        form.read(cx).insert_mode_for(key) == InsertMode::WholeValue,
+                    )
+                })
+                .collect()
         });
-        assert_eq!(committed, Some(Variant::String("hi %user%".to_owned())));
+
+        assert_eq!(
+            whole_value,
+            [
+                (WHEN, true),
+                (MESSAGE, false),
+                (BODY, false),
+                ("count", false),
+                ("file", false),
+                ("missing", false)
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn enter_on_a_datetime_variable_for_a_datetime_field_inserts_its_plain_token(
+        cx: &mut TestAppContext,
+    ) {
+        let (form, vcx, _rt) =
+            open_form_in_scope(cx, vec![when_spec()], SubActionConfig::new(), stamp_scope());
+        open_picker(&form, vcx, WHEN);
+
+        vcx.simulate_keystrokes("enter");
+        vcx.run_until_parked();
+
+        assert_eq!(
+            (content_of(&form, vcx, WHEN), open_key(&form, vcx)),
+            ("%stamp%".to_owned(), None)
+        );
+    }
+
+    #[gpui::test]
+    fn enter_on_a_datetime_variable_for_a_text_field_opens_its_formats_instead_of_inserting(
+        cx: &mut TestAppContext,
+    ) {
+        let (form, vcx, _rt) =
+            open_form_in_scope(cx, text_specs(), SubActionConfig::new(), stamp_scope());
+        open_picker(&form, vcx, MESSAGE);
+
+        vcx.simulate_keystrokes("enter");
+        vcx.run_until_parked();
+
+        assert_eq!(
+            (content_of(&form, vcx, MESSAGE), open_key(&form, vcx)),
+            (String::new(), Some(MESSAGE.to_owned()))
+        );
+    }
+
+    #[gpui::test]
+    fn a_pick_replaces_a_datetime_value_but_inserts_into_a_text_value_at_the_caret(
+        cx: &mut TestAppContext,
+    ) {
+        for (key, expected) in [
+            (WHEN, "%user%".to_owned()),
+            (MESSAGE, format!("{STORED_INSTANT}%user%")),
+        ] {
+            let specs = vec![when_spec(), text(MESSAGE)];
+            let config = stored(&[(WHEN, STORED_INSTANT), (MESSAGE, STORED_INSTANT)]);
+            let (form, vcx, _rt) = open_form(cx, specs, config);
+            open_picker(&form, vcx, key);
+
+            vcx.simulate_keystrokes("enter");
+            vcx.run_until_parked();
+
+            assert_eq!(content_of(&form, vcx, key), expected, "{key}");
+        }
+    }
+
+    #[gpui::test]
+    fn submitting_after_a_datetime_pick_commits_the_token_as_text(cx: &mut TestAppContext) {
+        let (form, vcx, _rt) = open_form(cx, vec![when_spec()], stored(&[(WHEN, STORED_INSTANT)]));
+        open_picker(&form, vcx, WHEN);
+        vcx.simulate_keystrokes("enter");
+        vcx.run_until_parked();
+
+        assert_eq!(
+            committed(&form, vcx, WHEN),
+            Some(Variant::String("%user%".to_owned()))
+        );
+    }
+
+    #[gpui::test]
+    fn a_datetime_field_seeded_with_a_token_commits_it_unchanged(cx: &mut TestAppContext) {
+        let (form, vcx, _rt) = open_form(cx, vec![when_spec()], stored(&[(WHEN, "%followed_at%")]));
+
+        assert_eq!(
+            committed(&form, vcx, WHEN),
+            Some(Variant::String("%followed_at%".to_owned()))
+        );
+    }
+
+    pub(in crate::actions_screen::sub_action_modal) fn open_calendar(
+        form: &Entity<EditSubActionForm>,
+        vcx: &mut VisualTestContext,
+    ) {
+        let InsertTarget::Input(input) = target_of(form, vcx, WHEN) else {
+            panic!("the datetime field is a text input");
+        };
+        vcx.update(|_window, cx| {
+            form.update(cx, |form, cx| {
+                form.open_datetime_picker(input, Point::default(), cx)
+            })
+        });
+        vcx.run_until_parked();
+    }
+
+    #[gpui::test]
+    fn opening_the_calendar_closes_the_variable_picker(cx: &mut TestAppContext) {
+        let (form, vcx, _rt) = open_form(cx, vec![when_spec()], SubActionConfig::new());
+        open_picker(&form, vcx, WHEN);
+
+        open_calendar(&form, vcx);
+
+        let calendar_open = vcx.update(|_window, cx| form.read(cx).datetime_picker.is_some());
+        assert_eq!((open_key(&form, vcx), calendar_open), (None, true));
+    }
+
+    #[gpui::test]
+    fn opening_the_variable_picker_closes_the_calendar(cx: &mut TestAppContext) {
+        let (form, vcx, _rt) = open_form(cx, vec![when_spec()], SubActionConfig::new());
+        open_calendar(&form, vcx);
+
+        open_picker(&form, vcx, WHEN);
+
+        let calendar_open = vcx.update(|_window, cx| form.read(cx).datetime_picker.is_some());
+        assert_eq!(
+            (open_key(&form, vcx), calendar_open),
+            (Some(WHEN.to_owned()), false)
+        );
     }
 }

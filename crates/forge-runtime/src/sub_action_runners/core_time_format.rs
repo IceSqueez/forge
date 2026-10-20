@@ -271,4 +271,27 @@ mod tests {
         assert!(matches!(outcome, SubActionOutcome::Failed(_)));
         assert!(out.is_none());
     }
+
+    #[tokio::test]
+    async fn format_reads_a_datetime_variable_named_in_the_source() {
+        let dt = utc(2026, Month::October, 4, 12, 0, 0);
+        let stack = ArgStack::new().set("when".to_owned(), Variant::Datetime(dt));
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+        let config = utc_cfg(Variant::String("%when%".to_owned()), "dd.MM.yyyy HH:mm");
+
+        let (telemetry, out) = CoreTimeFormatRunner.execute(&config, &ctx).await;
+
+        let formatted = out
+            .as_ref()
+            .and_then(|stack| stack.get("time.formatted"))
+            .and_then(Variant::as_str)
+            .map(str::to_owned);
+        assert_eq!(
+            (telemetry.outcome, formatted),
+            (
+                SubActionOutcome::Success,
+                Some("04.10.2026 12:00".to_owned())
+            )
+        );
+    }
 }

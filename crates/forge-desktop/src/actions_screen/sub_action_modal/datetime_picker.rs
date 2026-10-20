@@ -76,3 +76,41 @@ impl EditSubActionForm {
             .into_any_element()
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use gpui::TestAppContext;
+
+    use super::super::variable_insert::tests::{
+        WHEN, content_of, open_calendar, open_form_in_scope, stored, when_spec,
+    };
+    use super::*;
+
+    #[gpui::test]
+    fn a_calendar_pick_replaces_a_variable_token_with_the_picked_instant(cx: &mut TestAppContext) {
+        let (form, vcx, _rt) = open_form_in_scope(
+            cx,
+            vec![when_spec()],
+            stored(&[(WHEN, "%followed_at%")]),
+            Vec::new(),
+        );
+        open_calendar(&form, vcx);
+        let picker = vcx.update(|_window, cx| {
+            form.read(cx)
+                .datetime_picker
+                .as_ref()
+                .map(|open| open.picker.clone())
+                .unwrap()
+        });
+
+        vcx.update(|_window, cx| {
+            picker.update(cx, |_, cx| {
+                cx.emit(DateTimePickerEvent::Picked("2026-10-04T12:00:00Z".into()))
+            })
+        });
+        vcx.run_until_parked();
+
+        assert_eq!(content_of(&form, vcx, WHEN), "2026-10-04T12:00:00Z");
+    }
+}

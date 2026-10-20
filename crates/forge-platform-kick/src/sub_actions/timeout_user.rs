@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner, ValueBounds,
+    ConfigReason, DurationBounds, FormField, RegistryError, RunContext, SubActionCategory,
+    SubActionConfigExt, SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
@@ -86,11 +86,10 @@ impl SubActionRunner for TimeoutUserRunner {
                 label: "Target User ID",
                 placeholder: "%user_id%",
             },
-            FormField::Integer {
+            FormField::Duration {
                 key: "duration_minutes",
-                label: "Duration (minutes)",
-                min: MIN_TIMEOUT_MINUTES,
-                max: MAX_TIMEOUT_MINUTES,
+                label: "Duration",
+                bounds: DurationBounds::in_minutes(MIN_TIMEOUT_MINUTES, MAX_TIMEOUT_MINUTES),
             },
             ban_reason::form_field(),
         ]

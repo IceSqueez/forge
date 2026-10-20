@@ -5,8 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner, ValueBounds,
+    ConfigReason, DurationBounds, FormField, RegistryError, RunContext, SubActionCategory,
+    SubActionConfigExt, SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -116,11 +116,10 @@ impl SubActionRunner for TimeoutUserRunner {
                 label: "Reason (optional, max 500 chars)",
                 placeholder: "",
             },
-            FormField::Integer {
+            FormField::Duration {
                 key: "duration_seconds",
-                label: "Duration (seconds, 1-1209600)",
-                min: MIN_DURATION_SECONDS,
-                max: MAX_DURATION_SECONDS,
+                label: "Duration",
+                bounds: DurationBounds::in_seconds(MIN_DURATION_SECONDS, MAX_DURATION_SECONDS),
             },
         ]
     }

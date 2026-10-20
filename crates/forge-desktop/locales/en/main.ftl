@@ -966,7 +966,7 @@ triggers_timer_min_messages = ≥{ $count } { $count ->
     [one] message
    *[other] messages
 }
-triggers_timer_hint_interval = Interval (minutes): how often it fires, in whole minutes (1-1440). The first fire comes one interval after saving or after the stream goes live.
+triggers_timer_hint_interval = Interval: how often it fires, from 1 minute to 24 hours. The first fire comes one interval after saving or after the stream goes live.
 triggers_timer_hint_live = Only while live: skip fires while no platform and no OBS stream output reports live.
 triggers_timer_hint_messages = Min chat messages: skip a fire until at least this many viewer messages arrived since the last one. 0 = off. Bot and forge's own messages do not count.
 triggers_sheet_section_used_in = USED IN
@@ -3073,6 +3073,7 @@ config_form_duration_unit_ms = milliseconds
 config_form_duration_unit_seconds = seconds
 config_form_duration_unit_minutes = minutes
 config_form_duration_unit_hours = hours
+config_form_duration_unit_days = days
 config_field_label_allow_everyone_pings = Allow @everyone / @here
 config_field_label_allow_role_pings = Allow role pings
 config_field_label_ban_type = Ban type
@@ -3093,7 +3094,7 @@ config_field_label_event_name = Event name
 config_field_label_from_user = From user (login)
 config_field_label_guest_state = Guest state (empty = any)
 config_field_label_hotkey_combo = Hotkey combo
-config_field_label_interval_minutes = Interval (minutes)
+config_field_label_interval = Interval
 config_field_label_match_text = Match text
 config_field_label_max_bits = Max bits (-1 = no limit)
 config_field_label_min_bits = Min bits

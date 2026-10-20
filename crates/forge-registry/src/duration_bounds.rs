@@ -6,13 +6,16 @@ pub const DURATION_UNIT_MILLISECONDS: &str = "ms";
 pub const DURATION_UNIT_SECONDS: &str = "seconds";
 pub const DURATION_UNIT_MINUTES: &str = "minutes";
 pub const DURATION_UNIT_HOURS: &str = "hours";
+pub const DURATION_UNIT_DAYS: &str = "days";
 
 const MILLIS_PER_MILLISECOND: u64 = 1;
 const MILLIS_PER_SECOND: u64 = 1_000;
 const SECONDS_PER_MINUTE: u64 = 60;
 const MINUTES_PER_HOUR: u64 = 60;
+const HOURS_PER_DAY: u64 = 24;
 const MILLIS_PER_MINUTE: u64 = SECONDS_PER_MINUTE * MILLIS_PER_SECOND;
 const MILLIS_PER_HOUR: u64 = MINUTES_PER_HOUR * MILLIS_PER_MINUTE;
+const MILLIS_PER_DAY: u64 = HOURS_PER_DAY * MILLIS_PER_HOUR;
 
 const DURATION_UNITS: &[AmountUnit] = &[
     AmountUnit {
@@ -31,24 +34,70 @@ const DURATION_UNITS: &[AmountUnit] = &[
         value: DURATION_UNIT_HOURS,
         base_units: MILLIS_PER_HOUR,
     },
+    AmountUnit {
+        value: DURATION_UNIT_DAYS,
+        base_units: MILLIS_PER_DAY,
+    },
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DurationBase {
+    Milliseconds,
+    Seconds,
+    Minutes,
+}
+
+impl DurationBase {
+    fn millis(self) -> u64 {
+        match self {
+            Self::Milliseconds => MILLIS_PER_MILLISECOND,
+            Self::Seconds => MILLIS_PER_SECOND,
+            Self::Minutes => MILLIS_PER_MINUTE,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DurationBounds {
-    pub min_ms: i64,
-    pub max_ms: i64,
+    pub min: i64,
+    pub max: i64,
+    pub base: DurationBase,
 }
 
 impl DurationBounds {
+    pub const fn in_millis(min: i64, max: i64) -> Self {
+        Self {
+            min,
+            max,
+            base: DurationBase::Milliseconds,
+        }
+    }
+
+    pub const fn in_seconds(min: i64, max: i64) -> Self {
+        Self {
+            min,
+            max,
+            base: DurationBase::Seconds,
+        }
+    }
+
+    pub const fn in_minutes(min: i64, max: i64) -> Self {
+        Self {
+            min,
+            max,
+            base: DurationBase::Minutes,
+        }
+    }
+
     pub fn fitting_units(&self) -> impl DoubleEndedIterator<Item = &'static AmountUnit> + '_ {
-        DURATION_UNITS
-            .iter()
-            .enumerate()
-            .filter_map(|(index, unit)| {
-                let (start, end) = self.whole_amounts(unit);
-                let fits = start <= end && (index == 0 || end >= 1);
-                fits.then_some(unit)
-            })
+        let base = self.base.millis();
+        DURATION_UNITS.iter().filter(move |unit| {
+            if unit.base_units < base || unit.base_units % base != 0 {
+                return false;
+            }
+            let (start, end) = self.whole_amounts(unit);
+            start <= end && (unit.base_units == base || end >= 1)
+        })
     }
 
     pub fn unit_or_first(&self, value: &str) -> Option<&'static AmountUnit> {
@@ -63,51 +112,55 @@ impl DurationBounds {
                 let (start, end) = self.whole_amounts(unit);
                 start..=end
             }
-            None => self.min_ms..=self.max_ms.max(self.min_ms),
+            None => self.min..=self.max.max(self.min),
         }
     }
 
-    pub fn in_largest_exact_unit(&self, millis: i64) -> Option<(&'static AmountUnit, i64)> {
-        let unit = if millis == 0 {
+    pub fn in_largest_exact_unit(&self, stored: i64) -> Option<(&'static AmountUnit, i64)> {
+        let unit = if stored == 0 {
             self.fitting_units().next()
         } else {
             self.fitting_units()
                 .rev()
-                .find(|unit| millis % unit_millis(unit) == 0)
+                .find(|unit| stored % self.factor(unit) == 0)
         }?;
-        Some((unit, millis / unit_millis(unit)))
+        Some((unit, stored / self.factor(unit)))
     }
 
-    pub fn millis(&self, unit: &str, amount: i64) -> i64 {
-        let base = self.unit_or_first(unit).map_or(1, unit_millis);
-        amount.saturating_mul(base)
+    pub fn stored_amount(&self, unit: &str, amount: i64) -> i64 {
+        let factor = self.unit_or_first(unit).map_or(1, |unit| self.factor(unit));
+        amount.saturating_mul(factor)
     }
 
     pub fn nearest_amount_in(&self, amount: i64, from: &str, to: &str) -> i64 {
-        let millis = self.millis(from, amount);
-        let base = self.unit_or_first(to).map_or(1, unit_millis);
-        let half = base / 2;
-        let nudged = if millis < 0 {
-            millis.saturating_sub(half)
+        let stored = self.stored_amount(from, amount);
+        let factor = self.unit_or_first(to).map_or(1, |unit| self.factor(unit));
+        let half = factor / 2;
+        let nudged = if stored < 0 {
+            stored.saturating_sub(half)
         } else {
-            millis.saturating_add(half)
+            stored.saturating_add(half)
         };
-        nudged / base
+        nudged / factor
+    }
+
+    fn unit_factor(&self, unit: &AmountUnit) -> u64 {
+        (unit.base_units / self.base.millis()).max(1)
+    }
+
+    fn factor(&self, unit: &AmountUnit) -> i64 {
+        i64::try_from(self.unit_factor(unit)).unwrap_or(i64::MAX)
     }
 
     fn whole_amounts(&self, unit: &AmountUnit) -> (i64, i64) {
-        let base = unit.base_units.max(1);
-        let min = u64::try_from(self.min_ms).unwrap_or(0);
-        let max = u64::try_from(self.max_ms).unwrap_or(0);
+        let factor = self.unit_factor(unit);
+        let min = u64::try_from(self.min).unwrap_or(0);
+        let max = u64::try_from(self.max).unwrap_or(0);
         (
-            i64::try_from(min.div_ceil(base)).unwrap_or(i64::MAX),
-            i64::try_from(max / base).unwrap_or(i64::MAX),
+            i64::try_from(min.div_ceil(factor)).unwrap_or(i64::MAX),
+            i64::try_from(max / factor).unwrap_or(i64::MAX),
         )
     }
-}
-
-fn unit_millis(unit: &AmountUnit) -> i64 {
-    i64::try_from(unit.base_units.max(1)).unwrap_or(i64::MAX)
 }
 
 #[cfg(test)]

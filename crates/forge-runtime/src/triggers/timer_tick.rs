@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, EventFilter, FormField, KindPlatformContract, SubActionConfigExt,
-    TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, DurationBounds, EventFilter, FormField, KindPlatformContract,
+    SubActionConfigExt, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
     DeclaredVariable, SynthesisHint, TriggerConfig, TriggerInstanceId, Variant, VariantKind,
@@ -112,11 +112,10 @@ impl TriggerKindDescriptor for TimerTickDescriptor {
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
-            FormField::Integer {
+            FormField::Duration {
                 key: INTERVAL_MINUTES_KEY,
-                label: "Interval (minutes)",
-                min: MIN_INTERVAL_MINUTES,
-                max: MAX_INTERVAL_MINUTES,
+                label: "Interval",
+                bounds: DurationBounds::in_minutes(MIN_INTERVAL_MINUTES, MAX_INTERVAL_MINUTES),
             },
             FormField::Toggle {
                 key: ONLY_WHILE_LIVE_KEY,

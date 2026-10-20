@@ -51,10 +51,7 @@ impl SubActionRunner for CoreLogicWaitRunner {
         vec![FormField::Duration {
             key: WAIT_MS_KEY,
             label: "Duration",
-            bounds: DurationBounds {
-                min_ms: 0,
-                max_ms: MAX_DELAY_MS as i64,
-            },
+            bounds: DurationBounds::in_millis(0, MAX_DELAY_MS as i64),
         }]
     }
 

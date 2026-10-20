@@ -5,8 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner, ValueBounds,
+    ConfigReason, DurationBounds, FormField, RegistryError, RunContext, SubActionCategory,
+    SubActionConfigExt, SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -189,22 +189,26 @@ impl SubActionRunner for SetModeRunner {
                 label: "Follower-Only Mode",
                 options: TOGGLE_OPTIONS,
             },
-            FormField::Integer {
+            FormField::Duration {
                 key: "follower_mode_min_minutes",
-                label: "Follower Min. Duration (minutes)",
-                min: FOLLOWER_MODE_MIN_MINUTES,
-                max: FOLLOWER_MODE_MAX_MINUTES,
+                label: "Follower Min. Duration",
+                bounds: DurationBounds::in_minutes(
+                    FOLLOWER_MODE_MIN_MINUTES,
+                    FOLLOWER_MODE_MAX_MINUTES,
+                ),
             },
             FormField::Select {
                 key: "slow_mode",
                 label: "Slow Mode",
                 options: TOGGLE_OPTIONS,
             },
-            FormField::Integer {
+            FormField::Duration {
                 key: "slow_mode_wait_seconds",
-                label: "Slow Mode Wait (seconds)",
-                min: SLOW_MODE_MIN_WAIT_SECONDS,
-                max: SLOW_MODE_MAX_WAIT_SECONDS,
+                label: "Slow Mode Wait",
+                bounds: DurationBounds::in_seconds(
+                    SLOW_MODE_MIN_WAIT_SECONDS,
+                    SLOW_MODE_MAX_WAIT_SECONDS,
+                ),
             },
             FormField::Select {
                 key: "subscriber_mode",

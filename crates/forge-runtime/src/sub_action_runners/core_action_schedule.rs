@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    AmountUnit, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
+    AmountUnit, DurationBounds, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
     SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner, UnitAmountBounds,
 };
 use forge_storage::MissedRunPolicy;
@@ -219,11 +219,13 @@ impl SubActionRunner for CoreActionScheduleRunner {
             FormField::Optional {
                 key: SKIP_IF_LATE_KEY,
                 label: "Skip instead of running late if forge was closed",
-                inner: Box::new(FormField::Integer {
+                inner: Box::new(FormField::Duration {
                     key: LATE_TOLERANCE_MINUTES_KEY,
-                    label: "Skip when late by more than (minutes)",
-                    min: whole_minutes(MIN_LATE_TOLERANCE),
-                    max: whole_minutes(MAX_LATE_TOLERANCE),
+                    label: "Skip when late by more than",
+                    bounds: DurationBounds::in_minutes(
+                        whole_minutes(MIN_LATE_TOLERANCE),
+                        whole_minutes(MAX_LATE_TOLERANCE),
+                    ),
                 }),
             },
             FormField::Text {

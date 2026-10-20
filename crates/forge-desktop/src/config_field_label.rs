@@ -94,7 +94,7 @@ pub(crate) fn localized_label(english: &'static str) -> String {
         "From user (login)" => tr!("config_field_label_from_user"),
         "Guest state (empty = any)" => tr!("config_field_label_guest_state"),
         "Hotkey combo" => tr!("config_field_label_hotkey_combo"),
-        "Interval (minutes)" => tr!("config_field_label_interval_minutes"),
+        "Interval" => tr!("config_field_label_interval"),
         "Match text" => tr!("config_field_label_match_text"),
         "Maximum bits (-1 = unlimited)" => tr!("config_field_label_max_bits"),
         "Minimum bits" => tr!("config_field_label_min_bits"),

@@ -5,8 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner, ValueBounds,
+    ConfigReason, DurationBounds, FormField, RegistryError, RunContext, SubActionCategory,
+    SubActionConfigExt, SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -153,11 +153,10 @@ impl SubActionRunner for StartPredictionRunner {
                 key: "outcomes",
                 label: "Outcomes (one per line or comma-separated, 2-10)",
             },
-            FormField::Integer {
+            FormField::Duration {
                 key: "prediction_window_seconds",
-                label: "Prediction Window (seconds, 30-1800)",
-                min: MIN_WINDOW_SECS,
-                max: MAX_WINDOW_SECS,
+                label: "Prediction Window",
+                bounds: DurationBounds::in_seconds(MIN_WINDOW_SECS, MAX_WINDOW_SECS),
             },
         ]
     }

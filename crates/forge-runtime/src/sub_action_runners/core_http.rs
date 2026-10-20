@@ -176,10 +176,7 @@ impl SubActionRunner for CoreHttpRunner {
         fields.push(FormField::Duration {
             key: "timeout_ms",
             label: "Timeout",
-            bounds: DurationBounds {
-                min_ms: TIMEOUT_MIN_MS,
-                max_ms: TIMEOUT_MAX_MS,
-            },
+            bounds: DurationBounds::in_millis(TIMEOUT_MIN_MS, TIMEOUT_MAX_MS),
         });
         fields.push(FormField::Toggle {
             key: "follow_redirects",

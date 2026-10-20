@@ -39,8 +39,8 @@ pub use config_ext::SubActionConfigExt;
 pub use config_problem::{ConfigProblem, ConfigReason, ValueBounds};
 pub use descriptor::{ChatTriggerFamily, TriggerKindDescriptor};
 pub use duration_bounds::{
-    DURATION_UNIT_HOURS, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_MINUTES, DURATION_UNIT_SECONDS,
-    DurationBounds,
+    DURATION_UNIT_DAYS, DURATION_UNIT_HOURS, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_MINUTES,
+    DURATION_UNIT_SECONDS, DurationBase, DurationBounds,
 };
 pub use error::RegistryError;
 pub use evaluator::{EventFilter, kind_matches_prefix};

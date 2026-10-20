@@ -5,8 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner, ValueBounds,
+    ConfigReason, DurationBounds, FormField, RegistryError, RunContext, SubActionCategory,
+    SubActionConfigExt, SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -165,11 +165,10 @@ impl SubActionRunner for StartPollRunner {
                 key: "choices",
                 label: "Choices (one per line or comma-separated, 2-5)",
             },
-            FormField::Integer {
+            FormField::Duration {
                 key: "duration_seconds",
-                label: "Duration (seconds, 15-1800)",
-                min: MIN_DURATION_SECS,
-                max: MAX_DURATION_SECS,
+                label: "Duration",
+                bounds: DurationBounds::in_seconds(MIN_DURATION_SECS, MAX_DURATION_SECS),
             },
             FormField::Toggle {
                 key: "channel_points_voting_enabled",

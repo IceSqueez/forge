@@ -2,8 +2,8 @@ use std::ops::RangeInclusive;
 
 use forge_components::tr;
 use forge_registry::{
-    DURATION_UNIT_HOURS, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_MINUTES, DURATION_UNIT_SECONDS,
-    DurationBounds, FormField, UnitAmountBounds,
+    DURATION_UNIT_DAYS, DURATION_UNIT_HOURS, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_MINUTES,
+    DURATION_UNIT_SECONDS, DurationBounds, FormField, UnitAmountBounds,
 };
 use forge_types::{SubActionConfig, Variant};
 
@@ -17,7 +17,7 @@ pub(crate) enum AmountScale {
         unit_key: &'static str,
         bounds: UnitAmountBounds,
     },
-    Millis(DurationBounds),
+    Duration(DurationBounds),
 }
 
 pub(crate) struct AmountSeed {
@@ -34,7 +34,7 @@ impl AmountScale {
                 unit_key,
                 bounds: *bounds,
             }),
-            FormField::Duration { bounds, .. } => Some(Self::Millis(*bounds)),
+            FormField::Duration { bounds, .. } => Some(Self::Duration(*bounds)),
             _ => None,
         }
     }
@@ -42,7 +42,7 @@ impl AmountScale {
     pub(crate) fn unit_picker_key(&self, key: &str) -> String {
         match self {
             Self::StoredUnit { unit_key, .. } => (*unit_key).to_owned(),
-            Self::Millis(_) => format!("{key}{DURATION_UNIT_PICKER_SUFFIX}"),
+            Self::Duration(_) => format!("{key}{DURATION_UNIT_PICKER_SUFFIX}"),
         }
     }
 
@@ -53,7 +53,7 @@ impl AmountScale {
                 .iter()
                 .map(|unit| (unit.value.to_owned(), preset_label(unit_key, unit.value)))
                 .collect(),
-            Self::Millis(bounds) => bounds
+            Self::Duration(bounds) => bounds
                 .fitting_units()
                 .map(|unit| (unit.value.to_owned(), duration_unit_label(unit.value)))
                 .collect(),
@@ -63,7 +63,7 @@ impl AmountScale {
     pub(crate) fn range_for(&self, unit: &str) -> RangeInclusive<i64> {
         match self {
             Self::StoredUnit { bounds, .. } => bounds.range_for(unit),
-            Self::Millis(bounds) => bounds.range_for(unit),
+            Self::Duration(bounds) => bounds.range_for(unit),
         }
     }
 
@@ -77,12 +77,12 @@ impl AmountScale {
                     .unwrap_or_default(),
                 amount: stored_amount,
             },
-            Self::Millis(bounds) => {
+            Self::Duration(bounds) => {
                 let shown = stored_amount
                     .trim()
                     .parse::<i64>()
                     .ok()
-                    .and_then(|millis| bounds.in_largest_exact_unit(millis));
+                    .and_then(|stored| bounds.in_largest_exact_unit(stored));
                 match shown {
                     Some((unit, amount)) => AmountSeed {
                         unit: unit.value.to_owned(),
@@ -107,7 +107,7 @@ impl AmountScale {
         from: &str,
         to: &str,
     ) -> Option<String> {
-        let Self::Millis(bounds) = self else {
+        let Self::Duration(bounds) = self else {
             return None;
         };
         let amount = typed.trim().parse::<i64>().ok()?;
@@ -126,8 +126,13 @@ impl AmountScale {
                     .chain(amount.map(|amount| (key.to_owned(), Variant::Int(amount))))
                     .collect()
             }
-            Self::Millis(bounds) => amount
-                .map(|amount| (key.to_owned(), Variant::Int(bounds.millis(unit, amount))))
+            Self::Duration(bounds) => amount
+                .map(|amount| {
+                    (
+                        key.to_owned(),
+                        Variant::Int(bounds.stored_amount(unit, amount)),
+                    )
+                })
                 .into_iter()
                 .collect(),
         }
@@ -136,7 +141,7 @@ impl AmountScale {
     pub(crate) fn stored_keys<'a>(&self, key: &'a str) -> Vec<&'a str> {
         match self {
             Self::StoredUnit { unit_key, .. } => vec![key, unit_key],
-            Self::Millis(_) => vec![key],
+            Self::Duration(_) => vec![key],
         }
     }
 }
@@ -154,6 +159,7 @@ fn duration_unit_label(unit: &str) -> String {
         DURATION_UNIT_SECONDS => tr!("config_form_duration_unit_seconds"),
         DURATION_UNIT_MINUTES => tr!("config_form_duration_unit_minutes"),
         DURATION_UNIT_HOURS => tr!("config_form_duration_unit_hours"),
+        DURATION_UNIT_DAYS => tr!("config_form_duration_unit_days"),
         _ => unit.to_owned(),
     }
 }

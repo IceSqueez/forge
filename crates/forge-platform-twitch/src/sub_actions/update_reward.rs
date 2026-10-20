@@ -5,8 +5,8 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
-    ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner, ValueBounds,
+    ConfigReason, DurationBounds, FormField, RegistryError, RunContext, SubActionCategory,
+    SubActionConfigExt, SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -236,11 +236,10 @@ impl SubActionRunner for UpdateRewardRunner {
             FormField::Optional {
                 key: "global_cooldown_seconds",
                 label: "Global Cooldown Seconds",
-                inner: Box::new(FormField::Integer {
+                inner: Box::new(FormField::Duration {
                     key: "global_cooldown_seconds",
-                    label: "Global Cooldown Seconds (0 = disabled)",
-                    min: 0,
-                    max: i64::MAX,
+                    label: "Global Cooldown (0 = disabled)",
+                    bounds: DurationBounds::in_seconds(0, i64::MAX),
                 }),
             },
             FormField::Select {

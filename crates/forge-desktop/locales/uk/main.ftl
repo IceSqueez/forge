@@ -992,7 +992,7 @@ triggers_timer_min_messages = ≥{ $count } { $count ->
     [many] повідомлень
    *[other] повідомлення
 }
-triggers_timer_hint_interval = Інтервал (хвилини): як часто спрацьовує, у цілих хвилинах (1-1440). Перше спрацювання - через один інтервал після збереження або після початку ефіру.
+triggers_timer_hint_interval = Інтервал: як часто спрацьовує, від 1 хвилини до 24 годин. Перше спрацювання - через один інтервал після збереження або після початку ефіру.
 triggers_timer_hint_live = Лише в ефірі: пропускати спрацювання, поки жодна платформа і жоден вихід трансляції OBS не повідомляє про ефір.
 triggers_timer_hint_messages = Мін. повідомлень у чаті: пропускати спрацювання, доки від останнього не надійде щонайменше стільки повідомлень глядачів. 0 = вимк. Боти й власні повідомлення forge не рахуються.
 triggers_sheet_section_used_in = ВИКОРИСТОВУЄТЬСЯ В
@@ -3147,6 +3147,7 @@ config_form_duration_unit_ms = мілісекунди
 config_form_duration_unit_seconds = секунди
 config_form_duration_unit_minutes = хвилини
 config_form_duration_unit_hours = години
+config_form_duration_unit_days = дні
 config_field_label_allow_everyone_pings = Дозволити @everyone / @here
 config_field_label_allow_role_pings = Дозволити пінг ролей
 config_field_label_ban_type = Тип бану
@@ -3167,7 +3168,7 @@ config_field_label_event_name = Назва події
 config_field_label_from_user = Від кого (логін)
 config_field_label_guest_state = Стан гостя (порожнє = усі)
 config_field_label_hotkey_combo = Комбінація клавіш
-config_field_label_interval_minutes = Інтервал (хвилини)
+config_field_label_interval = Інтервал
 config_field_label_match_text = Текст для збігу
 config_field_label_max_bits = Макс. бітсів (-1 = без меж)
 config_field_label_min_bits = Мін. бітсів

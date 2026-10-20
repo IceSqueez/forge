@@ -74,18 +74,12 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
             FormField::Duration {
                 key: "poll_interval_ms",
                 label: "Poll Interval",
-                bounds: DurationBounds {
-                    min_ms: POLL_MIN_MS,
-                    max_ms: POLL_MAX_MS,
-                },
+                bounds: DurationBounds::in_millis(POLL_MIN_MS, POLL_MAX_MS),
             },
             FormField::Duration {
                 key: "timeout_ms",
                 label: "Timeout",
-                bounds: DurationBounds {
-                    min_ms: TIMEOUT_MIN_MS,
-                    max_ms: TIMEOUT_MAX_MS,
-                },
+                bounds: DurationBounds::in_millis(TIMEOUT_MIN_MS, TIMEOUT_MAX_MS),
             },
         ]
     }

@@ -969,7 +969,8 @@ impl ScreenActionsView {
         step: &SubActionStep,
         palette: &ForgePalette,
     ) -> TestRunRow {
-        let (fallback_icon, fallback_title, _) = super::editor::sub_action_summary(step);
+        let (fallback_icon, fallback_title, _) =
+            super::editor::sub_action_summary(step, &self.select_options);
         let runner = self.sub_action_registry.get(&step.kind_id);
         let name = runner
             .map(|r| r.label().to_owned())

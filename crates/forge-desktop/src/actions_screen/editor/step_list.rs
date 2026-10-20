@@ -178,7 +178,8 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let is_last = i + 1 == total;
-        let (fallback_icon, fallback_title, detail_opt) = sub_action_summary(step);
+        let (fallback_icon, fallback_title, detail_opt) =
+            sub_action_summary(step, &self.select_options);
         let runner = self.sub_action_registry.get(&step.kind_id);
         let title = runner
             .map(|r| r.label().to_owned())

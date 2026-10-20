@@ -332,6 +332,7 @@ impl ScreenActionsView {
         };
         view.reload(cx);
         view.load_favorites(cx);
+        view.fetch_select_options(cx);
         view
     }
 

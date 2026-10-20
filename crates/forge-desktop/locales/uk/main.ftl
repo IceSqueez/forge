@@ -842,6 +842,7 @@ action_editor_kind_set_global = Встановити змінну
 action_editor_kind_delay = Затримка
 action_editor_kind_log = Журнал
 action_editor_kind_play_sound = Відтворити звук
+action_editor_clip_missing = Звук не знайдено
 action_editor_kind_speak = Синтез мовлення
 action_editor_kind_read_file = Читати файл
 action_editor_kind_random_int = Випадкове число

@@ -8,7 +8,7 @@ use forge_runtime::triggers::DONATION_PROVIDER_OPTIONS_KEY;
 use gpui::Context;
 use std::collections::HashMap;
 
-const CLIP_OPTIONS_KEY: &str = "soundboard.clip_ids";
+pub(super) const CLIP_OPTIONS_KEY: &str = "soundboard.clip_ids";
 
 struct SelectOptionsFetch {
     options: HashMap<String, Vec<(String, String)>>,
@@ -30,7 +30,7 @@ fn mark_unavailable_clips(
 }
 
 impl ScreenActionsView {
-    pub(super) fn fetch_select_options(&self, cx: &mut Context<Self>) {
+    pub(in crate::actions_screen) fn fetch_select_options(&self, cx: &mut Context<Self>) {
         let action_repo = Arc::clone(&self.action_repo);
         let queue_repo = Arc::clone(&self.queue_repo);
         let ti_repo = Arc::clone(&self.trigger_instance_repo);

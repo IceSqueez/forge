@@ -832,6 +832,7 @@ action_editor_kind_set_global = Set global
 action_editor_kind_delay = Delay
 action_editor_kind_log = Log
 action_editor_kind_play_sound = Play sound
+action_editor_clip_missing = Missing clip
 action_editor_kind_speak = Speak
 action_editor_kind_read_file = Read file
 action_editor_kind_random_int = Random int

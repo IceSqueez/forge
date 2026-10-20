@@ -1,12 +1,33 @@
+use super::select_options::CLIP_OPTIONS_KEY;
 use super::*;
 use crate::platform_visuals::platform_color;
 use forge_components::{FONT_XS, ForgePalette, Icon, mono_family, tr};
 use forge_registry::SubActionCategory;
 use forge_types::{PlatformId, SubActionStep, Variant};
 use gpui::{AnyElement, Rgba, div};
+use std::collections::HashMap;
+
+fn clip_step_detail(
+    clip_id: &str,
+    select_options: &HashMap<String, Vec<(String, String)>>,
+) -> String {
+    let is_templated = forge_types::variable_references(clip_id).next().is_some();
+    if clip_id.is_empty() || is_templated {
+        return clip_id.to_owned();
+    }
+    let Some(clips) = select_options.get(CLIP_OPTIONS_KEY) else {
+        return String::new();
+    };
+    clips
+        .iter()
+        .find(|(id, _)| id == clip_id)
+        .map(|(_, name)| name.clone())
+        .unwrap_or_else(|| tr!("action_editor_clip_missing"))
+}
 
 pub(in crate::actions_screen) fn sub_action_summary(
     step: &SubActionStep,
+    select_options: &HashMap<String, Vec<(String, String)>>,
 ) -> (&'static str, String, Option<String>) {
     fn as_str(v: &Variant) -> &str {
         if let Variant::String(s) = v {
@@ -84,7 +105,7 @@ pub(in crate::actions_screen) fn sub_action_summary(
             (
                 "music",
                 tr!("action_editor_kind_play_sound"),
-                Some(clip_id.to_owned()),
+                Some(clip_step_detail(clip_id, select_options)),
             )
         }
         "tts.speak.text" => {

@@ -312,4 +312,52 @@ mod tests {
 
         assert_eq!(listed, Some(expected));
     }
+
+    fn play_step(clip_id: &str) -> forge_types::SubActionStep {
+        let mut step = crate::test_support::step("soundboard.sound.play", true);
+        step.config.insert(
+            "clip_id".to_owned(),
+            forge_types::Variant::String(clip_id.to_owned()),
+        );
+        step
+    }
+
+    #[gpui::test]
+    fn a_freshly_mounted_editor_names_play_sound_clips_without_opening_a_step_form(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        crate::i18n::install_language(forge_storage::Language::En);
+        let rt = runtime();
+        let managed_file = tempfile::NamedTempFile::new().unwrap();
+        let clip = stored_clip(
+            "Airhorn",
+            std::path::PathBuf::from("/nonexistent/forge/airhorn.wav"),
+        );
+        let known = play_step(&clip.id.to_string());
+        let dangling = play_step(&ClipId::new().to_string());
+        let media = media_holding(clip.id, managed_file.path().to_owned());
+        let view = view_over(cx, &rt, vec![clip], media);
+
+        let mut details = None;
+        for _ in 0..CLIP_PROBE_ROUNDS {
+            pump(&rt);
+            cx.run_until_parked();
+            details = view.read_with(cx, |view, _| {
+                view.select_options.contains_key(CLIP_OPTIONS_KEY).then(|| {
+                    (
+                        super::super::sub_action_summary(&known, &view.select_options).2,
+                        super::super::sub_action_summary(&dangling, &view.select_options).2,
+                    )
+                })
+            });
+            if details.is_some() {
+                break;
+            }
+        }
+
+        assert_eq!(
+            details,
+            Some((Some("Airhorn".to_owned()), Some("Missing clip".to_owned())))
+        );
+    }
 }

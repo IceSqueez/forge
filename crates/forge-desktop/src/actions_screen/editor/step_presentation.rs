@@ -278,3 +278,70 @@ pub(super) fn variable_text(s: &str, palette: &ForgePalette) -> AnyElement {
     }
     row.into_any_element()
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_storage::Language;
+
+    use super::*;
+
+    const PLAY_SOUND: &str = "soundboard.sound.play";
+    const AIRHORN_ID: &str = "01JAAAAAAAAAAAAAAAAAAAAAAA";
+    const BELL_ID: &str = "01JBBBBBBBBBBBBBBBBBBBBBBB";
+    const DANGLING_ID: &str = "01JZZZZZZZZZZZZZZZZZZZZZZZ";
+    const MISSING_LABEL: &str = "Missing clip";
+
+    fn play_step(clip_id: &str) -> SubActionStep {
+        let mut step = crate::test_support::step(PLAY_SOUND, true);
+        step.config
+            .insert("clip_id".to_owned(), Variant::String(clip_id.to_owned()));
+        step
+    }
+
+    fn clip_options(clips: &[(&str, &str)]) -> HashMap<String, Vec<(String, String)>> {
+        HashMap::from([(
+            CLIP_OPTIONS_KEY.to_owned(),
+            clips
+                .iter()
+                .map(|(id, name)| ((*id).to_owned(), (*name).to_owned()))
+                .collect(),
+        )])
+    }
+
+    fn card_detail(clip_id: &str, options: &HashMap<String, Vec<(String, String)>>) -> String {
+        sub_action_summary(&play_step(clip_id), options)
+            .2
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn play_sound_card_detail_resolves_the_clip_id_against_the_loaded_clip_list() {
+        crate::i18n::install_language(Language::En);
+        let options = clip_options(&[(AIRHORN_ID, "Airhorn"), (BELL_ID, "Bell - file missing")]);
+
+        for (clip_id, expected) in [
+            (AIRHORN_ID, "Airhorn"),
+            (BELL_ID, "Bell - file missing"),
+            (DANGLING_ID, MISSING_LABEL),
+            ("", ""),
+            ("%clip%", "%clip%"),
+            ("prefix %x%", "prefix %x%"),
+        ] {
+            assert_eq!(card_detail(clip_id, &options), expected, "{clip_id:?}");
+        }
+    }
+
+    #[test]
+    fn play_sound_card_detail_stays_blank_until_the_clip_list_loads() {
+        crate::i18n::install_language(Language::En);
+
+        assert_eq!(card_detail(AIRHORN_ID, &HashMap::new()), "");
+    }
+
+    #[test]
+    fn play_sound_card_detail_flags_a_clip_id_when_the_library_is_empty() {
+        crate::i18n::install_language(Language::En);
+
+        assert_eq!(card_detail(AIRHORN_ID, &clip_options(&[])), MISSING_LABEL);
+    }
+}

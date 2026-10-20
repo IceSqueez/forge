@@ -4,7 +4,7 @@ use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
     TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{ActorRole, DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
+use forge_types::{ActorRole, DeclaredVariable, PlatformId, TriggerConfig, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::shield as shield_fields;
@@ -74,14 +74,14 @@ impl TriggerKindDescriptor for ShieldModeEndedDescriptor {
                     twitch_actor(ActorRole::Moderator),
                     shield_moderator_identity,
                 )
-                .event_specific(
+                .event_specific_optional(
                     DeclaredVariable {
                         name: "ended_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Ended at".to_owned(),
                         synthesis: None,
                     },
-                    |event| Variant::String(payload_read::text(event, shield_fields::ENDED_AT)),
+                    |event| payload_read::timestamp(event, shield_fields::ENDED_AT),
                 ),
         )
     }

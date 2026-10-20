@@ -88,23 +88,18 @@ impl TriggerKindDescriptor for HypeTrainEndedDescriptor {
         let ended_at = hype
             .and_then(|h| h.get(fields::ENDED_AT))
             .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+            .and_then(crate::timestamp::variant);
         let cooldown_ends_at = hype
             .and_then(|h| h.get(fields::COOLDOWN_ENDS_AT))
             .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+            .and_then(crate::timestamp::variant);
 
-        ArgStack::new()
+        let stack = ArgStack::new()
             .set("hype.id".to_owned(), Variant::String(id))
             .set("hype.level".to_owned(), Variant::Int(level))
-            .set("hype.total".to_owned(), Variant::Int(total))
-            .set("hype.ended_at".to_owned(), Variant::String(ended_at))
-            .set(
-                "hype.cooldown_ends_at".to_owned(),
-                Variant::String(cooldown_ends_at),
-            )
+            .set("hype.total".to_owned(), Variant::Int(total));
+        let stack = crate::timestamp::set(stack, "hype.ended_at", ended_at);
+        crate::timestamp::set(stack, "hype.cooldown_ends_at", cooldown_ends_at)
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some({
@@ -133,13 +128,13 @@ impl TriggerKindDescriptor for HypeTrainEndedDescriptor {
                     },
                     DeclaredVariable {
                         name: "hype.ended_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Ended at".to_owned(),
                         synthesis: None,
                     },
                     DeclaredVariable {
                         name: "hype.cooldown_ends_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Cooldown ends at".to_owned(),
                         synthesis: None,
                     },

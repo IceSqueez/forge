@@ -84,24 +84,19 @@ impl TriggerKindDescriptor for PredictionStartedDescriptor {
         let started_at = prediction
             .and_then(|v| v.get(fields::STARTED_AT))
             .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+            .and_then(crate::timestamp::variant);
         let locks_at = prediction
             .and_then(|v| v.get(fields::LOCKS_AT))
             .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+            .and_then(crate::timestamp::variant);
         let outcomes = build_outcomes_variant(event);
 
-        ArgStack::new()
+        let stack = ArgStack::new()
             .set("prediction.id".to_owned(), Variant::String(prediction_id))
             .set("prediction.title".to_owned(), Variant::String(title))
-            .set(
-                "prediction.started_at".to_owned(),
-                Variant::String(started_at),
-            )
-            .set("prediction.locks_at".to_owned(), Variant::String(locks_at))
-            .set("prediction.outcomes".to_owned(), outcomes)
+            .set("prediction.outcomes".to_owned(), outcomes);
+        let stack = crate::timestamp::set(stack, "prediction.started_at", started_at);
+        crate::timestamp::set(stack, "prediction.locks_at", locks_at)
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some({
@@ -121,13 +116,13 @@ impl TriggerKindDescriptor for PredictionStartedDescriptor {
                     },
                     DeclaredVariable {
                         name: "prediction.started_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Started at".to_owned(),
                         synthesis: None,
                     },
                     DeclaredVariable {
                         name: "prediction.locks_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Locks at".to_owned(),
                         synthesis: None,
                     },

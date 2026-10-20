@@ -4,7 +4,7 @@ use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
     TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{ActorRole, DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
+use forge_types::{ActorRole, DeclaredVariable, PlatformId, TriggerConfig, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::follow as fields;
@@ -67,14 +67,14 @@ impl TriggerKindDescriptor for ChannelFollowDescriptor {
         Some(
             TriggerVariables::new()
                 .actor(twitch_actor(ActorRole::Principal), follower_identity)
-                .event_specific(
+                .event_specific_optional(
                     DeclaredVariable {
                         name: "followed_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Followed at".to_owned(),
                         synthesis: None,
                     },
-                    |event| Variant::String(payload_read::text(event, fields::FOLLOWED_AT)),
+                    |event| payload_read::timestamp(event, fields::FOLLOWED_AT),
                 ),
         )
     }

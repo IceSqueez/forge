@@ -96,22 +96,20 @@ impl TriggerKindDescriptor for HypeTrainStartedDescriptor {
         let started_at = hype
             .and_then(|h| h.get(fields::STARTED_AT))
             .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+            .and_then(crate::timestamp::variant);
         let expires_at = hype
             .and_then(|h| h.get(fields::EXPIRES_AT))
             .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+            .and_then(crate::timestamp::variant);
 
-        ArgStack::new()
+        let stack = ArgStack::new()
             .set("hype.id".to_owned(), Variant::String(id))
             .set("hype.level".to_owned(), Variant::Int(level))
             .set("hype.goal".to_owned(), Variant::Int(goal))
             .set("hype.progress".to_owned(), Variant::Int(progress))
-            .set("hype.total".to_owned(), Variant::Int(total))
-            .set("hype.started_at".to_owned(), Variant::String(started_at))
-            .set("hype.expires_at".to_owned(), Variant::String(expires_at))
+            .set("hype.total".to_owned(), Variant::Int(total));
+        let stack = crate::timestamp::set(stack, "hype.started_at", started_at);
+        crate::timestamp::set(stack, "hype.expires_at", expires_at)
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some({
@@ -158,13 +156,13 @@ impl TriggerKindDescriptor for HypeTrainStartedDescriptor {
                     },
                     DeclaredVariable {
                         name: "hype.started_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Started at".to_owned(),
                         synthesis: None,
                     },
                     DeclaredVariable {
                         name: "hype.expires_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Expires at".to_owned(),
                         synthesis: None,
                     },

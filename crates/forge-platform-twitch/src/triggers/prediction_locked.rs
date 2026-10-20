@@ -84,16 +84,12 @@ impl TriggerKindDescriptor for PredictionLockedDescriptor {
         let locked_at = prediction
             .and_then(|v| v.get(fields::LOCKED_AT))
             .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+            .and_then(crate::timestamp::variant);
 
-        ArgStack::new()
+        let stack = ArgStack::new()
             .set("prediction.id".to_owned(), Variant::String(prediction_id))
-            .set("prediction.title".to_owned(), Variant::String(title))
-            .set(
-                "prediction.locked_at".to_owned(),
-                Variant::String(locked_at),
-            )
+            .set("prediction.title".to_owned(), Variant::String(title));
+        crate::timestamp::set(stack, "prediction.locked_at", locked_at)
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some({
@@ -113,7 +109,7 @@ impl TriggerKindDescriptor for PredictionLockedDescriptor {
                     },
                     DeclaredVariable {
                         name: "prediction.locked_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Locked at".to_owned(),
                         synthesis: None,
                     },

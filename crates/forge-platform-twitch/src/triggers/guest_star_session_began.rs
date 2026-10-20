@@ -79,18 +79,13 @@ impl TriggerKindDescriptor for GuestStarSessionBeganDescriptor {
         let started_at = session
             .and_then(|s| s.get(guest_star_fields::SESSION_STARTED_AT))
             .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+            .and_then(crate::timestamp::variant);
 
-        ArgStack::new()
-            .set(
-                "guest_star.session_id".to_owned(),
-                Variant::String(session_id),
-            )
-            .set(
-                "guest_star.started_at".to_owned(),
-                Variant::String(started_at),
-            )
+        let stack = ArgStack::new().set(
+            "guest_star.session_id".to_owned(),
+            Variant::String(session_id),
+        );
+        crate::timestamp::set(stack, "guest_star.started_at", started_at)
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some({
@@ -104,7 +99,7 @@ impl TriggerKindDescriptor for GuestStarSessionBeganDescriptor {
                     },
                     DeclaredVariable {
                         name: "guest_star.started_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Session started at".to_owned(),
                         synthesis: None,
                     },

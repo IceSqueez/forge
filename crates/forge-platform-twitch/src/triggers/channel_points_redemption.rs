@@ -186,19 +186,19 @@ impl TriggerKindDescriptor for ChannelPointsRedemptionDescriptor {
                         ))
                     },
                 )
-                .event_specific(
+                .event_specific_optional(
                     DeclaredVariable {
                         name: "redeemed_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Redeemed at".to_owned(),
                         synthesis: None,
                     },
                     |event| {
-                        Variant::String(payload_read::nested_text(
+                        payload_read::nested_timestamp(
                             event,
                             fields::REDEMPTION,
                             fields::REDEEMED_AT,
-                        ))
+                        )
                     },
                 )
                 .event_specific(

@@ -29,7 +29,10 @@ impl CreateMarkerRunner {
         }
     }
 
-    async fn create(&self, description: &str) -> Result<(String, i64, String), SubActionOutcome> {
+    async fn create(
+        &self,
+        description: &str,
+    ) -> Result<(String, i64, Option<Variant>), SubActionOutcome> {
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return Err(SubActionOutcome::Failed(e.to_string())),
@@ -66,10 +69,7 @@ impl CreateMarkerRunner {
         })?;
         let created_at = marker["created_at"]
             .as_str()
-            .ok_or_else(|| {
-                SubActionOutcome::Failed("marker created_at missing in response".to_owned())
-            })?
-            .to_owned();
+            .and_then(crate::timestamp::variant);
 
         Ok((id, position_seconds, created_at))
     }
@@ -160,8 +160,9 @@ impl SubActionRunner for CreateMarkerRunner {
                     .set(
                         "marker.position_seconds".to_owned(),
                         Variant::Int(position_seconds),
-                    )
-                    .set("marker.created_at".to_owned(), Variant::String(created_at));
+                    );
+                let output_stack =
+                    crate::timestamp::set(output_stack, "marker.created_at", created_at);
                 (
                     SubActionTelemetry {
                         args_in: ::std::collections::BTreeMap::new(),

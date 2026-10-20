@@ -76,14 +76,14 @@ impl TriggerKindDescriptor for ShoutoutReceivedDescriptor {
                 .count(CanonicalCount::ViewerCount, |event| {
                     payload_read::number(event, shoutout_fields::VIEWER_COUNT)
                 })
-                .event_specific(
+                .event_specific_optional(
                     DeclaredVariable {
                         name: "started_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Started at".to_owned(),
                         synthesis: None,
                     },
-                    |event| Variant::String(payload_read::text(event, shoutout_fields::STARTED_AT)),
+                    |event| payload_read::timestamp(event, shoutout_fields::STARTED_AT),
                 )
                 .legacy(
                     DeclaredVariable {

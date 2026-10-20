@@ -100,19 +100,19 @@ impl TriggerKindDescriptor for AdBreakStartedDescriptor {
                         ))
                     },
                 )
-                .event_specific(
+                .event_specific_optional(
                     DeclaredVariable {
                         name: "ad_break.started_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Ad break start time".to_owned(),
                         synthesis: None,
                     },
                     |event| {
-                        Variant::String(payload_read::nested_text(
+                        payload_read::nested_timestamp(
                             event,
                             ad_break_fields::AD_BREAK,
                             ad_break_fields::STARTED_AT,
-                        ))
+                        )
                     },
                 )
                 .legacy(

@@ -89,8 +89,7 @@ impl TriggerKindDescriptor for StreamOnlineDescriptor {
             .get(stream_fields::STREAM)
             .and_then(|s| s.get(stream_fields::STARTED_AT))
             .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+            .and_then(crate::timestamp::variant);
         let broadcaster_login = event
             .payload
             .get(stream_fields::BROADCASTER)
@@ -106,15 +105,15 @@ impl TriggerKindDescriptor for StreamOnlineDescriptor {
             .unwrap_or("")
             .to_owned();
 
-        ArgStack::new()
+        let stack = ArgStack::new()
             .set("stream_id".to_owned(), Variant::String(stream_id))
             .set("stream_type".to_owned(), Variant::String(stream_type))
-            .set("started_at".to_owned(), Variant::String(started_at))
             .set(
                 "broadcaster_login".to_owned(),
                 Variant::String(broadcaster_login),
             )
-            .set("broadcaster_id".to_owned(), Variant::String(broadcaster_id))
+            .set("broadcaster_id".to_owned(), Variant::String(broadcaster_id));
+        crate::timestamp::set(stack, "started_at", started_at)
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some({
@@ -134,7 +133,7 @@ impl TriggerKindDescriptor for StreamOnlineDescriptor {
                     },
                     DeclaredVariable {
                         name: "started_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Started at".to_owned(),
                         synthesis: None,
                     },

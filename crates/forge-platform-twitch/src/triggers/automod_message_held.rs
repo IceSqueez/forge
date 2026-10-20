@@ -139,19 +139,19 @@ impl TriggerKindDescriptor for AutomodMessageHeldDescriptor {
                         )
                     },
                 )
-                .event_specific(
+                .event_specific_optional(
                     DeclaredVariable {
                         name: "held_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Held at".to_owned(),
                         synthesis: None,
                     },
                     |event| {
-                        Variant::String(payload_read::nested_text(
+                        payload_read::nested_timestamp(
                             event,
                             automod_fields::AUTOMOD,
                             automod_fields::HELD_AT,
-                        ))
+                        )
                     },
                 ),
         )

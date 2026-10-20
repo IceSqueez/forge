@@ -97,10 +97,9 @@ impl TriggerKindDescriptor for GoalEndedDescriptor {
         let ended_at = goal
             .and_then(|v| v.get(fields::ENDED_AT))
             .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+            .and_then(crate::timestamp::variant);
 
-        ArgStack::new()
+        let stack = ArgStack::new()
             .set("goal.id".to_owned(), Variant::String(goal_id))
             .set("goal.type".to_owned(), Variant::String(goal_type))
             .set(
@@ -108,8 +107,8 @@ impl TriggerKindDescriptor for GoalEndedDescriptor {
                 Variant::Int(current_amount),
             )
             .set("goal.target_amount".to_owned(), Variant::Int(target_amount))
-            .set("goal.is_achieved".to_owned(), Variant::Bool(is_achieved))
-            .set("goal.ended_at".to_owned(), Variant::String(ended_at))
+            .set("goal.is_achieved".to_owned(), Variant::Bool(is_achieved));
+        crate::timestamp::set(stack, "goal.ended_at", ended_at)
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some({
@@ -153,7 +152,7 @@ impl TriggerKindDescriptor for GoalEndedDescriptor {
                     },
                     DeclaredVariable {
                         name: "goal.ended_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Ended at".to_owned(),
                         synthesis: None,
                     },

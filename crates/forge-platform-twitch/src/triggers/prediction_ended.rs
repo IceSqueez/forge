@@ -94,18 +94,17 @@ impl TriggerKindDescriptor for PredictionEndedDescriptor {
         let ended_at = prediction
             .and_then(|v| v.get(fields::ENDED_AT))
             .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+            .and_then(crate::timestamp::variant);
 
-        ArgStack::new()
+        let stack = ArgStack::new()
             .set("prediction.id".to_owned(), Variant::String(prediction_id))
             .set("prediction.title".to_owned(), Variant::String(title))
             .set(
                 "prediction.winning_outcome_id".to_owned(),
                 Variant::String(winning_outcome_id),
             )
-            .set("prediction.status".to_owned(), Variant::String(status))
-            .set("prediction.ended_at".to_owned(), Variant::String(ended_at))
+            .set("prediction.status".to_owned(), Variant::String(status));
+        crate::timestamp::set(stack, "prediction.ended_at", ended_at)
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some({
@@ -137,7 +136,7 @@ impl TriggerKindDescriptor for PredictionEndedDescriptor {
                     },
                     DeclaredVariable {
                         name: "prediction.ended_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Ended at".to_owned(),
                         synthesis: None,
                     },

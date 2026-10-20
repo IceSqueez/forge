@@ -84,14 +84,14 @@ impl TriggerKindDescriptor for ChannelBanDescriptor {
                     },
                     |event| Variant::String(payload_read::text(event, fields::REASON)),
                 )
-                .event_specific(
+                .event_specific_optional(
                     DeclaredVariable {
                         name: "banned_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Banned at".to_owned(),
                         synthesis: None,
                     },
-                    |event| Variant::String(payload_read::text(event, fields::BANNED_AT)),
+                    |event| payload_read::timestamp(event, fields::BANNED_AT),
                 ),
         )
     }

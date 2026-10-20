@@ -79,15 +79,13 @@ impl TriggerKindDescriptor for GuestStarSessionEndedDescriptor {
         let ended_at = session
             .and_then(|s| s.get(guest_star_fields::SESSION_ENDED_AT))
             .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+            .and_then(crate::timestamp::variant);
 
-        ArgStack::new()
-            .set(
-                "guest_star.session_id".to_owned(),
-                Variant::String(session_id),
-            )
-            .set("guest_star.ended_at".to_owned(), Variant::String(ended_at))
+        let stack = ArgStack::new().set(
+            "guest_star.session_id".to_owned(),
+            Variant::String(session_id),
+        );
+        crate::timestamp::set(stack, "guest_star.ended_at", ended_at)
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some({
@@ -101,7 +99,7 @@ impl TriggerKindDescriptor for GuestStarSessionEndedDescriptor {
                     },
                     DeclaredVariable {
                         name: "guest_star.ended_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Session ended at".to_owned(),
                         synthesis: None,
                     },

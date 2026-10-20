@@ -90,17 +90,16 @@ impl TriggerKindDescriptor for PollEndedDescriptor {
         let ended_at = poll
             .and_then(|v| v.get(fields::ENDED_AT))
             .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+            .and_then(crate::timestamp::variant);
 
         let choices = build_choices_variant(event);
 
-        ArgStack::new()
+        let stack = ArgStack::new()
             .set("poll.id".to_owned(), Variant::String(poll_id))
             .set("poll.title".to_owned(), Variant::String(title))
             .set("poll.status".to_owned(), Variant::String(status))
-            .set("poll.ended_at".to_owned(), Variant::String(ended_at))
-            .set("poll.choices".to_owned(), choices)
+            .set("poll.choices".to_owned(), choices);
+        crate::timestamp::set(stack, "poll.ended_at", ended_at)
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some({
@@ -126,7 +125,7 @@ impl TriggerKindDescriptor for PollEndedDescriptor {
                     },
                     DeclaredVariable {
                         name: "poll.ended_at".to_owned(),
-                        kind: VariantKind::String,
+                        kind: VariantKind::Datetime,
                         label: "Ended at".to_owned(),
                         synthesis: None,
                     },

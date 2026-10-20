@@ -93,7 +93,7 @@ pub fn declared_variables(descriptor: &dyn TriggerKindDescriptor) -> Option<Vec<
     })
 }
 
-type ValueReader = Arc<dyn Fn(&Event) -> Variant + Send + Sync>;
+type ValueReader = Arc<dyn Fn(&Event) -> Option<Variant> + Send + Sync>;
 
 struct VariableEntry {
     declared: DeclaredVariable,
@@ -126,7 +126,7 @@ impl TriggerVariables {
             self.entries.push(VariableEntry {
                 declared: canonical_declaration(canonical),
                 standing: VariableStanding::Canonical(canonical),
-                read: Arc::new(move |event| actor_value(slot, platform, &identity(event))),
+                read: Arc::new(move |event| Some(actor_value(slot, platform, &identity(event)))),
             });
         }
         self
@@ -148,12 +148,12 @@ impl TriggerVariables {
                 standing: VariableStanding::Canonical(canonical),
                 read: Arc::new(move |event| {
                     let actor = actor(event);
-                    match slot {
+                    Some(match slot {
                         ActorSlot::Platform => Variant::String(actor.source),
                         ActorSlot::Id | ActorSlot::Name | ActorSlot::Login => {
                             Variant::String(identity_value(slot, &actor.identity))
                         }
-                    }
+                    })
                 }),
             });
         }
@@ -218,9 +218,16 @@ impl TriggerVariables {
         })
     }
 
-    pub fn event_specific<F>(mut self, declared: DeclaredVariable, read: F) -> Self
+    pub fn event_specific<F>(self, declared: DeclaredVariable, read: F) -> Self
     where
         F: Fn(&Event) -> Variant + Send + Sync + 'static,
+    {
+        self.event_specific_optional(declared, move |event| Some(read(event)))
+    }
+
+    pub fn event_specific_optional<F>(mut self, declared: DeclaredVariable, read: F) -> Self
+    where
+        F: Fn(&Event) -> Option<Variant> + Send + Sync + 'static,
     {
         self.entries.push(VariableEntry {
             declared,
@@ -242,7 +249,7 @@ impl TriggerVariables {
         self.entries.push(VariableEntry {
             declared,
             standing: VariableStanding::Legacy(superseded_by),
-            read: Arc::new(read),
+            read: Arc::new(move |event| Some(read(event))),
         });
         self
     }
@@ -270,9 +277,12 @@ impl TriggerVariables {
     }
 
     pub fn arg_stack(&self, event: &Event) -> ArgStack {
-        self.entries.iter().fold(ArgStack::new(), |stack, entry| {
-            stack.set(entry.declared.name.clone(), (entry.read)(event))
-        })
+        self.entries
+            .iter()
+            .fold(ArgStack::new(), |stack, entry| match (entry.read)(event) {
+                Some(value) => stack.set(entry.declared.name.clone(), value),
+                None => stack,
+            })
     }
 
     fn canonical<F>(mut self, canonical: CanonicalVariable, read: F) -> Self
@@ -282,7 +292,7 @@ impl TriggerVariables {
         self.entries.push(VariableEntry {
             declared: canonical_declaration(canonical),
             standing: VariableStanding::Canonical(canonical),
-            read: Arc::new(read),
+            read: Arc::new(move |event| Some(read(event))),
         });
         self
     }

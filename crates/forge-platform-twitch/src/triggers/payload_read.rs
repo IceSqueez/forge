@@ -36,6 +36,14 @@ pub(super) fn nested_text(event: &Event, object: &str, key: &str) -> String {
     actor_text(event.payload.get(object), key)
 }
 
+pub(super) fn timestamp(event: &Event, key: &str) -> Option<Variant> {
+    crate::timestamp::variant_of(event.payload.get(key))
+}
+
+pub(super) fn nested_timestamp(event: &Event, object: &str, key: &str) -> Option<Variant> {
+    crate::timestamp::variant_of(event.payload.get(object).and_then(|nested| nested.get(key)))
+}
+
 pub(super) fn number(event: &Event, key: &str) -> i64 {
     event
         .payload

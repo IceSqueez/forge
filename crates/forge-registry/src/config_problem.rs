@@ -111,3 +111,105 @@ impl fmt::Display for ConfigProblem {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::RegistryError;
+
+    #[test]
+    fn display_prefixes_the_field_or_the_word_value_before_each_reason() {
+        let keyed = |reason| ConfigProblem::field("k", reason);
+        for (problem, expected) in [
+            (keyed(ConfigReason::Required), "'k' is required"),
+            (
+                ConfigProblem::whole(ConfigReason::Required),
+                "value is required",
+            ),
+            (
+                keyed(ConfigReason::Custom("pick a scene first".to_owned())),
+                "'k': pick a scene first",
+            ),
+            (
+                ConfigProblem::whole(ConfigReason::Custom("pick a scene first".to_owned())),
+                "pick a scene first",
+            ),
+            (
+                keyed(ConfigReason::OutOfRange(ValueBounds::between(1, 10))),
+                "'k' must be between 1 and 10",
+            ),
+            (
+                keyed(ConfigReason::OutOfRange(ValueBounds::at_least(-1))),
+                "'k' must be at least -1",
+            ),
+            (
+                keyed(ConfigReason::OutOfRange(ValueBounds::at_most(5))),
+                "'k' must be at most 5",
+            ),
+            (
+                keyed(ConfigReason::OutOfRange(ValueBounds {
+                    min: None,
+                    max: None,
+                })),
+                "'k' must be within its allowed range",
+            ),
+            (
+                keyed(ConfigReason::LengthOutOfRange(ValueBounds::at_most(100))),
+                "'k' must be at most 100 characters long",
+            ),
+            (keyed(ConfigReason::NotANumber), "'k' must be a number"),
+            (
+                keyed(ConfigReason::choices(["public", "unlisted"])),
+                "'k' must be one of: public, unlisted",
+            ),
+            (
+                keyed(ConfigReason::InvalidFormat("bad token qq".to_owned())),
+                "'k' is invalid: bad token qq",
+            ),
+        ] {
+            assert_eq!(problem.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn bounds_beyond_i64_saturate_to_i64_max_while_in_range_values_pass_through() {
+        assert_eq!(
+            ValueBounds::between(-3_i32, usize::MAX),
+            ValueBounds {
+                min: Some(-3),
+                max: Some(i64::MAX),
+            }
+        );
+        assert_eq!(ValueBounds::at_least(u64::MAX).min, Some(i64::MAX));
+    }
+
+    #[test]
+    fn into_config_problem_keeps_an_invalid_config_problem_intact() {
+        let problem = ConfigProblem::field("volume", ConfigReason::NotANumber);
+
+        assert_eq!(
+            RegistryError::InvalidConfig(problem.clone()).into_config_problem(),
+            problem
+        );
+    }
+
+    #[test]
+    fn into_config_problem_folds_other_errors_into_a_whole_config_custom_reason() {
+        for error in [
+            RegistryError::DuplicateId("a.b".to_owned()),
+            RegistryError::UnknownKindId("a.b".to_owned()),
+            RegistryError::DepthExceeded(9),
+            RegistryError::InvalidRemap {
+                namespace: "action".to_owned(),
+                value: "x".to_owned(),
+            },
+            RegistryError::RunnerInit("boom".to_owned()),
+        ] {
+            let text = error.to_string();
+            assert_eq!(
+                error.into_config_problem(),
+                ConfigProblem::whole(ConfigReason::Custom(text))
+            );
+        }
+    }
+}

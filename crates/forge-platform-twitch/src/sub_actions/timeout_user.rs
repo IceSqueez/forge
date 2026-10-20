@@ -266,24 +266,45 @@ mod tests {
     }
 
     #[test]
-    fn validate_config_enforces_duration_bounds_inclusive() {
+    fn validate_config_keys_out_of_range_durations_and_over_long_reasons_to_their_fields() {
         let runner = TimeoutUserRunner::new(
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)))
                 as Arc<dyn HelixTransport>,
             Arc::new(SelfIdentity::new(Arc::new(MockCreds::empty()))),
         );
-
-        for (duration, expected_ok) in [
-            (MIN_DURATION_SECONDS, true),
-            (MIN_DURATION_SECONDS - 1, false),
-            (MAX_DURATION_SECONDS, true),
-            (MAX_DURATION_SECONDS + 1, false),
+        let duration_problem = || {
+            Some(forge_registry::ConfigProblem::field(
+                "duration_seconds",
+                ConfigReason::OutOfRange(ValueBounds::between(
+                    MIN_DURATION_SECONDS,
+                    MAX_DURATION_SECONDS,
+                )),
+            ))
+        };
+        let reason_problem = Some(forge_registry::ConfigProblem::field(
+            "reason",
+            ConfigReason::LengthOutOfRange(ValueBounds::at_most(MAX_REASON_CHARS)),
+        ));
+        for (duration, reason_chars, expected) in [
+            (MIN_DURATION_SECONDS, 0, None),
+            (MIN_DURATION_SECONDS - 1, 0, duration_problem()),
+            (MAX_DURATION_SECONDS, 0, None),
+            (MAX_DURATION_SECONDS + 1, 0, duration_problem()),
+            (DEFAULT_DURATION_SECONDS, MAX_REASON_CHARS, None),
+            (
+                DEFAULT_DURATION_SECONDS,
+                MAX_REASON_CHARS + 1,
+                reason_problem,
+            ),
         ] {
-            let result = runner.validate_config(&config("target", "", duration));
+            let reason = "ї".repeat(reason_chars);
+            let problem = runner
+                .validate_config(&config("target", &reason, duration))
+                .err()
+                .map(RegistryError::into_config_problem);
             assert_eq!(
-                result.is_ok(),
-                expected_ok,
-                "duration {duration} expected ok={expected_ok}, got {result:?}"
+                problem, expected,
+                "duration {duration}, reason {reason_chars} chars"
             );
         }
     }

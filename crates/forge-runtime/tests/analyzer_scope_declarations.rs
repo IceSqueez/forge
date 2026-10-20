@@ -310,7 +310,7 @@ fn a_time_step_with_an_unusable_pattern_reports_invalid_step_config() {
         let message = runner
             .validate_config(&placed.config)
             .expect_err("the fixture config is invalid")
-            .to_string();
+            .into_config_problem();
         assert_eq!(
             health_of(vec![placed]),
             vec![StepHealth {

@@ -367,7 +367,7 @@ mod tests {
             rejection,
             Some(StepRejection {
                 field_key: Some(CLIP_FIELD.to_owned()),
-                message: "clip_id is required".to_owned(),
+                message: "Required".to_owned(),
             })
         );
     }

@@ -105,4 +105,32 @@ mod tests {
             assert!(reg.get(id).is_some(), "missing runner: {id}");
         }
     }
+
+    #[test]
+    fn post_text_keys_a_missing_webhook_before_a_missing_content() {
+        use forge_registry::SubActionRunner;
+        use forge_types::Variant;
+
+        let runner = PostTextRunner::new(Arc::new(MockSink));
+        let text = |value: &str| Variant::String(value.to_owned());
+        for (entries, expected) in [
+            (vec![], Some("webhook_name")),
+            (vec![("content", text("hi"))], Some("webhook_name")),
+            (vec![("webhook_name", text("alerts"))], Some("content")),
+            (
+                vec![("webhook_name", text("alerts")), ("content", text("hi"))],
+                None,
+            ),
+        ] {
+            let config = entries
+                .into_iter()
+                .map(|(key, value)| (key.to_owned(), value))
+                .collect();
+            let field = runner
+                .validate_config(&config)
+                .err()
+                .and_then(|error| error.into_config_problem().field);
+            assert_eq!(field.as_deref(), expected);
+        }
+    }
 }

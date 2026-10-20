@@ -272,14 +272,21 @@ mod tests {
     }
 
     #[test]
-    fn validate_rejects_invalid_and_untranslatable_patterns() {
+    fn validate_reports_invalid_and_untranslatable_patterns_as_format_problems_on_the_pattern_key()
+    {
         for (fmt, named) in [
             ("yyyy qqq", "qqq"),
             ("[unix_timestamp]", "[unix_timestamp]"),
         ] {
             let result = CoreTimeParseRunner.validate_config(&cfg("", fmt));
             assert!(
-                matches!(&result, Err(RegistryError::InvalidConfig(reason)) if reason.contains(named)),
+                matches!(
+                    &result,
+                    Err(RegistryError::InvalidConfig(forge_registry::ConfigProblem {
+                        field: Some(field),
+                        reason: ConfigReason::InvalidFormat(detail),
+                    })) if field == PARSE_PATTERN_KEY && detail.contains(named)
+                ),
                 "{fmt}: {result:?}"
             );
         }

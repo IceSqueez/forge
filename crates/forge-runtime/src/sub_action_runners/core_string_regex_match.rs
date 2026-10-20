@@ -227,4 +227,38 @@ mod tests {
         assert!(matches!(tel.outcome, SubActionOutcome::Failed(_)));
         assert!(stack.is_none());
     }
+
+    fn pattern_problem(cfg: &SubActionConfig) -> Option<forge_registry::ConfigProblem> {
+        CoreStringRegexMatchRunner
+            .validate_config(cfg)
+            .err()
+            .map(RegistryError::into_config_problem)
+    }
+
+    fn pattern(value: &str) -> SubActionConfig {
+        SubActionConfig::from([("pattern".to_owned(), Variant::String(value.to_owned()))])
+    }
+
+    #[test]
+    fn validate_config_reports_an_unparsable_pattern_as_a_format_problem_on_the_pattern() {
+        assert!(matches!(
+            pattern_problem(&pattern("(ab")),
+            Some(forge_registry::ConfigProblem {
+                field: Some(field),
+                reason: ConfigReason::InvalidFormat(_),
+            }) if field == "pattern"
+        ));
+    }
+
+    #[test]
+    fn validate_config_requires_a_pattern_and_accepts_a_parsable_one() {
+        assert_eq!(
+            pattern_problem(&SubActionConfig::new()),
+            Some(forge_registry::ConfigProblem::field(
+                "pattern",
+                ConfigReason::Required
+            ))
+        );
+        assert_eq!(pattern_problem(&pattern("(ab)+")), None);
+    }
 }

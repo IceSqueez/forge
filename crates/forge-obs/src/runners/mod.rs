@@ -392,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn required_string_fields_reject_blank_missing_and_non_string_values() {
+    fn required_string_fields_reject_blank_missing_and_non_string_values_on_their_own_key() {
         let reg = registry_with(Arc::new(MockSink));
         for (id, key, siblings) in REQUIRED_STRING_FIELDS {
             let runner = reg.get(id).unwrap();
@@ -410,14 +410,30 @@ mod tests {
                 if let Some(value) = value.clone() {
                     config.insert((*key).to_owned(), value);
                 }
-                assert!(
-                    matches!(
-                        runner.validate_config(&config),
-                        Err(RegistryError::InvalidConfig(_))
-                    ),
-                    "{id} accepted {key} = {value:?}",
+                let field = runner
+                    .validate_config(&config)
+                    .err()
+                    .and_then(|error| error.into_config_problem().field);
+                assert_eq!(
+                    field.as_deref(),
+                    Some(*key),
+                    "{id} did not key {key} = {value:?} to its field",
                 );
             }
+        }
+    }
+
+    #[test]
+    fn scene_item_runners_report_the_missing_scene_before_the_missing_source() {
+        let reg = registry_with(Arc::new(MockSink));
+        for (id, _, _) in SCENE_ITEM_FLAG_RUNNERS {
+            let field = reg
+                .get(id)
+                .unwrap()
+                .validate_config(&BTreeMap::new())
+                .err()
+                .and_then(|error| error.into_config_problem().field);
+            assert_eq!(field.as_deref(), Some("scene"), "{id}");
         }
     }
 

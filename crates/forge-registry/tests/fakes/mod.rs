@@ -16,7 +16,7 @@ pub struct FakeRunner {
     pub id: &'static str,
     pub fields: Vec<FormField>,
     pub io: SubActionIo,
-    pub config_error: Option<&'static str>,
+    pub config_error: Option<forge_registry::ConfigProblem>,
     pub checks_while_editing: bool,
 }
 
@@ -65,8 +65,8 @@ impl SubActionRunner for FakeRunner {
     }
 
     fn validate_config(&self, _: &SubActionConfig) -> Result<(), RegistryError> {
-        match self.config_error {
-            Some(reason) => Err(RegistryError::InvalidConfig(reason.to_owned())),
+        match &self.config_error {
+            Some(problem) => Err(RegistryError::InvalidConfig(problem.clone())),
             None => Ok(()),
         }
     }

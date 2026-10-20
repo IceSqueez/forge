@@ -6,9 +6,9 @@ use std::collections::HashSet;
 
 use forge_registry::{
     ActorBlock, ActorIdentity, BREAK_LOOP_KIND_ID, CASE_CHAIN_KEY, CONTINUE_LOOP_KIND_ID,
-    CodeLanguage, Finding, FormField, HealthSeverity, LOOP_KIND_ID, LoginSlot, ProducedVariable,
-    RegistryError, STOP_KIND_ID, StepHealth, SubActionIo, SubActionRegistry, TriggerRegistry,
-    TriggerVariables, analyze, flag_failed, flag_switched_off,
+    CodeLanguage, ConfigProblem, ConfigReason, Finding, FormField, HealthSeverity, LOOP_KIND_ID,
+    LoginSlot, ProducedVariable, STOP_KIND_ID, StepHealth, SubActionIo, SubActionRegistry,
+    TriggerRegistry, TriggerVariables, analyze, flag_failed, flag_switched_off,
 };
 use forge_types::{
     Action, ActorRole, ActorSlot, CanonicalVariable, DatePattern, DeclaredVariable, IntegrationId,
@@ -672,7 +672,14 @@ const INT_STAMP_TRIGGER: &str = "stub.counted";
 const CODE_KIND: &str = "fake.code";
 const CODE_KEY: &str = "script";
 const CHECKED_KIND: &str = "fake.checked";
-const CHECK_FAILURE: &str = "the pattern names an unknown component";
+const CHECKED_FIELD: &str = "pattern";
+
+fn check_failure() -> ConfigProblem {
+    ConfigProblem::field(
+        CHECKED_FIELD,
+        ConfigReason::InvalidFormat("the pattern names an unknown component".to_owned()),
+    )
+}
 const INTO_VAR_KEY: &str = "into_var";
 
 fn stamp_as(kind: VariantKind) -> TriggerVariables {
@@ -762,7 +769,7 @@ fn date_registry(io: SubActionIo) -> SubActionRegistry {
             ..runner(CODE_KIND)
         },
         fakes::FakeRunner {
-            config_error: Some(CHECK_FAILURE),
+            config_error: Some(check_failure()),
             checks_while_editing: true,
             ..runner(CHECKED_KIND)
         },
@@ -1039,11 +1046,9 @@ fn a_nested_invalid_date_pattern_is_reported_once_on_its_top_level_step() {
 }
 
 #[test]
-fn an_opted_in_runner_failing_validation_reports_invalid_step_config() {
+fn an_opted_in_runner_failing_validation_reports_invalid_step_config_keyed_to_its_field() {
     let failing = || plain(CHECKED_KIND);
-    let expected = findings(vec![Finding::InvalidStepConfig(
-        RegistryError::InvalidConfig(CHECK_FAILURE.to_owned()).to_string(),
-    )]);
+    let expected = findings(vec![Finding::InvalidStepConfig(check_failure())]);
     for (placed, place) in [
         (failing(), "at the top level"),
         (branch(vec![failing()]), "inside an if branch"),
@@ -1057,7 +1062,7 @@ fn an_opted_in_runner_failing_validation_reports_invalid_step_config() {
 fn a_runner_that_does_not_opt_in_is_not_validated_while_editing() {
     let mut reg = SubActionRegistry::new();
     reg.register(Box::new(fakes::FakeRunner {
-        config_error: Some(CHECK_FAILURE),
+        config_error: Some(check_failure()),
         ..runner(CHECKED_KIND)
     }))
     .expect("the failing fake registers");
@@ -1104,7 +1109,7 @@ fn date_pattern_and_step_config_errors_break_the_step_while_a_kind_mismatch_warn
     for (finding, severity) in [
         (invalid_pattern("qq"), HealthSeverity::Red),
         (
-            Finding::InvalidStepConfig(CHECK_FAILURE.to_owned()),
+            Finding::InvalidStepConfig(check_failure()),
             HealthSeverity::Red,
         ),
         (

@@ -80,24 +80,21 @@ mod tests {
             ("multibyte at limit", text(&"ї".repeat(100))),
             ("template", text("%reason%")),
         ] {
-            assert!(
-                validate("kick.moderation.ban", &config).is_ok(),
-                "case: {label}"
-            );
+            assert!(validate(&config).is_ok(), "case: {label}");
         }
     }
 
     #[test]
-    fn validate_rejects_an_over_long_or_non_string_reason_naming_the_kind() {
+    fn validate_keys_an_over_long_or_non_string_reason_to_the_reason_field() {
         for (label, config) in [
             ("one over limit", text(&"a".repeat(101))),
             ("multibyte one over limit", text(&"ї".repeat(101))),
             ("integer", reason_config(Variant::Int(7))),
         ] {
-            let error = validate("kick.moderation.timeout", &config).unwrap_err();
+            let error = validate(&config).unwrap_err();
             assert!(
-                matches!(&error, RegistryError::InvalidConfig(message)
-                    if message.starts_with("kick.moderation.timeout:")),
+                matches!(&error, RegistryError::InvalidConfig(problem)
+                    if problem.field.as_deref() == Some(REASON_KEY)),
                 "case: {label}, got {error:?}"
             );
         }

@@ -370,7 +370,12 @@ mod tests {
                     },
                     vec![NAME, PATTERN, REASON],
                 ),
-                (Finding::InvalidStepConfig(REASON.to_owned()), vec![REASON]),
+                (
+                    Finding::InvalidStepConfig(forge_registry::ConfigProblem::whole(
+                        forge_registry::ConfigReason::Custom(REASON.to_owned()),
+                    )),
+                    vec![REASON],
+                ),
             ] {
                 let rendered = analyzer_finding_message(&finding);
                 for marker in carried {

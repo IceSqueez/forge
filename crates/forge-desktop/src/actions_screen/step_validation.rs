@@ -39,15 +39,19 @@ fn holds_variable_reference(value: &Variant) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory};
+    use forge_registry::{
+        ConfigProblem, ConfigReason, FormField, RegistryError, RunContext, SubActionCategory,
+    };
+    use forge_storage::Language;
     use forge_types::{ArgStack, SubActionTelemetry};
 
     use super::*;
+    use crate::i18n::install_language;
 
     const KIND: &str = "test.kind";
     const KEYS: [&str; 3] = ["id", "clip_id", "text"];
 
-    struct Verdict(Option<&'static str>);
+    struct Verdict(Option<ConfigProblem>);
 
     #[async_trait::async_trait]
     impl SubActionRunner for Verdict {
@@ -84,8 +88,8 @@ mod tests {
         }
 
         fn validate_config(&self, _: &SubActionConfig) -> Result<(), RegistryError> {
-            match self.0 {
-                Some(message) => Err(RegistryError::InvalidConfig(message.to_owned())),
+            match &self.0 {
+                Some(problem) => Err(RegistryError::InvalidConfig(problem.clone())),
                 None => Ok(()),
             }
         }
@@ -110,8 +114,20 @@ mod tests {
             .collect()
     }
 
-    fn rejection(message: &'static str, entries: &[(&str, &str)]) -> Option<StepRejection> {
-        step_rejection(&Verdict(Some(message)), &config(entries), &keys())
+    fn rejection(problem: ConfigProblem, entries: &[(&str, &str)]) -> Option<StepRejection> {
+        install_language(Language::En);
+        step_rejection(&Verdict(Some(problem)), &config(entries), &keys()).map(|r| StepRejection {
+            message: r
+                .message
+                .chars()
+                .filter(|c| !matches!(c, '\u{2068}' | '\u{2069}'))
+                .collect(),
+            ..r
+        })
+    }
+
+    fn clip_required() -> ConfigProblem {
+        ConfigProblem::field("clip_id", ConfigReason::Required)
     }
 
     #[test]
@@ -122,39 +138,62 @@ mod tests {
     }
 
     #[test]
-    fn the_rejection_names_the_field_its_message_quotes_or_starts_with() {
-        for (message, expected) in [
-            ("clip_id is required", Some("clip_id")),
-            ("missing 'clip_id' value", Some("clip_id")),
-            ("missing `text` value", Some("text")),
-            ("test.kind: clip_id is required", Some("clip_id")),
-            ("id is required", Some("id")),
-            ("volume must be between 0 and 1", None),
-        ] {
-            let field = rejection(message, &[]).and_then(|r| r.field_key);
-
-            assert_eq!(field.as_deref(), expected, "{message:?}");
-        }
+    fn a_problem_on_a_form_field_is_attributed_to_it_with_only_the_reason() {
+        assert_eq!(
+            rejection(clip_required(), &[]),
+            Some(StepRejection {
+                field_key: Some("clip_id".to_owned()),
+                message: "Required".to_owned(),
+            })
+        );
     }
 
     #[test]
-    fn the_rejection_message_drops_only_the_runners_own_kind_prefix() {
-        for (raw, shown) in [
-            ("test.kind: clip_id is required", "clip_id is required"),
-            ("test.kind:clip_id is required", "clip_id is required"),
-            ("clip_id is required", "clip_id is required"),
+    fn a_problem_on_a_key_the_form_does_not_show_goes_to_the_footer_naming_the_key() {
+        let problem = ConfigProblem::field("volume", ConfigReason::NotANumber);
+
+        assert_eq!(
+            rejection(problem, &[]),
+            Some(StepRejection {
+                field_key: None,
+                message: "Must be a number (volume)".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_whole_config_problem_goes_to_the_footer_as_the_reason_alone() {
+        let problem = ConfigProblem::whole(ConfigReason::NotANumber);
+
+        assert_eq!(
+            rejection(problem, &[("text", "hello")]),
+            Some(StepRejection {
+                field_key: None,
+                message: "Must be a number".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_custom_reason_is_shown_verbatim_on_the_field_or_in_the_footer() {
+        let text = "pick a clip from the soundboard";
+        for (problem, field_key) in [
             (
-                "test.kinder: clip_id is required",
-                "test.kinder: clip_id is required",
+                ConfigProblem::field("clip_id", ConfigReason::Custom(text.to_owned())),
+                Some("clip_id".to_owned()),
             ),
             (
-                "other.kind: clip_id is required",
-                "other.kind: clip_id is required",
+                ConfigProblem::whole(ConfigReason::Custom(text.to_owned())),
+                None,
             ),
         ] {
-            let message = rejection(raw, &[]).map(|r| r.message);
-
-            assert_eq!(message.as_deref(), Some(shown), "{raw:?}");
+            assert_eq!(
+                rejection(problem, &[]),
+                Some(StepRejection {
+                    field_key,
+                    message: text.to_owned(),
+                })
+            );
         }
     }
 
@@ -166,7 +205,7 @@ mod tests {
             ("50% off", true),
             ("", true),
         ] {
-            let verdict = rejection("test.kind: clip_id is required", &[("clip_id", value)]);
+            let verdict = rejection(clip_required(), &[("clip_id", value)]);
 
             assert_eq!(verdict.is_some(), rejected, "clip_id = {value:?}");
         }
@@ -174,10 +213,7 @@ mod tests {
 
     #[test]
     fn a_variable_in_another_field_does_not_excuse_the_named_field() {
-        let verdict = rejection(
-            "test.kind: clip_id is required",
-            &[("clip_id", ""), ("text", "%user%")],
-        );
+        let verdict = rejection(clip_required(), &[("clip_id", ""), ("text", "%user%")]);
 
         assert_eq!(
             verdict.and_then(|r| r.field_key).as_deref(),
@@ -186,22 +222,9 @@ mod tests {
     }
 
     #[test]
-    fn an_unattributed_rejection_goes_to_the_footer() {
-        let verdict = rejection("test.kind: volume out of range", &[("text", "hello")]);
-
-        assert_eq!(
-            verdict,
-            Some(StepRejection {
-                field_key: None,
-                message: "volume out of range".to_owned(),
-            })
-        );
-    }
-
-    #[test]
-    fn a_variable_anywhere_defers_an_unattributed_rejection() {
+    fn a_variable_anywhere_defers_a_whole_config_rejection() {
         let verdict = rejection(
-            "test.kind: volume out of range",
+            ConfigProblem::whole(ConfigReason::NotANumber),
             &[("clip_id", ""), ("text", "%user%")],
         );
 

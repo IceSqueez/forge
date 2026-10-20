@@ -209,7 +209,8 @@ mod tests {
     }
 
     #[test]
-    fn validate_config_accepts_each_enum_value_and_rejects_off_enum_empty_missing_non_string() {
+    fn validate_config_accepts_each_offered_value_and_rejects_anything_else_listing_the_offered_choices()
+     {
         let server_uri = "http://127.0.0.1:0".to_owned();
         let handle = ActiveBroadcastIdHandle::new();
         let quota = SharedQuota::default();
@@ -235,8 +236,17 @@ mod tests {
                 false,
             ),
         ];
+        let offered_choices = Some(forge_registry::ConfigProblem::field(
+            "privacy_status",
+            ConfigReason::choices(PRIVACY_OPTIONS.iter().copied()),
+        ));
         for (label, cfg, ok) in cases {
-            assert_eq!(runner.validate_config(&cfg).is_ok(), ok, "case: {label}");
+            let problem = runner
+                .validate_config(&cfg)
+                .err()
+                .map(RegistryError::into_config_problem);
+            let expected = if ok { None } else { offered_choices.clone() };
+            assert_eq!(problem, expected, "case: {label}");
         }
     }
 }

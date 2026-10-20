@@ -84,6 +84,7 @@ impl SubActionConfigExt for SubActionConfig {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::config_problem::ConfigProblem;
     use forge_types::Variant;
 
     fn cfg(value: Variant) -> SubActionConfig {
@@ -134,19 +135,28 @@ mod tests {
             empty.require_object("k").err(),
         ];
         for e in errors {
-            assert_eq!(e.unwrap().to_string(), "field 'k' is required");
+            assert!(
+                matches!(
+                    e,
+                    Some(RegistryError::InvalidConfig(ConfigProblem {
+                        field: Some(ref key),
+                        reason: ConfigReason::Required,
+                    })) if key == "k"
+                ),
+                "{e:?}"
+            );
         }
     }
 
     #[test]
     fn require_str_treats_a_present_empty_string_as_missing() {
-        assert_eq!(
-            cfg(Variant::String(String::new()))
-                .require_str("k")
-                .unwrap_err()
-                .to_string(),
-            "field 'k' is required"
-        );
+        assert!(matches!(
+            cfg(Variant::String(String::new())).require_str("k"),
+            Err(RegistryError::InvalidConfig(ConfigProblem {
+                reason: ConfigReason::Required,
+                ..
+            }))
+        ));
         assert_eq!(
             cfg(Variant::String("  ".to_owned()))
                 .require_str("k")

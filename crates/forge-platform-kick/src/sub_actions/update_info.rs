@@ -396,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_config_requires_at_least_one_field_and_caps_tags_at_ten() {
+    fn validate_config_asks_for_any_field_as_a_whole_and_keys_the_tag_cap_to_tags() {
         let runner = runner_offline();
         let ten = (1..=10)
             .map(|n| format!("t{n}"))
@@ -407,20 +407,30 @@ mod tests {
             .collect::<Vec<_>>()
             .join(",");
 
-        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
-            ("all empty", config("", "", ""), false),
-            ("only title", config("t", "", ""), true),
-            ("only category", config("", "1", ""), true),
-            ("only tags", config("", "", "a,b"), true),
-            ("ten tags", config("", "", &ten), true),
-            ("eleven tags", config("", "", &eleven), false),
+        let cases: Vec<(&str, SubActionConfig, Option<Option<&str>>)> = vec![
+            ("all empty", config("", "", ""), Some(None)),
+            ("only title", config("t", "", ""), None),
+            ("only category", config("", "1", ""), None),
+            ("only tags", config("", "", "a,b"), None),
+            ("ten tags", config("", "", &ten), None),
+            ("eleven tags", config("", "", &eleven), Some(Some("tags"))),
         ];
 
-        for (label, cfg, expect_ok) in cases {
+        for (label, cfg, expected_field) in cases {
+            let problem = runner
+                .validate_config(&cfg)
+                .err()
+                .map(RegistryError::into_config_problem);
             assert_eq!(
-                runner.validate_config(&cfg).is_ok(),
-                expect_ok,
+                problem.as_ref().map(|p| p.field.as_deref()),
+                expected_field,
                 "case: {label}"
+            );
+            assert!(
+                problem
+                    .as_ref()
+                    .is_none_or(|p| matches!(p.reason, ConfigReason::Custom(_))),
+                "case: {label}, got {problem:?}"
             );
         }
     }

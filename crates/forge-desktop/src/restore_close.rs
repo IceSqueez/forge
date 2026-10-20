@@ -153,7 +153,7 @@ mod tests {
     use std::rc::Rc;
     use std::sync::Arc;
 
-    use forge_components::{ToastKind, Toasts};
+    use forge_components::{ToastKind, Toasts, tr};
     use forge_storage::{DataProvider, Language};
     use forge_transfer::{
         RESTORE_MARKER_FILE, StagedRestore, UpdateActivity, record_pending_restore,
@@ -358,6 +358,59 @@ mod tests {
         assert_eq!(
             (
                 h.exit.is_disarmed(),
+                h.data.path().join(RESTORE_MARKER_FILE).exists(),
+                toast_kinds(cx)
+            ),
+            (true, true, vec![])
+        );
+    }
+
+    #[gpui::test]
+    fn yielding_to_an_update_withdraws_a_pending_restore_with_a_warning(cx: &mut TestAppContext) {
+        let h = harness(cx);
+        let staged = recorded_restore(&h);
+        let staging = staged.staging_dir().to_path_buf();
+        h.close.update(cx, |close, cx| close.request(staged, cx));
+
+        h.close.update(cx, |close, cx| close.yield_to_update(cx));
+        settle_withdrawal(cx, &h);
+        let toasts: Vec<(ToastKind, String)> = cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|toast| (toast.kind, toast.message.to_string()))
+                .collect()
+        });
+
+        assert_eq!(
+            (
+                toasts,
+                h.exit.is_disarmed(),
+                h.data.path().join(RESTORE_MARKER_FILE).exists(),
+                staging.exists(),
+            ),
+            (
+                vec![(ToastKind::Warn, tr!("restore_close_yielded_to_update"))],
+                true,
+                false,
+                false
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn yielding_to_an_update_leaves_a_pending_restart_armed(cx: &mut TestAppContext) {
+        let h = harness(cx);
+        recorded_restore(&h);
+        h.close.update(cx, |close, cx| close.restart(cx));
+
+        h.close.update(cx, |close, cx| close.yield_to_update(cx));
+        pump(&h.rt);
+        cx.run_until_parked();
+
+        assert_eq!(
+            (
+                h.exit.restore_is_armed(),
                 h.data.path().join(RESTORE_MARKER_FILE).exists(),
                 toast_kinds(cx)
             ),

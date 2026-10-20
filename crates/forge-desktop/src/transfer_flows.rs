@@ -278,9 +278,10 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::time::Duration;
 
-    use forge_components::{ToastKind, Toasts};
+    use forge_components::{ToastKind, Toasts, tr};
     use forge_storage::Language;
     use forge_transfer::{BundleKind, read_bundle_kind, setup_staging_root};
+    use forge_types::ActionId;
     use gpui::{AppContext, Entity, TestAppContext};
 
     use super::{TransferFlows, TransferRoute};
@@ -358,6 +359,39 @@ mod tests {
         })
     }
 
+    type Start = fn(&mut TransferFlows, &mut gpui::Context<TransferFlows>);
+    type Probe = fn(&TransferFlows, &gpui::App) -> bool;
+
+    fn starts() -> [(&'static str, Start, Probe); 5] {
+        [
+            (
+                "backup",
+                |flows, cx| flows.export_full_backup(cx),
+                |flows, cx| flows.backup.read(cx).is_busy(),
+            ),
+            (
+                "export_pack",
+                |flows, cx| flows.export_pack(cx),
+                |flows, cx| flows.pack_export.read(cx).is_busy(),
+            ),
+            (
+                "export_pack_of",
+                |flows, cx| flows.export_pack_of(vec![ActionId::new()], cx),
+                |flows, cx| flows.pack_export.read(cx).is_busy(),
+            ),
+            (
+                "export_setup",
+                |flows, cx| flows.export_setup(cx),
+                |flows, cx| flows.setup_export.read(cx).is_busy(),
+            ),
+            (
+                "start_restore",
+                |flows, cx| flows.start_restore(cx),
+                |flows, cx| flows.restore.read(cx).is_busy(),
+            ),
+        ]
+    }
+
     fn entries(dir: &Path) -> usize {
         std::fs::read_dir(dir).map_or(0, |listing| listing.count())
     }
@@ -399,6 +433,64 @@ mod tests {
         assert_eq!(
             (busy_flows(cx, &rig), kinds),
             ((false, false, false), vec![ToastKind::Error])
+        );
+    }
+
+    #[gpui::test]
+    fn every_transfer_start_is_refused_with_a_warning_while_another_transfer_runs(
+        cx: &mut TestAppContext,
+    ) {
+        let mut outcomes = Vec::new();
+        let mut expected = Vec::new();
+
+        for (name, start, started) in starts() {
+            let rig = stalled_rig(cx);
+            rig.flows.update(cx, |flows, cx| {
+                flows.route_import(
+                    PathBuf::from("picked.forgebundle"),
+                    Ok(BundleKind::Pack),
+                    cx,
+                )
+            });
+
+            rig.flows.update(cx, start);
+
+            let opened = rig.flows.read_with(cx, started);
+            outcomes.push((name, opened, toasts(cx)));
+            expected.push((
+                name,
+                false,
+                vec![(ToastKind::Warn, tr!("transfer_busy_already"))],
+            ));
+        }
+
+        assert_eq!(outcomes, expected);
+    }
+
+    #[gpui::test]
+    fn an_idle_transfer_start_opens_its_flow_without_a_warning(cx: &mut TestAppContext) {
+        let mut outcomes = Vec::new();
+
+        for (name, start, started) in starts()
+            .into_iter()
+            .filter(|(name, _, _)| *name != "start_restore")
+        {
+            let rig = stalled_rig(cx);
+
+            rig.flows.update(cx, start);
+
+            let opened = rig.flows.read_with(cx, started);
+            outcomes.push((name, opened, toasts(cx).len()));
+        }
+
+        assert_eq!(
+            outcomes,
+            vec![
+                ("backup", true, 0),
+                ("export_pack", true, 0),
+                ("export_pack_of", true, 0),
+                ("export_setup", true, 0),
+            ]
         );
     }
 

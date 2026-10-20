@@ -226,6 +226,14 @@ mod tests {
                 RestoreProblem::UnknownEncryption,
             ),
             (
+                TransferError::PassphraseRequired,
+                RestoreProblem::PassphraseRequired,
+            ),
+            (
+                TransferError::PassphraseTooShort { minimum: 12 },
+                RestoreProblem::PassphraseTooShort { minimum: 12 },
+            ),
+            (
                 TransferError::MissingCredentialsKey,
                 RestoreProblem::MissingCredentialsKey,
             ),
@@ -310,6 +318,18 @@ mod tests {
                 wanted.iter().all(|part| message.contains(part)),
                 "{error:?} gave {message:?}"
             );
+        }
+    }
+
+    #[test]
+    fn a_too_short_passphrase_names_the_minimum_length_in_every_language() {
+        for language in [Language::En, Language::Uk] {
+            install_language(language);
+
+            let message =
+                RestoreProblem::of(&TransferError::PassphraseTooShort { minimum: 12 }).message();
+
+            assert!(message.contains("12"), "{language:?}: {message:?}");
         }
     }
 

@@ -956,6 +956,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         crate::test_support::install_presentation(cx);
+        cx.update(|cx| cx.set_global(Toasts::new()));
         let rt = runtime();
         let handle = rt.handle().clone();
         let (view, vcx) = cx.add_window_view(move |_window, cx| {

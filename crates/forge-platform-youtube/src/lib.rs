@@ -29,6 +29,7 @@ pub mod stream_metadata;
 pub mod stream_stats;
 pub mod sub_actions;
 pub mod thumbnail;
+mod timestamp;
 pub mod triggers;
 pub mod viewer_poll;
 

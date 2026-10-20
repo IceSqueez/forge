@@ -10,6 +10,7 @@ use reqwest::StatusCode;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::quota_state::{SharedQuota, today_pacific};
+use crate::timestamp;
 
 const FETCH_COST: u32 = 1;
 
@@ -105,34 +106,33 @@ impl YoutubeStreamStats {
         let actual_start_time = details
             .get("actualStartTime")
             .and_then(|v| v.as_str())
-            .unwrap_or_default();
+            .and_then(timestamp::parse_logged);
         let scheduled_start_time = details
             .get("scheduledStartTime")
             .and_then(|v| v.as_str())
-            .unwrap_or_default();
+            .and_then(timestamp::parse_logged);
         let active_live_chat_id = details
             .get("activeLiveChatId")
             .and_then(|v| v.as_str())
             .unwrap_or_default();
 
-        Ok(Variant::Object(BTreeMap::from([
+        let mut fields = BTreeMap::from([
             (
                 "concurrent_viewers".to_owned(),
                 Variant::Int(concurrent_viewers),
             ),
             (
-                "actual_start_time".to_owned(),
-                Variant::String(actual_start_time.to_owned()),
-            ),
-            (
-                "scheduled_start_time".to_owned(),
-                Variant::String(scheduled_start_time.to_owned()),
-            ),
-            (
                 "live_chat_id".to_owned(),
                 Variant::String(active_live_chat_id.to_owned()),
             ),
-        ])))
+        ]);
+        if let Some(value) = timestamp::variant(actual_start_time) {
+            fields.insert("actual_start_time".to_owned(), value);
+        }
+        if let Some(value) = timestamp::variant(scheduled_start_time) {
+            fields.insert("scheduled_start_time".to_owned(), value);
+        }
+        Ok(Variant::Object(fields))
     }
 
     async fn map_failure(&self, resp: reqwest::Response) -> PlatformError {

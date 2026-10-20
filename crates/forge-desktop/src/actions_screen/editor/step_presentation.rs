@@ -5,8 +5,9 @@ use crate::platform_visuals::platform_color;
 use forge_components::{FONT_XS, ForgePalette, Icon, mono_family, tr};
 use forge_registry::SubActionCategory;
 use forge_types::{PlatformId, SubActionStep, Variant, VariantKind};
-use gpui::{AnyElement, Rgba, div};
+use gpui::{AnyElement, HighlightStyle, Hsla, Rgba, SharedString, StyledText, div};
 use std::collections::HashMap;
+use std::ops::Range;
 
 fn clip_step_detail(
     clip_id: &str,
@@ -276,50 +277,57 @@ pub(super) fn variable_segments(s: &str) -> Vec<VariableSegment<'_>> {
         .collect()
 }
 
-fn formatted_variable_chip(name: &str, pattern: &str, palette: &ForgePalette) -> AnyElement {
-    div()
-        .flex()
-        .flex_none()
-        .child(div().text_color(palette.warning).child(format!("%{name}")))
-        .child(
-            div()
-                .text_color(variant_kind_color(VariantKind::Datetime, palette))
-                .child(format!(":{pattern}")),
-        )
-        .child(div().text_color(palette.warning).child("%"))
-        .into_any_element()
+fn push_highlighted(
+    text: &mut String,
+    highlights: &mut Vec<(Range<usize>, HighlightStyle)>,
+    part: &str,
+    color: Rgba,
+) {
+    let start = text.len();
+    text.push_str(part);
+    highlights.push((
+        start..text.len(),
+        HighlightStyle {
+            color: Some(Hsla::from(color)),
+            ..HighlightStyle::default()
+        },
+    ));
 }
 
 pub(super) fn variable_text(s: &str, palette: &ForgePalette) -> AnyElement {
-    if s.is_empty() {
-        return div()
-            .font_family(mono_family())
-            .text_size(FONT_XS)
-            .text_color(palette.text_muted)
-            .child(String::new())
-            .into_any_element();
-    }
-    let mut row = div()
-        .flex()
-        .flex_wrap()
-        .font_family(mono_family())
-        .text_size(FONT_XS);
+    let mut text = String::with_capacity(s.len());
+    let mut highlights = Vec::new();
     for segment in variable_segments(s) {
-        row = row.child(match segment {
-            VariableSegment::Text(text) => div()
-                .text_color(palette.text_muted)
-                .child(text.to_owned())
-                .into_any_element(),
-            VariableSegment::Variable(raw) => div()
-                .text_color(palette.warning)
-                .child(raw.to_owned())
-                .into_any_element(),
-            VariableSegment::FormattedVariable { name, pattern } => {
-                formatted_variable_chip(name, pattern, palette)
+        match segment {
+            VariableSegment::Text(part) => text.push_str(part),
+            VariableSegment::Variable(raw) => {
+                push_highlighted(&mut text, &mut highlights, raw, palette.warning)
             }
-        });
+            VariableSegment::FormattedVariable { name, pattern } => {
+                push_highlighted(
+                    &mut text,
+                    &mut highlights,
+                    &format!("%{name}"),
+                    palette.warning,
+                );
+                push_highlighted(
+                    &mut text,
+                    &mut highlights,
+                    &format!(":{pattern}"),
+                    variant_kind_color(VariantKind::Datetime, palette),
+                );
+                push_highlighted(&mut text, &mut highlights, "%", palette.warning);
+            }
+        }
     }
-    row.into_any_element()
+    div()
+        .w_full()
+        .min_w_0()
+        .font_family(mono_family())
+        .text_size(FONT_XS)
+        .text_color(palette.text_muted)
+        .child(StyledText::new(SharedString::from(text)).with_highlights(highlights))
+        .into_any_element()
 }
 
 #[cfg(test)]

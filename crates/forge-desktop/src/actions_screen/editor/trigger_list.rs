@@ -157,6 +157,7 @@ impl ScreenActionsView {
             .child(icon(glyph, TRIGGER_GLYPH, accent));
 
         let title = div()
+            .min_w_0()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, Density::Cozy))
@@ -165,6 +166,7 @@ impl ScreenActionsView {
                     .font_family(body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(FONT_XS)
+                    .flex_none()
                     .text_color(name_color)
                     .child(instance.name.clone()),
             )
@@ -172,6 +174,7 @@ impl ScreenActionsView {
                 div()
                     .font_family(body_family())
                     .text_size(FONT_XXS)
+                    .flex_none()
                     .text_color(palette.text_faint)
                     .child(kind_label),
             )
@@ -179,6 +182,8 @@ impl ScreenActionsView {
                 div()
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
+                    .min_w_0()
+                    .truncate()
                     .text_color(palette.bits)
                     .child(condition),
             )

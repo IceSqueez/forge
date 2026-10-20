@@ -91,6 +91,7 @@ pub(super) fn inline_warning_card(
         .child(
             div()
                 .flex_1()
+                .min_w_0()
                 .flex()
                 .flex_col()
                 .gap(spacing(Spacing::Xxs, Density::Cozy))

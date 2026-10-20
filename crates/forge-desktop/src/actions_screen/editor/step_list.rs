@@ -246,6 +246,7 @@ impl ScreenActionsView {
 
         let title_text = div()
             .flex_1()
+            .min_w_0()
             .font_family(body_family())
             .font_weight(FontWeight::SEMIBOLD)
             .text_size(FONT_XS)

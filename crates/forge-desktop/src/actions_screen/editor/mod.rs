@@ -72,6 +72,7 @@ impl ScreenActionsView {
 
         div()
             .flex_1()
+            .min_w_0()
             .h_full()
             .flex()
             .items_center()
@@ -84,6 +85,7 @@ impl ScreenActionsView {
     fn render_loading(&self, palette: &ForgePalette) -> AnyElement {
         div()
             .flex_1()
+            .min_w_0()
             .h_full()
             .py(spacing(Spacing::Md, Density::Cozy))
             .px(spacing(Spacing::Lg, Density::Cozy))
@@ -132,6 +134,7 @@ impl ScreenActionsView {
         div()
             .id("actions-editor-scroll")
             .flex_1()
+            .min_w_0()
             .h_full()
             .overflow_y_scroll()
             .py(PANE_PAD_V)

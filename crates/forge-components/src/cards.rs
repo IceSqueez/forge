@@ -576,7 +576,7 @@ impl RenderOnce for RowCard {
                     .child(leading),
             );
         }
-        root = root.child(div().flex_1().child(title_col));
+        root = root.child(div().flex_1().min_w_0().child(title_col));
         if let Some(trailing) = self.trailing {
             let slot = match &self.reveal_trailing_group {
                 Some(group) => {

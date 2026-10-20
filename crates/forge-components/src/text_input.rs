@@ -1052,7 +1052,10 @@ mod tests {
     #[gpui::test]
     fn a_read_only_input_ignores_every_edit(cx: &mut gpui::TestAppContext) {
         type Edit = fn(&mut TextInput, &mut Window, &mut Context<TextInput>);
-        let edits: [(&str, Edit); 6] = [
+        let edits: [(&str, Edit); 7] = [
+            ("insert at caret", |input, _window, cx| {
+                input.insert_at_caret("%user%", cx)
+            }),
             ("type", |input, window, cx| {
                 input.replace_text_in_range(None, "x", window, cx)
             }),
@@ -1445,5 +1448,80 @@ mod tests {
             "expected no commit, saw {:?}",
             walk.first_commits
         );
+    }
+
+    #[gpui::test]
+    fn insert_at_caret_lands_at_the_cursor_and_advances_it(cx: &mut gpui::TestAppContext) {
+        let (content, cursor) = with_input(cx, "helo", |input, window, cx| {
+            input.home(&Home, window, cx);
+            input.right(&Right, window, cx);
+            input.right(&Right, window, cx);
+            input.insert_at_caret("%x%", cx);
+            (input.content().to_string(), input.cursor_offset())
+        });
+        assert_eq!((content.as_str(), cursor), ("he%x%lo", 5));
+    }
+
+    #[gpui::test]
+    fn insert_at_caret_replaces_the_selection_or_an_open_composition(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        type Prepare = fn(&mut TextInput, &mut Window, &mut Context<TextInput>);
+        let cases: [(&str, Prepare, &str); 2] = [
+            (
+                "selection",
+                |input, window, cx| {
+                    input.home(&Home, window, cx);
+                    input.select_right(&SelectRight, window, cx);
+                    input.select_right(&SelectRight, window, cx);
+                },
+                "%x%llo",
+            ),
+            (
+                "composition",
+                |input, window, cx| {
+                    input.replace_and_mark_text_in_range(None, "ж", None, window, cx);
+                },
+                "hello%x%",
+            ),
+        ];
+        for (case, prepare, expected) in cases {
+            let content = with_input(cx, "hello", |input, window, cx| {
+                prepare(input, window, cx);
+                input.insert_at_caret("%x%", cx);
+                input.content().to_string()
+            });
+            assert_eq!(content, expected, "{case}");
+        }
+    }
+
+    #[gpui::test]
+    fn insert_at_caret_flattens_newlines_into_spaces(cx: &mut gpui::TestAppContext) {
+        let content = with_input(cx, "", |input, _window, cx| {
+            input.insert_at_caret("a\nb\n", cx);
+            input.content().to_string()
+        });
+        assert_eq!(content, "a b ");
+    }
+
+    #[gpui::test]
+    fn insert_at_caret_announces_the_new_content(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|_window, cx| TextInput::new("placeholder", cx));
+        let input = window.root(cx).unwrap();
+        let heard = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let sink = std::rc::Rc::clone(&heard);
+        let _subscription = cx.update(|cx| {
+            cx.subscribe(&input, move |_, event: &InputEvent, _| {
+                if let InputEvent::Changed(text) = event {
+                    sink.borrow_mut().push(text.to_string());
+                }
+            })
+        });
+
+        window
+            .update(cx, |input, _window, cx| input.insert_at_caret("%x%", cx))
+            .unwrap();
+
+        assert_eq!(*heard.borrow(), vec!["%x%".to_string()]);
     }
 }

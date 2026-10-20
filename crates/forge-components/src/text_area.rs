@@ -1104,4 +1104,35 @@ mod tests {
             ]
         );
     }
+
+    #[gpui::test]
+    fn insert_at_caret_lands_at_the_cursor_and_advances_it(cx: &mut gpui::TestAppContext) {
+        let (content, cursor) = with_area(cx, "ab\ncd", |area, _window, cx| {
+            area.move_to(4, cx);
+            area.insert_at_caret("%x%", cx);
+            (area.content().to_string(), area.cursor_offset())
+        });
+        assert_eq!((content.as_str(), cursor), ("ab\nc%x%d", 7));
+    }
+
+    #[gpui::test]
+    fn insert_at_caret_replaces_the_selection(cx: &mut gpui::TestAppContext) {
+        let content = with_area(cx, "hello", |area, _window, cx| {
+            area.move_to(1, cx);
+            area.select_to(4, cx);
+            area.insert_at_caret("%x%", cx);
+            area.content().to_string()
+        });
+        assert_eq!(content, "h%x%o");
+    }
+
+    #[gpui::test]
+    fn an_inserted_token_is_one_undo_step_apart_from_typing(cx: &mut gpui::TestAppContext) {
+        let (_, changes) = changes_after(cx, |area, window, cx| {
+            area.insert_at_caret("%x%", cx);
+            area.undo(&Undo, window, cx);
+            area.redo(&Redo, window, cx);
+        });
+        assert_eq!(changes, vec!["ab%x%", "ab", "ab%x%"]);
+    }
 }

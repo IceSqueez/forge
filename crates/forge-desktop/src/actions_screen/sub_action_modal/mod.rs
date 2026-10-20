@@ -321,7 +321,7 @@ mod tests {
         launch_with(specs(), config)
     }
 
-    fn launch_with(specs: Vec<FormField>, config: SubActionConfig) -> SubFormLaunch {
+    pub(super) fn launch_with(specs: Vec<FormField>, config: SubActionConfig) -> SubFormLaunch {
         SubFormLaunch {
             kind_id: "twitch.channel_points.enable_reward".to_owned(),
             target: SubFormTarget::Add,

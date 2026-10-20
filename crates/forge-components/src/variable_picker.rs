@@ -414,3 +414,226 @@ impl Render for VariablePicker {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use gpui::{AppContext, VisualTestContext};
+
+    use super::*;
+    use crate::palette::FORGE_DEFAULT;
+    use crate::picker::bind_picker_keys;
+    use crate::text_input::bind_text_input_keys;
+
+    struct Heard {
+        events: Vec<VariablePickerEvent>,
+        _sub: Subscription,
+    }
+
+    fn plain(name: &str) -> VariableEntry {
+        VariableEntry {
+            name: SharedString::from(name.to_owned()),
+            token: SharedString::from(format!("%{name}%")),
+            tag: None,
+            formats: Vec::new(),
+        }
+    }
+
+    fn dated(name: &str) -> VariableEntry {
+        let format = |pattern: Option<&str>| VariableFormat {
+            pattern: pattern.map(|p| SharedString::from(p.to_owned())),
+            preview: "preview".into(),
+            token: SharedString::from(match pattern {
+                Some(p) => format!("%{name}:{p}%"),
+                None => format!("%{name}%"),
+            }),
+        };
+        VariableEntry {
+            formats: vec![format(None), format(Some("HH:mm")), format(Some("d MMMM"))],
+            ..plain(name)
+        }
+    }
+
+    fn groups() -> Vec<VariableGroup> {
+        vec![
+            VariableGroup {
+                title: "Trigger".into(),
+                entries: vec![plain("user"), dated("stamp")],
+            },
+            VariableGroup {
+                title: "Earlier steps".into(),
+                entries: vec![plain("made")],
+            },
+        ]
+    }
+
+    fn labels() -> VariablePickerLabels {
+        VariablePickerLabels {
+            placeholder: "search".into(),
+            empty: "empty".into(),
+            no_format: "no format".into(),
+        }
+    }
+
+    fn open(
+        cx: &mut gpui::TestAppContext,
+        groups: Vec<VariableGroup>,
+    ) -> (
+        Entity<VariablePicker>,
+        Entity<Heard>,
+        &mut VisualTestContext,
+    ) {
+        cx.update(|cx| {
+            bind_picker_keys(cx);
+            bind_text_input_keys(cx);
+        });
+        let (picker, vcx) = cx.add_window_view(|window, cx| {
+            VariablePicker::new(labels(), groups, FORGE_DEFAULT, window, cx)
+        });
+        let heard = vcx.update(|window, cx| {
+            picker.update(cx, |view, cx| view.focus(window, cx));
+            cx.new(|cx| Heard {
+                events: Vec::new(),
+                _sub: cx.subscribe(&picker, |this: &mut Heard, _view, event, _cx| {
+                    this.events.push(event.clone());
+                }),
+            })
+        });
+        vcx.run_until_parked();
+        (picker, heard, vcx)
+    }
+
+    fn events(heard: &Entity<Heard>, vcx: &mut VisualTestContext) -> Vec<VariablePickerEvent> {
+        vcx.update(|_window, cx| heard.read(cx).events.clone())
+    }
+
+    fn picked(token: &str) -> VariablePickerEvent {
+        VariablePickerEvent::Picked(SharedString::from(token.to_owned()))
+    }
+
+    fn highlighted(picker: &Entity<VariablePicker>, vcx: &mut VisualTestContext) -> Option<String> {
+        vcx.update(|_window, cx| {
+            let view = picker.read(cx);
+            match view.selected.and_then(|pos| view.rows.get(pos).copied()) {
+                Some(PickerRow::Entry(group, entry)) => {
+                    view.entry(group, entry).map(|entry| entry.name.to_string())
+                }
+                _ => None,
+            }
+        })
+    }
+
+    fn submenu_open(picker: &Entity<VariablePicker>, vcx: &mut VisualTestContext) -> bool {
+        vcx.update(|_window, cx| picker.read(cx).formats.is_some())
+    }
+
+    #[gpui::test]
+    fn a_search_keeps_only_groups_with_a_matching_entry(cx: &mut gpui::TestAppContext) {
+        let (picker, _heard, vcx) = open(cx, groups());
+
+        vcx.simulate_input("mad");
+
+        let rows = vcx.update(|_window, cx| picker.read(cx).rows.clone());
+        assert_eq!(rows, vec![PickerRow::Header(1), PickerRow::Entry(1, 0)]);
+    }
+
+    #[gpui::test]
+    fn arrows_walk_the_entries_skipping_headers_and_wrap_both_ways(cx: &mut gpui::TestAppContext) {
+        let (picker, _heard, vcx) = open(cx, groups());
+        let mut seen = vec![highlighted(&picker, vcx)];
+
+        for key in ["down", "down", "down", "up"] {
+            vcx.simulate_keystrokes(key);
+            seen.push(highlighted(&picker, vcx));
+        }
+
+        let expected = ["user", "stamp", "made", "user", "made"];
+        assert_eq!(seen, expected.map(|name| Some(name.to_owned())));
+    }
+
+    #[gpui::test]
+    fn enter_on_a_plain_entry_picks_its_token(cx: &mut gpui::TestAppContext) {
+        let (_picker, heard, vcx) = open(cx, groups());
+
+        vcx.simulate_keystrokes("enter");
+
+        assert_eq!(events(&heard, vcx), vec![picked("%user%")]);
+    }
+
+    #[gpui::test]
+    fn enter_on_a_datetime_entry_opens_its_formats_without_picking(cx: &mut gpui::TestAppContext) {
+        let (picker, heard, vcx) = open(cx, groups());
+
+        vcx.simulate_keystrokes("down enter");
+
+        assert_eq!(
+            (submenu_open(&picker, vcx), events(&heard, vcx)),
+            (true, Vec::new())
+        );
+    }
+
+    #[gpui::test]
+    fn enter_in_the_formats_picks_the_highlighted_format_token(cx: &mut gpui::TestAppContext) {
+        for (keys, expected) in [
+            ("enter", "%stamp%"),
+            ("down enter", "%stamp:HH:mm%"),
+            ("up enter", "%stamp:d MMMM%"),
+            ("down down down enter", "%stamp%"),
+        ] {
+            let (_picker, heard, vcx) = open(cx, groups());
+            vcx.simulate_keystrokes("down enter");
+
+            vcx.simulate_keystrokes(keys);
+
+            assert_eq!(events(&heard, vcx), vec![picked(expected)], "{keys}");
+        }
+    }
+
+    #[gpui::test]
+    fn escape_or_left_in_the_formats_returns_to_the_list(cx: &mut gpui::TestAppContext) {
+        for key in ["escape", "left"] {
+            let (picker, heard, vcx) = open(cx, groups());
+            vcx.simulate_keystrokes("down enter");
+
+            vcx.simulate_keystrokes(key);
+
+            assert_eq!(
+                (
+                    submenu_open(&picker, vcx),
+                    highlighted(&picker, vcx),
+                    events(&heard, vcx)
+                ),
+                (false, Some("stamp".to_owned()), Vec::new()),
+                "{key}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn escape_in_the_list_cancels_once(cx: &mut gpui::TestAppContext) {
+        let (_picker, heard, vcx) = open(cx, groups());
+
+        vcx.simulate_keystrokes("escape");
+
+        assert_eq!(events(&heard, vcx), vec![VariablePickerEvent::Cancelled]);
+    }
+
+    #[gpui::test]
+    fn keys_over_an_empty_list_pick_nothing(cx: &mut gpui::TestAppContext) {
+        for (groups, typed, case) in [
+            (Vec::new(), "", "no variables in scope"),
+            (groups(), "zzz", "a search with no match"),
+        ] {
+            let (picker, heard, vcx) = open(cx, groups);
+            vcx.simulate_input(typed);
+
+            vcx.simulate_keystrokes("down up enter");
+
+            assert_eq!(
+                (highlighted(&picker, vcx), events(&heard, vcx)),
+                (None, Vec::new()),
+                "{case}"
+            );
+        }
+    }
+}

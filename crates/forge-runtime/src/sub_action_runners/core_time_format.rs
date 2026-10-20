@@ -6,13 +6,16 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
 use super::datetime_input::resolve_datetime;
+use super::time_pattern::{
+    DEFAULT_TIME_PATTERN, FORMAT_PATTERN_KEY, TIME_FORMAT_KIND_ID, UTC_KEY, resolve_time_pattern,
+};
 
 pub struct CoreTimeFormatRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreTimeFormatRunner {
     fn id(&self) -> &str {
-        "core.time.format"
+        TIME_FORMAT_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -24,11 +27,11 @@ impl SubActionRunner for CoreTimeFormatRunner {
     }
 
     fn summary(&self) -> &str {
-        "Format a datetime as a string using a time-crate format description (e.g. [year]-[month]-[day]); always UTC"
+        "Format a datetime as text with a date pattern (e.g. HH:mm dd.MM.yyyy or d MMMM yyyy) in local time, or in UTC when the toggle is on"
     }
 
     fn search_text(&self) -> &str {
-        "time format datetime string timestamp display"
+        "time format datetime string timestamp display pattern date"
     }
 
     fn icon_name(&self) -> &str {
@@ -39,9 +42,10 @@ impl SubActionRunner for CoreTimeFormatRunner {
         let mut cfg = SubActionConfig::new();
         cfg.insert("source".to_owned(), Variant::String(String::new()));
         cfg.insert(
-            "format_string".to_owned(),
-            Variant::String("[year]-[month]-[day] [hour]:[minute]:[second]".to_owned()),
+            FORMAT_PATTERN_KEY.to_owned(),
+            Variant::String(DEFAULT_TIME_PATTERN.to_owned()),
         );
+        cfg.insert(UTC_KEY.to_owned(), Variant::Bool(false));
         cfg.insert(
             "into_var".to_owned(),
             Variant::String("time.formatted".to_owned()),
@@ -56,9 +60,13 @@ impl SubActionRunner for CoreTimeFormatRunner {
                 label: "Source (datetime or %var%)",
             },
             FormField::Text {
-                key: "format_string",
-                label: "Format Description",
-                placeholder: "[year]-[month]-[day] [hour]:[minute]:[second]",
+                key: FORMAT_PATTERN_KEY,
+                label: "Date pattern (e.g. HH:mm dd.MM.yyyy, d MMMM yyyy, EEEE)",
+                placeholder: DEFAULT_TIME_PATTERN,
+            },
+            FormField::Toggle {
+                key: UTC_KEY,
+                label: "Use UTC instead of local time",
             },
             FormField::Text {
                 key: "into_var",
@@ -68,8 +76,10 @@ impl SubActionRunner for CoreTimeFormatRunner {
         ]
     }
 
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
+        resolve_time_pattern(config, FORMAT_PATTERN_KEY)
+            .and_then(|resolved| resolved.pattern().map(|_| ()))
+            .map_err(RegistryError::InvalidConfig)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -88,7 +98,7 @@ impl SubActionRunner for CoreTimeFormatRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.time.format");
+        let timer = StepTimer::start(ctx, TIME_FORMAT_KIND_ID);
 
         let source_v = config
             .get("source")
@@ -101,20 +111,17 @@ impl SubActionRunner for CoreTimeFormatRunner {
             Err(e) => return (timer.failed(e), None),
         };
 
-        let fmt_str = config
-            .str("format_string")
-            .unwrap_or("[year]-[month]-[day] [hour]:[minute]:[second]")
-            .to_owned();
         let into_var = forge_types::strip_var_decoration(
             config.str_nonempty("into_var").unwrap_or("time.formatted"),
         );
 
-        let formatted = match time::format_description::parse_borrowed::<2>(&fmt_str) {
-            Ok(desc) => match dt.format(&desc) {
-                Ok(s) => s,
-                Err(e) => return (timer.failed(format!("format error: {e}")), None),
-            },
-            Err(e) => return (timer.failed(format!("invalid format_string: {e}")), None),
+        let resolved = match resolve_time_pattern(config, FORMAT_PATTERN_KEY) {
+            Ok(resolved) => resolved,
+            Err(e) => return (timer.failed(e), None),
+        };
+        let formatted = match resolved.pattern() {
+            Ok(pattern) => pattern.format(dt, resolved.zone, resolved.language),
+            Err(e) => return (timer.failed(e), None),
         };
 
         let new_stack = ctx

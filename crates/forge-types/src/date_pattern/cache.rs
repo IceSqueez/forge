@@ -5,7 +5,7 @@ use super::{DatePattern, DatePatternError};
 
 const PATTERN_CACHE_CAPACITY: usize = 256;
 
-pub(super) type ParsedPattern = Arc<Result<DatePattern, DatePatternError>>;
+pub type ParsedPattern = Arc<Result<DatePattern, DatePatternError>>;
 
 pub(super) struct CachedPattern {
     pub(super) parsed: ParsedPattern,
@@ -31,6 +31,10 @@ impl PatternCache {
 }
 
 static PATTERN_CACHE: LazyLock<RwLock<PatternCache>> = LazyLock::new(RwLock::default);
+
+pub fn shared_date_pattern(pattern: &str) -> ParsedPattern {
+    cached_pattern(pattern).parsed
+}
 
 pub(super) fn cached_pattern(pattern: &str) -> CachedPattern {
     if let Some(parsed) = PATTERN_CACHE

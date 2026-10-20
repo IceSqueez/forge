@@ -76,6 +76,7 @@ mod script_emit_event;
 mod script_run_inline;
 mod script_run_named;
 mod server_broadcast;
+mod time_pattern;
 mod twitch_chat_send_message;
 
 pub use core_action_cancel::CoreActionCancelRunner;
@@ -161,6 +162,7 @@ pub use script_emit_event::ScriptEmitEventRunner;
 pub use script_run_inline::ScriptRunInlineRunner;
 pub use script_run_named::ScriptRunNamedRunner;
 pub use server_broadcast::ServerBroadcastRunner;
+pub use time_pattern::translate_legacy_time_steps;
 pub use twitch_chat_send_message::TwitchChatSendMessageRunner;
 
 use std::sync::Arc;

@@ -8,15 +8,21 @@ use forge_types::{
 };
 use time::OffsetDateTime;
 
+use super::time_pattern::{
+    CUSTOM_NOW_PATTERN_KEY, TIME_NOW_KIND_ID, UTC_KEY, resolve_time_pattern,
+};
+
 const TIME_FORMATTED_VAR: &str = "time.formatted";
 const TIME_UNIX_SECONDS_VAR: &str = "time.unix_seconds";
+const FORMAT_KEY: &str = "format";
+const CUSTOM_FORMAT: &str = "custom";
 
 pub struct CoreTimeNowRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreTimeNowRunner {
     fn id(&self) -> &str {
-        "core.time.now"
+        TIME_NOW_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -28,11 +34,11 @@ impl SubActionRunner for CoreTimeNowRunner {
     }
 
     fn summary(&self) -> &str {
-        "Capture the current UTC time; writes the datetime to `into_var`, a formatted string to `time.formatted`, and unix seconds to `time.unix_seconds`"
+        "Capture the current time; writes the datetime to `into_var`, a formatted string to `time.formatted` (custom: a date pattern such as HH:mm dd.MM.yyyy, local time or UTC), and unix seconds to `time.unix_seconds`"
     }
 
     fn search_text(&self) -> &str {
-        "time now current datetime timestamp unix clock"
+        "time now current datetime timestamp unix clock pattern date"
     }
 
     fn icon_name(&self) -> &str {
@@ -42,25 +48,30 @@ impl SubActionRunner for CoreTimeNowRunner {
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
         cfg.insert("into_var".to_owned(), Variant::String("now".to_owned()));
-        cfg.insert("format".to_owned(), Variant::String("iso8601".to_owned()));
+        cfg.insert(FORMAT_KEY.to_owned(), Variant::String("iso8601".to_owned()));
         cfg.insert(
-            "custom_format_string".to_owned(),
+            CUSTOM_NOW_PATTERN_KEY.to_owned(),
             Variant::String(String::new()),
         );
+        cfg.insert(UTC_KEY.to_owned(), Variant::Bool(false));
         cfg
     }
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
             FormField::Select {
-                key: "format",
+                key: FORMAT_KEY,
                 label: "Format",
-                options: &["iso8601", "unix_seconds", "unix_millis", "custom"],
+                options: &["iso8601", "unix_seconds", "unix_millis", CUSTOM_FORMAT],
             },
             FormField::Text {
-                key: "custom_format_string",
-                label: "Custom Format",
-                placeholder: "[year]-[month]-[day] [hour]:[minute]:[second]",
+                key: CUSTOM_NOW_PATTERN_KEY,
+                label: "Custom date pattern (e.g. HH:mm dd.MM.yyyy, d MMMM yyyy, EEEE)",
+                placeholder: "yyyy-MM-dd HH:mm:ss",
+            },
+            FormField::Toggle {
+                key: UTC_KEY,
+                label: "Use UTC instead of local time",
             },
             FormField::Text {
                 key: "into_var",
@@ -70,8 +81,13 @@ impl SubActionRunner for CoreTimeNowRunner {
         ]
     }
 
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
+        if config.str(FORMAT_KEY) != Some(CUSTOM_FORMAT) {
+            return Ok(());
+        }
+        resolve_time_pattern(config, CUSTOM_NOW_PATTERN_KEY)
+            .and_then(|resolved| resolved.pattern().map(|_| ()))
+            .map_err(RegistryError::InvalidConfig)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -94,11 +110,10 @@ impl SubActionRunner for CoreTimeNowRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.time.now");
+        let timer = StepTimer::start(ctx, TIME_NOW_KIND_ID);
         let now: OffsetDateTime = timer.started_at();
 
-        let format = config.str("format").unwrap_or("iso8601");
-        let custom_fmt_string = config.str("custom_format_string").unwrap_or("").to_owned();
+        let format = config.str(FORMAT_KEY).unwrap_or("iso8601");
         let into_var =
             forge_types::strip_var_decoration(config.str_nonempty("into_var").unwrap_or("now"));
 
@@ -108,20 +123,16 @@ impl SubActionRunner for CoreTimeNowRunner {
                 let ms = now.unix_timestamp() * 1000 + i64::from(now.millisecond());
                 ms.to_string()
             }
-            "custom" => match time::format_description::parse_borrowed::<2>(&custom_fmt_string) {
-                Ok(desc) => match now.format(&desc) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        return (timer.failed(format!("time format error: {e}")), None);
-                    }
-                },
-                Err(e) => {
-                    return (
-                        timer.failed(format!("invalid custom_format_string: {e}")),
-                        None,
-                    );
+            CUSTOM_FORMAT => {
+                let resolved = match resolve_time_pattern(config, CUSTOM_NOW_PATTERN_KEY) {
+                    Ok(resolved) => resolved,
+                    Err(e) => return (timer.failed(e), None),
+                };
+                match resolved.pattern() {
+                    Ok(pattern) => pattern.format(now, resolved.zone, resolved.language),
+                    Err(e) => return (timer.failed(e), None),
                 }
-            },
+            }
             _ => datetime_to_text(&now),
         };
 

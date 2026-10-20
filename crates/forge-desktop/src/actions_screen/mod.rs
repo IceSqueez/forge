@@ -18,6 +18,7 @@ use forge_components::{
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerCategory, TriggerRegistry};
 use forge_runtime::actions::{ActionDetail, ActionsService};
+use forge_runtime::sub_action_runners::translate_legacy_time_steps;
 use forge_runtime::{EventBus, QueueSchedulerHandle};
 use forge_soundboard::ClipLibrary;
 use forge_speak_queue::SpeakQueueHandle;
@@ -570,10 +571,11 @@ impl ScreenActionsView {
         );
     }
 
-    fn apply_detail(&mut self, id: ActionId, detail: ActionDetail, cx: &mut Context<Self>) {
+    fn apply_detail(&mut self, id: ActionId, mut detail: ActionDetail, cx: &mut Context<Self>) {
         if self.selected != Some(id) {
             return;
         }
+        translate_legacy_time_steps(&mut detail.action.sub_actions);
         self.sync_filter_membership(&detail);
         self.detail = Some(detail);
         self.sync_case_fields(cx);

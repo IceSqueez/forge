@@ -4,14 +4,17 @@ use forge_registry::{
     SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
-use time::{OffsetDateTime, PrimitiveDateTime};
+
+use super::time_pattern::{
+    DEFAULT_TIME_PATTERN, PARSE_PATTERN_KEY, TIME_PARSE_KIND_ID, UTC_KEY, resolve_time_pattern,
+};
 
 pub struct CoreTimeParseRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreTimeParseRunner {
     fn id(&self) -> &str {
-        "core.time.parse"
+        TIME_PARSE_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -23,11 +26,11 @@ impl SubActionRunner for CoreTimeParseRunner {
     }
 
     fn summary(&self) -> &str {
-        "Parse a string into a datetime using a time-crate format description; treated as UTC when the format carries no UTC offset"
+        "Read text into a datetime with a date pattern (e.g. dd.MM.yyyy HH:mm); text without an offset is read as local time, or as UTC when the toggle is on"
     }
 
     fn search_text(&self) -> &str {
-        "time parse string datetime format convert"
+        "time parse string datetime format convert pattern date"
     }
 
     fn icon_name(&self) -> &str {
@@ -38,9 +41,10 @@ impl SubActionRunner for CoreTimeParseRunner {
         let mut cfg = SubActionConfig::new();
         cfg.insert("source".to_owned(), Variant::String(String::new()));
         cfg.insert(
-            "format".to_owned(),
-            Variant::String("[year]-[month]-[day] [hour]:[minute]:[second]".to_owned()),
+            PARSE_PATTERN_KEY.to_owned(),
+            Variant::String(DEFAULT_TIME_PATTERN.to_owned()),
         );
+        cfg.insert(UTC_KEY.to_owned(), Variant::Bool(false));
         cfg.insert(
             "into_var".to_owned(),
             Variant::String("time.parsed".to_owned()),
@@ -56,9 +60,13 @@ impl SubActionRunner for CoreTimeParseRunner {
                 placeholder: "2024-01-15 12:00:00",
             },
             FormField::Text {
-                key: "format",
-                label: "Format Description",
-                placeholder: "[year]-[month]-[day] [hour]:[minute]:[second]",
+                key: PARSE_PATTERN_KEY,
+                label: "Date pattern (e.g. dd.MM.yyyy HH:mm, yyyy-MM-dd'T'HH:mm:ssxxx)",
+                placeholder: DEFAULT_TIME_PATTERN,
+            },
+            FormField::Toggle {
+                key: UTC_KEY,
+                label: "Read text without an offset as UTC instead of local time",
             },
             FormField::Text {
                 key: "into_var",
@@ -68,8 +76,10 @@ impl SubActionRunner for CoreTimeParseRunner {
         ]
     }
 
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
+        resolve_time_pattern(config, PARSE_PATTERN_KEY)
+            .and_then(|resolved| resolved.pattern().map(|_| ()))
+            .map_err(RegistryError::InvalidConfig)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -88,31 +98,35 @@ impl SubActionRunner for CoreTimeParseRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.time.parse");
+        let timer = StepTimer::start(ctx, TIME_PARSE_KIND_ID);
 
         let source_template = config.str("source").unwrap_or("").to_owned();
         let source = ctx.arg_stack.interpolate(&source_template);
 
-        let format_str = config
-            .str("format")
-            .unwrap_or("[year]-[month]-[day] [hour]:[minute]:[second]")
-            .to_owned();
         let into_var = forge_types::strip_var_decoration(
             config.str_nonempty("into_var").unwrap_or("time.parsed"),
         );
 
-        let desc = match time::format_description::parse_borrowed::<2>(&format_str) {
-            Ok(d) => d,
-            Err(e) => return (timer.failed(format!("invalid format: {e}")), None),
+        let resolved = match resolve_time_pattern(config, PARSE_PATTERN_KEY) {
+            Ok(resolved) => resolved,
+            Err(e) => return (timer.failed(e), None),
+        };
+        let pattern = match resolved.pattern() {
+            Ok(pattern) => pattern,
+            Err(e) => return (timer.failed(e), None),
         };
 
-        let dt = OffsetDateTime::parse(&source, &desc)
-            .or_else(|_| PrimitiveDateTime::parse(&source, &desc).map(|pdt| pdt.assume_utc()))
-            .map_err(|_| format!("cannot parse '{source}' with format '{format_str}'"));
-
-        let dt = match dt {
+        let dt = match pattern.parse_text(&source, resolved.zone, resolved.language) {
             Ok(dt) => dt,
-            Err(e) => return (timer.failed(e), None),
+            Err(e) => {
+                return (
+                    timer.failed(format!(
+                        "cannot read '{source}' with pattern '{}': {e}",
+                        resolved.text()
+                    )),
+                    None,
+                );
+            }
         };
 
         let new_stack = ctx.arg_stack.clone().set(into_var, Variant::Datetime(dt));

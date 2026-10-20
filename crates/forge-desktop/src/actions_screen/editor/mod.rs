@@ -14,6 +14,7 @@ mod step_controls;
 mod step_list;
 mod step_picker;
 mod step_presentation;
+mod step_scope;
 mod sub_form;
 mod trigger_fill;
 mod trigger_list;

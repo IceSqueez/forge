@@ -4,14 +4,14 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     Anchor, AnchoredPositionMode, AnimationExt, AnyElement, App, BoxShadow, ClickEvent, Div,
     ElementId, FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, RenderOnce, SharedString, Stateful,
+    MouseDownEvent, ParentElement, Pixels, RenderOnce, Rgba, SharedString, Stateful,
     StatefulInteractiveElement, Styled, Window, anchored, deferred, div, hsla, point, px, relative,
 };
 
 use crate::icons::{Icon, icon};
 use crate::overlay::enter_animation;
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, body_family};
+use crate::tokens::{BORDER_THIN, FONT_XXS, body_family, mono_family};
 
 pub(crate) const DROPDOWN_ROW_HEIGHT: Pixels = px(27.0);
 pub(crate) const DROPDOWN_PADDING: Pixels = px(4.0);
@@ -71,6 +71,8 @@ pub struct DropdownRow {
     suffix: Option<SharedString>,
     glyph: Option<Icon>,
     label_family: Option<SharedString>,
+    tag: Option<(SharedString, Rgba)>,
+    trailing: Option<Icon>,
     current: bool,
     highlighted: bool,
     on_click: Option<RowClick>,
@@ -88,6 +90,8 @@ pub fn dropdown_row(
         suffix: None,
         glyph: None,
         label_family: None,
+        tag: None,
+        trailing: None,
         current: false,
         highlighted: false,
         on_click: None,
@@ -127,6 +131,18 @@ impl DropdownRow {
     }
 
     #[must_use]
+    pub fn tag(mut self, tag: Option<(SharedString, Rgba)>) -> Self {
+        self.tag = tag;
+        self
+    }
+
+    #[must_use]
+    pub fn trailing_icon(mut self, glyph: Option<Icon>) -> Self {
+        self.trailing = glyph;
+        self
+    }
+
+    #[must_use]
     pub fn on_click(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -134,6 +150,26 @@ impl DropdownRow {
         self.on_click = Some(Box::new(handler));
         self
     }
+}
+
+pub fn dropdown_group_header(label: impl Into<SharedString>, palette: &ForgePalette) -> Div {
+    div()
+        .w_full()
+        .flex_none()
+        .h(DROPDOWN_ROW_HEIGHT)
+        .flex()
+        .items_center()
+        .px(ROW_PAD_X)
+        .font_family(mono_family())
+        .text_size(FONT_XXS)
+        .text_color(palette.text_faint)
+        .child(label.into())
+}
+
+pub(crate) fn dropdown_list_height(row_count: usize) -> Pixels {
+    let natural = DROPDOWN_ROW_HEIGHT * row_count as f32;
+    let ceiling = DROPDOWN_MAX_HEIGHT - DROPDOWN_PADDING * 2.0;
+    if natural < ceiling { natural } else { ceiling }
 }
 
 impl RenderOnce for DropdownRow {
@@ -193,6 +229,19 @@ impl RenderOnce for DropdownRow {
                     .text_color(p.text_faint)
                     .child(suffix),
             );
+        }
+        if let Some((tag, tint)) = self.tag {
+            row = row.child(
+                div()
+                    .flex_none()
+                    .font_family(mono_family())
+                    .text_size(FONT_XXS)
+                    .text_color(tint)
+                    .child(tag),
+            );
+        }
+        if let Some(glyph) = self.trailing {
+            row = row.child(icon(glyph, ICON_SIZE, p.text_faint));
         }
 
         if self.current {

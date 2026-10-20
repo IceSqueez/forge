@@ -9,7 +9,7 @@ use crate::chain_steps::nested_chains;
 use crate::flow_kinds::{BREAK_LOOP_KIND_ID, CONTINUE_LOOP_KIND_ID, LOOP_KIND_ID, STOP_KIND_ID};
 use crate::form::FormField;
 use crate::registry::{SubActionRegistry, TriggerRegistry};
-use crate::variables::declared_variables;
+use crate::variables::{TriggerVariable, declared_variables};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum HealthSeverity {
@@ -283,33 +283,52 @@ fn step_holds_unguarded_control_flow(
     })
 }
 
+fn trigger_schemas(
+    triggers: &[TriggerInstance],
+    registry: &TriggerRegistry,
+) -> Option<Vec<Vec<TriggerVariable>>> {
+    triggers
+        .iter()
+        .map(|instance| declared_variables(registry.get(&instance.kind_id)?))
+        .collect()
+}
+
+pub(crate) fn names_on_some_triggers_only(schemas: &[Vec<TriggerVariable>]) -> HashSet<String> {
+    let sets: Vec<HashSet<&str>> = schemas
+        .iter()
+        .map(|schema| {
+            schema
+                .iter()
+                .map(|variable| variable.declared.name.as_str())
+                .collect()
+        })
+        .collect();
+    let mut some_only = HashSet::new();
+    for set in &sets {
+        for name in set {
+            if sets.iter().any(|other| !other.contains(name)) {
+                some_only.insert((*name).to_owned());
+            }
+        }
+    }
+    some_only
+}
+
 fn trigger_seed(triggers: &[TriggerInstance], registry: &TriggerRegistry) -> Option<TriggerSeed> {
     if triggers.is_empty() {
         return None;
     }
-    let mut schemas: Vec<HashSet<String>> = Vec::with_capacity(triggers.len());
-    let mut datetime_reach = DatetimeReach::default();
-    for instance in triggers {
-        let declared = declared_variables(registry.get(&instance.kind_id)?)?;
-        let mut names = HashSet::with_capacity(declared.len());
-        for variable in declared {
-            datetime_reach.note(
-                variable.declared.name.clone(),
-                variable.declared.kind == VariantKind::Datetime,
-            );
-            names.insert(variable.declared.name);
-        }
-        schemas.push(names);
-    }
+    let schemas = trigger_schemas(triggers, registry)?;
     let mut all = HashSet::new();
-    for names in &schemas {
-        all.extend(names.iter().cloned());
+    let mut datetime_reach = DatetimeReach::default();
+    for variable in schemas.iter().flatten() {
+        datetime_reach.note(
+            variable.declared.name.clone(),
+            variable.declared.kind == VariantKind::Datetime,
+        );
+        all.insert(variable.declared.name.clone());
     }
-    let mut intersection = all.clone();
-    for names in &schemas {
-        intersection.retain(|name| names.contains(name));
-    }
-    let some_only = all.difference(&intersection).cloned().collect();
+    let some_only = names_on_some_triggers_only(&schemas);
     Some(TriggerSeed {
         all,
         some_only,
@@ -358,11 +377,7 @@ fn analyze_step(
     }
 
     let mut produced_by_step = step_output_names(step, ctx.sub_registry);
-    let body_locals = ctx
-        .sub_registry
-        .get(&step.kind_id)
-        .map(|runner| runner.scope_io().body_locals)
-        .unwrap_or_default();
+    let body_locals = body_locals(step, ctx.sub_registry);
     for chain in nested_chains(step, ctx.sub_registry) {
         let mut body_scope = scope.clone();
         body_scope.extend(body_locals.iter().cloned());
@@ -421,21 +436,11 @@ fn collect_produced_kinds(
         if !step.enabled {
             continue;
         }
-        if let Some(runner) = registry.get(&step.kind_id) {
-            let io = runner.scope_io();
-            for produced in io.produces {
-                if let Some(name) = step
-                    .config
-                    .get(&produced.output_name_key)
-                    .and_then(Variant::as_str)
-                    .and_then(normalize_var_name)
-                {
-                    out.note(name, produced.kind == VariantKind::Datetime);
-                }
-            }
-            for name in io.fixed_outputs.into_iter().chain(io.body_locals) {
-                out.note(name, true);
-            }
+        for (name, kind) in step_outputs(step, registry) {
+            out.note(name, kind.is_none_or(|kind| kind == VariantKind::Datetime));
+        }
+        for name in body_locals(step, registry) {
+            out.note(name, true);
         }
         for chain in nested_chains(step, registry) {
             collect_produced_kinds(&chain, registry, out);
@@ -473,12 +478,15 @@ fn collect_pattern_findings(
     }
 }
 
-fn step_output_names(step: &SubActionStep, registry: &SubActionRegistry) -> HashSet<String> {
-    let mut out = HashSet::new();
+pub(crate) fn step_outputs(
+    step: &SubActionStep,
+    registry: &SubActionRegistry,
+) -> Vec<(String, Option<VariantKind>)> {
     let Some(runner) = registry.get(&step.kind_id) else {
-        return out;
+        return Vec::new();
     };
     let io = runner.scope_io();
+    let mut out = Vec::with_capacity(io.produces.len() + io.fixed_outputs.len());
     for produced in io.produces {
         if let Some(name) = step
             .config
@@ -486,11 +494,25 @@ fn step_output_names(step: &SubActionStep, registry: &SubActionRegistry) -> Hash
             .and_then(Variant::as_str)
             .and_then(normalize_var_name)
         {
-            out.insert(name);
+            out.push((name, Some(produced.kind)));
         }
     }
-    out.extend(io.fixed_outputs);
+    out.extend(io.fixed_outputs.into_iter().map(|name| (name, None)));
     out
+}
+
+pub(crate) fn body_locals(step: &SubActionStep, registry: &SubActionRegistry) -> Vec<String> {
+    registry
+        .get(&step.kind_id)
+        .map(|runner| runner.scope_io().body_locals)
+        .unwrap_or_default()
+}
+
+fn step_output_names(step: &SubActionStep, registry: &SubActionRegistry) -> HashSet<String> {
+    step_outputs(step, registry)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect()
 }
 
 fn consumed_references(step: &SubActionStep, registry: &SubActionRegistry) -> ConsumedReferences {

@@ -266,6 +266,28 @@ impl TextInput {
         self.set_content("", cx);
     }
 
+    pub fn insert_at_caret(&mut self, text: &str, cx: &mut Context<Self>) {
+        if self.read_only {
+            return;
+        }
+        let range = self
+            .marked_range
+            .clone()
+            .unwrap_or(self.selected_range.clone());
+        self.splice(range, &text.replace('\n', " "), cx);
+    }
+
+    fn splice(&mut self, range: Range<usize>, new_text: &str, cx: &mut Context<Self>) {
+        self.content =
+            (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
+                .into();
+        self.selected_range = range.start + new_text.len()..range.start + new_text.len();
+        self.marked_range.take();
+        self.caret.wake();
+        cx.emit(InputEvent::Changed(self.content.clone()));
+        cx.notify();
+    }
+
     pub fn restore_committed(&mut self, cx: &mut Context<Self>) {
         let committed = self.committed.clone();
         self.set_content(committed, cx);
@@ -568,15 +590,7 @@ impl EntityInputHandler for TextInput {
             .map(|range_utf16| self.range_from_utf16(range_utf16))
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
-
-        self.content =
-            (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
-                .into();
-        self.selected_range = range.start + new_text.len()..range.start + new_text.len();
-        self.marked_range.take();
-        self.caret.wake();
-        cx.emit(InputEvent::Changed(self.content.clone()));
-        cx.notify();
+        self.splice(range, new_text, cx);
     }
 
     fn replace_and_mark_text_in_range(

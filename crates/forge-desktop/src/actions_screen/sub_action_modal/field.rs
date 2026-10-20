@@ -66,6 +66,20 @@ pub(super) struct SelectEntries {
 }
 
 impl SubFormField {
+    pub(super) fn accepts_variables(&self) -> bool {
+        match self {
+            Self::Input {
+                key,
+                integer,
+                browse,
+                datetime,
+                ..
+            } => integer.is_none() && !browse && !datetime && !is_var_key(key),
+            Self::Area { .. } => true,
+            _ => false,
+        }
+    }
+
     pub(super) fn select_entries(&self, key: &str) -> Option<SelectEntries> {
         match self {
             Self::Select {

@@ -1,6 +1,7 @@
 use super::field::{SubFormField, field_keys, is_var_key};
 use super::field_controls::{bool_row, field_wrap, hint_block, multiline_field};
 use super::rejection::with_rejection_note;
+use super::variable_insert::InsertTarget;
 use super::*;
 use forge_components::{FONT_SM, Spacing, body_family, spacing};
 use forge_registry::CodeLanguage;
@@ -35,34 +36,35 @@ impl EditSubActionForm {
         for field in &self.fields {
             let pushed_before = grid_items.len();
             match field {
-                SubFormField::Input {
-                    key,
-                    label,
-                    browse,
-                    datetime,
-                    gate,
-                    input,
-                    ..
-                } => {
+                SubFormField::Input { label, gate, .. } => {
                     if !gate_on(gate) {
                         continue;
                     }
-                    let control = self.input_control(key, *browse, *datetime, input, palette, cx);
+                    let control = self.input_control(field, palette, cx);
                     grid_items.push((
                         sub_field_is_half(field),
                         field_wrap(label, control, palette),
                     ));
                 }
                 SubFormField::Area {
-                    label, gate, area, ..
+                    key,
+                    label,
+                    gate,
+                    area,
                 } => {
                     if !gate_on(gate) {
                         continue;
                     }
-                    grid_items.push((
-                        false,
-                        multiline_field(label, None, area.clone().into_any_element(), palette),
-                    ));
+                    let button =
+                        self.variable_button(key, InsertTarget::Area(area.clone()), palette, cx);
+                    let block = multiline_field(
+                        label,
+                        None,
+                        Some(button),
+                        area.clone().into_any_element(),
+                        palette,
+                    );
+                    grid_items.push((false, self.with_variable_popover(key, block, cx)));
                 }
                 SubFormField::Code {
                     label,
@@ -83,6 +85,7 @@ impl EditSubActionForm {
                         multiline_field(
                             label,
                             Some(tag),
+                            None,
                             editor.clone().into_any_element(),
                             palette,
                         ),

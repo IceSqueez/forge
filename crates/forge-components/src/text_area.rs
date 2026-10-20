@@ -223,6 +223,12 @@ impl TextArea {
         self.set_content("", cx);
     }
 
+    pub fn insert_at_caret(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.preferred_x = None;
+        self.buffer.insert(text, EditKind::Standalone);
+        self.edited(cx);
+    }
+
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         window.focus(&self.focus_handle, cx);
     }

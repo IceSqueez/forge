@@ -22,7 +22,10 @@ impl ScreenActionsView {
         self.sub_form_choice_fields = collection_choice_fields(&launch.specs);
         self.sub_form_obs_fields = obs_catalog_fields(&launch.specs);
         self.sub_form_vtube_fields = vtube_catalog_fields(&launch.specs);
-        let form = cx.new(|cx| EditSubActionForm::new(launch, self.rt_handle.clone(), cx));
+        let scope = self.step_scope(launch.target);
+        let form = cx.new(|cx| {
+            EditSubActionForm::new(launch, self.rt_handle.clone(), cx).with_variable_scope(scope)
+        });
         self._sub_form_sub = Some(cx.subscribe(&form, Self::on_sub_form_event));
         self.sub_form = Some(form);
         self.fetch_select_options(cx);

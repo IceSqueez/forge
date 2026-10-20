@@ -56,6 +56,7 @@ pub mod toggle;
 pub mod tokens;
 pub mod tooltip;
 pub mod type_to_confirm;
+pub mod variable_picker;
 
 pub use avatar::{AvatarTile, avatar_tile, hash_accent};
 pub use breadcrumb::{Breadcrumb, BreadcrumbCrumb, breadcrumb};
@@ -80,7 +81,8 @@ pub use data::{
 };
 pub use date_time_picker::{DateTimePicker, DateTimePickerEvent, DateTimePickerLabels};
 pub use dropdown::{
-    Dropdown, DropdownRow, dropdown, dropdown_list, dropdown_row, dropdown_surface,
+    Dropdown, DropdownRow, dropdown, dropdown_group_header, dropdown_list, dropdown_row,
+    dropdown_surface,
 };
 pub use error_row::error_row;
 pub use fonts::embedded_fonts;
@@ -161,4 +163,8 @@ pub use tooltip::{
 };
 pub use type_to_confirm::{
     BulletItem, BulletKind, TypeToConfirm, TypeToConfirmEvent, type_to_confirm,
+};
+pub use variable_picker::{
+    VariableEntry, VariableFormat, VariableGroup, VariablePicker, VariablePickerEvent,
+    VariablePickerLabels,
 };

@@ -1,4 +1,5 @@
 use super::field::SubFormField;
+use super::variable_insert::InsertTarget;
 use super::*;
 use crate::async_bridge;
 use forge_components::{
@@ -36,14 +37,21 @@ impl EditSubActionForm {
 
     pub(super) fn input_control(
         &self,
-        key: &str,
-        browse: bool,
-        datetime: bool,
-        input: &Entity<TextInput>,
+        field: &SubFormField,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        if browse {
+        let SubFormField::Input {
+            key,
+            browse,
+            datetime,
+            input,
+            ..
+        } = field
+        else {
+            return div().into_any_element();
+        };
+        if *browse {
             let target_input = input.clone();
             div()
                 .flex()
@@ -60,7 +68,7 @@ impl EditSubActionForm {
                         ),
                 )
                 .into_any_element()
-        } else if datetime {
+        } else if *datetime {
             let target_input = input.clone();
             div()
                 .flex()
@@ -81,6 +89,15 @@ impl EditSubActionForm {
                     ),
                 )
                 .into_any_element()
+        } else if field.accepts_variables() {
+            let control = div()
+                .flex()
+                .items_center()
+                .gap(spacing(Spacing::Xs, Density::Cozy))
+                .child(div().flex_1().child(input.clone()))
+                .child(self.variable_button(key, InsertTarget::Input(input.clone()), palette, cx))
+                .into_any_element();
+            self.with_variable_popover(key, control, cx)
         } else {
             input.clone().into_any_element()
         }
@@ -148,6 +165,7 @@ pub(super) fn field_wrap(label: &str, control: AnyElement, palette: &ForgePalett
 pub(super) fn multiline_field(
     label: &str,
     tag: Option<&'static str>,
+    trailing: Option<AnyElement>,
     control: AnyElement,
     palette: &ForgePalette,
 ) -> AnyElement {
@@ -158,12 +176,19 @@ pub(super) fn multiline_field(
             .text_color(palette.text_muted)
             .child(text)
     };
-    let header = div()
+    let captions = div()
         .flex()
         .items_center()
         .gap(spacing(Spacing::Xs, Density::Cozy))
         .child(caption(label.to_owned().into()))
         .children(tag.map(|tag| caption(tag.into())));
+    let header = div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(spacing(Spacing::Xs, Density::Cozy))
+        .child(captions)
+        .children(trailing);
     div()
         .flex()
         .flex_col()

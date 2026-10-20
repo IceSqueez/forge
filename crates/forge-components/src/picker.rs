@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::dropdown::{
-    DROPDOWN_MAX_HEIGHT, DROPDOWN_PADDING, DROPDOWN_ROW_HEIGHT, dropdown_row, dropdown_surface,
+    DROPDOWN_PADDING, DROPDOWN_ROW_HEIGHT, dropdown_list_height, dropdown_row, dropdown_surface,
 };
 use crate::icons::Icon;
 use crate::palette::ForgePalette;
@@ -297,9 +297,7 @@ impl Picker {
     }
 
     fn list_height(&self, count: usize) -> Pixels {
-        let natural = DROPDOWN_ROW_HEIGHT * count as f32;
-        let ceiling = DROPDOWN_MAX_HEIGHT - DROPDOWN_PADDING * 2.0;
-        if natural < ceiling { natural } else { ceiling }
+        dropdown_list_height(count)
     }
 }
 
@@ -312,7 +310,7 @@ pub(crate) fn item_matches(label: &str, sublabel: Option<&str>, query: &str) -> 
         || sublabel.is_some_and(|s| s.to_lowercase().contains(&needle))
 }
 
-fn message_row(text: SharedString, palette: ForgePalette) -> AnyElement {
+pub(crate) fn message_row(text: SharedString, palette: ForgePalette) -> AnyElement {
     div()
         .w_full()
         .h(DROPDOWN_ROW_HEIGHT)

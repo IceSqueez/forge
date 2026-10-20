@@ -11,6 +11,7 @@ use forge_registry::{
 use forge_types::{SubActionConfig, Variant};
 use gpui::FocusHandle;
 use select_picker::{SelectPickerForm, select_picker_items};
+use variable_insert::VariableInsert;
 
 mod build;
 mod datetime_picker;
@@ -22,6 +23,7 @@ mod rejection;
 mod select_picker;
 mod submit;
 mod unit_amount;
+mod variable_insert;
 
 #[derive(Clone, Copy)]
 pub(super) enum SubFormTarget {
@@ -78,6 +80,7 @@ pub(super) struct EditSubActionForm {
     condition_input: Entity<TextInput>,
     continue_on_error: bool,
     select_picker: Option<SelectPickerForm>,
+    variables: VariableInsert,
     datetime_picker: Option<DateTimePickerForm>,
     datetime_focus: FocusHandle,
     datetime_focus_restore: Option<FocusHandle>,
@@ -133,6 +136,7 @@ impl EditSubActionForm {
             condition_input,
             continue_on_error,
             select_picker: None,
+            variables: VariableInsert::default(),
             datetime_picker: None,
             datetime_focus: cx.focus_handle(),
             datetime_focus_restore: None,

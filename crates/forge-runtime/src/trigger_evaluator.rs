@@ -134,6 +134,7 @@ impl TriggerEvaluator {
                 action_id: action.id,
                 trigger_event_id: event.id,
                 trigger_kind: Some(instance.kind_id.clone()),
+                manual_test: false,
                 initial_args: args,
                 bypass_pause: action.bypass_pause,
             };

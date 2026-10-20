@@ -36,7 +36,7 @@ pub use builtin::{
 pub use capabilities::PlatformCapabilities;
 pub use chat::{
     AtomicConnectionState, CONNECTION_STATE_CHANGED_KIND, ChatPlatform, ConnectionState,
-    connection_state_changed_event,
+    ConnectionTransition, connection_state_changed_event,
 };
 pub use collections::{
     BuiltinCollections, CollectionFailure, CollectionField, CollectionId, CollectionItem,

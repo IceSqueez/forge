@@ -261,6 +261,7 @@ pub(crate) async fn handle_do_action(
             action_id: aid,
             trigger_event_id,
             trigger_kind: None,
+            manual_test: false,
             initial_args,
         })
         .await

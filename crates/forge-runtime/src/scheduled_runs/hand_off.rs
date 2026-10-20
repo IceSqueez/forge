@@ -152,6 +152,7 @@ impl HandOffPath {
             action_id: action.id,
             trigger_event_id,
             trigger_kind: None,
+            manual_test: false,
             initial_args: initial_args(run, late),
             bypass_pause: action.bypass_pause,
         };

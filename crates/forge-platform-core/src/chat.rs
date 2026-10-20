@@ -93,11 +93,31 @@ const WHISPER_FEATURE: &str = "chat.whisper";
 
 pub const CONNECTION_STATE_CHANGED_KIND: &str = "platform.connection.changed";
 
-pub fn connection_state_changed_event(platform_id: &str, state: ConnectionState) -> Event {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ConnectionTransition {
+    Expected,
+    Unexpected,
+}
+
+impl ConnectionTransition {
+    pub fn is_expected(self) -> bool {
+        matches!(self, Self::Expected)
+    }
+}
+
+pub fn connection_state_changed_event(
+    platform_id: &str,
+    state: ConnectionState,
+    transition: ConnectionTransition,
+) -> Event {
     Event::new(
         EventSource::Core,
         CONNECTION_STATE_CHANGED_KIND,
-        serde_json::json!({ "platform_id": platform_id, "state": state }),
+        serde_json::json!({
+            "platform_id": platform_id,
+            "state": state,
+            "expected": transition.is_expected(),
+        }),
     )
 }
 

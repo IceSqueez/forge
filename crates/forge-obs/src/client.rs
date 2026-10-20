@@ -11,8 +11,8 @@ use tokio::task::JoinHandle;
 use forge_events::{Event, EventPublisher};
 use forge_platform_core::{
     AtomicConnectionState, Backoff, BuiltinControl, BuiltinStatus, CapabilityFlags,
-    ConnectionState, ControlFailure, ControlOutcome, HeaderAction, HealthDelta, HeroBadge,
-    HeroBadgeTone, connection_state_changed_event,
+    ConnectionState, ConnectionTransition, ControlFailure, ControlOutcome, HeaderAction,
+    HealthDelta, HeroBadge, HeroBadgeTone, connection_state_changed_event,
 };
 use forge_types::IntegrationId;
 
@@ -26,7 +26,9 @@ use crate::stream_output::StreamOutputFeed;
 const OBS_PLATFORM_ID: &str = "obs";
 
 fn connection_state_transition(previous: ConnectionState, next: ConnectionState) -> Option<Event> {
-    (previous != next).then(|| connection_state_changed_event(OBS_PLATFORM_ID, next))
+    (previous != next).then(|| {
+        connection_state_changed_event(OBS_PLATFORM_ID, next, ConnectionTransition::Unexpected)
+    })
 }
 
 fn settle_connection_state(

@@ -8,8 +8,8 @@ use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_platform_core::{
-    Backoff, ConnectionState, EndpointSurface, PlatformEndpoints, PlatformError,
-    connection_state_changed_event,
+    Backoff, ConnectionState, ConnectionTransition, EndpointSurface, PlatformEndpoints,
+    PlatformError, connection_state_changed_event,
 };
 use forge_types::{
     ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply, ChatViewer, OAuthToken,
@@ -3761,9 +3761,11 @@ impl ChatSession {
 
     fn publish_connection_event(&self) {
         let state = self.state_tx.borrow().to_connection_state();
-        self.config
-            .bus
-            .publish(connection_state_changed_event("twitch", state));
+        self.config.bus.publish(connection_state_changed_event(
+            "twitch",
+            state,
+            ConnectionTransition::Unexpected,
+        ));
     }
 
     fn publish_reauth_required(&self) {
@@ -4118,6 +4120,7 @@ impl Drop for StoppedReport {
         self.bus.publish(connection_state_changed_event(
             "twitch",
             ConnectionState::Disconnected,
+            ConnectionTransition::Unexpected,
         ));
     }
 }

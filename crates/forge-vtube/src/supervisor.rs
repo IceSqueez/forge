@@ -10,7 +10,8 @@ use tokio_tungstenite::tungstenite::Message;
 
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_platform_core::{
-    AtomicConnectionState, Backoff, ConnectionState, HealthDelta, connection_state_changed_event,
+    AtomicConnectionState, Backoff, ConnectionState, ConnectionTransition, HealthDelta,
+    connection_state_changed_event,
 };
 use forge_storage::CredentialsRepo;
 
@@ -300,7 +301,9 @@ async fn run_auth(
 }
 
 fn connection_state_transition(previous: ConnectionState, next: ConnectionState) -> Option<Event> {
-    (previous != next).then(|| connection_state_changed_event(VTUBE_PLATFORM_ID, next))
+    (previous != next).then(|| {
+        connection_state_changed_event(VTUBE_PLATFORM_ID, next, ConnectionTransition::Unexpected)
+    })
 }
 
 pub(crate) fn set_connection_state(

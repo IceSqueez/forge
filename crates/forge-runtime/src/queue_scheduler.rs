@@ -45,6 +45,7 @@ pub struct SchedulerRequest {
     pub action_id: ActionId,
     pub trigger_event_id: EventId,
     pub trigger_kind: Option<String>,
+    pub manual_test: bool,
     pub initial_args: ArgStack,
     pub bypass_pause: bool,
 }
@@ -410,6 +411,7 @@ struct QueueTask {
     action_id: ActionId,
     trigger_event_id: EventId,
     trigger_kind: Option<String>,
+    manual_test: bool,
     origin: Option<ScheduledOrigin>,
     initial_args: ArgStack,
     bypass_pause: bool,
@@ -617,6 +619,7 @@ impl QueueScheduler {
                 action_id: task.action_id,
                 trigger_event_id: task.trigger_event_id,
                 trigger_kind: task.trigger_kind,
+                manual_test: task.manual_test,
                 initial_args: task.initial_args,
             };
             let origin = task.origin;
@@ -726,6 +729,7 @@ impl QueueScheduler {
             action_id,
             trigger_event_id,
             trigger_kind,
+            manual_test,
             initial_args,
             bypass_pause,
         } = req;
@@ -757,6 +761,7 @@ impl QueueScheduler {
             action_id,
             trigger_event_id,
             trigger_kind,
+            manual_test,
             origin,
             initial_args,
             bypass_pause,

@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventStream};
 use forge_platform_core::{
-    ChatPlatform, ConnectionState, PlatformCapabilities, PlatformEndpoints, PlatformError,
-    connection_state_changed_event,
+    ChatPlatform, ConnectionState, ConnectionTransition, PlatformCapabilities, PlatformEndpoints,
+    PlatformError, connection_state_changed_event,
 };
 use forge_storage::BanLedgerRepo;
 use futures::future::BoxFuture;
@@ -235,7 +235,11 @@ fn publish_transition(
     };
     if changed {
         let _ = state_tx.send(new);
-        events.publish(connection_state_changed_event(PLATFORM_ID, new));
+        events.publish(connection_state_changed_event(
+            PLATFORM_ID,
+            new,
+            ConnectionTransition::Unexpected,
+        ));
     }
 }
 

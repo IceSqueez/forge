@@ -25,6 +25,7 @@ use crate::{Config, EventBus};
 const EXECUTION_INTAKE_CAPACITY: usize = 256;
 const QUICK_ACTION_INTAKE_CAPACITY: usize = 64;
 const ACTION_START_KIND: &str = "action.start";
+pub const MANUAL_TEST_RUN_KIND: &str = "test.run";
 const MAX_CAUSATION_DEPTH: usize = 16;
 const CAUSATION_DEPTH_SKIP_REASON: &str = "causation_depth_exceeded";
 
@@ -56,6 +57,7 @@ pub struct ExecutionRequest {
     pub action_id: ActionId,
     pub trigger_event_id: EventId,
     pub trigger_kind: Option<String>,
+    pub manual_test: bool,
     pub initial_args: forge_types::ArgStack,
 }
 
@@ -319,6 +321,7 @@ impl ActionEngine {
             },
         };
         let started_at = OffsetDateTime::now_utc();
+        let manual_test = req.manual_test;
 
         let trigger_depth = self.bus.causation_depth(req.trigger_event_id);
         if usize::from(trigger_depth) >= MAX_CAUSATION_DEPTH {
@@ -423,17 +426,23 @@ impl ActionEngine {
             status,
         });
         let cancelled = matches!(ctx.outcome, ExecutionOutcome::Cancelled);
+        let mut done_payload = json!({
+            "action_id": action.id.to_string(),
+            "action_name": action.name,
+            "outcome": outcome_label,
+            "total_ms": total_ms,
+            "manual_test": manual_test,
+        });
+        if let ExecutionOutcome::Failed(reason) = &ctx.outcome {
+            done_payload["reason"] = json!(reason);
+        }
         self.history.record(ctx, execution);
 
         if !cancelled {
             self.bus.publish(Event::caused_by(
                 EventSource::Core,
                 "action.done",
-                json!({
-                    "action_id": action.id.to_string(),
-                    "outcome": outcome_label,
-                    "total_ms": total_ms,
-                }),
+                done_payload,
                 start_event_id,
             ));
         }

@@ -1,5 +1,5 @@
 use forge_events::{Event, EventSource};
-use forge_runtime::{EventBus, QueueSchedulerHandle, SchedulerRequest};
+use forge_runtime::{EventBus, MANUAL_TEST_RUN_KIND, QueueSchedulerHandle, SchedulerRequest};
 use forge_types::{ActionId, ArgStack, QueueId};
 use serde_json::json;
 
@@ -14,7 +14,7 @@ pub(super) async fn dispatch_test_run(
 ) -> Result<(), String> {
     let root = Event::new(
         EventSource::Core,
-        "test.run",
+        MANUAL_TEST_RUN_KIND,
         json!({ "action_id": action_id.to_string() }),
     );
     let trigger_event_id = root.id;
@@ -25,6 +25,7 @@ pub(super) async fn dispatch_test_run(
             action_id,
             trigger_event_id,
             trigger_kind,
+            manual_test: true,
             initial_args,
             bypass_pause,
         })

@@ -54,7 +54,8 @@ pub mod viewer_tracker;
 
 pub use action_cancel::ActionCancelRegistry;
 pub use action_engine::{
-    ActionEngineHandle, DispatchError, ExecutionRequest, PendingQuickAction, spawn_action_engine,
+    ActionEngineHandle, DispatchError, ExecutionRequest, MANUAL_TEST_RUN_KIND, PendingQuickAction,
+    spawn_action_engine,
 };
 pub use audio_runners::register_audio_sub_actions;
 pub use bridge::bus_subscription;

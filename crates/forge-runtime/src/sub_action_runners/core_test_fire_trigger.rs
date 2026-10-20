@@ -85,6 +85,7 @@ impl CoreTestFireTriggerRunner {
                 action_id,
                 trigger_event_id: ctx.parent_event_id,
                 trigger_kind: Some(trigger_kind.clone()),
+                manual_test: false,
                 initial_args: synthetic_args.clone(),
                 bypass_pause: action.bypass_pause,
             };

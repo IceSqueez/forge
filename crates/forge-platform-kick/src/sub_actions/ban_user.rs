@@ -12,7 +12,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
-use super::ban_reason;
+use super::{ban_reason, display_name};
 use crate::moderation::KickModeration;
 
 const KIND_ID: &str = "kick.moderation.ban";
@@ -109,6 +109,7 @@ impl SubActionRunner for BanUserRunner {
         let template = config.str("user_id").unwrap_or_default();
         let resolved = ctx.arg_stack.interpolate(template);
         let reason = ban_reason::resolve(config, ctx);
+        let display_name = display_name::resolve(config, ctx);
 
         let outcome = match resolved.parse::<u64>() {
             Err(_) => {
@@ -120,7 +121,13 @@ impl SubActionRunner for BanUserRunner {
                     Err(e) => SubActionOutcome::Failed(format!("broadcaster id error: {e}")),
                     Ok(broadcaster_user_id) => match self
                         .client
-                        .ban(target_id, broadcaster_user_id, reason.as_deref(), &token)
+                        .ban(
+                            target_id,
+                            broadcaster_user_id,
+                            display_name.as_deref(),
+                            reason.as_deref(),
+                            &token,
+                        )
                         .await
                     {
                         Ok(()) => SubActionOutcome::Success,

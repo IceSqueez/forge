@@ -10,6 +10,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
+use super::display_name;
 use crate::moderation::YoutubeModeration;
 
 const KIND_ID: &str = "youtube.moderation.timeout_user";
@@ -100,6 +101,7 @@ impl SubActionRunner for TimeoutUserRunner {
 
         let template = config.str("channel_id").unwrap_or_default();
         let channel_id = ctx.arg_stack.interpolate(template);
+        let display_name = display_name::resolve(config, ctx);
         let duration = config
             .get("duration_seconds")
             .and_then(|v| match v {
@@ -111,7 +113,12 @@ impl SubActionRunner for TimeoutUserRunner {
         let outcome = if channel_id.is_empty() {
             SubActionOutcome::Failed("channel_id is empty after interpolation".to_owned())
         } else {
-            SubActionOutcome::from_result(&self.moderation.timeout(&channel_id, duration).await)
+            SubActionOutcome::from_result(
+                &self
+                    .moderation
+                    .timeout(&channel_id, duration, display_name.as_deref())
+                    .await,
+            )
         };
 
         (

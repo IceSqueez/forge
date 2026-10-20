@@ -46,13 +46,20 @@ impl KickModeration {
         &self,
         target_user_id: u64,
         broadcaster_user_id: u64,
+        display_name: Option<&str>,
         reason: Option<&str>,
         token: &str,
     ) -> Result<(), PlatformError> {
         self.post_ban(target_user_id, broadcaster_user_id, None, reason, token)
             .await?;
-        self.record_issued_ban(target_user_id, broadcaster_user_id, None, reason)
-            .await;
+        self.record_issued_ban(
+            target_user_id,
+            broadcaster_user_id,
+            display_name,
+            None,
+            reason,
+        )
+        .await;
         Ok(())
     }
 
@@ -61,6 +68,7 @@ impl KickModeration {
         target_user_id: u64,
         broadcaster_user_id: u64,
         duration_minutes: u32,
+        display_name: Option<&str>,
         reason: Option<&str>,
         token: &str,
     ) -> Result<(), PlatformError> {
@@ -75,6 +83,7 @@ impl KickModeration {
         self.record_issued_ban(
             target_user_id,
             broadcaster_user_id,
+            display_name,
             Some(timeout_term_minutes(duration_minutes)),
             reason,
         )
@@ -152,6 +161,7 @@ impl KickModeration {
         &self,
         target_user_id: u64,
         broadcaster_user_id: u64,
+        display_name: Option<&str>,
         term: Option<Duration>,
         reason: Option<&str>,
     ) {
@@ -167,7 +177,10 @@ impl KickModeration {
         };
         let entry = issued_ban(
             key,
-            known_name.unwrap_or(viewer_id),
+            display_name
+                .map(str::to_owned)
+                .or(known_name)
+                .unwrap_or(viewer_id),
             reason.map(str::to_owned),
             banned_at,
             term,

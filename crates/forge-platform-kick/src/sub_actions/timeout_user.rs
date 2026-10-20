@@ -12,7 +12,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
-use super::ban_reason;
+use super::{ban_reason, display_name};
 use crate::moderation::KickModeration;
 
 const KIND_ID: &str = "kick.moderation.timeout";
@@ -125,6 +125,7 @@ impl SubActionRunner for TimeoutUserRunner {
         let user_template = config.str("user_id").unwrap_or_default();
         let resolved_uid = ctx.arg_stack.interpolate(user_template);
         let reason = ban_reason::resolve(config, ctx);
+        let display_name = display_name::resolve(config, ctx);
 
         let duration_minutes = config
             .get("duration_minutes")
@@ -153,6 +154,7 @@ impl SubActionRunner for TimeoutUserRunner {
                                 target_id,
                                 broadcaster_user_id,
                                 duration_u32,
+                                display_name.as_deref(),
                                 reason.as_deref(),
                                 &token,
                             )

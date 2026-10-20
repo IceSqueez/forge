@@ -2,6 +2,7 @@ mod add_moderator;
 mod ban_user;
 mod create_poll;
 mod delete_message;
+mod display_name;
 mod insert_ad_break;
 mod lookup_stream_stats;
 mod lookup_viewer;

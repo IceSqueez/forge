@@ -63,9 +63,14 @@ impl YoutubeModeration {
         self
     }
 
-    pub async fn ban(&self, channel_id: &str) -> Result<(), PlatformError> {
+    pub async fn ban(
+        &self,
+        channel_id: &str,
+        display_name: Option<&str>,
+    ) -> Result<(), PlatformError> {
         let ban_id = self.insert_ban(channel_id, None).await?;
-        self.record_issued_ban(channel_id, ban_id, None).await;
+        self.record_issued_ban(channel_id, display_name, ban_id, None)
+            .await;
         Ok(())
     }
 
@@ -73,9 +78,10 @@ impl YoutubeModeration {
         &self,
         channel_id: &str,
         duration_seconds: u32,
+        display_name: Option<&str>,
     ) -> Result<(), PlatformError> {
         let ban_id = self.insert_ban(channel_id, Some(duration_seconds)).await?;
-        self.record_issued_ban(channel_id, ban_id, Some(duration_seconds))
+        self.record_issued_ban(channel_id, display_name, ban_id, Some(duration_seconds))
             .await;
         Ok(())
     }
@@ -127,6 +133,7 @@ impl YoutubeModeration {
     async fn record_issued_ban(
         &self,
         viewer_channel_id: &str,
+        display_name: Option<&str>,
         ban_id: Option<String>,
         duration_seconds: Option<u32>,
     ) {
@@ -151,7 +158,10 @@ impl YoutubeModeration {
         };
         let entry = BanLedgerEntry {
             key,
-            viewer_name: known_name.unwrap_or_else(|| viewer_channel_id.to_owned()),
+            viewer_name: display_name
+                .map(str::to_owned)
+                .or(known_name)
+                .unwrap_or_else(|| viewer_channel_id.to_owned()),
             reason: None,
             moderator: Some(broadcaster.channel_title).filter(|title| !title.is_empty()),
             banned_at,

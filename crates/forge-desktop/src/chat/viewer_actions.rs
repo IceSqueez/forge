@@ -22,6 +22,8 @@ const TWITCH_SHOUTOUT_TARGET_KEY: &str = "to_broadcaster_id";
 const TWITCH_WHISPER_TARGET_KEY: &str = "to_user_id";
 const TWITCH_MODERATION_TARGET_KEY: &str = "target_user_id";
 
+const DISPLAY_NAME_KEY: &str = "display_name";
+
 const TWITCH_MAX_TIMEOUT_SECONDS: i64 = 1_209_600;
 const YOUTUBE_MAX_TIMEOUT_SECONDS: i64 = 86_400;
 const KICK_MAX_TIMEOUT_MINUTES: i64 = 10_080;
@@ -144,6 +146,13 @@ impl ViewerTarget {
         }
     }
 
+    fn display_name_entry(&self) -> (String, Variant) {
+        (
+            DISPLAY_NAME_KEY.to_owned(),
+            Variant::String(self.name.clone()),
+        )
+    }
+
     fn youtube_step(
         &self,
         action: &ViewerAction,
@@ -158,11 +167,15 @@ impl ViewerTarget {
                         YOUTUBE_TIMEOUT_KIND,
                         BTreeMap::from([
                             channel,
+                            self.display_name_entry(),
                             ("duration_seconds".to_owned(), Variant::Int(*seconds)),
                         ]),
                     )
                 }),
-            ViewerAction::Ban => Some((YOUTUBE_BAN_KIND, BTreeMap::from([channel]))),
+            ViewerAction::Ban => Some((
+                YOUTUBE_BAN_KIND,
+                BTreeMap::from([channel, self.display_name_entry()]),
+            )),
             ViewerAction::Unban => Some((YOUTUBE_UNBAN_KIND, BTreeMap::from([channel]))),
             ViewerAction::Shoutout | ViewerAction::Whisper(_) => None,
         }
@@ -188,10 +201,17 @@ impl ViewerTarget {
                     .filter(|minutes| *minutes <= KICK_MAX_TIMEOUT_MINUTES)?;
                 Some((
                     KICK_TIMEOUT_KIND,
-                    BTreeMap::from([user, ("duration_minutes".to_owned(), Variant::Int(minutes))]),
+                    BTreeMap::from([
+                        user,
+                        self.display_name_entry(),
+                        ("duration_minutes".to_owned(), Variant::Int(minutes)),
+                    ]),
                 ))
             }
-            ViewerAction::Ban => Some((KICK_BAN_KIND, BTreeMap::from([user]))),
+            ViewerAction::Ban => Some((
+                KICK_BAN_KIND,
+                BTreeMap::from([user, self.display_name_entry()]),
+            )),
             ViewerAction::Unban => Some((KICK_UNBAN_KIND, BTreeMap::from([user]))),
             ViewerAction::Shoutout | ViewerAction::Whisper(_) => None,
         }

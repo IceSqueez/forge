@@ -440,4 +440,33 @@ mod tests {
             assert_eq!(variable_segments(template), expected, "{template:?}");
         }
     }
+
+    #[test]
+    fn push_highlighted_ranges_are_byte_offsets_that_land_on_char_boundaries() {
+        let warning = gpui::rgb(0x00ff_aa00);
+        let datetime = gpui::rgb(0x0000_aaff);
+        let mut text = "Привіт 👋 ".to_owned();
+        let mut highlights = Vec::new();
+
+        push_highlighted(&mut text, &mut highlights, "%час", warning);
+        push_highlighted(&mut text, &mut highlights, ":HH:mm", datetime);
+        push_highlighted(&mut text, &mut highlights, "%", warning);
+
+        assert_eq!(text, "Привіт 👋 %час:HH:mm%");
+        let ranges: Vec<Range<usize>> = highlights.iter().map(|(r, _)| r.clone()).collect();
+        assert_eq!(ranges, vec![18..25, 25..31, 31..32]);
+        for range in &ranges {
+            assert!(text.is_char_boundary(range.start) && text.is_char_boundary(range.end));
+        }
+        assert_eq!(&text[ranges[0].clone()], "%час");
+        let colors: Vec<Option<Hsla>> = highlights.iter().map(|(_, s)| s.color).collect();
+        assert_eq!(
+            colors,
+            vec![
+                Some(Hsla::from(warning)),
+                Some(Hsla::from(datetime)),
+                Some(Hsla::from(warning)),
+            ]
+        );
+    }
 }

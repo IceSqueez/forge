@@ -76,6 +76,16 @@ impl RestoreClose {
     }
 
     pub fn abort(&mut self, cx: &mut Context<Self>) {
+        self.withdraw(WithdrawNotice::Cancelled, cx);
+    }
+
+    pub fn yield_to_update(&mut self, cx: &mut Context<Self>) {
+        if matches!(self.pending, Some(PendingClose::Restore(_))) {
+            self.withdraw(WithdrawNotice::YieldedToUpdate, cx);
+        }
+    }
+
+    fn withdraw(&mut self, notice: WithdrawNotice, cx: &mut Context<Self>) {
         let Some(pending) = self.pending.take() else {
             return;
         };
@@ -90,8 +100,8 @@ impl RestoreClose {
         run_async(
             &self.rt_handle,
             withdraw(data_dir, staged),
-            |_: &mut Self, result, cx| match result {
-                Ok(()) => cx.push_toast(ToastKind::Info, tr!("restore_close_cancelled")),
+            move |_: &mut Self, result, cx| match result {
+                Ok(()) => cx.push_toast(notice.kind(), notice.message()),
                 Err(error) => {
                     tracing::warn!(error = %error, "cancelled restore could not be withdrawn");
                     cx.push_toast(
@@ -103,6 +113,28 @@ impl RestoreClose {
             cx,
         );
         cx.notify();
+    }
+}
+
+#[derive(Clone, Copy)]
+enum WithdrawNotice {
+    Cancelled,
+    YieldedToUpdate,
+}
+
+impl WithdrawNotice {
+    fn kind(self) -> ToastKind {
+        match self {
+            Self::Cancelled => ToastKind::Info,
+            Self::YieldedToUpdate => ToastKind::Warn,
+        }
+    }
+
+    fn message(self) -> String {
+        match self {
+            Self::Cancelled => tr!("restore_close_cancelled"),
+            Self::YieldedToUpdate => tr!("restore_close_yielded_to_update"),
+        }
     }
 }
 

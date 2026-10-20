@@ -380,14 +380,9 @@ impl SettingsStorageView {
     }
 
     fn start_restore(&mut self, cx: &mut Context<Self>) {
-        let Some(transfers) = self.transfers.clone() else {
-            return;
-        };
-        if transfers.read(cx).is_busy(cx) {
-            return;
+        if let Some(transfers) = self.transfers.clone() {
+            transfers.update(cx, |transfers, cx| transfers.start_restore(cx));
         }
-        let restore = transfers.read(cx).restore.clone();
-        restore.update(cx, |restore, cx| restore.start(cx));
         cx.notify();
     }
 
@@ -422,16 +417,17 @@ impl Render for SettingsStorageView {
         let density = cx.density();
 
         let db_path = forge_storage::paths::data_dir().join("forge.db");
-        let (backup_flow, restore_flow, transfer_busy) = match &self.transfers {
+        let (backup_flow, restore_flow, flow_views, transfer_busy) = match &self.transfers {
             Some(transfers) => {
                 let flows = transfers.read(cx);
                 (
                     Some(flows.backup.clone()),
                     Some(flows.restore.clone()),
+                    flows.views().to_vec(),
                     flows.is_busy(cx),
                 )
             }
-            None => (None, None, true),
+            None => (None, None, Vec::new(), true),
         };
         let backing_up = backup_flow
             .as_ref()
@@ -463,6 +459,11 @@ impl Render for SettingsStorageView {
                 "settings-db-restore",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.start_restore(cx)),
             );
+        let backup_hint = if transfer_busy && !backing_up && !restore_preparing {
+            tr!("settings_storage_transfer_busy_hint")
+        } else {
+            tr!("settings_storage_backup_hint")
+        };
         let backup_controls = div()
             .flex()
             .items_center()
@@ -479,7 +480,7 @@ impl Render for SettingsStorageView {
             ))
             .row(setting_row(
                 tr!("settings_storage_backup_label"),
-                Some(tr!("settings_storage_backup_hint").into()),
+                Some(backup_hint.into()),
                 backup_controls,
                 &palette,
                 density,
@@ -517,8 +518,7 @@ impl Render for SettingsStorageView {
             .flex_col()
             .child(SettingsPaneHeader::new(SettingsSection::Storage))
             .child(rows)
-            .children(backup_flow)
-            .children(restore_flow)
+            .children(flow_views)
     }
 }
 

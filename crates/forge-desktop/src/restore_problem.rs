@@ -27,6 +27,10 @@ pub(crate) enum RestoreProblem {
     },
     UnrecognizedDatabase,
     UnknownEncryption,
+    PassphraseRequired,
+    PassphraseTooShort {
+        minimum: usize,
+    },
     WrongPassphrase,
     Damaged,
     MissingCredentialsKey,
@@ -64,6 +68,10 @@ impl RestoreProblem {
             },
             TransferError::UnrecognizedDatabase => Self::UnrecognizedDatabase,
             TransferError::UnknownEncryption { .. } => Self::UnknownEncryption,
+            TransferError::PassphraseRequired => Self::PassphraseRequired,
+            TransferError::PassphraseTooShort { minimum } => {
+                Self::PassphraseTooShort { minimum: *minimum }
+            }
             TransferError::WrongPassphrase => Self::WrongPassphrase,
             TransferError::Damaged { .. }
             | TransferError::UnsafeEntry { .. }
@@ -112,6 +120,11 @@ impl RestoreProblem {
             ),
             Self::UnrecognizedDatabase => tr!("restore_problem_unrecognized_database"),
             Self::UnknownEncryption => tr!("restore_problem_unknown_encryption"),
+            Self::PassphraseRequired => tr!("restore_problem_passphrase_required"),
+            Self::PassphraseTooShort { minimum } => tr!(
+                "restore_problem_passphrase_too_short",
+                min = minimum.to_string()
+            ),
             Self::WrongPassphrase => tr!("restore_problem_wrong_passphrase"),
             Self::Damaged => tr!("restore_problem_damaged"),
             Self::MissingCredentialsKey => tr!("restore_problem_missing_key"),

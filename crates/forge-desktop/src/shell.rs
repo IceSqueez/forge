@@ -491,7 +491,6 @@ impl AppShell {
                 let builtins = handles.builtins.clone();
                 let scheduled_run_repo = handles.backend.scheduled_run_repo();
                 let switch = Self::integration_switch(topics, handles);
-                let actions_pack = PackServices::of(handles);
                 let view = cx.new(|cx| {
                     ScreenActionsView::new(
                         action_repo,
@@ -516,7 +515,7 @@ impl AppShell {
                     )
                     .with_builtins(builtins)
                     .with_scheduled_runs(scheduled_run_repo)
-                    .with_pack_export(actions_pack, cx)
+                    .with_pack_export(cx)
                     .with_integration_switch(switch, cx)
                 });
                 cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
@@ -991,9 +990,16 @@ impl AppShell {
     }
 
     fn update_close_decision(&mut self, cx: &mut Context<Self>) -> CloseDecision {
-        self.topics
+        let decision = self
+            .topics
             .update_flow
-            .update(cx, |flow, cx| flow.close_decision(cx))
+            .update(cx, |flow, cx| flow.close_decision(cx));
+        if decision == CloseDecision::Hold
+            && let Some(restore_close) = RestoreClose::route(cx)
+        {
+            restore_close.update(cx, |close, cx| close.yield_to_update(cx));
+        }
+        decision
     }
 
     fn leave_to(&mut self, target: LeaveTarget, cx: &mut Context<Self>) {

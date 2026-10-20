@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use forge_components::{PushToast, ToastKind, tr};
 use forge_transfer::{BundleKind, TransferError, read_bundle_kind};
-use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Subscription};
+use forge_types::ActionId;
+use gpui::{AnyView, App, AppContext, Context, Entity, EventEmitter, Global, Subscription};
 
 use crate::async_bridge::{self, DIALOG_CANCELLED, DialogFilter};
 use crate::backup_flow::{BackupFlow, BackupTarget};
@@ -212,7 +213,7 @@ impl TransferFlows {
     }
 
     fn start_backup(&mut self, target: BackupTarget, cx: &mut Context<Self>) {
-        if self.is_busy(cx) {
+        if self.refused_while_busy(cx) {
             return;
         }
         self.backup
@@ -221,21 +222,53 @@ impl TransferFlows {
     }
 
     pub fn export_pack(&mut self, cx: &mut Context<Self>) {
-        if self.is_busy(cx) {
+        self.export_pack_of(Vec::new(), cx);
+    }
+
+    pub fn export_pack_of(&mut self, preselected: Vec<ActionId>, cx: &mut Context<Self>) {
+        if self.refused_while_busy(cx) {
             return;
         }
         self.pack_export
-            .update(cx, |pack_export, cx| pack_export.start(Vec::new(), cx));
+            .update(cx, |pack_export, cx| pack_export.start(preselected, cx));
         cx.notify();
     }
 
     pub fn export_setup(&mut self, cx: &mut Context<Self>) {
-        if self.is_busy(cx) {
+        if self.refused_while_busy(cx) {
             return;
         }
         self.setup_export
             .update(cx, |setup_export, cx| setup_export.start(cx));
         cx.notify();
+    }
+
+    pub fn start_restore(&mut self, cx: &mut Context<Self>) {
+        if self.refused_while_busy(cx) {
+            return;
+        }
+        self.restore.update(cx, |restore, cx| restore.start(cx));
+        cx.notify();
+    }
+
+    pub fn views(&self) -> [AnyView; 6] {
+        [
+            self.backup.clone().into(),
+            self.pack_export.clone().into(),
+            self.pack_import.clone().into(),
+            self.setup_export.clone().into(),
+            self.setup_import.clone().into(),
+            self.restore.clone().into(),
+        ]
+    }
+
+    fn refused_while_busy(&self, cx: &mut Context<Self>) -> bool {
+        let busy = self.is_busy(cx);
+        if busy {
+            tracing::info!("transfer start ignored while another transfer runs");
+            cx.push_toast(ToastKind::Warn, tr!("transfer_busy_already"));
+        }
+        busy
     }
 }
 

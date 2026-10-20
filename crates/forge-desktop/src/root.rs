@@ -3,8 +3,8 @@ use std::time::{Duration, Instant};
 
 use forge_awake::StatusWatch;
 use forge_components::{
-    Density, FONT_LG, FONT_SM, ForgePalette, Icon, Radius, Spacing, ToastKind, body_family, card,
-    icon, mono_family, primary_button, radius, secondary_button, spacing, tr,
+    Density, FONT_LG, FONT_SM, ForgePalette, Icon, Radius, Spacing, ToastKind, Toasts, body_family,
+    card, icon, mono_family, primary_button, radius, secondary_button, spacing, toast_layer, tr,
 };
 use forge_platform_core::{CONNECTION_STATE_CHANGED_KIND, PlatformEndpoints};
 use forge_runtime::{EventSubscription, LiveViewerAggregatorHandle, LossWatch, QueueDepthWatch};
@@ -75,6 +75,12 @@ impl RootView {
     ) -> Self {
         cx.observe_global::<Presentation>(|_, cx| cx.notify())
             .detach();
+        cx.observe_global::<Toasts>(|root, cx| {
+            if matches!(root.state, BootState::Failed(_)) {
+                cx.notify();
+            }
+        })
+        .detach();
         Self {
             state: BootState::Booting,
             rt_handle,
@@ -351,6 +357,7 @@ pub fn run_boot(
                     root.mark_failed(failure);
                     cx.notify();
                 });
+                cx.update(crate::boot_restore::raise_boot_restore_toast);
             }
         }
     })
@@ -644,10 +651,10 @@ impl Render for RootView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
-        match &self.state {
-            BootState::Booting => splash(&palette, density),
+        let failure_screen = match &self.state {
+            BootState::Booting => return splash(&palette, density),
             BootState::Ready { shell, .. } => {
-                div().size_full().child(shell.clone()).into_any_element()
+                return div().size_full().child(shell.clone()).into_any_element();
             }
             BootState::Failed(BootFailure::UpgradeRequired { expected, found }) => {
                 upgrade_screen(*expected, *found, &palette, density)
@@ -658,7 +665,13 @@ impl Render for RootView {
             BootState::Failed(BootFailure::Retry { reason }) => {
                 retry_screen(reason, cx.entity(), &palette, density)
             }
-        }
+        };
+        div()
+            .size_full()
+            .relative()
+            .child(failure_screen)
+            .children(toast_layer(&palette, cx))
+            .into_any_element()
     }
 }
 

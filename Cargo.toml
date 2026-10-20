@@ -48,7 +48,7 @@ repository = "https://github.com/IceSqueez/forge"
 rust-version = "1.99"
 
 [workspace.dependencies]
-tokio = { version = "1.53", features = ["full"] }
+tokio = { version = "1.54", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 tokio-util = { version = "0.7" }
@@ -105,7 +105,7 @@ rhai = { version = "1.26", features = ["sync"] }
 midir = { version = "0.11" }
 
 global-hotkey = { version = "0.9" }
-zbus = { version = "5.19", default-features = false, features = ["async-io"] }
+zbus = { version = "6.0", default-features = false, features = ["tokio", "proxy"] }
 libc = { version = "0.2" }
 rustix = { version = "1.1", features = ["fs"] }
 
@@ -149,10 +149,10 @@ block2 = { version = "0.6" }
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.7", features = ["cors", "fs"] }
 
-gpui = { git = "https://github.com/zed-industries/zed", tag = "v1.23.3", features = [
+gpui = { git = "https://github.com/zed-industries/zed", tag = "v1.24.3", features = [
   "stacker",
 ] }
-gpui_platform = { git = "https://github.com/zed-industries/zed", tag = "v1.23.3", features = [
+gpui_platform = { git = "https://github.com/zed-industries/zed", tag = "v1.24.3", features = [
   "font-kit",
   "wayland",
   "x11",
@@ -164,7 +164,7 @@ rfd = { version = "0.17", default-features = false, features = [
   "wayland",
 ] }
 open = { version = "5.4" }
-arboard = { version = "3.6", default-features = false, features = [
+arboard = { version = "3.7", default-features = false, features = [
   "wayland-data-control",
 ] }
 notify-rust = { version = "4.18" }
@@ -190,7 +190,9 @@ fluent = { version = "0.17" }
 fluent-langneg = { version = "0.13" }
 unic-langid = { version = "0.9" }
 sys-locale = { version = "0.3" }
-sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+sysinfo = { version = "0.39.6", default-features = false, features = [
+  "system",
+] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

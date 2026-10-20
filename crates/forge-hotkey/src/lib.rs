@@ -32,6 +32,8 @@ pub(crate) mod backend_portal;
 #[cfg(target_os = "linux")]
 mod evdev_watch;
 #[cfg(target_os = "linux")]
+mod owned_fd_readiness;
+#[cfg(target_os = "linux")]
 mod portal_request;
 #[cfg(target_os = "linux")]
 mod portal_trigger;

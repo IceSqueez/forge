@@ -14,6 +14,7 @@ use crate::backend::{HotkeyBackend, HotkeyEdge, HotkeyFiredEvent, HotkeyId};
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
 use crate::evdev_watch::{EVENT_NODE_PREFIX, INPUT_DIR, InputDirChange, InputDirWatcher};
+use crate::owned_fd_readiness::register_readiness;
 
 const EV_SYN: u16 = 0;
 const EV_KEY: u16 = 1;
@@ -168,7 +169,7 @@ impl DevicePool {
                 return;
             }
         };
-        let async_fd = match AsyncFd::new(file) {
+        let async_fd = match register_readiness(file) {
             Ok(fd) => fd,
             Err(e) => {
                 tracing::debug!(device = %path.display(), error = %e, "input device cannot be polled");

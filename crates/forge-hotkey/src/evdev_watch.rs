@@ -8,6 +8,8 @@ use rustix::fs::inotify::{self, CreateFlags, ReadFlags, WatchFlags};
 use rustix::io::Errno;
 use tokio::io::unix::AsyncFd;
 
+use crate::owned_fd_readiness::register_readiness;
+
 pub(crate) const INPUT_DIR: &str = "/dev/input";
 pub(crate) const EVENT_NODE_PREFIX: &str = "event";
 const WATCH_BUFFER_BYTES: usize = 4096;
@@ -33,7 +35,7 @@ impl InputDirWatcher {
         )?;
         Ok(Self {
             dir: dir.to_path_buf(),
-            fd: AsyncFd::new(fd)?,
+            fd: register_readiness(fd)?,
             buf: vec![MaybeUninit::uninit(); WATCH_BUFFER_BYTES],
         })
     }

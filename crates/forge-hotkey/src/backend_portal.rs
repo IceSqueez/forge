@@ -8,7 +8,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
 use zbus::Connection;
-use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value};
+use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant};
 
 use crate::backend::{BackendSessionEvent, HotkeyBackend, HotkeyEdge, HotkeyFiredEvent, HotkeyId};
 use crate::combo::HotkeyCombo;
@@ -469,14 +469,14 @@ impl ShortcutsPortal for DbusShortcutsPortal {
             .map_err(|e| e.to_string())?;
         let session = ObjectPath::try_from(session).map_err(|e| e.to_string())?;
 
-        let shortcuts: Vec<(&str, HashMap<&str, Value<'_>>)> = combos
+        let shortcuts: Vec<(&str, HashMap<&str, Variant<'_>>)> = combos
             .iter()
             .map(|combo| (combo.as_str(), shortcut_properties(combo)))
             .collect();
 
         let handle_token = make_token(&self.app_name, "bind");
-        let options: HashMap<&str, Value<'_>> =
-            HashMap::from([(OPTION_HANDLE_TOKEN, Value::from(handle_token.as_str()))]);
+        let options: HashMap<&str, Variant<'_>> =
+            HashMap::from([(OPTION_HANDLE_TOKEN, Variant::from(handle_token.as_str()))]);
 
         let results = call_with_response(
             &self.conn,
@@ -506,33 +506,33 @@ impl ShortcutsPortal for DbusShortcutsPortal {
     }
 }
 
-fn shortcut_properties(combo: &HotkeyCombo) -> HashMap<&'static str, Value<'_>> {
-    let mut props: HashMap<&'static str, Value<'_>> =
-        HashMap::from([(SHORTCUT_DESCRIPTION, Value::from(combo.as_str()))]);
+fn shortcut_properties(combo: &HotkeyCombo) -> HashMap<&'static str, Variant<'_>> {
+    let mut props: HashMap<&'static str, Variant<'_>> =
+        HashMap::from([(SHORTCUT_DESCRIPTION, Variant::from(combo.as_str()))]);
     if let Some(trigger) = preferred_trigger(combo) {
-        props.insert(SHORTCUT_PREFERRED_TRIGGER, Value::from(trigger));
+        props.insert(SHORTCUT_PREFERRED_TRIGGER, Variant::from(trigger));
     }
     props
 }
 
-fn bound_triggers(results: &HashMap<String, OwnedValue>) -> HashMap<String, String> {
-    let Some(Value::Array(entries)) = results.get(RESULT_SHORTCUTS).map(|v| &**v) else {
+fn bound_triggers(results: &HashMap<String, OwnedVariant>) -> HashMap<String, String> {
+    let Some(Variant::Array(entries)) = results.get(RESULT_SHORTCUTS).map(|v| &**v) else {
         return HashMap::new();
     };
     entries
         .inner()
         .iter()
         .filter_map(|entry| {
-            let Value::Structure(shortcut) = entry else {
+            let Variant::Structure(shortcut) = entry else {
                 return None;
             };
-            let [Value::Str(id), Value::Dict(props)] = shortcut.fields() else {
+            let [Variant::Str(id), Variant::Dict(props)] = shortcut.fields() else {
                 return None;
             };
             let trigger = props
                 .iter()
                 .find_map(|(key, value)| match (key, unwrap_variant(value)) {
-                    (Value::Str(k), Value::Str(trigger))
+                    (Variant::Str(k), Variant::Str(trigger))
                         if k.as_str() == SHORTCUT_TRIGGER_DESCRIPTION =>
                     {
                         Some(trigger.as_str().to_owned())
@@ -545,9 +545,9 @@ fn bound_triggers(results: &HashMap<String, OwnedValue>) -> HashMap<String, Stri
         .collect()
 }
 
-fn unwrap_variant<'a>(value: &'a Value<'a>) -> &'a Value<'a> {
+fn unwrap_variant<'a>(value: &'a Variant<'a>) -> &'a Variant<'a> {
     match value {
-        Value::Value(inner) => inner,
+        Variant::Variant(inner) => inner,
         other => other,
     }
 }
@@ -578,7 +578,7 @@ async fn register_host_app_id(conn: &Connection, app_id: &str) {
         }
     };
 
-    let options: HashMap<&str, Value<'_>> = HashMap::new();
+    let options: HashMap<&str, Variant<'_>> = HashMap::new();
     if let Err(e) = proxy.call::<_, _, ()>("Register", &(app_id, options)).await {
         tracing::debug!(error = %e, "host app id registration skipped");
     }
@@ -594,11 +594,11 @@ async fn create_portal_session(
 
     let handle_token = make_token(app_name, "session");
     let session_token = make_token(app_name, "sess");
-    let options: HashMap<&str, Value<'_>> = HashMap::from([
-        (OPTION_HANDLE_TOKEN, Value::from(handle_token.as_str())),
+    let options: HashMap<&str, Variant<'_>> = HashMap::from([
+        (OPTION_HANDLE_TOKEN, Variant::from(handle_token.as_str())),
         (
             OPTION_SESSION_HANDLE_TOKEN,
-            Value::from(session_token.as_str()),
+            Variant::from(session_token.as_str()),
         ),
     ]);
 
@@ -721,7 +721,7 @@ fn parse_shortcut_signal(msg: &zbus::Message, edge: HotkeyEdge) -> Option<Shortc
         OwnedObjectPath,
         String,
         u64,
-        HashMap<String, OwnedValue>,
+        HashMap<String, OwnedVariant>,
     ) = msg.body().deserialize().ok()?;
     Some(ShortcutEdge {
         session: session.as_str().to_owned(),

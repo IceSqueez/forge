@@ -7,7 +7,7 @@ use std::time::Duration;
 use serde::Serialize;
 use tokio_stream::StreamExt;
 use zbus::Connection;
-use zbus::zvariant::{DynamicType, OwnedObjectPath, OwnedValue, Value};
+use zbus::{DynamicType, OwnedObjectPath, OwnedVariant, Variant};
 
 pub(crate) const PORTAL_DESTINATION: &str = "org.freedesktop.portal.Desktop";
 pub(crate) const PORTAL_OBJECT_PATH: &str = "/org/freedesktop/portal/desktop";
@@ -20,13 +20,16 @@ const RESPONSE_CANCELLED: u32 = 1;
 static TOKEN_SERIAL: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) enum PortalOutcome {
-    Success(HashMap<String, OwnedValue>),
+    Success(HashMap<String, OwnedVariant>),
     Cancelled,
     Ended(u32),
 }
 
 impl PortalOutcome {
-    pub(crate) fn into_results(self, method: &str) -> Result<HashMap<String, OwnedValue>, String> {
+    pub(crate) fn into_results(
+        self,
+        method: &str,
+    ) -> Result<HashMap<String, OwnedVariant>, String> {
         match self {
             Self::Success(results) => Ok(results),
             Self::Cancelled => Err(format!("{method} was cancelled on the desktop")),
@@ -75,7 +78,7 @@ where
         .map_err(|_| zbus::Error::Failure(format!("{method} response timed out")))?
         .ok_or_else(|| zbus::Error::Failure(format!("{method} response stream closed")))?;
 
-    let (code, results): (u32, HashMap<String, OwnedValue>) = msg.body().deserialize()?;
+    let (code, results): (u32, HashMap<String, OwnedVariant>) = msg.body().deserialize()?;
     Ok(match code {
         RESPONSE_SUCCESS => PortalOutcome::Success(results),
         RESPONSE_CANCELLED => PortalOutcome::Cancelled,
@@ -84,12 +87,12 @@ where
 }
 
 pub(crate) fn object_path_result(
-    results: &HashMap<String, OwnedValue>,
+    results: &HashMap<String, OwnedVariant>,
     key: &str,
 ) -> Option<OwnedObjectPath> {
     match &**results.get(key)? {
-        Value::ObjectPath(p) => OwnedObjectPath::try_from(p.as_str()).ok(),
-        Value::Str(s) => OwnedObjectPath::try_from(s.as_str()).ok(),
+        Variant::ObjectPath(p) => OwnedObjectPath::try_from(p.as_str()).ok(),
+        Variant::Str(s) => OwnedObjectPath::try_from(s.as_str()).ok(),
         _ => None,
     }
 }

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 use zbus::Connection;
-use zbus::zvariant::OwnedFd;
+use zbus::OwnedFd;
 
 use crate::Aspect;
 use crate::AwakeError;

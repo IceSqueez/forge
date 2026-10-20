@@ -387,4 +387,49 @@ mod tests {
 
         assert_eq!(card_detail(AIRHORN_ID, &clip_options(&[])), MISSING_LABEL);
     }
+
+    #[test]
+    fn variable_segments_split_text_plain_references_and_formatted_references() {
+        use VariableSegment::{FormattedVariable, Text, Variable};
+
+        for (template, expected) in [
+            ("", vec![]),
+            ("a %x% b", vec![Text("a "), Variable("%x%"), Text(" b")]),
+            (
+                "%at:HH:mm%",
+                vec![FormattedVariable {
+                    name: "at",
+                    pattern: "HH:mm",
+                }],
+            ),
+            (
+                "%at:%",
+                vec![FormattedVariable {
+                    name: "at",
+                    pattern: "",
+                }],
+            ),
+            (
+                "%bad name:HH%",
+                vec![Text("%"), Text("bad name:HH"), Text("%")],
+            ),
+            ("100%", vec![Text("100"), Text("%")]),
+            ("50% off", vec![Text("50"), Text("% off")]),
+            ("%a%%b%", vec![Variable("%a%"), Variable("%b%")]),
+            (
+                "%user% at %at:d MMMM%!",
+                vec![
+                    Variable("%user%"),
+                    Text(" at "),
+                    FormattedVariable {
+                        name: "at",
+                        pattern: "d MMMM",
+                    },
+                    Text("!"),
+                ],
+            ),
+        ] {
+            assert_eq!(variable_segments(template), expected, "{template:?}");
+        }
+    }
 }

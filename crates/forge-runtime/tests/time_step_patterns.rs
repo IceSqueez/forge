@@ -4,13 +4,11 @@ use std::process::Command;
 
 use forge_events::{Event, EventPublisher};
 use forge_registry::{RunContext, SubActionRunner};
+use forge_runtime::DateNamesHandle;
 use forge_runtime::sub_action_runners::{
     CoreTimeFormatRunner, CoreTimeNowRunner, CoreTimeParseRunner,
 };
-use forge_types::{
-    ArgStack, EventId, NamesLanguage, SubActionConfig, SubActionOutcome, Variant,
-    set_current_names_language,
-};
+use forge_types::{ArgStack, EventId, NamesLanguage, SubActionConfig, SubActionOutcome, Variant};
 use time::{Date, Month, OffsetDateTime, UtcOffset};
 use tokio::sync::{Mutex, MutexGuard};
 
@@ -25,7 +23,7 @@ impl EventPublisher for NullPublisher {
 
 async fn names_language(language: NamesLanguage) -> MutexGuard<'static, ()> {
     let guard = NAMES_LANGUAGE_LOCK.lock().await;
-    set_current_names_language(language);
+    DateNamesHandle.set_language(language);
     guard
 }
 
@@ -125,12 +123,20 @@ async fn format_pattern_follows_the_system_zone_when_utc_is_off_and_ignores_it_w
 }
 
 #[tokio::test]
-async fn format_pattern_uses_the_current_names_language() {
-    let _language = names_language(NamesLanguage::Uk).await;
-    assert_eq!(
-        formatted(&format_cfg("d MMMM, EEEE", Some(true))).await,
-        "15 жовтня, четвер"
-    );
+async fn format_pattern_follows_the_names_language_switched_through_the_handle() {
+    let _language = names_language(NamesLanguage::En).await;
+    for (language, expected) in [
+        (NamesLanguage::Uk, "15 жовтня, четвер"),
+        (NamesLanguage::En, "15 October, Thursday"),
+        (NamesLanguage::Uk, "15 жовтня, четвер"),
+    ] {
+        DateNamesHandle.set_language(language);
+        assert_eq!(
+            formatted(&format_cfg("d MMMM, EEEE", Some(true))).await,
+            expected,
+            "{language:?}"
+        );
+    }
 }
 
 #[tokio::test]

@@ -116,3 +116,174 @@ fn translate_legacy_time_config(kind_id: &str, config: &mut SubActionConfig) -> 
         .or_insert(Variant::Bool(true));
     true
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use forge_registry::CASE_CHAIN_KEY;
+
+    use super::*;
+
+    const LEGACY: &str = "[day].[month].[year] [hour]:[minute]";
+    const TRANSLATED: &str = "dd.MM.yyyy HH:mm";
+
+    fn s(value: &str) -> Variant {
+        Variant::String(value.to_owned())
+    }
+
+    fn config(entries: &[(&str, Variant)]) -> SubActionConfig {
+        entries
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), value.clone()))
+            .collect()
+    }
+
+    fn step(kind_id: &str, config: SubActionConfig) -> SubActionStep {
+        SubActionStep {
+            kind_id: kind_id.to_owned(),
+            config,
+            enabled: true,
+            continue_on_error: false,
+            condition: None,
+            label: None,
+        }
+    }
+
+    fn step_object(kind_id: &str, config: SubActionConfig) -> Variant {
+        Variant::Object(BTreeMap::from([
+            (STEP_KIND_KEY.to_owned(), s(kind_id)),
+            (STEP_CONFIG_KEY.to_owned(), Variant::Object(config)),
+        ]))
+    }
+
+    fn translated_config(pattern_key: &str) -> SubActionConfig {
+        config(&[(pattern_key, s(TRANSLATED)), (UTC_KEY, Variant::Bool(true))])
+    }
+
+    #[test]
+    fn top_level_time_steps_get_the_translated_pattern_and_utc_on() {
+        let mut steps = vec![
+            step(
+                TIME_FORMAT_KIND_ID,
+                config(&[(FORMAT_PATTERN_KEY, s(LEGACY))]),
+            ),
+            step(
+                TIME_PARSE_KIND_ID,
+                config(&[(PARSE_PATTERN_KEY, s(LEGACY))]),
+            ),
+            step(
+                TIME_NOW_KIND_ID,
+                config(&[(CUSTOM_NOW_PATTERN_KEY, s(LEGACY))]),
+            ),
+        ];
+        assert!(translate_legacy_time_steps(&mut steps));
+        assert_eq!(steps[0].config, translated_config(FORMAT_PATTERN_KEY));
+        assert_eq!(steps[1].config, translated_config(PARSE_PATTERN_KEY));
+        assert_eq!(steps[2].config, translated_config(CUSTOM_NOW_PATTERN_KEY));
+    }
+
+    #[test]
+    fn steps_nested_in_sub_chains_and_case_lists_are_translated() {
+        let legacy_format = || config(&[(FORMAT_PATTERN_KEY, s(LEGACY))]);
+        let inner_chain = Variant::Array(vec![step_object(TIME_FORMAT_KIND_ID, legacy_format())]);
+        let mut steps = vec![
+            step(
+                "core.logic.if",
+                config(&[(
+                    "then",
+                    Variant::Array(vec![step_object(TIME_FORMAT_KIND_ID, legacy_format())]),
+                )]),
+            ),
+            step(
+                "core.logic.switch",
+                config(&[(
+                    "cases",
+                    Variant::Array(vec![Variant::Object(BTreeMap::from([(
+                        CASE_CHAIN_KEY.to_owned(),
+                        Variant::Array(vec![step_object(
+                            "core.logic.if",
+                            config(&[("then", inner_chain)]),
+                        )]),
+                    )]))]),
+                )]),
+            ),
+        ];
+        assert!(translate_legacy_time_steps(&mut steps));
+        let expected = Variant::Object(translated_config(FORMAT_PATTERN_KEY));
+        let then_step = &steps[0].config["then"].as_array().unwrap()[0];
+        assert_eq!(then_step.as_object().unwrap()[STEP_CONFIG_KEY], expected);
+        let case_step = &steps[1].config["cases"].as_array().unwrap()[0]
+            .as_object()
+            .unwrap()[CASE_CHAIN_KEY]
+            .as_array()
+            .unwrap()[0];
+        let deepest = &case_step.as_object().unwrap()[STEP_CONFIG_KEY]
+            .as_object()
+            .unwrap()["then"]
+            .as_array()
+            .unwrap()[0];
+        assert_eq!(deepest.as_object().unwrap()[STEP_CONFIG_KEY], expected);
+    }
+
+    #[test]
+    fn an_existing_utc_false_is_kept() {
+        let mut steps = vec![step(
+            TIME_FORMAT_KIND_ID,
+            config(&[
+                (FORMAT_PATTERN_KEY, s(LEGACY)),
+                (UTC_KEY, Variant::Bool(false)),
+            ]),
+        )];
+        assert!(translate_legacy_time_steps(&mut steps));
+        assert_eq!(
+            steps[0].config,
+            config(&[
+                (FORMAT_PATTERN_KEY, s(TRANSLATED)),
+                (UTC_KEY, Variant::Bool(false)),
+            ])
+        );
+    }
+
+    #[test]
+    fn untranslatable_ldml_and_non_time_steps_are_left_alone_and_report_no_change() {
+        let original = vec![
+            step(
+                TIME_FORMAT_KIND_ID,
+                config(&[(FORMAT_PATTERN_KEY, s("[unix_timestamp]"))]),
+            ),
+            step(
+                TIME_PARSE_KIND_ID,
+                config(&[(PARSE_PATTERN_KEY, s("dd.MM.yyyy"))]),
+            ),
+            step(TIME_NOW_KIND_ID, config(&[])),
+            step("core.string.format", config(&[("format", s(LEGACY))])),
+            step(
+                "core.logic.if",
+                config(&[(
+                    "then",
+                    Variant::Array(vec![step_object(
+                        "core.string.format",
+                        config(&[(FORMAT_PATTERN_KEY, s(LEGACY))]),
+                    )]),
+                )]),
+            ),
+        ];
+        let mut steps = original.clone();
+        assert!(!translate_legacy_time_steps(&mut steps));
+        assert_eq!(steps, original);
+    }
+
+    #[test]
+    fn translating_twice_changes_nothing_the_second_time() {
+        let mut steps = vec![step(
+            TIME_PARSE_KIND_ID,
+            config(&[(PARSE_PATTERN_KEY, s(LEGACY))]),
+        )];
+        assert!(translate_legacy_time_steps(&mut steps));
+        let once = steps.clone();
+        assert!(!translate_legacy_time_steps(&mut steps));
+        assert_eq!(steps, once);
+    }
+}

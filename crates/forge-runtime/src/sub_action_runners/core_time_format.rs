@@ -134,7 +134,7 @@ impl SubActionRunner for CoreTimeFormatRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
@@ -167,40 +167,103 @@ mod tests {
         c
     }
 
+    fn utc_cfg(source: Variant, fmt: &str) -> SubActionConfig {
+        let mut c = cfg(source, fmt);
+        c.insert("utc".to_owned(), Variant::Bool(true));
+        c
+    }
+
+    async fn formatted(c: &SubActionConfig) -> String {
+        let (outcome, out) = run(c).await;
+        assert!(matches!(outcome, SubActionOutcome::Success), "{outcome:?}");
+        out.unwrap()
+            .get("time.formatted")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_owned()
+    }
+
+    fn failure(outcome: SubActionOutcome) -> String {
+        match outcome {
+            SubActionOutcome::Failed(reason) => reason,
+            other => panic!("expected a failed outcome, got {other:?}"),
+        }
+    }
+
     #[tokio::test]
-    async fn format_renders_fixed_datetime_for_each_description() {
-        let dt = utc(2024, Month::January, 15, 12, 34, 56);
+    async fn format_renders_each_numeric_pattern_in_utc_when_utc_is_on() {
+        let dt = utc(2024, Month::January, 15, 12, 34, 56)
+            .to_offset(time::UtcOffset::from_hms(2, 0, 0).unwrap());
         for (fmt, expected) in [
-            ("[year]", "2024"),
-            ("[year]-[month]-[day]", "2024-01-15"),
-            ("[hour]:[minute]:[second]", "12:34:56"),
-            (
-                "[year]-[month]-[day] [hour]:[minute]:[second]",
-                "2024-01-15 12:34:56",
-            ),
+            ("yyyy", "2024"),
+            ("dd.MM.yyyy", "15.01.2024"),
+            ("HH:mm:ss", "12:34:56"),
+            ("h:mm", "12:34"),
+            ("yyyy-MM-dd'T'HH:mmxxx", "2024-01-15T12:34+00:00"),
         ] {
-            let (outcome, out) = run(&cfg(Variant::Datetime(dt), fmt)).await;
-            assert!(matches!(outcome, SubActionOutcome::Success), "fmt {fmt}");
             assert_eq!(
-                out.unwrap().get("time.formatted").and_then(|v| v.as_str()),
-                Some(expected),
+                formatted(&utc_cfg(Variant::Datetime(dt), fmt)).await,
+                expected,
                 "fmt {fmt}"
             );
         }
     }
 
     #[tokio::test]
-    async fn format_with_invalid_format_string_yields_failed() {
+    async fn format_with_legacy_description_and_no_utc_key_matches_the_old_utc_english_output() {
+        let dt = utc(2024, Month::January, 15, 21, 4, 5)
+            .to_offset(time::UtcOffset::from_hms(5, 30, 0).unwrap());
+        for legacy in [
+            "[year]-[month]-[day] [hour]:[minute]:[second]",
+            "[day padding:none] [month repr:long] [year]",
+            "[weekday], [hour repr:12]:[minute] [period]",
+            "[offset_hour sign:mandatory]:[offset_minute]",
+        ] {
+            let old = dt
+                .to_offset(time::UtcOffset::UTC)
+                .format(&time::format_description::parse_borrowed::<2>(legacy).unwrap())
+                .unwrap();
+            assert_eq!(
+                formatted(&cfg(Variant::Datetime(dt), legacy)).await,
+                old,
+                "legacy {legacy}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn format_with_untranslatable_legacy_component_fails_naming_it() {
         let dt = utc(2024, Month::January, 15, 0, 0, 0);
-        let (outcome, out) = run(&cfg(Variant::Datetime(dt), "[bogus]")).await;
-        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+        let (outcome, out) = run(&cfg(Variant::Datetime(dt), "[unix_timestamp]")).await;
+        assert!(failure(outcome).contains("[unix_timestamp]"));
+        assert!(out.is_none());
+    }
+
+    #[test]
+    fn validate_rejects_invalid_and_untranslatable_patterns() {
+        for (fmt, named) in [
+            ("yyyy qqq", "qqq"),
+            ("[unix_timestamp]", "[unix_timestamp]"),
+        ] {
+            let result = CoreTimeFormatRunner.validate_config(&cfg(Variant::Bool(false), fmt));
+            assert!(
+                matches!(&result, Err(RegistryError::InvalidConfig(reason)) if reason.contains(named)),
+                "{fmt}: {result:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn format_with_invalid_pattern_yields_failed() {
+        let dt = utc(2024, Month::January, 15, 0, 0, 0);
+        let (outcome, out) = run(&cfg(Variant::Datetime(dt), "yyyy qqq")).await;
+        assert!(failure(outcome).contains("yyyy qqq"));
         assert!(out.is_none());
     }
 
     #[tokio::test]
     async fn format_with_unparseable_source_string_yields_failed() {
-        let (outcome, out) =
-            run(&cfg(Variant::String("not a datetime".to_owned()), "[year]")).await;
+        let (outcome, out) = run(&cfg(Variant::String("not a datetime".to_owned()), "yyyy")).await;
         assert!(matches!(outcome, SubActionOutcome::Failed(_)));
         assert!(out.is_none());
     }

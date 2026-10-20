@@ -136,12 +136,12 @@ impl SubActionRunner for CoreTimeParseRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
     use forge_types::{EventId, SubActionOutcome};
-    use time::{Date, Month, Time};
+    use time::{Date, Month, OffsetDateTime, Time};
 
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
@@ -175,37 +175,57 @@ mod tests {
         c
     }
 
-    #[tokio::test]
-    async fn parse_rfc3339_with_offset_yields_correct_instant() {
-        let fmt = "[year]-[month]-[day]T[hour]:[minute]:[second][offset_hour \
-                   sign:mandatory]:[offset_minute]";
-        let (outcome, out) = run(&cfg("2024-01-15T12:00:00+02:00", fmt)).await;
-        assert!(matches!(outcome, SubActionOutcome::Success));
-        let dt = *out
-            .unwrap()
+    fn utc_cfg(source: &str, fmt: &str) -> SubActionConfig {
+        let mut c = cfg(source, fmt);
+        c.insert("utc".to_owned(), Variant::Bool(true));
+        c
+    }
+
+    fn parsed(out: Option<ArgStack>) -> OffsetDateTime {
+        *out.unwrap()
             .get("time.parsed")
             .and_then(|v| v.as_datetime())
-            .unwrap();
-        assert_eq!(
-            dt.unix_timestamp(),
-            utc(2024, Month::January, 15, 10, 0, 0).unix_timestamp()
-        );
+            .unwrap()
+    }
+
+    fn failure(outcome: SubActionOutcome) -> String {
+        match outcome {
+            SubActionOutcome::Failed(reason) => reason,
+            other => panic!("expected a failed outcome, got {other:?}"),
+        }
     }
 
     #[tokio::test]
-    async fn parse_without_offset_assumes_utc() {
+    async fn parse_with_offset_in_text_yields_that_instant() {
+        let (outcome, out) = run(&cfg(
+            "2024-01-15T12:00:00+02:00",
+            "yyyy-MM-dd'T'HH:mm:ssxxx",
+        ))
+        .await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert_eq!(parsed(out), utc(2024, Month::January, 15, 10, 0, 0));
+    }
+
+    #[tokio::test]
+    async fn parse_without_offset_reads_utc_when_utc_is_on() {
+        let (outcome, out) = run(&utc_cfg("15.01.2024 12:00", "dd.MM.yyyy HH:mm")).await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        let dt = parsed(out);
+        assert_eq!(dt, utc(2024, Month::January, 15, 12, 0, 0));
+        assert_eq!(dt.offset(), time::UtcOffset::UTC);
+    }
+
+    #[tokio::test]
+    async fn parse_with_legacy_description_and_no_utc_key_reads_utc() {
         let (outcome, out) = run(&cfg(
             "2024-01-15 12:00:00",
             "[year]-[month]-[day] [hour]:[minute]:[second]",
         ))
         .await;
         assert!(matches!(outcome, SubActionOutcome::Success));
-        let dt = *out
-            .unwrap()
-            .get("time.parsed")
-            .and_then(|v| v.as_datetime())
-            .unwrap();
+        let dt = parsed(out);
         assert_eq!(dt, utc(2024, Month::January, 15, 12, 0, 0));
+        assert_eq!(dt.offset(), time::UtcOffset::UTC);
     }
 
     #[tokio::test]
@@ -214,32 +234,48 @@ mod tests {
             "when".to_owned(),
             Variant::String("2024-01-15 12:00:00".to_owned()),
         );
-        let c = cfg("%when%", "[year]-[month]-[day] [hour]:[minute]:[second]");
+        let c = utc_cfg("%when%", "yyyy-MM-dd HH:mm:ss");
         let (outcome, out) = run_with(&c, stack).await;
         assert!(matches!(outcome, SubActionOutcome::Success));
-        let dt = *out
-            .unwrap()
-            .get("time.parsed")
-            .and_then(|v| v.as_datetime())
-            .unwrap();
-        assert_eq!(dt, utc(2024, Month::January, 15, 12, 0, 0));
+        assert_eq!(parsed(out), utc(2024, Month::January, 15, 12, 0, 0));
     }
 
     #[tokio::test]
-    async fn parse_invalid_source_yields_failed() {
-        let (outcome, out) = run(&cfg(
-            "not-a-date",
-            "[year]-[month]-[day] [hour]:[minute]:[second]",
-        ))
-        .await;
-        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+    async fn parse_unreadable_source_fails_naming_the_source_and_pattern() {
+        let (outcome, out) = run(&utc_cfg("not-a-date", "yyyy-MM-dd")).await;
+        let reason = failure(outcome);
+        assert!(
+            reason.contains("'not-a-date'") && reason.contains("'yyyy-MM-dd'"),
+            "{reason}"
+        );
         assert!(out.is_none());
     }
 
     #[tokio::test]
-    async fn parse_invalid_format_string_yields_failed() {
-        let (outcome, out) = run(&cfg("2024-01-15", "[nonsense]")).await;
-        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+    async fn parse_with_invalid_pattern_yields_failed() {
+        let (outcome, out) = run(&cfg("2024-01-15", "yyyy qqq")).await;
+        assert!(failure(outcome).contains("yyyy qqq"));
         assert!(out.is_none());
+    }
+
+    #[tokio::test]
+    async fn parse_with_untranslatable_legacy_component_fails_naming_it() {
+        let (outcome, out) = run(&cfg("1700000000", "[unix_timestamp]")).await;
+        assert!(failure(outcome).contains("[unix_timestamp]"));
+        assert!(out.is_none());
+    }
+
+    #[test]
+    fn validate_rejects_invalid_and_untranslatable_patterns() {
+        for (fmt, named) in [
+            ("yyyy qqq", "qqq"),
+            ("[unix_timestamp]", "[unix_timestamp]"),
+        ] {
+            let result = CoreTimeParseRunner.validate_config(&cfg("", fmt));
+            assert!(
+                matches!(&result, Err(RegistryError::InvalidConfig(reason)) if reason.contains(named)),
+                "{fmt}: {result:?}"
+            );
+        }
     }
 }

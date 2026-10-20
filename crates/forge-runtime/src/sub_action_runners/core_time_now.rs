@@ -151,7 +151,7 @@ impl SubActionRunner for CoreTimeNowRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
@@ -223,10 +223,89 @@ mod tests {
         assert_eq!(formatted, unix.to_string());
     }
 
+    fn custom_cfg(pattern: &str, utc: Option<bool>) -> SubActionConfig {
+        let mut c = cfg("custom", pattern, "now");
+        if let Some(utc) = utc {
+            c.insert("utc".to_owned(), Variant::Bool(utc));
+        }
+        c
+    }
+
+    fn failure(outcome: SubActionOutcome) -> String {
+        match outcome {
+            SubActionOutcome::Failed(reason) => reason,
+            other => panic!("expected a failed outcome, got {other:?}"),
+        }
+    }
+
     #[tokio::test]
-    async fn now_custom_format_with_invalid_description_yields_failed() {
-        let (outcome, out) = run(&cfg("custom", "[nope]", "now")).await;
-        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
-        assert!(out.is_none());
+    async fn now_custom_pattern_with_utc_on_renders_the_captured_instant_in_utc() {
+        let pattern = "yyyy-MM-dd HH:mm:ss.SSSSSSSSS xxx";
+        let (outcome, out) = run(&custom_cfg(pattern, Some(true))).await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        let out = out.unwrap();
+        let captured = *out.get("now").and_then(|v| v.as_datetime()).unwrap();
+        let expected = forge_types::DatePattern::parse(pattern).unwrap().format(
+            captured,
+            forge_types::PatternZone::Utc,
+            forge_types::NamesLanguage::En,
+        );
+        assert_eq!(
+            out.get("time.formatted").and_then(|v| v.as_str()),
+            Some(expected.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn now_custom_legacy_pattern_without_utc_key_renders_in_utc() {
+        let (outcome, out) = run(&custom_cfg(
+            "[offset_hour sign:mandatory]:[offset_minute]",
+            None,
+        ))
+        .await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert_eq!(
+            out.unwrap().get("time.formatted").and_then(|v| v.as_str()),
+            Some("+00:00")
+        );
+    }
+
+    #[tokio::test]
+    async fn now_custom_rejected_patterns_fail_the_run_naming_the_cause() {
+        for (pattern, named) in [
+            ("yyyy qqq", "qqq"),
+            ("", "empty"),
+            ("[unix_timestamp]", "[unix_timestamp]"),
+        ] {
+            let (outcome, out) = run(&custom_cfg(pattern, None)).await;
+            let reason = failure(outcome);
+            assert!(reason.contains(named), "{pattern:?}: {reason}");
+            assert!(out.is_none(), "{pattern:?}");
+        }
+    }
+
+    #[test]
+    fn validate_rejects_custom_patterns_that_cannot_render() {
+        for pattern in ["yyyy qqq", "", "[unix_timestamp]"] {
+            assert!(
+                matches!(
+                    CoreTimeNowRunner.validate_config(&custom_cfg(pattern, None)),
+                    Err(RegistryError::InvalidConfig(_))
+                ),
+                "{pattern:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_ignores_the_custom_pattern_when_the_mode_is_not_custom() {
+        for format in ["iso8601", "unix_seconds", "unix_millis"] {
+            assert!(
+                CoreTimeNowRunner
+                    .validate_config(&cfg(format, "yyyy qqq", "now"))
+                    .is_ok(),
+                "{format}"
+            );
+        }
     }
 }

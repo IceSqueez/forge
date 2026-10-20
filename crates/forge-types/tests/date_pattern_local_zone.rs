@@ -129,3 +129,38 @@ fn local_zone_falls_back_to_utc_outside_the_supported_range() {
         assert_eq!(local(FULL_PATTERN, instant), expected, "{instant}");
     }
 }
+
+#[test]
+fn parse_text_in_the_local_zone_reads_kyiv_civil_time_and_keeps_its_offset() {
+    if !in_child_zone(
+        "parse_text_in_the_local_zone_reads_kyiv_civil_time_and_keeps_its_offset",
+        "Europe/Kyiv",
+    ) {
+        return;
+    }
+    let pattern = DatePattern::parse("yyyy-MM-dd HH:mm").unwrap();
+    for (text, instant, offset_hours) in [
+        (
+            "2026-01-15 12:00",
+            utc(2026, Month::January, 15, (10, 0, 0)),
+            2,
+        ),
+        ("2026-07-01 12:00", utc(2026, Month::July, 1, (9, 0, 0)), 3),
+        (
+            "2026-03-29 03:30",
+            utc(2026, Month::March, 29, (1, 30, 0)),
+            3,
+        ),
+        (
+            "2026-10-25 03:30",
+            utc(2026, Month::October, 25, (0, 30, 0)),
+            3,
+        ),
+    ] {
+        let parsed = pattern
+            .parse_text(text, PatternZone::Local, NamesLanguage::En)
+            .unwrap();
+        assert_eq!(parsed, instant, "{text}");
+        assert_eq!(parsed.offset().whole_hours(), offset_hours, "{text}");
+    }
+}

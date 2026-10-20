@@ -97,6 +97,15 @@ mod tests {
     }
 
     #[test]
+    fn shared_date_pattern_hands_out_one_parse_per_pattern() {
+        let pattern = "'shared probe' HH:mm";
+        assert!(Arc::ptr_eq(
+            &shared_date_pattern(pattern),
+            &shared_date_pattern(pattern)
+        ));
+    }
+
+    #[test]
     fn pattern_cache_at_capacity_keeps_every_entry() {
         let cache = filled_to_capacity();
         assert_eq!(cache.entries.len(), PATTERN_CACHE_CAPACITY);

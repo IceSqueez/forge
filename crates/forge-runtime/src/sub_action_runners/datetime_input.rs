@@ -79,6 +79,17 @@ mod tests {
     }
 
     #[test]
+    fn resolve_datetime_names_the_trimmed_input_when_it_is_neither_a_datetime_nor_a_timestamp() {
+        let error =
+            resolve_datetime(&Variant::String("%when%".to_owned()), "  tomorrow \n").unwrap_err();
+
+        assert_eq!(
+            error,
+            "cannot parse 'tomorrow' as a datetime or unix timestamp"
+        );
+    }
+
+    #[test]
     fn resolve_datetime_rejects_unreadable_or_unrepresentable_input() {
         let placeholder = Variant::String("%when%".to_owned());
         for (raw, interpolated, reason) in [

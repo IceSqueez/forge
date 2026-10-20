@@ -47,7 +47,15 @@ pub(crate) fn dynamic_to_variant(d: rhai::Dynamic) -> Result<Variant, String> {
 mod tests {
     use super::*;
     use forge_types::Variant;
-    use time::OffsetDateTime;
+    use time::{Date, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset};
+
+    fn at(year: i32, nanos: u32, offset: (i8, i8, i8)) -> OffsetDateTime {
+        PrimitiveDateTime::new(
+            Date::from_calendar_date(year, Month::March, 5).unwrap(),
+            Time::from_hms_nano(14, 7, 9, nanos).unwrap(),
+        )
+        .assume_offset(UtcOffset::from_hms(offset.0, offset.1, offset.2).unwrap())
+    }
 
     #[test]
     fn variant_to_dynamic_maps_each_variant_to_expected_rhai_type() {
@@ -63,10 +71,6 @@ mod tests {
         let str_d = variant_to_dynamic(Variant::String("hello".to_owned()));
         assert_eq!(str_d.cast::<rhai::ImmutableString>().as_str(), "hello");
 
-        let dt = OffsetDateTime::from_unix_timestamp(0).unwrap();
-        let dt_d = variant_to_dynamic(Variant::Datetime(dt));
-        assert!(dt_d.cast::<rhai::ImmutableString>().contains("1970"));
-
         let arr_d = variant_to_dynamic(Variant::Array(vec![Variant::Int(1), Variant::Int(2)]));
         let arr = arr_d.cast::<rhai::Array>();
         assert_eq!(arr.len(), 2);
@@ -77,6 +81,19 @@ mod tests {
         let obj_d = variant_to_dynamic(Variant::Object(obj));
         let map = obj_d.cast::<rhai::Map>();
         assert_eq!(map.get("key").unwrap().clone().cast::<i64>(), 99);
+    }
+
+    #[test]
+    fn a_datetime_reaches_a_script_as_the_same_text_every_other_renderer_uses() {
+        for (value, expected) in [
+            (at(2026, 0, (0, 0, 0)), "2026-03-05T14:07:09Z"),
+            (at(2026, 0, (-5, -30, 0)), "2026-03-05T14:07:09-05:30"),
+            (at(2026, 500_000_000, (0, 0, 0)), "2026-03-05T14:07:09.5Z"),
+            (at(-1, 0, (0, 0, 0)), "-0001-03-05 14:07:09.0 +00:00:00"),
+        ] {
+            let text = variant_to_dynamic(Variant::Datetime(value)).cast::<rhai::ImmutableString>();
+            assert_eq!(text.as_str(), expected, "value {value:?}");
+        }
     }
 
     #[test]

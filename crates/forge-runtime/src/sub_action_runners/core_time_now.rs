@@ -170,7 +170,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn now_iso8601_outputs_datetime_formatted_and_unix_are_mutually_consistent() {
+    async fn now_default_format_writes_canonical_text_and_unix_seconds_of_the_captured_instant() {
         let (outcome, out) = run(&cfg("iso8601", "", "captured")).await;
         assert!(matches!(outcome, SubActionOutcome::Success));
         let out = out.unwrap();
@@ -180,7 +180,7 @@ mod tests {
             .get("time.unix_seconds")
             .and_then(|v| v.as_int())
             .unwrap();
-        assert_eq!(OffsetDateTime::parse(formatted, &Rfc3339).unwrap(), dt);
+        assert_eq!(formatted, datetime_to_text(&dt));
         assert_eq!(unix, dt.unix_timestamp());
     }
 

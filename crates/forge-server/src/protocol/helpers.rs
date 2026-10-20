@@ -51,3 +51,35 @@ pub(crate) fn build_arg_stack(args: serde_json::Value) -> ArgStack {
         .filter_map(|(k, v)| Variant::from_json(v).ok().map(|vv| (k, vv)))
         .fold(ArgStack::new(), |stack, (k, v)| stack.set(k, v))
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use time::{Date, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset};
+
+    fn at(year: i32, nanos: u32, offset: (i8, i8, i8)) -> OffsetDateTime {
+        PrimitiveDateTime::new(
+            Date::from_calendar_date(year, Month::March, 5).unwrap(),
+            Time::from_hms_nano(14, 7, 9, nanos).unwrap(),
+        )
+        .assume_offset(UtcOffset::from_hms(offset.0, offset.1, offset.2).unwrap())
+    }
+
+    #[test]
+    fn wire_value_writes_a_datetime_as_the_same_text_every_other_renderer_uses() {
+        for (value, expected) in [
+            (at(2026, 0, (0, 0, 0)), "2026-03-05T14:07:09Z"),
+            (at(2026, 0, (-5, -30, 0)), "2026-03-05T14:07:09-05:30"),
+            (at(2026, 500_000_000, (0, 0, 0)), "2026-03-05T14:07:09.5Z"),
+            (at(-1, 0, (0, 0, 0)), "-0001-03-05 14:07:09.0 +00:00:00"),
+        ] {
+            let nested = Variant::Array(vec![Variant::Datetime(value)]);
+            assert_eq!(
+                variant_to_wire_value(&nested),
+                serde_json::json!([expected]),
+                "value {value:?}"
+            );
+        }
+    }
+}

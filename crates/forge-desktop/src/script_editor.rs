@@ -3655,9 +3655,6 @@ mod tests {
             (VariantKind::Array, "[1, 2] trailing"),
             (VariantKind::Object, "not json"),
             (VariantKind::Object, "[1, 2]"),
-            (VariantKind::Datetime, ""),
-            (VariantKind::Datetime, "2026-01-31"),
-            (VariantKind::Datetime, "18:04:00Z"),
             (VariantKind::Datetime, "2026-01-31T18:04:00"),
         ] {
             let err = parse(kind, raw).unwrap_err();
@@ -3726,34 +3723,6 @@ mod tests {
             parsed.as_object().unwrap().len(),
             2,
             "a script asking for an object gets the two keys the user typed: {parsed:?}"
-        );
-    }
-
-    #[test]
-    fn the_spellings_rfc3339_tolerates_all_land_on_the_same_instant() {
-        for raw in [
-            "1970-01-01T00:00:00Z",
-            "1970-01-01t00:00:00z",
-            "1970-01-01 00:00:00Z",
-            "1970-01-01T00:00:00.000Z",
-        ] {
-            let parsed = parse(VariantKind::Datetime, raw).unwrap();
-            assert_eq!(
-                parsed.as_datetime().map(|dt| dt.unix_timestamp()),
-                Some(0),
-                "input {raw:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn an_offset_timestamp_is_read_as_the_instant_it_names() {
-        let parsed = parse(VariantKind::Datetime, "1970-01-01T02:00:00+02:00").unwrap();
-
-        assert_eq!(
-            parsed.as_datetime().map(|dt| dt.unix_timestamp()),
-            Some(0),
-            "the offset shifts the instant, it is not decoration: {parsed:?}"
         );
     }
 

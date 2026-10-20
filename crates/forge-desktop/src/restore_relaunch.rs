@@ -98,7 +98,11 @@ pub fn await_previous_exit(previous: u32) -> bool {
 
 fn is_running(pid: Pid) -> bool {
     let mut system = System::new();
-    system.refresh_processes_specifics(ProcessesToUpdate::Some(&[pid]), ProcessRefreshKind::new());
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing(),
+    );
     system
         .process(pid)
         .is_some_and(|process| process.status() != ProcessStatus::Zombie)

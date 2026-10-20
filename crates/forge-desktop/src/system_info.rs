@@ -168,9 +168,9 @@ impl HostFacts {
 
     pub fn collect_static() -> Self {
         let system = System::new_with_specifics(
-            RefreshKind::new()
-                .with_cpu(CpuRefreshKind::new())
-                .with_memory(MemoryRefreshKind::new().with_ram()),
+            RefreshKind::nothing()
+                .with_cpu(CpuRefreshKind::nothing())
+                .with_memory(MemoryRefreshKind::nothing().with_ram()),
         );
         let cpus = system.cpus();
         let cpu_model = cpus

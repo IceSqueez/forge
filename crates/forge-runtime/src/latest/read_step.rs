@@ -95,7 +95,7 @@ impl SubActionRunner for LatestGetRunner {
         if slot_declaration(slot).is_none() {
             return Err(RegistryError::invalid_field(
                 SLOT_KEY,
-                ConfigReason::Custom(format!("unknown latest slot '{slot}'")),
+                ConfigReason::choices(latest_slot_ids().iter().copied()),
             ));
         }
         Ok(())

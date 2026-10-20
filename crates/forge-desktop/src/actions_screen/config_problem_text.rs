@@ -1,37 +1,51 @@
 use forge_components::tr;
-use forge_registry::{ConfigProblem, ConfigReason, ValueBounds};
+use forge_registry::{ConfigProblem, ConfigReason, FormField, ValueBounds};
 
-pub(super) fn config_problem_text(problem: &ConfigProblem) -> String {
-    let reason = config_reason_text(&problem.reason);
+use crate::config_field_label::form_field_label;
+
+pub(super) fn config_problem_text(problem: &ConfigProblem, fields: &[FormField]) -> String {
+    let reason = config_reason_text(&problem.reason, fields);
     match &problem.field {
         Some(field) => tr!(
             "step_config_field_problem",
-            field = field.clone(),
+            field = field_name(field, fields),
             problem = reason
         ),
         None => reason,
     }
 }
 
-pub(super) fn config_reason_text(reason: &ConfigReason) -> String {
+pub(super) fn config_reason_text(reason: &ConfigReason, fields: &[FormField]) -> String {
     match reason {
         ConfigReason::Required => tr!("step_config_required"),
         ConfigReason::OutOfRange(bounds) => bounds_text(bounds, BoundsUnit::Value),
         ConfigReason::LengthOutOfRange(bounds) => bounds_text(bounds, BoundsUnit::Characters),
+        ConfigReason::CountOutOfRange(bounds) => bounds_text(bounds, BoundsUnit::Items),
         ConfigReason::NotANumber => tr!("step_config_not_a_number"),
+        ConfigReason::NotText => tr!("step_config_not_text"),
         ConfigReason::InvalidChoice(choices) => {
             tr!("step_config_invalid_choice", choices = choices.join(", "))
         }
+        ConfigReason::AnyOfRequired(keys) => {
+            let names: Vec<String> = keys.iter().map(|key| field_name(key, fields)).collect();
+            tr!("step_config_any_of_required", fields = names.join(", "))
+        }
         ConfigReason::InvalidFormat(detail) => {
-            tr!("step_config_invalid_format", detail = detail.clone())
+            let first_line = detail.lines().next().unwrap_or_default().to_owned();
+            tr!("step_config_invalid_format", detail = first_line)
         }
         ConfigReason::Custom(text) => text.clone(),
     }
 }
 
+fn field_name(key: &str, fields: &[FormField]) -> String {
+    form_field_label(fields, key).unwrap_or_else(|| key.to_owned())
+}
+
 enum BoundsUnit {
     Value,
     Characters,
+    Items,
 }
 
 fn bounds_text(bounds: &ValueBounds, unit: BoundsUnit) -> String {
@@ -50,6 +64,11 @@ fn bounds_text(bounds: &ValueBounds, unit: BoundsUnit) -> String {
         (None, Some(max), BoundsUnit::Characters) => {
             tr!("step_config_length_at_most", max = max)
         }
+        (Some(min), Some(max), BoundsUnit::Items) => {
+            tr!("step_config_count_between", min = min, max = max)
+        }
+        (Some(min), None, BoundsUnit::Items) => tr!("step_config_count_at_least", min = min),
+        (None, Some(max), BoundsUnit::Items) => tr!("step_config_count_at_most", max = max),
         (None, None, _) => tr!("step_config_out_of_range"),
     }
 }

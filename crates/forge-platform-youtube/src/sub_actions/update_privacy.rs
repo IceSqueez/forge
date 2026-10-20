@@ -74,7 +74,7 @@ impl SubActionRunner for UpdatePrivacyRunner {
             Some(Variant::String(s)) if PRIVACY_OPTIONS.contains(&s.as_str()) => Ok(()),
             _ => Err(RegistryError::invalid_field(
                 "privacy_status",
-                ConfigReason::choices(["public", "unlisted", "private"]),
+                ConfigReason::choices(PRIVACY_OPTIONS.iter().copied()),
             )),
         }
     }

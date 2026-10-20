@@ -7,11 +7,11 @@ use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
     health_tile, icon, mono_family, radius, row_card, spacing, tooltip_lines_builder, tr,
 };
-use forge_registry::{Finding, HealthSeverity, StepHealth};
+use forge_registry::{Finding, FormField, HealthSeverity, StepHealth};
 use forge_types::SubActionStep;
 use gpui::{AnyElement, ClickEvent, Context, FontWeight, Rgba, SharedString, div, px};
 
-fn analyzer_finding_message(finding: &Finding) -> SharedString {
+fn analyzer_finding_message(finding: &Finding, fields: &[FormField]) -> SharedString {
     let text = match finding {
         Finding::UnknownVariable(name) => {
             tr!("action_editor_health_unknown_var", name = name.clone())
@@ -67,7 +67,7 @@ fn analyzer_finding_message(finding: &Finding) -> SharedString {
         Finding::InvalidStepConfig(problem) => {
             tr!(
                 "action_editor_health_invalid_step_config",
-                message = config_problem_text(problem)
+                message = config_problem_text(problem, fields)
             )
         }
     };
@@ -154,6 +154,7 @@ impl ScreenActionsView {
     fn render_health_dot(
         &self,
         health: &StepHealth,
+        fields: &[FormField],
         i: usize,
         palette: &ForgePalette,
     ) -> AnyElement {
@@ -184,7 +185,12 @@ impl ScreenActionsView {
         };
         let tile = health_tile(glyph, color);
         let mut lines: Vec<SharedString> = vec![title];
-        lines.extend(health.findings.iter().map(analyzer_finding_message));
+        lines.extend(
+            health
+                .findings
+                .iter()
+                .map(|finding| analyzer_finding_message(finding, fields)),
+        );
         div()
             .id(SharedString::from(format!("actions-step-health-{i}")))
             .flex_none()
@@ -254,9 +260,10 @@ impl ScreenActionsView {
             .text_color(palette.text_primary)
             .child(title);
         let health_dot = if depth == 0 {
-            self.step_health
-                .get(i)
-                .map(|health| self.render_health_dot(health, i, palette))
+            self.step_health.get(i).map(|health| {
+                let fields = runner.map(|r| r.config_fields()).unwrap_or_default();
+                self.render_health_dot(health, &fields, i, palette)
+            })
         } else {
             None
         };

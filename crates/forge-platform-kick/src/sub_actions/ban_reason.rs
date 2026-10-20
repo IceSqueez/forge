@@ -29,7 +29,7 @@ pub(super) fn validate(config: &SubActionConfig) -> Result<(), RegistryError> {
         )),
         Some(_) => Err(RegistryError::invalid_field(
             REASON_KEY,
-            ConfigReason::Required,
+            ConfigReason::NotText,
         )),
     }
 }

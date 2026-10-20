@@ -23,9 +23,10 @@ pub(super) fn step_rejection(
         return None;
     }
     let field_key = problem.field.clone().filter(|key| field_keys.contains(key));
+    let fields = runner.config_fields();
     let message = match field_key {
-        Some(_) => config_reason_text(&problem.reason),
-        None => config_problem_text(&problem),
+        Some(_) => config_reason_text(&problem.reason, &fields),
+        None => config_problem_text(&problem, &fields),
     };
     Some(StepRejection { field_key, message })
 }

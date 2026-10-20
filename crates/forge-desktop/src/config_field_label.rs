@@ -22,6 +22,32 @@ pub(crate) fn row_label(
         .unwrap_or_else(|| SharedString::from(field.key().to_owned()))
 }
 
+pub(crate) fn form_field_label(fields: &[FormField], key: &str) -> Option<String> {
+    fields
+        .iter()
+        .find_map(|spec| declared_label(spec, key))
+        .map(localized_label)
+        .map(|label| short_label(&label))
+        .filter(|label| !label.is_empty())
+}
+
+fn short_label(label: &str) -> String {
+    label
+        .split_once(" (")
+        .map_or(label, |(name, _)| name)
+        .trim()
+        .to_owned()
+}
+
+fn declared_label(spec: &FormField, key: &str) -> Option<&'static str> {
+    match spec {
+        _ if spec.key() == key => Some(descriptor_label(spec)),
+        FormField::UnitAmount { unit_key, .. } if *unit_key == key => Some(descriptor_label(spec)),
+        FormField::Optional { inner, .. } => declared_label(inner, key),
+        _ => None,
+    }
+}
+
 fn descriptor_label(spec: &FormField) -> &'static str {
     match spec {
         FormField::Text { label, .. }

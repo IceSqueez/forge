@@ -110,9 +110,11 @@ impl SubActionRunner for UpdateRewardRunner {
         let description = config.str("description").unwrap_or_default();
 
         if title.is_empty() && cost.is_empty() && description.is_empty() {
-            return Err(RegistryError::invalid_config(ConfigReason::Custom(
-                "set at least one of title, cost or description".to_owned(),
-            )));
+            return Err(RegistryError::invalid_config(ConfigReason::any_of([
+                "title",
+                "cost",
+                "description",
+            ])));
         }
 
         Ok(())

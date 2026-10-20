@@ -716,6 +716,17 @@ step_config_length_at_most = Must be at most { $max } { $max ->
    *[other] characters
 } long
 step_config_out_of_range = Out of the allowed range
+step_config_count_between = Must list { $min } to { $max } items
+step_config_count_at_least = Must list at least { $min } { $min ->
+    [one] item
+   *[other] items
+}
+step_config_count_at_most = Must list at most { $max } { $max ->
+    [one] item
+   *[other] items
+}
+step_config_not_text = Must be text
+step_config_any_of_required = Fill in at least one of: { $fields }
 step_config_invalid_choice = Must be one of: { $choices }
 step_config_invalid_format = Invalid format: { $detail }
 step_config_field_problem = { $problem } ({ $field })

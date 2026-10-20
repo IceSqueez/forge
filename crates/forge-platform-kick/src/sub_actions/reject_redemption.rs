@@ -7,7 +7,7 @@ use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
@@ -97,7 +97,7 @@ impl SubActionRunner for RejectRedemptionRunner {
         if ids.len() > MAX_BATCH {
             return Err(RegistryError::invalid_field(
                 "redemption_ids",
-                ConfigReason::Custom(format!("at most {MAX_BATCH} ids are allowed")),
+                ConfigReason::CountOutOfRange(ValueBounds::at_most(MAX_BATCH)),
             ));
         }
         Ok(())

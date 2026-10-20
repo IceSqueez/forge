@@ -72,6 +72,7 @@ pub(crate) mod interpolate;
 mod os_ports;
 mod overlay_send;
 mod overlay_targets;
+mod regex_pattern;
 mod script_emit_event;
 mod script_run_inline;
 mod script_run_named;

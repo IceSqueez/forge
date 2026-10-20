@@ -1,7 +1,8 @@
+use super::regex_pattern::invalid_pattern;
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigReason, FormField, ProducedVariable, RegistryError, RunContext, StepTimer,
-    SubActionCategory, SubActionConfigExt, SubActionIo, SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
@@ -77,9 +78,7 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         let pattern = config.require_str("pattern")?;
-        regex::Regex::new(pattern).map_err(|e| {
-            RegistryError::invalid_field("pattern", ConfigReason::InvalidFormat(e.to_string()))
-        })?;
+        regex::Regex::new(pattern).map_err(|e| invalid_pattern("pattern", &e))?;
         Ok(())
     }
 

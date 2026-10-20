@@ -732,6 +732,23 @@ step_config_length_at_most = Щонайбільше { $max } { $max ->
    *[other] символів
 }
 step_config_out_of_range = Значення поза допустимими межами
+step_config_count_between = Має містити від { $min } до { $max } { $max ->
+    [one] елемента
+    [few] елементів
+   *[other] елементів
+}
+step_config_count_at_least = Щонайменше { $min } { $min ->
+    [one] елемент
+    [few] елементи
+   *[other] елементів
+}
+step_config_count_at_most = Щонайбільше { $max } { $max ->
+    [one] елемент
+    [few] елементи
+   *[other] елементів
+}
+step_config_not_text = Має бути текстом
+step_config_any_of_required = Заповніть хоча б одне з полів: { $fields }
 step_config_invalid_choice = Допустимі значення: { $choices }
 step_config_invalid_format = Неправильний формат: { $detail }
 step_config_field_problem = { $problem } ({ $field })

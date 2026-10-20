@@ -7,7 +7,7 @@ use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    SubActionRunner, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
@@ -108,9 +108,11 @@ impl SubActionRunner for UpdateInfoRunner {
         let has_tags = !tags_raw.is_empty();
 
         if !has_title && !has_category && !has_tags {
-            return Err(RegistryError::invalid_config(ConfigReason::Custom(
-                "set at least one of title, category or tags".to_owned(),
-            )));
+            return Err(RegistryError::invalid_config(ConfigReason::any_of([
+                "title",
+                "category_id",
+                "tags",
+            ])));
         }
 
         if has_tags {
@@ -118,7 +120,7 @@ impl SubActionRunner for UpdateInfoRunner {
             if count > MAX_TAGS {
                 return Err(RegistryError::invalid_field(
                     "tags",
-                    ConfigReason::Custom(format!("at most {MAX_TAGS} tags are allowed")),
+                    ConfigReason::CountOutOfRange(ValueBounds::at_most(MAX_TAGS)),
                 ));
             }
         }

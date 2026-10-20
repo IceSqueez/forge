@@ -38,8 +38,11 @@ pub enum ConfigReason {
     Required,
     OutOfRange(ValueBounds),
     LengthOutOfRange(ValueBounds),
+    CountOutOfRange(ValueBounds),
     NotANumber,
+    NotText,
     InvalidChoice(Vec<String>),
+    AnyOfRequired(Vec<String>),
     InvalidFormat(String),
     Custom(String),
 }
@@ -51,6 +54,14 @@ impl ConfigReason {
         S: Into<String>,
     {
         Self::InvalidChoice(choices.into_iter().map(Into::into).collect())
+    }
+
+    pub fn any_of<I, S>(fields: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self::AnyOfRequired(fields.into_iter().map(Into::into).collect())
     }
 }
 
@@ -93,8 +104,13 @@ impl fmt::Display for ConfigReason {
             Self::Required => f.write_str("is required"),
             Self::OutOfRange(bounds) => write!(f, "must be {bounds}"),
             Self::LengthOutOfRange(bounds) => write!(f, "must be {bounds} characters long"),
+            Self::CountOutOfRange(bounds) => write!(f, "must list {bounds} items"),
             Self::NotANumber => f.write_str("must be a number"),
+            Self::NotText => f.write_str("must be text"),
             Self::InvalidChoice(choices) => write!(f, "must be one of: {}", choices.join(", ")),
+            Self::AnyOfRequired(fields) => {
+                write!(f, "needs at least one of: {}", fields.join(", "))
+            }
             Self::InvalidFormat(detail) => write!(f, "is invalid: {detail}"),
             Self::Custom(text) => f.write_str(text),
         }
@@ -107,6 +123,7 @@ impl fmt::Display for ConfigProblem {
             (Some(field), ConfigReason::Custom(text)) => write!(f, "'{field}': {text}"),
             (Some(field), reason) => write!(f, "'{field}' {reason}"),
             (None, ConfigReason::Custom(text)) => f.write_str(text),
+            (None, reason @ ConfigReason::AnyOfRequired(_)) => write!(f, "step {reason}"),
             (None, reason) => write!(f, "value {reason}"),
         }
     }

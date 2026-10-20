@@ -167,14 +167,17 @@ impl DurationBounds {
 mod tests {
     use super::*;
 
-    const POLL: DurationBounds = DurationBounds {
-        min_ms: 100,
-        max_ms: 30_000,
-    };
-    const TIMEOUT: DurationBounds = DurationBounds {
-        min_ms: 100,
-        max_ms: 600_000,
-    };
+    const POLL: DurationBounds = DurationBounds::in_millis(100, 30_000);
+    const TIMEOUT: DurationBounds = DurationBounds::in_millis(100, 600_000);
+    const BAN: DurationBounds = DurationBounds::in_seconds(1, 1_209_600);
+    const INTERVAL: DurationBounds = DurationBounds::in_minutes(1, 1_440);
+    const COOLDOWN: DurationBounds = DurationBounds::in_seconds(0, i64::MAX);
+
+    const MS: &str = DURATION_UNIT_MILLISECONDS;
+    const SEC: &str = DURATION_UNIT_SECONDS;
+    const MIN: &str = DURATION_UNIT_MINUTES;
+    const HOUR: &str = DURATION_UNIT_HOURS;
+    const DAY: &str = DURATION_UNIT_DAYS;
 
     fn unit_values(bounds: DurationBounds) -> Vec<&'static str> {
         bounds.fitting_units().map(|unit| unit.value).collect()
@@ -182,197 +185,234 @@ mod tests {
 
     #[test]
     fn fitting_units_offer_only_units_holding_a_whole_amount_inside_the_bounds() {
-        for (max_ms, expected) in [
+        for (bounds, expected) in [
+            (DurationBounds::in_millis(100, 59_999), vec![MS, SEC]),
+            (DurationBounds::in_millis(100, 60_000), vec![MS, SEC, MIN]),
             (
-                59_999,
-                vec![DURATION_UNIT_MILLISECONDS, DURATION_UNIT_SECONDS],
+                DurationBounds::in_millis(100, 3_600_000),
+                vec![MS, SEC, MIN, HOUR],
             ),
             (
-                60_000,
-                vec![
-                    DURATION_UNIT_MILLISECONDS,
-                    DURATION_UNIT_SECONDS,
-                    DURATION_UNIT_MINUTES,
-                ],
+                DurationBounds::in_millis(100, 86_399_999),
+                vec![MS, SEC, MIN, HOUR],
             ),
             (
-                3_600_000,
-                vec![
-                    DURATION_UNIT_MILLISECONDS,
-                    DURATION_UNIT_SECONDS,
-                    DURATION_UNIT_MINUTES,
-                    DURATION_UNIT_HOURS,
-                ],
+                DurationBounds::in_millis(100, 86_400_000),
+                vec![MS, SEC, MIN, HOUR, DAY],
             ),
         ] {
-            let bounds = DurationBounds {
-                min_ms: 100,
-                max_ms,
-            };
-            assert_eq!(unit_values(bounds), expected, "max {max_ms} ms");
+            assert_eq!(unit_values(bounds), expected, "{bounds:?}");
+        }
+    }
+
+    #[test]
+    fn fitting_units_never_offer_a_unit_smaller_than_the_stored_base() {
+        for (bounds, expected) in [
+            (DurationBounds::in_seconds(1, 600), vec![SEC, MIN]),
+            (DurationBounds::in_seconds(0, 0), vec![SEC]),
+            (DurationBounds::in_minutes(1, 59), vec![MIN]),
+            (DurationBounds::in_minutes(0, 0), vec![MIN]),
+            (COOLDOWN, vec![SEC, MIN, HOUR, DAY]),
+        ] {
+            assert_eq!(unit_values(bounds), expected, "{bounds:?}");
+        }
+    }
+
+    #[test]
+    fn fitting_units_offer_days_only_once_the_maximum_reaches_one_whole_day() {
+        for (bounds, expected) in [
+            (DurationBounds::in_seconds(0, 86_399), vec![SEC, MIN, HOUR]),
+            (
+                DurationBounds::in_seconds(0, 86_400),
+                vec![SEC, MIN, HOUR, DAY],
+            ),
+            (DurationBounds::in_minutes(1, 1_439), vec![MIN, HOUR]),
+            (INTERVAL, vec![MIN, HOUR, DAY]),
+        ] {
+            assert_eq!(unit_values(bounds), expected, "{bounds:?}");
         }
     }
 
     #[test]
     fn fitting_units_drop_a_unit_that_could_only_hold_zero() {
-        let bounds = DurationBounds {
-            min_ms: 0,
-            max_ms: 60_000,
-        };
+        let bounds = DurationBounds::in_millis(0, 60_000);
 
-        assert_eq!(
-            unit_values(bounds),
-            [
-                DURATION_UNIT_MILLISECONDS,
-                DURATION_UNIT_SECONDS,
-                DURATION_UNIT_MINUTES,
-            ]
-        );
+        assert_eq!(unit_values(bounds), [MS, SEC, MIN]);
     }
 
     #[test]
     fn fitting_units_keep_the_smallest_unit_even_when_its_range_is_only_zero() {
-        let bounds = DurationBounds {
-            min_ms: 0,
-            max_ms: 0,
-        };
+        let bounds = DurationBounds::in_millis(0, 0);
 
-        assert_eq!(unit_values(bounds), [DURATION_UNIT_MILLISECONDS]);
+        assert_eq!(unit_values(bounds), [MS]);
     }
 
     #[test]
     fn fitting_units_offer_a_unit_whose_range_top_is_exactly_one() {
-        for (max_ms, expected) in [
-            (999, vec![DURATION_UNIT_MILLISECONDS]),
-            (
-                1_000,
-                vec![DURATION_UNIT_MILLISECONDS, DURATION_UNIT_SECONDS],
-            ),
-        ] {
-            let bounds = DurationBounds { min_ms: 0, max_ms };
+        for (max_ms, expected) in [(999, vec![MS]), (1_000, vec![MS, SEC])] {
+            let bounds = DurationBounds::in_millis(0, max_ms);
             assert_eq!(unit_values(bounds), expected, "max {max_ms} ms");
         }
     }
 
     #[test]
     fn fitting_units_drop_a_unit_whose_rounded_up_minimum_passes_the_maximum() {
-        let bounds = DurationBounds {
-            min_ms: 1_500,
-            max_ms: 1_999,
-        };
+        let bounds = DurationBounds::in_millis(1_500, 1_999);
 
-        assert_eq!(unit_values(bounds), [DURATION_UNIT_MILLISECONDS]);
+        assert_eq!(unit_values(bounds), [MS]);
     }
 
     #[test]
     fn range_for_rounds_the_minimum_up_and_the_maximum_down_to_whole_units() {
-        let bounds = DurationBounds {
-            min_ms: 1_500,
-            max_ms: 150_000,
-        };
-        for (unit, expected) in [
-            (DURATION_UNIT_MILLISECONDS, 1_500..=150_000),
-            (DURATION_UNIT_SECONDS, 2..=150),
-            (DURATION_UNIT_MINUTES, 1..=2),
+        let mixed = DurationBounds::in_millis(1_500, 150_000);
+        for (bounds, unit, expected) in [
+            (mixed, MS, 1_500..=150_000),
+            (mixed, SEC, 2..=150),
+            (mixed, MIN, 1..=2),
+            (INTERVAL, MIN, 1..=1_440),
+            (INTERVAL, HOUR, 1..=24),
+            (INTERVAL, DAY, 1..=1),
+            (BAN, MIN, 1..=20_160),
+            (BAN, DAY, 1..=14),
+            (COOLDOWN, DAY, 0..=i64::MAX / 86_400),
         ] {
-            assert_eq!(bounds.range_for(unit), expected, "unit {unit}");
+            assert_eq!(bounds.range_for(unit), expected, "{unit} in {bounds:?}");
         }
     }
 
     #[test]
     fn range_for_a_unit_that_does_not_fit_or_is_unknown_uses_the_first_fitting_unit() {
-        for unit in [DURATION_UNIT_MINUTES, DURATION_UNIT_HOURS, "weeks", ""] {
-            assert_eq!(POLL.range_for(unit), 100..=30_000, "unit {unit:?}");
+        for (bounds, unit, expected) in [
+            (POLL, MIN, 100..=30_000),
+            (POLL, HOUR, 100..=30_000),
+            (POLL, "weeks", 100..=30_000),
+            (POLL, "", 100..=30_000),
+            (INTERVAL, SEC, 1..=1_440),
+            (INTERVAL, MS, 1..=1_440),
+            (BAN, MS, 1..=1_209_600),
+        ] {
+            assert_eq!(bounds.range_for(unit), expected, "{unit:?} in {bounds:?}");
         }
     }
 
     #[test]
-    fn in_largest_exact_unit_shows_millis_in_the_largest_fitting_unit_that_divides_them() {
-        for (bounds, millis, unit, amount) in [
-            (TIMEOUT, 1_000, DURATION_UNIT_SECONDS, 1),
-            (TIMEOUT, 60_000, DURATION_UNIT_MINUTES, 1),
-            (TIMEOUT, 90_000, DURATION_UNIT_SECONDS, 90),
-            (TIMEOUT, 1_500, DURATION_UNIT_MILLISECONDS, 1_500),
-            (TIMEOUT, 0, DURATION_UNIT_MILLISECONDS, 0),
-            (TIMEOUT, 3_600_000, DURATION_UNIT_MINUTES, 60),
-            (POLL, 60_000, DURATION_UNIT_SECONDS, 60),
-            (POLL, 500, DURATION_UNIT_MILLISECONDS, 500),
-            (TIMEOUT, -2_000, DURATION_UNIT_SECONDS, -2),
+    fn in_largest_exact_unit_shows_a_stored_amount_in_the_largest_fitting_unit_that_divides_it() {
+        for (bounds, stored, unit, amount) in [
+            (TIMEOUT, 1_000, SEC, 1),
+            (TIMEOUT, 60_000, MIN, 1),
+            (TIMEOUT, 90_000, SEC, 90),
+            (TIMEOUT, 1_500, MS, 1_500),
+            (TIMEOUT, 0, MS, 0),
+            (TIMEOUT, 3_600_000, MIN, 60),
+            (POLL, 60_000, SEC, 60),
+            (POLL, 500, MS, 500),
+            (TIMEOUT, -2_000, SEC, -2),
+            (BAN, 3_600, HOUR, 1),
+            (BAN, 90, SEC, 90),
+            (BAN, 120, MIN, 2),
+            (BAN, 172_800, DAY, 2),
+            (BAN, 0, SEC, 0),
+            (INTERVAL, 1_440, DAY, 1),
+            (INTERVAL, 120, HOUR, 2),
+            (INTERVAL, 90, MIN, 90),
+            (INTERVAL, 0, MIN, 0),
+            (COOLDOWN, i64::MAX, SEC, i64::MAX),
         ] {
             let shown = bounds
-                .in_largest_exact_unit(millis)
+                .in_largest_exact_unit(stored)
                 .map(|(unit, amount)| (unit.value, amount));
-            assert_eq!(shown, Some((unit, amount)), "{millis} ms in {bounds:?}");
+            assert_eq!(shown, Some((unit, amount)), "{stored} in {bounds:?}");
         }
     }
 
     #[test]
     fn in_largest_exact_unit_finds_nothing_when_no_unit_fits_the_bounds() {
-        let inverted = DurationBounds {
-            min_ms: 5_000,
-            max_ms: 100,
-        };
+        let inverted = DurationBounds::in_millis(5_000, 100);
 
         assert!(inverted.in_largest_exact_unit(1_000).is_none());
     }
 
     #[test]
-    fn millis_scales_an_amount_by_its_unit_and_saturates_instead_of_overflowing() {
-        for (unit, amount, expected) in [
-            (DURATION_UNIT_MILLISECONDS, 7, 7),
-            (DURATION_UNIT_SECONDS, 2, 2_000),
-            (DURATION_UNIT_MINUTES, 2, 120_000),
-            ("weeks", 7, 7),
-            (DURATION_UNIT_MINUTES, i64::MAX, i64::MAX),
-            (DURATION_UNIT_MINUTES, i64::MIN, i64::MIN),
+    fn stored_amount_scales_an_amount_by_its_unit_in_base_units() {
+        for (bounds, unit, amount, expected) in [
+            (TIMEOUT, MS, 7, 7),
+            (TIMEOUT, SEC, 2, 2_000),
+            (TIMEOUT, MIN, 2, 120_000),
+            (TIMEOUT, "weeks", 7, 7),
+            (BAN, MIN, 2, 120),
+            (BAN, HOUR, 1, 3_600),
+            (BAN, DAY, 1, 86_400),
+            (BAN, MS, 5, 5),
+            (INTERVAL, HOUR, 24, 1_440),
+            (INTERVAL, DAY, 1, 1_440),
+            (INTERVAL, SEC, 30, 30),
         ] {
-            assert_eq!(TIMEOUT.millis(unit, amount), expected, "{amount} {unit:?}");
+            assert_eq!(
+                bounds.stored_amount(unit, amount),
+                expected,
+                "{amount} {unit:?} in {bounds:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn stored_amount_saturates_instead_of_overflowing() {
+        for (bounds, unit, amount, expected) in [
+            (TIMEOUT, MIN, i64::MAX, i64::MAX),
+            (TIMEOUT, MIN, i64::MIN, i64::MIN),
+            (COOLDOWN, DAY, i64::MAX, i64::MAX),
+            (COOLDOWN, DAY, i64::MAX / 86_400 + 1, i64::MAX),
+            (COOLDOWN, DAY, i64::MAX / 86_400, i64::MAX / 86_400 * 86_400),
+        ] {
+            assert_eq!(
+                bounds.stored_amount(unit, amount),
+                expected,
+                "{amount} {unit:?} in {bounds:?}"
+            );
         }
     }
 
     #[test]
     fn nearest_amount_in_converts_exactly_or_rounds_half_away_from_zero() {
-        for (amount, from, to, expected) in [
-            (2, DURATION_UNIT_MINUTES, DURATION_UNIT_SECONDS, 120),
-            (2, DURATION_UNIT_SECONDS, DURATION_UNIT_MILLISECONDS, 2_000),
-            (
-                120_000,
-                DURATION_UNIT_MILLISECONDS,
-                DURATION_UNIT_MINUTES,
-                2,
-            ),
-            (1_500, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_SECONDS, 2),
-            (1_499, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_SECONDS, 1),
-            (500, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_SECONDS, 1),
-            (400, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_SECONDS, 0),
-            (90, DURATION_UNIT_SECONDS, DURATION_UNIT_MINUTES, 2),
-            (
-                -1_500,
-                DURATION_UNIT_MILLISECONDS,
-                DURATION_UNIT_SECONDS,
-                -2,
-            ),
-            (-400, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_SECONDS, 0),
+        for (bounds, amount, from, to, expected) in [
+            (TIMEOUT, 2, MIN, SEC, 120),
+            (TIMEOUT, 2, SEC, MS, 2_000),
+            (TIMEOUT, 120_000, MS, MIN, 2),
+            (TIMEOUT, 1_500, MS, SEC, 2),
+            (TIMEOUT, 1_499, MS, SEC, 1),
+            (TIMEOUT, 500, MS, SEC, 1),
+            (TIMEOUT, 400, MS, SEC, 0),
+            (TIMEOUT, 90, SEC, MIN, 2),
+            (TIMEOUT, -1_500, MS, SEC, -2),
+            (TIMEOUT, -400, MS, SEC, 0),
+            (BAN, 90, SEC, MIN, 2),
+            (BAN, 89, SEC, MIN, 1),
+            (BAN, 2, DAY, HOUR, 48),
+            (INTERVAL, 1_440, MIN, HOUR, 24),
+            (INTERVAL, 1, DAY, MIN, 1_440),
+            (INTERVAL, 36, HOUR, DAY, 2),
+            (INTERVAL, 11, HOUR, DAY, 0),
         ] {
             assert_eq!(
-                TIMEOUT.nearest_amount_in(amount, from, to),
+                bounds.nearest_amount_in(amount, from, to),
                 expected,
-                "{amount} {from} -> {to}"
+                "{amount} {from} -> {to} in {bounds:?}"
             );
         }
     }
 
     #[test]
     fn nearest_amount_in_saturates_at_the_ends_of_i64() {
-        for (amount, from, expected) in [
-            (i64::MAX, DURATION_UNIT_MINUTES, i64::MAX / 1_000),
-            (i64::MAX, DURATION_UNIT_MILLISECONDS, i64::MAX / 1_000),
-            (i64::MIN, DURATION_UNIT_MILLISECONDS, i64::MIN / 1_000),
+        for (bounds, amount, from, to, expected) in [
+            (TIMEOUT, i64::MAX, MIN, SEC, i64::MAX / 1_000),
+            (TIMEOUT, i64::MAX, MS, SEC, i64::MAX / 1_000),
+            (TIMEOUT, i64::MIN, MS, SEC, i64::MIN / 1_000),
+            (COOLDOWN, i64::MAX, DAY, HOUR, i64::MAX / 3_600),
         ] {
             assert_eq!(
-                TIMEOUT.nearest_amount_in(amount, from, DURATION_UNIT_SECONDS),
+                bounds.nearest_amount_in(amount, from, to),
                 expected,
-                "{amount} {from}"
+                "{amount} {from} -> {to} in {bounds:?}"
             );
         }
     }

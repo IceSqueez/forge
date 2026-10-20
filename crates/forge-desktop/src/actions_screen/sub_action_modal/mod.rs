@@ -755,10 +755,7 @@ mod tests {
         FormField::Duration {
             key: DURATION_FIELD,
             label: "Timeout",
-            bounds: forge_registry::DurationBounds {
-                min_ms: 100,
-                max_ms: 600_000,
-            },
+            bounds: forge_registry::DurationBounds::in_millis(100, 600_000),
         }
     }
 
@@ -791,17 +788,82 @@ mod tests {
     }
 
     #[gpui::test]
-    fn an_unedited_duration_commits_only_the_millis_it_loaded(cx: &mut TestAppContext) {
-        for millis in [100, 1_500, 30_000, 120_000] {
-            let overrides = committed_overrides(
-                vec![duration_spec()],
-                stored_millis(Variant::Int(millis)),
-                cx,
-            );
+    fn an_unedited_duration_commits_only_the_stored_amount_it_loaded(cx: &mut TestAppContext) {
+        let in_seconds = forge_registry::DurationBounds::in_seconds(1, 1_209_600);
+        let in_minutes = forge_registry::DurationBounds::in_minutes(1, 1_440);
+        let in_millis = forge_registry::DurationBounds::in_millis(100, 600_000);
+        for (bounds, stored) in [
+            (in_millis, 100),
+            (in_millis, 1_500),
+            (in_millis, 30_000),
+            (in_millis, 120_000),
+            (in_seconds, 1),
+            (in_seconds, 90),
+            (in_seconds, 600),
+            (in_seconds, 86_400),
+            (in_seconds, 1_209_600),
+            (in_minutes, 1),
+            (in_minutes, 90),
+            (in_minutes, 120),
+            (in_minutes, 1_440),
+        ] {
+            let spec = FormField::Duration {
+                key: DURATION_FIELD,
+                label: "Timeout",
+                bounds,
+            };
+            let overrides =
+                committed_overrides(vec![spec], stored_millis(Variant::Int(stored)), cx);
             assert_eq!(
                 overrides,
-                [(DURATION_FIELD.to_owned(), Variant::Int(millis))],
-                "stored {millis} ms"
+                [(DURATION_FIELD.to_owned(), Variant::Int(stored))],
+                "stored {stored} in {bounds:?}"
+            );
+        }
+    }
+
+    const COOLDOWN_FIELD: &str = "global_cooldown_seconds";
+
+    fn same_key_optional(inner: FormField) -> FormField {
+        FormField::Optional {
+            key: COOLDOWN_FIELD,
+            label: "Global Cooldown Seconds",
+            inner: Box::new(inner),
+        }
+    }
+
+    #[gpui::test]
+    fn a_same_key_optional_duration_commits_what_the_same_key_optional_integer_did(
+        cx: &mut TestAppContext,
+    ) {
+        let integer = same_key_optional(FormField::Integer {
+            key: COOLDOWN_FIELD,
+            label: "Global Cooldown Seconds (0 = disabled)",
+            min: 0,
+            max: i64::MAX,
+        });
+        let duration = same_key_optional(FormField::Duration {
+            key: COOLDOWN_FIELD,
+            label: "Global Cooldown (0 = disabled)",
+            bounds: forge_registry::DurationBounds::in_seconds(0, i64::MAX),
+        });
+        for stored in [
+            None,
+            Some(Variant::Bool(true)),
+            Some(Variant::Bool(false)),
+            Some(Variant::Int(0)),
+            Some(Variant::Int(300)),
+            Some(Variant::Int(3_600)),
+        ] {
+            let config: SubActionConfig = stored
+                .clone()
+                .map(|value| (COOLDOWN_FIELD.to_owned(), value))
+                .into_iter()
+                .collect();
+            assert_eq!(
+                submitted_overrides(vec![duration.clone()], config.clone(), cx),
+                submitted_overrides(vec![integer.clone()], config, cx),
+                "stored {stored:?}"
             );
         }
     }

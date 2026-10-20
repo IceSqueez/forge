@@ -171,14 +171,10 @@ mod tests {
 
     const KEY: &str = "timeout_ms";
     const UNIT_KEY: &str = "delay_unit";
-    const POLL: AmountScale = AmountScale::Millis(DurationBounds {
-        min_ms: 100,
-        max_ms: 30_000,
-    });
-    const TIMEOUT: AmountScale = AmountScale::Millis(DurationBounds {
-        min_ms: 100,
-        max_ms: 600_000,
-    });
+    const POLL: AmountScale = AmountScale::Duration(DurationBounds::in_millis(100, 30_000));
+    const TIMEOUT: AmountScale = AmountScale::Duration(DurationBounds::in_millis(100, 600_000));
+    const BAN: AmountScale = AmountScale::Duration(DurationBounds::in_seconds(1, 1_209_600));
+    const INTERVAL: AmountScale = AmountScale::Duration(DurationBounds::in_minutes(1, 1_440));
     const STORED_UNIT: AmountScale = AmountScale::StoredUnit {
         unit_key: UNIT_KEY,
         bounds: UnitAmountBounds {
@@ -221,11 +217,16 @@ mod tests {
             (TIMEOUT, 120_000, pair(DURATION_UNIT_MINUTES, "2")),
             (TIMEOUT, 1_500, pair(DURATION_UNIT_MILLISECONDS, "1500")),
             (TIMEOUT, 0, pair(DURATION_UNIT_MILLISECONDS, "0")),
+            (BAN, 600, pair(DURATION_UNIT_MINUTES, "10")),
+            (BAN, 86_400, pair(DURATION_UNIT_DAYS, "1")),
+            (BAN, 0, pair(DURATION_UNIT_SECONDS, "0")),
+            (INTERVAL, 90, pair(DURATION_UNIT_MINUTES, "90")),
+            (INTERVAL, 120, pair(DURATION_UNIT_HOURS, "2")),
         ] {
             assert_eq!(
                 shown(scale, Some(Variant::Int(millis))),
                 expected,
-                "{millis} ms"
+                "{millis} in {scale:?}"
             );
         }
     }
@@ -289,11 +290,18 @@ mod tests {
     }
 
     #[test]
-    fn a_duration_stores_only_its_millis_under_its_own_key() {
-        assert_eq!(
-            TIMEOUT.stored_values(KEY, DURATION_UNIT_MINUTES, Some(2)),
-            [(KEY.to_owned(), Variant::Int(120_000))]
-        );
+    fn a_duration_stores_only_its_base_unit_amount_under_its_own_key() {
+        for (scale, unit, amount, expected) in [
+            (TIMEOUT, DURATION_UNIT_MINUTES, 2, 120_000),
+            (BAN, DURATION_UNIT_MINUTES, 2, 120),
+            (INTERVAL, DURATION_UNIT_HOURS, 24, 1_440),
+        ] {
+            assert_eq!(
+                scale.stored_values(KEY, unit, Some(amount)),
+                [(KEY.to_owned(), Variant::Int(expected))],
+                "{amount} {unit} in {scale:?}"
+            );
+        }
     }
 
     #[test]
@@ -329,7 +337,7 @@ mod tests {
     }
 
     #[test]
-    fn saving_an_unedited_duration_writes_back_the_same_millis() {
+    fn saving_an_unedited_duration_writes_back_the_same_stored_amount() {
         for (scale, millis) in [
             (POLL, 100),
             (POLL, 500),
@@ -339,6 +347,15 @@ mod tests {
             (TIMEOUT, 120_000),
             (TIMEOUT, 600_000),
             (TIMEOUT, 0),
+            (BAN, 1),
+            (BAN, 90),
+            (BAN, 3_600),
+            (BAN, 1_209_600),
+            (BAN, 0),
+            (INTERVAL, 1),
+            (INTERVAL, 30),
+            (INTERVAL, 90),
+            (INTERVAL, 1_440),
         ] {
             let AmountSeed { unit, amount } = scale.seed(KEY, &stored(Some(Variant::Int(millis))));
             let amount = amount.parse::<i64>().ok();
@@ -346,7 +363,7 @@ mod tests {
             assert_eq!(
                 scale.stored_values(KEY, &unit, amount),
                 [(KEY.to_owned(), Variant::Int(millis))],
-                "{millis} ms shown as {amount:?} {unit}"
+                "{millis} in {scale:?} shown as {amount:?} {unit}"
             );
         }
     }

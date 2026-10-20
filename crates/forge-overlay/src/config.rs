@@ -557,10 +557,7 @@ mod tests {
     const PROBE_AMOUNT: &str = "probe.amount";
     const PROBE_AMOUNT_UNIT: &str = "probe.amount_unit";
     const PROBE_DURATION: &str = "probe.duration";
-    const PROBE_DURATION_BOUNDS: DurationBounds = DurationBounds {
-        min_ms: 100,
-        max_ms: 600_000,
-    };
+    const PROBE_DURATION_BOUNDS: DurationBounds = DurationBounds::in_millis(100, 600_000);
     const PROBE_AMOUNT_BOUNDS: UnitAmountBounds = UnitAmountBounds {
         min: 1,
         max_base_units: 120,

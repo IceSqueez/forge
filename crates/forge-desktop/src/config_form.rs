@@ -2002,7 +2002,7 @@ mod tests {
         FormField::Duration {
             key: DURATION_KEY,
             label: "Timeout",
-            bounds: forge_registry::DurationBounds { min_ms, max_ms },
+            bounds: forge_registry::DurationBounds::in_millis(min_ms, max_ms),
         }
     }
 
@@ -2045,22 +2045,83 @@ mod tests {
     }
 
     #[gpui::test]
-    fn an_unedited_duration_saves_the_millis_it_loaded(cx: &mut gpui::TestAppContext) {
-        for stored in [100, 1_500, 30_000, 90_000, 120_000, 600_000] {
-            let (_host, fields) = build(
-                cx,
-                &duration_spec(100, 600_000),
-                &FieldConfig::new(),
-                &stored_millis(stored),
-                "",
-            );
+    fn an_unedited_duration_saves_the_stored_amount_it_loaded(cx: &mut gpui::TestAppContext) {
+        let in_millis = forge_registry::DurationBounds::in_millis(100, 600_000);
+        let in_seconds = forge_registry::DurationBounds::in_seconds(1, 1_209_600);
+        let in_minutes = forge_registry::DurationBounds::in_minutes(1, 1_440);
+        for (bounds, stored) in [
+            (in_millis, 100),
+            (in_millis, 1_500),
+            (in_millis, 30_000),
+            (in_millis, 90_000),
+            (in_millis, 120_000),
+            (in_millis, 600_000),
+            (in_seconds, 1),
+            (in_seconds, 90),
+            (in_seconds, 600),
+            (in_seconds, 86_400),
+            (in_seconds, 1_209_600),
+            (in_minutes, 1),
+            (in_minutes, 30),
+            (in_minutes, 90),
+            (in_minutes, 1_440),
+        ] {
+            let spec = FormField::Duration {
+                key: DURATION_KEY,
+                label: "Timeout",
+                bounds,
+            };
+            let (_host, fields) = build(cx, &spec, &FieldConfig::new(), &stored_millis(stored), "");
 
             assert_eq!(
                 collected(cx, &fields, &FieldConfig::new()),
                 stored_millis(stored),
-                "stored {stored} ms"
+                "stored {stored} in {bounds:?}"
             );
         }
+    }
+
+    const TIMER_INTERVAL_KEY: &str = "interval_minutes";
+
+    fn timer_interval_spec() -> FormField {
+        use forge_registry::TriggerKindDescriptor;
+        forge_runtime::triggers::TimerTickDescriptor
+            .config_fields()
+            .into_iter()
+            .find(|field| field.key() == TIMER_INTERVAL_KEY)
+            .unwrap_or_else(|| panic!("the timer trigger declares an interval field"))
+    }
+
+    fn timer_interval_unit_picker() -> String {
+        AmountScale::of(&timer_interval_spec())
+            .map(|scale| scale.unit_picker_key(TIMER_INTERVAL_KEY))
+            .unwrap_or_else(|| panic!("the timer interval has an amount scale"))
+    }
+
+    #[gpui::test]
+    fn a_timer_interval_switched_to_hours_shows_hours_and_still_saves_minutes(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let stored = config(&[(TIMER_INTERVAL_KEY, Variant::Int(1_440))]);
+        let (_host, mut fields) =
+            build(cx, &timer_interval_spec(), &FieldConfig::new(), &stored, "");
+
+        cx.update(|cx| {
+            set_picked_value(
+                &mut fields,
+                &timer_interval_unit_picker(),
+                forge_registry::DURATION_UNIT_HOURS,
+                cx,
+            )
+        });
+
+        assert_eq!(
+            (
+                shown_amount(cx, &fields),
+                collected(cx, &fields, &FieldConfig::new())
+            ),
+            ("24".to_owned(), stored)
+        );
     }
 
     #[gpui::test]

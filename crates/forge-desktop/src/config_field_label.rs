@@ -248,11 +248,10 @@ mod tests {
                 label: "Scene",
                 placeholder: "",
             },
-            FormField::Integer {
-                key: "interval",
-                label: "Interval (minutes)",
-                min: 1,
-                max: 60,
+            FormField::Text {
+                key: "from_user",
+                label: "From user (login)",
+                placeholder: "",
             },
             FormField::Optional {
                 key: "only_live",
@@ -287,7 +286,7 @@ mod tests {
         let fields = labelled_form();
         for (key, expected) in [
             ("scene", Some("Scene")),
-            ("interval", Some("Interval")),
+            ("from_user", Some("From user")),
             ("only_live", Some("Only while live")),
             ("pattern", Some("Match text")),
             ("amount", Some("Timeout length")),
@@ -307,7 +306,7 @@ mod tests {
     fn form_field_label_trims_the_hint_from_the_translated_label() {
         install_language(Language::Uk);
         let fields = labelled_form();
-        for (key, expected) in [("scene", "Сцена"), ("interval", "Інтервал")] {
+        for (key, expected) in [("scene", "Сцена"), ("from_user", "Від кого")] {
             assert_eq!(
                 form_field_label(&fields, key).as_deref(),
                 Some(expected),

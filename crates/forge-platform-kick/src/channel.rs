@@ -72,7 +72,7 @@ struct StreamData {
     #[serde(default)]
     viewer_count: u64,
     #[serde(default)]
-    start_time: String,
+    start_time: Option<String>,
 }
 
 impl KickChannel {
@@ -180,7 +180,11 @@ impl KickChannel {
             category_id: channel.category.id,
             category_name: channel.category.name,
             viewer_count: channel.stream.viewer_count,
-            started_at: crate::timestamp::parse_logged(&channel.stream.start_time),
+            started_at: channel
+                .stream
+                .start_time
+                .as_deref()
+                .and_then(crate::timestamp::parse_logged),
         })
     }
 

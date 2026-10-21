@@ -5,9 +5,9 @@ use std::sync::Arc;
 use forge_runtime::{ActionEngineHandle, EventBus};
 use forge_storage::paths;
 use forge_storage::{
-    ActionRepo, CredentialsRepo, GlobalsRepo, OverlayRepo, SettingsRepo, StorageError,
-    UserGlobalsRepo, get_bool_setting, get_json_setting, reserved_keys, set_bool_setting,
-    set_json_setting,
+    ActionRepo, CredentialsRepo, GlobalsRepo, OverlayRepo,
+    SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT, SettingsRepo, StorageError, UserGlobalsRepo,
+    get_bool_setting, get_json_setting, reserved_keys, set_bool_setting, set_json_setting,
 };
 
 const VALID_BIND_ADDRESSES: &[&str] = &["127.0.0.1", "0.0.0.0", "::1", "::"];
@@ -67,6 +67,7 @@ pub struct ServerSettings {
     pub port: u16,
     pub lan_bind_enabled: bool,
     pub auth_required_for_reads: bool,
+    pub http_overlay_require_token: bool,
     pub overlay_cors_any_origin: bool,
     pub overlay_root: Option<String>,
     pub additional_origins: Vec<String>,
@@ -80,6 +81,7 @@ impl Default for ServerSettings {
             port: 8081,
             lan_bind_enabled: false,
             auth_required_for_reads: false,
+            http_overlay_require_token: SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT,
             overlay_cors_any_origin: true,
             overlay_root: None,
             additional_origins: Vec::new(),
@@ -104,6 +106,12 @@ impl ServerSettings {
             get_bool_setting(repo, reserved_keys::SERVER_LAN_BIND_ENABLED, false).await;
         let auth_required_for_reads =
             get_bool_setting(repo, reserved_keys::SERVER_AUTH_REQUIRED_FOR_READS, false).await;
+        let http_overlay_require_token = get_bool_setting(
+            repo,
+            reserved_keys::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN,
+            SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT,
+        )
+        .await;
         let overlay_cors_any_origin =
             get_bool_setting(repo, reserved_keys::SERVER_OVERLAY_CORS_ANY_ORIGIN, true).await;
         let overlay_root = repo.get_string(reserved_keys::SERVER_OVERLAY_ROOT).await?;
@@ -117,6 +125,7 @@ impl ServerSettings {
             port,
             lan_bind_enabled,
             auth_required_for_reads,
+            http_overlay_require_token,
             overlay_cors_any_origin,
             overlay_root,
             additional_origins,
@@ -160,6 +169,18 @@ impl ServerSettings {
         set_bool_setting(
             repo,
             reserved_keys::SERVER_AUTH_REQUIRED_FOR_READS,
+            required,
+        )
+        .await
+    }
+
+    pub async fn save_http_overlay_require_token(
+        repo: &dyn SettingsRepo,
+        required: bool,
+    ) -> Result<(), StorageError> {
+        set_bool_setting(
+            repo,
+            reserved_keys::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN,
             required,
         )
         .await

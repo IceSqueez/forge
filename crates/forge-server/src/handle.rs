@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_runtime::{OverlayConnectListener, OverlayReceivers};
+use forge_runtime::{OverlayConnectListener, OverlayReceivers, OverlayServiceHandle};
 use forge_storage::OverlayId;
 use forge_storage::paths;
 use tokio::net::TcpListener;
@@ -156,6 +156,10 @@ impl ServerHandle {
         state
             .auth
             .set_reads_required(settings.auth_required_for_reads);
+        state
+            .auth
+            .overlay_token()
+            .set_required(settings.http_overlay_require_token);
 
         let listener = TcpListener::bind(bind_addr)
             .await
@@ -207,6 +211,48 @@ impl ServerHandle {
 
     pub async fn auth_state(&self) -> Arc<AuthState> {
         Arc::clone(&self.inner.lock().await.state.auth)
+    }
+
+    pub async fn set_http_overlay_token_required(&self, required: bool) {
+        self.auth_state()
+            .await
+            .overlay_token()
+            .set_required(required);
+    }
+
+    pub async fn regenerate_overlay_token(
+        &self,
+        overlay_service: &OverlayServiceHandle,
+    ) -> Result<String, ServerError> {
+        let state = self.inner.lock().await.state.clone();
+        let gate = state.auth.overlay_token();
+        let fresh = gate.stage_rotation(state.credentials.as_ref()).await?;
+        let reissued = match state.overlays.reissue_all_credentials().await {
+            Ok(reissued) => reissued,
+            Err(e) => {
+                gate.abandon_rotation(state.credentials.as_ref()).await;
+                return Err(e.into());
+            }
+        };
+        gate.commit_rotation(fresh.clone());
+        for identity in &reissued {
+            state.bus_adapter.revoke_overlay(identity).await;
+        }
+        let incomplete = |reason: String| ServerError::OverlayRotationIncomplete {
+            token: fresh.clone(),
+            reason,
+        };
+        let pass = overlay_service
+            .materialize_all()
+            .await
+            .map_err(|e| incomplete(e.to_string()))?;
+        if pass.failed > 0 {
+            return Err(incomplete(format!(
+                "{} overlay pages failed to rewrite",
+                pass.failed
+            )));
+        }
+        Ok(fresh)
     }
 
     pub async fn bind_addr(&self) -> SocketAddr {

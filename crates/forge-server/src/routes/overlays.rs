@@ -13,6 +13,7 @@ use crate::server::AppState;
 const OVERLAY_ENTRY_DOCUMENT: &str = "index.html";
 pub(crate) const FAVICON_PATH: &str = "/favicon.ico";
 pub(crate) const NOSNIFF: &str = "nosniff";
+const NO_REFERRER: &str = "no-referrer";
 const ANY_ORIGIN: &str = "*";
 const SELF_SCHEME: &str = "http://";
 
@@ -29,9 +30,12 @@ const GENERATED_MEDIA_CACHE_MAX_AGE_SECONDS: u64 =
 pub async fn serve_overlay_file(
     State(state): State<AppState>,
     headers: HeaderMap,
-    axum::extract::Path(path): axum::extract::Path<String>,
+    axum::extract::Path(requested): axum::extract::Path<String>,
 ) -> Response {
-    match resolve_and_open(&state, &path).await {
+    let Some(path) = strip_overlay_token(&state, &requested) else {
+        return refused_response();
+    };
+    match resolve_and_open(&state, path).await {
         Ok(served) => {
             let resolved = served.path;
             let ext = resolved
@@ -54,15 +58,46 @@ pub async fn serve_overlay_file(
                 header::X_CONTENT_TYPE_OPTIONS,
                 HeaderValue::from_static(NOSNIFF),
             );
-            if is_generated_media_path(&path) {
+            response_headers.insert(
+                header::REFERRER_POLICY,
+                HeaderValue::from_static(NO_REFERRER),
+            );
+            if is_generated_media_path(path) {
                 response_headers.insert(header::CACHE_CONTROL, immutable_cache_control());
             }
 
             let body = Body::from_stream(ReaderStream::new(served.file));
             (StatusCode::OK, response_headers, body).into_response()
         }
-        Err(status) => status.into_response(),
+        Err(status) => (
+            status,
+            [(
+                header::REFERRER_POLICY,
+                HeaderValue::from_static(NO_REFERRER),
+            )],
+        )
+            .into_response(),
     }
+}
+
+fn refused_response() -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        [(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static(NO_REFERRER),
+        )],
+    )
+        .into_response()
+}
+
+fn strip_overlay_token<'a>(state: &AppState, requested: &'a str) -> Option<&'a str> {
+    let token_gate = state.auth.overlay_token();
+    let (first, remainder) = requested.split_once('/').unwrap_or((requested, ""));
+    if token_gate.verify(first) {
+        return (!remainder.is_empty()).then_some(remainder);
+    }
+    (!token_gate.required()).then_some(requested)
 }
 
 pub async fn serve_empty_favicon() -> Response {

@@ -32,6 +32,12 @@ pub enum ServerError {
     )]
     NoTokenForLanBind { addr: String },
 
+    #[error("overlay pages could not be rewritten with the new credentials: {reason}")]
+    OverlayRematerialization { reason: String },
+
+    #[error("the overlay token was regenerated but its pages could not be rewritten: {reason}")]
+    OverlayRotationIncomplete { token: String, reason: String },
+
     #[error("the server is switched off in settings")]
     Disabled,
 

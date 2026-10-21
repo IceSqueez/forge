@@ -11,6 +11,7 @@ pub mod error;
 pub mod handle;
 mod listener;
 mod origin;
+pub mod overlay_token;
 pub mod overlay_url;
 pub mod protocol;
 mod run_state;
@@ -33,6 +34,7 @@ pub use bus_adapter::{BusAdapter, ClientId, EventFilter};
 pub use config::{ServerConfig, ServerSettings};
 pub use error::ServerError;
 pub use handle::ServerHandle;
+pub use overlay_token::{OverlayTokenState, masked_overlay_token};
 pub use server::{AppState, Server, start_server, stopped_server};
 pub use server_info::ServerInfo;
 pub use snapshot::{

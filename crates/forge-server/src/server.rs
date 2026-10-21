@@ -12,7 +12,9 @@ use tokio::net::TcpListener;
 
 use forge_runtime::{ActionEngineHandle, EventBus};
 use forge_storage::{
-    ActionRepo, CredentialsRepo, GlobalsRepo, OverlayRepo, SettingsRepo, UserGlobalsRepo,
+    ActionRepo, CredentialsRepo, GlobalsRepo, OverlayRepo,
+    SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT, SettingsRepo, UserGlobalsRepo, get_bool_setting,
+    reserved_keys,
 };
 
 use crate::audio_clips::AudioClipStore;
@@ -77,6 +79,14 @@ impl Server {
 
 async fn build_state(config: ServerConfig, bind_addr: SocketAddr) -> Result<AppState, ServerError> {
     let auth = AuthState::load(config.auth_required_for_reads, config.credentials.as_ref()).await?;
+    auth.overlay_token().set_required(
+        get_bool_setting(
+            config.settings.as_ref(),
+            reserved_keys::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN,
+            SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT,
+        )
+        .await,
+    );
     let bus = Arc::clone(&config.event_bus);
     let bus_adapter = BusAdapter::new(Arc::clone(&bus));
     bus_adapter.spawn();

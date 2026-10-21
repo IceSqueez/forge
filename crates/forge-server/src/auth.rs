@@ -9,6 +9,7 @@ use tokio::sync::{RwLock, watch};
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 
 use crate::ServerError;
+use crate::overlay_token::OverlayTokenState;
 
 const TOKEN_BYTE_LEN: usize = 64;
 const TOKEN_PREFIX: &str = "fg_";
@@ -18,6 +19,7 @@ pub struct AuthState {
     token_generation: AtomicU64,
     reads_required: AtomicBool,
     policy_changed: watch::Sender<()>,
+    overlay_token: OverlayTokenState,
 }
 
 impl AuthState {
@@ -45,17 +47,31 @@ impl AuthState {
                 t
             }
         };
-        Ok(Arc::new(Self::with_token(token, auth_required_for_reads)))
+        let overlay_token = OverlayTokenState::load(creds).await?;
+        Ok(Arc::new(Self::with_tokens(
+            token,
+            overlay_token,
+            auth_required_for_reads,
+        )))
     }
 
-    fn with_token(token: String, auth_required_for_reads: bool) -> Self {
+    fn with_tokens(
+        token: String,
+        overlay_token: OverlayTokenState,
+        auth_required_for_reads: bool,
+    ) -> Self {
         let (policy_changed, _) = watch::channel(());
         Self {
             bearer_token: Arc::new(RwLock::new(token)),
             token_generation: AtomicU64::new(0),
             reads_required: AtomicBool::new(auth_required_for_reads),
             policy_changed,
+            overlay_token,
         }
+    }
+
+    pub fn overlay_token(&self) -> &OverlayTokenState {
+        &self.overlay_token
     }
 
     pub async fn regenerate(&self, creds: &dyn CredentialsRepo) -> Result<String, ServerError> {
@@ -109,7 +125,11 @@ impl AuthState {
 
     #[cfg(test)]
     pub fn for_test(auth_required_for_reads: bool, token: impl Into<String>) -> Arc<Self> {
-        Arc::new(Self::with_token(token.into(), auth_required_for_reads))
+        Arc::new(Self::with_tokens(
+            token.into(),
+            OverlayTokenState::with_token(crate::overlay_token::generate_overlay_token(), false),
+            auth_required_for_reads,
+        ))
     }
 }
 
@@ -124,6 +144,10 @@ const EMPTY_TOKEN_PLACEHOLDER: &str = "-";
 const MASKED_BODY: &str = "•••••";
 
 pub fn masked_token(token: &str) -> String {
+    mask_with_prefix(TOKEN_PREFIX, token)
+}
+
+pub(crate) fn mask_with_prefix(prefix: &str, token: &str) -> String {
     if token.is_empty() {
         return EMPTY_TOKEN_PLACEHOLDER.to_owned();
     }
@@ -135,7 +159,7 @@ pub fn masked_token(token: &str) -> String {
         .into_iter()
         .rev()
         .collect();
-    format!("{TOKEN_PREFIX}{MASKED_BODY}{tail}")
+    format!("{prefix}{MASKED_BODY}{tail}")
 }
 
 pub fn generate_token() -> String {

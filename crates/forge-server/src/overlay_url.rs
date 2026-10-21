@@ -47,12 +47,12 @@ pub fn overlay_origin(bind_address: &str, routable_host: Option<&str>) -> String
     format!("{URL_SCHEME}://{host}:{port}")
 }
 
-pub fn overlay_page_url(origin: &str, identity: &str) -> String {
-    format!("{origin}/{OVERLAY_ROUTE}/{identity}/")
+pub fn overlay_page_url(origin: &str, token: &str, identity: &str) -> String {
+    format!("{origin}/{OVERLAY_ROUTE}/{token}/{identity}/")
 }
 
-pub fn overlay_file_url(origin: &str, file_name: &str) -> String {
-    format!("{origin}/{OVERLAY_ROUTE}/{file_name}")
+pub fn overlay_file_url(origin: &str, token: &str, file_name: &str) -> String {
+    format!("{origin}/{OVERLAY_ROUTE}/{token}/{file_name}")
 }
 
 #[cfg(test)]

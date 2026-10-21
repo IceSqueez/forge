@@ -25,10 +25,12 @@ use crate::stream_output::StreamOutputFeed;
 
 const OBS_PLATFORM_ID: &str = "obs";
 
-fn connection_state_transition(previous: ConnectionState, next: ConnectionState) -> Option<Event> {
-    (previous != next).then(|| {
-        connection_state_changed_event(OBS_PLATFORM_ID, next, ConnectionTransition::Unexpected)
-    })
+fn connection_state_transition(
+    previous: ConnectionState,
+    next: ConnectionState,
+    transition: ConnectionTransition,
+) -> Option<Event> {
+    (previous != next).then(|| connection_state_changed_event(OBS_PLATFORM_ID, next, transition))
 }
 
 fn settle_connection_state(
@@ -36,11 +38,12 @@ fn settle_connection_state(
     publisher: &dyn EventPublisher,
     stream_output: &StreamOutputFeed,
     next: ConnectionState,
+    transition: ConnectionTransition,
 ) {
     let previous = state.load();
     state.store(next);
     stream_output.refresh();
-    if let Some(event) = connection_state_transition(previous, next) {
+    if let Some(event) = connection_state_transition(previous, next, transition) {
         publisher.publish(event);
     }
 }
@@ -290,6 +293,7 @@ impl BuiltinControl for ObsClient {
             &*self.reconnect_publisher,
             &self.stream_output,
             ConnectionState::Connecting,
+            ConnectionTransition::Expected,
         );
         clear_connected_at(&self.connected_at);
         record_failure(&self.last_failure, None);
@@ -340,6 +344,7 @@ impl BuiltinControl for ObsClient {
             &*self.reconnect_publisher,
             &self.stream_output,
             ConnectionState::Disconnected,
+            ConnectionTransition::Expected,
         );
         Ok(())
     }
@@ -451,6 +456,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                         &*publisher,
                         &stream_output,
                         ConnectionState::Disconnected,
+                        ConnectionTransition::Expected,
                     );
                     return;
                 }
@@ -462,6 +468,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                         &*publisher,
                         &stream_output,
                         ConnectionState::Disconnected,
+                        ConnectionTransition::Unexpected,
                     );
                     if !park_until_auto_reconnect(&shutdown, &mut auto_reconnect).await {
                         return;
@@ -480,6 +487,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             } else {
                 ConnectionState::Connecting
             },
+            ConnectionTransition::Unexpected,
         );
         tracing::debug!(host = %host, port, "attempting OBS connection");
 
@@ -496,7 +504,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         let attempt = tokio::select! {
             outcome = obws::Client::connect_with_config(connect_config) => outcome.map_err(map_obws_error),
             () = shutdown.notified() => {
-                settle_connection_state(&state, &*publisher, &stream_output, ConnectionState::Disconnected);
+                settle_connection_state(&state, &*publisher, &stream_output, ConnectionState::Disconnected, ConnectionTransition::Expected);
                 return;
             }
         };
@@ -511,6 +519,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                     &*publisher,
                     &stream_output,
                     ConnectionState::Disconnected,
+                    ConnectionTransition::Unexpected,
                 );
                 publisher.publish(crate::events::make_connection_auth_failed(
                     "authentication rejected",
@@ -552,7 +561,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                 &item_cache,
             ) => outcome,
             () = shutdown.notified() => {
-                settle_connection_state(&state, &*publisher, &stream_output, ConnectionState::Disconnected);
+                settle_connection_state(&state, &*publisher, &stream_output, ConnectionState::Disconnected, ConnectionTransition::Expected);
                 return;
             }
         };
@@ -580,6 +589,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             &*publisher,
             &stream_output,
             ConnectionState::Connected,
+            ConnectionTransition::Unexpected,
         );
         tracing::info!(host = %host, port, "connected to OBS");
         publisher.publish(crate::events::make_connection_connected());
@@ -605,7 +615,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                     stats_handle.abort();
                     inner.write().await.take();
                     clear_connected_at(&connected_at);
-                    settle_connection_state(&state, &*publisher, &stream_output, ConnectionState::Disconnected);
+                    settle_connection_state(&state, &*publisher, &stream_output, ConnectionState::Disconnected, ConnectionTransition::Expected);
                     tracing::info!("OBS supervisor shutting down");
                     return;
                 }
@@ -677,6 +687,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             } else {
                 ConnectionState::Disconnected
             },
+            ConnectionTransition::Unexpected,
         );
         publisher.publish(crate::events::make_connection_disconnected(
             crate::payload_fields::connection::reason::CONNECTION_LOST,

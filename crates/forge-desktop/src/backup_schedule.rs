@@ -145,7 +145,7 @@ pub(crate) fn include_key(category: BackupCategory) -> Option<&'static str> {
     }
 }
 
-fn category_label(category: BackupCategory) -> String {
+pub(crate) fn category_label(category: BackupCategory) -> String {
     match category {
         BackupCategory::Database => tr!("backup_schedule_category_database"),
         BackupCategory::Media => tr!("backup_schedule_category_media"),
@@ -386,6 +386,41 @@ struct NumberField {
     invalid: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ManualRunProgress {
+    Pending,
+    Succeeded,
+    Ended,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ManualRunWatch {
+    baseline: Option<OffsetDateTime>,
+    started: bool,
+}
+
+impl ManualRunWatch {
+    pub(crate) fn since(last_success_at: Option<OffsetDateTime>) -> Self {
+        Self {
+            baseline: last_success_at,
+            started: false,
+        }
+    }
+
+    pub(crate) fn observe(&mut self, status: &ScheduledBackupStatus) -> ManualRunProgress {
+        if status.last_success_at > self.baseline {
+            ManualRunProgress::Succeeded
+        } else if status.state == ScheduleState::Running {
+            self.started = true;
+            ManualRunProgress::Pending
+        } else if self.started {
+            ManualRunProgress::Ended
+        } else {
+            ManualRunProgress::Pending
+        }
+    }
+}
+
 struct PassphrasePrompt {
     purpose: PassphrasePurpose,
     modal: Entity<BackupPassphraseModal>,
@@ -403,6 +438,7 @@ pub struct BackupScheduleView {
     included: Vec<BackupCategory>,
     destination: Option<String>,
     status: ScheduledBackupStatus,
+    manual_run: Option<ManualRunWatch>,
     numbers: Vec<NumberField>,
     prompt: Option<PassphrasePrompt>,
     _subs: Vec<Subscription>,
@@ -454,6 +490,7 @@ impl BackupScheduleView {
             included: OPTIONAL_CATEGORIES.to_vec(),
             destination: None,
             status,
+            manual_run: None,
             numbers,
             prompt: None,
             _subs: subs,
@@ -518,6 +555,16 @@ impl BackupScheduleView {
     }
 
     pub(crate) fn apply_status(&mut self, status: ScheduledBackupStatus, cx: &mut Context<Self>) {
+        if let Some(watch) = self.manual_run.as_mut() {
+            match watch.observe(&status) {
+                ManualRunProgress::Pending => {}
+                ManualRunProgress::Succeeded => {
+                    self.manual_run = None;
+                    cx.push_toast(ToastKind::Success, tr!("backup_schedule_run_done"));
+                }
+                ManualRunProgress::Ended => self.manual_run = None,
+            }
+        }
         self.status = status;
         cx.notify();
     }
@@ -534,8 +581,10 @@ impl BackupScheduleView {
         self.exclusivity.is_held()
     }
 
-    pub fn run_now(&self) {
+    pub fn run_now(&mut self, cx: &mut Context<Self>) {
+        self.manual_run = Some(ManualRunWatch::since(self.status.last_success_at));
         self.service.run_now();
+        cx.notify();
     }
 
     pub fn prompt_view(&self) -> Option<AnyView> {

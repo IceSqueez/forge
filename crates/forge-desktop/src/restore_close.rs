@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use forge_components::{PushToast, ToastKind, tr};
 use forge_transfer::{
-    StagedRestore, TransferError, UpdateActivity, cancel_pending_restore, discard_staged_restore,
+    ScheduledBackupHandle, StagedRestore, TransferError, UpdateActivity, cancel_pending_restore,
+    discard_staged_restore,
 };
 use gpui::{App, Context, Entity, EventEmitter, Global};
 use tokio::runtime::Handle;
@@ -25,6 +26,7 @@ pub struct RestoreClose {
     update_flow: Entity<UpdateFlow>,
     data_dir: PathBuf,
     rt_handle: Handle,
+    scheduled: Option<ScheduledBackupHandle>,
 }
 
 pub struct RestoreRoute(pub Entity<RestoreClose>);
@@ -40,6 +42,19 @@ impl RestoreClose {
             update_flow,
             data_dir,
             rt_handle,
+            scheduled: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_scheduled_backups(mut self, scheduled: ScheduledBackupHandle) -> Self {
+        self.scheduled = Some(scheduled);
+        self
+    }
+
+    fn suspend_scheduled_backups(&self, suspended: bool) {
+        if let Some(scheduled) = &self.scheduled {
+            scheduled.set_suspended(suspended);
         }
     }
 
@@ -67,6 +82,9 @@ impl RestoreClose {
     }
 
     fn arm(&mut self, pending: PendingClose, cx: &mut Context<Self>) {
+        if matches!(pending, PendingClose::Restore(_)) {
+            self.suspend_scheduled_backups(true);
+        }
         self.pending = Some(pending);
         if let Some(exit) = cx.try_global::<ExitHandoff>() {
             exit.arm_restore();
@@ -96,6 +114,7 @@ impl RestoreClose {
             cx.notify();
             return;
         };
+        self.suspend_scheduled_backups(false);
         let data_dir = self.data_dir.clone();
         run_async(
             &self.rt_handle,

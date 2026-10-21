@@ -10,6 +10,7 @@ use forge_runtime::{
 use forge_server::ServerHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
 use forge_storage::DataProvider;
+use forge_transfer::{ScheduleState, ScheduledBackupHandle};
 use gpui::{App, Global};
 use tokio::runtime::Runtime;
 
@@ -35,6 +36,21 @@ const GRACEFUL_BUDGET: Duration = TIMER_STOP_BUDGET
     .saturating_add(STORAGE_CLOSE_BUDGET);
 
 const _: () = assert!(GRACEFUL_BUDGET.as_millis() < gpui::SHUTDOWN_TIMEOUT.as_millis());
+
+const SCHEDULED_BACKUP_STOP_BUDGET: Duration = GRACEFUL_BUDGET;
+
+pub async fn stop_scheduled_backups(scheduled: ScheduledBackupHandle) {
+    scheduled.cancel_in_flight();
+    scheduled.shutdown();
+    let mut status = scheduled.status();
+    let stopped = status.wait_for(|current| current.state != ScheduleState::Running);
+    if tokio::time::timeout(SCHEDULED_BACKUP_STOP_BUDGET, stopped)
+        .await
+        .is_err()
+    {
+        tracing::warn!("graceful shutdown: scheduled backup did not stop within its budget");
+    }
+}
 
 pub const RUNTIME_SHUTDOWN_BUDGET: Duration = Duration::from_secs(1);
 

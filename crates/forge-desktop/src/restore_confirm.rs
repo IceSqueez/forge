@@ -5,19 +5,45 @@ use forge_components::{
     destructive_button, failure_note, ghost_button, icon, modal, modal_width, mono_family, radius,
     spacing, tr,
 };
-use forge_transfer::BundleSummary;
+use forge_transfer::{BackupCategory, BundleSummary};
 use gpui::{AnyElement, App, ClickEvent, Rgba, Window, div, prelude::*, px};
 
+use crate::backup_schedule::category_label;
 use crate::restore_problem::RestoreProblem;
 use crate::scheduled_run_labels::{local_stamp, system_offset_at};
 
 const UNKNOWN_FACT: &str = "-";
+const PART_SEPARATOR: &str = ", ";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RestoreScope {
+    pub replaced: Vec<BackupCategory>,
+    pub kept: Vec<BackupCategory>,
+}
+
+impl RestoreScope {
+    pub(crate) fn of(included: &[BackupCategory]) -> Option<Self> {
+        let (replaced, kept): (Vec<_>, Vec<_>) = BackupCategory::ALL
+            .into_iter()
+            .partition(|category| included.contains(category));
+        (!kept.is_empty()).then_some(Self { replaced, kept })
+    }
+}
+
+fn joined_labels(categories: &[BackupCategory]) -> String {
+    categories
+        .iter()
+        .map(|category| category_label(*category))
+        .collect::<Vec<_>>()
+        .join(PART_SEPARATOR)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ConfirmFacts {
     pub created: String,
     pub forge_version: String,
     pub schema: String,
+    pub scope: Option<RestoreScope>,
 }
 
 impl ConfirmFacts {
@@ -27,11 +53,13 @@ impl ConfirmFacts {
                 created: local_stamp(manifest.created_at, system_offset_at(manifest.created_at)),
                 forge_version: manifest.forge_version.clone(),
                 schema: manifest.schema_version.to_string(),
+                scope: RestoreScope::of(&manifest.categories),
             },
             BundleSummary::LegacyUnencrypted => Self {
                 created: UNKNOWN_FACT.to_owned(),
                 forge_version: UNKNOWN_FACT.to_owned(),
                 schema: UNKNOWN_FACT.to_owned(),
+                scope: None,
             },
         }
     }
@@ -123,11 +151,35 @@ impl ConfirmCard<'_> {
                 palette,
             ));
 
-        let statements = div()
+        let mut statements = div()
             .w_full()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xs, density))
+            .gap(spacing(Spacing::Xs, density));
+        if let Some(scope) = &self.facts.scope {
+            statements = statements
+                .child(statement(
+                    Icon::Refresh,
+                    palette.warning,
+                    tr!(
+                        "restore_confirm_scope_replaced",
+                        parts = joined_labels(&scope.replaced)
+                    ),
+                    palette,
+                    density,
+                ))
+                .child(statement(
+                    Icon::Lock,
+                    palette.success,
+                    tr!(
+                        "restore_confirm_scope_kept",
+                        parts = joined_labels(&scope.kept)
+                    ),
+                    palette,
+                    density,
+                ));
+        }
+        let statements = statements
             .child(statement(
                 Icon::Database,
                 palette.success,
@@ -191,9 +243,14 @@ impl ConfirmCard<'_> {
                     .on_click("restore-confirm-apply", on_confirm),
             );
 
+        let subtitle = if self.facts.scope.is_some() {
+            tr!("restore_confirm_subtitle_scoped")
+        } else {
+            tr!("restore_confirm_subtitle")
+        };
         modal(tr!("restore_confirm_title"), body, palette)
             .header_icon(Icon::History, palette.warning)
-            .subtitle(tr!("restore_confirm_subtitle"))
+            .subtitle(subtitle)
             .width(modal_width(ModalSize::Sm))
             .footer(footer)
             .on_close("restore-confirm-close", move |event, window, cx| {

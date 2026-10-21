@@ -404,7 +404,7 @@ impl SettingsStorageView {
         if let Some(schedule) = &self.schedule
             && schedule.read(cx).backs_up_unattended()
         {
-            schedule.read(cx).run_now();
+            schedule.update(cx, |schedule, cx| schedule.run_now(cx));
         } else if let Some(transfers) = self.transfers.clone() {
             transfers.update(cx, |transfers, cx| transfers.backup_to_backups_dir(cx));
         }

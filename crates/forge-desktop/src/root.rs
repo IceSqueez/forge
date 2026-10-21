@@ -266,15 +266,25 @@ pub fn run_boot(
                     let mut shutdown =
                         Some(crate::shutdown::ShutdownHandles::from_handles(&handles));
                     let stay_awake = handles.stay_awake.clone();
+                    let mut scheduled_backups = Some(handles.scheduled_backups.clone());
                     App::on_app_quit(cx, move |cx| {
                         stay_awake.release();
                         let taken = shutdown.take();
+                        let backups = scheduled_backups.take();
                         let teardown = crate::shutdown::QuitTeardown::claim(cx);
                         let exit = crate::update_exit::ExitHandoff::claim_at_quit(cx);
                         async move {
-                            if let Some(handles) = taken {
-                                handles.run_graceful().await;
-                            }
+                            let backups_stopped = async {
+                                if let Some(backups) = backups {
+                                    crate::shutdown::stop_scheduled_backups(backups).await;
+                                }
+                            };
+                            let graceful = async {
+                                if let Some(handles) = taken {
+                                    handles.run_graceful().await;
+                                }
+                            };
+                            tokio::join!(backups_stopped, graceful);
                             if let Some(exit) = exit {
                                 exit.finish();
                             }

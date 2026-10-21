@@ -153,6 +153,7 @@ impl AppShell {
                 handles.transfer_exclusivity.clone(),
                 handles.scheduled_backups.clone(),
             )
+            .watching_scheduled(cx)
         });
         cx.set_global(TransferRoute(transfers));
         let screen = initial_screen;
@@ -201,6 +202,7 @@ impl AppShell {
                 forge_storage::paths::data_dir(),
                 handles.rt_handle.clone(),
             )
+            .with_scheduled_backups(handles.scheduled_backups.clone())
         });
         cx.subscribe(
             &restore_close,

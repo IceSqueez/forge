@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use forge_components::{PushToast, ToastKind, tr};
 use forge_transfer::{
-    BundleKind, ScheduledBackupHandle, TransferError, TransferExclusivity, TransferGuard,
-    read_bundle_kind,
+    BundleKind, ScheduleState, ScheduledBackupHandle, TransferError, TransferExclusivity,
+    TransferGuard, read_bundle_kind,
 };
 use forge_types::ActionId;
 use gpui::{AnyView, App, AppContext, Context, Entity, EventEmitter, Global, Subscription};
@@ -100,6 +100,28 @@ impl TransferFlows {
     ) -> Self {
         self.exclusivity = exclusivity;
         self.scheduled = Some(scheduled);
+        self
+    }
+
+    #[must_use]
+    pub fn watching_scheduled(self, cx: &mut Context<Self>) -> Self {
+        if let Some(scheduled) = &self.scheduled {
+            let mut status = scheduled.status();
+            cx.spawn(async move |this, cx| {
+                let mut running = status.borrow_and_update().state == ScheduleState::Running;
+                while status.changed().await.is_ok() {
+                    let now_running = status.borrow_and_update().state == ScheduleState::Running;
+                    if now_running == running {
+                        continue;
+                    }
+                    running = now_running;
+                    if this.update(cx, |_, cx| cx.notify()).is_err() {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
         self
     }
 

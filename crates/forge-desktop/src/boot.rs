@@ -205,6 +205,14 @@ pub async fn build_runtime(
         &bus,
         NotificationPreferences::load(settings_repo.as_ref()).await,
     );
+    let transfer_exclusivity = forge_transfer::TransferExclusivity::new();
+    let scheduled_backups =
+        forge_transfer::spawn_scheduled_backups(forge_transfer::ScheduledBackupParts {
+            provider: Arc::clone(&backend),
+            data_dir: paths::data_dir(),
+            exclusivity: transfer_exclusivity.clone(),
+            clock: Arc::new(forge_transfer::SystemBackupClock),
+        });
     let chat_history_retention = spawn_chat_history_persistence(
         Arc::clone(&bus),
         backend.chat_history_repo(),
@@ -573,6 +581,8 @@ pub async fn build_runtime(
         stream_live,
         chat_history_retention,
         notification_policy,
+        transfer_exclusivity,
+        scheduled_backups,
         builtins: integrations.builtins,
         integrations: supervisor,
         obs_install_seed: integrations.obs_install_seed,

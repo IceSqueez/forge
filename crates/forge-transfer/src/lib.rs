@@ -1,3 +1,4 @@
+mod cancel;
 mod category;
 mod digest;
 mod document_bundle;
@@ -24,17 +25,20 @@ mod restore_marker;
 mod restore_outcome;
 mod safety_snapshot;
 mod schedule_key;
+mod scheduled;
 mod setup;
 mod snapshot;
 mod stage;
 mod staging_sweep;
 
+pub use cancel::CancelFlag;
 pub use category::BackupCategory;
 pub use error::TransferError;
 pub use exclusivity::{TransferExclusivity, TransferGuard};
 pub use full_writer::{
-    BackupDestination, FullBackupRequest, ScheduledBackupRequest, write_full_backup,
-    write_scheduled_backup,
+    BackupDestination, FullBackupRequest, ScheduledBackupRequest, ScheduledWrite,
+    write_full_backup, write_scheduled_backup, write_scheduled_backup_cancellable,
+    write_scheduled_backup_unless_unchanged,
 };
 pub use layout::{ARCHIVE_ROOT, INCLUDED_DIRS};
 pub use limits::{
@@ -69,6 +73,11 @@ pub use restore_marker::{
 };
 pub use restore_outcome::{RestoreDeferral, RestoreOutcome, RestoreRollback};
 pub use schedule_key::{ScheduleKey, change_schedule_passphrase, create_schedule_key};
+pub use scheduled::{
+    BackupClock, FailureCategory, FailureStreak, ScheduleState, ScheduledBackupHandle,
+    ScheduledBackupParts, ScheduledBackupStatus, StorageUsed, SystemBackupClock,
+    spawn_scheduled_backups,
+};
 pub use setup::{
     ClipHotkeyDocument, SETUP_DOCUMENTS_VERSION, SETUP_ROOT, SETUP_STAGING_DIR_NAME,
     SetupDocuments, SetupExportRequest, SetupImportOutcome, SetupImportRequest, SetupLivePart,

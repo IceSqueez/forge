@@ -7,13 +7,13 @@ pub const BUNDLE_EXTENSION: &str = "forgebundle";
 pub const LEGACY_ARCHIVE_EXTENSION: &str = "tar.gz";
 
 const FILE_PREFIX: &str = "forge-backup";
-const SCHEDULED_PREFIX: &str = "forge-scheduled";
+pub(crate) const SCHEDULED_PREFIX: &str = "forge-scheduled";
 const PRE_RESTORE_PREFIX: &str = "forge-pre-restore";
 const PRE_PACK_PREFIX: &str = "forge-pre-pack";
 const PRE_SETUP_PREFIX: &str = "forge-pre-setup";
 const SUFFIX_LEN: usize = 6;
-const PARTIAL_EXTENSION: &str = "partial";
-const CIPHERTEXT_EXTENSION: &str = "payload.partial";
+pub(crate) const PARTIAL_EXTENSION: &str = "partial";
+pub(crate) const CIPHERTEXT_EXTENSION: &str = "payload.partial";
 const SNAPSHOT_EXTENSION: &str = "db.snapshot";
 
 pub fn backups_dir(data_dir: &Path) -> PathBuf {

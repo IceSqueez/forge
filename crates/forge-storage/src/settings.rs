@@ -89,6 +89,8 @@ pub mod reserved_keys {
     pub const BACKUP_SCHEDULE_DESTINATION: &str = "backup_schedule.destination";
     pub const BACKUP_SCHEDULE_RECIPIENT: &str = "backup_schedule.recipient";
     pub const BACKUP_SCHEDULE_WRAPPED_IDENTITY: &str = "backup_schedule.wrapped_identity";
+    pub const BACKUP_SCHEDULE_LAST_SUCCESS_AT: &str = "backup_schedule.last_success_at";
+    pub const BACKUP_SCHEDULE_CONTENT_FINGERPRINT: &str = "backup_schedule.content_fingerprint";
 }
 
 pub mod portability;

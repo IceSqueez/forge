@@ -43,6 +43,8 @@ pub struct RuntimeHandles {
     pub stream_live: StreamLiveHandle,
     pub chat_history_retention: ChatHistoryRetentionHandle,
     pub notification_policy: NotificationPolicyHandle,
+    pub transfer_exclusivity: forge_transfer::TransferExclusivity,
+    pub scheduled_backups: forge_transfer::ScheduledBackupHandle,
     pub builtins: BuiltinRegistry,
     pub integrations: IntegrationSupervisor<BuiltinObject>,
     pub obs_install_seed: ObsInstallSeed,

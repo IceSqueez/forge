@@ -6,9 +6,12 @@ use flate2::Compression;
 use flate2::write::GzEncoder;
 use forge_storage::DataProvider;
 use forge_storage::paths::credentials_key_path_in;
+use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
+use crate::cancel::CancelFlag;
 use crate::category::BackupCategory;
+use crate::digest::to_hex;
 use crate::error::TransferError;
 use crate::manifest::{
     BUNDLE_FORMAT_VERSION, BundleKind, ENCRYPTED_PAYLOAD_ENTRY_NAME, FullManifest,
@@ -47,6 +50,12 @@ pub struct ScheduledBackupRequest {
     pub categories: Vec<BackupCategory>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScheduledWrite {
+    Written { path: PathBuf, fingerprint: String },
+    Unchanged { fingerprint: String },
+}
+
 pub async fn write_full_backup(request: FullBackupRequest) -> Result<PathBuf, TransferError> {
     let FullBackupRequest {
         provider,
@@ -62,20 +71,48 @@ pub async fn write_full_backup(request: FullBackupRequest) -> Result<PathBuf, Tr
         }
         BackupDestination::File(path) => path,
     };
-    write_protected(WriteJob {
+    let written = write_protected(WriteJob {
         provider,
         data_dir,
         stem,
         destination,
         protection: Protection::Passphrase(passphrase),
         categories: BackupCategory::all(),
+        unchanged_since: None,
+        cancel: CancelFlag::new(),
     })
-    .await
+    .await?;
+    match written {
+        ScheduledWrite::Written { path, .. } => Ok(path),
+        ScheduledWrite::Unchanged { .. } => Err(TransferError::Interrupted {
+            reason: "the backup was skipped as unchanged".to_owned(),
+        }),
+    }
 }
 
 pub async fn write_scheduled_backup(
     request: ScheduledBackupRequest,
 ) -> Result<PathBuf, TransferError> {
+    match write_scheduled_backup_unless_unchanged(request, None).await? {
+        ScheduledWrite::Written { path, .. } => Ok(path),
+        ScheduledWrite::Unchanged { .. } => Err(TransferError::Interrupted {
+            reason: "the backup was skipped as unchanged".to_owned(),
+        }),
+    }
+}
+
+pub async fn write_scheduled_backup_unless_unchanged(
+    request: ScheduledBackupRequest,
+    unchanged_since: Option<String>,
+) -> Result<ScheduledWrite, TransferError> {
+    write_scheduled_backup_cancellable(request, unchanged_since, CancelFlag::new()).await
+}
+
+pub async fn write_scheduled_backup_cancellable(
+    request: ScheduledBackupRequest,
+    unchanged_since: Option<String>,
+    cancel: CancelFlag,
+) -> Result<ScheduledWrite, TransferError> {
     let ScheduledBackupRequest {
         provider,
         data_dir,
@@ -93,6 +130,8 @@ pub async fn write_scheduled_backup(
         destination,
         protection,
         categories: with_database(categories),
+        unchanged_since,
+        cancel,
     })
     .await
 }
@@ -111,9 +150,11 @@ struct WriteJob {
     destination: PathBuf,
     protection: Protection,
     categories: Vec<BackupCategory>,
+    unchanged_since: Option<String>,
+    cancel: CancelFlag,
 }
 
-async fn write_protected(job: WriteJob) -> Result<PathBuf, TransferError> {
+async fn write_protected(job: WriteJob) -> Result<ScheduledWrite, TransferError> {
     let WriteJob {
         provider,
         data_dir,
@@ -121,6 +162,8 @@ async fn write_protected(job: WriteJob) -> Result<PathBuf, TransferError> {
         destination,
         protection,
         categories,
+        unchanged_since,
+        cancel,
     } = job;
     let schema_version = provider.schema_version().await?;
     let work_dir = data_dir.clone();
@@ -133,6 +176,8 @@ async fn write_protected(job: WriteJob) -> Result<PathBuf, TransferError> {
             protection: &protection,
             categories: &categories,
             schema_version,
+            unchanged_since: unchanged_since.as_deref(),
+            cancel: &cancel,
         })
     })
     .await;
@@ -140,7 +185,23 @@ async fn write_protected(job: WriteJob) -> Result<PathBuf, TransferError> {
         let _ = tokio::fs::remove_file(ciphertext_path(&destination)).await;
         let _ = tokio::fs::remove_file(partial_path(&destination)).await;
     }
-    written.map(|()| destination)
+    written.map(|outcome| {
+        if outcome.written {
+            ScheduledWrite::Written {
+                path: destination,
+                fingerprint: outcome.fingerprint,
+            }
+        } else {
+            ScheduledWrite::Unchanged {
+                fingerprint: outcome.fingerprint,
+            }
+        }
+    })
+}
+
+struct BundleOutcome {
+    fingerprint: String,
+    written: bool,
 }
 
 struct BundleInput<'a> {
@@ -150,11 +211,42 @@ struct BundleInput<'a> {
     protection: &'a Protection,
     categories: &'a [BackupCategory],
     schema_version: u32,
+    unchanged_since: Option<&'a str>,
+    cancel: &'a CancelFlag,
 }
 
-fn write_bundle(input: BundleInput<'_>) -> Result<(), TransferError> {
+fn content_fingerprint(input: &BundleInput<'_>, files: &[PayloadFile]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(input.protection.key_fingerprint().unwrap_or_default());
+    hasher.update(
+        input
+            .destination
+            .parent()
+            .map(|folder| folder.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+    );
+    for category in input.categories {
+        hasher.update(format!("{category:?}"));
+    }
+    for file in files {
+        hasher.update(&file.entry.path);
+        hasher.update(file.entry.size.to_be_bytes());
+        hasher.update(&file.entry.sha256_hex);
+    }
+    to_hex(&hasher.finalize())
+}
+
+fn write_bundle(input: BundleInput<'_>) -> Result<BundleOutcome, TransferError> {
     let key = credentials_key_path_in(input.data_dir);
     let files = collect_payload(input.data_dir, input.snapshot, &key, input.categories)?;
+    input.cancel.checkpoint()?;
+    let fingerprint = content_fingerprint(&input, &files);
+    if input.unchanged_since == Some(fingerprint.as_str()) {
+        return Ok(BundleOutcome {
+            fingerprint,
+            written: false,
+        });
+    }
     let created_at = OffsetDateTime::now_utc();
     let full = FullManifest {
         format_version: BUNDLE_FORMAT_VERSION,
@@ -179,12 +271,16 @@ fn write_bundle(input: BundleInput<'_>) -> Result<(), TransferError> {
     };
 
     let ciphertext = ciphertext_path(input.destination);
-    write_encrypted_payload(&ciphertext, input.protection, &full, &files)?;
+    write_encrypted_payload(&ciphertext, input.protection, &full, &files, input.cancel)?;
+    input.cancel.checkpoint()?;
     let partial = partial_path(input.destination);
     write_outer(&partial, &public, &ciphertext)?;
     std::fs::remove_file(&ciphertext)?;
     std::fs::rename(&partial, input.destination)?;
-    Ok(())
+    Ok(BundleOutcome {
+        fingerprint,
+        written: true,
+    })
 }
 
 fn write_encrypted_payload(
@@ -192,6 +288,7 @@ fn write_encrypted_payload(
     protection: &Protection,
     manifest: &FullManifest,
     files: &[PayloadFile],
+    cancel: &CancelFlag,
 ) -> Result<(), TransferError> {
     let sink = BufWriter::new(create_private(path)?);
     let encrypted = protection.seal(sink)?;
@@ -202,6 +299,7 @@ fn write_encrypted_payload(
         &serde_json::to_vec(manifest).map_err(std::io::Error::from)?,
     )?;
     for file in files {
+        cancel.checkpoint()?;
         append_verified(&mut builder, file)?;
     }
     let encrypted = builder.into_inner()?.finish()?;

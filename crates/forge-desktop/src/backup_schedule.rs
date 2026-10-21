@@ -2135,6 +2135,14 @@ pub(crate) mod tests {
     #[gpui::test]
     fn a_clicked_backup_now_toasts_once_its_run_saves_a_backup(cx: &mut TestAppContext) {
         let rig = schedule_rig(cx, &unattended_seeds(&key_for(OLD_PASSPHRASE)));
+        let progress_loaded = rig.settle(cx, |cx| {
+            rig.view
+                .read_with(cx, |view, _| view.status.last_success_at.is_some())
+        });
+        assert!(
+            progress_loaded,
+            "the seeded last backup never reached the view"
+        );
 
         rig.view.update(cx, |view, cx| view.run_now(cx));
         let toasted = rig.settle(cx, |cx| !success_toasts(cx).is_empty());

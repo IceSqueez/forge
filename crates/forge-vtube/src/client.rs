@@ -1771,4 +1771,86 @@ pub(crate) mod tests {
             "a client whose disconnect already returned published again"
         );
     }
+
+    fn announcements(publisher: &MockPublisher) -> Vec<(String, Option<bool>)> {
+        publisher
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.kind == forge_platform_core::CONNECTION_STATE_CHANGED_KIND)
+            .map(|e| {
+                (
+                    e.payload["state"]
+                        .as_str()
+                        .unwrap_or("<missing>")
+                        .to_owned(),
+                    e.payload["expected"].as_bool(),
+                )
+            })
+            .collect()
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum LeaveConnected {
+        UserDisconnects,
+        UserReconnects,
+        VtsClosesTheSocket,
+    }
+
+    #[tokio::test]
+    async fn leaving_connected_is_flagged_expected_only_when_the_user_asked_for_it() {
+        for (cause, want_state, want_expected) in [
+            (LeaveConnected::UserDisconnects, "disconnected", true),
+            (LeaveConnected::UserReconnects, "disconnected", true),
+            (LeaveConnected::VtsClosesTheSocket, "reconnecting", false),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let (gate_tx, gate_rx) = tokio::sync::oneshot::channel();
+            let (settled_tx, _settled_rx) = tokio::sync::oneshot::channel();
+            let server = tokio::spawn(serve_auth_then_announced_close(
+                listener, gate_rx, settled_tx,
+            ));
+            let publisher = MockPublisher::new();
+            let client = VTubeClient::connect(
+                VTubeConfig {
+                    endpoint: format!("ws://{addr}"),
+                },
+                publisher.publisher(),
+                MockCreds::new().creds(),
+            );
+            assert!(
+                wait_until(Duration::from_secs(30), || {
+                    announcements(&publisher)
+                        .last()
+                        .is_some_and(|(state, _)| state == "connected")
+                })
+                .await,
+                "{cause:?}: never connected"
+            );
+            let before = announcements(&publisher).len();
+
+            match cause {
+                LeaveConnected::UserDisconnects => client.disconnect().await.unwrap(),
+                LeaveConnected::UserReconnects => client.reconnect().await.unwrap(),
+                LeaveConnected::VtsClosesTheSocket => gate_tx.send(()).unwrap(),
+            }
+            assert!(
+                wait_until(Duration::from_secs(30), || {
+                    announcements(&publisher).len() > before
+                })
+                .await,
+                "{cause:?}: never left connected"
+            );
+
+            assert_eq!(
+                announcements(&publisher)[before],
+                (want_state.to_owned(), Some(want_expected)),
+                "{cause:?}"
+            );
+            client.disconnect().await.unwrap();
+            server.abort();
+        }
+    }
 }

@@ -315,21 +315,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn connect_publishes_connecting_then_connected_optimistically() {
-        let p = platform();
-        let mut stream = p.events();
-        p.connect().await.unwrap();
-        assert_eq!(
-            state_of(&stream.recv().await.unwrap()).as_deref(),
-            Some("connecting")
-        );
-        assert_eq!(
-            state_of(&stream.recv().await.unwrap()).as_deref(),
-            Some("connected")
-        );
-    }
-
-    #[tokio::test]
     async fn send_message_without_credentials_requires_reauth() {
         let p = platform();
         let err = p.send_message("chan", "hello").await.unwrap_err();
@@ -340,20 +325,40 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn explicit_disconnect_deduplicates_the_redundant_poller_exit_transition() {
+    async fn an_explicit_disconnect_is_announced_once_and_flagged_expected() {
         let p = platform();
         let mut stream = p.events();
         p.connect().await.unwrap();
         p.disconnect().await.unwrap();
         drop(p);
 
-        let mut states = Vec::new();
+        let mut announcements = Vec::new();
         while let Ok(event) = stream.recv().await {
             if let Some(state) = state_of(&event) {
-                states.push(state);
+                announcements.push((state, event.payload["expected"].as_bool()));
             }
         }
-        assert_eq!(states, ["connecting", "connected", "disconnected"]);
+        assert_eq!(
+            announcements,
+            [
+                ("connecting".to_owned(), Some(true)),
+                ("connected".to_owned(), Some(true)),
+                ("disconnected".to_owned(), Some(true)),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn reconnecting_a_running_poller_stays_connected_after_the_retired_poller_exits() {
+        let p = platform();
+        p.connect().await.unwrap();
+        p.connect().await.unwrap();
+
+        for _ in 0..64 {
+            tokio::task::yield_now().await;
+        }
+
+        assert_eq!(p.connection_state(), ConnectionState::Connected);
     }
 
     fn info_lifecycle_lines(

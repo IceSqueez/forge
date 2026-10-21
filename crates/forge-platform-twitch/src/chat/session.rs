@@ -8137,6 +8137,93 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_session_aborted_after_the_grace_period_flags_its_disconnect_expected() {
+        let aborted = shut_down_while_refreshing_the_token().await;
+
+        let disconnected = serde_json::json!(ConnectionState::Disconnected);
+        let flags: Vec<Option<bool>> = aborted
+            .bus
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| {
+                event.kind == CONNECTION_STATE_CHANGED_KIND
+                    && event.payload["state"] == disconnected
+            })
+            .map(|event| event.payload["expected"].as_bool())
+            .collect();
+        assert_eq!(
+            flags,
+            [Some(true)],
+            "the abort only happens because a shutdown was requested"
+        );
+    }
+
+    async fn next_link_announcement(events: &mut EventStream) -> (ConnectionState, Option<bool>) {
+        within_real_time(FAKE_WAIT, async {
+            loop {
+                let event = events.recv().await.expect("the bus must stay open");
+                if event.kind == CONNECTION_STATE_CHANGED_KIND {
+                    return (
+                        serde_json::from_value(event.payload["state"].clone())
+                            .expect("a connection-state event must carry a known state"),
+                        event.payload["expected"].as_bool(),
+                    );
+                }
+            }
+        })
+        .await
+        .expect("the session never announced leaving connected")
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum LeaveConnected {
+        ShutdownRequested,
+        TwitchClosesTheSocket,
+    }
+
+    #[tokio::test]
+    async fn leaving_a_live_session_is_flagged_expected_only_when_a_shutdown_was_requested() {
+        for (cause, want_state, want_expected) in [
+            (
+                LeaveConnected::ShutdownRequested,
+                ConnectionState::Disconnected,
+                true,
+            ),
+            (
+                LeaveConnected::TwitchClosesTheSocket,
+                ConnectionState::Reconnecting,
+                false,
+            ),
+        ] {
+            let api = eventsub_api().await;
+            let mut base = FakeEventSub::bind().await;
+            let (handle, peer, mut events) = live_handle(&mut base, &api).await;
+
+            let still_running = match cause {
+                LeaveConnected::ShutdownRequested => {
+                    handle.shutdown().await;
+                    None
+                }
+                LeaveConnected::TwitchClosesTheSocket => {
+                    peer.close();
+                    Some(handle)
+                }
+            };
+
+            assert_eq!(
+                next_link_announcement(&mut events).await,
+                (want_state, Some(want_expected)),
+                "{cause:?}"
+            );
+            if let Some(handle) = still_running {
+                handle.shutdown().await;
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn a_token_refresh_in_flight_when_the_session_is_aborted_still_stores_the_rotated_token()
     {
         let aborted = shut_down_while_refreshing_the_token().await;

@@ -366,6 +366,24 @@ impl Recorder {
             .collect()
     }
 
+    fn announcements(&self) -> Vec<(String, Option<bool>)> {
+        self.0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.kind == CONNECTION_STATE_CHANGED_KIND)
+            .map(|e| {
+                (
+                    e.payload["state"]
+                        .as_str()
+                        .unwrap_or("<missing>")
+                        .to_owned(),
+                    e.payload["expected"].as_bool(),
+                )
+            })
+            .collect()
+    }
+
     fn states(&self) -> Vec<String> {
         self.0
             .lock()
@@ -1214,4 +1232,54 @@ async fn a_live_session_lost_with_auto_reconnect_off_shows_why_and_is_not_redial
         failure_banner(&client).is_some(),
         "the lost session left no failure banner"
     );
+}
+
+#[derive(Debug, Clone, Copy)]
+enum LeaveConnected {
+    UserDisconnects,
+    UserReconnects,
+    ObsDropsTheSocket,
+}
+
+#[tokio::test]
+async fn leaving_connected_is_flagged_expected_only_when_the_user_asked_for_it() {
+    for (cause, want_state, want_expected) in [
+        (LeaveConnected::UserDisconnects, "disconnected", true),
+        (LeaveConnected::UserReconnects, "disconnected", true),
+        (LeaveConnected::ObsDropsTheSocket, "reconnecting", false),
+    ] {
+        let fake = spawn_fake_obs(
+            only_the_first_handshake_completes,
+            Arc::new(|seen: Seen<'_>| match seen.request_type {
+                "SetCurrentProgramScene" => Reply::DropSocket,
+                other => standard_reply(other),
+            }),
+        )
+        .await;
+        let recorder = Recorder::default();
+        let client = connect_to(&fake, &recorder).await;
+        connected(&client).await;
+
+        match cause {
+            LeaveConnected::UserDisconnects => client.disconnect().await.unwrap(),
+            LeaveConnected::UserReconnects => client.reconnect().await.unwrap(),
+            LeaveConnected::ObsDropsTheSocket => {
+                let lost = client.set_scene(SCENE).await;
+                assert!(matches!(lost, Err(ObsError::Disconnected)), "got {lost:?}");
+            }
+        }
+        settle_until("the client announced leaving connected", || {
+            recorder.announcements().len() >= 2
+        })
+        .await;
+
+        assert_eq!(
+            recorder.announcements()[..2],
+            [
+                ("connected".to_owned(), Some(false)),
+                (want_state.to_owned(), Some(want_expected)),
+            ],
+            "{cause:?}"
+        );
+    }
 }

@@ -1404,27 +1404,37 @@ mod tests {
     fn a_state_transition_announces_the_new_state_only_when_it_actually_changed() {
         for previous in EVERY_CONNECTION_STATE {
             for next in EVERY_CONNECTION_STATE {
-                match connection_state_transition(previous, next) {
-                    None => assert_eq!(
-                        previous, next,
-                        "{previous:?} -> {next:?} never reached the bus"
-                    ),
-                    Some(event) => {
-                        assert_ne!(
+                for transition in [
+                    ConnectionTransition::Expected,
+                    ConnectionTransition::Unexpected,
+                ] {
+                    match connection_state_transition(previous, next, transition) {
+                        None => assert_eq!(
                             previous, next,
-                            "{previous:?} -> {next:?} re-announced a state that did not change"
-                        );
-                        assert_eq!(event.kind, CONNECTION_STATE_CHANGED_KIND);
-                        assert_eq!(
-                            event.payload["platform_id"].as_str(),
-                            Some(OBS_PLATFORM_ID),
-                            "{previous:?} -> {next:?} was announced for another platform"
-                        );
-                        assert_eq!(
-                            event.payload["state"],
-                            serde_json::to_value(next).unwrap(),
-                            "{previous:?} -> {next:?} announced the wrong state"
-                        );
+                            "{previous:?} -> {next:?} never reached the bus"
+                        ),
+                        Some(event) => {
+                            assert_ne!(
+                                previous, next,
+                                "{previous:?} -> {next:?} re-announced a state that did not change"
+                            );
+                            assert_eq!(event.kind, CONNECTION_STATE_CHANGED_KIND);
+                            assert_eq!(
+                                event.payload["platform_id"].as_str(),
+                                Some(OBS_PLATFORM_ID),
+                                "{previous:?} -> {next:?} was announced for another platform"
+                            );
+                            assert_eq!(
+                                event.payload["state"],
+                                serde_json::to_value(next).unwrap(),
+                                "{previous:?} -> {next:?} announced the wrong state"
+                            );
+                            assert_eq!(
+                                event.payload["expected"].as_bool(),
+                                Some(transition.is_expected()),
+                                "{previous:?} -> {next:?} lost the {transition:?} flag"
+                            );
+                        }
                     }
                 }
             }

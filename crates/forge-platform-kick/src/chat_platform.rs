@@ -444,6 +444,14 @@ pub(crate) mod tests {
         frame: String,
         ledger: Arc<dyn BanLedgerRepo>,
     ) -> (KickPlatform, wiremock::MockServer) {
+        let socket_base = pusher_peer_sending(frame).await;
+        platform_on_socket(socket_base, ledger).await
+    }
+
+    async fn platform_on_socket(
+        socket_base: String,
+        ledger: Arc<dyn BanLedgerRepo>,
+    ) -> (KickPlatform, wiremock::MockServer) {
         use forge_platform_core::EndpointSurface;
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -457,7 +465,6 @@ pub(crate) mod tests {
             })))
             .mount(&server)
             .await;
-        let socket_base = pusher_peer_sending(frame).await;
         let overrides = [
             (
                 EndpointSurface::KickChannelApi.env_var(),
@@ -580,5 +587,93 @@ pub(crate) mod tests {
         platform.disconnect().await.unwrap();
 
         assert_eq!(event.payload["banned_user"]["id"], 77);
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum PeerEnding {
+        Holds,
+        ClosesWith(u16),
+        DropsTheSocket,
+    }
+
+    async fn pusher_peer_ending(ending: PeerEnding) -> String {
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::tungstenite::Message;
+        use tokio_tungstenite::tungstenite::protocol::CloseFrame;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let socket_addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            while let Some(Ok(message)) = ws.next().await {
+                if matches!(message, Message::Text(_)) {
+                    break;
+                }
+            }
+            match ending {
+                PeerEnding::Holds => {}
+                PeerEnding::ClosesWith(code) => {
+                    let frame = CloseFrame {
+                        code: code.into(),
+                        reason: "closed by the test peer".into(),
+                    };
+                    let _ = ws.send(Message::Close(Some(frame))).await;
+                }
+                PeerEnding::DropsTheSocket => return,
+            }
+            while let Some(Ok(_)) = ws.next().await {}
+        });
+        format!("ws://{socket_addr}/app")
+    }
+
+    async fn next_link_announcement(stream: &mut EventStream) -> (String, Option<bool>) {
+        tokio::time::timeout(BANNED_STEP_DEADLINE, async {
+            loop {
+                let event = stream.recv().await.unwrap();
+                if event.kind == forge_platform_core::CONNECTION_STATE_CHANGED_KIND {
+                    return (
+                        event.payload["state"].as_str().unwrap().to_owned(),
+                        event.payload["expected"].as_bool(),
+                    );
+                }
+            }
+        })
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn leaving_connected_is_flagged_expected_only_for_a_requested_close_or_a_pusher_reconnect_code()
+     {
+        for (ending, want_state, want_expected) in [
+            (PeerEnding::Holds, "disconnected", true),
+            (PeerEnding::ClosesWith(4200), "reconnecting", true),
+            (PeerEnding::ClosesWith(4299), "reconnecting", true),
+            (PeerEnding::ClosesWith(4199), "reconnecting", false),
+            (PeerEnding::ClosesWith(4300), "reconnecting", false),
+            (PeerEnding::ClosesWith(1000), "reconnecting", false),
+            (PeerEnding::DropsTheSocket, "reconnecting", false),
+        ] {
+            let (platform, _server) = platform_on_socket(
+                pusher_peer_ending(ending).await,
+                crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            )
+            .await;
+            let mut stream = platform.events();
+            platform.connect().await.unwrap();
+            while next_link_announcement(&mut stream).await.0 != "connected" {}
+
+            if matches!(ending, PeerEnding::Holds) {
+                platform.disconnect().await.unwrap();
+            }
+
+            assert_eq!(
+                next_link_announcement(&mut stream).await,
+                (want_state.to_owned(), Some(want_expected)),
+                "{ending:?}"
+            );
+            platform.disconnect().await.unwrap();
+        }
     }
 }

@@ -3,11 +3,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_ACCENT, BORDER_THIN, BulletItem, BulletKind, Density, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SaveState, Spacing, TextArea,
-    TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, field_title, ghost_button_with_icon,
-    grow_cell, icon, mono_family, overlay, radio_row, radius, save_indicator, setting_block,
-    setting_row, setting_rows, setting_sections, spacing, toggle, tr, type_to_confirm,
+    BORDER_ACCENT, BORDER_THIN, BulletItem, BulletKind, ConfirmTone, Density, FONT_SM, FONT_XS,
+    FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SaveState, Spacing,
+    TextArea, TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, confirm_modal,
+    field_title, ghost_button_with_icon, grow_cell, icon, mono_family, overlay, radio_row, radius,
+    save_indicator, setting_block, setting_row, setting_rows, setting_sections, spacing, toggle,
+    tr, type_to_confirm,
 };
 use forge_runtime::OverlayServiceHandle;
 use forge_server::{ServerHandle, ServerSettings};
@@ -19,6 +20,7 @@ use gpui::{
 
 use crate::async_bridge::{self, ErrorSink};
 use crate::overlay_build_failure::OverlayBuildFailure;
+use crate::overlay_link_token;
 use crate::server_restart::restart_ignoring_disabled;
 use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
@@ -35,6 +37,8 @@ const ORIGINS_PERSIST_CONTEXT: &str = "websocket additional origins";
 const ORIGINS_AREA_HEIGHT: Pixels = px(72.0);
 const PORT_COLUMN_MIN_W: Pixels = px(140.0);
 const TOKEN_COLUMN_MIN_W: Pixels = px(230.0);
+const TOKEN_FIELD_PAD_V: Pixels = px(7.0);
+const TOKEN_ACTION_GLYPH: Pixels = px(12.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BindChoice {
@@ -47,6 +51,7 @@ struct WebSocketSnapshot {
     lan_bind_enabled: bool,
     port: u16,
     require_ws_token: bool,
+    require_overlay_token: bool,
     cors_any_origin: bool,
     overlay_root: Option<String>,
     additional_origins: Vec<String>,
@@ -62,12 +67,16 @@ pub struct SettingsWebSocketView {
     bind_choice: BindChoice,
     port: u16,
     require_ws_token: bool,
+    require_overlay_token: bool,
     cors_any_origin: bool,
     overlay_root: Option<String>,
     additional_origins: Vec<String>,
 
     bearer_token: String,
     token_revealed: bool,
+    overlay_token: Option<String>,
+    overlay_token_regenerating: bool,
+    overlay_token_confirm_open: bool,
 
     loading: bool,
     save_state: SaveState,
@@ -124,6 +133,14 @@ impl SettingsWebSocketView {
         );
         subs.push(cx.on_release(|this, cx| this.persist_origins_on_release(cx)));
 
+        subs.push(overlay_link_token::follow(
+            server.as_ref(),
+            &rt_handle,
+            |this: &mut Self, token| this.overlay_token = token,
+            cx,
+        ));
+        let overlay_token = overlay_link_token::current(cx);
+
         let running = server
             .as_ref()
             .is_some_and(|handle| *handle.run_state().borrow());
@@ -136,11 +153,15 @@ impl SettingsWebSocketView {
             bind_choice: BindChoice::Localhost,
             port: DEFAULT_PORT,
             require_ws_token: true,
+            require_overlay_token: forge_storage::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT,
             cors_any_origin: true,
             overlay_root: None,
             additional_origins: Vec::new(),
             bearer_token: String::new(),
             token_revealed: false,
+            overlay_token,
+            overlay_token_regenerating: false,
+            overlay_token_confirm_open: false,
             loading: false,
             save_state: SaveState::default(),
             restarting: false,
@@ -215,6 +236,7 @@ impl SettingsWebSocketView {
                 self.port_input
                     .update(cx, |i, cx| i.set_content(snap.port.to_string(), cx));
                 self.require_ws_token = snap.require_ws_token;
+                self.require_overlay_token = snap.require_overlay_token;
                 self.cors_any_origin = snap.cors_any_origin;
                 self.overlay_root = snap.overlay_root.filter(|s| !s.is_empty());
                 self.additional_origins = snap.additional_origins;
@@ -645,6 +667,104 @@ impl SettingsWebSocketView {
             },
             cx,
         );
+    }
+
+    fn toggle_require_overlay_token(&mut self, cx: &mut Context<Self>) {
+        let prev = self.require_overlay_token;
+        let value = !prev;
+        self.require_overlay_token = value;
+        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let server = self.server.clone();
+        self.persist_bool(
+            prev,
+            |this, v| this.require_overlay_token = v,
+            async move {
+                ServerSettings::save_http_overlay_require_token(repo.as_ref(), value)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                if let Some(handle) = server {
+                    handle.set_http_overlay_token_required(value).await;
+                }
+                Ok(())
+            },
+            cx,
+        );
+    }
+
+    fn copy_overlay_token(&mut self, cx: &mut Context<Self>) {
+        if let Some(token) = self.overlay_token.clone() {
+            crate::toasts::copy_to_clipboard(token, cx);
+        }
+    }
+
+    fn overlay_token_regenerate_disabled(&self) -> bool {
+        self.overlay_token_regenerating || self.server.is_none()
+    }
+
+    fn request_overlay_token_regenerate(&mut self, cx: &mut Context<Self>) {
+        if self.overlay_token_regenerate_disabled() {
+            return;
+        }
+        self.overlay_token_confirm_open = true;
+        cx.notify();
+    }
+
+    fn cancel_overlay_token_regenerate(&mut self, cx: &mut Context<Self>) {
+        self.overlay_token_confirm_open = false;
+        cx.notify();
+    }
+
+    fn confirm_overlay_token_regenerate(&mut self, cx: &mut Context<Self>) {
+        self.overlay_token_confirm_open = false;
+        let Some(handle) = self.server.clone() else {
+            cx.notify();
+            return;
+        };
+        if self.overlay_token_regenerating {
+            cx.notify();
+            return;
+        }
+        self.overlay_token_regenerating = true;
+        let overlays = self.overlays.clone();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                match handle.regenerate_overlay_token(&overlays).await {
+                    Ok(token) => Ok((token, None)),
+                    Err(forge_server::ServerError::OverlayRotationIncomplete { token, reason }) => {
+                        Ok((token, Some(reason)))
+                    }
+                    Err(e) => Err(e.to_string()),
+                }
+            },
+            |this, result: Result<(String, Option<String>), String>, cx| {
+                this.finish_overlay_token_regenerate(result, cx)
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn finish_overlay_token_regenerate(
+        &mut self,
+        result: Result<(String, Option<String>), String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.overlay_token_regenerating = false;
+        match result {
+            Ok((token, rewrite_failure)) => {
+                overlay_link_token::publish(token, cx);
+                if let Some(reason) = rewrite_failure {
+                    tracing::warn!(error = %reason, "overlay pages were not fully rewritten after regenerating the token");
+                    ErrorSink::Toast.report(reason, cx);
+                }
+            }
+            Err(message) => {
+                tracing::warn!(error = %message, "failed to regenerate the overlay token");
+                ErrorSink::Toast.report(message, cx);
+            }
+        }
+        cx.notify();
     }
 
     fn toggle_cors(&mut self, cx: &mut Context<Self>) {
@@ -1086,6 +1206,21 @@ impl SettingsWebSocketView {
             )
             .row(
                 setting_row(
+                    tr!("settings_ws_auth_require_http_label"),
+                    Some(tr!("settings_ws_auth_require_http_sublabel").into()),
+                    toggle(self.require_overlay_token, palette).on_click(
+                        "settings-ws-auth-http",
+                        cx.listener(|this, _: &ClickEvent, _, cx| {
+                            this.toggle_require_overlay_token(cx)
+                        }),
+                    ),
+                    palette,
+                    density,
+                )
+                .leading(Icon::Globe, palette.info),
+            )
+            .row(
+                setting_row(
                     tr!("settings_ws_auth_cors_label"),
                     Some(tr!("settings_ws_auth_cors_sublabel").into()),
                     toggle(self.cors_any_origin, palette).on_click(
@@ -1100,9 +1235,124 @@ impl SettingsWebSocketView {
         setting_block(
             tr!("settings_ws_auth_section_title"),
             Some(tr!("settings_ws_auth_section_subtitle").into()),
-            rows,
+            div()
+                .flex()
+                .flex_col()
+                .gap(spacing(Spacing::Md, density))
+                .child(rows)
+                .child(self.overlay_token_block(palette, density, cx)),
             palette,
         )
+    }
+
+    fn overlay_token_block(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let shown =
+            overlay_link_token::displayed(self.overlay_token.as_deref().unwrap_or_default());
+
+        let mut field = div()
+            .flex_1()
+            .min_w(px(0.0))
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(spacing(Spacing::Xs, density))
+            .py(TOKEN_FIELD_PAD_V)
+            .px(spacing(Spacing::Sm, Density::Cozy))
+            .rounded(radius(Radius::Md))
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .bg(palette.shell)
+            .child(
+                div()
+                    .min_w(px(0.0))
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .font_family(mono_family())
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_primary)
+                    .child(shown),
+            );
+        if self.overlay_token.is_some() {
+            field = field.child(
+                div()
+                    .id("settings-ws-overlay-token-copy")
+                    .flex()
+                    .flex_none()
+                    .cursor_pointer()
+                    .on_click(
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.copy_overlay_token(cx)),
+                    )
+                    .child(icon(Icon::Copy, TOKEN_ACTION_GLYPH, palette.text_faint)),
+            );
+        }
+
+        let regenerate =
+            ghost_button_with_icon(Icon::Refresh, tr!("server_btn_regenerate"), palette)
+                .ink(palette.warning)
+                .disabled(self.overlay_token_regenerate_disabled())
+                .busy(self.overlay_token_regenerating)
+                .on_click(
+                    "settings-ws-overlay-token-regen",
+                    cx.listener(|this, _: &ClickEvent, _, cx| {
+                        this.request_overlay_token_regenerate(cx)
+                    }),
+                );
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(field_title(tr!("settings_ws_overlay_token_title"), palette))
+            .child(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_muted)
+                    .child(tr!("settings_ws_overlay_token_subtitle")),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xs, density))
+                    .child(field)
+                    .child(regenerate),
+            )
+    }
+
+    fn overlay_token_confirm(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let confirm = confirm_modal(
+            tr!("settings_ws_overlay_token_regen_title"),
+            tr!("settings_ws_overlay_token_regen_message"),
+            ConfirmTone::Warning,
+            palette,
+        )
+        .on_cancel(
+            "settings-ws-overlay-token-regen-cancel",
+            tr!("common_cancel"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_overlay_token_regenerate(cx)),
+        )
+        .on_confirm(
+            "settings-ws-overlay-token-regen-confirm",
+            tr!("server_btn_regenerate"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_overlay_token_regenerate(cx)),
+        );
+        let view = cx.entity();
+        overlay(confirm, palette)
+            .position(OverlayPosition::Center)
+            .on_dismiss(
+                "settings-ws-overlay-token-regen-scrim",
+                move |_window, cx| {
+                    view.update(cx, |this, cx| this.cancel_overlay_token_regenerate(cx));
+                },
+            )
+            .into_any_element()
     }
 
     fn overlay_section(
@@ -1248,6 +1498,9 @@ impl Render for SettingsWebSocketView {
         if let Some(modal) = &self.lan_modal {
             root = root.child(self.lan_overlay(modal.clone(), &palette, cx));
         }
+        if self.overlay_token_confirm_open {
+            root = root.child(self.overlay_token_confirm(&palette, cx));
+        }
         root
     }
 }
@@ -1261,6 +1514,7 @@ async fn load_websocket_settings(repo: Arc<dyn SettingsRepo>) -> Result<WebSocke
         lan_bind_enabled: snap.lan_bind_enabled,
         port: snap.port,
         require_ws_token: snap.auth_required_for_reads,
+        require_overlay_token: snap.http_overlay_require_token,
         cors_any_origin: snap.overlay_cors_any_origin,
         overlay_root: snap.overlay_root,
         additional_origins: snap.additional_origins,

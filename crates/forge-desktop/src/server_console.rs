@@ -20,7 +20,7 @@ use forge_server::{
 use forge_storage::{CredentialId, CredentialsRepo, SettingsRepo};
 use gpui::{
     AnyElement, ClickEvent, Context, Div, ElementId, EventEmitter, FontWeight, Pixels, Rgba,
-    SharedString, UniformListScrollHandle, Window, div, prelude::*, px,
+    SharedString, Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge::{self, ErrorSink};
@@ -161,6 +161,8 @@ pub struct ServerConsoleView {
     routable_host_resolved_for: Option<String>,
     bearer_token: String,
     token_revealed: bool,
+    overlay_token: Option<String>,
+    _overlay_token_watch: Subscription,
     connected_clients: Vec<OwnedClientRow>,
     recent_clients: usize,
     clients_scroll: UniformListScrollHandle,
@@ -183,6 +185,13 @@ impl ServerConsoleView {
         let running = server
             .as_ref()
             .is_some_and(|handle| *handle.run_state().borrow());
+        let overlay_token = crate::overlay_link_token::current(cx);
+        let overlay_token_watch = crate::overlay_link_token::follow(
+            server.as_ref(),
+            &rt_handle,
+            |this: &mut Self, token| this.overlay_token = token,
+            cx,
+        );
         let view = Self {
             server,
             rt_handle,
@@ -196,6 +205,8 @@ impl ServerConsoleView {
             routable_host_resolved_for: None,
             bearer_token: String::new(),
             token_revealed: false,
+            overlay_token,
+            _overlay_token_watch: overlay_token_watch,
             connected_clients: Vec::new(),
             recent_clients: 0,
             clients_scroll: UniformListScrollHandle::new(),
@@ -498,14 +509,24 @@ impl ServerConsoleView {
     }
 
     fn browser_source_url(&self) -> Option<String> {
+        self.browser_source_url_with(self.overlay_token.as_deref()?)
+    }
+
+    fn displayed_browser_source_url(&self) -> Option<String> {
+        self.browser_source_url_with(&crate::overlay_link_token::displayed(
+            self.overlay_token.as_deref()?,
+        ))
+    }
+
+    fn browser_source_url_with(&self, token: &str) -> Option<String> {
         if !self.running {
             return None;
         }
         let origin = overlay_origin(self.bind_address.as_deref()?, self.routable_host.as_deref());
         let entry = self.browser_source_entry()?;
         Some(match entry.kind {
-            OwnedOverlayKind::Dir { .. } => overlay_page_url(&origin, &entry.name),
-            OwnedOverlayKind::File { .. } => overlay_file_url(&origin, &entry.name),
+            OwnedOverlayKind::Dir { .. } => overlay_page_url(&origin, token, &entry.name),
+            OwnedOverlayKind::File { .. } => overlay_file_url(&origin, token, &entry.name),
         })
     }
 
@@ -1125,7 +1146,7 @@ impl ServerConsoleView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let url = self.browser_source_url();
+        let url = self.displayed_browser_source_url();
 
         let value = match url.clone() {
             Some(url) => div()

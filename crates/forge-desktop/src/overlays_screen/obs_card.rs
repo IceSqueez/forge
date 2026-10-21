@@ -70,7 +70,7 @@ impl OverlaysView {
         let advice = obs_recommendations(&config, self.receiver.as_ref() == Some(&definition.id));
 
         let id = definition.id.clone();
-        let url_row = match self.overlay_url(&definition.id) {
+        let url_row = match self.displayed_overlay_url(&definition.id) {
             Some(url) => value_row(
                 tr!("overlays_obs_url"),
                 url,

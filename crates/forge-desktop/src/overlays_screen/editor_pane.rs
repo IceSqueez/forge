@@ -225,7 +225,7 @@ impl OverlaysView {
             .font_family(mono_family())
             .text_size(URL_FS);
 
-        let Some(url) = self.overlay_url(&definition.id) else {
+        let Some(url) = self.displayed_overlay_url(&definition.id) else {
             return box_frame
                 .child(icon(Icon::Link, URL_GLYPH, palette.text_faint))
                 .child(

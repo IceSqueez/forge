@@ -1,7 +1,8 @@
 use forge_storage::OverlayId;
-use gpui::Context;
+use gpui::{Context, Subscription};
 
 use super::OverlaysView;
+use crate::overlay_link_token;
 use forge_server::overlay_url::{overlay_origin, overlay_page_url, resolve_routable_host};
 
 struct ServedEndpoint {
@@ -14,6 +15,8 @@ pub(super) struct ServerStatus {
     pub(super) running: bool,
     pub(super) bind_address: Option<String>,
     routable_host: Option<String>,
+    token: Option<String>,
+    token_watch: Option<Subscription>,
 }
 
 impl ServerStatus {
@@ -25,11 +28,19 @@ impl ServerStatus {
     }
 
     fn overlay_url(&self, id: &OverlayId) -> Option<String> {
+        self.page_url(self.token.as_deref()?, id)
+    }
+
+    fn displayed_overlay_url(&self, id: &OverlayId) -> Option<String> {
+        self.page_url(&overlay_link_token::displayed(self.token.as_deref()?), id)
+    }
+
+    fn page_url(&self, token: &str, id: &OverlayId) -> Option<String> {
         if !self.running {
             return None;
         }
         let origin = overlay_origin(self.bind_address.as_deref()?, self.routable_host.as_deref());
-        Some(overlay_page_url(&origin, id.as_str()))
+        Some(overlay_page_url(&origin, token, id.as_str()))
     }
 
     fn apply(&mut self, running: bool, endpoint: Option<ServedEndpoint>) -> bool {
@@ -52,7 +63,27 @@ impl OverlaysView {
         self.served.overlay_url(id)
     }
 
-    pub(super) fn start_server_bridge(&self, cx: &mut Context<Self>) {
+    pub(super) fn displayed_overlay_url(&self, id: &OverlayId) -> Option<String> {
+        self.served.displayed_overlay_url(id)
+    }
+
+    pub(super) fn displayed_served_path(&self, id: &OverlayId, file: &str) -> String {
+        let token = overlay_link_token::displayed(self.served.token.as_deref().unwrap_or_default());
+        format!("{}{file}", overlay_page_url("", &token, id.as_str()))
+    }
+
+    fn follow_overlay_token(&mut self, cx: &mut Context<Self>) {
+        self.served.token = overlay_link_token::current(cx);
+        self.served.token_watch = Some(overlay_link_token::follow(
+            self.handles.server.as_ref(),
+            &self.handles.rt_handle,
+            |this: &mut Self, token| this.served.token = token,
+            cx,
+        ));
+    }
+
+    pub(super) fn start_server_bridge(&mut self, cx: &mut Context<Self>) {
+        self.follow_overlay_token(cx);
         let Some(handle) = self.handles.server.clone() else {
             return;
         };

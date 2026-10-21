@@ -678,11 +678,7 @@ impl OverlaysView {
                     .font_family(mono_family())
                     .text_size(FOOT_FS)
                     .text_color(palette.text_muted)
-                    .child(format!(
-                        "/overlays/{}/{}",
-                        definition.id.as_str(),
-                        self.editor.code.file
-                    )),
+                    .child(self.displayed_served_path(&definition.id, self.editor.code.file)),
             )
             .into_any_element()
     }

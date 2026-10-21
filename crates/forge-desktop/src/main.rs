@@ -95,6 +95,7 @@ mod obs_credentials_form;
 mod obs_settings_modal;
 mod overlay_build_failure;
 mod overlay_frame_sink;
+mod overlay_link_token;
 mod overlay_speech_failure;
 mod overlays_screen;
 mod pack_export;

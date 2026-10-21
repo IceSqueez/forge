@@ -1,9 +1,11 @@
 #![doc = "Audio output abstraction: AudioSink trait, cpal device discovery, multi-sink fan-out, format conversion."]
 
+pub mod alert_cue;
 pub mod audio_route;
 pub mod convert;
 pub mod cpal_sink;
 pub mod decode;
+pub mod default_output;
 pub mod device;
 pub mod device_sink;
 pub mod error;
@@ -20,9 +22,11 @@ pub mod targeted;
 pub mod voice_gate;
 pub mod wave;
 
+pub use alert_cue::alert_cue;
 pub use audio_route::AudioRoute;
 pub use cpal_sink::CpalSink;
 pub use decode::{decode_bytes, decode_file, probe_duration_secs};
+pub use default_output::play_on_default_output;
 pub use device::{
     DeviceId, DeviceInfo, OutputDevice, list_input_devices, list_output_devices,
     pick_default_input_device, pick_default_output_device, refresh_input_devices,

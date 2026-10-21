@@ -2672,6 +2672,7 @@ dependencies = [
  "fluent",
  "forge-types",
  "gpui",
+ "jiff",
  "time",
  "tracing",
  "unic-langid",

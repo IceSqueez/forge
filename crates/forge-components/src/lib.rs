@@ -14,6 +14,7 @@ pub mod data;
 pub mod date_display;
 pub mod date_time_picker;
 pub mod display_formats;
+pub mod display_zone;
 pub mod dropdown;
 pub mod error_row;
 pub mod fonts;
@@ -85,7 +86,7 @@ pub use data::{
     hover_reveal, virtual_table,
 };
 pub use date_display::{
-    DateDisplay, DateShape, active_display_formats, date_display, fmt_display,
+    DateDisplay, DateShape, active_display_formats, date_display, fmt_day_period, fmt_display,
     fmt_display_relative, install_display_formats, ui_names_language,
 };
 pub use date_time_picker::{DateTimePicker, DateTimePickerEvent, DateTimePickerLabels};
@@ -93,6 +94,7 @@ pub use display_formats::{
     ClockStyle, DateFormatChoice, DisplayFormatChoices, DisplayFormats, FOLLOW_REGION_CODE,
     FirstWeekday, FormatChoice, FormatOption,
 };
+pub use display_zone::{DisplayZone, WallTime, display_zone, install_display_zone};
 pub use dropdown::{
     Dropdown, DropdownRow, dropdown, dropdown_group_header, dropdown_list, dropdown_row,
     dropdown_surface,

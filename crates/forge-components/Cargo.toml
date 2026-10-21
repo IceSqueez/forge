@@ -9,6 +9,7 @@ repository.workspace = true
 fluent = { workspace = true }
 forge-types = { path = "../forge-types" }
 gpui = { workspace = true }
+jiff = { workspace = true }
 time = { workspace = true }
 tracing = { workspace = true }
 unic-langid = { workspace = true }

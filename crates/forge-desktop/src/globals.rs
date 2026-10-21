@@ -1,6 +1,7 @@
-use forge_components::ForgePalette;
+use forge_components::{ForgePalette, fmt_display_relative};
 use forge_types::{Variant, VariantKind};
 use gpui::{Rgba, SharedString};
+use time::OffsetDateTime;
 
 pub fn variant_kind_color(kind: VariantKind, palette: &ForgePalette) -> Rgba {
     match kind {
@@ -21,12 +22,16 @@ pub struct Global {
     pub persisted: bool,
     pub reads: u64,
     pub writes: u64,
-    pub modified: SharedString,
+    pub modified_at: OffsetDateTime,
 }
 
 impl Global {
     pub fn kind(&self) -> VariantKind {
         VariantKind::from_variant(&self.value)
+    }
+
+    pub fn modified_label(&self) -> String {
+        fmt_display_relative(Some(self.modified_at))
     }
 }
 

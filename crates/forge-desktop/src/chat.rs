@@ -1477,10 +1477,7 @@ impl ChatView {
             name_row = name_row.child(drawer_role_badge(role, BADGE_DETAIL, palette));
         }
 
-        let last_seen = tr!(
-            "chat_drawer_last_seen",
-            when = summary.last_seen_label.clone()
-        );
+        let last_seen = tr!("chat_drawer_last_seen", when = summary.last_seen_label());
         let name_col = div()
             .flex_1()
             .min_w(px(0.0))
@@ -2003,7 +2000,7 @@ impl ChatView {
             .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
-            .child(SharedString::from(summary.last_seen_label.clone()));
+            .child(SharedString::from(summary.last_seen_label()));
 
         let mut row = div()
             .id(row_id)

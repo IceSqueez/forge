@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use forge_types::{NamesLanguage, PatternZone, datetime_to_text, shared_date_pattern};
-use time::OffsetDateTime;
+use time::{OffsetDateTime, Time};
 
 use crate::display_formats::{ClockStyle, DisplayFormatChoices, DisplayFormats};
 use crate::locale::{CatalogLanguage, active_locale, relative_within_week, tr_lookup};
@@ -9,6 +9,7 @@ use crate::region::Region;
 
 const DATE_TIME_SEPARATOR: &str = ", ";
 const MONTH_YEAR_PATTERN: &str = "LLLL yyyy";
+const DAY_PERIOD_PATTERN: &str = "a";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DateShape {
@@ -109,6 +110,18 @@ pub fn fmt_display(shape: DateShape, value: OffsetDateTime) -> String {
 
 pub fn fmt_display_relative(value: Option<OffsetDateTime>) -> String {
     date_display().relative(value, OffsetDateTime::now_utc())
+}
+
+pub fn fmt_day_period(time_of_day: Time) -> String {
+    DateDisplay::new(
+        active_display_formats(),
+        ui_names_language(),
+        PatternZone::Utc,
+    )
+    .render(
+        DAY_PERIOD_PATTERN,
+        OffsetDateTime::UNIX_EPOCH.replace_time(time_of_day),
+    )
 }
 
 #[cfg(test)]

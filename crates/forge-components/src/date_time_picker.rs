@@ -1,11 +1,14 @@
+use forge_types::{datetime_from_text, datetime_to_text};
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, EventEmitter, Pixels, SharedString, Window,
     div, prelude::*, px,
 };
-use time::{Date, Month, OffsetDateTime, Time, format_description::well_known::Rfc3339};
+use time::{Date, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset};
 
 use crate::buttons::{ghost_button_with_icon, primary_button, secondary_button};
-use crate::display_formats::FirstWeekday;
+use crate::date_display::fmt_day_period;
+use crate::display_formats::{ClockStyle, FirstWeekday};
+use crate::display_zone::{DisplayZone, WallTime};
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{
@@ -18,6 +21,11 @@ const PANEL_W: Pixels = px(284.0);
 const CELL: Pixels = px(34.0);
 const NAV_BTN: Pixels = px(26.0);
 const NAV_GLYPH: Pixels = px(14.0);
+const STEPPER_W: Pixels = px(40.0);
+
+const HOURS_PER_DAY: i32 = 24;
+const HOURS_PER_HALF_DAY: u8 = 12;
+const MINUTES_PER_HOUR: i32 = 60;
 
 const DAYS_PER_WEEK: u8 = 7;
 
@@ -52,6 +60,16 @@ pub struct DateTimePicker {
     hour: u8,
     minute: u8,
     first_day: FirstWeekday,
+    clock: ClockStyle,
+    zone: DisplayZone,
+    repeated: Option<RepeatedWallTime>,
+    later_in_repeat: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RepeatedWallTime {
+    earlier: UtcOffset,
+    later: UtcOffset,
 }
 
 impl EventEmitter<DateTimePickerEvent> for DateTimePicker {}
@@ -59,16 +77,15 @@ impl EventEmitter<DateTimePickerEvent> for DateTimePicker {}
 impl DateTimePicker {
     pub fn new(
         initial: Option<&str>,
+        zone: DisplayZone,
         labels: DateTimePickerLabels,
         palette: ForgePalette,
         _cx: &mut Context<Self>,
     ) -> Self {
         let seed = initial
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .and_then(|s| OffsetDateTime::parse(s, &Rfc3339).ok())
+            .and_then(datetime_from_text)
             .unwrap_or_else(OffsetDateTime::now_utc);
-        Self {
+        let mut picker = Self {
             palette,
             labels,
             year: seed.year(),
@@ -77,12 +94,108 @@ impl DateTimePicker {
             hour: seed.hour(),
             minute: seed.minute(),
             first_day: FirstWeekday::Monday,
-        }
+            clock: ClockStyle::TwentyFourHour,
+            zone,
+            repeated: None,
+            later_in_repeat: false,
+        };
+        picker.show_local(seed);
+        picker
     }
 
     pub fn first_day(mut self, first_day: FirstWeekday) -> Self {
         self.first_day = first_day;
         self
+    }
+
+    pub fn clock(mut self, clock: ClockStyle) -> Self {
+        self.clock = clock;
+        self
+    }
+
+    fn show_local(&mut self, instant: OffsetDateTime) {
+        let wall = self.zone.wall_clock(instant);
+        self.show_wall(wall);
+        self.later_in_repeat = false;
+        self.settle(true);
+        self.later_in_repeat = self
+            .repeated
+            .is_some_and(|repeated| repeated.later == wall.offset());
+    }
+
+    fn show_wall(&mut self, wall: OffsetDateTime) {
+        self.year = wall.year();
+        self.month = wall.month();
+        self.day = wall.day();
+        self.hour = wall.hour();
+        self.minute = wall.minute();
+    }
+
+    fn wall(&self) -> Option<PrimitiveDateTime> {
+        let date = Date::from_calendar_date(self.year, self.month, self.day).ok()?;
+        let time = Time::from_hms(self.hour, self.minute, 0).ok()?;
+        Some(PrimitiveDateTime::new(date, time))
+    }
+
+    fn wall_time(&self) -> Option<WallTime> {
+        self.zone.resolve(self.wall()?)
+    }
+
+    fn settle(&mut self, forward: bool) {
+        let resolved = self.wall_time();
+        if let Some(WallTime::Skipped {
+            first_valid,
+            last_before,
+        }) = resolved
+        {
+            self.show_wall(if forward { first_valid } else { last_before });
+        }
+        let repeated = match resolved {
+            Some(WallTime::Repeated { earlier, later }) => Some(RepeatedWallTime {
+                earlier: earlier.offset(),
+                later: later.offset(),
+            }),
+            _ => None,
+        };
+        if repeated.is_none() {
+            self.later_in_repeat = false;
+        }
+        self.repeated = repeated;
+    }
+
+    fn choose_repeat(&mut self, later: bool, cx: &mut Context<Self>) {
+        self.later_in_repeat = later;
+        cx.notify();
+    }
+
+    fn wall_time_label(&self) -> String {
+        match self.clock {
+            ClockStyle::TwentyFourHour => format!("{:02}:{:02}", self.hour, self.minute),
+            ClockStyle::TwelveHour => format!(
+                "{}:{:02} {}",
+                self.displayed_hour(),
+                self.minute,
+                fmt_day_period(day_period_sample(self.is_after_noon()))
+            ),
+        }
+    }
+
+    fn repeat_choice_label(&self, offset: UtcOffset) -> String {
+        format!("{} ({})", self.wall_time_label(), offset_label(offset))
+    }
+
+    fn is_after_noon(&self) -> bool {
+        self.hour >= HOURS_PER_HALF_DAY
+    }
+
+    fn displayed_hour(&self) -> u8 {
+        match self.clock {
+            ClockStyle::TwentyFourHour => self.hour,
+            ClockStyle::TwelveHour => match self.hour % HOURS_PER_HALF_DAY {
+                0 => HOURS_PER_HALF_DAY,
+                hour => hour,
+            },
+        }
     }
 
     fn weekday_keys(&self) -> impl Iterator<Item = &'static str> {
@@ -118,6 +231,7 @@ impl DateTimePicker {
         }
         self.month = self.month.previous();
         self.clamp_day();
+        self.settle(true);
         cx.notify();
     }
 
@@ -127,37 +241,44 @@ impl DateTimePicker {
         }
         self.month = self.month.next();
         self.clamp_day();
+        self.settle(true);
         cx.notify();
     }
 
     fn pick_day(&mut self, day: u8, cx: &mut Context<Self>) {
         self.day = day;
+        self.settle(true);
         cx.notify();
     }
 
     fn step_hour(&mut self, delta: i32, cx: &mut Context<Self>) {
-        self.hour = (i32::from(self.hour) + delta).rem_euclid(24) as u8;
+        self.hour = (i32::from(self.hour) + delta).rem_euclid(HOURS_PER_DAY) as u8;
+        self.settle(delta >= 0);
+        cx.notify();
+    }
+
+    fn set_day_period(&mut self, after_noon: bool, cx: &mut Context<Self>) {
+        if self.is_after_noon() != after_noon {
+            self.hour = (self.hour + HOURS_PER_HALF_DAY) % HOURS_PER_DAY as u8;
+        }
+        self.settle(true);
         cx.notify();
     }
 
     fn step_minute(&mut self, delta: i32, cx: &mut Context<Self>) {
-        self.minute = (i32::from(self.minute) + delta).rem_euclid(60) as u8;
+        self.minute = (i32::from(self.minute) + delta).rem_euclid(MINUTES_PER_HOUR) as u8;
+        self.settle(delta >= 0);
         cx.notify();
     }
 
     fn set_now(&mut self, cx: &mut Context<Self>) {
-        let now = OffsetDateTime::now_utc();
-        self.year = now.year();
-        self.month = now.month();
-        self.day = now.day();
-        self.hour = now.hour();
-        self.minute = now.minute();
+        self.show_local(OffsetDateTime::now_utc());
         cx.notify();
     }
 
     fn confirm(&mut self, cx: &mut Context<Self>) {
-        if let Some(value) = self.rfc3339() {
-            cx.emit(DateTimePickerEvent::Picked(value.into()));
+        if let Some(value) = self.picked_instant() {
+            cx.emit(DateTimePickerEvent::Picked(datetime_to_text(&value).into()));
         }
     }
 
@@ -165,10 +286,14 @@ impl DateTimePicker {
         cx.emit(DateTimePickerEvent::Dismissed);
     }
 
-    fn rfc3339(&self) -> Option<String> {
-        let date = Date::from_calendar_date(self.year, self.month, self.day).ok()?;
-        let time = Time::from_hms(self.hour, self.minute, 0).ok()?;
-        date.with_time(time).assume_utc().format(&Rfc3339).ok()
+    fn picked_instant(&self) -> Option<OffsetDateTime> {
+        match self.wall_time()? {
+            WallTime::Exact(instant) => Some(instant),
+            WallTime::Repeated { earlier, later } => {
+                Some(if self.later_in_repeat { later } else { earlier })
+            }
+            WallTime::Skipped { first_valid, .. } => Some(first_valid),
+        }
     }
 
     fn render_month_nav(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -269,7 +394,7 @@ impl DateTimePicker {
             .gap(spacing(Spacing::Sm, Density::Cozy))
             .child(self.render_stepper(
                 "hour",
-                self.hour,
+                self.displayed_hour(),
                 cx.listener(|this, _: &ClickEvent, _, cx| this.step_hour(1, cx)),
                 cx.listener(|this, _: &ClickEvent, _, cx| this.step_hour(-1, cx)),
             ))
@@ -286,6 +411,76 @@ impl DateTimePicker {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.step_minute(1, cx)),
                 cx.listener(|this, _: &ClickEvent, _, cx| this.step_minute(-1, cx)),
             ))
+            .when(self.clock == ClockStyle::TwelveHour, |row| {
+                row.child(self.render_day_period(cx))
+            })
+            .into_any_element()
+    }
+
+    fn render_day_period(&self, cx: &mut Context<Self>) -> AnyElement {
+        let after_noon = self.is_after_noon();
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .child(self.render_day_period_option(false, !after_noon, cx))
+            .child(self.render_day_period_option(true, after_noon, cx))
+            .into_any_element()
+    }
+
+    fn render_day_period_option(
+        &self,
+        after_noon: bool,
+        selected: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let id = if after_noon {
+            "forge-dtp-after-noon"
+        } else {
+            "forge-dtp-before-noon"
+        };
+        choice_chip(
+            id,
+            fmt_day_period(day_period_sample(after_noon)),
+            selected,
+            &self.palette,
+        )
+        .w(STEPPER_W)
+        .on_click(
+            cx.listener(move |this, _: &ClickEvent, _, cx| this.set_day_period(after_noon, cx)),
+        )
+        .into_any_element()
+    }
+
+    fn render_repeat_choices(
+        &self,
+        repeated: RepeatedWallTime,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .w_full()
+            .flex()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .child(
+                choice_chip(
+                    "forge-dtp-repeat-earlier",
+                    self.repeat_choice_label(repeated.earlier),
+                    !self.later_in_repeat,
+                    &self.palette,
+                )
+                .flex_1()
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.choose_repeat(false, cx))),
+            )
+            .child(
+                choice_chip(
+                    "forge-dtp-repeat-later",
+                    self.repeat_choice_label(repeated.later),
+                    self.later_in_repeat,
+                    &self.palette,
+                )
+                .flex_1()
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.choose_repeat(true, cx))),
+            )
             .into_any_element()
     }
 
@@ -310,7 +505,7 @@ impl DateTimePicker {
             ))
             .child(
                 div()
-                    .w(px(40.0))
+                    .w(STEPPER_W)
                     .flex()
                     .justify_center()
                     .font_family(mono_family())
@@ -378,6 +573,9 @@ impl Render for DateTimePicker {
             .child(self.render_day_grid(cx))
             .child(div().w_full().h(BORDER_THIN).bg(p.border_regular))
             .child(self.render_time(cx))
+            .when_some(self.repeated, |panel, repeated| {
+                panel.child(self.render_repeat_choices(repeated, cx))
+            })
             .child(self.render_footer(cx))
     }
 }
@@ -402,6 +600,45 @@ fn nav_btn(
         .on_click(handler)
         .child(icon(glyph, NAV_GLYPH, ink))
         .into_any_element()
+}
+
+fn day_period_sample(after_noon: bool) -> Time {
+    let hour = if after_noon { HOURS_PER_HALF_DAY } else { 0 };
+    Time::from_hms(hour, 0, 0).unwrap_or(Time::MIDNIGHT)
+}
+
+fn choice_chip(
+    id: &'static str,
+    label: String,
+    selected: bool,
+    palette: &ForgePalette,
+) -> gpui::Stateful<gpui::Div> {
+    let p = *palette;
+    let hover_bg = p.surface_overlay;
+    div()
+        .id(id)
+        .flex()
+        .justify_center()
+        .py(spacing(Spacing::Xxs, Density::Cozy))
+        .rounded(radius(Radius::Sm))
+        .font_family(mono_family())
+        .text_size(FONT_XS)
+        .cursor_pointer()
+        .when(selected, |c| c.bg(p.brand).text_color(p.base))
+        .when(!selected, |c| {
+            c.text_color(p.text_secondary)
+                .hover(move |s| s.bg(hover_bg))
+        })
+        .child(label)
+}
+
+fn offset_label(offset: UtcOffset) -> String {
+    let sign = if offset.is_negative() { '-' } else { '+' };
+    format!(
+        "{sign}{:02}:{:02}",
+        offset.whole_hours().unsigned_abs(),
+        offset.minutes_past_hour().unsigned_abs()
+    )
 }
 
 fn month_name(month: Month) -> String {

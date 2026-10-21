@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use forge_components::{ForgePalette, fmt_display_relative, hash_accent};
 use forge_storage::Viewer;
 use gpui::{Rgba, SharedString};
+use time::OffsetDateTime;
 
 use crate::chat_author::AuthorKey;
 use crate::chat_feed::{AuthorActivity, AuthorIndex};
@@ -24,10 +25,16 @@ pub(crate) struct ViewerSummary {
     pub username: String,
     pub role: Option<BadgeKind>,
     pub message_count: u64,
-    pub last_seen_label: String,
+    pub last_seen_at: OffsetDateTime,
     pub avatar_letter: char,
     pub avatar_color: Rgba,
     pub sub: SubStatus,
+}
+
+impl ViewerSummary {
+    pub(crate) fn last_seen_label(&self) -> String {
+        fmt_display_relative(Some(self.last_seen_at))
+    }
 }
 
 pub(crate) fn drawer_matches(username: &str, search: &str) -> bool {
@@ -88,7 +95,7 @@ pub(crate) fn summary_from_activity(
         username: username.to_owned(),
         role: activity.role,
         message_count,
-        last_seen_label: fmt_display_relative(Some(activity.last_received_at)),
+        last_seen_at: activity.last_received_at,
         avatar_letter,
         avatar_color: hash_accent(username, palette),
         sub: sub_status(activity.role),
@@ -100,7 +107,7 @@ pub(crate) fn enrich_with_storage(
     viewer: Option<&Viewer>,
 ) -> ViewerSummary {
     if let Some(v) = viewer {
-        summary.last_seen_label = fmt_display_relative(Some(v.last_seen_at));
+        summary.last_seen_at = v.last_seen_at;
     }
     summary
 }

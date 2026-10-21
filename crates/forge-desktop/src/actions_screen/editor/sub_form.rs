@@ -204,6 +204,7 @@ mod tests {
 
     use super::super::tests::view_with;
     use super::*;
+    use crate::screen_shortcuts::ScreenShortcuts;
     use crate::test_support::{pump, runtime};
 
     const PLAY_SOUND: &str = "soundboard.sound.play";
@@ -461,6 +462,42 @@ mod tests {
             assert_eq!(
                 saved,
                 Some([(CLIP_FIELD.to_owned(), clip)].into_iter().collect()),
+                "{case}"
+            );
+        }
+    }
+
+    fn settle(editor: &PlaySoundEditor, cx: &mut gpui::TestAppContext) {
+        for _ in 0..3 {
+            pump(&editor.rt);
+            cx.run_until_parked();
+        }
+    }
+
+    #[gpui::test]
+    fn the_save_shortcut_submits_the_step_dialog_through_its_validation(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let clip = Variant::String(ClipId::new().to_string());
+        for (stored, closes, saves, case) in [
+            (SubActionConfig::new(), false, 0, "no clip picked"),
+            (
+                [(CLIP_FIELD.to_owned(), clip.clone())]
+                    .into_iter()
+                    .collect(),
+                true,
+                1,
+                "clip picked",
+            ),
+        ] {
+            let editor = PlaySoundEditor::open_storing(cx, stored);
+
+            editor.view.update(cx, |view, cx| view.save_shortcut(cx));
+            settle(&editor, cx);
+
+            assert_eq!(
+                (editor.form(cx).is_none(), editor.saves.saved().len()),
+                (closes, saves),
                 "{case}"
             );
         }

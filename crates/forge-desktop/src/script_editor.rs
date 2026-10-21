@@ -3777,6 +3777,7 @@ mod tests {
         use super::*;
         use crate::i18n::install_language;
         use crate::navigation_guard::{LeaveTarget, NavigationGuard};
+        use crate::screen_shortcuts::ScreenShortcuts;
         use crate::test_support::{StubEventLog, pump, runtime, test_backend_with_scripts};
         use crate::unsaved_work::UnsavedWorkHandle;
         use forge_components::Presentation;
@@ -3794,14 +3795,6 @@ mod tests {
         }
 
         struct Blank;
-
-        struct Hosting(Entity<ScriptEditorView>);
-
-        impl Render for Hosting {
-            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-                div().size_full().child(self.0.clone())
-            }
-        }
 
         impl Render for Blank {
             fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
@@ -4020,23 +4013,133 @@ mod tests {
             );
         }
 
+        struct ShellHosting {
+            editor: Entity<ScriptEditorView>,
+            focus: gpui::FocusHandle,
+            shell_saves: Arc<AtomicUsize>,
+        }
+
+        impl Render for ShellHosting {
+            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                let shell_saves = Arc::clone(&self.shell_saves);
+                div()
+                    .key_context(crate::actions::SHELL_CONTEXT)
+                    .track_focus(&self.focus)
+                    .on_action(move |_: &crate::actions::SaveFocused, _, _| {
+                        shell_saves.fetch_add(1, Ordering::SeqCst);
+                    })
+                    .size_full()
+                    .child(self.editor.clone())
+            }
+        }
+
+        fn press_save_chord(
+            rig: &Rig,
+            cx: &mut TestAppContext,
+            in_code_editor: bool,
+        ) -> Arc<AtomicUsize> {
+            cx.update(bind_code_editor_keys);
+            cx.update(crate::actions::register_shell_key_bindings);
+            let shell_saves = Arc::new(AtomicUsize::new(0));
+            let hosted = rig.view.clone();
+            let counted = Arc::clone(&shell_saves);
+            let window = cx.add_window(|_, cx| ShellHosting {
+                editor: hosted,
+                focus: cx.focus_handle(),
+                shell_saves: counted,
+            });
+            let vcx = &mut gpui::VisualTestContext::from_window(window.into(), cx);
+            vcx.update(|window, cx| {
+                if in_code_editor {
+                    let editor = rig.view.read(cx).code_input.clone();
+                    editor.update(cx, |editor, cx| editor.focus(window, cx));
+                } else {
+                    let focus = window
+                        .root::<ShellHosting>()
+                        .flatten()
+                        .map(|host| host.read(cx).focus.clone());
+                    if let Some(focus) = focus {
+                        window.focus(&focus, cx);
+                    }
+                }
+            });
+            vcx.run_until_parked();
+            vcx.simulate_keystrokes("ctrl-s");
+            rig.settle(cx);
+            shell_saves
+        }
+
         #[gpui::test]
-        fn the_save_chord_in_the_code_editor_stores_the_edited_script(cx: &mut TestAppContext) {
+        fn the_save_chord_in_the_code_editor_never_reaches_the_shell_save(cx: &mut TestAppContext) {
             let stores = Arc::new(AtomicUsize::new(0));
             let rig = Rig::mount(cx, Store::Counted(Arc::clone(&stores)));
             rig.type_body(EDITED_BODY, cx);
-            cx.update(bind_code_editor_keys);
-            let hosted = rig.view.clone();
-            let window = cx.add_window(|_, _| Hosting(hosted));
-            let vcx = &mut gpui::VisualTestContext::from_window(window.into(), cx);
-            let editor = vcx.update(|_window, cx| rig.view.read(cx).code_input.clone());
-            vcx.update(|window, cx| editor.update(cx, |editor, cx| editor.focus(window, cx)));
-            vcx.run_until_parked();
 
-            vcx.simulate_keystrokes("secondary-s");
-            rig.settle(cx);
+            let shell_saves = press_save_chord(&rig, cx, true);
 
-            assert_eq!((stores.load(Ordering::SeqCst), rig.unsaved(cx)), (1, false));
+            assert_eq!(
+                (
+                    shell_saves.load(Ordering::SeqCst),
+                    stores.load(Ordering::SeqCst)
+                ),
+                (0, 1)
+            );
+        }
+
+        #[gpui::test]
+        fn the_save_chord_outside_the_code_editor_goes_to_the_shell_save(cx: &mut TestAppContext) {
+            let rig = Rig::mount(cx, Store::NeverCalled);
+
+            let shell_saves = press_save_chord(&rig, cx, false);
+
+            assert_eq!(shell_saves.load(Ordering::SeqCst), 1);
+        }
+
+        #[gpui::test]
+        fn the_save_shortcut_stores_the_edited_script_unless_a_prompt_is_showing(
+            cx: &mut TestAppContext,
+        ) {
+            for (delete_prompt, expected, case) in
+                [(false, 1, "no prompt"), (true, 0, "delete prompt showing")]
+            {
+                let stores = Arc::new(AtomicUsize::new(0));
+                let rig = Rig::mount(cx, Store::Counted(Arc::clone(&stores)));
+                rig.type_body(EDITED_BODY, cx);
+                if delete_prompt {
+                    rig.view
+                        .update(cx, |view, _| view.pending_delete.request(ScriptId::new()));
+                }
+
+                rig.view.update(cx, |view, cx| view.save_shortcut(cx));
+                rig.settle(cx);
+
+                assert_eq!(stores.load(Ordering::SeqCst), expected, "{case}");
+            }
+        }
+
+        #[gpui::test]
+        fn the_run_shortcut_runs_the_open_script_unless_a_prompt_is_showing(
+            cx: &mut TestAppContext,
+        ) {
+            for (delete_prompt, expected, case) in
+                [(false, 1, "no prompt"), (true, 0, "delete prompt showing")]
+            {
+                let rig = Rig::mount(cx, Store::NeverCalled);
+                if delete_prompt {
+                    rig.view
+                        .update(cx, |view, _| view.pending_delete.request(ScriptId::new()));
+                }
+
+                rig.view.update(cx, |view, cx| view.run_shortcut(cx));
+
+                let runs = rig.view.read_with(cx, |view, _| {
+                    view.console
+                        .iter()
+                        .filter(|line| matches!(line.tag, LogTag::Run))
+                        .count()
+                });
+                assert_eq!(runs, expected, "{case}");
+            }
         }
     }
 }

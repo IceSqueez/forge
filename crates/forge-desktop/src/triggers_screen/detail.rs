@@ -1085,6 +1085,7 @@ mod tests {
 
     use super::*;
     use crate::integrations::BuiltinRegistry;
+    use crate::screen_shortcuts::ScreenShortcuts;
     use crate::test_support::{
         Declares, FakeCollections, StubActions, StubTrigger, owned_reward, pump, runtime,
         test_backend, trigger_registry,
@@ -1471,5 +1472,28 @@ mod tests {
                 .and_then(|overrides| overrides.get(REWARD_FIELD).cloned()),
             Some(Variant::String("r-1".to_owned()))
         );
+    }
+
+    #[gpui::test]
+    fn the_save_shortcut_commits_the_open_sheet_unless_a_delete_prompt_is_showing(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (delete_prompt, expected, case) in [
+            (false, vec![5], "sheet open"),
+            (true, Vec::new(), "delete prompt showing"),
+        ] {
+            let mut fixture = Fixture::new(cx);
+            fixture.type_cooldown(cx, "5");
+            if delete_prompt {
+                fixture.view().update(cx, |view, _| {
+                    view.pending_delete.request(TriggerInstanceId::new())
+                });
+            }
+
+            fixture.view().update(cx, |view, cx| view.save_shortcut(cx));
+            fixture.settle(cx);
+
+            assert_eq!(fixture.repo.saved_cooldowns(), expected, "{case}");
+        }
     }
 }

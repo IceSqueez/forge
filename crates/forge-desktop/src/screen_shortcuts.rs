@@ -71,3 +71,51 @@ pub fn toggle_destination(
         .filter(|recorded| &recorded.toggled == target)
         .map(|recorded| recorded.back_to.clone())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn left(toggled: Screen, back_to: Screen) -> Option<ToggleReturn> {
+        Some(ToggleReturn { toggled, back_to })
+    }
+
+    #[test]
+    fn a_toggle_returns_only_to_the_screen_the_same_toggle_left() {
+        let cases = [
+            (Screen::Home, None, Some(Screen::Chat), "first press opens"),
+            (
+                Screen::EventFeed,
+                left(Screen::EventFeed, Screen::Home),
+                Some(Screen::Chat),
+                "the other toggle's screen still opens chat",
+            ),
+            (
+                Screen::Chat,
+                left(Screen::Chat, Screen::Settings(None)),
+                Some(Screen::Settings(None)),
+                "second press returns",
+            ),
+            (
+                Screen::Chat,
+                None,
+                None,
+                "chat reached by other navigation stays",
+            ),
+            (
+                Screen::Chat,
+                left(Screen::EventFeed, Screen::Home),
+                None,
+                "a return point of the other toggle is ignored",
+            ),
+        ];
+
+        for (current, recorded, expected, case) in cases {
+            assert_eq!(
+                toggle_destination(&current, &Screen::Chat, recorded.as_ref()),
+                expected,
+                "{case}"
+            );
+        }
+    }
+}

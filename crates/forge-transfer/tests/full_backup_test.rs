@@ -1174,3 +1174,59 @@ async fn bundle_written_before_categories_restores_every_folder() {
         .collect();
     assert_eq!(staged_files, expected);
 }
+
+#[tokio::test]
+async fn a_full_backup_restores_its_settings_without_the_schedule_progress() {
+    let live = LiveData::new().await;
+    let repo: &dyn forge_storage::SettingsRepo = live.provider.as_ref();
+    for (key, value) in [
+        (
+            forge_storage::reserved_keys::BACKUP_SCHEDULE_LAST_SUCCESS_AT,
+            "2026-10-21T12:00:00Z",
+        ),
+        (
+            forge_storage::reserved_keys::BACKUP_SCHEDULE_CONTENT_FINGERPRINT,
+            "abc123",
+        ),
+        (
+            forge_storage::reserved_keys::BACKUP_SCHEDULE_ENABLED,
+            "true",
+        ),
+    ] {
+        repo.set_string(key, value).await.unwrap();
+    }
+    let bundle = write_full_backup(FullBackupRequest {
+        provider: live.provider.clone(),
+        data_dir: live.data_dir(),
+        destination: BackupDestination::BackupsDir,
+        passphrase: Passphrase::new(PASSPHRASE.to_owned()),
+    })
+    .await
+    .unwrap();
+    live.provider.shutdown().await;
+
+    let staged = stage_real(bundle, live.data_dir(), Some(PASSPHRASE)).await;
+
+    let reopened = tempfile::tempdir().unwrap();
+    let copy = reopened.path().join(DATABASE_FILE_NAME);
+    std::fs::copy(staged.database_file(), &copy).unwrap();
+    let restored = SqliteBackend::open_for_test(
+        &format!("sqlite://{}", copy.display()),
+        SQLITE_KEY,
+        reopened.path().join(MEDIA_DIR_NAME),
+        None,
+    )
+    .await
+    .unwrap();
+    let mut found = Vec::new();
+    for key in [
+        forge_storage::reserved_keys::BACKUP_SCHEDULE_LAST_SUCCESS_AT,
+        forge_storage::reserved_keys::BACKUP_SCHEDULE_CONTENT_FINGERPRINT,
+        forge_storage::reserved_keys::BACKUP_SCHEDULE_ENABLED,
+    ] {
+        let repo: &dyn forge_storage::SettingsRepo = &restored;
+        found.push(repo.get_string(key).await.unwrap());
+    }
+    restored.shutdown().await;
+    assert_eq!(found, [None, None, Some("true".to_owned())]);
+}

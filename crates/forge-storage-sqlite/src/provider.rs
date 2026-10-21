@@ -669,4 +669,100 @@ mod tests {
         exported.close().await;
         assert_eq!(keys, vec!["committed".to_string()]);
     }
+
+    async fn backend_with_settings(
+        dir: &tempfile::TempDir,
+        settings: &[(&str, &str)],
+    ) -> SqliteBackend {
+        let url = format!(
+            "sqlite://{}",
+            dir.path().join(forge_storage::DATABASE_FILE_NAME).display()
+        );
+        let backend =
+            SqliteBackend::open_for_test(&url, [0xab; 32], dir.path().join("media"), None)
+                .await
+                .unwrap();
+        for (key, value) in settings {
+            sqlx::query("INSERT INTO settings (key, value) VALUES (?, ?)")
+                .bind(key)
+                .bind(value)
+                .execute(backend.pool.writer())
+                .await
+                .unwrap();
+        }
+        backend
+    }
+
+    async fn setting_keys(database: &std::path::Path) -> Vec<String> {
+        let pool = crate::connect(&format!("sqlite://{}", database.display()))
+            .await
+            .unwrap();
+        let keys = sqlx::query_scalar("SELECT key FROM settings WHERE key = 'kept' OR key LIKE 'backup_schedule.%' ORDER BY key")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+        keys
+    }
+
+    const PROGRESS: [(&str, &str); 2] = [
+        (
+            forge_storage::reserved_keys::BACKUP_SCHEDULE_LAST_SUCCESS_AT,
+            "2026-10-21T12:00:00Z",
+        ),
+        (
+            forge_storage::reserved_keys::BACKUP_SCHEDULE_CONTENT_FINGERPRINT,
+            "abc123",
+        ),
+    ];
+
+    #[tokio::test]
+    async fn export_drops_schedule_progress_but_keeps_every_other_setting() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = backend_with_settings(&dir, &[PROGRESS[0], PROGRESS[1], ("kept", "v")]).await;
+        let export_path = dir.path().join("export.db");
+
+        backend.export(&export_path).await.unwrap();
+        backend.shutdown().await;
+
+        assert_eq!(setting_keys(&export_path).await, ["kept".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn export_leaves_schedule_progress_in_the_live_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = backend_with_settings(&dir, &PROGRESS).await;
+
+        backend.export(&dir.path().join("export.db")).await.unwrap();
+        backend.shutdown().await;
+
+        assert_eq!(
+            setting_keys(&dir.path().join(forge_storage::DATABASE_FILE_NAME))
+                .await
+                .len(),
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn export_is_byte_identical_whether_or_not_schedule_progress_is_stored() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = backend_with_settings(&dir, &[("kept", "v")]).await;
+        let without = dir.path().join("without.db");
+        backend.export(&without).await.unwrap();
+        for (key, value) in PROGRESS {
+            sqlx::query("INSERT INTO settings (key, value) VALUES (?, ?)")
+                .bind(key)
+                .bind(value)
+                .execute(backend.pool.writer())
+                .await
+                .unwrap();
+        }
+        let with = dir.path().join("with.db");
+
+        backend.export(&with).await.unwrap();
+        backend.shutdown().await;
+
+        assert!(std::fs::read(&without).unwrap() == std::fs::read(&with).unwrap());
+    }
 }

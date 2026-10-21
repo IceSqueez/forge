@@ -241,3 +241,150 @@ impl Service {
         });
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::sync::Arc;
+
+    use forge_storage::DATABASE_FILE_NAME;
+    use forge_storage_sqlite::SqliteBackend;
+    use time::{Date, Month, OffsetDateTime, UtcOffset};
+    use tokio::sync::{Notify, watch};
+    use tokio_util::sync::CancellationToken;
+
+    use super::{ScheduledBackupParts, Service, Signals, Trigger};
+    use crate::exclusivity::TransferExclusivity;
+    use crate::passphrase::Passphrase;
+    use crate::schedule_key::create_schedule_key;
+    use crate::scheduled::clock::BackupClock;
+    use crate::scheduled::settings::{Progress, ScheduleSettings};
+    use crate::scheduled::status::{ScheduleState, ScheduledBackupStatus};
+
+    struct FixedClock;
+
+    impl BackupClock for FixedClock {
+        fn now(&self) -> OffsetDateTime {
+            Date::from_calendar_date(2026, Month::October, 21)
+                .unwrap()
+                .with_hms(12, 0, 0)
+                .unwrap()
+                .assume_utc()
+        }
+
+        fn offset_at(&self, _instant: OffsetDateTime) -> UtcOffset {
+            UtcOffset::UTC
+        }
+    }
+
+    async fn service() -> (
+        tempfile::TempDir,
+        Service,
+        watch::Receiver<ScheduledBackupStatus>,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let url = format!("sqlite://{}", dir.path().join(DATABASE_FILE_NAME).display());
+        let backend = SqliteBackend::open_for_test(&url, [7; 32], dir.path().join("media"), None)
+            .await
+            .unwrap();
+        let (status, receiver) = watch::channel(ScheduledBackupStatus::initial());
+        let service = Service {
+            parts: ScheduledBackupParts {
+                provider: Arc::new(backend),
+                data_dir: dir.path().to_path_buf(),
+                exclusivity: TransferExclusivity::new(),
+                clock: Arc::new(FixedClock),
+            },
+            signals: Arc::new(Signals {
+                settings_changed: Notify::new(),
+                storage_changed: Notify::new(),
+                run_now: Notify::new(),
+                cancel_in_flight: Notify::new(),
+                shutdown: CancellationToken::new(),
+            }),
+            status,
+            settings: ScheduleSettings::default(),
+            progress: Progress::default(),
+            retry_after: None,
+            streak: None,
+            prune_failures: 0,
+            storage_used: None,
+            suspended: false,
+            running: false,
+        };
+        (dir, service, receiver)
+    }
+
+    #[tokio::test]
+    async fn published_state_ranks_disabled_over_suspended_over_running_over_idle() {
+        let (_dir, mut service, status) = service().await;
+        for (enabled, suspended, running, expected) in [
+            (false, true, true, ScheduleState::Disabled),
+            (true, true, true, ScheduleState::Suspended),
+            (true, false, true, ScheduleState::Running),
+            (true, false, false, ScheduleState::Idle),
+        ] {
+            service.settings.enabled = enabled;
+            service.suspended = suspended;
+            service.running = running;
+
+            service.publish();
+
+            assert_eq!(
+                status.borrow().state,
+                expected,
+                "{enabled} {suspended} {running}"
+            );
+        }
+        service.parts.provider.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn next_due_is_published_only_while_the_schedule_can_run() {
+        let (_dir, mut service, status) = service().await;
+        let mut seen = Vec::new();
+        for (enabled, suspended) in [(true, false), (true, true), (false, false)] {
+            service.settings.enabled = enabled;
+            service.suspended = suspended;
+
+            service.publish();
+
+            seen.push(status.borrow().next_due.is_some());
+        }
+
+        assert_eq!(seen, [true, false, false]);
+        service.parts.provider.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_run_cancelled_by_shutdown_stops_the_writer_releases_the_guard_and_leaves_nothing() {
+        let (dir, mut service, _status) = service().await;
+        let folder = dir.path().join("out");
+        std::fs::create_dir_all(&folder).unwrap();
+        service.settings.enabled = true;
+        service.settings.destination = Some(folder.clone());
+        service.settings.key = Some(
+            create_schedule_key(&Passphrase::new("correct horse battery staple".to_owned()))
+                .unwrap(),
+        );
+        service.signals.shutdown.cancel();
+
+        service.attempt(Trigger::Due).await;
+
+        let backups = std::fs::read_dir(dir.path().join(forge_storage::paths::BACKUPS_DIR_NAME))
+            .map(|entries| entries.count())
+            .unwrap_or(0);
+        assert_eq!(
+            (
+                service.parts.exclusivity.is_held(),
+                std::fs::read_dir(&folder).unwrap().count(),
+                backups,
+                service.streak,
+                service.progress.last_success_at,
+                service.retry_after.is_some(),
+            ),
+            (false, 0, 0, None, None, true)
+        );
+        service.parts.provider.shutdown().await;
+    }
+}

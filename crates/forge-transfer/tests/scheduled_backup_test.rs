@@ -12,11 +12,12 @@ use forge_storage::paths::{
 use forge_storage::{CredentialId, CredentialsRepo, DATABASE_FILE_NAME, DataProvider};
 use forge_storage_sqlite::{SqliteBackend, SqliteCredentialsRepo, SqliteDatabaseFileSchema};
 use forge_transfer::{
-    BUNDLE_EXTENSION, BackupCategory, BundleOrigin, BundleSummary, Passphrase, PublicManifest,
-    RestoreOutcome, ScheduleKey, ScheduledBackupRequest, StageRequest, StagedRestore,
-    TransferError, UpdateActivity, apply_pending_restore, change_schedule_passphrase,
-    create_schedule_key, read_bundle_summary, record_pending_restore, restore_staging_root,
-    stage_full_restore, write_scheduled_backup,
+    BUNDLE_EXTENSION, BackupCategory, BundleOrigin, BundleSummary, CancelFlag, Passphrase,
+    PublicManifest, RestoreOutcome, ScheduleKey, ScheduledBackupRequest, ScheduledWrite,
+    StageRequest, StagedRestore, TransferError, UpdateActivity, apply_pending_restore,
+    change_schedule_passphrase, create_schedule_key, read_bundle_summary, record_pending_restore,
+    restore_staging_root, stage_full_restore, write_scheduled_backup,
+    write_scheduled_backup_cancellable, write_scheduled_backup_unless_unchanged,
 };
 use tempfile::TempDir;
 
@@ -418,4 +419,193 @@ async fn applying_a_scheduled_restore_leaves_excluded_categories_untouched() {
         excluded_folders(&files_under(&pre_restore_snapshot)),
         Tree::new()
     );
+}
+
+impl Source {
+    async fn write_unless(
+        &self,
+        folder: PathBuf,
+        key: &ScheduleKey,
+        categories: Vec<BackupCategory>,
+        unchanged_since: Option<String>,
+    ) -> ScheduledWrite {
+        write_scheduled_backup_unless_unchanged(
+            ScheduledBackupRequest {
+                provider: self.provider.clone(),
+                data_dir: self.data_dir(),
+                folder,
+                key: key.clone(),
+                categories,
+            },
+            unchanged_since,
+        )
+        .await
+        .unwrap()
+    }
+}
+
+fn fingerprint_of(written: &ScheduledWrite) -> String {
+    match written {
+        ScheduledWrite::Written { fingerprint, .. } | ScheduledWrite::Unchanged { fingerprint } => {
+            fingerprint.clone()
+        }
+    }
+}
+
+fn bundles_in(folder: &Path) -> usize {
+    std::fs::read_dir(folder)
+        .unwrap()
+        .filter(|entry| {
+            entry
+                .as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .ends_with(&format!(".{BUNDLE_EXTENSION}"))
+        })
+        .count()
+}
+
+#[tokio::test]
+async fn unchanged_content_since_the_last_fingerprint_writes_no_bundle() {
+    let source = Source::new().await;
+    let key = create_schedule_key(&passphrase(PASSPHRASE)).unwrap();
+    let first = source
+        .write_unless(source.folder(), &key, media_only(), None)
+        .await;
+
+    let second = source
+        .write_unless(
+            source.folder(),
+            &key,
+            media_only(),
+            Some(fingerprint_of(&first)),
+        )
+        .await;
+
+    assert_eq!(
+        (second, bundles_in(&source.folder())),
+        (
+            ScheduledWrite::Unchanged {
+                fingerprint: fingerprint_of(&first)
+            },
+            1
+        )
+    );
+    source.provider.shutdown().await;
+}
+
+#[tokio::test]
+async fn any_change_to_included_content_key_categories_or_folder_writes_a_bundle() {
+    let source = Source::new().await;
+    let key = create_schedule_key(&passphrase(PASSPHRASE)).unwrap();
+    let other_key = create_schedule_key(&passphrase(PASSPHRASE)).unwrap();
+    let other_folder = source.dir.path().join("other-out");
+    std::fs::create_dir_all(&other_folder).unwrap();
+    let baseline = fingerprint_of(
+        &source
+            .write_unless(source.folder(), &key, media_only(), None)
+            .await,
+    );
+    let with_overlays = vec![BackupCategory::Media, BackupCategory::Overlays];
+    for (label, folder, key, categories) in [
+        ("other key", source.folder(), &other_key, media_only()),
+        ("other folder", other_folder.clone(), &key, media_only()),
+        ("more categories", source.folder(), &key, with_overlays),
+    ] {
+        let written = source
+            .write_unless(folder, key, categories, Some(baseline.clone()))
+            .await;
+        assert!(
+            matches!(written, ScheduledWrite::Written { .. }),
+            "{label}: {written:?}"
+        );
+    }
+    source.provider.shutdown().await;
+}
+
+#[tokio::test]
+async fn an_edited_included_file_writes_a_bundle() {
+    let source = Source::new().await;
+    let key = create_schedule_key(&passphrase(PASSPHRASE)).unwrap();
+    let baseline = fingerprint_of(
+        &source
+            .write_unless(source.folder(), &key, media_only(), None)
+            .await,
+    );
+    write_file(
+        &source.data_dir().join(MEDIA_DIR_NAME).join("clip.ogg"),
+        b"edited media",
+    );
+
+    let written = source
+        .write_unless(source.folder(), &key, media_only(), Some(baseline))
+        .await;
+
+    assert!(
+        matches!(written, ScheduledWrite::Written { .. }),
+        "{written:?}"
+    );
+    source.provider.shutdown().await;
+}
+
+#[tokio::test]
+async fn an_edit_in_an_excluded_category_does_not_count_as_a_change() {
+    let source = Source::new().await;
+    let key = create_schedule_key(&passphrase(PASSPHRASE)).unwrap();
+    let baseline = fingerprint_of(
+        &source
+            .write_unless(source.folder(), &key, media_only(), None)
+            .await,
+    );
+    write_file(
+        &source.data_dir().join(OVERLAYS_DIR_NAME).join("o.html"),
+        b"edited overlay",
+    );
+
+    let written = source
+        .write_unless(source.folder(), &key, media_only(), Some(baseline))
+        .await;
+
+    assert!(
+        matches!(written, ScheduledWrite::Unchanged { .. }),
+        "{written:?}"
+    );
+    source.provider.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_cancelled_scheduled_write_is_interrupted_and_leaves_no_file_behind() {
+    let source = Source::new().await;
+    let key = create_schedule_key(&passphrase(PASSPHRASE)).unwrap();
+    let cancel = CancelFlag::new();
+    cancel.raise();
+
+    let result = write_scheduled_backup_cancellable(
+        ScheduledBackupRequest {
+            provider: source.provider.clone(),
+            data_dir: source.data_dir(),
+            folder: source.folder(),
+            key,
+            categories: media_only(),
+        },
+        None,
+        cancel,
+    )
+    .await;
+
+    let leftovers = (
+        files_under(&source.folder()),
+        files_under(
+            &source
+                .data_dir()
+                .join(forge_storage::paths::BACKUPS_DIR_NAME),
+        ),
+    );
+    assert!(
+        matches!(result, Err(TransferError::Interrupted { .. })),
+        "{result:?}"
+    );
+    assert_eq!(leftovers, (Tree::new(), Tree::new()));
+    source.provider.shutdown().await;
 }

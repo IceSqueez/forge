@@ -35,3 +35,30 @@ impl Drop for TransferGuard {
         self.held.store(false, Ordering::Release);
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::TransferExclusivity;
+
+    #[test]
+    fn a_second_acquire_fails_while_the_first_guard_lives() {
+        let exclusivity = TransferExclusivity::new();
+        let _guard = exclusivity.try_acquire();
+
+        assert!(exclusivity.try_acquire().is_none());
+    }
+
+    #[test]
+    fn a_guard_taken_through_one_clone_blocks_every_other_clone_until_dropped() {
+        let scheduler = TransferExclusivity::new();
+        let manual = scheduler.clone();
+        let guard = scheduler.try_acquire().unwrap();
+
+        let while_held = (manual.is_held(), manual.try_acquire().is_some());
+        drop(guard);
+        let after_release = (manual.is_held(), manual.try_acquire().is_some());
+
+        assert_eq!((while_held, after_release), ((true, false), (false, true)));
+    }
+}

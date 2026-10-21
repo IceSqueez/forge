@@ -11,16 +11,17 @@ use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionCancelRegistry, ActionEngineHandle, Catalog, CatchUpSettle, Config, CoreSubActionDeps,
     DateNamesHandle, DonationIngest, DonationOverlayAudience, EventBus, FirstChatLedger,
-    LatestValues, OverlayConnectFanout, OverlayConnectListener, OverlayFrameSink,
-    OverlayMediaLibrary, OverlayServiceCell, OverlayServiceHandle, QueueScheduler,
-    ScheduledRunsCell, ScheduledRunsParts, SchedulerCell, ScriptRegistry, ScriptScheduling,
-    SoundPlayer, SpeakDispatcher, SystemWallClock, TwitchEmoteLexicon, register_audio_sub_actions,
-    register_core_sub_actions, register_core_triggers, register_donation_sub_actions,
-    register_latest_sub_actions, register_scheduled_run_sub_actions, spawn_action_engine,
-    spawn_chat_history_persistence, spawn_event_log_bridge, spawn_latest_overlay_feed,
-    spawn_latest_projector, spawn_live_viewer_aggregator, spawn_scheduled_runs,
-    spawn_stream_live_signal, spawn_timer_scheduler, spawn_trigger_evaluator,
-    spawn_twitch_emote_learning, spawn_viewer_tracker,
+    LatestValues, NotificationPreferences, OverlayConnectFanout, OverlayConnectListener,
+    OverlayFrameSink, OverlayMediaLibrary, OverlayServiceCell, OverlayServiceHandle,
+    QueueScheduler, ScheduledRunsCell, ScheduledRunsParts, SchedulerCell, ScriptRegistry,
+    ScriptScheduling, SoundPlayer, SpeakDispatcher, SystemWallClock, TwitchEmoteLexicon,
+    register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
+    register_donation_sub_actions, register_latest_sub_actions, register_scheduled_run_sub_actions,
+    spawn_action_engine, spawn_chat_history_persistence, spawn_event_log_bridge,
+    spawn_latest_overlay_feed, spawn_latest_projector, spawn_live_viewer_aggregator,
+    spawn_notification_policy, spawn_scheduled_runs, spawn_stream_live_signal,
+    spawn_timer_scheduler, spawn_trigger_evaluator, spawn_twitch_emote_learning,
+    spawn_viewer_tracker,
 };
 use forge_soundboard::{
     BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
@@ -197,6 +198,13 @@ pub async fn build_runtime(
     let bus = EventBus::new(backend.event_log_repo());
     EventBus::spawn_flush_task(Arc::clone(&bus));
     spawn_event_log_bridge(Arc::clone(&bus));
+    if let Err(e) = forge_runtime::sub_action_runners::SystemNotifyPort::adopt_app_identity() {
+        tracing::warn!(error = %e, "desktop notifications keep the default app identity");
+    }
+    let notification_policy = spawn_notification_policy(
+        &bus,
+        NotificationPreferences::load(settings_repo.as_ref()).await,
+    );
     let chat_history_retention = spawn_chat_history_persistence(
         Arc::clone(&bus),
         backend.chat_history_repo(),
@@ -564,6 +572,7 @@ pub async fn build_runtime(
         live_viewers,
         stream_live,
         chat_history_retention,
+        notification_policy,
         builtins: integrations.builtins,
         integrations: supervisor,
         obs_install_seed: integrations.obs_install_seed,

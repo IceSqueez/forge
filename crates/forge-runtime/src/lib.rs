@@ -27,6 +27,7 @@ pub mod integration_supervisor;
 pub mod latest;
 mod latest_overlay_feed;
 pub mod live_viewers;
+pub mod notification_policy;
 mod overlay_definition_revision;
 mod overlay_lanes;
 pub mod overlay_media;
@@ -86,6 +87,10 @@ pub use latest::{
 };
 pub use latest_overlay_feed::spawn_latest_overlay_feed;
 pub use live_viewers::{LiveViewerAggregatorHandle, LiveViewerCount, spawn_live_viewer_aggregator};
+pub use notification_policy::{
+    ActionFailureNotice, NotificationIntent, NotificationIntents, NotificationPolicyHandle,
+    NotificationPreferences, spawn_notification_policy,
+};
 pub use overlay_definition_revision::OverlayDefinitionChanges;
 pub use overlay_media::OverlayMediaLibrary;
 pub use overlay_service::{

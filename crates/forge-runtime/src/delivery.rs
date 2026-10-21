@@ -19,6 +19,7 @@ pub const LATEST_OVERLAYS: &str = "latest_overlays";
 pub const RUN_HISTORY: &str = "run_history";
 pub const EVENT_TRAIL: &str = "event_trail";
 pub const TIMER_SCHEDULER: &str = "timer_scheduler";
+pub const NOTIFICATION_POLICY: &str = "notification_policy";
 pub const UNNAMED_OBSERVER: &str = "observer";
 
 const CORE_BULK_KINDS: &[&str] = &[

@@ -1,5 +1,10 @@
 use thiserror::Error;
 
+#[cfg(target_os = "windows")]
+const WINDOWS_APP_USER_MODEL_ID: &str = "IceSqueez.Forge";
+#[cfg(all(unix, not(target_os = "macos")))]
+const DESKTOP_APP_NAME: &str = "forge";
+
 #[derive(Debug, Error)]
 pub enum OsPortError {
     #[error("os service unavailable: {0}")]
@@ -39,9 +44,26 @@ pub trait UrlOpenPort: Send + Sync {
 #[derive(Default)]
 pub struct SystemNotifyPort;
 
+impl SystemNotifyPort {
+    #[cfg(target_os = "macos")]
+    pub fn adopt_app_identity() -> Result<(), OsPortError> {
+        notify_rust::set_application(forge_storage::paths::MACOS_BUNDLE_ID)
+            .map_err(|e| OsPortError::Unavailable(e.to_string()))
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn adopt_app_identity() -> Result<(), OsPortError> {
+        Ok(())
+    }
+}
+
 impl NotifyPort for SystemNotifyPort {
     fn show(&self, notice: DesktopNotice) -> Result<(), OsPortError> {
         let mut builder = notify_rust::Notification::new();
+        #[cfg(target_os = "windows")]
+        builder.app_id(WINDOWS_APP_USER_MODEL_ID);
+        #[cfg(all(unix, not(target_os = "macos")))]
+        builder.appname(DESKTOP_APP_NAME);
         builder
             .summary(&notice.title)
             .body(&notice.body)

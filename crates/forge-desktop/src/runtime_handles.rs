@@ -5,8 +5,9 @@ use forge_platform_core::PlatformEndpoints;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionEngineHandle, ChatHistoryRetentionHandle, DateNamesHandle, EventBus, LatestValues,
-    LiveViewerAggregatorHandle, OverlayServiceHandle, QueueSchedulerHandle, ScheduledRunsHandle,
-    ScriptRegistry, StreamLiveHandle, TimerSchedulerHandle, TriggerEvaluatorHandle,
+    LiveViewerAggregatorHandle, NotificationPolicyHandle, OverlayServiceHandle,
+    QueueSchedulerHandle, ScheduledRunsHandle, ScriptRegistry, StreamLiveHandle,
+    TimerSchedulerHandle, TriggerEvaluatorHandle,
 };
 use forge_storage::{CredentialsKeyLoss, DataProvider, Language};
 
@@ -41,6 +42,7 @@ pub struct RuntimeHandles {
     pub live_viewers: LiveViewerAggregatorHandle,
     pub stream_live: StreamLiveHandle,
     pub chat_history_retention: ChatHistoryRetentionHandle,
+    pub notification_policy: NotificationPolicyHandle,
     pub builtins: BuiltinRegistry,
     pub integrations: IntegrationSupervisor<BuiltinObject>,
     pub obs_install_seed: ObsInstallSeed,

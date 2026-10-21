@@ -25,6 +25,7 @@ use crate::{Config, EventBus};
 const EXECUTION_INTAKE_CAPACITY: usize = 256;
 const QUICK_ACTION_INTAKE_CAPACITY: usize = 64;
 const ACTION_START_KIND: &str = "action.start";
+pub(crate) const ACTION_DONE_KIND: &str = "action.done";
 pub const MANUAL_TEST_RUN_KIND: &str = "test.run";
 const MAX_CAUSATION_DEPTH: usize = 16;
 const CAUSATION_DEPTH_SKIP_REASON: &str = "causation_depth_exceeded";
@@ -441,7 +442,7 @@ impl ActionEngine {
         if !cancelled {
             self.bus.publish(Event::caused_by(
                 EventSource::Core,
-                "action.done",
+                ACTION_DONE_KIND,
                 done_payload,
                 start_event_id,
             ));

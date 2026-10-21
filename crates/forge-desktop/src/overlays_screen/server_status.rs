@@ -128,3 +128,49 @@ impl OverlaysView {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    const TOKEN: &str = "fgo_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_abcde";
+
+    fn serving(token: Option<&str>) -> ServerStatus {
+        ServerStatus {
+            running: true,
+            bind_address: Some("127.0.0.1:9515".to_owned()),
+            token: token.map(str::to_owned),
+            ..ServerStatus::default()
+        }
+    }
+
+    #[test]
+    fn the_copied_overlay_url_carries_the_full_token_ahead_of_the_identity() {
+        let url = serving(Some(TOKEN)).overlay_url(&OverlayId::new("alerts"));
+
+        assert_eq!(
+            url.as_deref(),
+            Some(format!("http://127.0.0.1:9515/overlays/{TOKEN}/alerts/").as_str())
+        );
+    }
+
+    #[test]
+    fn the_displayed_overlay_url_never_shows_the_full_token() {
+        let shown = serving(Some(TOKEN))
+            .displayed_overlay_url(&OverlayId::new("alerts"))
+            .expect("a running server offers a URL");
+
+        assert!(!shown.contains(TOKEN), "shown {shown}");
+        assert!(shown.ends_with("/alerts/"), "shown {shown}");
+    }
+
+    #[test]
+    fn no_overlay_url_is_offered_before_the_token_is_known() {
+        let status = serving(None);
+        let id = OverlayId::new("alerts");
+
+        assert_eq!(status.overlay_url(&id), None);
+        assert_eq!(status.displayed_overlay_url(&id), None);
+    }
+}

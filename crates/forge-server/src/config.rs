@@ -259,6 +259,10 @@ mod tests {
         assert_eq!(s.port, 8081);
         assert!(!s.lan_bind_enabled);
         assert!(!s.auth_required_for_reads);
+        assert!(
+            s.http_overlay_require_token,
+            "an unset key must keep overlay files behind the token"
+        );
         assert!(s.overlay_cors_any_origin);
         assert!(s.overlay_root.is_none());
         assert!(s.additional_origins.is_empty());
@@ -275,6 +279,9 @@ mod tests {
             .await
             .unwrap();
         ServerSettings::save_auth_required_for_reads(&repo, true)
+            .await
+            .unwrap();
+        ServerSettings::save_http_overlay_require_token(&repo, false)
             .await
             .unwrap();
         ServerSettings::save_overlay_cors_any_origin(&repo, false)
@@ -295,6 +302,7 @@ mod tests {
         assert_eq!(s.port, 9000);
         assert!(s.lan_bind_enabled);
         assert!(s.auth_required_for_reads);
+        assert!(!s.http_overlay_require_token);
         assert!(!s.overlay_cors_any_origin);
         assert_eq!(s.overlay_root.as_deref(), Some("/overlays"));
         assert_eq!(

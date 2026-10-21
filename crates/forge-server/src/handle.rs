@@ -348,7 +348,7 @@ impl ServerHandle {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::collections::HashSet;
 
@@ -395,6 +395,224 @@ mod tests {
         );
 
         stopped_server(config).await.expect("a stopped handle")
+    }
+
+    type CredentialSlots = Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>;
+
+    fn slot_credentials() -> (MockCredentialsRepo, CredentialSlots) {
+        let slots: CredentialSlots = Arc::default();
+        let mut credentials = MockCredentialsRepo::new();
+        let read = Arc::clone(&slots);
+        credentials
+            .expect_load()
+            .returning(move |id| Ok(read.lock().expect("lock").get(id.as_str()).cloned()));
+        let write = Arc::clone(&slots);
+        credentials.expect_store().returning(move |id, value| {
+            write
+                .lock()
+                .expect("lock")
+                .insert(id.as_str().to_owned(), value.to_owned());
+            Ok(())
+        });
+        (credentials, slots)
+    }
+
+    async fn rotation_handle(
+        reissue: Result<Vec<OverlayId>, forge_storage::StorageError>,
+    ) -> (ServerHandle, CredentialSlots) {
+        let mut dp = TestDataProvider::new();
+        let reissue = std::sync::Mutex::new(Some(reissue));
+        dp.overlay()
+            .expect_reissue_all_credentials()
+            .returning(move || reissue.lock().expect("lock").take().expect("one reissue"));
+        let dp = Arc::new(dp);
+        let (credentials, slots) = slot_credentials();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let engine = Arc::new(spawn_action_engine(
+            Arc::clone(&bus),
+            forge_runtime::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(SubActionRegistry::new()),
+            Arc::new(ActionCancelRegistry::new()),
+        ));
+        let config = ServerConfig::new(
+            MemSettings::new() as Arc<dyn SettingsRepo>,
+            Arc::new(credentials) as Arc<dyn CredentialsRepo>,
+            bus,
+            dp.action_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+            Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
+            dp.overlay_repo(),
+            engine,
+        );
+        (
+            stopped_server(config).await.expect("a stopped handle"),
+            slots,
+        )
+    }
+
+    async fn empty_overlay_service(root: &std::path::Path) -> OverlayServiceHandle {
+        let mut repo = forge_storage::MockOverlayRepo::new();
+        repo.expect_list().returning(|| Ok(Vec::new()));
+        let settings = MemSettings::new();
+        settings
+            .set_string(
+                forge_storage::reserved_keys::SERVER_OVERLAY_ROOT,
+                &root.to_string_lossy(),
+            )
+            .await
+            .expect("overlay root setting");
+        OverlayServiceHandle::new(
+            Arc::new(repo),
+            settings as Arc<dyn SettingsRepo>,
+            Arc::new(forge_overlay::OverlayKindRegistry::new()),
+            EventBus::new(Arc::new(NullEventLogRepo)),
+            None,
+        )
+    }
+
+    async fn live_overlay_page(
+        handle: &ServerHandle,
+        identity: &OverlayId,
+    ) -> tokio::sync::broadcast::Receiver<crate::bus_adapter::WsFrame> {
+        let adapter = adapter_of(handle).await;
+        let (client, _initial_rx) = adapter
+            .register_client(ClientFilterSet::new(HashSet::new()))
+            .await;
+        adapter
+            .promote_to_overlay(
+                client.id,
+                identity.clone(),
+                OverlayClientClass::BrowserSource,
+            )
+            .await
+            .expect("a just-registered client is still on the registry")
+    }
+
+    fn received_close(
+        page: &mut tokio::sync::broadcast::Receiver<crate::bus_adapter::WsFrame>,
+    ) -> bool {
+        std::iter::from_fn(|| page.try_recv().ok())
+            .any(|frame| matches!(frame, crate::bus_adapter::WsFrame::Close))
+    }
+
+    #[tokio::test]
+    async fn regenerating_the_overlay_token_refuses_the_old_token_and_persists_the_new_one() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let (handle, slots) = rotation_handle(Ok(Vec::new())).await;
+        let gate_before = handle.auth_state().await;
+        let old = gate_before.overlay_token().current();
+
+        let fresh = handle
+            .regenerate_overlay_token(&empty_overlay_service(root.path()).await)
+            .await
+            .expect("regenerate");
+
+        let gate = handle.auth_state().await;
+        assert!(
+            !gate.overlay_token().verify(&old),
+            "the old token still opens overlay files"
+        );
+        assert!(gate.overlay_token().verify(&fresh));
+        assert_eq!(
+            slots
+                .lock()
+                .expect("lock")
+                .get(forge_storage::SERVER_OVERLAY_TOKEN_CREDENTIAL_ID)
+                .map(String::as_str),
+            Some(fresh.as_str()),
+            "a restart would bring the old token back"
+        );
+    }
+
+    #[tokio::test]
+    async fn regenerating_the_overlay_token_closes_the_live_page_of_every_reissued_overlay() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let alerts = OverlayId::new("alerts");
+        let (handle, _slots) = rotation_handle(Ok(vec![alerts.clone()])).await;
+        let mut page = live_overlay_page(&handle, &alerts).await;
+
+        handle
+            .regenerate_overlay_token(&empty_overlay_service(root.path()).await)
+            .await
+            .expect("regenerate");
+
+        assert!(
+            received_close(&mut page),
+            "a page holding a reissued credential keeps streaming after rotation"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_credential_reissue_keeps_the_old_token_live_stored_and_its_pages_open() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let alerts = OverlayId::new("alerts");
+        let (handle, slots) = rotation_handle(Err(forge_storage::StorageError::Connection {
+            reason: "database is locked".into(),
+        }))
+        .await;
+        let old = handle.auth_state().await.overlay_token().current();
+        let mut page = live_overlay_page(&handle, &alerts).await;
+
+        let result = handle
+            .regenerate_overlay_token(&empty_overlay_service(root.path()).await)
+            .await;
+
+        assert!(result.is_err());
+        assert!(handle.auth_state().await.overlay_token().verify(&old));
+        assert_eq!(
+            stored_overlay_token(&slots),
+            Some(old),
+            "a restart would load a token no URL carries"
+        );
+        assert!(!received_close(&mut page));
+    }
+
+    #[tokio::test]
+    async fn a_failed_page_rewrite_reports_the_live_token_and_refuses_the_old_one() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let not_a_directory = root.path().join("overlays-file");
+        tokio::fs::write(&not_a_directory, b"x")
+            .await
+            .expect("write file");
+        let (handle, slots) = rotation_handle(Ok(Vec::new())).await;
+        let old = handle.auth_state().await.overlay_token().current();
+
+        let result = handle
+            .regenerate_overlay_token(&empty_overlay_service(&not_a_directory).await)
+            .await;
+
+        let error = result.expect_err("a failed rewrite must fail the regenerate");
+        let ServerError::OverlayRotationIncomplete { token, .. } = &error else {
+            panic!("expected an incomplete rotation, got {error:?}");
+        };
+        let gate = handle.auth_state().await;
+        assert!(
+            gate.overlay_token().verify(token),
+            "the reported token is not the live one"
+        );
+        assert!(!gate.overlay_token().verify(&old));
+        assert_eq!(
+            stored_overlay_token(&slots).as_deref(),
+            Some(token.as_str())
+        );
+        assert!(
+            !error.to_string().contains(token.as_str()),
+            "the toast text carries the overlay token"
+        );
+    }
+
+    fn stored_overlay_token(slots: &CredentialSlots) -> Option<String> {
+        slots
+            .lock()
+            .expect("lock")
+            .get(forge_storage::SERVER_OVERLAY_TOKEN_CREDENTIAL_ID)
+            .cloned()
     }
 
     async fn adapter_of(handle: &ServerHandle) -> Arc<BusAdapter> {

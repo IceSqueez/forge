@@ -2083,4 +2083,40 @@ pub(crate) mod tests {
             handle.stop().await.expect("stop");
         }
     }
+
+    #[tokio::test]
+    async fn a_started_server_gates_tokenless_overlay_files_unless_the_stored_setting_opts_out() {
+        let root = tempfile::tempdir().expect("tempdir");
+        tokio::fs::write(root.path().join("page.html"), b"<p>page</p>")
+            .await
+            .expect("write page");
+
+        for (stored, tokenless_status, case) in [
+            (None, 404, "setting never written"),
+            (Some(true), 404, "setting on"),
+            (Some(false), 200, "setting off"),
+        ] {
+            let settings = MapSettings::new();
+            if let Some(required) = stored {
+                crate::config::ServerSettings::save_http_overlay_require_token(
+                    &*settings, required,
+                )
+                .await
+                .expect("save setting");
+            }
+            let mut config = loopback_config(settings, EPHEMERAL_PORT, Vec::new());
+            config.overlay_root = root.path().to_path_buf();
+            let handle = start_server(config).await.expect("start");
+            let addr = handle.bind_addr().await;
+
+            let status = reqwest::get(format!("http://{addr}/overlays/page.html"))
+                .await
+                .expect("request")
+                .status()
+                .as_u16();
+
+            assert_eq!(status, tokenless_status, "{case}");
+            handle.stop().await.expect("stop");
+        }
+    }
 }

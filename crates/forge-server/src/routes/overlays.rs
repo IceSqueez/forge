@@ -252,7 +252,7 @@ mod tests {
     use crate::bus_adapter::BusAdapter;
     use crate::server::AppState;
     use crate::server_info::ServerInfo;
-    use crate::test_helpers::test_dp;
+    use crate::test_helpers::{log_capture, test_dp};
 
     struct MemCreds(Mutex<HashMap<String, String>>);
 
@@ -307,6 +307,7 @@ mod tests {
     }
 
     const FIXTURE_BIND_ADDR: &str = "127.0.0.1:9515";
+    const FIXTURE_OVERLAY_TOKEN: &str = "fgo_fixture";
     const FOREIGN_ORIGIN: &str = "https://evil.example";
 
     async fn make_overlay_server(
@@ -323,6 +324,13 @@ mod tests {
         creds: Arc<MemCreds>,
         overlay_repo: Option<Arc<dyn OverlayRepo>>,
     ) -> (ServerHandle, SocketAddr) {
+        creds
+            .store(
+                &CredentialId::new(forge_storage::SERVER_OVERLAY_TOKEN_CREDENTIAL_ID),
+                FIXTURE_OVERLAY_TOKEN,
+            )
+            .await
+            .expect("seed overlay token");
         let auth = AuthState::load(false, &*creds).await.expect("auth load");
         let creds_dyn: Arc<dyn CredentialsRepo> = creds;
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
@@ -386,7 +394,7 @@ mod tests {
         let (handle, addr) =
             make_overlay_server(dir.path().to_path_buf(), true, MemCreds::new()).await;
 
-        let resp = reqwest::get(format!("http://{}/overlays/alerts.html", addr))
+        let resp = reqwest::get(format!("http://{}/overlays/fgo_fixture/alerts.html", addr))
             .await
             .expect("request");
         assert_eq!(resp.status().as_u16(), 200);
@@ -405,7 +413,7 @@ mod tests {
         let (handle, addr) =
             make_overlay_server(dir.path().to_path_buf(), true, MemCreds::new()).await;
 
-        let resp = reqwest::get(format!("http://{}/overlays/nope.html", addr))
+        let resp = reqwest::get(format!("http://{}/overlays/fgo_fixture/nope.html", addr))
             .await
             .expect("request");
         assert_eq!(resp.status().as_u16(), 404);
@@ -461,11 +469,11 @@ mod tests {
         let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
         for target in [
-            "/overlays/%2e%2e%2fsecret.html",
-            "/overlays/..%2fsecret.html",
-            "/overlays/%2E%2E%2Fsecret.html",
-            "/overlays/sub%2f%2e%2e%2f%2e%2e%2fsecret.html",
-            "/overlays/.%2e%2fsecret.html",
+            "/overlays/fgo_fixture/%2e%2e%2fsecret.html",
+            "/overlays/fgo_fixture/..%2fsecret.html",
+            "/overlays/fgo_fixture/%2E%2E%2Fsecret.html",
+            "/overlays/fgo_fixture/sub%2f%2e%2e%2f%2e%2e%2fsecret.html",
+            "/overlays/fgo_fixture/.%2e%2fsecret.html",
         ] {
             let (status, body) = raw_get(addr, target, "").await;
             assert_eq!(status, 404, "expected 404 for {target}");
@@ -489,8 +497,8 @@ mod tests {
         let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
         for target in [
-            format!("/overlays/{encoded}"),
-            format!("/overlays/{absolute}"),
+            format!("/overlays/fgo_fixture/{encoded}"),
+            format!("/overlays/fgo_fixture/{absolute}"),
         ] {
             let (status, body) = raw_get(addr, &target, "").await;
             assert_eq!(status, 404, "expected 404 for {target}");
@@ -513,7 +521,7 @@ mod tests {
 
         let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
-        let (status, body) = raw_get(addr, "/overlays/link.html", "").await;
+        let (status, body) = raw_get(addr, "/overlays/fgo_fixture/link.html", "").await;
         assert_eq!(status, 404);
         assert!(!body.contains(ESCAPE_MARKER));
 
@@ -533,7 +541,7 @@ mod tests {
 
         let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
-        let (status, body) = raw_get(addr, "/overlays/alias.html", "").await;
+        let (status, body) = raw_get(addr, "/overlays/fgo_fixture/alias.html", "").await;
         assert_eq!(status, 200);
         assert!(body.contains("<p>inside</p>"));
 
@@ -550,7 +558,7 @@ mod tests {
         let (handle, addr) =
             make_overlay_server(dir.path().to_path_buf(), true, MemCreds::new()).await;
 
-        let resp = reqwest::get(format!("http://{}/overlays/.secret", addr))
+        let resp = reqwest::get(format!("http://{}/overlays/fgo_fixture/.secret", addr))
             .await
             .expect("request");
         assert_eq!(resp.status().as_u16(), 404);
@@ -576,7 +584,7 @@ mod tests {
             make_overlay_server(dir.path().to_path_buf(), any_origin, MemCreds::new()).await;
 
         let mut request =
-            reqwest::Client::new().get(format!("http://{addr}/overlays/{WIDGET_FILE}"));
+            reqwest::Client::new().get(format!("http://{addr}/overlays/fgo_fixture/{WIDGET_FILE}"));
         if let Some(origin) = origin_for(addr) {
             request = request.header(reqwest::header::ORIGIN, origin);
         }
@@ -687,7 +695,10 @@ mod tests {
 
         let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
-        for target in ["/overlays/alerts/", "/overlays/alerts"] {
+        for target in [
+            "/overlays/fgo_fixture/alerts/",
+            "/overlays/fgo_fixture/alerts",
+        ] {
             let resp = reqwest::get(format!("http://{addr}{target}"))
                 .await
                 .expect("request");
@@ -724,10 +735,10 @@ mod tests {
         let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
         for target in [
-            "/overlays/bare/",
-            "/overlays/bare",
-            "/overlays/shadowed/",
-            "/overlays/shadowed",
+            "/overlays/fgo_fixture/bare/",
+            "/overlays/fgo_fixture/bare",
+            "/overlays/fgo_fixture/shadowed/",
+            "/overlays/fgo_fixture/shadowed",
         ] {
             let (status, _) = get_status_and_body(addr, target).await;
             assert_eq!(status, 404, "expected 404 for {target}");
@@ -752,7 +763,10 @@ mod tests {
 
         let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
-        for target in ["/overlays/alerts/", "/overlays/alerts"] {
+        for target in [
+            "/overlays/fgo_fixture/alerts/",
+            "/overlays/fgo_fixture/alerts",
+        ] {
             let (status, body) = raw_get(addr, target, "").await;
             assert_eq!(status, 404, "expected 404 for {target}");
             assert!(
@@ -775,9 +789,12 @@ mod tests {
         let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
         for (target, expected) in [
-            ("/overlays/config.json", "application/json"),
-            ("/overlays/face.woff2", "font/woff2"),
-            ("/overlays/blob.unknownext", "application/octet-stream"),
+            ("/overlays/fgo_fixture/config.json", "application/json"),
+            ("/overlays/fgo_fixture/face.woff2", "font/woff2"),
+            (
+                "/overlays/fgo_fixture/blob.unknownext",
+                "application/octet-stream",
+            ),
         ] {
             let resp = reqwest::get(format!("http://{addr}{target}"))
                 .await
@@ -859,13 +876,13 @@ mod tests {
 
         let namespace = forge_overlay::GENERATED_MEDIA_DIRECTORY;
         for target in [
-            "/overlays/alerts".to_owned(),
-            "/overlays/alerts/".to_owned(),
-            "/overlays/alerts/index.html".to_owned(),
-            "/overlays/alerts/config.json".to_owned(),
-            format!("/overlays/alerts/{MEDIA_FILE}"),
-            format!("/overlays/alerts/{namespace}/nested/{MEDIA_FILE}"),
-            format!("/overlays/alerts/{namespace}-user/{MEDIA_FILE}"),
+            "/overlays/fgo_fixture/alerts".to_owned(),
+            "/overlays/fgo_fixture/alerts/".to_owned(),
+            "/overlays/fgo_fixture/alerts/index.html".to_owned(),
+            "/overlays/fgo_fixture/alerts/config.json".to_owned(),
+            format!("/overlays/fgo_fixture/alerts/{MEDIA_FILE}"),
+            format!("/overlays/fgo_fixture/alerts/{namespace}/nested/{MEDIA_FILE}"),
+            format!("/overlays/fgo_fixture/alerts/{namespace}-user/{MEDIA_FILE}"),
         ] {
             assert_eq!(
                 cache_control_of(addr, &target).await,
@@ -874,9 +891,12 @@ mod tests {
             );
         }
 
-        let cached = cache_control_of(addr, &format!("/overlays/alerts/{namespace}/{MEDIA_FILE}"))
-            .await
-            .expect("a content-named generated file carries a cache directive");
+        let cached = cache_control_of(
+            addr,
+            &format!("/overlays/fgo_fixture/alerts/{namespace}/{MEDIA_FILE}"),
+        )
+        .await
+        .expect("a content-named generated file carries a cache directive");
         assert!(cached.contains("public"), "{cached}");
         assert!(cached.contains("immutable"), "{cached}");
         let max_age: u64 = cached
@@ -956,10 +976,10 @@ mod tests {
         .await;
 
         for target in [
-            "/overlays/off/",
-            "/overlays/off",
-            "/overlays/off/index.html",
-            "/overlays/off/asset.js",
+            "/overlays/fgo_fixture/off/",
+            "/overlays/fgo_fixture/off",
+            "/overlays/fgo_fixture/off/index.html",
+            "/overlays/fgo_fixture/off/asset.js",
         ] {
             let (status, body) = get_status_and_body(addr, target).await;
             assert_eq!(status, 404, "expected 404 for {target}");
@@ -988,9 +1008,9 @@ mod tests {
         .await;
 
         for target in [
-            "/overlays/alias/index.html",
-            "/overlays/alias/asset.js",
-            "/overlays/alias/",
+            "/overlays/fgo_fixture/alias/index.html",
+            "/overlays/fgo_fixture/alias/asset.js",
+            "/overlays/fgo_fixture/alias/",
         ] {
             let (status, body) = get_status_and_body(addr, target).await;
             assert_eq!(status, 404, "expected 404 for {target}");
@@ -1017,11 +1037,14 @@ mod tests {
         .await;
 
         for (target, expected_body) in [
-            ("/overlays/on/index.html", "<p>on</p>"),
-            ("/overlays/stranger/index.html", "<p>stranger</p>"),
-            ("/overlays/boom/index.html", "<p>boom</p>"),
+            ("/overlays/fgo_fixture/on/index.html", "<p>on</p>"),
             (
-                "/overlays/forge-shared/runtime-v1.js",
+                "/overlays/fgo_fixture/stranger/index.html",
+                "<p>stranger</p>",
+            ),
+            ("/overlays/fgo_fixture/boom/index.html", "<p>boom</p>"),
+            (
+                "/overlays/fgo_fixture/forge-shared/runtime-v1.js",
                 "export const runtime = 1;",
             ),
         ] {
@@ -1044,10 +1067,10 @@ mod tests {
         let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
         for target in [
-            "/overlays/a%5Cb.html",
-            "/overlays/a:b.html",
-            "/overlays/a%3Ab.html",
-            "/overlays/%5C%5Chost%5Cs%5Cx",
+            "/overlays/fgo_fixture/a%5Cb.html",
+            "/overlays/fgo_fixture/a:b.html",
+            "/overlays/fgo_fixture/a%3Ab.html",
+            "/overlays/fgo_fixture/%5C%5Chost%5Cs%5Cx",
         ] {
             let (status, body) = raw_get(addr, target, "").await;
             assert_eq!(status, 404, "expected 404 for {target}");
@@ -1069,7 +1092,7 @@ mod tests {
         let mut granted = Vec::new();
         for file in [forge_overlay::CONFIG_FILE, WIDGET_FILE] {
             let response = reqwest::Client::new()
-                .get(format!("http://{addr}/overlays/alerts/{file}"))
+                .get(format!("http://{addr}/overlays/fgo_fixture/alerts/{file}"))
                 .header(reqwest::header::ORIGIN, FOREIGN_ORIGIN)
                 .send()
                 .await
@@ -1102,7 +1125,7 @@ mod tests {
 
         let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
-        let response = reqwest::get(format!("http://{addr}/overlays/clip.wav"))
+        let response = reqwest::get(format!("http://{addr}/overlays/fgo_fixture/clip.wav"))
             .await
             .expect("request");
         assert_eq!(
@@ -1137,5 +1160,231 @@ mod tests {
         assert!(response.bytes().await.expect("body").is_empty());
 
         handle.stop().await.expect("stop");
+    }
+
+    const OVERLAY_PAGE_PATHS: &[&str] = &[
+        "alerts/",
+        "alerts/index.html",
+        "alerts/config.json",
+        "alerts/overlay.css",
+        "alerts/media/chime.ogg",
+        "forge-shared/runtime-v1.js",
+        "loose.html",
+    ];
+
+    async fn overlay_page_root(base: &std::path::Path) -> std::path::PathBuf {
+        let root = make_root(base).await;
+        write_at(root.join("alerts").join("index.html"), "<p>entry</p>").await;
+        write_at(
+            root.join("alerts").join("config.json"),
+            "{\"credential\":\"c\"}",
+        )
+        .await;
+        write_at(root.join("alerts").join("overlay.css"), "body{}").await;
+        write_at(root.join("alerts").join("media").join("chime.ogg"), "ogg").await;
+        write_at(
+            root.join("forge-shared").join("runtime-v1.js"),
+            "export const runtime = 1;",
+        )
+        .await;
+        write_at(root.join("loose.html"), "<p>loose</p>").await;
+        root
+    }
+
+    fn referrer_policy(response: &reqwest::Response) -> Option<String> {
+        response
+            .headers()
+            .get(reqwest::header::REFERRER_POLICY)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned)
+    }
+
+    #[tokio::test]
+    async fn every_overlay_path_without_the_exact_token_is_refused_with_an_empty_no_referrer_404() {
+        let dir = qa_tempdir();
+        let root = overlay_page_root(dir.path()).await;
+        let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
+
+        for prefix in [
+            "",
+            "fgo_wrong/",
+            "fgo_fixtur/",
+            "fgo_fixturee/",
+            "FGO_FIXTURE/",
+            "fg_fixture/",
+            "/",
+        ] {
+            for path in OVERLAY_PAGE_PATHS {
+                let target = format!("http://{addr}/overlays/{prefix}{path}");
+                let response = reqwest::get(&target).await.expect("request");
+
+                assert_eq!(response.status().as_u16(), 404, "{target}");
+                assert_eq!(
+                    referrer_policy(&response).as_deref(),
+                    Some("no-referrer"),
+                    "{target}"
+                );
+                assert!(
+                    response.bytes().await.expect("body").is_empty(),
+                    "{target} leaked a body"
+                );
+            }
+        }
+
+        handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn the_overlay_token_opens_every_file_an_overlay_page_loads_under_no_referrer() {
+        let dir = qa_tempdir();
+        let root = overlay_page_root(dir.path()).await;
+        let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
+
+        for path in OVERLAY_PAGE_PATHS {
+            let target = format!("http://{addr}/overlays/{FIXTURE_OVERLAY_TOKEN}/{path}");
+            let response = reqwest::get(&target).await.expect("request");
+
+            assert_eq!(response.status().as_u16(), 200, "{target}");
+            assert_eq!(
+                referrer_policy(&response).as_deref(),
+                Some("no-referrer"),
+                "{target} would leak the tokenized path to third-party subresources"
+            );
+        }
+
+        handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn the_overlay_token_segment_alone_serves_nothing() {
+        let dir = qa_tempdir();
+        let root = overlay_page_root(dir.path()).await;
+        write_at(root.join("index.html"), "<p>root entry</p>").await;
+        let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
+
+        for required in [true, false] {
+            handle.set_http_overlay_token_required(required).await;
+            for target in [
+                format!("/overlays/{FIXTURE_OVERLAY_TOKEN}"),
+                format!("/overlays/{FIXTURE_OVERLAY_TOKEN}/"),
+            ] {
+                let (status, body) = get_status_and_body(addr, &target).await;
+
+                assert_eq!(status, 404, "{target} with the token required {required}");
+                assert!(
+                    body.is_empty(),
+                    "{target} with the token required {required}"
+                );
+            }
+        }
+
+        handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn a_dot_dot_after_the_overlay_token_cannot_reach_a_file_outside_the_root() {
+        let dir = qa_tempdir();
+        let (root, _) = root_with_outside_decoy(dir.path()).await;
+        write_at(root.join("alerts").join("index.html"), "<p>entry</p>").await;
+        let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
+
+        for target in [
+            format!("/overlays/{FIXTURE_OVERLAY_TOKEN}/../secret.html"),
+            format!("/overlays/{FIXTURE_OVERLAY_TOKEN}/alerts/../../secret.html"),
+            format!("/overlays/{FIXTURE_OVERLAY_TOKEN}/%2e%2e/secret.html"),
+            format!("/overlays/{FIXTURE_OVERLAY_TOKEN}/..%2fsecret.html"),
+            format!("/overlays/{FIXTURE_OVERLAY_TOKEN}/%2e%2e%2f..%2fsecret.html"),
+        ] {
+            let (status, response) = raw_get(addr, &target, "").await;
+
+            assert_ne!(status, 200, "{target}");
+            assert!(
+                !response.contains(ESCAPE_MARKER),
+                "{target} escaped the root"
+            );
+        }
+
+        handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn switching_the_token_requirement_takes_effect_on_the_next_request() {
+        let dir = qa_tempdir();
+        let root = overlay_page_root(dir.path()).await;
+        let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
+        let tokenless = "/overlays/alerts/config.json";
+        let tokened = format!("/overlays/{FIXTURE_OVERLAY_TOKEN}/alerts/config.json");
+
+        handle.set_http_overlay_token_required(false).await;
+        assert_eq!(get_status_and_body(addr, tokenless).await.0, 200);
+        assert_eq!(
+            get_status_and_body(addr, &tokened).await.0,
+            200,
+            "a copied URL must keep working while the requirement is off"
+        );
+
+        handle.set_http_overlay_token_required(true).await;
+        assert_eq!(get_status_and_body(addr, tokenless).await.0, 404);
+
+        handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn a_refused_overlay_request_never_reaches_the_overlay_store() {
+        let dir = qa_tempdir();
+        let root = overlay_page_root(dir.path()).await;
+        let mut repo = MockOverlayRepo::new();
+        repo.expect_get().times(0);
+        let (handle, addr) =
+            make_overlay_server_with_overlays(root, true, MemCreds::new(), Some(Arc::new(repo)))
+                .await;
+
+        let (status, _) = get_status_and_body(addr, "/overlays/fgo_wrong/alerts/").await;
+
+        assert_eq!(status, 404);
+        handle.stop().await.expect("stop");
+    }
+
+    #[test]
+    fn overlay_requests_never_put_the_overlay_token_into_any_log_line() {
+        let dir = qa_tempdir();
+        let base = dir.path().to_path_buf();
+
+        let ((), lines) = log_capture::capture_blocking(tracing::Level::TRACE, async move {
+            let root = overlay_page_root(&base).await;
+            let mut repo = MockOverlayRepo::new();
+            repo.expect_get().returning(|_| {
+                Err(StorageError::Connection {
+                    reason: "overlay store offline".to_owned(),
+                })
+            });
+            let (handle, addr) = make_overlay_server_with_overlays(
+                root,
+                true,
+                MemCreds::new(),
+                Some(Arc::new(repo)),
+            )
+            .await;
+            for target in [
+                format!("/overlays/{FIXTURE_OVERLAY_TOKEN}/alerts/"),
+                format!("/overlays/{FIXTURE_OVERLAY_TOKEN}/alerts/missing.js"),
+                format!("/overlays/{FIXTURE_OVERLAY_TOKEN}/../escape.html"),
+                "/overlays/fgo_guess/alerts/".to_owned(),
+            ] {
+                raw_get(addr, &target, "").await;
+            }
+            handle.stop().await.expect("stop");
+        });
+
+        assert!(
+            !log_capture::forge_warnings(&lines).is_empty(),
+            "the store failure should have produced a warning to inspect"
+        );
+        for token in [FIXTURE_OVERLAY_TOKEN, "fgo_guess"] {
+            assert!(
+                !lines.iter().any(|line| line.mentions(token)),
+                "a log line carries {token}"
+            );
+        }
     }
 }

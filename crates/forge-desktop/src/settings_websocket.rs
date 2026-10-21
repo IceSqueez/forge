@@ -1618,6 +1618,8 @@ mod tests {
     const STORED_ORIGIN: &str = "http://stored.test:9000";
     const TYPED_ORIGIN: &str = "http://typed.test:9100";
     const RESTART_FAILURE: &str = "address already in use";
+    const SETTLE_ROUNDS: usize = 2_000;
+    const SETTLE_NAP: std::time::Duration = std::time::Duration::from_millis(1);
 
     fn settings_view(
         cx: &mut TestAppContext,
@@ -1818,5 +1820,163 @@ mod tests {
                 assert_eq!(this.restarting, expect_rerun, "{case}");
             });
         }
+    }
+
+    fn live_overlay_token(rt: &tokio::runtime::Runtime, server: &ServerHandle) -> (String, bool) {
+        rt.block_on(async {
+            let auth = server.auth_state().await;
+            (
+                auth.overlay_token().current(),
+                auth.overlay_token().required(),
+            )
+        })
+    }
+
+    fn settle(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
+        for _ in 0..4 {
+            pump(rt);
+            cx.run_until_parked();
+        }
+    }
+
+    fn settle_until(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        view: &Entity<SettingsWebSocketView>,
+        done: impl Fn(&SettingsWebSocketView) -> bool,
+    ) {
+        for _ in 0..SETTLE_ROUNDS {
+            settle(cx, rt);
+            if view.read_with(cx, |this, _| done(this)) {
+                return;
+            }
+            rt.block_on(async { tokio::time::sleep(SETTLE_NAP).await });
+        }
+        panic!("the pane never settled");
+    }
+
+    #[gpui::test]
+    fn switching_off_the_overlay_token_requirement_persists_it_and_opens_the_live_gate(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (backend, mut writes) = test_backend();
+        let server = stopped_handle(&rt, &backend);
+        let view = settings_view_with_server(cx, &rt, backend, Some(server.clone()));
+        settle(cx, &rt);
+        while writes.try_recv().is_ok() {}
+
+        view.update(cx, |this, cx| this.toggle_require_overlay_token(cx));
+        settle(cx, &rt);
+
+        let written: Vec<_> = std::iter::from_fn(|| writes.try_recv().ok()).collect();
+        assert!(
+            written.iter().any(|(key, value)| {
+                key == reserved_keys::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN && value == "false"
+            }),
+            "writes {written:?}"
+        );
+        assert!(
+            !live_overlay_token(&rt, &server).1,
+            "the running gate still demands the token"
+        );
+    }
+
+    #[gpui::test]
+    fn regenerate_waits_for_confirmation_and_cancel_keeps_the_token(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (backend, _writes) = test_backend();
+        let server = stopped_handle(&rt, &backend);
+        let before = live_overlay_token(&rt, &server).0;
+        let view = settings_view_with_server(cx, &rt, backend, Some(server.clone()));
+
+        view.update(cx, |this, cx| this.request_overlay_token_regenerate(cx));
+        assert!(view.read_with(cx, |this, _| this.overlay_token_confirm_open));
+        view.update(cx, |this, cx| this.cancel_overlay_token_regenerate(cx));
+        settle(cx, &rt);
+
+        assert!(!view.read_with(cx, |this, _| this.overlay_token_confirm_open));
+        assert_eq!(live_overlay_token(&rt, &server).0, before);
+    }
+
+    #[gpui::test]
+    fn regenerate_is_not_offered_without_a_server(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (backend, _writes) = test_backend();
+        let view = settings_view(cx, &rt, backend);
+
+        view.update(cx, |this, cx| this.request_overlay_token_regenerate(cx));
+
+        assert!(!view.read_with(cx, |this, _| this.overlay_token_confirm_open));
+    }
+
+    #[gpui::test]
+    fn a_confirmed_regenerate_rotates_the_live_token_and_shows_the_new_one(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let overlay_root = tempfile::tempdir().expect("tempdir");
+        let (backend, _writes) = test_backend();
+        rt.block_on(backend.set_string(
+            reserved_keys::SERVER_OVERLAY_ROOT,
+            &overlay_root.path().to_string_lossy(),
+        ))
+        .expect("overlay root setting");
+        let server = stopped_handle(&rt, &backend);
+        let before = live_overlay_token(&rt, &server).0;
+        let view = settings_view_with_server(cx, &rt, backend, Some(server.clone()));
+        settle(cx, &rt);
+
+        view.update(cx, |this, cx| {
+            this.request_overlay_token_regenerate(cx);
+            this.confirm_overlay_token_regenerate(cx);
+        });
+        settle_until(cx, &rt, &view, |this| !this.overlay_token_regenerating);
+
+        let after = live_overlay_token(&rt, &server).0;
+        assert_ne!(
+            after, before,
+            "the confirmed regenerate never rotated the token"
+        );
+        assert_eq!(
+            view.read_with(cx, |this, _| this.overlay_token.clone()),
+            Some(after),
+            "the pane still shows the retired token"
+        );
+    }
+
+    #[gpui::test]
+    fn a_regenerate_whose_pages_fail_to_rewrite_still_shows_the_live_token(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let scratch = tempfile::tempdir().expect("tempdir");
+        let not_a_directory = scratch.path().join("overlays-file");
+        std::fs::write(&not_a_directory, b"x").expect("write file");
+        let (backend, _writes) = test_backend();
+        rt.block_on(backend.set_string(
+            reserved_keys::SERVER_OVERLAY_ROOT,
+            &not_a_directory.to_string_lossy(),
+        ))
+        .expect("overlay root setting");
+        let server = stopped_handle(&rt, &backend);
+        let before = live_overlay_token(&rt, &server).0;
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+        let view = settings_view_with_server(cx, &rt, backend, Some(server.clone()));
+        settle(cx, &rt);
+
+        view.update(cx, |this, cx| {
+            this.request_overlay_token_regenerate(cx);
+            this.confirm_overlay_token_regenerate(cx);
+        });
+        settle_until(cx, &rt, &view, |this| !this.overlay_token_regenerating);
+
+        let live = live_overlay_token(&rt, &server).0;
+        assert_ne!(live, before);
+        assert_eq!(
+            view.read_with(cx, |this, _| this.overlay_token.clone()),
+            Some(live),
+            "the pane offers a token the server already refuses"
+        );
     }
 }

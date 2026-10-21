@@ -1886,12 +1886,15 @@ mod tests {
     const OVERLAY_DIR: &str = "alerts";
     const PLAIN_DIR: &str = "assets";
     const LOOSE_PAGE: &str = "legacy.html";
+    const OVERLAY_TOKEN: &str = "fgo_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_abcde";
+    const ROTATED_TOKEN: &str = "fgo_ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210_-edcba";
 
     fn serverless_console(
         cx: &mut TestAppContext,
         rt: &tokio::runtime::Runtime,
     ) -> Entity<ServerConsoleView> {
         let (backend, _writes) = test_backend();
+        cx.update(|cx| crate::overlay_link_token::publish(OVERLAY_TOKEN.to_owned(), cx));
         cx.new(|cx| {
             ServerConsoleView::new(
                 None,
@@ -1981,7 +1984,7 @@ mod tests {
 
         assert_eq!(
             url.as_deref(),
-            Some("http://192.168.1.5:9515/overlays/alerts/")
+            Some(format!("http://192.168.1.5:9515/overlays/{OVERLAY_TOKEN}/alerts/").as_str())
         );
     }
 
@@ -2002,7 +2005,7 @@ mod tests {
 
         assert_eq!(
             url.as_deref(),
-            Some("http://192.168.1.5:9515/overlays/legacy.html")
+            Some(format!("http://192.168.1.5:9515/overlays/{OVERLAY_TOKEN}/legacy.html").as_str())
         );
     }
 
@@ -2024,7 +2027,7 @@ mod tests {
 
             assert_eq!(
                 url.as_deref(),
-                Some("http://192.168.1.5:9515/overlays/alerts/"),
+                Some(format!("http://192.168.1.5:9515/overlays/{OVERLAY_TOKEN}/alerts/").as_str()),
                 "directory {unhostable}"
             );
         }
@@ -2073,6 +2076,55 @@ mod tests {
 
             assert_eq!(url, None, "{case}");
         }
+    }
+
+    #[gpui::test]
+    fn the_browser_source_url_follows_a_regenerated_overlay_token(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = serverless_console(cx, &rt);
+        view.update(cx, |this, _| {
+            serve(this, vec![dir_entry(OVERLAY_DIR, true)])
+        });
+
+        cx.update(|cx| crate::overlay_link_token::publish(ROTATED_TOKEN.to_owned(), cx));
+        cx.run_until_parked();
+
+        let url = view.update(cx, |this, _| this.browser_source_url());
+        assert_eq!(
+            url.as_deref(),
+            Some(format!("http://192.168.1.5:9515/overlays/{ROTATED_TOKEN}/alerts/").as_str())
+        );
+    }
+
+    #[gpui::test]
+    fn the_displayed_browser_source_url_never_shows_the_full_overlay_token(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let view = serverless_console(cx, &rt);
+
+        let shown = view.update(cx, |this, _| {
+            serve(this, vec![dir_entry(OVERLAY_DIR, true)]);
+            this.displayed_browser_source_url()
+        });
+
+        let shown = shown.expect("a hosted overlay is offered as a browser source");
+        assert!(!shown.contains(OVERLAY_TOKEN), "shown {shown}");
+        assert!(shown.ends_with("/alerts/"), "shown {shown}");
+    }
+
+    #[gpui::test]
+    fn no_browser_source_url_is_offered_before_the_overlay_token_is_known(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = serverless_console(cx, &rt);
+
+        let url = view.update(cx, |this, _| {
+            serve(this, vec![dir_entry(OVERLAY_DIR, true)]);
+            this.overlay_token = None;
+            this.browser_source_url()
+        });
+
+        assert_eq!(url, None);
     }
 
     fn snapshot_client(

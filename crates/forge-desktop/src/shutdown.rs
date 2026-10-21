@@ -175,7 +175,7 @@ impl ShutdownHandles {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use std::io::Write;
     use std::sync::Mutex;
@@ -815,12 +815,17 @@ mod tests {
         );
     }
 
+    const RUNNING_DEADLINE: Duration = Duration::from_secs(600);
+
     async fn until_running(handle: &ScheduledBackupHandle) {
-        handle
-            .status()
-            .wait_for(|status| status.state == ScheduleState::Running)
-            .await
-            .unwrap();
+        let mut status = handle.status();
+        tokio::time::timeout(
+            RUNNING_DEADLINE,
+            status.wait_for(|status| status.state == ScheduleState::Running),
+        )
+        .await
+        .expect("the gated backup never reported Running")
+        .unwrap();
     }
 
     #[tokio::test(start_paused = true)]

@@ -881,6 +881,10 @@ pub(crate) mod tests {
             unreachable!("the property panel never creates an overlay")
         }
 
+        async fn reissue_all_credentials(&self) -> Result<Vec<OverlayId>, StorageError> {
+            unreachable!("the property panel never reissues overlay credentials")
+        }
+
         async fn save(&self, definition: &OverlayDefinition) -> Result<(), StorageError> {
             self.saved.lock().unwrap().push(definition.config.clone());
             Ok(())

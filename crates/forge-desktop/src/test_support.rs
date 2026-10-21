@@ -515,6 +515,10 @@ impl OverlayRepo for StubOverlays {
         unreachable!("the settings pane never creates an overlay")
     }
 
+    async fn reissue_all_credentials(&self) -> Result<Vec<OverlayId>, StorageError> {
+        Ok(Vec::new())
+    }
+
     async fn save(&self, _: &OverlayDefinition) -> Result<(), StorageError> {
         unreachable!("the settings pane never saves an overlay")
     }

@@ -138,13 +138,13 @@ mod tests {
         let origin = overlay_origin("0.0.0.0:9515", Some(ROUTABLE_HOST));
 
         assert_eq!(
-            overlay_page_url(&origin, "alerts"),
-            "http://192.168.1.5:9515/overlays/alerts/",
+            overlay_page_url(&origin, "fgo_t", "alerts"),
+            "http://192.168.1.5:9515/overlays/fgo_t/alerts/",
             "without the trailing slash a browser source requests a file, not the entry document"
         );
         assert_eq!(
-            overlay_file_url(&origin, "alerts.html"),
-            "http://192.168.1.5:9515/overlays/alerts.html",
+            overlay_file_url(&origin, "fgo_t", "alerts.html"),
+            "http://192.168.1.5:9515/overlays/fgo_t/alerts.html",
             "a trailing slash on a file would redirect a browser source to a directory listing"
         );
     }

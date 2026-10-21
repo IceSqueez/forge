@@ -218,6 +218,10 @@ mod tests {
             unreachable!("routing never creates an overlay")
         }
 
+        async fn reissue_all_credentials(&self) -> Result<Vec<OverlayId>, StorageError> {
+            unreachable!("routing never reissues overlay credentials")
+        }
+
         async fn save(&self, _: &OverlayDefinition) -> Result<(), StorageError> {
             unreachable!("routing never saves an overlay")
         }

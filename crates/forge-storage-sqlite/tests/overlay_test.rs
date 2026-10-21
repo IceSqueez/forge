@@ -538,3 +538,86 @@ async fn reapplying_migrations_leaves_existing_rows_untouched() {
         "an existing overlay must survive a migration re-run"
     );
 }
+
+async fn three_overlays(repo: &SqliteOverlayRepo) -> Vec<(OverlayId, OverlayCredential)> {
+    let mut created = Vec::new();
+    for name in ["Alert Box", "Chat", "Goal Bar"] {
+        let definition = repo.create(name, "forge.chat", 1).await.expect("create");
+        created.push((definition.id, definition.credential));
+    }
+    created
+}
+
+#[tokio::test]
+async fn reissue_all_credentials_retires_every_old_credential_for_a_fresh_distinct_one() {
+    let (repo, _pool) = fresh().await;
+    let before = three_overlays(&repo).await;
+
+    let reissued = repo.reissue_all_credentials().await.expect("reissue");
+
+    assert_eq!(
+        reissued,
+        before.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>()
+    );
+    let mut fresh_credentials = BTreeSet::new();
+    for (id, old) in &before {
+        assert!(
+            repo.get_by_credential(old).await.expect("lookup").is_none(),
+            "{id} still answers to its old credential"
+        );
+        let current = repo.get(id).await.expect("get").expect("overlay kept");
+        assert_eq!(
+            repo.get_by_credential(&current.credential)
+                .await
+                .expect("lookup")
+                .map(|d| d.id),
+            Some(id.clone())
+        );
+        fresh_credentials.insert(current.credential.as_str().to_owned());
+    }
+    assert_eq!(
+        fresh_credentials.len(),
+        before.len(),
+        "two overlays share a credential"
+    );
+}
+
+#[tokio::test]
+async fn reissue_all_credentials_on_an_empty_store_reissues_nothing() {
+    let (repo, _pool) = fresh().await;
+
+    assert!(
+        repo.reissue_all_credentials()
+            .await
+            .expect("reissue")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn a_reissue_that_fails_part_way_keeps_every_old_credential() {
+    let (repo, pool) = fresh().await;
+    let before = three_overlays(&repo).await;
+    assert_eq!(before[1].0.as_str(), "chat");
+    sqlx::query(
+        "CREATE TRIGGER refuse_reissue BEFORE UPDATE OF credential ON overlays \
+         WHEN OLD.id = 'chat' BEGIN SELECT RAISE(ABORT, 'refused'); END",
+    )
+    .execute(&pool)
+    .await
+    .expect("install failing trigger");
+
+    let result = repo.reissue_all_credentials().await;
+
+    assert!(result.is_err());
+    for (id, old) in &before {
+        assert_eq!(
+            repo.get_by_credential(old)
+                .await
+                .expect("lookup")
+                .map(|d| d.id),
+            Some(id.clone()),
+            "{id} lost its credential to a rolled-back reissue"
+        );
+    }
+}

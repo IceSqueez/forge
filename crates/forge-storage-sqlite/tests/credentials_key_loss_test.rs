@@ -94,3 +94,33 @@ async fn an_existing_key_file_over_an_existing_credential_reports_nothing() {
         None
     );
 }
+
+#[tokio::test]
+async fn missing_key_file_over_only_server_issued_tokens_reports_nothing() {
+    let _guard = ENV_LOCK.lock().await;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let key_file = dir.path().join("credentials-key");
+    let url = format!("sqlite:{}", dir.path().join("test.db").display());
+
+    {
+        let backend = open_with_key_file(&url, &key_file).await;
+        for id in [
+            forge_storage::SERVER_BEARER_CREDENTIAL_ID,
+            forge_storage::SERVER_OVERLAY_TOKEN_CREDENTIAL_ID,
+        ] {
+            backend
+                .store(&CredentialId::new(id), "server-issued")
+                .await
+                .expect("seed a server-issued token");
+        }
+    }
+    std::fs::remove_file(&key_file).expect("drop the key file to simulate a lost key");
+
+    let backend = open_with_key_file(&url, &key_file).await;
+
+    assert_eq!(
+        take_credentials_key_loss(&backend).await.expect("take"),
+        None,
+        "the server re-issues its own tokens, so no login was lost"
+    );
+}

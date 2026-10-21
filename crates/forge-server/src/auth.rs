@@ -171,10 +171,11 @@ pub fn generate_token() -> String {
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
-    use forge_storage::StorageError;
     use forge_storage::credentials::MockCredentialsRepo;
+    use forge_storage::{CredentialId, SERVER_BEARER_CREDENTIAL_ID, StorageError};
 
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
@@ -184,20 +185,38 @@ mod tests {
 
     type Slot = Arc<Mutex<Option<String>>>;
     type WriteLog = Arc<Mutex<Vec<String>>>;
+    type OtherSlots = Arc<Mutex<HashMap<String, String>>>;
+
+    fn is_bearer(id: &CredentialId) -> bool {
+        id.as_str() == SERVER_BEARER_CREDENTIAL_ID
+    }
 
     fn slot_backed_repo(initial: Option<&str>) -> (MockCredentialsRepo, Slot, WriteLog) {
         let slot: Slot = Arc::new(Mutex::new(initial.map(str::to_owned)));
         let writes: WriteLog = Arc::new(Mutex::new(Vec::new()));
+        let others: OtherSlots = Arc::new(Mutex::new(HashMap::new()));
         let mut creds = MockCredentialsRepo::new();
         let read = Arc::clone(&slot);
-        creds
-            .expect_load()
-            .returning(move |_| Ok(read.lock().expect("lock").clone()));
+        let read_others = Arc::clone(&others);
+        creds.expect_load().returning(move |id| {
+            Ok(if is_bearer(id) {
+                read.lock().expect("lock").clone()
+            } else {
+                read_others.lock().expect("lock").get(id.as_str()).cloned()
+            })
+        });
         let write = Arc::clone(&slot);
         let log = Arc::clone(&writes);
-        creds.expect_store().returning(move |_, token| {
-            *write.lock().expect("lock") = Some(token.to_owned());
-            log.lock().expect("lock").push(token.to_owned());
+        creds.expect_store().returning(move |id, token| {
+            if is_bearer(id) {
+                *write.lock().expect("lock") = Some(token.to_owned());
+                log.lock().expect("lock").push(token.to_owned());
+            } else {
+                others
+                    .lock()
+                    .expect("lock")
+                    .insert(id.as_str().to_owned(), token.to_owned());
+            }
             Ok(())
         });
         (creds, slot, writes)
@@ -264,13 +283,19 @@ mod tests {
     #[tokio::test]
     async fn load_treats_an_undecryptable_stored_bearer_as_absent_and_mints_a_working_token() {
         let mut creds = MockCredentialsRepo::new();
-        creds
-            .expect_load()
-            .returning(|_| Err(StorageError::Decryption));
+        creds.expect_load().returning(|id| {
+            if is_bearer(id) {
+                Err(StorageError::Decryption)
+            } else {
+                Ok(None)
+            }
+        });
         let minted = Arc::new(Mutex::new(None));
         let minted_write = Arc::clone(&minted);
-        creds.expect_store().times(1).returning(move |_, token| {
-            *minted_write.lock().expect("lock") = Some(token.to_owned());
+        creds.expect_store().returning(move |id, token| {
+            if is_bearer(id) {
+                *minted_write.lock().expect("lock") = Some(token.to_owned());
+            }
             Ok(())
         });
 

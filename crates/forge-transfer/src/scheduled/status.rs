@@ -12,6 +12,7 @@ pub enum FailureCategory {
     DiskFull,
     DestinationInsideBackupScope,
     KeyMissing,
+    KeyUnreadable,
     SnapshotFailed,
     StateNotSaved,
     Interrupted,

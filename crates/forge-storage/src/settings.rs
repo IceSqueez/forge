@@ -87,8 +87,7 @@ pub mod reserved_keys {
     pub const BACKUP_SCHEDULE_INCLUDE_OVERLAYS: &str = "backup_schedule.include_overlays";
     pub const BACKUP_SCHEDULE_INCLUDE_ASSETS: &str = "backup_schedule.include_assets";
     pub const BACKUP_SCHEDULE_DESTINATION: &str = "backup_schedule.destination";
-    pub const BACKUP_SCHEDULE_RECIPIENT: &str = "backup_schedule.recipient";
-    pub const BACKUP_SCHEDULE_WRAPPED_IDENTITY: &str = "backup_schedule.wrapped_identity";
+    pub const BACKUP_SCHEDULE_KEY: &str = "backup_schedule.key";
     pub const BACKUP_SCHEDULE_LAST_SUCCESS_AT: &str = "backup_schedule.last_success_at";
     pub const BACKUP_SCHEDULE_CONTENT_FINGERPRINT: &str = "backup_schedule.content_fingerprint";
 }

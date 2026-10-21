@@ -35,6 +35,9 @@ impl Service {
     }
 
     async fn execute(&mut self, trigger: Trigger) -> Result<Completed, FailureCategory> {
+        if self.settings.key_unreadable {
+            return Err(FailureCategory::KeyUnreadable);
+        }
         let key = self
             .settings
             .key

@@ -11,13 +11,25 @@ use crate::error::TransferError;
 use crate::limits::{ENCRYPT_SCRYPT_WORK_FACTOR, MAX_DECRYPT_SCRYPT_WORK_FACTOR};
 use crate::passphrase::Passphrase;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ScheduleKey {
     pub recipient: String,
     pub wrapped_identity: String,
 }
 
 impl ScheduleKey {
+    pub fn encode(&self) -> Result<String, TransferError> {
+        serde_json::to_string(self).map_err(|reason| TransferError::Encryption {
+            reason: reason.to_string(),
+        })
+    }
+
+    pub fn decode(stored: &str) -> Result<Self, TransferError> {
+        serde_json::from_str(stored).map_err(|reason| TransferError::Encryption {
+            reason: reason.to_string(),
+        })
+    }
+
     pub fn fingerprint(&self) -> String {
         to_hex(&Sha256::digest(self.recipient.as_bytes()))
     }

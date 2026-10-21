@@ -24,6 +24,7 @@ pub(crate) struct ScheduleSettings {
     pub categories: Vec<BackupCategory>,
     pub destination: Option<PathBuf>,
     pub key: Option<ScheduleKey>,
+    pub key_unreadable: bool,
 }
 
 impl Default for ScheduleSettings {
@@ -38,6 +39,7 @@ impl Default for ScheduleSettings {
             categories: BackupCategory::all(),
             destination: None,
             key: None,
+            key_unreadable: false,
         }
     }
 }
@@ -78,8 +80,9 @@ impl ScheduleSettings {
         let categories = std::iter::once(BackupCategory::Database)
             .chain(optional_categories.into_iter().flatten())
             .collect();
-        let recipient = text(repo, reserved_keys::BACKUP_SCHEDULE_RECIPIENT).await?;
-        let wrapped_identity = text(repo, reserved_keys::BACKUP_SCHEDULE_WRAPPED_IDENTITY).await?;
+        let stored_key = text(repo, reserved_keys::BACKUP_SCHEDULE_KEY).await?;
+        let decoded_key = stored_key.as_deref().map(ScheduleKey::decode);
+        let key_unreadable = matches!(decoded_key, Some(Err(_)));
         Ok(Self {
             enabled: get_bool_setting(
                 repo,
@@ -123,12 +126,8 @@ impl ScheduleSettings {
             destination: text(repo, reserved_keys::BACKUP_SCHEDULE_DESTINATION)
                 .await?
                 .map(PathBuf::from),
-            key: recipient
-                .zip(wrapped_identity)
-                .map(|(recipient, wrapped_identity)| ScheduleKey {
-                    recipient,
-                    wrapped_identity,
-                }),
+            key: decoded_key.and_then(Result::ok),
+            key_unreadable,
         })
     }
 }

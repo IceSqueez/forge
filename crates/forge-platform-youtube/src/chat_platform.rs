@@ -111,6 +111,7 @@ impl ChatPlatform for YoutubePlatform {
             &self.state_tx,
             &self.events,
             ConnectionState::Connecting,
+            ConnectionTransition::Expected,
         );
 
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
@@ -137,6 +138,7 @@ impl ChatPlatform for YoutubePlatform {
         let exit_state_tx = self.state_tx.clone();
         let exit_events = Arc::clone(&self.events);
         let poller_cancel = cancel.clone();
+        let poller_cancelled = cancel.clone();
         tokio::spawn(async move {
             if let Err(err) = poller.run(poller_cancel).await {
                 tracing::warn!(
@@ -144,12 +146,15 @@ impl ChatPlatform for YoutubePlatform {
                     "youtube chat poller exited"
                 );
             }
-            publish_transition(
-                &exit_state,
-                &exit_state_tx,
-                &exit_events,
-                ConnectionState::Disconnected,
-            );
+            if !poller_cancelled.is_cancelled() {
+                publish_transition(
+                    &exit_state,
+                    &exit_state_tx,
+                    &exit_events,
+                    ConnectionState::Disconnected,
+                    ConnectionTransition::Unexpected,
+                );
+            }
             tracing::info!("youtube chat polling stopped");
         });
 
@@ -159,6 +164,7 @@ impl ChatPlatform for YoutubePlatform {
             &self.state_tx,
             &self.events,
             ConnectionState::Connected,
+            ConnectionTransition::Expected,
         );
         tracing::info!(channel_id = %self.channel_id, "youtube chat polling started");
         Ok(())
@@ -174,6 +180,7 @@ impl ChatPlatform for YoutubePlatform {
             &self.state_tx,
             &self.events,
             ConnectionState::Disconnected,
+            ConnectionTransition::Expected,
         );
         Ok(())
     }
@@ -223,6 +230,7 @@ fn publish_transition(
     state_tx: &watch::Sender<ConnectionState>,
     events: &PlatformEventChannel,
     new: ConnectionState,
+    transition: ConnectionTransition,
 ) {
     let changed = {
         let mut guard = state.lock().unwrap_or_else(|p| p.into_inner());
@@ -235,11 +243,7 @@ fn publish_transition(
     };
     if changed {
         let _ = state_tx.send(new);
-        events.publish(connection_state_changed_event(
-            PLATFORM_ID,
-            new,
-            ConnectionTransition::Unexpected,
-        ));
+        events.publish(connection_state_changed_event(PLATFORM_ID, new, transition));
     }
 }
 

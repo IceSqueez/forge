@@ -187,6 +187,8 @@ pub fn run_boot(
                 let queue_health_for_depths = queue_health.clone();
                 let speak_for_bridge = speak.clone();
                 let live_viewers_handle = handles.live_viewers.clone();
+                let notification_policy = handles.notification_policy.clone();
+                let rt_handle_for_notices = handles.rt_handle.clone();
                 let backend_for_shortcuts = Arc::clone(&handles.backend);
                 let rt_handle_for_shortcuts = handles.rt_handle.clone();
                 let chat_feed_for_history = chat_feed.clone();
@@ -311,6 +313,11 @@ pub fn run_boot(
                     start_uptime_clock(cx, status_for_clock);
                     start_awake_bridge(cx, awake_for_bridge, awake_watch);
                     start_live_viewers_bridge(cx, home_stats_for_viewers, live_viewers_handle);
+                    crate::system_notices::start_system_notices(
+                        cx,
+                        &notification_policy,
+                        rt_handle_for_notices,
+                    );
                     apply_persisted_shortcuts(cx, backend_for_shortcuts, rt_handle_for_shortcuts);
                     let boot_report = crate::update_report::start_update_report(
                         cx,

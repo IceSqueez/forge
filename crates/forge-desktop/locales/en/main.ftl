@@ -399,6 +399,15 @@ update_toast_download_failed = forge { $version } could not be downloaded.
 update_toast_unverified = forge { $version } could not be verified, so it was not installed.
 update_toast_handoff_failed = forge { $version } could not be prepared for install.
 update_toast_retry_action = Retry
+
+system_notice_action_failed_title = Action failed
+system_notice_action_failed_body = { $action } did not finish.
+system_notice_action_failed_body_reason = { $action } - { $reason }
+system_notice_actions_folded_title = More actions failed
+system_notice_actions_folded_body = { $count ->
+    [one] { $count } more action failed. See the event log.
+   *[other] { $count } more actions failed. See the event log.
+}
 update_leftover_install = Another forge is installed for all users. Uninstall it so only one copy uses your data.
 update_leftover_open_action = Open installed apps
 update_report_updated = forge updated to { $version }

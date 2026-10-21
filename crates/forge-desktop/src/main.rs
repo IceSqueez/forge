@@ -153,6 +153,7 @@ mod speak_bridge;
 mod speak_state;
 mod stay_awake;
 mod system_info;
+mod system_notices;
 #[cfg(test)]
 mod test_support;
 mod titlebar;

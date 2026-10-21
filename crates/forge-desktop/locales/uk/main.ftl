@@ -407,6 +407,17 @@ update_toast_download_failed = Не вдалося завантажити forge 
 update_toast_unverified = Не вдалося перевірити forge { $version }, тому її не встановлено.
 update_toast_handoff_failed = Не вдалося підготувати forge { $version } до встановлення.
 update_toast_retry_action = Повторити
+
+system_notice_action_failed_title = Дія не виконалася
+system_notice_action_failed_body = { $action } не завершилася.
+system_notice_action_failed_body_reason = { $action } - { $reason }
+system_notice_actions_folded_title = Не виконалися й інші дії
+system_notice_actions_folded_body = { $count ->
+    [one] Ще { $count } дія не виконалася. Перегляньте журнал подій.
+    [few] Ще { $count } дії не виконалися. Перегляньте журнал подій.
+    [many] Ще { $count } дій не виконалися. Перегляньте журнал подій.
+   *[other] Ще { $count } дій не виконалися. Перегляньте журнал подій.
+}
 update_leftover_install = Інша копія forge встановлена для всіх користувачів. Видаліть її, щоб ваші дані використовувала лише одна копія.
 update_leftover_open_action = Відкрити встановлені програми
 update_report_updated = forge оновлено до { $version }

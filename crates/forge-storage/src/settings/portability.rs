@@ -239,13 +239,17 @@ mod tests {
     }
 
     #[test]
-    fn the_whole_appearance_travels_with_a_backup() {
+    fn the_whole_appearance_and_region_format_travel_with_a_backup() {
         for key in [
             key::THEME,
             key::ACCENT,
             key::DENSITY,
             key::FONT_BODY,
             key::FONT_MONO,
+            key::REGION,
+            key::DATE_FORMAT,
+            key::TIME_FORMAT,
+            key::FIRST_DAY_OF_WEEK,
         ] {
             assert!(is_portable(key), "{key}");
         }

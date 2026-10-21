@@ -328,3 +328,236 @@ impl Render for SettingsRegionView {
         rows.in_card(&palette)
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use forge_components::{FOLLOW_REGION_CODE, active_display_formats};
+    use forge_storage::Language;
+    use gpui::{Entity, TestAppContext};
+    use time::{Date, Month, Time};
+
+    use super::*;
+    use crate::i18n::install_language;
+    use crate::test_support::{install_presentation, pump, runtime, test_backend};
+
+    fn noon() -> OffsetDateTime {
+        OffsetDateTime::new_utc(
+            Date::from_calendar_date(2026, Month::March, 15).unwrap(),
+            Time::from_hms(12, 0, 0).unwrap(),
+        )
+    }
+
+    fn plain(text: &str) -> String {
+        text.chars()
+            .filter(|c| !matches!(c, '\u{2068}' | '\u{2069}'))
+            .collect()
+    }
+
+    fn digit_shape(text: &str) -> String {
+        plain(text)
+            .chars()
+            .map(|c| if c.is_ascii_digit() { 'd' } else { c })
+            .collect()
+    }
+
+    fn label_of(view: &SettingsRegionView, row: RegionRow, pick: RegionPick) -> String {
+        view.options(row, noon())
+            .into_iter()
+            .find(|option| option.pick == pick)
+            .map(|option| option.label)
+            .unwrap()
+    }
+
+    fn mount(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        choices: DisplayFormatChoices,
+    ) -> (
+        Entity<SettingsRegionView>,
+        tokio::sync::mpsc::UnboundedReceiver<(String, String)>,
+    ) {
+        install_presentation(cx);
+        install_language(Language::En);
+        let (backend, writes) = test_backend();
+        let view = cx.update(|cx| {
+            cx.new(|cx| SettingsRegionView::new(backend, rt.handle().clone(), choices, cx))
+        });
+        (view, writes)
+    }
+
+    #[gpui::test]
+    fn picking_a_format_persists_its_code_and_applies_it_live(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (view, mut writes) = mount(cx, &rt, DisplayFormatChoices::following(Region::Ukraine));
+
+        view.update(cx, |view, cx| {
+            view.pick(
+                RegionPick::DateFormat(FormatChoice::Fixed(DateFormatChoice::YearMonthDay)),
+                cx,
+            )
+        });
+        pump(&rt);
+
+        assert_eq!(
+            (
+                writes.try_recv().ok(),
+                active_display_formats().date_format,
+                cx.update(|cx| cx.global::<ActiveDisplayFormats>().0.date_format),
+            ),
+            (
+                Some((reserved_keys::DATE_FORMAT.to_owned(), "ymd".to_owned())),
+                DateFormatChoice::YearMonthDay,
+                FormatChoice::Fixed(DateFormatChoice::YearMonthDay),
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn picking_a_region_persists_its_code_and_moves_region_default_rows_live(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (view, mut writes) = mount(cx, &rt, DisplayFormatChoices::following(Region::Ukraine));
+
+        view.update(cx, |view, cx| {
+            view.pick(RegionPick::Region(Region::UnitedStates), cx)
+        });
+        pump(&rt);
+
+        assert_eq!(
+            (writes.try_recv().ok(), active_display_formats()),
+            (
+                Some((reserved_keys::REGION.to_owned(), "US".to_owned())),
+                DisplayFormatChoices::following(Region::UnitedStates).resolve(),
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn re_picking_the_current_choice_writes_nothing(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let mut choices = DisplayFormatChoices::following(Region::Ukraine);
+        choices.clock = FormatChoice::Fixed(ClockStyle::TwelveHour);
+        let (view, _writes) = mount(cx, &rt, choices);
+
+        let writes = view.update(cx, |view, _| {
+            [
+                RegionPick::Region(Region::Ukraine),
+                RegionPick::DateFormat(FormatChoice::RegionDefault),
+                RegionPick::TimeFormat(FormatChoice::Fixed(ClockStyle::TwelveHour)),
+                RegionPick::FirstDay(FormatChoice::RegionDefault),
+            ]
+            .map(|pick| view.apply_pick(pick))
+        });
+
+        assert_eq!(writes, [None; 4]);
+    }
+
+    #[gpui::test]
+    fn returning_a_manual_row_to_region_default_stores_the_follow_region_code(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let mut choices = DisplayFormatChoices::following(Region::Ukraine);
+        choices.clock = FormatChoice::Fixed(ClockStyle::TwelveHour);
+        choices.first_day = FormatChoice::Fixed(FirstWeekday::Saturday);
+        let (view, _writes) = mount(cx, &rt, choices);
+
+        let writes = view.update(cx, |view, _| {
+            [
+                view.apply_pick(RegionPick::TimeFormat(FormatChoice::RegionDefault)),
+                view.apply_pick(RegionPick::FirstDay(FormatChoice::RegionDefault)),
+            ]
+        });
+
+        assert_eq!(
+            writes,
+            [
+                Some((reserved_keys::TIME_FORMAT, FOLLOW_REGION_CODE)),
+                Some((reserved_keys::FIRST_DAY_OF_WEEK, FOLLOW_REGION_CODE)),
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn region_default_labels_follow_a_region_change_while_manual_labels_stay(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (view, _writes) = mount(cx, &rt, DisplayFormatChoices::following(Region::Ukraine));
+        let labels = |view: &SettingsRegionView| {
+            [
+                digit_shape(&label_of(
+                    view,
+                    RegionRow::DateFormat,
+                    RegionPick::DateFormat(FormatChoice::RegionDefault),
+                )),
+                digit_shape(&label_of(
+                    view,
+                    RegionRow::DateFormat,
+                    RegionPick::DateFormat(FormatChoice::Fixed(DateFormatChoice::YearMonthDay)),
+                )),
+                plain(&label_of(
+                    view,
+                    RegionRow::TimeFormat,
+                    RegionPick::TimeFormat(FormatChoice::RegionDefault),
+                )),
+                plain(&label_of(
+                    view,
+                    RegionRow::FirstDay,
+                    RegionPick::FirstDay(FormatChoice::RegionDefault),
+                )),
+            ]
+        };
+
+        let before = view.update(cx, |view, _| labels(view));
+        let after = view.update(cx, |view, _| {
+            view.apply_pick(RegionPick::Region(Region::UnitedStates));
+            labels(view)
+        });
+
+        assert_eq!(
+            (before, after),
+            (
+                [
+                    "Region default (dd.dd.dddd)".to_owned(),
+                    "dddd-dd-dd".to_owned(),
+                    "Region default (24-hour)".to_owned(),
+                    "Region default (Monday)".to_owned(),
+                ],
+                [
+                    "Region default (dd/dd/dddd)".to_owned(),
+                    "dddd-dd-dd".to_owned(),
+                    "Region default (12-hour)".to_owned(),
+                    "Region default (Sunday)".to_owned(),
+                ],
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn time_options_preview_a_sample_in_their_own_clock(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (view, _writes) = mount(cx, &rt, DisplayFormatChoices::following(Region::Ukraine));
+
+        let samples = view.update(cx, |view, _| {
+            view.options(RegionRow::TimeFormat, noon())
+                .into_iter()
+                .map(|option| (option.pick, option.sample.unwrap_or_default()))
+                .collect::<Vec<_>>()
+        });
+
+        for (pick, sample) in samples {
+            let twelve_hour = matches!(
+                pick,
+                RegionPick::TimeFormat(FormatChoice::Fixed(ClockStyle::TwelveHour))
+            );
+            assert_eq!(
+                sample.ends_with(" AM") || sample.ends_with(" PM"),
+                twelve_hour,
+                "{pick:?} {sample:?}"
+            );
+        }
+    }
+}

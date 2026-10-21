@@ -77,11 +77,12 @@ pub(crate) fn optional_label(value: Option<&str>) -> String {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
+    use forge_components::{DateShape, fmt_display};
     use forge_events::{Event, EventSource};
     use forge_platform_core::{BanDuration, BanListUnavailable};
     use forge_storage::Language;
     use forge_types::PlatformId;
-    use time::{OffsetDateTime, UtcOffset};
+    use time::OffsetDateTime;
 
     use super::{
         ban_change_platform, changed_platforms, expiry_label, optional_label, unavailable_label,
@@ -163,27 +164,21 @@ mod tests {
     fn expiry_label_is_permanent_for_a_ban_without_an_end() {
         install_language(Language::En);
 
-        assert_eq!(
-            expiry_label(
-                BanDuration::Permanent,
-                UtcOffset::from_hms(3, 0, 0).unwrap()
-            ),
-            "Permanent"
-        );
+        assert_eq!(expiry_label(BanDuration::Permanent), "Permanent");
     }
 
     #[test]
-    fn expiry_label_shows_the_end_in_the_given_offset_across_midnight() {
+    fn expiry_label_shows_the_end_as_a_display_date_time() {
         install_language(Language::En);
         let ends = OffsetDateTime::from_unix_timestamp(MAR_15_2026_2330_UTC).unwrap();
 
-        let label = expiry_label(
-            BanDuration::Until(ends),
-            UtcOffset::from_hms(3, 0, 0).unwrap(),
-        );
+        let label = expiry_label(BanDuration::Until(ends));
 
         assert!(label.starts_with("until"), "{label:?}");
-        assert!(label.contains("Mar 16, 2026 02:30"), "{label:?}");
+        assert!(
+            label.contains(&fmt_display(DateShape::DateTime, ends)),
+            "{label:?}"
+        );
     }
 
     #[test]

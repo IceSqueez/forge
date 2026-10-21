@@ -270,4 +270,16 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn exported_items_keep_the_event_instant_as_iso_utc() {
+        let mut event = published_event(TWITCH_CHAT);
+        event.timestamp = time::OffsetDateTime::from_unix_timestamp(1_773_617_400).unwrap()
+            + time::Duration::milliseconds(90);
+        let item = EventLog::item_from_event(&event).unwrap();
+
+        let exported = serde_json::to_value(&item).unwrap();
+
+        assert_eq!(exported["timestamp"], "2026-03-15T23:30:00.09Z");
+    }
 }

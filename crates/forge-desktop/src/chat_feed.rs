@@ -554,7 +554,6 @@ mod tests {
         ChatMessage {
             id: "id".into(),
             event_id,
-            timestamp: "00:00:00".into(),
             received_at: OffsetDateTime::from_unix_timestamp(0).unwrap(),
             platform: PlatformId::Twitch,
             badges: vec![],

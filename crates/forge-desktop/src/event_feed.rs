@@ -1356,7 +1356,7 @@ mod tests {
     fn item(id: &str) -> EventItem {
         EventItem {
             id: id.to_owned().into(),
-            timestamp: "00:00:00.000".into(),
+            timestamp: time::OffsetDateTime::UNIX_EPOCH,
             source: EventSource::Core,
             kind: "core.test".into(),
             summary: "".into(),

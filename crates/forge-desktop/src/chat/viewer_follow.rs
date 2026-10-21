@@ -160,7 +160,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use crate::platform_visuals::BadgeKind;
-    use forge_components::{FORGE_DEFAULT, fmt_short_date, tr};
+    use forge_components::{DateShape, FORGE_DEFAULT, fmt_display, tr};
     use forge_platform_core::{
         BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
         DetailSection, FollowLookup, FollowStatus, HeaderAction, HealthMetric, HealthStream,
@@ -359,7 +359,7 @@ mod tests {
     #[test]
     fn follow_display_renders_each_status_with_its_tone() {
         let p = FORGE_DEFAULT;
-        let followed = fmt_short_date(&since());
+        let followed = fmt_display(DateShape::Date, since());
         let cases = [
             (
                 Some(FollowStatus::FollowedSince(since())),

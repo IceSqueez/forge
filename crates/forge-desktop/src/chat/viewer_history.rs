@@ -515,7 +515,6 @@ mod tests {
         ChatMessage {
             id: id.to_owned().into(),
             event_id: EventId::new(),
-            timestamp: "00:00:00".into(),
             received_at: OffsetDateTime::from_unix_timestamp(at).unwrap(),
             platform,
             badges: vec![],

@@ -857,9 +857,10 @@ mod tests {
     use super::disclosure::{self, SettingDisclosure};
     use super::{
         CredentialsKeyLoss, DEFAULT_DIAGNOSTIC_LOG_LEVEL, Density, Language, SettingsRepo,
-        StorageError, chat_history_per_viewer_limit, diagnostic_log_level, get_json_setting,
-        record_credentials_key_loss, reserved_keys, set_chat_history_per_viewer_limit,
-        set_diagnostic_log_level, set_json_setting, take_credentials_key_loss,
+        StorageError, StoredDisplayFormats, chat_history_per_viewer_limit, diagnostic_log_level,
+        get_json_setting, record_credentials_key_loss, reserved_keys,
+        set_chat_history_per_viewer_limit, set_diagnostic_log_level, set_json_setting,
+        stored_display_formats, take_credentials_key_loss,
     };
 
     #[derive(Default)]
@@ -1103,6 +1104,10 @@ mod tests {
             (reserved_keys::SERVER_ENABLED, "true"),
             (reserved_keys::UPDATES_ROLLED_BACK_VERSION, "0.6.0"),
             (reserved_keys::CREDENTIALS_KEY_LOSS, "1"),
+            (reserved_keys::REGION, "UA"),
+            (reserved_keys::DATE_FORMAT, "dmy_dot"),
+            (reserved_keys::TIME_FORMAT, "12h"),
+            (reserved_keys::FIRST_DAY_OF_WEEK, "region"),
             ("tts.engine_params.piper.speed", "1.25"),
         ] {
             assert_eq!(disclosure::class_of(key), SettingDisclosure::Verbatim);
@@ -1270,5 +1275,27 @@ mod tests {
                 "requested={requested}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn stored_display_formats_reads_each_key_and_leaves_absent_ones_empty() {
+        let repo = MapRepo::default();
+        for (key, value) in [
+            (reserved_keys::REGION, "GB"),
+            (reserved_keys::TIME_FORMAT, "12h"),
+            (reserved_keys::FIRST_DAY_OF_WEEK, "sat"),
+        ] {
+            repo.set_string(key, value).await.unwrap();
+        }
+
+        assert_eq!(
+            stored_display_formats(&repo).await.unwrap(),
+            StoredDisplayFormats {
+                region: Some("GB".to_owned()),
+                date_format: None,
+                time_format: Some("12h".to_owned()),
+                first_day_of_week: Some("sat".to_owned()),
+            }
+        );
     }
 }

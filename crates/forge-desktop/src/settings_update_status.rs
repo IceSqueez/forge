@@ -101,9 +101,12 @@ pub fn status_line(status: &UpdateCheckStatus, palette: &ForgePalette) -> Option
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
-    use time::{OffsetDateTime, Time, UtcOffset};
+    use forge_components::{DateShape, fmt_display};
+    use forge_storage::Language;
+    use time::{OffsetDateTime, Time};
 
-    use super::{StatusTone, UpdateCheckStatus, clock_label};
+    use super::{StatusTone, UpdateCheckStatus};
+    use crate::i18n::install_language;
     use crate::update_check::{CheckResult, UpdatePlan};
 
     fn at(hour: u8, minute: u8, second: u8) -> OffsetDateTime {
@@ -205,22 +208,17 @@ mod tests {
     }
 
     #[test]
-    fn clock_label_pads_hours_and_minutes_and_drops_seconds() {
-        for ((hour, minute, second), expected) in [
-            ((0, 0, 0), "00:00"),
-            ((9, 5, 59), "09:05"),
-            ((10, 30, 0), "10:30"),
-            ((23, 59, 59), "23:59"),
-        ] {
-            assert_eq!(clock_label(at(hour, minute, second)), expected);
-        }
-    }
+    fn up_to_date_label_carries_the_check_time_in_the_display_time_shape() {
+        install_language(Language::En);
+        let checked_at = at(22, 30, 0);
 
-    #[test]
-    fn clock_label_reads_the_wall_clock_of_the_stamp_offset() {
-        let offset = UtcOffset::from_hms(3, 0, 0).expect("valid offset");
-        let late_utc_evening = at(22, 30, 0).to_offset(offset);
+        let label = UpdateCheckStatus::UpToDate { checked_at }
+            .label()
+            .expect("an up-to-date status has a label");
 
-        assert_eq!(clock_label(late_utc_evening), "01:30");
+        assert!(
+            label.contains(&fmt_display(DateShape::Time, checked_at)),
+            "{label:?}"
+        );
     }
 }

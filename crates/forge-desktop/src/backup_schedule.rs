@@ -1171,7 +1171,7 @@ pub(crate) mod tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    use forge_components::{Toasts, fmt_relative_time, tr};
+    use forge_components::{DateShape, Toasts, fmt_display, fmt_display_relative, tr};
     use forge_storage::settings::portability::{SettingPortability, portability_of};
     use forge_storage::{DataProvider, Language, reserved_keys};
     use forge_transfer::{
@@ -1191,7 +1191,6 @@ pub(crate) mod tests {
     };
     use crate::backup_passphrase_modal::PassphrasePurpose;
     use crate::i18n::install_language;
-    use crate::scheduled_run_labels::{local_stamp, system_offset_at};
     use crate::test_support::install_presentation;
     use crate::test_support::pack_flow::{PackWorld, pack_world};
     use crate::test_support::{pump, runtime};
@@ -1487,9 +1486,9 @@ pub(crate) mod tests {
         for lang in [Language::En, Language::Uk] {
             install_language(lang);
             let never = unmarked(tr!("fmt_relative_never"));
-            let relative = unmarked(fmt_relative_time(Some(last)));
-            let next_stamp = local_stamp(next, system_offset_at(next));
-            let since_stamp = local_stamp(last, system_offset_at(last));
+            let relative = unmarked(fmt_display_relative(Some(last)));
+            let next_stamp = fmt_display(DateShape::DateTime, next);
+            let since_stamp = fmt_display(DateShape::DateTime, last);
             let reason = failure_reason(FailureCategory::DiskFull);
             let text = |line: StatusLine| unmarked(line.text());
 

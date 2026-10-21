@@ -480,11 +480,67 @@ mod tests {
         );
     }
 
-    #[test]
-    fn weekday_headers_follow_the_installed_language_starting_on_sunday() {
-        install_ukrainian();
-        let headers = WEEKDAY_KEYS.map(|key| tr!(key));
+    fn picker(year: i32, month: Month, first_day: FirstWeekday) -> DateTimePicker {
+        DateTimePicker {
+            palette: crate::palette::FORGE_DEFAULT,
+            labels: DateTimePickerLabels {
+                now: SharedString::default(),
+                set: SharedString::default(),
+                cancel: SharedString::default(),
+            },
+            year,
+            month,
+            day: 1,
+            hour: 0,
+            minute: 0,
+            first_day,
+        }
+    }
 
-        assert_eq!(headers, ["Нд", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]);
+    #[test]
+    fn weekday_headers_start_on_the_chosen_first_day_in_the_installed_language() {
+        install_ukrainian();
+        for (first_day, expected) in [
+            (
+                FirstWeekday::Monday,
+                ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"],
+            ),
+            (
+                FirstWeekday::Sunday,
+                ["Нд", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"],
+            ),
+            (
+                FirstWeekday::Saturday,
+                ["Сб", "Нд", "Пн", "Вт", "Ср", "Чт", "Пт"],
+            ),
+        ] {
+            let headers: Vec<String> = picker(2026, Month::October, first_day)
+                .weekday_keys()
+                .map(|key| tr!(key))
+                .collect();
+            assert_eq!(headers, expected, "{first_day:?}");
+        }
+    }
+
+    #[test]
+    fn day_grid_offsets_the_first_of_the_month_from_the_chosen_first_day() {
+        for (year, month, monday_first, sunday_first, saturday_first) in [
+            (2026, Month::October, 3, 4, 5),
+            (2026, Month::June, 0, 1, 2),
+            (2026, Month::February, 6, 0, 1),
+            (2026, Month::August, 5, 6, 0),
+        ] {
+            let blanks = [
+                FirstWeekday::Monday,
+                FirstWeekday::Sunday,
+                FirstWeekday::Saturday,
+            ]
+            .map(|first_day| picker(year, month, first_day).leading_blanks());
+            assert_eq!(
+                blanks,
+                [monday_first, sunday_first, saturday_first],
+                "{year}-{month}"
+            );
+        }
     }
 }

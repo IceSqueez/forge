@@ -243,13 +243,6 @@ macro_rules! tr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use time::{Date, Month, Time};
-
-    fn utc(year: i32, month: Month, day: u8, h: u8, m: u8, s: u8, milli: u16) -> OffsetDateTime {
-        let date = Date::from_calendar_date(year, month, day).unwrap_or(Date::MIN);
-        let time = Time::from_hms_milli(h, m, s, milli).unwrap_or(Time::MIDNIGHT);
-        OffsetDateTime::new_utc(date, time)
-    }
 
     #[test]
     fn tr_lookup_returns_key_verbatim_when_no_bundle_installed() {
@@ -297,21 +290,5 @@ mod tests {
             set_locale_id(locale);
             assert_eq!(fmt_bytes(bytes), expected, "fmt_bytes({bytes}) in {locale}");
         }
-    }
-
-    #[test]
-    fn fmt_short_date_orders_components_per_locale() {
-        let date = utc(2026, Month::March, 15, 0, 0, 0, 0);
-
-        set_locale_id("en");
-        assert_eq!(fmt_short_date(&date), "fmt_month_abbr_03 15, 2026");
-
-        set_locale_id("uk");
-        assert_eq!(fmt_short_date(&date), "15 fmt_month_abbr_03 2026");
-    }
-
-    #[test]
-    fn fmt_relative_time_none_maps_to_the_never_key() {
-        assert_eq!(fmt_relative_time(None), "fmt_relative_never");
     }
 }

@@ -172,10 +172,18 @@ pub fn install_language(lang: Language) {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
+    use std::collections::HashMap;
+
     use forge_components::locale::{ArgsBuilder, tr_lookup};
+    use forge_components::{
+        ClockStyle, DateFormatChoice, FirstWeekday, FormatChoice, FormatOption,
+    };
+    use forge_storage::StorageError;
 
     use super::*;
+    use crate::test_support::test_backend;
 
     const MARKER: &str = "MARKER-7";
 
@@ -217,6 +225,130 @@ mod tests {
                     argument.is_none() || resolved.contains(MARKER),
                     "{lang:?} {key} dropped its {argument:?} argument: {resolved}"
                 );
+            }
+        }
+    }
+
+    struct UnreadableSettings;
+
+    #[async_trait::async_trait]
+    impl SettingsRepo for UnreadableSettings {
+        async fn get_string(&self, _: &str) -> Result<Option<String>, StorageError> {
+            Err(StorageError::Connection {
+                reason: "unreadable".to_owned(),
+            })
+        }
+        async fn set_string(&self, _: &str, _: &str) -> Result<(), StorageError> {
+            Err(StorageError::Connection {
+                reason: "unreadable".to_owned(),
+            })
+        }
+        async fn delete(&self, _: &str) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
+            Ok(HashMap::new())
+        }
+    }
+
+    #[test]
+    fn startup_region_prefers_a_known_os_locale_region_over_the_ui_language() {
+        for (os_locale, lang, expected) in [
+            (Some("de_DE.UTF-8"), Language::Uk, Region::Germany),
+            (Some("en-GB"), Language::En, Region::UnitedKingdom),
+            (Some("en_NZ.UTF-8"), Language::Uk, Region::Ukraine),
+            (Some("C"), Language::En, Region::UnitedStates),
+            (Some("uk"), Language::Uk, Region::Ukraine),
+            (None, Language::En, Region::UnitedStates),
+            (None, Language::Uk, Region::Ukraine),
+        ] {
+            assert_eq!(
+                startup_region(os_locale, lang),
+                expected,
+                "{os_locale:?} {lang:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn stored_display_choices_are_read_back_without_rewriting_the_region() {
+        let (settings, mut writes) = test_backend();
+        for (key, value) in [
+            (reserved_keys::REGION, "gb"),
+            (reserved_keys::DATE_FORMAT, "ymd"),
+            (reserved_keys::TIME_FORMAT, "bogus"),
+        ] {
+            settings.set_string(key, value).await.unwrap();
+        }
+        while writes.try_recv().is_ok() {}
+
+        let choices = resolve_startup_display_formats(settings.as_ref(), Language::Uk).await;
+
+        assert_eq!(
+            (choices, writes.try_recv().ok()),
+            (
+                DisplayFormatChoices {
+                    region: Region::UnitedKingdom,
+                    date_format: FormatChoice::Fixed(DateFormatChoice::YearMonthDay),
+                    clock: FormatChoice::RegionDefault,
+                    first_day: FormatChoice::RegionDefault,
+                },
+                None,
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unknown_stored_region_follows_the_ui_language_region() {
+        let (settings, _writes) = test_backend();
+        settings
+            .set_string(reserved_keys::REGION, "ZZ")
+            .await
+            .unwrap();
+
+        let choices = resolve_startup_display_formats(settings.as_ref(), Language::Uk).await;
+
+        assert_eq!(choices, DisplayFormatChoices::following(Region::Ukraine));
+    }
+
+    #[tokio::test]
+    async fn a_first_run_region_is_stored_once_and_read_back_on_the_next_start() {
+        let (settings, mut writes) = test_backend();
+
+        let first = resolve_startup_display_formats(settings.as_ref(), Language::En).await;
+        let stored = writes.try_recv().ok();
+        let second = resolve_startup_display_formats(settings.as_ref(), Language::Uk).await;
+
+        assert_eq!(
+            (stored, second, writes.try_recv().ok()),
+            (
+                Some((
+                    reserved_keys::REGION.to_owned(),
+                    first.region.code().to_owned()
+                )),
+                first,
+                None,
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn unreadable_settings_follow_the_ui_language_region() {
+        let choices = resolve_startup_display_formats(&UnreadableSettings, Language::Uk).await;
+
+        assert_eq!(choices, DisplayFormatChoices::following(Region::Ukraine));
+    }
+
+    #[test]
+    fn every_region_clock_and_weekday_name_resolves_in_both_locales() {
+        let keys = Region::ALL
+            .map(Region::name_key)
+            .into_iter()
+            .chain(ClockStyle::ALL.iter().map(|clock| clock.label_key()))
+            .chain(FirstWeekday::ALL.iter().map(|day| day.label_key()));
+        for key in keys {
+            for lang in [Language::En, Language::Uk] {
+                assert_ne!(message_in(lang, key), key, "{lang:?} {key}");
             }
         }
     }

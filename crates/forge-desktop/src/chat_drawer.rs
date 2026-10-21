@@ -207,7 +207,6 @@ mod tests {
         ChatMessage {
             id: "".into(),
             event_id: forge_types::EventId::new(),
-            timestamp: "".into(),
             received_at: OffsetDateTime::now_utc(),
             platform: PlatformId::Twitch,
             badges,

@@ -145,7 +145,6 @@ mod tests {
     use crate::i18n::{install_language, message_in};
 
     const OCT_4_2026_NOON_UTC: i64 = 1_791_115_200;
-    const MAR_15_2026_2330_UTC: i64 = 1_773_617_400;
 
     const REASON_SOURCES: [&str; 3] = [
         "../forge-storage/src/scheduled_run.rs",
@@ -342,17 +341,5 @@ mod tests {
                 assert_ne!(message_in(language, key), key, "{language:?} {state:?}");
             }
         }
-    }
-
-    #[test]
-    fn local_stamp_shifts_the_instant_into_the_offset_across_midnight() {
-        install_language(Language::En);
-        assert_eq!(
-            local_stamp(
-                OffsetDateTime::from_unix_timestamp(MAR_15_2026_2330_UTC).unwrap(),
-                UtcOffset::from_hms(3, 0, 0).unwrap()
-            ),
-            "Mar 16, 2026 02:30"
-        );
     }
 }

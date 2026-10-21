@@ -196,3 +196,147 @@ impl Region {
         Self::from_code(identifier.region?.as_str())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_region_preset_resolves_from_its_code_to_its_formats() {
+        use ClockStyle::{TwelveHour, TwentyFourHour};
+        use DateFormatChoice::{
+            DayMonthYearDot, DayMonthYearSlash, MonthDayYearSlash, YearMonthDay,
+        };
+        use FirstWeekday::{Monday, Sunday};
+        let presets = [
+            (
+                "UA",
+                Region::Ukraine,
+                DayMonthYearDot,
+                TwentyFourHour,
+                Monday,
+            ),
+            (
+                "US",
+                Region::UnitedStates,
+                MonthDayYearSlash,
+                TwelveHour,
+                Sunday,
+            ),
+            (
+                "GB",
+                Region::UnitedKingdom,
+                DayMonthYearSlash,
+                TwentyFourHour,
+                Monday,
+            ),
+            ("CA", Region::Canada, YearMonthDay, TwelveHour, Sunday),
+            (
+                "PL",
+                Region::Poland,
+                DayMonthYearDot,
+                TwentyFourHour,
+                Monday,
+            ),
+            (
+                "DE",
+                Region::Germany,
+                DayMonthYearDot,
+                TwentyFourHour,
+                Monday,
+            ),
+            (
+                "FR",
+                Region::France,
+                DayMonthYearSlash,
+                TwentyFourHour,
+                Monday,
+            ),
+            (
+                "ES",
+                Region::Spain,
+                DayMonthYearSlash,
+                TwentyFourHour,
+                Monday,
+            ),
+            (
+                "IT",
+                Region::Italy,
+                DayMonthYearSlash,
+                TwentyFourHour,
+                Monday,
+            ),
+            (
+                "CZ",
+                Region::Czechia,
+                DayMonthYearDot,
+                TwentyFourHour,
+                Monday,
+            ),
+            (
+                "KZ",
+                Region::Kazakhstan,
+                DayMonthYearDot,
+                TwentyFourHour,
+                Monday,
+            ),
+            (
+                "AU",
+                Region::Australia,
+                DayMonthYearSlash,
+                TwelveHour,
+                Monday,
+            ),
+        ];
+        assert_eq!(presets.len(), Region::ALL.len());
+        for (code, region, date_format, clock, first_day) in presets {
+            assert_eq!(Region::from_code(code), Some(region), "{code}");
+            assert_eq!(
+                region.defaults(),
+                RegionDefaults {
+                    date_format,
+                    clock,
+                    first_day,
+                },
+                "{code}"
+            );
+        }
+    }
+
+    #[test]
+    fn from_code_ignores_ascii_case_and_rejects_anything_else() {
+        for (code, expected) in [
+            ("ua", Some(Region::Ukraine)),
+            ("Gb", Some(Region::UnitedKingdom)),
+            ("", None),
+            ("XX", None),
+            ("UKR", None),
+            (" UA", None),
+            ("UA ", None),
+            ("U", None),
+        ] {
+            assert_eq!(Region::from_code(code), expected, "{code:?}");
+        }
+    }
+
+    #[test]
+    fn from_locale_tag_reads_the_region_of_posix_and_bcp47_tags() {
+        for (tag, expected) in [
+            ("uk_UA.UTF-8", Some(Region::Ukraine)),
+            ("en-US", Some(Region::UnitedStates)),
+            ("en_GB", Some(Region::UnitedKingdom)),
+            ("de_DE@euro", Some(Region::Germany)),
+            ("fr_CA.UTF-8@latin", Some(Region::Canada)),
+            ("sr-Latn-CZ", Some(Region::Czechia)),
+            ("en_NZ.UTF-8", None),
+            ("es-419", None),
+            ("uk", None),
+            ("C", None),
+            ("POSIX", None),
+            ("", None),
+            ("not a locale", None),
+        ] {
+            assert_eq!(Region::from_locale_tag(tag), expected, "{tag:?}");
+        }
+    }
+}

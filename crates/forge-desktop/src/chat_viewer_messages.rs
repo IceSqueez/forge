@@ -156,7 +156,6 @@ mod tests {
         ChatMessage {
             id: id.to_owned().into(),
             event_id: EventId::new(),
-            timestamp: "00:00:00".into(),
             received_at: at,
             platform,
             badges: vec![],

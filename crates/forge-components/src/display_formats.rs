@@ -202,3 +202,143 @@ impl DisplayFormatChoices {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stored_codes<T: FormatOption>() -> Vec<&'static str> {
+        T::ALL.iter().map(|option| option.code()).collect()
+    }
+
+    fn codes_not_round_tripping<T: FormatOption>() -> Vec<&'static str> {
+        std::iter::once(FormatChoice::<T>::RegionDefault)
+            .chain(T::ALL.iter().copied().map(FormatChoice::Fixed))
+            .filter(|choice| FormatChoice::from_stored(Some(choice.code())) != *choice)
+            .map(FormatChoice::code)
+            .collect()
+    }
+
+    #[test]
+    fn persisted_option_codes_match_the_stored_setting_vocabulary() {
+        assert_eq!(
+            (
+                stored_codes::<DateFormatChoice>(),
+                stored_codes::<ClockStyle>(),
+                stored_codes::<FirstWeekday>(),
+            ),
+            (
+                vec!["dmy_dot", "dmy_slash", "mdy_slash", "ymd", "named_month"],
+                vec!["24h", "12h"],
+                vec!["mon", "sun", "sat"],
+            )
+        );
+    }
+
+    #[test]
+    fn every_choice_including_region_default_round_trips_through_its_stored_code() {
+        assert_eq!(
+            [
+                codes_not_round_tripping::<DateFormatChoice>(),
+                codes_not_round_tripping::<ClockStyle>(),
+                codes_not_round_tripping::<FirstWeekday>(),
+            ],
+            [Vec::<&str>::new(), Vec::new(), Vec::new()]
+        );
+    }
+
+    #[test]
+    fn an_absent_unknown_or_region_code_follows_the_region() {
+        for stored in [
+            None,
+            Some(FOLLOW_REGION_CODE),
+            Some(""),
+            Some("bogus"),
+            Some("DMY_DOT"),
+            Some(" ymd"),
+            Some("24H"),
+        ] {
+            assert_eq!(
+                FormatChoice::<DateFormatChoice>::from_stored(stored),
+                FormatChoice::RegionDefault,
+                "{stored:?}"
+            );
+            assert_eq!(
+                FormatChoice::<ClockStyle>::from_stored(stored),
+                FormatChoice::RegionDefault,
+                "{stored:?}"
+            );
+            assert_eq!(
+                FormatChoice::<FirstWeekday>::from_stored(stored),
+                FormatChoice::RegionDefault,
+                "{stored:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn from_stored_falls_back_to_the_given_region_when_the_region_is_absent_or_unknown() {
+        for (stored, expected) in [
+            (None, Region::Ukraine),
+            (Some("ZZ"), Region::Ukraine),
+            (Some(""), Region::Ukraine),
+            (Some("gb"), Region::UnitedKingdom),
+            (Some("US"), Region::UnitedStates),
+        ] {
+            let choices =
+                DisplayFormatChoices::from_stored(stored, None, None, None, Region::Ukraine);
+            assert_eq!(choices.region, expected, "{stored:?}");
+        }
+    }
+
+    #[test]
+    fn region_default_rows_follow_a_region_change_while_manual_rows_stay() {
+        let mut choices = DisplayFormatChoices::from_stored(
+            Some("UA"),
+            Some("ymd"),
+            Some(FOLLOW_REGION_CODE),
+            None,
+            Region::UnitedStates,
+        );
+        let before = choices.resolve();
+
+        choices.region = Region::UnitedStates;
+        let after = choices.resolve();
+
+        assert_eq!(
+            (before, after),
+            (
+                DisplayFormats {
+                    date_format: DateFormatChoice::YearMonthDay,
+                    clock: ClockStyle::TwentyFourHour,
+                    first_day: FirstWeekday::Monday,
+                },
+                DisplayFormats {
+                    date_format: DateFormatChoice::YearMonthDay,
+                    clock: ClockStyle::TwelveHour,
+                    first_day: FirstWeekday::Sunday,
+                },
+            )
+        );
+    }
+
+    #[test]
+    fn manual_rows_override_every_region_preset() {
+        let choices = DisplayFormatChoices::from_stored(
+            Some("US"),
+            Some("dmy_dot"),
+            Some("24h"),
+            Some("sat"),
+            Region::Ukraine,
+        );
+
+        assert_eq!(
+            choices.resolve(),
+            DisplayFormats {
+                date_format: DateFormatChoice::DayMonthYearDot,
+                clock: ClockStyle::TwentyFourHour,
+                first_day: FirstWeekday::Saturday,
+            }
+        );
+    }
+}

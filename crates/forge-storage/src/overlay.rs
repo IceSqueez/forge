@@ -83,6 +83,8 @@ pub trait OverlayRepo: Send + Sync {
         config_schema_version: u32,
     ) -> Result<OverlayDefinition, StorageError>;
 
+    async fn reissue_all_credentials(&self) -> Result<Vec<OverlayId>, StorageError>;
+
     async fn save(&self, definition: &OverlayDefinition) -> Result<(), StorageError>;
 
     async fn set_enabled(&self, id: &OverlayId, enabled: bool) -> Result<bool, StorageError>;

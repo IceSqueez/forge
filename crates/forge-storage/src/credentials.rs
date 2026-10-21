@@ -5,6 +5,15 @@ use time::OffsetDateTime;
 use crate::error::StorageError;
 
 pub const SERVER_BEARER_CREDENTIAL_ID: &str = "server:bearer";
+pub const SERVER_OVERLAY_TOKEN_CREDENTIAL_ID: &str = "server:overlay_token";
+pub const REGENERABLE_CREDENTIAL_IDS: [&str; 2] = [
+    SERVER_BEARER_CREDENTIAL_ID,
+    SERVER_OVERLAY_TOKEN_CREDENTIAL_ID,
+];
+
+pub fn is_regenerable_credential(id: &str) -> bool {
+    REGENERABLE_CREDENTIAL_IDS.contains(&id)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]

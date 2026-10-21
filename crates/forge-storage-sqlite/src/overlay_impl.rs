@@ -176,6 +176,37 @@ impl OverlayRepo for SqliteOverlayRepo {
             .transpose()
     }
 
+    async fn reissue_all_credentials(&self) -> Result<Vec<OverlayId>, StorageError> {
+        let mut tx = self
+            .db
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        let ids: Vec<(String,)> = sqlx::query_as("SELECT id FROM overlays ORDER BY position ASC")
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        let now_ms = epoch_ms_now();
+
+        let mut reissued = Vec::with_capacity(ids.len());
+        for (id,) in ids {
+            let credential = generate_credential();
+            sqlx::query("UPDATE overlays SET credential = ?, updated_at = ? WHERE id = ?")
+                .bind(credential.as_str())
+                .bind(now_ms)
+                .bind(&id)
+                .execute(&mut *tx)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+            reissued.push(OverlayId::new(id));
+        }
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(reissued)
+    }
+
     async fn create(
         &self,
         display_name: &str,

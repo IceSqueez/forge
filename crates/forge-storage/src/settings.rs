@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::StorageError;
 
+pub const SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT: bool = true;
+
 pub mod reserved_keys {
     pub const THEME: &str = "theme";
     pub const ACCENT: &str = "accent";

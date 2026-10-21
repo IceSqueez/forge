@@ -4,6 +4,7 @@ mod document_bundle;
 mod durable_fs;
 mod encryption;
 mod error;
+mod exclusivity;
 mod extract;
 mod full_writer;
 mod layout;
@@ -30,6 +31,7 @@ mod staging_sweep;
 
 pub use category::BackupCategory;
 pub use error::TransferError;
+pub use exclusivity::{TransferExclusivity, TransferGuard};
 pub use full_writer::{
     BackupDestination, FullBackupRequest, ScheduledBackupRequest, write_full_backup,
     write_scheduled_backup,

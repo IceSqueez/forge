@@ -73,6 +73,21 @@ pub const CLASSIFIED_KEYS: &[(&str, SettingPortability)] = &[
     (key::VOICE_ASSIGNMENT_STRATEGY, RepositoryOwned),
     (key::NOTIFICATIONS_ACTION_FAILURE_OS_NOTICE, Portable),
     (key::NOTIFICATIONS_CONNECTION_LOSS_SOUND, Portable),
+    (
+        key::NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE,
+        Portable,
+    ),
+    (key::BACKUP_SCHEDULE_ENABLED, MachineLocal),
+    (key::BACKUP_SCHEDULE_INTERVAL_MINUTES, Portable),
+    (key::BACKUP_SCHEDULE_KEEP_NEWEST, Portable),
+    (key::BACKUP_SCHEDULE_KEEP_DAILY_DAYS, Portable),
+    (key::BACKUP_SCHEDULE_INCLUDE_MEDIA, Portable),
+    (key::BACKUP_SCHEDULE_INCLUDE_VOICES, Portable),
+    (key::BACKUP_SCHEDULE_INCLUDE_OVERLAYS, Portable),
+    (key::BACKUP_SCHEDULE_INCLUDE_ASSETS, Portable),
+    (key::BACKUP_SCHEDULE_DESTINATION, MachineLocal),
+    (key::BACKUP_SCHEDULE_RECIPIENT, MachineLocal),
+    (key::BACKUP_SCHEDULE_WRAPPED_IDENTITY, MachineLocal),
 ];
 
 pub const CLASSIFIED_PREFIXES: &[(&str, SettingPortability)] = &[

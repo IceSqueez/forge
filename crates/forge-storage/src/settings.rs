@@ -76,12 +76,37 @@ pub mod reserved_keys {
     pub const NOTIFICATIONS_ACTION_FAILURE_OS_NOTICE: &str =
         "notifications.action_failure_os_notice";
     pub const NOTIFICATIONS_CONNECTION_LOSS_SOUND: &str = "notifications.connection_loss_sound";
+    pub const NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE: &str =
+        "notifications.scheduled_backup_failure_os_notice";
+    pub const BACKUP_SCHEDULE_ENABLED: &str = "backup_schedule.enabled";
+    pub const BACKUP_SCHEDULE_INTERVAL_MINUTES: &str = "backup_schedule.interval_minutes";
+    pub const BACKUP_SCHEDULE_KEEP_NEWEST: &str = "backup_schedule.keep_newest";
+    pub const BACKUP_SCHEDULE_KEEP_DAILY_DAYS: &str = "backup_schedule.keep_daily_days";
+    pub const BACKUP_SCHEDULE_INCLUDE_MEDIA: &str = "backup_schedule.include_media";
+    pub const BACKUP_SCHEDULE_INCLUDE_VOICES: &str = "backup_schedule.include_voices";
+    pub const BACKUP_SCHEDULE_INCLUDE_OVERLAYS: &str = "backup_schedule.include_overlays";
+    pub const BACKUP_SCHEDULE_INCLUDE_ASSETS: &str = "backup_schedule.include_assets";
+    pub const BACKUP_SCHEDULE_DESTINATION: &str = "backup_schedule.destination";
+    pub const BACKUP_SCHEDULE_RECIPIENT: &str = "backup_schedule.recipient";
+    pub const BACKUP_SCHEDULE_WRAPPED_IDENTITY: &str = "backup_schedule.wrapped_identity";
 }
 
 pub mod portability;
 
 pub const DEFAULT_NOTIFICATIONS_ACTION_FAILURE_OS_NOTICE: bool = true;
 pub const DEFAULT_NOTIFICATIONS_CONNECTION_LOSS_SOUND: bool = false;
+pub const DEFAULT_NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE: bool = true;
+pub const DEFAULT_BACKUP_SCHEDULE_ENABLED: bool = false;
+pub const DEFAULT_BACKUP_SCHEDULE_INTERVAL_MINUTES: u32 = 60;
+pub const MIN_BACKUP_SCHEDULE_INTERVAL_MINUTES: u32 = 15;
+pub const MAX_BACKUP_SCHEDULE_INTERVAL_MINUTES: u32 = 10_080;
+pub const DEFAULT_BACKUP_SCHEDULE_KEEP_NEWEST: u32 = 20;
+pub const MIN_BACKUP_SCHEDULE_KEEP_NEWEST: u32 = 1;
+pub const MAX_BACKUP_SCHEDULE_KEEP_NEWEST: u32 = 1000;
+pub const DEFAULT_BACKUP_SCHEDULE_KEEP_DAILY_DAYS: u32 = 30;
+pub const MIN_BACKUP_SCHEDULE_KEEP_DAILY_DAYS: u32 = 0;
+pub const MAX_BACKUP_SCHEDULE_KEEP_DAILY_DAYS: u32 = 3650;
+pub const DEFAULT_BACKUP_SCHEDULE_INCLUDE_CATEGORY: bool = true;
 pub const DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT: u32 = 500;
 pub const DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 50;
 pub const UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 0;

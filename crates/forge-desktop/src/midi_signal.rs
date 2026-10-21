@@ -40,7 +40,7 @@ pub fn kind_color(kind_id: &str, palette: &ForgePalette) -> Rgba {
         NOTE_ON => palette.success,
         NOTE_OFF => palette.text_faint,
         CONTROL_CHANGE | PITCH_BEND => palette.info,
-        PROGRAM_CHANGE => palette.brand,
+        PROGRAM_CHANGE => palette.theme_brand,
         _ => palette.text_faint,
     }
 }

@@ -9,7 +9,7 @@ pub fn variant_kind_color(kind: VariantKind, palette: &ForgePalette) -> Rgba {
         VariantKind::Bool => palette.random,
         VariantKind::String => palette.success,
         VariantKind::Datetime => palette.accent_teal,
-        VariantKind::Array => palette.brand,
+        VariantKind::Array => palette.theme_brand,
         VariantKind::Object => palette.accent_pink_light,
     }
 }

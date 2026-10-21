@@ -994,7 +994,7 @@ fn stat_column_cell(col: &StatColumn, palette: &ForgePalette, density: Density) 
 fn panel_header_icon_color(icon_str: &str, palette: &ForgePalette) -> Rgba {
     match icon_str {
         "key" => palette.warning,
-        "rss" | "layout-grid" => palette.brand,
+        "rss" | "layout-grid" => palette.theme_brand,
         "stack-2" => palette.info,
         "mood-smile" => palette.accent_pink_light,
         _ => palette.text_secondary,

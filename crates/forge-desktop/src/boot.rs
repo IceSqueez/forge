@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_audio::AudioSink;
-use forge_components::{Density, ThemeId};
+use forge_components::{AccentColor, Density, ThemeId};
 use forge_events::EventPublisher;
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_platform_core::PlatformEndpoints;
@@ -65,6 +65,7 @@ const APPEARANCE_READ_BUDGET: Duration = Duration::from_secs(2);
 #[derive(Default)]
 pub struct PersistedAppearance {
     pub theme: ThemeId,
+    pub accent: AccentColor,
     pub density: Density,
     pub body_font: Option<String>,
     pub mono_font: Option<String>,
@@ -94,6 +95,7 @@ pub fn open_boot_storage(rt_handle: &tokio::runtime::Handle) -> BootStorage {
         rx.recv_timeout(APPEARANCE_READ_BUDGET).unwrap_or_default();
     tracing::info!(
         theme = ?appearance.theme,
+        accent = ?appearance.accent,
         density = ?appearance.density,
         "applied persisted presentation"
     );
@@ -109,12 +111,17 @@ async fn load_appearance(settings: &dyn SettingsRepo) -> PersistedAppearance {
         Ok(Some(key)) => ThemeId::from_storage_key(&key).unwrap_or_default(),
         _ => ThemeId::default(),
     };
+    let accent = match settings.get_accent().await {
+        Ok(Some(key)) => AccentColor::from_storage_key(&key).unwrap_or_default(),
+        _ => AccentColor::default(),
+    };
     let density = match settings.get_string(reserved_keys::DENSITY).await {
         Ok(Some(key)) => Density::from_storage_key(&key).unwrap_or_default(),
         _ => Density::default(),
     };
     PersistedAppearance {
         theme,
+        accent,
         density,
         body_font: settings.font_body().await.ok().flatten(),
         mono_font: settings.font_mono().await.ok().flatten(),

@@ -119,7 +119,7 @@ pub fn look_of(id: &IntegrationId, palette: &ForgePalette) -> IntegrationLook {
         "monobank" => (Some("M"), Icon::Coin, palette.text_secondary),
         "obs" => (None, Icon::Broadcast, palette.success),
         "vtube" => (None, Icon::MoodTongue, palette.warning),
-        "discord" => (None, Icon::BrandDiscord, palette.brand),
+        "discord" => (None, Icon::BrandDiscord, palette.theme_brand),
         "midi" => (None, Icon::Piano, palette.info),
         "hotkey" => (None, Icon::Keyboard, palette.success),
         _ => (None, Icon::Plug, palette.text_muted),

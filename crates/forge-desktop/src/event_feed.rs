@@ -993,7 +993,7 @@ impl EventFeedView {
         match filter {
             EventFilter::All => ChipGlyph::Dot(palette.brand),
             EventFilter::Chat => ChipGlyph::DotIcon(palette.info, Icon::MessageCircle),
-            EventFilter::Subs => ChipGlyph::DotIcon(palette.brand, Icon::Star),
+            EventFilter::Subs => ChipGlyph::DotIcon(palette.theme_brand, Icon::Star),
             EventFilter::Bits => ChipGlyph::DotIcon(palette.warning, Icon::Coin),
             EventFilter::Timers => ChipGlyph::DotIcon(palette.warning, Icon::Clock),
             EventFilter::Obs => ChipGlyph::DotIcon(palette.success, Icon::Broadcast),
@@ -1247,14 +1247,14 @@ fn type_color(kind: &str, is_error: bool, palette: &ForgePalette) -> Rgba {
     }
     match kind {
         k if is_chat_message_kind(k) => palette.info,
-        "command.matched" => palette.brand,
+        "command.matched" => palette.theme_brand,
         "action.done" | "obs.scene.changed" => palette.success,
         "chat.send" => palette.info,
         "action.start" | "script.exec" | "timer.tick" | "subaction.run" => palette.warning,
         k if k.starts_with("global.") => palette.warning,
         k if k.contains("cheer") || k.contains("bits") => palette.warning,
         k if k.contains("raid") => palette.random,
-        k if k.contains("sub") || k.contains("follow") => palette.brand,
+        k if k.contains("sub") || k.contains("follow") => palette.theme_brand,
         _ => palette.text_secondary,
     }
 }

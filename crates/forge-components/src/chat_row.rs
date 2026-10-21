@@ -544,7 +544,7 @@ impl RenderOnce for ChatRowView {
                     .map(|text| (text, p.text_muted, data.moderated));
                 event_row(
                     data.timestamp.clone(),
-                    p.brand,
+                    p.theme_brand,
                     Icon::Star,
                     username,
                     descriptor.clone(),

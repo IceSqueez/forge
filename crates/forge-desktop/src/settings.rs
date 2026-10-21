@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    Picker, PickerEvent, PickerItem, PickerLabels, Radius, Spacing, ThemeId, badge, body_family,
-    card, dropdown, field_hint, field_label, ghost_button_with_icon, icon, mono_family, page_frame,
-    radius, set_body_family, set_mono_family, setting_block, setting_groups, setting_row,
-    setting_rows, setting_sections, spacing, toggle, tr, with_alpha,
+    AccentColor, BORDER_THIN, BreadcrumbCrumb, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, Picker, PickerEvent, PickerItem, PickerLabels, Radius, Spacing, ThemeId,
+    badge, body_family, card, dropdown, field_hint, field_label, ghost_button_with_icon, icon,
+    mono_family, page_frame, radius, set_body_family, set_mono_family, setting_block,
+    setting_groups, setting_row, setting_rows, setting_sections, spacing, toggle, tr, with_alpha,
 };
 use forge_storage::{Language, SettingsRepo, reserved_keys};
 use gpui::{
@@ -56,6 +56,10 @@ const CHOICE_LABEL_GAP: Pixels = px(2.0);
 const CHOICE_PAD_V: Pixels = px(8.0);
 const CHOICE_ACTIVE_FILL: f32 = 0.12;
 const CHOICE_ACTIVE_EDGE: f32 = 0.5;
+const ACCENT_SWATCH: Pixels = px(20.0);
+const ACCENT_SWATCH_SELECTED: Pixels = px(24.0);
+const ACCENT_SWATCH_RING: Pixels = px(2.0);
+const ACCENT_SWATCH_GAP: Pixels = px(6.0);
 
 const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
     (
@@ -521,7 +525,8 @@ impl SettingsView {
 
     fn select_theme(&mut self, theme: ThemeId, cx: &mut Context<Self>) {
         let density = cx.density();
-        cx.set_global(Presentation::new(theme, density));
+        let accent = cx.accent();
+        cx.set_global(Presentation::accented(theme, accent, density));
 
         let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
         let key = theme.storage_key().to_owned();
@@ -530,6 +535,27 @@ impl SettingsView {
             async move { backend.set_theme(&key).await },
             ErrorSink::Toast,
             tr!("settings_theme_persist_failed"),
+            cx,
+        );
+        cx.refresh_windows();
+        cx.notify();
+    }
+
+    fn select_accent(&mut self, accent: AccentColor, cx: &mut Context<Self>) {
+        if cx.accent() == accent {
+            return;
+        }
+        let theme = cx.theme();
+        let density = cx.density();
+        cx.set_global(Presentation::accented(theme, accent, density));
+
+        let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
+        let key = accent.storage_key().to_owned();
+        async_bridge::report_failure(
+            &self.handles.rt_handle,
+            async move { backend.set_accent(&key).await },
+            ErrorSink::Toast,
+            tr!("settings_accent_persist_failed"),
             cx,
         );
         cx.refresh_windows();
@@ -563,7 +589,8 @@ impl SettingsView {
 
     fn select_density(&mut self, density: Density, cx: &mut Context<Self>) {
         let theme = cx.theme();
-        cx.set_global(Presentation::new(theme, density));
+        let accent = cx.accent();
+        cx.set_global(Presentation::accented(theme, accent, density));
 
         let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
         let key = density.storage_key().to_owned();
@@ -739,6 +766,14 @@ impl SettingsView {
             palette,
         );
 
+        let accent_row = setting_row(
+            tr!("settings_appearance_accent_label"),
+            Some(tr!("settings_appearance_accent_hint").into()),
+            self.accent_swatches(palette, cx),
+            palette,
+            density,
+        );
+
         let mut density_rows = div().flex().flex_col().gap(spacing(Spacing::Xxs, density));
         let current_density = cx.density();
         for option in [Density::Compact, Density::Cozy, Density::Spacious] {
@@ -787,12 +822,55 @@ impl SettingsView {
             .child(setting_sections(
                 [
                     theme_block.into_any_element(),
+                    accent_row.into_any_element(),
                     density_block.into_any_element(),
                     fonts_block.into_any_element(),
                 ],
                 palette,
             ))
             .into_any_element()
+    }
+
+    fn accent_swatches(
+        &self,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let theme = cx.theme();
+        let selected = cx.accent();
+        let mut row = div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(ACCENT_SWATCH_GAP);
+        for accent in AccentColor::ALL {
+            let active = accent == selected;
+            let size = if active {
+                ACCENT_SWATCH_SELECTED
+            } else {
+                ACCENT_SWATCH
+            };
+            let mut swatch = div()
+                .id(SharedString::from(format!(
+                    "settings-accent-{}",
+                    accent.storage_key()
+                )))
+                .flex_none()
+                .size(size)
+                .rounded_full()
+                .bg(theme.accent(accent))
+                .cursor_pointer()
+                .on_click(
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.select_accent(accent, cx)),
+                );
+            if active {
+                swatch = swatch
+                    .border(ACCENT_SWATCH_RING)
+                    .border_color(palette.text_primary);
+            }
+            row = row.child(swatch);
+        }
+        row
     }
 
     fn theme_card(
@@ -802,7 +880,7 @@ impl SettingsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let pal = theme.palette();
+        let pal = theme.accented_palette(cx.accent());
         let (title, subtitle) = theme_meta(theme);
         let border_color = if active {
             palette.brand

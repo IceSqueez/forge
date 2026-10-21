@@ -12,7 +12,7 @@ pub fn hash_accent(name: &str, palette: &ForgePalette) -> Rgba {
         .fold(0u32, |acc, b| acc.wrapping_add(u32::from(b))) as usize
         % 8;
     [
-        palette.brand,
+        palette.theme_brand,
         palette.success,
         palette.warning,
         palette.info,

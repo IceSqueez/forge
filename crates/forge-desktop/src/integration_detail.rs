@@ -1521,12 +1521,12 @@ fn hero_identity(
         return (letter.to_owned(), look.tint);
     }
     match icon_str {
-        "brand-twitch" => ("T".to_owned(), palette.brand),
+        "brand-twitch" => ("T".to_owned(), palette.theme_brand),
         "brand-youtube" => ("Y".to_owned(), palette.random),
         "brand-kick" => ("K".to_owned(), palette.info),
         "broadcast" => ("O".to_owned(), palette.success),
         "mood-smile" => ("V".to_owned(), palette.warning),
-        "brand-discord" => ("D".to_owned(), palette.brand),
+        "brand-discord" => ("D".to_owned(), palette.theme_brand),
         "piano" => ("M".to_owned(), palette.accent_teal),
         "keyboard" => ("H".to_owned(), palette.info),
         _ => {

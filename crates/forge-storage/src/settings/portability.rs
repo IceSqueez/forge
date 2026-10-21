@@ -11,6 +11,7 @@ use SettingPortability::{MachineLocal, Portable, RepositoryOwned};
 
 pub const CLASSIFIED_KEYS: &[(&str, SettingPortability)] = &[
     (key::THEME, Portable),
+    (key::ACCENT, Portable),
     (key::DENSITY, Portable),
     (key::FONT_BODY, Portable),
     (key::FONT_MONO, Portable),

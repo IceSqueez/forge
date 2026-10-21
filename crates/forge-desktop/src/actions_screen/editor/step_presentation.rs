@@ -202,7 +202,7 @@ pub(in crate::actions_screen) fn sub_category_color(
     palette: &ForgePalette,
 ) -> Rgba {
     match cat {
-        SubActionCategory::Chat | SubActionCategory::Twitch => palette.brand,
+        SubActionCategory::Chat | SubActionCategory::Twitch => palette.theme_brand,
         SubActionCategory::Tts | SubActionCategory::Audio => palette.success,
         SubActionCategory::Globals => palette.warning,
         SubActionCategory::Files => palette.random,
@@ -236,7 +236,7 @@ pub(in crate::actions_screen) fn step_glyph(
         "core.random.int" => ("dice", palette.random),
         "script.run.named" => ("code", palette.success),
         "core.globals.increment" | "core.globals.set" => ("variable", palette.warning),
-        "twitch.chat.send_message" => ("send", palette.brand),
+        "twitch.chat.send_message" => ("send", palette.theme_brand),
         _ => {
             return (
                 Icon::from_name(fallback_icon),

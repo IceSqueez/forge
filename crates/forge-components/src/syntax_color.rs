@@ -10,7 +10,7 @@ pub fn token_color(language: Language, class: TokenClass, palette: &ForgePalette
         (Language::Json, TokenClass::Variable) => palette.info,
         (Language::Json, TokenClass::String) => palette.success,
         (Language::Json, TokenClass::Number) => palette.bits,
-        (Language::Json, TokenClass::Keyword) => palette.brand,
+        (Language::Json, TokenClass::Keyword) => palette.theme_brand,
         (_, TokenClass::Keyword) => palette.code_keyword,
         (_, TokenClass::Function) => palette.code_fn,
         (_, TokenClass::String) => palette.code_str,

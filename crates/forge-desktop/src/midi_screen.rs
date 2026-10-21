@@ -114,7 +114,7 @@ fn monitor_color(kind: &str, palette: &ForgePalette) -> Rgba {
         "note_on" => palette.success,
         "note_off" => palette.text_faint,
         "control_change" | "pitch_bend" => palette.info,
-        "program_change" => palette.brand,
+        "program_change" => palette.theme_brand,
         _ => palette.text_secondary,
     }
 }

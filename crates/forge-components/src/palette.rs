@@ -19,6 +19,7 @@ pub struct ForgePalette {
     pub surface_overlay: Rgba,
 
     pub brand: Rgba,
+    pub theme_brand: Rgba,
     pub success: Rgba,
     pub warning: Rgba,
     pub info: Rgba,
@@ -57,13 +58,59 @@ pub fn with_alpha(c: Rgba, alpha: f32) -> Rgba {
 
 pub fn accent_swatch(name: &str, palette: &ForgePalette) -> Option<Rgba> {
     match name {
-        "mauve" => Some(palette.brand),
+        "mauve" => Some(palette.theme_brand),
         "sky" => Some(palette.info),
         "green" => Some(palette.success),
         "peach" => Some(palette.bits),
         "yellow" => Some(palette.warning),
         "red" => Some(palette.random),
         _ => None,
+    }
+}
+
+const TOKYO_NIGHT_FLAMINGO: Rgba = hex(0xff, 0x79, 0xc6);
+const LATTE_MAUVE: Rgba = hex(0x88, 0x39, 0xef);
+const LATTE_FLAMINGO: Rgba = hex(0xdd, 0x78, 0x78);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum AccentColor {
+    Red,
+    Peach,
+    Yellow,
+    Green,
+    Sky,
+    #[default]
+    Mauve,
+    Flamingo,
+}
+
+impl AccentColor {
+    pub const ALL: [AccentColor; 7] = [
+        AccentColor::Red,
+        AccentColor::Peach,
+        AccentColor::Yellow,
+        AccentColor::Green,
+        AccentColor::Sky,
+        AccentColor::Mauve,
+        AccentColor::Flamingo,
+    ];
+
+    pub fn storage_key(self) -> &'static str {
+        match self {
+            AccentColor::Red => "red",
+            AccentColor::Peach => "peach",
+            AccentColor::Yellow => "yellow",
+            AccentColor::Green => "green",
+            AccentColor::Sky => "sky",
+            AccentColor::Mauve => "mauve",
+            AccentColor::Flamingo => "flamingo",
+        }
+    }
+
+    pub fn from_storage_key(key: &str) -> Option<AccentColor> {
+        AccentColor::ALL
+            .into_iter()
+            .find(|accent| accent.storage_key() == key)
     }
 }
 
@@ -102,6 +149,35 @@ impl ThemeId {
             ThemeId::Latte => LATTE,
         }
     }
+
+    pub fn accent(self, accent: AccentColor) -> Rgba {
+        let palette = self.palette();
+        match accent {
+            AccentColor::Red => palette.random,
+            AccentColor::Peach => palette.bits,
+            AccentColor::Yellow => palette.warning,
+            AccentColor::Green => palette.success,
+            AccentColor::Sky => palette.info,
+            AccentColor::Mauve => match self {
+                ThemeId::ForgeDefault | ThemeId::TokyoNight => palette.theme_brand,
+                ThemeId::Latte => LATTE_MAUVE,
+            },
+            AccentColor::Flamingo => match self {
+                ThemeId::ForgeDefault => palette.accent_pink_light,
+                ThemeId::TokyoNight => TOKYO_NIGHT_FLAMINGO,
+                ThemeId::Latte => LATTE_FLAMINGO,
+            },
+        }
+    }
+
+    pub fn accented_palette(self, accent: AccentColor) -> ForgePalette {
+        let color = self.accent(accent);
+        ForgePalette {
+            brand: color,
+            border_active: color,
+            ..self.palette()
+        }
+    }
 }
 
 pub const FORGE_DEFAULT: ForgePalette = ForgePalette {
@@ -122,6 +198,7 @@ pub const FORGE_DEFAULT: ForgePalette = ForgePalette {
     surface_overlay: hex(0x2e, 0x29, 0x42),
 
     brand: hex(0xc9, 0xa6, 0xf0),
+    theme_brand: hex(0xc9, 0xa6, 0xf0),
     success: hex(0x50, 0xfa, 0x7b),
     warning: hex(0xe0, 0xb8, 0x60),
     info: hex(0x8b, 0xe9, 0xfd),
@@ -168,6 +245,7 @@ pub const TOKYO_NIGHT: ForgePalette = ForgePalette {
     surface_overlay: hex(0x3b, 0x42, 0x61),
 
     brand: hex(0xbb, 0x9a, 0xf7),
+    theme_brand: hex(0xbb, 0x9a, 0xf7),
     success: hex(0x9e, 0xce, 0x6a),
     warning: hex(0xe0, 0xaf, 0x68),
     info: hex(0x2a, 0xc3, 0xde),
@@ -214,6 +292,7 @@ pub const LATTE: ForgePalette = ForgePalette {
     surface_overlay: hex(0xbc, 0xc0, 0xcc),
 
     brand: hex(0x1e, 0x66, 0xf5),
+    theme_brand: hex(0x1e, 0x66, 0xf5),
     success: hex(0x40, 0xa0, 0x2b),
     warning: hex(0xdf, 0x8e, 0x1d),
     info: hex(0x04, 0xa5, 0xe5),

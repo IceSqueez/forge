@@ -470,7 +470,11 @@ fn main() {
 
         let boot_storage = crate::boot::open_boot_storage(&rt_handle);
         let appearance = boot_storage.appearance;
-        cx.set_global(Presentation::new(appearance.theme, appearance.density));
+        cx.set_global(Presentation::accented(
+            appearance.theme,
+            appearance.accent,
+            appearance.density,
+        ));
         forge_components::set_body_family(appearance.body_font.map(Into::into));
         forge_components::set_mono_family(appearance.mono_font.map(Into::into));
         #[cfg(target_os = "linux")]

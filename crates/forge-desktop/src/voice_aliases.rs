@@ -936,7 +936,7 @@ fn engine_visual(engine_id: &str, palette: &ForgePalette) -> (Icon, Rgba) {
         forge_tts_core::ENGINE_ID_ESPEAK_NG
         | forge_tts_core::ENGINE_ID_SAPI
         | forge_tts_core::ENGINE_ID_NSSPEECH => (Icon::Terminal, palette.success),
-        forge_tts_core::ENGINE_ID_ELEVENLABS => (Icon::Microphone2, palette.brand),
+        forge_tts_core::ENGINE_ID_ELEVENLABS => (Icon::Microphone2, palette.theme_brand),
         forge_tts_core::ENGINE_ID_POLLY => (Icon::BrandAws, palette.bits),
         forge_tts_core::ENGINE_ID_AZURE => (Icon::Cloud, palette.info),
         forge_tts_core::ENGINE_ID_OPENAI => (Icon::Bolt, palette.accent_teal),

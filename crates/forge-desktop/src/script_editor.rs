@@ -326,7 +326,7 @@ impl LogTag {
         match self {
             LogTag::Run => palette.info,
             LogTag::Ok => palette.success,
-            LogTag::Stats => palette.brand,
+            LogTag::Stats => palette.theme_brand,
             LogTag::Log => palette.text_secondary,
             LogTag::Warn => palette.warning,
             LogTag::Err => palette.random,
@@ -3088,7 +3088,7 @@ impl ScriptEditorView {
 
         let linked = self.find_entry(open.id).and_then(|e| e.linked.as_ref());
         let (type_label, type_color): (SharedString, Rgba) = match linked {
-            Some(_) => (tr!("script_editor_type_action").into(), palette.brand),
+            Some(_) => (tr!("script_editor_type_action").into(), palette.theme_brand),
             None => (tr!("script_editor_type_standalone").into(), palette.bits),
         };
 

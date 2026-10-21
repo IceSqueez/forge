@@ -1678,7 +1678,7 @@ fn color_for_source(source: EventSource, palette: &ForgePalette) -> Rgba {
         EventSource::Http => palette.random,
         EventSource::Obs => palette.success,
         EventSource::VTube => palette.accent_teal,
-        EventSource::Discord => palette.brand,
+        EventSource::Discord => palette.theme_brand,
         EventSource::Midi => palette.bits,
         EventSource::Hotkey => palette.bits,
         EventSource::Timer => palette.warning,

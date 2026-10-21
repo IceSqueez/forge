@@ -11,6 +11,7 @@ use crate::StorageError;
 
 pub mod reserved_keys {
     pub const THEME: &str = "theme";
+    pub const ACCENT: &str = "accent";
     pub const DENSITY: &str = "density";
     pub const FONT_BODY: &str = "font_body";
     pub const FONT_MONO: &str = "font_mono";
@@ -140,6 +141,7 @@ pub mod disclosure {
 
         match key {
             reserved_keys::THEME
+            | reserved_keys::ACCENT
             | reserved_keys::DENSITY
             | reserved_keys::LANGUAGE
             | reserved_keys::DIAGNOSTICS_LOG_LEVEL
@@ -333,6 +335,14 @@ pub trait SettingsRepo: Send + Sync {
 
     async fn set_theme(&self, theme_key: &str) -> Result<(), StorageError> {
         self.set_string(reserved_keys::THEME, theme_key).await
+    }
+
+    async fn get_accent(&self) -> Result<Option<String>, StorageError> {
+        self.get_string(reserved_keys::ACCENT).await
+    }
+
+    async fn set_accent(&self, accent_key: &str) -> Result<(), StorageError> {
+        self.set_string(reserved_keys::ACCENT, accent_key).await
     }
 
     async fn font_body(&self) -> Result<Option<String>, StorageError> {

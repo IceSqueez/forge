@@ -576,7 +576,11 @@ fn category_meta(
             palette.brand,
         ),
         TriggerCategory::Bits => (tr!("trigger_cat_bits").into(), "bits", palette.bits),
-        TriggerCategory::Raids => (tr!("trigger_cat_raids").into(), "raids", palette.brand),
+        TriggerCategory::Raids => (
+            tr!("trigger_cat_raids").into(),
+            "raids",
+            palette.theme_brand,
+        ),
         TriggerCategory::Moderation => (
             tr!("trigger_cat_moderation").into(),
             "moderation",
@@ -593,7 +597,7 @@ fn category_meta(
             "predictions",
             palette.warning,
         ),
-        TriggerCategory::Hype => (tr!("trigger_cat_hype").into(), "hype", palette.brand),
+        TriggerCategory::Hype => (tr!("trigger_cat_hype").into(), "hype", palette.theme_brand),
         TriggerCategory::Charity => (
             tr!("trigger_cat_charity").into(),
             "charity",

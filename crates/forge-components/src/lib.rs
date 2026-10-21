@@ -125,7 +125,8 @@ pub use overlay::{
 };
 pub use page_frame::{HeaderStat, PageFrame, header_stat, header_stats, header_status, page_frame};
 pub use palette::{
-    FORGE_DEFAULT, ForgePalette, LATTE, TOKYO_NIGHT, ThemeId, accent_swatch, with_alpha,
+    AccentColor, FORGE_DEFAULT, ForgePalette, LATTE, TOKYO_NIGHT, ThemeId, accent_swatch,
+    with_alpha,
 };
 pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels, bind_picker_keys};
 pub use platform_hero::{PlatformHero, platform_hero};

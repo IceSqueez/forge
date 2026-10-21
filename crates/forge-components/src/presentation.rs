@@ -1,17 +1,23 @@
-use crate::{Density, ForgePalette, ThemeId};
+use crate::{AccentColor, Density, ForgePalette, ThemeId};
 use gpui::{App, Global};
 
 pub struct Presentation {
     pub theme: ThemeId,
+    pub accent: AccentColor,
     pub palette: ForgePalette,
     pub density: Density,
 }
 
 impl Presentation {
     pub fn new(theme: ThemeId, density: Density) -> Self {
+        Self::accented(theme, AccentColor::default(), density)
+    }
+
+    pub fn accented(theme: ThemeId, accent: AccentColor, density: Density) -> Self {
         Self {
             theme,
-            palette: theme.palette(),
+            accent,
+            palette: theme.accented_palette(accent),
             density,
         }
     }
@@ -23,6 +29,7 @@ pub trait ActivePresentation {
     fn palette(&self) -> ForgePalette;
     fn density(&self) -> Density;
     fn theme(&self) -> ThemeId;
+    fn accent(&self) -> AccentColor;
 }
 
 impl ActivePresentation for App {
@@ -36,5 +43,9 @@ impl ActivePresentation for App {
 
     fn theme(&self) -> ThemeId {
         self.global::<Presentation>().theme
+    }
+
+    fn accent(&self) -> AccentColor {
+        self.global::<Presentation>().accent
     }
 }

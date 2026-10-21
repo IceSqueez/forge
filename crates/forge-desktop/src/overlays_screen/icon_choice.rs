@@ -166,7 +166,7 @@ fn category_dot(category: IconCategory, palette: &ForgePalette) -> Rgba {
         IconCategory::Support => palette.random,
         IconCategory::Celebration => palette.warning,
         IconCategory::Community => palette.info,
-        IconCategory::Stream => palette.brand,
+        IconCategory::Stream => palette.theme_brand,
         IconCategory::Play => palette.success,
         IconCategory::Goals => palette.bits,
         IconCategory::Nature => palette.accent_teal,

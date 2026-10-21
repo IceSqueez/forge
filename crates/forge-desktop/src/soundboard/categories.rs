@@ -26,7 +26,7 @@ pub(crate) fn category_color(cat: &str, palette: &ForgePalette) -> Rgba {
     match cat {
         "memes" => palette.bits,
         "alerts" => palette.random,
-        "music" => palette.brand,
+        "music" => palette.theme_brand,
         "voice" => palette.info,
         _ => palette.text_muted,
     }

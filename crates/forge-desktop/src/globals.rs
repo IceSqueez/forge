@@ -84,3 +84,38 @@ impl Globals {
         self.entries.iter().any(|g| g.name.as_ref() == name)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_components::{AccentColor, ThemeId};
+    use forge_types::VariantKind;
+
+    use super::variant_kind_color;
+
+    const KINDS: [VariantKind; 7] = [
+        VariantKind::Int,
+        VariantKind::Float,
+        VariantKind::Bool,
+        VariantKind::String,
+        VariantKind::Datetime,
+        VariantKind::Array,
+        VariantKind::Object,
+    ];
+
+    #[test]
+    fn variant_type_colors_do_not_follow_the_accent() {
+        for theme in ThemeId::ALL {
+            let base = theme.palette();
+            for accent in AccentColor::ALL {
+                let accented = theme.accented_palette(accent);
+                for kind in KINDS {
+                    assert_eq!(
+                        variant_kind_color(kind, &accented),
+                        variant_kind_color(kind, &base),
+                        "{theme:?} {accent:?} {kind:?}"
+                    );
+                }
+            }
+        }
+    }
+}

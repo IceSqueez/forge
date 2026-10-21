@@ -744,17 +744,21 @@ async fn build_server(
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use forge_components::{Density, ThemeId};
+    use forge_components::{AccentColor, Density, ThemeId};
     use forge_storage::{SettingsRepo, reserved_keys};
 
     use super::load_appearance;
     use crate::test_support::test_backend;
 
     #[tokio::test]
-    async fn the_stored_theme_density_and_both_fonts_come_back_in_their_own_slots() {
+    async fn the_stored_theme_accent_density_and_both_fonts_come_back_in_their_own_slots() {
         let (backend, _writes) = test_backend();
         backend
             .set_theme(ThemeId::TokyoNight.storage_key())
+            .await
+            .unwrap();
+        backend
+            .set_accent(AccentColor::Green.storage_key())
             .await
             .unwrap();
         backend
@@ -775,12 +779,14 @@ mod tests {
         assert_eq!(
             (
                 appearance.theme,
+                appearance.accent,
                 appearance.density,
                 appearance.body_font.as_deref(),
                 appearance.mono_font.as_deref()
             ),
             (
                 ThemeId::TokyoNight,
+                AccentColor::Green,
                 Density::Spacious,
                 Some("Inter"),
                 Some("Iosevka")
@@ -792,6 +798,7 @@ mod tests {
     async fn unrecognised_or_missing_appearance_settings_fall_back_to_the_defaults() {
         let (backend, _writes) = test_backend();
         backend.set_theme("solarized").await.unwrap();
+        backend.set_accent("teal").await.unwrap();
         backend
             .set_string(reserved_keys::DENSITY, "roomy")
             .await
@@ -802,11 +809,27 @@ mod tests {
         assert_eq!(
             (
                 appearance.theme,
+                appearance.accent,
                 appearance.density,
                 appearance.body_font,
                 appearance.mono_font
             ),
-            (ThemeId::default(), Density::default(), None, None)
+            (
+                ThemeId::default(),
+                AccentColor::Mauve,
+                Density::default(),
+                None,
+                None
+            )
         );
+    }
+
+    #[tokio::test]
+    async fn a_store_without_an_accent_boots_with_mauve() {
+        let (backend, _writes) = test_backend();
+
+        let appearance = load_appearance(backend.as_ref()).await;
+
+        assert_eq!(appearance.accent, AccentColor::Mauve);
     }
 }

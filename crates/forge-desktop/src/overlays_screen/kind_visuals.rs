@@ -51,7 +51,7 @@ pub(super) fn kind_visuals(
 mod tests {
     use std::collections::HashSet;
 
-    use forge_components::{ThemeId, accent_swatch};
+    use forge_components::{AccentColor, ThemeId, accent_swatch};
     use forge_overlay::config::{ACCENT, ACCENT_OPTIONS};
     use forge_overlay::{OverlayConfig, register_builtin_kinds};
     use forge_storage::{OverlayCredential, OverlayId};
@@ -143,18 +143,22 @@ mod tests {
             .expect("the alert kind ships in this build");
 
         for theme in ThemeId::ALL {
-            let palette = theme.palette();
+            for app_accent in AccentColor::ALL {
+                let palette = theme.accented_palette(app_accent);
 
-            for name in ACCENT_OPTIONS {
-                let config =
-                    OverlayConfig::from([(ACCENT.to_owned(), Variant::String((*name).to_owned()))]);
-                let rendered = accent_color(descriptor.preview(&config).accent, &palette);
+                for name in ACCENT_OPTIONS {
+                    let config = OverlayConfig::from([(
+                        ACCENT.to_owned(),
+                        Variant::String((*name).to_owned()),
+                    )]);
+                    let rendered = accent_color(descriptor.preview(&config).accent, &palette);
 
-                assert_eq!(
-                    accent_swatch(name, &palette),
-                    Some(rendered),
-                    "{theme:?}: the '{name}' dot does not paint what the stage renders for it"
-                );
+                    assert_eq!(
+                        accent_swatch(name, &palette),
+                        Some(rendered),
+                        "{theme:?} {app_accent:?}: the '{name}' dot does not paint what the stage renders for it"
+                    );
+                }
             }
         }
     }

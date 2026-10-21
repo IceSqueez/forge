@@ -51,7 +51,7 @@ pub fn highlighted_text(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::palette::ThemeId;
+    use crate::palette::{AccentColor, ThemeId};
 
     const CLASSES: [TokenClass; 8] = [
         TokenClass::Keyword,
@@ -65,22 +65,25 @@ mod tests {
     ];
 
     #[test]
-    fn json_classes_use_data_viewer_colors_in_every_theme() {
+    fn json_classes_use_data_viewer_colors_in_every_theme_whatever_the_accent() {
         for theme in ThemeId::ALL {
-            let palette = theme.palette();
-            for (class, expected) in [
-                (TokenClass::Variable, palette.info),
-                (TokenClass::String, palette.success),
-                (TokenClass::Number, palette.bits),
-                (TokenClass::Keyword, palette.brand),
-                (TokenClass::Plain, palette.text_primary),
-                (TokenClass::Punctuation, palette.text_secondary),
-            ] {
-                assert_eq!(
-                    token_color(Language::Json, class, &palette),
-                    Hsla::from(expected),
-                    "{theme:?} {class:?}"
-                );
+            let base = theme.palette();
+            for accent in AccentColor::ALL {
+                let palette = theme.accented_palette(accent);
+                for (class, expected) in [
+                    (TokenClass::Variable, base.info),
+                    (TokenClass::String, base.success),
+                    (TokenClass::Number, base.bits),
+                    (TokenClass::Keyword, base.theme_brand),
+                    (TokenClass::Plain, base.text_primary),
+                    (TokenClass::Punctuation, base.text_secondary),
+                ] {
+                    assert_eq!(
+                        token_color(Language::Json, class, &palette),
+                        Hsla::from(expected),
+                        "{theme:?} {accent:?} {class:?}"
+                    );
+                }
             }
         }
     }

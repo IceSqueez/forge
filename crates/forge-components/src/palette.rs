@@ -320,3 +320,117 @@ pub const LATTE: ForgePalette = ForgePalette {
         a: 0.35,
     },
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn named_accent(theme: ThemeId, accent: AccentColor) -> Rgba {
+        let p = theme.palette();
+        match (accent, theme) {
+            (AccentColor::Red, _) => p.random,
+            (AccentColor::Peach, _) => p.bits,
+            (AccentColor::Yellow, _) => p.warning,
+            (AccentColor::Green, _) => p.success,
+            (AccentColor::Sky, _) => p.info,
+            (AccentColor::Mauve, ThemeId::Latte) => hex(0x88, 0x39, 0xef),
+            (AccentColor::Mauve, _) => p.theme_brand,
+            (AccentColor::Flamingo, ThemeId::ForgeDefault) => p.accent_pink_light,
+            (AccentColor::Flamingo, ThemeId::TokyoNight) => hex(0xff, 0x79, 0xc6),
+            (AccentColor::Flamingo, ThemeId::Latte) => hex(0xdd, 0x78, 0x78),
+        }
+    }
+
+    #[test]
+    fn an_accent_paints_brand_and_active_border_with_the_themes_own_named_color() {
+        for theme in ThemeId::ALL {
+            for accent in AccentColor::ALL {
+                let accented = theme.accented_palette(accent);
+                let expected = named_accent(theme, accent);
+
+                assert_eq!(
+                    (accented.brand, accented.border_active),
+                    (expected, expected),
+                    "{theme:?} {accent:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_accent_leaves_every_semantic_type_and_theme_brand_color_untouched() {
+        for theme in ThemeId::ALL {
+            let base = theme.palette();
+            for accent in AccentColor::ALL {
+                let accented = theme.accented_palette(accent);
+                let without_accent = ForgePalette {
+                    brand: base.brand,
+                    border_active: base.border_active,
+                    ..accented
+                };
+
+                assert_eq!(without_accent, base, "{theme:?} {accent:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn every_accent_is_a_distinct_swatch_in_every_theme() {
+        for theme in ThemeId::ALL {
+            for (index, accent) in AccentColor::ALL.iter().enumerate() {
+                for other in AccentColor::ALL.iter().skip(index + 1) {
+                    assert_ne!(
+                        theme.accent(*accent),
+                        theme.accent(*other),
+                        "{theme:?}: {accent:?} and {other:?} paint the same swatch"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_default_accent_keeps_the_dark_themes_looking_as_they_shipped() {
+        for theme in [ThemeId::ForgeDefault, ThemeId::TokyoNight] {
+            assert_eq!(
+                theme.accented_palette(AccentColor::default()),
+                theme.palette(),
+                "{theme:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn category_swatches_do_not_follow_the_accent() {
+        for theme in ThemeId::ALL {
+            let base = theme.palette();
+            for accent in AccentColor::ALL {
+                let accented = theme.accented_palette(accent);
+                for name in ["mauve", "sky", "green", "peach", "yellow", "red"] {
+                    assert_eq!(
+                        accent_swatch(name, &accented),
+                        accent_swatch(name, &base),
+                        "{theme:?} {accent:?} {name}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_accent_round_trips_through_its_storage_key() {
+        for accent in AccentColor::ALL {
+            assert_eq!(
+                AccentColor::from_storage_key(accent.storage_key()),
+                Some(accent)
+            );
+        }
+    }
+
+    #[test]
+    fn a_non_canonical_accent_key_is_rejected() {
+        for bad in ["", "Mauve", "MAUVE", "purple", " red", "red ", "pink"] {
+            assert_eq!(AccentColor::from_storage_key(bad), None, "{bad:?}");
+        }
+    }
+}

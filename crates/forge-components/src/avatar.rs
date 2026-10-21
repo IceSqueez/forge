@@ -99,3 +99,26 @@ impl RenderOnce for AvatarTile {
             .child(self.letter)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::hash_accent;
+    use crate::palette::{AccentColor, ThemeId};
+
+    #[test]
+    fn a_viewers_avatar_color_does_not_follow_the_app_accent() {
+        for theme in ThemeId::ALL {
+            let base = theme.palette();
+            for accent in AccentColor::ALL {
+                let accented = theme.accented_palette(accent);
+                for name in ["a", "b", "c", "d", "e", "f", "g", "h"] {
+                    assert_eq!(
+                        hash_accent(name, &accented),
+                        hash_accent(name, &base),
+                        "{theme:?} {accent:?} {name}"
+                    );
+                }
+            }
+        }
+    }
+}

@@ -235,6 +235,19 @@ mod tests {
     }
 
     #[test]
+    fn the_whole_appearance_travels_with_a_backup() {
+        for key in [
+            key::THEME,
+            key::ACCENT,
+            key::DENSITY,
+            key::FONT_BODY,
+            key::FONT_MONO,
+        ] {
+            assert!(is_portable(key), "{key}");
+        }
+    }
+
+    #[test]
     fn the_voice_strategy_row_is_left_to_its_repository() {
         assert!(!is_portable(key::VOICE_ASSIGNMENT_STRATEGY));
     }

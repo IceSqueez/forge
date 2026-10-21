@@ -107,6 +107,7 @@ pub(crate) struct ChatSession {
     config: SessionConfig,
     state_tx: watch::Sender<ChatConnectionState>,
     shutdown_rx: oneshot::Receiver<()>,
+    transition: ConnectionTransition,
     seen_messages: MessageIdWindow,
     backoff: Backoff,
 }
@@ -157,6 +158,7 @@ impl ChatSession {
             },
             state_tx,
             shutdown_rx,
+            transition: ConnectionTransition::Unexpected,
             seen_messages: MessageIdWindow::default(),
             backoff: Backoff::default(),
         };
@@ -169,11 +171,6 @@ impl ChatSession {
             .endpoints
             .base_url(EndpointSurface::TwitchEventSubSocket)
             .to_owned();
-        let stopped_report = StoppedReport {
-            state_tx: self.state_tx.clone(),
-            bus: Arc::clone(&self.config.bus),
-        };
-
         loop {
             let attempt = self.backoff.attempt();
             self.set_state(if attempt == 0 {
@@ -190,7 +187,10 @@ impl ChatSession {
 
             match outcome {
                 SessionOutcome::Disconnected => {}
-                SessionOutcome::Shutdown => break,
+                SessionOutcome::Shutdown => {
+                    self.transition = ConnectionTransition::Expected;
+                    break;
+                }
                 SessionOutcome::ReauthRequired => {
                     error!(
                         "twitch chat session stopped: re-authorization required (rejected \
@@ -209,11 +209,13 @@ impl ChatSession {
             );
             tokio::select! {
                 _ = tokio::time::sleep(delay) => {}
-                _ = &mut self.shutdown_rx => break,
+                _ = &mut self.shutdown_rx => {
+                    self.transition = ConnectionTransition::Expected;
+                    break;
+                }
             }
         }
 
-        drop(stopped_report);
         info!("twitch chat stopped");
     }
 
@@ -4109,18 +4111,17 @@ enum FrameAction {
     ReauthRequired,
 }
 
-struct StoppedReport {
-    state_tx: watch::Sender<ChatConnectionState>,
-    bus: Arc<dyn EventPublisher>,
-}
-
-impl Drop for StoppedReport {
+impl Drop for ChatSession {
     fn drop(&mut self) {
+        let transition = match self.shutdown_rx.try_recv() {
+            Ok(()) => ConnectionTransition::Expected,
+            Err(_) => self.transition,
+        };
         let _ = self.state_tx.send(ChatConnectionState::Disconnected);
-        self.bus.publish(connection_state_changed_event(
+        self.config.bus.publish(connection_state_changed_event(
             "twitch",
             ConnectionState::Disconnected,
-            ConnectionTransition::Unexpected,
+            transition,
         ));
     }
 }

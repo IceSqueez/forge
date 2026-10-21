@@ -1177,3 +1177,28 @@ fn choice_row(
             .hover(move |style| style.bg(hover))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::screen::Screen;
+
+    #[test]
+    fn every_settings_nav_entry_opens_from_its_route_key() {
+        for section in NAV_GROUPS.iter().flat_map(|(_, sections)| sections.iter()) {
+            assert_eq!(
+                Screen::parse_cli(&format!("settings:{}", section.key())),
+                Ok(Screen::Settings(Some(*section))),
+                "{section:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_notifications_route_opens_the_notifications_pane() {
+        assert_eq!(
+            Screen::parse_cli("settings:notifications"),
+            Ok(Screen::Settings(Some(SettingsSection::Notifications)))
+        );
+    }
+}

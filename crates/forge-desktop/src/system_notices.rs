@@ -172,13 +172,175 @@ fn play_cue_detached(rt: &Handle) {
 }
 
 #[cfg(test)]
-#[allow(clippy::panic)]
+#[allow(clippy::panic, clippy::unwrap_used)]
 mod tests {
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+
+    use forge_components::Toasts;
+    use forge_events::{Event, EventSource};
+    use forge_runtime::{NotificationPreferences, spawn_notification_policy};
     use forge_storage::Language;
     use forge_types::ActionId;
+    use gpui::TestAppContext;
+    use serde_json::json;
 
     use super::*;
     use crate::i18n::install_language;
+    use crate::test_support::{pump, quiet_bus, runtime};
+
+    const SETTLE_ROUNDS: usize = 2000;
+    const ALL_ON: NotificationPreferences = NotificationPreferences {
+        action_failure_notice: true,
+        connection_loss_cue: true,
+    };
+
+    struct ScriptedPort {
+        results: Mutex<VecDeque<Result<(), OsPortError>>>,
+        seen: Mutex<Vec<DesktopNotice>>,
+    }
+
+    impl ScriptedPort {
+        fn new(results: Vec<Result<(), OsPortError>>) -> Arc<Self> {
+            Arc::new(Self {
+                results: Mutex::new(results.into()),
+                seen: Mutex::new(Vec::new()),
+            })
+        }
+
+        fn seen_bodies(&self) -> Vec<String> {
+            self.seen
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|notice| notice.body.clone())
+                .collect()
+        }
+    }
+
+    impl NotifyPort for ScriptedPort {
+        fn show(&self, notice: DesktopNotice) -> Result<(), OsPortError> {
+            self.seen.lock().unwrap().push(notice);
+            self.results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| Err(OsPortError::Failed("unscripted".to_owned())))
+        }
+    }
+
+    fn run_failed(name: &str) -> (Event, NotificationIntent) {
+        let action_id = ActionId::new();
+        let event = Event::new(
+            EventSource::Core,
+            "action.done",
+            json!({
+                "action_id": action_id.to_string(),
+                "action_name": name,
+                "outcome": "failed",
+                "reason": "OBS is offline",
+            }),
+        );
+        let intent = NotificationIntent::ActionFailed(ActionFailureNotice {
+            action_id,
+            action_name: name.to_owned(),
+            reason: Some("OBS is offline".to_owned()),
+        });
+        (event, intent)
+    }
+
+    fn fallback_toast(intent: &NotificationIntent) -> (ToastKind, String) {
+        match plan_for(intent) {
+            NoticePlan::Show(text) => (ToastKind::Error, text.toast_message()),
+            NoticePlan::PlayCue => panic!("expected a notice for {intent:?}"),
+        }
+    }
+
+    fn toasts(cx: &mut TestAppContext) -> Vec<(ToastKind, String)> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|t| (t.kind, t.message.to_string()))
+                .collect()
+        })
+    }
+
+    fn drain_events_through(
+        cx: &mut TestAppContext,
+        port: Arc<ScriptedPort>,
+        events: Vec<Event>,
+        expected_toasts: usize,
+    ) -> Vec<(ToastKind, String)> {
+        install_language(Language::En);
+        cx.executor().allow_parking();
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let bus = quiet_bus(&rt);
+        let policy = rt.block_on(async { spawn_notification_policy(&bus, ALL_ON) });
+        start_system_notices(
+            &mut cx.to_async(),
+            &policy,
+            port as Arc<dyn NotifyPort>,
+            rt.handle().clone(),
+        );
+        pump(&rt);
+        rt.block_on(async {
+            for event in events {
+                bus.publish(event);
+            }
+        });
+        for _ in 0..SETTLE_ROUNDS {
+            pump(&rt);
+            cx.run_until_parked();
+            if toasts(cx).len() >= expected_toasts {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        pump(&rt);
+        cx.run_until_parked();
+        toasts(cx)
+    }
+
+    #[gpui::test]
+    fn a_desktop_notice_the_os_rejects_falls_back_to_exactly_one_error_toast(
+        cx: &mut TestAppContext,
+    ) {
+        let port = ScriptedPort::new(vec![Err(OsPortError::Unavailable("no daemon".to_owned()))]);
+        let (event, intent) = run_failed("Shoutout");
+
+        let shown = drain_events_through(cx, Arc::clone(&port), vec![event], 1);
+
+        assert_eq!(
+            (port.seen_bodies().len(), shown),
+            (1, vec![fallback_toast(&intent)])
+        );
+    }
+
+    #[gpui::test]
+    fn a_desktop_notice_the_os_shows_raises_no_toast(cx: &mut TestAppContext) {
+        let port = ScriptedPort::new(vec![
+            Ok(()),
+            Err(OsPortError::Failed("daemon gone".to_owned())),
+        ]);
+        let (shown_event, _) = run_failed("Alpha");
+        let (rejected_event, rejected) = run_failed("Beta");
+
+        let shown =
+            drain_events_through(cx, Arc::clone(&port), vec![shown_event, rejected_event], 1);
+
+        assert_eq!(
+            (port.seen_bodies(), shown),
+            (
+                vec![
+                    "Alpha - OBS is offline".to_owned(),
+                    "Beta - OBS is offline".to_owned()
+                ],
+                vec![fallback_toast(&rejected)]
+            )
+        );
+    }
 
     fn failed(action: &str, reason: Option<&str>) -> NotificationIntent {
         NotificationIntent::ActionFailed(ActionFailureNotice {

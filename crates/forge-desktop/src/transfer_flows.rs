@@ -2,14 +2,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_components::{PushToast, ToastKind, tr};
-use forge_transfer::{BundleKind, TransferError, read_bundle_kind};
+use forge_transfer::{
+    BundleKind, ScheduledBackupHandle, TransferError, TransferExclusivity, TransferGuard,
+    read_bundle_kind,
+};
 use forge_types::ActionId;
 use gpui::{AnyView, App, AppContext, Context, Entity, EventEmitter, Global, Subscription};
 
 use crate::async_bridge::{self, DIALOG_CANCELLED, DialogFilter};
 use crate::backup_flow::{BackupFlow, BackupTarget};
 use crate::home_stats::HomeStats;
-use crate::import_busy::refuse_while_busy;
 use crate::pack_export::PackExportFlow;
 use crate::pack_import_flow::{PackImportFlow, PackImported};
 use crate::pack_import_live::SetupLiveHandles;
@@ -29,6 +31,9 @@ pub struct TransferFlows {
     pub setup_import: Entity<SetupImportFlow>,
     rt_handle: tokio::runtime::Handle,
     routing: bool,
+    exclusivity: TransferExclusivity,
+    guard: Option<TransferGuard>,
+    scheduled: Option<ScheduledBackupHandle>,
     _subs: [Subscription; 8],
 }
 
@@ -57,12 +62,12 @@ impl TransferFlows {
         let setup_export = cx.new(|_| SetupExportFlow::new(pack.clone()));
         let setup_import = cx.new(|_| SetupImportFlow::new(pack.clone(), data_dir));
         let subs = [
-            cx.observe(&restore, |_, _, cx| cx.notify()),
-            cx.observe(&backup, |_, _, cx| cx.notify()),
-            cx.observe(&pack_export, |_, _, cx| cx.notify()),
-            cx.observe(&pack_import, |_, _, cx| cx.notify()),
-            cx.observe(&setup_export, |_, _, cx| cx.notify()),
-            cx.observe(&setup_import, |_, _, cx| cx.notify()),
+            cx.observe(&restore, |this, _, cx| this.settle_guard(cx)),
+            cx.observe(&backup, |this, _, cx| this.settle_guard(cx)),
+            cx.observe(&pack_export, |this, _, cx| this.settle_guard(cx)),
+            cx.observe(&pack_import, |this, _, cx| this.settle_guard(cx)),
+            cx.observe(&setup_export, |this, _, cx| this.settle_guard(cx)),
+            cx.observe(&setup_import, |this, _, cx| this.settle_guard(cx)),
             Self::refresh_stats_on::<PackImportFlow, PackImported>(&pack_import, &stats, &pack, cx),
             Self::refresh_stats_on::<SetupImportFlow, SetupImported>(
                 &setup_import,
@@ -80,8 +85,22 @@ impl TransferFlows {
             setup_import,
             rt_handle,
             routing: false,
+            exclusivity: TransferExclusivity::new(),
+            guard: None,
+            scheduled: None,
             _subs: subs,
         }
+    }
+
+    #[must_use]
+    pub fn with_shared_exclusivity(
+        mut self,
+        exclusivity: TransferExclusivity,
+        scheduled: ScheduledBackupHandle,
+    ) -> Self {
+        self.exclusivity = exclusivity;
+        self.scheduled = Some(scheduled);
+        self
     }
 
     #[must_use]
@@ -123,8 +142,11 @@ impl TransferFlows {
     }
 
     pub fn is_busy(&self, cx: &App) -> bool {
-        self.routing
-            || self.restore.read(cx).is_busy()
+        self.exclusivity.is_held() || self.routing || self.any_flow_busy(cx)
+    }
+
+    fn any_flow_busy(&self, cx: &App) -> bool {
+        self.restore.read(cx).is_busy()
             || self.backup.read(cx).is_busy()
             || self.pack_export.read(cx).is_busy()
             || self.pack_import.read(cx).is_busy()
@@ -133,8 +155,7 @@ impl TransferFlows {
     }
 
     pub fn request_import(&mut self, cx: &mut Context<Self>) {
-        if self.is_busy(cx) {
-            refuse_while_busy(cx);
+        if self.refused_while_busy(cx) {
             return;
         }
         self.routing = true;
@@ -176,7 +197,7 @@ impl TransferFlows {
                 }
             }
         }
-        cx.notify();
+        self.settle_guard(cx);
     }
 
     pub fn route_import(
@@ -186,6 +207,9 @@ impl TransferFlows {
         cx: &mut Context<Self>,
     ) {
         self.routing = false;
+        if self.guard.is_none() && self.refused_while_busy(cx) {
+            return;
+        }
         match kind {
             Ok(BundleKind::Full) => self
                 .restore
@@ -201,7 +225,7 @@ impl TransferFlows {
                 cx.push_toast(ToastKind::Error, RestoreProblem::of(&error).message());
             }
         }
-        cx.notify();
+        self.settle_guard(cx);
     }
 
     pub fn export_full_backup(&mut self, cx: &mut Context<Self>) {
@@ -218,7 +242,7 @@ impl TransferFlows {
         }
         self.backup
             .update(cx, |backup, cx| backup.start(target, cx));
-        cx.notify();
+        self.settle_guard(cx);
     }
 
     pub fn export_pack(&mut self, cx: &mut Context<Self>) {
@@ -231,7 +255,7 @@ impl TransferFlows {
         }
         self.pack_export
             .update(cx, |pack_export, cx| pack_export.start(preselected, cx));
-        cx.notify();
+        self.settle_guard(cx);
     }
 
     pub fn export_setup(&mut self, cx: &mut Context<Self>) {
@@ -240,7 +264,7 @@ impl TransferFlows {
         }
         self.setup_export
             .update(cx, |setup_export, cx| setup_export.start(cx));
-        cx.notify();
+        self.settle_guard(cx);
     }
 
     pub fn start_restore(&mut self, cx: &mut Context<Self>) {
@@ -248,7 +272,7 @@ impl TransferFlows {
             return;
         }
         self.restore.update(cx, |restore, cx| restore.start(cx));
-        cx.notify();
+        self.settle_guard(cx);
     }
 
     pub fn views(&self) -> [AnyView; 6] {
@@ -262,13 +286,31 @@ impl TransferFlows {
         ]
     }
 
-    fn refused_while_busy(&self, cx: &mut Context<Self>) -> bool {
-        let busy = self.is_busy(cx);
-        if busy {
+    fn acquire(&mut self, cx: &App) -> bool {
+        if self.guard.is_some() || self.routing || self.any_flow_busy(cx) {
+            return false;
+        }
+        self.guard = self.exclusivity.try_acquire();
+        self.guard.is_some()
+    }
+
+    fn refused_while_busy(&mut self, cx: &mut Context<Self>) -> bool {
+        let refused = !self.acquire(cx);
+        if refused {
             tracing::info!("transfer start ignored while another transfer runs");
             cx.push_toast(ToastKind::Warn, tr!("transfer_busy_already"));
         }
-        busy
+        refused
+    }
+
+    fn settle_guard(&mut self, cx: &mut Context<Self>) {
+        if self.guard.is_some() && !self.routing && !self.any_flow_busy(cx) {
+            self.guard = None;
+            if let Some(scheduled) = &self.scheduled {
+                scheduled.storage_changed();
+            }
+        }
+        cx.notify();
     }
 }
 

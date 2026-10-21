@@ -5,10 +5,11 @@ use forge_components::{
 };
 use forge_runtime::{NotificationPolicyHandle, NotificationPreferences};
 use forge_storage::{SettingsRepo, StorageError, reserved_keys, set_bool_setting};
-use gpui::{ClickEvent, Context, IntoElement, ParentElement, Render, Styled, Window, div};
+use gpui::{App, ClickEvent, Context, IntoElement, ParentElement, Render, Styled, Window, div};
 use tokio::runtime::Handle;
 
 use crate::async_bridge;
+use crate::scheduled_backup_notices::BackupFailureNoticePreference;
 use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 
@@ -48,39 +49,85 @@ impl NotificationToggle {
             NotificationToggle::ConnectionLossCue => preferences.connection_loss_cue = value,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationSetting {
+    Policy(NotificationToggle),
+    ScheduledBackupFailureNotice,
+}
+
+impl From<NotificationToggle> for NotificationSetting {
+    fn from(toggle: NotificationToggle) -> Self {
+        NotificationSetting::Policy(toggle)
+    }
+}
+
+impl NotificationSetting {
+    pub fn all() -> impl Iterator<Item = NotificationSetting> {
+        NotificationToggle::ALL
+            .into_iter()
+            .map(NotificationSetting::from)
+            .chain([NotificationSetting::ScheduledBackupFailureNotice])
+    }
+
+    pub fn storage_key(self) -> &'static str {
+        match self {
+            NotificationSetting::Policy(toggle) => toggle.storage_key(),
+            NotificationSetting::ScheduledBackupFailureNotice => {
+                reserved_keys::NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE
+            }
+        }
+    }
 
     fn element_id(self) -> &'static str {
         match self {
-            NotificationToggle::ActionFailureNotice => "settings-notifications-action-failure",
-            NotificationToggle::ConnectionLossCue => "settings-notifications-connection-loss",
+            NotificationSetting::Policy(NotificationToggle::ActionFailureNotice) => {
+                "settings-notifications-action-failure"
+            }
+            NotificationSetting::Policy(NotificationToggle::ConnectionLossCue) => {
+                "settings-notifications-connection-loss"
+            }
+            NotificationSetting::ScheduledBackupFailureNotice => {
+                "settings-notifications-scheduled-backup-failure"
+            }
         }
     }
 
     fn icon(self) -> Icon {
         match self {
-            NotificationToggle::ActionFailureNotice => Icon::Bell,
-            NotificationToggle::ConnectionLossCue => Icon::AlertTriangle,
+            NotificationSetting::Policy(NotificationToggle::ActionFailureNotice) => Icon::Bell,
+            NotificationSetting::Policy(NotificationToggle::ConnectionLossCue) => {
+                Icon::AlertTriangle
+            }
+            NotificationSetting::ScheduledBackupFailureNotice => Icon::Database,
         }
     }
 
     fn label(self) -> String {
         match self {
-            NotificationToggle::ActionFailureNotice => {
+            NotificationSetting::Policy(NotificationToggle::ActionFailureNotice) => {
                 tr!("settings_notifications_action_failure_label")
             }
-            NotificationToggle::ConnectionLossCue => {
+            NotificationSetting::Policy(NotificationToggle::ConnectionLossCue) => {
                 tr!("settings_notifications_connection_loss_label")
+            }
+            NotificationSetting::ScheduledBackupFailureNotice => {
+                tr!("settings_notifications_scheduled_backup_failure_label")
             }
         }
     }
 
     fn hint(self) -> String {
         match self {
-            NotificationToggle::ActionFailureNotice => {
+            NotificationSetting::Policy(NotificationToggle::ActionFailureNotice) => {
                 tr!("settings_notifications_action_failure_hint")
             }
-            NotificationToggle::ConnectionLossCue => {
+            NotificationSetting::Policy(NotificationToggle::ConnectionLossCue) => {
                 tr!("settings_notifications_connection_loss_hint")
+            }
+            NotificationSetting::ScheduledBackupFailureNotice => {
+                tr!("settings_notifications_scheduled_backup_failure_hint")
             }
         }
     }
@@ -92,7 +139,9 @@ pub struct SettingsNotificationsView {
     policy: NotificationPolicyHandle,
     preferences: NotificationPreferences,
     stored: NotificationPreferences,
-    writing: Vec<NotificationToggle>,
+    backup_failure_notice: bool,
+    stored_backup_failure_notice: bool,
+    writing: Vec<NotificationSetting>,
 }
 
 impl SettingsNotificationsView {
@@ -102,26 +151,74 @@ impl SettingsNotificationsView {
         policy: NotificationPolicyHandle,
     ) -> Self {
         let preferences = policy.preferences();
+        let backup_failure_notice = BackupFailureNoticePreference::default().0;
         Self {
             settings,
             rt_handle,
             policy,
             preferences,
             stored: preferences,
+            backup_failure_notice,
+            stored_backup_failure_notice: backup_failure_notice,
             writing: Vec::new(),
         }
     }
 
-    pub fn flip(&mut self, setting: NotificationToggle, cx: &mut Context<Self>) {
-        let value = !setting.read(&self.preferences);
-        setting.write(&mut self.preferences, value);
+    #[must_use]
+    pub fn with_backup_failure_notice(mut self, cx: &App) -> Self {
+        let enabled = BackupFailureNoticePreference::current(cx);
+        self.backup_failure_notice = enabled;
+        self.stored_backup_failure_notice = enabled;
+        self
+    }
+
+    pub fn shown(&self, setting: NotificationSetting) -> bool {
+        match setting {
+            NotificationSetting::Policy(toggle) => toggle.read(&self.preferences),
+            NotificationSetting::ScheduledBackupFailureNotice => self.backup_failure_notice,
+        }
+    }
+
+    fn stored_value(&self, setting: NotificationSetting) -> bool {
+        match setting {
+            NotificationSetting::Policy(toggle) => toggle.read(&self.stored),
+            NotificationSetting::ScheduledBackupFailureNotice => self.stored_backup_failure_notice,
+        }
+    }
+
+    fn show(&mut self, setting: NotificationSetting, value: bool) {
+        match setting {
+            NotificationSetting::Policy(toggle) => toggle.write(&mut self.preferences, value),
+            NotificationSetting::ScheduledBackupFailureNotice => {
+                self.backup_failure_notice = value;
+            }
+        }
+    }
+
+    fn record_stored(&mut self, setting: NotificationSetting, value: bool, cx: &mut App) {
+        match setting {
+            NotificationSetting::Policy(toggle) => {
+                toggle.write(&mut self.stored, value);
+                self.policy.set_preferences(self.stored);
+            }
+            NotificationSetting::ScheduledBackupFailureNotice => {
+                self.stored_backup_failure_notice = value;
+                cx.set_global(BackupFailureNoticePreference(value));
+            }
+        }
+    }
+
+    pub fn flip(&mut self, setting: impl Into<NotificationSetting>, cx: &mut Context<Self>) {
+        let setting = setting.into();
+        let value = !self.shown(setting);
+        self.show(setting, value);
         if !self.writing.contains(&setting) {
             self.start_write(setting, value, cx);
         }
         cx.notify();
     }
 
-    fn start_write(&mut self, setting: NotificationToggle, value: bool, cx: &mut Context<Self>) {
+    fn start_write(&mut self, setting: NotificationSetting, value: bool, cx: &mut Context<Self>) {
         self.writing.push(setting);
         let repo = Arc::clone(&self.settings);
         let key = setting.storage_key();
@@ -135,7 +232,7 @@ impl SettingsNotificationsView {
 
     pub fn finish_write(
         &mut self,
-        setting: NotificationToggle,
+        setting: NotificationSetting,
         written: bool,
         result: Result<(), StorageError>,
         cx: &mut Context<Self>,
@@ -143,16 +240,15 @@ impl SettingsNotificationsView {
         self.writing.retain(|pending| *pending != setting);
         match result {
             Ok(()) => {
-                setting.write(&mut self.stored, written);
-                self.policy.set_preferences(self.stored);
-                let wanted = setting.read(&self.preferences);
+                self.record_stored(setting, written, cx);
+                let wanted = self.shown(setting);
                 if wanted != written {
                     self.start_write(setting, wanted, cx);
                 }
             }
             Err(error) => {
                 tracing::warn!(error = %error, key = setting.storage_key(), "notification preference not saved");
-                setting.write(&mut self.preferences, setting.read(&self.stored));
+                self.show(setting, self.stored_value(setting));
                 cx.push_toast(
                     ToastKind::Error,
                     tr!("settings_notifications_persist_failed"),
@@ -167,15 +263,20 @@ impl Render for SettingsNotificationsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
-        let rows = NotificationToggle::ALL.map(|setting| {
+        let rows = NotificationSetting::all().map(|setting| {
             let glyph_color = match setting {
-                NotificationToggle::ActionFailureNotice => palette.brand,
-                NotificationToggle::ConnectionLossCue => palette.warning,
+                NotificationSetting::Policy(NotificationToggle::ActionFailureNotice) => {
+                    palette.brand
+                }
+                NotificationSetting::Policy(NotificationToggle::ConnectionLossCue) => {
+                    palette.warning
+                }
+                NotificationSetting::ScheduledBackupFailureNotice => palette.info,
             };
             setting_row(
                 setting.label(),
                 Some(setting.hint().into()),
-                toggle(setting.read(&self.preferences), &palette).on_click(
+                toggle(self.shown(setting), &palette).on_click(
                     setting.element_id(),
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.flip(setting, cx)),
                 ),

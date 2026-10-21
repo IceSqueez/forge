@@ -268,12 +268,13 @@ impl SettingsView {
                 cx,
             )
         });
-        let notifications = cx.new(|_| {
+        let notifications = cx.new(|cx| {
             SettingsNotificationsView::new(
                 Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>,
                 handles.rt_handle.clone(),
                 handles.notification_policy.clone(),
             )
+            .with_backup_failure_notice(cx)
         });
         let schedule = cx.new(|cx| {
             BackupScheduleView::new(
@@ -312,6 +313,7 @@ impl SettingsView {
                 section == SettingsSection::Diagnostics,
                 cx,
             )
+            .with_storage_changes(handles.scheduled_backups.clone())
         });
         Self {
             section,

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, InputEvent,
-    PushToast, Radius, SettingRow, Spacing, TextInput, ToastKind, body_family, checkbox,
+    PushToast, Radius, SettingRow, Spacing, TextInput, ToastKind, body_family, checkbox, fmt_bytes,
     fmt_relative_time, ghost_button, ghost_button_with_icon, mono_family, radius, setting_row,
     setting_rows, spacing, toggle, tr,
 };
@@ -21,7 +21,7 @@ use forge_storage::{
 };
 use forge_transfer::{
     BackupCategory, FailureCategory, Passphrase, ScheduleKey, ScheduleState, ScheduledBackupHandle,
-    ScheduledBackupStatus, TransferError, TransferExclusivity, backups_dir,
+    ScheduledBackupStatus, StorageUsed, TransferError, TransferExclusivity, backups_dir,
     change_schedule_passphrase, create_schedule_key,
 };
 use gpui::{
@@ -155,7 +155,7 @@ fn category_label(category: BackupCategory) -> String {
     }
 }
 
-fn failure_reason(category: FailureCategory) -> String {
+pub(crate) fn failure_reason(category: FailureCategory) -> String {
     match category {
         FailureCategory::DestinationMissing => tr!("backup_schedule_failure_destination_missing"),
         FailureCategory::DestinationNotWritable => {
@@ -171,6 +171,49 @@ fn failure_reason(category: FailureCategory) -> String {
         FailureCategory::StateNotSaved => tr!("backup_schedule_failure_state_not_saved"),
         FailureCategory::Interrupted => tr!("backup_schedule_failure_interrupted"),
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum StoragePart {
+    Database,
+    Media,
+    Voices,
+    Overlays,
+    Assets,
+    Logs,
+    Backups,
+    Destination,
+}
+
+impl StoragePart {
+    fn label(self) -> String {
+        match self {
+            Self::Database => tr!("backup_schedule_storage_used_database"),
+            Self::Media => tr!("backup_schedule_storage_used_media"),
+            Self::Voices => tr!("backup_schedule_storage_used_voices"),
+            Self::Overlays => tr!("backup_schedule_storage_used_overlays"),
+            Self::Assets => tr!("backup_schedule_storage_used_assets"),
+            Self::Logs => tr!("backup_schedule_storage_used_logs"),
+            Self::Backups => tr!("backup_schedule_storage_used_backups"),
+            Self::Destination => tr!("backup_schedule_storage_used_destination"),
+        }
+    }
+}
+
+pub(crate) fn storage_parts(used: &StorageUsed) -> Vec<(StoragePart, u64)> {
+    let mut parts = vec![
+        (StoragePart::Database, used.database),
+        (StoragePart::Media, used.media),
+        (StoragePart::Voices, used.voices),
+        (StoragePart::Overlays, used.overlays),
+        (StoragePart::Assets, used.assets),
+        (StoragePart::Logs, used.logs),
+        (StoragePart::Backups, used.backups),
+    ];
+    if used.destination_outside_data_dir > 0 {
+        parts.push((StoragePart::Destination, used.destination_outside_data_dir));
+    }
+    parts
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -417,6 +460,7 @@ impl BackupScheduleView {
         };
         view.load(cx);
         view.start_status_bridge(cx);
+        view.service.storage_changed();
         view
     }
 
@@ -969,6 +1013,58 @@ impl BackupScheduleView {
         )
         .stacked()
     }
+
+    fn storage_used_row(&self, palette: &ForgePalette, density: Density) -> SettingRow {
+        let mut items = div()
+            .w_full()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap(spacing(Spacing::Sm, density));
+        match &self.status.storage_used {
+            Some(used) => {
+                for (part, bytes) in storage_parts(used) {
+                    items = items.child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(spacing(Spacing::Xs, density))
+                            .child(
+                                div()
+                                    .font_family(body_family())
+                                    .text_size(FONT_XS)
+                                    .text_color(palette.text_muted)
+                                    .child(part.label()),
+                            )
+                            .child(
+                                div()
+                                    .font_family(mono_family())
+                                    .text_size(FONT_XS)
+                                    .text_color(palette.text_primary)
+                                    .child(fmt_bytes(bytes)),
+                            ),
+                    );
+                }
+            }
+            None => {
+                items = items.child(
+                    div()
+                        .font_family(mono_family())
+                        .text_size(FONT_XS)
+                        .text_color(palette.text_muted)
+                        .child(tr!("backup_schedule_storage_used_unknown")),
+                );
+            }
+        }
+        setting_row(
+            tr!("backup_schedule_storage_used_label"),
+            Some(tr!("backup_schedule_storage_used_hint").into()),
+            items,
+            palette,
+            density,
+        )
+        .stacked()
+    }
 }
 
 enum KeyWork {
@@ -1015,7 +1111,8 @@ impl Render for BackupScheduleView {
                     .map(IntoElement::into_any_element),
             );
         }
-        rows.in_card(&palette)
+        rows.row(self.storage_used_row(&palette, density))
+            .in_card(&palette)
     }
 }
 

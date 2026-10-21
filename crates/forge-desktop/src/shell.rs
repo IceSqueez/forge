@@ -103,13 +103,20 @@ impl<V: Render> From<Entity<V>> for RoutedContent {
     }
 }
 
-struct QuitRoute(WeakEntity<AppShell>);
+struct ShellRoute(WeakEntity<AppShell>);
 
-impl Global for QuitRoute {}
+impl Global for ShellRoute {}
+
+pub fn open_screen(screen: Screen, cx: &mut App) {
+    let shell = cx.try_global::<ShellRoute>().map(|route| route.0.clone());
+    if let Some(shell) = shell {
+        let _ = shell.update(cx, |shell, cx| shell.navigate(screen, cx));
+    }
+}
 
 pub fn quit_requested(_: &Quit, cx: &mut App) {
     let routed = cx
-        .try_global::<QuitRoute>()
+        .try_global::<ShellRoute>()
         .map(|route| route.0.clone())
         .and_then(|shell| shell.update(cx, |shell, cx| shell.request_close(cx)).ok());
     if routed.is_none() {
@@ -142,6 +149,10 @@ impl AppShell {
                 cx,
             )
             .with_setup_live(SetupLiveHandles::of(&handles), cx)
+            .with_shared_exclusivity(
+                handles.transfer_exclusivity.clone(),
+                handles.scheduled_backups.clone(),
+            )
         });
         cx.set_global(TransferRoute(transfers));
         let screen = initial_screen;
@@ -205,7 +216,7 @@ impl AppShell {
         window.focus(&focus, cx);
         cx.on_focus_lost(window, Self::restore_focus).detach();
 
-        cx.set_global(QuitRoute(cx.weak_entity()));
+        cx.set_global(ShellRoute(cx.weak_entity()));
 
         let shell = cx.weak_entity();
         window.on_window_should_close(cx, move |_window, cx| {

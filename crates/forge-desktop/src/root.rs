@@ -189,6 +189,9 @@ pub fn run_boot(
                 let live_viewers_handle = handles.live_viewers.clone();
                 let notification_policy = handles.notification_policy.clone();
                 let rt_handle_for_notices = handles.rt_handle.clone();
+                let scheduled_backups_for_notices = handles.scheduled_backups.clone();
+                let settings_for_backup_notices =
+                    Arc::clone(&handles.backend) as Arc<dyn forge_storage::SettingsRepo>;
                 let backend_for_shortcuts = Arc::clone(&handles.backend);
                 let rt_handle_for_shortcuts = handles.rt_handle.clone();
                 let chat_feed_for_history = chat_feed.clone();
@@ -316,6 +319,13 @@ pub fn run_boot(
                     crate::system_notices::start_system_notices(
                         cx,
                         &notification_policy,
+                        Arc::new(forge_runtime::sub_action_runners::SystemNotifyPort),
+                        rt_handle_for_notices.clone(),
+                    );
+                    crate::scheduled_backup_notices::start_scheduled_backup_notices(
+                        cx,
+                        &scheduled_backups_for_notices,
+                        settings_for_backup_notices,
                         Arc::new(forge_runtime::sub_action_runners::SystemNotifyPort),
                         rt_handle_for_notices,
                     );

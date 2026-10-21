@@ -149,7 +149,7 @@ pub async fn drain_intents(
     }
 }
 
-async fn show_off_thread(
+pub(crate) async fn show_off_thread(
     rt: &Handle,
     port: Arc<dyn NotifyPort>,
     notice: DesktopNotice,

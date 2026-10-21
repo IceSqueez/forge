@@ -29,6 +29,7 @@ use crate::settings_pane_header::SettingsPaneHeader;
 use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_transfer::ScheduledBackupHandle;
 
 const TAIL_REFRESH: Duration = Duration::from_secs(2);
 const TAIL_MAX_HEIGHT: Pixels = px(320.0);
@@ -53,6 +54,7 @@ pub struct SettingsDiagnosticsView {
     clearing: bool,
     preparing_export: bool,
     pending_export: Option<Bundle>,
+    storage_changes: Option<ScheduledBackupHandle>,
 }
 
 impl SettingsDiagnosticsView {
@@ -80,12 +82,19 @@ impl SettingsDiagnosticsView {
             clearing: false,
             preparing_export: false,
             pending_export: None,
+            storage_changes: None,
         };
         view.load_level(cx);
         if initial_active {
             view.refresh(cx);
         }
         view
+    }
+
+    #[must_use]
+    pub fn with_storage_changes(mut self, scheduled: ScheduledBackupHandle) -> Self {
+        self.storage_changes = Some(scheduled);
+        self
     }
 
     fn load_level(&mut self, cx: &mut Context<Self>) {
@@ -292,6 +301,9 @@ impl SettingsDiagnosticsView {
                     Ok(()) => {
                         this.tail.clear();
                         this.lines.clear();
+                        if let Some(scheduled) = &this.storage_changes {
+                            scheduled.storage_changed();
+                        }
                         cx.push_toast(ToastKind::Success, tr!("settings_diagnostics_cleared"));
                     }
                     Err(e) => cx.push_toast(

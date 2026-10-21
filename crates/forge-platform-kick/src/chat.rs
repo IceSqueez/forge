@@ -2,12 +2,13 @@ use std::time::Duration;
 
 use forge_events::{Event, EventSource};
 use forge_platform_core::chat::ConnectionState;
-use forge_platform_core::{Backoff, EndpointSurface, PlatformEndpoints};
+use forge_platform_core::{Backoff, ConnectionTransition, EndpointSurface, PlatformEndpoints};
 use forge_types::ChatPayload;
 use futures_util::StreamExt;
 use serde::Deserialize;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tracing::{debug, info, warn};
 
 use crate::ban_ledger::USER_BANNED_EVENT_KIND;
@@ -21,6 +22,34 @@ const PUSHER_PROTOCOL_PARAMS: &str = "protocol=7&client=js&version=7.6.0&flash=f
 
 const PING_INTERVAL: Duration = Duration::from_secs(30);
 
+const PUSHER_RECONNECT_IMMEDIATELY_CODES: std::ops::RangeInclusive<u16> = 4200..=4299;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ChatLinkStatus {
+    pub(crate) state: ConnectionState,
+    pub(crate) transition: ConnectionTransition,
+}
+
+impl ChatLinkStatus {
+    fn expected(state: ConnectionState) -> Self {
+        Self {
+            state,
+            transition: ConnectionTransition::Expected,
+        }
+    }
+
+    fn unexpected(state: ConnectionState) -> Self {
+        Self {
+            state,
+            transition: ConnectionTransition::Unexpected,
+        }
+    }
+}
+
+fn is_server_requested_reconnect(frame: Option<&CloseFrame>) -> bool {
+    frame.is_some_and(|frame| PUSHER_RECONNECT_IMMEDIATELY_CODES.contains(&u16::from(frame.code)))
+}
+
 pub struct KickChat {
     fetcher: ChannelInfoFetcher,
     ws_url: String,
@@ -28,15 +57,15 @@ pub struct KickChat {
 
 pub struct KickChatHandle {
     close_tx: oneshot::Sender<()>,
-    state_rx: watch::Receiver<ConnectionState>,
+    state_rx: watch::Receiver<ChatLinkStatus>,
 }
 
 impl KickChatHandle {
     pub fn connection_state(&self) -> ConnectionState {
-        *self.state_rx.borrow()
+        self.state_rx.borrow().state
     }
 
-    pub(crate) fn state_receiver(&self) -> watch::Receiver<ConnectionState> {
+    pub(crate) fn state_receiver(&self) -> watch::Receiver<ChatLinkStatus> {
         self.state_rx.clone()
     }
 
@@ -61,7 +90,8 @@ impl KickChat {
         let ws_stream = connect_ws(&ws_url).await?;
 
         let (close_tx, close_rx) = oneshot::channel();
-        let (state_tx, state_rx) = watch::channel(ConnectionState::Connecting);
+        let (state_tx, state_rx) =
+            watch::channel(ChatLinkStatus::unexpected(ConnectionState::Connecting));
 
         tokio::spawn(run_loop(
             ws_stream,
@@ -141,7 +171,7 @@ struct RunLoopContext {
     close_rx: oneshot::Receiver<()>,
     ws_url: String,
     fetcher: ChannelInfoFetcher,
-    state_tx: watch::Sender<ConnectionState>,
+    state_tx: watch::Sender<ChatLinkStatus>,
 }
 
 fn channel_info_failure(err: &KickError) -> String {
@@ -175,54 +205,62 @@ async fn run_loop(
         warn!(error = %e, "subscribe send failed");
     }
 
-    let _ = state_tx.send(ConnectionState::Connected);
+    let _ = state_tx.send(ChatLinkStatus::unexpected(ConnectionState::Connected));
     info!(chatroom_id, "kick chat connected");
 
     let mut ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
 
-    'session: loop {
+    let reconnect_transition = 'session: loop {
         tokio::select! {
-            _ = &mut close_rx => {
-                info!("kick chat close requested");
-                let _ = state_tx.send(ConnectionState::Disconnected);
-                return;
-            }
+                   _ = &mut close_rx => {
+                       info!("kick chat close requested");
+                       let _ = state_tx.send(ChatLinkStatus::expected(ConnectionState::Disconnected));
+                       return;
+                   }
 
-            _ = tokio::time::sleep_until(ping_deadline) => {
-                if let Err(e) = send_ping(&mut ws_stream).await {
-                    warn!(error = %e, "ping failed; reconnecting");
-                    break 'session;
-                }
-                ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
-            }
+                   _ = tokio::time::sleep_until(ping_deadline) => {
+                       if let Err(e) = send_ping(&mut ws_stream).await {
+                           warn!(error = %e, "ping failed; reconnecting");
+                           break 'session ConnectionTransition::Unexpected;
+                       }
+                       ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
+                   }
 
-            msg = ws_stream.next() => {
-                match msg {
-                    None | Some(Err(_)) => {
-                        warn!("kick chat WebSocket closed; reconnecting");
-                        break 'session;
-                    }
-                    Some(Ok(Message::Text(text))) => {
-                        handle_ws_text(&text, &event_tx).await;
-                    }
-                    Some(Ok(Message::Close(frame))) => {
-                        match frame {
-                            Some(frame) => warn!(
-                                code = %frame.code,
-                                reason = %frame.reason,
-                                "kick chat server sent close frame; reconnecting",
-                            ),
-                            None => warn!("kick chat server sent close frame; reconnecting"),
-                        }
-                        break 'session;
-                    }
-                    Some(Ok(_)) => {}
-                }
-            }
-        }
-    }
+                   msg = ws_stream.next() => {
+                       match msg {
+                           None | Some(Err(_)) => {
+                               warn!("kick chat WebSocket closed; reconnecting");
+                               break 'session ConnectionTransition::Unexpected;
+                           }
+                           Some(Ok(Message::Text(text))) => {
+                               handle_ws_text(&text, &event_tx).await;
+                           }
+                           Some(Ok(Message::Close(frame))) => {
+                               let requested = is_server_requested_reconnect(frame.as_ref());
+                               match frame {
+                                   Some(frame) => warn!(
+                                       code = %frame.code,
+                                       reason = %frame.reason,
+                                       "kick chat server sent close frame; reconnecting",
+                                   ),
+                                   None => warn!("kick chat server sent close frame; reconnecting"),
+                               }
+                               break 'session if requested {
+        ConnectionTransition::Expected
+        } else {
+        ConnectionTransition::Unexpected
+        };
+                           }
+                           Some(Ok(_)) => {}
+                       }
+                   }
+               }
+    };
 
-    let _ = state_tx.send(ConnectionState::Reconnecting);
+    let _ = state_tx.send(ChatLinkStatus {
+        state: ConnectionState::Reconnecting,
+        transition: reconnect_transition,
+    });
     tokio::time::sleep(backoff.next_delay()).await;
 
     loop {
@@ -230,7 +268,7 @@ async fn run_loop(
             close_rx.try_recv(),
             Ok(()) | Err(oneshot::error::TryRecvError::Closed)
         ) {
-            let _ = state_tx.send(ConnectionState::Disconnected);
+            let _ = state_tx.send(ChatLinkStatus::expected(ConnectionState::Disconnected));
             return;
         }
 
@@ -257,59 +295,67 @@ async fn run_loop(
             warn!(error = %e, "subscribe failed on reconnect");
         }
 
-        let _ = state_tx.send(ConnectionState::Connected);
+        let _ = state_tx.send(ChatLinkStatus::unexpected(ConnectionState::Connected));
         debug!(chatroom_id = new_chatroom_id, "kick chat reconnected");
         ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
 
         let mut session_healthy = false;
-        'session: loop {
+        let reconnect_transition = 'session: loop {
             tokio::select! {
-                _ = &mut close_rx => {
-                    info!("kick chat close requested");
-                    let _ = state_tx.send(ConnectionState::Disconnected);
-                    return;
-                }
+                           _ = &mut close_rx => {
+                               info!("kick chat close requested");
+                               let _ = state_tx.send(ChatLinkStatus::expected(ConnectionState::Disconnected));
+                               return;
+                           }
 
-                _ = tokio::time::sleep_until(ping_deadline) => {
-                    if let Err(e) = send_ping(&mut ws_stream).await {
-                        warn!(error = %e, "ping failed; reconnecting");
-                        break 'session;
-                    }
-                    ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
-                }
+                           _ = tokio::time::sleep_until(ping_deadline) => {
+                               if let Err(e) = send_ping(&mut ws_stream).await {
+                                   warn!(error = %e, "ping failed; reconnecting");
+                                   break 'session ConnectionTransition::Unexpected;
+                               }
+                               ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
+                           }
 
-                msg = ws_stream.next() => {
-                    match msg {
-                        None | Some(Err(_)) => {
-                            warn!("kick chat WebSocket closed; reconnecting");
-                            break 'session;
-                        }
-                        Some(Ok(Message::Text(text))) => {
-                            if handle_ws_text(&text, &event_tx).await == WsFrameHealth::Healthy
-                                && !session_healthy
-                            {
-                                session_healthy = true;
-                                backoff.reset();
-                            }
-                        }
-                        Some(Ok(Message::Close(frame))) => {
-                            match frame {
-                                Some(frame) => warn!(
-                                    code = %frame.code,
-                                    reason = %frame.reason,
-                                    "kick chat server sent close frame; reconnecting",
-                                ),
-                                None => warn!("kick chat server sent close frame; reconnecting"),
-                            }
-                            break 'session;
-                        }
-                        Some(Ok(_)) => {}
-                    }
-                }
-            }
-        }
+                           msg = ws_stream.next() => {
+                               match msg {
+                                   None | Some(Err(_)) => {
+                                       warn!("kick chat WebSocket closed; reconnecting");
+                                       break 'session ConnectionTransition::Unexpected;
+                                   }
+                                   Some(Ok(Message::Text(text))) => {
+                                       if handle_ws_text(&text, &event_tx).await == WsFrameHealth::Healthy
+                                           && !session_healthy
+                                       {
+                                           session_healthy = true;
+                                           backoff.reset();
+                                       }
+                                   }
+                                   Some(Ok(Message::Close(frame))) => {
+                                       let requested = is_server_requested_reconnect(frame.as_ref());
+                                       match frame {
+                                           Some(frame) => warn!(
+                                               code = %frame.code,
+                                               reason = %frame.reason,
+                                               "kick chat server sent close frame; reconnecting",
+                                           ),
+                                           None => warn!("kick chat server sent close frame; reconnecting"),
+                                       }
+                                       break 'session if requested {
+            ConnectionTransition::Expected
+            } else {
+            ConnectionTransition::Unexpected
+            };
+                                   }
+                                   Some(Ok(_)) => {}
+                               }
+                           }
+                       }
+        };
 
-        let _ = state_tx.send(ConnectionState::Reconnecting);
+        let _ = state_tx.send(ChatLinkStatus {
+            state: ConnectionState::Reconnecting,
+            transition: reconnect_transition,
+        });
         tokio::time::sleep(backoff.next_delay()).await;
     }
 }

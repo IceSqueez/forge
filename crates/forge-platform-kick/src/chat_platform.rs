@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventStream};
 use forge_platform_core::{
-    ChatPlatform, ConnectionState, ConnectionTransition, PlatformCapabilities, PlatformEndpoints,
-    PlatformError, RateLimiter, connection_state_changed_event,
+    ChatPlatform, ConnectionState, PlatformCapabilities, PlatformEndpoints, PlatformError,
+    RateLimiter, connection_state_changed_event,
 };
 use forge_storage::BanLedgerRepo;
 use tokio::sync::{mpsc, watch};
@@ -137,13 +137,13 @@ impl ChatPlatform for KickPlatform {
         let mut state_rx = handle.state_receiver();
         tokio::spawn(async move {
             loop {
-                let state = *state_rx.borrow_and_update();
+                let status = *state_rx.borrow_and_update();
                 state_events.publish(connection_state_changed_event(
                     PLATFORM_ID,
-                    state,
-                    ConnectionTransition::Unexpected,
+                    status.state,
+                    status.transition,
                 ));
-                let _ = platform_state_tx.send(state);
+                let _ = platform_state_tx.send(status.state);
                 if state_rx.changed().await.is_err() {
                     break;
                 }

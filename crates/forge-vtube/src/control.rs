@@ -3,7 +3,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::Notify;
 
-use forge_platform_core::{BuiltinControl, ConnectionState, ControlFailure, ControlOutcome};
+use forge_platform_core::{
+    BuiltinControl, ConnectionState, ConnectionTransition, ControlFailure, ControlOutcome,
+};
 
 use crate::client::VTubeClient;
 use crate::supervisor::SupervisorContext;
@@ -29,6 +31,7 @@ impl BuiltinControl for VTubeClient {
             &self.health_state,
             &*self.reconnect_publisher,
             ConnectionState::Connecting,
+            ConnectionTransition::Expected,
         );
         if let Ok(mut g) = self.connected_at.write() {
             *g = None;
@@ -81,6 +84,7 @@ impl BuiltinControl for VTubeClient {
             &self.health_state,
             &*self.reconnect_publisher,
             ConnectionState::Disconnected,
+            ConnectionTransition::Expected,
         );
 
         Ok(())

@@ -300,10 +300,12 @@ async fn run_auth(
     Ok(())
 }
 
-fn connection_state_transition(previous: ConnectionState, next: ConnectionState) -> Option<Event> {
-    (previous != next).then(|| {
-        connection_state_changed_event(VTUBE_PLATFORM_ID, next, ConnectionTransition::Unexpected)
-    })
+fn connection_state_transition(
+    previous: ConnectionState,
+    next: ConnectionState,
+    transition: ConnectionTransition,
+) -> Option<Event> {
+    (previous != next).then(|| connection_state_changed_event(VTUBE_PLATFORM_ID, next, transition))
 }
 
 pub(crate) fn set_connection_state(
@@ -311,6 +313,7 @@ pub(crate) fn set_connection_state(
     health_state: &RwLock<HealthSnapshot>,
     publisher: &dyn EventPublisher,
     new_state: ConnectionState,
+    transition: ConnectionTransition,
 ) {
     let previous = state.load();
     state.store(new_state);
@@ -321,7 +324,7 @@ pub(crate) fn set_connection_state(
     if let Ok(mut g) = health_state.write() {
         g.dialing = dialing;
     }
-    if let Some(event) = connection_state_transition(previous, new_state) {
+    if let Some(event) = connection_state_transition(previous, new_state, transition) {
         publisher.publish(event);
     }
 }
@@ -394,6 +397,7 @@ fn settle_unless_retrying(
         health_state,
         publisher,
         ConnectionState::Disconnected,
+        ConnectionTransition::Unexpected,
     );
 }
 
@@ -440,6 +444,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                         &health_state,
                         &*publisher,
                         ConnectionState::Disconnected,
+                        ConnectionTransition::Expected,
                     );
                     emit_connection_changed(&*publisher, &endpoint, false, None, None);
                     return;
@@ -456,6 +461,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                             &health_state,
                             &*publisher,
                             ConnectionState::Disconnected,
+                            ConnectionTransition::Expected,
                         );
                         emit_connection_changed(&*publisher, &endpoint, false, None, None);
                     }
@@ -476,13 +482,14 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
             } else {
                 ConnectionState::Connecting
             },
+            ConnectionTransition::Unexpected,
         );
         tracing::debug!(endpoint = %endpoint, "attempting VTube Studio connection");
 
         let connect_attempt = tokio::select! {
             outcome = tokio_tungstenite::connect_async(&endpoint) => outcome,
             () = shutdown.notified() => {
-                set_connection_state(&state, &health_state, &*publisher, ConnectionState::Disconnected);
+                set_connection_state(&state, &health_state, &*publisher, ConnectionState::Disconnected, ConnectionTransition::Expected);
                 emit_connection_changed(&*publisher, &endpoint, false, None, None);
                 return;
             }
@@ -537,6 +544,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     &health_state,
                     &*publisher,
                     ConnectionState::Disconnected,
+                    ConnectionTransition::Unexpected,
                 );
                 emit_connection_changed(&*publisher, &endpoint, false, Some("auth_required"), None);
                 return;
@@ -551,6 +559,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     &health_state,
                     &*publisher,
                     ConnectionState::Disconnected,
+                    ConnectionTransition::Unexpected,
                 );
                 emit_connection_changed(&*publisher, &endpoint, false, Some("auth_denied"), None);
                 return;
@@ -565,6 +574,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     &health_state,
                     &*publisher,
                     ConnectionState::Disconnected,
+                    ConnectionTransition::Unexpected,
                 );
                 emit_connection_changed(&*publisher, &endpoint, false, Some("auth_timeout"), None);
                 return;
@@ -639,6 +649,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
             &health_state,
             &*publisher,
             ConnectionState::Connected,
+            ConnectionTransition::Unexpected,
         );
         emit_connection_changed(&*publisher, &endpoint, true, None, None);
         let _ = connected_notifier.send(());
@@ -815,6 +826,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 &health_state,
                 &*publisher,
                 ConnectionState::Reconnecting,
+                ConnectionTransition::Unexpected,
             );
         }
         emit_connection_changed(&*publisher, &endpoint, false, Some(close_reason), None);
@@ -835,6 +847,7 @@ fn announce_stopped(
         health_state,
         publisher,
         ConnectionState::Disconnected,
+        ConnectionTransition::Expected,
     );
     if let Ok(mut g) = auth_state.write() {
         *g = AuthState::Cold;

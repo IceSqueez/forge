@@ -13,10 +13,10 @@ use forge_storage::{
 };
 use forge_storage_sqlite::{SqliteBackend, SqliteCredentialsRepo, SqliteDatabaseFileSchema};
 use forge_transfer::{
-    BUNDLE_FORMAT_VERSION, BackupDestination, BundleKind, BundleSummary, ContentEntry,
-    ENCRYPTED_PAYLOAD_ENTRY_NAME, EncryptionScheme, FullBackupRequest, FullManifest,
-    MANIFEST_ENTRY_NAME, MAX_DECRYPT_SCRYPT_WORK_FACTOR, Passphrase, PublicManifest, StageRequest,
-    StagedRestore, TransferError, discard_staged_restore, read_bundle_summary,
+    BUNDLE_FORMAT_VERSION, BackupCategory, BackupDestination, BundleKind, BundleOrigin,
+    BundleSummary, ContentEntry, ENCRYPTED_PAYLOAD_ENTRY_NAME, EncryptionScheme, FullBackupRequest,
+    FullManifest, MANIFEST_ENTRY_NAME, MAX_DECRYPT_SCRYPT_WORK_FACTOR, Passphrase, PublicManifest,
+    StageRequest, StagedRestore, TransferError, discard_staged_restore, read_bundle_summary,
     restore_staging_root, stage_full_restore, write_full_backup,
 };
 use sha2::{Digest, Sha256};
@@ -133,18 +133,31 @@ fn entry(path: &str, bytes: &[u8]) -> ContentEntry {
 }
 
 fn full_manifest(schema_version: u32, contents: Vec<ContentEntry>) -> Vec<u8> {
+    full_manifest_in(schema_version, BackupCategory::all(), contents)
+}
+
+fn full_manifest_in(
+    schema_version: u32,
+    categories: Vec<BackupCategory>,
+    contents: Vec<ContentEntry>,
+) -> Vec<u8> {
     serde_json::to_vec(&FullManifest {
         format_version: BUNDLE_FORMAT_VERSION,
         kind: BundleKind::Full,
         forge_version: "0.0.0".to_owned(),
         schema_version,
         created_at: OffsetDateTime::UNIX_EPOCH,
+        categories,
         contents,
     })
     .unwrap()
 }
 
 fn public_manifest() -> Vec<u8> {
+    public_manifest_in(BackupCategory::all())
+}
+
+fn public_manifest_in(categories: Vec<BackupCategory>) -> Vec<u8> {
     serde_json::to_vec(&PublicManifest {
         format_version: BUNDLE_FORMAT_VERSION,
         kind: BundleKind::Full,
@@ -152,6 +165,10 @@ fn public_manifest() -> Vec<u8> {
         forge_version: "0.0.0".to_owned(),
         schema_version: EXPECTED_SCHEMA_VERSION,
         created_at: OffsetDateTime::UNIX_EPOCH,
+        origin: BundleOrigin::Manual,
+        categories,
+        key_fingerprint: None,
+        wrapped_identity: None,
     })
     .unwrap()
 }
@@ -992,4 +1009,168 @@ async fn discarding_a_staged_restore_removes_its_files() {
     discard_staged_restore(staged).await.unwrap();
 
     assert!(!staging_dir.exists());
+}
+
+fn sealed_with_labels(
+    public: Vec<BackupCategory>,
+    inner_categories: Vec<BackupCategory>,
+    files: &[(&str, &[u8])],
+) -> Vec<u8> {
+    let contents = files.iter().map(|(p, b)| entry(p, b)).collect();
+    let manifest = full_manifest_in(EXPECTED_SCHEMA_VERSION, inner_categories, contents);
+    outer(
+        &public_manifest_in(public),
+        &encrypt(&inner(&manifest, files), PASSPHRASE),
+    )
+}
+
+#[tokio::test]
+async fn public_and_inner_category_labels_must_agree() {
+    let fx = Fixture::new();
+    let database_only = vec![BackupCategory::Database];
+    let with_media = vec![BackupCategory::Database, BackupCategory::Media];
+    let files: [(&str, &[u8]); 1] = [(DB_ENTRY, DB_BYTES)];
+    let cases = [
+        (
+            "public narrower than inner",
+            database_only.clone(),
+            with_media.clone(),
+        ),
+        ("public wider than inner", with_media, database_only),
+    ];
+    for (case, public, inner_categories) in cases {
+        let bundle = sealed_with_labels(public, inner_categories, &files);
+        let error = fx.refusal(&bundle, Some(PASSPHRASE)).await;
+        assert!(
+            matches!(error, TransferError::Damaged { .. }),
+            "{case}: {error:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn content_outside_the_listed_categories_is_refused() {
+    let fx = Fixture::new();
+    let database_only = vec![BackupCategory::Database];
+    let files: [(&str, &[u8]); 2] = [(DB_ENTRY, DB_BYTES), (MEDIA_ENTRY, MEDIA_BYTES)];
+
+    let error = fx
+        .refusal(
+            &sealed_with_labels(database_only.clone(), database_only, &files),
+            Some(PASSPHRASE),
+        )
+        .await;
+
+    assert!(matches!(error, TransferError::ContentsMismatch { path } if path == MEDIA_ENTRY));
+}
+
+#[tokio::test]
+async fn a_bundle_labelled_without_the_database_is_refused() {
+    let fx = Fixture::new();
+    let media_only = vec![BackupCategory::Media];
+    let files: [(&str, &[u8]); 1] = [(DB_ENTRY, DB_BYTES)];
+    let cases = [
+        ("public label", media_only.clone(), BackupCategory::all()),
+        ("inner label", BackupCategory::all(), media_only),
+    ];
+    for (case, public, inner_categories) in cases {
+        let bundle = sealed_with_labels(public, inner_categories, &files);
+        let error = fx.refusal(&bundle, Some(PASSPHRASE)).await;
+        assert!(
+            matches!(error, TransferError::Damaged { .. }),
+            "{case}: {error:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn restore_key_scheme_without_a_wrapped_key_is_refused_at_the_summary() {
+    let fx = Fixture::new();
+    let manifest = manifest_json(
+        "full",
+        BUNDLE_FORMAT_VERSION,
+        EXPECTED_SCHEMA_VERSION,
+        EncryptionScheme::AGE_X25519_WRAPPED_ID,
+        EncryptionScheme::AGE_X25519_WRAPPED_VERSION,
+    );
+
+    let error = fx.summary(&manifest_only(&manifest)).await.unwrap_err();
+
+    assert!(matches!(error, TransferError::Damaged { .. }));
+}
+
+fn manifest_without_categories(contents: &[ContentEntry]) -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({
+        "format_version": BUNDLE_FORMAT_VERSION,
+        "kind": "full",
+        "forge_version": "0.6.0",
+        "schema_version": EXPECTED_SCHEMA_VERSION,
+        "created_at": "2026-10-01T00:00:00Z",
+        "contents": contents,
+    }))
+    .unwrap()
+}
+
+#[tokio::test]
+async fn bundle_written_before_categories_reads_as_a_manual_backup_of_everything() {
+    let fx = Fixture::new();
+    let manifest = manifest_json(
+        "full",
+        BUNDLE_FORMAT_VERSION,
+        EXPECTED_SCHEMA_VERSION,
+        EncryptionScheme::AGE_SCRYPT_ID,
+        EncryptionScheme::AGE_SCRYPT_VERSION,
+    );
+
+    let summary = fx.summary(&manifest_only(&manifest)).await.unwrap();
+
+    assert!(matches!(
+        &summary,
+        BundleSummary::Encrypted(m)
+            if m.categories == BackupCategory::all()
+                && m.origin == BundleOrigin::Manual
+                && m.wrapped_identity.is_none()
+    ));
+}
+
+#[tokio::test]
+async fn bundle_written_before_categories_restores_every_folder() {
+    let fx = Fixture::new();
+    let overlay_entry = "forge/overlays/alerts/index.html";
+    let files: [(&str, &[u8]); 3] = [
+        (DB_ENTRY, DB_BYTES),
+        (MEDIA_ENTRY, MEDIA_BYTES),
+        (overlay_entry, b"<html></html>"),
+    ];
+    let contents: Vec<ContentEntry> = files.iter().map(|(p, b)| entry(p, b)).collect();
+    let public = manifest_json(
+        "full",
+        BUNDLE_FORMAT_VERSION,
+        EXPECTED_SCHEMA_VERSION,
+        EncryptionScheme::AGE_SCRYPT_ID,
+        EncryptionScheme::AGE_SCRYPT_VERSION,
+    );
+    let payload = encrypt(
+        &inner(&manifest_without_categories(&contents), &files),
+        PASSPHRASE,
+    );
+
+    let staged = fx
+        .stage(
+            &outer(&public, &payload),
+            Some(PASSPHRASE),
+            current_schema(),
+        )
+        .await
+        .unwrap();
+
+    let staged_files = files_under(&staged.payload_dir());
+    let expected: BTreeMap<String, Vec<u8>> = files
+        .iter()
+        .map(|(path, bytes)| {
+            let relative: PathBuf = path.split('/').skip(1).collect();
+            (relative.to_string_lossy().into_owned(), bytes.to_vec())
+        })
+        .collect();
+    assert_eq!(staged_files, expected);
 }

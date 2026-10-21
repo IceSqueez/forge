@@ -764,3 +764,38 @@ async fn staged_and_recorded_restore_applies_at_the_next_boot() {
         b"restored database"
     );
 }
+
+#[test]
+fn rollback_of_a_category_scoped_restore_returns_only_the_listed_entries() {
+    let data = Data::with_update_state();
+    data.stage(&[("forge.db", b"restored database")]);
+    data.mark_pending();
+    let journal = json!({
+        "format": 1,
+        "phase": placing(),
+        "staging_dir": data.staging_dir(),
+        "snapshot_dir": data.snapshot_dir(),
+        "credentials_key": data.key(),
+        "original_key": true,
+        "staged_entries": ["forge.db", "media"],
+        "staged_key": false,
+        "categories": ["database", "media"],
+    });
+    write_file(
+        &data.path().join(RESTORE_JOURNAL_FILE),
+        journal.to_string().as_bytes(),
+    );
+    std::fs::create_dir_all(data.snapshot_dir()).unwrap();
+    for name in ["forge.db", "forge.db-wal", "media"] {
+        std::fs::rename(data.path().join(name), data.snapshot_dir().join(name)).unwrap();
+    }
+    data.snapshot_key();
+
+    let outcome = data.apply();
+
+    assert!(
+        matches!(outcome, RestoreOutcome::RolledBack { .. }),
+        "{outcome:?}"
+    );
+    assert_eq!(data.tree(), original_tree(true));
+}

@@ -8,21 +8,26 @@ use forge_storage::{
     DATABASE_FILE_NAME, DatabaseFileSchema, LAST_PRE_BASELINE_RELEASE, StoredSchema,
 };
 
-use crate::encryption::decrypt_from;
+use crate::category::BackupCategory;
+use crate::durable_fs::{read_record, write_record};
+use crate::encryption::{decrypt_from, decrypt_with_identity};
 use crate::error::TransferError;
 use crate::extract::Extractor;
 use crate::layout::{ARCHIVE_ROOT, ArchiveScope};
 use crate::limits::MAX_FULL_MANIFEST_BYTES;
 use crate::manifest::{
-    ENCRYPTED_PAYLOAD_ENTRY_NAME, FullManifest, MANIFEST_ENTRY_NAME, check_schema, parse_full,
+    ENCRYPTED_PAYLOAD_ENTRY_NAME, FullManifest, MANIFEST_ENTRY_NAME, PublicManifest, check_schema,
+    parse_full,
 };
 use crate::naming::fresh_stem;
 use crate::outer::{open_outer, read_bounded};
 use crate::passphrase::Passphrase;
 use crate::reader::{BundleSummary, summarize_first_entry};
+use crate::schedule_key::unwrap_identity;
 use crate::snapshot::run_blocking;
 
 pub const RESTORE_STAGING_DIR_NAME: &str = "restore-staging";
+const STAGED_CATEGORIES_FILE: &str = "staged-categories.json";
 
 pub struct StageRequest {
     pub bundle: PathBuf,
@@ -97,7 +102,7 @@ fn stage(request: &StageRequest, staging_dir: &Path) -> Result<BundleSummary, Tr
         .map_err(|_| TransferError::NotABundle)?;
     let summary = summarize_first_entry(&mut first)?;
     match &summary {
-        BundleSummary::Encrypted(_) => {
+        BundleSummary::Encrypted(public) => {
             drop(first);
             let passphrase = request
                 .passphrase
@@ -113,7 +118,8 @@ fn stage(request: &StageRequest, staging_dir: &Path) -> Result<BundleSummary, Tr
             if !is_payload {
                 return Err(TransferError::damaged("the encrypted payload is missing"));
             }
-            extract_encrypted(&mut payload, passphrase, staging_dir)?;
+            let categories = extract_encrypted(&mut payload, public, passphrase, staging_dir)?;
+            write_record(&staging_dir.join(STAGED_CATEGORIES_FILE), &categories)?;
         }
         BundleSummary::LegacyUnencrypted => {
             let mut extractor =
@@ -135,12 +141,28 @@ fn stage(request: &StageRequest, staging_dir: &Path) -> Result<BundleSummary, Tr
     Ok(summary)
 }
 
+pub(crate) fn read_staged_categories(
+    staging_dir: &Path,
+) -> Result<Vec<BackupCategory>, TransferError> {
+    Ok(read_record(&staging_dir.join(STAGED_CATEGORIES_FILE))?.unwrap_or_else(BackupCategory::all))
+}
+
 fn extract_encrypted(
     payload: impl Read,
+    public: &PublicManifest,
     passphrase: &Passphrase,
     staging_dir: &Path,
-) -> Result<(), TransferError> {
-    let decrypted = decrypt_from(passphrase, payload)?;
+) -> Result<Vec<BackupCategory>, TransferError> {
+    let decrypted = if public.encryption.is_wrapped_recipient() {
+        let wrapped = public
+            .wrapped_identity
+            .as_deref()
+            .ok_or_else(|| TransferError::damaged("the backup carries no restore key"))?;
+        let identity = unwrap_identity(wrapped, passphrase)?;
+        decrypt_with_identity(&identity, payload)?
+    } else {
+        decrypt_from(passphrase, payload)?
+    };
     let mut inner = tar::Archive::new(GzDecoder::new(decrypted));
     let manifest = {
         let mut entries = inner.entries().map_err(TransferError::damaged)?;
@@ -162,7 +184,13 @@ fn extract_encrypted(
         manifest
     };
     io::copy(&mut inner.into_inner(), &mut io::sink()).map_err(TransferError::damaged)?;
-    check_schema(manifest.schema_version)
+    check_schema(manifest.schema_version)?;
+    if manifest.categories != public.categories {
+        return Err(TransferError::damaged(
+            "the backup contents do not match its label",
+        ));
+    }
+    Ok(manifest.categories)
 }
 
 fn read_full_manifest<R: Read>(

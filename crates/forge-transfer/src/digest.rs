@@ -60,7 +60,7 @@ pub(crate) fn digest_reader(mut reader: impl Read) -> io::Result<(u64, String)> 
     Ok((size, to_hex(&hasher.finalize())))
 }
 
-fn to_hex(bytes: &[u8]) -> String {
+pub(crate) fn to_hex(bytes: &[u8]) -> String {
     bytes.iter().fold(String::new(), |mut hex, byte| {
         let _ = write!(hex, "{byte:02x}");
         hex

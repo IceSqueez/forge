@@ -8,16 +8,20 @@ use forge_storage::DataProvider;
 use forge_storage::paths::credentials_key_path_in;
 use time::OffsetDateTime;
 
-use crate::encryption::encrypt_into;
+use crate::category::BackupCategory;
 use crate::error::TransferError;
 use crate::manifest::{
-    BUNDLE_FORMAT_VERSION, BundleKind, ENCRYPTED_PAYLOAD_ENTRY_NAME, EncryptionScheme,
-    FullManifest, MANIFEST_ENTRY_NAME, PublicManifest,
+    BUNDLE_FORMAT_VERSION, BundleKind, ENCRYPTED_PAYLOAD_ENTRY_NAME, FullManifest,
+    MANIFEST_ENTRY_NAME, PublicManifest,
 };
-use crate::naming::{BUNDLE_EXTENSION, backups_dir, ciphertext_path, fresh_stem, partial_path};
+use crate::naming::{
+    BUNDLE_EXTENSION, backups_dir, ciphertext_path, fresh_scheduled_stem, fresh_stem, partial_path,
+};
 use crate::passphrase::Passphrase;
 use crate::payload::{PayloadFile, append_bytes, append_file, append_verified, collect_payload};
 use crate::private_file::create_private;
+use crate::protection::Protection;
+use crate::schedule_key::ScheduleKey;
 use crate::snapshot::with_database_snapshot;
 
 pub(crate) const FORGE_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -35,6 +39,14 @@ pub struct FullBackupRequest {
     pub passphrase: Passphrase,
 }
 
+pub struct ScheduledBackupRequest {
+    pub provider: Arc<dyn DataProvider>,
+    pub data_dir: PathBuf,
+    pub folder: PathBuf,
+    pub key: ScheduleKey,
+    pub categories: Vec<BackupCategory>,
+}
+
 pub async fn write_full_backup(request: FullBackupRequest) -> Result<PathBuf, TransferError> {
     let FullBackupRequest {
         provider,
@@ -50,6 +62,66 @@ pub async fn write_full_backup(request: FullBackupRequest) -> Result<PathBuf, Tr
         }
         BackupDestination::File(path) => path,
     };
+    write_protected(WriteJob {
+        provider,
+        data_dir,
+        stem,
+        destination,
+        protection: Protection::Passphrase(passphrase),
+        categories: BackupCategory::all(),
+    })
+    .await
+}
+
+pub async fn write_scheduled_backup(
+    request: ScheduledBackupRequest,
+) -> Result<PathBuf, TransferError> {
+    let ScheduledBackupRequest {
+        provider,
+        data_dir,
+        folder,
+        key,
+        categories,
+    } = request;
+    let protection = Protection::scheduled(key)?;
+    let stem = fresh_scheduled_stem();
+    let destination = folder.join(format!("{stem}.{BUNDLE_EXTENSION}"));
+    write_protected(WriteJob {
+        provider,
+        data_dir,
+        stem,
+        destination,
+        protection,
+        categories: with_database(categories),
+    })
+    .await
+}
+
+fn with_database(categories: Vec<BackupCategory>) -> Vec<BackupCategory> {
+    BackupCategory::ALL
+        .into_iter()
+        .filter(|category| *category == BackupCategory::Database || categories.contains(category))
+        .collect()
+}
+
+struct WriteJob {
+    provider: Arc<dyn DataProvider>,
+    data_dir: PathBuf,
+    stem: String,
+    destination: PathBuf,
+    protection: Protection,
+    categories: Vec<BackupCategory>,
+}
+
+async fn write_protected(job: WriteJob) -> Result<PathBuf, TransferError> {
+    let WriteJob {
+        provider,
+        data_dir,
+        stem,
+        destination,
+        protection,
+        categories,
+    } = job;
     let schema_version = provider.schema_version().await?;
     let work_dir = data_dir.clone();
     let output = destination.clone();
@@ -58,7 +130,8 @@ pub async fn write_full_backup(request: FullBackupRequest) -> Result<PathBuf, Tr
             data_dir: &work_dir,
             snapshot: &snapshot,
             destination: &output,
-            passphrase: &passphrase,
+            protection: &protection,
+            categories: &categories,
             schema_version,
         })
     })
@@ -74,13 +147,14 @@ struct BundleInput<'a> {
     data_dir: &'a Path,
     snapshot: &'a Path,
     destination: &'a Path,
-    passphrase: &'a Passphrase,
+    protection: &'a Protection,
+    categories: &'a [BackupCategory],
     schema_version: u32,
 }
 
 fn write_bundle(input: BundleInput<'_>) -> Result<(), TransferError> {
     let key = credentials_key_path_in(input.data_dir);
-    let files = collect_payload(input.data_dir, input.snapshot, &key)?;
+    let files = collect_payload(input.data_dir, input.snapshot, &key, input.categories)?;
     let created_at = OffsetDateTime::now_utc();
     let full = FullManifest {
         format_version: BUNDLE_FORMAT_VERSION,
@@ -88,19 +162,24 @@ fn write_bundle(input: BundleInput<'_>) -> Result<(), TransferError> {
         forge_version: FORGE_VERSION.to_owned(),
         schema_version: input.schema_version,
         created_at,
+        categories: input.categories.to_vec(),
         contents: files.iter().map(|file| file.entry.clone()).collect(),
     };
     let public = PublicManifest {
         format_version: BUNDLE_FORMAT_VERSION,
         kind: BundleKind::Full,
-        encryption: EncryptionScheme::age_scrypt(),
+        encryption: input.protection.scheme(),
         forge_version: FORGE_VERSION.to_owned(),
         schema_version: input.schema_version,
         created_at,
+        origin: input.protection.origin(),
+        categories: input.categories.to_vec(),
+        key_fingerprint: input.protection.key_fingerprint(),
+        wrapped_identity: input.protection.wrapped_identity(),
     };
 
     let ciphertext = ciphertext_path(input.destination);
-    write_encrypted_payload(&ciphertext, input.passphrase, &full, &files)?;
+    write_encrypted_payload(&ciphertext, input.protection, &full, &files)?;
     let partial = partial_path(input.destination);
     write_outer(&partial, &public, &ciphertext)?;
     std::fs::remove_file(&ciphertext)?;
@@ -110,12 +189,12 @@ fn write_bundle(input: BundleInput<'_>) -> Result<(), TransferError> {
 
 fn write_encrypted_payload(
     path: &Path,
-    passphrase: &Passphrase,
+    protection: &Protection,
     manifest: &FullManifest,
     files: &[PayloadFile],
 ) -> Result<(), TransferError> {
     let sink = BufWriter::new(create_private(path)?);
-    let encrypted = encrypt_into(passphrase, sink)?;
+    let encrypted = protection.seal(sink)?;
     let mut builder = tar::Builder::new(GzEncoder::new(encrypted, Compression::default()));
     append_bytes(
         &mut builder,

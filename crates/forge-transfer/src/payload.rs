@@ -2,9 +2,10 @@ use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use crate::category::{BackupCategory, directories_of};
 use crate::digest::{DigestingReader, digest_reader};
 use crate::error::TransferError;
-use crate::layout::{INCLUDED_DIRS, archive_name_of, credentials_key_entry, database_entry};
+use crate::layout::{archive_name_of, credentials_key_entry, database_entry};
 use crate::manifest::ContentEntry;
 
 const ARCHIVED_FILE_MODE: u32 = 0o600;
@@ -18,12 +19,13 @@ pub(crate) fn collect_payload(
     data_dir: &Path,
     database_snapshot: &Path,
     credentials_key: &Path,
+    categories: &[BackupCategory],
 ) -> Result<Vec<PayloadFile>, TransferError> {
     let mut files = vec![digested(database_snapshot, database_entry())?];
     if credentials_key.is_file() {
         files.push(digested(credentials_key, credentials_key_entry())?);
     }
-    for dir in INCLUDED_DIRS {
+    for dir in directories_of(categories) {
         walk(data_dir, Path::new(dir), &mut files)?;
     }
     Ok(files)

@@ -21,6 +21,33 @@ pub(crate) fn encrypt_into<W: Write>(
     Ok(encryptor.wrap_output(output)?)
 }
 
+pub(crate) fn encrypt_to_recipient<W: Write>(
+    recipient: &age::x25519::Recipient,
+    output: W,
+) -> Result<StreamWriter<W>, TransferError> {
+    let encryptor =
+        age::Encryptor::with_recipients(std::iter::once(recipient as &dyn age::Recipient))
+            .map_err(|e| TransferError::Encryption {
+                reason: e.to_string(),
+            })?;
+    Ok(encryptor.wrap_output(output)?)
+}
+
+pub(crate) fn decrypt_with_identity<R: Read>(
+    identity: &age::x25519::Identity,
+    input: R,
+) -> Result<StreamReader<R>, TransferError> {
+    let decryptor = age::Decryptor::new(input).map_err(classify)?;
+    if decryptor.is_scrypt() {
+        return Err(TransferError::damaged(
+            "the payload is not encrypted to a restore key",
+        ));
+    }
+    decryptor
+        .decrypt(std::iter::once(identity as &dyn age::Identity))
+        .map_err(classify)
+}
+
 pub(crate) fn decrypt_from<R: Read>(
     passphrase: &Passphrase,
     input: R,
@@ -38,7 +65,7 @@ pub(crate) fn decrypt_from<R: Read>(
         .map_err(classify)
 }
 
-fn classify(error: DecryptError) -> TransferError {
+pub(crate) fn classify(error: DecryptError) -> TransferError {
     match error {
         DecryptError::DecryptionFailed | DecryptError::KeyDecryptionFailed => {
             TransferError::WrongPassphrase

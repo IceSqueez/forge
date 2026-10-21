@@ -3205,6 +3205,7 @@ name = "forge-transfer"
 version = "0.6.2"
 dependencies = [
  "age",
+ "base64 0.23.1",
  "flate2",
  "forge-overlay",
  "forge-registry",

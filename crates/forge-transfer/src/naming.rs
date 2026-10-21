@@ -7,6 +7,7 @@ pub const BUNDLE_EXTENSION: &str = "forgebundle";
 pub const LEGACY_ARCHIVE_EXTENSION: &str = "tar.gz";
 
 const FILE_PREFIX: &str = "forge-backup";
+const SCHEDULED_PREFIX: &str = "forge-scheduled";
 const PRE_RESTORE_PREFIX: &str = "forge-pre-restore";
 const PRE_PACK_PREFIX: &str = "forge-pre-pack";
 const PRE_SETUP_PREFIX: &str = "forge-pre-setup";
@@ -40,6 +41,14 @@ pub fn unique_suffix() -> String {
     id.split_at(id.len().saturating_sub(SUFFIX_LEN))
         .1
         .to_owned()
+}
+
+pub(crate) fn fresh_scheduled_stem() -> String {
+    stamped_stem(
+        SCHEDULED_PREFIX,
+        OffsetDateTime::now_utc(),
+        &unique_suffix(),
+    )
 }
 
 pub(crate) fn fresh_stem() -> String {

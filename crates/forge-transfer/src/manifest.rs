@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
+use crate::category::{BackupCategory, admits_content, includes_database};
 use crate::error::TransferError;
 
 pub const BUNDLE_FORMAT_VERSION: u32 = 1;
@@ -13,6 +14,14 @@ pub enum BundleKind {
     Full,
     Pack,
     Setup,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BundleOrigin {
+    #[default]
+    Manual,
+    Scheduled,
 }
 
 impl BundleKind {
@@ -57,6 +66,8 @@ pub struct EncryptionScheme {
 impl EncryptionScheme {
     pub const AGE_SCRYPT_ID: &str = "age-scrypt";
     pub const AGE_SCRYPT_VERSION: u32 = 1;
+    pub const AGE_X25519_WRAPPED_ID: &str = "age-x25519-wrapped";
+    pub const AGE_X25519_WRAPPED_VERSION: u32 = 1;
 
     pub fn age_scrypt() -> Self {
         Self {
@@ -65,8 +76,23 @@ impl EncryptionScheme {
         }
     }
 
+    pub fn age_x25519_wrapped() -> Self {
+        Self {
+            id: Self::AGE_X25519_WRAPPED_ID.to_owned(),
+            version: Self::AGE_X25519_WRAPPED_VERSION,
+        }
+    }
+
     pub fn is_supported(&self) -> bool {
+        self.is_passphrase() || self.is_wrapped_recipient()
+    }
+
+    pub fn is_passphrase(&self) -> bool {
         self.id == Self::AGE_SCRYPT_ID && self.version == Self::AGE_SCRYPT_VERSION
+    }
+
+    pub fn is_wrapped_recipient(&self) -> bool {
+        self.id == Self::AGE_X25519_WRAPPED_ID && self.version == Self::AGE_X25519_WRAPPED_VERSION
     }
 }
 
@@ -79,6 +105,14 @@ pub struct PublicManifest {
     pub schema_version: u32,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
+    #[serde(default)]
+    pub origin: BundleOrigin,
+    #[serde(default = "BackupCategory::all")]
+    pub categories: Vec<BackupCategory>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_fingerprint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wrapped_identity: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -96,6 +130,8 @@ pub struct FullManifest {
     pub schema_version: u32,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
+    #[serde(default = "BackupCategory::all")]
+    pub categories: Vec<BackupCategory>,
     pub contents: Vec<ContentEntry>,
 }
 
@@ -145,6 +181,12 @@ pub(crate) fn parse_public(bytes: &[u8]) -> Result<PublicManifest, TransferError
             version: manifest.encryption.version,
         });
     }
+    if !includes_database(&manifest.categories) {
+        return Err(TransferError::damaged("the backup lists no database"));
+    }
+    if manifest.encryption.is_wrapped_recipient() && manifest.wrapped_identity.is_none() {
+        return Err(TransferError::damaged("the backup carries no restore key"));
+    }
     Ok(manifest)
 }
 
@@ -152,5 +194,17 @@ pub(crate) fn parse_full(bytes: &[u8]) -> Result<FullManifest, TransferError> {
     expect_kind(check_head(bytes)?, BundleKind::Full)?;
     let manifest: FullManifest = serde_json::from_slice(bytes).map_err(TransferError::damaged)?;
     check_schema(manifest.schema_version)?;
+    if !includes_database(&manifest.categories) {
+        return Err(TransferError::damaged("the backup lists no database"));
+    }
+    if let Some(entry) = manifest
+        .contents
+        .iter()
+        .find(|entry| !admits_content(&manifest.categories, &entry.path))
+    {
+        return Err(TransferError::ContentsMismatch {
+            path: entry.path.clone(),
+        });
+    }
     Ok(manifest)
 }

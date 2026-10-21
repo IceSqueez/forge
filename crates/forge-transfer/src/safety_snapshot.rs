@@ -7,6 +7,7 @@ use flate2::write::GzEncoder;
 use forge_storage::DataProvider;
 use forge_storage::paths::credentials_key_path_in;
 
+use crate::category::BackupCategory;
 use crate::error::TransferError;
 use crate::naming::{LEGACY_ARCHIVE_EXTENSION, backups_dir, partial_path};
 use crate::payload::{append_verified, collect_payload};
@@ -37,7 +38,7 @@ fn write_plain_archive(
     destination: &Path,
 ) -> Result<(), TransferError> {
     let key = credentials_key_path_in(data_dir);
-    let files = collect_payload(data_dir, database_snapshot, &key)?;
+    let files = collect_payload(data_dir, database_snapshot, &key, &BackupCategory::ALL)?;
     let partial = partial_path(destination);
     let sink = BufWriter::new(create_private(&partial)?);
     let mut builder = tar::Builder::new(GzEncoder::new(sink, Compression::default()));

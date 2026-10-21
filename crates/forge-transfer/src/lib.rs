@@ -1,3 +1,4 @@
+mod category;
 mod digest;
 mod document_bundle;
 mod durable_fs;
@@ -14,26 +15,32 @@ mod pack;
 mod passphrase;
 mod payload;
 mod private_file;
+mod protection;
 mod reader;
 mod restore_apply;
 mod restore_journal;
 mod restore_marker;
 mod restore_outcome;
 mod safety_snapshot;
+mod schedule_key;
 mod setup;
 mod snapshot;
 mod stage;
 mod staging_sweep;
 
+pub use category::BackupCategory;
 pub use error::TransferError;
-pub use full_writer::{BackupDestination, FullBackupRequest, write_full_backup};
+pub use full_writer::{
+    BackupDestination, FullBackupRequest, ScheduledBackupRequest, write_full_backup,
+    write_scheduled_backup,
+};
 pub use layout::{ARCHIVE_ROOT, INCLUDED_DIRS};
 pub use limits::{
     ENCRYPT_SCRYPT_WORK_FACTOR, MAX_ARCHIVE_ENTRIES, MAX_DECRYPT_SCRYPT_WORK_FACTOR,
     MAX_ENTRY_BYTES, MAX_PACK_DOCUMENTS_BYTES, MAX_UNPACKED_BYTES,
 };
 pub use manifest::{
-    BUNDLE_FORMAT_VERSION, BundleKind, ContentEntry, ENCRYPTED_PAYLOAD_ENTRY_NAME,
+    BUNDLE_FORMAT_VERSION, BundleKind, BundleOrigin, ContentEntry, ENCRYPTED_PAYLOAD_ENTRY_NAME,
     EncryptionScheme, FullManifest, MANIFEST_ENTRY_NAME, PublicManifest,
 };
 pub use naming::{
@@ -59,6 +66,7 @@ pub use restore_marker::{
     restore_pending,
 };
 pub use restore_outcome::{RestoreDeferral, RestoreOutcome, RestoreRollback};
+pub use schedule_key::{ScheduleKey, change_schedule_passphrase, create_schedule_key};
 pub use setup::{
     ClipHotkeyDocument, SETUP_DOCUMENTS_VERSION, SETUP_ROOT, SETUP_STAGING_DIR_NAME,
     SetupDocuments, SetupExportRequest, SetupImportOutcome, SetupImportRequest, SetupLivePart,

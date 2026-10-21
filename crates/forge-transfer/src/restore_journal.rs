@@ -4,10 +4,12 @@ use forge_storage::paths::CREDENTIALS_KEY_FILE_NAME;
 use forge_storage::{DATABASE_FILE_NAME, database_unit_file_names};
 use serde::{Deserialize, Serialize};
 
+use crate::category::{BackupCategory, directories_of};
 use crate::durable_fs::{exists, read_record, remove_record, write_record};
 use crate::error::TransferError;
-use crate::layout::{ARCHIVE_ROOT, INCLUDED_DIRS};
+use crate::layout::ARCHIVE_ROOT;
 use crate::restore_outcome::RestoreRollback;
+use crate::stage::read_staged_categories;
 
 pub const RESTORE_JOURNAL_FILE: &str = "restore-journal.json";
 const RESTORE_JOURNAL_FORMAT: u32 = 1;
@@ -31,6 +33,8 @@ pub(crate) struct RestoreJournal {
     pub(crate) original_key: bool,
     pub(crate) staged_entries: Vec<String>,
     pub(crate) staged_key: bool,
+    #[serde(default = "BackupCategory::all")]
+    pub(crate) categories: Vec<BackupCategory>,
 }
 
 impl RestoreJournal {
@@ -44,8 +48,9 @@ impl RestoreJournal {
         credentials_key: PathBuf,
     ) -> Result<Self, TransferError> {
         let payload = staging_dir.join(ARCHIVE_ROOT);
+        let categories = read_staged_categories(&staging_dir)?;
         let mut staged_entries = Vec::new();
-        for name in std::iter::once(DATABASE_FILE_NAME).chain(INCLUDED_DIRS) {
+        for name in std::iter::once(DATABASE_FILE_NAME).chain(directories_of(&categories)) {
             if exists(&payload.join(name))? {
                 staged_entries.push(name.to_owned());
             }
@@ -59,6 +64,7 @@ impl RestoreJournal {
             snapshot_dir,
             credentials_key,
             staged_entries,
+            categories,
         })
     }
 
@@ -108,9 +114,9 @@ pub fn restore_in_flight(data_dir: &Path) -> Result<bool, TransferError> {
     Ok(exists(&RestoreJournal::path_in(data_dir))?)
 }
 
-pub(crate) fn backup_scope_entries() -> Vec<String> {
+pub(crate) fn backup_scope_entries(categories: &[BackupCategory]) -> Vec<String> {
     database_unit_file_names()
         .into_iter()
-        .chain(INCLUDED_DIRS.iter().map(|dir| (*dir).to_owned()))
+        .chain(directories_of(categories).into_iter().map(str::to_owned))
         .collect()
 }

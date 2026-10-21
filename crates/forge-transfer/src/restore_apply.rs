@@ -88,7 +88,7 @@ fn place_then_commit(
 
 fn snapshot_current(data_dir: &Path, journal: &RestoreJournal) -> Result<(), TransferError> {
     std::fs::create_dir_all(&journal.snapshot_dir)?;
-    for name in backup_scope_entries() {
+    for name in backup_scope_entries(&journal.categories) {
         let live = data_dir.join(&name);
         let kept = journal.snapshot_dir.join(&name);
         match (exists(&live)?, exists(&kept)?) {
@@ -106,7 +106,7 @@ fn snapshot_current(data_dir: &Path, journal: &RestoreJournal) -> Result<(), Tra
 }
 
 fn place_staged(data_dir: &Path, journal: &RestoreJournal) -> Result<(), TransferError> {
-    for name in backup_scope_entries() {
+    for name in backup_scope_entries(&journal.categories) {
         let is_staged = journal.staged_entries.contains(&name);
         let live = data_dir.join(&name);
         if !is_staged && exists(&live)? {
@@ -169,7 +169,7 @@ fn roll_back(
     if exists(&journal.snapshot_dir)? {
         return_placed_entries(data_dir, journal)?;
     }
-    for name in backup_scope_entries() {
+    for name in backup_scope_entries(&journal.categories) {
         let kept = journal.snapshot_dir.join(&name);
         let live = data_dir.join(&name);
         match (exists(&kept)?, exists(&live)?) {

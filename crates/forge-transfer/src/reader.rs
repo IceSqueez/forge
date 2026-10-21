@@ -10,7 +10,7 @@ use crate::snapshot::run_blocking;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BundleSummary {
-    Encrypted(PublicManifest),
+    Encrypted(Box<PublicManifest>),
     LegacyUnencrypted,
 }
 
@@ -79,7 +79,7 @@ pub(crate) fn summarize_first_entry<R: Read>(
     if is_file && path == Path::new(MANIFEST_ENTRY_NAME) {
         let size = entry.size();
         let bytes = read_bounded(entry, size, MAX_PUBLIC_MANIFEST_BYTES)?;
-        return parse_public(&bytes).map(BundleSummary::Encrypted);
+        return parse_public(&bytes).map(|manifest| BundleSummary::Encrypted(Box::new(manifest)));
     }
     if is_file && path == Path::new(&database_entry()) {
         return Ok(BundleSummary::LegacyUnencrypted);

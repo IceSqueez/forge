@@ -304,6 +304,13 @@ settings_stay_awake_label = Stay awake while forge is running
 settings_stay_awake_hint = Keeps the display and the system from sleeping while forge runs
 settings_nav_language_region = Language & region
 settings_nav_shortcuts = Shortcuts
+settings_nav_notifications = Notifications
+settings_notifications_subtitle = What Forge tells you about
+settings_notifications_action_failure_label = Show desktop toasts on errors
+settings_notifications_action_failure_hint = OS-native notification on action failure
+settings_notifications_connection_loss_label = Beep on disconnect
+settings_notifications_connection_loss_hint = System sound when a platform/app loses connection
+settings_notifications_persist_failed = Could not save the notification setting
 settings_nav_audio = Audio
 
 ## Settings → Diagnostics pane

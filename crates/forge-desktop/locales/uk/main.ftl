@@ -312,6 +312,13 @@ settings_stay_awake_label = Не засинати, поки forge працює
 settings_stay_awake_hint = Екран і система не переходять у сон, поки forge працює
 settings_nav_language_region = Мова та регіон
 settings_nav_shortcuts = Скорочення
+settings_nav_notifications = Сповіщення
+settings_notifications_subtitle = Про що Forge вам повідомляє
+settings_notifications_action_failure_label = Показувати системні сповіщення про помилки
+settings_notifications_action_failure_hint = Сповіщення ОС, коли дія не виконалася
+settings_notifications_connection_loss_label = Сигнал при розриві з'єднання
+settings_notifications_connection_loss_hint = Системний звук, коли платформа чи застосунок втрачає з'єднання
+settings_notifications_persist_failed = Не вдалося зберегти налаштування сповіщень
 settings_nav_audio = Аудіо
 
 ## Налаштування → панель діагностики

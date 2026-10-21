@@ -133,6 +133,7 @@ mod settings_about;
 mod settings_audio;
 mod settings_audio_routing;
 mod settings_diagnostics;
+mod settings_notifications;
 mod settings_pane_header;
 mod settings_scripting;
 mod settings_shortcuts;

@@ -316,6 +316,7 @@ pub fn run_boot(
                     crate::system_notices::start_system_notices(
                         cx,
                         &notification_policy,
+                        Arc::new(forge_runtime::sub_action_runners::SystemNotifyPort),
                         rt_handle_for_notices,
                     );
                     apply_persisted_shortcuts(cx, backend_for_shortcuts, rt_handle_for_shortcuts);

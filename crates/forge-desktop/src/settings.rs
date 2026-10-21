@@ -21,6 +21,7 @@ use crate::runtime_handles::RuntimeHandles;
 use crate::settings_about::SettingsAboutView;
 use crate::settings_audio::SettingsAudioView;
 use crate::settings_diagnostics::SettingsDiagnosticsView;
+use crate::settings_notifications::SettingsNotificationsView;
 use crate::settings_pane_header::SettingsPaneHeader;
 use crate::settings_scripting::SettingsScriptingView;
 use crate::settings_shortcuts::SettingsShortcutsView;
@@ -63,6 +64,7 @@ const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
             SettingsSection::Appearance,
             SettingsSection::Language,
             SettingsSection::Shortcuts,
+            SettingsSection::Notifications,
         ],
     ),
     (
@@ -86,6 +88,7 @@ pub enum SettingsSection {
     Appearance,
     Language,
     Shortcuts,
+    Notifications,
     Audio,
     Scripting,
     Storage,
@@ -101,6 +104,7 @@ impl SettingsSection {
             SettingsSection::Appearance => tr!("settings_nav_appearance"),
             SettingsSection::Language => tr!("settings_nav_language_region"),
             SettingsSection::Shortcuts => tr!("settings_nav_shortcuts"),
+            SettingsSection::Notifications => tr!("settings_nav_notifications"),
             SettingsSection::Audio => tr!("settings_nav_audio"),
             SettingsSection::Scripting => tr!("settings_scripting_title"),
             SettingsSection::Storage => tr!("settings_storage_section_title"),
@@ -116,6 +120,7 @@ impl SettingsSection {
             SettingsSection::Appearance => Icon::Palette,
             SettingsSection::Language => Icon::Language,
             SettingsSection::Shortcuts => Icon::Keyboard,
+            SettingsSection::Notifications => Icon::Bell,
             SettingsSection::Audio => Icon::Volume,
             SettingsSection::Scripting => Icon::Code,
             SettingsSection::Storage => Icon::Database,
@@ -131,6 +136,7 @@ impl SettingsSection {
             SettingsSection::Appearance => "appearance",
             SettingsSection::Language => "language",
             SettingsSection::Shortcuts => "shortcuts",
+            SettingsSection::Notifications => "notifications",
             SettingsSection::Audio => "audio",
             SettingsSection::Scripting => "scripting",
             SettingsSection::Storage => "storage",
@@ -208,6 +214,7 @@ pub struct SettingsView {
     scripting: Entity<SettingsScriptingView>,
     websocket: Entity<SettingsWebSocketView>,
     shortcuts: Entity<SettingsShortcutsView>,
+    notifications: Entity<SettingsNotificationsView>,
     storage: Entity<SettingsStorageView>,
     diagnostics: Entity<SettingsDiagnosticsView>,
     font_picker: Option<FontPicker>,
@@ -260,6 +267,13 @@ impl SettingsView {
                 cx,
             )
         });
+        let notifications = cx.new(|_| {
+            SettingsNotificationsView::new(
+                Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>,
+                handles.rt_handle.clone(),
+                handles.notification_policy.clone(),
+            )
+        });
         let storage = cx.new(|cx| {
             SettingsStorageView::new(
                 Arc::clone(&handles.backend),
@@ -298,6 +312,7 @@ impl SettingsView {
             scripting,
             websocket,
             shortcuts,
+            notifications,
             storage,
             diagnostics,
             font_picker: None,
@@ -670,6 +685,7 @@ impl SettingsView {
             SettingsSection::Appearance => self.appearance_pane(palette, density, cx),
             SettingsSection::Language => self.language_pane(palette, density, cx),
             SettingsSection::Shortcuts => self.shortcuts.clone().into_any_element(),
+            SettingsSection::Notifications => self.notifications.clone().into_any_element(),
             SettingsSection::Audio => self.audio.clone().into_any_element(),
             SettingsSection::Scripting => self.scripting.clone().into_any_element(),
             SettingsSection::WebSocket => self.websocket.clone().into_any_element(),

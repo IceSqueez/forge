@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use forge_audio::{NullAudioEventSink, alert_cue, play_on_default_output};
 use forge_components::{PushToast, ToastKind, tr};
-use forge_runtime::sub_action_runners::{
-    DesktopNotice, NotifyPort, NotifyUrgency, OsPortError, SystemNotifyPort,
-};
+use forge_runtime::sub_action_runners::{DesktopNotice, NotifyPort, NotifyUrgency, OsPortError};
 use forge_runtime::{
     ActionFailureNotice, NotificationIntent, NotificationIntents, NotificationPolicyHandle,
 };
@@ -109,22 +107,34 @@ impl FallbackLog {
     }
 }
 
-pub fn start_system_notices(cx: &mut AsyncApp, policy: &NotificationPolicyHandle, rt: Handle) {
+pub fn start_system_notices(
+    cx: &mut AsyncApp,
+    policy: &NotificationPolicyHandle,
+    port: Arc<dyn NotifyPort>,
+    rt: Handle,
+) {
     let Some(intents) = policy.take_intents() else {
         tracing::warn!("notification intents already claimed; system notices stay off");
         return;
     };
-    cx.spawn(async move |cx| drain_intents(intents, rt, cx).await)
+    cx.spawn(async move |cx| drain_intents(intents, port, rt, cx).await)
         .detach();
 }
 
-async fn drain_intents(mut intents: NotificationIntents, rt: Handle, cx: &mut AsyncApp) {
+pub async fn drain_intents(
+    mut intents: NotificationIntents,
+    port: Arc<dyn NotifyPort>,
+    rt: Handle,
+    cx: &mut AsyncApp,
+) {
     let mut fallback_log = FallbackLog::default();
     while let Some(intent) = intents.next().await {
         let plan = cx.update(|_| plan_for(&intent));
         match plan {
             NoticePlan::Show(text) => {
-                if let Err(error) = show_off_thread(&rt, text.desktop_notice()).await {
+                if let Err(error) =
+                    show_off_thread(&rt, Arc::clone(&port), text.desktop_notice()).await
+                {
                     if fallback_log.first_failure() {
                         tracing::warn!(
                             error = %error,
@@ -139,10 +149,14 @@ async fn drain_intents(mut intents: NotificationIntents, rt: Handle, cx: &mut As
     }
 }
 
-async fn show_off_thread(rt: &Handle, notice: DesktopNotice) -> Result<(), OsPortError> {
+async fn show_off_thread(
+    rt: &Handle,
+    port: Arc<dyn NotifyPort>,
+    notice: DesktopNotice,
+) -> Result<(), OsPortError> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     rt.spawn_blocking(move || {
-        let _ = tx.send(SystemNotifyPort.show(notice));
+        let _ = tx.send(port.show(notice));
     });
     rx.await
         .unwrap_or_else(|_| Err(OsPortError::Failed("notice task ended".to_owned())))

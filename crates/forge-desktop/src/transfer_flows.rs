@@ -347,9 +347,9 @@ mod tests {
     use std::sync::Arc;
 
     use forge_transfer::{
-        BundleKind, MIN_PASSPHRASE_CHARS, ScheduledBackupHandle, ScheduledBackupParts,
-        SystemBackupClock, TransferError, TransferExclusivity, backups_dir, read_bundle_kind,
-        setup_staging_root, spawn_scheduled_backups,
+        BundleKind, MIN_PASSPHRASE_CHARS, ScheduleState, ScheduledBackupHandle,
+        ScheduledBackupParts, SystemBackupClock, TransferError, TransferExclusivity, backups_dir,
+        read_bundle_kind, setup_staging_root, spawn_scheduled_backups,
     };
     use forge_types::ActionId;
     use gpui::{AppContext, Entity, TestAppContext};
@@ -862,5 +862,47 @@ mod tests {
         cx.run_until_parked();
 
         assert_eq!((while_asking, lock.exclusivity.is_held()), (true, false));
+    }
+
+    #[gpui::test]
+    fn the_flows_repaint_only_when_a_scheduled_run_starts_or_stops(cx: &mut TestAppContext) {
+        let rig = rig_with(cx, true);
+        let schedule = rig
+            .rt
+            .block_on(async { crate::test_support::gated_running_schedule() });
+        let stats = cx.new(|_| HomeStats::new());
+        let (pack, data_dir) = (rig.services.clone(), rig.world.data_dir());
+        let handle = schedule.handle.clone();
+        let flows = cx.new(|cx| {
+            TransferFlows::new(stats, pack, data_dir, cx)
+                .with_shared_exclusivity(TransferExclusivity::new(), handle)
+                .watching_scheduled(cx)
+        });
+        cx.run_until_parked();
+        let repaints = std::rc::Rc::new(std::cell::Cell::new(0));
+        let counter = std::rc::Rc::clone(&repaints);
+        cx.update(|cx| {
+            cx.observe(&flows, move |_, _| counter.set(counter.get() + 1))
+                .detach();
+        });
+        let mut status = schedule.handle.status();
+        let mut settle_on = |cx: &mut TestAppContext, state: ScheduleState| {
+            rig.rt.block_on(async {
+                tokio::time::timeout(SETTLE_DEADLINE, status.wait_for(|s| s.state == state))
+                    .await
+                    .expect("the schedule never reached the awaited state")
+                    .unwrap();
+            });
+            cx.run_until_parked();
+            repaints.get()
+        };
+
+        let started = settle_on(cx, ScheduleState::Running);
+        schedule.export_gate.notify_one();
+        let stopped = settle_on(cx, ScheduleState::Idle);
+        schedule.handle.set_suspended(true);
+        let suspended = settle_on(cx, ScheduleState::Suspended);
+
+        assert_eq!((started, stopped, suspended), (1, 2, 2));
     }
 }

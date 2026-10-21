@@ -2043,4 +2043,124 @@ pub(crate) mod tests {
             (7, true)
         );
     }
+
+    fn status_at(
+        state: ScheduleState,
+        last_success_at: Option<OffsetDateTime>,
+    ) -> ScheduledBackupStatus {
+        ScheduledBackupStatus {
+            state,
+            last_success_at,
+            failure: None,
+            next_due: None,
+            prune_failures: 0,
+            storage_used: None,
+        }
+    }
+
+    #[test]
+    fn manual_run_watch_follows_the_clicked_run_from_pickup_to_its_outcome() {
+        use super::{ManualRunProgress as Progress, ManualRunWatch};
+        let clicked = just_now();
+        let later = Some(clicked + time::Duration::seconds(1));
+        let earlier = Some(clicked - time::Duration::seconds(1));
+        let base = Some(clicked);
+        let cases: [(&str, Option<OffsetDateTime>, Vec<_>, Vec<_>); 6] = [
+            (
+                "first ever backup succeeds",
+                None,
+                vec![(ScheduleState::Running, None), (ScheduleState::Idle, later)],
+                vec![Progress::Pending, Progress::Succeeded],
+            ),
+            (
+                "run starts then fails",
+                base,
+                vec![(ScheduleState::Running, base), (ScheduleState::Idle, base)],
+                vec![Progress::Pending, Progress::Ended],
+            ),
+            (
+                "not picked up yet",
+                base,
+                vec![(ScheduleState::Idle, base), (ScheduleState::Idle, base)],
+                vec![Progress::Pending, Progress::Pending],
+            ),
+            (
+                "success lands before Running was ever seen",
+                base,
+                vec![(ScheduleState::Idle, later)],
+                vec![Progress::Succeeded],
+            ),
+            (
+                "an older stamp after the run is no success",
+                base,
+                vec![
+                    (ScheduleState::Running, base),
+                    (ScheduleState::Idle, earlier),
+                ],
+                vec![Progress::Pending, Progress::Ended],
+            ),
+            (
+                "run ends suspended without a success",
+                base,
+                vec![
+                    (ScheduleState::Running, base),
+                    (ScheduleState::Suspended, base),
+                ],
+                vec![Progress::Pending, Progress::Ended],
+            ),
+        ];
+        for (label, baseline, steps, expected) in cases {
+            let mut watch = ManualRunWatch::since(baseline);
+
+            let observed: Vec<Progress> = steps
+                .into_iter()
+                .map(|(state, last)| watch.observe(&status_at(state, last)))
+                .collect();
+
+            assert_eq!(observed, expected, "{label}");
+        }
+    }
+
+    fn success_toasts(cx: &mut TestAppContext) -> Vec<String> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .filter(|toast| toast.kind == forge_components::ToastKind::Success)
+                .map(|toast| unmarked(toast.message.to_string()))
+                .collect()
+        })
+    }
+
+    #[gpui::test]
+    fn a_clicked_backup_now_toasts_once_its_run_saves_a_backup(cx: &mut TestAppContext) {
+        let rig = schedule_rig(cx, &unattended_seeds(&key_for(OLD_PASSPHRASE)));
+
+        rig.view.update(cx, |view, cx| view.run_now(cx));
+        let toasted = rig.settle(cx, |cx| !success_toasts(cx).is_empty());
+
+        assert_eq!(
+            (toasted, success_toasts(cx), rig.scheduled_bundles().len()),
+            (true, vec![tr!("backup_schedule_run_done")], 1)
+        );
+    }
+
+    #[gpui::test]
+    fn an_automatic_run_saves_a_backup_without_a_success_toast(cx: &mut TestAppContext) {
+        let overdue = just_now() - time::Duration::days(2);
+        let mut seeds = unattended_seeds(&key_for(OLD_PASSPHRASE));
+        seeds[2].1 = overdue.format(&Rfc3339).unwrap();
+        let rig = schedule_rig(cx, &seeds);
+
+        let saved = rig.settle(cx, |cx| {
+            rig.view.read_with(cx, |view, _| {
+                view.status.last_success_at > Some(overdue) && !view.is_running()
+            })
+        });
+
+        assert_eq!(
+            (saved, success_toasts(cx), rig.scheduled_bundles().len()),
+            (true, Vec::<String>::new(), 1)
+        );
+    }
 }

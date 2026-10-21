@@ -814,4 +814,48 @@ mod tests {
             "{worst_case:?} of steps before the count is logged, {GRACEFUL_BUDGET:?} allowed"
         );
     }
+
+    async fn until_running(handle: &ScheduledBackupHandle) {
+        handle
+            .status()
+            .wait_for(|status| status.state == ScheduleState::Running)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn stopping_scheduled_backups_returns_once_the_cancelled_run_ends_inside_the_budget() {
+        let schedule = crate::test_support::gated_running_schedule();
+        until_running(&schedule.handle).await;
+        let started = tokio::time::Instant::now();
+
+        let run_ends = async {
+            tokio::task::yield_now().await;
+            schedule.export_gate.notify_one();
+        };
+        tokio::join!(stop_scheduled_backups(schedule.handle.clone()), run_ends);
+
+        let state = schedule.handle.status().borrow().state;
+        assert!(
+            state != ScheduleState::Running && started.elapsed() < SCHEDULED_BACKUP_STOP_BUDGET,
+            "{state:?} after {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn stopping_scheduled_backups_gives_up_at_the_budget_when_the_run_never_ends() {
+        let schedule = crate::test_support::gated_running_schedule();
+        until_running(&schedule.handle).await;
+        let started = tokio::time::Instant::now();
+
+        stop_scheduled_backups(schedule.handle.clone()).await;
+
+        let state = schedule.handle.status().borrow().state;
+        assert!(
+            state == ScheduleState::Running && started.elapsed() >= SCHEDULED_BACKUP_STOP_BUDGET,
+            "{state:?} after {:?}",
+            started.elapsed()
+        );
+    }
 }

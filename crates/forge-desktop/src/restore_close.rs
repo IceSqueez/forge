@@ -166,7 +166,7 @@ async fn withdraw(data_dir: PathBuf, staged: StagedRestore) -> Result<(), String
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
@@ -175,14 +175,17 @@ mod tests {
     use forge_components::{ToastKind, Toasts, tr};
     use forge_storage::{DataProvider, Language};
     use forge_transfer::{
-        RESTORE_MARKER_FILE, StagedRestore, UpdateActivity, record_pending_restore,
+        RESTORE_MARKER_FILE, ScheduleState, ScheduledBackupHandle, ScheduledBackupStatus,
+        StagedRestore, UpdateActivity, record_pending_restore,
     };
     use gpui::{AppContext, Entity, TestAppContext};
     use tempfile::TempDir;
 
     use super::{RestoreClose, RestoreCloseEvent};
     use crate::i18n::install_language;
-    use crate::test_support::{pump, runtime, staged_restore_in, test_backend};
+    use crate::test_support::{
+        GatedSchedule, keyless_enabled_schedule, pump, runtime, staged_restore_in, test_backend,
+    };
     use crate::update_exit::ExitHandoff;
     use crate::update_flow::UpdateFlow;
 
@@ -194,8 +197,22 @@ mod tests {
     }
 
     fn harness(cx: &mut TestAppContext) -> Harness {
-        install_language(Language::En);
+        harness_over(cx, runtime(), None)
+    }
+
+    fn scheduled_harness(cx: &mut TestAppContext) -> (Harness, GatedSchedule) {
         let rt = runtime();
+        let schedule = rt.block_on(async { keyless_enabled_schedule() });
+        let scheduled = schedule.handle.clone();
+        (harness_over(cx, rt, Some(scheduled)), schedule)
+    }
+
+    fn harness_over(
+        cx: &mut TestAppContext,
+        rt: tokio::runtime::Runtime,
+        scheduled: Option<ScheduledBackupHandle>,
+    ) -> Harness {
+        install_language(Language::En);
         let data = TempDir::new().unwrap();
         let (backend, _) = test_backend();
         let exit = ExitHandoff::new(None);
@@ -213,7 +230,11 @@ mod tests {
                     data_dir.clone(),
                 )
             });
-            RestoreClose::new(update_flow, data_dir, handle)
+            let close = RestoreClose::new(update_flow, data_dir, handle);
+            match scheduled {
+                Some(scheduled) => close.with_scheduled_backups(scheduled),
+                None => close,
+            }
         });
         Harness {
             close,
@@ -435,5 +456,71 @@ mod tests {
             ),
             (true, true, vec![])
         );
+    }
+
+    const SCHEDULE_SETTLE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+
+    fn settled_state(
+        h: &Harness,
+        schedule: &GatedSchedule,
+        reached: impl Fn(&ScheduledBackupStatus) -> bool,
+    ) -> ScheduleState {
+        let mut status = schedule.handle.status();
+        h.rt.block_on(async {
+            tokio::time::timeout(
+                SCHEDULE_SETTLE_DEADLINE,
+                status.wait_for(|status| reached(status)),
+            )
+            .await
+            .expect("the schedule never reached the awaited state")
+            .unwrap()
+            .state
+        })
+    }
+
+    fn idle(status: &ScheduledBackupStatus) -> bool {
+        status.state == ScheduleState::Idle
+    }
+
+    #[gpui::test]
+    fn arming_a_restore_suspends_scheduled_backups(cx: &mut TestAppContext) {
+        let (h, schedule) = scheduled_harness(cx);
+        settled_state(&h, &schedule, idle);
+        let staged = recorded_restore(&h);
+
+        h.close.update(cx, |close, cx| close.request(staged, cx));
+
+        assert_eq!(
+            settled_state(&h, &schedule, |status| status.state != ScheduleState::Idle),
+            ScheduleState::Suspended
+        );
+    }
+
+    #[gpui::test]
+    fn withdrawing_an_armed_restore_resumes_scheduled_backups(cx: &mut TestAppContext) {
+        type Withdraw = fn(&mut RestoreClose, &mut gpui::Context<RestoreClose>);
+        let routes: [(&str, Withdraw); 2] = [
+            ("abort", |close, cx| close.abort(cx)),
+            ("yield to update", |close, cx| close.yield_to_update(cx)),
+        ];
+        for (label, withdraw) in routes {
+            let (h, schedule) = scheduled_harness(cx);
+            settled_state(&h, &schedule, idle);
+            let staged = recorded_restore(&h);
+            h.close.update(cx, |close, cx| close.request(staged, cx));
+            settled_state(&h, &schedule, |status| {
+                status.state == ScheduleState::Suspended
+            });
+
+            h.close.update(cx, withdraw);
+
+            assert_eq!(
+                settled_state(&h, &schedule, |status| {
+                    status.state != ScheduleState::Suspended
+                }),
+                ScheduleState::Idle,
+                "{label}"
+            );
+        }
     }
 }

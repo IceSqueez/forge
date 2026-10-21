@@ -259,3 +259,84 @@ impl ConfirmCard<'_> {
             .into_any_element()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_components::tr;
+    use forge_storage::Language;
+    use forge_transfer::{BackupCategory, BundleSummary};
+
+    use super::{ConfirmFacts, RestoreScope, joined_labels};
+    use crate::backup_schedule::category_label;
+    use crate::i18n::install_language;
+
+    #[test]
+    fn a_bundle_holding_every_part_needs_no_replaced_and_kept_split() {
+        assert_eq!(RestoreScope::of(&BackupCategory::ALL), None);
+    }
+
+    #[test]
+    fn a_partial_bundle_splits_every_part_into_replaced_or_kept_in_canonical_order() {
+        let scope = RestoreScope::of(&[BackupCategory::Overlays, BackupCategory::Database]);
+
+        assert_eq!(
+            scope,
+            Some(RestoreScope {
+                replaced: vec![BackupCategory::Database, BackupCategory::Overlays],
+                kept: vec![
+                    BackupCategory::Media,
+                    BackupCategory::Voices,
+                    BackupCategory::Assets,
+                ],
+            })
+        );
+    }
+
+    #[test]
+    fn a_legacy_bundle_shows_no_scope() {
+        assert_eq!(
+            ConfirmFacts::of(&BundleSummary::LegacyUnencrypted).scope,
+            None
+        );
+    }
+
+    #[test]
+    fn scope_lines_name_exactly_their_own_parts_in_each_locale() {
+        let replaced = [BackupCategory::Database, BackupCategory::Media];
+        let kept = [
+            BackupCategory::Voices,
+            BackupCategory::Overlays,
+            BackupCategory::Assets,
+        ];
+        for lang in [Language::En, Language::Uk] {
+            install_language(lang);
+            let names = |line: &str, parts: &[BackupCategory]| {
+                parts
+                    .iter()
+                    .all(|part| line.contains(&category_label(*part)))
+            };
+            let unmarked = |text: String| text.replace(['\u{2068}', '\u{2069}'], "");
+            let replaced_line = unmarked(tr!(
+                "restore_confirm_scope_replaced",
+                parts = joined_labels(&replaced)
+            ));
+            let kept_line = unmarked(tr!(
+                "restore_confirm_scope_kept",
+                parts = joined_labels(&kept)
+            ));
+
+            assert!(
+                names(&replaced_line, &replaced)
+                    && !kept
+                        .iter()
+                        .any(|part| replaced_line.contains(&category_label(*part)))
+                    && names(&kept_line, &kept)
+                    && !replaced
+                        .iter()
+                        .any(|part| kept_line.contains(&category_label(*part)))
+                    && !tr!("restore_confirm_subtitle_scoped").starts_with("restore_confirm_"),
+                "{lang:?}: {replaced_line} / {kept_line}"
+            );
+        }
+    }
+}

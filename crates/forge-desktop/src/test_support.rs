@@ -44,6 +44,7 @@ pub(crate) struct TestBackend {
     overlays: Option<Arc<dyn OverlayRepo>>,
     scripts: Option<Arc<dyn ScriptRepo>>,
     media: Arc<dyn MediaRepo>,
+    export_gate: Option<Arc<tokio::sync::Notify>>,
 }
 
 pub(crate) fn test_backend() -> (Arc<TestBackend>, UnboundedReceiver<SettingWrite>) {
@@ -79,9 +80,75 @@ fn backend_over(
             overlays,
             scripts,
             media,
+            export_gate: None,
         }),
         rx,
     )
+}
+
+pub(crate) struct GatedSchedule {
+    pub(crate) handle: forge_transfer::ScheduledBackupHandle,
+    pub(crate) export_gate: Arc<tokio::sync::Notify>,
+    _data_dir: tempfile::TempDir,
+}
+
+pub(crate) fn gated_running_schedule() -> GatedSchedule {
+    let key = forge_transfer::create_schedule_key(&forge_transfer::Passphrase::new(
+        "a gated schedule passphrase".to_owned(),
+    ))
+    .unwrap();
+    let schedule = enabled_schedule_over_test_backend(Some(key.encode().unwrap()));
+    schedule.handle.run_now();
+    schedule
+}
+
+pub(crate) fn keyless_enabled_schedule() -> GatedSchedule {
+    enabled_schedule_over_test_backend(None)
+}
+
+fn enabled_schedule_over_test_backend(encoded_key: Option<String>) -> GatedSchedule {
+    let export_gate = Arc::new(tokio::sync::Notify::new());
+    let (writes, _) = unbounded_channel();
+    let last_success = OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    let mut values = HashMap::from([
+        (
+            forge_storage::reserved_keys::BACKUP_SCHEDULE_ENABLED.to_owned(),
+            "true".to_owned(),
+        ),
+        (
+            forge_storage::reserved_keys::BACKUP_SCHEDULE_LAST_SUCCESS_AT.to_owned(),
+            last_success,
+        ),
+    ]);
+    if let Some(encoded) = encoded_key {
+        values.insert(
+            forge_storage::reserved_keys::BACKUP_SCHEDULE_KEY.to_owned(),
+            encoded,
+        );
+    }
+    let backend = Arc::new(TestBackend {
+        values: Mutex::new(values),
+        writes,
+        overlays: None,
+        scripts: None,
+        media: Arc::new(EmptyMediaLibrary),
+        export_gate: Some(Arc::clone(&export_gate)),
+    });
+    let data_dir = tempfile::tempdir().unwrap();
+    let parts = forge_transfer::ScheduledBackupParts {
+        provider: backend,
+        data_dir: data_dir.path().to_path_buf(),
+        exclusivity: forge_transfer::TransferExclusivity::new(),
+        clock: Arc::new(forge_transfer::SystemBackupClock),
+    };
+    let handle = forge_transfer::spawn_scheduled_backups(parts);
+    GatedSchedule {
+        handle,
+        export_gate,
+        _data_dir: data_dir,
+    }
 }
 
 #[async_trait::async_trait]
@@ -324,11 +391,20 @@ impl DataProvider for TestBackend {
     }
 
     async fn export(&self, _: &std::path::Path) -> Result<(), StorageError> {
-        unreachable!("the settings pane never exports")
+        let Some(gate) = &self.export_gate else {
+            unreachable!("the settings pane never exports")
+        };
+        gate.notified().await;
+        Err(StorageError::Connection {
+            reason: "the gated export was released without a snapshot".to_owned(),
+        })
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {
-        unreachable!("the settings pane never reads the schema version")
+        if self.export_gate.is_none() {
+            unreachable!("the settings pane never reads the schema version")
+        }
+        Ok(0)
     }
 
     async fn shutdown(&self) {}

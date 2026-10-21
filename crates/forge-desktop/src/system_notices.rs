@@ -156,3 +156,184 @@ fn play_cue_detached(rt: &Handle) {
         }
     });
 }
+
+#[cfg(test)]
+#[allow(clippy::panic)]
+mod tests {
+    use forge_storage::Language;
+    use forge_types::ActionId;
+
+    use super::*;
+    use crate::i18n::install_language;
+
+    fn failed(action: &str, reason: Option<&str>) -> NotificationIntent {
+        NotificationIntent::ActionFailed(ActionFailureNotice {
+            action_id: ActionId::new(),
+            action_name: action.to_owned(),
+            reason: reason.map(str::to_owned),
+        })
+    }
+
+    fn shown(intent: &NotificationIntent) -> DesktopNotice {
+        match plan_for(intent) {
+            NoticePlan::Show(text) => text.desktop_notice(),
+            NoticePlan::PlayCue => panic!("expected a notice for {intent:?}"),
+        }
+    }
+
+    fn folded_body(lang: Language, count: u32) -> String {
+        install_language(lang);
+        shown(&NotificationIntent::ActionFailuresFolded { count }).body
+    }
+
+    #[test]
+    fn action_failed_notice_carries_action_and_reason_in_each_locale() {
+        for (lang, title) in [
+            (Language::En, "Action failed"),
+            (Language::Uk, "Дія не виконалася"),
+        ] {
+            install_language(lang);
+            let notice = shown(&failed("Shoutout", Some("OBS is offline")));
+            assert_eq!(notice.title, title, "{lang:?}");
+            assert_eq!(notice.body, "Shoutout - OBS is offline", "{lang:?}");
+        }
+    }
+
+    #[test]
+    fn action_failed_without_a_usable_reason_uses_the_reasonless_body() {
+        for (lang, expected) in [
+            (Language::En, "Shoutout did not finish."),
+            (Language::Uk, "Shoutout не завершилася."),
+        ] {
+            install_language(lang);
+            for reason in [None, Some(""), Some("   \n\t")] {
+                assert_eq!(
+                    shown(&failed("Shoutout", reason)).body,
+                    expected,
+                    "{lang:?} {reason:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn action_failed_reason_is_trimmed_before_display() {
+        install_language(Language::En);
+        assert_eq!(
+            shown(&failed("Shoutout", Some("  OBS is offline \n"))).body,
+            "Shoutout - OBS is offline"
+        );
+    }
+
+    #[test]
+    fn folded_notice_body_uses_english_plural_forms() {
+        for (count, expected) in [
+            (1, "1 more action failed. See the event log."),
+            (2, "2 more actions failed. See the event log."),
+            (0, "0 more actions failed. See the event log."),
+        ] {
+            assert_eq!(folded_body(Language::En, count), expected, "count {count}");
+        }
+    }
+
+    #[test]
+    fn folded_notice_body_uses_ukrainian_one_few_many_forms() {
+        for (count, expected) in [
+            (1, "Ще 1 дія не виконалася. Перегляньте журнал подій."),
+            (21, "Ще 21 дія не виконалася. Перегляньте журнал подій."),
+            (3, "Ще 3 дії не виконалися. Перегляньте журнал подій."),
+            (22, "Ще 22 дії не виконалися. Перегляньте журнал подій."),
+            (5, "Ще 5 дій не виконалися. Перегляньте журнал подій."),
+            (11, "Ще 11 дій не виконалися. Перегляньте журнал подій."),
+            (12, "Ще 12 дій не виконалися. Перегляньте журнал подій."),
+        ] {
+            assert_eq!(folded_body(Language::Uk, count), expected, "count {count}");
+        }
+    }
+
+    #[test]
+    fn folded_notice_has_a_translated_title_in_each_locale() {
+        for (lang, title) in [
+            (Language::En, "More actions failed"),
+            (Language::Uk, "Не виконалися й інші дії"),
+        ] {
+            install_language(lang);
+            let notice = shown(&NotificationIntent::ActionFailuresFolded { count: 2 });
+            assert_eq!(notice.title, title, "{lang:?}");
+        }
+    }
+
+    #[test]
+    fn truncate_reason_keeps_a_reason_at_the_limit_untouched() {
+        for reason in ["a".repeat(8), "є".repeat(8), "🎮".repeat(8)] {
+            assert_eq!(truncate_reason(&reason, 8), reason);
+        }
+    }
+
+    #[test]
+    fn truncate_reason_one_over_the_limit_ends_with_the_mark_at_the_limit_length() {
+        for unit in ["a", "є", "🎮"] {
+            let truncated = truncate_reason(&unit.repeat(9), 8);
+            assert_eq!(truncated, format!("{}...", unit.repeat(5)), "{unit}");
+        }
+    }
+
+    #[test]
+    fn truncate_reason_with_a_limit_below_the_mark_length_yields_only_the_mark() {
+        assert_eq!(truncate_reason("abcdef", 2), "...");
+    }
+
+    #[test]
+    fn action_failed_body_truncates_the_reason_at_the_notice_limit() {
+        install_language(Language::En);
+        let at_limit = "є".repeat(NOTICE_REASON_MAX_CHARS);
+        let over_limit = "є".repeat(NOTICE_REASON_MAX_CHARS + 1);
+        assert_eq!(
+            shown(&failed("A", Some(&at_limit))).body,
+            format!("A - {at_limit}")
+        );
+        assert_eq!(
+            shown(&failed("A", Some(&over_limit))).body,
+            format!(
+                "A - {}...",
+                "є".repeat(NOTICE_REASON_MAX_CHARS - TRUNCATION_MARK.len())
+            )
+        );
+    }
+
+    #[test]
+    fn desktop_notice_contains_no_fluent_isolate_marks() {
+        let isolated = "\u{2068}Shout\u{2069}out";
+        for lang in [Language::En, Language::Uk] {
+            install_language(lang);
+            for intent in [
+                failed(isolated, Some(isolated)),
+                failed(isolated, None),
+                NotificationIntent::ActionFailuresFolded { count: 3 },
+            ] {
+                let notice = shown(&intent);
+                let text = format!("{}{}", notice.title, notice.body);
+                assert!(
+                    !text.contains([FLUENT_ISOLATE_START, FLUENT_ISOLATE_END]),
+                    "{lang:?} {intent:?} leaked isolates: {text:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn connection_loss_cue_plans_a_cue_not_a_notice() {
+        install_language(Language::En);
+        let intent = NotificationIntent::ConnectionLossCue {
+            platform_ids: vec!["twitch".to_owned(), "kick".to_owned()],
+        };
+        assert_eq!(plan_for(&intent), NoticePlan::PlayCue);
+    }
+
+    #[test]
+    fn fallback_log_reports_only_the_first_failure_of_a_session() {
+        let mut log = FallbackLog::default();
+        let reports: Vec<bool> = (0..3).map(|_| log.first_failure()).collect();
+        assert_eq!(reports, [true, false, false]);
+    }
+}

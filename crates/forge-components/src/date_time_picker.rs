@@ -660,6 +660,7 @@ fn month_name(month: Month) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use std::rc::Rc;
 
@@ -731,7 +732,316 @@ mod tests {
             hour: 0,
             minute: 0,
             first_day,
+            clock: ClockStyle::TwentyFourHour,
+            zone: DisplayZone::fixed(UtcOffset::UTC),
+            repeated: None,
+            later_in_repeat: false,
         }
+    }
+
+    fn at_time(clock: ClockStyle, hour: u8, minute: u8) -> DateTimePicker {
+        let mut at = picker(2026, Month::October, FirstWeekday::Monday);
+        at.clock = clock;
+        at.hour = hour;
+        at.minute = minute;
+        at
+    }
+
+    fn zone(name: &str) -> DisplayZone {
+        DisplayZone::named(name).unwrap()
+    }
+
+    fn instant(text: &str) -> OffsetDateTime {
+        datetime_from_text(text).unwrap()
+    }
+
+    fn showing(zone: DisplayZone, seed: &str) -> DateTimePicker {
+        let mut shown = picker(2000, Month::January, FirstWeekday::Monday);
+        shown.zone = zone;
+        shown.show_local(instant(seed));
+        shown
+    }
+
+    fn after(
+        cx: &mut gpui::TestAppContext,
+        start: DateTimePicker,
+        act: impl FnOnce(&mut DateTimePicker, &mut Context<DateTimePicker>),
+    ) -> DateTimePicker {
+        let entity = cx.update(|cx| cx.new(|_| start));
+        entity.update(cx, act);
+        entity.read_with(cx, |p, _| DateTimePicker {
+            labels: DateTimePickerLabels {
+                now: p.labels.now.clone(),
+                set: p.labels.set.clone(),
+                cancel: p.labels.cancel.clone(),
+            },
+            zone: p.zone.clone(),
+            ..*p
+        })
+    }
+
+    fn hm(p: &DateTimePicker) -> (u8, u8) {
+        (p.hour, p.minute)
+    }
+
+    #[test]
+    fn twelve_hour_clock_shows_midnight_and_noon_as_twelve_and_other_hours_as_one_to_eleven() {
+        let shown = [0, 1, 11, 12, 13, 23]
+            .map(|hour| at_time(ClockStyle::TwelveHour, hour, 0).displayed_hour());
+        assert_eq!(shown, [12, 1, 11, 12, 1, 11]);
+    }
+
+    #[test]
+    fn twenty_four_hour_clock_shows_the_stored_hour() {
+        let shown =
+            [0, 12, 23].map(|hour| at_time(ClockStyle::TwentyFourHour, hour, 0).displayed_hour());
+        assert_eq!(shown, [0, 12, 23]);
+    }
+
+    #[gpui::test]
+    fn twelve_hour_stepper_moves_one_wall_clock_hour_across_the_noon_and_midnight_boundaries(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (start, delta, expected) in [
+            (11, 1, 12),
+            (12, -1, 11),
+            (23, 1, 0),
+            (0, -1, 23),
+            (5, 1, 6),
+        ] {
+            let stepped = after(cx, at_time(ClockStyle::TwelveHour, start, 30), |p, cx| {
+                p.step_hour(delta, cx)
+            });
+            assert_eq!(hm(&stepped), (expected, 30), "start {start} delta {delta}");
+        }
+    }
+
+    #[gpui::test]
+    fn twenty_four_hour_stepper_wraps_between_twenty_three_and_zero(cx: &mut gpui::TestAppContext) {
+        for (start, delta, expected) in [(23, 1, 0), (0, -1, 23), (11, 1, 12)] {
+            let stepped = after(
+                cx,
+                at_time(ClockStyle::TwentyFourHour, start, 30),
+                |p, cx| p.step_hour(delta, cx),
+            );
+            assert_eq!(hm(&stepped), (expected, 30), "start {start} delta {delta}");
+        }
+    }
+
+    #[gpui::test]
+    fn day_period_toggle_moves_twelve_hours_and_keeps_the_minutes(cx: &mut gpui::TestAppContext) {
+        for (start, after_noon, expected) in
+            [(0, true, 12), (12, false, 0), (9, true, 21), (21, false, 9)]
+        {
+            let moved = after(cx, at_time(ClockStyle::TwelveHour, start, 47), |p, cx| {
+                p.set_day_period(after_noon, cx)
+            });
+            assert_eq!(
+                hm(&moved),
+                (expected, 47),
+                "start {start} after_noon {after_noon}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn choosing_the_day_period_already_shown_leaves_the_time_unchanged(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (start, after_noon) in [(0, false), (11, false), (12, true), (23, true)] {
+            let kept = after(cx, at_time(ClockStyle::TwelveHour, start, 15), |p, cx| {
+                p.set_day_period(after_noon, cx)
+            });
+            assert_eq!(
+                hm(&kept),
+                (start, 15),
+                "start {start} after_noon {after_noon}"
+            );
+        }
+    }
+
+    #[test]
+    fn picked_text_reads_back_as_the_seeded_instant_in_every_zone() {
+        for (name, seed) in [
+            ("Europe/Kyiv", "2026-10-21T14:30:00+03:00"),
+            ("Europe/Kyiv", "2026-03-29T01:00:00Z"),
+            ("Europe/Kyiv", "2026-03-29T00:59:00Z"),
+            ("Europe/Kyiv", "2026-10-25T00:30:00Z"),
+            ("Europe/Kyiv", "2026-10-25T01:30:00Z"),
+            ("America/New_York", "2026-10-21T14:30:00-05:00"),
+            ("America/New_York", "2026-11-01T05:30:00Z"),
+            ("America/New_York", "2026-11-01T06:30:00Z"),
+            ("America/New_York", "2026-12-31T23:59:00-05:00"),
+            ("UTC", "2026-10-21T14:30:00+00:00"),
+        ] {
+            let picked = datetime_to_text(&showing(zone(name), seed).picked_instant().unwrap());
+            assert_eq!(
+                datetime_from_text(&picked),
+                Some(instant(seed)),
+                "{name} seed {seed} picked {picked}"
+            );
+        }
+    }
+
+    #[test]
+    fn picked_text_is_written_in_the_zone_offset_of_the_shown_wall_time() {
+        for (name, seed, expected) in [
+            (
+                "Europe/Kyiv",
+                "2026-10-21T11:30:00Z",
+                "2026-10-21T14:30:00+03:00",
+            ),
+            (
+                "Europe/Kyiv",
+                "2026-12-01T12:30:00Z",
+                "2026-12-01T14:30:00+02:00",
+            ),
+            (
+                "America/New_York",
+                "2026-10-21T19:30:00Z",
+                "2026-10-21T15:30:00-04:00",
+            ),
+            (
+                "America/New_York",
+                "2026-12-01T19:30:00Z",
+                "2026-12-01T14:30:00-05:00",
+            ),
+        ] {
+            let picked = showing(zone(name), seed).picked_instant().unwrap();
+            assert_eq!(datetime_to_text(&picked), expected, "{name} seed {seed}");
+        }
+    }
+
+    #[test]
+    fn seeding_either_instant_of_a_repeated_hour_shows_the_same_wall_time_with_its_choice() {
+        for (seed, later) in [
+            ("2026-10-25T00:30:00Z", false),
+            ("2026-10-25T01:30:00Z", true),
+        ] {
+            let shown = showing(zone("Europe/Kyiv"), seed);
+            assert_eq!(
+                (hm(&shown), shown.later_in_repeat, shown.repeated.is_some()),
+                ((3, 30), later, true),
+                "seed {seed}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn both_repeated_hour_choices_emit_their_own_instant(cx: &mut gpui::TestAppContext) {
+        for (name, seed, earlier, later) in [
+            (
+                "Europe/Kyiv",
+                "2026-10-25T00:30:00Z",
+                "2026-10-25T03:30:00+03:00",
+                "2026-10-25T03:30:00+02:00",
+            ),
+            (
+                "America/New_York",
+                "2026-11-01T05:30:00Z",
+                "2026-11-01T01:30:00-04:00",
+                "2026-11-01T01:30:00-05:00",
+            ),
+        ] {
+            let picked = [false, true].map(|choice| {
+                let chosen = after(cx, showing(zone(name), seed), |p, cx| {
+                    p.choose_repeat(choice, cx)
+                });
+                datetime_to_text(&chosen.picked_instant().unwrap())
+            });
+            assert_eq!(picked, [earlier, later], "{name}");
+        }
+    }
+
+    #[test]
+    fn repeated_hour_choices_are_labelled_with_their_offsets() {
+        let shown = showing(zone("Europe/Kyiv"), "2026-10-25T00:30:00Z");
+        let repeated = shown.repeated.unwrap();
+        assert_eq!(
+            [
+                shown.repeat_choice_label(repeated.earlier),
+                shown.repeat_choice_label(repeated.later)
+            ],
+            ["03:30 (+03:00)", "03:30 (+02:00)"]
+        );
+    }
+
+    #[gpui::test]
+    fn stepping_out_of_a_repeated_hour_forgets_the_later_choice(cx: &mut gpui::TestAppContext) {
+        let left = after(
+            cx,
+            showing(zone("Europe/Kyiv"), "2026-10-25T01:30:00Z"),
+            |p, cx| p.step_hour(1, cx),
+        );
+        assert_eq!(
+            (hm(&left), left.repeated, left.later_in_repeat),
+            ((4, 30), None, false)
+        );
+    }
+
+    #[gpui::test]
+    fn stepping_the_hour_forward_into_a_skipped_spring_time_jumps_to_the_first_valid_minute(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (name, seed, expected) in [
+            (
+                "Europe/Kyiv",
+                "2026-03-29T00:30:00Z",
+                "2026-03-29T04:00:00+03:00",
+            ),
+            (
+                "America/New_York",
+                "2026-03-08T06:30:00Z",
+                "2026-03-08T03:00:00-04:00",
+            ),
+        ] {
+            let stepped = after(cx, showing(zone(name), seed), |p, cx| p.step_hour(1, cx));
+            assert_eq!(
+                datetime_to_text(&stepped.picked_instant().unwrap()),
+                expected,
+                "{name} seed {seed}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn stepping_the_hour_back_into_a_skipped_spring_time_lands_on_the_last_valid_minute(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (name, seed, expected) in [
+            (
+                "Europe/Kyiv",
+                "2026-03-29T01:30:00Z",
+                "2026-03-29T02:59:00+02:00",
+            ),
+            (
+                "America/New_York",
+                "2026-03-08T07:30:00Z",
+                "2026-03-08T01:59:00-05:00",
+            ),
+        ] {
+            let stepped = after(cx, showing(zone(name), seed), |p, cx| p.step_hour(-1, cx));
+            assert_eq!(
+                datetime_to_text(&stepped.picked_instant().unwrap()),
+                expected,
+                "{name} seed {seed}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn picking_the_spring_forward_day_at_a_skipped_time_moves_to_the_first_valid_minute(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let picked = after(
+            cx,
+            showing(zone("Europe/Kyiv"), "2026-03-28T01:30:00Z"),
+            |p, cx| p.pick_day(29, cx),
+        );
+        assert_eq!(
+            datetime_to_text(&picked.picked_instant().unwrap()),
+            "2026-03-29T04:00:00+03:00"
+        );
     }
 
     #[test]

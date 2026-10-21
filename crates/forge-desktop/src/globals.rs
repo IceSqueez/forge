@@ -92,10 +92,14 @@ impl Globals {
 
 #[cfg(test)]
 mod tests {
-    use forge_components::{AccentColor, ThemeId};
-    use forge_types::VariantKind;
+    use forge_components::{
+        AccentColor, ClockStyle, DateFormatChoice, DisplayFormats, FirstWeekday, ThemeId,
+        install_display_formats,
+    };
+    use forge_types::{Variant, VariantKind};
+    use time::{Duration, OffsetDateTime};
 
-    use super::variant_kind_color;
+    use super::{Global, variant_kind_color};
 
     const KINDS: [VariantKind; 7] = [
         VariantKind::Int,
@@ -122,5 +126,36 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn install_date_format(date_format: DateFormatChoice) {
+        install_display_formats(DisplayFormats {
+            date_format,
+            clock: ClockStyle::TwentyFourHour,
+            first_day: FirstWeekday::Monday,
+        });
+    }
+
+    #[test]
+    fn modified_label_follows_the_date_format_installed_after_the_global_was_loaded() {
+        let modified_at = OffsetDateTime::now_utc() - Duration::days(30);
+        let global = Global {
+            name: "counter".into(),
+            value: Variant::Int(1),
+            persisted: true,
+            reads: 0,
+            writes: 0,
+            modified_at,
+        };
+        install_date_format(DateFormatChoice::DayMonthYearDot);
+        let before = global.modified_label();
+        install_date_format(DateFormatChoice::YearMonthDay);
+        let after = global.modified_label();
+
+        assert_ne!(before, after);
+        assert_eq!(
+            after,
+            forge_components::fmt_display(forge_components::DateShape::Date, modified_at)
+        );
     }
 }

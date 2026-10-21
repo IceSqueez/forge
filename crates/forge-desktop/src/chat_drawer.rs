@@ -167,7 +167,10 @@ pub(crate) fn current_name(
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use crate::platform_visuals::BadgeKind;
-    use forge_components::{ChatBody, FORGE_DEFAULT};
+    use forge_components::{
+        ChatBody, ClockStyle, DateFormatChoice, DisplayFormats, FORGE_DEFAULT, FirstWeekday,
+        install_display_formats,
+    };
     use forge_storage::Viewer;
     use forge_types::PlatformId;
     use time::{Duration, OffsetDateTime};
@@ -302,7 +305,7 @@ mod tests {
         let enriched = enrich_with_storage(summary, Some(&stored));
 
         assert_eq!(enriched.message_count, 1);
-        assert_eq!(enriched.last_seen_label, "fmt_relative_days");
+        assert_eq!(enriched.last_seen_label(), "fmt_relative_days");
         assert_eq!(enriched.role, Some(BadgeKind::Subscriber));
         assert!(enriched.sub == SubStatus::Subscribed);
     }
@@ -319,7 +322,29 @@ mod tests {
         );
 
         assert_eq!(enriched.message_count, 1);
-        assert_eq!(enriched.last_seen_label, "fmt_relative_seconds");
+        assert_eq!(enriched.last_seen_label(), "fmt_relative_seconds");
+    }
+
+    #[test]
+    fn last_seen_label_follows_the_date_format_installed_after_the_summary_was_built() {
+        let messages = [msg("alice", vec![])];
+        let summary = synthesize_from_chat("alice", &messages).unwrap();
+        let last_seen_at = OffsetDateTime::now_utc() - Duration::days(30);
+        let enriched =
+            enrich_with_storage(summary, Some(&viewer("alice", last_seen_at, last_seen_at)));
+        let label_in = |date_format| {
+            install_display_formats(DisplayFormats {
+                date_format,
+                clock: ClockStyle::TwentyFourHour,
+                first_day: FirstWeekday::Monday,
+            });
+            enriched.last_seen_label()
+        };
+
+        assert_ne!(
+            label_in(DateFormatChoice::DayMonthYearDot),
+            label_in(DateFormatChoice::YearMonthDay)
+        );
     }
 
     #[test]

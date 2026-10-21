@@ -5,6 +5,7 @@ use gpui::{
 use time::{Date, Month, OffsetDateTime, Time, format_description::well_known::Rfc3339};
 
 use crate::buttons::{ghost_button_with_icon, primary_button, secondary_button};
+use crate::display_formats::FirstWeekday;
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{
@@ -18,7 +19,9 @@ const CELL: Pixels = px(34.0);
 const NAV_BTN: Pixels = px(26.0);
 const NAV_GLYPH: Pixels = px(14.0);
 
-const WEEKDAY_KEYS: [&str; 7] = [
+const DAYS_PER_WEEK: u8 = 7;
+
+const WEEKDAY_KEYS: [&str; DAYS_PER_WEEK as usize] = [
     "widget_date_weekday_sunday",
     "widget_date_weekday_monday",
     "widget_date_weekday_tuesday",
@@ -48,6 +51,7 @@ pub struct DateTimePicker {
     day: u8,
     hour: u8,
     minute: u8,
+    first_day: FirstWeekday,
 }
 
 impl EventEmitter<DateTimePickerEvent> for DateTimePicker {}
@@ -72,7 +76,33 @@ impl DateTimePicker {
             day: seed.day(),
             hour: seed.hour(),
             minute: seed.minute(),
+            first_day: FirstWeekday::Monday,
         }
+    }
+
+    pub fn first_day(mut self, first_day: FirstWeekday) -> Self {
+        self.first_day = first_day;
+        self
+    }
+
+    fn weekday_keys(&self) -> impl Iterator<Item = &'static str> {
+        let start = usize::from(self.first_day.days_from_monday() + 1);
+        WEEKDAY_KEYS
+            .iter()
+            .cycle()
+            .skip(start)
+            .take(WEEKDAY_KEYS.len())
+            .copied()
+    }
+
+    fn leading_blanks(&self) -> u8 {
+        Date::from_calendar_date(self.year, self.month, 1)
+            .map(|d| {
+                (d.weekday().number_days_from_monday() + DAYS_PER_WEEK
+                    - self.first_day.days_from_monday())
+                    % DAYS_PER_WEEK
+            })
+            .unwrap_or(0)
     }
 
     fn clamp_day(&mut self) {
@@ -176,7 +206,7 @@ impl DateTimePicker {
     fn render_weekday_header(&self) -> AnyElement {
         let p = self.palette;
         let mut row = div().flex();
-        for key in WEEKDAY_KEYS {
+        for key in self.weekday_keys() {
             row = row.child(
                 div()
                     .w(CELL)
@@ -193,12 +223,10 @@ impl DateTimePicker {
 
     fn render_day_grid(&self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let lead = Date::from_calendar_date(self.year, self.month, 1)
-            .map(|d| d.weekday().number_days_from_sunday())
-            .unwrap_or(0);
+        let lead = self.leading_blanks();
         let len = self.month.length(self.year);
 
-        let mut grid = div().flex().flex_wrap().w(CELL * 7.0);
+        let mut grid = div().flex().flex_wrap().w(CELL * f32::from(DAYS_PER_WEEK));
         for _ in 0..lead {
             grid = grid.child(div().size(CELL));
         }

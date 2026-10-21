@@ -16,7 +16,7 @@ use gpui::{
 use crate::async_bridge::{self, ErrorSink};
 use crate::awake_state::AwakeState;
 use crate::backup_schedule::BackupScheduleView;
-use crate::presentation::ActiveLanguage;
+use crate::presentation::{ActiveDisplayFormats, ActiveLanguage};
 use crate::problem_report::ProblemReport;
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_about::SettingsAboutView;
@@ -24,6 +24,7 @@ use crate::settings_audio::SettingsAudioView;
 use crate::settings_diagnostics::SettingsDiagnosticsView;
 use crate::settings_notifications::SettingsNotificationsView;
 use crate::settings_pane_header::SettingsPaneHeader;
+use crate::settings_region::SettingsRegionView;
 use crate::settings_scripting::SettingsScriptingView;
 use crate::settings_shortcuts::SettingsShortcutsView;
 use crate::settings_storage::SettingsStorageView;
@@ -222,6 +223,7 @@ pub struct SettingsView {
     notifications: Entity<SettingsNotificationsView>,
     storage: Entity<SettingsStorageView>,
     diagnostics: Entity<SettingsDiagnosticsView>,
+    region: Entity<SettingsRegionView>,
     font_picker: Option<FontPicker>,
 }
 
@@ -319,6 +321,14 @@ impl SettingsView {
             )
             .with_storage_changes(handles.scheduled_backups.clone())
         });
+        let region = cx.new(|cx| {
+            SettingsRegionView::new(
+                Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>,
+                handles.rt_handle.clone(),
+                cx.global::<ActiveDisplayFormats>().0,
+                cx,
+            )
+        });
         Self {
             section,
             handles,
@@ -334,6 +344,7 @@ impl SettingsView {
             notifications,
             storage,
             diagnostics,
+            region,
             font_picker: None,
         }
     }
@@ -1052,7 +1063,10 @@ impl SettingsView {
                 SettingsPaneHeader::new(SettingsSection::Language)
                     .subtitle(tr!("settings_language_subtitle")),
             )
-            .child(list)
+            .child(setting_groups([
+                list.into_any_element(),
+                self.region.clone().into_any_element(),
+            ]))
             .into_any_element()
     }
 

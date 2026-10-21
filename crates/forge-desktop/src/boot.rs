@@ -201,6 +201,9 @@ pub async fn build_runtime(
     {
         eprintln!("forge-desktop: failed to persist detected locale: {e}");
     }
+    let startup_display_formats =
+        crate::i18n::resolve_startup_display_formats(settings_repo.as_ref(), startup_language)
+            .await;
 
     let bus = EventBus::new(backend.event_log_repo());
     EventBus::spawn_flush_task(Arc::clone(&bus));
@@ -570,6 +573,7 @@ pub async fn build_runtime(
         log_tail,
         backend,
         startup_language,
+        startup_display_formats,
         anonymous_donor,
         date_names,
         latest_values,

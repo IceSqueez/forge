@@ -23,6 +23,7 @@ use crate::async_bridge;
 use crate::event_log::{EventFilter, EventItem, EventLog};
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_components::{ClockStyle, DateShape, active_display_formats, fmt_display};
 
 const INSPECTOR_INITIAL: f32 = 300.0;
 const INSPECTOR_MIN: f32 = 220.0;
@@ -31,6 +32,7 @@ const INSPECTOR_MAX: f32 = 540.0;
 const SEARCH_W: Pixels = px(240.0);
 
 const TS_COL_W: Pixels = px(88.0);
+const TS_COL_W_TWELVE_HOUR: Pixels = px(112.0);
 const KIND_COL_MIN_W: Pixels = px(104.0);
 const KIND_COL_MAX_W: Pixels = px(280.0);
 const KIND_COL_SLACK: Pixels = px(2.0);
@@ -97,6 +99,13 @@ fn replay_failure_message(error: &BusError) -> String {
             let detail = e.to_string();
             tr!("event_feed_replay_failed", error = detail.as_str())
         }
+    }
+}
+
+fn timestamp_column_width() -> Pixels {
+    match active_display_formats().clock {
+        ClockStyle::TwentyFourHour => TS_COL_W,
+        ClockStyle::TwelveHour => TS_COL_W_TWELVE_HOUR,
     }
 }
 
@@ -601,12 +610,12 @@ impl EventFeedView {
             .child(
                 div()
                     .flex_none()
-                    .w(TS_COL_W)
+                    .w(timestamp_column_width())
                     .whitespace_nowrap()
                     .font_family(mono_family())
                     .text_size(ROW_FS)
                     .text_color(palette.text_faint)
-                    .child(item.timestamp.clone()),
+                    .child(fmt_display(DateShape::TimeWithMillis, item.timestamp)),
             )
             .child(source_badge)
             .child(type_cell)
@@ -786,7 +795,10 @@ impl EventFeedView {
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
-                    .child(format!("{} · #{last6}", item.timestamp)),
+                    .child(format!(
+                        "{} · #{last6}",
+                        fmt_display(DateShape::TimeWithMillis, item.timestamp)
+                    )),
             );
 
         let payload = self.payload_block(item, palette);
@@ -910,7 +922,7 @@ impl EventFeedView {
             &mut lines,
         );
         push_json_lines(
-            &serde_json::json!(item.timestamp.as_ref()),
+            &serde_json::json!(fmt_display(DateShape::TimeWithMillis, item.timestamp)),
             1,
             Some("timestamp"),
             true,

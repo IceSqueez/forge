@@ -23,6 +23,7 @@ pub struct RuntimeHandles {
     pub log_tail: LogTail,
     pub backend: Arc<dyn DataProvider>,
     pub startup_language: Language,
+    pub startup_display_formats: forge_components::DisplayFormatChoices,
     pub anonymous_donor: forge_types::Shared<String>,
     pub date_names: DateNamesHandle,
     pub latest_values: LatestValues,

@@ -294,6 +294,12 @@ settings_theme_desc_light_mode = Light mode
 ## Settings → Language pane
 
 settings_language_subtitle = Choose how Forge talks to you
+settings_region_region = Region
+settings_region_date_format = Date format
+settings_region_time_format = Time format
+settings_region_first_day = First day of week
+settings_region_default = Region default ({ $value })
+settings_region_persist_failed = Could not save the region setting
 
 ## Settings → navigation sidebar
 

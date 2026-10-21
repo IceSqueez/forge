@@ -4,6 +4,7 @@ use forge_events::{Event, EventSource};
 use forge_types::{ChatPayload, ChatSegment};
 use gpui::SharedString;
 use serde::Serialize;
+use time::OffsetDateTime;
 
 const RING_CAP: usize = 500;
 
@@ -33,7 +34,8 @@ fn is_chat_message_kind(kind: &str) -> bool {
 #[derive(Clone, Debug, Serialize)]
 pub struct EventItem {
     pub id: SharedString,
-    pub timestamp: SharedString,
+    #[serde(with = "time::serde::rfc3339")]
+    pub timestamp: OffsetDateTime,
     pub source: EventSource,
     pub kind: SharedString,
     pub summary: SharedString,
@@ -106,14 +108,6 @@ impl EventLog {
     }
 
     pub fn item_from_event(event: &Event) -> Option<EventItem> {
-        let ts = event.timestamp;
-        let timestamp = format!(
-            "{:02}:{:02}:{:02}.{:03}",
-            ts.hour(),
-            ts.minute(),
-            ts.second(),
-            ts.millisecond()
-        );
         let kind = event.kind.clone();
         let is_error = kind.contains("error") || kind.contains("fail");
         let summary = Self::summarize(event);
@@ -127,7 +121,7 @@ impl EventLog {
         let (user_login, user_platform) = Self::acting_user(event);
         Some(EventItem {
             id: event.id.to_string().into(),
-            timestamp: timestamp.into(),
+            timestamp: event.timestamp,
             source: event.source,
             kind: kind.into(),
             summary: summary.into(),

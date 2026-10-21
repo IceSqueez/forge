@@ -10,7 +10,6 @@ use gpui::{AsyncApp, Entity, Task};
 use time::OffsetDateTime;
 use tokio::runtime::Handle;
 
-use crate::scheduled_run_labels::system_offset_at;
 use crate::update_flow::{InstallTarget, UpdateCandidate, UpdateFlow};
 
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -204,12 +203,11 @@ async fn probe(backend: Arc<dyn DataProvider>) -> Probe {
     let install = tokio::task::spawn_blocking(detect_install)
         .await
         .unwrap_or(InstallKind::ManualOnly(ManualReason::UnknownExecutable));
-    let now = OffsetDateTime::now_utc();
     Probe {
         rolled_back,
         outcome,
         install,
-        checked_at: now.to_offset(system_offset_at(now)),
+        checked_at: OffsetDateTime::now_utc(),
     }
 }
 

@@ -7,6 +7,7 @@ repository.workspace = true
 
 [dependencies]
 fluent = { workspace = true }
+forge-types = { path = "../forge-types" }
 gpui = { workspace = true }
 time = { workspace = true }
 tracing = { workspace = true }

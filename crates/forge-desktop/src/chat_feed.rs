@@ -21,7 +21,6 @@ const ACTION_START_KIND: &str = "action.start";
 pub struct ChatMessage {
     pub id: SharedString,
     pub event_id: EventId,
-    pub timestamp: SharedString,
     pub received_at: OffsetDateTime,
     pub platform: PlatformId,
     pub badges: Vec<BadgeKind>,
@@ -68,7 +67,6 @@ impl ChatMessage {
         ChatMessage {
             id: row.id.clone().into(),
             event_id: row.event_id,
-            timestamp: format_clock(row.received_at.unix_timestamp()).into(),
             received_at: row.received_at,
             platform: row.source,
             badges: row.badges.iter().filter_map(badge_kind).collect(),
@@ -533,14 +531,6 @@ fn format_amount(micros: u64) -> String {
     let whole = micros / 1_000_000;
     let cents = (micros % 1_000_000) / 10_000;
     format!("{whole}.{cents:02}")
-}
-
-fn format_clock(unix_secs: i64) -> String {
-    let secs = unix_secs.rem_euclid(86_400);
-    let h = secs / 3600;
-    let m = (secs % 3600) / 60;
-    let s = secs % 60;
-    format!("{h:02}:{m:02}:{s:02}")
 }
 
 #[cfg(test)]

@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use fluent::{FluentArgs, FluentBundle, FluentResource, FluentValue};
-use time::OffsetDateTime;
 
 const EN_CATALOG: &str = include_str!("../locales/en/main.ftl");
 const UK_CATALOG: &str = include_str!("../locales/uk/main.ftl");
@@ -44,18 +43,8 @@ pub fn set_locale_id(id: &'static str) {
     });
 }
 
-fn active_locale() -> &'static str {
+pub(crate) fn active_locale() -> &'static str {
     LOCALE_ID.with(|cell| *cell.borrow())
-}
-
-pub fn fmt_short_date(ts: &OffsetDateTime) -> String {
-    let locale = active_locale();
-    let month_key = format!("fmt_month_abbr_{:02}", ts.month() as u8);
-    let month = tr_lookup(&month_key, None);
-    match locale {
-        "uk" => format!("{} {} {}", ts.day(), month, ts.year()),
-        _ => format!("{} {}, {}", month, ts.day(), ts.year()),
-    }
 }
 
 pub fn fmt_number(value: f64, decimal_places: usize) -> String {
@@ -80,30 +69,26 @@ pub fn fmt_number(value: f64, decimal_places: usize) -> String {
     }
 }
 
-pub fn fmt_relative_time(opt: Option<OffsetDateTime>) -> String {
-    let Some(dt) = opt else {
-        return tr_lookup("fmt_relative_never", None);
-    };
-    let delta = OffsetDateTime::now_utc() - dt;
-    let secs = delta.whole_seconds().max(0) as u64;
+pub(crate) fn relative_within_week(elapsed: time::Duration) -> Option<String> {
+    let secs = elapsed.whole_seconds().max(0) as u64;
 
     if secs < 60 {
         let args = ArgsBuilder::new().set("count", secs as i64).build();
-        tr_lookup("fmt_relative_seconds", Some(&args))
+        Some(tr_lookup("fmt_relative_seconds", Some(&args)))
     } else if secs < 3_600 {
         let mins = secs / 60;
         let args = ArgsBuilder::new().set("count", mins as i64).build();
-        tr_lookup("fmt_relative_minutes", Some(&args))
+        Some(tr_lookup("fmt_relative_minutes", Some(&args)))
     } else if secs < 86_400 {
         let hours = secs / 3_600;
         let args = ArgsBuilder::new().set("count", hours as i64).build();
-        tr_lookup("fmt_relative_hours", Some(&args))
+        Some(tr_lookup("fmt_relative_hours", Some(&args)))
     } else if secs < 7 * 86_400 {
         let days = secs / 86_400;
         let args = ArgsBuilder::new().set("count", days as i64).build();
-        tr_lookup("fmt_relative_days", Some(&args))
+        Some(tr_lookup("fmt_relative_days", Some(&args)))
     } else {
-        fmt_short_date(&dt)
+        None
     }
 }
 

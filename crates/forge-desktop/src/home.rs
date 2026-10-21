@@ -24,6 +24,14 @@ use crate::setup_import_flow::SetupImportFlow;
 use crate::sidebar::NavRequested;
 use crate::transfer_flows::TransferFlows;
 use forge_components::ActivePresentation;
+use forge_components::{ClockStyle, DateShape, active_display_formats, fmt_display};
+
+fn event_time_width() -> Pixels {
+    match active_display_formats().clock {
+        ClockStyle::TwentyFourHour => EVENT_TIME_W,
+        ClockStyle::TwelveHour => EVENT_TIME_W_TWELVE_HOUR,
+    }
+}
 
 const BODY_PAD_V: Pixels = px(22.0);
 const BODY_PAD_H: Pixels = px(28.0);
@@ -59,6 +67,7 @@ const HEALTH_LIVE_DOT: Pixels = px(6.0);
 const EVENT_ROW_PAD_V: Pixels = px(7.0);
 const EVENT_ROW_PAD_H: Pixels = px(4.0);
 const EVENT_TIME_W: Pixels = px(60.0);
+const EVENT_TIME_W_TWELVE_HOUR: Pixels = px(84.0);
 const EVENT_DOT: Pixels = px(6.0);
 const EVENT_LIVE_DOT: Pixels = px(6.0);
 const EVENT_HEADER_ICON: Pixels = px(14.0);
@@ -841,11 +850,11 @@ impl HomeView {
             .child(
                 div()
                     .flex_none()
-                    .w(EVENT_TIME_W)
+                    .w(event_time_width())
                     .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
-                    .child(ev.time.clone()),
+                    .child(fmt_display(DateShape::TimeWithSeconds, ev.at)),
             )
             .child(spans);
 

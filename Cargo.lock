@@ -2670,6 +2670,7 @@ name = "forge-components"
 version = "0.6.2"
 dependencies = [
  "fluent",
+ "forge-types",
  "gpui",
  "time",
  "tracing",
@@ -2723,7 +2724,6 @@ dependencies = [
  "futures-util",
  "gpui",
  "gpui_platform",
- "jiff",
  "log",
  "open",
  "percent-encoding",

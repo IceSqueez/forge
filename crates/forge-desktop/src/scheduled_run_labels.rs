@@ -1,4 +1,4 @@
-use forge_components::{fmt_short_date, tr};
+use forge_components::tr;
 use forge_runtime::scheduled_runs::{
     ACTION_DISABLED_REASON, ACTION_NOT_FOUND_REASON, ACTIONS_UNAVAILABLE_REASON, MISSED_REASON,
     QUEUES_CLOSED_REASON, UNREADABLE_REASON,
@@ -9,7 +9,7 @@ use forge_runtime::{
 use forge_storage::{
     ACTION_REMOVED_REASON, CANCELLED_REASON, SUPERSEDED_REASON, ScheduledRunState,
 };
-use time::{OffsetDateTime, UtcOffset};
+use time::OffsetDateTime;
 
 const SECS_PER_MINUTE: i64 = 60;
 const SECS_PER_HOUR: i64 = 3_600;
@@ -78,24 +78,6 @@ pub(crate) fn countdown_label(countdown: Countdown) -> String {
         Countdown::DueNow => tr!("queues_scheduled_due_now"),
         Countdown::In(span) => tr!("queues_scheduled_due_in", span = span.label()),
     }
-}
-
-pub(crate) fn system_offset_at(at: OffsetDateTime) -> UtcOffset {
-    jiff::Timestamp::from_second(at.unix_timestamp())
-        .ok()
-        .map(|instant| jiff::tz::TimeZone::system().to_offset(instant).seconds())
-        .and_then(|seconds| UtcOffset::from_whole_seconds(seconds).ok())
-        .unwrap_or(UtcOffset::UTC)
-}
-
-pub(crate) fn local_stamp(at: OffsetDateTime, offset: UtcOffset) -> String {
-    let local = at.to_offset(offset);
-    format!(
-        "{} {:02}:{:02}",
-        fmt_short_date(&local),
-        local.hour(),
-        local.minute()
-    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

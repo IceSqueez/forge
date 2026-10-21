@@ -16,7 +16,6 @@ use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, SharedString, Subscription,
     Task, Window, div, prelude::*, px,
 };
-use time::UtcOffset;
 
 use super::ban_labels::{
     banned_at_label, changed_platforms, expiry_label, optional_label, refusal_label,
@@ -29,7 +28,6 @@ use crate::async_bridge::{self, EventBatch};
 use crate::integration_disabled::disclaimer_line;
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::integrations::BuiltinRegistry;
-use crate::scheduled_run_labels::system_offset_at;
 use forge_components::ActivePresentation;
 use forge_runtime::LifecycleState;
 
@@ -53,19 +51,13 @@ pub(crate) enum UnbanState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BanRow {
     pub entry: BanEntry,
-    pub expiry_offset: UtcOffset,
     pub unban: UnbanState,
 }
 
 impl BanRow {
     fn listed(entry: BanEntry) -> Self {
-        let expiry_offset = match entry.duration {
-            BanDuration::Until(at) => system_offset_at(at),
-            BanDuration::Permanent => UtcOffset::UTC,
-        };
         Self {
             entry,
-            expiry_offset,
             unban: UnbanState::Idle,
         }
     }
@@ -771,7 +763,7 @@ impl BannedPanel {
                         Some(BANNED_AT_COLUMN_W),
                     ))
                     .child(text_cell(
-                        expiry_label(entry.duration, row.expiry_offset),
+                        expiry_label(entry.duration),
                         match entry.duration {
                             BanDuration::Permanent => palette.random,
                             BanDuration::Until(_) => palette.warning,

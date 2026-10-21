@@ -14,19 +14,20 @@ use gpui::{
     AnyElement, ClickEvent, Context, EventEmitter, Pixels, Rgba, SharedString, Task, Window, div,
     prelude::*, px,
 };
-use time::{OffsetDateTime, UtcOffset};
+use time::OffsetDateTime;
 
 use crate::async_bridge;
 use crate::queues::running_pill;
 use crate::scheduled_run_labels::{
-    Countdown, OutcomeTone, Span, countdown, countdown_label, local_stamp, outcome_badge_key,
-    outcome_tone, reason_label, system_offset_at,
+    Countdown, OutcomeTone, Span, countdown, countdown_label, outcome_badge_key, outcome_tone,
+    reason_label,
 };
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_components::{DateShape, fmt_display};
 
 const RECENT_LIMIT: usize = 20;
 const COUNTDOWN_TICK: Duration = Duration::from_secs(30);
@@ -42,7 +43,6 @@ const BADGE_BORDER_ALPHA: f32 = 0.30;
 
 struct ScheduledRow {
     run: ScheduledRun,
-    offset: UtcOffset,
     scheduled_by_name: Option<String>,
     target_name: Option<String>,
 }
@@ -377,7 +377,7 @@ impl ScheduledRunsView {
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
-                    .child(local_stamp(spec.due_at, row.offset)),
+                    .child(fmt_display(DateShape::DateTime, spec.due_at)),
             );
 
         let label = row.title();
@@ -472,7 +472,7 @@ impl ScheduledRunsView {
             .unwrap_or_default();
         let resolved = run
             .resolved_at
-            .map(|at| local_stamp(at, row.offset))
+            .map(|at| fmt_display(DateShape::DateTime, at))
             .unwrap_or_default();
 
         let badge = div()
@@ -708,14 +708,12 @@ async fn load_snapshot(
         .map(|action| (action.id, action.name))
         .collect();
     let to_row = |run: ScheduledRun| {
-        let anchor = run.resolved_at.unwrap_or(run.spec.due_at);
         let scheduled_by_name = run
             .spec
             .scheduled_by_action
             .and_then(|id| names.get(&id).cloned());
         let target_name = names.get(&run.spec.target_action_id).cloned();
         ScheduledRow {
-            offset: system_offset_at(anchor),
             scheduled_by_name,
             target_name,
             run,

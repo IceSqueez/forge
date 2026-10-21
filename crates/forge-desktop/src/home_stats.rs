@@ -4,6 +4,7 @@ use forge_events::{Event, EventSource};
 use forge_runtime::{LiveViewerCount, dashboard::DashboardStats};
 use forge_types::{IntegrationId, PlatformId};
 use gpui::{Rgba, SharedString};
+use time::OffsetDateTime;
 
 use crate::event_log::EventLog;
 use crate::screen::Screen;
@@ -103,7 +104,7 @@ impl SourceHue {
 #[derive(Clone, Debug)]
 pub struct HomeEvent {
     pub id: SharedString,
-    pub time: SharedString,
+    pub at: OffsetDateTime,
     pub source: SharedString,
     pub name: SharedString,
     pub desc: SharedString,
@@ -115,11 +116,9 @@ impl HomeEvent {
         if !is_home_notable(&event.kind) {
             return None;
         }
-        let ts = event.timestamp;
-        let time = format!("{:02}:{:02}:{:02}", ts.hour(), ts.minute(), ts.second());
         Some(Self {
             id: event.id.to_string().into(),
-            time: time.into(),
+            at: event.timestamp,
             source: source_label(event.source).into(),
             name: event.kind.clone().into(),
             desc: EventLog::summarize(event).into(),

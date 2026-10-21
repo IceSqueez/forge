@@ -1,7 +1,7 @@
 use crate::platform_visuals::BadgeKind;
 use std::collections::HashMap;
 
-use forge_components::{ForgePalette, fmt_short_date, tr};
+use forge_components::{DateShape, ForgePalette, fmt_display, tr};
 use forge_platform_core::FollowStatus;
 use forge_types::{IntegrationId, PlatformId};
 use gpui::{Context, Rgba, SharedString, Task};
@@ -47,9 +47,10 @@ pub(crate) fn follow_display(
         return Some((INFINITY_GLYPH.into(), palette.text_primary));
     }
     Some(match status {
-        Some(FollowStatus::FollowedSince(since)) => {
-            (fmt_short_date(&since).into(), palette.text_primary)
-        }
+        Some(FollowStatus::FollowedSince(since)) => (
+            fmt_display(DateShape::Date, since).into(),
+            palette.text_primary,
+        ),
         Some(FollowStatus::NotFollowing) => {
             (tr!("chat_follow_not_following").into(), palette.text_muted)
         }

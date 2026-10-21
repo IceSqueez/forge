@@ -37,6 +37,10 @@ pub mod reserved_keys {
     pub const SCRIPT_OP_LIMIT: &str = "script.op_limit";
     pub const SCRIPT_TIMEOUT_MS: &str = "script.timeout_ms";
     pub const LANGUAGE: &str = "app.language";
+    pub const REGION: &str = "app.region";
+    pub const DATE_FORMAT: &str = "app.date_format";
+    pub const TIME_FORMAT: &str = "app.time_format";
+    pub const FIRST_DAY_OF_WEEK: &str = "app.first_day_of_week";
     pub const KEYBOARD_SHORTCUTS: &str = "app.keyboard_shortcuts";
     pub const AUDIO_OUTPUT_DEVICE_ID: &str = "audio.output_device_id";
     pub const AUDIO_VOICE_GATE_ENABLED: &str = "audio.voice_gate_enabled";
@@ -146,6 +150,10 @@ pub mod disclosure {
             | reserved_keys::ACCENT
             | reserved_keys::DENSITY
             | reserved_keys::LANGUAGE
+            | reserved_keys::REGION
+            | reserved_keys::DATE_FORMAT
+            | reserved_keys::TIME_FORMAT
+            | reserved_keys::FIRST_DAY_OF_WEEK
             | reserved_keys::DIAGNOSTICS_LOG_LEVEL
             | reserved_keys::EVENT_LOG_RETENTION_DAYS
             | reserved_keys::ACTION_HISTORY_RETENTION_DAYS
@@ -420,6 +428,25 @@ pub async fn set_bool_setting(
 ) -> Result<(), StorageError> {
     repo.set_string(key, if value { "true" } else { "false" })
         .await
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StoredDisplayFormats {
+    pub region: Option<String>,
+    pub date_format: Option<String>,
+    pub time_format: Option<String>,
+    pub first_day_of_week: Option<String>,
+}
+
+pub async fn stored_display_formats(
+    repo: &dyn SettingsRepo,
+) -> Result<StoredDisplayFormats, StorageError> {
+    Ok(StoredDisplayFormats {
+        region: repo.get_string(reserved_keys::REGION).await?,
+        date_format: repo.get_string(reserved_keys::DATE_FORMAT).await?,
+        time_format: repo.get_string(reserved_keys::TIME_FORMAT).await?,
+        first_day_of_week: repo.get_string(reserved_keys::FIRST_DAY_OF_WEEK).await?,
+    })
 }
 
 pub async fn get_json_setting<T: serde::de::DeserializeOwned>(

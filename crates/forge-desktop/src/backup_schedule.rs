@@ -3,10 +3,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_components::{
-    ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, InputEvent,
-    PushToast, Radius, SettingRow, Spacing, TextInput, ToastKind, body_family, checkbox, fmt_bytes,
-    fmt_relative_time, ghost_button, ghost_button_with_icon, mono_family, radius, setting_row,
-    setting_rows, spacing, toggle, tr,
+    ActivePresentation, BORDER_THIN, DateShape, Density, FONT_SM, FONT_XS, ForgePalette, Icon,
+    InputEvent, PushToast, Radius, SettingRow, Spacing, TextInput, ToastKind, body_family,
+    checkbox, fmt_bytes, fmt_display, fmt_display_relative, ghost_button, ghost_button_with_icon,
+    mono_family, radius, setting_row, setting_rows, spacing, toggle, tr,
 };
 use forge_storage::settings::{
     DEFAULT_BACKUP_SCHEDULE_ENABLED, DEFAULT_BACKUP_SCHEDULE_INCLUDE_CATEGORY,
@@ -34,7 +34,6 @@ use crate::async_bridge::{self, DIALOG_CANCELLED, Debounced, ErrorSink, SLIDER_P
 use crate::backup_passphrase_modal::{
     BackupPassphraseEvent, BackupPassphraseModal, PassphrasePurpose,
 };
-use crate::scheduled_run_labels::{local_stamp, system_offset_at};
 
 const NUMBER_INPUT_W: Pixels = px(120.0);
 
@@ -262,7 +261,7 @@ impl StatusLine {
         match self {
             Self::Off { last_success_at } => tr!(
                 "backup_schedule_status_off",
-                last = fmt_relative_time(last_success_at)
+                last = fmt_display_relative(last_success_at)
             ),
             Self::Paused => tr!("backup_schedule_status_paused"),
             Self::Running => tr!("backup_schedule_status_running"),
@@ -272,7 +271,7 @@ impl StatusLine {
                 attempts,
             } => tr!(
                 "backup_schedule_status_failing",
-                since = local_stamp(since, system_offset_at(since)),
+                since = fmt_display(DateShape::DateTime, since),
                 attempts = attempts,
                 reason = failure_reason(category)
             ),
@@ -281,15 +280,15 @@ impl StatusLine {
                 next_due: Some(next),
             } => tr!(
                 "backup_schedule_status_scheduled",
-                last = fmt_relative_time(last_success_at),
-                next = local_stamp(next, system_offset_at(next))
+                last = fmt_display_relative(last_success_at),
+                next = fmt_display(DateShape::DateTime, next)
             ),
             Self::Scheduled {
                 last_success_at,
                 next_due: None,
             } => tr!(
                 "backup_schedule_status_last",
-                last = fmt_relative_time(last_success_at)
+                last = fmt_display_relative(last_success_at)
             ),
         }
     }

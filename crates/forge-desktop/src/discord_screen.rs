@@ -3,8 +3,8 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, FONT_XS, ForgePalette, Icon, MenuPlacement,
     OverlayPosition, SectionLabel, ToastKind, badge, body_family, card, confirm_modal,
-    fmt_relative_time, icon, menu_button, menu_divider, menu_item, mono_family, overlay, pad_tile,
-    page_frame, status_dot, tr,
+    fmt_display_relative, icon, menu_button, menu_divider, menu_item, mono_family, overlay,
+    pad_tile, page_frame, status_dot, tr,
 };
 use forge_discord::{DiscordClient, DiscordSendHealth, WebhookPost};
 use forge_runtime::EventBus;
@@ -570,7 +570,7 @@ impl DiscordScreenView {
             None => (NO_VALUE.to_owned(), palette.text_primary),
         };
         let send_hint = match self.last_send_at() {
-            Some(at) => fmt_relative_time(Some(at)),
+            Some(at) => fmt_display_relative(Some(at)),
             None => tr!("discord_stat_send_none"),
         };
 
@@ -785,7 +785,7 @@ impl DiscordScreenView {
 
     fn render_posts(&self, palette: &ForgePalette) -> AnyElement {
         let last = match self.last_send_at() {
-            Some(at) => fmt_relative_time(Some(at)),
+            Some(at) => fmt_display_relative(Some(at)),
             None => tr!("discord_posts_never"),
         };
         let hint = div()
@@ -950,7 +950,7 @@ fn render_post(post: &WebhookPost, palette: &ForgePalette) -> AnyElement {
                 .font_family(mono_family())
                 .text_size(POST_TIME_FS)
                 .text_color(palette.text_faint)
-                .child(fmt_relative_time(Some(post.sent_at))),
+                .child(fmt_display_relative(Some(post.sent_at))),
         );
 
     div()

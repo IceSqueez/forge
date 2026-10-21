@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use forge_components::{
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition, Spacing,
-    body_family, fmt_relative_time, ghost_button, modal, mono_family, overlay, spacing, tr,
+    body_family, fmt_display_relative, ghost_button, modal, mono_family, overlay, spacing, tr,
 };
 use forge_storage::{
     ChatAuthorKey, ChatAuthorPage, ChatAuthorTally, ChatHistoryCursor, ChatHistoryRepo,
@@ -365,7 +365,7 @@ impl ViewerHistory {
                     palette.text_primary
                 };
                 Self::render_row(
-                    fmt_relative_time(Some(message.received_at)),
+                    fmt_display_relative(Some(message.received_at)),
                     body_export_text(&message.body),
                     text_color,
                     &palette,

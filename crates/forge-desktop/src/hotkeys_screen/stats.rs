@@ -1,4 +1,4 @@
-use forge_components::{ForgePalette, fmt_relative_time, stat_card, tr};
+use forge_components::{ForgePalette, fmt_display_relative, stat_card, tr};
 use gpui::{AnyElement, Pixels, div, prelude::*, px};
 
 use super::HotkeysScreenView;
@@ -26,7 +26,7 @@ impl HotkeysScreenView {
             )
         };
         let (fired_value, fired_hint) = match &self.last_fired {
-            Some(last) => (last.combo.clone(), fmt_relative_time(Some(last.at))),
+            Some(last) => (last.combo.clone(), fmt_display_relative(Some(last.at))),
             None => (NO_VALUE.to_owned(), tr!("hotkeys_stat_last_fired_none")),
         };
 

@@ -7,10 +7,11 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, CodeEditor, Confirm, ConfirmTone, Density, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent, MenuItem, ModalSize,
     OverlayPosition, Radius, ResizeEdge, ResizeRange, SaveCode, SearchState, Spacing, TextInput,
-    badge, body_family, confirm_modal, context_menu, fmt_relative_time, ghost_button, icon,
+    badge, body_family, confirm_modal, context_menu, fmt_display_relative, ghost_button, icon,
     inline_edit, install_resize, menu_divider, menu_item, modal, mono_family, overlay, page_frame,
     primary_button, radius, spacing, status_dot, tr, with_alpha,
 };
+use forge_components::{DateShape, fmt_display};
 use forge_events::{Event, EventPublisher};
 use forge_runtime::{EventBus, SchedulingContext, ScriptRegistry};
 use forge_script::{
@@ -85,11 +86,6 @@ const GLYPH_STATUS: Pixels = px(12.0);
 const GLYPH_FILE: Pixels = px(12.0);
 const GLYPH_TAB: Pixels = px(12.0);
 const GLYPH_ACTION: Pixels = px(12.0);
-
-fn now_timestamp() -> String {
-    let now = OffsetDateTime::now_utc();
-    format!("{:02}:{:02}:{:02}", now.hour(), now.minute(), now.second())
-}
 
 fn format_run_stats(duration_ms: f64, error_count: usize) -> String {
     format!("executed in {duration_ms:.2}ms · {error_count} errors")
@@ -335,7 +331,7 @@ impl LogTag {
 }
 
 struct ConsoleLine {
-    time: SharedString,
+    at: OffsetDateTime,
     tag: LogTag,
     text: SharedString,
 }
@@ -748,7 +744,7 @@ impl ScriptEditorView {
             self.console.pop_front();
         }
         self.console.push_back(ConsoleLine {
-            time: now_timestamp().into(),
+            at: OffsetDateTime::now_utc(),
             tag,
             text: text.into(),
         });
@@ -1753,7 +1749,7 @@ impl ScriptEditorView {
         let edited = format!(
             "{} {}",
             tr!("script_editor_edited_prefix"),
-            fmt_relative_time(Some(open.record.last_modified))
+            fmt_display_relative(Some(open.record.last_modified))
         );
 
         let (status_color, status_text): (Rgba, String) = if self.compile_error.is_some() {
@@ -3084,7 +3080,7 @@ impl ScriptEditorView {
         };
         let record = &open.record;
         let line_count = record.body.lines().count();
-        let edited = fmt_relative_time(Some(record.last_modified));
+        let edited = fmt_display_relative(Some(record.last_modified));
 
         let linked = self.find_entry(open.id).and_then(|e| e.linked.as_ref());
         let (type_label, type_color): (SharedString, Rgba) = match linked {
@@ -3541,7 +3537,7 @@ fn console_row(line: &ConsoleLine, palette: &ForgePalette) -> impl IntoElement {
         .child(
             div()
                 .text_color(palette.text_faint)
-                .child(line.time.clone()),
+                .child(fmt_display(DateShape::TimeWithSeconds, line.at)),
         )
         .child(
             div()

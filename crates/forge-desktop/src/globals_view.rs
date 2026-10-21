@@ -11,7 +11,7 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, CodeEditor, ColumnWidth, DataRow, Density, FONT_XS, FONT_XXS,
     ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent, OverlayPosition, Radius, Spacing,
     TextInput, ToastAction, ToastKind, badge, body_family, chip, column, confirm_modal,
-    context_menu, empty_state, fmt_relative_time, header_stat, header_stats, hover_reveal, icon,
+    context_menu, empty_state, fmt_display_relative, header_stat, header_stats, hover_reveal, icon,
     inline_edit, menu_divider, menu_item, modal, mono_family, overlay, page_frame, primary_button,
     primary_button_with_icon, radius, secondary_button, spacing, status_dot, toggle, tr,
     virtual_table, with_alpha,
@@ -1720,7 +1720,7 @@ fn global_from_entry(entry: &GlobalEntry) -> Global {
         persisted: entry.persisted,
         reads: entry.reads,
         writes: entry.writes,
-        modified: fmt_relative_time(Some(entry.last_modified)).into(),
+        modified: fmt_display_relative(Some(entry.last_modified)).into(),
     }
 }
 

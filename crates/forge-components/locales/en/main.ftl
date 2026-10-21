@@ -42,30 +42,6 @@ widget_save_unsaved = Unsaved changes
 
 widget_save_failed = Save failed: { $error }
 
-fmt_month_abbr_01 = Jan
-
-fmt_month_abbr_02 = Feb
-
-fmt_month_abbr_03 = Mar
-
-fmt_month_abbr_04 = Apr
-
-fmt_month_abbr_05 = May
-
-fmt_month_abbr_06 = Jun
-
-fmt_month_abbr_07 = Jul
-
-fmt_month_abbr_08 = Aug
-
-fmt_month_abbr_09 = Sep
-
-fmt_month_abbr_10 = Oct
-
-fmt_month_abbr_11 = Nov
-
-fmt_month_abbr_12 = Dec
-
 fmt_relative_never = never
 
 fmt_relative_seconds = { $count ->
@@ -103,3 +79,37 @@ widget_grid_picker_no_match = Nothing matches “{ $query }”
 widget_grid_picker_match_one = 1 match for “{ $query }”
 
 widget_grid_picker_match_many = { $total } matches for “{ $query }”
+
+fmt_clock_24_hour = 24-hour
+
+fmt_clock_12_hour = 12-hour
+
+fmt_weekday_monday = Monday
+
+fmt_weekday_sunday = Sunday
+
+fmt_weekday_saturday = Saturday
+
+region_name_ua = Ukraine
+
+region_name_us = United States
+
+region_name_gb = United Kingdom
+
+region_name_ca = Canada
+
+region_name_pl = Poland
+
+region_name_de = Germany
+
+region_name_fr = France
+
+region_name_es = Spain
+
+region_name_it = Italy
+
+region_name_cz = Czechia
+
+region_name_kz = Kazakhstan
+
+region_name_au = Australia

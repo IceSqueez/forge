@@ -1,4 +1,6 @@
-use forge_components::{BORDER_THIN, ForgePalette, fmt_relative_time, mono_family, status_dot, tr};
+use forge_components::{
+    BORDER_THIN, ForgePalette, fmt_display_relative, mono_family, status_dot, tr,
+};
 use gpui::{AnyElement, Pixels, div, prelude::*, px};
 
 use super::HotkeysScreenView;
@@ -40,7 +42,7 @@ impl HotkeysScreenView {
                         .text_color(palette.warning)
                         .child(tr!(
                             "hotkeys_footer_hold_closed",
-                            when = fmt_relative_time(Some(at))
+                            when = fmt_display_relative(Some(at))
                         )),
                 )
         });

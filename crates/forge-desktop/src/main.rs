@@ -139,6 +139,7 @@ mod settings_audio_routing;
 mod settings_diagnostics;
 mod settings_notifications;
 mod settings_pane_header;
+mod settings_region;
 mod settings_scripting;
 mod settings_shortcuts;
 mod settings_storage;
@@ -482,6 +483,13 @@ fn main() {
         prewarm_kit_fonts(cx);
         cx.set_global(crate::presentation::ActiveLanguage(
             forge_storage::Language::default(),
+        ));
+        cx.set_global(crate::presentation::ActiveDisplayFormats(
+            forge_components::DisplayFormatChoices::following(
+                forge_components::Region::for_language(crate::i18n::catalog_language(
+                    forge_storage::Language::default(),
+                )),
+            ),
         ));
         cx.set_global(forge_components::Toasts::new());
 

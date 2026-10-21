@@ -4,7 +4,7 @@ use forge_components::ActivePresentation;
 use forge_components::highlight::Language;
 use forge_components::{
     Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition, Radius,
-    Spacing, body_family, error_row, fmt_relative_time, highlighted_text, icon,
+    Spacing, body_family, error_row, fmt_display_relative, highlighted_text, icon,
     integration_disabled_reason, modal, mono_family, overlay, radius, spacing, status_dot,
     tooltip_builder, tr,
 };
@@ -255,7 +255,7 @@ impl RunHistoryModal {
             ExecutionOutcome::Failed(_) => palette.random,
             ExecutionOutcome::Cancelled => palette.text_muted,
         };
-        let when = fmt_relative_time(Some(ctx.started_at));
+        let when = fmt_display_relative(Some(ctx.started_at));
         let duration = match ctx.completed_at {
             Some(done) => {
                 let ms = (done - ctx.started_at).whole_milliseconds().max(0);
@@ -315,7 +315,7 @@ impl RunHistoryModal {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let when = fmt_relative_time(Some(ctx.started_at));
+        let when = fmt_display_relative(Some(ctx.started_at));
         let duration = match ctx.completed_at {
             Some(done) => {
                 let ms = (done - ctx.started_at).whole_milliseconds().max(0);

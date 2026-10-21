@@ -11,7 +11,9 @@ pub mod code_editor;
 pub mod confirm;
 pub mod confirm_state;
 pub mod data;
+pub mod date_display;
 pub mod date_time_picker;
+pub mod display_formats;
 pub mod dropdown;
 pub mod error_row;
 pub mod fonts;
@@ -36,6 +38,7 @@ pub mod platform_hero;
 pub mod presentation;
 pub mod progress_bar;
 pub mod radio_row;
+pub mod region;
 pub mod resize_handle;
 pub mod save_state;
 pub mod search_state;
@@ -81,7 +84,15 @@ pub use data::{
     Column, ColumnWidth, DataRow, DataTable, HeaderAlign, VirtualTable, column, data_table,
     hover_reveal, virtual_table,
 };
+pub use date_display::{
+    DateDisplay, DateShape, active_display_formats, date_display, fmt_display,
+    fmt_display_relative, install_display_formats, ui_names_language,
+};
 pub use date_time_picker::{DateTimePicker, DateTimePickerEvent, DateTimePickerLabels};
+pub use display_formats::{
+    ClockStyle, DateFormatChoice, DisplayFormatChoices, DisplayFormats, FOLLOW_REGION_CODE,
+    FirstWeekday, FormatChoice, FormatOption,
+};
 pub use dropdown::{
     Dropdown, DropdownRow, dropdown, dropdown_group_header, dropdown_list, dropdown_row,
     dropdown_surface,
@@ -111,9 +122,8 @@ pub use integration_gating::{
     integration_disabled_reason, integration_inactive_badge,
 };
 pub use locale::{
-    ArgsBuilder, CatalogLanguage, catalog_source, fmt_bytes, fmt_clock, fmt_number,
-    fmt_relative_time, fmt_short_date, fmt_uptime, fmt_uptime_short, install_bundle, set_locale_id,
-    tr_lookup,
+    ArgsBuilder, CatalogLanguage, catalog_source, fmt_bytes, fmt_clock, fmt_number, fmt_uptime,
+    fmt_uptime_short, install_bundle, set_locale_id, tr_lookup,
 };
 pub use menu::{
     ContextMenu, MenuButton, MenuEntry, MenuItem, MenuPlacement, context_menu, menu_button,
@@ -133,6 +143,7 @@ pub use platform_hero::{PlatformHero, platform_hero};
 pub use presentation::{ActivePresentation, Presentation};
 pub use progress_bar::{ProgressBar, clamped_fraction, progress_bar};
 pub use radio_row::{RadioRow, radio_row, radio_row_label};
+pub use region::{Region, RegionDefaults};
 pub use resize_handle::{ResizeEdge, ResizeRange, install_resize};
 pub use save_state::{SaveState, save_indicator};
 pub use search_state::SearchState;

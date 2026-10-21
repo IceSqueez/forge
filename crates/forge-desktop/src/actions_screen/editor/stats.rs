@@ -10,7 +10,7 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let last_fired = fmt_relative_time(telemetry.last_fired_at);
+        let last_fired = fmt_display_relative(telemetry.last_fired_at);
         let runs = fmt_number(telemetry.runs_today as f64, 0);
         let avg = match telemetry.avg_duration_ms {
             Some(ms) => tr!("action_stat_avg_ms", count = ms as i64),

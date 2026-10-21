@@ -42,30 +42,6 @@ widget_save_unsaved = Незбережені зміни
 
 widget_save_failed = Помилка збереження: { $error }
 
-fmt_month_abbr_01 = січ.
-
-fmt_month_abbr_02 = лют.
-
-fmt_month_abbr_03 = бер.
-
-fmt_month_abbr_04 = квіт.
-
-fmt_month_abbr_05 = трав.
-
-fmt_month_abbr_06 = черв.
-
-fmt_month_abbr_07 = лип.
-
-fmt_month_abbr_08 = серп.
-
-fmt_month_abbr_09 = вер.
-
-fmt_month_abbr_10 = жовт.
-
-fmt_month_abbr_11 = лист.
-
-fmt_month_abbr_12 = груд.
-
 fmt_relative_never = ніколи
 
 fmt_relative_seconds = { $count ->
@@ -116,3 +92,37 @@ widget_grid_picker_match_many =
         [few] { $total } збіги
        *[other] { $total } збігів
     } за «{ $query }»
+
+fmt_clock_24_hour = 24-годинний
+
+fmt_clock_12_hour = 12-годинний
+
+fmt_weekday_monday = Понеділок
+
+fmt_weekday_sunday = Неділя
+
+fmt_weekday_saturday = Субота
+
+region_name_ua = Україна
+
+region_name_us = Сполучені Штати
+
+region_name_gb = Велика Британія
+
+region_name_ca = Канада
+
+region_name_pl = Польща
+
+region_name_de = Німеччина
+
+region_name_fr = Франція
+
+region_name_es = Іспанія
+
+region_name_it = Італія
+
+region_name_cz = Чехія
+
+region_name_kz = Казахстан
+
+region_name_au = Австралія

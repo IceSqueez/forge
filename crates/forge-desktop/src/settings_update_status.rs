@@ -1,3 +1,4 @@
+use forge_components::{DateShape, fmt_display};
 use forge_components::{FONT_XS, ForgePalette, body_family, tr};
 use gpui::{IntoElement, Rgba, div, prelude::*};
 use time::OffsetDateTime;
@@ -56,7 +57,7 @@ impl UpdateCheckStatus {
             UpdateCheckStatus::Checking => Some(tr!("settings_version_checking")),
             UpdateCheckStatus::UpToDate { checked_at } => Some(tr!(
                 "settings_version_up_to_date",
-                time = clock_label(*checked_at)
+                time = fmt_display(DateShape::Time, *checked_at)
             )),
             UpdateCheckStatus::Found {
                 version,
@@ -75,10 +76,6 @@ impl UpdateCheckStatus {
             UpdateCheckStatus::Failed => Some(tr!("settings_version_check_failed")),
         }
     }
-}
-
-pub fn clock_label(at: OffsetDateTime) -> String {
-    format!("{:02}:{:02}", at.hour(), at.minute())
 }
 
 fn tone_color(tone: StatusTone, palette: &ForgePalette) -> Rgba {

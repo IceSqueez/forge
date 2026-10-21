@@ -29,6 +29,7 @@ use crate::settings_pane_header::SettingsPaneHeader;
 use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_components::{DateShape, fmt_display};
 use forge_transfer::ScheduledBackupHandle;
 
 const TAIL_REFRESH: Duration = Duration::from_secs(2);
@@ -627,7 +628,7 @@ fn log_row(line: &LogLine, palette: &ForgePalette, density: Density) -> impl Int
             div()
                 .flex_none()
                 .text_color(palette.text_faint)
-                .child(format_time(line)),
+                .child(fmt_display(DateShape::TimeWithMillis, line.at)),
         )
         .child(
             div()
@@ -650,17 +651,6 @@ fn log_row(line: &LogLine, palette: &ForgePalette, density: Density) -> impl Int
                 .text_color(palette.text_primary)
                 .child(SharedString::from(line.message.clone())),
         )
-}
-
-fn format_time(line: &LogLine) -> SharedString {
-    format!(
-        "{:02}:{:02}:{:02}.{:03}",
-        line.at.hour(),
-        line.at.minute(),
-        line.at.second(),
-        line.at.millisecond(),
-    )
-    .into()
 }
 
 fn level_color(level: Level, palette: &ForgePalette) -> Rgba {

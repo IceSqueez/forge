@@ -1,16 +1,15 @@
 use std::rc::Rc;
 
 use forge_components::{
-    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, Radius, Spacing, body_family,
-    destructive_button, failure_note, ghost_button, icon, modal, modal_width, mono_family, radius,
-    spacing, tr,
+    DateShape, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, Radius, Spacing,
+    body_family, destructive_button, failure_note, fmt_display, ghost_button, icon, modal,
+    modal_width, mono_family, radius, spacing, tr,
 };
 use forge_transfer::{BackupCategory, BundleSummary};
 use gpui::{AnyElement, App, ClickEvent, Rgba, Window, div, prelude::*, px};
 
 use crate::backup_schedule::category_label;
 use crate::restore_problem::RestoreProblem;
-use crate::scheduled_run_labels::{local_stamp, system_offset_at};
 
 const UNKNOWN_FACT: &str = "-";
 const PART_SEPARATOR: &str = ", ";
@@ -50,7 +49,7 @@ impl ConfirmFacts {
     pub(crate) fn of(summary: &BundleSummary) -> Self {
         match summary {
             BundleSummary::Encrypted(manifest) => Self {
-                created: local_stamp(manifest.created_at, system_offset_at(manifest.created_at)),
+                created: fmt_display(DateShape::DateTime, manifest.created_at),
                 forge_version: manifest.forge_version.clone(),
                 schema: manifest.schema_version.to_string(),
                 scope: RestoreScope::of(&manifest.categories),

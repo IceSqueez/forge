@@ -1,11 +1,10 @@
-use forge_components::{fmt_relative_time, tr};
+use forge_components::{DateShape, fmt_display, fmt_display_relative, tr};
 use forge_events::Event;
 use forge_platform_core::{BanDuration, BanListUnavailable, UnbanRefusal};
 use forge_types::PlatformId;
-use time::{OffsetDateTime, UtcOffset};
+use time::OffsetDateTime;
 
 use crate::chat_drawer::DASH;
-use crate::scheduled_run_labels::local_stamp;
 
 const BAN_CHANGE_KINDS: [(&str, PlatformId); 4] = [
     ("twitch.channel.ban", PlatformId::Twitch),
@@ -50,16 +49,19 @@ pub(crate) fn refusal_label(refusal: UnbanRefusal) -> String {
     }
 }
 
-pub(crate) fn expiry_label(duration: BanDuration, offset: UtcOffset) -> String {
+pub(crate) fn expiry_label(duration: BanDuration) -> String {
     match duration {
         BanDuration::Permanent => tr!("chat_banned_permanent"),
-        BanDuration::Until(at) => tr!("chat_banned_until", time = local_stamp(at, offset)),
+        BanDuration::Until(at) => tr!(
+            "chat_banned_until",
+            time = fmt_display(DateShape::DateTime, at)
+        ),
     }
 }
 
 pub(crate) fn banned_at_label(created_at: Option<OffsetDateTime>) -> String {
     match created_at {
-        Some(at) => fmt_relative_time(Some(at)),
+        Some(at) => fmt_display_relative(Some(at)),
         None => DASH.to_owned(),
     }
 }

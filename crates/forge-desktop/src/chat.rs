@@ -36,6 +36,7 @@ use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_components::{DateShape, fmt_display};
 
 mod ban_labels;
 mod banned_panel;
@@ -1010,16 +1011,19 @@ impl ChatView {
         for msg in feed.messages().iter().filter(|m| self.row_visible(m)) {
             let text = body_export_text(&msg.body);
             if msg.username.is_empty() {
-                lines.push(format!("[{}] {}", msg.timestamp, text));
+                lines.push(format!("[{}] {}", export_stamp(msg.received_at), text));
             } else {
-                lines.push(format!("[{}] {}: {}", msg.timestamp, msg.username, text));
+                lines.push(format!(
+                    "[{}] {}: {}",
+                    export_stamp(msg.received_at),
+                    msg.username,
+                    text
+                ));
             }
         }
 
         let stamp = time::OffsetDateTime::now_utc();
-        let when = stamp
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap_or_else(|_| stamp.unix_timestamp().to_string());
+        let when = export_stamp(stamp);
         let header = format!(
             "Forge chat log · exported {} · {} lines\n{}\n",
             when,
@@ -1204,7 +1208,7 @@ impl ChatView {
             let gap = feed_state.gap_before(previous, seq);
             let data = ChatRow {
                 id: msg.id.clone(),
-                timestamp: msg.timestamp.clone(),
+                timestamp: fmt_display(DateShape::TimeWithSeconds, msg.received_at).into(),
                 platform: platform_mark(msg.platform, &pal),
                 badges: msg
                     .badges
@@ -2137,6 +2141,11 @@ fn drawer_ghost_button(
     } else {
         button.opacity(DISABLED_OPACITY)
     }
+}
+
+fn export_stamp(at: time::OffsetDateTime) -> String {
+    at.format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|_| at.unix_timestamp().to_string())
 }
 
 fn body_export_text(body: &ChatBody) -> String {

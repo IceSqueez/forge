@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use fluent::{FluentBundle, FluentResource};
 use fluent_langneg::{NegotiationStrategy, negotiate_languages};
-use forge_storage::{Language, SettingsRepo};
+use forge_components::{CatalogLanguage, DisplayFormatChoices, Region};
+use forge_storage::{Language, SettingsRepo, reserved_keys, stored_display_formats};
 use forge_types::NamesLanguage;
 use unic_langid::LanguageIdentifier;
 
@@ -25,10 +26,7 @@ fn build_bundle(lang: Language) -> Rc<FluentBundle<FluentResource>> {
         Language::Uk => UK_MAIN_FTL,
     };
 
-    let kit_source = forge_components::catalog_source(match lang {
-        Language::En => forge_components::CatalogLanguage::En,
-        Language::Uk => forge_components::CatalogLanguage::Uk,
-    });
+    let kit_source = forge_components::catalog_source(catalog_language(lang));
 
     let mut bundle = FluentBundle::new(vec![lang_id]);
     for source in [ftl_source, kit_source] {
@@ -90,6 +88,53 @@ pub async fn resolve_startup_language(
             (Language::En, None)
         }
     }
+}
+
+pub fn catalog_language(lang: Language) -> CatalogLanguage {
+    match lang {
+        Language::En => CatalogLanguage::En,
+        Language::Uk => CatalogLanguage::Uk,
+    }
+}
+
+pub fn startup_region(os_locale: Option<&str>, lang: Language) -> Region {
+    os_locale
+        .and_then(Region::from_locale_tag)
+        .unwrap_or_else(|| Region::for_language(catalog_language(lang)))
+}
+
+pub async fn resolve_startup_display_formats(
+    settings: &dyn SettingsRepo,
+    lang: Language,
+) -> DisplayFormatChoices {
+    let language_region = Region::for_language(catalog_language(lang));
+    let stored = match stored_display_formats(settings).await {
+        Ok(stored) => stored,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to read display format settings; following the language region");
+            return DisplayFormatChoices::following(language_region);
+        }
+    };
+    let region = match stored.region.as_deref() {
+        Some(code) => Region::from_code(code).unwrap_or(language_region),
+        None => {
+            let detected = startup_region(sys_locale::get_locale().as_deref(), lang);
+            if let Err(e) = settings
+                .set_string(reserved_keys::REGION, detected.code())
+                .await
+            {
+                tracing::warn!(error = %e, "failed to persist the detected region");
+            }
+            detected
+        }
+    };
+    DisplayFormatChoices::from_stored(
+        Some(region.code()),
+        stored.date_format.as_deref(),
+        stored.time_format.as_deref(),
+        stored.first_day_of_week.as_deref(),
+        language_region,
+    )
 }
 
 pub const ANONYMOUS_DONOR_KEY: &str = "donation_anonymous_donor";

@@ -302,6 +302,12 @@ settings_theme_desc_light_mode = Світлий режим
 ## Налаштування → панель мови
 
 settings_language_subtitle = Оберіть, якою мовою Forge говоритиме з вами
+settings_region_region = Регіон
+settings_region_date_format = Формат дати
+settings_region_time_format = Формат часу
+settings_region_first_day = Перший день тижня
+settings_region_default = Як у регіоні ({ $value })
+settings_region_persist_failed = Не вдалося зберегти налаштування регіону
 
 ## Налаштування → бічна навігація
 

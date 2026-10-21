@@ -12,7 +12,7 @@ use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::{
     BreadcrumbCrumb, Confirm, Density, ForgePalette, GridPicker, Icon, InlineEdit, OverlayPosition,
-    SearchState, TextArea, TextInput, ToastKind, fmt_number, fmt_relative_time, icon, overlay,
+    SearchState, TextArea, TextInput, ToastKind, fmt_display_relative, fmt_number, icon, overlay,
     page_frame, tr,
 };
 use forge_overlay::OverlayKindRegistry;

@@ -2,9 +2,9 @@ use std::collections::BTreeSet;
 
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
-    ModalSize, OverlayPosition, Radius, SearchState, Spacing, TextInput, body_family, failure_note,
-    field_column, field_frame, ghost_button, icon, modal, modal_width, mono_family, overlay,
-    primary_button, radius, section_label, spacing, tr,
+    ModalSize, OverlayPosition, Radius, SearchState, Spacing, TextInput, body_family, checkbox,
+    failure_note, field_column, field_frame, ghost_button, icon, modal, modal_width, mono_family,
+    overlay, primary_button, radius, section_label, spacing, tr,
 };
 use forge_transfer::{PackInventory, PackMetadata, PackSelection, resolve_pack_closure};
 use forge_types::ActionId;
@@ -18,9 +18,6 @@ use crate::integration_switch::integration_name;
 use crate::pack_services::{PackServices, PackSource};
 
 const ACTION_LIST_H: Pixels = px(320.0);
-const CHECK_BOX: Pixels = px(14.0);
-const CHECK_GLYPH: Pixels = px(10.0);
-const CHECK_RADIUS: Pixels = px(3.0);
 const COUNT_COLUMNS: usize = 2;
 
 pub enum PackExportModalEvent {
@@ -414,22 +411,7 @@ impl PackExportModal {
         let checked = self.selected.contains(&choice.id);
         let id = choice.id;
         let hover_bg = palette.base;
-        let mut check = div()
-            .flex_none()
-            .size(CHECK_BOX)
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(CHECK_RADIUS)
-            .border(BORDER_THIN);
-        check = if checked {
-            check
-                .border_color(palette.brand)
-                .bg(palette.brand)
-                .child(icon(Icon::Check, CHECK_GLYPH, palette.base))
-        } else {
-            check.border_color(palette.border_input)
-        };
+        let check = checkbox(checked, palette);
         div()
             .id(("pack-export-action", index))
             .w_full()

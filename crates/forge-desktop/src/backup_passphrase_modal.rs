@@ -42,12 +42,68 @@ impl PassphraseCheck {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PassphrasePurpose {
+    FullBackup,
+    ScheduleSetup,
+    ScheduleChange,
+}
+
+impl PassphrasePurpose {
+    fn title(self) -> String {
+        match self {
+            Self::FullBackup => tr!("settings_storage_passphrase_title"),
+            Self::ScheduleSetup => tr!("backup_schedule_setup_title"),
+            Self::ScheduleChange => tr!("backup_schedule_change_title"),
+        }
+    }
+
+    fn subtitle(self) -> String {
+        match self {
+            Self::FullBackup => tr!("settings_storage_passphrase_subtitle"),
+            Self::ScheduleSetup => tr!("backup_schedule_setup_subtitle"),
+            Self::ScheduleChange => tr!("backup_schedule_change_subtitle"),
+        }
+    }
+
+    fn warning(self) -> String {
+        match self {
+            Self::FullBackup => tr!("settings_storage_passphrase_warning"),
+            Self::ScheduleSetup => tr!("backup_schedule_setup_warning"),
+            Self::ScheduleChange => tr!("backup_schedule_change_warning"),
+        }
+    }
+
+    fn confirm_label(self) -> String {
+        match self {
+            Self::FullBackup => tr!("settings_storage_passphrase_confirm_btn"),
+            Self::ScheduleSetup => tr!("backup_schedule_setup_confirm_btn"),
+            Self::ScheduleChange => tr!("backup_schedule_change_confirm_btn"),
+        }
+    }
+
+    fn new_passphrase_label(self) -> String {
+        match self {
+            Self::ScheduleChange => tr!("backup_schedule_change_new_label"),
+            Self::FullBackup | Self::ScheduleSetup => tr!("settings_storage_passphrase_label"),
+        }
+    }
+
+    pub(crate) fn asks_current(self) -> bool {
+        self == Self::ScheduleChange
+    }
+}
+
 pub enum BackupPassphraseEvent {
     Confirmed,
     Cancelled,
 }
 
 pub struct BackupPassphraseModal {
+    purpose: PassphrasePurpose,
+    current: Option<Entity<TextInput>>,
+    current_error: Option<String>,
+    working: bool,
     passphrase: Entity<TextInput>,
     confirmation: Entity<TextInput>,
     focus_pending: bool,
@@ -58,7 +114,20 @@ impl EventEmitter<BackupPassphraseEvent> for BackupPassphraseModal {}
 
 impl BackupPassphraseModal {
     pub fn new(cx: &mut Context<Self>) -> Self {
+        Self::with_purpose(PassphrasePurpose::FullBackup, cx)
+    }
+
+    pub fn with_purpose(purpose: PassphrasePurpose, cx: &mut Context<Self>) -> Self {
         let palette = cx.palette();
+        let current = purpose.asks_current().then(|| {
+            cx.new(|cx| {
+                TextInput::new(tr!("backup_schedule_change_current_placeholder"), cx)
+                    .with_palette(palette)
+                    .with_font_size(FONT_XS)
+                    .plain()
+                    .secure(true)
+            })
+        });
         let passphrase = cx.new(|cx| {
             TextInput::new(tr!("settings_storage_passphrase_placeholder"), cx)
                 .with_palette(palette)
@@ -73,11 +142,18 @@ impl BackupPassphraseModal {
                 .plain()
                 .secure(true)
         });
-        let subs = vec![
+        let mut subs = vec![
             cx.subscribe(&passphrase, Self::on_field_event),
             cx.subscribe(&confirmation, Self::on_field_event),
         ];
+        if let Some(current) = &current {
+            subs.push(cx.subscribe(current, Self::on_field_event));
+        }
         Self {
+            purpose,
+            current,
+            current_error: None,
+            working: false,
             passphrase,
             confirmation,
             focus_pending: true,
@@ -90,6 +166,48 @@ impl BackupPassphraseModal {
             self.passphrase.read(cx).content(),
             self.confirmation.read(cx).content(),
         )
+    }
+
+    fn current_entered(&self, cx: &Context<Self>) -> bool {
+        self.current
+            .as_ref()
+            .is_none_or(|current| !current.read(cx).content().is_empty())
+    }
+
+    pub(crate) fn ready(&self, cx: &Context<Self>) -> bool {
+        !self.working && self.check(cx).is_valid() && self.current_entered(cx)
+    }
+
+    pub(crate) fn entered_passphrase(&self, cx: &Context<Self>) -> Option<Passphrase> {
+        self.check(cx)
+            .is_valid()
+            .then(|| Passphrase::new(self.passphrase.read(cx).content().to_owned()))
+    }
+
+    pub(crate) fn entered_current(&self, cx: &Context<Self>) -> Option<Passphrase> {
+        self.current
+            .as_ref()
+            .map(|current| current.read(cx).content().to_owned())
+            .filter(|current| !current.is_empty())
+            .map(Passphrase::new)
+    }
+
+    pub(crate) fn set_working(&mut self, working: bool, cx: &mut Context<Self>) {
+        self.working = working;
+        if working {
+            self.current_error = None;
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn reject_current(&mut self, cx: &mut Context<Self>) {
+        self.working = false;
+        self.current_error = Some(tr!("backup_schedule_change_wrong_current"));
+        if let Some(current) = &self.current {
+            current.update(cx, |input, cx| input.clear(cx));
+        }
+        self.focus_pending = true;
+        cx.notify();
     }
 
     pub(crate) fn take_passphrase(&mut self, cx: &mut Context<Self>) -> Option<Passphrase> {
@@ -105,20 +223,29 @@ impl BackupPassphraseModal {
 
     fn on_field_event(
         &mut self,
-        _field: Entity<TextInput>,
+        field: Entity<TextInput>,
         event: &InputEvent,
         cx: &mut Context<Self>,
     ) {
         match event {
             InputEvent::Cancelled => self.cancel(cx),
             InputEvent::Submitted(_) => self.confirm(cx),
-            InputEvent::Changed(_) => cx.notify(),
+            InputEvent::Changed(_) => {
+                if self
+                    .current
+                    .as_ref()
+                    .is_some_and(|current| *current == field)
+                {
+                    self.current_error = None;
+                }
+                cx.notify();
+            }
             InputEvent::Blurred(_) => {}
         }
     }
 
     fn confirm(&mut self, cx: &mut Context<Self>) {
-        if self.check(cx).is_valid() {
+        if self.ready(cx) {
             cx.emit(BackupPassphraseEvent::Confirmed);
         }
     }
@@ -141,14 +268,14 @@ impl BackupPassphraseModal {
                     .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.warning)
-                    .child(tr!("settings_storage_passphrase_warning")),
+                    .child(self.purpose.warning()),
             )
             .into_any_element()
     }
 
     fn footer(
         &self,
-        check: PassphraseCheck,
+        ready: bool,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
@@ -163,8 +290,9 @@ impl BackupPassphraseModal {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
             ))
             .child(
-                primary_button(tr!("settings_storage_passphrase_confirm_btn"), palette)
-                    .disabled(!check.is_valid())
+                primary_button(self.purpose.confirm_label(), palette)
+                    .busy(self.working)
+                    .disabled(!ready)
                     .on_click(
                         "backup-passphrase-confirm",
                         cx.listener(|this, _: &ClickEvent, _, cx| this.confirm(cx)),
@@ -180,10 +308,11 @@ impl Render for BackupPassphraseModal {
         let density = cx.density();
         if self.focus_pending {
             self.focus_pending = false;
-            self.passphrase
-                .update(cx, |input, cx| input.focus(window, cx));
+            let first = self.current.as_ref().unwrap_or(&self.passphrase);
+            first.update(cx, |input, cx| input.focus(window, cx));
         }
         let check = self.check(cx);
+        let ready = self.ready(cx);
 
         let too_short = tr!(
             "settings_storage_passphrase_too_short",
@@ -195,15 +324,27 @@ impl Render for BackupPassphraseModal {
             min = MIN_PASSPHRASE_CHARS.to_string()
         );
 
+        let current_field = self.current.as_ref().map(|current| {
+            field_column(
+                &palette,
+                &tr!("backup_schedule_change_current_label"),
+                None,
+                self.current_error.as_deref(),
+                field_frame(&palette)
+                    .child(current.clone())
+                    .into_any_element(),
+            )
+        });
         let body = div()
             .w_full()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Md, density))
             .child(self.warning(&palette, density))
+            .children(current_field)
             .child(field_column(
                 &palette,
-                &tr!("settings_storage_passphrase_label"),
+                &self.purpose.new_passphrase_label(),
                 Some(hint.as_str()),
                 check.shows_too_short().then_some(too_short.as_str()),
                 field_frame(&palette)
@@ -220,11 +361,11 @@ impl Render for BackupPassphraseModal {
                     .into_any_element(),
             ));
 
-        let card = modal(tr!("settings_storage_passphrase_title"), body, &palette)
+        let card = modal(self.purpose.title(), body, &palette)
             .header_icon(Icon::Lock, palette.brand)
-            .subtitle(tr!("settings_storage_passphrase_subtitle"))
+            .subtitle(self.purpose.subtitle())
             .width(modal_width(ModalSize::Sm))
-            .footer(self.footer(check, &palette, density, cx))
+            .footer(self.footer(ready, &palette, density, cx))
             .on_close(
                 "backup-passphrase-close",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),

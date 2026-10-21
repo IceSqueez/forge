@@ -468,6 +468,78 @@ settings_storage_passphrase_mismatch = Паролі не збігаються
 settings_storage_passphrase_confirm_btn = Створити копію
 settings_storage_restore_btn = Відновити...
 settings_storage_restore_btn_busy = Підготовка...
+settings_storage_backup_scheduled_hint = Одразу створює заплановану копію з її вмістом і ключем пароля розкладу - пароль не запитується.
+backup_schedule_label = Розклад резервних копій
+backup_schedule_change_btn = Змінити пароль
+backup_schedule_status_off = Вимкнено - остання копія: { $last }
+backup_schedule_status_paused = Призупинено, доки очікує відновлення
+backup_schedule_status_running = Створюю копію...
+backup_schedule_status_scheduled = Остання копія: { $last } - наступна о { $next }
+backup_schedule_status_last = Остання копія: { $last }
+backup_schedule_status_failing = { $attempts ->
+    [one] Збій з { $since }: { $reason }
+    [few] Збій з { $since }, спроб: { $attempts }: { $reason }
+   *[other] Збій з { $since }, спроб: { $attempts }: { $reason }
+}
+backup_schedule_failure_destination_missing = теки резервних копій немає
+backup_schedule_failure_destination_not_writable = до теки резервних копій не можна записати
+backup_schedule_failure_disk_full = диск заповнено
+backup_schedule_failure_inside_scope = тека резервних копій лежить у теці даних
+backup_schedule_failure_key_missing = немає ключа пароля розкладу
+backup_schedule_failure_key_unreadable = збережений ключ пароля розкладу пошкоджено, задайте пароль знову
+backup_schedule_failure_snapshot_failed = не вдалося записати копію
+backup_schedule_failure_state_not_saved = копію записано, але не вдалося зберегти її стан
+backup_schedule_failure_interrupted = створення копії перервано
+backup_schedule_interval_label = Інтервал
+backup_schedule_interval_hint = Хвилин між запланованими копіями, { $min }-{ $max }.
+backup_schedule_keep_newest_label = Зберігання копій
+backup_schedule_keep_newest_hint = Скільки найновіших запланованих копій зберігати, { $min }-{ $max }.
+backup_schedule_keep_daily_label = Щоденні копії
+backup_schedule_keep_daily_hint = Додатково зберігати по одній запланованій копії на день стільки днів, { $min }-{ $max }; 0 вимикає.
+backup_schedule_range_error = Введіть ціле число від { $min } до { $max }
+backup_schedule_unit_minutes = { $count ->
+    [one] хвилина
+    [few] хвилини
+   *[other] хвилин
+}
+backup_schedule_unit_backups = { $count ->
+    [one] копія
+    [few] копії
+   *[other] копій
+}
+backup_schedule_unit_days = { $count ->
+    [one] день
+    [few] дні
+   *[other] днів
+}
+backup_schedule_contents_label = Вміст
+backup_schedule_contents_hint = Невибрані частини не потрапляють у заплановані копії; під час відновлення вони лишаються такими, як на цьому комп'ютері.
+backup_schedule_category_database = База даних і ключ облікових даних
+backup_schedule_category_database_reason = завжди включено
+backup_schedule_category_media = Медіа
+backup_schedule_category_voices = Голоси
+backup_schedule_category_overlays = Файли оверлеїв
+backup_schedule_category_assets = Файли дій
+backup_schedule_folder_label = Тека резервних копій
+backup_schedule_folder_hint = Сюди записуються заплановані копії. Якщо теки немає, створюється лише тека за замовчуванням.
+backup_schedule_folder_choose = Вибрати...
+backup_schedule_folder_reset = За замовчуванням
+backup_schedule_folder_failed = Не вдалося відкрити вибір теки: { $error }
+backup_schedule_persist_failed = Не вдалося зберегти налаштування розкладу копій
+backup_schedule_key_failed = Не вдалося встановити пароль розкладу: { $error }
+backup_schedule_setup_title = Захист запланованих копій
+backup_schedule_setup_subtitle = Запитується один раз - далі заплановані копії створюються самі
+backup_schedule_setup_warning = forge забуває цей пароль і зберігає лише заблокований ключ відновлення. Відновлення запланованої копії запитає його; якщо ви його забудете, ніхто не зможе відновити ці копії.
+backup_schedule_setup_confirm_btn = Увімкнути розклад
+backup_schedule_change_title = Зміна пароля розкладу
+backup_schedule_change_subtitle = Нові заплановані копії використовуватимуть новий пароль
+backup_schedule_change_warning = Копії, створені до цієї зміни, і далі відкриваються лише старим паролем. Зберігайте його, доки ці копії потрібні.
+backup_schedule_change_confirm_btn = Змінити пароль
+backup_schedule_change_current_label = Поточний пароль
+backup_schedule_change_current_placeholder = Введіть поточний пароль
+backup_schedule_change_new_label = Новий пароль
+backup_schedule_change_wrong_current = Поточний пароль неправильний
+backup_schedule_change_done = Пароль розкладу змінено
 restore_dialog_filter = Резервні копії forge
 restore_passphrase_title = Розблокування копії
 restore_passphrase_subtitle = Введіть пароль, з яким створено цю копію

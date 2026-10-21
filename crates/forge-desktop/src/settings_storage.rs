@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use forge_components::{
     Density, FONT_SM, ForgePalette, InputEvent, SettingRow, Spacing, TextInput, primary_button,
-    secondary_button, segment, segmented, setting_row, setting_rows, setting_value_row, spacing,
-    tr,
+    secondary_button, segment, segmented, setting_groups, setting_row, setting_rows,
+    setting_value_row, spacing, tr,
 };
 use forge_runtime::ChatHistoryRetentionHandle;
 use forge_storage::{
@@ -22,6 +22,7 @@ use gpui::{
 };
 
 use crate::async_bridge;
+use crate::backup_schedule::BackupScheduleView;
 use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 use crate::transfer_flows::TransferFlows;
@@ -67,6 +68,7 @@ pub struct SettingsStorageView {
     retention_days: u32,
     history_retention_days: u32,
     transfers: Option<Entity<TransferFlows>>,
+    schedule: Option<Entity<BackupScheduleView>>,
 
     per_viewer_input: Entity<TextInput>,
     display_input: Entity<TextInput>,
@@ -147,6 +149,7 @@ impl SettingsStorageView {
             retention_days: DEFAULT_EVENT_LOG_RETENTION_DAYS,
             history_retention_days: default_history_retention,
             transfers,
+            schedule: None,
             per_viewer_input,
             display_input,
             retention_input,
@@ -155,6 +158,17 @@ impl SettingsStorageView {
         };
         view.load(cx);
         view
+    }
+
+    pub fn attach_schedule(
+        &mut self,
+        schedule: Entity<BackupScheduleView>,
+        cx: &mut Context<Self>,
+    ) {
+        self._subs
+            .push(cx.observe(&schedule, |_, _, cx| cx.notify()));
+        self.schedule = Some(schedule);
+        cx.notify();
     }
 
     fn load(&mut self, cx: &mut Context<Self>) {
@@ -387,7 +401,11 @@ impl SettingsStorageView {
     }
 
     fn start_backup(&mut self, cx: &mut Context<Self>) {
-        if let Some(transfers) = self.transfers.clone() {
+        if let Some(schedule) = &self.schedule
+            && schedule.read(cx).backs_up_unattended()
+        {
+            schedule.read(cx).run_now();
+        } else if let Some(transfers) = self.transfers.clone() {
             transfers.update(cx, |transfers, cx| transfers.backup_to_backups_dir(cx));
         }
         cx.notify();
@@ -429,9 +447,15 @@ impl Render for SettingsStorageView {
             }
             None => (None, None, Vec::new(), true),
         };
-        let backing_up = backup_flow
-            .as_ref()
-            .is_some_and(|backup| backup.read(cx).is_writing());
+        let schedule = self.schedule.as_ref().map(|schedule| schedule.read(cx));
+        let unattended = schedule.is_some_and(BackupScheduleView::backs_up_unattended);
+        let scheduled_running = schedule.is_some_and(BackupScheduleView::is_running);
+        let transfer_held = schedule.is_some_and(BackupScheduleView::transfer_held);
+        let schedule_prompt = schedule.and_then(BackupScheduleView::prompt_view);
+        let backing_up = scheduled_running
+            || backup_flow
+                .as_ref()
+                .is_some_and(|backup| backup.read(cx).is_writing());
         let restore_preparing = restore_flow
             .as_ref()
             .is_some_and(|restore| restore.read(cx).is_preparing());
@@ -442,7 +466,7 @@ impl Render for SettingsStorageView {
         };
         let backup_btn = primary_button(backup_label, &palette)
             .busy(backing_up)
-            .disabled(transfer_busy)
+            .disabled(transfer_busy || transfer_held)
             .on_click(
                 "settings-db-backup",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.start_backup(cx)),
@@ -459,8 +483,10 @@ impl Render for SettingsStorageView {
                 "settings-db-restore",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.start_restore(cx)),
             );
-        let backup_hint = if transfer_busy && !backing_up && !restore_preparing {
+        let backup_hint = if (transfer_busy || transfer_held) && !backing_up && !restore_preparing {
             tr!("settings_storage_transfer_busy_hint")
+        } else if unattended {
+            tr!("settings_storage_backup_scheduled_hint")
         } else {
             tr!("settings_storage_backup_hint")
         };
@@ -471,7 +497,7 @@ impl Render for SettingsStorageView {
             .child(restore_btn)
             .child(backup_btn);
 
-        let rows = setting_rows(&palette)
+        let backup_rows = setting_rows(&palette)
             .row(setting_value_row(
                 tr!("settings_storage_db_path_label"),
                 db_path.display().to_string(),
@@ -485,6 +511,9 @@ impl Render for SettingsStorageView {
                 &palette,
                 density,
             ))
+            .in_card(&palette);
+
+        let limit_rows = setting_rows(&palette)
             .row(self.per_viewer_field(&palette, density, cx))
             .row(self.limit_row(
                 tr!("settings_storage_display_limit_label"),
@@ -517,8 +546,17 @@ impl Render for SettingsStorageView {
             .flex()
             .flex_col()
             .child(SettingsPaneHeader::new(SettingsSection::Storage))
-            .child(rows)
+            .child(setting_groups(
+                [
+                    Some(backup_rows.into_any_element()),
+                    self.schedule.clone().map(IntoElement::into_any_element),
+                    Some(limit_rows.into_any_element()),
+                ]
+                .into_iter()
+                .flatten(),
+            ))
             .children(flow_views)
+            .children(schedule_prompt)
     }
 }
 

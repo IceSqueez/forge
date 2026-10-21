@@ -15,6 +15,7 @@ use gpui::{
 
 use crate::async_bridge::{self, ErrorSink};
 use crate::awake_state::AwakeState;
+use crate::backup_schedule::BackupScheduleView;
 use crate::presentation::ActiveLanguage;
 use crate::problem_report::ProblemReport;
 use crate::runtime_handles::RuntimeHandles;
@@ -274,13 +275,25 @@ impl SettingsView {
                 handles.notification_policy.clone(),
             )
         });
+        let schedule = cx.new(|cx| {
+            BackupScheduleView::new(
+                Arc::clone(&handles.backend),
+                handles.rt_handle.clone(),
+                handles.scheduled_backups.clone(),
+                handles.transfer_exclusivity.clone(),
+                forge_storage::paths::data_dir(),
+                cx,
+            )
+        });
         let storage = cx.new(|cx| {
-            SettingsStorageView::new(
+            let mut storage = SettingsStorageView::new(
                 Arc::clone(&handles.backend),
                 handles.rt_handle.clone(),
                 handles.chat_history_retention.clone(),
                 cx,
-            )
+            );
+            storage.attach_schedule(schedule, cx);
+            storage
         });
         let about = cx.new(|cx| {
             SettingsAboutView::new(

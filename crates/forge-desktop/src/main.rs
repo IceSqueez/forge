@@ -8,6 +8,7 @@ mod audio_routes;
 mod awake_state;
 mod backup_flow;
 mod backup_passphrase_modal;
+mod backup_schedule;
 mod boot;
 mod boot_restore;
 mod builtin_sections;

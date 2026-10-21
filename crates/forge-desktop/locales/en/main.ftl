@@ -458,6 +458,74 @@ settings_storage_passphrase_mismatch = Passphrases do not match
 settings_storage_passphrase_confirm_btn = Create backup
 settings_storage_restore_btn = Restore...
 settings_storage_restore_btn_busy = Preparing...
+settings_storage_backup_scheduled_hint = Writes a scheduled backup now with the schedule's contents and passphrase key - no passphrase is asked.
+backup_schedule_label = Backup schedule
+backup_schedule_change_btn = Change passphrase
+backup_schedule_status_off = Off - last backup: { $last }
+backup_schedule_status_paused = Paused while a restore is pending
+backup_schedule_status_running = Backing up now...
+backup_schedule_status_scheduled = Last backup: { $last } - next at { $next }
+backup_schedule_status_last = Last backup: { $last }
+backup_schedule_status_failing = { $attempts ->
+    [one] Failing since { $since }: { $reason }
+   *[other] Failing since { $since }, { $attempts } attempts: { $reason }
+}
+backup_schedule_failure_destination_missing = the backup folder is missing
+backup_schedule_failure_destination_not_writable = the backup folder is not writable
+backup_schedule_failure_disk_full = the disk is full
+backup_schedule_failure_inside_scope = the backup folder is inside the data folder
+backup_schedule_failure_key_missing = the schedule passphrase key is missing
+backup_schedule_failure_key_unreadable = the stored schedule passphrase key is damaged, set the passphrase again
+backup_schedule_failure_snapshot_failed = the backup could not be written
+backup_schedule_failure_state_not_saved = the backup was written but its state could not be saved
+backup_schedule_failure_interrupted = the backup was interrupted
+backup_schedule_interval_label = Interval
+backup_schedule_interval_hint = Minutes between scheduled backups, { $min }-{ $max }.
+backup_schedule_keep_newest_label = Backup retention
+backup_schedule_keep_newest_hint = How many of the newest scheduled backups to keep, { $min }-{ $max }.
+backup_schedule_keep_daily_label = Daily backups
+backup_schedule_keep_daily_hint = Also keep one scheduled backup per day for this many days, { $min }-{ $max }; 0 turns this off.
+backup_schedule_range_error = Enter a whole number from { $min } to { $max }
+backup_schedule_unit_minutes = { $count ->
+    [one] minute
+   *[other] minutes
+}
+backup_schedule_unit_backups = { $count ->
+    [one] backup
+   *[other] backups
+}
+backup_schedule_unit_days = { $count ->
+    [one] day
+   *[other] days
+}
+backup_schedule_contents_label = Contents
+backup_schedule_contents_hint = Unchecked parts are left out of scheduled backups; restoring one keeps them as they are on this machine.
+backup_schedule_category_database = Database and credentials key
+backup_schedule_category_database_reason = always included
+backup_schedule_category_media = Media
+backup_schedule_category_voices = Voices
+backup_schedule_category_overlays = Overlay files
+backup_schedule_category_assets = Action files
+backup_schedule_folder_label = Backup folder
+backup_schedule_folder_hint = Scheduled backups are written here. Only the default folder is created when missing.
+backup_schedule_folder_choose = Choose...
+backup_schedule_folder_reset = Use default
+backup_schedule_folder_failed = Could not open the folder picker: { $error }
+backup_schedule_persist_failed = Could not save the backup schedule setting
+backup_schedule_key_failed = Could not set the schedule passphrase: { $error }
+backup_schedule_setup_title = Protect scheduled backups
+backup_schedule_setup_subtitle = Asked once - scheduled backups then run on their own
+backup_schedule_setup_warning = forge forgets this passphrase and keeps only a locked restore key. Restoring a scheduled backup asks for it; if you forget it, nobody can recover those backups.
+backup_schedule_setup_confirm_btn = Turn on schedule
+backup_schedule_change_title = Change schedule passphrase
+backup_schedule_change_subtitle = New scheduled backups use the new passphrase
+backup_schedule_change_warning = Backups made before this change still open only with the old passphrase. Keep it while you still need those backups.
+backup_schedule_change_confirm_btn = Change passphrase
+backup_schedule_change_current_label = Current passphrase
+backup_schedule_change_current_placeholder = Enter the current passphrase
+backup_schedule_change_new_label = New passphrase
+backup_schedule_change_wrong_current = The current passphrase is not correct
+backup_schedule_change_done = Schedule passphrase changed
 restore_dialog_filter = forge backups
 restore_passphrase_title = Unlock backup
 restore_passphrase_subtitle = Enter the passphrase this backup was created with

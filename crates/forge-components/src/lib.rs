@@ -5,6 +5,7 @@ pub mod cards;
 pub(crate) mod caret_blink;
 pub mod chat_gap_row;
 pub mod chat_row;
+pub mod checkbox;
 pub mod chip;
 pub mod code_editor;
 pub mod confirm;
@@ -71,6 +72,7 @@ pub use cards::{
 };
 pub use chat_gap_row::chat_gap_row;
 pub use chat_row::{ChatBody, ChatRow, ChatRowView, PlatformMark, RoleBadge, chat_row};
+pub use checkbox::{Checkbox, checkbox};
 pub use chip::{Chip, ChipGlyph, chip};
 pub use code_editor::{CodeEditor, SaveCode, bind_code_editor_keys};
 pub use confirm::{ConfirmModal, ConfirmTone, confirm_modal};

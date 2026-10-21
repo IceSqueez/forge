@@ -1932,4 +1932,66 @@ pub(crate) mod tests {
         let included = rig.view.read_with(cx, |view, _| view.included.clone());
         assert_eq!(included, OPTIONAL_CATEGORIES.to_vec());
     }
+
+    fn measured(destination_outside_data_dir: u64) -> forge_transfer::StorageUsed {
+        forge_transfer::StorageUsed {
+            database: 1,
+            media: 2,
+            voices: 3,
+            overlays: 4,
+            assets: 5,
+            logs: 6,
+            backups: 7,
+            destination_outside_data_dir,
+        }
+    }
+
+    #[test]
+    fn storage_parts_list_the_data_folder_parts_in_order_with_their_own_sizes() {
+        let parts = super::storage_parts(&measured(0));
+
+        assert_eq!(
+            parts,
+            vec![
+                (super::StoragePart::Database, 1),
+                (super::StoragePart::Media, 2),
+                (super::StoragePart::Voices, 3),
+                (super::StoragePart::Overlays, 4),
+                (super::StoragePart::Assets, 5),
+                (super::StoragePart::Logs, 6),
+                (super::StoragePart::Backups, 7),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_outside_destination_part_appears_only_when_it_holds_bytes() {
+        let shown: Vec<Option<(super::StoragePart, u64)>> = [0, 1, u64::MAX]
+            .into_iter()
+            .map(|outside| {
+                super::storage_parts(&measured(outside))
+                    .into_iter()
+                    .find(|(part, _)| *part == super::StoragePart::Destination)
+            })
+            .collect();
+
+        assert_eq!(
+            shown,
+            vec![
+                None,
+                Some((super::StoragePart::Destination, 1)),
+                Some((super::StoragePart::Destination, u64::MAX)),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_empty_data_folder_still_lists_every_part_at_zero() {
+        let parts = super::storage_parts(&forge_transfer::StorageUsed::default());
+
+        assert_eq!(
+            (parts.len(), parts.iter().all(|(_, bytes)| *bytes == 0)),
+            (7, true)
+        );
+    }
 }

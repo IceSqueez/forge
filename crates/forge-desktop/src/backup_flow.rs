@@ -203,3 +203,17 @@ impl Render for BackupFlow {
         }
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+
+    impl BackupFlow {
+        pub(crate) fn passphrase_prompt(&self) -> Option<Entity<BackupPassphraseModal>> {
+            match &self.step {
+                BackupStep::Passphrase(prompt) => Some(prompt.modal.clone()),
+                BackupStep::Idle | BackupStep::ChoosingFile | BackupStep::Writing => None,
+            }
+        }
+    }
+}

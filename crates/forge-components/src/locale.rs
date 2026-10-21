@@ -296,6 +296,25 @@ mod tests {
     }
 
     #[test]
+    fn fmt_bytes_switches_unit_exactly_at_each_binary_boundary() {
+        let cases = [
+            ("en", 0, "0 B"),
+            ("en", 1_023, "1,023 B"),
+            ("en", 1_024, "1.0 KB"),
+            ("en", 1_536, "1.5 KB"),
+            ("en", 1_048_576, "1.0 MB"),
+            ("en", 1_073_741_824, "1.00 GB"),
+            ("en", u64::MAX, "17,179,869,184.00 GB"),
+            ("uk", 1_536, "1,5 KB"),
+            ("uk", 1_073_741_824, "1,00 GB"),
+        ];
+        for (locale, bytes, expected) in cases {
+            set_locale_id(locale);
+            assert_eq!(fmt_bytes(bytes), expected, "fmt_bytes({bytes}) in {locale}");
+        }
+    }
+
+    #[test]
     fn fmt_short_date_orders_components_per_locale() {
         let date = utc(2026, Month::March, 15, 0, 0, 0, 0);
 

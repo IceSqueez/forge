@@ -168,3 +168,242 @@ fn dismiss_toast(id: u64, cx: &mut App) {
         cx.global_mut::<Toasts>().dismiss(id);
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::sync::Mutex;
+
+    use forge_components::{ToastKind, Toasts};
+    use forge_runtime::sub_action_runners::{DesktopNotice, OsPortError};
+    use forge_storage::Language;
+    use forge_transfer::{FailureCategory, ScheduleState};
+    use gpui::TestAppContext;
+    use time::Duration;
+
+    use super::*;
+    use crate::i18n::install_language;
+    use crate::test_support::{pump, runtime};
+
+    const SETTLE_ROUNDS: usize = 2000;
+
+    fn streak(since_offset_mins: i64, attempts: u32) -> FailureStreak {
+        FailureStreak {
+            category: FailureCategory::KeyMissing,
+            since: OffsetDateTime::UNIX_EPOCH + Duration::minutes(since_offset_mins),
+            attempts,
+        }
+    }
+
+    fn status(failure: Option<FailureStreak>) -> ScheduledBackupStatus {
+        ScheduledBackupStatus {
+            state: ScheduleState::Idle,
+            last_success_at: None,
+            failure,
+            next_due: None,
+            prune_failures: 0,
+            storage_used: None,
+        }
+    }
+
+    #[test]
+    fn a_streak_is_announced_once_however_many_attempts_and_republishes_follow() {
+        let mut watch = FailureStreakWatch::default();
+        let first = streak(0, 1);
+
+        let changes: Vec<StreakChange> = [None, Some(first), Some(first), Some(streak(0, 2))]
+            .into_iter()
+            .chain([Some(streak(0, 3))])
+            .map(|failure| watch.observe(failure))
+            .collect();
+
+        assert_eq!(
+            changes,
+            vec![
+                StreakChange::Unchanged,
+                StreakChange::Started(first),
+                StreakChange::Unchanged,
+                StreakChange::Unchanged,
+                StreakChange::Unchanged,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_cleared_streak_ends_once_and_the_next_streak_is_announced_again() {
+        let mut watch = FailureStreakWatch::default();
+        let next = streak(90, 1);
+
+        let changes: Vec<StreakChange> = [Some(streak(0, 1)), Some(streak(0, 2)), None, None]
+            .into_iter()
+            .chain([Some(next)])
+            .map(|failure| watch.observe(failure))
+            .collect();
+
+        assert_eq!(
+            changes,
+            vec![
+                StreakChange::Started(streak(0, 1)),
+                StreakChange::Unchanged,
+                StreakChange::Ended,
+                StreakChange::Unchanged,
+                StreakChange::Started(next),
+            ]
+        );
+    }
+
+    #[derive(Default)]
+    struct RecordingPort {
+        shown: Mutex<Vec<String>>,
+    }
+
+    impl RecordingPort {
+        fn titles(&self) -> Vec<String> {
+            self.shown.lock().unwrap().clone()
+        }
+    }
+
+    impl NotifyPort for RecordingPort {
+        fn show(&self, notice: DesktopNotice) -> Result<(), OsPortError> {
+            self.shown.lock().unwrap().push(notice.title);
+            Ok(())
+        }
+    }
+
+    struct Drain {
+        rt: tokio::runtime::Runtime,
+        tx: watch::Sender<ScheduledBackupStatus>,
+        port: Arc<RecordingPort>,
+    }
+
+    type ShownToast = (ToastKind, Option<String>);
+
+    fn drain(cx: &mut TestAppContext, os_notice: bool) -> Drain {
+        install_language(Language::En);
+        cx.executor().allow_parking();
+        cx.update(|cx| {
+            cx.set_global(Toasts::new());
+            cx.set_global(BackupFailureNoticePreference(os_notice));
+        });
+        let rt = runtime();
+        let (tx, rx) = watch::channel(status(None));
+        let port = Arc::new(RecordingPort::default());
+        let notify = Arc::clone(&port) as Arc<dyn NotifyPort>;
+        let handle = rt.handle().clone();
+        cx.update(|cx| {
+            cx.spawn(async move |cx| drain_failures(rx, notify, handle, cx).await)
+                .detach();
+        });
+        settle(cx, &rt, |_, _| true);
+        Drain { rt, tx, port }
+    }
+
+    fn toasts(cx: &mut TestAppContext) -> Vec<ShownToast> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|toast| {
+                    (
+                        toast.kind,
+                        toast.action.as_ref().map(|action| action.label.to_string()),
+                    )
+                })
+                .collect()
+        })
+    }
+
+    fn settle(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        done: impl Fn(&mut TestAppContext, &tokio::runtime::Runtime) -> bool,
+    ) {
+        for _ in 0..SETTLE_ROUNDS {
+            pump(rt);
+            cx.run_until_parked();
+            if done(cx, rt) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        pump(rt);
+        cx.run_until_parked();
+    }
+
+    fn publish(
+        cx: &mut TestAppContext,
+        rig: &Drain,
+        failure: Option<FailureStreak>,
+        settled: (usize, usize),
+    ) {
+        rig.tx.send_replace(status(failure));
+        let port = Arc::clone(&rig.port);
+        settle(cx, &rig.rt, move |cx, _| {
+            (port.titles().len(), toasts(cx).len()) == settled
+        });
+    }
+
+    fn open_settings_error() -> ShownToast {
+        (
+            ToastKind::Error,
+            Some(tr!("system_notice_backup_failed_open")),
+        )
+    }
+
+    #[gpui::test]
+    fn a_streak_of_many_attempts_raises_one_sticky_error_toast_and_one_os_notice(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = drain(cx, true);
+
+        for attempts in 1..=3 {
+            publish(cx, &rig, Some(streak(0, attempts)), (1, 1));
+        }
+
+        assert_eq!(
+            (toasts(cx), rig.port.titles()),
+            (
+                vec![open_settings_error()],
+                vec![tr!("system_notice_backup_failed_title")]
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn the_end_of_a_streak_dismisses_its_toast(cx: &mut TestAppContext) {
+        let rig = drain(cx, true);
+        publish(cx, &rig, Some(streak(0, 1)), (1, 1));
+
+        publish(cx, &rig, None, (1, 0));
+
+        assert_eq!(toasts(cx), Vec::new());
+    }
+
+    #[gpui::test]
+    fn a_new_streak_after_a_success_raises_a_fresh_toast_and_os_notice(cx: &mut TestAppContext) {
+        let rig = drain(cx, true);
+        publish(cx, &rig, Some(streak(0, 1)), (1, 1));
+        publish(cx, &rig, None, (1, 0));
+
+        publish(cx, &rig, Some(streak(90, 1)), (2, 1));
+
+        assert_eq!(
+            (toasts(cx), rig.port.titles().len()),
+            (vec![open_settings_error()], 2)
+        );
+    }
+
+    #[gpui::test]
+    fn with_the_os_notice_toggle_off_a_streak_raises_the_toast_but_no_os_notice(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = drain(cx, false);
+
+        publish(cx, &rig, Some(streak(0, 1)), (0, 1));
+
+        assert_eq!(
+            (toasts(cx), rig.port.titles()),
+            (vec![open_settings_error()], Vec::<String>::new())
+        );
+    }
+}

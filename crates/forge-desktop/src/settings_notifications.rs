@@ -487,6 +487,149 @@ mod tests {
         );
     }
 
+    fn mount_with_backup_notice(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        settings: Arc<dyn SettingsRepo>,
+        enabled: bool,
+    ) -> (Entity<SettingsNotificationsView>, NotificationPolicyHandle) {
+        install_language(Language::En);
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            cx.set_global(Toasts::new());
+            cx.set_global(BackupFailureNoticePreference(enabled));
+        });
+        let policy = policy(rt, STORED);
+        let handle = rt.handle().clone();
+        let shared = policy.clone();
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                SettingsNotificationsView::new(settings, handle, shared)
+                    .with_backup_failure_notice(cx)
+            })
+        });
+        (view, policy)
+    }
+
+    fn backup_notice(cx: &mut TestAppContext) -> bool {
+        cx.update(|cx| BackupFailureNoticePreference::current(cx))
+    }
+
+    #[gpui::test]
+    fn the_backup_failure_toggle_opens_showing_the_global_preference(cx: &mut TestAppContext) {
+        let rt = runtime();
+        for enabled in [true, false] {
+            let (backend, _writes) = test_backend();
+            let (view, _policy) = mount_with_backup_notice(cx, &rt, backend, enabled);
+            let opened = view.read_with(cx, |view, _| {
+                view.shown(NotificationSetting::ScheduledBackupFailureNotice)
+            });
+            assert_eq!(opened, enabled);
+        }
+    }
+
+    #[gpui::test]
+    fn flipping_the_backup_failure_toggle_persists_its_key_and_updates_the_global_only(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (backend, mut writes) = test_backend();
+        let (view, policy) = mount_with_backup_notice(cx, &rt, backend, true);
+
+        view.update(cx, |view, cx| {
+            view.flip(NotificationSetting::ScheduledBackupFailureNotice, cx)
+        });
+        settle(cx, &rt);
+
+        assert_eq!(
+            (
+                writes.try_recv().ok(),
+                writes.try_recv().ok(),
+                backup_notice(cx),
+                policy.preferences(),
+            ),
+            (
+                Some((
+                    reserved_keys::NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE.to_owned(),
+                    "false".to_owned()
+                )),
+                None,
+                false,
+                STORED,
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn the_backup_failure_flip_shows_before_the_write_lands_and_the_global_waits(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (backend, _writes) = test_backend();
+        let (view, _policy) = mount_with_backup_notice(cx, &rt, backend, true);
+
+        view.update(cx, |view, cx| {
+            view.flip(NotificationSetting::ScheduledBackupFailureNotice, cx)
+        });
+
+        let shown = view.read_with(cx, |view, _| {
+            view.shown(NotificationSetting::ScheduledBackupFailureNotice)
+        });
+        assert_eq!((shown, backup_notice(cx)), (false, true));
+    }
+
+    #[gpui::test]
+    fn a_failed_backup_failure_toggle_write_reverts_it_keeps_the_global_and_shows_an_error(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (view, _policy) = mount_with_backup_notice(cx, &rt, failing_settings(), true);
+
+        view.update(cx, |view, cx| {
+            view.flip(NotificationSetting::ScheduledBackupFailureNotice, cx)
+        });
+        settle(cx, &rt);
+
+        let shown = view.read_with(cx, |view, _| {
+            view.shown(NotificationSetting::ScheduledBackupFailureNotice)
+        });
+        assert_eq!(
+            (shown, backup_notice(cx), toasts(cx)),
+            (
+                true,
+                true,
+                vec![(
+                    ToastKind::Error,
+                    tr!("settings_notifications_persist_failed")
+                )]
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn a_double_flip_of_the_backup_failure_toggle_settles_on_the_original_value(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (backend, mut writes) = test_backend();
+        let (view, _policy) = mount_with_backup_notice(cx, &rt, backend, true);
+
+        view.update(cx, |view, cx| {
+            view.flip(NotificationSetting::ScheduledBackupFailureNotice, cx);
+            view.flip(NotificationSetting::ScheduledBackupFailureNotice, cx);
+        });
+        settle(cx, &rt);
+
+        let mut written = Vec::new();
+        while let Ok((_, value)) = writes.try_recv() {
+            written.push(value);
+        }
+        assert_eq!(
+            (written, backup_notice(cx)),
+            (vec!["false".to_owned(), "true".to_owned()], true)
+        );
+    }
+
     #[gpui::test]
     fn two_failed_writes_of_a_double_flip_leave_the_toggle_at_the_stored_value(
         cx: &mut TestAppContext,

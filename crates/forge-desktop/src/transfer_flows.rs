@@ -322,11 +322,18 @@ mod tests {
 
     use forge_components::{ToastKind, Toasts, tr};
     use forge_storage::Language;
-    use forge_transfer::{BundleKind, read_bundle_kind, setup_staging_root};
+    use std::sync::Arc;
+
+    use forge_transfer::{
+        BundleKind, MIN_PASSPHRASE_CHARS, ScheduledBackupHandle, ScheduledBackupParts,
+        SystemBackupClock, TransferError, TransferExclusivity, backups_dir, read_bundle_kind,
+        setup_staging_root, spawn_scheduled_backups,
+    };
     use forge_types::ActionId;
     use gpui::{AppContext, Entity, TestAppContext};
 
     use super::{TransferFlows, TransferRoute};
+    use crate::backup_passphrase_modal::{BackupPassphraseEvent, BackupPassphraseModal};
     use crate::event_loss::EventLoss;
     use crate::home::HomeView;
     use crate::home_stats::HomeStats;
@@ -591,5 +598,247 @@ mod tests {
             "toasts {shown:?}, {} staged setups left",
             entries(&staging)
         );
+    }
+
+    struct SharedLock {
+        exclusivity: TransferExclusivity,
+        scheduled: ScheduledBackupHandle,
+    }
+
+    fn shared_rig(cx: &mut TestAppContext, background_runs: bool) -> (Rig, SharedLock) {
+        let mut rig = rig_with(cx, background_runs);
+        let exclusivity = TransferExclusivity::new();
+        let parts = ScheduledBackupParts {
+            provider: Arc::clone(rig.world.provider()),
+            data_dir: rig.world.data_dir(),
+            exclusivity: exclusivity.clone(),
+            clock: Arc::new(SystemBackupClock),
+        };
+        let scheduled = rig.rt.block_on(async { spawn_scheduled_backups(parts) });
+        let stats = cx.new(|_| HomeStats::new());
+        let pack = rig.services.clone();
+        let data_dir = rig.world.data_dir();
+        let (shared, handle) = (exclusivity.clone(), scheduled.clone());
+        rig.flows = cx.new(|cx| {
+            TransferFlows::new(stats, pack, data_dir, cx).with_shared_exclusivity(shared, handle)
+        });
+        (
+            rig,
+            SharedLock {
+                exclusivity,
+                scheduled,
+            },
+        )
+    }
+
+    fn settle_until(
+        cx: &mut TestAppContext,
+        rig: &Rig,
+        done: impl Fn(&mut TestAppContext) -> bool,
+    ) {
+        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
+        while !done(cx) && std::time::Instant::now() < deadline {
+            rig.rt
+                .block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
+            cx.run_until_parked();
+        }
+    }
+
+    fn measured_backups(lock: &SharedLock) -> Option<u64> {
+        lock.scheduled
+            .status()
+            .borrow()
+            .storage_used
+            .map(|used| used.backups)
+    }
+
+    fn backup_prompt(cx: &mut TestAppContext, rig: &Rig) -> Entity<BackupPassphraseModal> {
+        rig.flows
+            .read_with(cx, |flows, cx| flows.backup.read(cx).passphrase_prompt())
+            .expect("the backup asks for a passphrase")
+    }
+
+    fn start_backup_to_backups_dir(
+        cx: &mut TestAppContext,
+        rig: &Rig,
+    ) -> Entity<BackupPassphraseModal> {
+        rig.flows
+            .update(cx, |flows, cx| flows.backup_to_backups_dir(cx));
+        backup_prompt(cx, rig)
+    }
+
+    fn confirm_passphrase(cx: &mut TestAppContext, prompt: &Entity<BackupPassphraseModal>) {
+        let passphrase: String = std::iter::repeat_n('p', MIN_PASSPHRASE_CHARS).collect();
+        prompt.update(cx, |modal, cx| {
+            modal.fill(None, &passphrase, &passphrase, cx);
+            modal.submit(cx);
+        });
+        cx.run_until_parked();
+    }
+
+    fn backup_running(cx: &mut TestAppContext, rig: &Rig) -> bool {
+        rig.flows
+            .read_with(cx, |flows, cx| flows.backup.read(cx).is_busy())
+    }
+
+    #[gpui::test]
+    fn every_manual_transfer_is_refused_with_a_warning_while_the_scheduler_holds_the_lock(
+        cx: &mut TestAppContext,
+    ) {
+        let mut outcomes = Vec::new();
+        let mut expected = Vec::new();
+        let extra: [(&'static str, Start, Probe); 2] = [
+            (
+                "backup_to_backups_dir",
+                |flows, cx| flows.backup_to_backups_dir(cx),
+                |flows, cx| flows.backup.read(cx).is_busy(),
+            ),
+            (
+                "request_import",
+                |flows, cx| flows.request_import(cx),
+                |flows, _| flows.routing,
+            ),
+        ];
+
+        for (name, start, started) in starts().into_iter().chain(extra) {
+            let (rig, lock) = shared_rig(cx, false);
+            let scheduler = lock.exclusivity.try_acquire().unwrap();
+
+            rig.flows.update(cx, start);
+
+            let opened = rig.flows.read_with(cx, started);
+            let holds = rig.flows.read_with(cx, |flows, _| flows.guard.is_some());
+            outcomes.push((name, opened, holds, toasts(cx)));
+            expected.push((
+                name,
+                false,
+                false,
+                vec![(ToastKind::Warn, tr!("transfer_busy_already"))],
+            ));
+            drop(scheduler);
+        }
+
+        assert_eq!(outcomes, expected);
+    }
+
+    #[gpui::test]
+    fn the_scheduler_holding_the_lock_marks_the_transfers_busy_until_it_lets_go(
+        cx: &mut TestAppContext,
+    ) {
+        let (rig, lock) = shared_rig(cx, false);
+        let busy = |cx: &mut TestAppContext| rig.flows.read_with(cx, |flows, cx| flows.is_busy(cx));
+
+        let idle = busy(cx);
+        let scheduler = lock.exclusivity.try_acquire().unwrap();
+        let held = busy(cx);
+        drop(scheduler);
+        let released = busy(cx);
+
+        assert_eq!((idle, held, released), (false, true, false));
+    }
+
+    #[gpui::test]
+    fn an_open_manual_flow_keeps_the_scheduler_out_of_the_shared_lock(cx: &mut TestAppContext) {
+        let mut outcomes = Vec::new();
+
+        for (name, start, _) in starts()
+            .into_iter()
+            .filter(|(name, _, _)| !matches!(*name, "start_restore" | "export_pack_of"))
+        {
+            let (rig, lock) = shared_rig(cx, false);
+
+            rig.flows.update(cx, start);
+
+            outcomes.push((name, lock.exclusivity.try_acquire().is_none()));
+        }
+
+        assert_eq!(
+            outcomes,
+            vec![
+                ("backup", true),
+                ("export_pack", true),
+                ("export_setup", true)
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn a_routed_import_keeps_the_lock_while_its_flow_is_open(cx: &mut TestAppContext) {
+        let mut held = Vec::new();
+
+        for kind in [BundleKind::Full, BundleKind::Pack, BundleKind::Setup] {
+            let (rig, lock) = shared_rig(cx, false);
+            rig.flows.update(cx, |flows, cx| {
+                flows.route_import(PathBuf::from("picked.forgebundle"), Ok(kind), cx)
+            });
+            held.push(lock.exclusivity.is_held());
+        }
+
+        assert_eq!(held, vec![true; 3]);
+    }
+
+    #[gpui::test]
+    fn an_unreadable_import_releases_the_lock_it_took(cx: &mut TestAppContext) {
+        let (rig, lock) = shared_rig(cx, false);
+        let kind = Err(TransferError::NotABundle);
+
+        rig.flows.update(cx, |flows, cx| {
+            flows.route_import(PathBuf::from("picked.forgebundle"), kind, cx)
+        });
+
+        assert!(!lock.exclusivity.is_held());
+    }
+
+    #[gpui::test]
+    fn a_finished_manual_backup_releases_the_lock_and_asks_for_a_storage_remeasure(
+        cx: &mut TestAppContext,
+    ) {
+        let (rig, lock) = shared_rig(cx, true);
+        settle_until(cx, &rig, |_| measured_backups(&lock).is_some());
+        let before = measured_backups(&lock);
+        let prompt = start_backup_to_backups_dir(cx, &rig);
+
+        confirm_passphrase(cx, &prompt);
+        settle_until(cx, &rig, |cx| !backup_running(cx, &rig));
+        settle_until(cx, &rig, |_| measured_backups(&lock) != before);
+
+        let kinds: Vec<ToastKind> = toasts(cx).into_iter().map(|toast| toast.0).collect();
+        assert_eq!(
+            (
+                lock.exclusivity.is_held(),
+                kinds,
+                before,
+                measured_backups(&lock).is_some_and(|bytes| bytes > 0)
+            ),
+            (false, vec![ToastKind::Success], Some(0), true)
+        );
+    }
+
+    #[gpui::test]
+    fn a_failed_manual_backup_releases_the_lock(cx: &mut TestAppContext) {
+        let (rig, lock) = shared_rig(cx, true);
+        std::fs::write(backups_dir(&rig.world.data_dir()), b"not a folder").unwrap();
+        let prompt = start_backup_to_backups_dir(cx, &rig);
+
+        confirm_passphrase(cx, &prompt);
+        settle_until(cx, &rig, |cx| !backup_running(cx, &rig));
+
+        let kinds: Vec<ToastKind> = toasts(cx).into_iter().map(|toast| toast.0).collect();
+        assert_eq!(
+            (lock.exclusivity.is_held(), kinds),
+            (false, vec![ToastKind::Error])
+        );
+    }
+
+    #[gpui::test]
+    fn a_cancelled_manual_backup_releases_the_lock(cx: &mut TestAppContext) {
+        let (rig, lock) = shared_rig(cx, false);
+        let prompt = start_backup_to_backups_dir(cx, &rig);
+        let while_asking = lock.exclusivity.is_held();
+
+        prompt.update(cx, |_, cx| cx.emit(BackupPassphraseEvent::Cancelled));
+        cx.run_until_parked();
+
+        assert_eq!((while_asking, lock.exclusivity.is_held()), (true, false));
     }
 }

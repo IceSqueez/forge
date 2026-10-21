@@ -172,7 +172,7 @@ impl ScreenActionsView {
         self.open_trigger_picker(window, cx);
     }
 
-    fn submit_trigger_fill(&mut self, cx: &mut Context<Self>) {
+    pub(in crate::actions_screen) fn submit_trigger_fill(&mut self, cx: &mut Context<Self>) {
         let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_ref() else {
             return;
         };

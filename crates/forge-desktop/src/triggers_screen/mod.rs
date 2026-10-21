@@ -33,6 +33,7 @@ mod create;
 mod detail;
 mod list;
 mod permission_help;
+mod shortcuts;
 mod timer;
 
 use create::CreateStage;

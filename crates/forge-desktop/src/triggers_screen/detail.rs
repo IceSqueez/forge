@@ -292,7 +292,7 @@ impl TriggersRegistryView {
         Some(instance)
     }
 
-    fn commit_config(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn commit_config(&mut self, cx: &mut Context<Self>) {
         let Some(instance) = self.pending_instance(cx) else {
             return;
         };

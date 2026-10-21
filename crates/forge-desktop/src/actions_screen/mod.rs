@@ -48,6 +48,7 @@ mod list;
 mod nav;
 pub(crate) mod overlay_schema;
 mod run_history;
+mod shortcuts;
 mod step_validation;
 mod sub_action_modal;
 mod test_run;

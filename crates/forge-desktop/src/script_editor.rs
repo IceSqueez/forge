@@ -35,6 +35,7 @@ use time::OffsetDateTime;
 use crate::async_bridge::{self, BridgeFlow, drain_events};
 use crate::globals::variant_kind_color;
 use crate::screen::Screen;
+use crate::screen_shortcuts::ScreenShortcuts;
 use crate::sidebar::NavRequested;
 use crate::unsaved_work::UnsavedWork;
 use forge_components::ActivePresentation;
@@ -568,6 +569,28 @@ impl UnsavedWork for ScriptEditorView {
         self.pending_nav = None;
         self.revert_current(cx);
         cx.notify();
+    }
+}
+
+impl ScreenShortcuts for ScriptEditorView {
+    fn save_shortcut(&mut self, cx: &mut Context<Self>) {
+        if !self.prompt_open() {
+            self.start_saving_unsaved_work(cx);
+        }
+    }
+
+    fn run_shortcut(&mut self, cx: &mut Context<Self>) {
+        if !self.prompt_open() {
+            self.run(cx);
+        }
+    }
+}
+
+impl ScriptEditorView {
+    fn prompt_open(&self) -> bool {
+        self.run_modal.is_some()
+            || self.pending_delete.get().is_some()
+            || self.pending_nav.is_some()
     }
 }
 

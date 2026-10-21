@@ -145,7 +145,7 @@ impl ScreenActionsView {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use forge_components::ThemeId;
     use forge_runtime::{ActionCancelRegistry, QueueScheduler, spawn_action_engine};
     use forge_soundboard::ClipLibrary;
@@ -163,7 +163,7 @@ mod tests {
     };
     use forge_components::Presentation;
 
-    pub(super) fn view_with(
+    pub(in crate::actions_screen) fn view_with(
         cx: &mut gpui::TestAppContext,
         rt: &tokio::runtime::Runtime,
         clips: Vec<StoredClip>,

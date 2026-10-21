@@ -13,6 +13,17 @@ actions!(
     [GoHome, GoChat, GoActions, GoTriggers, GoTwitch, GoSettings]
 );
 
+actions!(
+    forge_commands,
+    [
+        SaveFocused,
+        NewAction,
+        ToggleLiveChat,
+        ToggleEventFeed,
+        RunFocused
+    ]
+);
+
 actions!(forge_list, [ListSelectPrev, ListSelectNext, ListActivate]);
 
 actions!(forge_app, [Quit]);
@@ -61,6 +72,31 @@ pub const SHORTCUTS: &[ShortcutEntry] = &[
         id: "nav.settings",
         default_chord: "ctrl-6",
         label_key: "settings_shortcuts_action_nav_settings",
+    },
+    ShortcutEntry {
+        id: "app.save",
+        default_chord: "ctrl-s",
+        label_key: "settings_shortcuts_action_save",
+    },
+    ShortcutEntry {
+        id: "app.new_action",
+        default_chord: "ctrl-n",
+        label_key: "settings_shortcuts_action_new_action",
+    },
+    ShortcutEntry {
+        id: "app.toggle_live_chat",
+        default_chord: "ctrl-shift-c",
+        label_key: "settings_shortcuts_action_toggle_live_chat",
+    },
+    ShortcutEntry {
+        id: "app.toggle_event_feed",
+        default_chord: "ctrl-shift-e",
+        label_key: "settings_shortcuts_action_toggle_event_feed",
+    },
+    ShortcutEntry {
+        id: "app.run",
+        default_chord: "f5",
+        label_key: "settings_shortcuts_action_run_script",
     },
 ];
 
@@ -201,6 +237,11 @@ fn make_binding(entry_id: &str, chord: &str) -> Option<KeyBinding> {
         "nav.triggers" => KeyBinding::new(chord, GoTriggers, context),
         "nav.twitch" => KeyBinding::new(chord, GoTwitch, context),
         "nav.settings" => KeyBinding::new(chord, GoSettings, context),
+        "app.save" => KeyBinding::new(chord, SaveFocused, context),
+        "app.new_action" => KeyBinding::new(chord, NewAction, context),
+        "app.toggle_live_chat" => KeyBinding::new(chord, ToggleLiveChat, context),
+        "app.toggle_event_feed" => KeyBinding::new(chord, ToggleEventFeed, context),
+        "app.run" => KeyBinding::new(chord, RunFocused, context),
         _ => return None,
     };
     Some(binding)

@@ -16,7 +16,8 @@ use gpui::{
 use crate::home_stats::HomeStats;
 
 use crate::actions::{
-    GoActions, GoChat, GoHome, GoSettings, GoTriggers, GoTwitch, Quit, SHELL_CONTEXT,
+    GoActions, GoChat, GoHome, GoSettings, GoTriggers, GoTwitch, NewAction, Quit, RunFocused,
+    SHELL_CONTEXT, SaveFocused, ToggleEventFeed, ToggleLiveChat,
 };
 use crate::actions_screen::ScreenActionsView;
 use crate::chat::ChatView;
@@ -49,6 +50,9 @@ use crate::runtime_handles::RuntimeHandles;
 use crate::runtime_status::RuntimeStatus;
 use crate::scheduled_runs_section::ScheduledRunsView;
 use crate::screen::Screen;
+use crate::screen_shortcuts::{
+    ScreenShortcuts, ScreenShortcutsHandle, ToggleReturn, toggle_destination,
+};
 use crate::script_editor::ScriptEditorView;
 use crate::server_console::ServerConsoleView;
 use crate::settings::SettingsView;
@@ -84,16 +88,30 @@ struct Router {
     screen: Screen,
     content: AnyView,
     guard: NavigationGuard,
+    shortcuts: Option<ScreenShortcutsHandle>,
+    toggle_return: Option<ToggleReturn>,
 }
 
 struct RoutedContent {
     view: AnyView,
     work: Option<UnsavedWorkHandle>,
+    shortcuts: Option<ScreenShortcutsHandle>,
 }
 
 impl From<AnyView> for RoutedContent {
     fn from(view: AnyView) -> Self {
-        Self { view, work: None }
+        Self {
+            view,
+            work: None,
+            shortcuts: None,
+        }
+    }
+}
+
+impl RoutedContent {
+    fn with_shortcuts<V: ScreenShortcuts>(mut self, view: &Entity<V>) -> Self {
+        self.shortcuts = Some(ScreenShortcutsHandle::new(view.clone()));
+        self
     }
 }
 
@@ -160,6 +178,7 @@ impl AppShell {
         let RoutedContent {
             view: content,
             work,
+            shortcuts,
         } = Self::content_for(&screen, &topics, &handles, cx);
         let mut guard = NavigationGuard::new(window.window_handle());
         guard.watch(work);
@@ -232,6 +251,8 @@ impl AppShell {
                 screen,
                 content,
                 guard,
+                shortcuts,
+                toggle_return: None,
             },
             chrome,
             focus,
@@ -456,7 +477,7 @@ impl AppShell {
                     bus: Arc::clone(&handles.bus),
                 };
                 let view = cx.new(|cx| OverlaysView::new(launch, cx));
-                Self::guarded(view, cx)
+                Self::guarded(view.clone(), cx).with_shortcuts(&view)
             }
             Screen::Server => {
                 let server = handles.server.clone();
@@ -535,7 +556,7 @@ impl AppShell {
                     this.navigate(event.0.clone(), cx);
                 })
                 .detach();
-                view.into()
+                RoutedContent::from(view.clone()).with_shortcuts(&view)
             }
             Screen::Triggers(preselect) => {
                 let repo = HotkeySyncedTriggerRepo::wrap(
@@ -568,7 +589,7 @@ impl AppShell {
                     this.navigate(event.0.clone(), cx);
                 })
                 .detach();
-                view.into()
+                RoutedContent::from(view.clone()).with_shortcuts(&view)
             }
             Screen::Scripts => {
                 let backend = handles.backend.clone();
@@ -587,7 +608,7 @@ impl AppShell {
                         cx,
                     )
                 });
-                Self::guarded(editor, cx)
+                Self::guarded(editor.clone(), cx).with_shortcuts(&editor)
             }
         }
     }
@@ -613,6 +634,7 @@ impl AppShell {
         RoutedContent {
             view: Self::routed(view, cx),
             work: Some(work),
+            shortcuts: None,
         }
     }
 
@@ -964,6 +986,7 @@ impl AppShell {
     fn show(&mut self, content: RoutedContent) {
         self.router.content = content.view;
         self.router.guard.watch(content.work);
+        self.router.shortcuts = content.shortcuts;
     }
 
     fn navigate(&mut self, screen: Screen, cx: &mut Context<Self>) {
@@ -1068,6 +1091,7 @@ impl AppShell {
             cx.notify();
         });
         self.router.screen = screen;
+        self.router.toggle_return = None;
         cx.notify();
     }
 
@@ -1093,6 +1117,67 @@ impl AppShell {
 
     fn go_settings(&mut self, _: &GoSettings, _: &mut Window, cx: &mut Context<Self>) {
         self.navigate(Screen::Settings(None), cx);
+    }
+
+    fn screen_shortcuts(&self) -> Option<ScreenShortcutsHandle> {
+        if self.router.guard.is_asking() {
+            return None;
+        }
+        self.router.shortcuts.clone()
+    }
+
+    fn save_focused(&mut self, _: &SaveFocused, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(shortcuts) = self.screen_shortcuts() {
+            shortcuts.save(cx);
+        }
+    }
+
+    fn run_focused(&mut self, _: &RunFocused, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(shortcuts) = self.screen_shortcuts() {
+            shortcuts.run(cx);
+        }
+    }
+
+    fn new_action(&mut self, _: &NewAction, window: &mut Window, cx: &mut Context<Self>) {
+        if self.router.guard.is_asking() {
+            return;
+        }
+        if !matches!(self.router.screen, Screen::Actions(_)) {
+            self.navigate(Screen::Actions(None), cx);
+        }
+        if !matches!(self.router.screen, Screen::Actions(_)) {
+            return;
+        }
+        if let Some(shortcuts) = self.router.shortcuts.clone() {
+            shortcuts.new_action(window, cx);
+        }
+    }
+
+    fn toggle_live_chat(&mut self, _: &ToggleLiveChat, _: &mut Window, cx: &mut Context<Self>) {
+        self.toggle_screen(Screen::Chat, cx);
+    }
+
+    fn toggle_event_feed(&mut self, _: &ToggleEventFeed, _: &mut Window, cx: &mut Context<Self>) {
+        self.toggle_screen(Screen::EventFeed, cx);
+    }
+
+    fn toggle_screen(&mut self, target: Screen, cx: &mut Context<Self>) {
+        if self.router.guard.is_asking() {
+            return;
+        }
+        let from = self.router.screen.clone();
+        let Some(destination) =
+            toggle_destination(&from, &target, self.router.toggle_return.as_ref())
+        else {
+            return;
+        };
+        self.navigate(destination.clone(), cx);
+        if destination == target && self.router.screen == target {
+            self.router.toggle_return = Some(ToggleReturn {
+                toggled: target,
+                back_to: from,
+            });
+        }
     }
 
     fn focus_next_stop(&mut self, _: &FocusNextField, window: &mut Window, cx: &mut Context<Self>) {
@@ -1192,6 +1277,11 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::go_triggers))
             .on_action(cx.listener(Self::go_twitch))
             .on_action(cx.listener(Self::go_settings))
+            .on_action(cx.listener(Self::save_focused))
+            .on_action(cx.listener(Self::run_focused))
+            .on_action(cx.listener(Self::new_action))
+            .on_action(cx.listener(Self::toggle_live_chat))
+            .on_action(cx.listener(Self::toggle_event_feed))
             .on_action(cx.listener(Self::focus_next_stop))
             .size_full()
             .relative()

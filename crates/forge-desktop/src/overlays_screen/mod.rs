@@ -23,6 +23,7 @@ mod receiver;
 mod registry;
 mod registry_pane;
 mod server_status;
+mod shortcuts;
 mod sizing_section;
 mod sound_choice;
 mod voice_choice;

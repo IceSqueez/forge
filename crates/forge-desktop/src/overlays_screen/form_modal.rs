@@ -117,7 +117,7 @@ impl OverlayFormModal {
         cx.notify();
     }
 
-    fn submit(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn submit(&mut self, cx: &mut Context<Self>) {
         if !self.can_submit(cx) {
             return;
         }

@@ -460,7 +460,7 @@ impl ScreenActionsView {
         }
     }
 
-    fn submit_action_modal(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn submit_action_modal(&mut self, cx: &mut Context<Self>) {
         let Some(form) = self.action_modal.as_ref() else {
             return;
         };
@@ -946,7 +946,7 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let name_len = form.name.read(cx).content().chars().count().min(NAME_LIMIT);
-        let valid = !form.name.read(cx).content().trim().is_empty() && !form.queues.is_empty();
+        let valid = form.ready(cx);
 
         let name_row = div()
             .flex()

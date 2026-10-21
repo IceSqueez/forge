@@ -269,7 +269,7 @@ impl TriggersRegistryView {
         cx.notify();
     }
 
-    fn submit_create(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn submit_create(&mut self, cx: &mut Context<Self>) {
         let Some(CreateStage::Fill(form)) = self.create.as_ref() else {
             return;
         };

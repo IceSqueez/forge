@@ -4,7 +4,7 @@ use forge_components::int_entry_invalid;
 use forge_types::{Variant, normalize_var_name};
 
 impl EditSubActionForm {
-    pub(super) fn submit(&mut self, cx: &mut Context<Self>) {
+    pub(in crate::actions_screen) fn submit(&mut self, cx: &mut Context<Self>) {
         self.clear_rejection(cx);
         let bool_vals: HashMap<String, bool> = self
             .fields

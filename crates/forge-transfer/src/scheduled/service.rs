@@ -396,4 +396,57 @@ mod tests {
         );
         service.parts.provider.shutdown().await;
     }
+
+    struct TickingClock {
+        calls: std::sync::atomic::AtomicI64,
+    }
+
+    impl BackupClock for TickingClock {
+        fn now(&self) -> OffsetDateTime {
+            let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            FixedClock.now() + time::Duration::microseconds(call)
+        }
+
+        fn offset_at(&self, _instant: OffsetDateTime) -> UtcOffset {
+            UtcOffset::UTC
+        }
+    }
+
+    #[tokio::test]
+    async fn a_schedule_that_never_backed_up_runs_its_first_backup_on_a_moving_clock() {
+        use forge_storage::{SettingsRepo, reserved_keys};
+        let dir = tempfile::tempdir().unwrap();
+        let url = format!("sqlite://{}", dir.path().join(DATABASE_FILE_NAME).display());
+        let backend = SqliteBackend::open_for_test(&url, [7; 32], dir.path().join("media"), None)
+            .await
+            .unwrap();
+        let key = create_schedule_key(&Passphrase::new("correct horse battery staple".to_owned()))
+            .unwrap();
+        backend
+            .set_string(reserved_keys::BACKUP_SCHEDULE_ENABLED, "true")
+            .await
+            .unwrap();
+        backend
+            .set_string(reserved_keys::BACKUP_SCHEDULE_KEY, &key.encode().unwrap())
+            .await
+            .unwrap();
+        let handle = super::spawn_scheduled_backups(ScheduledBackupParts {
+            provider: Arc::new(backend),
+            data_dir: dir.path().to_path_buf(),
+            exclusivity: TransferExclusivity::new(),
+            clock: Arc::new(TickingClock {
+                calls: std::sync::atomic::AtomicI64::new(0),
+            }),
+        });
+        let mut status = handle.status();
+
+        let first_run = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            status.wait_for(|status| status.state == ScheduleState::Running),
+        )
+        .await;
+
+        handle.shutdown();
+        assert!(first_run.is_ok(), "the first backup never started");
+    }
 }

@@ -150,7 +150,8 @@ impl Service {
                     self.publish();
                 }
                 () = tokio::time::sleep(nap), if self.runnable() => {
-                    if self.parts.clock.now() >= self.due_at() {
+                    let now = self.parts.clock.now();
+                    if self.is_due(now) {
                         self.attempt(Trigger::Due).await;
                     }
                 }
@@ -163,14 +164,22 @@ impl Service {
     }
 
     pub(crate) fn due_at(&self) -> OffsetDateTime {
-        let now = self.parts.clock.now();
+        self.due_at_from(self.parts.clock.now())
+    }
+
+    fn is_due(&self, now: OffsetDateTime) -> bool {
+        self.due_at_from(now) <= now
+    }
+
+    fn due_at_from(&self, now: OffsetDateTime) -> OffsetDateTime {
         let scheduled = next_due(self.progress.last_success_at, self.settings.interval(), now);
         self.retry_after
             .map_or(scheduled, |retry| retry.max(scheduled))
     }
 
     fn nap(&self) -> StdDuration {
-        let remaining = self.due_at() - self.parts.clock.now();
+        let now = self.parts.clock.now();
+        let remaining = self.due_at_from(now) - now;
         StdDuration::try_from(remaining)
             .unwrap_or(StdDuration::ZERO)
             .min(CLOCK_RECHECK_INTERVAL)

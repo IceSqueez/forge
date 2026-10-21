@@ -159,6 +159,7 @@ impl RenderOnce for Overlay {
             .is_some()
             .then(|| self.escape_focus(window, cx));
         let position = self.position;
+        let viewport = window.viewport_size();
         let content = std::mem::replace(&mut self.content, div().into_any_element());
 
         let root: Div = match position {
@@ -175,10 +176,9 @@ impl RenderOnce for Overlay {
                     .child(card);
 
                 div()
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .size_full()
+                    .relative()
+                    .w(viewport.width)
+                    .h(viewport.height)
                     .overflow_hidden()
                     .child(self.render_scrim(false))
                     .child(content_layer)
@@ -197,10 +197,9 @@ impl RenderOnce for Overlay {
                     });
 
                 div()
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .size_full()
+                    .relative()
+                    .w(viewport.width)
+                    .h(viewport.height)
                     .overflow_hidden()
                     .child(self.render_scrim(true))
                     .child(card)
@@ -219,10 +218,9 @@ impl RenderOnce for Overlay {
                     });
 
                 div()
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .size_full()
+                    .relative()
+                    .w(viewport.width)
+                    .h(viewport.height)
                     .overflow_hidden()
                     .child(self.render_scrim(true))
                     .child(card)
@@ -245,18 +243,23 @@ impl RenderOnce for Overlay {
                 });
         }
 
-        match position {
-            OverlayPosition::Center => deferred(root.with_animation(
-                self.dismiss_id.clone(),
-                enter_animation(),
-                |el, delta| el.opacity(delta),
-            ))
-            .with_priority(OVERLAY_PRIORITY)
-            .into_any_element(),
-            OverlayPosition::Left(_) | OverlayPosition::Right(_) => deferred(root)
-                .with_priority(OVERLAY_PRIORITY)
+        let layer = match position {
+            OverlayPosition::Center => root
+                .with_animation(self.dismiss_id.clone(), enter_animation(), |el, delta| {
+                    el.opacity(delta)
+                })
                 .into_any_element(),
-        }
+            OverlayPosition::Left(_) | OverlayPosition::Right(_) => root.into_any_element(),
+        };
+        deferred(
+            anchored()
+                .position_mode(AnchoredPositionMode::Window)
+                .position(Point::default())
+                .anchor(Anchor::TopLeft)
+                .child(layer),
+        )
+        .with_priority(OVERLAY_PRIORITY)
+        .into_any_element()
     }
 }
 

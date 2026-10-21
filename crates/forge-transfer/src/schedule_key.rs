@@ -90,3 +90,31 @@ pub(crate) fn unwrap_identity(
     age::x25519::Identity::from_str(secret.expose_secret())
         .map_err(|_| TransferError::damaged("the restore key is not readable"))
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::ScheduleKey;
+
+    #[test]
+    fn an_encoded_key_decodes_to_the_same_pair() {
+        let key = ScheduleKey {
+            recipient: "age1recipient".to_owned(),
+            wrapped_identity: "d3JhcHBlZA==\"quoted\"".to_owned(),
+        };
+
+        assert_eq!(ScheduleKey::decode(&key.encode().unwrap()).unwrap(), key);
+    }
+
+    #[test]
+    fn decoding_rejects_text_that_is_not_a_whole_key() {
+        for stored in [
+            "",
+            "not json",
+            "{\"recipient\":\"age1\"}",
+            "{\"wrapped_identity\":\"w\"}",
+        ] {
+            assert!(ScheduleKey::decode(stored).is_err(), "{stored:?}");
+        }
+    }
+}

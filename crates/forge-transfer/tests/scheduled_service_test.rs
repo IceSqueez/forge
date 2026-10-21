@@ -106,13 +106,8 @@ impl Fixture {
     }
 
     async fn store_key(&self, key: &ScheduleKey) {
-        self.set(reserved_keys::BACKUP_SCHEDULE_RECIPIENT, &key.recipient)
+        self.set(reserved_keys::BACKUP_SCHEDULE_KEY, &key.encode().unwrap())
             .await;
-        self.set(
-            reserved_keys::BACKUP_SCHEDULE_WRAPPED_IDENTITY,
-            &key.wrapped_identity,
-        )
-        .await;
     }
 
     async fn last_succeeded_at(&self, at: OffsetDateTime) {
@@ -341,6 +336,24 @@ async fn an_enabled_schedule_without_a_key_fails_as_key_missing() {
     let streak = failed_attempts(&handle, 1).await.failure.unwrap();
 
     assert_eq!(streak.category, FailureCategory::KeyMissing);
+    fixture.finish(handle).await;
+}
+
+#[tokio::test]
+async fn a_corrupted_stored_key_fails_as_key_unreadable_and_writes_no_bundle() {
+    let fixture = Fixture::new().await;
+    fixture.enable_into(&fixture.folder()).await;
+    fixture
+        .set(reserved_keys::BACKUP_SCHEDULE_KEY, "{\"recipient\":")
+        .await;
+    let handle = fixture.spawn();
+
+    let streak = failed_attempts(&handle, 1).await.failure.unwrap();
+
+    assert_eq!(
+        (streak.category, bundles_in(&fixture.folder())),
+        (FailureCategory::KeyUnreadable, Vec::<String>::new())
+    );
     fixture.finish(handle).await;
 }
 

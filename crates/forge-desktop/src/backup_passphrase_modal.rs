@@ -383,11 +383,191 @@ impl Render for BackupPassphraseModal {
 }
 
 #[cfg(test)]
-mod tests {
+#[allow(clippy::unwrap_used)]
+pub(crate) mod tests {
+    use gpui::TestAppContext;
+
     use super::*;
+    use crate::test_support::install_presentation;
 
     fn chars(c: char, n: usize) -> String {
         std::iter::repeat_n(c, n).collect()
+    }
+
+    impl BackupPassphraseModal {
+        pub(crate) fn fill(
+            &mut self,
+            current: Option<&str>,
+            passphrase: &str,
+            confirmation: &str,
+            cx: &mut Context<Self>,
+        ) {
+            if let (Some(field), Some(text)) = (&self.current, current) {
+                let text = text.to_owned();
+                field.update(cx, |input, cx| input.set_content(text, cx));
+            }
+            let (passphrase, confirmation) = (passphrase.to_owned(), confirmation.to_owned());
+            self.passphrase
+                .update(cx, |input, cx| input.set_content(passphrase, cx));
+            self.confirmation
+                .update(cx, |input, cx| input.set_content(confirmation, cx));
+        }
+
+        pub(crate) fn submit(&mut self, cx: &mut Context<Self>) {
+            self.confirm(cx);
+        }
+
+        pub(crate) fn shown_current_error(&self) -> Option<String> {
+            self.current_error.clone()
+        }
+
+        fn typed_current(&self, cx: &gpui::App) -> Option<String> {
+            self.current
+                .as_ref()
+                .map(|current| current.read(cx).content().to_owned())
+        }
+
+        fn typed_passphrase(&self, cx: &gpui::App) -> String {
+            self.passphrase.read(cx).content().to_owned()
+        }
+    }
+
+    fn prompt(
+        cx: &mut TestAppContext,
+        purpose: PassphrasePurpose,
+    ) -> Entity<BackupPassphraseModal> {
+        install_presentation(cx);
+        cx.update(|cx| cx.new(|cx| BackupPassphraseModal::with_purpose(purpose, cx)))
+    }
+
+    fn confirmations(
+        cx: &mut TestAppContext,
+        modal: &Entity<BackupPassphraseModal>,
+    ) -> std::rc::Rc<std::cell::Cell<usize>> {
+        let count = std::rc::Rc::new(std::cell::Cell::new(0));
+        let seen = std::rc::Rc::clone(&count);
+        cx.update(|cx| {
+            cx.subscribe(modal, move |_, event: &BackupPassphraseEvent, _| {
+                if matches!(event, BackupPassphraseEvent::Confirmed) {
+                    seen.set(seen.get() + 1);
+                }
+            })
+            .detach();
+        });
+        count
+    }
+
+    #[gpui::test]
+    fn change_prompt_does_not_confirm_until_the_current_passphrase_is_entered(
+        cx: &mut TestAppContext,
+    ) {
+        let modal = prompt(cx, PassphrasePurpose::ScheduleChange);
+        let confirmed = confirmations(cx, &modal);
+        let new = chars('n', MIN_PASSPHRASE_CHARS);
+
+        modal.update(cx, |modal, cx| {
+            modal.fill(Some(""), &new, &new, cx);
+            modal.submit(cx);
+        });
+        cx.run_until_parked();
+        let without_current = confirmed.get();
+        modal.update(cx, |modal, cx| {
+            modal.fill(Some("old passphrase"), &new, &new, cx);
+            modal.submit(cx);
+        });
+        cx.run_until_parked();
+
+        assert_eq!((without_current, confirmed.get()), (0, 1));
+    }
+
+    #[gpui::test]
+    fn setup_prompt_confirms_on_a_matching_passphrase_without_asking_a_current_one(
+        cx: &mut TestAppContext,
+    ) {
+        let modal = prompt(cx, PassphrasePurpose::ScheduleSetup);
+        let confirmed = confirmations(cx, &modal);
+        let new = chars('n', MIN_PASSPHRASE_CHARS);
+
+        modal.update(cx, |modal, cx| {
+            modal.fill(None, &new, &new, cx);
+            modal.submit(cx);
+        });
+        cx.run_until_parked();
+
+        let asks_current = modal.read_with(cx, |modal, cx| modal.typed_current(cx).is_some());
+        assert_eq!((asks_current, confirmed.get()), (false, 1));
+    }
+
+    #[gpui::test]
+    fn a_working_prompt_ignores_repeated_confirms(cx: &mut TestAppContext) {
+        let modal = prompt(cx, PassphrasePurpose::ScheduleSetup);
+        let confirmed = confirmations(cx, &modal);
+        let new = chars('n', MIN_PASSPHRASE_CHARS);
+
+        modal.update(cx, |modal, cx| {
+            modal.fill(None, &new, &new, cx);
+            modal.set_working(true, cx);
+            modal.submit(cx);
+        });
+        cx.run_until_parked();
+
+        assert_eq!(confirmed.get(), 0);
+    }
+
+    #[gpui::test]
+    fn rejecting_the_current_passphrase_clears_it_shows_the_error_and_keeps_the_new_one(
+        cx: &mut TestAppContext,
+    ) {
+        let modal = prompt(cx, PassphrasePurpose::ScheduleChange);
+        let new = chars('n', MIN_PASSPHRASE_CHARS);
+
+        modal.update(cx, |modal, cx| {
+            modal.fill(Some("wrong passphrase"), &new, &new, cx);
+            modal.set_working(true, cx);
+            modal.reject_current(cx);
+        });
+        cx.run_until_parked();
+
+        let shown = modal.update(cx, |modal, cx| {
+            (
+                modal.shown_current_error().is_some(),
+                modal.typed_current(cx),
+                modal.typed_passphrase(cx),
+                modal.ready(cx),
+            )
+        });
+        assert_eq!(shown, (true, Some(String::new()), new, false));
+    }
+
+    #[gpui::test]
+    fn editing_the_current_passphrase_clears_its_error(cx: &mut TestAppContext) {
+        let modal = prompt(cx, PassphrasePurpose::ScheduleChange);
+        modal.update(cx, |modal, cx| modal.reject_current(cx));
+
+        let current = modal.read_with(cx, |modal, _| modal.current.clone().unwrap());
+        current.update(cx, |_, cx| cx.emit(InputEvent::Changed("o".into())));
+        cx.run_until_parked();
+
+        assert_eq!(
+            modal.read_with(cx, |modal, _| modal.shown_current_error()),
+            None
+        );
+    }
+
+    #[gpui::test]
+    fn editing_the_new_passphrase_keeps_the_current_passphrase_error(cx: &mut TestAppContext) {
+        let modal = prompt(cx, PassphrasePurpose::ScheduleChange);
+        modal.update(cx, |modal, cx| modal.reject_current(cx));
+
+        let passphrase = modal.read_with(cx, |modal, _| modal.passphrase.clone());
+        passphrase.update(cx, |_, cx| cx.emit(InputEvent::Changed("n".into())));
+        cx.run_until_parked();
+
+        assert!(
+            modal
+                .read_with(cx, |modal, _| modal.shown_current_error())
+                .is_some()
+        );
     }
 
     #[test]

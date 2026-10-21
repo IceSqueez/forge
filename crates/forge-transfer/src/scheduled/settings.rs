@@ -259,18 +259,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_key_needs_both_the_recipient_and_the_wrapped_identity() {
+    async fn a_stored_key_loads_and_an_undecodable_one_is_flagged_unreadable() {
         let (_dir, repo) = backend().await;
-        repo.set_string(reserved_keys::BACKUP_SCHEDULE_RECIPIENT, "age1recipient")
-            .await
-            .unwrap();
-        let half = ScheduleSettings::load(&repo).await.unwrap().key.is_some();
-        repo.set_string(reserved_keys::BACKUP_SCHEDULE_WRAPPED_IDENTITY, "wrapped")
-            .await
-            .unwrap();
-        let whole = ScheduleSettings::load(&repo).await.unwrap().key.is_some();
+        let key = crate::schedule_key::ScheduleKey {
+            recipient: "age1recipient".to_owned(),
+            wrapped_identity: "wrapped".to_owned(),
+        };
+        let mut loaded = Vec::new();
+        for stored in [
+            None,
+            Some(key.encode().unwrap()),
+            Some("{not json".to_owned()),
+        ] {
+            match &stored {
+                Some(value) => repo
+                    .set_string(reserved_keys::BACKUP_SCHEDULE_KEY, value)
+                    .await
+                    .unwrap(),
+                None => {
+                    repo.delete(reserved_keys::BACKUP_SCHEDULE_KEY)
+                        .await
+                        .unwrap();
+                }
+            }
+            let settings = ScheduleSettings::load(&repo).await.unwrap();
+            loaded.push((settings.key, settings.key_unreadable));
+        }
 
-        assert_eq!((half, whole), (false, true));
+        assert_eq!(
+            loaded,
+            vec![(None, false), (Some(key), false), (None, true)]
+        );
         repo.shutdown().await;
     }
 

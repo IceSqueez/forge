@@ -221,6 +221,19 @@ mod tests {
     }
 
     #[test]
+    fn the_backup_schedule_key_and_its_machine_state_never_travel() {
+        for key in [
+            key::BACKUP_SCHEDULE_KEY,
+            key::BACKUP_SCHEDULE_ENABLED,
+            key::BACKUP_SCHEDULE_DESTINATION,
+            key::BACKUP_SCHEDULE_LAST_SUCCESS_AT,
+            key::BACKUP_SCHEDULE_CONTENT_FINGERPRINT,
+        ] {
+            assert_eq!(portability_of(key), MachineLocal, "{key}");
+        }
+    }
+
+    #[test]
     fn the_voice_strategy_row_is_left_to_its_repository() {
         assert!(!is_portable(key::VOICE_ASSIGNMENT_STRATEGY));
     }

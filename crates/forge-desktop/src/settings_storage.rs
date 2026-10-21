@@ -634,9 +634,12 @@ mod tests {
         PerViewerChoice, SettingsStorageView, parse_history_retention_days, parse_limit,
         parse_per_viewer_limit, parse_retention_days, per_viewer_choice,
     };
+    use crate::backup_schedule::tests::{ScheduleRig, key_for, schedule_rig, unattended_seeds};
+    use crate::home_stats::HomeStats;
     use crate::test_support::{
         SettingWrite, TestBackend, install_presentation, pump, quiet_bus, runtime, test_backend,
     };
+    use crate::transfer_flows::{TransferFlows, TransferRoute};
 
     const RECV_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -966,5 +969,70 @@ mod tests {
                 "stored history {stored_history:?}, event log {event_log:?}"
             );
         }
+    }
+
+    fn storage_with_schedule(
+        cx: &mut TestAppContext,
+        schedule: &ScheduleRig,
+    ) -> (Entity<SettingsStorageView>, Entity<TransferFlows>) {
+        let services = schedule.world.services.clone();
+        let data_dir = schedule.world.data_dir();
+        let flows = cx.update(|cx| {
+            let stats = cx.new(|_| HomeStats::new());
+            let flows = cx.new(|cx| TransferFlows::new(stats, services, data_dir, cx));
+            cx.set_global(TransferRoute(flows.clone()));
+            flows
+        });
+        let provider = Arc::clone(schedule.world.provider());
+        let bus = quiet_bus(&schedule.rt);
+        let mut repo = MockChatHistoryRepo::new();
+        repo.expect_append_batch().returning(|_| Ok(()));
+        repo.expect_apply_retention().returning(|_, _| Ok(0));
+        let retention = schedule.rt.block_on(async {
+            spawn_chat_history_persistence(
+                bus,
+                Arc::new(repo),
+                Arc::clone(&provider) as Arc<dyn SettingsRepo>,
+            )
+        });
+        let handle = schedule.rt.handle().clone();
+        let schedule_view = schedule.view.clone();
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                let mut view = SettingsStorageView::new(provider, handle, retention, cx);
+                view.attach_schedule(schedule_view, cx);
+                view
+            })
+        });
+        cx.run_until_parked();
+        (view, flows)
+    }
+
+    #[gpui::test]
+    fn backup_now_with_an_unattended_schedule_writes_a_scheduled_backup_without_asking(
+        cx: &mut TestAppContext,
+    ) {
+        let schedule = schedule_rig(cx, &unattended_seeds(&key_for("the schedule passphrase")));
+        let (view, flows) = storage_with_schedule(cx, &schedule);
+
+        view.update(cx, |view, cx| view.start_backup(cx));
+        let written = schedule.settle(cx, |_| !schedule.scheduled_bundles().is_empty());
+
+        let asked = flows.read_with(cx, |flows, cx| flows.is_busy(cx));
+        assert_eq!((written, asked), (true, false));
+    }
+
+    #[gpui::test]
+    fn backup_now_without_a_schedule_key_opens_the_passphrase_flow(cx: &mut TestAppContext) {
+        let schedule = schedule_rig(cx, &[]);
+        let (view, flows) = storage_with_schedule(cx, &schedule);
+
+        view.update(cx, |view, cx| view.start_backup(cx));
+        let asked = schedule.settle(cx, |cx| flows.read_with(cx, |flows, cx| flows.is_busy(cx)));
+
+        assert_eq!(
+            (asked, schedule.scheduled_bundles()),
+            (true, Vec::<String>::new())
+        );
     }
 }

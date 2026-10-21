@@ -1018,3 +1018,821 @@ impl Render for BackupScheduleView {
         rows.in_card(&palette)
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+pub(crate) mod tests {
+    use std::path::Path;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    use forge_components::{Toasts, fmt_relative_time, tr};
+    use forge_storage::settings::portability::{SettingPortability, portability_of};
+    use forge_storage::{DataProvider, Language, reserved_keys};
+    use forge_transfer::{
+        BackupCategory, FailureCategory, FailureStreak, Passphrase, ScheduleKey, ScheduleState,
+        ScheduledBackupHandle, ScheduledBackupParts, ScheduledBackupStatus, SystemBackupClock,
+        TransferError, TransferExclusivity, change_schedule_passphrase, create_schedule_key,
+        spawn_scheduled_backups,
+    };
+    use gpui::{AppContext as _, Entity, TestAppContext};
+    use tempfile::TempDir;
+    use time::OffsetDateTime;
+    use time::format_description::well_known::Rfc3339;
+
+    use super::{
+        BackupScheduleView, OPTIONAL_CATEGORIES, ScheduleNumber, ScheduleSnapshot, StatusLine,
+        failure_reason, load_schedule,
+    };
+    use crate::backup_passphrase_modal::PassphrasePurpose;
+    use crate::i18n::install_language;
+    use crate::scheduled_run_labels::{local_stamp, system_offset_at};
+    use crate::test_support::install_presentation;
+    use crate::test_support::pack_flow::{PackWorld, pack_world};
+    use crate::test_support::{pump, runtime};
+
+    const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
+    const OLD_PASSPHRASE: &str = "the old schedule passphrase";
+    const NEW_PASSPHRASE: &str = "a brand new schedule passphrase";
+    const SCHEDULED_PREFIX: &str = "forge-scheduled-";
+
+    pub(crate) struct ScheduleRig {
+        pub(crate) rt: tokio::runtime::Runtime,
+        pub(crate) world: PackWorld,
+        pub(crate) destination: TempDir,
+        pub(crate) view: Entity<BackupScheduleView>,
+        _service: ScheduledBackupHandle,
+    }
+
+    pub(crate) fn key_for(passphrase: &str) -> ScheduleKey {
+        create_schedule_key(&Passphrase::new(passphrase.to_owned())).unwrap()
+    }
+
+    pub(crate) fn unattended_seeds(key: &ScheduleKey) -> Vec<(&'static str, String)> {
+        vec![
+            (reserved_keys::BACKUP_SCHEDULE_ENABLED, "true".to_owned()),
+            (reserved_keys::BACKUP_SCHEDULE_KEY, key.encode().unwrap()),
+            (
+                reserved_keys::BACKUP_SCHEDULE_LAST_SUCCESS_AT,
+                just_now().format(&Rfc3339).unwrap(),
+            ),
+        ]
+    }
+
+    fn just_now() -> OffsetDateTime {
+        OffsetDateTime::now_utc().replace_nanosecond(0).unwrap()
+    }
+
+    pub(crate) fn schedule_rig(
+        cx: &mut TestAppContext,
+        seeds: &[(&'static str, String)],
+    ) -> ScheduleRig {
+        install_language(Language::En);
+        install_presentation(cx);
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let world = pack_world(&rt);
+        let destination = tempfile::tempdir().unwrap();
+        let shown_destination = destination.path().to_string_lossy().into_owned();
+        let exclusivity = TransferExclusivity::new();
+        let provider = Arc::clone(world.provider());
+        let service = rt.block_on(async {
+            provider
+                .set_string(
+                    reserved_keys::BACKUP_SCHEDULE_DESTINATION,
+                    &shown_destination,
+                )
+                .await
+                .unwrap();
+            for (key, value) in seeds {
+                provider.set_string(key, value).await.unwrap();
+            }
+            spawn_scheduled_backups(ScheduledBackupParts {
+                provider: Arc::clone(&provider),
+                data_dir: world.data_dir(),
+                exclusivity: exclusivity.clone(),
+                clock: Arc::new(SystemBackupClock),
+            })
+        });
+        let handle = rt.handle().clone();
+        let data_dir = world.data_dir();
+        let (view_service, view_exclusivity) = (service.clone(), exclusivity.clone());
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                BackupScheduleView::new(
+                    provider as Arc<dyn DataProvider>,
+                    handle,
+                    view_service,
+                    view_exclusivity,
+                    data_dir,
+                    cx,
+                )
+            })
+        });
+        let rig = ScheduleRig {
+            rt,
+            world,
+            destination,
+            view,
+            _service: service,
+        };
+        let loaded = rig.settle(cx, |cx| {
+            rig.view.read_with(cx, |view, _| {
+                view.destination.as_deref() == Some(shown_destination.as_str())
+            })
+        });
+        assert!(loaded, "the schedule settings never loaded");
+        rig
+    }
+
+    impl ScheduleRig {
+        pub(crate) fn settle(
+            &self,
+            cx: &mut TestAppContext,
+            mut done: impl FnMut(&mut TestAppContext) -> bool,
+        ) -> bool {
+            let deadline = Instant::now() + SETTLE_DEADLINE;
+            loop {
+                cx.run_until_parked();
+                if done(cx) {
+                    return true;
+                }
+                if Instant::now() >= deadline {
+                    return false;
+                }
+                self.rt
+                    .block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
+            }
+        }
+
+        pub(crate) fn stored(&self, key: &str) -> Option<String> {
+            self.rt
+                .block_on(self.world.provider().get_string(key))
+                .unwrap()
+        }
+
+        fn stored_key(&self) -> Option<ScheduleKey> {
+            self.stored(reserved_keys::BACKUP_SCHEDULE_KEY)
+                .map(|stored| ScheduleKey::decode(&stored).unwrap())
+        }
+
+        pub(crate) fn scheduled_bundles(&self) -> Vec<String> {
+            bundles_in(self.destination.path())
+        }
+
+        fn prompt_purpose(&self, cx: &mut TestAppContext) -> Option<PassphrasePurpose> {
+            self.view
+                .read_with(cx, |view, _| view.prompt.as_ref().map(|p| p.purpose))
+        }
+
+        fn view_key(&self, cx: &mut TestAppContext) -> Option<ScheduleKey> {
+            self.view.read_with(cx, |view, _| view.key.clone())
+        }
+
+        fn answer_prompt(
+            &self,
+            cx: &mut TestAppContext,
+            current: Option<&str>,
+            passphrase: &str,
+            confirmation: &str,
+        ) {
+            let modal = self
+                .view
+                .read_with(cx, |view, _| view.prompt.as_ref().unwrap().modal.clone());
+            modal.update(cx, |modal, cx| {
+                modal.fill(current, passphrase, confirmation, cx);
+                modal.submit(cx);
+            });
+        }
+
+        fn settle_until_prompt_closes(&self, cx: &mut TestAppContext) {
+            let closed = self.settle(cx, |cx| {
+                self.view.read_with(cx, |view, _| view.prompt.is_none())
+            });
+            assert!(closed, "the passphrase prompt never closed");
+        }
+    }
+
+    pub(crate) fn bundles_in(folder: &Path) -> Vec<String> {
+        std::fs::read_dir(folder)
+            .map(|entries| {
+                entries
+                    .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                    .filter(|name| name.starts_with(SCHEDULED_PREFIX))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn opens_with(wrapped: &str, passphrase: &str) -> Result<(), TransferError> {
+        change_schedule_passphrase(
+            wrapped,
+            &Passphrase::new(passphrase.to_owned()),
+            &Passphrase::new(NEW_PASSPHRASE.to_owned()),
+        )
+        .map(|_| ())
+    }
+
+    fn unmarked(text: String) -> String {
+        text.replace(['\u{2068}', '\u{2069}'], "")
+    }
+
+    #[test]
+    fn number_input_accepts_exactly_the_settings_bounds() {
+        for number in ScheduleNumber::ALL {
+            let (min, max) = (*number.range().start(), *number.range().end());
+            let mut cases = vec![
+                (min.to_string(), Some(min)),
+                (max.to_string(), Some(max)),
+                (format!(" {max} "), Some(max)),
+                ((max + 1).to_string(), None),
+                ("abc".to_owned(), None),
+                (String::new(), None),
+                ("1.5".to_owned(), None),
+                ("-1".to_owned(), None),
+            ];
+            if min > 0 {
+                cases.push(((min - 1).to_string(), None));
+            }
+            for (typed, expected) in cases {
+                assert_eq!(number.parse(&typed), expected, "{number:?} typed {typed:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn stored_number_falls_back_to_the_default_when_unreadable_and_clamps_when_out_of_range() {
+        for number in ScheduleNumber::ALL {
+            let (min, max) = (*number.range().start(), *number.range().end());
+            let mut cases = vec![
+                (None, number.default_value()),
+                (Some("abc".to_owned()), number.default_value()),
+                (Some((max + 1).to_string()), max),
+                (Some(min.to_string()), min),
+            ];
+            if min > 0 {
+                cases.push((Some((min - 1).to_string()), min));
+            }
+            for (stored, expected) in cases {
+                assert_eq!(
+                    number.value_from_stored(stored.as_deref()),
+                    expected,
+                    "{number:?} stored {stored:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn status_line_lets_off_and_paused_win_over_a_failure_streak() {
+        let at = just_now();
+        let streak = FailureStreak {
+            category: FailureCategory::DiskFull,
+            since: at,
+            attempts: 2,
+        };
+        let status = |state, failure| ScheduledBackupStatus {
+            state,
+            last_success_at: Some(at),
+            failure,
+            next_due: Some(at),
+            prune_failures: 0,
+            storage_used: None,
+        };
+        for (state, failure, expected) in [
+            (
+                ScheduleState::Disabled,
+                Some(streak),
+                StatusLine::Off {
+                    last_success_at: Some(at),
+                },
+            ),
+            (ScheduleState::Suspended, Some(streak), StatusLine::Paused),
+            (ScheduleState::Running, Some(streak), StatusLine::Running),
+            (
+                ScheduleState::Idle,
+                Some(streak),
+                StatusLine::Failing {
+                    category: FailureCategory::DiskFull,
+                    since: at,
+                    attempts: 2,
+                },
+            ),
+            (
+                ScheduleState::Idle,
+                None,
+                StatusLine::Scheduled {
+                    last_success_at: Some(at),
+                    next_due: Some(at),
+                },
+            ),
+        ] {
+            assert_eq!(
+                StatusLine::of(&status(state, failure)),
+                expected,
+                "{state:?} {failure:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn status_text_shows_never_relative_last_next_and_failure_reason_in_each_locale() {
+        let last = OffsetDateTime::now_utc() - time::Duration::hours(2);
+        let next = OffsetDateTime::now_utc() + time::Duration::hours(1);
+        for lang in [Language::En, Language::Uk] {
+            install_language(lang);
+            let never = unmarked(tr!("fmt_relative_never"));
+            let relative = unmarked(fmt_relative_time(Some(last)));
+            let next_stamp = local_stamp(next, system_offset_at(next));
+            let since_stamp = local_stamp(last, system_offset_at(last));
+            let reason = failure_reason(FailureCategory::DiskFull);
+            let text = |line: StatusLine| unmarked(line.text());
+
+            let off = text(StatusLine::Off {
+                last_success_at: None,
+            });
+            let scheduled = text(StatusLine::Scheduled {
+                last_success_at: Some(last),
+                next_due: Some(next),
+            });
+            let last_only = text(StatusLine::Scheduled {
+                last_success_at: Some(last),
+                next_due: None,
+            });
+            let failing_once = text(StatusLine::Failing {
+                category: FailureCategory::DiskFull,
+                since: last,
+                attempts: 1,
+            });
+            let failing_thrice = text(StatusLine::Failing {
+                category: FailureCategory::DiskFull,
+                since: last,
+                attempts: 3,
+            });
+
+            assert!(off.contains(&never), "{lang:?} off: {off}");
+            assert!(
+                scheduled.contains(&relative) && scheduled.contains(&next_stamp),
+                "{lang:?} scheduled: {scheduled}"
+            );
+            assert!(
+                last_only.contains(&relative) && !last_only.contains(&next_stamp),
+                "{lang:?} last only: {last_only}"
+            );
+            assert!(
+                failing_once.contains(&since_stamp)
+                    && failing_once.contains(&reason)
+                    && failing_once != failing_thrice,
+                "{lang:?} failing once: {failing_once}"
+            );
+            assert!(
+                failing_thrice.contains(&reason) && failing_thrice.contains('3'),
+                "{lang:?} failing thrice: {failing_thrice}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_failure_category_has_its_own_translated_reason_in_each_locale() {
+        let categories = [
+            FailureCategory::DestinationMissing,
+            FailureCategory::DestinationNotWritable,
+            FailureCategory::DiskFull,
+            FailureCategory::DestinationInsideBackupScope,
+            FailureCategory::KeyMissing,
+            FailureCategory::KeyUnreadable,
+            FailureCategory::SnapshotFailed,
+            FailureCategory::StateNotSaved,
+            FailureCategory::Interrupted,
+        ];
+        for lang in [Language::En, Language::Uk] {
+            install_language(lang);
+            let reasons: std::collections::BTreeSet<String> =
+                categories.iter().map(|c| failure_reason(*c)).collect();
+
+            assert!(
+                reasons.len() == categories.len()
+                    && reasons.iter().all(|r| !r.starts_with("backup_schedule_")),
+                "{lang:?}: {reasons:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn number_hints_and_range_errors_carry_the_bounds_in_each_locale() {
+        for lang in [Language::En, Language::Uk] {
+            install_language(lang);
+            for number in ScheduleNumber::ALL {
+                let (min, max) = (*number.range().start(), *number.range().end());
+                for text in [unmarked(number.hint()), unmarked(number.range_error())] {
+                    assert!(
+                        text.contains(&min.to_string()) && text.contains(&max.to_string()),
+                        "{lang:?} {number:?}: {text}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn unattended_backup_needs_a_key_an_enabled_schedule_and_no_pending_restore(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = schedule_rig(cx, &[]);
+        let key = ScheduleKey {
+            recipient: "recipient".to_owned(),
+            wrapped_identity: "wrapped".to_owned(),
+        };
+        for (has_key, enabled, state, expected) in [
+            (true, true, ScheduleState::Idle, true),
+            (true, true, ScheduleState::Running, true),
+            (true, true, ScheduleState::Suspended, false),
+            (false, true, ScheduleState::Idle, false),
+            (true, false, ScheduleState::Disabled, false),
+        ] {
+            let unattended = rig.view.update(cx, |view, cx| {
+                view.apply_snapshot(
+                    ScheduleSnapshot {
+                        enabled,
+                        key: has_key.then(|| key.clone()),
+                        numbers: Vec::new(),
+                        included: OPTIONAL_CATEGORIES.to_vec(),
+                        destination: None,
+                    },
+                    cx,
+                );
+                let mut status = view.status.clone();
+                status.state = state;
+                view.apply_status(status, cx);
+                view.backs_up_unattended()
+            });
+
+            assert_eq!(
+                unattended, expected,
+                "key={has_key} enabled={enabled} {state:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn turning_on_without_a_key_asks_for_a_passphrase_and_leaves_the_schedule_off(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = schedule_rig(cx, &[]);
+
+        rig.view.update(cx, |view, cx| view.toggle_enabled(cx));
+        cx.run_until_parked();
+
+        let enabled = rig.view.read_with(cx, |view, _| view.enabled);
+        assert_eq!(
+            (
+                rig.prompt_purpose(cx),
+                enabled,
+                rig.stored(reserved_keys::BACKUP_SCHEDULE_ENABLED)
+            ),
+            (Some(PassphrasePurpose::ScheduleSetup), false, None)
+        );
+    }
+
+    #[gpui::test]
+    fn setup_with_a_short_or_mismatched_passphrase_stores_no_key(cx: &mut TestAppContext) {
+        let short: String = "s".repeat(forge_transfer::MIN_PASSPHRASE_CHARS - 1);
+        for (passphrase, confirmation) in [
+            (short.as_str(), short.as_str()),
+            (NEW_PASSPHRASE, OLD_PASSPHRASE),
+        ] {
+            let rig = schedule_rig(cx, &[]);
+            rig.view.update(cx, |view, cx| view.toggle_enabled(cx));
+            cx.run_until_parked();
+
+            rig.answer_prompt(cx, None, passphrase, confirmation);
+            pump(&rig.rt);
+            cx.run_until_parked();
+
+            assert_eq!(
+                (rig.prompt_purpose(cx), rig.view_key(cx), rig.stored_key()),
+                (Some(PassphrasePurpose::ScheduleSetup), None, None),
+                "{passphrase:?} / {confirmation:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn confirmed_setup_stores_the_key_pair_machine_locally_and_turns_the_schedule_on(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = schedule_rig(cx, &[]);
+        rig.view.update(cx, |view, cx| view.toggle_enabled(cx));
+        cx.run_until_parked();
+
+        rig.answer_prompt(cx, None, NEW_PASSPHRASE, NEW_PASSPHRASE);
+        rig.settle_until_prompt_closes(cx);
+
+        let key = rig.view_key(cx).expect("a schedule key");
+        let enabled = rig.view.read_with(cx, |view, _| view.enabled);
+        assert_eq!(
+            (
+                rig.stored_key(),
+                rig.stored(reserved_keys::BACKUP_SCHEDULE_ENABLED),
+                enabled,
+                portability_of(reserved_keys::BACKUP_SCHEDULE_KEY),
+            ),
+            (
+                Some(key),
+                Some("true".to_owned()),
+                true,
+                SettingPortability::MachineLocal,
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn the_stored_wrapped_identity_opens_only_with_the_setup_passphrase(cx: &mut TestAppContext) {
+        let rig = schedule_rig(cx, &[]);
+        rig.view.update(cx, |view, cx| view.toggle_enabled(cx));
+        cx.run_until_parked();
+
+        rig.answer_prompt(cx, None, NEW_PASSPHRASE, NEW_PASSPHRASE);
+        rig.settle_until_prompt_closes(cx);
+
+        let wrapped = rig
+            .stored_key()
+            .expect("a stored schedule key")
+            .wrapped_identity;
+        assert!(
+            opens_with(&wrapped, NEW_PASSPHRASE).is_ok()
+                && matches!(
+                    opens_with(&wrapped, OLD_PASSPHRASE),
+                    Err(TransferError::WrongPassphrase)
+                )
+        );
+    }
+
+    #[gpui::test]
+    fn turning_the_schedule_off_keeps_its_key(cx: &mut TestAppContext) {
+        let key = key_for(OLD_PASSPHRASE);
+        let rig = schedule_rig(cx, &unattended_seeds(&key));
+
+        rig.view.update(cx, |view, cx| view.toggle_enabled(cx));
+        let persisted = rig.settle(cx, |_| {
+            rig.stored(reserved_keys::BACKUP_SCHEDULE_ENABLED)
+                .as_deref()
+                == Some("false")
+        });
+
+        assert_eq!(
+            (persisted, rig.view_key(cx), rig.stored_key()),
+            (true, Some(key.clone()), Some(key))
+        );
+    }
+
+    #[gpui::test]
+    fn turning_back_on_with_a_stored_key_skips_the_passphrase_prompt(cx: &mut TestAppContext) {
+        let key = key_for(OLD_PASSPHRASE);
+        let mut seeds = unattended_seeds(&key);
+        seeds[0].1 = "false".to_owned();
+        let rig = schedule_rig(cx, &seeds);
+
+        rig.view.update(cx, |view, cx| view.toggle_enabled(cx));
+        let persisted = rig.settle(cx, |_| {
+            rig.stored(reserved_keys::BACKUP_SCHEDULE_ENABLED)
+                .as_deref()
+                == Some("true")
+        });
+
+        assert_eq!((persisted, rig.prompt_purpose(cx)), (true, None));
+    }
+
+    #[gpui::test]
+    fn an_unreadable_stored_key_asks_for_a_new_passphrase_when_turned_on(cx: &mut TestAppContext) {
+        let rig = schedule_rig(
+            cx,
+            &[(
+                reserved_keys::BACKUP_SCHEDULE_KEY,
+                "{\"recipient\":".to_owned(),
+            )],
+        );
+
+        rig.view.update(cx, |view, cx| view.toggle_enabled(cx));
+        cx.run_until_parked();
+
+        assert_eq!(
+            rig.prompt_purpose(cx),
+            Some(PassphrasePurpose::ScheduleSetup)
+        );
+    }
+
+    #[gpui::test]
+    fn a_wrong_current_passphrase_is_rejected_inline_and_keeps_the_old_key(
+        cx: &mut TestAppContext,
+    ) {
+        let key = key_for(OLD_PASSPHRASE);
+        let rig = schedule_rig(cx, &unattended_seeds(&key));
+        rig.view.update(cx, |view, cx| view.change_passphrase(cx));
+        cx.run_until_parked();
+
+        rig.answer_prompt(
+            cx,
+            Some("not the old passphrase"),
+            NEW_PASSPHRASE,
+            NEW_PASSPHRASE,
+        );
+        let rejected = rig.settle(cx, |cx| {
+            rig.view.read_with(cx, |view, cx| {
+                view.prompt
+                    .as_ref()
+                    .is_some_and(|p| p.modal.read(cx).shown_current_error().is_some())
+            })
+        });
+
+        assert_eq!(
+            (
+                rejected,
+                rig.prompt_purpose(cx),
+                rig.stored_key().map(|stored| stored.recipient)
+            ),
+            (
+                true,
+                Some(PassphrasePurpose::ScheduleChange),
+                Some(key.recipient)
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn a_confirmed_change_replaces_the_key_with_one_that_opens_only_with_the_new_passphrase(
+        cx: &mut TestAppContext,
+    ) {
+        let key = key_for(OLD_PASSPHRASE);
+        let rig = schedule_rig(cx, &unattended_seeds(&key));
+        rig.view.update(cx, |view, cx| view.change_passphrase(cx));
+        cx.run_until_parked();
+
+        rig.answer_prompt(cx, Some(OLD_PASSPHRASE), NEW_PASSPHRASE, NEW_PASSPHRASE);
+        rig.settle_until_prompt_closes(cx);
+
+        let ScheduleKey {
+            recipient,
+            wrapped_identity: wrapped,
+        } = rig.stored_key().unwrap();
+        assert!(
+            recipient != key.recipient
+                && rig.view_key(cx).map(|k| k.recipient) == Some(recipient)
+                && opens_with(&wrapped, NEW_PASSPHRASE).is_ok()
+                && matches!(
+                    opens_with(&wrapped, OLD_PASSPHRASE),
+                    Err(TransferError::WrongPassphrase)
+                )
+        );
+    }
+
+    #[gpui::test]
+    fn an_out_of_range_number_is_flagged_and_never_saved(cx: &mut TestAppContext) {
+        let rig = schedule_rig(cx, &[]);
+        let below = (MIN_INTERVAL - 1).to_string();
+
+        let flagged = rig.view.update(cx, |view, cx| {
+            let mut flagged = Vec::new();
+            for typed in [below.as_str(), "abc", ""] {
+                view.commit_number(ScheduleNumber::Interval, typed, cx);
+                let field = view
+                    .numbers
+                    .iter()
+                    .find(|f| f.number == ScheduleNumber::Interval)
+                    .unwrap();
+                flagged.push((field.invalid, field.value));
+            }
+            view.commit_number(ScheduleNumber::KeepNewest, "30", cx);
+            flagged
+        });
+        let later_saved = rig.settle(cx, |_| {
+            rig.stored(reserved_keys::BACKUP_SCHEDULE_KEEP_NEWEST)
+                .as_deref()
+                == Some("30")
+        });
+
+        let default = ScheduleNumber::Interval.default_value();
+        assert_eq!(
+            (
+                flagged,
+                later_saved,
+                rig.stored(reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES)
+            ),
+            (vec![(true, default); 3], true, None)
+        );
+    }
+
+    const MIN_INTERVAL: u32 = forge_storage::settings::MIN_BACKUP_SCHEDULE_INTERVAL_MINUTES;
+
+    #[gpui::test]
+    fn each_number_saves_its_boundary_values(cx: &mut TestAppContext) {
+        let rig = schedule_rig(cx, &[]);
+
+        let accepted = rig.view.update(cx, |view, cx| {
+            let mut accepted = Vec::new();
+            for number in ScheduleNumber::ALL {
+                for bound in [*number.range().start(), *number.range().end()] {
+                    view.commit_number(number, &bound.to_string(), cx);
+                    let field = view.numbers.iter().find(|f| f.number == number).unwrap();
+                    accepted.push((field.invalid, field.value == bound));
+                }
+            }
+            accepted
+        });
+        let saved = rig.settle(cx, |_| {
+            ScheduleNumber::ALL.iter().all(|number| {
+                rig.stored(number.storage_key()) == Some(number.range().end().to_string())
+            })
+        });
+
+        assert_eq!(
+            (accepted, saved),
+            (vec![(false, true); ScheduleNumber::ALL.len() * 2], true)
+        );
+    }
+
+    #[gpui::test]
+    fn saving_a_new_interval_moves_the_shown_next_due_time(cx: &mut TestAppContext) {
+        let key = key_for(OLD_PASSPHRASE);
+        let seeds = unattended_seeds(&key);
+        let (_, stored_last) = seeds
+            .iter()
+            .find(|(key, _)| *key == reserved_keys::BACKUP_SCHEDULE_LAST_SUCCESS_AT)
+            .unwrap();
+        let last = OffsetDateTime::parse(stored_last, &Rfc3339).unwrap();
+        let rig = schedule_rig(cx, &seeds);
+
+        rig.view.update(cx, |view, cx| {
+            view.commit_number(ScheduleNumber::Interval, "30", cx)
+        });
+        let moved = rig.settle(cx, |cx| {
+            rig.view.read_with(cx, |view, _| {
+                view.status.next_due == Some(last + time::Duration::minutes(30))
+            })
+        });
+
+        assert!(moved);
+    }
+
+    #[gpui::test]
+    fn an_unchecked_category_persists_and_is_left_out_on_reload(cx: &mut TestAppContext) {
+        let rig = schedule_rig(cx, &[]);
+
+        rig.view.update(cx, |view, cx| {
+            view.toggle_category(BackupCategory::Media, cx)
+        });
+        let persisted = rig.settle(cx, |_| {
+            rig.stored(reserved_keys::BACKUP_SCHEDULE_INCLUDE_MEDIA)
+                .as_deref()
+                == Some("false")
+        });
+        let reloaded = rig
+            .rt
+            .block_on(load_schedule(Arc::clone(rig.world.provider()) as _))
+            .unwrap()
+            .included;
+
+        assert_eq!(
+            (persisted, reloaded),
+            (
+                true,
+                vec![
+                    BackupCategory::Voices,
+                    BackupCategory::Overlays,
+                    BackupCategory::Assets
+                ]
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn rechecking_a_category_includes_it_again(cx: &mut TestAppContext) {
+        let rig = schedule_rig(cx, &[]);
+
+        rig.view.update(cx, |view, cx| {
+            view.toggle_category(BackupCategory::Voices, cx);
+            view.toggle_category(BackupCategory::Voices, cx);
+        });
+        let persisted = rig.settle(cx, |_| {
+            rig.stored(reserved_keys::BACKUP_SCHEDULE_INCLUDE_VOICES)
+                .as_deref()
+                == Some("true")
+        });
+
+        let included = rig.view.read_with(cx, |view, _| view.included.clone());
+        assert!(persisted && included.contains(&BackupCategory::Voices));
+    }
+
+    #[gpui::test]
+    fn the_database_category_cannot_be_unchecked(cx: &mut TestAppContext) {
+        let rig = schedule_rig(cx, &[]);
+
+        rig.view.update(cx, |view, cx| {
+            view.toggle_category(BackupCategory::Database, cx)
+        });
+        cx.run_until_parked();
+
+        let included = rig.view.read_with(cx, |view, _| view.included.clone());
+        assert_eq!(included, OPTIONAL_CATEGORIES.to_vec());
+    }
+}

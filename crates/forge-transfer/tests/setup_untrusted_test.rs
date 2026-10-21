@@ -427,6 +427,7 @@ async fn a_crafted_setup_carrying_machine_local_keys_writes_none_of_them() {
         (key::AUDIO_OUTPUT_DEVICE_ID, "local-speakers"),
         (key::SERVER_OVERLAY_ROOT, "/home/local/overlays"),
         (key::STAY_AWAKE, "false"),
+        (key::BACKUP_SCHEDULE_KEY, "local-schedule-key"),
     ];
     store.set(&local).await;
     let path = bundle(
@@ -438,6 +439,7 @@ async fn a_crafted_setup_carrying_machine_local_keys_writes_none_of_them() {
             (key::SERVER_OVERLAY_ROOT, "/etc"),
             (key::UPDATES_ROLLED_BACK_VERSION, "9.9.9"),
             (key::STAY_AWAKE, "true"),
+            (key::BACKUP_SCHEDULE_KEY, "foreign-schedule-key"),
             (key::VOICE_ASSIGNMENT_STRATEGY, "\"Random\""),
             (UNCLASSIFIED_KEY, "foreign-note"),
             (key::THEME, PORTABLE_THEME),

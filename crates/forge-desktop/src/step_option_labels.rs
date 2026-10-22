@@ -238,3 +238,197 @@ pub(crate) fn step_option_label(key: &str, option: &str) -> Option<String> {
         .find(|(wire, _)| *wire == option)
         .map(|(_, label_key)| tr_lookup(label_key, None))
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use forge_registry::FormField;
+    use forge_storage::Language;
+
+    use super::{GROUPS, step_option_label};
+    use crate::i18n::install_language;
+    use crate::integrations::tests::every_registry_entry;
+    use crate::motion_labels::preset_label;
+
+    const LANGUAGES: [Language; 2] = [Language::En, Language::Uk];
+    const EN_WIRE_VALUES_DISPLAYED_AS_IS: &[(&str, &str)] = &[
+        ("read_as", "Lines array"),
+        ("read_as", "Whole file"),
+        ("read_as", "JSON"),
+    ];
+    const UK_WIRE_VALUES_DISPLAYED_AS_IS: &[(&str, &str)] = &[("read_as", "JSON")];
+    const SELECT_KEYS_WITH_UNTRANSLATED_OPTIONS: &[&str] = &["content_type"];
+
+    fn displayed_as_is(language: Language) -> &'static [(&'static str, &'static str)] {
+        match language {
+            Language::En => EN_WIRE_VALUES_DISPLAYED_AS_IS,
+            Language::Uk => UK_WIRE_VALUES_DISPLAYED_AS_IS,
+        }
+    }
+
+    fn mapped_pairs() -> Vec<(&'static str, &'static str)> {
+        GROUPS
+            .iter()
+            .flat_map(|group| {
+                group
+                    .keys
+                    .iter()
+                    .flat_map(|key| group.options.iter().map(move |(wire, _)| (*key, *wire)))
+            })
+            .collect()
+    }
+
+    fn collect_static_options(
+        field: &FormField,
+        owner: &str,
+        out: &mut BTreeSet<(String, &'static str, &'static str)>,
+    ) {
+        match field {
+            FormField::Select { key, options, .. } | FormField::Swatch { key, options, .. } => {
+                for option in *options {
+                    out.insert((owner.to_owned(), *key, *option));
+                }
+            }
+            FormField::Optional { inner, .. } => collect_static_options(inner, owner, out),
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn every_mapped_option_has_a_translated_label_in_each_language() {
+        for language in LANGUAGES {
+            install_language(language);
+            for (key, wire) in mapped_pairs() {
+                let label = preset_label(key, wire);
+                assert!(!label.is_empty(), "{language:?} {key}={wire}");
+                assert!(
+                    !label.starts_with("step_option_"),
+                    "{language:?} {key}={wire}: untranslated {label}"
+                );
+                if !displayed_as_is(language).contains(&(key, wire)) {
+                    assert_ne!(label, wire, "{language:?} {key}={wire}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn options_that_pass_through_unchanged_are_declared_exceptions() {
+        for language in LANGUAGES {
+            install_language(language);
+            let passthrough: Vec<_> = mapped_pairs()
+                .into_iter()
+                .filter(|(key, wire)| preset_label(key, wire) == *wire)
+                .collect();
+            assert_eq!(passthrough, displayed_as_is(language), "{language:?}");
+        }
+    }
+
+    #[test]
+    fn unknown_values_and_keys_fall_back_to_the_raw_value() {
+        install_language(Language::En);
+        for (key, option) in [
+            ("mode", "teleport"),
+            ("urgency", ""),
+            ("position", "left"),
+            ("status", "any"),
+            ("no_such_field", "on"),
+            ("mode", "BOTH"),
+            ("duration_seconds", "soon"),
+            ("duration_seconds", "-5"),
+            ("duration_seconds", "4294967296"),
+        ] {
+            assert_eq!(step_option_label(key, option), None, "{key}={option}");
+            assert_eq!(preset_label(key, option), option, "{key}={option}");
+        }
+    }
+
+    #[test]
+    fn options_of_one_field_never_share_a_label() {
+        for language in LANGUAGES {
+            install_language(language);
+            for group in GROUPS {
+                for key in group.keys {
+                    let labels: Vec<String> = group
+                        .options
+                        .iter()
+                        .map(|(wire, _)| preset_label(key, wire))
+                        .collect();
+                    let distinct: BTreeSet<&String> = labels.iter().collect();
+                    assert_eq!(
+                        distinct.len(),
+                        labels.len(),
+                        "{language:?} {key}: {labels:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_wire_value_is_not_labelled_under_a_field_that_does_not_declare_it() {
+        install_language(Language::En);
+        assert_ne!(preset_label("mode", "left"), "left");
+        assert_eq!(preset_label("direction", "left"), "left");
+        assert_eq!(preset_label("urgency", "both"), "both");
+    }
+
+    #[test]
+    fn duration_seconds_accepts_unsigned_integers_up_to_the_u32_maximum() {
+        for language in LANGUAGES {
+            install_language(language);
+            for option in ["0", "7", "4294967295"] {
+                let label = step_option_label("duration_seconds", option).unwrap();
+                assert!(label.contains(option), "{language:?}: {label}");
+                assert!(!label.starts_with("step_option_"), "{language:?}: {label}");
+            }
+        }
+    }
+
+    #[test]
+    fn ukrainian_labels_use_plain_hyphens_only() {
+        install_language(Language::Uk);
+        let mut labels: Vec<String> = mapped_pairs()
+            .into_iter()
+            .map(|(key, wire)| preset_label(key, wire))
+            .collect();
+        labels.push(step_option_label("duration_seconds", "30").unwrap());
+        for label in labels {
+            assert!(
+                !label.contains(['\u{2014}', '\u{2013}', '\u{2012}', '\u{2015}']),
+                "{label}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn every_static_select_option_in_the_registries_is_labelled_or_allow_listed() {
+        let (triggers, sub_actions) = every_registry_entry().await;
+        let mut options = BTreeSet::new();
+        for descriptor in triggers.all() {
+            for field in descriptor.config_fields() {
+                collect_static_options(&field, descriptor.id(), &mut options);
+            }
+        }
+        for runner in sub_actions.all() {
+            for field in runner.config_fields() {
+                collect_static_options(&field, runner.id(), &mut options);
+            }
+        }
+        assert!(!options.is_empty());
+
+        install_language(Language::En);
+        let unlabelled: BTreeSet<_> = options
+            .iter()
+            .filter(|(_, key, option)| {
+                !SELECT_KEYS_WITH_UNTRANSLATED_OPTIONS.contains(key)
+                    && step_option_label(key, option).is_none()
+                    && preset_label(key, option) == *option
+            })
+            .map(|(owner, key, option)| format!("{owner} {key}={option}"))
+            .collect();
+        assert!(unlabelled.is_empty(), "{unlabelled:#?}");
+    }
+}

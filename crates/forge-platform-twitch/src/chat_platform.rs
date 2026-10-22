@@ -3,22 +3,23 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::{EventPublisher, EventStream};
 use forge_platform_core::{
-    ChatPlatform, ConnectionState, NON_HTTP_STATUS, PlatformCapabilities, PlatformError,
-    RateLimiter,
+    ActingSender, ChatPlatform, ConnectionState, NON_HTTP_STATUS, PlatformCapabilities,
+    PlatformError, RateLimiter, SenderPreference,
 };
 use forge_storage::CredentialsRepo;
+use reqwest::StatusCode;
 use tokio::sync::{Mutex, OnceCell, watch};
 
+use crate::bot_account::TwitchBotAccount;
 use crate::builtin::ChatSessionConfig;
-use crate::chat::{
-    ChatConnectionState, ChatSendError, TwitchChat, TwitchChatHandle, WhisperError, send_chat,
-    send_chat_reply, send_whisper,
-};
+use crate::chat::{ChatConnectionState, ChatSendError, TwitchChat, TwitchChatHandle, WhisperError};
+use crate::chat_sender::{ChatDelivery, ChatSenders, SendFailure};
 use crate::credentials::load;
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::event_channel::PlatformEventChannel;
 use crate::helix::{HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport};
 use crate::lifecycle::TwitchLifecycle;
+use crate::sub_actions::identity::SelfIdentity;
 use crate::subscriptions::SubscriptionTracker;
 
 const PLATFORM_ID: &str = "twitch";
@@ -35,6 +36,7 @@ pub struct TwitchPlatform {
     state_tx: watch::Sender<ChatConnectionState>,
     session: Mutex<Option<TwitchChatHandle>>,
     transport: OnceCell<Arc<dyn HelixTransport>>,
+    bot: Option<Arc<TwitchBotAccount>>,
 }
 
 impl TwitchPlatform {
@@ -67,7 +69,17 @@ impl TwitchPlatform {
             state_tx: watch::channel(ChatConnectionState::Disconnected).0,
             session: Mutex::new(None),
             transport: OnceCell::new(),
+            bot: None,
         }
+    }
+
+    pub fn with_bot(mut self, bot: Arc<TwitchBotAccount>) -> Self {
+        self.bot = Some(bot);
+        self
+    }
+
+    pub fn bot_account(&self) -> Option<&Arc<TwitchBotAccount>> {
+        self.bot.as_ref()
     }
 
     pub(crate) fn publisher(&self) -> Arc<dyn EventPublisher> {
@@ -123,22 +135,29 @@ impl TwitchPlatform {
             .cloned()
     }
 
-    async fn sender(&self) -> Result<(String, Arc<dyn HelixTransport>), PlatformError> {
+    async fn senders(&self) -> Result<ChatSenders, PlatformError> {
         if !self.capabilities.can_send_chat {
             return Err(PlatformError::Unsupported {
                 feature: "chat.send".to_owned(),
             });
         }
-        let cred = load(self.creds.as_ref())
+        Ok(ChatSenders::new(
+            self.helix_transport().await?,
+            Arc::new(SelfIdentity::new(Arc::clone(&self.creds))),
+        )
+        .with_bot(self.bot.clone()))
+    }
+
+    async fn deliver(
+        &self,
+        delivery: ChatDelivery<'_>,
+        preference: SenderPreference,
+    ) -> Result<ActingSender, PlatformError> {
+        self.senders()
+            .await?
+            .deliver(delivery, preference, self.events.as_ref())
             .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.to_string(),
-            })?
-            .ok_or_else(|| PlatformError::ReauthRequired {
-                platform: PLATFORM_ID.to_owned(),
-            })?;
-        let transport = self.helix_transport().await?;
-        Ok((cred.user_id, transport))
+            .map_err(map_send_failure)
     }
 }
 
@@ -170,6 +189,7 @@ impl ChatPlatform for TwitchPlatform {
                 self.tracker.clone(),
                 self.lifecycle.clone(),
             )
+            .with_bot(self.bot.clone())
             .start_reporting_to(self.state_tx.clone()),
         );
         Ok(())
@@ -183,42 +203,97 @@ impl ChatPlatform for TwitchPlatform {
         Ok(())
     }
 
-    async fn send_message(&self, _channel: &str, text: &str) -> Result<(), PlatformError> {
-        let (user_id, transport) = self.sender().await?;
-        send_chat(transport.as_ref(), &user_id, &user_id, text)
+    async fn send_message(&self, channel: &str, text: &str) -> Result<(), PlatformError> {
+        self.send_message_as(channel, text, SenderPreference::Default)
             .await
             .map(|_| ())
-            .map_err(map_send_error)
     }
 
     async fn send_reply(
         &self,
-        _channel: &str,
+        channel: &str,
         reply_parent_message_id: &str,
         text: &str,
     ) -> Result<(), PlatformError> {
-        let (user_id, transport) = self.sender().await?;
-        send_chat_reply(
-            transport.as_ref(),
-            &user_id,
-            &user_id,
-            text,
+        self.send_reply_as(
+            channel,
             reply_parent_message_id,
+            text,
+            SenderPreference::Default,
         )
         .await
         .map(|_| ())
-        .map_err(map_send_error)
     }
 
     async fn send_whisper(&self, recipient_login: &str, text: &str) -> Result<(), PlatformError> {
-        let (user_id, transport) = self.sender().await?;
-        send_whisper(transport.as_ref(), &user_id, recipient_login, text)
+        self.send_whisper_as(recipient_login, text, SenderPreference::Default)
             .await
-            .map_err(map_whisper_error)
+            .map(|_| ())
+    }
+
+    async fn send_message_as(
+        &self,
+        _channel: &str,
+        text: &str,
+        sender: SenderPreference,
+    ) -> Result<Option<ActingSender>, PlatformError> {
+        self.deliver(ChatDelivery::Message { text }, sender)
+            .await
+            .map(Some)
+    }
+
+    async fn send_reply_as(
+        &self,
+        _channel: &str,
+        reply_parent_message_id: &str,
+        text: &str,
+        sender: SenderPreference,
+    ) -> Result<Option<ActingSender>, PlatformError> {
+        self.deliver(
+            ChatDelivery::Reply {
+                text,
+                parent_message_id: reply_parent_message_id,
+            },
+            sender,
+        )
+        .await
+        .map(Some)
+    }
+
+    async fn send_whisper_as(
+        &self,
+        recipient_login: &str,
+        text: &str,
+        sender: SenderPreference,
+    ) -> Result<Option<ActingSender>, PlatformError> {
+        self.deliver(
+            ChatDelivery::WhisperToLogin {
+                login: recipient_login,
+                text,
+            },
+            sender,
+        )
+        .await
+        .map(Some)
     }
 
     fn events(&self) -> EventStream {
         self.events.subscribe()
+    }
+}
+
+fn map_send_failure(failure: SendFailure) -> PlatformError {
+    match failure {
+        SendFailure::BotNotConnected(_) => PlatformError::Auth {
+            reason: failure.to_string(),
+        },
+        SendFailure::BotPhoneUnverified => PlatformError::Http {
+            status: NON_HTTP_STATUS,
+            body: failure.to_string(),
+        },
+        SendFailure::Chat(err) => map_send_error(err),
+        SendFailure::Whisper(err) => map_whisper_error(err),
+        SendFailure::Credentials(reason) => PlatformError::Network { reason },
     }
 }
 
@@ -252,6 +327,10 @@ fn map_send_error(err: ChatSendError) -> PlatformError {
         ChatSendError::Dropped { code, message } => PlatformError::Http {
             status: NON_HTTP_STATUS,
             body: format!("{code}: {message}"),
+        },
+        ChatSendError::Forbidden(reason) => PlatformError::Http {
+            status: StatusCode::FORBIDDEN.as_u16(),
+            body: reason,
         },
     }
 }

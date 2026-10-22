@@ -9,6 +9,7 @@ use crate::auth::TwitchAuthBundle;
 use crate::helix::{HelixError, HelixTokenSource};
 
 pub const TWITCH_CREDENTIAL_ID: &str = "twitch:broadcaster";
+pub const TWITCH_BOT_CREDENTIAL_ID: &str = "twitch:bot";
 
 #[derive(Clone)]
 pub struct StoredCredential {
@@ -35,6 +36,14 @@ pub async fn store(
     creds: &dyn CredentialsRepo,
     auth: &TwitchAuthBundle,
 ) -> Result<(), StorageError> {
+    store_at(creds, TWITCH_CREDENTIAL_ID, auth).await
+}
+
+pub(crate) async fn store_at(
+    creds: &dyn CredentialsRepo,
+    credential_id: &str,
+    auth: &TwitchAuthBundle,
+) -> Result<(), StorageError> {
     let stored = StoredCredential {
         access_token: auth.access_token.clone(),
         refresh_token: auth.refresh_token.clone(),
@@ -42,11 +51,19 @@ pub async fn store(
         login: auth.user_info.login.clone(),
         expires_at: auth.expires_at,
     };
-    store_credential(creds, &stored).await
+    store_credential_at(creds, credential_id, &stored).await
 }
 
 pub async fn store_credential(
     creds: &dyn CredentialsRepo,
+    cred: &StoredCredential,
+) -> Result<(), StorageError> {
+    store_credential_at(creds, TWITCH_CREDENTIAL_ID, cred).await
+}
+
+pub(crate) async fn store_credential_at(
+    creds: &dyn CredentialsRepo,
+    credential_id: &str,
     cred: &StoredCredential,
 ) -> Result<(), StorageError> {
     let expires_at_unix: Option<i64> = cred.expires_at.and_then(|t| {
@@ -62,15 +79,19 @@ pub async fn store_credential(
         "expires_at_unix": expires_at_unix,
     });
     creds
-        .store(
-            &CredentialId::new(TWITCH_CREDENTIAL_ID),
-            &bundle.to_string(),
-        )
+        .store(&CredentialId::new(credential_id), &bundle.to_string())
         .await
 }
 
 pub async fn load(creds: &dyn CredentialsRepo) -> Result<Option<StoredCredential>, StorageError> {
-    let Some(json) = creds.load(&CredentialId::new(TWITCH_CREDENTIAL_ID)).await? else {
+    load_at(creds, TWITCH_CREDENTIAL_ID).await
+}
+
+pub(crate) async fn load_at(
+    creds: &dyn CredentialsRepo,
+    credential_id: &str,
+) -> Result<Option<StoredCredential>, StorageError> {
+    let Some(json) = creds.load(&CredentialId::new(credential_id)).await? else {
         return Ok(None);
     };
     let bundle: serde_json::Value = serde_json::from_str(&json)?;

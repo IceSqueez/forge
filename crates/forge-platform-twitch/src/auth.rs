@@ -13,6 +13,8 @@ use crate::sub_actions::identity::BroadcasterTier;
 
 const TWITCH_DEVICE_PATH: &str = "/device";
 const TWITCH_TOKEN_PATH: &str = "/token";
+const TWITCH_VALIDATE_PATH: &str = "/validate";
+const TWITCH_REVOKE_PATH: &str = "/revoke";
 
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -59,6 +61,32 @@ pub const TWITCH_BROADCASTER_SCOPES: &[&str] = &[
     "channel:edit:commercial",
     "channel:manage:guest_star",
 ];
+
+pub const TWITCH_BOT_SCOPES: &[&str] = &[
+    "user:write:chat",
+    "user:manage:whispers",
+    "moderator:manage:announcements",
+    "moderator:manage:shoutouts",
+];
+
+pub(crate) const DEVICE_CANCELLED_REASON: &str = "device authorization cancelled";
+pub(crate) const DEVICE_DENIED_REASON: &str = "authorization denied by user";
+pub(crate) const DEVICE_EXPIRED_REASON: &str = "device code expired";
+pub(crate) const DEVICE_CODE_USED_REASON: &str = "device code expired or already used";
+
+pub(crate) fn twitch_validate_endpoint(endpoints: &PlatformEndpoints) -> String {
+    format!(
+        "{}{TWITCH_VALIDATE_PATH}",
+        endpoints.base_url(EndpointSurface::TwitchOAuth)
+    )
+}
+
+pub(crate) fn twitch_revoke_endpoint(endpoints: &PlatformEndpoints) -> String {
+    format!(
+        "{}{TWITCH_REVOKE_PATH}",
+        endpoints.base_url(EndpointSurface::TwitchOAuth)
+    )
+}
 
 pub(crate) fn twitch_device_endpoint(endpoints: &PlatformEndpoints) -> String {
     format!(
@@ -152,6 +180,7 @@ pub struct TwitchAuthFlow {
     client_id: String,
     device_endpoint: String,
     token_endpoint: String,
+    scopes: &'static [&'static str],
     http: reqwest::Client,
     helix: HelixClient<'static, reqwest::Client>,
     device_code: Option<String>,
@@ -168,6 +197,12 @@ impl TwitchAuthFlow {
         )
     }
 
+    pub(crate) fn for_bot(endpoints: &PlatformEndpoints, client_id: String) -> Self {
+        let mut flow = Self::new(endpoints, client_id);
+        flow.scopes = TWITCH_BOT_SCOPES;
+        flow
+    }
+
     pub(crate) fn with_endpoints(
         client_id: String,
         device_endpoint: String,
@@ -177,6 +212,7 @@ impl TwitchAuthFlow {
             client_id,
             device_endpoint,
             token_endpoint,
+            scopes: TWITCH_BROADCASTER_SCOPES,
             http: reqwest::Client::new(),
             helix: HelixClient::with_client(reqwest::Client::new()),
             device_code: None,
@@ -186,7 +222,7 @@ impl TwitchAuthFlow {
     }
 
     pub async fn start(&mut self) -> Result<DeviceCodeInfo, PlatformError> {
-        let scopes = TWITCH_BROADCASTER_SCOPES.join(" ");
+        let scopes = self.scopes.join(" ");
         let form = [
             ("client_id", self.client_id.as_str()),
             ("scopes", scopes.as_str()),
@@ -204,7 +240,7 @@ impl TwitchAuthFlow {
         self.poll_interval = Duration::from_secs(parsed.interval.max(1));
         self.expires_at = Some(expires_at);
         info!(
-            scopes = TWITCH_BROADCASTER_SCOPES.len(),
+            scopes = self.scopes.len(),
             expires_in_secs = parsed.expires_in,
             poll_interval_secs = self.poll_interval.as_secs(),
             "twitch device authorization started"
@@ -233,13 +269,13 @@ impl TwitchAuthFlow {
         let token_response = loop {
             if SystemTime::now() >= expires_at {
                 return Err(PlatformError::Auth {
-                    reason: "device code expired".into(),
+                    reason: DEVICE_EXPIRED_REASON.into(),
                 });
             }
             tokio::select! {
                 _ = cancel.cancelled() => {
                     return Err(PlatformError::Auth {
-                        reason: "device authorization cancelled".into(),
+                        reason: DEVICE_CANCELLED_REASON.into(),
                     });
                 }
                 _ = tokio::time::sleep(self.poll_interval) => {}
@@ -284,10 +320,10 @@ impl TwitchAuthFlow {
             "authorization_pending" => Ok(DevicePollOutcome::Pending),
             "slow_down" => Ok(DevicePollOutcome::SlowDown),
             "expired_token" | "invalid device code" => Err(PlatformError::Auth {
-                reason: "device code expired or already used".into(),
+                reason: DEVICE_CODE_USED_REASON.into(),
             }),
             "access_denied" => Err(PlatformError::Auth {
-                reason: "authorization denied by user".into(),
+                reason: DEVICE_DENIED_REASON.into(),
             }),
             _ => Err(PlatformError::Http {
                 status: status.as_u16(),

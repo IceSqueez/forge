@@ -13,13 +13,16 @@ use forge_types::OAuthToken;
 use tracing::{debug, info, warn};
 
 use crate::auth::twitch_token_endpoint;
-use crate::credentials::{StoredCredential, load, store_credential};
+use crate::credentials::{
+    StoredCredential, TWITCH_BOT_CREDENTIAL_ID, TWITCH_CREDENTIAL_ID, load_at, store_credential_at,
+};
 
 const PLATFORM: &str = "twitch";
 const REFRESH_BUFFER: Duration = Duration::from_secs(REFRESH_BUFFER_SECS);
 
 pub struct TwitchCredentialsManager {
     repo: Arc<dyn CredentialsRepo>,
+    credential_id: &'static str,
     refresher: PkceRefresher,
     refresh_guard: tokio::sync::Mutex<()>,
     expiry_tx: tokio::sync::watch::Sender<Option<SystemTime>>,
@@ -34,7 +37,29 @@ impl TwitchCredentialsManager {
         Self::with_endpoint(repo, client_id, twitch_token_endpoint(endpoints))
     }
 
+    pub(crate) fn for_bot(
+        endpoints: &PlatformEndpoints,
+        repo: Arc<dyn CredentialsRepo>,
+        client_id: String,
+    ) -> Self {
+        Self::bound_to(
+            TWITCH_BOT_CREDENTIAL_ID,
+            repo,
+            client_id,
+            twitch_token_endpoint(endpoints),
+        )
+    }
+
     pub(crate) fn with_endpoint(
+        repo: Arc<dyn CredentialsRepo>,
+        client_id: String,
+        refresh_endpoint: String,
+    ) -> Self {
+        Self::bound_to(TWITCH_CREDENTIAL_ID, repo, client_id, refresh_endpoint)
+    }
+
+    fn bound_to(
+        credential_id: &'static str,
         repo: Arc<dyn CredentialsRepo>,
         client_id: String,
         refresh_endpoint: String,
@@ -48,6 +73,7 @@ impl TwitchCredentialsManager {
         });
         Self {
             repo,
+            credential_id,
             refresher,
             refresh_guard: tokio::sync::Mutex::new(()),
             expiry_tx: tokio::sync::watch::channel(None).0,
@@ -59,7 +85,7 @@ impl TwitchCredentialsManager {
     }
 
     pub async fn load(&self) -> Result<Option<StoredCredential>, PlatformError> {
-        load(self.repo.as_ref())
+        load_at(self.repo.as_ref(), self.credential_id)
             .await
             .map_err(|e| credential_storage_error(PLATFORM, e))
     }
@@ -157,7 +183,7 @@ impl TwitchCredentialsManager {
                 .filter(|secs| *secs > 0)
                 .map(|secs| SystemTime::now() + Duration::from_secs(secs)),
         };
-        store_credential(self.repo.as_ref(), &renewed)
+        store_credential_at(self.repo.as_ref(), self.credential_id, &renewed)
             .await
             .map_err(|e| credential_storage_error(PLATFORM, e))?;
         self.expiry_tx.send_replace(renewed.expires_at);

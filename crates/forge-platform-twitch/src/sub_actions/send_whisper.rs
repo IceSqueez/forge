@@ -3,6 +3,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
+use forge_events::EventPublisher;
+use forge_platform_core::{SENDER_FIELD, SenderPreference};
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
@@ -13,7 +15,8 @@ use time::OffsetDateTime;
 
 use super::identity::SelfIdentity;
 use super::user_target::{TargetKeys, UserTarget};
-use crate::chat::send_whisper_to;
+use crate::bot_account::TwitchBotAccount;
+use crate::chat_sender::{ChatDelivery, ChatSenders, StepResult, configured_sender, step_result};
 use crate::helix::HelixTransport;
 
 const KIND_ID: &str = "twitch.chat.send_whisper";
@@ -23,26 +26,33 @@ const RECIPIENT_KEYS: TargetKeys = TargetKeys {
 };
 
 pub struct SendWhisperRunner {
-    transport: Arc<dyn HelixTransport>,
-    identity: Arc<SelfIdentity>,
+    senders: ChatSenders,
 }
 
 impl SendWhisperRunner {
     pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
-            transport,
-            identity,
+            senders: ChatSenders::new(transport, identity),
         }
     }
 
-    async fn whisper(&self, recipient: Option<UserTarget<'_>>, message: &str) -> SubActionOutcome {
-        let from_user_id = match self.identity.user_id().await {
-            Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+    pub fn with_bot(mut self, bot: Option<Arc<TwitchBotAccount>>) -> Self {
+        self.senders = self.senders.with_bot(bot);
+        self
+    }
+
+    async fn whisper(
+        &self,
+        recipient: Option<UserTarget<'_>>,
+        message: &str,
+        sender: SenderPreference,
+        events: &dyn EventPublisher,
+    ) -> StepResult {
+        let delivery = ChatDelivery::WhisperToTarget {
+            recipient,
+            text: message,
         };
-        SubActionOutcome::from_result(
-            &send_whisper_to(self.transport.as_ref(), &from_user_id, recipient, message).await,
-        )
+        step_result(self.senders.deliver(delivery, sender, events).await)
     }
 }
 
@@ -79,6 +89,10 @@ impl SubActionRunner for SendWhisperRunner {
                 Variant::String(String::new()),
             ),
             ("message".to_owned(), Variant::String(String::new())),
+            (
+                SENDER_FIELD.to_owned(),
+                Variant::String(SenderPreference::Default.as_str().to_owned()),
+            ),
         ])
     }
 
@@ -92,6 +106,11 @@ impl SubActionRunner for SendWhisperRunner {
             FormField::TextArea {
                 key: "message",
                 label: "Message",
+            },
+            FormField::Select {
+                key: SENDER_FIELD,
+                label: "Send As",
+                options: SenderPreference::WIRE_NAMES,
             },
         ]
     }
@@ -107,7 +126,7 @@ impl SubActionRunner for SendWhisperRunner {
                 ));
             }
         }
-        Ok(())
+        configured_sender(config).map(|_| ())
     }
 
     async fn execute(
@@ -123,12 +142,18 @@ impl SubActionRunner for SendWhisperRunner {
         let msg_template = config.str("message").unwrap_or_default();
         let message = ctx.arg_stack.interpolate(msg_template);
 
-        let outcome = self.whisper(recipient.target(), &message).await;
+        let (outcome, produced) = match configured_sender(config) {
+            Ok(sender) => {
+                self.whisper(recipient.target(), &message, sender, ctx.publisher)
+                    .await
+            }
+            Err(e) => (SubActionOutcome::Failed(e.to_string()), BTreeMap::new()),
+        };
 
         (
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
+                produced,
                 kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,

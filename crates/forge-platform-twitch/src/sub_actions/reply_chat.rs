@@ -3,6 +3,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
+use forge_events::EventPublisher;
+use forge_platform_core::{SENDER_FIELD, SenderPreference};
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
@@ -12,49 +14,53 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use super::identity::SelfIdentity;
-use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::bot_account::TwitchBotAccount;
+use crate::chat_sender::{
+    ChatDelivery, ChatSenders, StepResult, configured_sender, failed_step, step_result,
+};
+use crate::helix::HelixTransport;
 
 const KIND_ID: &str = "twitch.chat.reply";
 const MAX_MESSAGE_CHARS: usize = 500;
 const DEFAULT_PARENT_TEMPLATE: &str = "%chat.message_id%";
 
 pub struct ReplyChatRunner {
-    transport: Arc<dyn HelixTransport>,
-    identity: Arc<SelfIdentity>,
+    senders: ChatSenders,
 }
 
 impl ReplyChatRunner {
     pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
-            transport,
-            identity,
+            senders: ChatSenders::new(transport, identity),
         }
     }
 
-    async fn reply(&self, message: &str, parent_message_id: &str) -> SubActionOutcome {
+    pub fn with_bot(mut self, bot: Option<Arc<TwitchBotAccount>>) -> Self {
+        self.senders = self.senders.with_bot(bot);
+        self
+    }
+
+    async fn reply(
+        &self,
+        message: &str,
+        parent_message_id: &str,
+        sender: SenderPreference,
+        events: &dyn EventPublisher,
+    ) -> StepResult {
         if message.is_empty() {
-            return SubActionOutcome::Failed("message is empty after interpolation".to_owned());
+            return failed_step("message is empty after interpolation");
         }
         if message.chars().count() > MAX_MESSAGE_CHARS {
-            return SubActionOutcome::Failed("message exceeds 500-character limit".to_owned());
+            return failed_step("message exceeds 500-character limit");
         }
         if parent_message_id.is_empty() {
-            return SubActionOutcome::Failed(
-                "parent_message_id is empty after interpolation".to_owned(),
-            );
+            return failed_step("parent_message_id is empty after interpolation");
         }
-        let user_id = match self.identity.user_id().await {
-            Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+        let delivery = ChatDelivery::Reply {
+            text: message,
+            parent_message_id,
         };
-        let request =
-            HelixRequest::new(HelixMethod::Post, "/helix/chat/messages").body(serde_json::json!({
-                "broadcaster_id": user_id,
-                "sender_id": user_id,
-                "message": message,
-                "reply_parent_message_id": parent_message_id,
-            }));
-        SubActionOutcome::from_result(&self.transport.execute(request).await)
+        step_result(self.senders.deliver(delivery, sender, events).await)
     }
 }
 
@@ -91,6 +97,10 @@ impl SubActionRunner for ReplyChatRunner {
                 "parent_message_id".to_owned(),
                 Variant::String(DEFAULT_PARENT_TEMPLATE.to_owned()),
             ),
+            (
+                SENDER_FIELD.to_owned(),
+                Variant::String(SenderPreference::Default.as_str().to_owned()),
+            ),
         ])
     }
 
@@ -104,6 +114,11 @@ impl SubActionRunner for ReplyChatRunner {
                 key: "parent_message_id",
                 label: "Parent Message ID",
                 placeholder: "%chat.message_id%",
+            },
+            FormField::Select {
+                key: SENDER_FIELD,
+                label: "Send As",
+                options: SenderPreference::WIRE_NAMES,
             },
         ]
     }
@@ -127,7 +142,7 @@ impl SubActionRunner for ReplyChatRunner {
                 ));
             }
         }
-        Ok(())
+        configured_sender(config).map(|_| ())
     }
 
     async fn execute(
@@ -146,12 +161,18 @@ impl SubActionRunner for ReplyChatRunner {
             .unwrap_or(DEFAULT_PARENT_TEMPLATE);
         let parent_message_id = ctx.arg_stack.interpolate(parent_template);
 
-        let outcome = self.reply(&message, &parent_message_id).await;
+        let (outcome, produced) = match configured_sender(config) {
+            Ok(sender) => {
+                self.reply(&message, &parent_message_id, sender, ctx.publisher)
+                    .await
+            }
+            Err(e) => (SubActionOutcome::Failed(e.to_string()), BTreeMap::new()),
+        };
 
         (
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
+                produced,
                 kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
@@ -171,7 +192,7 @@ mod tests {
     use forge_types::{ArgStack, SubActionOutcome, Variant};
 
     use super::*;
-    use crate::helix::HelixError;
+    use crate::helix::{HelixError, HelixMethod};
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };

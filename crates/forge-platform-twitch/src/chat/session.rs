@@ -1,3 +1,4 @@
+use crate::bot_account::TwitchBotAccount;
 use crate::builtin::ChatSessionConfig;
 use crate::chat::subscriber::{
     SubscribeError, SubscribePass, mark_revoked, subscribe_all_with_base_url,
@@ -12,7 +13,8 @@ use forge_platform_core::{
     PlatformError, connection_state_changed_event,
 };
 use forge_types::{
-    ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply, ChatViewer, OAuthToken,
+    AUTHOR_IS_CONNECTED_BOT_FIELD, ChatModerationAction, ChatModerationPayload, ChatPayload,
+    ChatReply, ChatViewer, OAuthToken,
 };
 use futures_util::{FutureExt, StreamExt};
 use serde::Deserialize;
@@ -101,6 +103,7 @@ struct SessionConfig {
     bus: Arc<dyn EventPublisher>,
     tracker: SubscriptionTracker,
     lifecycle: TwitchLifecycle,
+    bot: Option<Arc<TwitchBotAccount>>,
 }
 
 pub(crate) struct ChatSession {
@@ -155,6 +158,7 @@ impl ChatSession {
                 bus,
                 tracker,
                 lifecycle,
+                bot: None,
             },
             state_tx,
             shutdown_rx,
@@ -163,6 +167,11 @@ impl ChatSession {
             backoff: Backoff::default(),
         };
         (session, shutdown_tx)
+    }
+
+    pub(crate) fn with_bot(mut self, bot: Option<Arc<TwitchBotAccount>>) -> Self {
+        self.config.bot = bot;
+        self
     }
 
     pub(crate) async fn run(mut self) {
@@ -637,6 +646,16 @@ impl ChatSession {
                 (chat_fields::FROM_CHANNEL_LOGIN): login,
                 (chat_fields::FROM_CHANNEL_DISPLAY_NAME): display_name,
             });
+        }
+
+        if self
+            .config
+            .bot
+            .as_ref()
+            .and_then(|bot| bot.connected_user_id())
+            .is_some_and(|bot_user_id| bot_user_id == user_id)
+        {
+            forge_payload[AUTHOR_IS_CONNECTED_BOT_FIELD] = serde_json::json!(true);
         }
 
         ChatViewer::new(user_id, user_login).attach(&mut forge_payload);

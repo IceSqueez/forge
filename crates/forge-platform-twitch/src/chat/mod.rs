@@ -10,6 +10,7 @@ pub use send::{ChatSendError, SentMessageId, send_chat, send_chat_reply};
 pub use session::ChatConnectionState;
 pub(crate) use whisper::{WhisperError, send_whisper, send_whisper_to};
 
+use crate::bot_account::TwitchBotAccount;
 use crate::builtin::ChatSessionConfig;
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::lifecycle::TwitchLifecycle;
@@ -29,6 +30,7 @@ pub struct TwitchChat {
     bus: Arc<dyn EventPublisher>,
     tracker: SubscriptionTracker,
     lifecycle: TwitchLifecycle,
+    bot: Option<Arc<TwitchBotAccount>>,
 }
 
 pub struct TwitchChatHandle {
@@ -51,7 +53,13 @@ impl TwitchChat {
             bus,
             tracker,
             lifecycle,
+            bot: None,
         }
+    }
+
+    pub(crate) fn with_bot(mut self, bot: Option<Arc<TwitchBotAccount>>) -> Self {
+        self.bot = bot;
+        self
     }
 
     pub fn start(self) -> TwitchChatHandle {
@@ -62,7 +70,7 @@ impl TwitchChat {
             self.tracker,
             self.lifecycle,
         );
-        TwitchChatHandle::spawn(sess, state_rx, shutdown_tx)
+        TwitchChatHandle::spawn(sess.with_bot(self.bot), state_rx, shutdown_tx)
     }
 
     pub(crate) fn start_reporting_to(
@@ -78,7 +86,7 @@ impl TwitchChat {
             self.lifecycle,
             state_tx,
         );
-        TwitchChatHandle::spawn(sess, state_rx, shutdown_tx)
+        TwitchChatHandle::spawn(sess.with_bot(self.bot), state_rx, shutdown_tx)
     }
 }
 

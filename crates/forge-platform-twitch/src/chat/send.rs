@@ -1,4 +1,5 @@
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use reqwest::StatusCode;
 use serde::Deserialize;
 use thiserror::Error;
 use tracing::debug;
@@ -23,6 +24,8 @@ pub enum ChatSendError {
     ReauthRequired,
     #[error("message dropped by twitch ({code}): {message}")]
     Dropped { code: String, message: String },
+    #[error("twitch refused the message: {0}")]
+    Forbidden(String),
 }
 
 impl From<HelixError> for ChatSendError {
@@ -30,10 +33,26 @@ impl From<HelixError> for ChatSendError {
         match err {
             HelixError::RateLimited => Self::RateLimited,
             HelixError::ReauthRequired => Self::ReauthRequired,
+            HelixError::Http { status, body } if status == StatusCode::FORBIDDEN.as_u16() => {
+                Self::Forbidden(refusal_text(&body))
+            }
             HelixError::Http { status, body } => Self::Http(format!("HTTP {status}: {body}")),
             HelixError::Credentials(msg) | HelixError::Transport(msg) => Self::Http(msg),
         }
     }
+}
+
+#[derive(Deserialize)]
+struct HelixErrorBody {
+    message: Option<String>,
+}
+
+pub(crate) fn refusal_text(body: &str) -> String {
+    serde_json::from_str::<HelixErrorBody>(body)
+        .ok()
+        .and_then(|parsed| parsed.message)
+        .filter(|message| !message.is_empty())
+        .unwrap_or_else(|| body.trim().to_owned())
 }
 
 #[derive(Debug, Deserialize)]

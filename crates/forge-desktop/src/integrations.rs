@@ -1894,6 +1894,7 @@ pub(crate) mod tests {
             transport,
             creds,
             forge_platform_twitch::TwitchLifecycle::new(),
+            None,
         )
         .unwrap();
     }

@@ -2175,6 +2175,7 @@ mod tests {
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
             Arc::new(MockCreds::empty()),
             TwitchLifecycle::new(),
+            None,
         )
         .unwrap();
 

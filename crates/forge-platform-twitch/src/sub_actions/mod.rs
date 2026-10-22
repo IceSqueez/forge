@@ -109,6 +109,7 @@ pub use update_tags::UpdateTagsRunner;
 pub use update_title::UpdateTitleRunner;
 pub use warn_user::WarnUserRunner;
 
+use crate::bot_account::TwitchBotAccount;
 use crate::helix::HelixTransport;
 use crate::lifecycle::TwitchLifecycle;
 
@@ -117,6 +118,7 @@ pub fn register_twitch_sub_actions(
     transport: Arc<dyn HelixTransport>,
     creds: Arc<dyn CredentialsRepo>,
     lifecycle: TwitchLifecycle,
+    bot: Option<Arc<TwitchBotAccount>>,
 ) -> Result<(), RegistryError> {
     let mut reg = reg.owned_by(crate::TWITCH_INTEGRATION.id);
     let identity = Arc::new(SelfIdentity::new(creds));
@@ -176,14 +178,12 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(ReplyChatRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(SendWhisperRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
+    reg.register(Box::new(
+        ReplyChatRunner::new(Arc::clone(&transport), Arc::clone(&identity)).with_bot(bot.clone()),
+    ))?;
+    reg.register(Box::new(
+        SendWhisperRunner::new(Arc::clone(&transport), Arc::clone(&identity)).with_bot(bot),
+    ))?;
     reg.register(Box::new(UpdateTitleRunner::new(
         Arc::clone(&transport),
         Arc::clone(&identity),
@@ -493,6 +493,7 @@ mod tests {
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
             Arc::new(MockCreds::empty()),
             TwitchLifecycle::new(),
+            None,
         )
         .unwrap();
 

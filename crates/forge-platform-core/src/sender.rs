@@ -77,3 +77,129 @@ impl ActingSender {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn from_payload_reads_an_absent_or_null_sender_as_default_and_parses_every_wire_name() {
+        for (payload, expected) in [
+            (json!({ "message": "hi" }), SenderPreference::Default),
+            (json!({ SENDER_FIELD: null }), SenderPreference::Default),
+            (
+                json!({ SENDER_FIELD: "default" }),
+                SenderPreference::Default,
+            ),
+            (
+                json!({ SENDER_FIELD: "streamer" }),
+                SenderPreference::Streamer,
+            ),
+            (json!({ SENDER_FIELD: "bot" }), SenderPreference::BotOnly),
+        ] {
+            assert_eq!(
+                SenderPreference::from_payload(&payload),
+                Ok(expected),
+                "{payload}"
+            );
+        }
+    }
+
+    #[test]
+    fn from_payload_rejects_a_non_canonical_string_naming_the_value_it_got() {
+        for raw in [
+            "Bot",
+            "STREAMER",
+            "",
+            " bot",
+            "bot ",
+            "bot_only",
+            "broadcaster",
+        ] {
+            assert_eq!(
+                SenderPreference::from_payload(&json!({ SENDER_FIELD: raw })),
+                Err(unknown_sender_reason(raw)),
+                "{raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn from_payload_rejects_a_non_string_sender() {
+        for value in [
+            json!(1),
+            json!(true),
+            json!(["bot"]),
+            json!({ "role": "bot" }),
+        ] {
+            assert!(
+                SenderPreference::from_payload(&json!({ SENDER_FIELD: value.clone() })).is_err(),
+                "{value}"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_sender_reason_names_the_value_and_every_valid_sender() {
+        let reason = unknown_sender_reason("robot");
+
+        assert!(reason.contains("\"robot\""), "{reason}");
+        for valid in ["default", "streamer", "bot"] {
+            assert!(reason.contains(valid), "{reason} misses {valid}");
+        }
+    }
+
+    #[test]
+    fn every_sender_serializes_parses_and_lists_under_the_same_wire_name() {
+        let listed: Vec<&str> = SenderPreference::ALL
+            .iter()
+            .map(|sender| sender.as_str())
+            .collect();
+        assert_eq!(listed, SenderPreference::WIRE_NAMES);
+        for sender in SenderPreference::ALL {
+            assert_eq!(
+                serde_json::to_value(sender).unwrap(),
+                json!(sender.as_str())
+            );
+            assert_eq!(SenderPreference::parse(sender.as_str()), Some(sender));
+        }
+    }
+
+    #[test]
+    fn acting_sender_is_recorded_under_sent_as_with_its_role_and_login() {
+        for (role, wire) in [(SenderRole::Bot, "bot"), (SenderRole::Streamer, "streamer")] {
+            let mut payload = json!({ "channel": "twitch", "message": "hi" });
+
+            ActingSender {
+                role,
+                login: "forgebot".to_owned(),
+            }
+            .insert_into(&mut payload);
+
+            assert_eq!(
+                payload,
+                json!({
+                    "channel": "twitch",
+                    "message": "hi",
+                    SENT_AS_FIELD: { "role": wire, "login": "forgebot" },
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn acting_sender_leaves_a_non_object_payload_untouched() {
+        let mut payload = json!("plain");
+
+        ActingSender {
+            role: SenderRole::Bot,
+            login: "forgebot".to_owned(),
+        }
+        .insert_into(&mut payload);
+
+        assert_eq!(payload, json!("plain"));
+    }
+}

@@ -387,4 +387,101 @@ mod tests {
         assert_eq!(sent.len(), 1);
         assert!(sent[0].get("target").is_none(), "published {}", sent[0]);
     }
+
+    fn config_with_sender(sender: Option<Variant>) -> SubActionConfig {
+        let mut cfg = config_with_target(Some("twitch"));
+        if let Some(sender) = sender {
+            cfg.insert(SENDER_FIELD.to_owned(), sender);
+        }
+        cfg
+    }
+
+    async fn run_with_sender(
+        sender: Option<Variant>,
+    ) -> (SubActionOutcome, Vec<serde_json::Value>) {
+        let publisher = CapturingPublisher::default();
+        let args = ArgStack::new();
+        let ctx = RunContext::leaf(&args, 0, EventId::new(), &publisher);
+        let (telemetry, _) = TwitchChatSendMessageRunner
+            .execute(&config_with_sender(sender), &ctx)
+            .await;
+        (telemetry.outcome, publisher.sent_requests())
+    }
+
+    fn invalid_senders() -> [Variant; 4] {
+        [
+            Variant::String("Bot".to_owned()),
+            Variant::String(String::new()),
+            Variant::String("bot_only".to_owned()),
+            Variant::Int(1),
+        ]
+    }
+
+    #[tokio::test]
+    async fn the_request_carries_the_sender_only_when_it_is_not_default() {
+        for (sender, published) in [
+            (None, None),
+            (Some("default"), None),
+            (Some("streamer"), Some("streamer")),
+            (Some("bot"), Some("bot")),
+        ] {
+            let (outcome, sent) =
+                run_with_sender(sender.map(|s| Variant::String(s.to_owned()))).await;
+
+            assert_eq!(outcome, SubActionOutcome::Success, "{sender:?}");
+            assert_eq!(sent.len(), 1, "{sender:?}");
+            assert_eq!(
+                sent[0].get(SENDER_FIELD).and_then(|v| v.as_str()),
+                published,
+                "{sender:?} published {}",
+                sent[0]
+            );
+        }
+    }
+
+    #[test]
+    fn validation_accepts_every_sender_choice_offered_by_the_form() {
+        let offered = TwitchChatSendMessageRunner
+            .config_fields()
+            .into_iter()
+            .find_map(|field| match field {
+                FormField::Select { key, options, .. } if key == SENDER_FIELD => Some(options),
+                _ => None,
+            })
+            .unwrap();
+        for option in offered {
+            let config = config_with_sender(Some(Variant::String((*option).to_owned())));
+            assert!(
+                TwitchChatSendMessageRunner.validate_config(&config).is_ok(),
+                "{option}"
+            );
+        }
+    }
+
+    #[test]
+    fn validation_rejects_an_unknown_sender_on_the_sender_field() {
+        for sender in invalid_senders() {
+            let err = TwitchChatSendMessageRunner
+                .validate_config(&config_with_sender(Some(sender.clone())))
+                .unwrap_err();
+
+            assert!(
+                matches!(&err, RegistryError::InvalidConfig(problem) if problem.field.as_deref() == Some(SENDER_FIELD)),
+                "{sender:?} got {err:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unknown_sender_fails_the_run_and_publishes_nothing() {
+        for sender in invalid_senders() {
+            let (outcome, sent) = run_with_sender(Some(sender.clone())).await;
+
+            assert!(
+                matches!(outcome, SubActionOutcome::Failed(_)),
+                "{sender:?} got {outcome:?}"
+            );
+            assert!(sent.is_empty(), "{sender:?} published {sent:?}");
+        }
+    }
 }

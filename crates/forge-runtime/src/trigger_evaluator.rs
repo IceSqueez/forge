@@ -496,17 +496,17 @@ mod tests {
     use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_events::{Event, EventSource};
     use forge_registry::{
-        EventFilter, FormField, KindPlatformContract, SubActionRegistry, TriggerCategory,
-        TriggerRegistry,
+        EventFilter, FormField, IGNORE_BOT_MESSAGES_KEY, KindPlatformContract, SubActionRegistry,
+        TriggerCategory, TriggerRegistry,
     };
     use forge_storage::{
         ActionRepo, DataProvider, GlobalsRepo, SettingsRepo, TriggerInstanceRepo, UserGlobalsRepo,
     };
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{
-        Action, ActionId, ChatSegment, DeclaredVariable, ModerationMarks, PlatformId,
-        PlatformScope, Queue, QueueId, SubActionStep, TriggerInstance, TriggerInstanceId,
-        UserBadge, VariableSchema, VariantKind,
+        AUTHOR_IS_CONNECTED_BOT_FIELD, Action, ActionId, ChatSegment, DeclaredVariable,
+        ModerationMarks, PlatformId, PlatformScope, Queue, QueueId, SubActionStep, TriggerInstance,
+        TriggerInstanceId, UserBadge, VariableSchema, VariantKind,
     };
     use serde_json::json;
 
@@ -1175,6 +1175,119 @@ mod tests {
                 "the carve-out is scoped by the match verdict, so {family:?} must stay silent"
             );
         }
+    }
+
+    fn flagged_command_event(flag: serde_json::Value) -> Event {
+        let mut event = command_event(LINE, "forgebot", vec![]);
+        event.payload[AUTHOR_IS_CONNECTED_BOT_FIELD] = flag;
+        event
+    }
+
+    fn instance_ignoring_bot_messages(ignore: bool) -> TriggerInstance {
+        let mut instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
+        instance
+            .overrides
+            .insert(IGNORE_BOT_MESSAGES_KEY.to_owned(), Variant::Bool(ignore));
+        instance
+    }
+
+    fn command_matches_published(sub: &mut EventSubscription) -> usize {
+        let mut matched = 0;
+        while let Ok(Some(event)) = sub.try_recv() {
+            if event.kind == "command.matched" {
+                matched += 1;
+            }
+        }
+        matched
+    }
+
+    #[tokio::test]
+    async fn a_chat_trigger_skips_the_connected_bot_s_message_unless_told_otherwise() {
+        for family in [ChatTriggerFamily::Command, ChatTriggerFamily::Message] {
+            let descriptor = CommandDescriptor {
+                family: Some(family),
+                ..CommandDescriptor::command()
+            };
+            let (_fixture, mut evaluator) = decide_harness(descriptor).await;
+            let event = flagged_command_event(json!(true));
+
+            for (instance, fires) in [
+                (
+                    command_instance(PlatformScope::Any, PermissionRung::Everyone, 0),
+                    false,
+                ),
+                (instance_ignoring_bot_messages(true), false),
+                (instance_ignoring_bot_messages(false), true),
+            ] {
+                assert_eq!(
+                    evaluator.decide(&instance, &event).is_some(),
+                    fires,
+                    "{family:?} overrides {:?}",
+                    instance.overrides
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_skipped_bot_command_publishes_no_command_match() {
+        let (fixture, mut evaluator) = decide_harness(CommandDescriptor::command()).await;
+        let mut observer = fixture.bus.subscribe();
+        let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
+
+        evaluator.decide(&instance, &flagged_command_event(json!(true)));
+        let after_bot = command_matches_published(&mut observer);
+        evaluator.decide(&instance, &flagged_command_event(json!(false)));
+        let after_viewer = command_matches_published(&mut observer);
+
+        assert_eq!((after_bot, after_viewer), (0, 1));
+    }
+
+    #[tokio::test]
+    async fn a_skipped_bot_command_names_the_bot_author_as_its_decision_point() {
+        let (_fixture, mut evaluator) = decide_harness(CommandDescriptor::command()).await;
+        let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
+        let event = flagged_command_event(json!(true));
+
+        let lines = capture(Level::DEBUG, || {
+            evaluator.decide(&instance, &event);
+        });
+
+        let refusal = on_target(&lines, DECISION_TARGET)
+            .into_iter()
+            .find(|line| line.field("message") == "command trigger did not fire")
+            .expect("a bot-author refusal must record its decision line");
+        assert_eq!(refusal.field("reason"), "bot_author");
+    }
+
+    #[tokio::test]
+    async fn a_chat_trigger_fires_on_a_message_not_flagged_as_the_connected_bot() {
+        let (_fixture, mut evaluator) = decide_harness(CommandDescriptor::command()).await;
+        let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
+        for (label, event) in [
+            ("absent", command_event(LINE, "alice", vec![])),
+            ("false", flagged_command_event(json!(false))),
+            ("non-bool", flagged_command_event(json!("true"))),
+            ("null", flagged_command_event(serde_json::Value::Null)),
+        ] {
+            assert!(evaluator.decide(&instance, &event).is_some(), "{label}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_trigger_outside_the_chat_families_fires_on_the_connected_bot_s_message() {
+        let descriptor = CommandDescriptor {
+            family: None,
+            ..CommandDescriptor::command()
+        };
+        let (_fixture, mut evaluator) = decide_harness(descriptor).await;
+        let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
+
+        assert!(
+            evaluator
+                .decide(&instance, &flagged_command_event(json!(true)))
+                .is_some()
+        );
     }
 
     #[test]

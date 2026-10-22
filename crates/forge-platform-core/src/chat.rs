@@ -266,4 +266,64 @@ mod tests {
         );
         assert!(platform.sent().is_empty(), "whisper leaked to public chat");
     }
+
+    #[tokio::test]
+    async fn default_and_streamer_sends_delegate_to_the_existing_methods_and_report_no_acting_sender()
+     {
+        for sender in [SenderPreference::Default, SenderPreference::Streamer] {
+            let platform = PlainOnlyPlatform::new();
+
+            let message = platform.send_message_as("chan", "one", sender).await;
+            let reply = platform.send_reply_as("chan", "msg-1", "two", sender).await;
+
+            assert_eq!(message.unwrap(), None, "{sender:?}");
+            assert_eq!(reply.unwrap(), None, "{sender:?}");
+            assert_eq!(
+                platform.sent(),
+                vec![
+                    ("chan".to_owned(), "one".to_owned()),
+                    ("chan".to_owned(), "two".to_owned()),
+                ],
+                "{sender:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn default_and_streamer_whispers_surface_the_existing_whisper_outcome() {
+        for sender in [SenderPreference::Default, SenderPreference::Streamer] {
+            let platform = PlainOnlyPlatform::new();
+
+            let err = platform
+                .send_whisper_as("viewer", "secret", sender)
+                .await
+                .unwrap_err();
+
+            assert!(
+                matches!(&err, PlatformError::Unsupported { feature } if feature == "chat.whisper"),
+                "{sender:?} got {err:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_bot_only_send_is_unsupported_without_touching_the_platform() {
+        let platform = PlainOnlyPlatform::new();
+        let bot = SenderPreference::BotOnly;
+
+        let outcomes = [
+            platform.send_message_as("chan", "one", bot).await,
+            platform.send_reply_as("chan", "msg-1", "two", bot).await,
+            platform.send_whisper_as("viewer", "three", bot).await,
+        ];
+
+        let expected = bot_sender_unsupported().to_string();
+        for outcome in outcomes {
+            assert!(
+                matches!(&outcome, Err(err @ PlatformError::Unsupported { .. }) if err.to_string() == expected),
+                "got {outcome:?}"
+            );
+        }
+        assert!(platform.sent().is_empty(), "sent {:?}", platform.sent());
+    }
 }

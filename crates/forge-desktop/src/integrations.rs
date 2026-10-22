@@ -648,6 +648,7 @@ pub(crate) mod tests {
     use forge_events::EventStream;
     use forge_platform_core::ConnectionState;
     use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
+    use forge_platform_core::{SENDER_FIELD, SENT_AS_FIELD, SenderRole, unknown_sender_reason};
     use forge_runtime::NullEventLogRepo;
     use std::time::Duration;
     use tokio::sync::{Semaphore, broadcast, mpsc};
@@ -1336,6 +1337,220 @@ pub(crate) mod tests {
             expect_call(&mut twitch_rx).await,
             PlatformCall::Whisper { .. }
         ));
+    }
+
+    #[derive(Debug, PartialEq)]
+    enum SenderCall {
+        Message(SenderPreference),
+        Reply(SenderPreference),
+        Whisper(SenderPreference),
+        Unrouted,
+    }
+
+    struct SenderAwarePlatform {
+        calls: mpsc::UnboundedSender<SenderCall>,
+        acting: Option<ActingSender>,
+    }
+
+    impl SenderAwarePlatform {
+        fn spawn(acting: Option<ActingSender>) -> (Arc<Self>, mpsc::UnboundedReceiver<SenderCall>) {
+            let (calls, rx) = mpsc::unbounded_channel();
+            (Arc::new(Self { calls, acting }), rx)
+        }
+
+        fn record(&self, call: SenderCall) -> Result<Option<ActingSender>, PlatformError> {
+            let _ = self.calls.send(call);
+            Ok(self.acting.clone())
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ChatPlatform for SenderAwarePlatform {
+        fn connection_state(&self) -> ConnectionState {
+            ConnectionState::Connected
+        }
+        async fn connect(&self) -> Result<(), PlatformError> {
+            Ok(())
+        }
+        async fn disconnect(&self) -> Result<(), PlatformError> {
+            Ok(())
+        }
+        async fn send_message(&self, _channel: &str, _text: &str) -> Result<(), PlatformError> {
+            self.record(SenderCall::Unrouted).map(|_| ())
+        }
+        async fn send_message_as(
+            &self,
+            _channel: &str,
+            _text: &str,
+            sender: SenderPreference,
+        ) -> Result<Option<ActingSender>, PlatformError> {
+            self.record(SenderCall::Message(sender))
+        }
+        async fn send_reply_as(
+            &self,
+            _channel: &str,
+            _reply_parent_message_id: &str,
+            _text: &str,
+            sender: SenderPreference,
+        ) -> Result<Option<ActingSender>, PlatformError> {
+            self.record(SenderCall::Reply(sender))
+        }
+        async fn send_whisper_as(
+            &self,
+            _recipient_login: &str,
+            _text: &str,
+            sender: SenderPreference,
+        ) -> Result<Option<ActingSender>, PlatformError> {
+            self.record(SenderCall::Whisper(sender))
+        }
+        fn events(&self) -> EventStream {
+            EventStream::new(broadcast::channel(1).1)
+        }
+    }
+
+    async fn expect_sender_call(rx: &mut mpsc::UnboundedReceiver<SenderCall>) -> SenderCall {
+        tokio::time::timeout(Duration::from_secs(30), rx.recv())
+            .await
+            .expect("a platform send call was expected but never arrived")
+            .expect("mock send channel closed")
+    }
+
+    fn bot_acting() -> ActingSender {
+        ActingSender {
+            role: SenderRole::Bot,
+            login: "forgebot".to_owned(),
+        }
+    }
+
+    fn one_of_each_send_kind() -> [(serde_json::Value, &'static str); 3] {
+        [
+            (serde_json::json!({ "message": "plain" }), "chat.send"),
+            (
+                serde_json::json!({ "message": "reply", REPLY_PARENT_FIELD: "msg-1" }),
+                "chat.send",
+            ),
+            (
+                serde_json::json!({ "message": "psst", WHISPER_RECIPIENT_FIELD: "viewer" }),
+                "chat.whisper.sent",
+            ),
+        ]
+    }
+
+    #[tokio::test]
+    async fn each_send_kind_hands_the_requested_sender_to_the_platform() {
+        let bus = test_bus();
+        let (twitch, mut twitch_rx) = SenderAwarePlatform::spawn(None);
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+
+        for (payload, expected) in [
+            (
+                serde_json::json!({ "message": "m" }),
+                SenderCall::Message(SenderPreference::Default),
+            ),
+            (
+                serde_json::json!({ "message": "m", SENDER_FIELD: null }),
+                SenderCall::Message(SenderPreference::Default),
+            ),
+            (
+                serde_json::json!({ "message": "m", SENDER_FIELD: "streamer" }),
+                SenderCall::Message(SenderPreference::Streamer),
+            ),
+            (
+                serde_json::json!({ "message": "m", SENDER_FIELD: "bot" }),
+                SenderCall::Message(SenderPreference::BotOnly),
+            ),
+            (
+                serde_json::json!({ "message": "m", REPLY_PARENT_FIELD: "msg-1", SENDER_FIELD: "bot" }),
+                SenderCall::Reply(SenderPreference::BotOnly),
+            ),
+            (
+                serde_json::json!({ "message": "m", WHISPER_RECIPIENT_FIELD: "viewer", SENDER_FIELD: "streamer" }),
+                SenderCall::Whisper(SenderPreference::Streamer),
+            ),
+        ] {
+            bus.publish(request(EventSource::Rhai, payload.clone()));
+
+            assert_eq!(
+                expect_sender_call(&mut twitch_rx).await,
+                expected,
+                "{payload}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unknown_sender_fails_the_request_unsent_naming_the_value() {
+        for (sender, named) in [
+            (serde_json::json!("Bot"), "Bot"),
+            (serde_json::json!(7), "7"),
+        ] {
+            let bus = test_bus();
+            let mut observer = bus.subscribe();
+            let (twitch, mut twitch_rx) = SenderAwarePlatform::spawn(None);
+            spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+            tokio::task::yield_now().await;
+            let req = request(
+                EventSource::Rhai,
+                serde_json::json!({ "message": "hi", SENDER_FIELD: sender }),
+            );
+            let req_id = req.id;
+
+            bus.publish(req);
+            bus.publish(request(
+                EventSource::Rhai,
+                serde_json::json!({ "message": "sentinel" }),
+            ));
+
+            let failed = next_of_kind(&mut observer, "chat.send.failed").await;
+            assert_eq!(failed.caused_by, Some(req_id), "{named}");
+            assert_eq!(failed.payload["error"], unknown_sender_reason(named));
+            assert_eq!(
+                expect_sender_call(&mut twitch_rx).await,
+                SenderCall::Message(SenderPreference::Default),
+                "the request with sender {named} must not reach the platform"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn every_outcome_event_records_the_identity_the_platform_says_acted() {
+        let bus = test_bus();
+        let mut observer = bus.subscribe();
+        let (twitch, _twitch_rx) = SenderAwarePlatform::spawn(Some(bot_acting()));
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+
+        for (payload, outcome_kind) in one_of_each_send_kind() {
+            bus.publish(request(EventSource::Rhai, payload.clone()));
+
+            let outcome = next_of_kind(&mut observer, outcome_kind).await;
+            assert_eq!(
+                outcome.payload[SENT_AS_FIELD],
+                serde_json::json!({ "role": "bot", "login": "forgebot" }),
+                "{payload}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn outcome_events_carry_no_sent_as_when_the_platform_reports_no_identity() {
+        let bus = test_bus();
+        let mut observer = bus.subscribe();
+        let (twitch, _twitch_rx) = RecordingPlatform::spawn();
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+
+        for (payload, outcome_kind) in one_of_each_send_kind() {
+            bus.publish(request(EventSource::Rhai, payload.clone()));
+
+            let outcome = next_of_kind(&mut observer, outcome_kind).await;
+            assert!(
+                outcome.payload.get(SENT_AS_FIELD).is_none(),
+                "{payload} published {}",
+                outcome.payload
+            );
+        }
     }
 
     struct SilentPublisher;

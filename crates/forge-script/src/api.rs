@@ -1395,6 +1395,104 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn sender_taking_chat_calls_publish_the_sender_beside_the_usual_payload() {
+        for (call, target, recipient, sender) in [
+            (
+                r#"forge::chat::send_as("bot", "hello")"#,
+                None,
+                None,
+                Some("bot"),
+            ),
+            (
+                r#"forge::chat::send_as("streamer", "twitch", "hello")"#,
+                Some("twitch"),
+                None,
+                Some("streamer"),
+            ),
+            (
+                r#"forge::chat::reply_as("bot", "msg-1", "hello")"#,
+                None,
+                Some((REPLY_PARENT_FIELD, "msg-1")),
+                Some("bot"),
+            ),
+            (
+                r#"forge::chat::reply_as("streamer", "Twitch", "msg-1", "hello")"#,
+                Some("twitch"),
+                Some((REPLY_PARENT_FIELD, "msg-1")),
+                Some("streamer"),
+            ),
+            (
+                r#"forge::chat::whisper_as("bot", "viewer", "hello")"#,
+                None,
+                Some((WHISPER_RECIPIENT_FIELD, "viewer")),
+                Some("bot"),
+            ),
+            (
+                r#"forge::chat::whisper_as("bot", "twitch", "viewer", "hello")"#,
+                Some("twitch"),
+                Some((WHISPER_RECIPIENT_FIELD, "viewer")),
+                Some("bot"),
+            ),
+            (
+                r#"forge::chat::send_as("default", "twitch", "hello")"#,
+                Some("twitch"),
+                None,
+                None,
+            ),
+            (r#"forge::chat::send("hello")"#, None, None, None),
+        ] {
+            let (result, sent) = eval_gated(SwitchableAvailability::default(), call).await;
+
+            assert!(result.is_ok(), "{call} failed: {result:?}");
+            assert_eq!(sent.len(), 1, "{call}");
+            let payload = &sent[0].payload;
+            assert_eq!(
+                payload.get(SENDER_FIELD).and_then(|v| v.as_str()),
+                sender,
+                "{call} published {payload}"
+            );
+            assert_eq!(
+                payload.get("target").and_then(|v| v.as_str()),
+                target,
+                "{call}"
+            );
+            assert_eq!(payload["message"], "hello", "{call}");
+            if let Some((key, value)) = recipient {
+                assert_eq!(payload[key], value, "{call}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unknown_sender_is_a_script_error_and_publishes_nothing() {
+        for (call, raw) in [
+            (r#"forge::chat::send_as("Bot", "hello")"#, "Bot"),
+            (r#"forge::chat::send_as("", "twitch", "hello")"#, ""),
+            (
+                r#"forge::chat::reply_as("bot_only", "msg-1", "hello")"#,
+                "bot_only",
+            ),
+            (
+                r#"forge::chat::reply_as("me", "twitch", "msg-1", "hello")"#,
+                "me",
+            ),
+            (
+                r#"forge::chat::whisper_as(" bot", "viewer", "hello")"#,
+                " bot",
+            ),
+            (
+                r#"forge::chat::whisper_as("BOT", "twitch", "viewer", "hello")"#,
+                "BOT",
+            ),
+        ] {
+            let (result, sent) = eval_gated(SwitchableAvailability::default(), call).await;
+
+            assert_runtime_error_mentions(call, result, &unknown_sender_reason(raw));
+            assert!(sent.is_empty(), "{call} published {sent:?}");
+        }
+    }
+
     #[derive(Clone, Default)]
     struct SwitchableAvailability(Arc<Mutex<std::collections::HashSet<IntegrationId>>>);
 
@@ -1446,6 +1544,9 @@ mod tests {
             r#"forge::chat::send("twitch", "hello")"#,
             r#"forge::chat::reply("twitch", "msg-1", "hello")"#,
             r#"forge::chat::whisper("twitch", "viewer", "hello")"#,
+            r#"forge::chat::send_as("bot", "twitch", "hello")"#,
+            r#"forge::chat::reply_as("bot", "twitch", "msg-1", "hello")"#,
+            r#"forge::chat::whisper_as("bot", "twitch", "viewer", "hello")"#,
         ] {
             let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
             let (engine, _dp) = gated_engine(
@@ -1515,7 +1616,7 @@ mod tests {
         assert_eq!(sent_requests(&captured), 1);
     }
 
-    const UNTARGETED_CHAT_CALLS: [&str; 7] = [
+    const UNTARGETED_CHAT_CALLS: [&str; 12] = [
         r#"forge::chat::send("hello")"#,
         r#"forge::chat::reply("msg-1", "hello")"#,
         r#"forge::chat::whisper("viewer", "hello")"#,
@@ -1523,6 +1624,11 @@ mod tests {
         r#"forge::chat::send("  ", "hello")"#,
         r#"forge::chat::reply(" ", "msg-1", "hello")"#,
         r#"forge::chat::whisper("\t", "viewer", "hello")"#,
+        r#"forge::chat::send_as("bot", "hello")"#,
+        r#"forge::chat::send_as("bot", " ", "hello")"#,
+        r#"forge::chat::reply_as("bot", "msg-1", "hello")"#,
+        r#"forge::chat::whisper_as("bot", "viewer", "hello")"#,
+        r#"forge::chat::whisper_as("bot", "\t", "viewer", "hello")"#,
     ];
 
     fn availability_disabling(ids: &[&'static str]) -> SwitchableAvailability {
@@ -1569,9 +1675,11 @@ mod tests {
         }
     }
 
-    const UNTARGETED_WHISPER_CALLS: [&str; 2] = [
+    const UNTARGETED_WHISPER_CALLS: [&str; 4] = [
         r#"forge::chat::whisper("viewer", "hello")"#,
         r#"forge::chat::whisper("\t", "viewer", "hello")"#,
+        r#"forge::chat::whisper_as("bot", "viewer", "hello")"#,
+        r#"forge::chat::whisper_as("bot", "\t", "viewer", "hello")"#,
     ];
 
     fn assert_runtime_error_mentions(

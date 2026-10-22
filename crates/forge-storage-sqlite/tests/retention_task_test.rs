@@ -86,6 +86,7 @@ fn spec(due_at: OffsetDateTime, scheduled_at: OffsetDateTime, label: &str) -> Sc
         scheduled_by_action: None,
         scheduled_by_run: None,
         trigger_event_id: None,
+        replay: false,
         scheduled_at,
         label: label.to_owned(),
     }

@@ -69,6 +69,7 @@ fn spec(target: ActionId, due_at: OffsetDateTime) -> ScheduledRunSpec {
         scheduled_by_action: None,
         scheduled_by_run: None,
         trigger_event_id: None,
+        replay: false,
         scheduled_at: base() - Duration::from_secs(3_600),
         label: "follow-up".to_owned(),
     }
@@ -88,6 +89,7 @@ fn request(target: ActionId) -> ScheduleRequest {
         scheduled_by_action: None,
         scheduled_by_run: None,
         trigger_event_id: None,
+        cause: None,
     }
 }
 
@@ -564,6 +566,39 @@ async fn the_run_trigger_is_a_recorded_due_event_caused_by_the_original_trigger(
         (recorded.kind.as_str(), recorded.caused_by),
         (SCHEDULED_RUN_DUE_KIND, Some(run.cause))
     );
+}
+
+#[tokio::test]
+async fn a_run_whose_trigger_left_the_ring_fires_its_due_and_start_with_the_stored_replay_mark() {
+    for replay in [false, true] {
+        let mut harness = Harness::new().await;
+        let action = harness.action(|_| {}).await;
+        let mut late_run = overdue(action.id, LATE_BY);
+        late_run.trigger_event_id = Some(EventId::new());
+        late_run.replay = replay;
+        harness.place(&late_run).await;
+        let mut subscription = harness.bus.subscribe();
+
+        let _handle = harness.start(CatchUpSettle::immediately());
+
+        let context = harness.next_run().await;
+        let due = harness
+            .bus
+            .lookup(scheduled_event_id(&context))
+            .expect("the due event is in the lineage ring");
+        let mut start = None;
+        while let Ok(Some(event)) = subscription.try_recv() {
+            if event.kind == "action.start" {
+                start = Some(event);
+            }
+        }
+        let start = start.expect("the run published its start");
+        assert_eq!(
+            (due.replay, start.replay),
+            (replay, replay),
+            "stored replay = {replay}"
+        );
+    }
 }
 
 #[tokio::test]

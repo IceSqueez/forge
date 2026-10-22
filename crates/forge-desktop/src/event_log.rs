@@ -274,6 +274,18 @@ mod tests {
     }
 
     #[test]
+    fn an_item_is_marked_replay_exactly_when_its_event_is() {
+        for replay in [false, true] {
+            let mut event = published_event(TWITCH_CHAT);
+            event.replay = replay;
+
+            let item = EventLog::item_from_event(&event).unwrap();
+
+            assert_eq!(item.replay, replay);
+        }
+    }
+
+    #[test]
     fn exported_items_keep_the_event_instant_as_iso_utc() {
         let mut event = published_event(TWITCH_CHAT);
         event.timestamp = time::OffsetDateTime::from_unix_timestamp(1_773_617_400).unwrap()

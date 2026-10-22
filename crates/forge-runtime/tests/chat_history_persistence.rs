@@ -316,6 +316,62 @@ async fn each_moderation_action_routes_to_its_repo_method_with_its_source() {
     );
 }
 
+fn replayed(mut event: Event) -> Event {
+    event.replay = true;
+    event
+}
+
+#[tokio::test]
+async fn a_replayed_chat_message_and_moderation_store_nothing_and_mark_no_later_row() {
+    let bus = bus();
+    let (rows_tx, mut rows_rx) = mpsc::unbounded_channel::<Vec<(String, bool)>>();
+    let (marks_tx, mut marks_rx) = mpsc::unbounded_channel::<Call>();
+
+    let mut repo = MockChatHistoryRepo::new();
+    repo.expect_append_batch().returning(move |rows| {
+        let _ = rows_tx.send(
+            rows.iter()
+                .map(|row| (row.id.clone(), row.moderation.deleted))
+                .collect(),
+        );
+        Ok(())
+    });
+    repo.expect_apply_retention().returning(|_, _| Ok(0));
+    let delete_tx = marks_tx.clone();
+    repo.expect_mark_message_deleted().returning(move |id| {
+        let _ = delete_tx.send(Call::Delete(id.to_string()));
+        Ok(1)
+    });
+    repo.expect_clear_platform().returning(move |source| {
+        let _ = marks_tx.send(Call::Clear(source));
+        Ok(1)
+    });
+
+    spawn_chat_history_persistence(Arc::clone(&bus), Arc::new(repo), no_settings());
+
+    bus.publish(replayed(chat_event("replayed")));
+    bus.publish(replayed(mod_event(
+        EventSource::Twitch,
+        ChatModerationAction::DeleteMessage {
+            message_id: "live".to_string(),
+        },
+    )));
+    bus.publish(replayed(mod_event(
+        EventSource::Twitch,
+        ChatModerationAction::ClearChat,
+    )));
+    bus.publish(chat_event("live"));
+
+    let stored = timeout(RECV_TIMEOUT, rows_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (stored, marks_rx.try_recv().ok()),
+        (vec![("live".to_string(), false)], None)
+    );
+}
+
 struct StuckEventLog;
 
 #[async_trait::async_trait]

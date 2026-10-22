@@ -10,7 +10,8 @@ use forge_storage::{
     StorageError,
 };
 use forge_storage_sqlite::{
-    SqliteBackend, SqlitePools, SqliteScheduledRunRepo, apply_migrations, connect_pools,
+    MIGRATIONS, SqliteBackend, SqlitePools, SqliteScheduledRunRepo, apply_migrations, connect,
+    connect_pools,
 };
 use forge_types::{Action, ActionId, EventId, Variant};
 use time::OffsetDateTime;
@@ -43,6 +44,7 @@ fn spec(target: ActionId, due_min: i64, key: Option<&str>) -> ScheduledRunSpec {
         scheduled_by_action: None,
         scheduled_by_run: None,
         trigger_event_id: None,
+        replay: false,
         scheduled_at: at_min(0),
         label: "follow-up".to_owned(),
     }
@@ -528,6 +530,7 @@ async fn a_scheduled_run_reads_back_exactly_as_it_was_specified() {
         scheduled_by_action: Some(ActionId::new()),
         scheduled_by_run: Some("run-42".to_owned()),
         trigger_event_id: Some(EventId::new()),
+        replay: true,
         scheduled_at: at_ms(7),
         label: "Remove VIP from алиса".to_owned(),
     };
@@ -1167,4 +1170,41 @@ async fn claiming_an_unreadable_run_fails_and_leaves_it_pending() {
         ),
         (true, ("pending".to_owned(), None, None))
     );
+}
+
+const VERSION_BEFORE_SCHEDULED_RUN_REPLAY: i64 = 53;
+const MILLIS_PER_SECOND: i64 = 1_000;
+
+#[tokio::test]
+async fn a_run_stored_before_replay_marking_reads_back_as_not_replayed() {
+    let dir = tempfile::tempdir().unwrap();
+    let url = format!("sqlite://{}", dir.path().join("forge.db").display());
+    let pool = connect(&url).await.unwrap();
+    MIGRATIONS
+        .run_to(VERSION_BEFORE_SCHEDULED_RUN_REPLAY, &pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO scheduled_runs (target_action_id, due_at, missed_policy, args, scheduled_at, label)
+         VALUES (?, ?, 'run_late_once', '{}', ?, 'legacy')",
+    )
+    .bind(ActionId::new().to_string())
+    .bind(at_min(1).unix_timestamp() * MILLIS_PER_SECOND)
+    .bind(at_min(0).unix_timestamp() * MILLIS_PER_SECOND)
+    .execute(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+
+    let backend = common::sandboxed_backend(&url, TEST_KEY).await;
+    let replay_marks: Vec<bool> = backend
+        .scheduled_run_repo()
+        .list_pending()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|run| run.spec.replay)
+        .collect();
+
+    assert_eq!(replay_marks, vec![false]);
 }

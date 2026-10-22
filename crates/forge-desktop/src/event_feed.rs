@@ -1311,10 +1311,11 @@ mod tests {
     use forge_components::Presentation;
     use forge_components::Toasts;
 
-    const REPLAY_KEYS: [&str; 3] = [
+    const REPLAY_KEYS: [&str; 4] = [
         "event_feed_replay_success",
         "event_feed_replay_not_found",
         "event_feed_replay_failed",
+        "event_feed_replay_badge",
     ];
 
     struct GatedEventLog {
@@ -1376,6 +1377,7 @@ mod tests {
             sub_action_count: None,
             total_ms: None,
             is_error: false,
+            replay: false,
             user_login: "".into(),
             user_platform: "".into(),
             payload: serde_json::Value::Null,

@@ -1273,4 +1273,45 @@ mod tests {
 
         assert_eq!(replayed.causation_depth, 2);
     }
+
+    fn replayed_root(kind: &str) -> Event {
+        let mut root = Event::new(EventSource::Twitch, kind, serde_json::Value::Null);
+        root.replay = true;
+        root
+    }
+
+    #[test]
+    fn recorded_child_of_a_replayed_parent_takes_the_mark_but_not_the_depth() {
+        let bus = null_bus();
+        let mut parent = replayed_root("twitch.chat");
+        parent.causation_depth = 5;
+        bus.publish(parent.clone());
+        let due = child_of(&parent, "scheduled.run.due", 0);
+        let due_id = due.id;
+
+        bus.record(due);
+
+        let recorded = bus.lookup(due_id).unwrap();
+        assert_eq!((recorded.replay, recorded.causation_depth), (true, 0));
+    }
+
+    #[test]
+    fn held_start_evicted_from_the_ring_still_hands_the_replay_mark_to_its_steps() {
+        let bus = bus_with_caps(Arc::new(NullEventLogRepo), CHANNEL_CAP, 2);
+        let root = replayed_root("twitch.chat");
+        let start = child_of(&root, "action.start", 1);
+        bus.publish(root.clone());
+        let _held = bus.hold_lineage(&start);
+        bus.publish(start.clone());
+        for i in 0..3 {
+            bus.publish(core_event(&format!("filler.{i}")));
+        }
+        assert!(bus.lookup(root.id).is_none() && bus.lookup(start.id).is_none());
+        let step = child_of(&start, "subaction.run", 0);
+        let step_id = step.id;
+
+        bus.publish(step);
+
+        assert!(bus.lookup(step_id).unwrap().replay);
+    }
 }

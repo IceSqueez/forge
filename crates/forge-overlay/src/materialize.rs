@@ -16,6 +16,8 @@ pub const GENERATOR_VERSION: u32 = 5;
 
 const MAX_IDENTITY_LEN: usize = 64;
 
+const CREDENTIAL_FIELD: &str = "credential";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MaterializeReport {
     pub directory: PathBuf,
@@ -151,6 +153,54 @@ fn sweep_generated_media(
             Err(_) => report.media_sweep_failures.push(display(&path)),
         }
     }
+}
+
+pub fn refresh_config_credential(
+    root: &Path,
+    id: &str,
+    credential: &str,
+) -> Result<bool, OverlayError> {
+    check_identity(id)?;
+
+    let Some(root) = optional_canonicalize(root)? else {
+        return Ok(false);
+    };
+    let directory = root.join(id);
+    reject_symlink(&directory)?;
+
+    let Some(resolved) = optional_canonicalize(&directory)? else {
+        return Ok(false);
+    };
+    if !resolved.starts_with(&root) {
+        return Err(OverlayError::OutsideRoot {
+            path: display(&directory),
+        });
+    }
+
+    let target = resolved.join(CONFIG_FILE);
+    reject_symlink(&target)?;
+    let existing = match fs::read_to_string(&target) {
+        Ok(existing) => existing,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(source) => {
+            return Err(OverlayError::Io {
+                path: display(&target),
+                source,
+            });
+        }
+    };
+
+    let mut document: serde_json::Value = serde_json::from_str(&existing)?;
+    let Some(fields) = document.as_object_mut() else {
+        return Ok(false);
+    };
+    fields.insert(
+        CREDENTIAL_FIELD.to_owned(),
+        serde_json::Value::String(credential.to_owned()),
+    );
+    let rewritten = serde_json::to_string_pretty(&document)?;
+    write_atomic(&resolved, CONFIG_FILE, rewritten.as_bytes())?;
+    Ok(true)
 }
 
 pub fn remove_overlay_directory(root: &Path, id: &str) -> Result<bool, OverlayError> {

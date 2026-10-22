@@ -7,7 +7,7 @@ use rand::Rng as _;
 use subtle::ConstantTimeEq as _;
 
 use forge_storage::{
-    CredentialId, CredentialsRepo, SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT,
+    CredentialId, CredentialsRepo, OVERLAY_TOKEN_PREFIX, SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT,
     SERVER_OVERLAY_TOKEN_CREDENTIAL_ID, StorageError,
 };
 
@@ -15,7 +15,6 @@ use crate::ServerError;
 use crate::auth::mask_with_prefix;
 
 const OVERLAY_TOKEN_BYTE_LEN: usize = 32;
-const OVERLAY_TOKEN_PREFIX: &str = "fgo_";
 
 pub struct OverlayTokenState {
     token: ArcSwap<String>,
@@ -84,12 +83,12 @@ impl OverlayTokenState {
         Ok(fresh)
     }
 
-    pub(crate) async fn abandon_rotation(&self, creds: &dyn CredentialsRepo) {
+    pub(crate) async fn abandon_rotation(
+        &self,
+        creds: &dyn CredentialsRepo,
+    ) -> Result<(), StorageError> {
         let id = CredentialId::new(SERVER_OVERLAY_TOKEN_CREDENTIAL_ID);
-        let previous = self.current();
-        if let Err(e) = creds.store(&id, &previous).await {
-            tracing::error!(error = %e, "could not restore the previous overlay token after an aborted rotation");
-        }
+        creds.store(&id, &self.current()).await
     }
 
     pub(crate) fn commit_rotation(&self, fresh: String) {

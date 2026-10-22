@@ -69,7 +69,10 @@ pub use media::{
     MEDIA_CONTENT_DIGEST_BYTES, MEDIA_CONTENT_HASH, MediaBlob, MediaBlobId, MediaFormat, MediaKind,
     MediaReferrer, MediaReferrerKind, MediaRepo, accept_media, sanitize_label, sniff,
 };
-pub use overlay::{OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo};
+pub use overlay::{
+    OVERLAY_TOKEN_PREFIX, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId,
+    OverlayRepo, is_token_shaped,
+};
 pub use provider::{
     DATABASE_FILE_NAME, DataProvider, EXPECTED_SCHEMA_VERSION, LAST_PRE_BASELINE_RELEASE,
     database_unit_file_names,

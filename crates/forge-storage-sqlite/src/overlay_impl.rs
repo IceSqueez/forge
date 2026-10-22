@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use forge_storage::{
     OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo, StorageError,
+    is_token_shaped,
 };
 use rand::rand_core::Rng;
 use sqlx::SqliteConnection;
@@ -87,6 +88,16 @@ impl SqliteOverlayRepo {
     pub fn new(db: impl Into<SqlitePools>) -> Self {
         Self { db: db.into() }
     }
+}
+
+fn refuse_token_shaped(field: &str, candidate: &str) -> Result<(), StorageError> {
+    if is_token_shaped(candidate) {
+        return Err(StorageError::ValidationFailed {
+            field: field.to_owned(),
+            reason: "the value looks like an overlay token".to_owned(),
+        });
+    }
+    Ok(())
 }
 
 async fn mint_unique_id(
@@ -213,6 +224,7 @@ impl OverlayRepo for SqliteOverlayRepo {
         kind_id: &str,
         config_schema_version: u32,
     ) -> Result<OverlayDefinition, StorageError> {
+        refuse_token_shaped("display_name", display_name)?;
         let mut tx = self
             .db
             .writer()
@@ -263,6 +275,8 @@ impl OverlayRepo for SqliteOverlayRepo {
     }
 
     async fn save(&self, definition: &OverlayDefinition) -> Result<(), StorageError> {
+        refuse_token_shaped("display_name", &definition.display_name)?;
+        refuse_token_shaped("id", definition.id.as_str())?;
         let config_json =
             serde_json::to_string(&definition.config).map_err(StorageError::Serialization)?;
         let source_overrides_json = serde_json::to_string(&definition.source_overrides)

@@ -58,7 +58,7 @@ pub use latest::{
 };
 pub use materialize::{
     GENERATOR_VERSION, MaterializeReport, ensure_shared_directory, materialize_overlay,
-    remove_overlay_directory,
+    refresh_config_credential, remove_overlay_directory,
 };
 pub use media::{
     CLIP_REFERENCE_PREFIX, ClipReference, EmittedIcon, GENERATED_MEDIA_DIRECTORY,

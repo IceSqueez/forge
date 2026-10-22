@@ -99,6 +99,10 @@ impl OverlaysView {
             self.report(&tr!("overlays_toast_unknown_type"), cx);
             return;
         };
+        if forge_storage::is_token_shaped(&display_name) {
+            self.report(&tr!("overlays_toast_token_shaped_name"), cx);
+            return;
+        }
         self.close_form(cx);
 
         let repo = Arc::clone(&self.handles.repo);
@@ -128,6 +132,10 @@ impl OverlaysView {
     }
 
     pub(super) fn rename(&mut self, id: OverlayId, display_name: String, cx: &mut Context<Self>) {
+        if forge_storage::is_token_shaped(&display_name) {
+            self.report(&tr!("overlays_toast_token_shaped_name"), cx);
+            return;
+        }
         self.close_form(cx);
         let repo = Arc::clone(&self.handles.repo);
         let service = self.handles.service.clone();

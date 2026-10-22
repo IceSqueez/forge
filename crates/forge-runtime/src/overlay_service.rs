@@ -9,8 +9,9 @@ use forge_overlay::{
     DEFAULT_DISPLAY_SECS, DeliveryDisposition, GENERATOR_VERSION, MaterializeReport,
     OverlayInstance, OverlayKindDescriptor, OverlayKindRegistry, OverlayMedia, SampleContext,
     SampleTrigger, delivered_content, ensure_shared_directory, joined_to_show, latest_binding,
-    latest_content, materialize_overlay, read_overlay_source, remove_overlay_directory,
-    sample_content, sample_context, show_timing, take_speech, upgrade_config, write_overlay_source,
+    latest_content, materialize_overlay, read_overlay_source, refresh_config_credential,
+    remove_overlay_directory, sample_content, sample_context, show_timing, take_speech,
+    upgrade_config, write_overlay_source,
 };
 use forge_registry::{
     CancelSignal, KindPlatformContract, SubActionRegistry, TriggerRegistry, declared_variables,
@@ -338,6 +339,10 @@ impl OverlayServiceHandle {
                     "overlay type is not in this build; record kept, page not regenerated"
                 );
                 pass.unavailable += 1;
+                if let Err(error) = self.refresh_credential(&definition).await {
+                    tracing::error!(overlay = %definition.id, %error, "credential in the kept overlay config could not be refreshed");
+                    pass.failed += 1;
+                }
                 continue;
             }
             match self.write_files(&definition).await {
@@ -350,6 +355,17 @@ impl OverlayServiceHandle {
         }
 
         Ok(pass)
+    }
+
+    async fn refresh_credential(
+        &self,
+        definition: &OverlayDefinition,
+    ) -> Result<(), OverlayServiceError> {
+        let root = self.root().await;
+        let identity = definition.id.as_str().to_owned();
+        let credential = definition.credential.as_str().to_owned();
+        blocking(move || refresh_config_credential(&root, &identity, &credential)).await??;
+        Ok(())
     }
 
     pub async fn materialize(

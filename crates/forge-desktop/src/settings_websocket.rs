@@ -40,6 +40,12 @@ const TOKEN_COLUMN_MIN_W: Pixels = px(230.0);
 const TOKEN_FIELD_PAD_V: Pixels = px(7.0);
 const TOKEN_ACTION_GLYPH: Pixels = px(12.0);
 
+enum TokenRegenerateNote {
+    Clean,
+    RewriteFailed(String),
+    RestoreFailed(String),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BindChoice {
     Localhost,
@@ -730,14 +736,23 @@ impl SettingsWebSocketView {
             &self.rt_handle,
             async move {
                 match handle.regenerate_overlay_token(&overlays).await {
-                    Ok(token) => Ok((token, None)),
+                    Ok(token) => Ok((token, TokenRegenerateNote::Clean)),
                     Err(forge_server::ServerError::OverlayRotationIncomplete { token, reason }) => {
-                        Ok((token, Some(reason)))
+                        Ok((
+                            token.into_inner(),
+                            TokenRegenerateNote::RewriteFailed(reason),
+                        ))
+                    }
+                    Err(forge_server::ServerError::OverlayTokenRestoreFailed { token, reason }) => {
+                        Ok((
+                            token.into_inner(),
+                            TokenRegenerateNote::RestoreFailed(reason),
+                        ))
                     }
                     Err(e) => Err(e.to_string()),
                 }
             },
-            |this, result: Result<(String, Option<String>), String>, cx| {
+            |this, result: Result<(String, TokenRegenerateNote), String>, cx| {
                 this.finish_overlay_token_regenerate(result, cx)
             },
             cx,
@@ -747,16 +762,24 @@ impl SettingsWebSocketView {
 
     fn finish_overlay_token_regenerate(
         &mut self,
-        result: Result<(String, Option<String>), String>,
+        result: Result<(String, TokenRegenerateNote), String>,
         cx: &mut Context<Self>,
     ) {
         self.overlay_token_regenerating = false;
         match result {
-            Ok((token, rewrite_failure)) => {
+            Ok((token, note)) => {
                 overlay_link_token::publish(token, cx);
-                if let Some(reason) = rewrite_failure {
-                    tracing::warn!(error = %reason, "overlay pages were not fully rewritten after regenerating the token");
-                    ErrorSink::Toast.report(reason, cx);
+                match note {
+                    TokenRegenerateNote::Clean => {}
+                    TokenRegenerateNote::RewriteFailed(reason) => {
+                        tracing::warn!(error = %reason, "overlay pages were not fully rewritten after regenerating the token");
+                        ErrorSink::Toast.report(reason, cx);
+                    }
+                    TokenRegenerateNote::RestoreFailed(reason) => {
+                        tracing::warn!(error = %reason, "previous overlay token could not be restored after a failed regenerate");
+                        ErrorSink::Toast
+                            .report(tr!("settings_ws_overlay_token_restore_failed"), cx);
+                    }
                 }
             }
             Err(message) => {

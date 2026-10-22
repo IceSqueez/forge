@@ -15,7 +15,7 @@ use crate::config::ServerSettings;
 use crate::origin::build_allowed_origins;
 use crate::run_state::{Generation, RunState};
 use crate::server::AppState;
-use crate::{ServerError, server};
+use crate::{SecretToken, ServerError, server};
 
 struct HandleInner {
     join: Option<tokio::task::JoinHandle<Result<(), ServerError>>>,
@@ -229,9 +229,18 @@ impl ServerHandle {
         let fresh = gate.stage_rotation(state.credentials.as_ref()).await?;
         let reissued = match state.overlays.reissue_all_credentials().await {
             Ok(reissued) => reissued,
-            Err(e) => {
-                gate.abandon_rotation(state.credentials.as_ref()).await;
-                return Err(e.into());
+            Err(reissue_error) => {
+                return match gate.abandon_rotation(state.credentials.as_ref()).await {
+                    Ok(()) => Err(reissue_error.into()),
+                    Err(restore_error) => {
+                        tracing::error!(error = %restore_error, "could not restore the previous overlay token after an aborted rotation");
+                        gate.commit_rotation(fresh.clone());
+                        Err(ServerError::OverlayTokenRestoreFailed {
+                            token: SecretToken::new(fresh),
+                            reason: format!("{reissue_error}; {restore_error}"),
+                        })
+                    }
+                };
             }
         };
         gate.commit_rotation(fresh.clone());
@@ -239,7 +248,7 @@ impl ServerHandle {
             state.bus_adapter.revoke_overlay(identity).await;
         }
         let incomplete = |reason: String| ServerError::OverlayRotationIncomplete {
-            token: fresh.clone(),
+            token: SecretToken::new(fresh.clone()),
             reason,
         };
         let pass = overlay_service

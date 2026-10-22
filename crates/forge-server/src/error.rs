@@ -1,3 +1,34 @@
+#[derive(Clone, PartialEq, Eq)]
+pub struct SecretToken(String);
+
+impl SecretToken {
+    pub fn new(token: String) -> Self {
+        Self(token)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl std::ops::Deref for SecretToken {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for SecretToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("<redacted>")
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
     #[error("could not bind to {addr}: {reason}")]
@@ -36,7 +67,12 @@ pub enum ServerError {
     OverlayRematerialization { reason: String },
 
     #[error("the overlay token was regenerated but its pages could not be rewritten: {reason}")]
-    OverlayRotationIncomplete { token: String, reason: String },
+    OverlayRotationIncomplete { token: SecretToken, reason: String },
+
+    #[error(
+        "the previous overlay token could not be restored after a failed regenerate, so the new token is now the active one: {reason}"
+    )]
+    OverlayTokenRestoreFailed { token: SecretToken, reason: String },
 
     #[error("the server is switched off in settings")]
     Disabled,

@@ -7,6 +7,15 @@ use time::OffsetDateTime;
 
 use crate::StorageError;
 
+pub const OVERLAY_TOKEN_PREFIX: &str = "fgo_";
+
+pub fn is_token_shaped(candidate: &str) -> bool {
+    candidate
+        .trim()
+        .get(..OVERLAY_TOKEN_PREFIX.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(OVERLAY_TOKEN_PREFIX))
+}
+
 pub type OverlayConfig = BTreeMap<String, Variant>;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

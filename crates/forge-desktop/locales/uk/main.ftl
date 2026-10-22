@@ -718,6 +718,7 @@ settings_ws_overlay_token_title = Токен оверлеїв
 settings_ws_overlay_token_subtitle = Лише читання - дозволяє браузерному джерелу завантажувати файли оверлеїв, і нічого більше
 settings_ws_overlay_token_regen_title = Оновити токен оверлеїв?
 settings_ws_overlay_token_regen_message = Зміниться кожна URL оверлею, а старі одразу перестануть завантажуватися. Скопіюйте кожну URL оверлею заново в її браузерне джерело в OBS.
+settings_ws_overlay_token_restore_failed = Не вдалося оновити токен, а попередній токен оверлеїв відновити не вдалося. Тепер активний новий токен - скопіюйте кожну URL оверлею заново в її браузерне джерело в OBS.
 settings_ws_auth_cors_label = Дозволити CORS з будь-якого походження
 settings_ws_auth_cors_sublabel = Вимкніть, щоб обмежити лише браузерними джерелами оверлею
 settings_ws_overlay_section_title = Коренева тека оверлею
@@ -2998,6 +2999,7 @@ overlays_toast_renamed = Оверлей перейменовано
 overlays_toast_deleted = Оверлей видалено
 overlays_toast_missing = Цього оверлея вже немає у сховищі.
 overlays_toast_unknown_type = У цій збірці немає такого типу оверлея.
+overlays_toast_token_shaped_name = Ця назва схожа на токен оверлеїв. Оберіть іншу назву.
 overlays_toast_url_unavailable = Сервер зупинено, тому копіювати нічого.
 overlays_toast_build_failed_pages =
     { $count ->

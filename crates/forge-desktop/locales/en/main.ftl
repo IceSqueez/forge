@@ -702,6 +702,7 @@ settings_ws_overlay_token_title = Overlay token
 settings_ws_overlay_token_subtitle = Read-only - lets a browser source load overlay files and nothing else
 settings_ws_overlay_token_regen_title = Regenerate the overlay token?
 settings_ws_overlay_token_regen_message = Every overlay URL changes and the old ones stop loading right away. Re-copy each overlay URL into its OBS browser source.
+settings_ws_overlay_token_restore_failed = Regenerate failed and the previous overlay token could not be restored. The new token is now active - re-copy every overlay URL into its OBS browser source.
 settings_ws_auth_cors_label = Allow CORS from any origin
 settings_ws_auth_cors_sublabel = Disable to restrict to overlay browser sources only
 settings_ws_overlay_section_title = Overlay host root
@@ -2928,6 +2929,7 @@ overlays_toast_renamed = Overlay renamed
 overlays_toast_deleted = Overlay deleted
 overlays_toast_missing = That overlay is no longer in storage.
 overlays_toast_unknown_type = This build does not have that overlay type.
+overlays_toast_token_shaped_name = That name looks like an overlay token. Choose a different name.
 overlays_toast_url_unavailable = The server is stopped, so there is no address to copy.
 overlays_toast_build_failed_pages =
     { $count ->

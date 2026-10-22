@@ -31,7 +31,9 @@ const INDENT_UNIT: &str = "  ";
 const LINE_HEIGHT_RATIO: f32 = 1.5;
 const ROW_CENTER: f32 = 0.5;
 const EDGE_INSET: Pixels = px(1.0);
+#[cfg(test)]
 const SAVE_CHORD: &str = "secondary-s";
+const SAVE_CHORDS: [&str; 2] = ["ctrl-s", "cmd-s"];
 const LEAVE_CHORD: &str = "escape";
 const COMPACT_FIELD_ROWS: RangeInclusive<usize> = 1..=4;
 
@@ -41,7 +43,11 @@ pub fn bind_code_editor_keys(cx: &mut App) {
     let mut bindings = editing_key_bindings(KEY_CONTEXT);
     bindings.push(KeyBinding::new("tab", Indent, Some(KEY_CONTEXT)));
     bindings.push(KeyBinding::new("shift-tab", Outdent, Some(KEY_CONTEXT)));
-    bindings.push(KeyBinding::new(SAVE_CHORD, SaveCode, Some(KEY_CONTEXT)));
+    bindings.extend(
+        SAVE_CHORDS
+            .iter()
+            .map(|chord| KeyBinding::new(chord, SaveCode, Some(KEY_CONTEXT))),
+    );
     bindings.push(KeyBinding::new(LEAVE_CHORD, LeaveEditor, Some(KEY_CONTEXT)));
     cx.bind_keys(bindings);
 }

@@ -259,4 +259,64 @@ mod tests {
         assert!(!msg.contains(TOKEN_SENTINEL), "token leaked: {msg}");
         assert!(!msg.contains("api.twitch.tv"), "URL leaked: {msg}");
     }
+
+    #[tokio::test]
+    async fn execute_whispers_as_the_connected_bot_and_records_it_as_the_sender() {
+        use crate::bot_account::test_support::{BOT_LOGIN, BOT_USER_ID, BotHarness};
+        use wiremock::ResponseTemplate;
+
+        let harness = BotHarness::connected().await;
+        harness
+            .mount(
+                "GET",
+                "/helix/users",
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"data": [{"id": "555", "login": "target"}]})),
+            )
+            .await;
+        harness
+            .mount("POST", "/helix/whispers", ResponseTemplate::new(204))
+            .await;
+        let streamer = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
+        let runner = SendWhisperRunner::new(
+            Arc::clone(&streamer) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::clone(&harness.repo) as _)),
+        )
+        .with_bot(Some(Arc::clone(&harness.bot)));
+
+        let (telemetry, _) = runner
+            .execute(&config("target", "hey"), &make_ctx(&ArgStack::new()))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(
+                &telemetry.produced[forge_platform_core::SENT_AS_FIELD]
+            )
+            .unwrap(),
+            serde_json::json!({ "role": "bot", "login": BOT_LOGIN })
+        );
+        let whisper = &harness.requests_to("/helix/whispers").await[0];
+        assert!(
+            whisper
+                .url
+                .query_pairs()
+                .any(|(key, value)| key == "from_user_id" && value == BOT_USER_ID)
+        );
+        assert_eq!(streamer.call_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn unknown_sender_is_rejected_by_validate_and_by_execute_without_a_helix_call() {
+        let (transport, runner) = runner_with(vec![users_fixture("555")]);
+        let mut config = config("target", "hey");
+        config.insert(SENDER_FIELD.to_owned(), Variant::Int(2));
+
+        let validation = runner.validate_config(&config);
+        let (telemetry, _) = runner.execute(&config, &make_ctx(&ArgStack::new())).await;
+
+        assert!(validation.is_err());
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(transport.call_count(), 0);
+    }
 }

@@ -615,41 +615,41 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn poll_token_maps_terminal_errors_to_distinct_auth_reasons() {
-        for (message, must_contain, must_not_contain) in [
-            ("access_denied", "denied", "expired"),
-            ("expired_token", "expired", "denied"),
-        ] {
+    async fn terminal_device_poll_answers_map_to_typed_bot_login_errors() {
+        type Expectation = fn(&crate::BotLoginError) -> bool;
+        let cases: [(u16, &str, Expectation); 4] = [
+            (400, "access_denied", |e| {
+                matches!(e, crate::BotLoginError::Denied)
+            }),
+            (400, "expired_token", |e| {
+                matches!(e, crate::BotLoginError::Expired)
+            }),
+            (400, "invalid device code", |e| {
+                matches!(e, crate::BotLoginError::Expired)
+            }),
+            (418, "teapot", |e| {
+                matches!(
+                    e,
+                    crate::BotLoginError::Platform(PlatformError::Http { status: 418, .. })
+                )
+            }),
+        ];
+
+        for (status, message, expected) in cases {
             let server = MockServer::start().await;
-            mount_token_message(&server, 400, message).await;
+            mount_token_message(&server, status, message).await;
             let flow = flow_for(
                 "http://unused".to_owned(),
                 format!("{}/token", server.uri()),
             );
 
-            let Err(PlatformError::Auth { reason }) = flow.poll_token("DEV123").await else {
-                panic!("expected Auth error for {message}");
+            let Err(error) = flow.poll_token("DEV123").await else {
+                panic!("{message} must end the poll");
             };
-            assert!(reason.contains(must_contain), "{message}: {reason}");
-            assert!(!reason.contains(must_not_contain), "{message}: {reason}");
+            let mapped = crate::BotLoginError::from(error);
+
+            assert!(expected(&mapped), "{message} mapped to {mapped:?}");
         }
-    }
-
-    #[tokio::test]
-    async fn poll_token_maps_unknown_error_message_to_http_error() {
-        let server = MockServer::start().await;
-        mount_token_message(&server, 418, "teapot").await;
-        let flow = flow_for(
-            "http://unused".to_owned(),
-            format!("{}/token", server.uri()),
-        );
-
-        let outcome = flow.poll_token("DEV123").await;
-
-        assert!(matches!(
-            outcome,
-            Err(PlatformError::Http { status: 418, .. })
-        ));
     }
 
     #[tokio::test]

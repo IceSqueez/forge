@@ -942,4 +942,79 @@ pub(crate) mod tests {
             );
         }
     }
+
+    #[tokio::test]
+    async fn refreshing_one_role_rotates_only_that_roles_row() {
+        use crate::bot_account::test_support::{
+            BOT_ACCESS, BOT_REFRESH, KeyedRepo, credential_json,
+        };
+        use crate::credentials::TWITCH_BOT_CREDENTIAL_ID;
+        use crate::sub_actions::test_support::endpoints_with;
+        use forge_platform_core::EndpointSurface;
+
+        for refreshed_role in [TWITCH_BOT_CREDENTIAL_ID, TWITCH_CREDENTIAL_ID] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/token"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                    "access_token": "rotated_access",
+                    "refresh_token": "rotated_refresh",
+                    "expires_in": 14400,
+                })))
+                .mount(&server)
+                .await;
+            let repo = Arc::new(KeyedRepo::default());
+            repo.put(
+                TWITCH_CREDENTIAL_ID,
+                credential_json("streamer_access", "streamer_refresh", "1", "streamer"),
+            );
+            repo.put(
+                TWITCH_BOT_CREDENTIAL_ID,
+                credential_json(BOT_ACCESS, BOT_REFRESH, "2", "helper_bot"),
+            );
+            let (manager, failed_access, other_role, own_refresh) =
+                if refreshed_role == TWITCH_BOT_CREDENTIAL_ID {
+                    let endpoints =
+                        endpoints_with(&[(EndpointSurface::TwitchOAuth, server.uri().as_str())]);
+                    (
+                        TwitchCredentialsManager::for_bot(
+                            &endpoints,
+                            Arc::clone(&repo) as Arc<dyn CredentialsRepo>,
+                            "test_client_id".to_owned(),
+                        ),
+                        BOT_ACCESS,
+                        TWITCH_CREDENTIAL_ID,
+                        BOT_REFRESH,
+                    )
+                } else {
+                    (
+                        manager_with_server(Arc::clone(&repo) as Arc<dyn CredentialsRepo>, &server),
+                        "streamer_access",
+                        TWITCH_BOT_CREDENTIAL_ID,
+                        "streamer_refresh",
+                    )
+                };
+            let other_before = repo.raw(other_role);
+
+            manager
+                .refresh(&OAuthToken::new(failed_access))
+                .await
+                .unwrap();
+
+            assert!(
+                repo.raw(refreshed_role).unwrap().contains("rotated_access"),
+                "{refreshed_role} must hold the rotated token"
+            );
+            assert_eq!(
+                repo.raw(other_role),
+                other_before,
+                "refreshing {refreshed_role} must leave {other_role} untouched"
+            );
+            let sent = server.received_requests().await.unwrap();
+            assert!(
+                String::from_utf8_lossy(&sent[0].body).contains(own_refresh),
+                "{refreshed_role} must refresh with its own refresh token"
+            );
+        }
+    }
 }

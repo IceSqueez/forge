@@ -474,4 +474,34 @@ mod tests {
             "got {err:?}"
         );
     }
+
+    #[test]
+    fn bot_send_failures_map_to_platform_errors_that_keep_their_cause() {
+        use crate::bot_account::BotUnavailable;
+
+        type Expectation = fn(&PlatformError) -> bool;
+        let cases: [(SendFailure, Expectation); 4] = [
+            (
+                SendFailure::BotNotConnected(BotUnavailable::NotConnected),
+                |e| matches!(e, PlatformError::Auth { reason } if reason.starts_with("bot not connected")),
+            ),
+            (
+                SendFailure::BotPhoneUnverified,
+                |e| matches!(e, PlatformError::Http { status: NON_HTTP_STATUS, body } if body.contains("verified phone")),
+            ),
+            (
+                SendFailure::Chat(ChatSendError::Forbidden("banned".to_owned())),
+                |e| matches!(e, PlatformError::Http { status: 403, body } if body == "banned"),
+            ),
+            (SendFailure::Chat(ChatSendError::RateLimited), |e| {
+                matches!(e, PlatformError::RateLimitExhausted)
+            }),
+        ];
+
+        for (failure, expected) in cases {
+            let label = failure.to_string();
+            let mapped = map_send_failure(failure);
+            assert!(expected(&mapped), "{label} mapped to {mapped:?}");
+        }
+    }
 }

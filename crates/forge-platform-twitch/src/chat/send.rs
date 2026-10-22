@@ -316,9 +316,24 @@ mod tests {
             (
                 HelixError::Http {
                     status: 403,
-                    body: "denied".to_owned(),
+                    body: r#"{"error":"Forbidden","status":403,"message":"The sender is banned."}"#
+                        .to_owned(),
                 },
-                |e| matches!(e, ChatSendError::Http(msg) if msg.contains("403")),
+                |e| matches!(e, ChatSendError::Forbidden(msg) if msg == "The sender is banned."),
+            ),
+            (
+                HelixError::Http {
+                    status: 403,
+                    body: " denied \n".to_owned(),
+                },
+                |e| matches!(e, ChatSendError::Forbidden(msg) if msg == "denied"),
+            ),
+            (
+                HelixError::Http {
+                    status: 400,
+                    body: "bad request".to_owned(),
+                },
+                |e| matches!(e, ChatSendError::Http(msg) if msg.contains("400")),
             ),
         ];
 
@@ -383,11 +398,8 @@ mod tests {
 
     #[tokio::test]
     async fn message_limit_enforced_by_character_count_not_byte_count() {
-        for (char_count, should_send) in [
-            (500, true),  // 500 chars Cyrillic = 1000 bytes; exactly at limit (by char count)
-            (501, false), // 501 chars Cyrillic = 1002 bytes; over limit (by char count)
-        ] {
-            let message = "я".repeat(char_count); // Cyrillic 'ya' is 2 bytes per char
+        for (char_count, should_send) in [(500, true), (501, false)] {
+            let message = "я".repeat(char_count);
             let transport = MockTransport::returning(Ok(sent_fixture()));
 
             let result = send_chat(&transport, "100", "100", &message).await;

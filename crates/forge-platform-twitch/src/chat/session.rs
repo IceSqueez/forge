@@ -4317,6 +4317,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn chat_message_is_flagged_as_the_connected_bot_only_for_the_bots_chatter_id() {
+        use crate::bot_account::test_support::{BOT_USER_ID, BotHarness};
+
+        let harness = BotHarness::connected().await;
+        for (chatter_id, expected) in [(BOT_USER_ID, Some(true)), ("67890", None), ("", None)] {
+            let bus = Arc::new(PlatformEventChannel::new());
+            let session = make_session(&bus).with_bot(Some(Arc::clone(&harness.bot)));
+            let mut sub = bus.subscribe();
+
+            session.publish_chat_message(&serde_json::json!({
+                "broadcaster_user_login": "streamer_channel",
+                "chatter_user_id": chatter_id,
+                "chatter_user_login": "someone",
+                "message": {"text": "hi"},
+            }));
+            let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+                .await
+                .expect("timeout")
+                .expect("recv error");
+
+            assert_eq!(
+                ev.payload
+                    .get(AUTHOR_IS_CONNECTED_BOT_FIELD)
+                    .and_then(serde_json::Value::as_bool),
+                expected,
+                "chatter {chatter_id:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn publish_chat_message_surfaces_cheer_bits_without_anonymity_signal() {
         let bus = Arc::new(PlatformEventChannel::new());
         let session = make_session(&bus);

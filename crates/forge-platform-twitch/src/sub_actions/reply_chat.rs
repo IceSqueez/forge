@@ -209,6 +209,10 @@ mod tests {
         (transport, runner)
     }
 
+    fn sent() -> Result<serde_json::Value, HelixError> {
+        Ok(serde_json::json!({ "data": [{ "message_id": "m-1", "is_sent": true }] }))
+    }
+
     fn config(message: &str, parent_message_id: &str) -> SubActionConfig {
         BTreeMap::from([
             ("message".to_owned(), Variant::String(message.to_owned())),
@@ -221,8 +225,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_posts_reply_with_broadcaster_and_sender_both_as_self() {
-        let (transport, runner) =
-            runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+        let (transport, runner) = runner_with(sent(), MockCreds::with_identity());
         let stack = ArgStack::new()
             .set("msg".to_owned(), Variant::String("hello!".to_owned()))
             .set(
@@ -288,8 +291,7 @@ mod tests {
     #[tokio::test]
     async fn message_limit_enforced_by_character_count_not_byte_count() {
         for (char_count, should_send) in [(500usize, true), (501, false)] {
-            let (transport, runner) =
-                runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+            let (transport, runner) = runner_with(sent(), MockCreds::with_identity());
             let stack =
                 ArgStack::new().set("msg".to_owned(), Variant::String("я".repeat(char_count)));
 
@@ -348,5 +350,57 @@ mod tests {
             !msg.contains("api.twitch.tv"),
             "outcome must not leak the request URL: {msg}"
         );
+    }
+
+    #[tokio::test]
+    async fn execute_records_the_acting_sender_only_when_the_reply_is_sent() {
+        let cases: [(
+            Result<serde_json::Value, HelixError>,
+            Option<serde_json::Value>,
+        ); 2] = [
+            (
+                sent(),
+                Some(serde_json::json!({ "role": "streamer", "login": "streamer" })),
+            ),
+            (
+                Err(HelixError::Http {
+                    status: 400,
+                    body: "message_id not found".to_owned(),
+                }),
+                None,
+            ),
+        ];
+
+        for (response, expected) in cases {
+            let (_transport, runner) = runner_with(response, MockCreds::with_identity());
+
+            let (telemetry, _) = runner
+                .execute(&config("hello", "parent-1"), &make_ctx(&ArgStack::new()))
+                .await;
+
+            let recorded = telemetry
+                .produced
+                .get(forge_platform_core::SENT_AS_FIELD)
+                .map(|json| serde_json::from_str::<serde_json::Value>(json).unwrap());
+            assert_eq!(recorded, expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn unknown_sender_is_rejected_by_validate_and_by_execute_without_a_helix_call() {
+        let (transport, runner) = runner_with(sent(), MockCreds::with_identity());
+        let mut config = config("hello", "parent-1");
+        config.insert(
+            SENDER_FIELD.to_owned(),
+            Variant::String("moderator".to_owned()),
+        );
+
+        let validation = runner.validate_config(&config);
+        let (telemetry, _) = runner.execute(&config, &make_ctx(&ArgStack::new())).await;
+
+        assert!(validation.is_err());
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(telemetry.produced.is_empty());
+        assert_eq!(transport.call_count(), 0);
     }
 }

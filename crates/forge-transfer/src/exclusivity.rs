@@ -191,4 +191,69 @@ mod tests {
             (1, true)
         );
     }
+
+    async fn signalled(watch: &mut super::TransferHeldWatch) -> bool {
+        tokio::select! {
+            biased;
+            changed = watch.changed() => changed.is_some(),
+            () = std::future::ready(()) => false,
+        }
+    }
+
+    #[tokio::test]
+    async fn taking_and_releasing_the_guard_each_signal_the_watchers() {
+        let exclusivity = TransferExclusivity::new();
+        let mut watch = exclusivity.watch_held();
+
+        let guard = exclusivity.try_acquire().unwrap();
+        let on_acquire = (signalled(&mut watch).await, exclusivity.is_held());
+        drop(guard);
+        let on_release = (signalled(&mut watch).await, exclusivity.is_held());
+
+        assert_eq!((on_acquire, on_release), ((true, true), (true, false)));
+    }
+
+    #[tokio::test]
+    async fn a_refused_take_and_an_idle_lock_do_not_signal() {
+        let exclusivity = TransferExclusivity::new();
+        let mut watch = exclusivity.watch_held();
+        let quiet_while_idle = !signalled(&mut watch).await;
+        let _guard = exclusivity.try_acquire().unwrap();
+        signalled(&mut watch).await;
+
+        let refused = exclusivity.try_acquire();
+
+        assert_eq!(
+            (
+                quiet_while_idle,
+                refused.is_none(),
+                signalled(&mut watch).await
+            ),
+            (true, true, false)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_burst_of_take_release_take_wakes_the_watcher_to_the_final_held_state() {
+        let exclusivity = TransferExclusivity::new();
+        let mut watch = exclusivity.watch_held();
+
+        drop(exclusivity.try_acquire().unwrap());
+        let _again = exclusivity.try_acquire().unwrap();
+
+        assert_eq!(
+            (signalled(&mut watch).await, exclusivity.is_held()),
+            (true, true)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_waiter_taking_the_guard_signals_the_watchers() {
+        let exclusivity = TransferExclusivity::new();
+        let mut watch = exclusivity.watch_held();
+
+        let _guard = exclusivity.acquire_when_free().await;
+
+        assert!(signalled(&mut watch).await);
+    }
 }

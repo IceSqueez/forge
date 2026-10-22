@@ -155,6 +155,13 @@ fn group_integer(n: u64, sep: &str) -> String {
 }
 
 pub fn tr_lookup(key: &str, args: Option<&FluentArgs<'_>>) -> String {
+    tr_find(key, args).unwrap_or_else(|| {
+        warn_missing_once(key);
+        key.to_owned()
+    })
+}
+
+pub fn tr_find(key: &str, args: Option<&FluentArgs<'_>>) -> Option<String> {
     let fluent_id: std::borrow::Cow<'_, str> = if key.contains('.') {
         std::borrow::Cow::Owned(key.replace('.', "_"))
     } else {
@@ -163,32 +170,18 @@ pub fn tr_lookup(key: &str, args: Option<&FluentArgs<'_>>) -> String {
 
     BUNDLE.with(|cell| {
         let borrow = cell.borrow();
-        let Some(bundle) = borrow.as_ref() else {
-            warn_missing_once(key);
-            return key.to_owned();
-        };
-
-        let Some(msg) = bundle.get_message(fluent_id.as_ref()) else {
-            warn_missing_once(key);
-            return key.to_owned();
-        };
-
-        let Some(pattern) = msg.value() else {
-            warn_missing_once(key);
-            return key.to_owned();
-        };
-
+        let bundle = borrow.as_ref()?;
+        let pattern = bundle.get_message(fluent_id.as_ref())?.value()?;
         let mut errors = vec![];
         let formatted = bundle.format_pattern(pattern, args, &mut errors);
         if !errors.is_empty() {
             #[cfg(debug_assertions)]
             tracing::warn!(key, "fluent format errors: {:?}", errors);
         }
-        formatted.into_owned()
+        Some(formatted.into_owned())
     })
 }
 
-#[allow(dead_code)]
 fn warn_missing_once(key: &str) {
     #[cfg(not(debug_assertions))]
     let _ = key;

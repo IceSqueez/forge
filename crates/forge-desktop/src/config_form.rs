@@ -17,6 +17,7 @@ use crate::amount_scale::{AmountScale, AmountSeed};
 use crate::collection_options::{
     ChoiceOptions, CollectionChoiceField, CollectionSource, collection_choice_fields,
 };
+use crate::config_field_label::field_placeholder;
 use crate::donation_services::donation_provider_options;
 use crate::obs_catalog_options::{ObsCatalogField, ObsCatalogList};
 use crate::vtube_catalog_options::{VTubeCatalogField, VTubeCatalogList};
@@ -165,6 +166,7 @@ pub(crate) fn sparse_overrides(default: &FieldConfig, buffer: &FieldConfig) -> F
 }
 
 pub(crate) struct FoldContext<'a, V: 'static> {
+    pub(crate) kind_id: &'a str,
     pub(crate) config: &'a FieldConfig,
     pub(crate) defaults: &'a FieldConfig,
     pub(crate) palette: &'a ForgePalette,
@@ -200,7 +202,7 @@ pub(crate) fn fold_config_field<V: 'static>(
         FormField::Text {
             key, placeholder, ..
         } => out.push(build_config_input(
-            free_text(key, (*placeholder).into()),
+            free_text(key, field_placeholder(ctx.kind_id, key, placeholder).into()),
             gate,
             ctx,
             cx,
@@ -362,6 +364,7 @@ pub(crate) fn fold_config_field<V: 'static>(
             });
             let inner_config = optional_inner_seed(key, inner, ctx.config);
             let inner_ctx = FoldContext {
+                kind_id: ctx.kind_id,
                 config: &inner_config,
                 defaults: ctx.defaults,
                 palette: ctx.palette,
@@ -1602,6 +1605,7 @@ mod tests {
         let fields = host.update(cx, |_, cx| {
             let palette = forge_components::ThemeId::ForgeDefault.palette();
             let ctx = FoldContext {
+                kind_id: "",
                 config,
                 defaults,
                 palette: &palette,
@@ -2121,6 +2125,7 @@ mod tests {
         let fields = host.update(cx, |_, cx| {
             let palette = forge_components::ThemeId::ForgeDefault.palette();
             let ctx = FoldContext {
+                kind_id: "",
                 config: &FieldConfig::new(),
                 defaults: &FieldConfig::new(),
                 palette: &palette,

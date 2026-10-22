@@ -2,7 +2,7 @@ use super::field::{SelectDependency, SubFormField, is_var_key};
 use super::unit_amount::build_unit_amount_field;
 use super::*;
 use crate::amount_scale::AmountScale;
-use crate::config_field_label::localized_label;
+use crate::config_field_label::{field_label, field_placeholder};
 use crate::config_form::{
     code_field_editor, dependent_options, optional_gate_seed, optional_inner_seed,
     optional_shares_key,
@@ -13,6 +13,9 @@ use forge_components::{FONT_SM, InputEvent};
 use forge_registry::{CodeKind, CodeLanguage, FormField};
 use forge_types::{SubActionConfig, Variant, normalize_var_name};
 use std::ops::RangeInclusive;
+
+const VAR_PLACEHOLDER: &str = "%result%";
+const INTEGER_PLACEHOLDER: &str = "0";
 
 impl EditSubActionForm {
     fn on_var_input_event(
@@ -28,16 +31,21 @@ impl EditSubActionForm {
     }
 }
 
+pub(super) struct FieldBuildContext<'a> {
+    pub(super) kind_id: &'a str,
+    pub(super) palette: ForgePalette,
+    pub(super) options_map: &'a HashMap<String, Vec<(String, String)>>,
+}
+
 pub(super) fn build_form_fields(
     specs: &[FormField],
     config: &SubActionConfig,
-    palette: ForgePalette,
-    options_map: &HashMap<String, Vec<(String, String)>>,
+    copy: &FieldBuildContext<'_>,
     cx: &mut Context<EditSubActionForm>,
 ) -> Vec<SubFormField> {
     let mut fields: Vec<SubFormField> = Vec::new();
     for spec in specs {
-        push_form_field(spec, None, config, palette, options_map, &mut fields, cx);
+        push_form_field(spec, None, config, copy, &mut fields, cx);
     }
     fields
 }
@@ -79,7 +87,7 @@ pub(super) fn build_step_meta_inputs(
 fn build_input_field(
     key: &str,
     label: &str,
-    placeholder: &'static str,
+    placeholder: String,
     integer: Option<RangeInclusive<i64>>,
     browse: bool,
     datetime: bool,
@@ -101,7 +109,11 @@ fn build_input_field(
             .is_some_and(|range| int_entry_invalid(&seed, *range.start(), *range.end(), false))
     };
     let input = cx.new(|cx| {
-        let ph = if is_var { "%result%" } else { placeholder };
+        let ph = if is_var {
+            VAR_PLACEHOLDER.to_owned()
+        } else {
+            placeholder
+        };
         let mut input = TextInput::new(ph, cx).with_palette(palette);
         if is_var {
             input = input
@@ -203,20 +215,19 @@ pub(super) fn push_form_field(
     spec: &FormField,
     gate: Option<String>,
     config: &SubActionConfig,
-    palette: ForgePalette,
-    options_map: &HashMap<String, Vec<(String, String)>>,
+    copy: &FieldBuildContext<'_>,
     out: &mut Vec<SubFormField>,
     cx: &mut Context<EditSubActionForm>,
 ) {
+    let palette = copy.palette;
+    let label = field_label(copy.kind_id, spec);
     match spec {
         FormField::Text {
-            key,
-            label,
-            placeholder,
+            key, placeholder, ..
         } => out.push(build_input_field(
             key,
-            label,
-            placeholder,
+            &label,
+            field_placeholder(copy.kind_id, key, placeholder),
             None,
             false,
             false,
@@ -225,64 +236,62 @@ pub(super) fn push_form_field(
             palette,
             cx,
         )),
-        FormField::TextArea { key, label } => {
-            out.push(build_area_field(key, label, gate, config, palette, cx))
+        FormField::TextArea { key, .. } => {
+            out.push(build_area_field(key, &label, gate, config, palette, cx))
         }
         FormField::Code {
             key,
-            label,
             language,
             kind,
-        } => out.push(build_code_field(
-            key, label, gate, *language, *kind, config, palette, cx,
-        )),
-        FormField::Integer {
-            key,
-            label,
-            min,
-            max,
-        }
-        | FormField::Slider {
-            key,
-            label,
-            min,
-            max,
             ..
-        } => out.push(build_input_field(
+        } => out.push(build_code_field(
+            key, &label, gate, *language, *kind, config, palette, cx,
+        )),
+        FormField::Integer { key, min, max, .. } | FormField::Slider { key, min, max, .. } => out
+            .push(build_input_field(
+                key,
+                &label,
+                INTEGER_PLACEHOLDER.to_owned(),
+                Some(*min..=*max),
+                false,
+                false,
+                gate,
+                config,
+                palette,
+                cx,
+            )),
+        FormField::UnitAmount { key, .. } | FormField::Duration { key, .. } => {
+            if let Some(scale) = AmountScale::of(spec) {
+                out.push(build_unit_amount_field(
+                    key, &label, scale, gate, config, palette, cx,
+                ));
+            }
+        }
+        FormField::FilePicker { key, .. } => out.push(build_input_field(
             key,
-            label,
-            "0",
-            Some(*min..=*max),
-            false,
+            &label,
+            String::new(),
+            None,
+            true,
             false,
             gate,
             config,
             palette,
             cx,
         )),
-        FormField::UnitAmount { key, label, .. } | FormField::Duration { key, label, .. } => {
-            if let Some(scale) = AmountScale::of(spec) {
-                out.push(build_unit_amount_field(
-                    key, label, scale, gate, config, palette, cx,
-                ));
-            }
-        }
-        FormField::FilePicker { key, label } => out.push(build_input_field(
-            key, label, "", None, true, false, gate, config, palette, cx,
-        )),
-        FormField::DateTime { key, label } => out.push(build_input_field(
-            key, label, "", None, false, true, gate, config, palette, cx,
-        )),
-        FormField::Select {
+        FormField::DateTime { key, .. } => out.push(build_input_field(
             key,
-            label,
-            options,
-        }
-        | FormField::Swatch {
-            key,
-            label,
-            options,
-        } => {
+            &label,
+            String::new(),
+            None,
+            false,
+            true,
+            gate,
+            config,
+            palette,
+            cx,
+        )),
+        FormField::Select { key, options, .. } | FormField::Swatch { key, options, .. } => {
             let selected = config
                 .get(*key)
                 .map(forge_types::display_scalar)
@@ -293,7 +302,7 @@ pub(super) fn push_form_field(
                 .collect();
             out.push(SubFormField::Select {
                 key: (*key).to_owned(),
-                label: localized_label(label),
+                label,
                 options_key: None,
                 options,
                 gate,
@@ -302,18 +311,20 @@ pub(super) fn push_form_field(
             });
         }
         FormField::DynamicSelect {
-            key,
-            label,
-            options_key,
+            key, options_key, ..
         } => {
             let selected = config
                 .get(*key)
                 .map(forge_types::display_scalar)
                 .unwrap_or_default();
-            let options = options_map.get(*options_key).cloned().unwrap_or_default();
+            let options = copy
+                .options_map
+                .get(*options_key)
+                .cloned()
+                .unwrap_or_default();
             out.push(SubFormField::Select {
                 key: (*key).to_owned(),
-                label: localized_label(label),
+                label,
                 options_key: Some((*options_key).to_owned()),
                 options,
                 gate,
@@ -323,9 +334,9 @@ pub(super) fn push_form_field(
         }
         FormField::DependentSelect {
             key,
-            label,
             options_prefix,
             depends_on,
+            ..
         } => {
             let selected = config
                 .get(*key)
@@ -337,9 +348,9 @@ pub(super) fn push_form_field(
                 .unwrap_or_default();
             out.push(SubFormField::Select {
                 key: (*key).to_owned(),
-                label: (*label).to_owned(),
+                label,
                 options_key: None,
-                options: dependent_options(options_map, options_prefix, &sibling),
+                options: dependent_options(copy.options_map, options_prefix, &sibling),
                 gate,
                 selected,
                 dependency: Some(SelectDependency {
@@ -348,25 +359,23 @@ pub(super) fn push_form_field(
                 }),
             });
         }
-        FormField::Toggle { key, label } => {
+        FormField::Toggle { key, .. } => {
             let value = matches!(config.get(*key), Some(Variant::Bool(true)));
             out.push(SubFormField::Bool {
                 key: (*key).to_owned(),
-                label: (*label).to_owned(),
+                label,
                 gate,
                 value,
                 presence_gate: false,
             });
         }
-        FormField::SubChain { label, .. } | FormField::CaseList { label, .. } => {
-            out.push(SubFormField::Hint {
-                label: (*label).to_owned(),
-            });
+        FormField::SubChain { .. } | FormField::CaseList { .. } => {
+            out.push(SubFormField::Hint { label });
         }
-        FormField::Optional { key, label, inner } => {
+        FormField::Optional { key, inner, .. } => {
             out.push(SubFormField::Bool {
                 key: (*key).to_owned(),
-                label: (*label).to_owned(),
+                label,
                 gate: gate.clone(),
                 value: optional_gate_seed(key, inner, config),
                 presence_gate: optional_shares_key(key, inner),
@@ -375,8 +384,7 @@ pub(super) fn push_form_field(
                 inner,
                 Some((*key).to_owned()),
                 &optional_inner_seed(key, inner, config),
-                palette,
-                options_map,
+                copy,
                 out,
                 cx,
             );

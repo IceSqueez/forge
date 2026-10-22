@@ -1,7 +1,7 @@
 use super::step_validation::StepRejection;
 use super::*;
 use crate::config_form::dependent_options;
-use build::{build_form_fields, build_step_meta_inputs, push_form_field};
+use build::{FieldBuildContext, build_form_fields, build_step_meta_inputs, push_form_field};
 use datetime_picker::DateTimePickerForm;
 use field::{SubFormField, field_keys, field_values};
 use forge_components::drive_overlay_focus;
@@ -115,7 +115,12 @@ impl EditSubActionForm {
         } = launch;
 
         let palette = cx.palette();
-        let fields = build_form_fields(&specs, &config, palette, &options_seed, cx);
+        let copy = FieldBuildContext {
+            kind_id: &kind_id,
+            palette,
+            options_map: &options_seed,
+        };
+        let fields = build_form_fields(&specs, &config, &copy, cx);
         let base_field_count = fields.len();
         let (name_input, condition_input) =
             build_step_meta_inputs(&kind_label, &name_value, &condition_value, cx);
@@ -161,11 +166,16 @@ impl EditSubActionForm {
         let seed = self.current_values(cx);
         let specs = refined_fields(refinement, &seed, self.schema.as_ref());
         self.fields.truncate(self.base_field_count);
-        let palette = cx.palette();
         let options = self.options.clone();
+        let kind_id = self.kind_id.clone();
+        let copy = FieldBuildContext {
+            kind_id: &kind_id,
+            palette: cx.palette(),
+            options_map: &options,
+        };
         let mut refined = Vec::new();
         for spec in &specs {
-            push_form_field(spec, None, &seed, palette, &options, &mut refined, cx);
+            push_form_field(spec, None, &seed, &copy, &mut refined, cx);
         }
         self.fields.append(&mut refined);
         if let Some(key) = self.select_picker.as_ref().map(|form| form.key.clone())

@@ -22,7 +22,6 @@ mod tests {
     use forge_storage::Language;
 
     use super::announcement_color_label;
-    use crate::config_field_label::localized_label;
     use crate::i18n::install_language;
 
     const COLORS: [&str; 5] = ["primary", "blue", "green", "orange", "purple"];
@@ -64,19 +63,6 @@ mod tests {
                 announcement_color_label(key, option),
                 None,
                 "{key}={option}"
-            );
-        }
-    }
-
-    #[test]
-    fn the_color_and_send_as_field_labels_are_translated() {
-        install_language(Language::Uk);
-        for english in ["Color", "Send As"] {
-            let localized = localized_label(english);
-
-            assert!(
-                localized != english && !localized.starts_with("config_field_label_"),
-                "{english}: {localized}"
             );
         }
     }

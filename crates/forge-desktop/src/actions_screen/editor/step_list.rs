@@ -11,7 +11,11 @@ use forge_registry::{Finding, FormField, HealthSeverity, StepHealth};
 use forge_types::SubActionStep;
 use gpui::{AnyElement, ClickEvent, Context, FontWeight, Rgba, SharedString, div, px};
 
-fn analyzer_finding_message(finding: &Finding, fields: &[FormField]) -> SharedString {
+fn analyzer_finding_message(
+    finding: &Finding,
+    kind_id: &str,
+    fields: &[FormField],
+) -> SharedString {
     let text = match finding {
         Finding::UnknownVariable(name) => {
             tr!("action_editor_health_unknown_var", name = name.clone())
@@ -64,7 +68,7 @@ fn analyzer_finding_message(finding: &Finding, fields: &[FormField]) -> SharedSt
         Finding::InvalidStepConfig(problem) => {
             tr!(
                 "action_editor_health_invalid_step_config",
-                message = config_problem_text(problem, fields)
+                message = config_problem_text(problem, kind_id, fields)
             )
         }
     };
@@ -151,6 +155,7 @@ impl ScreenActionsView {
     fn render_health_dot(
         &self,
         health: &StepHealth,
+        kind_id: &str,
         fields: &[FormField],
         i: usize,
         palette: &ForgePalette,
@@ -186,7 +191,7 @@ impl ScreenActionsView {
             health
                 .findings
                 .iter()
-                .map(|finding| analyzer_finding_message(finding, fields)),
+                .map(|finding| analyzer_finding_message(finding, kind_id, fields)),
         );
         div()
             .id(SharedString::from(format!("actions-step-health-{i}")))
@@ -267,7 +272,7 @@ impl ScreenActionsView {
         let health_dot = if depth == 0 {
             self.step_health.get(i).map(|health| {
                 let fields = runner.map(|r| r.config_fields()).unwrap_or_default();
-                self.render_health_dot(health, &fields, i, palette)
+                self.render_health_dot(health, &step.kind_id, &fields, i, palette)
             })
         } else {
             None
@@ -397,7 +402,7 @@ mod tests {
                     vec![REASON],
                 ),
             ] {
-                let rendered = analyzer_finding_message(&finding, &[]);
+                let rendered = analyzer_finding_message(&finding, "test.step", &[]);
                 for marker in carried {
                     assert!(
                         rendered.contains(marker),
@@ -421,7 +426,7 @@ mod tests {
             forge_registry::ConfigReason::Required,
         ));
 
-        let rendered = analyzer_finding_message(&finding, &fields);
+        let rendered = analyzer_finding_message(&finding, "test.step", &fields);
 
         assert!(rendered.contains("Target scene"), "{rendered}");
     }

@@ -53,11 +53,7 @@ mod tests {
         ChatTriggerFamily, FormField, IGNORE_BOT_MESSAGES_KEY, KindPlatformContract,
         TriggerCategory, TriggerKindDescriptor,
     };
-    use forge_storage::Language;
     use forge_types::{PlatformId, TriggerConfig, Variant};
-
-    use crate::config_field_label::localized_label;
-    use crate::i18n::install_language;
 
     use super::{trigger_form_defaults, trigger_form_specs};
     use crate::config_form::sparse_overrides;
@@ -223,27 +219,5 @@ mod tests {
                 "{contract:?}"
             );
         }
-    }
-
-    #[test]
-    fn the_added_bot_toggle_label_is_translated() {
-        let descriptor = chat_trigger(ChatTriggerFamily::Command);
-        let specs = trigger_form_specs(Some(&descriptor as &dyn TriggerKindDescriptor));
-        let label = specs.iter().find_map(|spec| match spec {
-            FormField::Toggle { key, label } if *key == IGNORE_BOT_MESSAGES_KEY => Some(*label),
-            _ => None,
-        });
-        install_language(Language::Uk);
-
-        let localized = label.map(localized_label);
-
-        assert!(
-            localized
-                .as_ref()
-                .zip(label)
-                .is_some_and(|(localized, english)| localized != english
-                    && !localized.starts_with("config_field_label_")),
-            "{localized:?}"
-        );
     }
 }

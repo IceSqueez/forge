@@ -126,6 +126,7 @@ impl TriggersRegistryView {
         let specs = trigger_form_specs(descriptor);
 
         let fold = FoldContext {
+            kind_id: &kind_id,
             config: &default,
             defaults: &default,
             palette: &palette,
@@ -136,7 +137,7 @@ impl TriggersRegistryView {
         let mut labels: Vec<SharedString> = Vec::new();
         for spec in &specs {
             fold_config_field(spec, None, &fold, &mut fields, cx);
-            config_field_labels(spec, &mut labels);
+            config_field_labels(&kind_id, spec, &mut labels);
         }
 
         let name_field = cx.new(|cx| {

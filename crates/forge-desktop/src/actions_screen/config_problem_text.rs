@@ -3,19 +3,27 @@ use forge_registry::{ConfigProblem, ConfigReason, FormField, ValueBounds};
 
 use crate::config_field_label::form_field_label;
 
-pub(super) fn config_problem_text(problem: &ConfigProblem, fields: &[FormField]) -> String {
-    let reason = config_reason_text(&problem.reason, fields);
+pub(super) fn config_problem_text(
+    problem: &ConfigProblem,
+    kind_id: &str,
+    fields: &[FormField],
+) -> String {
+    let reason = config_reason_text(&problem.reason, kind_id, fields);
     match &problem.field {
         Some(field) => tr!(
             "step_config_field_problem",
-            field = field_name(field, fields),
+            field = field_name(field, kind_id, fields),
             problem = reason
         ),
         None => reason,
     }
 }
 
-pub(super) fn config_reason_text(reason: &ConfigReason, fields: &[FormField]) -> String {
+pub(super) fn config_reason_text(
+    reason: &ConfigReason,
+    kind_id: &str,
+    fields: &[FormField],
+) -> String {
     match reason {
         ConfigReason::Required => tr!("step_config_required"),
         ConfigReason::OutOfRange(bounds) => bounds_text(bounds, BoundsUnit::Value),
@@ -27,7 +35,10 @@ pub(super) fn config_reason_text(reason: &ConfigReason, fields: &[FormField]) ->
             tr!("step_config_invalid_choice", choices = choices.join(", "))
         }
         ConfigReason::AnyOfRequired(keys) => {
-            let names: Vec<String> = keys.iter().map(|key| field_name(key, fields)).collect();
+            let names: Vec<String> = keys
+                .iter()
+                .map(|key| field_name(key, kind_id, fields))
+                .collect();
             tr!("step_config_any_of_required", fields = names.join(", "))
         }
         ConfigReason::InvalidFormat(detail) => {
@@ -38,8 +49,8 @@ pub(super) fn config_reason_text(reason: &ConfigReason, fields: &[FormField]) ->
     }
 }
 
-fn field_name(key: &str, fields: &[FormField]) -> String {
-    form_field_label(fields, key).unwrap_or_else(|| key.to_owned())
+fn field_name(key: &str, kind_id: &str, fields: &[FormField]) -> String {
+    form_field_label(kind_id, fields, key).unwrap_or_else(|| key.to_owned())
 }
 
 enum BoundsUnit {
@@ -89,7 +100,7 @@ mod tests {
 
     fn reason_in(language: Language, reason: ConfigReason) -> String {
         install_language(language);
-        plain(config_reason_text(&reason, &[]))
+        plain(config_reason_text(&reason, "test.step", &[]))
     }
 
     fn count(bounds: ValueBounds) -> ConfigReason {
@@ -283,7 +294,10 @@ mod tests {
             ),
         ] {
             install_language(language);
-            assert_eq!(plain(config_reason_text(&reason, &form())), expected);
+            assert_eq!(
+                plain(config_reason_text(&reason, "test.step", &form())),
+                expected
+            );
         }
     }
 
@@ -314,7 +328,10 @@ mod tests {
             ),
             (ConfigProblem::whole(ConfigReason::Required), "Required"),
         ] {
-            assert_eq!(plain(config_problem_text(&problem, &form())), expected);
+            assert_eq!(
+                plain(config_problem_text(&problem, "test.step", &form())),
+                expected
+            );
         }
     }
 }

@@ -89,6 +89,7 @@ impl TriggersRegistryView {
         let effective = effective_config(&default, &data.instance.overrides);
 
         let fold = FoldContext {
+            kind_id: &data.instance.kind_id,
             config: &effective,
             defaults: &default,
             palette: &palette,
@@ -99,7 +100,7 @@ impl TriggersRegistryView {
         let mut labels: Vec<SharedString> = Vec::new();
         for spec in &specs {
             fold_config_field(spec, None, &fold, &mut fields, cx);
-            config_field_labels(spec, &mut labels);
+            config_field_labels(&data.instance.kind_id, spec, &mut labels);
         }
 
         let cooldown_per_user = !data.instance.cooldown_global;

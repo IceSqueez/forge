@@ -49,6 +49,7 @@ pub(super) const NOTICE_LINE_H: Pixels = px(15.0);
 const SLIDE_SETTLE: Duration = Duration::from_millis(400);
 
 const RELEASE_PERSIST_CONTEXT: &str = "overlay property panel teardown";
+const OVERLAY_LOOK_COPY_SCOPE: &str = "overlay_look";
 
 pub(super) enum PropertyPanelEvent {
     Save(OverlayConfig),
@@ -130,6 +131,7 @@ impl OverlayPropertyPanel {
     pub(super) fn new(launch: PanelLaunch, cx: &mut Context<Self>) -> Self {
         let palette = cx.palette();
         let fold = FoldContext {
+            kind_id: OVERLAY_LOOK_COPY_SCOPE,
             config: &launch.effective,
             defaults: &launch.defaults,
             palette: &palette,

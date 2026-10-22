@@ -519,4 +519,111 @@ mod tests {
             );
         }
     }
+
+    const SENDER_OPTIONS: &[&str] = &["default", "streamer", "bot"];
+    const COLOR_OPTIONS: &[&str] = &["primary", "blue"];
+
+    fn text(value: &str) -> Variant {
+        Variant::String(value.to_owned())
+    }
+
+    fn config(entries: &[(&str, &str)]) -> SubActionConfig {
+        entries
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), text(value)))
+            .collect()
+    }
+
+    fn choice_specs() -> Vec<FormField> {
+        vec![
+            FormField::Select {
+                key: "sender",
+                label: "Send As",
+                options: SENDER_OPTIONS,
+            },
+            FormField::Swatch {
+                key: "color",
+                label: "Color",
+                options: COLOR_OPTIONS,
+            },
+        ]
+    }
+
+    #[test]
+    fn absent_select_and_swatch_values_are_filled_from_the_runner_defaults() {
+        let defaults = config(&[("sender", "default"), ("color", "primary")]);
+        let mut stored = config(&[("message", "hello")]);
+
+        seed_absent_choices(&choice_specs(), &defaults, &mut stored);
+
+        assert_eq!(
+            stored,
+            config(&[
+                ("message", "hello"),
+                ("sender", "default"),
+                ("color", "primary")
+            ])
+        );
+    }
+
+    #[test]
+    fn stored_choices_are_never_replaced_by_the_defaults() {
+        let defaults = config(&[("sender", "default"), ("color", "primary")]);
+        let mut stored = config(&[("sender", "bot"), ("color", "blue")]);
+
+        seed_absent_choices(&choice_specs(), &defaults, &mut stored);
+
+        assert_eq!(stored, config(&[("sender", "bot"), ("color", "blue")]));
+    }
+
+    #[test]
+    fn a_choice_without_a_declared_default_stays_absent() {
+        let mut stored = SubActionConfig::new();
+
+        seed_absent_choices(&choice_specs(), &SubActionConfig::new(), &mut stored);
+
+        assert!(stored.is_empty());
+    }
+
+    #[test]
+    fn only_static_choice_fields_are_seeded() {
+        let specs = vec![
+            FormField::Text {
+                key: "message",
+                label: "Message",
+                placeholder: "",
+            },
+            FormField::DynamicSelect {
+                key: "reward",
+                label: "Reward",
+                options_key: "rewards",
+            },
+            FormField::DependentSelect {
+                key: "source",
+                label: "Source",
+                options_prefix: "sources",
+                depends_on: "scene",
+            },
+            FormField::Optional {
+                key: "voice",
+                label: "Voice",
+                inner: Box::new(FormField::Select {
+                    key: "voice",
+                    label: "Voice",
+                    options: SENDER_OPTIONS,
+                }),
+            },
+        ];
+        let defaults = config(&[
+            ("message", "hi"),
+            ("reward", "r1"),
+            ("source", "cam"),
+            ("voice", "default"),
+        ]);
+        let mut stored = SubActionConfig::new();
+
+        seed_absent_choices(&specs, &defaults, &mut stored);
+
+        assert!(stored.is_empty(), "{stored:?}");
+    }
 }

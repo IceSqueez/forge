@@ -12,8 +12,9 @@ use std::sync::{Arc, Mutex};
 use forge_audio::{AudioError, AudioSink, ControlledPlayback, PcmBuffer, PlaybackHandle};
 use forge_events::Event;
 use forge_registry::{
-    ActorBlock, ActorIdentity, EventFilter, FormField, KindPlatformContract, LoginSlot,
-    SubActionRegistry, TriggerCategory, TriggerKindDescriptor, TriggerRegistry, TriggerVariables,
+    ActorBlock, ActorIdentity, ChatTriggerFamily, EventFilter, FormField, KindPlatformContract,
+    LoginSlot, SubActionRegistry, TriggerCategory, TriggerKindDescriptor, TriggerRegistry,
+    TriggerVariables,
 };
 use forge_runtime::{ActionCancelRegistry, Catalog, EventBus, spawn_action_engine};
 use forge_server::{ServerConfig, ServerHandle, stopped_server};
@@ -665,6 +666,9 @@ pub(crate) struct StubTrigger {
     category: TriggerCategory,
     declares: Declares,
     fields: Vec<FormField>,
+    defaults: TriggerConfig,
+    chat_family: Option<ChatTriggerFamily>,
+    contract: KindPlatformContract,
 }
 
 impl StubTrigger {
@@ -680,11 +684,29 @@ impl StubTrigger {
             category,
             declares,
             fields: Vec::new(),
+            defaults: TriggerConfig::new(),
+            chat_family: None,
+            contract: KindPlatformContract::PlatformSpecific(PlatformId::Twitch),
         }
+    }
+
+    pub(crate) fn with_contract(mut self, contract: KindPlatformContract) -> Self {
+        self.contract = contract;
+        self
     }
 
     pub(crate) fn with_fields(mut self, fields: Vec<FormField>) -> Self {
         self.fields = fields;
+        self
+    }
+
+    pub(crate) fn with_defaults(mut self, defaults: TriggerConfig) -> Self {
+        self.defaults = defaults;
+        self
+    }
+
+    pub(crate) fn in_chat_family(mut self, family: ChatTriggerFamily) -> Self {
+        self.chat_family = Some(family);
         self
     }
 }
@@ -715,15 +737,19 @@ impl TriggerKindDescriptor for StubTrigger {
     }
 
     fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
+        self.contract
     }
 
     fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
+        self.defaults.clone()
     }
 
     fn config_fields(&self) -> Vec<FormField> {
         self.fields.clone()
+    }
+
+    fn chat_trigger_family(&self) -> Option<ChatTriggerFamily> {
+        self.chat_family
     }
 
     fn condition_display(&self, _: &TriggerConfig) -> String {

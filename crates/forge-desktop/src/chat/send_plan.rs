@@ -290,9 +290,10 @@ mod tests {
 
     use super::{
         CHAT_SEND_FAILED_KIND, CHAT_SEND_REQUEST_KIND, CHAT_SENT_KIND, DeliveryResult,
-        PlatformReach, SendPlan, SendRefusal, SendReport, SendRoute, collect_delivery,
-        delivery_response, max_message_chars, plan_send,
+        PlatformReach, SendPlan, SendRefusal, SendReport, SendRoute, attach_twitch_sender,
+        collect_delivery, delivery_response, max_message_chars, plan_send,
     };
+    use forge_platform_core::{SENDER_FIELD, SenderPreference};
 
     const T: PlatformId = PlatformId::Twitch;
     const Y: PlatformId = PlatformId::YouTube;
@@ -716,5 +717,75 @@ mod tests {
                 (K, DeliveryResult::NoResponse)
             ]
         );
+    }
+
+    fn plan(route: SendRoute) -> SendPlan {
+        let recipients = match &route {
+            SendRoute::Broadcast => vec![T, Y, K],
+            SendRoute::Targeted(platforms) => platforms.clone(),
+        };
+        SendPlan {
+            message: "hi".to_owned(),
+            route,
+            recipients,
+        }
+    }
+
+    fn senders(requests: &[Event]) -> Vec<(Option<String>, Option<String>)> {
+        requests
+            .iter()
+            .map(|request| {
+                let read = |key: &str| {
+                    request
+                        .payload
+                        .get(key)
+                        .and_then(|value| value.as_str())
+                        .map(str::to_owned)
+                };
+                (read("target"), read(SENDER_FIELD))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn broadcast_request_carries_the_twitch_sender() {
+        let mut requests = plan(SendRoute::Broadcast).request_events();
+
+        attach_twitch_sender(&mut requests, SenderPreference::BotOnly);
+
+        assert_eq!(senders(&requests), vec![(None, Some("bot".to_owned()))]);
+    }
+
+    #[test]
+    fn targeted_requests_carry_the_sender_only_on_the_twitch_request() {
+        let mut requests = plan(SendRoute::Targeted(vec![Y, T, K])).request_events();
+
+        attach_twitch_sender(&mut requests, SenderPreference::Streamer);
+
+        assert_eq!(
+            senders(&requests),
+            vec![
+                (Some("youtube".to_owned()), None),
+                (Some("twitch".to_owned()), Some("streamer".to_owned())),
+                (Some("kick".to_owned()), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn requests_without_twitch_are_left_without_a_sender() {
+        let mut requests = plan(SendRoute::Targeted(vec![Y, K])).request_events();
+        let before: Vec<serde_json::Value> = requests
+            .iter()
+            .map(|request| request.payload.clone())
+            .collect();
+
+        attach_twitch_sender(&mut requests, SenderPreference::BotOnly);
+
+        let after: Vec<serde_json::Value> = requests
+            .iter()
+            .map(|request| request.payload.clone())
+            .collect();
+        assert_eq!(after, before);
     }
 }

@@ -1588,4 +1588,60 @@ mod tests {
         assert_eq!(type_color("obs.scene.changed", false, &p), p.success);
         assert_eq!(type_color("scene.changed", false, &p), p.text_secondary);
     }
+
+    fn send_outcome(kind: &str, payload: serde_json::Value) -> Option<gpui::SharedString> {
+        install_language(Language::En);
+        let item = EventItem {
+            kind: kind.to_owned().into(),
+            payload,
+            ..item("e1")
+        };
+        EventFeedView::outcome_tag(&item, &HashMap::new(), &HashSet::new())
+    }
+
+    #[test]
+    fn sent_outcomes_name_the_acting_account_when_the_platform_reported_one() {
+        for kind in ["chat.send", "chat.whisper.sent"] {
+            let tag = send_outcome(
+                kind,
+                serde_json::json!({ "sent_as": { "role": "bot", "login": "forgebot" } }),
+            );
+
+            let plain = tag.map(|tag| tag.replace(['\u{2068}', '\u{2069}'], ""));
+            assert!(
+                plain.as_ref().is_some_and(|tag| tag.contains("@forgebot")),
+                "{kind}: {plain:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sent_outcomes_without_a_usable_acting_login_read_plain_sent() {
+        for payload in [
+            serde_json::json!({ "channel": "twitch" }),
+            serde_json::json!({ "sent_as": { "role": "bot" } }),
+            serde_json::json!({ "sent_as": { "role": "bot", "login": 7 } }),
+            serde_json::Value::Null,
+        ] {
+            assert_eq!(
+                send_outcome("chat.send", payload.clone()),
+                Some("sent".into()),
+                "{payload}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_a_warning_level_string_marks_a_row_as_a_warning() {
+        for (payload, warning) in [
+            (serde_json::json!({ "level": "warning" }), true),
+            (serde_json::json!({ "level": "error" }), false),
+            (serde_json::json!({ "level": "Warning" }), false),
+            (serde_json::json!({ "level": 1 }), false),
+            (serde_json::json!({ "message": "warning" }), false),
+            (serde_json::Value::Null, false),
+        ] {
+            assert_eq!(is_warning_level(&payload), warning, "{payload}");
+        }
+    }
 }

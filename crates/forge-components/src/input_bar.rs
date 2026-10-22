@@ -805,4 +805,71 @@ mod tests {
             assert_eq!(count, expected, "text {text:?}");
         }
     }
+
+    fn me_bot(selected: usize) -> Option<InputBarSwitch> {
+        Some(InputBarSwitch {
+            options: vec!["Me".into(), "Bot".into()],
+            selected,
+        })
+    }
+
+    #[allow(clippy::unwrap_used)]
+    fn pick_on_switch(
+        cx: &mut gpui::TestAppContext,
+        switch: Option<InputBarSwitch>,
+        picks: &[usize],
+    ) -> (Vec<usize>, Option<InputBarSwitch>) {
+        let window = cx.add_window(|_window, cx| {
+            InputBar::new("placeholder", FORGE_DEFAULT, cx).with_targets(strip(true, true, true))
+        });
+        let bar = window.root(cx).unwrap();
+        let emitted = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let sink = std::rc::Rc::clone(&emitted);
+        let _subscription = cx.update(|cx| {
+            cx.subscribe(&bar, move |_, event: &InputBarEvent, _| {
+                if let InputBarEvent::SwitchChanged(idx) = event {
+                    sink.borrow_mut().push(*idx);
+                }
+            })
+        });
+
+        let state = bar.update(cx, |bar, cx| {
+            bar.set_switch(switch, cx);
+            for idx in picks {
+                bar.pick_switch(*idx, cx);
+            }
+            bar.switch.clone()
+        });
+
+        let emitted = emitted.borrow().clone();
+        (emitted, state)
+    }
+
+    #[gpui::test]
+    fn picking_another_switch_option_selects_it_and_reports_its_index(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (emitted, state) = pick_on_switch(cx, me_bot(0), &[1, 0]);
+
+        assert_eq!(emitted, vec![1, 0]);
+        assert_eq!(state, me_bot(0));
+    }
+
+    #[gpui::test]
+    fn picking_the_selected_option_or_one_past_the_end_reports_nothing(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (emitted, state) = pick_on_switch(cx, me_bot(1), &[1, 2, usize::MAX]);
+
+        assert!(emitted.is_empty(), "{emitted:?}");
+        assert_eq!(state, me_bot(1));
+    }
+
+    #[gpui::test]
+    fn picking_without_a_switch_reports_nothing(cx: &mut gpui::TestAppContext) {
+        let (emitted, state) = pick_on_switch(cx, None, &[0, 1]);
+
+        assert!(emitted.is_empty());
+        assert_eq!(state, None);
+    }
 }

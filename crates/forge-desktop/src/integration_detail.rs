@@ -1951,8 +1951,12 @@ mod tests {
 
         impl ShiftingActions {
             fn labelled(label: &'static str) -> Arc<Self> {
+                Self::for_integration("discord", label)
+            }
+
+            fn for_integration(id: &'static str, label: &'static str) -> Arc<Self> {
                 Arc::new(Self {
-                    id: IntegrationId::new("discord"),
+                    id: IntegrationId::new(id),
                     label: Mutex::new(label),
                     signal: CollectionRevisionSignal::new(),
                 })
@@ -2129,6 +2133,50 @@ mod tests {
             assert_eq!(
                 shown_labels(cx, &view),
                 vec!["second session, shield on".to_owned()]
+            );
+        }
+
+        #[gpui::test]
+        fn a_streamer_sign_in_request_from_the_bot_card_restarts_the_twitch_connect_flow(
+            cx: &mut TestAppContext,
+        ) {
+            let rt = runtime();
+            let _enter = rt.enter();
+            let view = open_detail(
+                cx,
+                &rt,
+                ShiftingActions::for_integration("twitch", "x").object(),
+            );
+            let (backend, _writes) = test_backend();
+            let bus = EventBus::new(Arc::new(StubEventLog));
+            let bot = TwitchBotAccount::new(
+                &PlatformEndpoints::default(),
+                backend as Arc<dyn CredentialsRepo>,
+                "client".to_owned(),
+                bus as Arc<dyn EventPublisher>,
+            );
+            let presence = cx.new(|_| TwitchBotPresence::new());
+            view.update(cx, |detail, cx| detail.attach_twitch_bot(bot, presence, cx));
+            let section = view.read_with(cx, |detail, _| detail.twitch_bot.clone());
+            let connect_flow = |cx: &mut TestAppContext| {
+                view.read_with(cx, |detail, _| {
+                    detail
+                        .connect
+                        .as_ref()
+                        .map(|connect| connect.view.entity_id())
+                })
+            };
+            let before = connect_flow(cx);
+
+            if let Some(section) = section {
+                section.update(cx, |_, cx| cx.emit(StreamerSignInRequested));
+            }
+            cx.run_until_parked();
+
+            let after = connect_flow(cx);
+            assert!(
+                after.is_some() && after != before,
+                "{before:?} -> {after:?}"
             );
         }
     }

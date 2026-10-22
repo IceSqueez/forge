@@ -323,7 +323,10 @@ mod tests {
     use crate::home_stats::{HomeStats, Integration};
     use crate::integration_lifecycle::IntegrationLifecycle;
     use crate::test_support::{pump, runtime};
-    use forge_components::Toasts;
+    use crate::twitch_bot_presence::TwitchBotPresence;
+    use forge_components::{InputBarEvent, Toasts};
+    use forge_platform_core::SENDER_FIELD;
+    use forge_platform_twitch::{BotModerator, BotStatus};
     use forge_runtime::{LifecycleState, LifecycleStates};
 
     fn mount<'a>(
@@ -584,5 +587,187 @@ mod tests {
             .update(|_window, cx| composer.update(cx, |composer, cx| composer.current_reach(cx)));
         assert_eq!(reach.enabled, vec![PlatformId::Twitch, PlatformId::YouTube]);
         assert!(reach.connected.is_empty());
+    }
+
+    fn bot_status(login: Option<&str>) -> BotStatus {
+        match login {
+            Some(login) => BotStatus::Connected {
+                login: login.to_owned(),
+            },
+            None => BotStatus::NotConnected,
+        }
+    }
+
+    fn attach_bot(
+        composer: &Entity<ChatComposer>,
+        vcx: &mut VisualTestContext,
+        login: Option<&str>,
+    ) -> Entity<TwitchBotPresence> {
+        let status = bot_status(login);
+        vcx.update(|_window, cx| {
+            let presence = cx.new(|_| {
+                let mut presence = TwitchBotPresence::new();
+                presence.apply(status, BotModerator::Moderator);
+                presence
+            });
+            composer.update(cx, |composer, cx| {
+                composer.set_twitch_bot(presence.clone(), cx);
+            });
+            presence
+        })
+    }
+
+    fn set_bot(
+        presence: &Entity<TwitchBotPresence>,
+        vcx: &mut VisualTestContext,
+        login: Option<&str>,
+    ) {
+        let status = bot_status(login);
+        vcx.update(|_window, cx| {
+            presence.update(cx, |presence, cx| {
+                if presence.apply(status, BotModerator::Moderator) {
+                    cx.notify();
+                }
+            });
+        });
+        vcx.run_until_parked();
+    }
+
+    fn pick_switch(composer: &Entity<ChatComposer>, vcx: &mut VisualTestContext, option: usize) {
+        vcx.update(|_window, cx| {
+            let input = composer.read(cx).input.clone();
+            input.update(cx, |_, cx| cx.emit(InputBarEvent::SwitchChanged(option)));
+        });
+        vcx.run_until_parked();
+    }
+
+    fn sent_sender(
+        composer: &Entity<ChatComposer>,
+        vcx: &mut VisualTestContext,
+        rt: &tokio::runtime::Runtime,
+        bus: &Arc<EventBus>,
+    ) -> Option<String> {
+        let mut observer = bus.subscribe();
+        send(composer, vcx, "hello");
+        pump(rt);
+        let request = observer
+            .try_recv()
+            .unwrap()
+            .expect("a send request on the bus");
+        request
+            .payload
+            .get(SENDER_FIELD)
+            .and_then(|sender| sender.as_str())
+            .map(str::to_owned)
+    }
+
+    #[gpui::test]
+    fn sends_carry_no_sender_while_no_bot_is_connected(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (composer, vcx) = mount(cx, &rt, &[Integration::Twitch]);
+        let bus = connected_bus(&composer, vcx);
+        attach_bot(&composer, vcx, None);
+
+        assert_eq!(sent_sender(&composer, vcx, &rt, &bus), None);
+    }
+
+    #[gpui::test]
+    fn sends_go_as_the_streamer_until_the_bot_is_picked(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (composer, vcx) = mount(cx, &rt, &[Integration::Twitch]);
+        let bus = connected_bus(&composer, vcx);
+        attach_bot(&composer, vcx, Some("forgebot"));
+
+        assert_eq!(
+            sent_sender(&composer, vcx, &rt, &bus).as_deref(),
+            Some("streamer")
+        );
+    }
+
+    #[gpui::test]
+    fn picking_bot_on_the_switch_sends_as_the_bot_only(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (composer, vcx) = mount(cx, &rt, &[Integration::Twitch]);
+        let bus = connected_bus(&composer, vcx);
+        attach_bot(&composer, vcx, Some("forgebot"));
+
+        pick_switch(&composer, vcx, 1);
+
+        assert_eq!(
+            sent_sender(&composer, vcx, &rt, &bus).as_deref(),
+            Some("bot")
+        );
+    }
+
+    #[gpui::test]
+    fn a_bot_reconnect_after_a_disconnect_starts_back_at_me(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (composer, vcx) = mount(cx, &rt, &[Integration::Twitch]);
+        let bus = connected_bus(&composer, vcx);
+        let presence = attach_bot(&composer, vcx, Some("forgebot"));
+        pick_switch(&composer, vcx, 1);
+
+        set_bot(&presence, vcx, None);
+        let while_gone = sent_sender(&composer, vcx, &rt, &bus);
+        release(&composer, vcx);
+        set_bot(&presence, vcx, Some("forgebot"));
+        let after_return = sent_sender(&composer, vcx, &rt, &bus);
+
+        assert_eq!(
+            (while_gone, after_return.as_deref()),
+            (None, Some("streamer"))
+        );
+    }
+
+    fn set_connected(
+        composer: &Entity<ChatComposer>,
+        vcx: &mut VisualTestContext,
+        connected: &[Integration],
+    ) {
+        let connections: Vec<(Integration, bool)> =
+            [Integration::Twitch, Integration::YouTube, Integration::Kick]
+                .into_iter()
+                .map(|integration| (integration, connected.contains(&integration)))
+                .collect();
+        vcx.update(|_window, cx| {
+            let stats = composer.read(cx).home_stats.clone();
+            stats.update(cx, |stats, cx| {
+                stats.set_connections(&connections);
+                cx.notify();
+            });
+        });
+        vcx.run_until_parked();
+    }
+
+    fn release(composer: &Entity<ChatComposer>, vcx: &mut VisualTestContext) {
+        vcx.update(|_window, cx| composer.update(cx, |composer, _| composer.in_flight = None));
+    }
+
+    #[gpui::test]
+    fn a_connected_bot_adds_no_sender_while_twitch_is_not_reachable(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (composer, vcx) = mount(cx, &rt, &[Integration::YouTube]);
+        let bus = connected_bus(&composer, vcx);
+        attach_bot(&composer, vcx, Some("forgebot"));
+        pick_switch(&composer, vcx, 1);
+
+        assert_eq!(sent_sender(&composer, vcx, &rt, &bus), None);
+    }
+
+    #[gpui::test]
+    fn the_sender_follows_twitch_dropping_out_and_coming_back(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (composer, vcx) = mount(cx, &rt, &[Integration::Twitch, Integration::YouTube]);
+        let bus = connected_bus(&composer, vcx);
+        attach_bot(&composer, vcx, Some("forgebot"));
+        pick_switch(&composer, vcx, 1);
+
+        set_connected(&composer, vcx, &[Integration::YouTube]);
+        let while_out = sent_sender(&composer, vcx, &rt, &bus);
+        release(&composer, vcx);
+        set_connected(&composer, vcx, &[Integration::Twitch, Integration::YouTube]);
+        let back = sent_sender(&composer, vcx, &rt, &bus);
+
+        assert_eq!((while_out, back.as_deref()), (None, Some("bot")));
     }
 }

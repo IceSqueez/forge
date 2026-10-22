@@ -816,3 +816,549 @@ fn copy_row(
         )
         .into_any_element()
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::SystemTime;
+
+    use forge_events::EventPublisher;
+    use forge_platform_core::PlatformEndpoints;
+    use forge_platform_twitch::{
+        BotLoginError, BotModerator, BotModeratorError, BotStatus, DeviceCodeInfo, TwitchBotAccount,
+    };
+    use forge_runtime::{EventBus, NullEventLogRepo};
+    use forge_storage::CredentialsRepo;
+    use gpui::{AppContext as _, Entity, TestAppContext};
+
+    use super::{
+        BotLogin, BotProblem, BotTask, SentAs, TwitchBotSection, default_sender, login_failure,
+        moderator_failure,
+    };
+    use crate::i18n::install_language;
+    use crate::test_support::{pump, runtime, test_backend};
+    use crate::twitch_bot_presence::TwitchBotPresence;
+    use forge_storage::Language;
+
+    struct Mounted {
+        section: Entity<TwitchBotSection>,
+        presence: Entity<TwitchBotPresence>,
+        rt: tokio::runtime::Runtime,
+    }
+
+    fn mount(cx: &mut TestAppContext) -> Mounted {
+        install_language(Language::En);
+        let rt = runtime();
+        let (backend, _writes) = test_backend();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let bot = TwitchBotAccount::new(
+            &PlatformEndpoints::default(),
+            backend as Arc<dyn CredentialsRepo>,
+            "client".to_owned(),
+            bus as Arc<dyn EventPublisher>,
+        );
+        let handle = rt.handle().clone();
+        let presence = cx.new(|_| TwitchBotPresence::new());
+        let for_section = presence.clone();
+        let section = cx.new(|cx| {
+            TwitchBotSection::new(bot, for_section, handle, Some("streamer".to_owned()), cx)
+        });
+        Mounted {
+            section,
+            presence,
+            rt,
+        }
+    }
+
+    fn code() -> DeviceCodeInfo {
+        DeviceCodeInfo {
+            user_code: "ABCD-EFGH".to_owned(),
+            verification_uri: "https://www.twitch.tv/activate".to_owned(),
+            expires_at: SystemTime::UNIX_EPOCH,
+        }
+    }
+
+    fn waiting() -> BotLogin {
+        BotLogin::Waiting {
+            user_code: "ABCD-EFGH".to_owned(),
+            verification_uri: "https://www.twitch.tv/activate".to_owned(),
+        }
+    }
+
+    fn login_state(m: &Mounted, cx: &mut TestAppContext) -> BotLogin {
+        m.section.read_with(cx, |section, _| section.login.clone())
+    }
+
+    fn started(m: &Mounted, cx: &mut TestAppContext) -> u64 {
+        m.section.update(cx, |section, cx| {
+            section.start_login(cx);
+            section.login_ticket
+        })
+    }
+
+    fn connected(login: &str) -> BotStatus {
+        BotStatus::Connected {
+            login: login.to_owned(),
+        }
+    }
+
+    #[gpui::test]
+    fn a_code_for_the_current_login_shows_the_link_and_code(cx: &mut TestAppContext) {
+        let m = mount(cx);
+        let ticket = started(&m, cx);
+
+        m.section.update(cx, |section, cx| {
+            section.apply_login_code(ticket, Ok(code()), cx)
+        });
+
+        assert_eq!(login_state(&m, cx), waiting());
+    }
+
+    #[gpui::test]
+    fn a_code_arriving_after_cancel_is_dropped(cx: &mut TestAppContext) {
+        let m = mount(cx);
+        let ticket = started(&m, cx);
+
+        m.section.update(cx, |section, cx| {
+            section.cancel_login(cx);
+            section.apply_login_code(ticket, Ok(code()), cx);
+        });
+
+        assert_eq!(login_state(&m, cx), BotLogin::Idle);
+    }
+
+    #[gpui::test]
+    fn an_outcome_of_a_replaced_login_is_dropped(cx: &mut TestAppContext) {
+        let m = mount(cx);
+        let first = started(&m, cx);
+        m.section.update(cx, |section, cx| {
+            section.apply_login_code(first, Ok(code()), cx)
+        });
+        let second = started(&m, cx);
+
+        m.section.update(cx, |section, cx| {
+            section.apply_login_outcome(first, Err(BotLoginError::Denied), cx)
+        });
+
+        assert_ne!(first, second);
+        assert_eq!(login_state(&m, cx), BotLogin::Requesting);
+    }
+
+    #[gpui::test]
+    fn the_current_login_outcome_ends_the_flow(cx: &mut TestAppContext) {
+        for (outcome, failed) in [
+            (Ok(connected("forgebot")), false),
+            (Err(BotLoginError::Expired), true),
+            (Err(BotLoginError::Cancelled), false),
+        ] {
+            let m = mount(cx);
+            let ticket = started(&m, cx);
+            m.section.update(cx, |section, cx| {
+                section.apply_login_code(ticket, Ok(code()), cx)
+            });
+
+            m.section.update(cx, |section, cx| {
+                section.apply_login_outcome(ticket, outcome, cx)
+            });
+
+            let state = login_state(&m, cx);
+            assert_eq!(matches!(state, BotLogin::Failed(_)), failed, "{state:?}");
+            assert_ne!(state, waiting());
+        }
+    }
+
+    #[gpui::test]
+    fn the_bot_connecting_ends_a_pending_login(cx: &mut TestAppContext) {
+        let m = mount(cx);
+        let ticket = started(&m, cx);
+        m.section.update(cx, |section, cx| {
+            section.apply_login_code(ticket, Ok(code()), cx)
+        });
+
+        m.presence.update(cx, |presence, cx| {
+            presence.apply(connected("forgebot"), BotModerator::Unknown);
+            cx.notify();
+        });
+        cx.run_until_parked();
+
+        assert_eq!(login_state(&m, cx), BotLogin::Idle);
+    }
+
+    #[gpui::test]
+    fn a_presence_change_without_a_connected_bot_keeps_the_login_going(cx: &mut TestAppContext) {
+        let m = mount(cx);
+        let ticket = started(&m, cx);
+        m.section.update(cx, |section, cx| {
+            section.apply_login_code(ticket, Ok(code()), cx)
+        });
+
+        m.presence.update(cx, |presence, cx| {
+            presence.apply(BotStatus::NotConnected, BotModerator::NotModerator);
+            cx.notify();
+        });
+        cx.run_until_parked();
+
+        assert_eq!(login_state(&m, cx), waiting());
+    }
+
+    #[gpui::test]
+    fn a_running_task_refuses_a_second_task(cx: &mut TestAppContext) {
+        let m = mount(cx);
+
+        let busy = m.section.update(cx, |section, cx| {
+            section.disconnect(cx);
+            section.make_moderator(cx);
+            section.busy
+        });
+
+        assert_eq!(busy, Some(BotTask::Disconnecting));
+    }
+
+    #[gpui::test]
+    fn failed_tasks_free_the_card_and_surface_their_problem(cx: &mut TestAppContext) {
+        let m = mount(cx);
+
+        let after_disconnect = m.section.update(cx, |section, cx| {
+            section.disconnect(cx);
+            section.apply_disconnect(Err(BotLoginError::Storage("disk full".to_owned())), cx);
+            (section.busy, section.problem.clone())
+        });
+        let after_promote = m.section.update(cx, |section, cx| {
+            section.make_moderator(cx);
+            section.apply_make_moderator(Err(BotModeratorError::BotBanned), cx);
+            (section.busy, section.problem.clone())
+        });
+
+        assert!(
+            matches!(after_disconnect, (None, Some(BotProblem::Disconnect(ref m))) if m.contains("disk full")),
+            "{after_disconnect:?}"
+        );
+        assert!(
+            matches!(after_promote, (None, Some(BotProblem::Moderator(_)))),
+            "{after_promote:?}"
+        );
+    }
+
+    #[gpui::test]
+    fn starting_a_new_attempt_clears_the_previous_problem(cx: &mut TestAppContext) {
+        let m = mount(cx);
+
+        let problem = m.section.update(cx, |section, cx| {
+            section.make_moderator(cx);
+            section.apply_make_moderator(Err(BotModeratorError::BotIsVip), cx);
+            section.start_login(cx);
+            section.problem.clone()
+        });
+
+        assert_eq!(problem, None);
+    }
+
+    #[gpui::test]
+    fn sent_as_follows_the_streamer_login_handed_in_on_reload(cx: &mut TestAppContext) {
+        let m = mount(cx);
+
+        let sent_as = m.section.update(cx, |section, cx| {
+            section.set_streamer_login(Some("newname".to_owned()), cx);
+            section.sent_as(cx)
+        });
+
+        assert_eq!(
+            sent_as,
+            Some(SentAs {
+                login: "newname".to_owned(),
+                as_bot: false,
+            })
+        );
+    }
+
+    #[test]
+    fn default_sender_is_the_bot_only_while_it_is_connected() {
+        let bot = |login: &str| SentAs {
+            login: login.to_owned(),
+            as_bot: true,
+        };
+        let streamer = SentAs {
+            login: "streamer".to_owned(),
+            as_bot: false,
+        };
+        for (status, streamer_login, expected) in [
+            (
+                connected("forgebot"),
+                Some("streamer"),
+                Some(bot("forgebot")),
+            ),
+            (connected("forgebot"), None, Some(bot("forgebot"))),
+            (
+                BotStatus::ReauthRequired {
+                    login: "forgebot".to_owned(),
+                },
+                Some("streamer"),
+                Some(streamer.clone()),
+            ),
+            (BotStatus::NotConnected, Some("streamer"), Some(streamer)),
+            (BotStatus::NotConnected, None, None),
+        ] {
+            assert_eq!(
+                default_sender(&status, streamer_login),
+                expected,
+                "{status:?} {streamer_login:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_cancelled_login_returns_to_idle_without_an_error() {
+        assert_eq!(login_failure(&BotLoginError::Cancelled), BotLogin::Idle);
+    }
+
+    #[test]
+    fn each_login_failure_reads_differently_and_generic_ones_carry_the_cause() {
+        install_language(Language::En);
+        let messages: Vec<String> = [
+            BotLoginError::SameAsBroadcaster,
+            BotLoginError::Denied,
+            BotLoginError::Expired,
+            BotLoginError::Storage("disk full".to_owned()),
+        ]
+        .iter()
+        .filter_map(|error| match login_failure(error) {
+            BotLogin::Failed(message) => Some(message),
+            BotLogin::Idle | BotLogin::Requesting | BotLogin::Waiting { .. } => None,
+        })
+        .collect();
+
+        assert_eq!(messages.len(), 4, "every one of them is a failure");
+        for message in &messages {
+            assert_eq!(
+                messages.iter().filter(|m| *m == message).count(),
+                1,
+                "{message}"
+            );
+        }
+        assert!(messages[3].contains("disk full"), "{}", messages[3]);
+    }
+
+    #[test]
+    fn each_moderator_failure_reads_differently_and_twitch_reasons_are_kept() {
+        install_language(Language::En);
+        let messages: Vec<String> = [
+            BotModeratorError::BotNotConnected,
+            BotModeratorError::BroadcasterReauthRequired,
+            BotModeratorError::BotBanned,
+            BotModeratorError::BotIsVip,
+            BotModeratorError::Refused("user is already a mod".to_owned()),
+            BotModeratorError::Unavailable("timed out".to_owned()),
+        ]
+        .iter()
+        .map(moderator_failure)
+        .collect();
+
+        for message in &messages {
+            assert_eq!(
+                messages.iter().filter(|m| *m == message).count(),
+                1,
+                "{message}"
+            );
+        }
+        assert!(
+            messages[4].contains("user is already a mod"),
+            "{}",
+            messages[4]
+        );
+        assert!(messages[5].contains("timed out"), "{}", messages[5]);
+    }
+
+    fn set_presence(
+        m: &Mounted,
+        cx: &mut TestAppContext,
+        status: BotStatus,
+        moderator: BotModerator,
+    ) {
+        m.presence.update(cx, |presence, cx| {
+            presence.apply(status, moderator);
+            cx.notify();
+        });
+        cx.run_until_parked();
+    }
+
+    fn presence_state(m: &Mounted, cx: &mut TestAppContext) -> (BotStatus, BotModerator) {
+        m.presence.read_with(cx, |presence, _| {
+            (presence.status().clone(), presence.moderator())
+        })
+    }
+
+    #[gpui::test]
+    fn a_bot_account_exists_while_the_bot_is_known_or_a_bot_task_runs(cx: &mut TestAppContext) {
+        let reauth = BotStatus::ReauthRequired {
+            login: "forgebot".to_owned(),
+        };
+        for (status, login, busy, expected) in [
+            (BotStatus::NotConnected, BotLogin::Idle, None, false),
+            (connected("forgebot"), BotLogin::Idle, None, true),
+            (reauth, BotLogin::Idle, None, true),
+            (BotStatus::NotConnected, BotLogin::Requesting, None, true),
+            (BotStatus::NotConnected, waiting(), None, true),
+            (
+                BotStatus::NotConnected,
+                BotLogin::Failed("expired".to_owned()),
+                None,
+                true,
+            ),
+            (
+                BotStatus::NotConnected,
+                BotLogin::Idle,
+                Some(BotTask::Disconnecting),
+                true,
+            ),
+        ] {
+            let m = mount(cx);
+            set_presence(&m, cx, status.clone(), BotModerator::Unknown);
+
+            let exists = m.section.update(cx, |section, cx| {
+                section.login = login.clone();
+                section.busy = busy;
+                section.has_bot_account(cx)
+            });
+
+            assert_eq!(exists, expected, "{status:?} {login:?} {busy:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn a_successful_login_shows_the_bot_without_waiting_for_the_status_event(
+        cx: &mut TestAppContext,
+    ) {
+        let m = mount(cx);
+        let ticket = started(&m, cx);
+        m.section.update(cx, |section, cx| {
+            section.apply_login_code(ticket, Ok(code()), cx)
+        });
+
+        m.section.update(cx, |section, cx| {
+            section.apply_login_outcome(ticket, Ok(connected("forgebot")), cx)
+        });
+
+        assert_eq!(presence_state(&m, cx).0, connected("forgebot"));
+    }
+
+    #[gpui::test]
+    fn a_successful_disconnect_shows_no_bot_and_resets_the_composer_to_me(cx: &mut TestAppContext) {
+        let m = mount(cx);
+        set_presence(&m, cx, connected("forgebot"), BotModerator::Moderator);
+        m.presence.update(cx, |presence, _| {
+            presence.set_composer_sends_as_bot(true);
+        });
+
+        m.section.update(cx, |section, cx| {
+            section.busy = Some(BotTask::Disconnecting);
+            section.apply_disconnect(Ok(()), cx);
+        });
+
+        let (status, as_bot) = m.presence.read_with(cx, |presence, _| {
+            (presence.status().clone(), presence.composer_sends_as_bot())
+        });
+        assert_eq!((status, as_bot), (BotStatus::NotConnected, false));
+    }
+
+    #[gpui::test]
+    fn a_successful_promotion_reads_the_account_status_again(cx: &mut TestAppContext) {
+        let m = mount(cx);
+        set_presence(&m, cx, connected("forgebot"), BotModerator::NotModerator);
+
+        m.section.update(cx, |section, cx| {
+            section.busy = Some(BotTask::Promoting);
+            section.apply_make_moderator(Ok(()), cx);
+        });
+        pump(&m.rt);
+        cx.run_until_parked();
+
+        assert_eq!(
+            presence_state(&m, cx),
+            (BotStatus::NotConnected, BotModerator::Unknown)
+        );
+    }
+
+    #[gpui::test]
+    fn a_promotion_refused_for_streamer_permissions_asks_for_a_streamer_sign_in(
+        cx: &mut TestAppContext,
+    ) {
+        for (error, sign_in) in [
+            (BotModeratorError::BroadcasterReauthRequired, true),
+            (BotModeratorError::BotBanned, false),
+            (BotModeratorError::Refused("nope".to_owned()), false),
+        ] {
+            let m = mount(cx);
+
+            let problem = m.section.update(cx, |section, cx| {
+                section.busy = Some(BotTask::Promoting);
+                section.apply_make_moderator(Err(error), cx);
+                section.problem.clone()
+            });
+
+            assert_eq!(
+                matches!(problem, Some(BotProblem::StreamerSignIn(_))),
+                sign_in,
+                "{problem:?}"
+            );
+            assert!(
+                matches!(
+                    problem,
+                    Some(BotProblem::StreamerSignIn(_) | BotProblem::Moderator(_))
+                ),
+                "{problem:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn becoming_a_moderator_clears_moderator_problems_but_not_a_disconnect_problem(
+        cx: &mut TestAppContext,
+    ) {
+        for (problem, cleared) in [
+            (BotProblem::Moderator("banned".to_owned()), true),
+            (BotProblem::StreamerSignIn("sign in".to_owned()), true),
+            (BotProblem::Disconnect("disk full".to_owned()), false),
+        ] {
+            let m = mount(cx);
+            set_presence(&m, cx, connected("forgebot"), BotModerator::NotModerator);
+            m.section
+                .update(cx, |section, _| section.problem = Some(problem.clone()));
+
+            set_presence(&m, cx, connected("forgebot"), BotModerator::Moderator);
+
+            let left = m
+                .section
+                .read_with(cx, |section, _| section.problem.clone());
+            assert_eq!(left.is_none(), cleared, "{problem:?} -> {left:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn a_moderator_problem_stays_while_the_bot_is_still_not_a_moderator(cx: &mut TestAppContext) {
+        let m = mount(cx);
+        m.section.update(cx, |section, _| {
+            section.problem = Some(BotProblem::Moderator("banned".to_owned()))
+        });
+
+        set_presence(&m, cx, connected("forgebot"), BotModerator::NotModerator);
+
+        let left = m
+            .section
+            .read_with(cx, |section, _| section.problem.clone());
+        assert!(matches!(left, Some(BotProblem::Moderator(_))), "{left:?}");
+    }
+
+    #[test]
+    fn the_reauth_fallback_line_names_the_streamer_in_each_language() {
+        for language in [Language::En, Language::Uk] {
+            install_language(language);
+
+            let line =
+                forge_components::tr!("twitch_bot_fallback_active", login = "streamer".to_owned())
+                    .replace(['\u{2068}', '\u{2069}'], "");
+
+            assert!(line.contains("@streamer"), "{language:?}: {line}");
+        }
+    }
+}

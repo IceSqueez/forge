@@ -17,12 +17,15 @@ use forge_storage::{
     event_log_retention_days, set_action_history_retention_days, set_chat_history_display_limit,
     set_chat_history_per_viewer_limit, set_event_log_retention_days,
 };
+use forge_transfer::TransferExclusivity;
 use gpui::{
-    ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div, prelude::*, px,
+    ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Task, Window, div, prelude::*,
+    px,
 };
 
 use crate::async_bridge;
 use crate::backup_schedule::BackupScheduleView;
+use crate::safety_copies::SafetyCopiesView;
 use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 use crate::transfer_flows::TransferFlows;
@@ -69,6 +72,8 @@ pub struct SettingsStorageView {
     history_retention_days: u32,
     transfers: Option<Entity<TransferFlows>>,
     schedule: Option<Entity<BackupScheduleView>>,
+    safety_copies: Option<Entity<SafetyCopiesView>>,
+    transfer_watch: Option<Task<()>>,
 
     per_viewer_input: Entity<TextInput>,
     display_input: Entity<TextInput>,
@@ -150,6 +155,8 @@ impl SettingsStorageView {
             history_retention_days: default_history_retention,
             transfers,
             schedule: None,
+            safety_copies: None,
+            transfer_watch: None,
             per_viewer_input,
             display_input,
             retention_input,
@@ -168,6 +175,45 @@ impl SettingsStorageView {
         self._subs
             .push(cx.observe(&schedule, |_, _, cx| cx.notify()));
         self.schedule = Some(schedule);
+        cx.notify();
+    }
+
+    pub fn attach_safety_copies(
+        &mut self,
+        safety_copies: Entity<SafetyCopiesView>,
+        cx: &mut Context<Self>,
+    ) {
+        self.safety_copies = Some(safety_copies);
+        cx.notify();
+    }
+
+    pub fn follow_transfer_lock(
+        &mut self,
+        exclusivity: &TransferExclusivity,
+        cx: &mut Context<Self>,
+    ) {
+        let mut held = exclusivity.watch_held();
+        self.transfer_watch = Some(cx.spawn(async move |this, cx| {
+            while held.changed().await.is_some() {
+                if this
+                    .update(cx, |this, cx| this.transfer_lock_changed(cx))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        }));
+    }
+
+    fn transfer_lock_changed(&mut self, cx: &mut Context<Self>) {
+        if let Some(schedule) = &self.schedule {
+            schedule.update(cx, |_, cx| cx.notify());
+        }
+        if let Some(safety_copies) = &self.safety_copies {
+            safety_copies.update(cx, |safety_copies, cx| {
+                safety_copies.transfer_lock_changed(cx)
+            });
+        }
         cx.notify();
     }
 
@@ -550,6 +596,9 @@ impl Render for SettingsStorageView {
                 [
                     Some(backup_rows.into_any_element()),
                     self.schedule.clone().map(IntoElement::into_any_element),
+                    self.safety_copies
+                        .clone()
+                        .map(IntoElement::into_any_element),
                     Some(limit_rows.into_any_element()),
                 ]
                 .into_iter()

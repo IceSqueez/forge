@@ -35,7 +35,7 @@ mod staging_sweep;
 pub use cancel::CancelFlag;
 pub use category::BackupCategory;
 pub use error::TransferError;
-pub use exclusivity::{TransferExclusivity, TransferGuard};
+pub use exclusivity::{TransferExclusivity, TransferGuard, TransferHeldWatch};
 pub use full_writer::{
     BackupDestination, FullBackupRequest, ScheduledBackupRequest, ScheduledWrite,
     write_full_backup, write_scheduled_backup, write_scheduled_backup_cancellable,

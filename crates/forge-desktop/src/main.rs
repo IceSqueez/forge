@@ -123,6 +123,7 @@ mod routed_sink;
 mod run_history_modal;
 mod runtime_handles;
 mod runtime_status;
+mod safety_copies;
 mod safety_copy_prune;
 mod scheduled_backup_notices;
 mod scheduled_run_labels;

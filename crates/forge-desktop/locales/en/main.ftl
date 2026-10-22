@@ -553,6 +553,44 @@ backup_schedule_change_current_placeholder = Enter the current passphrase
 backup_schedule_change_new_label = New passphrase
 backup_schedule_change_wrong_current = The current passphrase is not correct
 backup_schedule_change_done = Schedule passphrase changed
+safety_copies_label = Safety copies
+safety_copies_hint = Copies forge makes on its own before a Restore, a pack or setup import and an update, so you can go back.
+safety_copies_mode_keep_newest = Keep the newest
+safety_copies_mode_delete_after_days = Delete after
+safety_copies_mode_never = Never delete
+safety_copies_unit_copies = { $count ->
+    [one] copy
+   *[other] copies
+}
+safety_copies_unit_days = { $count ->
+    [one] day
+   *[other] days
+}
+safety_copies_usage_label = Stored safety copies
+safety_copies_usage = { $count ->
+    [one] { $count } copy - { $size }
+   *[other] { $count } copies - { $size }
+}
+safety_copies_usage_unknown = -
+safety_copies_clean_up_btn = Clean up now
+safety_copies_clean_up_btn_busy = Cleaning up...
+safety_copies_clean_up_confirm_title = Delete all safety copies?
+safety_copies_clean_up_confirm_body = Every safety copy in the data folder is deleted, except ones still needed by an update in progress or an unfinished restore. Your backups are not touched. You will not be able to go back to the state before an earlier Restore, import or update.
+safety_copies_clean_up_confirm_action = Delete safety copies
+safety_copies_saved = Safety copy setting saved
+safety_copies_nothing_to_remove = There are no safety copies to delete - copies still needed by an update in progress or an unfinished restore are kept
+safety_copies_freed = { $count ->
+    [one] Deleted { $count } safety copy - freed { $size }
+   *[other] Deleted { $count } safety copies - freed { $size }
+}
+safety_copies_not_deleted = { $count ->
+    [one] Could not delete a safety copy ({ $name }): { $reason }
+   *[other] Could not delete { $count } safety copies, first { $name }: { $reason }
+}
+safety_copies_change_deferred = Setting saved - a backup or transfer is running, so safety copies will be trimmed the next time forge starts.
+safety_copies_clean_up_deferred = A backup or restore is running - try again when it finishes.
+safety_copies_change_failed = Could not apply the safety copy setting: { $error }
+safety_copies_clean_up_failed = Could not clean up safety copies: { $error }
 restore_dialog_filter = forge backups
 restore_passphrase_title = Unlock backup
 restore_passphrase_subtitle = Enter the passphrase this backup was created with

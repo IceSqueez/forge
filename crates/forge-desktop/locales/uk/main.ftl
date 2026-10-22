@@ -567,6 +567,49 @@ backup_schedule_change_current_placeholder = Введіть поточний п�
 backup_schedule_change_new_label = Новий пароль
 backup_schedule_change_wrong_current = Поточний пароль неправильний
 backup_schedule_change_done = Пароль розкладу змінено
+safety_copies_label = Страхувальні копії
+safety_copies_hint = Копії, які forge робить сам перед відновленням, імпортом пакета чи налаштувань і оновленням, щоб можна було повернутися назад.
+safety_copies_mode_keep_newest = Зберігати найновіші
+safety_copies_mode_delete_after_days = Видаляти через
+safety_copies_mode_never = Ніколи не видаляти
+safety_copies_unit_copies = { $count ->
+    [one] копію
+    [few] копії
+   *[other] копій
+}
+safety_copies_unit_days = { $count ->
+    [one] день
+    [few] дні
+   *[other] днів
+}
+safety_copies_usage_label = Збережені страхувальні копії
+safety_copies_usage = { $count ->
+    [one] { $count } копія - { $size }
+    [few] { $count } копії - { $size }
+   *[other] { $count } копій - { $size }
+}
+safety_copies_usage_unknown = -
+safety_copies_clean_up_btn = Очистити зараз
+safety_copies_clean_up_btn_busy = Очищую...
+safety_copies_clean_up_confirm_title = Видалити всі страхувальні копії?
+safety_copies_clean_up_confirm_body = Усі страхувальні копії в теці даних буде видалено, крім тих, що ще потрібні оновленню, яке триває, або незавершеному відновленню. Резервні копії не зачіпаються. Повернутися до стану перед попереднім відновленням, імпортом чи оновленням уже не вийде.
+safety_copies_clean_up_confirm_action = Видалити страхувальні копії
+safety_copies_saved = Налаштування страхувальних копій збережено
+safety_copies_nothing_to_remove = Страхувальних копій для видалення немає - копії, що ще потрібні оновленню, яке триває, або незавершеному відновленню, зберігаються
+safety_copies_freed = { $count ->
+    [one] Видалено { $count } страхувальну копію - звільнено { $size }
+    [few] Видалено { $count } страхувальні копії - звільнено { $size }
+   *[other] Видалено { $count } страхувальних копій - звільнено { $size }
+}
+safety_copies_not_deleted = { $count ->
+    [one] Не вдалося видалити страхувальну копію ({ $name }): { $reason }
+    [few] Не вдалося видалити { $count } страхувальні копії, перша { $name }: { $reason }
+   *[other] Не вдалося видалити { $count } страхувальних копій, перша { $name }: { $reason }
+}
+safety_copies_change_deferred = Налаштування збережено - триває резервне копіювання чи перенесення, тож страхувальні копії буде скорочено під час наступного запуску forge.
+safety_copies_clean_up_deferred = Триває резервне копіювання чи відновлення - спробуйте ще раз, коли воно завершиться.
+safety_copies_change_failed = Не вдалося застосувати налаштування страхувальних копій: { $error }
+safety_copies_clean_up_failed = Не вдалося очистити страхувальні копії: { $error }
 restore_dialog_filter = Резервні копії forge
 restore_passphrase_title = Розблокування копії
 restore_passphrase_subtitle = Введіть пароль, з яким створено цю копію

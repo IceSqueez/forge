@@ -19,6 +19,7 @@ use crate::backup_schedule::BackupScheduleView;
 use crate::presentation::{ActiveDisplayFormats, ActiveLanguage};
 use crate::problem_report::ProblemReport;
 use crate::runtime_handles::RuntimeHandles;
+use crate::safety_copies::SafetyCopiesView;
 use crate::settings_about::SettingsAboutView;
 use crate::settings_audio::SettingsAudioView;
 use crate::settings_diagnostics::SettingsDiagnosticsView;
@@ -292,6 +293,16 @@ impl SettingsView {
                 cx,
             )
         });
+        let safety_copies = cx.new(|cx| {
+            SafetyCopiesView::new(
+                Arc::clone(&handles.backend),
+                handles.rt_handle.clone(),
+                handles.transfer_exclusivity.clone(),
+                handles.scheduled_backups.clone(),
+                forge_storage::paths::data_dir(),
+                cx,
+            )
+        });
         let storage = cx.new(|cx| {
             let mut storage = SettingsStorageView::new(
                 Arc::clone(&handles.backend),
@@ -300,6 +311,8 @@ impl SettingsView {
                 cx,
             );
             storage.attach_schedule(schedule, cx);
+            storage.attach_safety_copies(safety_copies, cx);
+            storage.follow_transfer_lock(&handles.transfer_exclusivity, cx);
             storage
         });
         let about = cx.new(|cx| {

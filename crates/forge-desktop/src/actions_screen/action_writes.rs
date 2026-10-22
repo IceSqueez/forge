@@ -330,3 +330,512 @@ impl ScreenActionsView {
         cx.notify();
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+
+    use forge_storage::{
+        ActionTelemetry, ExecutionStatus, MockMediaRepo, StorageError, action::ActionRepo,
+    };
+    use gpui::TestAppContext;
+    use time::OffsetDateTime;
+
+    use super::super::editor::tests::view_with;
+    use super::*;
+    use crate::test_support::{action_running, error_toasts, pump, runtime, step};
+
+    const FIRST: &str = "test.first";
+    const SECOND: &str = "test.second";
+    const THIRD: &str = "test.third";
+    const ALPHA: &str = "Alpha";
+    const BRAVO: &str = "Bravo";
+    const RENAMED: &str = "Renamed";
+    const SETTLE_ROUNDS: usize = 4;
+    const SAVE_OP: &str = "save";
+    const ARCHIVE_OP: &str = "archive";
+
+    fn chain() -> Vec<SubActionStep> {
+        vec![step(FIRST, true), step(SECOND, true), step(THIRD, true)]
+    }
+
+    fn kinds(steps: &[SubActionStep]) -> Vec<String> {
+        steps.iter().map(|step| step.kind_id.clone()).collect()
+    }
+
+    fn rotated() -> Vec<String> {
+        [SECOND, THIRD, FIRST].map(str::to_owned).to_vec()
+    }
+
+    fn original() -> Vec<String> {
+        [FIRST, SECOND, THIRD].map(str::to_owned).to_vec()
+    }
+
+    fn settings_from(action: &Action) -> ActionSettings {
+        ActionSettings {
+            name: RENAMED.to_owned(),
+            group: Some(BRAVO.to_owned()),
+            queue_id: QueueId::new(),
+            enabled: !action.enabled,
+            concurrent: !action.concurrent,
+            bypass_pause: !action.bypass_pause,
+            execution_mode: ExecutionMode::RandomPick,
+            description: Some(ALPHA.to_owned()),
+        }
+    }
+
+    #[test]
+    fn each_edit_changes_only_its_own_fields() {
+        let base = action_running(ALPHA, chain());
+        let settings = settings_from(&base);
+        let mut with_settings = base.clone();
+        with_settings.name = settings.name.clone();
+        with_settings.group = settings.group.clone();
+        with_settings.queue_id = settings.queue_id;
+        with_settings.enabled = settings.enabled;
+        with_settings.concurrent = settings.concurrent;
+        with_settings.bypass_pause = settings.bypass_pause;
+        with_settings.execution_mode = settings.execution_mode;
+        with_settings.description = settings.description.clone();
+        let mut disabled = base.clone();
+        disabled.enabled = false;
+        let mut renamed = base.clone();
+        renamed.name = RENAMED.to_owned();
+        let mut reordered = base.clone();
+        reordered.sub_actions.rotate_left(1);
+        for (write, expected, case) in [
+            (ActionWrite::Settings(settings), with_settings, "settings"),
+            (ActionWrite::SetEnabled(false), disabled, "enabled"),
+            (ActionWrite::Rename(RENAMED.to_owned()), renamed, "rename"),
+            (
+                ActionWrite::SetChain {
+                    path: Vec::new(),
+                    chain: reordered.sub_actions.clone(),
+                },
+                reordered,
+                "chain",
+            ),
+        ] {
+            let mut action = base.clone();
+
+            let applied = apply_action_edit(&mut action, &write);
+
+            assert_eq!((applied, action), (true, expected), "{case}");
+        }
+    }
+
+    #[test]
+    fn a_chain_edit_on_a_missing_nested_path_changes_nothing() {
+        let base = action_running(ALPHA, chain());
+        let mut action = base.clone();
+        let write = ActionWrite::SetChain {
+            path: vec![nav::NavFrame {
+                step_index: chain().len(),
+                chain_key: FIRST.to_owned(),
+                case_index: None,
+            }],
+            chain: Vec::new(),
+        };
+
+        let applied = apply_action_edit(&mut action, &write);
+
+        assert_eq!((applied, action), (false, base));
+    }
+
+    #[test]
+    fn repository_operations_are_not_applied_as_edits() {
+        let base = action_running(ALPHA, chain());
+        for (write, case) in [
+            (
+                ActionWrite::Create(action_running(BRAVO, Vec::new())),
+                "create",
+            ),
+            (
+                ActionWrite::Duplicate {
+                    new_id: ActionId::new(),
+                },
+                "duplicate",
+            ),
+            (
+                ActionWrite::Archive {
+                    name: ALPHA.to_owned(),
+                },
+                "archive",
+            ),
+            (ActionWrite::Restore, "restore"),
+        ] {
+            let mut action = base.clone();
+
+            let applied = apply_action_edit(&mut action, &write);
+
+            assert_eq!((applied, action), (false, base.clone()), "{case}");
+        }
+    }
+
+    #[derive(Default)]
+    struct MemActions {
+        actions: Mutex<HashMap<ActionId, Action>>,
+        archived: Mutex<HashSet<ActionId>>,
+        failing_saves: Mutex<HashMap<ActionId, usize>>,
+        ops: Mutex<Vec<(&'static str, ActionId)>>,
+    }
+
+    impl MemActions {
+        fn stored(&self, id: ActionId) -> Action {
+            self.actions.lock().unwrap().get(&id).cloned().unwrap()
+        }
+
+        fn fail_next_save(&self, id: ActionId) {
+            *self.failing_saves.lock().unwrap().entry(id).or_default() += 1;
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ActionRepo for MemActions {
+        async fn list(&self) -> Result<Vec<Action>, StorageError> {
+            let archived = self.archived.lock().unwrap().clone();
+            let mut listed: Vec<Action> = self
+                .actions
+                .lock()
+                .unwrap()
+                .values()
+                .filter(|action| !archived.contains(&action.id))
+                .cloned()
+                .collect();
+            listed.sort_by(|a, b| a.name.cmp(&b.name));
+            Ok(listed)
+        }
+
+        async fn get(&self, id: ActionId) -> Result<Option<Action>, StorageError> {
+            Ok(self.actions.lock().unwrap().get(&id).cloned())
+        }
+
+        async fn save(&self, action: &Action) -> Result<(), StorageError> {
+            if let Some(left) = self.failing_saves.lock().unwrap().get_mut(&action.id)
+                && *left > 0
+            {
+                *left -= 1;
+                return Err(StorageError::NotFound {
+                    key: action.id.to_string(),
+                });
+            }
+            self.ops.lock().unwrap().push((SAVE_OP, action.id));
+            self.actions
+                .lock()
+                .unwrap()
+                .insert(action.id, action.clone());
+            Ok(())
+        }
+
+        async fn delete(&self, id: ActionId) -> Result<bool, StorageError> {
+            Ok(self.actions.lock().unwrap().remove(&id).is_some())
+        }
+
+        async fn telemetry(&self, _: ActionId) -> Result<ActionTelemetry, StorageError> {
+            Ok(ActionTelemetry::default())
+        }
+
+        async fn record_execution(
+            &self,
+            _: ActionId,
+            _: OffsetDateTime,
+            _: u64,
+            _: ExecutionStatus,
+        ) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn prune_executions_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+
+        async fn archive(&self, id: ActionId) -> Result<bool, StorageError> {
+            self.ops.lock().unwrap().push((ARCHIVE_OP, id));
+            Ok(self.archived.lock().unwrap().insert(id))
+        }
+
+        async fn restore(&self, id: ActionId) -> Result<bool, StorageError> {
+            Ok(self.archived.lock().unwrap().remove(&id))
+        }
+    }
+
+    struct Screen {
+        view: Entity<ScreenActionsView>,
+        store: Arc<MemActions>,
+        alpha: ActionId,
+        bravo: ActionId,
+        rt: tokio::runtime::Runtime,
+    }
+
+    impl Screen {
+        fn open(cx: &mut TestAppContext) -> Self {
+            crate::i18n::install_language(forge_storage::Language::En);
+            cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+            let rt = runtime();
+            let store = Arc::new(MemActions::default());
+            let alpha = action_running(ALPHA, chain());
+            let bravo = action_running(BRAVO, chain());
+            let ids = (alpha.id, bravo.id);
+            for action in [alpha, bravo] {
+                store.actions.lock().unwrap().insert(action.id, action);
+            }
+            let view = view_with(
+                cx,
+                &rt,
+                Vec::new(),
+                MockMediaRepo::new(),
+                SubActionRegistry::new(),
+                Arc::clone(&store) as Arc<dyn ActionRepo>,
+            );
+            let screen = Self {
+                view,
+                store,
+                alpha: ids.0,
+                bravo: ids.1,
+                rt,
+            };
+            screen.settle(cx);
+            let alpha = screen.alpha;
+            screen.view.update(cx, |view, cx| view.select(alpha, cx));
+            screen.settle(cx);
+            screen
+        }
+
+        fn settle(&self, cx: &mut TestAppContext) {
+            for _ in 0..SETTLE_ROUNDS {
+                pump(&self.rt);
+                cx.run_until_parked();
+            }
+        }
+
+        fn write(&self, cx: &mut TestAppContext, id: ActionId, write: ActionWrite) {
+            self.view
+                .update(cx, |view, cx| view.write_action(id, write, cx));
+        }
+
+        fn reorder_shown(&self, cx: &mut TestAppContext) {
+            self.view.update(cx, |view, cx| {
+                view.persist_chain_mutation(|chain| chain.rotate_left(1), cx)
+            });
+        }
+
+        fn shown(&self, cx: &mut TestAppContext) -> Action {
+            self.view
+                .read_with(cx, |view, _| view.detail.as_ref().unwrap().action.clone())
+        }
+
+        fn idle(&self, cx: &mut TestAppContext) -> bool {
+            self.view
+                .read_with(cx, |view, _| view.action_writes.is_empty())
+        }
+    }
+
+    #[gpui::test]
+    fn edits_on_two_actions_in_flight_together_each_keep_their_own_change(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        screen.reorder_shown(cx);
+        screen.write(cx, screen.bravo, ActionWrite::Rename(RENAMED.to_owned()));
+
+        screen.settle(cx);
+
+        let alpha = screen.store.stored(screen.alpha);
+        let bravo = screen.store.stored(screen.bravo);
+        assert_eq!(
+            (
+                kinds(&alpha.sub_actions),
+                alpha.name,
+                kinds(&bravo.sub_actions),
+                bravo.name
+            ),
+            (rotated(), ALPHA.to_owned(), original(), RENAMED.to_owned())
+        );
+    }
+
+    #[gpui::test]
+    fn an_enable_toggle_queued_behind_a_reorder_keeps_both(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        screen.reorder_shown(cx);
+        let alpha = screen.alpha;
+        screen
+            .view
+            .update(cx, |view, cx| view.set_enabled(alpha, false, cx));
+
+        screen.settle(cx);
+
+        let stored = screen.store.stored(screen.alpha);
+        assert_eq!(
+            (kinds(&stored.sub_actions), stored.enabled),
+            (rotated(), false)
+        );
+    }
+
+    #[gpui::test]
+    fn a_rename_queued_behind_a_reorder_keeps_both(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        screen.reorder_shown(cx);
+        screen.write(cx, screen.alpha, ActionWrite::Rename(RENAMED.to_owned()));
+
+        screen.settle(cx);
+
+        let stored = screen.store.stored(screen.alpha);
+        assert_eq!(
+            (kinds(&stored.sub_actions), stored.name),
+            (rotated(), RENAMED.to_owned())
+        );
+    }
+
+    #[gpui::test]
+    fn a_settings_edit_queued_behind_a_reorder_keeps_the_new_order(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        let settings = settings_from(&screen.shown(cx));
+        screen.reorder_shown(cx);
+        screen.write(cx, screen.alpha, ActionWrite::Settings(settings));
+
+        screen.settle(cx);
+
+        let stored = screen.store.stored(screen.alpha);
+        assert_eq!(
+            (kinds(&stored.sub_actions), stored.name),
+            (rotated(), RENAMED.to_owned())
+        );
+    }
+
+    #[gpui::test]
+    fn an_archive_queued_behind_a_reorder_saves_the_order_first(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        screen.write(cx, screen.alpha, ActionWrite::Rename(RENAMED.to_owned()));
+        screen.reorder_shown(cx);
+        screen.write(
+            cx,
+            screen.alpha,
+            ActionWrite::Archive {
+                name: ALPHA.to_owned(),
+            },
+        );
+
+        screen.settle(cx);
+
+        let ops = screen.store.ops.lock().unwrap().clone();
+        assert_eq!(
+            (ops, kinds(&screen.store.stored(screen.alpha).sub_actions)),
+            (
+                vec![
+                    (SAVE_OP, screen.alpha),
+                    (SAVE_OP, screen.alpha),
+                    (ARCHIVE_OP, screen.alpha),
+                ],
+                rotated()
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn an_edit_right_after_create_lands_on_the_new_action(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        let created = action_running(THIRD, Vec::new());
+        let id = created.id;
+        screen.write(cx, id, ActionWrite::Create(created));
+        screen.write(cx, id, ActionWrite::Rename(RENAMED.to_owned()));
+
+        screen.settle(cx);
+
+        assert_eq!(screen.store.stored(id).name, RENAMED);
+    }
+
+    #[gpui::test]
+    fn a_created_action_ends_up_selected(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        let created = action_running(THIRD, Vec::new());
+        let id = created.id;
+
+        screen.write(cx, id, ActionWrite::Create(created));
+        screen.settle(cx);
+
+        assert_eq!(screen.shown(cx).id, id);
+    }
+
+    #[gpui::test]
+    fn a_failed_save_on_one_action_leaves_the_other_actions_save_intact(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        screen.store.fail_next_save(screen.alpha);
+        screen.reorder_shown(cx);
+        screen.write(cx, screen.bravo, ActionWrite::Rename(RENAMED.to_owned()));
+
+        screen.settle(cx);
+
+        assert_eq!(
+            (
+                kinds(&screen.store.stored(screen.alpha).sub_actions),
+                screen.store.stored(screen.bravo).name
+            ),
+            (original(), RENAMED.to_owned())
+        );
+    }
+
+    #[gpui::test]
+    fn a_failed_save_shows_the_stored_action_and_one_error_toast(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        screen.store.fail_next_save(screen.alpha);
+        screen.reorder_shown(cx);
+
+        screen.settle(cx);
+
+        assert_eq!(
+            (
+                kinds(&screen.shown(cx).sub_actions),
+                cx.update(|cx| error_toasts(cx)),
+                screen.idle(cx)
+            ),
+            (original(), 1, true)
+        );
+    }
+
+    #[gpui::test]
+    fn an_edit_queued_behind_a_failed_save_is_still_stored(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        screen.store.fail_next_save(screen.alpha);
+        screen.reorder_shown(cx);
+        screen.write(cx, screen.alpha, ActionWrite::Rename(RENAMED.to_owned()));
+
+        screen.settle(cx);
+
+        let stored = screen.store.stored(screen.alpha);
+        let shown = screen.shown(cx);
+        assert_eq!(
+            (stored.name, shown.name, kinds(&shown.sub_actions)),
+            (
+                RENAMED.to_owned(),
+                RENAMED.to_owned(),
+                kinds(&stored.sub_actions)
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn a_chain_edit_under_a_missing_nested_path_writes_nothing(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        screen.view.update(cx, |view, _| {
+            view.nav_path = vec![nav::NavFrame {
+                step_index: chain().len(),
+                chain_key: FIRST.to_owned(),
+                case_index: None,
+            }];
+        });
+
+        screen.view.update(cx, |view, cx| {
+            view.persist_chain_mutation(|chain| chain.push(step(FIRST, true)), cx)
+        });
+        screen.settle(cx);
+
+        assert_eq!(
+            (
+                screen.store.ops.lock().unwrap().len(),
+                cx.update(|cx| error_toasts(cx)),
+                screen.idle(cx)
+            ),
+            (0, 0, true)
+        );
+    }
+}

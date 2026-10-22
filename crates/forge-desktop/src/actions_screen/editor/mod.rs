@@ -183,6 +183,9 @@ pub(super) mod tests {
         let queue_repo: Arc<dyn QueueRepo> = Arc::new(queues);
         let mut triggers = MockTriggerInstanceRepo::new();
         triggers.expect_list_all().returning(|| Ok(Vec::new()));
+        triggers
+            .expect_list_for_action()
+            .returning(|_| Ok(Vec::new()));
         let trigger_repo: Arc<dyn TriggerInstanceRepo> = Arc::new(triggers);
         let mut scripts = MockScriptRepo::new();
         scripts.expect_list().returning(|| Ok(Vec::new()));

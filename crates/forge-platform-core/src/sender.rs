@@ -1,12 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::PlatformError;
-
 pub const SENDER_FIELD: &str = "sender";
 
 pub const SENT_AS_FIELD: &str = "sent_as";
-
-const BOT_SENDER_FEATURE: &str = "chat.bot_sender";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -49,12 +45,6 @@ impl SenderPreference {
 pub fn unknown_sender_reason(raw: &str) -> String {
     let valid = SenderPreference::WIRE_NAMES.join(", ");
     format!("unknown sender \"{raw}\"; valid senders: {valid}")
-}
-
-pub fn bot_sender_unsupported() -> PlatformError {
-    PlatformError::Unsupported {
-        feature: BOT_SENDER_FEATURE.to_owned(),
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -68,6 +68,5 @@ pub use rate_limit::{
     RateLimitUsage, RateLimiter, TokenBucketRateLimiter, acquire_or_wait,
 };
 pub use sender::{
-    ActingSender, SENDER_FIELD, SENT_AS_FIELD, SenderPreference, SenderRole,
-    bot_sender_unsupported, unknown_sender_reason,
+    ActingSender, SENDER_FIELD, SENT_AS_FIELD, SenderPreference, SenderRole, unknown_sender_reason,
 };

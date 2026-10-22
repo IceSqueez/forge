@@ -5,7 +5,7 @@ use forge_events::{Event, EventSource, EventStream};
 use serde::{Deserialize, Serialize};
 
 use crate::PlatformError;
-use crate::sender::{ActingSender, SenderPreference, bot_sender_unsupported};
+use crate::sender::{ActingSender, SenderPreference};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -91,14 +91,9 @@ pub trait ChatPlatform: Send + Sync {
         &self,
         channel: &str,
         text: &str,
-        sender: SenderPreference,
+        _sender: SenderPreference,
     ) -> Result<Option<ActingSender>, PlatformError> {
-        match sender {
-            SenderPreference::Default | SenderPreference::Streamer => {
-                self.send_message(channel, text).await.map(|()| None)
-            }
-            SenderPreference::BotOnly => Err(bot_sender_unsupported()),
-        }
+        self.send_message(channel, text).await.map(|()| None)
     }
 
     async fn send_reply_as(
@@ -106,30 +101,22 @@ pub trait ChatPlatform: Send + Sync {
         channel: &str,
         reply_parent_message_id: &str,
         text: &str,
-        sender: SenderPreference,
+        _sender: SenderPreference,
     ) -> Result<Option<ActingSender>, PlatformError> {
-        match sender {
-            SenderPreference::Default | SenderPreference::Streamer => self
-                .send_reply(channel, reply_parent_message_id, text)
-                .await
-                .map(|()| None),
-            SenderPreference::BotOnly => Err(bot_sender_unsupported()),
-        }
+        self.send_reply(channel, reply_parent_message_id, text)
+            .await
+            .map(|()| None)
     }
 
     async fn send_whisper_as(
         &self,
         recipient_login: &str,
         text: &str,
-        sender: SenderPreference,
+        _sender: SenderPreference,
     ) -> Result<Option<ActingSender>, PlatformError> {
-        match sender {
-            SenderPreference::Default | SenderPreference::Streamer => self
-                .send_whisper(recipient_login, text)
-                .await
-                .map(|()| None),
-            SenderPreference::BotOnly => Err(bot_sender_unsupported()),
-        }
+        self.send_whisper(recipient_login, text)
+            .await
+            .map(|()| None)
     }
 
     fn events(&self) -> EventStream;
@@ -304,26 +291,5 @@ mod tests {
                 "{sender:?} got {err:?}"
             );
         }
-    }
-
-    #[tokio::test]
-    async fn a_bot_only_send_is_unsupported_without_touching_the_platform() {
-        let platform = PlainOnlyPlatform::new();
-        let bot = SenderPreference::BotOnly;
-
-        let outcomes = [
-            platform.send_message_as("chan", "one", bot).await,
-            platform.send_reply_as("chan", "msg-1", "two", bot).await,
-            platform.send_whisper_as("viewer", "three", bot).await,
-        ];
-
-        let expected = bot_sender_unsupported().to_string();
-        for outcome in outcomes {
-            assert!(
-                matches!(&outcome, Err(err @ PlatformError::Unsupported { .. }) if err.to_string() == expected),
-                "got {outcome:?}"
-            );
-        }
-        assert!(platform.sent().is_empty(), "sent {:?}", platform.sent());
     }
 }

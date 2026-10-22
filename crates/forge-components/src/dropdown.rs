@@ -11,7 +11,7 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::overlay::enter_animation;
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, FONT_XXS, body_family, mono_family};
+use crate::tokens::{BORDER_THIN, ESCAPE_KEY, FONT_XXS, body_family, mono_family};
 
 pub(crate) const DROPDOWN_ROW_HEIGHT: Pixels = px(27.0);
 pub(crate) const DROPDOWN_PADDING: Pixels = px(4.0);
@@ -31,7 +31,6 @@ const SUFFIX_FONT: Pixels = px(11.0);
 const CHECK_SIZE: Pixels = px(12.0);
 const ICON_SIZE: Pixels = px(13.0);
 
-const ESCAPE_KEY: &str = "escape";
 const DROPDOWN_PRIORITY: usize = 1;
 
 type DismissHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;

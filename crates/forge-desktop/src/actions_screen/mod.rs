@@ -36,6 +36,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
 use std::sync::{Arc, RwLock};
 
+mod action_writes;
 mod analyzer;
 mod branch;
 mod collection_choices;
@@ -233,6 +234,9 @@ pub struct ScreenActionsView {
     sub_form: Option<Entity<sub_action_modal::EditSubActionForm>>,
     _sub_form_sub: Option<Subscription>,
     step_menu_open: Option<usize>,
+    step_drag: Option<editor::StepDragSession>,
+    step_drag_focus: gpui::FocusHandle,
+    action_writes: HashMap<ActionId, action_writes::ActionWriteQueue>,
     menu_click_pos: Option<Point<Pixels>>,
     grid_picker: Option<GridPickerForm>,
     add_trigger: Option<AddTriggerStage>,
@@ -323,6 +327,9 @@ impl ScreenActionsView {
             sub_form: None,
             _sub_form_sub: None,
             step_menu_open: None,
+            step_drag: None,
+            step_drag_focus: cx.focus_handle(),
+            action_writes: HashMap::new(),
             menu_click_pos: None,
             grid_picker: None,
             add_trigger: None,
@@ -578,6 +585,14 @@ impl ScreenActionsView {
             return;
         }
         translate_legacy_time_steps(&mut detail.action.sub_actions);
+        if let Some(latest) = self.latest_written_action(id) {
+            detail.action = latest.clone();
+        } else if self.has_pending_action_writes(id)
+            && let Some(current) = self.detail.as_ref()
+            && current.action.id == id
+        {
+            detail.action = current.action.clone();
+        }
         self.sync_filter_membership(&detail);
         self.detail = Some(detail);
         self.sync_case_fields(cx);
@@ -641,17 +656,6 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    pub(super) fn persist_action(&self, action: Action, cx: &mut Context<Self>) {
-        let repo = Arc::clone(&self.action_repo);
-        self.spawn_reload(
-            async move {
-                repo.save(&action).await.map_err(|e| e.to_string())?;
-                repo.list().await.map_err(|e| e.to_string())
-            },
-            cx,
-        );
-    }
-
     pub(super) fn persist_chain_mutation(
         &mut self,
         mutate: impl FnOnce(&mut Vec<SubActionStep>),
@@ -660,21 +664,19 @@ impl ScreenActionsView {
         let Some(detail) = self.detail.as_ref() else {
             return;
         };
-        let mut action = detail.action.clone();
+        let id = detail.action.id;
         let path = self.nav_path.clone();
-        let mut chain = nav::resolve_chain(&action.sub_actions, &path);
+        let mut chain = nav::resolve_chain(&detail.action.sub_actions, &path);
         mutate(&mut chain);
-        if !nav::set_chain(&mut action.sub_actions, &path, &chain) {
-            return;
-        }
-        self.persist_action(action, cx);
+        self.write_action(id, action_writes::ActionWrite::SetChain { path, chain }, cx);
     }
 }
 
 impl EventEmitter<NavRequested> for ScreenActionsView {}
 
 impl Render for ScreenActionsView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.release_step_drag(window, cx);
         let palette = cx.palette();
 
         let stats = self.render_stats(&palette);

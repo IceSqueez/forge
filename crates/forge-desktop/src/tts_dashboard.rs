@@ -1,8 +1,8 @@
 use forge_components::{
-    BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_SM, FONT_XXS, ForgePalette, Icon,
-    InputEvent, OverlayPosition, Radius, ResizeEdge, ResizeRange, Spacing, TextInput, badge,
-    body_family, card, chip, confirm_modal, empty_state, fmt_clock, hash_accent, icon,
-    install_resize, mono_family, overlay, radius, section_label, slider, spacing, status_dot,
+    BORDER_THIN, ChipGlyph, ConfirmTone, DRAG_SOURCE_OPACITY, Density, FONT_SM, FONT_XXS,
+    ForgePalette, Icon, InputEvent, OverlayPosition, Radius, ResizeEdge, ResizeRange, Spacing,
+    TextInput, badge, body_family, card, chip, confirm_modal, empty_state, fmt_clock, hash_accent,
+    icon, install_resize, mono_family, overlay, radius, section_label, slider, spacing, status_dot,
     tooltip_builder, tr, with_alpha,
 };
 use std::sync::{Arc, RwLock};
@@ -78,7 +78,6 @@ const QUEUE_PREVIEW_FONT: Pixels = px(10.0);
 const QUEUE_MSG_FONT: Pixels = px(11.0);
 const QUEUE_DUR_FONT: Pixels = px(10.0);
 const QUEUE_ACTION_GLYPH: Pixels = px(13.0);
-const QUEUE_DRAG_OPACITY: f32 = 0.4;
 const QUEUE_DROP_TINT_ALPHA: f32 = 0.06;
 const QUEUE_GHOST_MAX_W: Pixels = px(280.0);
 
@@ -909,7 +908,7 @@ impl TtsDashboardView {
         }
 
         if self.dragged_row.as_ref() == Some(&item.request_id) {
-            row.opacity(QUEUE_DRAG_OPACITY).into_any_element()
+            row.opacity(DRAG_SOURCE_OPACITY).into_any_element()
         } else {
             row.into_any_element()
         }

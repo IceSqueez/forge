@@ -11,6 +11,7 @@ mod header;
 mod select_options;
 mod stats;
 mod step_controls;
+mod step_drag;
 mod step_list;
 mod step_picker;
 mod step_presentation;
@@ -25,6 +26,7 @@ pub(super) use step_presentation::{step_glyph, sub_action_summary, sub_category_
 
 use cards::inline_warning_card;
 pub(super) use export::PackExportHost;
+pub(super) use step_drag::StepDragSession;
 
 impl ScreenActionsView {
     pub(super) fn current_chain(&self) -> Vec<SubActionStep> {

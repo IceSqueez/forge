@@ -144,7 +144,7 @@ impl ScreenActionsView {
             .flex_col()
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .child(header)
-            .child(steps_col)
+            .child(self.wire_step_list_drop(steps_col, cx))
             .into_any_element()
     }
 
@@ -248,6 +248,14 @@ impl ScreenActionsView {
             .child(circle)
             .child(connector);
 
+        let grip = self.render_step_grip(
+            i,
+            SharedString::from(title.clone()),
+            glyph,
+            glyph_color,
+            palette,
+            cx,
+        );
         let title_text = div()
             .flex_1()
             .min_w_0()
@@ -292,7 +300,14 @@ impl ScreenActionsView {
             None => variable_text(&detail_str, palette).into_any_element(),
         };
         let mut card = row_card(title_el, palette)
-            .leading(icon(glyph, CARD_GLYPH, glyph_color))
+            .leading(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xxs, Density::Cozy))
+                    .child(grip)
+                    .child(icon(glyph, CARD_GLYPH, glyph_color)),
+            )
             .meta(meta)
             .trailing(self.render_step_controls(i, total, enabled, palette, cx))
             .idle_background(palette.elevated)
@@ -338,10 +353,11 @@ impl ScreenActionsView {
             None => step_row.into_any_element(),
         };
 
-        div()
+        let row = div()
             .w_full()
             .pb(if is_last { px(0.0) } else { STEP_GAP })
-            .child(block)
+            .child(block);
+        self.wire_step_row_drop(row, i, total, palette, cx)
             .into_any_element()
     }
 }

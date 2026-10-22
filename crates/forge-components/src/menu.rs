@@ -272,7 +272,7 @@ impl MenuInk {
                 panel
                     .track_focus(focus)
                     .on_key_down(move |event: &KeyDownEvent, window, cx| {
-                        if event.keystroke.key.as_str() == "escape" {
+                        if event.keystroke.key.as_str() == crate::tokens::ESCAPE_KEY {
                             dismiss(window, cx);
                         }
                     });

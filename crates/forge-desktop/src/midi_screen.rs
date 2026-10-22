@@ -549,7 +549,9 @@ impl MidiScreenView {
         self.capture = Capture::Learn;
         let weak = cx.entity().downgrade();
         self.escape_sub = Some(cx.intercept_keystrokes(move |event, _window, cx| {
-            if event.keystroke.key != "escape" || event.keystroke.modifiers.modified() {
+            if event.keystroke.key != forge_components::ESCAPE_KEY
+                || event.keystroke.modifiers.modified()
+            {
                 return;
             }
             let handled = weak

@@ -106,6 +106,9 @@ pub const FONT_SM: Pixels = px(14.0);
 pub const FONT_MD: Pixels = px(16.0);
 pub const FONT_LG: Pixels = px(18.0);
 
+pub const ESCAPE_KEY: &str = "escape";
+pub const DRAG_SOURCE_OPACITY: f32 = 0.4;
+
 pub const DEFAULT_BODY_FAMILY: &str = "Inter";
 pub const DEFAULT_MONO_FAMILY: &str = "JetBrains Mono";
 

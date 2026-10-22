@@ -5,7 +5,7 @@ use gpui::{App, Context, Keystroke, Subscription};
 use crate::hotkey_bindings::keystroke_to_combo;
 use forge_components::PushToast;
 
-const ESCAPE_KEY: &str = "escape";
+use forge_components::ESCAPE_KEY;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CapturedKey {

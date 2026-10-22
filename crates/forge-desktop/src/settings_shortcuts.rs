@@ -219,7 +219,7 @@ impl SettingsShortcutsView {
         let Some(id) = self.rebinding else {
             return;
         };
-        if keystroke.key == "escape" && !keystroke.modifiers.modified() {
+        if keystroke.key == forge_components::ESCAPE_KEY && !keystroke.modifiers.modified() {
             self.cancel_capture(cx);
             return;
         }

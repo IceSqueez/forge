@@ -9,6 +9,7 @@ use gpui::{
 };
 
 use crate::palette::{ForgePalette, with_alpha};
+use crate::tokens::ESCAPE_KEY;
 
 pub fn drive_overlay_focus(
     open: bool,
@@ -26,8 +27,6 @@ pub fn drive_overlay_focus(
         window.focus(&prev, cx);
     }
 }
-
-const ESCAPE_KEY: &str = "escape";
 
 const ENTER_MS: u64 = 200;
 
@@ -99,7 +98,7 @@ impl Overlay {
         let handle: Entity<FocusHandle> = window.use_keyed_state(
             ElementId::NamedChild(
                 Arc::new(self.dismiss_id.clone()),
-                SharedString::new_static("escape"),
+                SharedString::new_static(ESCAPE_KEY),
             ),
             cx,
             |window, cx| {

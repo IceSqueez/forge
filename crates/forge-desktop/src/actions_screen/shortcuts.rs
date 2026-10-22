@@ -8,7 +8,7 @@ impl ActionForm {
 }
 
 impl ScreenActionsView {
-    fn has_open_modal(&self) -> bool {
+    pub(super) fn has_open_modal(&self) -> bool {
         self.action_modal.is_some()
             || self.sub_form.is_some()
             || self.add_trigger.is_some()

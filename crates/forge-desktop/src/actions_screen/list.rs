@@ -1,3 +1,4 @@
+use super::action_writes::{ActionSettings, ActionWrite};
 use super::*;
 use crate::async_bridge;
 use forge_components::ActivePresentation;
@@ -109,7 +110,7 @@ impl ScreenActionsView {
         }
     }
 
-    fn select(&mut self, id: ActionId, cx: &mut Context<Self>) {
+    pub(super) fn select(&mut self, id: ActionId, cx: &mut Context<Self>) {
         self.selected = Some(id);
         self.detail = None;
         self.telemetry = None;
@@ -146,40 +147,15 @@ impl ScreenActionsView {
 
     pub(super) fn set_enabled(&mut self, id: ActionId, enabled: bool, cx: &mut Context<Self>) {
         self.menu_open = None;
-        cx.notify();
-        let repo = Arc::clone(&self.action_repo);
-        self.spawn_reload(
-            async move {
-                let mut action = repo
-                    .get(id)
-                    .await
-                    .map_err(|e| e.to_string())?
-                    .ok_or_else(|| "action not found".to_owned())?;
-                action.enabled = enabled;
-                repo.save(&action).await.map_err(|e| e.to_string())?;
-                repo.list().await.map_err(|e| e.to_string())
-            },
-            cx,
-        );
+        self.write_action(id, ActionWrite::SetEnabled(enabled), cx);
     }
 
     pub(super) fn duplicate(&mut self, id: ActionId, cx: &mut Context<Self>) {
         self.menu_open = None;
-        cx.notify();
-        let repo = Arc::clone(&self.action_repo);
-        let new_id = ActionId::new();
-        self.spawn_reload(
-            async move {
-                let source = repo
-                    .get(id)
-                    .await
-                    .map_err(|e| e.to_string())?
-                    .ok_or_else(|| "source action not found".to_owned())?;
-                let new_name = format!("{} (copy)", source.name);
-                repo.duplicate(id, new_id, &new_name)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                repo.list().await.map_err(|e| e.to_string())
+        self.write_action(
+            id,
+            ActionWrite::Duplicate {
+                new_id: ActionId::new(),
             },
             cx,
         );
@@ -236,20 +212,7 @@ impl ScreenActionsView {
             );
             return;
         }
-        let repo = Arc::clone(&self.action_repo);
-        self.spawn_reload(
-            async move {
-                let mut action = repo
-                    .get(id)
-                    .await
-                    .map_err(|e| e.to_string())?
-                    .ok_or_else(|| "action not found".to_owned())?;
-                action.name = trimmed;
-                repo.save(&action).await.map_err(|e| e.to_string())?;
-                repo.list().await.map_err(|e| e.to_string())
-            },
-            cx,
-        );
+        self.write_action(id, ActionWrite::Rename(trimmed), cx);
     }
 
     pub(super) fn request_delete(&mut self, id: ActionId, cx: &mut Context<Self>) {
@@ -270,37 +233,11 @@ impl ScreenActionsView {
             return;
         };
         let name = self.find(id).map(|a| a.name.clone()).unwrap_or_default();
-        cx.notify();
-
-        let repo = Arc::clone(&self.action_repo);
-        let restore_repo = Arc::clone(&self.action_repo);
-        let restore_rt = self.rt_handle.clone();
         self.delete_scheduled_count = None;
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move {
-                repo.archive(id).await.map_err(|e| e.to_string())?;
-                repo.list().await.map_err(|e| e.to_string())
-            },
-            move |this, result, cx| match result {
-                Ok(actions) => {
-                    this.apply_actions(actions, cx);
-                    this.raise_undo_toast(id, name, restore_repo, restore_rt, cx);
-                }
-                Err(message) => this.on_repo_error(&message, cx),
-            },
-            cx,
-        );
+        self.write_action(id, ActionWrite::Archive { name }, cx);
     }
 
-    fn raise_undo_toast(
-        &self,
-        id: ActionId,
-        name: String,
-        repo: Arc<dyn ActionRepo>,
-        rt_handle: tokio::runtime::Handle,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn raise_undo_toast(&self, id: ActionId, name: String, cx: &mut Context<Self>) {
         let view = cx.entity();
         let message = tr!("actions_deleted_toast", name = name.as_str());
         cx.push_toast_full(
@@ -310,17 +247,9 @@ impl ScreenActionsView {
             Some(ToastAction::new(
                 tr!("common_undo"),
                 move |_window, app: &mut App| {
-                    let repo = Arc::clone(&repo);
-                    let rt_handle = rt_handle.clone();
-                    Self::reload_entity(
-                        view.clone(),
-                        rt_handle,
-                        async move {
-                            repo.restore(id).await.map_err(|e| e.to_string())?;
-                            repo.list().await.map_err(|e| e.to_string())
-                        },
-                        app,
-                    );
+                    view.update(app, |this, cx| {
+                        this.write_action(id, ActionWrite::Restore, cx)
+                    });
                 },
             )),
             Duration::from_millis(6000),
@@ -481,51 +410,41 @@ impl ScreenActionsView {
         };
         let group = (!group_name.is_empty()).then_some(group_name);
         let description = (!description.is_empty()).then_some(description);
-        let action = match form.base.clone() {
-            Some(mut existing) => {
-                existing.name = name;
-                existing.group = group;
-                existing.queue_id = queue_id;
-                existing.enabled = form.enabled;
-                existing.concurrent = form.concurrent;
-                existing.bypass_pause = form.bypass_pause;
-                existing.execution_mode = execution_mode;
-                existing.description = description;
-                existing
-            }
-            None => Action {
-                id: ActionId::new(),
-                name,
-                group,
-                queue_id,
-                enabled: form.enabled,
-                concurrent: form.concurrent,
-                bypass_pause: form.bypass_pause,
-                execution_mode,
-                description,
-                sub_actions: Vec::new(),
-            },
-        };
-        let new_id = action.id;
+        let write_target = form.base.as_ref().map(|existing| existing.id);
+        let (enabled, concurrent, bypass_pause) =
+            (form.enabled, form.concurrent, form.bypass_pause);
         self.action_modal = None;
-        cx.notify();
-
-        let repo = Arc::clone(&self.action_repo);
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move {
-                repo.save(&action).await.map_err(|e| e.to_string())?;
-                repo.list().await.map_err(|e| e.to_string())
-            },
-            move |this, result, cx| match result {
-                Ok(actions) => {
-                    this.apply_actions(actions, cx);
-                    this.select(new_id, cx);
-                }
-                Err(message) => this.on_repo_error(&message, cx),
-            },
-            cx,
-        );
+        match write_target {
+            Some(id) => self.write_action(
+                id,
+                ActionWrite::Settings(ActionSettings {
+                    name,
+                    group,
+                    queue_id,
+                    enabled,
+                    concurrent,
+                    bypass_pause,
+                    execution_mode,
+                    description,
+                }),
+                cx,
+            ),
+            None => {
+                let action = Action {
+                    id: ActionId::new(),
+                    name,
+                    group,
+                    queue_id,
+                    enabled,
+                    concurrent,
+                    bypass_pause,
+                    execution_mode,
+                    description,
+                    sub_actions: Vec::new(),
+                };
+                self.write_action(action.id, ActionWrite::Create(action), cx);
+            }
+        }
     }
 
     pub(super) fn render_stats(&self, palette: &ForgePalette) -> AnyElement {

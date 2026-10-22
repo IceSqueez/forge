@@ -1041,7 +1041,7 @@ mod tests {
             action_id,
             action_name: "Scene".into(),
             queue_id,
-            bypass_pause: false,
+            admission: QueueAdmission::default(),
             rows: vec![TestRunRow {
                 index: 0,
                 name: OBS_SCENE.into(),

@@ -8,8 +8,8 @@ use forge_events::{Event, EventPublisher};
 use forge_registry::{RunContext, SubActionRegistry, SubActionRunner};
 use forge_runtime::sub_action_runners::{CoreGlobalsSetRunner, CoreTestFireTriggerRunner};
 use forge_runtime::{
-    EventBus, EventSubscription, NullEventLogRepo, QueueScheduler, QueueSchedulerHandle,
-    SchedulerCell, SchedulerRequest, spawn_action_engine,
+    EventBus, EventSubscription, NullEventLogRepo, QueueAdmission, QueueScheduler,
+    QueueSchedulerHandle, SchedulerCell, SchedulerRequest, spawn_action_engine,
 };
 use forge_storage::{ActionRepo, DataProvider, GlobalsRepo, TriggerInstanceRepo};
 use forge_storage_sqlite::SqliteBackend;
@@ -359,7 +359,7 @@ async fn instance_with_no_bound_actions_succeeds_and_dispatches_nothing() {
             trigger_kind: None,
             manual_test: false,
             initial_args: ArgStack::new(),
-            bypass_pause: false,
+            admission: QueueAdmission::default(),
         })
         .await
         .unwrap();
@@ -420,7 +420,7 @@ async fn fired_trigger_dispatches_disabled_action_but_engine_skips_it() {
             trigger_kind: None,
             manual_test: false,
             initial_args: ArgStack::new(),
-            bypass_pause: false,
+            admission: QueueAdmission::default(),
         })
         .await
         .unwrap();

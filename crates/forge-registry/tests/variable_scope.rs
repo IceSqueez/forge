@@ -370,39 +370,52 @@ fn a_disabled_enclosing_loop_lends_no_locals_to_its_body() {
     assert_eq!(names(&scope), vec!["before", "sibling"]);
 }
 
-fn isolated_actions() -> [(Action, &'static str); 2] {
+fn random_pick_action() -> Action {
+    Action {
+        execution_mode: ExecutionMode::RandomPick,
+        ..action("random pick", nested_chain())
+    }
+}
+
+fn top_level_scope(action: &Action) -> Vec<ScopedVariable> {
+    scope_of(
+        action,
+        &[ScopeLevel {
+            chain: &action.sub_actions,
+            step_index: 3,
+        }],
+        &[],
+    )
+}
+
+#[test]
+fn a_top_level_step_of_a_random_pick_action_sees_no_sibling_outputs() {
+    assert_eq!(top_level_scope(&random_pick_action()), Vec::new());
+}
+
+#[test]
+fn nested_levels_of_a_random_pick_action_stay_sequential() {
+    assert_eq!(
+        nested_scope(&random_pick_action()),
+        vec![loop_local(), earlier_text("sibling")]
+    );
+}
+
+#[test]
+fn a_top_level_step_of_a_concurrent_action_sees_earlier_sibling_outputs() {
     let concurrent = Action {
         concurrent: true,
         ..action("concurrent", nested_chain())
     };
-    let random = Action {
-        execution_mode: ExecutionMode::RandomPick,
-        ..action("random pick", nested_chain())
-    };
-    [(concurrent, "concurrent"), (random, "random pick")]
-}
+    let sequential = action("sequential", nested_chain());
 
-#[test]
-fn a_top_level_step_of_an_isolated_action_sees_no_sibling_outputs() {
-    for (action, case) in isolated_actions() {
-        let scope = scope_of(
-            &action,
-            &[ScopeLevel {
-                chain: &action.sub_actions,
-                step_index: 3,
-            }],
-            &[],
-        );
-        assert_eq!(scope, Vec::new(), "{case}");
-    }
-}
+    let scope = top_level_scope(&concurrent);
 
-#[test]
-fn nested_levels_of_an_isolated_action_stay_sequential() {
-    for (action, case) in isolated_actions() {
-        let scope = nested_scope(&action);
-        assert_eq!(scope, vec![loop_local(), earlier_text("sibling")], "{case}");
-    }
+    assert!(
+        !scope.is_empty(),
+        "the earlier steps must lend their outputs"
+    );
+    assert_eq!(scope, top_level_scope(&sequential));
 }
 
 #[test]

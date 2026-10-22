@@ -1048,6 +1048,16 @@ mod tests {
 
     const HANG_GUARD: Duration = Duration::from_secs(30);
 
+    const BYPASS_PAUSE: QueueAdmission = QueueAdmission {
+        bypass_pause: true,
+        run_alongside: false,
+    };
+
+    const ALONGSIDE: QueueAdmission = QueueAdmission {
+        bypass_pause: false,
+        run_alongside: true,
+    };
+
     async fn events_until(
         sub: &mut EventSubscription,
         done: impl Fn(&[Event]) -> bool,
@@ -1282,7 +1292,7 @@ mod tests {
                 trigger_kind: None,
                 manual_test: false,
                 initial_args: ArgStack::new(),
-                bypass_pause: false,
+                admission: QueueAdmission::default(),
             })
             .await
             .unwrap();
@@ -1334,7 +1344,7 @@ mod tests {
                     trigger_kind: None,
                     manual_test: false,
                     initial_args: ArgStack::new(),
-                    bypass_pause: false,
+                    admission: QueueAdmission::default(),
                 })
                 .await
                 .unwrap();
@@ -1383,7 +1393,7 @@ mod tests {
                 trigger_kind: None,
                 manual_test: false,
                 initial_args: ArgStack::new(),
-                bypass_pause: false,
+                admission: QueueAdmission::default(),
             })
             .await
             .unwrap();
@@ -1443,7 +1453,7 @@ mod tests {
                 trigger_kind: None,
                 manual_test: false,
                 initial_args: ArgStack::new(),
-                bypass_pause: true,
+                admission: BYPASS_PAUSE,
             })
             .await
             .unwrap();
@@ -1491,7 +1501,7 @@ mod tests {
                 trigger_kind: None,
                 manual_test: false,
                 initial_args: ArgStack::new(),
-                bypass_pause: false,
+                admission: QueueAdmission::default(),
             })
             .await
             .unwrap();
@@ -1596,7 +1606,7 @@ mod tests {
                 trigger_kind: None,
                 manual_test: false,
                 initial_args: ArgStack::new(),
-                bypass_pause: false,
+                admission: QueueAdmission::default(),
             })
             .await
             .unwrap();
@@ -1649,7 +1659,7 @@ mod tests {
                 trigger_kind: None,
                 manual_test: false,
                 initial_args: ArgStack::new(),
-                bypass_pause: false,
+                admission: QueueAdmission::default(),
             })
             .await
             .unwrap();
@@ -1698,7 +1708,7 @@ mod tests {
                 trigger_kind: None,
                 manual_test: false,
                 initial_args: ArgStack::new(),
-                bypass_pause: false,
+                admission: QueueAdmission::default(),
             })
             .await
             .unwrap();
@@ -1752,7 +1762,7 @@ mod tests {
                 trigger_kind: None,
                 manual_test: false,
                 initial_args: ArgStack::new(),
-                bypass_pause: false,
+                admission: QueueAdmission::default(),
             })
             .await
             .unwrap();
@@ -1824,7 +1834,7 @@ mod tests {
                 trigger_kind: None,
                 manual_test: false,
                 initial_args: ArgStack::new(),
-                bypass_pause: false,
+                admission: QueueAdmission::default(),
             })
             .await
             .unwrap();
@@ -1873,7 +1883,7 @@ mod tests {
                 trigger_kind: None,
                 manual_test: false,
                 initial_args: ArgStack::new(),
-                bypass_pause: false,
+                admission: QueueAdmission::default(),
             })
             .await
             .unwrap();
@@ -1930,7 +1940,7 @@ mod tests {
             trigger_kind: None,
             manual_test: false,
             initial_args: ArgStack::new(),
-            bypass_pause: false,
+            admission: QueueAdmission::default(),
         }
     }
 
@@ -2678,5 +2688,65 @@ mod tests {
 
         assert_eq!((joined, left.len()), (Some(depth(0, 0, 0)), 0));
         sched.shutdown();
+    }
+
+    fn task(admission: QueueAdmission) -> (ActionId, QueueTask) {
+        let action_id = ActionId::new();
+        let task = QueueTask {
+            action_id,
+            trigger_event_id: EventId::new(),
+            trigger_kind: None,
+            manual_test: false,
+            origin: None,
+            initial_args: ArgStack::new(),
+            admission,
+        };
+        (action_id, task)
+    }
+
+    fn buffer_of(admissions: &[QueueAdmission]) -> (PendingBuffer, Vec<ActionId>) {
+        let buffer = PendingBuffer::new(DepthBoard::new().register(QueueId::new()));
+        let ids = admissions
+            .iter()
+            .map(|admission| {
+                let (id, task) = task(*admission);
+                assert!(buffer.push(task));
+                id
+            })
+            .collect();
+        (buffer, ids)
+    }
+
+    fn drain_lane(buffer: &PendingBuffer, lane: Lane, frozen: bool) -> Vec<ActionId> {
+        std::iter::from_fn(|| buffer.take_next(lane, frozen))
+            .map(|task| task.action_id)
+            .collect()
+    }
+
+    const BYPASS_ALONGSIDE: QueueAdmission = QueueAdmission {
+        bypass_pause: true,
+        run_alongside: true,
+    };
+
+    #[test]
+    fn each_lane_takes_its_own_tasks_in_arrival_order_past_the_other_lane() {
+        let gated = QueueAdmission::default();
+        let (buffer, ids) = buffer_of(&[ALONGSIDE, gated, ALONGSIDE, gated]);
+
+        let taken = (
+            drain_lane(&buffer, Lane::Gated, false),
+            drain_lane(&buffer, Lane::Alongside, false),
+        );
+
+        assert_eq!(taken, (vec![ids[1], ids[3]], vec![ids[0], ids[2]]));
+    }
+
+    #[test]
+    fn a_frozen_lane_takes_only_its_bypass_pause_tasks_and_leaves_the_rest() {
+        let (buffer, ids) = buffer_of(&[ALONGSIDE, BYPASS_PAUSE, BYPASS_ALONGSIDE]);
+
+        let taken = drain_lane(&buffer, Lane::Alongside, true);
+
+        assert_eq!((taken, buffer.len()), (vec![ids[2]], 2));
     }
 }

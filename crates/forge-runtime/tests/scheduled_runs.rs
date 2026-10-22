@@ -18,10 +18,10 @@ use forge_runtime::scheduled_runs::{
 };
 use forge_runtime::{
     ActionCancelRegistry, Catalog, CatchUpSettle, EventBus, HandOff, NullEventLogRepo,
-    QUEUE_DRAINING_REASON, QUEUE_NOT_FOUND_REASON, QUEUE_PAUSED_REASON, QueueMode, QueueScheduler,
-    QueueSchedulerHandle, ScheduleDue, ScheduleError, ScheduleRequest, ScheduledRunsHandle,
-    ScheduledRunsParts, SchedulerRequest, WaitingRuns, WallClock, spawn_action_engine,
-    spawn_scheduled_runs,
+    QUEUE_DRAINING_REASON, QUEUE_NOT_FOUND_REASON, QUEUE_PAUSED_REASON, QueueAdmission, QueueMode,
+    QueueScheduler, QueueSchedulerHandle, ScheduleDue, ScheduleError, ScheduleRequest,
+    ScheduledRunsHandle, ScheduledRunsParts, SchedulerRequest, WaitingRuns, WallClock,
+    spawn_action_engine, spawn_scheduled_runs,
 };
 use forge_storage::action::MockActionRepo;
 use forge_storage::history::MockHistoryRepo;
@@ -256,7 +256,7 @@ impl Harness {
                     trigger_kind: None,
                     manual_test: false,
                     initial_args: ArgStack::new(),
-                    bypass_pause: false,
+                    admission: QueueAdmission::default(),
                 })
                 .await
                 .unwrap();
@@ -632,7 +632,7 @@ async fn a_triggered_run_still_records_trigger_metadata() {
             trigger_kind: Some("twitch.channel.follow".to_owned()),
             manual_test: false,
             initial_args: ArgStack::new(),
-            bypass_pause: false,
+            admission: QueueAdmission::default(),
         })
         .await
         .unwrap();

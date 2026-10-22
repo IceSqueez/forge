@@ -12,8 +12,8 @@ use forge_registry::{
 };
 use forge_runtime::{
     ActionCancelRegistry, Catalog, EventBus, EventSubscription, MAX_PENDING_PER_QUEUE,
-    NullEventLogRepo, QueueMode, QueueRuntimeState, QueueScheduler, QueueSchedulerHandle,
-    SchedulerRequest, spawn_action_engine,
+    NullEventLogRepo, QueueAdmission, QueueMode, QueueRuntimeState, QueueScheduler,
+    QueueSchedulerHandle, SchedulerRequest, spawn_action_engine,
 };
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
@@ -211,7 +211,7 @@ fn req(queue_id: QueueId, action_id: ActionId) -> SchedulerRequest {
         trigger_kind: None,
         manual_test: false,
         initial_args: ArgStack::new(),
-        bypass_pause: false,
+        admission: QueueAdmission::default(),
     }
 }
 
@@ -521,7 +521,10 @@ async fn a_bypass_dispatch_jumps_a_held_buffer_without_disturbing_its_order() {
 
     q.sched
         .dispatch(SchedulerRequest {
-            bypass_pause: true,
+            admission: QueueAdmission {
+                bypass_pause: true,
+                run_alongside: false,
+            },
             ..req(q.q_id, z)
         })
         .await

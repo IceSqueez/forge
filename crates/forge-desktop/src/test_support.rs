@@ -970,7 +970,7 @@ pub(crate) fn hold_one_dispatch(
         trigger_kind: None,
         manual_test: false,
         initial_args: forge_types::ArgStack::new(),
-        bypass_pause: false,
+        admission: forge_runtime::QueueAdmission::default(),
     }))
     .expect("the scheduler is running");
     pump(rt);

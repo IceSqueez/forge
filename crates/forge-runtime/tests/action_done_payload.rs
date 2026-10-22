@@ -10,8 +10,8 @@ use forge_registry::{
 };
 use forge_runtime::sub_action_runners::{CoreLogicWaitRunner, WAIT_KIND_ID, WAIT_MS_KEY};
 use forge_runtime::{
-    ActionCancelRegistry, Catalog, EventBus, EventSubscription, NullEventLogRepo, QueueScheduler,
-    QueueSchedulerHandle, SchedulerRequest, spawn_action_engine,
+    ActionCancelRegistry, Catalog, EventBus, EventSubscription, NullEventLogRepo, QueueAdmission,
+    QueueScheduler, QueueSchedulerHandle, SchedulerRequest, spawn_action_engine,
 };
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
@@ -192,7 +192,7 @@ async fn dispatch(rig: &Rig, action: &Action, manual_test: bool) {
             trigger_kind: None,
             manual_test,
             initial_args: ArgStack::new(),
-            bypass_pause: false,
+            admission: QueueAdmission::default(),
         })
         .await
         .unwrap();

@@ -6,8 +6,8 @@ use std::time::Duration;
 use forge_events::{Event, EventSource, EventsError};
 use forge_registry::SubActionRegistry;
 use forge_runtime::{
-    EventBus, EventSubscription, NullEventLogRepo, QueueScheduler, SchedulerRequest,
-    spawn_action_engine,
+    EventBus, EventSubscription, NullEventLogRepo, QueueAdmission, QueueScheduler,
+    SchedulerRequest, spawn_action_engine,
 };
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
@@ -139,7 +139,7 @@ async fn spawn_pipeline() -> PipelineFixture {
                     trigger_kind: None,
                     manual_test: false,
                     initial_args: ArgStack::new(),
-                    bypass_pause: false,
+                    admission: QueueAdmission::default(),
                 };
                 let _ = sched_clone.dispatch(req).await;
             }

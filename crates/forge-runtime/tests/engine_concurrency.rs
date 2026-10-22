@@ -13,8 +13,9 @@ use forge_registry::{
 use forge_runtime::sub_action_runners::{CoreLogicWaitRunner, WAIT_KIND_ID, WAIT_MS_KEY};
 use forge_runtime::{
     ActionCancelRegistry, ActionEngineHandle, Catalog, DispatchError, EventBus, EventSubscription,
-    NullEventLogRepo, PendingQuickAction, QueueRuntimeState, QueueScheduler, QueueSchedulerHandle,
-    SchedulerRequest, spawn_action_engine,
+    MAX_PENDING_PER_QUEUE, NullEventLogRepo, PendingQuickAction, QUEUE_DRAINING_REASON,
+    QUEUE_PAUSED_REASON, QueueAdmission, QueueMode, QueueRuntimeState, QueueScheduler,
+    QueueSchedulerHandle, SchedulerRequest, spawn_action_engine,
 };
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
@@ -325,7 +326,7 @@ fn req(a: &Action) -> SchedulerRequest {
         trigger_kind: None,
         manual_test: false,
         initial_args: ArgStack::new(),
-        bypass_pause: false,
+        admission: QueueAdmission::default(),
     }
 }
 
@@ -737,4 +738,249 @@ async fn a_quick_action_reports_its_outcome_without_waiting_for_its_run_to_be_sa
         saved.metadata,
         ExecutionMetadata::QuickAction { .. }
     ));
+}
+
+fn concurrent(action: Action) -> Action {
+    Action {
+        concurrent: true,
+        ..action
+    }
+}
+
+fn admitted(a: &Action) -> SchedulerRequest {
+    SchedulerRequest {
+        admission: QueueAdmission::from(a),
+        ..req(a)
+    }
+}
+
+fn step_trace(events: &[Event]) -> Vec<(&str, i64)> {
+    events
+        .iter()
+        .filter(|ev| ev.kind == "subaction.run" || ev.kind == "subaction.done")
+        .filter_map(|ev| Some((ev.kind.as_str(), ev.payload.get("step_index")?.as_i64()?)))
+        .collect()
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_alongside_run_starts_while_the_only_slot_is_busy() {
+    let q = QueueId::new();
+    let slow = single(q, SLOW_KIND_ID);
+    let beside = concurrent(single(q, INSTANT_KIND_ID));
+    let r = rig(vec![queue(q, 1)], &[&slow, &beside]).await;
+    let mut sub = r.bus.subscribe();
+
+    r.sched.dispatch(req(&slow)).await.unwrap();
+    events_until(&mut sub, start_of(&slow)).await;
+    r.sched.dispatch(admitted(&beside)).await.unwrap();
+
+    let seen = events_until(&mut sub, done_of(&beside)).await;
+    assert!(
+        !ids_of(&seen, "action.done").contains(&slow.id.to_string()),
+        "the concurrent action must finish while the slow one still holds the only slot"
+    );
+    r.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn alongside_runs_count_as_in_flight_beyond_the_queue_limit() {
+    let q = QueueId::new();
+    let slow = single(q, SLOW_KIND_ID);
+    let beside = concurrent(single(q, SLOW_KIND_ID));
+    let r = rig(vec![queue(q, 1)], &[&slow, &beside]).await;
+
+    r.sched.dispatch(req(&slow)).await.unwrap();
+    r.sched.dispatch(admitted(&beside)).await.unwrap();
+
+    settle(&r.sched, q, "both runs in flight on a queue of one", |s| {
+        s.in_flight == 2 && s.pending == 0
+    })
+    .await;
+    r.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_running_alongside_run_leaves_the_slot_to_a_gated_run() {
+    let q = QueueId::new();
+    let beside = concurrent(single(q, SLOW_KIND_ID));
+    let gated = single(q, INSTANT_KIND_ID);
+    let r = rig(vec![queue(q, 1)], &[&beside, &gated]).await;
+    let mut sub = r.bus.subscribe();
+
+    r.sched.dispatch(admitted(&beside)).await.unwrap();
+    events_until(&mut sub, start_of(&beside)).await;
+    r.sched.dispatch(req(&gated)).await.unwrap();
+
+    let seen = events_until(&mut sub, done_of(&gated)).await;
+    assert!(
+        !ids_of(&seen, "action.done").contains(&beside.id.to_string()),
+        "the gated action must take the slot while the concurrent one still runs"
+    );
+    r.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_concurrent_action_runs_its_steps_one_after_another() {
+    let q = QueueId::new();
+    let both = concurrent(action(
+        q,
+        vec![
+            step(SLOW_KIND_ID, SubActionConfig::new()),
+            step(INSTANT_KIND_ID, SubActionConfig::new()),
+        ],
+    ));
+    let r = rig(vec![queue(q, 1)], &[&both]).await;
+    let mut sub = r.bus.subscribe();
+
+    r.sched.dispatch(admitted(&both)).await.unwrap();
+    let mut seen = events_until(&mut sub, start_of(&both)).await;
+    quiesce().await;
+    seen.extend(drain(&mut sub));
+    r.open_slow_gate();
+    seen.extend(events_until(&mut sub, done_of(&both)).await);
+
+    assert_eq!(
+        step_trace(&seen),
+        vec![
+            ("subaction.run", 0),
+            ("subaction.done", 0),
+            ("subaction.run", 1),
+            ("subaction.done", 1),
+        ]
+    );
+    r.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn holding_withholds_an_alongside_run_until_the_queue_resumes() {
+    let q = QueueId::new();
+    let beside = concurrent(single(q, INSTANT_KIND_ID));
+    let r = rig(vec![queue(q, 1)], &[&beside]).await;
+    let mut sub = r.bus.subscribe();
+
+    r.sched.set_mode(q, QueueMode::HOLDING).await.unwrap();
+    r.sched.dispatch(admitted(&beside)).await.unwrap();
+    settle(&r.sched, q, "the run held", |s| s.pending == 1).await;
+    quiesce().await;
+    let while_held = drain(&mut sub);
+    r.sched.set_mode(q, QueueMode::RUNNING).await.unwrap();
+    let after_resume = events_until(&mut sub, done_of(&beside)).await;
+
+    assert_eq!(
+        (
+            ids_of(&while_held, "action.start"),
+            ids_of(&after_resume, "action.start")
+        ),
+        (Vec::new(), vec![beside.id.to_string()])
+    );
+    r.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_bypass_pause_alongside_run_passes_a_held_queue_while_a_plain_one_waits() {
+    let q = QueueId::new();
+    let plain = concurrent(single(q, INSTANT_KIND_ID));
+    let bypass = Action {
+        bypass_pause: true,
+        ..concurrent(single(q, INSTANT_KIND_ID))
+    };
+    let r = rig(vec![queue(q, 1)], &[&plain, &bypass]).await;
+    let mut sub = r.bus.subscribe();
+
+    r.sched.set_mode(q, QueueMode::HOLDING).await.unwrap();
+    r.sched.dispatch(admitted(&plain)).await.unwrap();
+    r.sched.dispatch(admitted(&bypass)).await.unwrap();
+    let seen = events_until(&mut sub, done_of(&bypass)).await;
+
+    assert_eq!(
+        (
+            ids_of(&seen, "action.start"),
+            state_of(&r.sched, q).await.pending
+        ),
+        (vec![bypass.id.to_string()], 1)
+    );
+    r.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn paused_and_draining_queues_refuse_an_alongside_run() {
+    let q = QueueId::new();
+    let beside = concurrent(single(q, INSTANT_KIND_ID));
+    let r = rig(vec![queue(q, 1)], &[&beside]).await;
+    let mut sub = r.bus.subscribe();
+
+    for (mode, reason) in [
+        (QueueMode::PAUSED, QUEUE_PAUSED_REASON),
+        (QueueMode::DRAINING, QUEUE_DRAINING_REASON),
+    ] {
+        r.sched.set_mode(q, mode).await.unwrap();
+        r.sched.dispatch(admitted(&beside)).await.unwrap();
+        let seen = events_until(&mut sub, |ev| ev.kind == "action.skipped").await;
+        assert_eq!(
+            seen.last()
+                .and_then(|ev| ev.payload.get("reason"))
+                .and_then(|v| v.as_str()),
+            Some(reason),
+            "{mode:?}"
+        );
+    }
+    r.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_alongside_run_past_the_pending_cap_is_refused_as_overflow() {
+    let q = QueueId::new();
+    let plain = single(q, INSTANT_KIND_ID);
+    let beside = concurrent(single(q, INSTANT_KIND_ID));
+    let r = rig(vec![queue(q, 1)], &[&plain, &beside]).await;
+
+    r.sched.set_mode(q, QueueMode::HOLDING).await.unwrap();
+    for _ in 0..MAX_PENDING_PER_QUEUE {
+        r.sched.dispatch(req(&plain)).await.unwrap();
+    }
+    r.sched.dispatch(admitted(&beside)).await.unwrap();
+
+    settle(&r.sched, q, "the alongside run counted as overflow", |s| {
+        s.pending == MAX_PENDING_PER_QUEUE && s.overflowed == 1
+    })
+    .await;
+    r.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn clearing_discards_withheld_alongside_runs() {
+    let q = QueueId::new();
+    let beside = concurrent(single(q, INSTANT_KIND_ID));
+    let r = rig(vec![queue(q, 1)], &[&beside]).await;
+    let mut sub = r.bus.subscribe();
+
+    r.sched.set_mode(q, QueueMode::HOLDING).await.unwrap();
+    for _ in 0..2 {
+        r.sched.dispatch(admitted(&beside)).await.unwrap();
+    }
+    settle(&r.sched, q, "two runs held", |s| s.pending == 2).await;
+    r.sched.clear(q, true).await.unwrap();
+    r.sched.set_mode(q, QueueMode::RUNNING).await.unwrap();
+    quiesce().await;
+
+    assert!(
+        ids_of(&drain(&mut sub), "action.start").is_empty(),
+        "cleared alongside runs must never start"
+    );
+    r.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn clearing_without_keeping_current_cancels_a_running_alongside_run() {
+    let q = QueueId::new();
+    let waiting = concurrent(long_wait_then_instant(q));
+    let mut r = rig(vec![queue(q, 1)], &[&waiting]).await;
+    let mut sub = r.bus.subscribe();
+
+    r.sched.dispatch(admitted(&waiting)).await.unwrap();
+    events_until(&mut sub, start_of(&waiting)).await;
+    r.sched.clear(q, false).await.unwrap();
+
+    assert_eq!(r.next_saved().await.outcome, ExecutionOutcome::Cancelled);
+    r.sched.shutdown();
 }

@@ -11,9 +11,9 @@ use forge_registry::{
     TriggerRegistry, TriggerVariables, analyze, flag_failed, flag_switched_off,
 };
 use forge_types::{
-    Action, ActorRole, ActorSlot, CanonicalVariable, DatePattern, DeclaredVariable, IntegrationId,
-    PlatformId, SubActionConfig, SubActionOutcome, SubActionStep, TriggerInstance, Variant,
-    VariantKind,
+    Action, ActorRole, ActorSlot, CanonicalVariable, DatePattern, DeclaredVariable, ExecutionMode,
+    IntegrationId, PlatformId, SubActionConfig, SubActionOutcome, SubActionStep, TriggerInstance,
+    Variant, VariantKind,
 };
 
 use fakes::{FakeTrigger, action, encode_chain, runner, step, trigger_of};
@@ -280,117 +280,23 @@ fn health_without_triggers(action: &Action) -> Vec<StepHealth> {
     )
 }
 
-fn concurrent_warning() -> StepHealth {
-    StepHealth {
-        findings: vec![Finding::ControlFlowInConcurrentAction],
-    }
-}
-
 #[test]
-fn flow_control_no_loop_absorbs_in_a_concurrent_action_flags_its_top_level_step() {
-    let flagged = FLOW_CONTROL_KINDS
-        .into_iter()
-        .flat_map(|kind_id| {
-            outside_any_loop(kind_id)
+fn flow_control_raises_no_finding_whether_or_not_the_action_is_concurrent() {
+    for concurrent in [false, true] {
+        for kind_id in FLOW_CONTROL_KINDS {
+            for (placed, place) in outside_any_loop(kind_id)
                 .into_iter()
-                .map(move |p| (kind_id, p))
-        })
-        .chain(
-            inside_a_loop(STOP_KIND_ID)
-                .into_iter()
-                .map(|p| (STOP_KIND_ID, p)),
-        );
-    for (kind_id, (placed, place)) in flagged {
-        let health = health_without_triggers(&action_of(vec![placed], true));
-        assert_eq!(health, vec![concurrent_warning()], "{kind_id} {place}");
-    }
-}
-
-#[test]
-fn flow_control_in_a_sequential_action_raises_no_finding() {
-    for kind_id in FLOW_CONTROL_KINDS {
-        for (placed, place) in outside_any_loop(kind_id)
-            .into_iter()
-            .chain(inside_a_loop(kind_id))
-        {
-            let health = health_without_triggers(&action_of(vec![placed], false));
-            assert_eq!(health, vec![StepHealth::default()], "{kind_id} {place}");
+                .chain(inside_a_loop(kind_id))
+            {
+                let health = health_without_triggers(&action_of(vec![placed], concurrent));
+                assert_eq!(
+                    health,
+                    vec![StepHealth::default()],
+                    "{kind_id} {place} concurrent={concurrent}"
+                );
+            }
         }
     }
-}
-
-#[test]
-fn a_loop_break_or_continue_in_a_concurrent_action_is_not_flagged() {
-    for kind_id in [BREAK_LOOP_KIND_ID, CONTINUE_LOOP_KIND_ID] {
-        for (placed, place) in inside_a_loop(kind_id) {
-            let health = health_without_triggers(&action_of(vec![placed], true));
-            assert_eq!(health, vec![StepHealth::default()], "{kind_id} {place}");
-        }
-    }
-}
-
-#[test]
-fn flow_control_in_a_concurrent_action_is_flagged_whether_or_not_triggers_seed_it() {
-    let action = action_of(vec![plain(STOP_KIND_ID)], true);
-    for (instances, seeded) in [
-        (Vec::new(), "no triggers"),
-        (vec![trigger_of(CANONICAL_TRIGGER)], "a declaring trigger"),
-    ] {
-        let health = analyze(
-            &action,
-            &instances,
-            &[None],
-            &flow_registry(),
-            &triggers(&[(CANONICAL_TRIGGER, canonical_actor_only)]),
-        );
-        assert_eq!(health, vec![concurrent_warning()], "{seeded}");
-    }
-}
-
-#[test]
-fn a_concurrent_action_flags_only_steps_that_hold_flow_control() {
-    let health = health_without_triggers(&action_of(
-        vec![
-            consumer("hi"),
-            branch(vec![consumer("hi")]),
-            branch(vec![plain(STOP_KIND_ID)]),
-        ],
-        true,
-    ));
-
-    assert_eq!(
-        health,
-        vec![
-            StepHealth::default(),
-            StepHealth::default(),
-            concurrent_warning()
-        ]
-    );
-}
-
-#[test]
-fn disabled_flow_control_in_a_concurrent_action_raises_no_finding() {
-    let disabled_stop = step(STOP_KIND_ID, SubActionConfig::new(), false);
-    let mut disabled_branch = branch(vec![plain(STOP_KIND_ID)]);
-    disabled_branch.enabled = false;
-
-    let health = health_without_triggers(&action_of(
-        vec![
-            disabled_stop.clone(),
-            disabled_branch,
-            branch(vec![disabled_stop]),
-        ],
-        true,
-    ));
-
-    assert_eq!(health, vec![StepHealth::default(); 3]);
-}
-
-#[test]
-fn flow_control_in_a_concurrent_action_warns_without_marking_the_step_broken() {
-    let health = health_without_triggers(&action_of(vec![plain(STOP_KIND_ID)], true));
-
-    assert_eq!(health[0].severity(), HealthSeverity::Yellow);
 }
 
 fn declaring_registry(io: SubActionIo) -> SubActionRegistry {
@@ -455,6 +361,34 @@ fn a_declared_fixed_output_is_in_scope_for_the_steps_after_its_producer() {
             &declaring_registry(io),
         );
         assert_eq!(health[1], expected, "the name is declared {declared}");
+    }
+}
+
+#[test]
+fn a_sibling_output_is_isolated_only_in_a_random_pick_action() {
+    let registry = declaring_registry(fixed_output());
+    let steps = vec![plain(PRODUCER_KIND), consumer(&token())];
+    let random_pick = Action {
+        execution_mode: ExecutionMode::RandomPick,
+        ..action("random pick", steps.clone())
+    };
+    for (shape, expected) in [
+        (action_of(steps.clone(), true), StepHealth::default()),
+        (
+            random_pick,
+            StepHealth {
+                findings: vec![Finding::IsolatedSibling(DECLARED_VAR.to_owned())],
+            },
+        ),
+    ] {
+        let health = analyze(
+            &shape,
+            &[trigger_of(CANONICAL_TRIGGER)],
+            &vec![None; steps.len()],
+            &registry,
+            &triggers(&[(CANONICAL_TRIGGER, canonical_actor_only)]),
+        );
+        assert_eq!(health[1], expected, "{:?}", shape.execution_mode);
     }
 }
 

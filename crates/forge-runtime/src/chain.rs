@@ -683,22 +683,6 @@ mod tests {
         assert_eq!(downstream_runs.load(Ordering::Relaxed), 0);
     }
 
-    #[tokio::test]
-    async fn pre_cancelled_signal_aborts_concurrent_run() {
-        let eng = engine(
-            registry(vec![Box::new(scripted("c.x", SubActionOutcome::Success))]),
-            8,
-        );
-        let cancel = CancelSignal::new();
-        cancel.cancel();
-        let run = eng
-            .run_concurrent(&[step("c.x")], &ArgStack::new(), EventId::new(), &cancel)
-            .await;
-
-        assert_eq!(run.signal, ChainSignal::Aborted);
-        assert!(run.telemetry.is_empty());
-    }
-
     #[test]
     fn cancel_signal_propagates_through_clones() {
         let signal = CancelSignal::new();
@@ -825,57 +809,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn concurrent_run_reports_first_failure_in_step_order() {
-        let eng = engine(
-            registry(vec![
-                Box::new(scripted("c.ok", SubActionOutcome::Success)),
-                Box::new(scripted(
-                    "c.fail.a",
-                    SubActionOutcome::Failed("first".to_owned()),
-                )),
-                Box::new(scripted(
-                    "c.fail.b",
-                    SubActionOutcome::Failed("second".to_owned()),
-                )),
-            ]),
-            8,
-        );
-        let run = eng
-            .run_concurrent(
-                &[step("c.ok"), step("c.fail.a"), step("c.fail.b")],
-                &ArgStack::new(),
-                EventId::new(),
-                &CancelSignal::new(),
-            )
-            .await;
-
-        assert_eq!(run.signal, ChainSignal::Error("first".to_owned()));
-        assert_eq!(run.telemetry.len(), 3);
-    }
-
-    #[tokio::test]
-    async fn concurrent_run_all_success_completes() {
-        let eng = engine(
-            registry(vec![
-                Box::new(scripted("c.a", SubActionOutcome::Success)),
-                Box::new(scripted("c.b", SubActionOutcome::Success)),
-            ]),
-            8,
-        );
-        let run = eng
-            .run_concurrent(
-                &[step("c.a"), step("c.b")],
-                &ArgStack::new(),
-                EventId::new(),
-                &CancelSignal::new(),
-            )
-            .await;
-
-        assert_eq!(run.signal, ChainSignal::Completed);
-        assert_eq!(run.telemetry.len(), 2);
-    }
-
-    #[tokio::test]
     async fn sequential_flagged_step_failure_lets_later_steps_run_and_chain_completes() {
         let downstream_runs = Arc::new(AtomicUsize::new(0));
         let first = scripted("seq.flagfail", SubActionOutcome::Failed("boom".to_owned()));
@@ -941,56 +874,6 @@ mod tests {
         assert_eq!(run.signal, ChainSignal::Error("halt".to_owned()));
         assert_eq!(run.telemetry.len(), 2);
         assert_eq!(third_runs.load(Ordering::Relaxed), 0);
-    }
-
-    #[tokio::test]
-    async fn concurrent_flagged_failure_does_not_become_the_chain_failure() {
-        let eng = engine(
-            registry(vec![
-                Box::new(scripted(
-                    "c.flagfail",
-                    SubActionOutcome::Failed("flagged".to_owned()),
-                )),
-                Box::new(scripted(
-                    "c.hardfail",
-                    SubActionOutcome::Failed("real".to_owned()),
-                )),
-            ]),
-            8,
-        );
-        let run = eng
-            .run_concurrent(
-                &[flagged_step("c.flagfail"), step("c.hardfail")],
-                &ArgStack::new(),
-                EventId::new(),
-                &CancelSignal::new(),
-            )
-            .await;
-
-        assert_eq!(run.signal, ChainSignal::Error("real".to_owned()));
-        assert_eq!(run.telemetry.len(), 2);
-    }
-
-    #[tokio::test]
-    async fn concurrent_all_failures_flagged_completes_the_chain() {
-        let eng = engine(
-            registry(vec![
-                Box::new(scripted("c.a", SubActionOutcome::Failed("a".to_owned()))),
-                Box::new(scripted("c.b", SubActionOutcome::Failed("b".to_owned()))),
-            ]),
-            8,
-        );
-        let run = eng
-            .run_concurrent(
-                &[flagged_step("c.a"), flagged_step("c.b")],
-                &ArgStack::new(),
-                EventId::new(),
-                &CancelSignal::new(),
-            )
-            .await;
-
-        assert_eq!(run.signal, ChainSignal::Completed);
-        assert_eq!(run.telemetry.len(), 2);
     }
 
     #[tokio::test]
@@ -1069,29 +952,6 @@ mod tests {
                 other => panic!("unexpected step index {other}"),
             }
         }
-    }
-
-    #[tokio::test]
-    async fn concurrent_disabled_step_emits_skipped_done_with_parent_causation_and_no_run() {
-        let (eng, events) = capturing_engine(
-            registry(vec![Box::new(scripted("c.off", SubActionOutcome::Success))]),
-            8,
-        );
-        let parent = EventId::new();
-        eng.run_concurrent(
-            &[disabled_step("c.off")],
-            &ArgStack::new(),
-            parent,
-            &CancelSignal::new(),
-        )
-        .await;
-
-        assert!(
-            run_ids(&events).is_empty(),
-            "disabled concurrent step must not emit subaction.run",
-        );
-        let done = done_events(&events);
-        assert_eq!(done, vec![(0, "skipped".to_owned(), Some(parent))]);
     }
 
     #[tokio::test]
@@ -1264,83 +1124,6 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn concurrent_false_condition_skips_step_without_running_it() {
-        let gated_runs = Arc::new(AtomicUsize::new(0));
-        let mut gated = scripted("cc.gated", SubActionOutcome::Success);
-        gated.runs = Arc::clone(&gated_runs);
-        let eng = engine(
-            registry(vec![
-                Box::new(scripted("cc.ok", SubActionOutcome::Success)),
-                Box::new(gated),
-            ]),
-            8,
-        );
-        let run = eng
-            .run_concurrent(
-                &[step("cc.ok"), step_if("cc.gated", "1 == 2")],
-                &ArgStack::new(),
-                EventId::new(),
-                &CancelSignal::new(),
-            )
-            .await;
-
-        assert_eq!(run.signal, ChainSignal::Completed);
-        assert_eq!(gated_runs.load(Ordering::Relaxed), 0);
-        let gated_row = run
-            .telemetry
-            .iter()
-            .find(|t| t.kind == "cc.gated")
-            .expect("gated step must have a telemetry row");
-        assert_eq!(gated_row.index, 1);
-        assert!(matches!(&gated_row.outcome, SubActionOutcome::Skipped(m) if m == "condition"),);
-    }
-
-    #[tokio::test]
-    async fn concurrent_condition_eval_error_fails_chain_unless_flagged() {
-        for (flagged, expect_completed) in [(false, false), (true, true)] {
-            let eng = engine(
-                registry(vec![
-                    Box::new(scripted("ce.ok", SubActionOutcome::Success)),
-                    Box::new(scripted("ce.gated", SubActionOutcome::Success)),
-                ]),
-                8,
-            );
-            let gated = SubActionStep {
-                condition: Some("1 + 1".to_owned()),
-                continue_on_error: flagged,
-                ..step("ce.gated")
-            };
-            let run = eng
-                .run_concurrent(
-                    &[step("ce.ok"), gated],
-                    &ArgStack::new(),
-                    EventId::new(),
-                    &CancelSignal::new(),
-                )
-                .await;
-
-            let gated_row = run
-                .telemetry
-                .iter()
-                .find(|t| t.kind == "ce.gated")
-                .expect("gated step must have a telemetry row");
-            assert!(
-                matches!(&gated_row.outcome, SubActionOutcome::Failed(m) if m.contains("condition evaluation failed")),
-                "flagged={flagged}",
-            );
-            if expect_completed {
-                assert_eq!(run.signal, ChainSignal::Completed, "flagged={flagged}");
-            } else {
-                assert!(
-                    matches!(&run.signal, ChainSignal::Error(m) if m.contains("condition evaluation failed")),
-                    "flagged={flagged}: {:?}",
-                    run.signal,
-                );
-            }
-        }
-    }
-
     fn twitch_owned_registry(
         twitch_runs: &Arc<AtomicUsize>,
         core_runs: &Arc<AtomicUsize>,
@@ -1418,32 +1201,6 @@ mod tests {
         assert_eq!(core_runs.load(Ordering::Relaxed), 1);
     }
 
-    #[tokio::test]
-    async fn a_disabled_integration_step_fails_a_concurrent_chain_while_core_siblings_run() {
-        let twitch_runs = Arc::new(AtomicUsize::new(0));
-        let core_runs = Arc::new(AtomicUsize::new(0));
-        let eng = engine(twitch_owned_registry(&twitch_runs, &core_runs), 8);
-        eng.integration_gate()
-            .disable(IntegrationId::from_static("twitch"));
-
-        let run = eng
-            .run_concurrent(
-                &[step("twitch.step"), step("core.after")],
-                &ArgStack::new(),
-                EventId::new(),
-                &CancelSignal::new(),
-            )
-            .await;
-
-        assert!(
-            matches!(&run.signal, ChainSignal::Error(reason) if reason.contains("twitch")),
-            "{:?}",
-            run.signal
-        );
-        assert_eq!(twitch_runs.load(Ordering::Relaxed), 0);
-        assert_eq!(core_runs.load(Ordering::Relaxed), 1);
-    }
-
     fn chat_send_registry() -> Arc<SubActionRegistry> {
         let mut reg = SubActionRegistry::new();
         reg.register(Box::new(
@@ -1473,14 +1230,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_concurrent_chat_send_aimed_by_argument_at_a_disabled_platform_fails_unsent() {
+    async fn a_chat_send_aimed_by_argument_at_a_disabled_platform_fails_unsent() {
         let (eng, events) = capturing_engine(chat_send_registry(), 8);
         eng.integration_gate()
             .disable(IntegrationId::from_static("kick"));
         let args = ArgStack::new().set("platform".to_owned(), Variant::String("kick".to_owned()));
 
         let run = eng
-            .run_concurrent(
+            .run_sequential(
                 &[chat_send_to("%platform%")],
                 &args,
                 EventId::new(),

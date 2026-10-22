@@ -79,7 +79,7 @@ mod tests {
                 &bus,
                 action_id,
                 queue_id,
-                false,
+                QueueAdmission::default(),
                 None,
                 ArgStack::new(),
             )

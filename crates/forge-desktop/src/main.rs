@@ -162,6 +162,7 @@ mod speak_boot;
 mod speak_bridge;
 mod speak_state;
 mod stay_awake;
+mod step_option_labels;
 mod system_info;
 mod system_notices;
 #[cfg(test)]

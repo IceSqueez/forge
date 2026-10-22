@@ -47,3 +47,108 @@ pub(crate) fn classify(name: &OsStr, is_dir: bool) -> Option<Classified> {
     let created_at = stamp_of(rest.strip_prefix('-')?)?;
     Some(Classified { kind, created_at })
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::ffi::OsStr;
+
+    use time::{Date, Month, PrimitiveDateTime, Time};
+
+    use super::{SafetyCopyKind, classify};
+
+    fn stamped_at() -> time::OffsetDateTime {
+        PrimitiveDateTime::new(
+            Date::from_calendar_date(2026, Month::October, 22).unwrap(),
+            Time::from_hms(9, 5, 7).unwrap(),
+        )
+        .assume_utc()
+    }
+
+    #[test]
+    fn each_safety_copy_name_is_classified_with_the_time_stamped_in_it() {
+        for (name, is_dir, kind) in [
+            (
+                "forge-pre-restore-20261022-090507Z-a1b2c3",
+                true,
+                SafetyCopyKind::PreRestore,
+            ),
+            (
+                "forge-pre-pack-20261022-090507Z-a1b2c3.tar.gz",
+                false,
+                SafetyCopyKind::PrePack,
+            ),
+            (
+                "forge-pre-setup-20261022-090507Z-a1b2c3.tar.gz",
+                false,
+                SafetyCopyKind::PreSetup,
+            ),
+            (
+                "forge-backup-20261022-090507Z-a1b2c3.pre-update.db",
+                false,
+                SafetyCopyKind::PreUpdate,
+            ),
+        ] {
+            let classified = classify(OsStr::new(name), is_dir).unwrap();
+
+            assert_eq!(
+                (classified.kind, classified.created_at),
+                (kind, stamped_at()),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn names_that_are_not_safety_copies_are_never_classified() {
+        for (name, is_dir) in [
+            ("forge-backup-20261022-090507Z-a1b2c3.forgebundle", false),
+            ("forge-scheduled-20261022-090507Z-a1b2c3.forgebundle", false),
+            ("forge-backup-20261022-090507Z-a1b2c3.tar.gz", false),
+            ("forge-backup-20261022-090507Z-a1b2c3.db.snapshot", false),
+            (
+                "forge-pre-pack-20261022-090507Z-a1b2c3.tar.gz.partial",
+                false,
+            ),
+            (
+                "forge-pre-setup-20261022-090507Z-a1b2c3.tar.gz.partial",
+                false,
+            ),
+            (
+                "forge-backup-20261022-090507Z-a1b2c3.pre-update.db.partial",
+                false,
+            ),
+            ("forge-pre-restore-20261022-090507Z-a1b2c3", false),
+            ("forge-pre-pack-20261022-090507Z-a1b2c3.tar.gz", true),
+            ("forge-backup-20261022-090507Z-a1b2c3.pre-update.db", true),
+            ("forge-restore-staging", true),
+            ("notes.txt", false),
+        ] {
+            assert!(
+                classify(OsStr::new(name), is_dir).is_none(),
+                "{name} dir={is_dir}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_safety_copy_name_whose_stamp_does_not_parse_is_never_classified() {
+        for (name, is_dir) in [
+            ("forge-pre-restore-manual-copy", true),
+            ("forge-pre-restore-20261022-090507-a1b2c3", true),
+            ("forge-pre-restore20261022-090507Z-a1b2c3", true),
+            ("forge-pre-restore-", true),
+            ("forge-pre-pack-20261340-090507Z-a1b2c3.tar.gz", false),
+            ("forge-pre-pack-20261022-250000Z-a1b2c3.tar.gz", false),
+            ("forge-pre-setup-2026102-090507Z-a1b2c3.tar.gz", false),
+            ("forge-pre-setup-20261022-090507junkZ-a1b2c3.tar.gz", false),
+            ("forge-backup-latest.pre-update.db", false),
+            ("forge-pre-restore-２０２６1022-090507Z-a1b2c3", true),
+        ] {
+            assert!(
+                classify(OsStr::new(name), is_dir).is_none(),
+                "{name} dir={is_dir}"
+            );
+        }
+    }
+}

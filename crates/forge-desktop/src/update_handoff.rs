@@ -110,9 +110,73 @@ async fn snapshot_and_plan(
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
+    use forge_update::InstallLayout;
     use time::{Date, Month, PrimitiveDateTime, Time};
 
     use super::*;
+    use crate::test_support::{pump, runtime, test_backend, test_backend_with_gated_export};
+
+    const STAGED_SIZE: u64 = 100;
+
+    fn input(data_dir: &Path, exclusivity: &TransferExclusivity) -> HandoffInput {
+        HandoffInput {
+            install: UpdatableInstall {
+                layout: InstallLayout::LinuxAppImage,
+                target: data_dir.join("forge.AppImage"),
+            },
+            staged: StagedArtifact {
+                path: data_dir.join(".forge-staged-forge.AppImage"),
+                size: STAGED_SIZE,
+            },
+            to_version: "0.9.0".to_owned(),
+            mode: ApplyMode::Restart,
+            data_dir: data_dir.to_path_buf(),
+            exclusivity: exclusivity.clone(),
+        }
+    }
+
+    fn backups_entries(data_dir: &Path) -> usize {
+        std::fs::read_dir(backups_dir(data_dir)).map_or(0, Iterator::count)
+    }
+
+    #[test]
+    fn a_handoff_while_a_backup_or_restore_runs_fails_without_writing_anything() {
+        let rt = runtime();
+        let data = tempfile::tempdir().unwrap();
+        let exclusivity = TransferExclusivity::new();
+        let _running_backup = exclusivity.try_acquire().unwrap();
+        let (backend, _) = test_backend();
+
+        let result = rt.block_on(prepare_handoff(backend, input(data.path(), &exclusivity)));
+
+        assert_eq!(
+            (result, backups_entries(data.path())),
+            (Err(HandoffError::Busy), 0)
+        );
+    }
+
+    #[test]
+    fn a_handoff_holds_off_backups_and_restores_until_it_settles() {
+        let rt = runtime();
+        let data = tempfile::tempdir().unwrap();
+        let exclusivity = TransferExclusivity::new();
+        let (backend, gate) = test_backend_with_gated_export();
+        let handoff = rt.spawn(prepare_handoff(backend, input(data.path(), &exclusivity)));
+        pump(&rt);
+        let held_while_snapshotting = exclusivity.is_held();
+
+        gate.notify_one();
+        let result = rt.block_on(handoff).unwrap();
+
+        assert_eq!(
+            (
+                held_while_snapshotting,
+                result.is_err(),
+                exclusivity.is_held()
+            ),
+            (true, true, false)
+        );
+    }
 
     #[test]
     fn the_update_snapshot_lands_in_the_backups_dir_as_a_stamped_pre_update_database() {

@@ -67,6 +67,14 @@ pub(crate) fn test_backend_with_media(
     backend_over(None, None, media)
 }
 
+pub(crate) fn test_backend_with_gated_export() -> (Arc<TestBackend>, Arc<tokio::sync::Notify>) {
+    let (backend, _) = backend_over(None, None, Arc::new(EmptyMediaLibrary));
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let mut backend = Arc::into_inner(backend).unwrap();
+    backend.export_gate = Some(Arc::clone(&gate));
+    (Arc::new(backend), gate)
+}
+
 fn backend_over(
     overlays: Option<Arc<dyn OverlayRepo>>,
     scripts: Option<Arc<dyn ScriptRepo>>,
@@ -97,16 +105,34 @@ pub(crate) fn gated_running_schedule() -> GatedSchedule {
         "a gated schedule passphrase".to_owned(),
     ))
     .unwrap();
-    let schedule = enabled_schedule_over_test_backend(Some(key.encode().unwrap()));
+    let schedule = enabled_schedule_over_test_backend(
+        Some(key.encode().unwrap()),
+        forge_transfer::TransferExclusivity::new(),
+    );
+    schedule.handle.run_now();
+    schedule
+}
+
+pub(crate) fn gated_running_schedule_sharing(
+    exclusivity: forge_transfer::TransferExclusivity,
+) -> GatedSchedule {
+    let key = forge_transfer::create_schedule_key(&forge_transfer::Passphrase::new(
+        "a gated schedule passphrase".to_owned(),
+    ))
+    .unwrap();
+    let schedule = enabled_schedule_over_test_backend(Some(key.encode().unwrap()), exclusivity);
     schedule.handle.run_now();
     schedule
 }
 
 pub(crate) fn keyless_enabled_schedule() -> GatedSchedule {
-    enabled_schedule_over_test_backend(None)
+    enabled_schedule_over_test_backend(None, forge_transfer::TransferExclusivity::new())
 }
 
-fn enabled_schedule_over_test_backend(encoded_key: Option<String>) -> GatedSchedule {
+fn enabled_schedule_over_test_backend(
+    encoded_key: Option<String>,
+    exclusivity: forge_transfer::TransferExclusivity,
+) -> GatedSchedule {
     let export_gate = Arc::new(tokio::sync::Notify::new());
     let (writes, _) = unbounded_channel();
     let last_success = OffsetDateTime::now_utc()
@@ -140,7 +166,7 @@ fn enabled_schedule_over_test_backend(encoded_key: Option<String>) -> GatedSched
     let parts = forge_transfer::ScheduledBackupParts {
         provider: backend,
         data_dir: data_dir.path().to_path_buf(),
-        exclusivity: forge_transfer::TransferExclusivity::new(),
+        exclusivity,
         clock: Arc::new(forge_transfer::SystemBackupClock),
     };
     let handle = forge_transfer::spawn_scheduled_backups(parts);

@@ -59,6 +59,14 @@ impl Drop for TransferGuard {
 mod tests {
     use super::TransferExclusivity;
 
+    const SCHEDULER_TURNS: usize = 8;
+
+    async fn let_waiters_run() {
+        for _ in 0..SCHEDULER_TURNS {
+            tokio::task::yield_now().await;
+        }
+    }
+
     #[test]
     fn a_second_acquire_fails_while_the_first_guard_lives() {
         let exclusivity = TransferExclusivity::new();
@@ -78,5 +86,79 @@ mod tests {
         let after_release = (manual.is_held(), manual.try_acquire().is_some());
 
         assert_eq!((while_held, after_release), ((true, false), (false, true)));
+    }
+
+    #[tokio::test]
+    async fn waiting_on_a_free_exclusivity_takes_it_at_once() {
+        let exclusivity = TransferExclusivity::new();
+
+        let _guard = exclusivity.acquire_when_free().await;
+
+        assert!(exclusivity.try_acquire().is_none());
+    }
+
+    #[tokio::test]
+    async fn a_waiter_stays_parked_while_held_and_takes_the_guard_on_release() {
+        let exclusivity = TransferExclusivity::new();
+        let running = exclusivity.try_acquire().unwrap();
+        let waiting = exclusivity.clone();
+        let waiter = tokio::spawn(async move { waiting.acquire_when_free().await });
+        let_waiters_run().await;
+        let parked_while_held = !waiter.is_finished();
+
+        drop(running);
+        let _taken = waiter.await.unwrap();
+
+        assert_eq!(
+            (parked_while_held, exclusivity.try_acquire().is_none()),
+            (true, true)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_waiter_beaten_to_the_release_keeps_waiting_for_the_next_one() {
+        let exclusivity = TransferExclusivity::new();
+        let first = exclusivity.try_acquire().unwrap();
+        let waiting = exclusivity.clone();
+        let waiter = tokio::spawn(async move { waiting.acquire_when_free().await });
+        let_waiters_run().await;
+
+        drop(first);
+        let regrabbed = exclusivity.try_acquire().unwrap();
+        let_waiters_run().await;
+        let parked_after_losing = !waiter.is_finished();
+        drop(regrabbed);
+        let _taken = waiter.await.unwrap();
+
+        assert_eq!((parked_after_losing, exclusivity.is_held()), (true, true));
+    }
+
+    #[tokio::test]
+    async fn two_waiters_take_the_guard_one_release_at_a_time() {
+        let exclusivity = TransferExclusivity::new();
+        let running = exclusivity.try_acquire().unwrap();
+        let spawn_waiter = |exclusivity: TransferExclusivity| {
+            tokio::spawn(async move { exclusivity.acquire_when_free().await })
+        };
+        let first = spawn_waiter(exclusivity.clone());
+        let second = spawn_waiter(exclusivity.clone());
+        let_waiters_run().await;
+
+        drop(running);
+        let_waiters_run().await;
+        let finished_after_one_release =
+            usize::from(first.is_finished()) + usize::from(second.is_finished());
+        let (winner, loser) = if first.is_finished() {
+            (first, second)
+        } else {
+            (second, first)
+        };
+        drop(winner.await.unwrap());
+        let _last = loser.await.unwrap();
+
+        assert_eq!(
+            (finished_after_one_release, exclusivity.is_held()),
+            (1, true)
+        );
     }
 }

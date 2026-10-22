@@ -503,3 +503,32 @@ async fn a_crafted_setup_cannot_loosen_network_exposure_or_http_trust() {
         .collect();
     assert_eq!(loosened, Vec::new());
 }
+
+#[tokio::test]
+async fn a_setup_import_trims_older_pre_setup_copies_to_the_kept_count() {
+    let store = Store::open().await;
+    store
+        .set(&[
+            (key::SAFETY_COPIES_MODE, "keep_newest"),
+            (key::SAFETY_COPIES_KEEP_NEWEST, "1"),
+        ])
+        .await;
+    let backups = forge_transfer::backups_dir(store.data_dir());
+    std::fs::create_dir_all(&backups).unwrap();
+    let older = backups.join("forge-pre-setup-20200101-000000Z-old001.tar.gz");
+    std::fs::write(&older, b"older safety copy").unwrap();
+    let path = bundle(store.data_dir(), &empty_setup(), &[]);
+
+    store.import(path).await.unwrap();
+
+    let pre_setup: Vec<String> = std::fs::read_dir(&backups)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with("forge-pre-setup-"))
+        .collect();
+    assert_eq!(
+        (pre_setup.len(), older.exists()),
+        (1, false),
+        "{pre_setup:?}"
+    );
+}

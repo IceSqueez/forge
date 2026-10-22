@@ -606,30 +606,53 @@ mod tests {
 
     use super::*;
     use crate::i18n::install_language;
-    use crate::test_support::{runtime, test_backend};
+    use crate::test_support::{
+        GatedSchedule, TestBackend, gated_running_schedule_sharing, keyless_enabled_schedule, pump,
+        runtime, test_backend, test_backend_with_gated_export,
+    };
 
     const VERSION: &str = "0.9.0";
     const RELEASE_PAGE: &str = "https://example.invalid/releases/v0.9.0";
     const ARTIFACT_SIZE: u64 = 100;
+    const DRIVE_ROUNDS: usize = 4;
+    const BLOCKING_POOL_TURN: std::time::Duration = std::time::Duration::from_millis(1);
+    const SCHEDULE_SETTLE_GUARD: std::time::Duration = std::time::Duration::from_secs(30);
 
     struct Harness {
         flow: Entity<UpdateFlow>,
         events: Rc<RefCell<Vec<UpdateFlowEvent>>>,
-        _rt: tokio::runtime::Runtime,
+        rt: tokio::runtime::Runtime,
     }
 
     fn harness(cx: &mut TestAppContext) -> Harness {
+        harness_on(
+            cx,
+            runtime(),
+            test_backend().0,
+            TransferExclusivity::new(),
+            None,
+            PathBuf::from("/data/forge"),
+        )
+    }
+
+    fn harness_on(
+        cx: &mut TestAppContext,
+        rt: tokio::runtime::Runtime,
+        backend: Arc<TestBackend>,
+        exclusivity: TransferExclusivity,
+        scheduled: Option<ScheduledBackupHandle>,
+        data_dir: PathBuf,
+    ) -> Harness {
         install_language(Language::En);
-        let rt = runtime();
-        let (backend, _) = test_backend();
         let handle = rt.handle().clone();
         cx.update(|cx| cx.set_global(Toasts::new()));
         let flow = cx.new(|_| {
-            UpdateFlow::new(
-                backend as Arc<dyn DataProvider>,
-                handle,
-                PathBuf::from("/data/forge"),
-            )
+            let flow = UpdateFlow::new(backend as Arc<dyn DataProvider>, handle, data_dir)
+                .with_exclusivity(exclusivity);
+            match scheduled {
+                Some(scheduled) => flow.with_scheduled_backups(scheduled),
+                None => flow,
+            }
         });
         let events = Rc::new(RefCell::new(Vec::new()));
         let sink = Rc::clone(&events);
@@ -639,10 +662,129 @@ mod tests {
             })
             .detach();
         });
-        Harness {
-            flow,
-            events,
-            _rt: rt,
+        Harness { flow, events, rt }
+    }
+
+    struct Waiting {
+        h: Harness,
+        handoff_export: Arc<tokio::sync::Notify>,
+        schedule: Option<GatedSchedule>,
+        _data_dir: tempfile::TempDir,
+    }
+
+    fn waiting_harness(
+        cx: &mut TestAppContext,
+        exclusivity: TransferExclusivity,
+        schedule: impl FnOnce(TransferExclusivity) -> Option<GatedSchedule>,
+    ) -> Waiting {
+        let rt = runtime();
+        let schedule = {
+            let _entered = rt.enter();
+            schedule(exclusivity.clone())
+        };
+        let (backend, handoff_export) = test_backend_with_gated_export();
+        let scheduled = schedule.as_ref().map(|s| s.handle.clone());
+        let data_dir = tempfile::tempdir().unwrap();
+        let h = harness_on(
+            cx,
+            rt,
+            backend,
+            exclusivity,
+            scheduled,
+            data_dir.path().to_path_buf(),
+        );
+        Waiting {
+            h,
+            handoff_export,
+            schedule,
+            _data_dir: data_dir,
+        }
+    }
+
+    fn settle_schedule(h: &Harness, schedule: &GatedSchedule, state: ScheduleState) -> bool {
+        let mut status = schedule.handle.status();
+        h.rt.block_on(async {
+            tokio::time::timeout(SCHEDULE_SETTLE_GUARD, status.wait_for(|s| s.state == state))
+                .await
+                .is_ok()
+        })
+    }
+
+    fn restart_and_close(cx: &mut TestAppContext, h: &Harness) -> CloseDecision {
+        ready(cx, h);
+        run(cx, h, UpdateCommand::Restart);
+        let decision = close(cx, h);
+        drive(cx, h);
+        decision
+    }
+
+    fn drive_until(
+        cx: &mut TestAppContext,
+        h: &Harness,
+        reached: impl Fn(&UpdateStage) -> bool,
+    ) -> bool {
+        let started = std::time::Instant::now();
+        loop {
+            drive(cx, h);
+            if reached(&stage(cx, h)) {
+                return true;
+            }
+            if started.elapsed() > SCHEDULE_SETTLE_GUARD {
+                return false;
+            }
+            h.rt.block_on(async { tokio::time::sleep(BLOCKING_POOL_TURN).await });
+        }
+    }
+
+    fn waiting_to_restart(stage: &UpdateStage) -> bool {
+        matches!(
+            stage,
+            UpdateStage::WaitingForTransfer {
+                mode: ApplyMode::Restart,
+                ..
+            }
+        )
+    }
+
+    fn waiting_to_install_on_quit(stage: &UpdateStage) -> bool {
+        matches!(
+            stage,
+            UpdateStage::WaitingForTransfer {
+                mode: ApplyMode::OnQuit,
+                ..
+            }
+        )
+    }
+
+    fn ready_with_the_staged_update(stage: &UpdateStage) -> bool {
+        matches!(stage, UpdateStage::Ready { staged: s, .. } if *s == staged())
+    }
+
+    fn close_into_the_wait(cx: &mut TestAppContext, h: &Harness) -> bool {
+        ready(cx, h);
+        close(cx, h);
+        drive_until(cx, h, waiting_to_install_on_quit)
+    }
+
+    fn handing_off(stage: &UpdateStage) -> bool {
+        matches!(stage, UpdateStage::HandingOff { .. })
+    }
+
+    fn handoff_failed(stage: &UpdateStage) -> bool {
+        matches!(
+            stage,
+            UpdateStage::Failed {
+                failure: UpdateFailure::Handoff,
+                staged: Some(_),
+                ..
+            }
+        )
+    }
+
+    fn drive(cx: &mut TestAppContext, h: &Harness) {
+        for _ in 0..DRIVE_ROUNDS {
+            pump(&h.rt);
+            cx.run_until_parked();
         }
     }
 
@@ -1106,6 +1248,196 @@ mod tests {
 
         assert_eq!(events(cx, &h), vec![UpdateFlowEvent::CloseApproved]);
         assert_eq!(close(cx, &h), CloseDecision::Proceed);
+    }
+
+    #[gpui::test]
+    fn restart_while_a_transfer_holds_the_guard_waits_with_the_window_open(
+        cx: &mut TestAppContext,
+    ) {
+        let exclusivity = TransferExclusivity::new();
+        let _running = exclusivity.try_acquire().unwrap();
+        let w = waiting_harness(cx, exclusivity, |_| None);
+
+        restart_and_close(cx, &w.h);
+
+        assert!(drive_until(cx, &w.h, waiting_to_restart));
+        assert_eq!(events(cx, &w.h), vec![UpdateFlowEvent::RestartRequested]);
+    }
+
+    #[gpui::test]
+    fn the_close_that_meets_a_running_transfer_is_held_while_the_update_waits(
+        cx: &mut TestAppContext,
+    ) {
+        let exclusivity = TransferExclusivity::new();
+        let _running = exclusivity.try_acquire().unwrap();
+        let w = waiting_harness(cx, exclusivity, |_| None);
+
+        let decision = restart_and_close(cx, &w.h);
+
+        assert_eq!(decision, CloseDecision::Hold);
+        assert!(drive_until(cx, &w.h, waiting_to_restart));
+    }
+
+    #[gpui::test]
+    fn one_more_close_after_a_restart_that_started_the_wait_quits_as_the_toast_promises(
+        cx: &mut TestAppContext,
+    ) {
+        let exclusivity = TransferExclusivity::new();
+        let _running = exclusivity.try_acquire().unwrap();
+        let w = waiting_harness(cx, exclusivity, |_| None);
+        restart_and_close(cx, &w.h);
+        assert!(drive_until(cx, &w.h, waiting_to_restart));
+
+        assert_eq!(close(cx, &w.h), CloseDecision::Proceed);
+    }
+
+    #[gpui::test]
+    fn the_end_of_the_transfer_resumes_the_handoff_holding_the_guard(cx: &mut TestAppContext) {
+        let exclusivity = TransferExclusivity::new();
+        let running = exclusivity.try_acquire().unwrap();
+        let w = waiting_harness(cx, exclusivity.clone(), |_| None);
+        restart_and_close(cx, &w.h);
+
+        drop(running);
+
+        assert!(drive_until(cx, &w.h, handing_off));
+        assert!(exclusivity.is_held());
+    }
+
+    #[gpui::test]
+    fn a_handoff_failing_after_the_wait_is_retryable_and_frees_the_guard(cx: &mut TestAppContext) {
+        let exclusivity = TransferExclusivity::new();
+        let running = exclusivity.try_acquire().unwrap();
+        let w = waiting_harness(cx, exclusivity.clone(), |_| None);
+        restart_and_close(cx, &w.h);
+        drop(running);
+        assert!(drive_until(cx, &w.h, handing_off));
+
+        w.handoff_export.notify_one();
+
+        assert!(drive_until(cx, &w.h, handoff_failed));
+        assert!(!exclusivity.is_held());
+    }
+
+    #[gpui::test]
+    fn a_scheduled_backup_running_at_restart_stays_suspended_through_the_handoff(
+        cx: &mut TestAppContext,
+    ) {
+        let w = waiting_harness(cx, TransferExclusivity::new(), |shared| {
+            Some(gated_running_schedule_sharing(shared))
+        });
+        let schedule = w.schedule.as_ref().unwrap();
+        assert!(settle_schedule(&w.h, schedule, ScheduleState::Running));
+        restart_and_close(cx, &w.h);
+
+        schedule.export_gate.notify_one();
+
+        assert!(drive_until(cx, &w.h, handing_off));
+        assert!(settle_schedule(&w.h, schedule, ScheduleState::Suspended));
+    }
+
+    #[gpui::test]
+    fn a_scheduled_backup_suspended_for_the_update_resumes_when_the_handoff_fails(
+        cx: &mut TestAppContext,
+    ) {
+        let w = waiting_harness(cx, TransferExclusivity::new(), |shared| {
+            Some(gated_running_schedule_sharing(shared))
+        });
+        let schedule = w.schedule.as_ref().unwrap();
+        assert!(settle_schedule(&w.h, schedule, ScheduleState::Running));
+        restart_and_close(cx, &w.h);
+        schedule.export_gate.notify_one();
+        assert!(drive_until(cx, &w.h, handing_off));
+
+        w.handoff_export.notify_one();
+
+        assert!(drive_until(cx, &w.h, handoff_failed));
+        assert!(settle_schedule(&w.h, schedule, ScheduleState::Idle));
+    }
+
+    #[gpui::test]
+    fn waiting_on_another_transfer_leaves_an_idle_schedule_unsuspended(cx: &mut TestAppContext) {
+        let exclusivity = TransferExclusivity::new();
+        let _running = exclusivity.try_acquire().unwrap();
+        let w = waiting_harness(cx, exclusivity, |_| Some(keyless_enabled_schedule()));
+        let schedule = w.schedule.as_ref().unwrap();
+        assert!(settle_schedule(&w.h, schedule, ScheduleState::Idle));
+
+        restart_and_close(cx, &w.h);
+
+        assert!(drive_until(cx, &w.h, waiting_to_restart));
+        assert_eq!(schedule.handle.status().borrow().state, ScheduleState::Idle);
+    }
+
+    #[gpui::test]
+    fn one_more_close_after_the_close_that_started_the_wait_quits_as_the_toast_promises(
+        cx: &mut TestAppContext,
+    ) {
+        let exclusivity = TransferExclusivity::new();
+        let _running = exclusivity.try_acquire().unwrap();
+        let w = waiting_harness(cx, exclusivity, |_| None);
+        assert!(close_into_the_wait(cx, &w.h));
+
+        assert_eq!(close(cx, &w.h), CloseDecision::Proceed);
+    }
+
+    #[gpui::test]
+    fn quitting_out_of_the_wait_keeps_the_staged_update_and_starts_no_install(
+        cx: &mut TestAppContext,
+    ) {
+        let exclusivity = TransferExclusivity::new();
+        let running = exclusivity.try_acquire().unwrap();
+        let w = waiting_harness(cx, exclusivity.clone(), |_| None);
+        assert!(close_into_the_wait(cx, &w.h));
+
+        let decision = close(cx, &w.h);
+        drop(running);
+        drive(cx, &w.h);
+
+        assert_eq!(decision, CloseDecision::Proceed);
+        assert!(ready_with_the_staged_update(&stage(cx, &w.h)));
+        assert!(!exclusivity.is_held());
+        assert!(events(cx, &w.h).is_empty());
+    }
+
+    #[gpui::test]
+    fn a_guard_freed_just_before_the_quitting_close_is_handed_back_unused(cx: &mut TestAppContext) {
+        let exclusivity = TransferExclusivity::new();
+        let running = exclusivity.try_acquire().unwrap();
+        let w = waiting_harness(cx, exclusivity.clone(), |_| None);
+        assert!(close_into_the_wait(cx, &w.h));
+        drop(running);
+        pump(&w.h.rt);
+        let taken_by_the_waiter = exclusivity.is_held();
+
+        let decision = close(cx, &w.h);
+        drive(cx, &w.h);
+
+        assert_eq!(
+            (taken_by_the_waiter, decision),
+            (true, CloseDecision::Proceed)
+        );
+        assert!(ready_with_the_staged_update(&stage(cx, &w.h)));
+        assert!(!exclusivity.is_held());
+    }
+
+    #[gpui::test]
+    fn quitting_out_of_the_wait_resumes_the_scheduled_backup_the_update_suspended(
+        cx: &mut TestAppContext,
+    ) {
+        let w = waiting_harness(cx, TransferExclusivity::new(), |shared| {
+            Some(gated_running_schedule_sharing(shared))
+        });
+        let schedule = w.schedule.as_ref().unwrap();
+        assert!(settle_schedule(&w.h, schedule, ScheduleState::Running));
+        assert!(close_into_the_wait(cx, &w.h));
+        close(cx, &w.h);
+
+        schedule.export_gate.notify_one();
+        drive(cx, &w.h);
+
+        assert!(settle_schedule(&w.h, schedule, ScheduleState::Idle));
+        assert!(ready_with_the_staged_update(&stage(cx, &w.h)));
     }
 
     #[gpui::test]

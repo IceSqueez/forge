@@ -23,6 +23,7 @@ mod restore_apply;
 mod restore_journal;
 mod restore_marker;
 mod restore_outcome;
+mod safety_copies;
 mod safety_snapshot;
 mod schedule_key;
 mod scheduled;
@@ -50,7 +51,8 @@ pub use manifest::{
     EncryptionScheme, FullManifest, MANIFEST_ENTRY_NAME, PublicManifest,
 };
 pub use naming::{
-    BUNDLE_EXTENSION, LEGACY_ARCHIVE_EXTENSION, backup_file_stem, backups_dir, unique_suffix,
+    BUNDLE_EXTENSION, LEGACY_ARCHIVE_EXTENSION, PRE_UPDATE_SNAPSHOT_EXTENSION, backup_file_stem,
+    backups_dir, unique_suffix,
 };
 pub use pack::{
     ActionDocument, ClipDocument, ClipSourceDocument, ClosureRegistries, DocumentConfig,
@@ -72,6 +74,11 @@ pub use restore_marker::{
     restore_pending,
 };
 pub use restore_outcome::{RestoreDeferral, RestoreOutcome, RestoreRollback};
+pub use safety_copies::{
+    SafetyCopyFailure, SafetyCopyKind, SafetyCopyMode, SafetyCopyReport, SafetyCopySettings,
+    SafetyCopyUsage, change_safety_copy_settings, clean_up_safety_copies, prune_safety_copies,
+    safety_copy_usage,
+};
 pub use schedule_key::{ScheduleKey, change_schedule_passphrase, create_schedule_key};
 pub use scheduled::{
     BackupClock, FailureCategory, FailureStreak, ScheduleState, ScheduledBackupHandle,

@@ -5,12 +5,13 @@ use time::OffsetDateTime;
 
 pub const BUNDLE_EXTENSION: &str = "forgebundle";
 pub const LEGACY_ARCHIVE_EXTENSION: &str = "tar.gz";
+pub const PRE_UPDATE_SNAPSHOT_EXTENSION: &str = "pre-update.db";
 
-const FILE_PREFIX: &str = "forge-backup";
+pub(crate) const FILE_PREFIX: &str = "forge-backup";
 pub(crate) const SCHEDULED_PREFIX: &str = "forge-scheduled";
-const PRE_RESTORE_PREFIX: &str = "forge-pre-restore";
-const PRE_PACK_PREFIX: &str = "forge-pre-pack";
-const PRE_SETUP_PREFIX: &str = "forge-pre-setup";
+pub(crate) const PRE_RESTORE_PREFIX: &str = "forge-pre-restore";
+pub(crate) const PRE_PACK_PREFIX: &str = "forge-pre-pack";
+pub(crate) const PRE_SETUP_PREFIX: &str = "forge-pre-setup";
 const SUFFIX_LEN: usize = 6;
 pub(crate) const PARTIAL_EXTENSION: &str = "partial";
 pub(crate) const CIPHERTEXT_EXTENSION: &str = "payload.partial";
@@ -34,6 +35,17 @@ fn stamped_stem(prefix: &str, now: OffsetDateTime, suffix: &str) -> String {
         now.minute(),
         now.second(),
     )
+}
+
+const STAMP_FORMAT: &str = "[year][month][day]-[hour][minute][second]";
+const STAMP_ZONE_MARK: char = 'Z';
+
+pub(crate) fn stamp_of(stem_after_prefix: &str) -> Option<OffsetDateTime> {
+    let (stamp, _) = stem_after_prefix.split_once(STAMP_ZONE_MARK)?;
+    let format = time::format_description::parse_borrowed::<2>(STAMP_FORMAT).ok()?;
+    time::PrimitiveDateTime::parse(stamp, &format)
+        .ok()
+        .map(time::PrimitiveDateTime::assume_utc)
 }
 
 pub fn unique_suffix() -> String {

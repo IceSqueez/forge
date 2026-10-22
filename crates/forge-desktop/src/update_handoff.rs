@@ -3,14 +3,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_storage::DataProvider;
-use forge_transfer::{backup_file_stem, backups_dir, unique_suffix};
+use forge_transfer::{
+    PRE_UPDATE_SNAPSHOT_EXTENSION, TransferExclusivity, TransferGuard, backup_file_stem,
+    backups_dir, unique_suffix,
+};
 use forge_update::{ApplyMode, HandoffPlan, HandoffRequest, StagedArtifact, UpdatableInstall};
 use time::OffsetDateTime;
 
 use crate::update_check::CURRENT_VERSION;
 
 pub const HANDOFF_PREPARE_BUDGET: Duration = Duration::from_secs(30);
-const SNAPSHOT_EXTENSION: &str = "pre-update.db";
 
 #[derive(Debug, Clone)]
 pub struct HandoffInput {
@@ -19,19 +21,40 @@ pub struct HandoffInput {
     pub to_version: String,
     pub mode: ApplyMode,
     pub data_dir: PathBuf,
+    pub exclusivity: TransferExclusivity,
 }
 
 pub fn update_snapshot_path(data_dir: &Path, now: OffsetDateTime, suffix: &str) -> PathBuf {
     backups_dir(data_dir).join(format!(
-        "{}.{SNAPSHOT_EXTENSION}",
+        "{}.{PRE_UPDATE_SNAPSHOT_EXTENSION}",
         backup_file_stem(now, suffix)
     ))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum HandoffError {
+    Busy,
+    Failed(String),
 }
 
 pub async fn prepare_handoff(
     backend: Arc<dyn DataProvider>,
     input: HandoffInput,
+) -> Result<(), HandoffError> {
+    let Some(guard) = input.exclusivity.try_acquire() else {
+        return Err(HandoffError::Busy);
+    };
+    prepare_handoff_holding(backend, input, guard)
+        .await
+        .map_err(HandoffError::Failed)
+}
+
+pub async fn prepare_handoff_holding(
+    backend: Arc<dyn DataProvider>,
+    input: HandoffInput,
+    guard: TransferGuard,
 ) -> Result<(), String> {
+    let _guard = guard;
     tokio::time::timeout(HANDOFF_PREPARE_BUDGET, write_handoff(backend, input))
         .await
         .unwrap_or_else(|_| Err("preparing the update took too long".to_owned()))

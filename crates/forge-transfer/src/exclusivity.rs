@@ -1,14 +1,18 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use tokio::sync::Notify;
+
 #[derive(Debug, Clone, Default)]
 pub struct TransferExclusivity {
     held: Arc<AtomicBool>,
+    released: Arc<Notify>,
 }
 
 #[derive(Debug)]
 pub struct TransferGuard {
     held: Arc<AtomicBool>,
+    released: Arc<Notify>,
 }
 
 impl TransferExclusivity {
@@ -22,7 +26,20 @@ impl TransferExclusivity {
             .ok()
             .map(|_| TransferGuard {
                 held: Arc::clone(&self.held),
+                released: Arc::clone(&self.released),
             })
+    }
+
+    pub async fn acquire_when_free(&self) -> TransferGuard {
+        loop {
+            let released = self.released.notified();
+            tokio::pin!(released);
+            released.as_mut().enable();
+            if let Some(guard) = self.try_acquire() {
+                return guard;
+            }
+            released.await;
+        }
     }
 
     pub fn is_held(&self) -> bool {
@@ -33,6 +50,7 @@ impl TransferExclusivity {
 impl Drop for TransferGuard {
     fn drop(&mut self) {
         self.held.store(false, Ordering::Release);
+        self.released.notify_waiters();
     }
 }
 

@@ -5,9 +5,9 @@ mod prune;
 mod retention;
 mod run;
 mod service;
-mod settings;
+pub(crate) mod settings;
 mod status;
-mod usage;
+pub(crate) mod usage;
 
 pub use clock::{BackupClock, SystemBackupClock};
 pub use service::{ScheduledBackupHandle, ScheduledBackupParts, spawn_scheduled_backups};

@@ -97,6 +97,9 @@ pub mod reserved_keys {
     pub const BACKUP_SCHEDULE_KEY: &str = "backup_schedule.key";
     pub const BACKUP_SCHEDULE_LAST_SUCCESS_AT: &str = "backup_schedule.last_success_at";
     pub const BACKUP_SCHEDULE_CONTENT_FINGERPRINT: &str = "backup_schedule.content_fingerprint";
+    pub const SAFETY_COPIES_MODE: &str = "safety_copies.mode";
+    pub const SAFETY_COPIES_KEEP_NEWEST: &str = "safety_copies.keep_newest";
+    pub const SAFETY_COPIES_DELETE_AFTER_DAYS: &str = "safety_copies.delete_after_days";
 }
 
 pub mod portability;
@@ -115,6 +118,12 @@ pub const DEFAULT_BACKUP_SCHEDULE_KEEP_DAILY_DAYS: u32 = 30;
 pub const MIN_BACKUP_SCHEDULE_KEEP_DAILY_DAYS: u32 = 0;
 pub const MAX_BACKUP_SCHEDULE_KEEP_DAILY_DAYS: u32 = 3650;
 pub const DEFAULT_BACKUP_SCHEDULE_INCLUDE_CATEGORY: bool = true;
+pub const DEFAULT_SAFETY_COPIES_KEEP_NEWEST: u32 = 5;
+pub const MIN_SAFETY_COPIES_KEEP_NEWEST: u32 = 1;
+pub const MAX_SAFETY_COPIES_KEEP_NEWEST: u32 = 1000;
+pub const DEFAULT_SAFETY_COPIES_DELETE_AFTER_DAYS: u32 = 30;
+pub const MIN_SAFETY_COPIES_DELETE_AFTER_DAYS: u32 = 1;
+pub const MAX_SAFETY_COPIES_DELETE_AFTER_DAYS: u32 = 3650;
 pub const DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT: u32 = 500;
 pub const DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 50;
 pub const UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 0;

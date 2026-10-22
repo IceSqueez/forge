@@ -12,6 +12,7 @@ use crate::error::TransferError;
 use crate::naming::{LEGACY_ARCHIVE_EXTENSION, backups_dir, partial_path};
 use crate::payload::{append_verified, collect_payload};
 use crate::private_file::create_private;
+use crate::safety_copies::prune_after_safety_copy;
 use crate::snapshot::with_database_snapshot;
 
 pub(crate) async fn write_safety_snapshot(
@@ -28,6 +29,9 @@ pub(crate) async fn write_safety_snapshot(
     .await;
     if written.is_err() {
         let _ = tokio::fs::remove_file(partial_path(&destination)).await;
+    }
+    if written.is_ok() {
+        prune_after_safety_copy(provider.as_ref(), data_dir, &destination).await;
     }
     written.map(|()| destination)
 }

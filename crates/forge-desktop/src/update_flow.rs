@@ -8,12 +8,14 @@ use forge_update::{
 };
 use gpui::{App, Context, EventEmitter, WeakEntity};
 use tokio::runtime::Handle;
+use tokio_util::sync::CancellationToken;
 
 use crate::async_bridge::{detached, open_path, run_async};
 use crate::update_exit::ExitHandoff;
-use crate::update_handoff::{HandoffInput, prepare_handoff};
+use crate::update_handoff::{HandoffError, HandoffInput, prepare_handoff, prepare_handoff_holding};
 use crate::update_toast::{UpdateCommand, toast_data, update_toast};
 use forge_components::Toasts;
+use forge_transfer::{ScheduleState, ScheduledBackupHandle, TransferExclusivity, TransferGuard};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstallTarget {
@@ -50,6 +52,11 @@ pub enum UpdateStage {
         staged: Option<StagedArtifact>,
     },
     HandingOff {
+        candidate: UpdateCandidate,
+        staged: StagedArtifact,
+        mode: ApplyMode,
+    },
+    WaitingForTransfer {
         candidate: UpdateCandidate,
         staged: StagedArtifact,
         mode: ApplyMode,
@@ -99,6 +106,11 @@ pub struct UpdateFlow {
     backend: Arc<dyn DataProvider>,
     rt_handle: Handle,
     data_dir: PathBuf,
+    exclusivity: TransferExclusivity,
+    scheduled: Option<ScheduledBackupHandle>,
+    scheduled_suspended: bool,
+    close_asked_while_waiting: bool,
+    wait: Option<CancellationToken>,
 }
 
 impl EventEmitter<UpdateFlowEvent> for UpdateFlow {}
@@ -114,7 +126,24 @@ impl UpdateFlow {
             backend,
             rt_handle,
             data_dir,
+            exclusivity: TransferExclusivity::new(),
+            scheduled: None,
+            scheduled_suspended: false,
+            close_asked_while_waiting: false,
+            wait: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_scheduled_backups(mut self, scheduled: ScheduledBackupHandle) -> Self {
+        self.scheduled = Some(scheduled);
+        self
+    }
+
+    #[must_use]
+    pub fn with_exclusivity(mut self, exclusivity: TransferExclusivity) -> Self {
+        self.exclusivity = exclusivity;
+        self
     }
 
     pub fn offer(&mut self, candidate: UpdateCandidate, cx: &mut Context<Self>) {
@@ -263,6 +292,7 @@ impl UpdateFlow {
             self.stage,
             UpdateStage::Ready { .. }
                 | UpdateStage::HandingOff { .. }
+                | UpdateStage::WaitingForTransfer { .. }
                 | UpdateStage::HandedOff { .. }
         )
     }
@@ -306,8 +336,36 @@ impl UpdateFlow {
     pub fn close_decision(&mut self, cx: &mut Context<Self>) -> CloseDecision {
         match &self.stage {
             UpdateStage::HandingOff { .. } => CloseDecision::Hold,
+            UpdateStage::WaitingForTransfer { .. } => self.close_while_waiting(cx),
             UpdateStage::Ready { .. } => self.begin_handoff(cx),
             _ => CloseDecision::Proceed,
+        }
+    }
+
+    fn close_while_waiting(&mut self, cx: &mut Context<Self>) -> CloseDecision {
+        if !self.close_asked_while_waiting {
+            self.close_asked_while_waiting = true;
+            return CloseDecision::Hold;
+        }
+        let Some(UpdateStage::WaitingForTransfer {
+            candidate, staged, ..
+        }) = self.take_stage(|stage| matches!(stage, UpdateStage::WaitingForTransfer { .. }))
+        else {
+            return CloseDecision::Proceed;
+        };
+        self.stop_waiting();
+        self.restart_requested = false;
+        self.resume_scheduled_backups();
+        self.stage = UpdateStage::Ready { candidate, staged };
+        self.show_toast(cx);
+        cx.notify();
+        CloseDecision::Proceed
+    }
+
+    fn stop_waiting(&mut self) {
+        self.close_asked_while_waiting = false;
+        if let Some(wait) = self.wait.take() {
+            wait.cancel();
         }
     }
 
@@ -328,6 +386,7 @@ impl UpdateFlow {
             to_version: candidate.version.clone(),
             mode,
             data_dir: self.data_dir.clone(),
+            exclusivity: self.exclusivity.clone(),
         };
         self.stage = UpdateStage::HandingOff {
             candidate,
@@ -336,13 +395,107 @@ impl UpdateFlow {
         };
         run_async(
             &self.rt_handle,
-            prepare_handoff(Arc::clone(&self.backend), input),
-            |flow: &mut Self, result, cx| flow.handoff_settled(result, cx),
+            prepare_handoff(Arc::clone(&self.backend), input.clone()),
+            move |flow: &mut Self, result, cx| flow.handoff_attempted(result, input, cx),
             cx,
         );
         self.show_toast(cx);
         cx.notify();
         CloseDecision::Hold
+    }
+
+    fn handoff_attempted(
+        &mut self,
+        result: Result<(), HandoffError>,
+        input: HandoffInput,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok(()) => self.handoff_settled(Ok(()), cx),
+            Err(HandoffError::Failed(error)) => self.handoff_settled(Err(error), cx),
+            Err(HandoffError::Busy) => self.wait_for_transfer(input, cx),
+        }
+    }
+
+    fn wait_for_transfer(&mut self, input: HandoffInput, cx: &mut Context<Self>) {
+        let Some(UpdateStage::HandingOff {
+            candidate,
+            staged,
+            mode,
+        }) = self.take_stage(|stage| matches!(stage, UpdateStage::HandingOff { .. }))
+        else {
+            return;
+        };
+        if let Some(scheduled) = &self.scheduled
+            && scheduled.status().borrow().state == ScheduleState::Running
+        {
+            scheduled.set_suspended(true);
+            self.scheduled_suspended = true;
+        }
+        self.stage = UpdateStage::WaitingForTransfer {
+            candidate,
+            staged,
+            mode,
+        };
+        let exclusivity = input.exclusivity.clone();
+        let cancel = CancellationToken::new();
+        self.wait = Some(cancel.clone());
+        self.close_asked_while_waiting = true;
+        run_async(
+            &self.rt_handle,
+            async move {
+                tokio::select! {
+                    guard = exclusivity.acquire_when_free() => Some(guard),
+                    () = cancel.cancelled() => None,
+                }
+            },
+            move |flow: &mut Self, guard, cx| {
+                if let Some(guard) = guard {
+                    flow.transfer_finished(guard, input, cx);
+                }
+            },
+            cx,
+        );
+        self.show_toast(cx);
+        cx.notify();
+    }
+
+    fn transfer_finished(
+        &mut self,
+        guard: TransferGuard,
+        input: HandoffInput,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(UpdateStage::WaitingForTransfer {
+            candidate,
+            staged,
+            mode,
+        }) = self.take_stage(|stage| matches!(stage, UpdateStage::WaitingForTransfer { .. }))
+        else {
+            return;
+        };
+        self.stop_waiting();
+        self.stage = UpdateStage::HandingOff {
+            candidate,
+            staged,
+            mode,
+        };
+        run_async(
+            &self.rt_handle,
+            prepare_handoff_holding(Arc::clone(&self.backend), input, guard),
+            |flow: &mut Self, result, cx| flow.handoff_settled(result, cx),
+            cx,
+        );
+        self.show_toast(cx);
+        cx.notify();
+    }
+
+    fn resume_scheduled_backups(&mut self) {
+        if std::mem::take(&mut self.scheduled_suspended)
+            && let Some(scheduled) = &self.scheduled
+        {
+            scheduled.set_suspended(false);
+        }
     }
 
     pub fn handoff_settled(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
@@ -366,6 +519,7 @@ impl UpdateFlow {
                 cx.emit(UpdateFlowEvent::CloseApproved);
             }
             Err(error) => {
+                self.resume_scheduled_backups();
                 tracing::warn!(error = %error, ?mode, "update could not be handed off");
                 self.stage = UpdateStage::Failed {
                     candidate,
@@ -393,6 +547,7 @@ impl UpdateFlow {
             | UpdateStage::Ready { candidate, .. }
             | UpdateStage::Failed { candidate, .. }
             | UpdateStage::HandingOff { candidate, .. }
+            | UpdateStage::WaitingForTransfer { candidate, .. }
             | UpdateStage::HandedOff { candidate, .. } => Some(candidate),
         }
     }

@@ -94,6 +94,17 @@ pub fn update_toast(stage: &UpdateStage) -> Option<UpdateToast> {
             primary: None,
             secondary: None,
         }),
+        UpdateStage::WaitingForTransfer { candidate, .. } => Some(UpdateToast {
+            kind: ToastKind::Info,
+            message: tr!(
+                "update_toast_waiting_for_transfer",
+                version = candidate.version.as_str()
+            ),
+            icon: Some(Icon::Sparkles),
+            progress: Some(PREPARING_PROGRESS),
+            primary: None,
+            secondary: None,
+        }),
         UpdateStage::HandedOff { candidate, mode } => {
             (*mode == ApplyMode::Restart).then(|| UpdateToast {
                 kind: ToastKind::Info,

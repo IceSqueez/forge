@@ -94,6 +94,9 @@ pub const CLASSIFIED_KEYS: &[(&str, SettingPortability)] = &[
     (key::BACKUP_SCHEDULE_KEY, MachineLocal),
     (key::BACKUP_SCHEDULE_LAST_SUCCESS_AT, MachineLocal),
     (key::BACKUP_SCHEDULE_CONTENT_FINGERPRINT, MachineLocal),
+    (key::SAFETY_COPIES_MODE, MachineLocal),
+    (key::SAFETY_COPIES_KEEP_NEWEST, MachineLocal),
+    (key::SAFETY_COPIES_DELETE_AFTER_DAYS, MachineLocal),
 ];
 
 pub const CLASSIFIED_PREFIXES: &[(&str, SettingPortability)] = &[

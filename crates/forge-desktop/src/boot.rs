@@ -223,6 +223,11 @@ pub async fn build_runtime(
             exclusivity: transfer_exclusivity.clone(),
             clock: Arc::new(forge_transfer::SystemBackupClock),
         });
+    crate::safety_copy_prune::spawn_boot_prune(
+        Arc::clone(&backend),
+        paths::data_dir(),
+        transfer_exclusivity.clone(),
+    );
     let chat_history_retention = spawn_chat_history_persistence(
         Arc::clone(&bus),
         backend.chat_history_repo(),

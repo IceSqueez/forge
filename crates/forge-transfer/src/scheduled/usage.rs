@@ -49,14 +49,14 @@ fn database_bytes(data_dir: &Path) -> u64 {
         .sum()
 }
 
-fn file_bytes(path: &Path) -> u64 {
+pub(crate) fn file_bytes(path: &Path) -> u64 {
     std::fs::symlink_metadata(path)
         .ok()
         .filter(|metadata| metadata.file_type().is_file())
         .map_or(0, |metadata| metadata.len())
 }
 
-fn directory_bytes(path: &Path) -> u64 {
+pub(crate) fn directory_bytes(path: &Path) -> u64 {
     let Ok(entries) = std::fs::read_dir(path) else {
         return 0;
     };

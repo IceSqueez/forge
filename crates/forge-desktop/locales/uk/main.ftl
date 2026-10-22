@@ -420,6 +420,7 @@ update_toast_open_action = Завантажити
 update_toast_ready = forge { $version } готова. Вона встановиться, коли ви закриєте програму.
 update_toast_restart_action = Перезапустити й оновити
 update_toast_preparing = Підготовка оновлення до forge { $version }...
+update_toast_waiting_for_transfer = Очікування завершення резервної копії чи перенесення - forge { $version } встановиться після цього. Закрийте ще раз, щоб вийти без оновлення.
 update_toast_restarting = Перезапуск для встановлення forge { $version }
 update_toast_download_failed = Не вдалося завантажити forge { $version }.
 update_toast_unverified = Не вдалося перевірити forge { $version }, тому її не встановлено.

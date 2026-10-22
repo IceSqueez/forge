@@ -234,6 +234,8 @@ pub fn run_boot(
                             handles.rt_handle.clone(),
                             paths::data_dir(),
                         )
+                        .with_exclusivity(handles.transfer_exclusivity.clone())
+                        .with_scheduled_backups(handles.scheduled_backups.clone())
                     });
                     flow_for_updates = Some(update_flow.clone());
                     let problem_report = cx.new(|_| {

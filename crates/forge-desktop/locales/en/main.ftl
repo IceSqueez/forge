@@ -412,6 +412,7 @@ update_toast_open_action = Download
 update_toast_ready = forge { $version } is ready. It installs when you quit.
 update_toast_restart_action = Restart to update
 update_toast_preparing = Preparing the update to forge { $version }...
+update_toast_waiting_for_transfer = Waiting for the running backup or transfer to finish - forge { $version } installs when it does. Close again to quit without updating.
 update_toast_restarting = Restarting to install forge { $version }
 update_toast_download_failed = forge { $version } could not be downloaded.
 update_toast_unverified = forge { $version } could not be verified, so it was not installed.

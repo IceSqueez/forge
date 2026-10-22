@@ -120,17 +120,6 @@ mod tests {
     const EN_FTL: &str = include_str!("../locales/en/main.ftl");
     const UK_FTL: &str = include_str!("../locales/uk/main.ftl");
     const FIELD_KEY_PREFIX: &str = "field_";
-    const FULLY_TRANSLATED_NAMESPACES: &[&str] = &[
-        "core",
-        "script",
-        "timer",
-        "donation",
-        "donations",
-        "hotkey",
-        "twitch",
-        "youtube",
-        "kick",
-    ];
     const INTENTIONAL_EN_REWORDINGS: &[(&str, &str, &str)] = &[
         (
             "core",
@@ -517,28 +506,22 @@ field_label_k3 = Global
     }
 
     #[tokio::test]
-    async fn every_step_field_of_the_fully_translated_namespaces_has_uk_copy() {
+    async fn every_registered_step_and_trigger_field_has_uk_copy() {
         let fields = every_registry_field().await;
         install_language(Language::Uk);
         let untranslated: Vec<String> = fields
             .iter()
-            .filter(|field| FULLY_TRANSLATED_NAMESPACES.contains(&field.namespace()))
             .filter(|field| !field.has_bundle_copy())
-            .map(RegistryField::describe)
+            .map(|field| {
+                let kind = if field.is_trigger { "trigger" } else { "step" };
+                format!("{kind} {}", field.describe())
+            })
             .collect();
-        assert!(untranslated.is_empty(), "{untranslated:#?}");
-    }
-
-    #[tokio::test]
-    async fn every_trigger_field_has_uk_copy() {
-        let fields = every_registry_field().await;
-        install_language(Language::Uk);
-        let untranslated: Vec<String> = fields
-            .iter()
-            .filter(|field| field.is_trigger && !field.has_bundle_copy())
-            .map(RegistryField::describe)
-            .collect();
-        assert!(untranslated.is_empty(), "{untranslated:#?}");
+        assert!(
+            untranslated.is_empty(),
+            "{} fields without uk copy: {untranslated:#?}",
+            untranslated.len()
+        );
     }
 
     #[tokio::test]

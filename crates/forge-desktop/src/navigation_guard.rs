@@ -2,11 +2,13 @@ use forge_components::{ConfirmTone, ForgePalette, OverlayPosition, confirm_modal
 use gpui::{AnyElement, AnyWindowHandle, App, ClickEvent, IntoElement, SharedString, Window};
 
 use crate::screen::Screen;
+use crate::screen_shortcuts::ToggleReturn;
 use crate::unsaved_work::UnsavedWorkHandle;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LeaveTarget {
     Screen(Screen),
+    ToggledScreen(ToggleReturn),
     CloseWindow,
 }
 

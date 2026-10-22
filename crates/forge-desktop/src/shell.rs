@@ -1041,6 +1041,10 @@ impl AppShell {
     fn leave_to(&mut self, target: LeaveTarget, cx: &mut Context<Self>) {
         match target {
             LeaveTarget::Screen(screen) => self.enter(screen, cx),
+            LeaveTarget::ToggledScreen(recorded) => {
+                self.enter(recorded.toggled.clone(), cx);
+                self.router.toggle_return = Some(recorded);
+            }
             LeaveTarget::CloseWindow => self.close_window_now(cx),
         }
     }
@@ -1172,11 +1176,17 @@ impl AppShell {
             return;
         };
         self.navigate(destination.clone(), cx);
-        if destination == target && self.router.screen == target {
-            self.router.toggle_return = Some(ToggleReturn {
-                toggled: target,
-                back_to: from,
-            });
+        if destination != target {
+            return;
+        }
+        let recorded = ToggleReturn {
+            toggled: target.clone(),
+            back_to: from,
+        };
+        if self.router.screen == target {
+            self.router.toggle_return = Some(recorded);
+        } else if self.router.guard.is_asking() {
+            self.router.guard.ask(LeaveTarget::ToggledScreen(recorded));
         }
     }
 

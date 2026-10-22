@@ -1,7 +1,8 @@
 use crate::platform_visuals::{send_target, send_target_id, send_target_platforms};
 use std::sync::Arc;
 
-use forge_components::{ForgePalette, InputBar, InputBarEvent, ToastKind, tr};
+use forge_components::{ForgePalette, InputBar, InputBarEvent, InputBarSwitch, ToastKind, tr};
+use forge_platform_core::SenderPreference;
 use forge_runtime::EventBus;
 use forge_types::{EventId, PlatformId};
 use gpui::{AppContext, Context, Entity, IntoElement, Render, SharedString, Subscription, Window};
@@ -10,12 +11,15 @@ use super::platform_display_name;
 use super::platform_gate::platform_integration;
 use super::send_plan::{
     CHAT_SEND_RESPONSE_TIMEOUT, DeliveryResult, PlatformReach, SendPlan, SendRefusal, SendReport,
-    collect_delivery, plan_send,
+    attach_twitch_sender, collect_delivery, plan_send,
 };
 use crate::home_stats::HomeStats;
 use crate::integration_lifecycle::IntegrationLifecycle;
+use crate::twitch_bot_presence::TwitchBotPresence;
 use forge_components::PushToast;
 use forge_runtime::LifecycleState;
+
+const BOT_SWITCH_OPTION: usize = 1;
 
 pub struct ChatComposer {
     input: Entity<InputBar>,
@@ -23,6 +27,7 @@ pub struct ChatComposer {
     bus: Option<Arc<EventBus>>,
     home_stats: Entity<HomeStats>,
     lifecycle: Option<Entity<IntegrationLifecycle>>,
+    twitch_bot: Option<Entity<TwitchBotPresence>>,
     reach: PlatformReach,
     in_flight: Option<String>,
     _subscriptions: Vec<Subscription>,
@@ -52,6 +57,7 @@ impl ChatComposer {
             bus: None,
             home_stats,
             lifecycle: None,
+            twitch_bot: None,
             reach: PlatformReach::default(),
             in_flight: None,
             _subscriptions: subscriptions,
@@ -75,6 +81,48 @@ impl ChatComposer {
             .push(cx.observe(&lifecycle, |this, _, cx| this.refresh_reach(cx)));
         self.lifecycle = Some(lifecycle);
         self.refresh_reach(cx);
+    }
+
+    pub fn set_twitch_bot(&mut self, presence: Entity<TwitchBotPresence>, cx: &mut Context<Self>) {
+        self._subscriptions
+            .push(cx.observe(&presence, |this, _, cx| this.refresh_sender_switch(cx)));
+        self.twitch_bot = Some(presence);
+        self.refresh_sender_switch(cx);
+    }
+
+    pub(crate) fn twitch_sender(&self, cx: &Context<Self>) -> Option<SenderPreference> {
+        let presence = self.twitch_bot.as_ref()?.read(cx);
+        if !presence.is_connected() || !self.reach.selectable().contains(&PlatformId::Twitch) {
+            return None;
+        }
+        Some(if presence.composer_sends_as_bot() {
+            SenderPreference::BotOnly
+        } else {
+            SenderPreference::Streamer
+        })
+    }
+
+    fn refresh_sender_switch(&mut self, cx: &mut Context<Self>) {
+        let switch = self.twitch_sender(cx).map(|sender| InputBarSwitch {
+            options: vec![
+                tr!("chat_send_as_me").into(),
+                tr!("chat_send_as_bot").into(),
+            ],
+            selected: usize::from(sender == SenderPreference::BotOnly),
+        });
+        self.input.update(cx, |bar, cx| bar.set_switch(switch, cx));
+        cx.notify();
+    }
+
+    fn pick_sender(&mut self, option: usize, cx: &mut Context<Self>) {
+        let Some(presence) = self.twitch_bot.clone() else {
+            return;
+        };
+        presence.update(cx, |presence, cx| {
+            if presence.set_composer_sends_as_bot(option == BOT_SWITCH_OPTION) {
+                cx.notify();
+            }
+        });
     }
 
     pub(crate) fn is_sending(&self) -> bool {
@@ -124,6 +172,7 @@ impl ChatComposer {
         self.input
             .update(cx, |bar, cx| bar.set_available_targets(&selectable, cx));
         self.refresh_targets(cx);
+        self.refresh_sender_switch(cx);
         cx.notify();
     }
 
@@ -158,6 +207,7 @@ impl ChatComposer {
                 self.refresh_targets(cx);
                 cx.notify();
             }
+            InputBarEvent::SwitchChanged(option) => self.pick_sender(*option, cx),
             InputBarEvent::EmojiToggled => {}
         }
     }
@@ -182,7 +232,10 @@ impl ChatComposer {
             cx.push_toast(ToastKind::Error, tr!("chat_send_unavailable"));
             return;
         };
-        let requests = plan.request_events();
+        let mut requests = plan.request_events();
+        if let Some(sender) = self.twitch_sender(cx) {
+            attach_twitch_sender(&mut requests, sender);
+        }
         let request_ids: Vec<EventId> = requests.iter().map(|event| event.id).collect();
         let pending = SendReport::unanswered(plan.message.clone(), &plan.recipients);
         let fallback = pending.clone();

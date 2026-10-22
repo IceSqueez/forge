@@ -108,6 +108,12 @@ pub(crate) fn wire_twitch(
     })
 }
 
+impl TwitchFactory {
+    pub(crate) fn bot(&self) -> Arc<forge_platform_twitch::TwitchBotAccount> {
+        Arc::clone(&self.bot)
+    }
+}
+
 #[async_trait]
 impl IntegrationFactory<BuiltinObject> for TwitchFactory {
     fn id(&self) -> IntegrationId {

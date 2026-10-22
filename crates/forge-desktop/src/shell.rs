@@ -331,6 +331,7 @@ impl AppShell {
                     .with_ban_list(builtins, Arc::clone(&bus))
                     .with_lifecycle(topics.integration_lifecycle.clone(), cx)
                     .with_chat_bus(bus, cx)
+                    .with_twitch_bot(topics.twitch_bot.clone(), cx)
                 })
                 .into()
             }
@@ -755,6 +756,10 @@ impl AppShell {
             detail.update(cx, |detail, cx| {
                 detail.attach_donation_settings(service, cx)
             });
+        }
+        if let Some(bot) = handles.twitch_bot.clone() {
+            let presence = topics.twitch_bot.clone();
+            detail.update(cx, |detail, cx| detail.attach_twitch_bot(bot, presence, cx));
         }
         cx.subscribe(&detail, |this, _view, event: &NavRequested, cx| {
             this.navigate(event.0.clone(), cx);

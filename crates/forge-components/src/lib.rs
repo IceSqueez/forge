@@ -118,7 +118,7 @@ pub use hub_card::{
 };
 pub use icons::{Icon, IconAssets, icon, spinner};
 pub use inline_edit::{InlineEdit, InlineEditEvent, inline_edit};
-pub use input_bar::{InputBar, InputBarEvent, SendTarget};
+pub use input_bar::{InputBar, InputBarEvent, InputBarSwitch, SendTarget};
 pub use integration_gating::{
     IntegrationDisabledNotice, health_tile, integration_disabled_notice,
     integration_disabled_reason, integration_inactive_badge,

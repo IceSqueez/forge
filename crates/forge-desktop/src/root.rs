@@ -36,6 +36,7 @@ use crate::shell::AppShell;
 use crate::speak_state::SpeakState;
 use crate::system_info::WindowFacts;
 use crate::topics::Topics;
+use crate::twitch_bot_presence::{TwitchBotPresence, start_twitch_bot_seed};
 use crate::update_flow::UpdateFlow;
 use crate::window_presence::PresenceGate;
 use forge_components::PushToast;
@@ -145,6 +146,7 @@ pub fn run_boot(
     let queue_health = cx.new(|_| QueueHealth::new());
     let event_loss = cx.new(|_| EventLoss::new());
     let awake = cx.new(|_| AwakeState::new());
+    let twitch_bot = cx.new(|_| TwitchBotPresence::new());
 
     let (hotkey_host, hotkey_main_thread) = forge_hotkey::main_thread_channel();
     cx.spawn(async move |_| hotkey_host.run().await).detach();
@@ -183,6 +185,10 @@ pub fn run_boot(
                 let home_stats_for_viewers = home_stats.clone();
                 let event_log_for_bridge = event_log.clone();
                 let platforms_for_bridge = platforms.clone();
+                let twitch_bot_for_bridge = twitch_bot.clone();
+                let twitch_bot_for_seed = twitch_bot.clone();
+                let twitch_bot_handle = handles.twitch_bot.clone();
+                let rt_handle_for_bot_seed = handles.rt_handle.clone();
                 let queue_health_for_bridge = queue_health.clone();
                 let queue_health_for_depths = queue_health.clone();
                 let speak_for_bridge = speak.clone();
@@ -260,6 +266,7 @@ pub fn run_boot(
                         integration_lifecycle,
                         update_flow,
                         problem_report,
+                        twitch_bot,
                     );
                     let shell = cx.new(|cx| {
                         AppShell::new(
@@ -329,8 +336,17 @@ pub fn run_boot(
                         event_log_for_bridge,
                         platforms_for_bridge,
                         queue_health_for_bridge,
+                        twitch_bot_for_bridge,
                         bridge_sub,
                     );
+                    if let Some(bot) = twitch_bot_handle {
+                        start_twitch_bot_seed(
+                            cx,
+                            twitch_bot_for_seed,
+                            bot,
+                            &rt_handle_for_bot_seed,
+                        );
+                    }
                     start_uptime_clock(cx, status_for_clock);
                     start_awake_bridge(cx, awake_for_bridge, awake_watch);
                     start_live_viewers_bridge(cx, home_stats_for_viewers, live_viewers_handle);
@@ -464,6 +480,7 @@ fn start_bridge(
     event_log: Entity<EventLog>,
     platforms: Entity<PlatformConnectivity>,
     queue_health: Entity<QueueHealth>,
+    twitch_bot: Entity<TwitchBotPresence>,
     sub: EventSubscription,
 ) {
     cx.spawn(async move |cx| {
@@ -520,6 +537,16 @@ fn start_bridge(
                 let mut changed = false;
                 for event in batch {
                     changed |= health.apply_event(event);
+                }
+                if changed {
+                    cx.notify();
+                }
+            });
+
+            twitch_bot.update(cx, |presence, cx| {
+                let mut changed = false;
+                for event in batch {
+                    changed |= presence.apply_event(event);
                 }
                 if changed {
                     cx.notify();

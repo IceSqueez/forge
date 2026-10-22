@@ -37,6 +37,17 @@ impl ChatView {
         self
     }
 
+    #[must_use]
+    pub fn with_twitch_bot(
+        self,
+        presence: Entity<crate::twitch_bot_presence::TwitchBotPresence>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        self.composer
+            .update(cx, |composer, cx| composer.set_twitch_bot(presence, cx));
+        self
+    }
+
     pub(crate) fn platform_enabled(&self, platform: PlatformId, cx: &App) -> bool {
         match &self.lifecycle {
             Some(lifecycle) => lifecycle

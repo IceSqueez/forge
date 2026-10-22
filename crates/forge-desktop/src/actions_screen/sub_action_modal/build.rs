@@ -7,6 +7,7 @@ use crate::config_form::{
     code_field_editor, dependent_options, optional_gate_seed, optional_inner_seed,
     optional_shares_key,
 };
+use crate::motion_labels::preset_label;
 use forge_components::int_entry_invalid;
 use forge_components::{FONT_SM, InputEvent};
 use forge_registry::{CodeKind, CodeLanguage, FormField};
@@ -288,11 +289,11 @@ pub(super) fn push_form_field(
                 .unwrap_or_default();
             let options = options
                 .iter()
-                .map(|opt| ((*opt).to_owned(), (*opt).to_owned()))
+                .map(|opt| ((*opt).to_owned(), preset_label(key, opt)))
                 .collect();
             out.push(SubFormField::Select {
                 key: (*key).to_owned(),
-                label: (*label).to_owned(),
+                label: localized_label(label),
                 options_key: None,
                 options,
                 gate,

@@ -3,7 +3,8 @@ use super::field_controls::{bool_row, field_wrap, hint_block, multiline_field};
 use super::rejection::with_rejection_note;
 use super::variable_insert::InsertTarget;
 use super::*;
-use forge_components::{FONT_SM, Spacing, body_family, spacing};
+use crate::sender_labels::sender_field_helper;
+use forge_components::{FONT_SM, FONT_XXS, Spacing, body_family, spacing};
 use forge_registry::CodeLanguage;
 use gpui::Div;
 
@@ -117,18 +118,20 @@ impl EditSubActionForm {
                         continue;
                     }
                     let open_picker = self.open_picker_for(key);
-                    grid_items.push((
-                        true,
-                        self.render_select_field(
-                            key,
-                            label,
-                            options,
-                            selected,
-                            open_picker,
-                            palette,
-                            cx,
-                        ),
-                    ));
+                    let select = self.render_select_field(
+                        key,
+                        label,
+                        options,
+                        selected,
+                        open_picker,
+                        palette,
+                        cx,
+                    );
+                    let select = match sender_field_helper(&self.kind_id, key) {
+                        Some(helper) => with_field_helper(select, helper, palette),
+                        None => select,
+                    };
+                    grid_items.push((true, select));
                 }
                 SubFormField::UnitAmount {
                     label,
@@ -222,4 +225,20 @@ fn sub_field_is_half(field: &SubFormField) -> bool {
         } => !*browse && !*datetime && (integer.is_some() || is_var_key(key)),
         _ => false,
     }
+}
+
+fn with_field_helper(element: AnyElement, helper: String, palette: &ForgePalette) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(spacing(Spacing::Xxs, Density::Cozy))
+        .child(element)
+        .child(
+            div()
+                .font_family(body_family())
+                .text_size(FONT_XXS)
+                .text_color(palette.text_faint)
+                .child(helper),
+        )
+        .into_any_element()
 }

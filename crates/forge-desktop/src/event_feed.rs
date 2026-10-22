@@ -10,6 +10,7 @@ use forge_components::{
 use std::sync::Arc;
 
 use forge_events::EventSource;
+use forge_platform_core::SENT_AS_FIELD;
 use forge_runtime::{BusError, EventBus};
 use forge_types::{EventId, PlatformId};
 use gpui::{
@@ -42,6 +43,8 @@ const SUFFIX_FS: Pixels = px(10.0);
 const STATUS_DOT: Pixels = px(6.0);
 const ROW_RAIL_W: Pixels = px(2.0);
 const ERROR_ROW_ALPHA: f32 = 0.06;
+const EVENT_LEVEL_FIELD: &str = "level";
+const WARNING_LEVEL: &str = "warning";
 const ROW_HOVER_ALPHA: f32 = 0.06;
 
 const FILTER_TABS: [(&str, EventFilter); 7] = [
@@ -527,7 +530,7 @@ impl EventFeedView {
             }
         };
         match item.kind.as_ref() {
-            "chat.send" => Some("sent".into()),
+            "chat.send" | "chat.whisper.sent" => Some(sent_tag(&item.payload)),
             "command.matched" => Some("\u{2192} trigger".into()),
             "action.start" => item.sub_action_count.map(|n| {
                 if n == 1 {
@@ -558,12 +561,25 @@ impl EventFeedView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let warning = !item.is_error && is_warning_level(&item.payload);
         let row_bg = if selected {
             Some(palette.elevated)
         } else if item.is_error {
             Some(with_alpha(palette.random, ERROR_ROW_ALPHA))
+        } else if warning {
+            Some(with_alpha(palette.warning, ERROR_ROW_ALPHA))
         } else {
             None
+        };
+        let kind_color = if warning {
+            palette.warning
+        } else {
+            type_color(&item.kind, item.is_error, palette)
+        };
+        let tag_color = if warning {
+            palette.warning
+        } else {
+            result_color(&item.kind, item.is_error, palette)
         };
         let rail = if selected {
             palette.brand
@@ -585,7 +601,7 @@ impl EventFeedView {
             .truncate()
             .font_family(mono_family())
             .text_size(ROW_FS)
-            .text_color(type_color(&item.kind, item.is_error, palette))
+            .text_color(kind_color)
             .child(item.kind.clone());
 
         let summary = div().flex_1().overflow_hidden().child(
@@ -627,7 +643,7 @@ impl EventFeedView {
                     .whitespace_nowrap()
                     .font_family(mono_family())
                     .text_size(SUFFIX_FS)
-                    .text_color(result_color(&item.kind, item.is_error, palette))
+                    .text_color(tag_color)
                     .child(tag)
             }));
 
@@ -1291,6 +1307,24 @@ fn result_color(kind: &str, is_error: bool, palette: &ForgePalette) -> Rgba {
         "action.done" | "command.matched" | "chat.send" => palette.success,
         k if is_chat_message_kind(k) => palette.success,
         _ => palette.text_muted,
+    }
+}
+
+fn is_warning_level(payload: &serde_json::Value) -> bool {
+    payload
+        .get(EVENT_LEVEL_FIELD)
+        .and_then(|level| level.as_str())
+        == Some(WARNING_LEVEL)
+}
+
+fn sent_tag(payload: &serde_json::Value) -> gpui::SharedString {
+    match payload
+        .get(SENT_AS_FIELD)
+        .and_then(|sent_as| sent_as.get("login"))
+        .and_then(|login| login.as_str())
+    {
+        Some(login) => tr!("event_feed_sent_as", login = login.to_owned()).into(),
+        None => "sent".into(),
     }
 }
 

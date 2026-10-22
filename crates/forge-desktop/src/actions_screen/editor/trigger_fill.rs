@@ -6,6 +6,7 @@ use crate::config_form::{
     FILL_VAL_FS, FoldContext, collect_field_values, fold_config_field, render_config_row,
     set_picked_value, sparse_overrides,
 };
+use crate::trigger_form_shape::{trigger_form_defaults, trigger_form_specs};
 use crate::triggers_screen::platform_dot_color;
 use forge_components::ActivePresentation;
 use forge_components::{
@@ -28,8 +29,8 @@ impl ScreenActionsView {
         let kind_label = descriptor
             .map(|d| d.label().to_owned())
             .unwrap_or_else(|| kind_id.clone());
-        let default = descriptor.map(|d| d.default_config()).unwrap_or_default();
-        let specs = descriptor.map(|d| d.config_fields()).unwrap_or_default();
+        let default = trigger_form_defaults(descriptor);
+        let specs = trigger_form_specs(descriptor);
 
         let fold = FoldContext {
             config: &default,
@@ -190,11 +191,7 @@ impl ScreenActionsView {
             return;
         }
         let kind_id = form.kind_id.clone();
-        let default = self
-            .trigger_registry
-            .get(&kind_id)
-            .map(|d| d.default_config())
-            .unwrap_or_default();
+        let default = trigger_form_defaults(self.trigger_registry.get(&kind_id));
         let mut buffer = default.clone();
         collect_field_values(&form.fields, &mut buffer, cx);
         let overrides = sparse_overrides(&default, &buffer);

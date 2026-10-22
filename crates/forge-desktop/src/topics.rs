@@ -11,6 +11,7 @@ use crate::platforms::PlatformConnectivity;
 use crate::problem_report::ProblemReport;
 use crate::queue_health::QueueHealth;
 use crate::speak_state::SpeakState;
+use crate::twitch_bot_presence::TwitchBotPresence;
 use crate::update_flow::UpdateFlow;
 
 pub struct Topics {
@@ -26,6 +27,7 @@ pub struct Topics {
     pub integration_lifecycle: Entity<IntegrationLifecycle>,
     pub update_flow: Entity<UpdateFlow>,
     pub problem_report: Entity<ProblemReport>,
+    pub twitch_bot: Entity<TwitchBotPresence>,
 }
 
 impl Topics {
@@ -43,6 +45,7 @@ impl Topics {
         integration_lifecycle: Entity<IntegrationLifecycle>,
         update_flow: Entity<UpdateFlow>,
         problem_report: Entity<ProblemReport>,
+        twitch_bot: Entity<TwitchBotPresence>,
     ) -> Self {
         Self {
             chat_feed,
@@ -57,6 +60,7 @@ impl Topics {
             integration_lifecycle,
             update_flow,
             problem_report,
+            twitch_bot,
         }
     }
 }

@@ -47,9 +47,12 @@ use crate::platforms::PlatformConnectivity;
 use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal, RunHistoryOpenIntegration};
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
+use crate::twitch_bot_presence::TwitchBotPresence;
+use crate::twitch_bot_section::{StreamerSignInRequested, TwitchBotSection};
 use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_platform_twitch::TwitchBotAccount;
 use forge_runtime::IntegrationSlot;
 
 struct ActiveConnect {
@@ -85,6 +88,8 @@ pub struct IntegrationDetail {
     vtube_install_seed: VTubeInstallSeed,
     connect: Option<ActiveConnect>,
     donation_settings: Option<DonationSettingsLink>,
+    twitch_bot: Option<Entity<TwitchBotSection>>,
+    _twitch_bot_subs: Vec<Subscription>,
     is_twitch: bool,
     is_obs: bool,
     is_vtube: bool,
@@ -238,6 +243,8 @@ impl IntegrationDetail {
             vtube_install_seed,
             connect: None,
             donation_settings: None,
+            twitch_bot: None,
+            _twitch_bot_subs: Vec::new(),
             is_twitch,
             is_obs,
             is_vtube,
@@ -295,6 +302,32 @@ impl IntegrationDetail {
         cx.notify();
     }
 
+    pub fn attach_twitch_bot(
+        &mut self,
+        bot: Arc<TwitchBotAccount>,
+        presence: Entity<TwitchBotPresence>,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.is_twitch {
+            return;
+        }
+        let rt_handle = self.rt_handle.clone();
+        let streamer_login = self.status.hero_name().map(ToOwned::to_owned);
+        let section =
+            cx.new(|cx| TwitchBotSection::new(bot, presence, rt_handle, streamer_login, cx));
+        self._twitch_bot_subs = vec![
+            cx.subscribe(
+                &section,
+                |this, _section, _: &StreamerSignInRequested, cx| {
+                    this.reset_to_connect(PlatformId::Twitch, cx)
+                },
+            ),
+            cx.observe(&section, |_, _, cx| cx.notify()),
+        ];
+        self.twitch_bot = Some(section);
+        cx.notify();
+    }
+
     fn open_connect_flow(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
         let launch = ConnectFlowLaunch {
             platform,
@@ -344,6 +377,12 @@ impl IntegrationDetail {
         if let Some(manager) = self.collection_manager.clone() {
             let connected = self.connection == ConnectionState::Connected;
             manager.update(cx, |manager, cx| manager.set_connected(connected, cx));
+        }
+        if let Some(section) = self.twitch_bot.clone() {
+            let streamer_login = self.status.hero_name().map(ToOwned::to_owned);
+            section.update(cx, |section, cx| {
+                section.set_streamer_login(streamer_login, cx)
+            });
         }
         cx.notify();
     }
@@ -1393,7 +1432,20 @@ impl Render for IntegrationDetail {
         let density = cx.density();
 
         let body = match &self.connect {
-            Some(connect) => connect.view.clone().into_any_element(),
+            Some(connect) => {
+                let twitch_bot = self
+                    .twitch_bot
+                    .clone()
+                    .filter(|section| section.read(cx).has_bot_account(cx));
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .gap(px(14.0))
+                    .child(connect.view.clone())
+                    .children(twitch_bot)
+                    .into_any_element()
+            }
             None => {
                 let header_card = self.header_card(&palette, density, cx);
                 let reconnecting = matches!(
@@ -1420,6 +1472,7 @@ impl Render for IntegrationDetail {
                     .donation_settings
                     .as_ref()
                     .map(|link| link.view.clone());
+                let twitch_bot = self.twitch_bot.clone();
 
                 div()
                     .w_full()
@@ -1431,6 +1484,7 @@ impl Render for IntegrationDetail {
                     .child(header_card)
                     .child(health)
                     .child(content)
+                    .children(twitch_bot)
                     .children(donation_settings)
                     .child(quick)
                     .into_any_element()

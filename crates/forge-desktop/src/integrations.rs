@@ -96,6 +96,7 @@ pub struct Integrations {
     pub hotkey_client: Option<Arc<forge_hotkey::HotkeyClient>>,
     pub hotkey_reconciler: Option<Arc<HotkeyReconciler>>,
     pub donation_services: DonationServices,
+    pub twitch_bot: Option<Arc<forge_platform_twitch::TwitchBotAccount>>,
 }
 
 #[derive(Clone)]
@@ -283,7 +284,9 @@ pub async fn build_integrations(
     let midi_kinds = kinds_owned_by(triggers, &forge_midi::MIDI_INTEGRATION.id);
 
     let mut factories: Vec<Arc<dyn IntegrationFactory<BuiltinObject>>> = Vec::new();
+    let mut twitch_bot = None;
     if let Some(twitch) = wire_twitch(sub_actions, backend, bus, endpoints) {
+        twitch_bot = Some(twitch.bot());
         factories.push(Arc::new(twitch));
     }
     let obs = wire_obs(sub_actions, backend, bus);
@@ -329,6 +332,7 @@ pub async fn build_integrations(
         hotkey_client: Some(hotkey_client),
         hotkey_reconciler: Some(hotkey_reconciler),
         donation_services,
+        twitch_bot,
     }
 }
 

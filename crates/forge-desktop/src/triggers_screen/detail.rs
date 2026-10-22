@@ -8,6 +8,7 @@ use crate::config_form::{
     set_picked_value, sparse_overrides,
 };
 use crate::integration_switch::{category_inactive_badge, inactive_badge};
+use crate::trigger_form_shape::{trigger_form_defaults, trigger_form_specs};
 use forge_components::ActivePresentation;
 use forge_components::{
     Density, FONT_XXS, Icon, InputEvent, Picker, PickerEvent, Radius, ResizeEdge, ResizeRange,
@@ -83,8 +84,8 @@ impl TriggersRegistryView {
         }
         let palette = cx.palette();
         let descriptor = self.registry.get(&data.instance.kind_id);
-        let default = descriptor.map(|d| d.default_config()).unwrap_or_default();
-        let specs = descriptor.map(|d| d.config_fields()).unwrap_or_default();
+        let default = trigger_form_defaults(descriptor);
+        let specs = trigger_form_specs(descriptor);
         let effective = effective_config(&default, &data.instance.overrides);
 
         let fold = FoldContext {
@@ -276,11 +277,7 @@ impl TriggersRegistryView {
 
     fn pending_instance(&self, cx: &App) -> Option<TriggerInstance> {
         let detail = self.detail.as_ref()?;
-        let default = self
-            .registry
-            .get(&detail.instance.kind_id)
-            .map(|d| d.default_config())
-            .unwrap_or_default();
+        let default = trigger_form_defaults(self.registry.get(&detail.instance.kind_id));
         let mut buffer = effective_config(&default, &detail.instance.overrides);
         collect_field_values(&detail.fields, &mut buffer, cx);
 

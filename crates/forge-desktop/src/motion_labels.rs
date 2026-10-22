@@ -1,7 +1,9 @@
 use forge_components::tr;
 use forge_overlay::motion::{ENTRANCE, EXIT, INTENSITY, TEXT_EFFECT, TEXT_UNIT};
 
+use crate::announcement_labels::announcement_color_label;
 use crate::latest_labels::latest_option_label;
+use crate::sender_labels::sender_option_label;
 
 pub(crate) fn motion_option_label(key: &str, option: &str) -> Option<String> {
     match key {
@@ -16,6 +18,8 @@ pub(crate) fn motion_option_label(key: &str, option: &str) -> Option<String> {
 pub(crate) fn preset_label(key: &str, option: &str) -> String {
     motion_option_label(key, option)
         .or_else(|| latest_option_label(key, option))
+        .or_else(|| sender_option_label(key, option))
+        .or_else(|| announcement_color_label(key, option))
         .unwrap_or_else(|| option.to_owned())
 }
 

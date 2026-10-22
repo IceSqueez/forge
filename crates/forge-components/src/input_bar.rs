@@ -26,6 +26,12 @@ struct TargetSlot {
     available: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct InputBarSwitch {
+    pub options: Vec<SharedString>,
+    pub selected: usize,
+}
+
 #[derive(Clone, Debug)]
 pub enum InputBarEvent {
     Send {
@@ -34,6 +40,7 @@ pub enum InputBarEvent {
     },
     EmojiToggled,
     TargetsChanged,
+    SwitchChanged(usize),
 }
 
 const COMPOSER_GAP: gpui::Pixels = px(8.0);
@@ -51,6 +58,7 @@ const HINT_GAP: gpui::Pixels = px(4.0);
 const HINT_ROW_GAP: gpui::Pixels = px(14.0);
 const TARGET_GROUP_GAP: gpui::Pixels = px(4.0);
 const WRAP_PAD_X: gpui::Pixels = px(14.0);
+const SWITCH_PAD_X: gpui::Pixels = px(6.0);
 
 const EMOJIS: &[&str] = &[
     "😀",
@@ -128,6 +136,7 @@ const EMOJIS: &[&str] = &[
 pub struct InputBar {
     field: Entity<TextInput>,
     targets: Vec<TargetSlot>,
+    switch: Option<InputBarSwitch>,
     max_chars: Option<usize>,
     emoji_open: bool,
     palette: ForgePalette,
@@ -155,6 +164,7 @@ impl InputBar {
         Self {
             field,
             targets: Vec::new(),
+            switch: None,
             max_chars: None,
             emoji_open: false,
             palette,
@@ -210,6 +220,13 @@ impl InputBar {
             slot.available = next;
         }
         if changed {
+            cx.notify();
+        }
+    }
+
+    pub fn set_switch(&mut self, switch: Option<InputBarSwitch>, cx: &mut Context<Self>) {
+        if self.switch != switch {
+            self.switch = switch;
             cx.notify();
         }
     }
@@ -283,6 +300,69 @@ impl InputBar {
         }
         cx.emit(InputBarEvent::TargetsChanged);
         cx.notify();
+    }
+
+    fn pick_switch(&mut self, idx: usize, cx: &mut Context<Self>) {
+        let Some(switch) = self.switch.as_mut() else {
+            return;
+        };
+        if idx >= switch.options.len() || switch.selected == idx {
+            return;
+        }
+        switch.selected = idx;
+        cx.emit(InputBarEvent::SwitchChanged(idx));
+        cx.notify();
+    }
+
+    fn render_switch(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        let switch = self.switch.as_ref()?;
+        let p = self.palette;
+        let mut group = div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(TARGET_GROUP_GAP);
+        for (idx, label) in switch.options.iter().enumerate() {
+            let lit = idx == switch.selected;
+            let mut tile = div()
+                .id(("forge-inputbar-switch", idx))
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .h(TARGET_SIZE)
+                .px(SWITCH_PAD_X)
+                .rounded(TARGET_RADIUS)
+                .cursor_pointer()
+                .on_click(cx.listener(move |this, _event, _window, cx| this.pick_switch(idx, cx)))
+                .child(
+                    div()
+                        .font_family(body_family())
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_size(FONT_XXS)
+                        .text_color(if lit { p.text_primary } else { p.text_faint })
+                        .child(label.clone()),
+                );
+            if lit {
+                tile = tile.bg(p.surface_overlay);
+            }
+            group = group.child(tile);
+        }
+        Some(
+            div()
+                .flex_none()
+                .flex()
+                .items_center()
+                .gap(COMPOSER_GAP)
+                .child(group)
+                .child(
+                    div()
+                        .flex_none()
+                        .w(DIVIDER_WIDTH)
+                        .h(DIVIDER_HEIGHT)
+                        .bg(p.border_regular),
+                ),
+        )
     }
 
     fn toggle_emoji(&mut self, cx: &mut Context<Self>) {
@@ -488,6 +568,7 @@ impl Render for InputBar {
             .rounded(radius(Radius::Md))
             .child(targets_group)
             .child(divider)
+            .children(self.render_switch(cx))
             .child(field)
             .child(emoji_toggle)
             .child(send);

@@ -77,6 +77,7 @@ pub(crate) fn localized_label(english: &'static str) -> String {
         "Ban type" => tr!("config_field_label_ban_type"),
         "Case sensitive" => tr!("config_field_label_case_sensitive"),
         "Channel" => tr!("config_field_label_channel"),
+        "Color" => tr!("config_field_label_color"),
         "Channel (leave empty for any)" => tr!("config_field_label_channel_filter"),
         "Command phrase" => tr!("config_field_label_command_phrase"),
         "Controller" => tr!("config_field_label_controller"),
@@ -114,6 +115,8 @@ pub(crate) fn localized_label(english: &'static str) -> String {
             tr!("config_field_label_reward_title")
         }
         "Scene" => tr!("config_field_label_scene"),
+        "Send As" => tr!("config_field_label_send_as"),
+        "Ignore the bot's messages" => tr!("config_field_label_ignore_bot_messages"),
         "Scene name (leave empty to match any)" => tr!("config_field_label_scene_filter"),
         "Source name" => tr!("config_field_label_source_name"),
         "Source name (leave empty to match any)" => tr!("config_field_label_source_filter"),

@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
+use forge_platform_core::{SENDER_FIELD, SenderPreference};
 use forge_runtime::{Delivery, EventSubscription};
 use forge_types::{EventId, PlatformId};
 
@@ -151,6 +152,19 @@ impl SendPlan {
                     )
                 })
                 .collect(),
+        }
+    }
+}
+
+pub(crate) fn attach_twitch_sender(requests: &mut [Event], sender: SenderPreference) {
+    let twitch = platform_integration(PlatformId::Twitch).id_str();
+    for request in requests {
+        let reaches_twitch = match request.payload.get("target").and_then(|t| t.as_str()) {
+            None => true,
+            Some(target) => target == twitch,
+        };
+        if reaches_twitch && let Some(fields) = request.payload.as_object_mut() {
+            fields.insert(SENDER_FIELD.to_owned(), sender.as_str().into());
         }
     }
 }

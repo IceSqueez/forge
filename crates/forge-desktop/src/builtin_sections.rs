@@ -1001,7 +1001,7 @@ fn panel_header_icon_color(icon_str: &str, palette: &ForgePalette) -> Rgba {
     }
 }
 
-fn panel_header_row(
+pub(crate) fn panel_header_row(
     icon_str: &str,
     title: &str,
     inline_label: Option<&str>,

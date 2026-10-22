@@ -608,6 +608,7 @@ pub async fn build_runtime(
         hotkey_client: integrations.hotkey_client,
         hotkey_reconciler: integrations.hotkey_reconciler,
         donation_services: integrations.donation_services,
+        twitch_bot: integrations.twitch_bot,
         server,
         overlays,
         overlay_kinds,

@@ -52,6 +52,7 @@ pub struct RuntimeHandles {
     pub vtube_install_seed: VTubeInstallSeed,
     pub discord_client: Arc<forge_discord::DiscordClient>,
     pub donation_services: crate::donation_services::DonationServices,
+    pub twitch_bot: Option<Arc<forge_platform_twitch::TwitchBotAccount>>,
     pub midi_sink: Arc<forge_midi::SwitchableMidiSink>,
     pub server: Option<forge_server::ServerHandle>,
     pub server_unavailable: Option<String>,

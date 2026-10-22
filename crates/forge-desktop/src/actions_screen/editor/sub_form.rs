@@ -6,7 +6,7 @@ use crate::actions_screen::sub_action_modal::{
 use crate::collection_options::collection_choice_fields;
 use crate::obs_catalog_options::obs_catalog_fields;
 use crate::vtube_catalog_options::vtube_catalog_fields;
-use forge_registry::FormSchemaSource;
+use forge_registry::{FormField, FormSchemaSource};
 use forge_types::{SubActionConfig, SubActionStep};
 use gpui::{Context, Entity};
 
@@ -156,12 +156,13 @@ impl ScreenActionsView {
             return;
         };
         let kind_id = step.kind_id.clone();
-        let config = step.config.clone();
+        let mut config = step.config.clone();
         let continue_on_error = step.continue_on_error;
-        let Some((specs, icon_name, category, refinement)) =
+        let Some((specs, defaults, icon_name, category, refinement)) =
             self.sub_action_registry.get(&kind_id).map(|r| {
                 (
                     r.config_fields(),
+                    r.default_config(),
                     r.icon_name().to_owned(),
                     r.category(),
                     r.config_refinement(),
@@ -170,6 +171,7 @@ impl ScreenActionsView {
         else {
             return;
         };
+        seed_absent_choices(&specs, &defaults, &mut config);
         let kind_label = self.kind_label(&kind_id);
         let name_value = step.label.clone().unwrap_or_else(|| kind_label.clone());
         let condition_value = step.condition.clone().unwrap_or_default();
@@ -192,6 +194,21 @@ impl ScreenActionsView {
         };
         self.step_menu_open = None;
         self.open_sub_form(launch, cx);
+    }
+}
+
+fn seed_absent_choices(
+    specs: &[FormField],
+    defaults: &SubActionConfig,
+    config: &mut SubActionConfig,
+) {
+    for spec in specs {
+        if let FormField::Select { key, .. } | FormField::Swatch { key, .. } = spec
+            && !config.contains_key(*key)
+            && let Some(default) = defaults.get(*key)
+        {
+            config.insert((*key).to_owned(), default.clone());
+        }
     }
 }
 

@@ -1,7 +1,8 @@
 mod login;
+mod moderator;
 mod validate;
 
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_platform_core::{PlatformEndpoints, TokenBucketRateLimiter};
@@ -17,6 +18,7 @@ use crate::helix::{HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, He
 use validate::{TokenValidator, TokenVerdict};
 
 pub use login::BotLoginError;
+pub use moderator::{BotModerator, BotModeratorError};
 
 pub const BOT_STATUS_CHANGED_KIND: &str = "twitch.bot.status";
 
@@ -71,6 +73,7 @@ struct BotState {
     status: BotStatus,
     user_id: Option<String>,
     token_rejected: bool,
+    moderator: BotModerator,
 }
 
 pub struct TwitchBotAccount {
@@ -82,6 +85,7 @@ pub struct TwitchBotAccount {
     client_id: String,
     bus: Arc<dyn EventPublisher>,
     state: RwLock<BotState>,
+    broadcaster_transport: OnceLock<Arc<dyn HelixTransport>>,
     pending_flow: tokio::sync::Mutex<Option<TwitchAuthFlow>>,
     login_cancel: std::sync::Mutex<CancellationToken>,
 }
@@ -123,10 +127,23 @@ impl TwitchBotAccount {
                 status: BotStatus::NotConnected,
                 user_id: None,
                 token_rejected: false,
+                moderator: BotModerator::Unknown,
             }),
+            broadcaster_transport: OnceLock::new(),
             pending_flow: tokio::sync::Mutex::new(None),
             login_cancel: std::sync::Mutex::new(CancellationToken::new()),
         })
+    }
+
+    pub fn attach_broadcaster_transport(&self, transport: Arc<dyn HelixTransport>) {
+        let _ = self.broadcaster_transport.set(transport);
+    }
+
+    pub fn moderator_status(&self) -> BotModerator {
+        self.state
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .moderator
     }
 
     pub fn status(&self) -> BotStatus {
@@ -171,7 +188,11 @@ impl TwitchBotAccount {
                 login: stored.login,
             }
         };
+        let connected = matches!(status, BotStatus::Connected { .. });
         self.set_state(status, Some(stored.user_id));
+        if connected {
+            self.refresh_moderator_status().await;
+        }
     }
 
     pub(crate) async fn identity(&self) -> Result<BotIdentity, BotUnavailable> {
@@ -226,16 +247,39 @@ impl TwitchBotAccount {
         let changed = {
             let mut guard = self.state.write().unwrap_or_else(|p| p.into_inner());
             let changed = guard.status != status;
-            guard.status = status.clone();
+            if status == BotStatus::NotConnected {
+                guard.moderator = BotModerator::Unknown;
+            }
+            guard.status = status;
             guard.user_id = user_id;
             guard.token_rejected = false;
             changed
         };
-        if !changed {
-            return;
+        if changed {
+            self.publish_status();
         }
+    }
+
+    fn set_moderator(&self, moderator: BotModerator) {
+        let changed = {
+            let mut guard = self.state.write().unwrap_or_else(|p| p.into_inner());
+            let changed = guard.moderator != moderator;
+            guard.moderator = moderator;
+            changed
+        };
+        if changed {
+            self.publish_status();
+        }
+    }
+
+    fn publish_status(&self) {
+        let (status, moderator) = {
+            let guard = self.state.read().unwrap_or_else(|p| p.into_inner());
+            (guard.status.clone(), guard.moderator)
+        };
         info!(
             status = status.wire_name(),
+            moderator = moderator.wire_name(),
             "twitch bot account status changed"
         );
         self.bus.publish(Event::new(
@@ -244,6 +288,7 @@ impl TwitchBotAccount {
             serde_json::json!({
                 "status": status.wire_name(),
                 "login": status.login(),
+                "moderator": moderator.wire_name(),
             }),
         ));
     }

@@ -291,6 +291,15 @@ fn map_send_failure(failure: SendFailure) -> PlatformError {
             status: NON_HTTP_STATUS,
             body: failure.to_string(),
         },
+        SendFailure::BotNotModerator => PlatformError::Http {
+            status: NON_HTTP_STATUS,
+            body: failure.to_string(),
+        },
+        SendFailure::PermissionDenied(_) | SendFailure::Refused(_) => PlatformError::Http {
+            status: NON_HTTP_STATUS,
+            body: failure.to_string(),
+        },
+        SendFailure::Helix(err) => map_send_error(ChatSendError::from(err)),
         SendFailure::Chat(err) => map_send_error(err),
         SendFailure::Whisper(err) => map_whisper_error(err),
         SendFailure::Credentials(reason) => PlatformError::Network { reason },

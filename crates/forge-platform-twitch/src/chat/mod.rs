@@ -6,6 +6,7 @@ mod session;
 mod subscriber;
 mod whisper;
 
+pub(crate) use send::refusal_text;
 pub use send::{ChatSendError, SentMessageId, send_chat, send_chat_reply};
 pub use session::ChatConnectionState;
 pub(crate) use whisper::{WhisperError, send_whisper, send_whisper_to};

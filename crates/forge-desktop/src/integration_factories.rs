@@ -86,6 +86,7 @@ pub(crate) fn wire_twitch(
                 Arc::clone(&manager) as Arc<dyn forge_platform_twitch::HelixTokenRefresher>
             ),
         );
+    bot.attach_broadcaster_transport(Arc::clone(&transport));
     if let Err(e) = forge_platform_twitch::register_twitch_sub_actions(
         sub_actions,
         transport,

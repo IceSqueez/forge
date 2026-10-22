@@ -4,6 +4,7 @@ pub mod auth;
 mod ban_list;
 mod bot_account;
 pub mod builtin;
+mod cadence;
 pub mod chat;
 pub mod chat_platform;
 mod chat_sender;
@@ -33,7 +34,10 @@ pub use auth::{
     DeviceCodeInfo, TWITCH_BOT_SCOPES, TWITCH_BROADCASTER_SCOPES, TwitchAuthBundle, TwitchAuthFlow,
     UserInfo, client_id, twitch_auth_flow,
 };
-pub use bot_account::{BOT_STATUS_CHANGED_KIND, BotLoginError, BotStatus, TwitchBotAccount};
+pub use bot_account::{
+    BOT_STATUS_CHANGED_KIND, BotLoginError, BotModerator, BotModeratorError, BotStatus,
+    TwitchBotAccount,
+};
 pub use builtin::{
     ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW, TwitchIntegrationBundle,
 };

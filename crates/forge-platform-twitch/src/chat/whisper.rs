@@ -1,10 +1,14 @@
+use reqwest::StatusCode;
 use thiserror::Error;
+
+use super::send::refusal_text;
 
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
 use crate::sub_actions::user_target::UserTarget;
 
 const WHISPERS_PATH: &str = "/helix/whispers";
 const MAX_WHISPER_CHARS: usize = 500;
+const WHISPER_BLOCK_MARKERS: [&str; 3] = ["stranger", "block", "doesn't allow"];
 
 #[derive(Debug, Error)]
 pub(crate) enum WhisperError {
@@ -14,8 +18,24 @@ pub(crate) enum WhisperError {
     EmptyMessage,
     #[error("whisper message exceeds {MAX_WHISPER_CHARS}-character limit")]
     MessageTooLong,
+    #[error("recipient does not accept whispers")]
+    RecipientRejectsWhispers,
     #[error(transparent)]
     Helix(#[from] HelixError),
+}
+
+fn classify_rejection(error: HelixError) -> WhisperError {
+    let HelixError::Http { status, body } = &error else {
+        return WhisperError::Helix(error);
+    };
+    let lowered = refusal_text(body).to_lowercase();
+    let blocks_strangers = WHISPER_BLOCK_MARKERS
+        .iter()
+        .any(|marker| lowered.contains(marker));
+    if *status == StatusCode::BAD_REQUEST.as_u16() && blocks_strangers {
+        return WhisperError::RecipientRejectsWhispers;
+    }
+    WhisperError::Helix(error)
 }
 
 pub(crate) async fn send_whisper(
@@ -48,7 +68,10 @@ pub(crate) async fn send_whisper_to(
         .query("from_user_id", from_user_id)
         .query("to_user_id", to_user_id)
         .body(serde_json::json!({ "message": message }));
-    transport.execute(request).await?;
+    transport
+        .execute(request)
+        .await
+        .map_err(classify_rejection)?;
     Ok(())
 }
 

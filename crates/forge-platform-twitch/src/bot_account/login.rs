@@ -90,6 +90,7 @@ impl TwitchBotAccount {
             login: bundle.user_info.login,
         };
         self.set_state(status.clone(), Some(bundle.user_info.id));
+        self.refresh_moderator_status().await;
         Ok(status)
     }
 

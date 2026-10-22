@@ -8,16 +8,22 @@ use forge_platform_core::{
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{ConfigReason, RegistryError};
 use forge_types::SubActionOutcome;
+use reqwest::StatusCode;
 use thiserror::Error;
 use tracing::warn;
 
-use crate::bot_account::{BotIdentity, BotUnavailable, TwitchBotAccount};
+use crate::bot_account::{BotIdentity, BotModerator, BotUnavailable, TwitchBotAccount};
+use crate::cadence::CadenceLedger;
+use crate::chat::refusal_text;
 use crate::chat::{
     ChatSendError, WhisperError, send_chat, send_chat_reply, send_whisper, send_whisper_to,
 };
-use crate::helix::{HelixError, HelixTransport};
+use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
 use crate::sub_actions::identity::SelfIdentity;
 use crate::sub_actions::user_target::UserTarget;
+
+const ANNOUNCEMENTS_PATH: &str = "/helix/chat/announcements";
+const SHOUTOUTS_PATH: &str = "/helix/chat/shoutouts";
 
 pub const SENDER_FALLBACK_KIND: &str = "chat.sender.fallback";
 
@@ -31,6 +37,14 @@ pub(crate) enum SendFailure {
     Chat(ChatSendError),
     #[error(transparent)]
     Whisper(WhisperError),
+    #[error("bot is not a moderator - make it one in Integrations -> Twitch")]
+    BotNotModerator,
+    #[error("Twitch refused: {0}")]
+    PermissionDenied(String),
+    #[error("{0}")]
+    Refused(String),
+    #[error(transparent)]
+    Helix(HelixError),
     #[error("{0}")]
     Credentials(String),
 }
@@ -41,6 +55,7 @@ impl SendFailure {
             self,
             Self::Chat(ChatSendError::ReauthRequired)
                 | Self::Whisper(WhisperError::Helix(HelixError::ReauthRequired))
+                | Self::Helix(HelixError::ReauthRequired)
         )
     }
 }
@@ -53,6 +68,13 @@ pub(crate) enum ChatDelivery<'a> {
     Reply {
         text: &'a str,
         parent_message_id: &'a str,
+    },
+    Announcement {
+        text: &'a str,
+        color: &'a str,
+    },
+    Shoutout {
+        target: UserTarget<'a>,
     },
     WhisperToLogin {
         login: &'a str,
@@ -69,8 +91,14 @@ impl ChatDelivery<'_> {
         match self {
             Self::Message { .. } => "message",
             Self::Reply { .. } => "reply",
+            Self::Announcement { .. } => "announcement",
+            Self::Shoutout { .. } => "shoutout",
             Self::WhisperToLogin { .. } | Self::WhisperToTarget { .. } => "whisper",
         }
+    }
+
+    const fn needs_moderator(&self) -> bool {
+        matches!(self, Self::Announcement { .. } | Self::Shoutout { .. })
     }
 
     const fn is_whisper(&self) -> bool {
@@ -110,6 +138,7 @@ pub(crate) struct ChatSenders {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
     bot: Option<Arc<TwitchBotAccount>>,
+    cadence: Arc<CadenceLedger>,
 }
 
 impl ChatSenders {
@@ -118,7 +147,13 @@ impl ChatSenders {
             transport,
             identity,
             bot: None,
+            cadence: Arc::default(),
         }
+    }
+
+    pub(crate) fn with_cadence(mut self, cadence: Arc<CadenceLedger>) -> Self {
+        self.cadence = cadence;
+        self
     }
 
     pub(crate) fn with_bot(mut self, bot: Option<Arc<TwitchBotAccount>>) -> Self {
@@ -144,14 +179,14 @@ impl ChatSenders {
             transport: Arc::clone(&self.transport),
         };
         match preference {
-            SenderPreference::Streamer => post(&streamer, &broadcaster_id, delivery).await,
+            SenderPreference::Streamer => self.post(&streamer, &broadcaster_id, delivery).await,
             SenderPreference::BotOnly => self.send_as_bot(&broadcaster_id, delivery).await,
             SenderPreference::Default => match self.send_as_bot(&broadcaster_id, delivery).await {
                 Err(SendFailure::BotNotConnected(reason)) => {
                     if reason != BotUnavailable::NotConnected {
                         announce_fallback(events, reason, &delivery);
                     }
-                    post(&streamer, &broadcaster_id, delivery).await
+                    self.post(&streamer, &broadcaster_id, delivery).await
                 }
                 other => other,
             },
@@ -172,7 +207,16 @@ impl ChatSenders {
                 .await
                 .map_err(SendFailure::BotNotConnected)?,
         );
-        match post(&bot, broadcaster_id, delivery).await {
+        if delivery.needs_moderator()
+            && bot_account.moderator_status() == BotModerator::NotModerator
+        {
+            return Err(SendFailure::BotNotModerator);
+        }
+        match self.post(&bot, broadcaster_id, delivery).await {
+            Err(SendFailure::PermissionDenied(reason)) if delivery.needs_moderator() => {
+                bot_account.refresh_moderator_status().await;
+                Err(SendFailure::PermissionDenied(reason))
+            }
             Err(failure) if failure.token_rejected() => {
                 if delivery.is_whisper() && !bot_account.token_confirmed_invalid().await {
                     return Err(SendFailure::BotPhoneUnverified);
@@ -185,46 +229,119 @@ impl ChatSenders {
     }
 }
 
-async fn post(
-    actor: &Actor,
-    broadcaster_id: &str,
-    delivery: ChatDelivery<'_>,
-) -> Result<ActingSender, SendFailure> {
-    let transport = actor.transport.as_ref();
-    match delivery {
-        ChatDelivery::Message { text } => {
-            send_chat(transport, broadcaster_id, &actor.user_id, text)
+impl ChatSenders {
+    async fn post(
+        &self,
+        actor: &Actor,
+        broadcaster_id: &str,
+        delivery: ChatDelivery<'_>,
+    ) -> Result<ActingSender, SendFailure> {
+        let transport = actor.transport.as_ref();
+        match delivery {
+            ChatDelivery::Message { text } => {
+                send_chat(transport, broadcaster_id, &actor.user_id, text)
+                    .await
+                    .map(drop)
+                    .map_err(SendFailure::Chat)?;
+            }
+            ChatDelivery::Reply {
+                text,
+                parent_message_id,
+            } => {
+                send_chat_reply(
+                    transport,
+                    broadcaster_id,
+                    &actor.user_id,
+                    text,
+                    parent_message_id,
+                )
                 .await
                 .map(drop)
                 .map_err(SendFailure::Chat)?;
+            }
+            ChatDelivery::Announcement { text, color } => {
+                let reservation = self.cadence.reserve_announcement();
+                if !reservation.wait().is_zero() {
+                    tokio::time::sleep(reservation.wait()).await;
+                }
+                let request = HelixRequest::new(HelixMethod::Post, ANNOUNCEMENTS_PATH)
+                    .query("broadcaster_id", broadcaster_id)
+                    .query("moderator_id", actor.user_id.as_str())
+                    .body(serde_json::json!({ "message": text, "color": color }));
+                transport
+                    .execute(request)
+                    .await
+                    .map_err(moderation_failure)?;
+                reservation.commit();
+            }
+            ChatDelivery::Shoutout { target } => {
+                let requested_key = target_key(target);
+                self.refuse_during_shoutout_cooldown(&[&requested_key])?;
+                let target_id = target
+                    .user_id(transport)
+                    .await
+                    .map_err(moderation_failure)?;
+                let id_key = target_key(UserTarget::Id(&target_id));
+                self.refuse_during_shoutout_cooldown(&[&id_key])?;
+                let request = HelixRequest::new(HelixMethod::Post, SHOUTOUTS_PATH)
+                    .query("from_broadcaster_id", broadcaster_id)
+                    .query("to_broadcaster_id", target_id.as_str())
+                    .query("moderator_id", actor.user_id.as_str());
+                transport
+                    .execute(request)
+                    .await
+                    .map_err(moderation_failure)?;
+                self.cadence
+                    .record_shoutout(&[requested_key.as_str(), id_key.as_str()]);
+            }
+            ChatDelivery::WhisperToLogin { login, text } => {
+                send_whisper(transport, &actor.user_id, login, text)
+                    .await
+                    .map_err(SendFailure::Whisper)?;
+            }
+            ChatDelivery::WhisperToTarget { recipient, text } => {
+                send_whisper_to(transport, &actor.user_id, recipient, text)
+                    .await
+                    .map_err(SendFailure::Whisper)?;
+            }
         }
-        ChatDelivery::Reply {
-            text,
-            parent_message_id,
-        } => {
-            send_chat_reply(
-                transport,
-                broadcaster_id,
-                &actor.user_id,
-                text,
-                parent_message_id,
-            )
-            .await
-            .map(drop)
-            .map_err(SendFailure::Chat)?;
-        }
-        ChatDelivery::WhisperToLogin { login, text } => {
-            send_whisper(transport, &actor.user_id, login, text)
-                .await
-                .map_err(SendFailure::Whisper)?;
-        }
-        ChatDelivery::WhisperToTarget { recipient, text } => {
-            send_whisper_to(transport, &actor.user_id, recipient, text)
-                .await
-                .map_err(SendFailure::Whisper)?;
+        Ok(actor.acting_sender())
+    }
+}
+
+fn target_key(target: UserTarget<'_>) -> String {
+    match target {
+        UserTarget::Id(id) => format!("id:{id}"),
+        UserTarget::Login(login) => format!("login:{}", login.to_lowercase()),
+    }
+}
+
+impl ChatSenders {
+    fn refuse_during_shoutout_cooldown(&self, target_keys: &[&str]) -> Result<(), SendFailure> {
+        match self.cadence.shoutout_cooldown(target_keys) {
+            Some(remaining) => Err(SendFailure::Refused(format!(
+                "shoutout cooldown: try again in {}s",
+                remaining.as_secs().max(1)
+            ))),
+            None => Ok(()),
         }
     }
-    Ok(actor.acting_sender())
+}
+
+fn moderation_failure(error: HelixError) -> SendFailure {
+    match error {
+        HelixError::ReauthRequired => SendFailure::Helix(HelixError::ReauthRequired),
+        HelixError::RateLimited => SendFailure::Refused(
+            "Twitch rate limit or cooldown reached; try again later".to_owned(),
+        ),
+        HelixError::Http { status, body } if status == StatusCode::FORBIDDEN.as_u16() => {
+            SendFailure::PermissionDenied(format!("HTTP {status}: {}", refusal_text(&body)))
+        }
+        HelixError::Http { status, body } => {
+            SendFailure::Refused(format!("HTTP {status}: {}", refusal_text(&body)))
+        }
+        other => SendFailure::Credentials(other.to_string()),
+    }
 }
 
 fn announce_fallback(

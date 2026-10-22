@@ -110,6 +110,7 @@ pub use update_title::UpdateTitleRunner;
 pub use warn_user::WarnUserRunner;
 
 use crate::bot_account::TwitchBotAccount;
+use crate::cadence::CadenceLedger;
 use crate::helix::HelixTransport;
 use crate::lifecycle::TwitchLifecycle;
 
@@ -122,10 +123,12 @@ pub fn register_twitch_sub_actions(
 ) -> Result<(), RegistryError> {
     let mut reg = reg.owned_by(crate::TWITCH_INTEGRATION.id);
     let identity = Arc::new(SelfIdentity::new(creds));
-    reg.register(Box::new(SendAnnouncementRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
+    let cadence = Arc::new(CadenceLedger::default());
+    reg.register(Box::new(
+        SendAnnouncementRunner::new(Arc::clone(&transport), Arc::clone(&identity))
+            .with_bot(bot.clone())
+            .with_cadence(Arc::clone(&cadence)),
+    ))?;
     reg.register(Box::new(DeleteMessageRunner::new(
         Arc::clone(&transport),
         Arc::clone(&identity),
@@ -182,7 +185,7 @@ pub fn register_twitch_sub_actions(
         ReplyChatRunner::new(Arc::clone(&transport), Arc::clone(&identity)).with_bot(bot.clone()),
     ))?;
     reg.register(Box::new(
-        SendWhisperRunner::new(Arc::clone(&transport), Arc::clone(&identity)).with_bot(bot),
+        SendWhisperRunner::new(Arc::clone(&transport), Arc::clone(&identity)).with_bot(bot.clone()),
     ))?;
     reg.register(Box::new(UpdateTitleRunner::new(
         Arc::clone(&transport),
@@ -200,10 +203,11 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(SendShoutoutRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
+    reg.register(Box::new(
+        SendShoutoutRunner::new(Arc::clone(&transport), Arc::clone(&identity))
+            .with_bot(bot.clone())
+            .with_cadence(Arc::clone(&cadence)),
+    ))?;
     reg.register(Box::new(StartRaidRunner::new(
         Arc::clone(&transport),
         Arc::clone(&identity),

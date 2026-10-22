@@ -3,14 +3,21 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
+use forge_events::EventPublisher;
+use forge_platform_core::{SENDER_FIELD, SenderPreference};
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use super::identity::SelfIdentity;
 use super::user_target::{TargetKeys, UserTarget};
-use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::bot_account::TwitchBotAccount;
+use crate::cadence::CadenceLedger;
+use crate::chat_sender::{
+    ChatDelivery, ChatSenders, StepResult, configured_sender, failed_step, step_result,
+};
+use crate::helix::HelixTransport;
 
 const KIND_ID: &str = "twitch.channel.send_shoutout";
 const TARGET_KEYS: TargetKeys = TargetKeys {
@@ -19,35 +26,40 @@ const TARGET_KEYS: TargetKeys = TargetKeys {
 };
 
 pub struct SendShoutoutRunner {
-    transport: Arc<dyn HelixTransport>,
-    identity: Arc<SelfIdentity>,
+    senders: ChatSenders,
 }
 
 impl SendShoutoutRunner {
     pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
-            transport,
-            identity,
+            senders: ChatSenders::new(transport, identity),
         }
     }
 
-    async fn shoutout(&self, target: Option<UserTarget<'_>>) -> SubActionOutcome {
+    pub fn with_bot(mut self, bot: Option<Arc<TwitchBotAccount>>) -> Self {
+        self.senders = self.senders.with_bot(bot);
+        self
+    }
+
+    pub(crate) fn with_cadence(mut self, cadence: Arc<CadenceLedger>) -> Self {
+        self.senders = self.senders.with_cadence(cadence);
+        self
+    }
+
+    async fn shoutout(
+        &self,
+        target: Option<UserTarget<'_>>,
+        sender: SenderPreference,
+        events: &dyn EventPublisher,
+    ) -> StepResult {
         let Some(target) = target else {
-            return SubActionOutcome::Failed(TARGET_KEYS.empty_after_interpolation());
+            return failed_step(&TARGET_KEYS.empty_after_interpolation());
         };
-        let self_id = match self.identity.user_id().await {
-            Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
-        };
-        let to_broadcaster_id = match target.user_id(self.transport.as_ref()).await {
-            Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
-        };
-        let request = HelixRequest::new(HelixMethod::Post, "/helix/chat/shoutouts")
-            .query("from_broadcaster_id", self_id.clone())
-            .query("to_broadcaster_id", to_broadcaster_id)
-            .query("moderator_id", self_id);
-        SubActionOutcome::from_result(&self.transport.execute(request).await)
+        step_result(
+            self.senders
+                .deliver(ChatDelivery::Shoutout { target }, sender, events)
+                .await,
+        )
     }
 }
 
@@ -78,19 +90,33 @@ impl SubActionRunner for SendShoutoutRunner {
     }
 
     fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([(TARGET_KEYS.login.to_owned(), Variant::String(String::new()))])
+        BTreeMap::from([
+            (TARGET_KEYS.login.to_owned(), Variant::String(String::new())),
+            (
+                SENDER_FIELD.to_owned(),
+                Variant::String(SenderPreference::Default.as_str().to_owned()),
+            ),
+        ])
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: TARGET_KEYS.login,
-            label: "Target Channel",
-            placeholder: "%user_login%",
-        }]
+        vec![
+            FormField::Text {
+                key: TARGET_KEYS.login,
+                label: "Target Channel",
+                placeholder: "%user_login%",
+            },
+            FormField::Select {
+                key: SENDER_FIELD,
+                label: "Send As",
+                options: SenderPreference::WIRE_NAMES,
+            },
+        ]
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        TARGET_KEYS.validate(config)
+        TARGET_KEYS.validate(config)?;
+        configured_sender(config).map(|_| ())
     }
 
     async fn execute(
@@ -103,12 +129,18 @@ impl SubActionRunner for SendShoutoutRunner {
 
         let interpolated = TARGET_KEYS.interpolate(config, ctx);
 
-        let outcome = self.shoutout(interpolated.target()).await;
+        let (outcome, produced) = match configured_sender(config) {
+            Ok(sender) => {
+                self.shoutout(interpolated.target(), sender, ctx.publisher)
+                    .await
+            }
+            Err(e) => failed_step(&e.to_string()),
+        };
 
         (
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
+                produced,
                 kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
@@ -124,10 +156,11 @@ impl SubActionRunner for SendShoutoutRunner {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use crate::helix::HelixError;
+    use crate::helix::{HelixError, HelixMethod};
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx, users_fixture,
     };
+    use forge_types::SubActionOutcome;
 
     fn runner_with(
         responses: Vec<Result<serde_json::Value, HelixError>>,

@@ -3,16 +3,23 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
+use forge_events::EventPublisher;
+use forge_platform_core::{SENDER_FIELD, SenderPreference};
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
     SubActionRunner,
 };
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use super::identity::SelfIdentity;
-use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::bot_account::TwitchBotAccount;
+use crate::cadence::CadenceLedger;
+use crate::chat_sender::{
+    ChatDelivery, ChatSenders, StepResult, configured_sender, failed_step, step_result,
+};
+use crate::helix::HelixTransport;
 
 const KIND_ID: &str = "twitch.chat.send_announcement";
 const MAX_MESSAGE_CHARS: usize = 500;
@@ -20,34 +27,44 @@ const COLORS: &[&str] = &["primary", "blue", "green", "orange", "purple"];
 const DEFAULT_COLOR: &str = "primary";
 
 pub struct SendAnnouncementRunner {
-    transport: Arc<dyn HelixTransport>,
-    identity: Arc<SelfIdentity>,
+    senders: ChatSenders,
 }
 
 impl SendAnnouncementRunner {
     pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
-            transport,
-            identity,
+            senders: ChatSenders::new(transport, identity),
         }
     }
 
-    async fn send(&self, message: &str, color: &str) -> SubActionOutcome {
+    pub fn with_bot(mut self, bot: Option<Arc<TwitchBotAccount>>) -> Self {
+        self.senders = self.senders.with_bot(bot);
+        self
+    }
+
+    pub(crate) fn with_cadence(mut self, cadence: Arc<CadenceLedger>) -> Self {
+        self.senders = self.senders.with_cadence(cadence);
+        self
+    }
+
+    async fn send(
+        &self,
+        message: &str,
+        color: &str,
+        sender: SenderPreference,
+        events: &dyn EventPublisher,
+    ) -> StepResult {
         if message.is_empty() {
-            return SubActionOutcome::Failed("message is empty after interpolation".to_owned());
+            return failed_step("message is empty after interpolation");
         }
         if message.chars().count() > MAX_MESSAGE_CHARS {
-            return SubActionOutcome::Failed("message exceeds 500-character limit".to_owned());
+            return failed_step("message exceeds 500-character limit");
         }
-        let user_id = match self.identity.user_id().await {
-            Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+        let delivery = ChatDelivery::Announcement {
+            text: message,
+            color,
         };
-        let request = HelixRequest::new(HelixMethod::Post, "/helix/chat/announcements")
-            .query("broadcaster_id", user_id.clone())
-            .query("moderator_id", user_id)
-            .body(serde_json::json!({ "message": message, "color": color }));
-        SubActionOutcome::from_result(&self.transport.execute(request).await)
+        step_result(self.senders.deliver(delivery, sender, events).await)
     }
 }
 
@@ -84,6 +101,10 @@ impl SubActionRunner for SendAnnouncementRunner {
                 "color".to_owned(),
                 Variant::String(DEFAULT_COLOR.to_owned()),
             ),
+            (
+                SENDER_FIELD.to_owned(),
+                Variant::String(SenderPreference::Default.as_str().to_owned()),
+            ),
         ])
     }
 
@@ -97,6 +118,11 @@ impl SubActionRunner for SendAnnouncementRunner {
                 key: "color",
                 label: "Color",
                 options: COLORS,
+            },
+            FormField::Select {
+                key: SENDER_FIELD,
+                label: "Send As",
+                options: SenderPreference::WIRE_NAMES,
             },
         ]
     }
@@ -121,7 +147,7 @@ impl SubActionRunner for SendAnnouncementRunner {
                 ));
             }
         }
-        Ok(())
+        configured_sender(config).map(|_| ())
     }
 
     async fn execute(
@@ -139,12 +165,15 @@ impl SubActionRunner for SendAnnouncementRunner {
             .filter(|c| COLORS.contains(c))
             .unwrap_or(DEFAULT_COLOR);
 
-        let outcome = self.send(&message, color).await;
+        let (outcome, produced) = match configured_sender(config) {
+            Ok(sender) => self.send(&message, color, sender, ctx.publisher).await,
+            Err(e) => failed_step(&e.to_string()),
+        };
 
         (
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
+                produced,
                 kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
@@ -160,10 +189,11 @@ impl SubActionRunner for SendAnnouncementRunner {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use crate::helix::HelixError;
+    use crate::helix::{HelixError, HelixMethod};
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use forge_types::SubActionOutcome;
 
     fn runner_with(
         response: Result<serde_json::Value, HelixError>,

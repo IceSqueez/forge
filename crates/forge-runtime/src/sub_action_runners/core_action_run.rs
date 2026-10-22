@@ -2,15 +2,14 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ChainSignal, ChildChainOutcome, FormField, RegistryError, RunContext, StepTimer,
-    SubActionCategory, SubActionConfigExt, SubActionRunner,
+    ChainSignal, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionRunner,
 };
 use forge_storage::ActionRepo;
 use forge_types::{
     Action, ActionId, ArgStack, ExecutionMode, SubActionConfig, SubActionOutcome, SubActionStep,
     SubActionTelemetry, Variant,
 };
-use futures_util::future::join_all;
 use rand::RngExt;
 
 pub struct CoreActionRunRunner {
@@ -47,13 +46,10 @@ impl CoreActionRunRunner {
         };
 
         let steps = pick_steps(&target);
-        let outcome = if target.concurrent {
-            run_concurrent(ctx, &steps, &child_stack).await
-        } else {
-            ctx.executor
-                .run_child_chain(&steps, &child_stack, ctx.parent_event_id)
-                .await
-        };
+        let outcome = ctx
+            .executor
+            .run_child_chain(&steps, &child_stack, ctx.parent_event_id)
+            .await;
 
         match outcome {
             Err(RegistryError::DepthExceeded(_)) => {
@@ -80,34 +76,6 @@ fn pick_steps(target: &Action) -> Vec<SubActionStep> {
         return vec![target.sub_actions[idx].clone()];
     }
     target.sub_actions.clone()
-}
-
-async fn run_concurrent(
-    ctx: &RunContext<'_>,
-    steps: &[SubActionStep],
-    arg_stack: &ArgStack,
-) -> Result<ChildChainOutcome, RegistryError> {
-    let runs = join_all(steps.iter().map(|step| {
-        ctx.executor
-            .run_child_chain(std::slice::from_ref(step), arg_stack, ctx.parent_event_id)
-    }))
-    .await;
-
-    let mut telemetry = Vec::new();
-    let mut signal = ChainSignal::Completed;
-    for run in runs {
-        let child = run?;
-        telemetry.extend(child.telemetry);
-        let decisive = matches!(child.signal, ChainSignal::Error(_) | ChainSignal::Aborted);
-        if decisive && !matches!(signal, ChainSignal::Error(_) | ChainSignal::Aborted) {
-            signal = child.signal;
-        }
-    }
-    Ok(ChildChainOutcome {
-        signal,
-        arg_stack: arg_stack.clone(),
-        telemetry,
-    })
 }
 
 #[async_trait]

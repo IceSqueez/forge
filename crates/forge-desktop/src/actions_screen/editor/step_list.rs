@@ -31,9 +31,6 @@ fn analyzer_finding_message(finding: &Finding, fields: &[FormField]) -> SharedSt
                 message = message.clone()
             )
         }
-        Finding::ControlFlowInConcurrentAction => {
-            tr!("action_editor_health_control_flow_concurrent")
-        }
         Finding::IntegrationDisabled(owner) => {
             tr!(
                 "action_editor_health_integration_disabled",

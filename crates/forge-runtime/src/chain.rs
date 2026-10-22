@@ -192,7 +192,6 @@ impl ChainEngine {
     pub(crate) async fn run_action(
         self: &Arc<Self>,
         running: RunningAction,
-        concurrent: bool,
         steps: &[SubActionStep],
         arg_stack: &ArgStack,
         cancel: &CancelSignal,
@@ -201,13 +200,8 @@ impl ChainEngine {
             running: Some(running),
             ..self.root_scope(cancel.clone())
         };
-        if concurrent {
-            self.drive_concurrent(steps, arg_stack, running.start_event_id, &scope)
-                .await
-        } else {
-            self.drive_sequential(steps, arg_stack, running.start_event_id, &scope)
-                .await
-        }
+        self.drive_sequential(steps, arg_stack, running.start_event_id, &scope)
+            .await
     }
 
     pub async fn run_sequential(
@@ -219,18 +213,6 @@ impl ChainEngine {
     ) -> ChainRun {
         let scope = self.root_scope(cancel.clone());
         self.drive_sequential(steps, arg_stack, parent_event_id, &scope)
-            .await
-    }
-
-    pub async fn run_concurrent(
-        self: &Arc<Self>,
-        steps: &[SubActionStep],
-        arg_stack: &ArgStack,
-        parent_event_id: EventId,
-        cancel: &CancelSignal,
-    ) -> ChainRun {
-        let scope = self.root_scope(cancel.clone());
-        self.drive_concurrent(steps, arg_stack, parent_event_id, &scope)
             .await
     }
 
@@ -382,150 +364,6 @@ impl ChainEngine {
         ChainRun {
             signal: ChainSignal::Completed,
             arg_stack: current,
-            telemetry,
-        }
-    }
-
-    async fn drive_concurrent(
-        &self,
-        steps: &[SubActionStep],
-        arg_stack: &ArgStack,
-        parent_event_id: EventId,
-        executor: &dyn ChainExecutor,
-    ) -> ChainRun {
-        use futures_util::future::join_all;
-
-        let cancel = executor.cancel_signal();
-        if cancel.is_cancelled() {
-            return ChainRun {
-                signal: ChainSignal::Aborted,
-                arg_stack: arg_stack.clone(),
-                telemetry: Vec::new(),
-            };
-        }
-
-        let futures: Vec<_> = steps
-            .iter()
-            .enumerate()
-            .map(|(index, step)| {
-                let cancel = cancel.clone();
-                async move {
-                    if !step.enabled {
-                        let mut tel = disabled_telemetry(index, &step.kind_id);
-                        tel.args_in = capture_args_in(&self.registry, step, arg_stack);
-                        publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
-                        return (tel, Vec::new(), None);
-                    }
-
-                    match self.check_condition(step, arg_stack).await {
-                        ConditionVerdict::Run => {}
-                        ConditionVerdict::Skip => {
-                            let mut tel = condition_skipped_telemetry(index, &step.kind_id);
-                            tel.args_in = capture_args_in(&self.registry, step, arg_stack);
-                            publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
-                            return (tel, Vec::new(), None);
-                        }
-                        ConditionVerdict::Fail(msg) => {
-                            let mut tel =
-                                condition_failed_telemetry(index, &step.kind_id, msg.clone());
-                            tel.args_in = capture_args_in(&self.registry, step, arg_stack);
-                            publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
-                            let failure = if step.continue_on_error {
-                                None
-                            } else {
-                                Some(msg)
-                            };
-                            return (tel, Vec::new(), failure);
-                        }
-                    }
-
-                    let run_event = Event::caused_by(
-                        EventSource::Core,
-                        "subaction.run",
-                        json!({ "step_index": index, "kind": step.kind_id }),
-                        parent_event_id,
-                    );
-                    let run_event_id = run_event.id;
-                    let _step_lineage = self.publish_step_run(run_event);
-
-                    let args_in = capture_args_in(&self.registry, step, arg_stack);
-                    let nested_sink = TelemetrySink::new();
-                    let run_ctx = RunContext {
-                        arg_stack,
-                        index,
-                        parent_event_id: run_event_id,
-                        publisher: self.publisher.as_ref(),
-                        executor,
-                        cancel: cancel.clone(),
-                        control: ControlCell::new(),
-                        telemetry: nested_sink.clone(),
-                    };
-
-                    let (mut tel, updated) = match self.registry.get(&step.kind_id) {
-                        Some(runner) => {
-                            let resolved = effective_config(&runner.default_config(), &step.config);
-                            run_gated_step(
-                                &self.integrations,
-                                step_owner(
-                                    self.registry.as_ref(),
-                                    runner,
-                                    &step.kind_id,
-                                    &resolved,
-                                    run_ctx.arg_stack,
-                                )
-                                .as_ref(),
-                                &run_ctx,
-                                &step.kind_id,
-                                runner.execute(&resolved, &run_ctx),
-                            )
-                            .await
-                        }
-                        None => {
-                            warn!(
-                                "unknown sub-action kind_id: {} - skipping step",
-                                step.kind_id
-                            );
-                            (skipped_telemetry(index, &step.kind_id), None)
-                        }
-                    };
-
-                    tel.args_in = args_in;
-                    tel.produced = match &updated {
-                        Some(new_stack) => capture_produced(arg_stack, new_stack),
-                        None => BTreeMap::new(),
-                    };
-                    publish_subaction_done(self.publisher.as_ref(), run_event_id, &tel);
-
-                    let failure = if step.continue_on_error {
-                        None
-                    } else {
-                        tel.outcome.failure_reason()
-                    };
-                    (tel, nested_sink.drain(), failure)
-                }
-            })
-            .collect();
-
-        let results = join_all(futures).await;
-
-        let mut telemetry = Vec::new();
-        let mut first_failure: Option<String> = None;
-        for (tel, nested, failure) in results {
-            if first_failure.is_none() {
-                first_failure = failure;
-            }
-            telemetry.push(tel);
-            telemetry.extend(nested);
-        }
-
-        let signal = match first_failure {
-            Some(msg) => ChainSignal::Error(msg),
-            None => ChainSignal::Completed,
-        };
-
-        ChainRun {
-            signal,
-            arg_stack: arg_stack.clone(),
             telemetry,
         }
     }

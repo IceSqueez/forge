@@ -82,7 +82,7 @@ pub fn variables_in_scope(
     let mut scope = ScopeList::default();
     add_trigger_variables(&mut scope, triggers, trigger_registry);
 
-    let isolated_root = action.concurrent || action.execution_mode == ExecutionMode::RandomPick;
+    let isolated_root = action.execution_mode == ExecutionMode::RandomPick;
     let last = levels.len().saturating_sub(1);
     for (depth, level) in levels.iter().enumerate() {
         let sees_earlier_siblings = depth > 0 || !isolated_root;

@@ -11,7 +11,7 @@ use forge_types::{
 };
 use std::collections::BTreeMap;
 
-use crate::{SchedulerCell, SchedulerRequest};
+use crate::{QueueAdmission, SchedulerCell, SchedulerRequest};
 
 pub struct CoreTestFireTriggerRunner {
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
@@ -87,7 +87,7 @@ impl CoreTestFireTriggerRunner {
                 trigger_kind: Some(trigger_kind.clone()),
                 manual_test: false,
                 initial_args: synthetic_args.clone(),
-                bypass_pause: action.bypass_pause,
+                admission: QueueAdmission::from(&action),
             };
             if let Err(e) = scheduler.dispatch(req).await {
                 return SubActionOutcome::Failed(format!(

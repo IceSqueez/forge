@@ -7,6 +7,7 @@ use forge_components::{
 };
 use forge_events::Event;
 use forge_registry::{SynthesisSample, declared_variables, synthesize_args};
+use forge_runtime::QueueAdmission;
 use forge_types::{ArgStack, EventId};
 use gpui::{Rgba, Task, relative};
 use std::time::Duration;
@@ -86,7 +87,7 @@ pub(super) struct TestRunLaunch {
     action_id: ActionId,
     action_name: SharedString,
     queue_id: QueueId,
-    bypass_pause: bool,
+    admission: QueueAdmission,
     rows: Vec<TestRunRow>,
     triggers: Vec<TestTriggerChoice>,
     selected_trigger: Option<usize>,
@@ -135,7 +136,7 @@ impl TestRunModal {
             action_id,
             action_name,
             queue_id,
-            bypass_pause,
+            admission,
             rows,
             triggers,
             selected_trigger,
@@ -166,7 +167,7 @@ impl TestRunModal {
                     &bus,
                     action_id,
                     queue_id,
-                    bypass_pause,
+                    admission,
                     trigger_kind,
                     initial_args,
                 )
@@ -898,7 +899,7 @@ impl ScreenActionsView {
             let action = &detail.action;
             let action_name: SharedString = action.name.clone().into();
             let queue_id = action.queue_id;
-            let bypass_pause = action.bypass_pause;
+            let admission = QueueAdmission::from(action);
 
             let rows: Vec<TestRunRow> = action
                 .sub_actions
@@ -944,7 +945,7 @@ impl ScreenActionsView {
                 action_id: id,
                 action_name,
                 queue_id,
-                bypass_pause,
+                admission,
                 rows,
                 triggers,
                 selected_trigger: selected,

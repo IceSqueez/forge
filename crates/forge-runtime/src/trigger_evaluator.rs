@@ -20,7 +20,7 @@ use crate::cooldown::CooldownMap;
 use crate::delivery::{CriticalSubscription, TRIGGER_EVALUATOR};
 use crate::event_log_bridge::identity_digest;
 use crate::task_stop::{StopListener, TaskStop, task_stop};
-use crate::{Config, EventBus, QueueSchedulerHandle, SchedulerRequest};
+use crate::{Config, EventBus, QueueAdmission, QueueSchedulerHandle, SchedulerRequest};
 
 const DECISION_TARGET: &str = "forge::trigger";
 
@@ -136,7 +136,7 @@ impl TriggerEvaluator {
                 trigger_kind: Some(instance.kind_id.clone()),
                 manual_test: false,
                 initial_args: args,
-                bypass_pause: action.bypass_pause,
+                admission: QueueAdmission::from(action.as_ref()),
             };
             if let Err(e) = self.scheduler.dispatch(req).await {
                 warn!("trigger_evaluator: scheduler dispatch failed: {e}");

@@ -97,8 +97,10 @@ impl ScreenActionsView {
     }
 
     pub(super) fn overlay_order_at_risk(&self, action: &Action) -> bool {
-        self.concurrent_queue_ids
-            .contains(&action.queue_id.to_string())
+        (action.concurrent
+            || self
+                .concurrent_queue_ids
+                .contains(&action.queue_id.to_string()))
             && analyzer::sends_order_sensitive_overlay(
                 &action.sub_actions,
                 &self.sub_action_registry,

@@ -381,7 +381,7 @@ impl ActionEngine {
         };
         let run = self
             .chain_engine
-            .run_action(running, action.concurrent, &pick, &arg_stack, cancel)
+            .run_action(running, &pick, &arg_stack, cancel)
             .await;
 
         ctx.telemetry = run.telemetry;

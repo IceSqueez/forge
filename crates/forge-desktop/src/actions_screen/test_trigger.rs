@@ -1,5 +1,7 @@
 use forge_events::{Event, EventSource};
-use forge_runtime::{EventBus, MANUAL_TEST_RUN_KIND, QueueSchedulerHandle, SchedulerRequest};
+use forge_runtime::{
+    EventBus, MANUAL_TEST_RUN_KIND, QueueAdmission, QueueSchedulerHandle, SchedulerRequest,
+};
 use forge_types::{ActionId, ArgStack, QueueId};
 use serde_json::json;
 
@@ -8,7 +10,7 @@ pub(super) async fn dispatch_test_run(
     bus: &EventBus,
     action_id: ActionId,
     queue_id: QueueId,
-    bypass_pause: bool,
+    admission: QueueAdmission,
     trigger_kind: Option<String>,
     initial_args: ArgStack,
 ) -> Result<(), String> {
@@ -27,7 +29,7 @@ pub(super) async fn dispatch_test_run(
             trigger_kind,
             manual_test: true,
             initial_args,
-            bypass_pause,
+            admission,
         })
         .await
         .map_err(|e| e.to_string())

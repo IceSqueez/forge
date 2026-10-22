@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use arc_swap::ArcSwapOption;
 use forge_events::{Event, EventSource};
 use forge_registry::CancelSignal;
-use forge_types::{ActionId, ArgStack, EventId, Queue, QueueId};
+use forge_types::{Action, ActionId, ArgStack, EventId, Queue, QueueId};
 use serde_json::json;
 use tokio::sync::futures::Notified;
 use tokio::sync::{Notify, mpsc, oneshot, watch};
@@ -47,7 +47,34 @@ pub struct SchedulerRequest {
     pub trigger_kind: Option<String>,
     pub manual_test: bool,
     pub initial_args: ArgStack,
+    pub admission: QueueAdmission,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct QueueAdmission {
     pub bypass_pause: bool,
+    pub run_alongside: bool,
+}
+
+impl From<&Action> for QueueAdmission {
+    fn from(action: &Action) -> Self {
+        Self {
+            bypass_pause: action.bypass_pause,
+            run_alongside: action.concurrent,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Lane {
+    Gated,
+    Alongside,
+}
+
+enum NextTask {
+    Ready(QueueTask),
+    Overcommitted,
+    Closed,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -183,7 +210,7 @@ enum SchedulerCommand {
     Shutdown,
 }
 
-enum Admission {
+enum Arrival {
     Triggered,
     Scheduled(ScheduledOrigin),
 }
@@ -290,7 +317,8 @@ struct PendingBuffer {
 
 struct PendingInner {
     tasks: Mutex<VecDeque<QueueTask>>,
-    arrived: Notify,
+    gated_arrived: Notify,
+    alongside_arrived: Notify,
     depth: DepthCell,
 }
 
@@ -299,13 +327,15 @@ impl PendingBuffer {
         Self {
             inner: Arc::new(PendingInner {
                 tasks: Mutex::new(VecDeque::new()),
-                arrived: Notify::new(),
+                gated_arrived: Notify::new(),
+                alongside_arrived: Notify::new(),
                 depth,
             }),
         }
     }
 
     fn push(&self, task: QueueTask) -> bool {
+        let lane = task.lane();
         {
             let mut tasks = self.lock();
             if tasks.len() >= MAX_PENDING_PER_QUEUE {
@@ -314,18 +344,16 @@ impl PendingBuffer {
             tasks.push_back(task);
             self.publish(tasks.len());
         }
-        self.inner.arrived.notify_one();
+        self.arrival(lane).notify_one();
         true
     }
 
-    fn take_next(&self, frozen: bool) -> Option<QueueTask> {
+    fn take_next(&self, lane: Lane, frozen: bool) -> Option<QueueTask> {
         let mut tasks = self.lock();
-        let taken = if frozen {
-            let at = tasks.iter().position(|task| task.bypass_pause)?;
-            tasks.remove(at)
-        } else {
-            tasks.pop_front()
-        };
+        let at = tasks
+            .iter()
+            .position(|task| task.lane() == lane && (!frozen || task.admission.bypass_pause))?;
+        let taken = tasks.remove(at);
         self.publish(tasks.len());
         taken
     }
@@ -344,8 +372,15 @@ impl PendingBuffer {
         self.lock().len()
     }
 
-    fn arrived(&self) -> Notified<'_> {
-        self.inner.arrived.notified()
+    fn arrived(&self, lane: Lane) -> Notified<'_> {
+        self.arrival(lane).notified()
+    }
+
+    fn arrival(&self, lane: Lane) -> &Notify {
+        match lane {
+            Lane::Gated => &self.inner.gated_arrived,
+            Lane::Alongside => &self.inner.alongside_arrived,
+        }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, VecDeque<QueueTask>> {
@@ -414,7 +449,17 @@ struct QueueTask {
     manual_test: bool,
     origin: Option<ScheduledOrigin>,
     initial_args: ArgStack,
-    bypass_pause: bool,
+    admission: QueueAdmission,
+}
+
+impl QueueTask {
+    fn lane(&self) -> Lane {
+        if self.admission.run_alongside {
+            Lane::Alongside
+        } else {
+            Lane::Gated
+        }
+    }
 }
 
 impl QueueSchedulerHandle {
@@ -561,6 +606,12 @@ impl QueueScheduler {
         let pending = PendingBuffer::new(depth.clone());
         let gate = ConcurrencyGate::new(queue.concurrency.max(1) as usize);
 
+        tokio::spawn(Self::run_alongside(
+            pending.clone(),
+            processing_tx.subscribe(),
+            Arc::clone(&engine),
+            inflight.clone(),
+        ));
         tokio::spawn(Self::run_bounded(
             pending.clone(),
             processing_rx,
@@ -590,61 +641,92 @@ impl QueueScheduler {
     ) {
         loop {
             let permit = gate.acquire().await;
-
-            let task = loop {
-                let arrived = pending.arrived();
-                let frozen = *processing.borrow_and_update() == QueueProcessing::Frozen;
-                if !permit.within_limit() {
-                    break None;
-                }
-                if let Some(task) = pending.take_next(frozen) {
-                    break Some(task);
-                }
-
-                tokio::select! {
-                    biased;
-                    changed = processing.changed() => {
-                        if changed.is_err() {
-                            return;
-                        }
-                    }
-                    _ = arrived => {}
-                }
-            };
-            let Some(task) = task else {
-                continue;
-            };
-
-            let req = ExecutionRequest {
-                action_id: task.action_id,
-                trigger_event_id: task.trigger_event_id,
-                trigger_kind: task.trigger_kind,
-                manual_test: task.manual_test,
-                initial_args: task.initial_args,
-            };
-            let origin = task.origin;
-
-            let cancel = CancelSignal::new();
-            let id = inflight.register(cancel.clone());
-            let engine_ref = Arc::clone(&engine);
-            let inflight_ref = inflight.clone();
-            tokio::spawn(async move {
-                let (done_tx, done_rx) = oneshot::channel::<()>();
-                let dispatched = match origin {
-                    Some(origin) => {
-                        engine_ref
-                            .dispatch_scheduled_tracked(req, origin, cancel, done_tx)
-                            .await
-                    }
-                    None => engine_ref.dispatch_tracked(req, cancel, done_tx).await,
-                };
-                if dispatched.is_ok() {
-                    let _ = done_rx.await;
-                }
-                inflight_ref.complete(id);
-                drop(permit);
-            });
+            match Self::next_task(&pending, &mut processing, Lane::Gated, Some(&permit)).await {
+                NextTask::Ready(task) => Self::launch(task, &engine, &inflight, Some(permit)),
+                NextTask::Overcommitted => continue,
+                NextTask::Closed => return,
+            }
         }
+    }
+
+    async fn run_alongside(
+        pending: PendingBuffer,
+        mut processing: watch::Receiver<QueueProcessing>,
+        engine: Arc<ActionEngineHandle>,
+        inflight: InflightTracker,
+    ) {
+        loop {
+            match Self::next_task(&pending, &mut processing, Lane::Alongside, None).await {
+                NextTask::Ready(task) => Self::launch(task, &engine, &inflight, None),
+                NextTask::Overcommitted => continue,
+                NextTask::Closed => return,
+            }
+        }
+    }
+
+    async fn next_task(
+        pending: &PendingBuffer,
+        processing: &mut watch::Receiver<QueueProcessing>,
+        lane: Lane,
+        permit: Option<&GatePermit>,
+    ) -> NextTask {
+        loop {
+            let arrived = pending.arrived(lane);
+            let frozen = *processing.borrow_and_update() == QueueProcessing::Frozen;
+            if permit.is_some_and(|permit| !permit.within_limit()) {
+                return NextTask::Overcommitted;
+            }
+            if let Some(task) = pending.take_next(lane, frozen) {
+                return NextTask::Ready(task);
+            }
+
+            tokio::select! {
+                biased;
+                changed = processing.changed() => {
+                    if changed.is_err() {
+                        return NextTask::Closed;
+                    }
+                }
+                _ = arrived => {}
+            }
+        }
+    }
+
+    fn launch(
+        task: QueueTask,
+        engine: &Arc<ActionEngineHandle>,
+        inflight: &InflightTracker,
+        permit: Option<GatePermit>,
+    ) {
+        let req = ExecutionRequest {
+            action_id: task.action_id,
+            trigger_event_id: task.trigger_event_id,
+            trigger_kind: task.trigger_kind,
+            manual_test: task.manual_test,
+            initial_args: task.initial_args,
+        };
+        let origin = task.origin;
+
+        let cancel = CancelSignal::new();
+        let id = inflight.register(cancel.clone());
+        let engine_ref = Arc::clone(engine);
+        let inflight_ref = inflight.clone();
+        tokio::spawn(async move {
+            let (done_tx, done_rx) = oneshot::channel::<()>();
+            let dispatched = match origin {
+                Some(origin) => {
+                    engine_ref
+                        .dispatch_scheduled_tracked(req, origin, cancel, done_tx)
+                        .await
+                }
+                None => engine_ref.dispatch_tracked(req, cancel, done_tx).await,
+            };
+            if dispatched.is_ok() {
+                let _ = done_rx.await;
+            }
+            inflight_ref.complete(id);
+            drop(permit);
+        });
     }
 
     async fn run_scheduler(
@@ -658,12 +740,11 @@ impl QueueScheduler {
         while let Some(cmd) = cmd_rx.recv().await {
             match cmd {
                 SchedulerCommand::Enqueue(req) => {
-                    let _ = Self::enqueue(req, Admission::Triggered, &mut slots, &bus);
+                    let _ = Self::enqueue(req, Arrival::Triggered, &mut slots, &bus);
                 }
                 SchedulerCommand::Admit(req, origin, reply) => {
-                    let admitted =
-                        Self::enqueue(req, Admission::Scheduled(origin), &mut slots, &bus)
-                            .map_err(SchedulerError::Refused);
+                    let admitted = Self::enqueue(req, Arrival::Scheduled(origin), &mut slots, &bus)
+                        .map_err(SchedulerError::Refused);
                     let _ = reply.send(admitted);
                 }
                 SchedulerCommand::IntakeRefusal(queue_id, bypass_pause, reply) => {
@@ -720,7 +801,7 @@ impl QueueScheduler {
 
     fn enqueue(
         req: SchedulerRequest,
-        admission: Admission,
+        arrival: Arrival,
         slots: &mut HashMap<QueueId, QueueSlot>,
         bus: &Arc<EventBus>,
     ) -> Result<(), &'static str> {
@@ -731,7 +812,7 @@ impl QueueScheduler {
             trigger_kind,
             manual_test,
             initial_args,
-            bypass_pause,
+            admission,
         } = req;
 
         let Some(slot) = slots.get_mut(&queue_id) else {
@@ -746,15 +827,15 @@ impl QueueScheduler {
             return Err(QUEUE_NOT_FOUND_REASON);
         };
 
-        let origin = match admission {
-            Admission::Triggered => {
-                if let Some(reason) = slot.mode.intake_refusal(bypass_pause) {
+        let origin = match arrival {
+            Arrival::Triggered => {
+                if let Some(reason) = slot.mode.intake_refusal(admission.bypass_pause) {
                     Self::publish_skip(bus, queue_id, action_id, trigger_event_id, reason);
                     return Err(reason);
                 }
                 None
             }
-            Admission::Scheduled(origin) => Some(origin),
+            Arrival::Scheduled(origin) => Some(origin),
         };
 
         let accepted = slot.pending.push(QueueTask {
@@ -764,7 +845,7 @@ impl QueueScheduler {
             manual_test,
             origin,
             initial_args,
-            bypass_pause,
+            admission,
         });
 
         if accepted {

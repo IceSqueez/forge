@@ -7,7 +7,6 @@ use forge_types::{
 
 use crate::chain_steps::nested_chains;
 use crate::config_problem::ConfigProblem;
-use crate::flow_kinds::{BREAK_LOOP_KIND_ID, CONTINUE_LOOP_KIND_ID, LOOP_KIND_ID, STOP_KIND_ID};
 use crate::form::FormField;
 use crate::registry::{SubActionRegistry, TriggerRegistry};
 use crate::variables::{TriggerVariable, declared_variables};
@@ -26,7 +25,6 @@ pub enum Finding {
     IsolatedSibling(String),
     SomeTriggersOnly(String),
     LastRunFailed(String),
-    ControlFlowInConcurrentAction,
     IntegrationDisabled(IntegrationId),
     IntegrationFailed(IntegrationId),
     DateFormatOnNonDatetime(String),
@@ -49,7 +47,6 @@ impl Finding {
             | Finding::ProducedLater(_)
             | Finding::IsolatedSibling(_)
             | Finding::SomeTriggersOnly(_)
-            | Finding::ControlFlowInConcurrentAction
             | Finding::IntegrationDisabled(_)
             | Finding::IntegrationFailed(_) => HealthSeverity::Yellow,
         }
@@ -189,7 +186,7 @@ pub fn analyze(
     trigger_registry: &TriggerRegistry,
 ) -> Vec<StepHealth> {
     let mut seed = trigger_seed(triggers, trigger_registry);
-    let isolated = action.concurrent || action.execution_mode == ExecutionMode::RandomPick;
+    let isolated = action.execution_mode == ExecutionMode::RandomPick;
 
     let mut produced_anywhere = HashSet::new();
     collect_produced(&action.sub_actions, sub_registry, &mut produced_anywhere);
@@ -237,14 +234,6 @@ pub fn analyze(
         collect_pattern_findings(step, sub_registry, &mut health.findings);
     }
 
-    if action.concurrent {
-        for (step, health) in action.sub_actions.iter().zip(result.iter_mut()) {
-            if step_holds_unguarded_control_flow(step, sub_registry, false) {
-                health.findings.push(Finding::ControlFlowInConcurrentAction);
-            }
-        }
-    }
-
     for (i, health) in result.iter_mut().enumerate() {
         if let Some(Some(reason)) = last_step_outcomes
             .get(i)
@@ -255,33 +244,6 @@ pub fn analyze(
     }
 
     result
-}
-
-fn is_unguarded_control_flow(kind_id: &str, enclosed_by_loop: bool) -> bool {
-    match kind_id {
-        BREAK_LOOP_KIND_ID | CONTINUE_LOOP_KIND_ID => !enclosed_by_loop,
-        STOP_KIND_ID => true,
-        _ => false,
-    }
-}
-
-fn step_holds_unguarded_control_flow(
-    step: &SubActionStep,
-    registry: &SubActionRegistry,
-    enclosed_by_loop: bool,
-) -> bool {
-    if !step.enabled {
-        return false;
-    }
-    if is_unguarded_control_flow(&step.kind_id, enclosed_by_loop) {
-        return true;
-    }
-    let child_enclosed_by_loop = enclosed_by_loop || step.kind_id == LOOP_KIND_ID;
-    nested_chains(step, registry).iter().any(|chain| {
-        chain
-            .iter()
-            .any(|child| step_holds_unguarded_control_flow(child, registry, child_enclosed_by_loop))
-    })
 }
 
 fn trigger_schemas(

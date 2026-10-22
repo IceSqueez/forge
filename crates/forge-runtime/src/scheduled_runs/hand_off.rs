@@ -16,7 +16,7 @@ use super::origin::ScheduledOrigin;
 use super::provenance::{initial_args, lateness};
 use crate::catalog::Catalog;
 use crate::queue_scheduler::QUEUE_NOT_FOUND_REASON;
-use crate::{EventBus, QueueSchedulerHandle, SchedulerError, SchedulerRequest};
+use crate::{EventBus, QueueAdmission, QueueSchedulerHandle, SchedulerError, SchedulerRequest};
 
 pub const SCHEDULED_RUN_DUE_KIND: &str = "scheduled_run.due";
 
@@ -154,7 +154,7 @@ impl HandOffPath {
             trigger_kind: None,
             manual_test: false,
             initial_args: initial_args(run, late),
-            bypass_pause: action.bypass_pause,
+            admission: QueueAdmission::from(action),
         };
         match self.queues.admit(request, ScheduledOrigin::of(run)).await {
             Ok(()) => {

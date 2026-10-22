@@ -621,3 +621,81 @@ async fn a_reissue_that_fails_part_way_keeps_every_old_credential() {
         );
     }
 }
+
+fn refused_field(err: &StorageError) -> Option<&str> {
+    match err {
+        StorageError::ValidationFailed { field, .. } => Some(field.as_str()),
+        _ => None,
+    }
+}
+
+#[tokio::test]
+async fn create_refuses_a_token_shaped_display_name_and_stores_nothing() {
+    let (repo, pool) = fresh().await;
+
+    for shaped in ["fgo_b8f1c07a4e2d", "  FGO_pasted  "] {
+        let err = repo
+            .create(shaped, "forge.chat", 1)
+            .await
+            .expect_err("a token-shaped name must be refused");
+
+        assert_eq!(
+            refused_field(&err),
+            Some("display_name"),
+            "{shaped:?} produced {err:?}"
+        );
+    }
+    assert_eq!(row_count(&pool).await, 0, "a refused create left a row");
+}
+
+#[tokio::test]
+async fn create_accepts_a_name_that_only_resembles_the_token_prefix() {
+    let (repo, _pool) = fresh().await;
+
+    let created = repo
+        .create("fgo alert", "forge.chat", 1)
+        .await
+        .expect("a near-miss of the token prefix is an ordinary name");
+
+    assert_eq!(created.id.as_str(), "fgo-alert");
+}
+
+#[tokio::test]
+async fn renaming_to_a_token_shaped_display_name_is_refused_and_keeps_the_stored_name() {
+    let (repo, _pool) = fresh().await;
+    let mut definition = repo
+        .create("Alert Box", "forge.chat", 1)
+        .await
+        .expect("create overlay");
+
+    definition.display_name = "fgo_b8f1c07a4e2d".to_owned();
+    let err = repo
+        .save(&definition)
+        .await
+        .expect_err("a token-shaped rename must be refused");
+
+    assert_eq!(refused_field(&err), Some("display_name"), "{err:?}");
+    let reloaded = repo
+        .get(&definition.id)
+        .await
+        .expect("get")
+        .expect("the overlay is still stored");
+    assert_eq!(reloaded.display_name, "Alert Box");
+}
+
+#[tokio::test]
+async fn saving_a_token_shaped_identity_is_refused_by_field() {
+    let (repo, _pool) = fresh().await;
+    let mut definition = repo
+        .create("Alert Box", "forge.chat", 1)
+        .await
+        .expect("create overlay");
+
+    definition.id = OverlayId::new("fgo_shadow");
+    let err = repo
+        .save(&definition)
+        .await
+        .expect_err("a token-shaped identity must be refused");
+
+    assert_eq!(refused_field(&err), Some("id"), "{err:?}");
+}

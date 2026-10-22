@@ -426,8 +426,46 @@ mod tests {
         (credentials, slots)
     }
 
+    const PREVIOUS_OVERLAY_TOKEN: &str = "fgo_previous-live-token";
+
+    fn credentials_refusing_to_restore(
+        previous: &'static str,
+    ) -> (MockCredentialsRepo, CredentialSlots) {
+        let slots: CredentialSlots = Arc::default();
+        slots.lock().expect("lock").insert(
+            forge_storage::SERVER_OVERLAY_TOKEN_CREDENTIAL_ID.to_owned(),
+            previous.to_owned(),
+        );
+        let mut credentials = MockCredentialsRepo::new();
+        let read = Arc::clone(&slots);
+        credentials
+            .expect_load()
+            .returning(move |id| Ok(read.lock().expect("lock").get(id.as_str()).cloned()));
+        let write = Arc::clone(&slots);
+        credentials.expect_store().returning(move |id, value| {
+            if value == previous {
+                return Err(forge_storage::StorageError::Connection {
+                    reason: "disk is full".into(),
+                });
+            }
+            write
+                .lock()
+                .expect("lock")
+                .insert(id.as_str().to_owned(), value.to_owned());
+            Ok(())
+        });
+        (credentials, slots)
+    }
+
     async fn rotation_handle(
         reissue: Result<Vec<OverlayId>, forge_storage::StorageError>,
+    ) -> (ServerHandle, CredentialSlots) {
+        rotation_handle_over(reissue, slot_credentials()).await
+    }
+
+    async fn rotation_handle_over(
+        reissue: Result<Vec<OverlayId>, forge_storage::StorageError>,
+        (credentials, slots): (MockCredentialsRepo, CredentialSlots),
     ) -> (ServerHandle, CredentialSlots) {
         let mut dp = TestDataProvider::new();
         let reissue = std::sync::Mutex::new(Some(reissue));
@@ -435,7 +473,6 @@ mod tests {
             .expect_reissue_all_credentials()
             .returning(move || reissue.lock().expect("lock").take().expect("one reissue"));
         let dp = Arc::new(dp);
-        let (credentials, slots) = slot_credentials();
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = Arc::new(spawn_action_engine(
             Arc::clone(&bus),
@@ -572,7 +609,10 @@ mod tests {
             .regenerate_overlay_token(&empty_overlay_service(root.path()).await)
             .await;
 
-        assert!(result.is_err());
+        assert!(
+            matches!(&result, Err(ServerError::Storage(reason)) if reason.contains("database is locked")),
+            "a restored rotation must report the reissue failure itself: {result:?}"
+        );
         assert!(handle.auth_state().await.overlay_token().verify(&old));
         assert_eq!(
             stored_overlay_token(&slots),
@@ -612,6 +652,80 @@ mod tests {
         );
         assert!(
             !error.to_string().contains(token.as_str()),
+            "the toast text carries the overlay token"
+        );
+    }
+
+    async fn regenerate_with_a_failed_reissue_and_restore(
+        root: &std::path::Path,
+    ) -> (ServerHandle, CredentialSlots, Result<String, ServerError>) {
+        let (handle, slots) = rotation_handle_over(
+            Err(forge_storage::StorageError::Connection {
+                reason: "database is locked".into(),
+            }),
+            credentials_refusing_to_restore(PREVIOUS_OVERLAY_TOKEN),
+        )
+        .await;
+        let result = handle
+            .regenerate_overlay_token(&empty_overlay_service(root).await)
+            .await;
+        (handle, slots, result)
+    }
+
+    #[tokio::test]
+    async fn a_failed_restore_adopts_the_stored_token_live_and_reports_it() {
+        let root = tempfile::tempdir().expect("tempdir");
+
+        let (handle, slots, result) =
+            regenerate_with_a_failed_reissue_and_restore(root.path()).await;
+
+        let error = result.expect_err("a failed reissue must fail the regenerate");
+        let ServerError::OverlayTokenRestoreFailed { token, .. } = &error else {
+            panic!("expected a failed restore, got {error:?}");
+        };
+        let gate = handle.auth_state().await;
+        assert!(
+            gate.overlay_token().verify(token),
+            "the reported token is not the live one"
+        );
+        assert_eq!(
+            stored_overlay_token(&slots).as_deref(),
+            Some(token.as_str()),
+            "a restart would load a token no URL carries"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_restore_refuses_the_previous_token() {
+        let root = tempfile::tempdir().expect("tempdir");
+
+        let (handle, _slots, result) =
+            regenerate_with_a_failed_reissue_and_restore(root.path()).await;
+
+        assert!(result.is_err());
+        assert!(
+            !handle
+                .auth_state()
+                .await
+                .overlay_token()
+                .verify(PREVIOUS_OVERLAY_TOKEN),
+            "the live gate still admits a token the store no longer holds"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_restore_message_never_carries_the_new_token() {
+        let root = tempfile::tempdir().expect("tempdir");
+
+        let (_handle, _slots, result) =
+            regenerate_with_a_failed_reissue_and_restore(root.path()).await;
+
+        let error = result.expect_err("a failed reissue must fail the regenerate");
+        let ServerError::OverlayTokenRestoreFailed { token, reason } = &error else {
+            panic!("expected a failed restore, got {error:?}");
+        };
+        assert!(
+            !error.to_string().contains(token.as_str()) && !reason.contains(token.as_str()),
             "the toast text carries the overlay token"
         );
     }

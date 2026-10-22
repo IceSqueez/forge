@@ -136,6 +136,38 @@ mod tests {
     }
 
     #[test]
+    fn a_name_opening_with_the_token_prefix_in_any_case_or_padding_is_token_shaped() {
+        for shaped in [
+            "fgo_",
+            "fgo_b8f1c07a4e2d9a6b",
+            "FGO_B8F1C07A",
+            "Fgo_mixed",
+            "  fgo_padded  ",
+            "\tfgo_tabbed\n",
+        ] {
+            assert!(is_token_shaped(shaped), "{shaped:?} was not refused");
+        }
+    }
+
+    #[test]
+    fn a_name_that_only_resembles_the_token_prefix_is_not_token_shaped() {
+        for plain in [
+            "",
+            "   ",
+            "fgo",
+            "fgo-alert",
+            "fgo alert",
+            "fg_bearer",
+            "xfgo_alert",
+            "alert fgo_box",
+            "fgo\u{0416}",
+            "\u{0416}fgo_",
+        ] {
+            assert!(!is_token_shaped(plain), "{plain:?} was refused");
+        }
+    }
+
+    #[test]
     fn debug_output_never_carries_the_overlay_credential() {
         let credential = OverlayCredential::new(TOKEN);
 

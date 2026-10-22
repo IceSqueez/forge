@@ -8,7 +8,8 @@ use forge_overlay::{
     BEHAVIOR_FILE, CONFIG_FILE, GENERATED_MEDIA_DIRECTORY, MARKUP_FILE, MOTION_ASSET,
     OverlayConfig, OverlayError, OverlayInstance, OverlayKindRegistry, OverlayMedia,
     RESERVED_DIRECTORY, RUNTIME_ASSET, ResolvedMedia, SAMPLE_FILE, STYLE_FILE, SampleContext,
-    ensure_shared_directory, materialize_overlay, register_builtin_kinds, remove_overlay_directory,
+    ensure_shared_directory, materialize_overlay, refresh_config_credential,
+    register_builtin_kinds, remove_overlay_directory,
 };
 use forge_types::Variant;
 use tempfile::TempDir;
@@ -802,4 +803,213 @@ fn a_namespace_that_is_a_symbolic_link_is_refused_without_writing_through_it() {
         names_in(&elsewhere).is_empty(),
         "the link target received the generated media"
     );
+}
+
+const STALE_CREDENTIAL: &str = "0a1b2c3d4e5f60718293a4b5c6d7e8f9";
+const FRESH_CREDENTIAL: &str = "f9e8d7c6b5a4938271605f4e3d2c1b0a";
+const CREDENTIAL_KEY: &str = "credential";
+
+fn credentialed(credential: Option<&str>) -> OverlayInstance {
+    let mut held = instance(&[]);
+    held.credential = credential.map(str::to_owned);
+    held
+}
+
+fn config_of(directory: &Path) -> serde_json::Value {
+    serde_json::from_str(&fs::read_to_string(directory.join(CONFIG_FILE)).unwrap()).unwrap()
+}
+
+fn without_credential(mut document: serde_json::Value) -> serde_json::Value {
+    document.as_object_mut().unwrap().remove(CREDENTIAL_KEY);
+    document
+}
+
+#[test]
+fn refreshing_the_credential_replaces_that_field_and_nothing_else_in_the_config() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    let page = materialize_overlay(&root, &credentialed(Some(STALE_CREDENTIAL)), &registry())
+        .expect("materialize");
+    let before = config_of(&page.directory);
+
+    let refreshed = refresh_config_credential(&root, IDENTITY, FRESH_CREDENTIAL).expect("refresh");
+
+    let after = config_of(&page.directory);
+    assert!(refreshed, "a rewritten config must be reported");
+    assert_eq!(after[CREDENTIAL_KEY].as_str(), Some(FRESH_CREDENTIAL));
+    assert_eq!(without_credential(after), without_credential(before));
+}
+
+#[test]
+fn refreshing_adds_the_credential_to_a_config_written_without_one() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    let page = materialize_overlay(&root, &credentialed(None), &registry()).expect("materialize");
+
+    refresh_config_credential(&root, IDENTITY, FRESH_CREDENTIAL).expect("refresh");
+
+    assert_eq!(
+        config_of(&page.directory)[CREDENTIAL_KEY].as_str(),
+        Some(FRESH_CREDENTIAL)
+    );
+}
+
+#[test]
+fn refreshing_leaves_no_staging_file_beside_the_config() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    let page = materialize_overlay(&root, &credentialed(Some(STALE_CREDENTIAL)), &registry())
+        .expect("materialize");
+
+    refresh_config_credential(&root, IDENTITY, FRESH_CREDENTIAL).expect("refresh");
+
+    assert_eq!(names_in(&page.directory), generated_page());
+}
+
+#[test]
+fn refreshing_reports_false_and_creates_nothing_when_the_root_directory_or_config_is_absent() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+
+    assert!(!refresh_config_credential(&root, IDENTITY, FRESH_CREDENTIAL).expect("no root"));
+    assert!(!root.exists(), "a refresh created the overlay root");
+
+    fs::create_dir_all(&root).unwrap();
+    assert!(!refresh_config_credential(&root, IDENTITY, FRESH_CREDENTIAL).expect("no directory"));
+    assert!(
+        !root.join(IDENTITY).exists(),
+        "a refresh created an overlay directory"
+    );
+
+    fs::create_dir_all(root.join(IDENTITY)).unwrap();
+    assert!(!refresh_config_credential(&root, IDENTITY, FRESH_CREDENTIAL).expect("no config"));
+    assert!(
+        names_in(&root.join(IDENTITY)).is_empty(),
+        "a refresh wrote a config the overlay never had"
+    );
+}
+
+#[test]
+fn refreshing_a_config_that_is_not_a_json_object_reports_false_and_leaves_it_alone() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    let directory = root.join(IDENTITY);
+    fs::create_dir_all(&directory).unwrap();
+    let body = "[\"not\", \"an\", \"object\"]";
+    fs::write(directory.join(CONFIG_FILE), body).unwrap();
+
+    let refreshed =
+        refresh_config_credential(&root, IDENTITY, FRESH_CREDENTIAL).expect("not an object");
+
+    assert!(!refreshed);
+    assert_eq!(
+        fs::read_to_string(directory.join(CONFIG_FILE)).unwrap(),
+        body
+    );
+}
+
+#[test]
+fn refreshing_a_config_that_is_not_json_is_an_error_and_leaves_it_alone() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    let directory = root.join(IDENTITY);
+    fs::create_dir_all(&directory).unwrap();
+    let body = "{ hand edited, half saved";
+    fs::write(directory.join(CONFIG_FILE), body).unwrap();
+
+    let err = refresh_config_credential(&root, IDENTITY, FRESH_CREDENTIAL)
+        .expect_err("an unreadable config must be reported");
+
+    assert!(matches!(&err, OverlayError::ConfigDocument(_)), "{err:?}");
+    assert_eq!(
+        fs::read_to_string(directory.join(CONFIG_FILE)).unwrap(),
+        body
+    );
+}
+
+#[test]
+fn refreshing_refuses_an_identity_that_is_not_a_plain_directory_name() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    materialize_overlay(&root, &credentialed(Some(STALE_CREDENTIAL)), &registry())
+        .expect("a neighbour to protect");
+
+    for &(id, label) in UNSAFE_IDENTITIES {
+        let err = refresh_config_credential(&root, id, FRESH_CREDENTIAL)
+            .expect_err("an identity is a directory name and must be refused when it is not");
+
+        assert!(
+            matches!(&err, OverlayError::UnsafeIdentity(got) if got == id),
+            "{label} ({id:?}) produced {err:?}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn refreshing_through_a_linked_overlay_directory_is_refused_and_its_target_untouched() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    fs::create_dir_all(&root).unwrap();
+    let elsewhere = home.path().join("elsewhere");
+    fs::create_dir_all(&elsewhere).unwrap();
+    let body = "{\"credential\": \"victim\"}";
+    fs::write(elsewhere.join(CONFIG_FILE), body).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, root.join(IDENTITY)).unwrap();
+
+    let err = refresh_config_credential(&root, IDENTITY, FRESH_CREDENTIAL)
+        .expect_err("a linked overlay directory must be refused");
+
+    assert!(
+        matches!(&err, OverlayError::SymlinkedPath { .. }),
+        "{err:?}"
+    );
+    assert_eq!(
+        fs::read_to_string(elsewhere.join(CONFIG_FILE)).unwrap(),
+        body
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn refreshing_a_config_that_is_a_symbolic_link_is_refused_and_its_target_untouched() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    let page = materialize_overlay(&root, &credentialed(Some(STALE_CREDENTIAL)), &registry())
+        .expect("materialize");
+    let outside = home.path().join("victim.json");
+    let body = "{\"credential\": \"victim\"}";
+    fs::write(&outside, body).unwrap();
+    fs::remove_file(page.directory.join(CONFIG_FILE)).unwrap();
+    std::os::unix::fs::symlink(&outside, page.directory.join(CONFIG_FILE)).unwrap();
+
+    let err = refresh_config_credential(&root, IDENTITY, FRESH_CREDENTIAL)
+        .expect_err("a linked config must be refused");
+
+    assert!(
+        matches!(&err, OverlayError::SymlinkedPath { .. }),
+        "{err:?}"
+    );
+    assert_eq!(fs::read_to_string(&outside).unwrap(), body);
+}
+
+#[cfg(unix)]
+#[test]
+fn refreshing_never_writes_through_a_link_on_the_config_staging_path() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    let page = materialize_overlay(&root, &credentialed(Some(STALE_CREDENTIAL)), &registry())
+        .expect("materialize");
+    let outside = home.path().join("victim.json");
+    fs::write(&outside, "victim content").unwrap();
+    std::os::unix::fs::symlink(&outside, page.directory.join(format!(".{CONFIG_FILE}.tmp")))
+        .unwrap();
+
+    let result = refresh_config_credential(&root, IDENTITY, FRESH_CREDENTIAL);
+
+    assert!(
+        matches!(&result, Err(OverlayError::SymlinkedPath { .. })),
+        "{result:?}"
+    );
+    assert_eq!(fs::read_to_string(&outside).unwrap(), "victim content");
 }

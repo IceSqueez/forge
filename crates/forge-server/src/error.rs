@@ -88,6 +88,25 @@ pub enum ServerError {
 mod tests {
     use super::*;
 
+    const LIVE_TOKEN: &str = "fgo_q8Vn2LxR0tYb7WcZ4sKe";
+
+    #[test]
+    fn debug_of_an_error_holding_the_overlay_token_never_carries_it() {
+        for error in [
+            ServerError::OverlayRotationIncomplete {
+                token: SecretToken::new(LIVE_TOKEN.to_owned()),
+                reason: "2 overlay pages failed to rewrite".into(),
+            },
+            ServerError::OverlayTokenRestoreFailed {
+                token: SecretToken::new(LIVE_TOKEN.to_owned()),
+                reason: "database is locked; disk is full".into(),
+            },
+        ] {
+            let debug = format!("{error:?}");
+            assert!(!debug.contains(LIVE_TOKEN), "token leaked: {debug}");
+        }
+    }
+
     #[test]
     fn auth_invalid_display_carries_reason() {
         let e = ServerError::AuthInvalid {

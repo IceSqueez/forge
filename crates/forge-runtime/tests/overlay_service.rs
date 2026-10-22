@@ -1243,3 +1243,71 @@ async fn a_connect_fanout_tells_every_listener_in_the_order_given() {
         vec![("replay", id.clone()), ("catch-up", id)]
     );
 }
+
+const KEPT_CREDENTIAL: &str = "c0ffee00c0ffee00c0ffee00c0ffee00";
+const KEPT_FIELD: &str = "handWritten";
+const CREDENTIAL_FIELD: &str = "credential";
+
+fn unshipped_with_kept_config(harness: &Harness, unshipped: &OverlayDefinition) -> PathBuf {
+    let directory = harness.root.join(unshipped.id.as_str());
+    fs::create_dir_all(&directory).unwrap();
+    let kept = serde_json::json!({ CREDENTIAL_FIELD: KEPT_CREDENTIAL, KEPT_FIELD: true });
+    fs::write(directory.join(CONFIG_FILE), kept.to_string()).unwrap();
+    directory
+}
+
+fn read_config(directory: &std::path::Path) -> serde_json::Value {
+    serde_json::from_str(&fs::read_to_string(directory.join(CONFIG_FILE)).unwrap()).unwrap()
+}
+
+#[tokio::test]
+async fn a_pass_rewrites_the_stored_credential_into_the_kept_config_of_an_unavailable_overlay() {
+    let mut unshipped = definition("vendor-box");
+    unshipped.kind_id = UNSHIPPED_KIND.to_owned();
+    let harness = harness(vec![unshipped.clone()], false);
+    let directory = unshipped_with_kept_config(&harness, &unshipped);
+
+    let pass = harness.service.materialize_all().await.expect("pass");
+
+    let config = read_config(&directory);
+    assert_eq!(
+        config[CREDENTIAL_FIELD].as_str(),
+        Some(unshipped.credential.as_str()),
+        "a reissued credential never reached the page of an overlay this build lacks"
+    );
+    assert_eq!(config[KEPT_FIELD], serde_json::Value::Bool(true));
+    assert_eq!(
+        pass,
+        MaterializePass {
+            materialized: 0,
+            unavailable: 1,
+            failed: 0,
+        }
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_kept_config_that_cannot_be_refreshed_counts_as_failed_and_the_pass_carries_on() {
+    let mut unshipped = definition("vendor-box");
+    unshipped.kind_id = UNSHIPPED_KIND.to_owned();
+    let known = definition("sub-alert");
+    let harness = harness(vec![unshipped.clone(), known.clone()], false);
+    let directory = harness.root.join(unshipped.id.as_str());
+    fs::create_dir_all(&directory).unwrap();
+    let outside = harness.root.parent().unwrap().join("victim.json");
+    fs::write(&outside, "{}").unwrap();
+    std::os::unix::fs::symlink(&outside, directory.join(CONFIG_FILE)).unwrap();
+
+    let pass = harness.service.materialize_all().await.expect("pass");
+
+    assert_eq!(
+        pass,
+        MaterializePass {
+            materialized: 1,
+            unavailable: 1,
+            failed: 1,
+        }
+    );
+    assert_eq!(fs::read_to_string(&outside).unwrap(), "{}");
+}

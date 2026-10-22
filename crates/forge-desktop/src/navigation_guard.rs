@@ -270,6 +270,13 @@ mod tests {
         LeaveTarget::Screen(Screen::Overlays)
     }
 
+    fn toggled_chat() -> LeaveTarget {
+        LeaveTarget::ToggledScreen(ToggleReturn {
+            toggled: Screen::Chat,
+            back_to: Screen::Overlays,
+        })
+    }
+
     fn discards(rig: &Rig, cx: &mut TestAppContext) -> usize {
         rig.work.read_with(cx, |work, _| work.discards)
     }
@@ -318,7 +325,7 @@ mod tests {
 
     #[gpui::test]
     fn discard_restores_the_work_and_releases_the_asked_target(cx: &mut TestAppContext) {
-        for target in [overlays(), LeaveTarget::CloseWindow] {
+        for target in [overlays(), toggled_chat(), LeaveTarget::CloseWindow] {
             let mut rig = asked(cx, SaveStart::InFlight, target.clone());
 
             let released = cx.update(|cx| rig.guard.discard(cx));
@@ -337,6 +344,27 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_plain_question_for_the_toggled_screen_drops_the_return_point(cx: &mut TestAppContext) {
+        let mut rig = asked(cx, SaveStart::InFlight, toggled_chat());
+
+        rig.guard.ask(LeaveTarget::Screen(Screen::Chat));
+        let released = cx.update(|cx| rig.guard.discard(cx));
+
+        assert_eq!(released, Some(LeaveTarget::Screen(Screen::Chat)));
+    }
+
+    #[gpui::test]
+    fn watching_another_screen_drops_an_open_question(cx: &mut TestAppContext) {
+        let mut rig = asked(cx, SaveStart::InFlight, toggled_chat());
+
+        rig.guard
+            .watch(Some(UnsavedWorkHandle::new(rig.work.clone())));
+        let released = cx.update(|cx| rig.guard.discard(cx));
+
+        assert_eq!((rig.guard.is_asking(), released), (false, None));
+    }
+
+    #[gpui::test]
     fn discard_without_an_open_question_touches_nothing(cx: &mut TestAppContext) {
         let mut rig = rig(cx, true, SaveStart::InFlight);
 
@@ -349,7 +377,7 @@ mod tests {
     fn save_and_leave_releases_the_target_only_once_the_save_settles_clean(
         cx: &mut TestAppContext,
     ) {
-        for target in [overlays(), LeaveTarget::CloseWindow] {
+        for target in [overlays(), toggled_chat(), LeaveTarget::CloseWindow] {
             let mut rig = asked(cx, SaveStart::InFlight, target.clone());
 
             let on_click = cx.update(|cx| rig.guard.save(cx));

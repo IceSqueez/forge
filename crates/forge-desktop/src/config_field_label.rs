@@ -120,8 +120,15 @@ mod tests {
     const EN_FTL: &str = include_str!("../locales/en/main.ftl");
     const UK_FTL: &str = include_str!("../locales/uk/main.ftl");
     const FIELD_KEY_PREFIX: &str = "field_";
-    const FULLY_TRANSLATED_NAMESPACES: &[&str] =
-        &["core", "script", "timer", "donation", "donations", "hotkey"];
+    const FULLY_TRANSLATED_NAMESPACES: &[&str] = &[
+        "core",
+        "script",
+        "timer",
+        "donation",
+        "donations",
+        "hotkey",
+        "twitch",
+    ];
     const INTENTIONAL_EN_REWORDINGS: &[(&str, &str, &str)] = &[
         (
             "core",

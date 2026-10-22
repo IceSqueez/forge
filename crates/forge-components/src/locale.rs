@@ -237,6 +237,46 @@ macro_rules! tr {
 mod tests {
     use super::*;
 
+    #[allow(clippy::unwrap_used)]
+    fn install_source(source: &str) {
+        let mut bundle = FluentBundle::new(vec!["en-US".parse().unwrap()]);
+        bundle
+            .add_resource(FluentResource::try_new(source.to_owned()).unwrap())
+            .unwrap();
+        install_bundle(Rc::new(bundle));
+    }
+
+    fn warned(key: &str) -> bool {
+        WARNED_KEYS.with(|cell| cell.borrow().contains(key))
+    }
+
+    #[test]
+    fn tr_find_reads_a_present_key_including_the_dotted_form() {
+        install_source("nav_home = Home\n");
+        assert_eq!(tr_find("nav.home", None).as_deref(), Some("Home"));
+    }
+
+    #[test]
+    fn tr_find_misses_without_recording_a_missing_key_warning() {
+        install_source("present = Here\n");
+        assert_eq!(tr_find("absent_key", None), None);
+        assert!(!warned("absent_key"));
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn tr_lookup_records_the_missing_key_warning_that_tr_find_skips() {
+        install_source("present = Here\n");
+        assert_eq!(tr_lookup("absent_key", None), "absent_key");
+        assert!(warned("absent_key"));
+    }
+
+    #[test]
+    fn tr_find_returns_none_when_no_bundle_is_installed() {
+        BUNDLE.with(|cell| *cell.borrow_mut() = None);
+        assert_eq!(tr_find("present", None), None);
+    }
+
     #[test]
     fn tr_lookup_returns_key_verbatim_when_no_bundle_installed() {
         for key in ["some_missing_key", "nav.home", "a.b.c", "plain_key"] {

@@ -1084,4 +1084,56 @@ mod tests {
             (true, Vec::<String>::new())
         );
     }
+
+    #[gpui::test]
+    fn every_take_and_release_of_the_transfer_lock_repaints_the_storage_cards(
+        cx: &mut TestAppContext,
+    ) {
+        let schedule = schedule_rig(cx, &[]);
+        let (view, _flows) = storage_with_schedule(cx, &schedule);
+        let exclusivity = forge_transfer::TransferExclusivity::new();
+        view.update(cx, |view, cx| view.follow_transfer_lock(&exclusivity, cx));
+        let repaints = std::rc::Rc::new(std::cell::Cell::new(0_u32));
+        let counter = std::rc::Rc::clone(&repaints);
+        cx.update(|cx| {
+            cx.observe(&schedule.view, move |_, _| counter.set(counter.get() + 1))
+                .detach();
+        });
+        cx.run_until_parked();
+        let before = repaints.get();
+
+        let guard = exclusivity.try_acquire().unwrap();
+        cx.run_until_parked();
+        let after_take = repaints.get();
+        drop(guard);
+        cx.run_until_parked();
+        let after_release = repaints.get();
+
+        assert_eq!(
+            (after_take > before, after_release > after_take),
+            (true, true)
+        );
+    }
+
+    #[gpui::test]
+    fn a_dropped_storage_view_stops_following_the_transfer_lock(cx: &mut TestAppContext) {
+        let schedule = schedule_rig(cx, &[]);
+        let (view, _flows) = storage_with_schedule(cx, &schedule);
+        let exclusivity = forge_transfer::TransferExclusivity::new();
+        view.update(cx, |view, cx| view.follow_transfer_lock(&exclusivity, cx));
+        let repaints = std::rc::Rc::new(std::cell::Cell::new(0_u32));
+        let counter = std::rc::Rc::clone(&repaints);
+        cx.update(|cx| {
+            cx.observe(&schedule.view, move |_, _| counter.set(counter.get() + 1))
+                .detach();
+        });
+        drop(view);
+        cx.run_until_parked();
+        let before = repaints.get();
+
+        drop(exclusivity.try_acquire().unwrap());
+        cx.run_until_parked();
+
+        assert_eq!(repaints.get(), before);
+    }
 }

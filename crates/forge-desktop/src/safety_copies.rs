@@ -688,3 +688,633 @@ impl Render for SafetyCopiesView {
             .children(self.clean_up_overlay(&palette, cx))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+mod tests {
+    use std::path::Path;
+    use std::time::{Duration, Instant};
+
+    use forge_components::Toasts;
+    use forge_storage::{Language, reserved_keys};
+    use forge_transfer::{
+        SafetyCopyFailure, ScheduledBackupParts, SystemBackupClock, backup_file_stem, backups_dir,
+        spawn_scheduled_backups,
+    };
+    use gpui::TestAppContext;
+    use time::OffsetDateTime;
+
+    use super::*;
+    use crate::i18n::install_language;
+    use crate::test_support::install_presentation;
+    use crate::test_support::pack_flow::{PackWorld, pack_world};
+    use crate::test_support::runtime;
+
+    const SETTLE_GUARD: Duration = Duration::from_secs(30);
+    const RUNTIME_TURN: Duration = Duration::from_millis(1);
+    const STEM_PREFIX: &str = "forge-backup";
+    const PRE_PACK: &str = "forge-pre-pack";
+    const ARCHIVE: &str = "tar.gz";
+    const COPY_BYTES: usize = 64;
+    const SETTLE_ROUNDS: usize = 20;
+
+    struct Rig {
+        rt: tokio::runtime::Runtime,
+        world: PackWorld,
+        exclusivity: TransferExclusivity,
+        scheduled: ScheduledBackupHandle,
+        view: Entity<SafetyCopiesView>,
+    }
+
+    fn rig(cx: &mut TestAppContext, seeds: &[(&str, &str)], copies: usize) -> Rig {
+        install_language(Language::En);
+        install_presentation(cx);
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let world = pack_world(&rt);
+        let provider = Arc::clone(world.provider());
+        let exclusivity = TransferExclusivity::new();
+        let backups = backups_dir(&world.data_dir());
+        std::fs::create_dir_all(&backups).unwrap();
+        for n in 0..copies {
+            let age = time::Duration::hours(i64::try_from(n).unwrap() + 1);
+            let stem = backup_file_stem(OffsetDateTime::now_utc() - age, &format!("aaaa{n:02}"));
+            let name = format!(
+                "{PRE_PACK}{}.{ARCHIVE}",
+                stem.strip_prefix(STEM_PREFIX).unwrap()
+            );
+            std::fs::write(backups.join(name), vec![0_u8; COPY_BYTES]).unwrap();
+        }
+        let scheduled = rt.block_on(async {
+            for (key, value) in seeds {
+                provider.set_string(key, value).await.unwrap();
+            }
+            spawn_scheduled_backups(ScheduledBackupParts {
+                provider: Arc::clone(&provider),
+                data_dir: world.data_dir(),
+                exclusivity: exclusivity.clone(),
+                clock: Arc::new(SystemBackupClock),
+            })
+        });
+        let (handle, data_dir) = (rt.handle().clone(), world.data_dir());
+        let (view_exclusivity, view_scheduled) = (exclusivity.clone(), scheduled.clone());
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                SafetyCopiesView::new(
+                    provider as Arc<dyn DataProvider>,
+                    handle,
+                    view_exclusivity,
+                    view_scheduled,
+                    data_dir,
+                    cx,
+                )
+            })
+        });
+        let rig = Rig {
+            rt,
+            world,
+            exclusivity,
+            scheduled,
+            view,
+        };
+        let expected = u32::try_from(copies).unwrap();
+        assert!(rig.settle(cx, |cx| rig.usage(cx).is_some_and(|u| u.count == expected)));
+        rig
+    }
+
+    impl Rig {
+        fn settle(
+            &self,
+            cx: &mut TestAppContext,
+            mut done: impl FnMut(&mut TestAppContext) -> bool,
+        ) -> bool {
+            let started = Instant::now();
+            loop {
+                cx.run_until_parked();
+                if done(cx) {
+                    return true;
+                }
+                if started.elapsed() > SETTLE_GUARD {
+                    return false;
+                }
+                self.rt
+                    .block_on(async { tokio::time::sleep(RUNTIME_TURN).await });
+            }
+        }
+
+        fn usage(&self, cx: &mut TestAppContext) -> Option<SafetyCopyUsage> {
+            self.view.read_with(cx, |view, _| view.usage)
+        }
+
+        fn stored(&self, key: &str) -> Option<String> {
+            self.rt
+                .block_on(self.world.provider().get_string(key))
+                .unwrap()
+        }
+
+        fn copies_on_disk(&self) -> usize {
+            std::fs::read_dir(backups_dir(&self.world.data_dir()))
+                .unwrap()
+                .filter(|entry| {
+                    entry
+                        .as_ref()
+                        .unwrap()
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(PRE_PACK)
+                })
+                .count()
+        }
+
+        fn type_and_commit(&self, cx: &mut TestAppContext, number: SafetyCopyNumber, text: &str) {
+            self.view.update(cx, |view, cx| {
+                let field = view.numbers.iter().find(|f| f.number == number).unwrap();
+                field
+                    .input
+                    .update(cx, |input, cx| input.set_content(text.to_owned(), cx));
+                view.commit_number(number, cx);
+            });
+        }
+
+        fn shown(&self, cx: &mut TestAppContext, number: SafetyCopyNumber) -> (String, bool) {
+            self.view.read_with(cx, |view, cx| {
+                let field = view.numbers.iter().find(|f| f.number == number).unwrap();
+                (field.input.read(cx).content().to_owned(), field.invalid)
+            })
+        }
+
+        fn settings(&self, cx: &mut TestAppContext) -> SafetyCopySettings {
+            self.view.read_with(cx, |view, _| view.settings)
+        }
+
+        fn toasts(&self, cx: &mut TestAppContext) -> usize {
+            cx.update(|cx| cx.global::<Toasts>().items().len())
+        }
+
+        fn fence_with_a_real_change(&self, cx: &mut TestAppContext) -> usize {
+            self.view
+                .update(cx, |view, cx| view.pick_mode(SafetyCopyMode::Never, cx));
+            assert!(self.settle(cx, |cx| {
+                self.stored(reserved_keys::SAFETY_COPIES_MODE) == Some("never".to_owned())
+                    && self.toasts(cx) > 0
+            }));
+            self.toasts(cx)
+        }
+
+        fn storage_backups_bytes(&self) -> Option<u64> {
+            self.scheduled
+                .status()
+                .borrow()
+                .storage_used
+                .map(|used| used.backups)
+        }
+    }
+
+    fn settings(
+        mode: SafetyCopyMode,
+        keep_newest: u32,
+        delete_after_days: u32,
+    ) -> SafetyCopySettings {
+        SafetyCopySettings {
+            mode,
+            keep_newest,
+            delete_after_days,
+        }
+    }
+
+    fn report(removed: u32, failures: &[&str], deferred: bool) -> SafetyCopyReport {
+        SafetyCopyReport {
+            removed,
+            freed_bytes: u64::from(removed),
+            failures: failures
+                .iter()
+                .map(|name| SafetyCopyFailure {
+                    path: Path::new("/data/backups").join(name),
+                    reason: "denied".to_owned(),
+                })
+                .collect(),
+            deferred_by_transfer: deferred,
+        }
+    }
+
+    #[test]
+    fn each_number_accepts_its_bounds_and_rejects_everything_outside_them() {
+        for number in [
+            SafetyCopyNumber::KeepNewest,
+            SafetyCopyNumber::DeleteAfterDays,
+        ] {
+            let (min, max) = (*number.range().start(), *number.range().end());
+            for (text, expected) in [
+                (min.to_string(), Some(min)),
+                (max.to_string(), Some(max)),
+                (format!(" {max} "), Some(max)),
+                ((min - 1).to_string(), None),
+                ((max + 1).to_string(), None),
+                (String::new(), None),
+                ("   ".to_owned(), None),
+                ("-1".to_owned(), None),
+                ("five".to_owned(), None),
+                ("1e3".to_owned(), None),
+                ("99999999999".to_owned(), None),
+            ] {
+                assert_eq!(number.parse(&text), expected, "{number:?} {text:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn setting_one_number_leaves_the_mode_and_the_other_number_alone() {
+        let before = settings(SafetyCopyMode::Never, 3, 40);
+        for (number, value, expected) in [
+            (
+                SafetyCopyNumber::KeepNewest,
+                9,
+                settings(SafetyCopyMode::Never, 9, 40),
+            ),
+            (
+                SafetyCopyNumber::DeleteAfterDays,
+                9,
+                settings(SafetyCopyMode::Never, 3, 9),
+            ),
+        ] {
+            assert_eq!(number.with_value(before, value), expected, "{number:?}");
+        }
+    }
+
+    #[test]
+    fn only_the_numbered_modes_show_a_number_field() {
+        assert_eq!(
+            MODES.map(SafetyCopyNumber::for_mode),
+            [
+                Some(SafetyCopyNumber::KeepNewest),
+                Some(SafetyCopyNumber::DeleteAfterDays),
+                None
+            ]
+        );
+    }
+
+    #[test]
+    fn each_sweep_outcome_maps_to_its_notices() {
+        use SafetyCopyNotice as N;
+        use SweepOrigin::{CleanUp, SettingChange};
+        let not_deleted = |count| N::NotDeleted {
+            count,
+            name: "first.tar.gz".to_owned(),
+            reason: "denied".to_owned(),
+        };
+        for (origin, result, expected) in [
+            (
+                CleanUp,
+                Err("disk gone".to_owned()),
+                vec![N::Failed(CleanUp, "disk gone".to_owned())],
+            ),
+            (
+                SettingChange,
+                Ok(report(0, &[], true)),
+                vec![N::Deferred(SettingChange)],
+            ),
+            (
+                CleanUp,
+                Ok(report(0, &[], true)),
+                vec![N::Deferred(CleanUp)],
+            ),
+            (
+                CleanUp,
+                Ok(report(2, &[], false)),
+                vec![N::Freed {
+                    removed: 2,
+                    bytes: 2,
+                }],
+            ),
+            (
+                CleanUp,
+                Ok(report(0, &["first.tar.gz", "second.tar.gz"], false)),
+                vec![not_deleted(2)],
+            ),
+            (
+                SettingChange,
+                Ok(report(1, &["first.tar.gz"], false)),
+                vec![
+                    N::Freed {
+                        removed: 1,
+                        bytes: 1,
+                    },
+                    not_deleted(1),
+                ],
+            ),
+            (SettingChange, Ok(report(0, &[], false)), vec![N::Saved]),
+            (CleanUp, Ok(report(0, &[], false)), vec![N::NothingToRemove]),
+        ] {
+            assert_eq!(notices(origin, &result), expected, "{origin:?} {result:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn the_card_shows_the_stored_policy_once_loaded(cx: &mut TestAppContext) {
+        let r = rig(
+            cx,
+            &[
+                (reserved_keys::SAFETY_COPIES_MODE, "delete_after_days"),
+                (reserved_keys::SAFETY_COPIES_KEEP_NEWEST, "7"),
+                (reserved_keys::SAFETY_COPIES_DELETE_AFTER_DAYS, "45"),
+            ],
+            0,
+        );
+
+        assert!(r.settle(cx, |cx| r.settings(cx)
+            == settings(SafetyCopyMode::DeleteAfterDays, 7, 45)));
+        assert_eq!(
+            (
+                r.shown(cx, SafetyCopyNumber::KeepNewest).0,
+                r.shown(cx, SafetyCopyNumber::DeleteAfterDays).0
+            ),
+            ("7".to_owned(), "45".to_owned())
+        );
+    }
+
+    #[gpui::test]
+    fn picking_a_mode_saves_it_and_prunes_under_it(cx: &mut TestAppContext) {
+        let r = rig(
+            cx,
+            &[
+                (reserved_keys::SAFETY_COPIES_MODE, "never"),
+                (reserved_keys::SAFETY_COPIES_KEEP_NEWEST, "1"),
+            ],
+            3,
+        );
+        assert!(r.settle(cx, |cx| r.settings(cx).mode == SafetyCopyMode::Never));
+
+        r.view.update(cx, |view, cx| {
+            view.pick_mode(SafetyCopyMode::KeepNewest, cx)
+        });
+
+        assert!(r.settle(cx, |cx| r.usage(cx).is_some_and(|u| u.count == 1)));
+        assert_eq!(
+            (
+                r.stored(reserved_keys::SAFETY_COPIES_MODE),
+                r.copies_on_disk()
+            ),
+            (Some("keep_newest".to_owned()), 1)
+        );
+    }
+
+    #[gpui::test]
+    fn picking_the_current_mode_issues_no_change(cx: &mut TestAppContext) {
+        let r = rig(cx, &[], 0);
+
+        r.view.update(cx, |view, cx| {
+            view.pick_mode(SafetyCopyMode::KeepNewest, cx)
+        });
+
+        assert_eq!(r.fence_with_a_real_change(cx), 1);
+    }
+
+    #[gpui::test]
+    fn switching_mode_keeps_the_other_number_as_typed(cx: &mut TestAppContext) {
+        let r = rig(cx, &[], 0);
+        r.type_and_commit(cx, SafetyCopyNumber::KeepNewest, "7");
+        assert!(
+            r.settle(cx, |_| r.stored(reserved_keys::SAFETY_COPIES_KEEP_NEWEST)
+                == Some("7".to_owned()))
+        );
+
+        r.view.update(cx, |view, cx| {
+            view.pick_mode(SafetyCopyMode::DeleteAfterDays, cx);
+        });
+
+        assert!(r.settle(cx, |_| r.stored(reserved_keys::SAFETY_COPIES_MODE)
+            == Some("delete_after_days".to_owned())));
+        assert_eq!(
+            (
+                r.stored(reserved_keys::SAFETY_COPIES_KEEP_NEWEST),
+                r.settings(cx).keep_newest
+            ),
+            (Some("7".to_owned()), 7)
+        );
+    }
+
+    #[gpui::test]
+    fn a_committed_number_is_normalised_saved_and_pruned_under(cx: &mut TestAppContext) {
+        let r = rig(cx, &[], 3);
+
+        r.type_and_commit(cx, SafetyCopyNumber::KeepNewest, " 1 ");
+
+        assert!(r.settle(cx, |cx| r.usage(cx).is_some_and(|u| u.count == 1)));
+        assert_eq!(
+            (
+                r.shown(cx, SafetyCopyNumber::KeepNewest),
+                r.stored(reserved_keys::SAFETY_COPIES_KEEP_NEWEST)
+            ),
+            (("1".to_owned(), false), Some("1".to_owned()))
+        );
+    }
+
+    #[gpui::test]
+    fn an_invalid_number_is_flagged_and_never_saved_or_pruned(cx: &mut TestAppContext) {
+        let r = rig(cx, &[], 3);
+        let max = *SafetyCopyNumber::KeepNewest.range().end();
+        let before = r.settings(cx);
+        let mut flagged = Vec::new();
+        for typed in [
+            String::new(),
+            "0".to_owned(),
+            (max + 1).to_string(),
+            "lots".to_owned(),
+        ] {
+            r.type_and_commit(cx, SafetyCopyNumber::KeepNewest, &typed);
+            flagged.push(r.shown(cx, SafetyCopyNumber::KeepNewest).1);
+        }
+
+        let toasts = r.fence_with_a_real_change(cx);
+
+        assert_eq!(flagged, [true, true, true, true]);
+        assert_eq!(
+            (
+                toasts,
+                r.stored(reserved_keys::SAFETY_COPIES_KEEP_NEWEST),
+                r.copies_on_disk()
+            ),
+            (1, Some(before.keep_newest.to_string()), 3)
+        );
+    }
+
+    #[gpui::test]
+    fn committing_the_current_value_issues_no_change_and_clears_the_invalid_mark(
+        cx: &mut TestAppContext,
+    ) {
+        let r = rig(cx, &[], 0);
+        r.type_and_commit(cx, SafetyCopyNumber::KeepNewest, "");
+        let current = r.settings(cx).keep_newest.to_string();
+
+        r.type_and_commit(cx, SafetyCopyNumber::KeepNewest, &current);
+        let cleared = !r.shown(cx, SafetyCopyNumber::KeepNewest).1;
+
+        assert_eq!((cleared, r.fence_with_a_real_change(cx)), (true, 1));
+    }
+
+    #[gpui::test]
+    fn applying_loaded_settings_clears_a_stale_invalid_mark(cx: &mut TestAppContext) {
+        let r = rig(cx, &[], 0);
+        r.type_and_commit(cx, SafetyCopyNumber::DeleteAfterDays, "never");
+
+        r.view.update(cx, |view, cx| {
+            view.apply_settings(settings(SafetyCopyMode::DeleteAfterDays, 4, 12), cx);
+        });
+
+        assert_eq!(
+            r.shown(cx, SafetyCopyNumber::DeleteAfterDays),
+            ("12".to_owned(), false)
+        );
+    }
+
+    #[gpui::test]
+    fn clean_up_deletes_every_safety_copy_and_leaves_the_bundles(cx: &mut TestAppContext) {
+        let r = rig(cx, &[], 3);
+        let bundle = backups_dir(&r.world.data_dir()).join("forge-backup-manual.forgebundle");
+        std::fs::write(&bundle, b"keep").unwrap();
+
+        r.view.update(cx, |view, cx| view.clean_up(cx));
+
+        assert!(r.settle(cx, |cx| r.usage(cx).is_some_and(|u| u.count == 0)));
+        assert_eq!((r.copies_on_disk(), bundle.is_file()), (0, true));
+    }
+
+    #[gpui::test]
+    fn clean_up_during_a_transfer_deletes_nothing(cx: &mut TestAppContext) {
+        let r = rig(cx, &[], 3);
+        let _running = r.exclusivity.try_acquire().unwrap();
+
+        r.view.update(cx, |view, cx| view.clean_up(cx));
+
+        assert!(r.settle(cx, |cx| r.view.read_with(cx, |view, _| !view.cleaning)));
+        assert_eq!(r.copies_on_disk(), 3);
+    }
+
+    #[gpui::test]
+    fn clean_up_is_blocked_while_cleaning_while_a_transfer_runs_or_when_nothing_is_stored(
+        cx: &mut TestAppContext,
+    ) {
+        let r = rig(cx, &[], 0);
+        let blocked = |cx: &mut TestAppContext, cleaning, usage| {
+            r.view.update(cx, |view, _| {
+                view.cleaning = cleaning;
+                view.usage = usage;
+                view.clean_up_blocked()
+            })
+        };
+        let some = Some(SafetyCopyUsage { count: 1, bytes: 1 });
+        let none_stored = Some(SafetyCopyUsage::default());
+
+        let free = [
+            blocked(cx, false, some),
+            blocked(cx, false, None),
+            blocked(cx, true, some),
+            blocked(cx, false, none_stored),
+        ];
+        let guard = r.exclusivity.try_acquire().unwrap();
+        let while_held = blocked(cx, false, some);
+        drop(guard);
+
+        assert_eq!((free, while_held), ([false, false, true, true], true));
+    }
+
+    #[gpui::test]
+    fn a_failed_measurement_shows_the_usage_as_unknown(cx: &mut TestAppContext) {
+        let r = rig(cx, &[], 1);
+
+        r.view.update(cx, |view, cx| {
+            view.apply_usage(Err("unreadable".to_owned()), cx)
+        });
+
+        assert_eq!(r.usage(cx), None);
+    }
+
+    #[gpui::test]
+    fn a_sweep_that_removed_copies_makes_storage_used_measure_again(cx: &mut TestAppContext) {
+        let r = rig(cx, &[], 1);
+        assert!(r.settle(cx, |_| r.storage_backups_bytes() == Some(COPY_BYTES as u64)));
+        for entry in std::fs::read_dir(backups_dir(&r.world.data_dir())).unwrap() {
+            std::fs::remove_file(entry.unwrap().path()).unwrap();
+        }
+
+        r.view.update(cx, |view, cx| {
+            view.sweep_finished(SweepOrigin::CleanUp, Ok(report(1, &[], false)), cx);
+        });
+
+        assert!(r.settle(cx, |_| r.storage_backups_bytes() == Some(0)));
+    }
+
+    #[gpui::test]
+    fn a_sweep_that_removed_nothing_leaves_storage_used_alone(cx: &mut TestAppContext) {
+        let r = rig(cx, &[], 1);
+        assert!(r.settle(cx, |_| r.storage_backups_bytes() == Some(COPY_BYTES as u64)));
+        for entry in std::fs::read_dir(backups_dir(&r.world.data_dir())).unwrap() {
+            std::fs::remove_file(entry.unwrap().path()).unwrap();
+        }
+
+        r.view.update(cx, |view, cx| {
+            view.sweep_finished(SweepOrigin::CleanUp, Ok(report(0, &[], false)), cx);
+        });
+        r.settle(cx, |cx| r.usage(cx).is_some_and(|u| u.count == 0));
+
+        assert_eq!(r.storage_backups_bytes(), Some(COPY_BYTES as u64));
+    }
+
+    #[gpui::test]
+    fn a_late_settings_load_does_not_overwrite_a_change_made_on_the_card(cx: &mut TestAppContext) {
+        let r = rig(cx, &[], 0);
+        r.type_and_commit(cx, SafetyCopyNumber::KeepNewest, "3");
+        assert!(r.settle(cx, |_| {
+            r.stored(reserved_keys::SAFETY_COPIES_KEEP_NEWEST) == Some("3".to_owned())
+        }));
+        r.rt.block_on(
+            r.world
+                .provider()
+                .set_string(reserved_keys::SAFETY_COPIES_KEEP_NEWEST, "7"),
+        )
+        .unwrap();
+
+        r.view.update(cx, |view, cx| view.load(cx));
+        r.settle(cx, |_| true);
+        for _ in 0..SETTLE_ROUNDS {
+            r.rt.block_on(async { tokio::time::sleep(RUNTIME_TURN).await });
+            cx.run_until_parked();
+        }
+
+        assert_eq!(
+            (
+                r.settings(cx).keep_newest,
+                r.shown(cx, SafetyCopyNumber::KeepNewest).0
+            ),
+            (3, "3".to_owned())
+        );
+    }
+
+    #[gpui::test]
+    fn a_change_during_a_transfer_is_saved_deletes_nothing_and_says_it_trims_at_next_start(
+        cx: &mut TestAppContext,
+    ) {
+        let r = rig(cx, &[], 3);
+        let _running = r.exclusivity.try_acquire().unwrap();
+        let next_start = tr!("safety_copies_change_deferred");
+        let deferred_shown = |cx: &mut TestAppContext| {
+            cx.update(|cx| {
+                cx.global::<Toasts>()
+                    .items()
+                    .iter()
+                    .any(|toast| toast.message == next_start)
+            })
+        };
+
+        r.type_and_commit(cx, SafetyCopyNumber::KeepNewest, "1");
+
+        assert!(r.settle(cx, deferred_shown));
+        assert_eq!(
+            (
+                r.stored(reserved_keys::SAFETY_COPIES_KEEP_NEWEST),
+                r.copies_on_disk()
+            ),
+            (Some("1".to_owned()), 3)
+        );
+    }
+}

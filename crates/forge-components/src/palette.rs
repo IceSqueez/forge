@@ -418,6 +418,19 @@ mod tests {
     }
 
     #[test]
+    fn the_mauve_category_swatch_is_the_themes_mauve_accent_whatever_accent_is_chosen() {
+        for theme in ThemeId::ALL {
+            for accent in AccentColor::ALL {
+                assert_eq!(
+                    accent_swatch("mauve", &theme.accented_palette(accent)),
+                    Some(named_accent(theme, AccentColor::Mauve)),
+                    "{theme:?} {accent:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn every_accent_round_trips_through_its_storage_key() {
         for accent in AccentColor::ALL {
             assert_eq!(

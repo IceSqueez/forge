@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use forge_events::EventPublisher;
 use forge_platform_core::{DonationProvider, DonationStream};
 use forge_storage::CredentialsRepo;
 use forge_types::IntegrationId;
@@ -50,6 +51,11 @@ impl MonobankProvider {
             control,
             status: Arc::new(StatusBoard::new()),
         })
+    }
+
+    pub fn with_event_publisher(self, publisher: Arc<dyn EventPublisher>) -> Self {
+        self.status.attach_publisher(publisher);
+        self
     }
 
     pub fn poll_status(&self) -> PollStatus {

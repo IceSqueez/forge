@@ -77,6 +77,17 @@ impl ConnectionLossGate {
         out.push(NotificationIntent::ConnectionLossCue { platform_ids: lost });
     }
 
+    pub(super) fn discard_due(&mut self, now: Instant) {
+        for link in self.links.values_mut() {
+            if link
+                .lost_at
+                .is_some_and(|at| at + CONNECTION_LOSS_GRACE <= now)
+            {
+                link.lost_at = None;
+            }
+        }
+    }
+
     pub(super) fn deadline(&self) -> Option<Instant> {
         let grace_ends = self
             .links

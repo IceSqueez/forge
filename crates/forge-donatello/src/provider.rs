@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_events::EventPublisher;
 use forge_platform_core::{DonationProvider, DonationStream, RateLimiter};
 use forge_storage::CredentialsRepo;
 use forge_types::IntegrationId;
@@ -49,6 +50,11 @@ impl DonatelloProvider {
             control,
             status: Arc::new(StatusBoard::new(interval)),
         })
+    }
+
+    pub fn with_event_publisher(self, publisher: Arc<dyn EventPublisher>) -> Self {
+        self.status.attach_publisher(publisher);
+        self
     }
 
     pub fn poll_status(&self) -> PollStatus {

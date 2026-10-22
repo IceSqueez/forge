@@ -7,6 +7,7 @@ pub mod builtin;
 pub mod capabilities;
 pub mod chat;
 pub mod collections;
+pub mod connection_announcer;
 pub mod credential_errors;
 pub mod donation;
 pub mod donation_test;
@@ -43,6 +44,7 @@ pub use collections::{
     CollectionItemAccess, CollectionItemId, CollectionMetadata, CollectionOutcome,
     CollectionRevisionSignal, CollectionRevisions, CollectionToggle, RevisionWait,
 };
+pub use connection_announcer::ConnectionAnnouncer;
 pub use credential_errors::{credential_storage_error, reauth_required};
 pub use donation::{DonationProvider, DonationStream};
 pub use donation_test::{

@@ -1323,6 +1323,7 @@ name = "forge-donatello"
 version = "0.6.2"
 dependencies = [
  "async-trait",
+ "forge-events",
  "forge-platform-core",
  "forge-storage",
  "forge-types",
@@ -1396,6 +1397,7 @@ name = "forge-monobank"
 version = "0.6.2"
 dependencies = [
  "async-trait",
+ "forge-events",
  "forge-platform-core",
  "forge-storage",
  "forge-types",

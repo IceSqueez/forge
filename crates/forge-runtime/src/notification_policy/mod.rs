@@ -105,7 +105,11 @@ impl NotificationPolicy {
                 () = sleep_until_due(deadline) => {
                     let now = Instant::now();
                     self.failures.flush_due(now, &mut due);
-                    self.links.flush_due(now, &mut due);
+                    if self.preferences.borrow().connection_loss_cue {
+                        self.links.flush_due(now, &mut due);
+                    } else {
+                        self.links.discard_due(now);
+                    }
                 }
             }
             self.deliver(&mut due);

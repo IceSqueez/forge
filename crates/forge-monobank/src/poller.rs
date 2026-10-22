@@ -89,6 +89,7 @@ struct Harvest {
 }
 
 pub(crate) async fn run(mut ctx: PollContext) {
+    let _running = ctx.status.poller_started();
     let mut session: Option<Session> = None;
     let mut memory: Option<PollMemory> = None;
     let mut generation = None;

@@ -23,6 +23,7 @@ pub mod live_chat_id;
 mod log_capture;
 pub mod moderation;
 mod payload_fields;
+mod poll_health;
 pub mod quota_state;
 pub mod send_chat;
 pub mod stream_metadata;

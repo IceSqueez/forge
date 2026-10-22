@@ -7,12 +7,13 @@ use forge_platform_core::{
     PlatformEndpoints, QuickActions, SectionIcon,
 };
 use forge_runtime::{
-    DEFAULT_TEARDOWN_GRACE, DonationIngest, IntegrationFactory, RunningIntegration, TaskGroup,
+    DEFAULT_TEARDOWN_GRACE, DonationIngest, EventBus, IntegrationFactory, RunningIntegration,
+    TaskGroup,
 };
 use forge_storage::{CredentialsRepo, DataProvider, StorageError, has_credentials_for};
 use forge_types::IntegrationId;
 
-use crate::integrations::{BuiltinObject, creds_of};
+use crate::integrations::{BuiltinObject, creds_of, publisher};
 
 const DONATION_ICON: &str = "coin";
 
@@ -90,6 +91,7 @@ pub(crate) fn wire_donatello(
     backend: &Arc<dyn DataProvider>,
     endpoints: &PlatformEndpoints,
     ingest: &Arc<DonationIngest>,
+    bus: &Arc<EventBus>,
 ) -> Option<DonationFactory<forge_donatello::DonatelloProvider>> {
     let creds = creds_of(backend);
     let provider = forge_donatello::DonatelloProvider::new(
@@ -99,7 +101,7 @@ pub(crate) fn wire_donatello(
     );
     match provider {
         Ok(provider) => Some(DonationFactory {
-            provider: Arc::new(provider),
+            provider: Arc::new(provider.with_event_publisher(publisher(bus))),
             creds,
             ingest: Arc::clone(ingest),
         }),
@@ -114,6 +116,7 @@ pub(crate) fn wire_monobank(
     backend: &Arc<dyn DataProvider>,
     endpoints: &PlatformEndpoints,
     ingest: &Arc<DonationIngest>,
+    bus: &Arc<EventBus>,
 ) -> Option<DonationFactory<forge_monobank::MonobankProvider>> {
     let creds = creds_of(backend);
     let provider = forge_monobank::MonobankProvider::new(
@@ -123,7 +126,7 @@ pub(crate) fn wire_monobank(
     );
     match provider {
         Ok(provider) => Some(DonationFactory {
-            provider: Arc::new(provider),
+            provider: Arc::new(provider.with_event_publisher(publisher(bus))),
             creds,
             ingest: Arc::clone(ingest),
         }),

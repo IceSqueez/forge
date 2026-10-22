@@ -21,6 +21,7 @@ use crate::payload_fields::{
     gift as gift_fields, member as member_fields, stream as stream_fields,
     support as support_fields,
 };
+use crate::poll_health::{PollHealthReporter, PollHealthTracker};
 use crate::quota_state::{BROADCAST_COST, CHAT_POLL_COST, SharedQuota, today_pacific};
 
 const POLL_FLOOR_MS: u64 = 3_000;
@@ -48,6 +49,7 @@ pub struct YoutubeChatPoller {
     live_chat_id: LiveChatIdHandle,
     active_broadcast_id: ActiveBroadcastIdHandle,
     ban_ledger: Arc<dyn BanLedgerRepo>,
+    health_reporter: Option<PollHealthReporter>,
 }
 
 impl YoutubeChatPoller {
@@ -76,7 +78,13 @@ impl YoutubeChatPoller {
             live_chat_id,
             active_broadcast_id,
             ban_ledger,
+            health_reporter: None,
         }
+    }
+
+    pub(crate) fn with_health_reporter(mut self, reporter: PollHealthReporter) -> Self {
+        self.health_reporter = Some(reporter);
+        self
     }
 
     #[cfg(test)]
@@ -90,6 +98,7 @@ impl YoutubeChatPoller {
         let mut last_seen_title: Option<String> = None;
         let mut last_broadcast_id: Option<String> = None;
         let mut is_live = false;
+        let mut health = PollHealthTracker::new(self.health_reporter.clone());
 
         'outer: loop {
             if cancel.is_cancelled() {
@@ -113,6 +122,7 @@ impl YoutubeChatPoller {
             let token = match (self.access_token_source)().await {
                 Ok(t) => t,
                 Err(e) => {
+                    health.failed();
                     tracing::warn!(
                         "access token source failed during broadcast resolution: {}",
                         crate::error_shape::redact_platform_error(&e)
@@ -125,10 +135,13 @@ impl YoutubeChatPoller {
                 }
             };
 
-            let (live_chat_id, broadcast_id, current_title) = match self
-                .fetch_live_chat_id(&token)
-                .await
-            {
+            let resolution = self.fetch_live_chat_id(&token).await;
+            if resolution.is_ok() {
+                health.succeeded();
+            } else {
+                health.failed();
+            }
+            let (live_chat_id, broadcast_id, current_title) = match resolution {
                 Ok(Some(ids)) => ids,
                 Ok(None) => {
                     self.live_chat_id.set(None);
@@ -243,6 +256,7 @@ impl YoutubeChatPoller {
                 let token = match (self.access_token_source)().await {
                     Ok(t) => t,
                     Err(e) => {
+                        health.failed();
                         tracing::warn!(
                             "access token fetch failed during chat poll: {}",
                             crate::error_shape::redact_platform_error(&e)
@@ -259,14 +273,19 @@ impl YoutubeChatPoller {
                     .fetch_chat_messages(&token, &live_chat_id, next_page_token.as_deref())
                     .await
                 {
-                    Ok(r) => r,
+                    Ok(r) => {
+                        health.succeeded();
+                        r
+                    }
                     Err(PlatformError::Http { status, body })
                         if status == StatusCode::FORBIDDEN.as_u16()
                             && body.contains(LIVE_CHAT_ENDED_REASON) =>
                     {
+                        health.succeeded();
                         break 'inner;
                     }
                     Err(e) => {
+                        health.failed();
                         tracing::warn!("chat messages fetch failed: {e}");
                         tokio::select! {
                             () = tokio::time::sleep(floor) => {}

@@ -16,6 +16,7 @@ use crate::chat_poller::YoutubeChatPoller;
 use crate::credentials_manager::YoutubeCredentialsManager;
 use crate::event_channel::PlatformEventChannel;
 use crate::live_chat_id::LiveChatIdHandle;
+use crate::poll_health::{PollHealthReporter, PollLinkHealth};
 use crate::quota_state::SharedQuota;
 use crate::send_chat::YoutubeSendChat;
 
@@ -103,6 +104,7 @@ impl ChatPlatform for YoutubePlatform {
     async fn connect(&self) -> Result<(), PlatformError> {
         let previous = self.cancel.lock().unwrap_or_else(|p| p.into_inner()).take();
         if let Some(previous) = previous {
+            let _current = self.state.lock().unwrap_or_else(|p| p.into_inner());
             previous.cancel();
         }
 
@@ -132,7 +134,13 @@ impl ChatPlatform for YoutubePlatform {
             self.active_broadcast_id.clone(),
             self.quota.clone(),
             Arc::clone(&self.ban_ledger),
-        );
+        )
+        .with_health_reporter(health_reporter(
+            Arc::clone(&self.state),
+            self.state_tx.clone(),
+            Arc::clone(&self.events),
+            cancel.clone(),
+        ));
 
         let exit_state = Arc::clone(&self.state);
         let exit_state_tx = self.state_tx.clone();
@@ -146,15 +154,14 @@ impl ChatPlatform for YoutubePlatform {
                     "youtube chat poller exited"
                 );
             }
-            if !poller_cancelled.is_cancelled() {
-                publish_transition(
-                    &exit_state,
-                    &exit_state_tx,
-                    &exit_events,
-                    ConnectionState::Disconnected,
-                    ConnectionTransition::Unexpected,
-                );
-            }
+            publish_unless_cancelled(
+                &exit_state,
+                &exit_state_tx,
+                &exit_events,
+                &poller_cancelled,
+                ConnectionState::Disconnected,
+                ConnectionTransition::Unexpected,
+            );
             tracing::info!("youtube chat polling stopped");
         });
 
@@ -172,11 +179,12 @@ impl ChatPlatform for YoutubePlatform {
 
     async fn disconnect(&self) -> Result<(), PlatformError> {
         let cancel = self.cancel.lock().unwrap_or_else(|p| p.into_inner()).take();
+        let mut current = self.state.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(cancel) = cancel {
             cancel.cancel();
         }
-        publish_transition(
-            &self.state,
+        apply_transition(
+            &mut current,
             &self.state_tx,
             &self.events,
             ConnectionState::Disconnected,
@@ -225,6 +233,38 @@ fn token_source(manager: Arc<YoutubeCredentialsManager>) -> TokenSource {
     })
 }
 
+fn health_reporter(
+    state: Arc<Mutex<ConnectionState>>,
+    state_tx: watch::Sender<ConnectionState>,
+    events: Arc<PlatformEventChannel>,
+    cancel: CancellationToken,
+) -> PollHealthReporter {
+    Arc::new(move |health| {
+        let (new, transition) = match health {
+            PollLinkHealth::Lost => (
+                ConnectionState::Reconnecting,
+                ConnectionTransition::Unexpected,
+            ),
+            PollLinkHealth::Healthy => (ConnectionState::Connected, ConnectionTransition::Expected),
+        };
+        publish_unless_cancelled(&state, &state_tx, &events, &cancel, new, transition);
+    })
+}
+
+fn publish_unless_cancelled(
+    state: &Mutex<ConnectionState>,
+    state_tx: &watch::Sender<ConnectionState>,
+    events: &PlatformEventChannel,
+    cancel: &CancellationToken,
+    new: ConnectionState,
+    transition: ConnectionTransition,
+) {
+    let mut current = state.lock().unwrap_or_else(|p| p.into_inner());
+    if !cancel.is_cancelled() {
+        apply_transition(&mut current, state_tx, events, new, transition);
+    }
+}
+
 fn publish_transition(
     state: &Mutex<ConnectionState>,
     state_tx: &watch::Sender<ConnectionState>,
@@ -232,19 +272,23 @@ fn publish_transition(
     new: ConnectionState,
     transition: ConnectionTransition,
 ) {
-    let changed = {
-        let mut guard = state.lock().unwrap_or_else(|p| p.into_inner());
-        if *guard == new {
-            false
-        } else {
-            *guard = new;
-            true
-        }
-    };
-    if changed {
-        let _ = state_tx.send(new);
-        events.publish(connection_state_changed_event(PLATFORM_ID, new, transition));
+    let mut current = state.lock().unwrap_or_else(|p| p.into_inner());
+    apply_transition(&mut current, state_tx, events, new, transition);
+}
+
+fn apply_transition(
+    current: &mut ConnectionState,
+    state_tx: &watch::Sender<ConnectionState>,
+    events: &PlatformEventChannel,
+    new: ConnectionState,
+    transition: ConnectionTransition,
+) {
+    if *current == new {
+        return;
     }
+    *current = new;
+    let _ = state_tx.send(new);
+    events.publish(connection_state_changed_event(PLATFORM_ID, new, transition));
 }
 
 #[cfg(test)]

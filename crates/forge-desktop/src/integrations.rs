@@ -307,13 +307,13 @@ pub async fn build_integrations(
         factories.push(Arc::new(kick));
     }
     let mut donation_services = DonationServices::default();
-    if let Some(donatello) = wire_donatello(backend, endpoints, donations) {
+    if let Some(donatello) = wire_donatello(backend, endpoints, donations, bus) {
         let provider = donatello.provider();
         restore_donatello_poll_interval(&provider, backend.as_ref()).await;
         donation_services.donatello = Some(provider);
         factories.push(Arc::new(donatello));
     }
-    if let Some(monobank) = wire_monobank(backend, endpoints, donations) {
+    if let Some(monobank) = wire_monobank(backend, endpoints, donations, bus) {
         donation_services.monobank = Some(monobank.provider());
         factories.push(Arc::new(monobank));
     }

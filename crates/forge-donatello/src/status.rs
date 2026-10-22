@@ -1,12 +1,17 @@
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use forge_platform_core::{ConnectionState, HealthDelta};
+use forge_events::EventPublisher;
+use forge_platform_core::{
+    ConnectionAnnouncer, ConnectionState, ConnectionTransition, HealthDelta,
+};
 use time::OffsetDateTime;
 use tokio::sync::broadcast;
 
 use crate::api::DonatelloAccount;
 use crate::error::DonatelloError;
+use crate::integration::DONATELLO_INTEGRATION;
 
 const HEALTH_CHANNEL_CAPACITY: usize = 16;
 
@@ -138,6 +143,8 @@ impl PollStatus {
 pub(crate) struct StatusBoard {
     status: Mutex<PollStatus>,
     health_tx: broadcast::Sender<HealthDelta>,
+    link: ConnectionAnnouncer,
+    running_pollers: AtomicUsize,
 }
 
 impl StatusBoard {
@@ -146,7 +153,18 @@ impl StatusBoard {
         Self {
             status: Mutex::new(PollStatus::initial(poll_interval)),
             health_tx,
+            link: ConnectionAnnouncer::new(DONATELLO_INTEGRATION.id.as_str()),
+            running_pollers: AtomicUsize::new(0),
         }
+    }
+
+    pub(crate) fn attach_publisher(&self, publisher: Arc<dyn EventPublisher>) {
+        self.link.attach(publisher);
+    }
+
+    pub(crate) fn poller_started(self: &Arc<Self>) -> RunningPoller {
+        self.running_pollers.fetch_add(1, Ordering::SeqCst);
+        RunningPoller(Arc::clone(self))
     }
 
     pub(crate) fn snapshot(&self) -> PollStatus {
@@ -161,19 +179,19 @@ impl StatusBoard {
     }
 
     pub(crate) fn enter(&self, phase: PollPhase) {
-        self.update(|status| status.enter(phase));
+        self.update_expected(|status| status.enter(phase));
     }
 
     pub(crate) fn set_poll_interval(&self, poll_interval: Duration) {
-        self.update(|status| status.poll_interval = poll_interval);
+        self.update_expected(|status| status.poll_interval = poll_interval);
     }
 
     pub(crate) fn record_account(&self, account: DonatelloAccount) {
-        self.update(|status| status.account = Some(account));
+        self.update_expected(|status| status.account = Some(account));
     }
 
     pub(crate) fn record_poll(&self, newest_donation: Option<OffsetDateTime>) {
-        self.update(|status| {
+        self.update_expected(|status| {
             status.enter(PollPhase::Polling);
             status.last_poll_at = Some(OffsetDateTime::now_utc());
             if let Some(occurred_at) = newest_donation {
@@ -196,7 +214,7 @@ impl StatusBoard {
         } else {
             PollPhase::Retrying
         };
-        self.update(|status| {
+        self.update(ConnectionTransition::Unexpected, |status| {
             status.enter(phase);
             status.last_error = Some(PollFailure::of(error));
             status.last_error_at = Some(OffsetDateTime::now_utc());
@@ -204,27 +222,45 @@ impl StatusBoard {
     }
 
     pub(crate) fn record_rejected_donation(&self, error: &DonatelloError) {
-        self.update(|status| {
+        self.update_expected(|status| {
             status.last_error = Some(PollFailure::of(error));
             status.last_error_at = Some(OffsetDateTime::now_utc());
         });
     }
 
-    fn update(&self, change: impl FnOnce(&mut PollStatus)) {
-        let snapshot = {
+    fn update_expected(&self, change: impl FnOnce(&mut PollStatus)) {
+        self.update(ConnectionTransition::Expected, change);
+    }
+
+    fn update(&self, transition: ConnectionTransition, change: impl FnOnce(&mut PollStatus)) {
+        let (snapshot, changed) = {
             let mut status = self
                 .status
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             let before = status.clone();
             change(&mut status);
-            if *status == before {
-                return;
-            }
-            status.clone()
+            (status.clone(), *status != before)
         };
-        for delta in crate::health::deltas(&snapshot) {
-            let _ = self.health_tx.send(delta);
+        if changed {
+            for delta in crate::health::deltas(&snapshot) {
+                let _ = self.health_tx.send(delta);
+            }
+        }
+        self.link.announce(snapshot.phase.connection(), transition);
+    }
+}
+
+pub(crate) struct RunningPoller(Arc<StatusBoard>);
+
+impl Drop for RunningPoller {
+    fn drop(&mut self) {
+        if self.0.running_pollers.fetch_sub(1, Ordering::SeqCst) == 1 {
+            self.0.update_expected(|status| {
+                if status.phase.connection() != ConnectionState::Disconnected {
+                    status.enter(PollPhase::Paused);
+                }
+            });
         }
     }
 }

@@ -2152,6 +2152,7 @@ event_feed_export_failed = Event feed export failed: { $error }
 event_feed_replay_success = Event replayed
 event_feed_replay_not_found = That event is no longer in the event log and cannot be replayed.
 event_feed_replay_failed = Event replay failed: { $error }
+event_feed_replay_badge = Replay
 event_feed_no_events = No events yet - system activity appears here in real time.
 event_feed_no_filter_match = No events match the active filter.
 event_feed_inspector_title = Event inspector

@@ -2213,6 +2213,7 @@ event_feed_export_failed = Не вдалося експортувати стрі
 event_feed_replay_success = Подію відтворено
 event_feed_replay_not_found = Цієї події вже немає в журналі подій, її не можна відтворити.
 event_feed_replay_failed = Не вдалося відтворити подію: { $error }
+event_feed_replay_badge = Повтор
 event_feed_no_events = Подій ще немає - системна активність з'явиться тут в реальному часі.
 event_feed_no_filter_match = Жодна подія не відповідає активному фільтру.
 event_feed_inspector_title = Інспектор подій

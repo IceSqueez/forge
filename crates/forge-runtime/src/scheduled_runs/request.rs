@@ -27,6 +27,7 @@ pub struct ScheduleRequest {
     pub scheduled_by_action: Option<ActionId>,
     pub scheduled_by_run: Option<String>,
     pub trigger_event_id: Option<EventId>,
+    pub cause: Option<EventId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,6 +80,7 @@ impl ScheduleRequest {
         self,
         now: OffsetDateTime,
         label: String,
+        replay: bool,
     ) -> Result<ScheduledRunSpec, ScheduleError> {
         let due_at = match self.due {
             ScheduleDue::After(delay) => {
@@ -102,6 +104,7 @@ impl ScheduleRequest {
             scheduled_by_action: self.scheduled_by_action,
             scheduled_by_run: self.scheduled_by_run,
             trigger_event_id: self.trigger_event_id,
+            replay,
             scheduled_at: now,
             label,
         })

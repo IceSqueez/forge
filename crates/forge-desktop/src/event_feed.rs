@@ -618,6 +618,7 @@ impl EventFeedView {
                     .child(fmt_display(DateShape::TimeWithMillis, item.timestamp)),
             )
             .child(source_badge)
+            .children(item.replay.then(|| replay_badge(palette, BADGE_FS)))
             .child(type_cell)
             .child(summary)
             .children(tag.map(|tag| {
@@ -779,6 +780,7 @@ impl EventFeedView {
                         true,
                         FONT_XXS,
                     ))
+                    .children(item.replay.then(|| replay_badge(palette, FONT_XXS)))
                     .child(
                         div()
                             .flex_1()
@@ -1202,6 +1204,16 @@ fn push_json_lines(
             out.push(json_line(indent, spans));
         }
     }
+}
+
+fn replay_badge(palette: &ForgePalette, size: Pixels) -> impl IntoElement + use<> {
+    badge(
+        palette.surface_overlay,
+        palette.brand,
+        tr!("event_feed_replay_badge"),
+        true,
+        size,
+    )
 }
 
 fn source_label(source: EventSource) -> &'static str {

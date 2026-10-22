@@ -57,7 +57,7 @@ pub fn spawn_chat_history_persistence(
     let mut mapper = ChatRecordMapper::default();
     let intake = MappedEvents::new(
         bus.subscribe_critical(CHAT_HISTORY),
-        move |event: &Event| mapper.map(event),
+        move |event: &Event| (!event.replay).then(|| mapper.map(event)).flatten(),
     );
     let sink = ChatHistorySink {
         repo,

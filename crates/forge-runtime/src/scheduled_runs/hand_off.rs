@@ -198,12 +198,13 @@ impl HandOffPath {
             "action_id": run.spec.target_action_id.to_string(),
             "late_seconds": late.as_secs(),
         });
-        let event = match run.spec.trigger_event_id {
+        let mut event = match run.spec.trigger_event_id {
             Some(cause) => {
                 Event::caused_by(EventSource::Core, SCHEDULED_RUN_DUE_KIND, payload, cause)
             }
             None => Event::new(EventSource::Core, SCHEDULED_RUN_DUE_KIND, payload),
         };
+        event.replay = run.spec.replay;
         let id = event.id;
         self.bus.record(event);
         id

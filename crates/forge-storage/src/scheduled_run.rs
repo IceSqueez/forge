@@ -69,6 +69,7 @@ pub struct ScheduledRunSpec {
     pub scheduled_by_action: Option<ActionId>,
     pub scheduled_by_run: Option<String>,
     pub trigger_event_id: Option<EventId>,
+    pub replay: bool,
     pub scheduled_at: OffsetDateTime,
     pub label: String,
 }

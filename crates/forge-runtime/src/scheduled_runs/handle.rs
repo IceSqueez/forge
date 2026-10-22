@@ -11,7 +11,7 @@ use crate::task_stop::TaskStop;
 
 pub(super) enum Command {
     Schedule(
-        ScheduleRequest,
+        Box<ScheduleRequest>,
         oneshot::Sender<Result<ScheduledPlacement, ScheduleError>>,
     ),
     RunNow(
@@ -59,7 +59,8 @@ impl ScheduledRunsHandle {
         request: ScheduleRequest,
     ) -> Result<ScheduledPlacement, ScheduleError> {
         let (reply, placed) = oneshot::channel();
-        self.send(Command::Schedule(request, reply)).await?;
+        self.send(Command::Schedule(Box::new(request), reply))
+            .await?;
         placed.await.map_err(|_| ScheduleError::SchedulerStopped)?
     }
 

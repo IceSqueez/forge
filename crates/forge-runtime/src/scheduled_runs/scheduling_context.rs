@@ -56,6 +56,7 @@ impl SchedulingContext {
                 .scheduled_by
                 .map(|run| run.trigger_event_id)
                 .or(self.cause),
+            cause: self.cause,
         }
     }
 }

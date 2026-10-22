@@ -75,7 +75,29 @@ pub struct EventBus {
     abandoned_rows: Arc<AtomicU64>,
     flushes: Mutex<Vec<Shared<oneshot::Receiver<()>>>>,
     first_chats: ArcSwapOption<FirstChatLedger>,
-    held_lineages: Mutex<HashMap<EventId, u16>>,
+    held_lineages: Mutex<HashMap<EventId, Lineage>>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct Lineage {
+    depth: u16,
+    replay: bool,
+}
+
+impl Lineage {
+    fn of(event: &Event) -> Self {
+        Self {
+            depth: event.causation_depth,
+            replay: event.replay,
+        }
+    }
+
+    fn inheriting(self, parent: Self) -> Self {
+        Self {
+            depth: self.depth.max(parent.depth),
+            replay: self.replay || parent.replay,
+        }
+    }
 }
 
 pub(crate) struct LineageHold<'a> {
@@ -179,21 +201,20 @@ impl EventBus {
     }
 
     fn publish_tracked(&self, mut event: Event, hold_lineage: bool) {
-        if let Some(ledger) = self.first_chats.load().as_deref() {
-            ledger.stamp(&mut event);
-        }
         let lanes = self.lanes.load();
         let (event, transient) = {
             let mut ring = self.ring.lock().unwrap_or_else(|p| p.into_inner());
-            if let Some(parent) = event.caused_by {
-                let inherited = self.depth_of(parent, &ring);
-                event.causation_depth = event.causation_depth.max(inherited);
+            let lineage = self.lineage_with_parent(&event, &ring);
+            event.causation_depth = lineage.depth;
+            event.replay = lineage.replay;
+            if let Some(ledger) = self.first_chats.load().as_deref() {
+                ledger.stamp(&mut event);
             }
             if hold_lineage {
                 self.held_lineages
                     .lock()
                     .unwrap_or_else(|p| p.into_inner())
-                    .insert(event.id, event.causation_depth);
+                    .insert(event.id, lineage);
             }
             let event = Arc::new(event);
             let transient = lanes.is_transient(&event, &ring);
@@ -210,11 +231,10 @@ impl EventBus {
         self.first_chats.store(Some(Arc::new(ledger)));
     }
 
-    pub fn record(&self, event: Event) {
-        self.ring
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .push(Arc::new(event));
+    pub fn record(&self, mut event: Event) {
+        let mut ring = self.ring.lock().unwrap_or_else(|p| p.into_inner());
+        event.replay = self.lineage_with_parent(&event, &ring).replay;
+        ring.push(Arc::new(event));
     }
 
     pub fn declare_lanes(&self, registry: &TriggerRegistry) {
@@ -275,29 +295,44 @@ impl EventBus {
 
     pub(crate) fn causation_depth(&self, event_id: EventId) -> u16 {
         let ring = self.ring.lock().unwrap_or_else(|p| p.into_inner());
-        self.depth_of(event_id, &ring)
+        self.lineage_of(event_id, &ring).depth
+    }
+
+    pub(crate) fn is_replay(&self, event_id: EventId) -> bool {
+        let ring = self.ring.lock().unwrap_or_else(|p| p.into_inner());
+        self.lineage_of(event_id, &ring).replay
     }
 
     pub(crate) fn hold_lineage(&self, event: &Event) -> LineageHold<'_> {
+        let ring = self.ring.lock().unwrap_or_else(|p| p.into_inner());
+        let lineage = self.lineage_with_parent(event, &ring);
         self.held_lineages
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .insert(event.id, event.causation_depth);
+            .insert(event.id, lineage);
         LineageHold {
             bus: self,
             event_id: event.id,
         }
     }
 
-    fn depth_of(&self, event_id: EventId, ring: &EventRing) -> u16 {
+    fn lineage_with_parent(&self, event: &Event, ring: &EventRing) -> Lineage {
+        let own = Lineage::of(event);
+        match event.caused_by {
+            Some(parent) => own.inheriting(self.lineage_of(parent, ring)),
+            None => own,
+        }
+    }
+
+    fn lineage_of(&self, event_id: EventId, ring: &EventRing) -> Lineage {
         let held = self
             .held_lineages
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .get(&event_id)
             .copied();
-        held.or_else(|| ring.get(event_id).map(|event| event.causation_depth))
-            .unwrap_or(0)
+        held.or_else(|| ring.get(event_id).map(|event| Lineage::of(event)))
+            .unwrap_or_default()
     }
 
     pub fn recent(&self, limit: usize) -> Vec<Event> {

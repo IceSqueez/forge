@@ -133,7 +133,7 @@ impl ScheduledRunsTask {
     async fn serve(&mut self, command: Command) {
         match command {
             Command::Schedule(request, reply) => {
-                let _ = reply.send(self.schedule(request).await);
+                let _ = reply.send(self.schedule(*request).await);
             }
             Command::RunNow(id, reply) => {
                 let handed = self.path.now(id).await.map_err(ScheduleError::from);
@@ -149,7 +149,11 @@ impl ScheduledRunsTask {
         let Some(target) = self.actions.get(request.target_action_id).await? else {
             return Err(ScheduleError::UnknownAction);
         };
-        let spec = request.into_spec(self.clock.now(), target.name)?;
+        let replay = [request.cause, request.trigger_event_id]
+            .into_iter()
+            .flatten()
+            .any(|event_id| self.path.bus.is_replay(event_id));
+        let spec = request.into_spec(self.clock.now(), target.name, replay)?;
         self.check_caps(&spec).await?;
         let placement = self.repo.schedule(&spec).await?;
         Ok(ScheduledPlacement {

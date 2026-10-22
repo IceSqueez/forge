@@ -25,7 +25,7 @@ const STATE_FAILED: &str = "failed";
 
 macro_rules! columns {
     () => {
-        "id, target_action_id, due_at, key, missed_policy, skip_late_ms, args, scheduled_by_action, scheduled_by_run, trigger_event_id, scheduled_at, label, state, outcome_reason, resolved_at"
+        "id, target_action_id, due_at, key, missed_policy, skip_late_ms, args, scheduled_by_action, scheduled_by_run, trigger_event_id, replay, scheduled_at, label, state, outcome_reason, resolved_at"
     };
 }
 
@@ -105,6 +105,7 @@ struct ScheduledRunRow {
     scheduled_by_action: Option<String>,
     scheduled_by_run: Option<String>,
     trigger_event_id: Option<String>,
+    replay: bool,
     scheduled_at: i64,
     label: String,
     state: String,
@@ -132,6 +133,7 @@ fn decode_row(row: ScheduledRunRow) -> Result<ScheduledRun, StorageError> {
                 .as_deref()
                 .map(parse_event_id)
                 .transpose()?,
+            replay: row.replay,
             scheduled_at: from_epoch_ms(row.scheduled_at)?,
             label: row.label,
         },
@@ -263,8 +265,9 @@ impl ScheduledRunRepo for SqliteScheduledRunRepo {
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO scheduled_runs (
                 target_action_id, due_at, key, missed_policy, skip_late_ms, args,
-                scheduled_by_action, scheduled_by_run, trigger_event_id, scheduled_at, label, state
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+                scheduled_by_action, scheduled_by_run, trigger_event_id, replay, scheduled_at, label,
+                state
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
         )
         .bind(spec.target_action_id.to_string())
         .bind(to_epoch_ms(spec.due_at))
@@ -275,6 +278,7 @@ impl ScheduledRunRepo for SqliteScheduledRunRepo {
         .bind(spec.scheduled_by_action.map(|id| id.to_string()))
         .bind(spec.scheduled_by_run.as_deref())
         .bind(spec.trigger_event_id.map(|id| id.to_string()))
+        .bind(spec.replay)
         .bind(to_epoch_ms(spec.scheduled_at))
         .bind(&spec.label)
         .bind(STATE_PENDING)

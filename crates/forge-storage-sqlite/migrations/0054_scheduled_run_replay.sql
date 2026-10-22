@@ -1,0 +1,1 @@
+ALTER TABLE scheduled_runs ADD COLUMN replay INTEGER NOT NULL DEFAULT 0 CHECK (replay IN (0, 1));

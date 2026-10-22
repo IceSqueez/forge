@@ -255,9 +255,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn default_and_streamer_sends_delegate_to_the_existing_methods_and_report_no_acting_sender()
-     {
-        for sender in [SenderPreference::Default, SenderPreference::Streamer] {
+    async fn every_preference_sends_through_the_existing_methods_and_reports_no_acting_sender() {
+        for sender in SenderPreference::ALL {
             let platform = PlainOnlyPlatform::new();
 
             let message = platform.send_message_as("chan", "one", sender).await;
@@ -277,8 +276,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn default_and_streamer_whispers_surface_the_existing_whisper_outcome() {
-        for sender in [SenderPreference::Default, SenderPreference::Streamer] {
+    async fn every_preference_whisper_surfaces_the_existing_whisper_outcome() {
+        for sender in SenderPreference::ALL {
             let platform = PlainOnlyPlatform::new();
 
             let err = platform

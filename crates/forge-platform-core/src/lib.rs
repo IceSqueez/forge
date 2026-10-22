@@ -19,6 +19,7 @@ pub mod live_viewers;
 pub mod net;
 pub mod poll;
 pub mod rate_limit;
+pub mod sender;
 pub use auth::AuthFlow;
 pub use backoff::Backoff;
 pub use ban_list::{
@@ -65,4 +66,8 @@ pub use poll::DedupSet;
 pub use rate_limit::{
     DEFAULT_RETRY_AFTER_SECS, MAX_ACQUIRE_ATTEMPTS, MAX_THROTTLE_WAIT, RateLimitOutcome,
     RateLimitUsage, RateLimiter, TokenBucketRateLimiter, acquire_or_wait,
+};
+pub use sender::{
+    ActingSender, SENDER_FIELD, SENT_AS_FIELD, SenderPreference, SenderRole,
+    bot_sender_unsupported, unknown_sender_reason,
 };

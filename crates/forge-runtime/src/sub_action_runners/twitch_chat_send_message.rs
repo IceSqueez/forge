@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
+use forge_platform_core::{SENDER_FIELD, SenderPreference};
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    ConfigReason, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionRunner,
 };
 use forge_types::{
     ArgStack, IntegrationId, NO_CHAT_PLATFORM_ENABLED_REASON, SubActionConfig, SubActionTelemetry,
@@ -13,6 +14,21 @@ const DEFAULT_TARGET: &str = "twitch";
 
 fn resolved_target(config: &SubActionConfig, arg_stack: &ArgStack) -> String {
     arg_stack.interpolate(config.str("target").unwrap_or(DEFAULT_TARGET))
+}
+
+fn configured_sender(config: &SubActionConfig) -> Result<SenderPreference, RegistryError> {
+    match config.get(SENDER_FIELD) {
+        None => Ok(SenderPreference::Default),
+        Some(value) => value
+            .as_str()
+            .and_then(SenderPreference::parse)
+            .ok_or_else(|| {
+                RegistryError::invalid_field(
+                    SENDER_FIELD,
+                    ConfigReason::choices(SenderPreference::WIRE_NAMES.iter().copied()),
+                )
+            }),
+    }
 }
 
 pub struct TwitchChatSendMessageRunner;
@@ -50,6 +66,10 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
             "target".to_owned(),
             Variant::String(DEFAULT_TARGET.to_owned()),
         );
+        cfg.insert(
+            SENDER_FIELD.to_owned(),
+            Variant::String(SenderPreference::Default.as_str().to_owned()),
+        );
         cfg
     }
 
@@ -64,11 +84,17 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
                 label: "Target Platform",
                 placeholder: DEFAULT_TARGET,
             },
+            FormField::Select {
+                key: SENDER_FIELD,
+                label: "Send As",
+                options: SenderPreference::WIRE_NAMES,
+            },
         ]
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("message").map(|_| ())
+        config.require_str("message")?;
+        configured_sender(config).map(|_| ())
     }
 
     fn targeted_integration(
@@ -92,8 +118,12 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
         let message = ctx
             .arg_stack
             .interpolate(config.str("message").unwrap_or_default());
+        let sender = match configured_sender(config) {
+            Ok(sender) => sender,
+            Err(e) => return (timer.failed(e.to_string()), None),
+        };
         let resolved = resolved_target(config, ctx.arg_stack);
-        let payload = match resolve_chat_target(&resolved) {
+        let mut payload = match resolve_chat_target(&resolved) {
             Err(reason) => return (timer.failed(reason), None),
             Ok(Some(platform)) => serde_json::json!({
                 "target": platform.as_str(),
@@ -110,6 +140,12 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
                 serde_json::json!({ "message": message })
             }
         };
+
+        if sender != SenderPreference::Default
+            && let Some(fields) = payload.as_object_mut()
+        {
+            fields.insert(SENDER_FIELD.to_owned(), sender.as_str().into());
+        }
 
         ctx.publisher.publish(Event::caused_by(
             EventSource::Core,

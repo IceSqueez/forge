@@ -9,6 +9,15 @@ use crate::references::ReferenceField;
 use crate::refinement::FormRefinement;
 use crate::variables::{ActorDeclaration, TriggerVariables};
 
+pub const IGNORE_BOT_MESSAGES_KEY: &str = "ignore_bot_messages";
+
+pub fn ignores_bot_messages(config: &TriggerConfig) -> bool {
+    config
+        .get(IGNORE_BOT_MESSAGES_KEY)
+        .and_then(forge_types::Variant::as_bool)
+        .unwrap_or(true)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChatTriggerFamily {
     Command,

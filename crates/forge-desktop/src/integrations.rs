@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use forge_events::{Event, EventPublisher, EventSource, EventStream, EventsError};
 use forge_platform_core::{
-    BanListSource, BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth,
+    ActingSender, BanListSource, BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth,
     BuiltinStatus, ChatPlatform, FollowLookup, PlatformEndpoints, QuickActions, SectionIcon,
+    SenderPreference,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{DonationIngest, EventBus};
@@ -422,7 +423,21 @@ impl ChatSendIntent {
 struct ChatSendRequest {
     message: String,
     intent: ChatSendIntent,
+    sender: SenderPreference,
     caused_by: EventId,
+}
+
+fn delivered_event(
+    source: EventSource,
+    kind: &str,
+    mut payload: serde_json::Value,
+    acting: Option<ActingSender>,
+    caused_by: EventId,
+) -> Event {
+    if let Some(acting) = acting {
+        acting.insert_into(&mut payload);
+    }
+    Event::caused_by(source, kind, payload, caused_by)
 }
 
 fn chat_send_failed(source: EventSource, target: &str, error: String, caused_by: EventId) -> Event {
@@ -446,48 +461,56 @@ fn spawn_chat_send_worker(
             let ChatSendRequest {
                 message,
                 intent,
+                sender,
                 caused_by,
             } = request;
-            let (outcome, delivered) = match intent {
-                ChatSendIntent::Plain => (
-                    platform.send_message(target, &message).await,
-                    Event::caused_by(
-                        source,
-                        "chat.send",
-                        serde_json::json!({ "channel": target, "message": message }),
-                        caused_by,
-                    ),
-                ),
-                ChatSendIntent::Reply { parent_message_id } => (
-                    platform
-                        .send_reply(target, &parent_message_id, &message)
-                        .await,
-                    Event::caused_by(
-                        source,
-                        "chat.send",
-                        serde_json::json!({
-                            "channel": target,
-                            "message": message,
-                            (REPLY_PARENT_FIELD): parent_message_id,
-                        }),
-                        caused_by,
-                    ),
-                ),
-                ChatSendIntent::Whisper { recipient_login } => (
-                    platform.send_whisper(&recipient_login, &message).await,
-                    Event::caused_by(
-                        source,
-                        "chat.whisper.sent",
-                        serde_json::json!({
-                            "channel": target,
-                            (WHISPER_RECIPIENT_FIELD): recipient_login,
-                        }),
-                        caused_by,
-                    ),
-                ),
+            let delivered = match intent {
+                ChatSendIntent::Plain => platform
+                    .send_message_as(target, &message, sender)
+                    .await
+                    .map(|acting| {
+                        delivered_event(
+                            source,
+                            "chat.send",
+                            serde_json::json!({ "channel": target, "message": message }),
+                            acting,
+                            caused_by,
+                        )
+                    }),
+                ChatSendIntent::Reply { parent_message_id } => platform
+                    .send_reply_as(target, &parent_message_id, &message, sender)
+                    .await
+                    .map(|acting| {
+                        delivered_event(
+                            source,
+                            "chat.send",
+                            serde_json::json!({
+                                "channel": target,
+                                "message": message,
+                                (REPLY_PARENT_FIELD): parent_message_id,
+                            }),
+                            acting,
+                            caused_by,
+                        )
+                    }),
+                ChatSendIntent::Whisper { recipient_login } => platform
+                    .send_whisper_as(&recipient_login, &message, sender)
+                    .await
+                    .map(|acting| {
+                        delivered_event(
+                            source,
+                            "chat.whisper.sent",
+                            serde_json::json!({
+                                "channel": target,
+                                (WHISPER_RECIPIENT_FIELD): recipient_login,
+                            }),
+                            acting,
+                            caused_by,
+                        )
+                    }),
             };
-            match outcome {
-                Ok(()) => bus.publish(delivered),
+            match delivered {
+                Ok(event) => bus.publish(event),
                 Err(e) => bus.publish(chat_send_failed(source, target, e.to_string(), caused_by)),
             }
         }
@@ -569,6 +592,13 @@ pub(crate) fn spawn_chat_send_bridge(
                 continue;
             };
             let caused_by = event.id;
+            let sender = match SenderPreference::from_payload(&event.payload) {
+                Ok(sender) => sender,
+                Err(reason) => {
+                    bus.publish(chat_send_failed(source, target, reason, caused_by));
+                    continue;
+                }
+            };
             let intent = ChatSendIntent::of(&event.payload);
             if matches!(intent, ChatSendIntent::Whisper { .. }) && !whispers_supported {
                 if requested.is_some() {
@@ -584,6 +614,7 @@ pub(crate) fn spawn_chat_send_bridge(
             let request = ChatSendRequest {
                 message,
                 intent,
+                sender,
                 caused_by,
             };
             if tx.try_send(request).is_err() {

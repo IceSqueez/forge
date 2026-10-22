@@ -5,6 +5,7 @@ use forge_events::{Event, EventSource, EventStream};
 use serde::{Deserialize, Serialize};
 
 use crate::PlatformError;
+use crate::sender::{ActingSender, SenderPreference, bot_sender_unsupported};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -84,6 +85,51 @@ pub trait ChatPlatform: Send + Sync {
         Err(PlatformError::Unsupported {
             feature: WHISPER_FEATURE.to_owned(),
         })
+    }
+
+    async fn send_message_as(
+        &self,
+        channel: &str,
+        text: &str,
+        sender: SenderPreference,
+    ) -> Result<Option<ActingSender>, PlatformError> {
+        match sender {
+            SenderPreference::Default | SenderPreference::Streamer => {
+                self.send_message(channel, text).await.map(|()| None)
+            }
+            SenderPreference::BotOnly => Err(bot_sender_unsupported()),
+        }
+    }
+
+    async fn send_reply_as(
+        &self,
+        channel: &str,
+        reply_parent_message_id: &str,
+        text: &str,
+        sender: SenderPreference,
+    ) -> Result<Option<ActingSender>, PlatformError> {
+        match sender {
+            SenderPreference::Default | SenderPreference::Streamer => self
+                .send_reply(channel, reply_parent_message_id, text)
+                .await
+                .map(|()| None),
+            SenderPreference::BotOnly => Err(bot_sender_unsupported()),
+        }
+    }
+
+    async fn send_whisper_as(
+        &self,
+        recipient_login: &str,
+        text: &str,
+        sender: SenderPreference,
+    ) -> Result<Option<ActingSender>, PlatformError> {
+        match sender {
+            SenderPreference::Default | SenderPreference::Streamer => self
+                .send_whisper(recipient_login, text)
+                .await
+                .map(|()| None),
+            SenderPreference::BotOnly => Err(bot_sender_unsupported()),
+        }
     }
 
     fn events(&self) -> EventStream;

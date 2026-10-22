@@ -199,6 +199,15 @@ pub fn is_bot_account(name: &str, extra_bot_accounts: &[String]) -> bool {
             .any(|extra| extra.to_lowercase() == name)
 }
 
+pub const AUTHOR_IS_CONNECTED_BOT_FIELD: &str = "author_is_connected_bot";
+
+pub fn authored_by_connected_bot(event_payload: &serde_json::Value) -> bool {
+    event_payload
+        .get(AUTHOR_IS_CONNECTED_BOT_FIELD)
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
 impl UnifiedChatRow {
     pub fn is_from_bot(&self, configured_bot_accounts: &[String]) -> bool {
         self.badges.contains(&UserBadge::Bot)

@@ -5,11 +5,11 @@ use std::time::Duration;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ChatTriggerFamily, TriggerKindDescriptor, TriggerRegistry, effective_config,
-    kind_matches_prefix,
+    ignores_bot_messages, kind_matches_prefix,
 };
 use forge_types::{
     ArgStack, ChatPayload, EventId, PermissionRung, SynthesisHint, TriggerConfig, TriggerInstance,
-    TriggerInstanceId, Variant,
+    TriggerInstanceId, Variant, authored_by_connected_bot,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -215,6 +215,13 @@ impl TriggerEvaluator {
         }
 
         let effective = effective_config(&descriptor.default_config(), &instance.overrides);
+        if chat_family.is_some()
+            && authored_by_connected_bot(&event.payload)
+            && ignores_bot_messages(&effective)
+        {
+            log_rejected(instance, event, is_command, Rejection::BotAuthor);
+            return None;
+        }
         if !descriptor.matches_trigger(&effective, event) {
             log_rejected(instance, event, is_command, Rejection::Phrase);
             return None;
@@ -292,6 +299,7 @@ impl TriggerEvaluator {
 
 enum Rejection {
     Scope,
+    BotAuthor,
     Phrase,
     Permission,
     Cooldown,
@@ -301,6 +309,7 @@ impl Rejection {
     fn as_str(&self) -> &'static str {
         match self {
             Self::Scope => "scope",
+            Self::BotAuthor => "bot_author",
             Self::Phrase => "phrase",
             Self::Permission => "permission",
             Self::Cooldown => "cooldown",

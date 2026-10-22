@@ -37,7 +37,9 @@ pub use chain_steps::{
 };
 pub use config_ext::SubActionConfigExt;
 pub use config_problem::{ConfigProblem, ConfigReason, ValueBounds};
-pub use descriptor::{ChatTriggerFamily, TriggerKindDescriptor};
+pub use descriptor::{
+    ChatTriggerFamily, IGNORE_BOT_MESSAGES_KEY, TriggerKindDescriptor, ignores_bot_messages,
+};
 pub use duration_bounds::{
     DURATION_UNIT_DAYS, DURATION_UNIT_HOURS, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_MINUTES,
     DURATION_UNIT_SECONDS, DurationBase, DurationBounds,

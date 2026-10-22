@@ -13,6 +13,9 @@ pub struct MethodDescriptor {
     pub doc: Option<&'static str>,
 }
 
+const SENDER_DOC: &str =
+    "sender is \"default\", \"streamer\" or \"bot\"; any other value is a script error.";
+
 static CATALOG: &[MethodDescriptor] = &[
     MethodDescriptor {
         namespace: None,
@@ -95,6 +98,62 @@ static CATALOG: &[MethodDescriptor] = &[
         ],
         return_type: "()",
         doc: None,
+    },
+    MethodDescriptor {
+        namespace: Some("chat"),
+        name: "send_as",
+        params: &[
+            ParamDescriptor {
+                name: "sender",
+                ty: "string",
+            },
+            ParamDescriptor {
+                name: "text",
+                ty: "string",
+            },
+        ],
+        return_type: "()",
+        doc: Some(SENDER_DOC),
+    },
+    MethodDescriptor {
+        namespace: Some("chat"),
+        name: "reply_as",
+        params: &[
+            ParamDescriptor {
+                name: "sender",
+                ty: "string",
+            },
+            ParamDescriptor {
+                name: "to",
+                ty: "string",
+            },
+            ParamDescriptor {
+                name: "text",
+                ty: "string",
+            },
+        ],
+        return_type: "()",
+        doc: Some(SENDER_DOC),
+    },
+    MethodDescriptor {
+        namespace: Some("chat"),
+        name: "whisper_as",
+        params: &[
+            ParamDescriptor {
+                name: "sender",
+                ty: "string",
+            },
+            ParamDescriptor {
+                name: "user",
+                ty: "string",
+            },
+            ParamDescriptor {
+                name: "text",
+                ty: "string",
+            },
+        ],
+        return_type: "()",
+        doc: Some(SENDER_DOC),
     },
     MethodDescriptor {
         namespace: Some("globals"),

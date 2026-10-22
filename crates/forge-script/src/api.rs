@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventPublisher, EventSource};
+use forge_platform_core::{SENDER_FIELD, SenderPreference, unknown_sender_reason};
 use forge_storage::GlobalsRepo;
 use forge_types::{
     EventId, IntegrationAvailability, IntegrationId, LatestScope, LatestValueReader,
@@ -490,6 +491,19 @@ fn chat_request_payload(
     payload
 }
 
+fn script_sender(raw: &str) -> Result<SenderPreference, Box<EvalAltResult>> {
+    SenderPreference::parse(raw).ok_or_else(|| unknown_sender_reason(raw).into())
+}
+
+fn with_sender(sender: SenderPreference, mut payload: serde_json::Value) -> serde_json::Value {
+    if sender != SenderPreference::Default
+        && let Some(fields) = payload.as_object_mut()
+    {
+        fields.insert(SENDER_FIELD.to_owned(), sender.as_str().into());
+    }
+    payload
+}
+
 fn build_chat_module(
     publisher: Arc<dyn EventPublisher>,
     caused_by: EventId,
@@ -583,14 +597,15 @@ fn build_chat_module(
         },
     );
 
-    let pub_whisper_targeted = publisher;
+    let pub_whisper_targeted = Arc::clone(&publisher);
+    let whisper_integrations = integrations.clone();
     m.set_native_fn(
         "whisper",
         move |target: ImmutableString,
               user: ImmutableString,
               text: ImmutableString|
               -> Result<(), Box<EvalAltResult>> {
-            let target = admit_whisper_target(integrations.as_deref(), target.as_str())?;
+            let target = admit_whisper_target(whisper_integrations.as_deref(), target.as_str())?;
             pub_whisper_targeted.publish(Event::caused_by(
                 EventSource::Rhai,
                 "chat.send.request",
@@ -604,7 +619,156 @@ fn build_chat_module(
         },
     );
 
+    register_sender_chat_fns(&mut m, publisher, caused_by, integrations);
+
     m
+}
+
+fn register_sender_chat_fns(
+    m: &mut Module,
+    publisher: Arc<dyn EventPublisher>,
+    caused_by: EventId,
+    integrations: Option<Arc<dyn IntegrationAvailability>>,
+) {
+    let pub_send = Arc::clone(&publisher);
+    let send_integrations = integrations.clone();
+    m.set_native_fn(
+        "send_as",
+        move |sender: ImmutableString, text: ImmutableString| -> Result<(), Box<EvalAltResult>> {
+            let sender = script_sender(sender.as_str())?;
+            admit_broadcast(send_integrations.as_deref())?;
+            pub_send.publish(Event::caused_by(
+                EventSource::Rhai,
+                "chat.send.request",
+                with_sender(sender, serde_json::json!({"message": text.as_str()})),
+                caused_by,
+            ));
+            Ok(())
+        },
+    );
+
+    let pub_send_targeted = Arc::clone(&publisher);
+    let send_targeted_integrations = integrations.clone();
+    m.set_native_fn(
+        "send_as",
+        move |sender: ImmutableString,
+              target: ImmutableString,
+              text: ImmutableString|
+              -> Result<(), Box<EvalAltResult>> {
+            let sender = script_sender(sender.as_str())?;
+            let target = admit_chat_target(send_targeted_integrations.as_deref(), target.as_str())?;
+            pub_send_targeted.publish(Event::caused_by(
+                EventSource::Rhai,
+                "chat.send.request",
+                with_sender(
+                    sender,
+                    chat_request_payload(target, serde_json::json!({"message": text.as_str()})),
+                ),
+                caused_by,
+            ));
+            Ok(())
+        },
+    );
+
+    let pub_reply = Arc::clone(&publisher);
+    let reply_integrations = integrations.clone();
+    m.set_native_fn(
+        "reply_as",
+        move |sender: ImmutableString,
+              to: ImmutableString,
+              text: ImmutableString|
+              -> Result<(), Box<EvalAltResult>> {
+            let sender = script_sender(sender.as_str())?;
+            admit_broadcast(reply_integrations.as_deref())?;
+            pub_reply.publish(Event::caused_by(
+                EventSource::Rhai,
+                "chat.send.request",
+                with_sender(
+                    sender,
+                    serde_json::json!({"message": text.as_str(), REPLY_PARENT_FIELD: to.as_str()}),
+                ),
+                caused_by,
+            ));
+            Ok(())
+        },
+    );
+
+    let pub_reply_targeted = Arc::clone(&publisher);
+    let reply_targeted_integrations = integrations.clone();
+    m.set_native_fn(
+        "reply_as",
+        move |sender: ImmutableString,
+              target: ImmutableString,
+              to: ImmutableString,
+              text: ImmutableString|
+              -> Result<(), Box<EvalAltResult>> {
+            let sender = script_sender(sender.as_str())?;
+            let target =
+                admit_chat_target(reply_targeted_integrations.as_deref(), target.as_str())?;
+            pub_reply_targeted.publish(Event::caused_by(
+                EventSource::Rhai,
+                "chat.send.request",
+                with_sender(
+                    sender,
+                    chat_request_payload(
+                        target,
+                        serde_json::json!({"message": text.as_str(), REPLY_PARENT_FIELD: to.as_str()}),
+                    ),
+                ),
+                caused_by,
+            ));
+            Ok(())
+        },
+    );
+
+    let pub_whisper = Arc::clone(&publisher);
+    let whisper_integrations = integrations.clone();
+    m.set_native_fn(
+        "whisper_as",
+        move |sender: ImmutableString,
+              user: ImmutableString,
+              text: ImmutableString|
+              -> Result<(), Box<EvalAltResult>> {
+            let sender = script_sender(sender.as_str())?;
+            admit_whisper_broadcast(whisper_integrations.as_deref())?;
+            pub_whisper.publish(Event::caused_by(
+                EventSource::Rhai,
+                "chat.send.request",
+                with_sender(
+                    sender,
+                    serde_json::json!({"message": text.as_str(), WHISPER_RECIPIENT_FIELD: user.as_str()}),
+                ),
+                caused_by,
+            ));
+            Ok(())
+        },
+    );
+
+    let pub_whisper_targeted = publisher;
+    m.set_native_fn(
+        "whisper_as",
+        move |sender: ImmutableString,
+              target: ImmutableString,
+              user: ImmutableString,
+              text: ImmutableString|
+              -> Result<(), Box<EvalAltResult>> {
+            let sender = script_sender(sender.as_str())?;
+            let target = admit_whisper_target(integrations.as_deref(), target.as_str())?;
+            pub_whisper_targeted.publish(Event::caused_by(
+                EventSource::Rhai,
+                "chat.send.request",
+                with_sender(
+                    sender,
+                    chat_request_payload(
+                        target,
+                        serde_json::json!({"message": text.as_str(), WHISPER_RECIPIENT_FIELD: user.as_str()}),
+                    ),
+                ),
+                caused_by,
+            ));
+            Ok(())
+        },
+    );
 }
 
 fn build_globals_module(

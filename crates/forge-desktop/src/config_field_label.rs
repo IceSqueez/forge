@@ -128,6 +128,8 @@ mod tests {
         "donations",
         "hotkey",
         "twitch",
+        "youtube",
+        "kick",
     ];
     const INTENTIONAL_EN_REWORDINGS: &[(&str, &str, &str)] = &[
         (

@@ -533,4 +533,18 @@ mod tests {
         let rig = rig(ALL_ON).await;
         assert!(rig.policy.take_intents().is_none());
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn reenabled_cue_sounds_for_the_first_loss_after_a_discarded_one() {
+        let cue_off = NotificationPreferences {
+            connection_loss_cue: false,
+            ..ALL_ON
+        };
+        let mut rig = rig(cue_off).await;
+        rig.lose_twitch().await;
+        assert!(rig.elapse(CONNECTION_LOSS_GRACE).await.is_empty());
+        rig.policy.set_preferences(ALL_ON);
+        rig.lose_twitch().await;
+        assert_eq!(rig.elapse(CONNECTION_LOSS_GRACE).await, loss_cue(&[TWITCH]));
+    }
 }

@@ -263,7 +263,13 @@ impl Drop for RunningPoller {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
+    use std::sync::Arc;
+
+    use forge_events::EventPublisher;
+    use forge_platform_core::ConnectionState;
+
     use super::{PollFailure, PollPhase, StatusBoard};
     use crate::error::MonobankError;
 
@@ -364,6 +370,175 @@ mod tests {
         assert_eq!(
             (status.phase, status.last_error),
             (PollPhase::Polling, Some(PollFailure::InvalidDonation))
+        );
+    }
+
+    #[derive(Default)]
+    struct Recorder(std::sync::Mutex<Vec<forge_events::Event>>);
+
+    impl EventPublisher for Recorder {
+        fn publish(&self, event: forge_events::Event) {
+            self.0.lock().unwrap().push(event);
+        }
+    }
+
+    impl Recorder {
+        fn announcements(&self) -> Vec<(ConnectionState, bool)> {
+            self.0
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|event| {
+                    (
+                        serde_json::from_value(event.payload["state"].clone()).unwrap(),
+                        event.payload["expected"].as_bool().unwrap(),
+                    )
+                })
+                .collect()
+        }
+
+        fn last(&self) -> Option<(ConnectionState, bool)> {
+            self.announcements().last().copied()
+        }
+    }
+
+    fn announcing_board() -> (Arc<StatusBoard>, Arc<Recorder>) {
+        let recorder = Arc::new(Recorder::default());
+        let board = Arc::new(StatusBoard::new());
+        board.attach_publisher(Arc::clone(&recorder) as Arc<dyn EventPublisher>);
+        (board, recorder)
+    }
+
+    fn network_error() -> MonobankError {
+        MonobankError::Network {
+            reason: String::new(),
+        }
+    }
+
+    #[test]
+    fn poll_failures_after_polling_announce_an_unexpected_loss() {
+        for (error, state) in [
+            (network_error(), ConnectionState::Reconnecting),
+            (MonobankError::Unauthorized, ConnectionState::Disconnected),
+            (MonobankError::MissingToken, ConnectionState::Disconnected),
+        ] {
+            let (board, recorder) = announcing_board();
+            board.record_poll(None);
+            board.record_failure(&error);
+            assert_eq!(recorder.last(), Some((state, false)), "{error:?}");
+        }
+    }
+
+    #[test]
+    fn polling_pausing_and_restarting_announce_expected_transitions() {
+        let (board, recorder) = announcing_board();
+        board.record_poll(None);
+        board.enter(PollPhase::Paused);
+        board.enter(PollPhase::Starting);
+        assert_eq!(
+            recorder.announcements(),
+            [
+                (ConnectionState::Connected, true),
+                (ConnectionState::Disconnected, true),
+                (ConnectionState::Connecting, true),
+            ]
+        );
+    }
+
+    #[test]
+    fn recovering_poll_after_a_failure_announces_connected() {
+        let (board, recorder) = announcing_board();
+        board.record_poll(None);
+        board.record_failure(&network_error());
+        board.record_poll(None);
+        assert_eq!(recorder.last(), Some((ConnectionState::Connected, true)));
+    }
+
+    #[test]
+    fn repeated_failures_announce_the_loss_once() {
+        let (board, recorder) = announcing_board();
+        board.record_poll(None);
+        board.record_failure(&network_error());
+        board.record_failure(&network_error());
+        assert_eq!(
+            recorder.announcements(),
+            [
+                (ConnectionState::Connected, true),
+                (ConnectionState::Reconnecting, false),
+            ]
+        );
+    }
+
+    #[test]
+    fn rejected_donation_while_polling_announces_nothing_new() {
+        let (board, recorder) = announcing_board();
+        board.record_poll(None);
+        board.record_rejected_donation(&MonobankError::InvalidDonation {
+            donation_id: "TX-1".to_owned(),
+            reason: String::new(),
+        });
+        assert_eq!(
+            recorder.announcements(),
+            [(ConnectionState::Connected, true)]
+        );
+    }
+
+    #[test]
+    fn last_poller_exit_announces_an_expected_disconnect() {
+        let (board, recorder) = announcing_board();
+        let running = board.poller_started();
+        board.record_failure(&network_error());
+        drop(running);
+        assert_eq!(recorder.last(), Some((ConnectionState::Disconnected, true)));
+    }
+
+    #[test]
+    fn retired_poller_exiting_while_a_newer_one_runs_announces_nothing() {
+        let (board, recorder) = announcing_board();
+        let retired = board.poller_started();
+        board.record_poll(None);
+        let _current = board.poller_started();
+        drop(retired);
+        assert_eq!(
+            recorder.announcements(),
+            [(ConnectionState::Connected, true)]
+        );
+    }
+
+    fn phase_after_last_poller_exit(reach: impl FnOnce(&StatusBoard)) -> PollPhase {
+        let (board, _recorder) = announcing_board();
+        let running = board.poller_started();
+        reach(&board);
+        drop(running);
+        board.snapshot().phase
+    }
+
+    #[test]
+    fn last_poller_exit_parks_an_active_phase_as_paused() {
+        let reach_starting = |board: &StatusBoard| board.enter(PollPhase::Starting);
+        let reach_polling = |board: &StatusBoard| board.record_poll(None);
+        let reach_retrying = |board: &StatusBoard| board.record_failure(&network_error());
+        assert_eq!(
+            [
+                phase_after_last_poller_exit(reach_starting),
+                phase_after_last_poller_exit(reach_polling),
+                phase_after_last_poller_exit(reach_retrying),
+            ],
+            [PollPhase::Paused; 3]
+        );
+    }
+
+    #[test]
+    fn last_poller_exit_keeps_a_phase_that_waits_for_the_user() {
+        let reach_awaiting =
+            |board: &StatusBoard| board.record_failure(&MonobankError::MissingToken);
+        let reach_action = |board: &StatusBoard| board.record_failure(&MonobankError::Unauthorized);
+        assert_eq!(
+            [
+                phase_after_last_poller_exit(reach_awaiting),
+                phase_after_last_poller_exit(reach_action),
+            ],
+            [PollPhase::AwaitingToken, PollPhase::ActionRequired]
         );
     }
 }

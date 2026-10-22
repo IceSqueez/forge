@@ -460,4 +460,74 @@ mod tests {
             "the pair must be ordered started-then-stopped, got {messages:?}"
         );
     }
+
+    fn reporter_for(p: &YoutubePlatform, cancel: &CancellationToken) -> PollHealthReporter {
+        health_reporter(
+            Arc::clone(&p.state),
+            p.state_tx.clone(),
+            Arc::clone(&p.events),
+            cancel.clone(),
+        )
+    }
+
+    async fn announcements(mut stream: EventStream) -> Vec<(String, Option<bool>)> {
+        let mut seen = Vec::new();
+        while let Ok(event) = stream.recv().await {
+            if let Some(state) = state_of(&event) {
+                seen.push((state, event.payload["expected"].as_bool()));
+            }
+        }
+        seen
+    }
+
+    #[tokio::test]
+    async fn poll_loss_then_recovery_announces_unexpected_reconnecting_then_expected_connected() {
+        let p = platform();
+        let stream = p.events();
+        let report = reporter_for(&p, &CancellationToken::new());
+        report(PollLinkHealth::Lost);
+        let lost_state = p.connection_state();
+        report(PollLinkHealth::Healthy);
+        let recovered_state = p.connection_state();
+        drop((report, p));
+        assert_eq!(
+            (lost_state, recovered_state, announcements(stream).await),
+            (
+                ConnectionState::Reconnecting,
+                ConnectionState::Connected,
+                vec![
+                    ("reconnecting".to_owned(), Some(false)),
+                    ("connected".to_owned(), Some(true)),
+                ]
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_health_reported_after_cancel_changes_nothing() {
+        let p = platform();
+        let stream = p.events();
+        let cancel = CancellationToken::new();
+        let report = reporter_for(&p, &cancel);
+        cancel.cancel();
+        report(PollLinkHealth::Lost);
+        let state = p.connection_state();
+        drop((report, p));
+        assert_eq!(
+            (state, announcements(stream).await),
+            (ConnectionState::Disconnected, Vec::new())
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_loss_reported_after_disconnect_leaves_the_link_disconnected() {
+        let p = platform();
+        let cancel = CancellationToken::new();
+        *p.cancel.lock().unwrap() = Some(cancel.clone());
+        let report = reporter_for(&p, &cancel);
+        report(PollLinkHealth::Healthy);
+        p.disconnect().await.unwrap();
+        report(PollLinkHealth::Lost);
+        assert_eq!(p.connection_state(), ConnectionState::Disconnected);
+    }
 }

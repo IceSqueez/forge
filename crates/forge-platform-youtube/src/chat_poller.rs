@@ -2829,4 +2829,257 @@ mod tests {
             "events seen: {kinds:?}"
         );
     }
+
+    use crate::poll_health::PollLinkHealth;
+
+    type HealthReport = (PollLinkHealth, usize);
+
+    struct ProbedPoller {
+        poller: YoutubeChatPoller,
+        reports: tokio::sync::mpsc::UnboundedReceiver<HealthReport>,
+        _events: tokio::sync::mpsc::UnboundedReceiver<Event>,
+    }
+
+    enum TokenOutcome {
+        Issued,
+        Refused,
+    }
+
+    fn probed_poller(server: &MockServer, token: TokenOutcome, quota: SharedQuota) -> ProbedPoller {
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = Arc::clone(&calls);
+        let issues = matches!(token, TokenOutcome::Issued);
+        let source: TokenSource = Arc::new(move || {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async move {
+                if issues {
+                    Ok("test-token".to_owned())
+                } else {
+                    Err(PlatformError::ReauthRequired {
+                        platform: "youtube".to_owned(),
+                    })
+                }
+            })
+        });
+        let (report_tx, reports) = tokio::sync::mpsc::unbounded_channel();
+        let reporter: PollHealthReporter = Arc::new(move |health| {
+            let _ = report_tx.send((health, calls.load(std::sync::atomic::Ordering::SeqCst)));
+        });
+        let (tx, events) = tokio::sync::mpsc::unbounded_channel();
+        let poller = YoutubeChatPoller::new(
+            &crate::endpoints_test_support::unreachable_endpoints(),
+            source,
+            tx,
+            "UCtest".to_owned(),
+            LiveChatIdHandle::new(),
+            ActiveBroadcastIdHandle::new(),
+            quota,
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+        )
+        .with_api_base(server.uri())
+        .with_health_reporter(reporter);
+        ProbedPoller {
+            poller,
+            reports,
+            _events: events,
+        }
+    }
+
+    async fn first_reports(probed: ProbedPoller, count: usize) -> Vec<HealthReport> {
+        let ProbedPoller {
+            poller,
+            mut reports,
+            _events,
+        } = probed;
+        let cancel = CancellationToken::new();
+        let join = tokio::spawn(poller.run(cancel.clone()));
+        let mut seen = Vec::new();
+        for _ in 0..count {
+            seen.push(reports.recv().await.unwrap());
+        }
+        cancel.cancel();
+        join.await.unwrap().unwrap();
+        seen
+    }
+
+    fn quota_with_room_for(units: u32) -> SharedQuota {
+        SharedQuota::new(QuotaState {
+            used_today: QUOTA_DAILY_LIMIT_FOR_TEST - units,
+            peak_seen: QUOTA_DAILY_LIMIT_FOR_TEST - units,
+            last_reset_date: today_pacific(),
+            long_interval_mode: false,
+        })
+    }
+
+    fn unpooled(status: StatusCode) -> ResponseTemplate {
+        ResponseTemplate::new(status.as_u16())
+            .insert_header(reqwest::header::CONNECTION.as_str(), CLOSE_CONNECTION)
+    }
+
+    const CLOSE_CONNECTION: &str = "close";
+
+    fn server_error() -> ResponseTemplate {
+        unpooled(StatusCode::INTERNAL_SERVER_ERROR)
+    }
+
+    fn live_chat_ended() -> ResponseTemplate {
+        unpooled(StatusCode::FORBIDDEN).set_body_json(json!({
+            "error": { "errors": [{ "reason": LIVE_CHAT_ENDED_REASON }] }
+        }))
+    }
+
+    async fn mount_responses(
+        server: &MockServer,
+        request_path: &str,
+        first: ResponseTemplate,
+        times: u64,
+        then: ResponseTemplate,
+    ) {
+        Mock::given(method("GET"))
+            .and(path(request_path))
+            .respond_with(first)
+            .up_to_n_times(times)
+            .mount(server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(request_path))
+            .respond_with(then)
+            .mount(server)
+            .await;
+    }
+
+    async fn mount_always(server: &MockServer, request_path: &str, response: ResponseTemplate) {
+        Mock::given(method("GET"))
+            .and(path(request_path))
+            .respond_with(response)
+            .mount(server)
+            .await;
+    }
+
+    const LIVE_LOOKUP_CALLS: usize = 1;
+    const NEXT_CALL: usize = 1;
+    const BROADCASTS: &str = "/liveBroadcasts";
+    const CHAT_MESSAGES: &str = "/liveChat/messages";
+    const LOSS_THRESHOLD: usize = crate::poll_health::CONSECUTIVE_POLL_FAILURES_FOR_LOSS as usize;
+
+    fn live_broadcast() -> ResponseTemplate {
+        unpooled(StatusCode::OK).set_body_json(broadcast_response("lc-live"))
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn each_failing_poll_step_reports_loss_on_the_third_consecutive_failure() {
+        for (label, token, broadcasts, chat, lost_at_call) in [
+            (
+                "token refused",
+                TokenOutcome::Refused,
+                server_error(),
+                server_error(),
+                LOSS_THRESHOLD,
+            ),
+            (
+                "broadcast lookup failing",
+                TokenOutcome::Issued,
+                server_error(),
+                server_error(),
+                LOSS_THRESHOLD,
+            ),
+            (
+                "chat request failing",
+                TokenOutcome::Issued,
+                live_broadcast(),
+                server_error(),
+                LIVE_LOOKUP_CALLS + LOSS_THRESHOLD,
+            ),
+        ] {
+            let server = MockServer::start().await;
+            mount_always(&server, BROADCASTS, broadcasts).await;
+            mount_always(&server, CHAT_MESSAGES, chat).await;
+            let reports = first_reports(probed_poller(&server, token, make_quota()), 1).await;
+            assert_eq!(reports, [(PollLinkHealth::Lost, lost_at_call)], "{label}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn absent_broadcast_after_a_loss_reports_recovery() {
+        let server = MockServer::start().await;
+        mount_responses(
+            &server,
+            BROADCASTS,
+            server_error(),
+            LOSS_THRESHOLD as u64,
+            unpooled(StatusCode::OK).set_body_json(empty_broadcast_response()),
+        )
+        .await;
+        let reports = first_reports(
+            probed_poller(&server, TokenOutcome::Issued, make_quota()),
+            2,
+        )
+        .await;
+        assert_eq!(
+            reports,
+            [
+                (PollLinkHealth::Lost, LOSS_THRESHOLD),
+                (PollLinkHealth::Healthy, LOSS_THRESHOLD + 1),
+            ]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn live_chat_ended_counts_as_a_successful_poll() {
+        let server = MockServer::start().await;
+        mount_responses(
+            &server,
+            BROADCASTS,
+            live_broadcast(),
+            LIVE_LOOKUP_CALLS as u64,
+            server_error(),
+        )
+        .await;
+        let failed_chat_polls = LOSS_THRESHOLD - 1;
+        mount_responses(
+            &server,
+            CHAT_MESSAGES,
+            server_error(),
+            failed_chat_polls as u64,
+            live_chat_ended(),
+        )
+        .await;
+        let ended_at_call = LIVE_LOOKUP_CALLS + failed_chat_polls + NEXT_CALL;
+        let reports = first_reports(
+            probed_poller(&server, TokenOutcome::Issued, make_quota()),
+            1,
+        )
+        .await;
+        assert_eq!(
+            reports,
+            [(PollLinkHealth::Lost, ended_at_call + LOSS_THRESHOLD)]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn local_quota_exhaustion_neither_breaks_nor_resets_the_failure_streak() {
+        let server = MockServer::start().await;
+        mount_responses(
+            &server,
+            BROADCASTS,
+            live_broadcast(),
+            LIVE_LOOKUP_CALLS as u64,
+            server_error(),
+        )
+        .await;
+        mount_always(&server, CHAT_MESSAGES, server_error()).await;
+        let failed_chat_polls = LOSS_THRESHOLD as u32 - 1;
+        let spare_broadcast_lookups = LOSS_THRESHOLD as u32;
+        let room = BROADCAST_COST
+            + failed_chat_polls * CHAT_POLL_COST
+            + spare_broadcast_lookups * BROADCAST_COST;
+        assert!(spare_broadcast_lookups * BROADCAST_COST < CHAT_POLL_COST);
+        let reports = first_reports(
+            probed_poller(&server, TokenOutcome::Issued, quota_with_room_for(room)),
+            1,
+        )
+        .await;
+        let streak_resumes_at_call = LIVE_LOOKUP_CALLS + failed_chat_polls as usize + NEXT_CALL;
+        assert_eq!(reports, [(PollLinkHealth::Lost, streak_resumes_at_call)]);
+    }
 }

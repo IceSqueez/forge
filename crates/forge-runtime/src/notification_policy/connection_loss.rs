@@ -270,4 +270,43 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn discard_drops_only_losses_whose_grace_has_ended() {
+        let t0 = Instant::now();
+        let mut gate = connected_gate(&[TWITCH, KICK], t0);
+        gate.disconnected(TWITCH, false, t0);
+        gate.disconnected(KICK, false, t0 + SECOND);
+        gate.discard_due(t0 + CONNECTION_LOSS_GRACE);
+        assert_eq!(gate.deadline(), Some(t0 + SECOND + CONNECTION_LOSS_GRACE));
+    }
+
+    #[test]
+    fn discarded_loss_leaves_the_link_armed_for_the_next_loss() {
+        let t0 = Instant::now();
+        let mut gate = connected_gate(&[TWITCH], t0);
+        gate.disconnected(TWITCH, false, t0);
+        let discarded = t0 + CONNECTION_LOSS_GRACE;
+        gate.discard_due(discarded);
+        gate.connected(TWITCH.to_owned(), discarded + SECOND);
+        gate.disconnected(TWITCH, false, discarded + 2 * SECOND);
+        assert_eq!(
+            flush(&mut gate, discarded + MIN_CUE_SPACING),
+            cue(&[TWITCH])
+        );
+    }
+
+    #[test]
+    fn discarded_loss_does_not_start_the_cue_spacing() {
+        let t0 = Instant::now();
+        let mut gate = connected_gate(&[TWITCH, KICK], t0);
+        gate.disconnected(TWITCH, false, t0);
+        let discarded = t0 + CONNECTION_LOSS_GRACE;
+        gate.discard_due(discarded);
+        gate.disconnected(KICK, false, discarded);
+        assert_eq!(
+            flush(&mut gate, discarded + CONNECTION_LOSS_GRACE),
+            cue(&[KICK])
+        );
+    }
 }

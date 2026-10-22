@@ -208,7 +208,7 @@ mod tests {
             .payload;
         assert_eq!(
             last_status,
-            serde_json::json!({"status": "not_connected", "login": null})
+            serde_json::json!({"status": "not_connected", "login": null, "moderator": "unknown"})
         );
     }
 

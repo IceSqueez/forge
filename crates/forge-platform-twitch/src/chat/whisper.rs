@@ -186,4 +186,43 @@ mod tests {
         assert!(matches!(err, WhisperError::Helix(_)), "got {err:?}");
         assert_eq!(transport.call_count(), 1, "only the lookup may run");
     }
+
+    #[tokio::test]
+    async fn only_a_400_naming_a_stranger_or_block_rule_means_the_recipient_refuses_whispers() {
+        let refusal = |status: u16, message: &str| {
+            Err(HelixError::Http {
+                status,
+                body: serde_json::json!({"status": status, "message": message}).to_string(),
+            })
+        };
+        let cases: [(Result<serde_json::Value, HelixError>, bool); 6] = [
+            (
+                refusal(
+                    400,
+                    "The recipient's settings prevent this sender from whispering them. Strangers are blocked.",
+                ),
+                true,
+            ),
+            (refusal(400, "Recipient has BLOCKED you"), true),
+            (refusal(400, "This user doesn't allow whispers"), true),
+            (refusal(400, "The message field may not be empty"), false),
+            (refusal(403, "Blocked by policy"), false),
+            (Err(HelixError::RateLimited), false),
+        ];
+
+        for (response, rejects) in cases {
+            let label = format!("{response:?}");
+            let transport = MockTransport::returning(response);
+
+            let err = send_whisper_to(&transport, "100", Some(UserTarget::Id("1001")), "psst")
+                .await
+                .unwrap_err();
+
+            assert_eq!(
+                matches!(err, WhisperError::RecipientRejectsWhispers),
+                rejects,
+                "{label} -> {err:?}"
+            );
+        }
+    }
 }

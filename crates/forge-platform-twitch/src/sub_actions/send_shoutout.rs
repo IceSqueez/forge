@@ -274,4 +274,36 @@ mod tests {
         assert!(!msg.contains(TOKEN_SENTINEL), "token leaked: {msg}");
         assert!(!msg.contains("api.twitch.tv"), "URL leaked: {msg}");
     }
+
+    #[tokio::test]
+    async fn a_sent_shoutout_records_the_acting_sender() {
+        let (_transport, runner) =
+            runner_with(vec![users_fixture("555"), Ok(serde_json::Value::Null)]);
+
+        let (telemetry, _) = runner
+            .execute(&config("target"), &make_ctx(&ArgStack::new()))
+            .await;
+
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(
+                &telemetry.produced[forge_platform_core::SENT_AS_FIELD]
+            )
+            .unwrap(),
+            serde_json::json!({"role": "streamer", "login": "streamer"})
+        );
+    }
+
+    #[tokio::test]
+    async fn unknown_sender_is_rejected_by_validate_and_by_execute_without_a_helix_call() {
+        let (transport, runner) = runner_with(vec![users_fixture("555")]);
+        let mut config = config("target");
+        config.insert(SENDER_FIELD.to_owned(), Variant::Int(0));
+
+        let validation = runner.validate_config(&config);
+        let (telemetry, _) = runner.execute(&config, &make_ctx(&ArgStack::new())).await;
+
+        assert!(validation.is_err());
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(transport.call_count(), 0);
+    }
 }

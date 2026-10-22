@@ -621,8 +621,8 @@ mod tests {
         assert_eq!(
             payloads,
             vec![
-                serde_json::json!({"status": "connected", "login": BOT_LOGIN}),
-                serde_json::json!({"status": "reauth_required", "login": BOT_LOGIN}),
+                serde_json::json!({"status": "connected", "login": BOT_LOGIN, "moderator": "unknown"}),
+                serde_json::json!({"status": "reauth_required", "login": BOT_LOGIN, "moderator": "unknown"}),
             ]
         );
     }

@@ -419,6 +419,7 @@ mod tests {
     };
     use crate::credentials::TWITCH_BOT_CREDENTIAL_ID;
     use crate::sub_actions::test_support::{MockTransport, SELF_USER_ID, users_fixture};
+    use crate::sub_actions::user_target::UserTarget;
 
     const CHAT_PATH: &str = "/helix/chat/messages";
     const WHISPER_PATH: &str = "/helix/whispers";
@@ -899,5 +900,381 @@ mod tests {
                 "{rejected:?} -> {err:?}"
             );
         }
+    }
+
+    const ANNOUNCE_PATH: &str = "/helix/chat/announcements";
+    const SHOUTOUT_PATH: &str = "/helix/chat/shoutouts";
+    const ANNOUNCE: ChatDelivery<'static> = ChatDelivery::Announcement {
+        text: "hello",
+        color: "primary",
+    };
+    const SHOUTOUT: ChatDelivery<'static> = ChatDelivery::Shoutout {
+        target: UserTarget::Id("555"),
+    };
+
+    fn path_of(delivery: &ChatDelivery<'_>) -> &'static str {
+        match delivery {
+            ChatDelivery::Announcement { .. } => ANNOUNCE_PATH,
+            _ => SHOUTOUT_PATH,
+        }
+    }
+
+    fn channel_key(delivery: &ChatDelivery<'_>) -> &'static str {
+        match delivery {
+            ChatDelivery::Announcement { .. } => "broadcaster_id",
+            _ => "from_broadcaster_id",
+        }
+    }
+
+    async fn with_moderator_lookup(rig: &Rig, listed: bool) {
+        let data = if listed {
+            json!({"data": [{"user_id": BOT_USER_ID}]})
+        } else {
+            json!({"data": []})
+        };
+        rig.harness
+            .bot
+            .attach_broadcaster_transport(Arc::new(MockTransport::returning_sequence(vec![
+                Ok(data),
+                Ok(json!({"data": []})),
+            ])));
+        rig.harness.bot.refresh_moderator_status().await;
+    }
+
+    #[tokio::test]
+    async fn moderator_actions_act_as_the_resolved_sender_in_the_broadcaster_channel() {
+        for delivery in [ANNOUNCE, SHOUTOUT] {
+            for (preference, actor_id) in [
+                (SenderPreference::Default, BOT_USER_ID),
+                (SenderPreference::Streamer, SELF_USER_ID),
+            ] {
+                let rig = Rig::over(BotHarness::connected().await, vec![Ok(Value::Null)]);
+                rig.harness
+                    .mount("POST", path_of(&delivery), ResponseTemplate::new(204))
+                    .await;
+
+                rig.send(delivery, preference).await.unwrap();
+
+                let query: Vec<(String, String)> = if actor_id == BOT_USER_ID {
+                    rig.harness.requests_to(path_of(&delivery)).await[0]
+                        .url
+                        .query_pairs()
+                        .into_owned()
+                        .collect()
+                } else {
+                    rig.streamer.last_request().query
+                };
+                let label = format!("{preference:?} {}", delivery.operation());
+                assert!(
+                    query.contains(&(channel_key(&delivery).to_owned(), SELF_USER_ID.to_owned())),
+                    "{label}: {query:?}"
+                );
+                assert!(
+                    query.contains(&("moderator_id".to_owned(), actor_id.to_owned())),
+                    "{label}: {query:?}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_bot_known_not_to_be_a_moderator_fails_moderator_actions_without_any_request() {
+        for preference in [SenderPreference::Default, SenderPreference::BotOnly] {
+            for delivery in [ANNOUNCE, SHOUTOUT] {
+                let rig = Rig::over(BotHarness::connected().await, vec![Ok(Value::Null)]);
+                with_moderator_lookup(&rig, false).await;
+
+                let failure = rig.send(delivery, preference).await.unwrap_err();
+
+                let label = format!("{preference:?} {}", delivery.operation());
+                assert!(
+                    matches!(failure, SendFailure::BotNotModerator),
+                    "{label}: {failure:?}"
+                );
+                assert!(
+                    rig.harness.requests_to(path_of(&delivery)).await.is_empty(),
+                    "{label}"
+                );
+                assert_eq!(rig.streamer.call_count(), 0, "{label}");
+                assert!(rig.fallbacks().is_empty(), "{label}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_bot_that_is_not_a_moderator_still_sends_plain_chat() {
+        let rig = connected_rig().await;
+        with_moderator_lookup(&rig, false).await;
+
+        let acting = rig.send(MESSAGE, SenderPreference::Default).await.unwrap();
+
+        assert_eq!(acting, as_bot());
+    }
+
+    #[tokio::test]
+    async fn a_403_on_a_bot_moderator_action_rechecks_moderator_status_and_is_a_refusal() {
+        let rig = Rig::over(BotHarness::connected().await, vec![Ok(Value::Null)]);
+        with_moderator_lookup(&rig, true).await;
+        rig.harness
+            .mount(
+                "POST",
+                ANNOUNCE_PATH,
+                ResponseTemplate::new(403)
+                    .set_body_json(json!({"status": 403, "message": "not a moderator"})),
+            )
+            .await;
+
+        let failure = rig
+            .send(ANNOUNCE, SenderPreference::Default)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(&failure, SendFailure::PermissionDenied(m) if m.contains("not a moderator")),
+            "{failure:?}"
+        );
+        assert_eq!(
+            rig.harness.bot.moderator_status(),
+            crate::bot_account::BotModerator::NotModerator
+        );
+        assert_eq!(rig.streamer.call_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn moderator_action_refusals_never_fall_back_or_resend() {
+        for delivery in [ANNOUNCE, SHOUTOUT] {
+            for (status, message) in [(400, "channel is offline"), (429, "cooldown")] {
+                let rig = Rig::over(BotHarness::connected().await, vec![Ok(Value::Null)]);
+                rig.harness
+                    .mount(
+                        "POST",
+                        path_of(&delivery),
+                        ResponseTemplate::new(status)
+                            .set_body_json(json!({"status": status, "message": message})),
+                    )
+                    .await;
+
+                let failure = rig
+                    .send(delivery, SenderPreference::Default)
+                    .await
+                    .unwrap_err();
+
+                let label = format!("{} {status}", delivery.operation());
+                assert!(
+                    matches!(failure, SendFailure::Refused(_)),
+                    "{label}: {failure:?}"
+                );
+                assert_eq!(rig.streamer.call_count(), 0, "{label}");
+                assert_eq!(
+                    rig.harness.requests_to(path_of(&delivery)).await.len(),
+                    1,
+                    "{label}"
+                );
+                assert!(rig.fallbacks().is_empty(), "{label}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_rejected_bot_token_on_a_moderator_action_falls_back_to_the_streamer() {
+        let rig = Rig::over(BotHarness::connected().await, vec![Ok(Value::Null)]);
+        rig.harness
+            .mount("POST", ANNOUNCE_PATH, ResponseTemplate::new(401))
+            .await;
+        rig.harness
+            .mount("POST", "/token", ResponseTemplate::new(400))
+            .await;
+
+        let acting = rig.send(ANNOUNCE, SenderPreference::Default).await.unwrap();
+
+        assert_eq!(acting, as_streamer());
+        assert!(
+            rig.streamer
+                .last_request()
+                .query
+                .contains(&("moderator_id".to_owned(), SELF_USER_ID.to_owned()))
+        );
+    }
+
+    fn cooldown_refusal(result: &Result<ActingSender, SendFailure>) -> bool {
+        matches!(result, Err(SendFailure::Refused(m)) if m.starts_with("shoutout cooldown"))
+    }
+
+    #[tokio::test]
+    async fn a_shoutout_in_cooldown_is_refused_for_every_sender_without_any_helix_call() {
+        let rig = Rig::over(
+            BotHarness::connected().await,
+            vec![users_fixture("555"), Ok(Value::Null)],
+        );
+        tokio::time::pause();
+        let target = ChatDelivery::Shoutout {
+            target: UserTarget::Login("Target"),
+        };
+        rig.send(target, SenderPreference::Streamer).await.unwrap();
+
+        let as_bot = rig
+            .send(
+                ChatDelivery::Shoutout {
+                    target: UserTarget::Login("target"),
+                },
+                SenderPreference::BotOnly,
+            )
+            .await;
+        let other_target = rig
+            .send(
+                ChatDelivery::Shoutout {
+                    target: UserTarget::Login("other"),
+                },
+                SenderPreference::Streamer,
+            )
+            .await;
+
+        assert!(cooldown_refusal(&as_bot), "{as_bot:?}");
+        assert!(cooldown_refusal(&other_target), "{other_target:?}");
+        assert_eq!(rig.streamer.call_count(), 2);
+        assert!(rig.harness.requests_to(SHOUTOUT_PATH).await.is_empty());
+        assert!(rig.harness.requests_to("/helix/users").await.is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_target_shouted_out_by_login_stays_blocked_by_id_after_the_channel_window() {
+        let rig = Rig::over(
+            BotHarness::without_bot_row().await,
+            vec![
+                users_fixture("555"),
+                Ok(Value::Null),
+                users_fixture("777"),
+                Ok(Value::Null),
+            ],
+        );
+        rig.send(
+            ChatDelivery::Shoutout {
+                target: UserTarget::Login("target"),
+            },
+            SenderPreference::Streamer,
+        )
+        .await
+        .unwrap();
+        tokio::time::advance(
+            crate::cadence::SHOUTOUT_CHANNEL_INTERVAL + std::time::Duration::from_secs(1),
+        )
+        .await;
+
+        let same_by_id = rig.send(SHOUTOUT, SenderPreference::Streamer).await;
+        let calls_after_blocked = rig.streamer.call_count();
+        let other = rig
+            .send(
+                ChatDelivery::Shoutout {
+                    target: UserTarget::Login("other"),
+                },
+                SenderPreference::Streamer,
+            )
+            .await;
+
+        assert!(cooldown_refusal(&same_by_id), "{same_by_id:?}");
+        assert_eq!(calls_after_blocked, 2);
+        assert_eq!(other.unwrap(), as_streamer());
+        assert_eq!(rig.streamer.call_count(), 4);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_refused_shoutout_leaves_no_cooldown_behind() {
+        let rig = Rig::over(
+            BotHarness::without_bot_row().await,
+            vec![
+                Err(HelixError::Http {
+                    status: 400,
+                    body: json!({"message": "channel is offline"}).to_string(),
+                }),
+                Ok(Value::Null),
+            ],
+        );
+        let refused = rig.send(SHOUTOUT, SenderPreference::Streamer).await;
+
+        let retried = rig.send(SHOUTOUT, SenderPreference::Streamer).await;
+
+        assert!(matches!(refused, Err(SendFailure::Refused(_))));
+        assert_eq!(retried.unwrap(), as_streamer());
+        assert_eq!(rig.streamer.call_count(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn back_to_back_announcements_go_out_exactly_one_interval_apart() {
+        let rig = Rig::over(
+            BotHarness::without_bot_row().await,
+            vec![Ok(Value::Null), Ok(Value::Null)],
+        );
+        let started = tokio::time::Instant::now();
+
+        rig.send(ANNOUNCE, SenderPreference::Streamer)
+            .await
+            .unwrap();
+        let after_first = started.elapsed();
+        rig.send(ANNOUNCE, SenderPreference::Streamer)
+            .await
+            .unwrap();
+
+        assert_eq!(after_first, std::time::Duration::ZERO);
+        assert_eq!(started.elapsed(), crate::cadence::ANNOUNCEMENT_INTERVAL);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_announcement_does_not_delay_the_next_one() {
+        let rig = Rig::over(
+            BotHarness::without_bot_row().await,
+            vec![
+                Err(HelixError::Http {
+                    status: 400,
+                    body: json!({"message": "channel is offline"}).to_string(),
+                }),
+                Ok(Value::Null),
+            ],
+        );
+        let started = tokio::time::Instant::now();
+
+        let failed = rig.send(ANNOUNCE, SenderPreference::Streamer).await;
+        rig.send(ANNOUNCE, SenderPreference::Streamer)
+            .await
+            .unwrap();
+
+        assert!(matches!(failed, Err(SendFailure::Refused(_))));
+        assert_eq!(started.elapsed(), std::time::Duration::ZERO);
+    }
+
+    #[tokio::test]
+    async fn a_whisper_the_recipient_refuses_never_falls_back() {
+        let rig = Rig::over(BotHarness::connected().await, vec![Ok(Value::Null)]);
+        rig.harness
+            .mount(
+                "GET",
+                "/helix/users",
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"data": [{"id": "555", "login": "viewer"}]})),
+            )
+            .await;
+        rig.harness
+            .mount(
+                "POST",
+                WHISPER_PATH,
+                ResponseTemplate::new(400).set_body_json(json!({
+                    "status": 400,
+                    "message": "The recipient doesn't allow whispers from strangers"
+                })),
+            )
+            .await;
+
+        let failure = rig
+            .send(WHISPER, SenderPreference::Default)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                failure,
+                SendFailure::Whisper(WhisperError::RecipientRejectsWhispers)
+            ),
+            "{failure:?}"
+        );
+        assert_eq!(rig.streamer.call_count(), 0);
     }
 }

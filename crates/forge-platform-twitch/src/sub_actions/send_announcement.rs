@@ -407,4 +407,50 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test]
+    async fn the_acting_sender_is_recorded_only_for_a_sent_announcement() {
+        let cases = [
+            (
+                Ok(serde_json::Value::Null),
+                Some(serde_json::json!({"role": "streamer", "login": "streamer"})),
+            ),
+            (
+                Err(HelixError::Http {
+                    status: 400,
+                    body: "channel is offline".to_owned(),
+                }),
+                None,
+            ),
+        ];
+
+        for (response, expected) in cases {
+            let (_transport, runner) = runner_with(response, MockCreds::with_identity());
+
+            let (telemetry, _) = runner
+                .execute(&config("hello", None), &make_ctx(&ArgStack::new()))
+                .await;
+
+            let recorded = telemetry
+                .produced
+                .get(forge_platform_core::SENT_AS_FIELD)
+                .map(|json| serde_json::from_str::<serde_json::Value>(json).unwrap());
+            assert_eq!(recorded, expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn unknown_sender_is_rejected_by_validate_and_by_execute_without_a_helix_call() {
+        let (transport, runner) =
+            runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+        let mut config = config("hello", None);
+        config.insert(SENDER_FIELD.to_owned(), Variant::String("mod".to_owned()));
+
+        let validation = runner.validate_config(&config);
+        let (telemetry, _) = runner.execute(&config, &make_ctx(&ArgStack::new())).await;
+
+        assert!(validation.is_err());
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert_eq!(transport.call_count(), 0);
+    }
 }

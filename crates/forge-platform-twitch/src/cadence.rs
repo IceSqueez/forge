@@ -113,3 +113,170 @@ impl CadenceLedger {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SECOND: Duration = Duration::from_secs(1);
+
+    #[tokio::test(start_paused = true)]
+    async fn committed_announcements_are_spaced_exactly_by_the_interval() {
+        let ledger = CadenceLedger::default();
+
+        let first = ledger.reserve_announcement();
+        let first_wait = first.wait();
+        first.commit();
+        let second = ledger.reserve_announcement();
+        let second_wait = second.wait();
+        second.commit();
+        tokio::time::advance(SECOND).await;
+        let third_wait = ledger.reserve_announcement().wait();
+
+        assert_eq!(first_wait, Duration::ZERO);
+        assert_eq!(second_wait, ANNOUNCEMENT_INTERVAL);
+        assert_eq!(third_wait, 2 * ANNOUNCEMENT_INTERVAL - SECOND);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_announcement_after_the_interval_has_passed_goes_out_at_once() {
+        let ledger = CadenceLedger::default();
+        ledger.reserve_announcement().commit();
+
+        tokio::time::advance(ANNOUNCEMENT_INTERVAL).await;
+
+        assert_eq!(ledger.reserve_announcement().wait(), Duration::ZERO);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_uncommitted_reservation_gives_its_slot_back() {
+        let ledger = CadenceLedger::default();
+        drop(ledger.reserve_announcement());
+        let after_first_released = ledger.reserve_announcement();
+        let after_first_released_wait = after_first_released.wait();
+        after_first_released.commit();
+
+        drop(ledger.reserve_announcement());
+        let after_second_released = ledger.reserve_announcement().wait();
+
+        assert_eq!(after_first_released_wait, Duration::ZERO);
+        assert_eq!(after_second_released, ANNOUNCEMENT_INTERVAL);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn releasing_an_earlier_reservation_never_frees_a_later_ones_slot() {
+        let ledger = CadenceLedger::default();
+        ledger.reserve_announcement().commit();
+        let earlier = ledger.reserve_announcement();
+        let later = ledger.reserve_announcement();
+
+        drop(earlier);
+        let next_wait = ledger.reserve_announcement().wait();
+
+        assert_eq!(later.wait(), 2 * ANNOUNCEMENT_INTERVAL);
+        assert_eq!(next_wait, 3 * ANNOUNCEMENT_INTERVAL);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_channel_cooldown_blocks_every_target_for_two_minutes() {
+        let ledger = CadenceLedger::default();
+        ledger.record_shoutout(&["id:1"]);
+
+        let at_start = ledger.shoutout_cooldown(&["id:2"]);
+        tokio::time::advance(SHOUTOUT_CHANNEL_INTERVAL - SECOND).await;
+        let one_second_left = ledger.shoutout_cooldown(&["id:2"]);
+        tokio::time::advance(2 * SECOND).await;
+        let after_window = ledger.shoutout_cooldown(&["id:2"]);
+
+        assert_eq!(at_start, Some(SHOUTOUT_CHANNEL_INTERVAL));
+        assert_eq!(one_second_left, Some(SECOND));
+        assert_eq!(after_window, None);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_target_cooldown_blocks_the_same_target_for_an_hour() {
+        let ledger = CadenceLedger::default();
+        ledger.record_shoutout(&["id:1"]);
+        tokio::time::advance(SHOUTOUT_CHANNEL_INTERVAL + SECOND).await;
+
+        let same_target = ledger.shoutout_cooldown(&["id:1"]);
+        tokio::time::advance(SHOUTOUT_TARGET_INTERVAL - SHOUTOUT_CHANNEL_INTERVAL).await;
+        let after_window = ledger.shoutout_cooldown(&["id:1"]);
+
+        assert_eq!(
+            same_target,
+            Some(SHOUTOUT_TARGET_INTERVAL - SHOUTOUT_CHANNEL_INTERVAL - SECOND)
+        );
+        assert_eq!(after_window, None);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn every_recorded_key_of_a_target_blocks_it() {
+        let ledger = CadenceLedger::default();
+        ledger.record_shoutout(&["login:target", "id:555"]);
+        tokio::time::advance(SHOUTOUT_CHANNEL_INTERVAL + SECOND).await;
+
+        assert!(ledger.shoutout_cooldown(&["login:target"]).is_some());
+        assert!(ledger.shoutout_cooldown(&["id:555"]).is_some());
+        assert!(
+            ledger
+                .shoutout_cooldown(&["id:777", "login:other"])
+                .is_none()
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancelling_every_queued_announcement_frees_the_queue_entirely() {
+        let ledger = CadenceLedger::default();
+        let second = ledger.reserve_announcement();
+        let third = ledger.reserve_announcement();
+        let third_wait = third.wait();
+
+        drop(second);
+        drop(third);
+        let next_wait = ledger.reserve_announcement().wait();
+
+        assert_eq!(third_wait, ANNOUNCEMENT_INTERVAL);
+        assert_eq!(next_wait, Duration::ZERO);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancelled_reservations_leave_only_the_committed_send_to_space_from() {
+        let ledger = CadenceLedger::default();
+        ledger.reserve_announcement().commit();
+        drop(ledger.reserve_announcement());
+        drop(ledger.reserve_announcement());
+
+        let next_wait = ledger.reserve_announcement().wait();
+
+        assert_eq!(next_wait, ANNOUNCEMENT_INTERVAL);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_later_reservation_committed_after_an_earlier_cancel_spaces_the_next_from_itself() {
+        let ledger = CadenceLedger::default();
+        ledger.reserve_announcement().commit();
+        let earlier = ledger.reserve_announcement();
+        let later = ledger.reserve_announcement();
+        drop(earlier);
+
+        later.commit();
+        let next_wait = ledger.reserve_announcement().wait();
+
+        assert_eq!(next_wait, 3 * ANNOUNCEMENT_INTERVAL);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn shoutout_cooldowns_end_exactly_at_their_window() {
+        let ledger = CadenceLedger::default();
+        ledger.record_shoutout(&["id:1"]);
+
+        tokio::time::advance(SHOUTOUT_CHANNEL_INTERVAL).await;
+        let channel_at_boundary = ledger.shoutout_cooldown(&["id:2"]);
+        tokio::time::advance(SHOUTOUT_TARGET_INTERVAL - SHOUTOUT_CHANNEL_INTERVAL).await;
+        let target_at_boundary = ledger.shoutout_cooldown(&["id:1"]);
+
+        assert_eq!(channel_at_boundary, None);
+        assert_eq!(target_at_boundary, None);
+    }
+}

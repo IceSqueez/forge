@@ -17,7 +17,7 @@ impl KindVisuals {
 
 pub(super) fn accent_color(accent: PreviewAccent, palette: &ForgePalette) -> Rgba {
     match accent {
-        PreviewAccent::Mauve => palette.theme_brand,
+        PreviewAccent::Mauve => palette.accent_mauve,
         PreviewAccent::Sky => palette.info,
         PreviewAccent::Green => palette.success,
         PreviewAccent::Peach => palette.bits,

@@ -20,6 +20,7 @@ pub struct ForgePalette {
 
     pub brand: Rgba,
     pub theme_brand: Rgba,
+    pub accent_mauve: Rgba,
     pub success: Rgba,
     pub warning: Rgba,
     pub info: Rgba,
@@ -58,7 +59,7 @@ pub fn with_alpha(c: Rgba, alpha: f32) -> Rgba {
 
 pub fn accent_swatch(name: &str, palette: &ForgePalette) -> Option<Rgba> {
     match name {
-        "mauve" => Some(palette.theme_brand),
+        "mauve" => Some(palette.accent_mauve),
         "sky" => Some(palette.info),
         "green" => Some(palette.success),
         "peach" => Some(palette.bits),
@@ -69,7 +70,6 @@ pub fn accent_swatch(name: &str, palette: &ForgePalette) -> Option<Rgba> {
 }
 
 const TOKYO_NIGHT_FLAMINGO: Rgba = hex(0xff, 0x79, 0xc6);
-const LATTE_MAUVE: Rgba = hex(0x88, 0x39, 0xef);
 const LATTE_FLAMINGO: Rgba = hex(0xdd, 0x78, 0x78);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -158,10 +158,7 @@ impl ThemeId {
             AccentColor::Yellow => palette.warning,
             AccentColor::Green => palette.success,
             AccentColor::Sky => palette.info,
-            AccentColor::Mauve => match self {
-                ThemeId::ForgeDefault | ThemeId::TokyoNight => palette.theme_brand,
-                ThemeId::Latte => LATTE_MAUVE,
-            },
+            AccentColor::Mauve => palette.accent_mauve,
             AccentColor::Flamingo => match self {
                 ThemeId::ForgeDefault => palette.accent_pink_light,
                 ThemeId::TokyoNight => TOKYO_NIGHT_FLAMINGO,
@@ -199,6 +196,7 @@ pub const FORGE_DEFAULT: ForgePalette = ForgePalette {
 
     brand: hex(0xc9, 0xa6, 0xf0),
     theme_brand: hex(0xc9, 0xa6, 0xf0),
+    accent_mauve: hex(0xc9, 0xa6, 0xf0),
     success: hex(0x50, 0xfa, 0x7b),
     warning: hex(0xe0, 0xb8, 0x60),
     info: hex(0x8b, 0xe9, 0xfd),
@@ -246,6 +244,7 @@ pub const TOKYO_NIGHT: ForgePalette = ForgePalette {
 
     brand: hex(0xbb, 0x9a, 0xf7),
     theme_brand: hex(0xbb, 0x9a, 0xf7),
+    accent_mauve: hex(0xbb, 0x9a, 0xf7),
     success: hex(0x9e, 0xce, 0x6a),
     warning: hex(0xe0, 0xaf, 0x68),
     info: hex(0x2a, 0xc3, 0xde),
@@ -293,6 +292,7 @@ pub const LATTE: ForgePalette = ForgePalette {
 
     brand: hex(0x1e, 0x66, 0xf5),
     theme_brand: hex(0x1e, 0x66, 0xf5),
+    accent_mauve: hex(0x88, 0x39, 0xef),
     success: hex(0x40, 0xa0, 0x2b),
     warning: hex(0xdf, 0x8e, 0x1d),
     info: hex(0x04, 0xa5, 0xe5),

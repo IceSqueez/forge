@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use forge_platform_core::{CollectionRevisionSignal, CollectionRevisions};
 use tokio::sync::watch;
 
 use crate::client::VTubeClient;
@@ -27,25 +28,40 @@ impl VTubeCatalogChanges {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct CatalogSignal(Arc<watch::Sender<u64>>);
+pub(crate) struct CatalogSignal {
+    lists: Arc<watch::Sender<u64>>,
+    options: Arc<CollectionRevisionSignal>,
+}
 
 impl Default for CatalogSignal {
     fn default() -> Self {
-        Self(Arc::new(watch::channel(0).0))
+        Self {
+            lists: Arc::new(watch::channel(0).0),
+            options: Arc::new(CollectionRevisionSignal::new()),
+        }
     }
 }
 
 impl CatalogSignal {
     pub(crate) fn bump(&self) {
-        self.0.send_modify(|revision| *revision += 1);
+        self.lists.send_modify(|revision| *revision += 1);
+        self.options.bump();
+    }
+
+    pub(crate) fn bump_options(&self) {
+        self.options.bump();
     }
 
     fn subscribe(&self) -> watch::Receiver<u64> {
-        self.0.subscribe()
+        self.lists.subscribe()
+    }
+
+    pub(crate) fn option_revisions(&self) -> CollectionRevisions {
+        self.options.subscribe()
     }
 }
 
-fn choice(value: &str, label: &str) -> Option<VTubeChoice> {
+pub(crate) fn choice(value: &str, label: &str) -> Option<VTubeChoice> {
     (!value.is_empty()).then(|| VTubeChoice {
         value: value.to_owned(),
         label: if label.is_empty() { value } else { label }.to_owned(),
@@ -83,12 +99,14 @@ impl VTubeClient {
     }
 
     pub fn catalog_changes(&self) -> VTubeCatalogChanges {
-        let receiver = self
-            .content_state
+        VTubeCatalogChanges(self.catalog_signal().subscribe())
+    }
+
+    pub(crate) fn catalog_signal(&self) -> CatalogSignal {
+        self.content_state
             .read()
-            .map(|snapshot| snapshot.signal.subscribe())
-            .unwrap_or_else(|poisoned| poisoned.into_inner().signal.subscribe());
-        VTubeCatalogChanges(receiver)
+            .map(|snapshot| snapshot.signal.clone())
+            .unwrap_or_else(|poisoned| poisoned.into_inner().signal.clone())
     }
 }
 

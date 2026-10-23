@@ -94,7 +94,11 @@ impl VTubeClient {
         let (health_tx, health_state) = make_health_channel();
         let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
         let req_tx_slot: ReqTxSlot = Arc::new(tokio::sync::Mutex::new(req_tx.clone()));
-        let content_state = Arc::new(RwLock::new(crate::content::ContentSnapshot::default()));
+        let catalog_signal = crate::catalog::CatalogSignal::default();
+        let content_state = Arc::new(RwLock::new(crate::content::ContentSnapshot {
+            signal: catalog_signal.clone(),
+            ..crate::content::ContentSnapshot::default()
+        }));
         let (content_notifier, content_changed_rx) = crate::content::ContentNotifier::new();
         let (connected_tx, connected_rx) = mpsc::unbounded_channel::<()>();
         let auto_reconnect = Arc::new(watch::Sender::new(true));
@@ -129,6 +133,7 @@ impl VTubeClient {
             health_state: Arc::clone(&health_state),
             health_tx: health_tx.clone(),
             content_notifier: content_notifier.clone(),
+            catalog_signal,
             connected_notifier: connected_tx.clone(),
             auto_reconnect: auto_reconnect.subscribe(),
             last_failure: Arc::clone(&last_failure),

@@ -56,6 +56,7 @@ impl BuiltinControl for VTubeClient {
             health_state: Arc::clone(&self.health_state),
             health_tx: self.health_tx.clone(),
             content_notifier: self.content_notifier.clone(),
+            catalog_signal: self.catalog_signal(),
             connected_notifier: self.connected_notifier.clone(),
             auto_reconnect: self.auto_reconnect.subscribe(),
             last_failure: Arc::clone(&self.last_failure),

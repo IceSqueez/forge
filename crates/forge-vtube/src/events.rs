@@ -39,6 +39,17 @@ pub(crate) async fn subscribe_all(ws: &mut VtsWs) -> Result<(), VTubeError> {
     Ok(())
 }
 
+const ITEM_EVENT_ADDED: &str = "Added";
+const ITEM_EVENT_REMOVED: &str = "Removed";
+
+pub(crate) fn changes_scene_items(env: &RawEnvelope) -> bool {
+    env.message_type == "ItemEvent"
+        && matches!(
+            env.data["itemEventType"].as_str(),
+            Some(ITEM_EVENT_ADDED | ITEM_EVENT_REMOVED)
+        )
+}
+
 pub(crate) fn dispatch_vts_event(env: &RawEnvelope, publisher: &dyn EventPublisher) {
     match env.message_type.as_str() {
         "ModelLoadedEvent" => {
@@ -98,8 +109,8 @@ pub(crate) fn dispatch_vts_event(env: &RawEnvelope, publisher: &dyn EventPublish
         "ItemEvent" => {
             let item_event_type = env.data["itemEventType"].as_str().unwrap_or("");
             let kind = match item_event_type {
-                "Added" => Some("vtube.item.added"),
-                "Removed" => Some("vtube.item.removed"),
+                ITEM_EVENT_ADDED => Some("vtube.item.added"),
+                ITEM_EVENT_REMOVED => Some("vtube.item.removed"),
                 _ => None,
             };
             if let Some(kind) = kind {

@@ -195,7 +195,7 @@ pub fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> BuiltinObj
         quick: client.clone(),
         control: Some(Arc::clone(&client) as Arc<dyn BuiltinControl>),
         collections: None,
-        option_source: None,
+        option_source: Some(Arc::clone(&client) as Arc<dyn BuiltinOptionSource>),
         obs_client: None,
         vtube_client: Some(client),
         follow: None,

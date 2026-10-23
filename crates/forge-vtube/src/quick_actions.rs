@@ -1,12 +1,21 @@
 use std::collections::BTreeMap;
 
 use forge_platform_core::{
-    PickerKind, QuickAction, QuickActionAccent, QuickActionField, QuickActionFieldKind,
-    QuickActionFieldValue, QuickActionLiveness, QuickActions, SectionIcon,
+    OptionListId, QuickAction, QuickActionAccent, QuickActionChoiceSource, QuickActionField,
+    QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness, QuickActions, SectionIcon,
 };
 use forge_types::{SubActionStep, Variant};
 
 use crate::client::VTubeClient;
+use crate::option_source::{
+    EXPRESSION_LIST, HOTKEY_LIST, ITEM_FILE_LIST, ITEM_INSTANCE_LIST, MODEL_LIST,
+};
+
+const EXPRESSION_FIELD: &str = "expression_file";
+const HOTKEY_FIELD: &str = "hotkey_id";
+const ITEM_FILE_FIELD: &str = "file_name";
+const ITEM_INSTANCE_FIELD: &str = "item_instance_id";
+const MODEL_FIELD: &str = "model_id";
 
 fn blank() -> Variant {
     Variant::String(String::new())
@@ -41,6 +50,20 @@ fn toggle_field(key: &str, label: &str, default: bool) -> QuickActionField {
     }
 }
 
+fn choice_field(key: &str, label: &str, list: &str) -> QuickActionField {
+    QuickActionField {
+        key: key.to_owned(),
+        label: label.to_owned(),
+        kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(OptionListId::new(
+            list,
+        ))),
+        default: None,
+        placeholder: None,
+        hint: None,
+        required: true,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn quick_action(
     label: &str,
@@ -51,7 +74,6 @@ fn quick_action(
     destructive: bool,
     kind_id: &str,
     config: BTreeMap<String, Variant>,
-    picker: Option<PickerKind>,
     fields: Vec<QuickActionField>,
 ) -> QuickAction {
     let (group_icon, group_accent) = group_badge(group);
@@ -74,7 +96,7 @@ fn quick_action(
             condition: None,
             label: None,
         },
-        picker,
+        picker: None,
         fields,
         collection: None,
     }
@@ -93,12 +115,12 @@ impl QuickActions for VTubeClient {
                 "Expressions",
                 false,
                 "vtube.expression.set",
-                config([
-                    ("expression_file", blank()),
-                    ("active", Variant::Bool(true)),
-                ]),
-                Some(PickerKind::Expression),
-                Vec::new(),
+                config([(EXPRESSION_FIELD, blank()), ("active", Variant::Bool(true))]),
+                vec![choice_field(
+                    EXPRESSION_FIELD,
+                    "Expression",
+                    EXPRESSION_LIST,
+                )],
             ),
             quick_action(
                 "Toggle expression",
@@ -109,11 +131,14 @@ impl QuickActions for VTubeClient {
                 false,
                 "vtube.expression.set",
                 config([
-                    ("expression_file", blank()),
+                    (EXPRESSION_FIELD, blank()),
                     ("active", Variant::Bool(false)),
                 ]),
-                Some(PickerKind::Expression),
-                Vec::new(),
+                vec![choice_field(
+                    EXPRESSION_FIELD,
+                    "Expression",
+                    EXPRESSION_LIST,
+                )],
             ),
             quick_action(
                 "Reset to idle",
@@ -124,7 +149,6 @@ impl QuickActions for VTubeClient {
                 false,
                 "vtube.params.reset",
                 BTreeMap::new(),
-                None,
                 Vec::new(),
             ),
             quick_action(
@@ -135,9 +159,8 @@ impl QuickActions for VTubeClient {
                 "Hotkeys & animation",
                 false,
                 "vtube.hotkey.trigger",
-                config([("hotkey_id", blank())]),
-                Some(PickerKind::Hotkey),
-                Vec::new(),
+                config([(HOTKEY_FIELD, blank())]),
+                vec![choice_field(HOTKEY_FIELD, "Hotkey", HOTKEY_LIST)],
             ),
             quick_action(
                 "Play animation",
@@ -147,9 +170,8 @@ impl QuickActions for VTubeClient {
                 "Hotkeys & animation",
                 false,
                 "vtube.hotkey.trigger",
-                config([("hotkey_id", blank())]),
-                Some(PickerKind::Hotkey),
-                Vec::new(),
+                config([(HOTKEY_FIELD, blank())]),
+                vec![choice_field(HOTKEY_FIELD, "Hotkey", HOTKEY_LIST)],
             ),
             quick_action(
                 "Throw item",
@@ -159,9 +181,8 @@ impl QuickActions for VTubeClient {
                 "Items",
                 false,
                 "vtube.item.throw",
-                config([("file_name", blank())]),
-                Some(PickerKind::Item),
-                Vec::new(),
+                config([(ITEM_FILE_FIELD, blank())]),
+                vec![choice_field(ITEM_FILE_FIELD, "Item file", ITEM_FILE_LIST)],
             ),
             quick_action(
                 "Pin item to model",
@@ -171,9 +192,12 @@ impl QuickActions for VTubeClient {
                 "Items",
                 false,
                 "vtube.item.pin",
-                config([("item_instance_id", blank()), ("pin", Variant::Bool(true))]),
-                Some(PickerKind::ItemInstance),
-                Vec::new(),
+                config([(ITEM_INSTANCE_FIELD, blank()), ("pin", Variant::Bool(true))]),
+                vec![choice_field(
+                    ITEM_INSTANCE_FIELD,
+                    "Item",
+                    ITEM_INSTANCE_LIST,
+                )],
             ),
             quick_action(
                 "Load item",
@@ -184,11 +208,10 @@ impl QuickActions for VTubeClient {
                 false,
                 "vtube.item.load",
                 config([
-                    ("file_name", blank()),
+                    (ITEM_FILE_FIELD, blank()),
                     ("unload_on_disconnect", Variant::Bool(true)),
                 ]),
-                Some(PickerKind::Item),
-                Vec::new(),
+                vec![choice_field(ITEM_FILE_FIELD, "Item file", ITEM_FILE_LIST)],
             ),
             quick_action(
                 "Remove all items",
@@ -199,7 +222,6 @@ impl QuickActions for VTubeClient {
                 true,
                 "vtube.item.unload_all",
                 BTreeMap::new(),
-                None,
                 Vec::new(),
             ),
             quick_action(
@@ -210,9 +232,8 @@ impl QuickActions for VTubeClient {
                 "Model & scene",
                 false,
                 "vtube.model.load",
-                config([("model_id", blank())]),
-                Some(PickerKind::Model),
-                Vec::new(),
+                config([(MODEL_FIELD, blank())]),
+                vec![choice_field(MODEL_FIELD, "Model", MODEL_LIST)],
             ),
             quick_action(
                 "Move / scale model",
@@ -229,7 +250,6 @@ impl QuickActions for VTubeClient {
                     ("size", Variant::Float(0.0)),
                     ("duration", Variant::Float(0.3)),
                 ]),
-                None,
                 Vec::new(),
             ),
             quick_action(
@@ -246,7 +266,6 @@ impl QuickActions for VTubeClient {
                     ("color_b", Variant::Int(247)),
                     ("color_a", Variant::Int(255)),
                 ]),
-                None,
                 Vec::new(),
             ),
             quick_action(
@@ -258,7 +277,6 @@ impl QuickActions for VTubeClient {
                 false,
                 "vtube.model.set_physics",
                 config([("enabled", Variant::Bool(true))]),
-                None,
                 vec![toggle_field("enabled", "Enabled", true)],
             ),
         ]
@@ -269,11 +287,15 @@ impl QuickActions for VTubeClient {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::collections::BTreeSet;
+    use std::sync::Arc;
 
-    use forge_platform_core::{PickerKind, QuickAction, QuickActions};
-    use forge_types::Variant;
+    use forge_platform_core::BuiltinOptionSource;
+    use forge_registry::SubActionRegistry;
 
-    use crate::client::VTubeClient;
+    use super::*;
+    use crate::runners::register_vtube_sub_actions;
+    use crate::runners::test_support::MockSink;
+    use crate::sink::VTubeSink;
 
     fn roster() -> Vec<QuickAction> {
         VTubeClient::new_for_test("ws://127.0.0.1:8001/").actions()
@@ -305,19 +327,131 @@ mod tests {
         );
     }
 
+    fn option_list_fields(action: &QuickAction) -> Vec<(String, String, bool)> {
+        action
+            .fields
+            .iter()
+            .filter_map(|f| match &f.kind {
+                QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(list)) => {
+                    Some((f.key.clone(), list.as_str().to_owned(), f.required))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     #[test]
-    fn item_rows_pick_files_for_spawning_and_instances_for_pinning() {
-        for label in ["Throw item", "Load item"] {
-            assert_eq!(
-                row(label).picker,
-                Some(PickerKind::Item),
-                "'{label}' spawns from an item file"
+    fn picker_rows_read_the_option_list_that_matches_the_runner_key() {
+        let expected = [
+            ("Set expression", "expression_file", EXPRESSION_LIST),
+            ("Toggle expression", "expression_file", EXPRESSION_LIST),
+            ("Trigger hotkey", "hotkey_id", HOTKEY_LIST),
+            ("Play animation", "hotkey_id", HOTKEY_LIST),
+            ("Throw item", "file_name", ITEM_FILE_LIST),
+            ("Pin item to model", "item_instance_id", ITEM_INSTANCE_LIST),
+            ("Load item", "file_name", ITEM_FILE_LIST),
+            ("Load model", "model_id", MODEL_LIST),
+        ];
+        let actual: BTreeMap<String, Vec<(String, String, bool)>> = roster()
+            .iter()
+            .map(|a| (a.label.clone(), option_list_fields(a)))
+            .filter(|(_, fields)| !fields.is_empty())
+            .collect();
+        let expected: BTreeMap<String, Vec<(String, String, bool)>> = expected
+            .into_iter()
+            .map(|(label, key, list)| {
+                (
+                    label.to_owned(),
+                    vec![(key.to_owned(), list.to_owned(), true)],
+                )
+            })
+            .collect();
+        assert_eq!(actual, expected);
+    }
+
+    fn registry() -> SubActionRegistry {
+        let mut reg = SubActionRegistry::new();
+        register_vtube_sub_actions(&mut reg, Arc::new(MockSink::new()) as Arc<dyn VTubeSink>)
+            .unwrap();
+        reg
+    }
+
+    #[test]
+    fn every_quick_action_config_and_field_key_is_one_its_runner_reads() {
+        let reg = registry();
+        for action in &roster() {
+            let kind_id = &action.subaction_template.kind_id;
+            let runner = reg
+                .get(kind_id)
+                .unwrap_or_else(|| panic!("{} targets unregistered {kind_id}", action.label));
+            let known: BTreeSet<String> = runner
+                .default_config()
+                .into_keys()
+                .chain(runner.config_fields().iter().map(|f| f.key().to_owned()))
+                .collect();
+            let keys = action
+                .subaction_template
+                .config
+                .keys()
+                .chain(action.fields.iter().map(|f| &f.key));
+            for key in keys {
+                assert!(
+                    known.contains(key),
+                    "{}: key {key:?} is not read by {kind_id}",
+                    action.label,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_blank_config_slot_has_a_field_that_fills_it() {
+        for action in &roster() {
+            for (key, value) in &action.subaction_template.config {
+                if !matches!(value, Variant::String(s) if s.is_empty()) {
+                    continue;
+                }
+                assert!(
+                    action.fields.iter().any(|f| &f.key == key),
+                    "{}: blank {key:?} has no field to fill it",
+                    action.label,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_option_list_a_field_reads_is_declared_by_the_option_source() {
+        let client = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+        let declared: BTreeSet<String> = client
+            .option_lists()
+            .into_iter()
+            .map(|m| m.id.as_str().to_owned())
+            .collect();
+        for action in &client.actions() {
+            for (key, list, _) in option_list_fields(action) {
+                assert!(
+                    declared.contains(&list),
+                    "{}: field {key:?} reads undeclared list {list:?}",
+                    action.label,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn no_action_still_declares_a_legacy_picker() {
+        for action in &roster() {
+            assert!(action.picker.is_none(), "{}: picker", action.label);
+            assert!(
+                !action.fields.iter().any(|f| matches!(
+                    f.kind,
+                    QuickActionFieldKind::Choice(QuickActionChoiceSource::Dynamic(_))
+                )),
+                "{}: dynamic choice field",
+                action.label,
             );
         }
-        assert_eq!(
-            row("Pin item to model").picker,
-            Some(PickerKind::ItemInstance)
-        );
     }
 
     #[test]

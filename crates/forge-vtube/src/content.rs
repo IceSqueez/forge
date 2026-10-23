@@ -249,8 +249,12 @@ async fn refresh_models_and_hotkeys(
             .flatten()
             .map(|n| n as u32);
         if let Ok(mut s) = snap.write() {
+            let changed = s.current_model_id != current_id;
             s.current_model_id = current_id;
             s.current_model_param_count = param_count;
+            if changed {
+                s.signal.bump_options();
+            }
         }
     }
 
@@ -330,7 +334,11 @@ async fn refresh_items(
     };
     let item_count = data["itemsInSceneCount"].as_u64().map(|n| n as u32);
     if let Ok(mut s) = snap.write() {
+        let changed = s.item_count != item_count;
         s.item_count = item_count;
+        if changed {
+            s.signal.bump_options();
+        }
     }
 }
 

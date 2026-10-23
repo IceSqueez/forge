@@ -341,6 +341,7 @@ pub(crate) struct SupervisorContext {
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
     pub(crate) health_tx: broadcast::Sender<HealthDelta>,
     pub(crate) content_notifier: crate::content::ContentNotifier,
+    pub(crate) catalog_signal: crate::catalog::CatalogSignal,
     pub(crate) connected_notifier: mpsc::UnboundedSender<()>,
     pub(crate) auto_reconnect: watch::Receiver<bool>,
     pub(crate) last_failure: Arc<RwLock<Option<String>>>,
@@ -414,6 +415,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         health_state,
         health_tx,
         content_notifier,
+        catalog_signal,
         connected_notifier,
         mut auto_reconnect,
         last_failure,
@@ -653,6 +655,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         );
         emit_connection_changed(&*publisher, &endpoint, true, None, None);
         let _ = connected_notifier.send(());
+        catalog_signal.bump_options();
         tracing::info!(endpoint = %endpoint, "connected and authenticated to VTube Studio");
 
         let mut pending: HashMap<String, InFlight> = HashMap::new();
@@ -680,6 +683,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
             tokio::select! {
                 () = shutdown.notified() => {
                     clear_session_state(&health_state, &health_tx);
+                    catalog_signal.bump_options();
                     announce_stopped(&state, &health_state, &*publisher, &auth_state, &endpoint);
                     return;
                 }
@@ -734,6 +738,9 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                                 if env.message_type == "ModelLoadedEvent" {
                                     content_notifier.notify_model_changed();
                                     expr_baseline = None;
+                                }
+                                if crate::events::changes_scene_items(&env) {
+                                    catalog_signal.bump_options();
                                 }
                                 if !is_repeated_face_state(&env, &mut last_face_found) {
                                     crate::events::dispatch_vts_event(&env, &*publisher);
@@ -798,6 +805,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         }
         pending.clear();
         clear_session_state(&health_state, &health_tx);
+        catalog_signal.bump_options();
 
         if let Ok(mut g) = connected_at.write() {
             *g = None;

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use forge_components::{
     FONT_XS, ForgePalette, Icon, InputEvent, OverlayPosition, Picker, PickerEvent, PickerItem,
@@ -19,7 +20,7 @@ use gpui::{
 };
 use tokio::runtime::Handle;
 
-use crate::async_bridge;
+use crate::async_bridge::{self, Generation};
 use crate::integration_quick_actions::accent_color;
 use crate::option_list_text::{option_failure_message, option_hint_text};
 use forge_components::ActivePresentation;
@@ -27,6 +28,8 @@ use forge_components::{
     FIELD_FONT, choice_trigger, failure_with_retry, field_column, field_frame, int_entry_invalid,
     int_range_hint, parse_int_in_range, toggle_row,
 };
+
+const TEXT_DEPENDENCY_DEBOUNCE: Duration = Duration::from_millis(400);
 
 pub enum QuickActionModalEvent {
     Run { step: SubActionStep, label: String },
@@ -98,6 +101,8 @@ pub struct QuickActionModal {
     option_source: Option<Arc<dyn BuiltinOptionSource>>,
     rt_handle: Handle,
     open_choice: Option<OpenChoice>,
+    text_resolve: Generation,
+    pending_text_changes: Vec<usize>,
     _subs: Vec<Subscription>,
     _revision_watch: Option<Task<()>>,
 }
@@ -294,6 +299,8 @@ impl QuickActionModal {
             option_source,
             rt_handle,
             open_choice: None,
+            text_resolve: Generation::default(),
+            pending_text_changes: Vec::new(),
             _subs: subs,
             _revision_watch: revision_watch,
         };
@@ -325,6 +332,27 @@ impl QuickActionModal {
         for index in dependents {
             self.resolve_option_list(index, ResolveMode::Load, cx);
         }
+    }
+
+    fn resolve_dependents_debounced(&mut self, changed: usize, cx: &mut Context<Self>) {
+        if !self.pending_text_changes.contains(&changed) {
+            self.pending_text_changes.push(changed);
+        }
+        let ticket = self.text_resolve.next();
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(TEXT_DEPENDENCY_DEBOUNCE)
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if !this.text_resolve.is_current(ticket) {
+                    return;
+                }
+                for index in std::mem::take(&mut this.pending_text_changes) {
+                    this.resolve_dependents(index, cx);
+                }
+            });
+        })
+        .detach();
     }
 
     fn dependency_values(
@@ -462,7 +490,7 @@ impl QuickActionModal {
             InputEvent::Changed(text) => {
                 self.revalidate(index, text, cx);
                 cx.notify();
-                self.resolve_dependents(index, cx);
+                self.resolve_dependents_debounced(index, cx);
             }
             InputEvent::Submitted(_) | InputEvent::Blurred(_) => {}
         }
@@ -644,10 +672,22 @@ impl QuickActionModal {
         cx.notify();
     }
 
+    fn awaits_debounced_resolve(&self, choice: &ChoiceControl) -> bool {
+        choice.option_list.as_ref().is_some_and(|binding| {
+            self.pending_text_changes.iter().any(|&changed| {
+                self.fields
+                    .get(changed)
+                    .is_some_and(|field| binding.depends_on.contains(&field.key))
+            })
+        })
+    }
+
     fn can_run(&self, cx: &Context<Self>) -> bool {
         self.fields.iter().all(|field| match &field.control {
             FieldControl::Choice(choice) => {
-                matches!(choice.state, ChoiceState::Ready(_)) && choice.selected.is_some()
+                matches!(choice.state, ChoiceState::Ready(_))
+                    && choice.selected.is_some()
+                    && !self.awaits_debounced_resolve(choice)
             }
             FieldControl::Text(input) => {
                 !field.required || !input.read(cx).content().trim().is_empty()

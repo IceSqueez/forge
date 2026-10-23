@@ -1,7 +1,7 @@
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{ConfigReason, RegistryError, RunContext, SubActionConfigExt};
 
-use super::identity::resolve_user_id;
+use super::identity::{login_handle, resolve_user_id};
 use crate::helix::{HelixError, HelixTransport};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,6 +12,8 @@ pub(crate) enum UserTarget<'a> {
 
 impl<'a> UserTarget<'a> {
     pub(crate) fn pick(id: &'a str, login: &'a str) -> Option<Self> {
+        let id = id.trim();
+        let login = login_handle(login);
         if !id.is_empty() {
             Some(Self::Id(id))
         } else if !login.is_empty() {

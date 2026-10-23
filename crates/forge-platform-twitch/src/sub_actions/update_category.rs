@@ -12,9 +12,11 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use super::identity::SelfIdentity;
-use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
 
 const KIND_ID: &str = "twitch.channel.update_category";
+const CATEGORY_ID_KEY: &str = "category_id";
+const CATEGORY_NAME_KEY: &str = "category_name";
 
 pub struct UpdateCategoryRunner {
     transport: Arc<dyn HelixTransport>,
@@ -29,13 +31,40 @@ impl UpdateCategoryRunner {
         }
     }
 
-    async fn apply(&self, category_id: &str) -> SubActionOutcome {
-        if category_id.is_empty() {
-            return SubActionOutcome::Failed("category_id is empty after interpolation".to_owned());
+    async fn resolve_category_id(&self, category_name: &str) -> Result<String, HelixError> {
+        let request =
+            HelixRequest::new(HelixMethod::Get, "/helix/games").query("name", category_name);
+        let resp = self.transport.execute(request).await?;
+        resp["data"]
+            .as_array()
+            .and_then(|arr| arr.first())
+            .and_then(|game| game["id"].as_str())
+            .map(str::to_owned)
+            .ok_or_else(|| HelixError::Http {
+                status: reqwest::StatusCode::NOT_FOUND.as_u16(),
+                body: format!("category not found: {category_name}"),
+            })
+    }
+
+    async fn apply(&self, category_id: &str, category_name: &str) -> SubActionOutcome {
+        let category_id = category_id.trim();
+        let category_name = category_name.trim();
+        if category_id.is_empty() && category_name.is_empty() {
+            return SubActionOutcome::Failed(
+                "category_id and category_name are empty after interpolation".to_owned(),
+            );
         }
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
+        };
+        let category_id = if category_id.is_empty() {
+            match self.resolve_category_id(category_name).await {
+                Ok(id) => id,
+                Err(e) => return SubActionOutcome::Failed(e.to_string()),
+            }
+        } else {
+            category_id.to_owned()
         };
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/channels")
             .query("broadcaster_id", user_id)
@@ -59,7 +88,7 @@ impl SubActionRunner for UpdateCategoryRunner {
     }
 
     fn summary(&self) -> &str {
-        "Changes the broadcaster's game/category by its Helix game_id."
+        "Changes the broadcaster's game/category by its Helix game_id or exact category name."
     }
 
     fn search_text(&self) -> &str {
@@ -72,37 +101,36 @@ impl SubActionRunner for UpdateCategoryRunner {
 
     fn default_config(&self) -> SubActionConfig {
         BTreeMap::from([
-            ("category_id".to_owned(), Variant::String(String::new())),
-            ("category_name".to_owned(), Variant::String(String::new())),
+            (CATEGORY_ID_KEY.to_owned(), Variant::String(String::new())),
+            (CATEGORY_NAME_KEY.to_owned(), Variant::String(String::new())),
         ])
     }
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
             FormField::Text {
-                key: "category_id",
+                key: CATEGORY_ID_KEY,
                 label: "Category ID",
                 placeholder: "e.g. 509658",
             },
             FormField::Text {
-                key: "category_name",
-                label: "Category Name (display only)",
+                key: CATEGORY_NAME_KEY,
+                label: "Category Name",
                 placeholder: "e.g. Just Chatting",
             },
         ]
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("category_id") {
-            Some(Variant::String(s)) if !s.is_empty() => {}
-            _ => {
-                return Err(RegistryError::invalid_field(
-                    "category_id",
-                    ConfigReason::Required,
-                ));
-            }
+        if config.str_nonempty(CATEGORY_ID_KEY).is_some()
+            || config.str_nonempty(CATEGORY_NAME_KEY).is_some()
+        {
+            return Ok(());
         }
-        Ok(())
+        Err(RegistryError::invalid_field(
+            CATEGORY_ID_KEY,
+            ConfigReason::Required,
+        ))
     }
 
     async fn execute(
@@ -113,10 +141,16 @@ impl SubActionRunner for UpdateCategoryRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let template = config.str("category_id").unwrap_or_default();
-        let category_id = ctx.arg_stack.interpolate(template);
+        let interpolate = |key: &str| {
+            config
+                .str(key)
+                .map(|template| ctx.arg_stack.interpolate(template))
+                .unwrap_or_default()
+        };
+        let category_id = interpolate(CATEGORY_ID_KEY);
+        let category_name = interpolate(CATEGORY_NAME_KEY);
 
-        let outcome = self.apply(&category_id).await;
+        let outcome = self.apply(&category_id, &category_name).await;
 
         (
             SubActionTelemetry {

@@ -26,11 +26,22 @@ impl SelfIdentity {
     }
 }
 
+pub(crate) fn login_handle(raw: &str) -> &str {
+    let trimmed = raw.trim();
+    trimmed.strip_prefix('@').unwrap_or(trimmed).trim_start()
+}
+
+pub(crate) fn normalize_login(raw: &str) -> String {
+    login_handle(raw).to_lowercase()
+}
+
 pub async fn resolve_user_id(
     transport: &dyn HelixTransport,
     login: &str,
 ) -> Result<String, HelixError> {
-    let request = HelixRequest::new(HelixMethod::Get, "/helix/users").query("login", login);
+    let login = normalize_login(login);
+    let request =
+        HelixRequest::new(HelixMethod::Get, "/helix/users").query("login", login.as_str());
     let resp = transport.execute(request).await?;
     resp["data"]
         .as_array()

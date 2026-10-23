@@ -2134,4 +2134,165 @@ mod tests {
             );
         }
     }
+
+    fn obs_events_that_change_a_picker_list() -> Vec<obws::events::Event> {
+        use obws::events::Event;
+        let input = || obws::responses::inputs::InputId {
+            name: "Mic".to_owned(),
+            ..Default::default()
+        };
+        vec![
+            Event::SceneCreated {
+                id: scene_id("Intro"),
+                is_group: false,
+            },
+            Event::SceneRemoved {
+                id: scene_id("Intro"),
+                is_group: false,
+            },
+            Event::SceneNameChanged {
+                uuid: Default::default(),
+                old_name: "Intro".to_owned(),
+                new_name: "Opening".to_owned(),
+            },
+            Event::SceneListChanged { scenes: Vec::new() },
+            Event::CurrentProgramSceneChanged {
+                id: scene_id("Gameplay"),
+            },
+            Event::InputCreated {
+                id: input(),
+                kind: "pulse_input_capture".to_owned(),
+                unversioned_kind: "pulse_input_capture".to_owned(),
+                caps: Default::default(),
+                settings: serde_json::Value::Null,
+                default_settings: serde_json::Value::Null,
+            },
+            Event::InputRemoved { id: input() },
+            Event::InputNameChanged {
+                uuid: Default::default(),
+                old_name: "Mic".to_owned(),
+                new_name: "Studio Mic".to_owned(),
+            },
+            Event::SceneItemCreated {
+                scene: scene_id("Gameplay"),
+                source: source_id("Mic"),
+                item_id: 1,
+                index: 0,
+            },
+            Event::SceneItemRemoved {
+                scene: scene_id("Gameplay"),
+                source: source_id("Mic"),
+                item_id: 1,
+            },
+            enable_state_changed("Gameplay", 1, false),
+            Event::CurrentSceneTransitionChanged {
+                id: obws::responses::transitions::TransitionId {
+                    name: "Fade".to_owned(),
+                    ..Default::default()
+                },
+            },
+            Event::CurrentProfileChanged {
+                name: "Collab".to_owned(),
+            },
+            Event::ProfileListChanged {
+                profiles: vec!["Default".to_owned()],
+            },
+            Event::CurrentSceneCollectionChanged {
+                name: "Collab".to_owned(),
+            },
+            Event::SceneCollectionListChanged {
+                collections: vec!["Default".to_owned()],
+            },
+        ]
+    }
+
+    #[test]
+    fn every_event_that_changes_a_picker_list_bumps_the_option_revision() {
+        let events = obs_events_that_change_a_picker_list();
+        assert_eq!(events.len(), 16, "the table lost an event");
+        for event in &events {
+            assert!(changes_option_lists(event), "{event:?}");
+        }
+    }
+
+    #[test]
+    fn events_no_picker_list_shows_leave_the_option_revision_alone() {
+        use obws::events::Event;
+        let input = || obws::responses::inputs::InputId {
+            name: "Mic".to_owned(),
+            ..Default::default()
+        };
+        for event in [
+            Event::CurrentPreviewSceneChanged {
+                id: scene_id("BRB"),
+            },
+            Event::SceneItemLockStateChanged {
+                scene: scene_id("Gameplay"),
+                item_id: 1,
+                locked: true,
+            },
+            Event::InputMuteStateChanged {
+                id: input(),
+                muted: true,
+            },
+            Event::InputVolumeChanged {
+                id: input(),
+                mul: 0.5,
+                db: -6.0,
+            },
+            Event::StudioModeStateChanged { enabled: true },
+            Event::CurrentSceneCollectionChanging {
+                name: "Collab".to_owned(),
+            },
+        ] {
+            assert!(!changes_option_lists(&event), "{event:?}");
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::unwrap_used)]
+    async fn a_connected_client_lists_sources_of_the_scene_the_form_picked() {
+        use forge_platform_core::{BuiltinOptionSource, OptionListId, QuickActionFieldValue};
+
+        let client = ObsClient::new_for_test("localhost:4455".to_owned());
+        {
+            let mut catalog = client.catalog_state.write().unwrap();
+            catalog.scenes = vec!["Gameplay".to_owned(), "BRB".to_owned()];
+            catalog.current_scene = Some("Gameplay".to_owned());
+            for (scene, name) in [("Gameplay", "Webcam"), ("BRB", "Logo")] {
+                catalog.sources.insert(
+                    scene.to_owned(),
+                    vec![SourceInfo {
+                        name: name.to_owned(),
+                        visible: true,
+                        locked: false,
+                        audio_db: None,
+                        kind: None,
+                    }],
+                );
+            }
+        }
+        client.state.store(ConnectionState::Connected);
+        let sources = OptionListId::new(crate::option_source::SOURCE_LIST);
+        let scene = |value: &str| {
+            std::collections::BTreeMap::from([(
+                crate::option_source::SCENE_FIELD.to_owned(),
+                QuickActionFieldValue::Text(value.to_owned()),
+            )])
+        };
+        for (values, expected) in [
+            (std::collections::BTreeMap::new(), "Webcam"),
+            (scene(""), "Webcam"),
+            (scene("BRB"), "Logo"),
+        ] {
+            let listed: Vec<String> = client
+                .resolve(&sources, &values)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|e| e.value)
+                .collect();
+            assert_eq!(listed, vec![expected.to_owned()], "{values:?}");
+        }
+    }
 }

@@ -584,4 +584,100 @@ mod tests {
             );
         }
     }
+
+    fn topology() -> ObsCatalog {
+        let item = |name: &str, visible: bool, kind: &str| SourceInfo {
+            name: name.to_owned(),
+            visible,
+            locked: false,
+            audio_db: Some(-20.0),
+            kind: Some(kind.to_owned()),
+        };
+        ObsCatalog {
+            scenes: vec!["Gameplay".to_owned(), "BRB".to_owned()],
+            current_scene: Some("Gameplay".to_owned()),
+            current_preview_scene: Some("BRB".to_owned()),
+            sources: HashMap::from([
+                (
+                    "Gameplay".to_owned(),
+                    vec![
+                        item("Webcam", true, "v4l2_input"),
+                        item("Mic", true, "pulse_input_capture"),
+                    ],
+                ),
+                ("BRB".to_owned(), vec![item("Logo", false, "image_source")]),
+            ]),
+            audio_inputs: vec!["Mic".to_owned(), "Desktop Audio".to_owned()],
+        }
+    }
+
+    type CatalogEdit = fn(&mut ObsCatalog);
+
+    fn gameplay_item(catalog: &mut ObsCatalog, index: usize) -> &mut SourceInfo {
+        &mut catalog.sources.get_mut("Gameplay").unwrap()[index]
+    }
+
+    #[test]
+    fn option_fingerprint_changes_whenever_a_picker_list_would_change() {
+        let changes: [(&str, CatalogEdit); 9] = [
+            ("scene renamed", |c| {
+                c.scenes[1] = "Be Right Back".to_owned()
+            }),
+            ("scenes reordered", |c| c.scenes.reverse()),
+            ("program scene switched", |c| {
+                c.current_scene = Some("BRB".to_owned())
+            }),
+            ("audio input added", |c| {
+                c.audio_inputs.push("Music".to_owned())
+            }),
+            ("item hidden", |c| gameplay_item(c, 0).visible = false),
+            ("item renamed", |c| {
+                gameplay_item(c, 0).name = "Cam".to_owned()
+            }),
+            ("item kind changed", |c| {
+                gameplay_item(c, 0).kind = Some("browser_source".to_owned())
+            }),
+            ("items reordered", |c| {
+                c.sources.get_mut("Gameplay").unwrap().reverse()
+            }),
+            ("item moved to another scene", |c| {
+                let moved = c.sources.get_mut("Gameplay").unwrap().remove(1);
+                c.sources.get_mut("BRB").unwrap().push(moved);
+            }),
+        ];
+        let baseline = topology().option_fingerprint();
+        for (label, change) in changes {
+            let mut catalog = topology();
+            change(&mut catalog);
+            assert_ne!(catalog.option_fingerprint(), baseline, "{label}");
+        }
+    }
+
+    #[test]
+    fn option_fingerprint_ignores_state_no_picker_list_shows() {
+        let unchanged: [(&str, CatalogEdit); 4] = [
+            ("nothing changed", |_| {}),
+            ("item locked", |c| gameplay_item(c, 0).locked = true),
+            ("audio level moved", |c| {
+                gameplay_item(c, 1).audio_db = Some(-3.5)
+            }),
+            ("preview scene switched", |c| {
+                c.current_preview_scene = Some("Gameplay".to_owned())
+            }),
+        ];
+        let baseline = topology().option_fingerprint();
+        for (label, change) in unchanged {
+            let mut catalog = topology();
+            change(&mut catalog);
+            assert_eq!(catalog.option_fingerprint(), baseline, "{label}");
+        }
+    }
+
+    #[test]
+    fn option_fingerprint_does_not_depend_on_scene_map_iteration_order() {
+        let baseline = topology().option_fingerprint();
+        for _ in 0..32 {
+            assert_eq!(topology().option_fingerprint(), baseline);
+        }
+    }
 }

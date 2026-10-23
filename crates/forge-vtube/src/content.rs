@@ -1072,4 +1072,97 @@ mod tests {
             }]
         );
     }
+
+    fn revision_moved(revisions: &mut forge_platform_core::CollectionRevisions) -> bool {
+        futures_util::FutureExt::now_or_never(revisions.changed()).is_some()
+    }
+
+    #[tokio::test]
+    async fn a_current_model_change_moves_the_option_revision_but_not_the_catalog_signal() {
+        for (case, current, expected) in [
+            (
+                "model switched",
+                serde_json::json!({ "modelLoaded": true, "modelID": "m2" }),
+                true,
+            ),
+            (
+                "model unloaded",
+                serde_json::json!({ "modelLoaded": false }),
+                true,
+            ),
+            (
+                "same model",
+                serde_json::json!({ "modelLoaded": true, "modelID": "m1" }),
+                false,
+            ),
+        ] {
+            let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+            {
+                let mut s = c.content_state.write().unwrap();
+                s.models = vec![model("m1", "Avatar"), model("m2", "Other")];
+                s.current_model_id = Some("m1".to_owned());
+            }
+            let mut changes = c.catalog_changes();
+            let mut revisions = forge_platform_core::BuiltinOptionSource::revisions(&c);
+            let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
+            let done = serve(
+                req_rx,
+                vec![
+                    serde_json::json!({ "availableModels": [
+                        { "modelID": "m1", "modelName": "Avatar" },
+                        { "modelID": "m2", "modelName": "Other" }
+                    ] }),
+                    current,
+                    serde_json::json!({ "availableHotkeys": [] }),
+                ],
+            );
+
+            refresh_models_and_hotkeys(&c.content_state, &req_tx).await;
+            await_served(done).await;
+
+            assert_eq!(
+                (
+                    futures_util::FutureExt::now_or_never(changes.changed()),
+                    revision_moved(&mut revisions)
+                ),
+                (None, expected),
+                "{case}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_item_count_change_moves_the_option_revision() {
+        for (case, before, reply, expected) in [
+            (
+                "item spawned",
+                Some(1),
+                serde_json::json!({ "itemsInSceneCount": 2 }),
+                true,
+            ),
+            (
+                "first count",
+                None,
+                serde_json::json!({ "itemsInSceneCount": 0 }),
+                true,
+            ),
+            (
+                "same count",
+                Some(2),
+                serde_json::json!({ "itemsInSceneCount": 2 }),
+                false,
+            ),
+        ] {
+            let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+            c.content_state.write().unwrap().item_count = before;
+            let mut revisions = forge_platform_core::BuiltinOptionSource::revisions(&c);
+            let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
+            let done = serve(req_rx, vec![reply]);
+
+            refresh_items(&c.content_state, &req_tx).await;
+            await_served(done).await;
+
+            assert_eq!(revision_moved(&mut revisions), expected, "{case}");
+        }
+    }
 }

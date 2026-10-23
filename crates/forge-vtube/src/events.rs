@@ -426,4 +426,29 @@ mod tests {
             "ExpressionActivationEvent has no VTS wire event and must not dispatch"
         );
     }
+
+    #[test]
+    fn only_item_spawns_and_removals_change_the_scene_item_lists() {
+        for (message_type, item_event_type, expected) in [
+            ("ItemEvent", Some("Added"), true),
+            ("ItemEvent", Some("Removed"), true),
+            ("ItemEvent", Some("DroppedPinned"), false),
+            ("ItemEvent", Some("Clicked"), false),
+            ("ItemEvent", Some("Locked"), false),
+            ("ItemEvent", Some("added"), false),
+            ("ItemEvent", None, false),
+            ("ModelLoadedEvent", Some("Added"), false),
+            ("HotkeyTriggeredEvent", Some("Removed"), false),
+        ] {
+            let data = match item_event_type {
+                Some(kind) => serde_json::json!({ "itemEventType": kind }),
+                None => serde_json::json!({}),
+            };
+            assert_eq!(
+                changes_scene_items(&make_envelope(message_type, data)),
+                expected,
+                "{message_type} {item_event_type:?}"
+            );
+        }
+    }
 }

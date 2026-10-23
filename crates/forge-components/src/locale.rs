@@ -340,4 +340,63 @@ mod tests {
             assert_eq!(fmt_bytes(bytes), expected, "fmt_bytes({bytes}) in {locale}");
         }
     }
+
+    #[allow(clippy::unwrap_used)]
+    fn install_catalog(language: CatalogLanguage) {
+        let tag = match language {
+            CatalogLanguage::En => "en-US",
+            CatalogLanguage::Uk => "uk-UA",
+        };
+        let mut bundle = FluentBundle::new(vec![tag.parse().unwrap()]);
+        bundle
+            .add_resource(FluentResource::try_new(catalog_source(language).to_owned()).unwrap())
+            .unwrap();
+        install_bundle(Rc::new(bundle));
+    }
+
+    fn unmarked(text: String) -> String {
+        text.replace(['\u{2068}', '\u{2069}'], "")
+    }
+
+    #[test]
+    fn fmt_uptime_switches_shape_at_the_minute_and_hour_boundaries_in_each_language() {
+        for (language, secs, expected) in [
+            (CatalogLanguage::En, 0, "0s"),
+            (CatalogLanguage::En, 59, "59s"),
+            (CatalogLanguage::En, 60, "1m 0s"),
+            (CatalogLanguage::En, 3_599, "59m 59s"),
+            (CatalogLanguage::En, 3_600, "1h 0m"),
+            (CatalogLanguage::Uk, 0, "0 с"),
+            (CatalogLanguage::Uk, 59, "59 с"),
+            (CatalogLanguage::Uk, 60, "1 хв 0 с"),
+            (CatalogLanguage::Uk, 3_599, "59 хв 59 с"),
+            (CatalogLanguage::Uk, 3_600, "1 год 0 хв"),
+        ] {
+            install_catalog(language);
+            assert_eq!(unmarked(fmt_uptime(secs)), expected, "{language:?} {secs}");
+        }
+    }
+
+    #[test]
+    fn fmt_uptime_short_keeps_only_the_largest_whole_unit_in_each_language() {
+        for (language, secs, expected) in [
+            (CatalogLanguage::En, 0, "0s"),
+            (CatalogLanguage::En, 59, "59s"),
+            (CatalogLanguage::En, 60, "1m"),
+            (CatalogLanguage::En, 3_599, "59m"),
+            (CatalogLanguage::En, 3_600, "1h"),
+            (CatalogLanguage::Uk, 0, "0 с"),
+            (CatalogLanguage::Uk, 59, "59 с"),
+            (CatalogLanguage::Uk, 60, "1 хв"),
+            (CatalogLanguage::Uk, 3_599, "59 хв"),
+            (CatalogLanguage::Uk, 3_600, "1 год"),
+        ] {
+            install_catalog(language);
+            assert_eq!(
+                unmarked(fmt_uptime_short(secs)),
+                expected,
+                "{language:?} {secs}"
+            );
+        }
+    }
 }

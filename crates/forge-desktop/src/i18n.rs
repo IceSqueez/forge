@@ -352,4 +352,40 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn step_count_copy_picks_the_cldr_plural_form_for_each_count() {
+        let counts: [(i64, &str, &str); 6] = [
+            (0, "0 steps", "0 кроків"),
+            (1, "1 step", "1 крок"),
+            (2, "2 steps", "2 кроки"),
+            (5, "5 steps", "5 кроків"),
+            (11, "11 steps", "11 кроків"),
+            (21, "21 steps", "21 крок"),
+        ];
+        for (key, prefix) in [
+            ("action_editor_sub_count", ""),
+            ("action_editor_sub_actions_count", ""),
+            ("action_editor_picker_sub_count", "· "),
+            ("event_feed_step_count", ""),
+        ] {
+            for lang in [Language::En, Language::Uk] {
+                install_language(lang);
+                for (count, en, uk) in counts {
+                    let expected = match lang {
+                        Language::En => en,
+                        Language::Uk => uk,
+                    };
+                    let args = ArgsBuilder::new().set("count", count).build();
+                    let resolved =
+                        tr_lookup(key, Some(&args)).replace(['\u{2068}', '\u{2069}'], "");
+                    assert_eq!(
+                        resolved,
+                        format!("{prefix}{expected}"),
+                        "{lang:?} {key} count {count}"
+                    );
+                }
+            }
+        }
+    }
 }

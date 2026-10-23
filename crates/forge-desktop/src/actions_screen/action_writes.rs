@@ -498,6 +498,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn write_errors_read_in_the_ui_language_and_storage_errors_pass_through() {
+        crate::i18n::install_language(forge_storage::Language::Uk);
+        for (error, expected) in [
+            (ActionWriteError::MissingAction, "дію не знайдено"),
+            (ActionWriteError::MissingChain, "список кроків не знайдено"),
+            (
+                ActionWriteError::Storage("disk full".to_owned()),
+                "disk full",
+            ),
+        ] {
+            assert_eq!(error.message(), expected);
+        }
+    }
+
     #[derive(Default)]
     struct MemActions {
         actions: Mutex<HashMap<ActionId, Action>>,
@@ -766,6 +781,24 @@ mod tests {
         screen.settle(cx);
 
         assert_eq!(screen.store.stored(id).name, RENAMED);
+    }
+
+    #[gpui::test]
+    fn a_duplicate_is_named_after_the_source_with_the_passed_suffix(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        let new_id = ActionId::new();
+        screen.write(
+            cx,
+            screen.alpha,
+            ActionWrite::Duplicate {
+                new_id,
+                copy_suffix: "(копія)".to_owned(),
+            },
+        );
+
+        screen.settle(cx);
+
+        assert_eq!(screen.store.stored(new_id).name, "Alpha (копія)");
     }
 
     #[gpui::test]

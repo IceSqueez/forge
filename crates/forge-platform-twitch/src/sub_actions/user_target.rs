@@ -312,6 +312,24 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn bare_at_sign_or_blank_login_fails_without_any_helix_call() {
+        for login in ["@", "   ", " @ "] {
+            for case in cases() {
+                let (transport, outcome) = case
+                    .run(&case.config(Some("  "), Some(login)), &ArgStack::new())
+                    .await;
+
+                assert!(
+                    matches!(outcome, SubActionOutcome::Failed(_)),
+                    "{} login {login:?}: {outcome:?}",
+                    case.kind
+                );
+                assert_eq!(transport.call_count(), 0, "{} login {login:?}", case.kind);
+            }
+        }
+    }
+
     #[test]
     fn validate_config_requires_a_non_empty_id_or_login() {
         for case in cases() {

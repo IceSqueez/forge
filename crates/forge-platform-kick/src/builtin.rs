@@ -1109,6 +1109,37 @@ mod tests {
         }
 
         #[test]
+        fn free_text_quick_action_fields_open_blank() {
+            for action in disconnected_bundle().actions() {
+                for field in &action.fields {
+                    if !matches!(
+                        field.kind,
+                        QuickActionFieldKind::Text | QuickActionFieldKind::Multiline
+                    ) {
+                        continue;
+                    }
+                    let prefilled_default = match &field.default {
+                        None => false,
+                        Some(QuickActionFieldValue::Text(text)) => !text.is_empty(),
+                        Some(_) => true,
+                    };
+                    let prefilled_config = matches!(
+                        action.subaction_template.config.get(&field.key),
+                        Some(value) if *value != forge_types::Variant::String(String::new())
+                    );
+                    assert!(
+                        !prefilled_default && !prefilled_config,
+                        "quick action {:?}: free-text field {:?} is prefilled (default {:?}, config {:?})",
+                        action.label,
+                        field.key,
+                        field.default,
+                        action.subaction_template.config.get(&field.key)
+                    );
+                }
+            }
+        }
+
+        #[test]
         fn quick_actions_are_marked_destructive_exactly_where_the_effect_is_irreversible() {
             let destructive: BTreeSet<String> = disconnected_bundle()
                 .actions()

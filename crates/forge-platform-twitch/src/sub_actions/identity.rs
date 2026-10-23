@@ -119,6 +119,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn resolve_user_id_sends_the_lowercased_login_without_at_sign_or_padding() {
+        for raw in ["@Name", "  @name ", "NAME", "name", "@ Name"] {
+            let transport = MockTransport::returning(users_fixture("555"));
+
+            resolve_user_id(&transport, raw).await.unwrap();
+
+            let request = transport.last_request();
+            assert_eq!(
+                request.query,
+                vec![("login".to_owned(), "name".to_owned())],
+                "raw login {raw:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn resolve_broadcaster_tier_maps_helix_type_and_fails_soft_to_standard() {
         for (raw, expected) in [
             ("", BroadcasterTier::Standard),

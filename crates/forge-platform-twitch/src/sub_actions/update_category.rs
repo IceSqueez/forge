@@ -211,6 +211,7 @@ mod tests {
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
         assert!(output.is_none());
+        assert_eq!(transport.call_count(), 1, "id must skip the games lookup");
         let request = transport.request(0);
         assert_eq!(request.method, HelixMethod::Patch);
         assert_eq!(request.path, "/helix/channels");
@@ -242,16 +243,79 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn empty_category_id_fails_without_helix_call() {
-        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+    async fn blank_category_id_and_name_fail_without_helix_call() {
+        for config in [
+            cfg(&[("category_id", "")]),
+            cfg(&[("category_id", "  "), ("category_name", " ")]),
+        ] {
+            let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+            let stack = ArgStack::new();
+
+            let (telemetry, _) = runner.execute(&config, &make_ctx(&stack)).await;
+
+            assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+            assert_eq!(transport.call_count(), 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn category_name_resolves_through_games_lookup_then_patches_returned_id() {
+        let transport = Arc::new(MockTransport::returning_sequence(vec![
+            Ok(serde_json::json!({ "data": [{ "id": "509658", "name": "Just Chatting" }] })),
+            Ok(serde_json::Value::Null),
+        ]));
+        let runner = UpdateCategoryRunner::new(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+        );
         let stack = ArgStack::new();
 
         let (telemetry, _) = runner
-            .execute(&cfg(&[("category_id", "")]), &make_ctx(&stack))
+            .execute(
+                &cfg(&[("category_name", "Just Chatting")]),
+                &make_ctx(&stack),
+            )
             .await;
 
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
-        assert_eq!(transport.call_count(), 0);
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let lookup = transport.request(0);
+        assert_eq!(
+            (lookup.method, lookup.path.as_str(), lookup.query),
+            (
+                HelixMethod::Get,
+                "/helix/games",
+                vec![("name".to_owned(), "Just Chatting".to_owned())]
+            )
+        );
+        let patch = transport.request(1);
+        assert_eq!(patch.path, "/helix/channels");
+        assert_eq!(
+            patch.body.unwrap(),
+            serde_json::json!({ "game_id": "509658" })
+        );
+    }
+
+    #[tokio::test]
+    async fn unknown_category_name_fails_with_not_found_and_skips_the_patch() {
+        let (transport, runner) = runner_with(Ok(serde_json::json!({ "data": [] })));
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner
+            .execute(
+                &cfg(&[("category_name", "No Such Game")]),
+                &make_ctx(&stack),
+            )
+            .await;
+
+        assert!(
+            matches!(
+                &telemetry.outcome,
+                SubActionOutcome::Failed(msg) if msg.contains("404") && msg.contains("No Such Game")
+            ),
+            "{:?}",
+            telemetry.outcome
+        );
+        assert_eq!(transport.call_count(), 1);
     }
 
     #[tokio::test]
@@ -273,11 +337,21 @@ mod tests {
     }
 
     #[test]
-    fn validate_config_requires_non_empty_category_id() {
+    fn validate_config_requires_a_non_empty_category_id_or_name() {
         let (_transport, runner) = runner_with(Ok(serde_json::Value::Null));
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![
             ("valid id", cfg(&[("category_id", "509658")]), true),
+            (
+                "name only",
+                cfg(&[("category_id", ""), ("category_name", "Just Chatting")]),
+                true,
+            ),
             ("empty id", cfg(&[("category_id", "")]), false),
+            (
+                "both empty",
+                cfg(&[("category_id", ""), ("category_name", "")]),
+                false,
+            ),
             ("missing id", BTreeMap::new(), false),
             (
                 "non-string id",

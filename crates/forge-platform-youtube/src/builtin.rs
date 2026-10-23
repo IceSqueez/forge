@@ -999,6 +999,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn free_text_quick_action_fields_open_blank() {
+        for action in QuickActions::actions(make_bundle(Arc::new(EmptyRepo)).0.as_ref()) {
+            for field in &action.fields {
+                if !matches!(
+                    field.kind,
+                    QuickActionFieldKind::Text | QuickActionFieldKind::Multiline
+                ) || (action.subaction_template.kind_id == "youtube.stream.update_category"
+                    && field.key == "category_id")
+                {
+                    continue;
+                }
+                let prefilled_default = match &field.default {
+                    None => false,
+                    Some(QuickActionFieldValue::Text(text)) => !text.is_empty(),
+                    Some(_) => true,
+                };
+                let prefilled_config = matches!(
+                    action.subaction_template.config.get(&field.key),
+                    Some(value) if *value != forge_types::Variant::String(String::new())
+                );
+                assert!(
+                    !prefilled_default && !prefilled_config,
+                    "quick action {:?}: free-text field {:?} is prefilled (default {:?}, config {:?})",
+                    action.label,
+                    field.key,
+                    field.default,
+                    action.subaction_template.config.get(&field.key)
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn static_choice_options_equal_runner_enum_and_include_default() {
         let reg = sub_action_registry();
         let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));

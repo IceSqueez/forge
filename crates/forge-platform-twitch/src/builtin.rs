@@ -2186,6 +2186,40 @@ mod tests {
     }
 
     #[test]
+    fn free_text_quick_action_fields_open_blank() {
+        for action in
+            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate)
+                .actions()
+        {
+            for field in &action.fields {
+                if !matches!(
+                    field.kind,
+                    QuickActionFieldKind::Text | QuickActionFieldKind::Multiline
+                ) {
+                    continue;
+                }
+                let prefilled_default = match &field.default {
+                    None => false,
+                    Some(QuickActionFieldValue::Text(text)) => !text.is_empty(),
+                    Some(_) => true,
+                };
+                let prefilled_config = matches!(
+                    action.subaction_template.config.get(&field.key),
+                    Some(value) if *value != forge_types::Variant::String(String::new())
+                );
+                assert!(
+                    !prefilled_default && !prefilled_config,
+                    "quick action {:?}: free-text field {:?} is prefilled (default {:?}, config {:?})",
+                    action.label,
+                    field.key,
+                    field.default,
+                    action.subaction_template.config.get(&field.key)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn every_static_choice_field_default_is_one_of_its_listed_options() {
         let bundle =
             make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);

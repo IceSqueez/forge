@@ -1,6 +1,204 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.6.3] - 2026-10-23
+### ⚡ Performance
+- *(storage)* Snapshot the database off the writer connection
+
+### 🐛 Bug Fixes
+- *(backup)* Include the credentials key from its overridden location
+- *(backup)* Keep a resumed rollback from moving restored originals
+- *(backup)* Tell the user to restart into a ready update before restoring
+- *(backup)* Treat archived rows as pack import conflicts and restore them on rollback
+- *(backup)* Keep network exposure and HTTP trust settings out of setups
+- *(backup)* Keep import results, busy state and cleanup independent of the Home screen
+- *(diagnostics)* Adapt system info and the relaunch wait to sysinfo 0.39
+- *(backup)* Run Settings backup and restore through the shared transfer flows
+- *(backup)* Surface busy, update-yield and boot-failure transfer outcomes
+- *(packs)* Remap global names that only contain a literal percent sign
+- *(setup)* Ignore voice order when deciding whether TTS needs a restart
+- *(actions)* Show the clip name on Play Sound step cards
+- *(actions)* Keep the action detail inside the window with long step text
+- *(kick)* Treat a null stream start time as no start time
+- *(chat)* Name banned viewers from the card instead of their raw id
+- *(actions)* Name config problems by field label and translate every reason
+- *(actions)* Keep a stored value behind an optional sharing its key
+- *(twitch)* Flag planned chat disconnects as expected
+- *(kick)* Flag requested closes and server reconnects as expected
+- *(obs)* Flag user and shutdown disconnects as expected
+- *(youtube)* Keep a reconnected chat connected and flag planned stops
+- *(vtube)* Flag user and shutdown disconnects as expected
+- *(transfer)* Store the schedule key as one setting
+- *(transfer)* Run a never-run schedule at once instead of spinning
+- *(ui)* Dim and block the whole window behind a modal
+- *(ui)* Pick local times with 12-hour and daylight-saving aware steps
+- *(notifications)* Cue lost donation and YouTube links and keep links armed while muted
+- *(overlays)* Keep the overlay token consistent when Regenerate fails
+- *(ui)* Keep the toggle return point when leaving through the unsaved-work dialog
+- *(ui)* Show the overlay mauve accent as mauve on the Latte theme
+- *(runtime)* Run action steps in order; bypass actions skip queue limit
+- *(runtime)* Mark every event in a replay chain and show a Replay badge
+- *(chat)* Ignore a bot sender on platforms without a bot account
+- *(editor)* Keep Ctrl+S and Cmd+S inside the code editor on every OS
+- *(ui)* Show readable labels for step and trigger select options
+- *(ui)* Translate step and trigger field labels by field key
+- *(twitch)* Translate Twitch step and trigger field labels
+- *(ui)* Translate YouTube and Kick step and trigger field labels
+- *(ui)* Translate the remaining integration step and trigger field labels
+- *(ui)* Show step and trigger names and descriptions in the UI language
+- *(twitch)* Translate Twitch step and trigger names and descriptions
+- *(ui)* Translate YouTube, Kick and VTube step and trigger names
+- *(obs)* Translate OBS step and trigger names and descriptions
+- *(ui)* Translate step counts, uptime and leftover Actions screen text
+- *(ui)* Show the configured script timeout and translate event feed tags
+- *(twitch)* Accept @-prefixed logins and resolve categories by name
+- *(platforms)* Show quick-action examples as placeholders, not values
+
+### 🚀 Features
+- *(storage)* Inspect a stored database's schema state and credentials
+- *(backup)* Write and stage passphrase-encrypted forge bundles
+- *(backup)* Apply a staged restore at boot through a crash-safe journal
+- *(backup)* Encrypt Backup now with a passphrase asked every time
+- *(backup)* Restore a backup from Settings and report the result at boot
+- *(backup)* Relaunch forge after a confirmed restore
+- *(backup)* Export a full backup and import any bundle from Home
+- *(registry)* List and remap the entity references in step and trigger configs
+- *(backup)* Export actions with their dependencies as a pack bundle
+- *(backup)* Plan and apply a pack import with conflict resolution
+- *(backup)* Export packs from Home and the action editor instead of action JSON
+- *(backup)* Preview and apply a pack import with per-item conflict choices
+- *(backup)* Export and import a whole setup carrying only portable settings
+- *(backup)* Export a setup from Home and import it with a replace confirmation
+- *(types)* Add a date pattern language with en and uk names
+- *(actions)* Format datetime variables inline with %name:pattern%
+- *(actions)* Switch time steps to date patterns in local time
+- *(actions)* Flag invalid date patterns and formats on non-dates while editing
+- *(actions)* Show inline date formats on step chips and switch names live
+- *(actions)* Add a variable picker with date presets to the step editor
+- *(twitch)* Emit trigger timestamps as typed datetimes
+- *(kick)* Emit the stream start time as a typed datetime
+- *(youtube)* Emit stream start times as typed datetimes
+- *(actions)* Pick variables into date and time step fields
+- *(actions)* Key step config errors to their field with translated reasons
+- *(actions)* Edit second and minute durations with a unit picker
+- *(actions)* Edit expression fields on one compact line
+- *(settings)* Add notification toggles for action failures and connection loss
+- *(runtime)* Mark manual test runs and expected drops on lifecycle events
+- *(runtime)* Decide when action failures and connection loss notify
+- *(audio)* Play a short alert cue on the default output
+- *(desktop)* Show OS notices for failed actions and play the loss cue
+- *(settings)* Add the Notifications pane with failure notice and loss cue toggles
+- *(transfer)* Write unattended backups with a write-only key and chosen parts
+- *(settings)* Add scheduled backup settings and a shared transfer lock
+- *(transfer)* Run unattended backups on a schedule with safe pruning
+- *(settings)* Schedule unattended backups from the Storage pane
+- *(settings)* Show storage used, notify failed backups and share one transfer lock
+- *(settings)* Stop backups cleanly on quit and show what a restore replaces
+- *(shortcuts)* Add save, new action, chat and feed toggles and run keys
+- *(appearance)* Pick an accent color for the UI highlight
+- *(storage)* Store an overlay token and reissue overlay credentials at once
+- *(server)* Require an overlay token in overlay URLs
+- *(overlays)* Show and regenerate the overlay token and copy tokened URLs
+- *(settings)* Choose region, date, time and week start for every date in the UI
+- *(backup)* Prune safety copies by count or age
+- *(settings)* Choose how long safety copies are kept and clean them up
+- *(actions)* Drag steps to reorder them and queue every action write
+- *(chat)* Let chat sends choose a sender and skip the bot's messages
+- *(twitch)* Sign in a bot account and send chat as the bot
+- *(twitch)* Check the bot's moderator status and send moderator actions
+- *(twitch)* Connect a bot account and choose who sends in Chat and steps
+
+### 🚜 Refactor
+- *(storage)* Probe a stored database's schema through forge-storage
+- *(types)* Render every datetime through one canonical RFC 3339 form
+
+### 🛠️ Build
+- *(solution)* Optimise scrypt in dev builds
+- *(deps)* Bump taiki-e/install-action from 2.87.27 to 2.87.29 (#91)
+- *(deps)* Bump libc from 0.2.190 to 0.2.191 (#92)
+- *(deps)* Bump objc2 from 0.6.4 to 0.6.5 (#93)
+- *(deps)* Bump arboard from 3.6.1 to 3.7.0 (#94)
+- *(deps)* Bump sysinfo from 0.31.4 to 0.39.6 (#95)
+- *(deps)* Bump global-hotkey from 0.8.0 to 0.9.0 (#96)
+- *(deps)* Move to zbus 6, tokio 1.54 and gpui v1.24.3
+- *(deps)* Bump tokio, rustls-webpki and webpki roots past advisories
+
+### 🧪 Testing
+- *(storage)* Cover key override, backup key and off-writer export
+- *(backup)* Cover bundle round trip, refusals, legacy archives and inspect
+- *(backup)* Cover crash-safe restore apply across every journal phase
+- *(backup)* Cover the passphrase rules and the credential key override
+- *(backup)* Cover restore flow, close handoff and relaunch args
+- *(registry)* Cover pack reference listing, remap and namespace drift
+- *(backup)* Refuse a truly unknown bundle kind now that packs exist
+- *(backup)* Cover pack closure, import conflicts, rollback and untrusted packs
+- *(backup)* Cover pack export, import preview flow, live refresh and import routing
+- *(backup)* Cover setup round trip, rollback, portability and untrusted setups
+- *(backup)* Cover setup export, import confirmation, live refresh and restart
+- *(hotkey)* Adapt portal tests to the zbus 6 message API
+- *(backup)* Cover transfer flow routing, busy refusal and staging sweep
+- *(backup)* Cover update yield, busy refusal and passphrase problems
+- *(transfer)* Cover set-equal ignore profiles and literal-percent references
+- *(actions)* Cover play sound step card clip name resolution
+- *(types)* Pin canonical datetime text across every renderer
+- *(types)* Cover date pattern parsing, rendering and legacy translation
+- *(types)* Cover inline date formats, pattern cache and names language
+- *(types)* Cover date text parsing and time step date patterns
+- *(actions)* Cover date findings in the step-health analyzer
+- *(actions)* Cover formatted variable segments and live names language
+- *(actions)* Cover variable picker scope, insertion and keyboard flow
+- *(actions)* Cover byte-accurate highlight ranges in step detail text
+- *(twitch)* Cover datetime trigger variables and omitted timestamps
+- *(platforms)* Cover typed kick and youtube stream start timestamps
+- *(kick)* Cover null and absent stream start times in channel lookup
+- *(moderation)* Cover display name priority in kick and youtube ban ledger
+- *(actions)* Cover whole-value variable insert on datetime fields
+- *(actions)* Cover keyed config problems across runners and step validation
+- *(actions)* Cover field labels and typed reasons in step config problems
+- *(actions)* Cover second- and minute-based duration fields across forms
+- *(actions)* Cover same-key optional fields keeping or clearing their value
+- *(actions)* Cover compact expression fields and variable insert into code
+- *(runtime)* Cover action.done test-run flag, name and failure reason
+- *(runtime)* Cover notification dedup, burst folding and loss grace
+- *(platforms)* Cover expected and unexpected connection drops per platform
+- *(audio)* Cover alert cue tone envelope and frequencies
+- *(desktop)* Cover system notice text, plural forms and reason truncation
+- *(desktop)* Cover notification settings pane and OS notice fallback
+- *(transfer)* Cover scheduled backups, restore keys and category-scoped restore
+- *(transfer)* Cover scheduled backup service, retention, prune and exclusivity
+- *(transfer)* Cover schedule setup, single key setting and backup-now routing
+- *(transfer)* Cover storage used, failure notices and shared transfer lock
+- *(transfer)* Reproduce a never-run schedule that never fired
+- *(transfer)* Cover restore scope, backup suspension, quit stop and backup-now toast
+- *(transfer)* Wait for the stored backup time before clicking backup now
+- *(shortcuts)* Cover save, run, new action and toggle shortcuts
+- *(appearance)* Cover accent palette, persistence and color isolation
+- *(overlays)* Cover the overlay token gate, rotation and url surfaces
+- *(ui)* Cover region presets, date formats and first-day calendar
+- *(ui)* Cover picker zone transitions, 12-hour stepper and live labels
+- *(notifications)* Cover connection-loss announcer, poll health and cue toggle
+- *(overlays)* Cover token restore failure, kept-config credential refresh and token-shaped names
+- *(ui)* Cover toggled, replaced and dropped leave questions in the navigation guard
+- *(ui)* Pin the overlay mauve swatch to the theme's mauve on every theme
+- *(transfer)* Cover safety copy retention and update handoff waits
+- *(transfer)* Cover the transfer lock change signal
+- *(ui)* Cover the safety copies card and the boot prune retry
+- *(runtime)* Cover queue-limit bypass runs and sequential chains
+- *(runtime)* Cover replay marking across runs, schedules and chat history
+- *(ui)* Cover step drag-and-drop and the per-action write queue
+- *(chat)* Cover sender preference routing and bot-message trigger skip
+- *(chat)* Cover every sender preference on platforms without a bot
+- *(twitch)* Cover bot sign-in, per-role refresh and sender routing
+- *(twitch)* Cover bot moderator status, moderator actions and cadence
+- *(twitch)* Cover the bot account card, sender switch and ignore-bot forms
+- *(ui)* Cover step and trigger select option labels
+- *(ui)* Cover the silent locale lookup used for field labels
+- *(ui)* Require Ukrainian copy for every Twitch form field
+- *(ui)* Require Ukrainian copy for every YouTube and Kick form field
+- *(ui)* Require Ukrainian copy for every registered step and trigger field
+- *(ui)* Guard step and trigger copy and localized counts and uptime
+- *(platforms)* Cover login normalization, category lookup and blank fields
+
 ## [0.6.2] - 2026-10-16
 ### ⚙️ Miscellaneous Tasks
 - *(issues)* Add a crash issue form and a system info field to bug reports
@@ -11,6 +209,9 @@ All notable changes to this project will be documented in this file.
 - *(diagnostics)* Keep every prefilled issue link under the URL size cap
 - *(server)* Issue fg_ prefixed bearer tokens and replace unprefixed ones
 - *(emulator)* Seed the server token with the server's own generator
+
+### 📚 Documentation
+- *(release)* Release v0.6.2
 
 ### 🚀 Features
 - *(ui)* Restore window size, position, monitor and state on launch

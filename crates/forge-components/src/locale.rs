@@ -420,4 +420,117 @@ mod tests {
             );
         }
     }
+
+    #[derive(Default)]
+    struct WarnFields {
+        key: Option<String>,
+        thread: Option<String>,
+    }
+
+    impl tracing::field::Visit for WarnFields {
+        fn record_debug(&mut self, _: &tracing::field::Field, _: &dyn std::fmt::Debug) {}
+
+        fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+            match field.name() {
+                "key" => self.key = Some(value.to_owned()),
+                "thread" => self.thread = Some(value.to_owned()),
+                _ => {}
+            }
+        }
+    }
+
+    type Warning = (Option<String>, Option<String>);
+
+    struct WarnCapture(std::sync::Arc<std::sync::Mutex<Vec<Warning>>>);
+
+    impl tracing::Subscriber for WarnCapture {
+        fn register_callsite(
+            &self,
+            _: &'static tracing::Metadata<'static>,
+        ) -> tracing::subscriber::Interest {
+            tracing::subscriber::Interest::sometimes()
+        }
+
+        fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+            *metadata.level() == tracing::Level::WARN
+        }
+
+        fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+
+        fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+
+        fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+
+        fn event(&self, event: &tracing::Event<'_>) {
+            let mut fields = WarnFields::default();
+            event.record(&mut fields);
+            self.0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push((fields.key, fields.thread));
+        }
+
+        fn enter(&self, _: &tracing::span::Id) {}
+
+        fn exit(&self, _: &tracing::span::Id) {}
+    }
+
+    #[allow(clippy::unwrap_used)]
+    fn warnings_on_a_bundleless_thread(name: &str, keys: &'static [&'static str]) -> Vec<Warning> {
+        std::thread::Builder::new()
+            .name(name.to_owned())
+            .spawn(move || {
+                let lines = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+                let capture = WarnCapture(std::sync::Arc::clone(&lines));
+                tracing::subscriber::with_default(capture, || {
+                    tracing::callsite::rebuild_interest_cache();
+                    for key in keys {
+                        assert_eq!(tr_lookup(key, None), *key);
+                    }
+                });
+                lines.lock().unwrap().clone()
+            })
+            .unwrap()
+            .join()
+            .unwrap()
+    }
+
+    fn warning(key: &str, thread: &str) -> Warning {
+        (Some(key.to_owned()), Some(thread.to_owned()))
+    }
+
+    #[test]
+    fn tr_lookup_without_a_bundle_warns_once_per_key_naming_the_thread() {
+        let captured = warnings_on_a_bundleless_thread(
+            "probe-worker",
+            &[
+                "unlocalized_a",
+                "unlocalized_a",
+                "unlocalized_b",
+                "unlocalized_a",
+            ],
+        );
+        assert_eq!(
+            captured,
+            vec![
+                warning("unlocalized_a", "probe-worker"),
+                warning("unlocalized_b", "probe-worker"),
+            ]
+        );
+    }
+
+    #[test]
+    fn tr_lookup_without_a_bundle_warns_again_for_the_same_key_on_another_thread() {
+        let first = warnings_on_a_bundleless_thread("probe-first", &["unlocalized_shared"]);
+        let second = warnings_on_a_bundleless_thread("probe-second", &["unlocalized_shared"]);
+        assert_eq!(
+            (first, second),
+            (
+                vec![warning("unlocalized_shared", "probe-first")],
+                vec![warning("unlocalized_shared", "probe-second")],
+            )
+        );
+    }
 }

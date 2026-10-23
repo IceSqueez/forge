@@ -1078,9 +1078,18 @@ mod tests {
     use forge_storage::CredentialsRepo;
     use gpui::TestAppContext;
 
+    use forge_storage::credentials::MockCredentialsRepo;
+    use forge_storage::{CredentialId, Language};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
     use super::*;
+    use crate::i18n::install_language;
     use crate::screen::Screen;
-    use crate::test_support::{StubActions, hub_crumb_targets, quiet_bus, runtime, test_backend};
+    use crate::test_support::{
+        StubActions, hub_crumb_targets, install_presentation, quiet_bus, runtime, test_backend,
+        worker_runtime,
+    };
 
     #[gpui::test]
     fn the_crumb_leads_back_to_the_discord_category_on_the_hub(cx: &mut TestAppContext) {
@@ -1108,6 +1117,104 @@ mod tests {
                 .iter()
                 .all(|screen| *screen == Screen::Integrations(Some(category))),
             "{targets:?}"
+        );
+    }
+
+    const POSTED_REPLY: &str = r#"{"id":"1"}"#;
+
+    fn header_end(buf: &[u8]) -> Option<usize> {
+        buf.windows(4).position(|w| w == b"\r\n\r\n")
+    }
+
+    fn content_length(head: &[u8]) -> usize {
+        String::from_utf8_lossy(head)
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case("content-length")
+                    .then(|| value.trim().parse().ok())
+                    .flatten()
+            })
+            .unwrap_or_default()
+    }
+
+    async fn first_posted_body(listener: TcpListener) -> Option<serde_json::Value> {
+        let (mut socket, _) = listener.accept().await.ok()?;
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 4096];
+        let body = loop {
+            let read = socket.read(&mut chunk).await.ok()?;
+            if read == 0 {
+                return None;
+            }
+            buf.extend_from_slice(&chunk[..read]);
+            if let Some(end) = header_end(&buf) {
+                let start = end + 4;
+                let len = content_length(&buf[..end]);
+                if buf.len() >= start + len {
+                    break buf[start..start + len].to_vec();
+                }
+            }
+        };
+        let reply = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{POSTED_REPLY}",
+            POSTED_REPLY.len()
+        );
+        socket.write_all(reply.as_bytes()).await.ok()?;
+        serde_json::from_slice(&body).ok()
+    }
+
+    fn webhook_pointing_at(url: String) -> MockCredentialsRepo {
+        let mut creds = MockCredentialsRepo::new();
+        creds
+            .expect_list_ids()
+            .returning(|| Ok(vec![CredentialId::new("discord:alerts")]));
+        creds
+            .expect_load()
+            .returning(move |_| Ok(Some(serde_json::json!({ "url": url }).to_string())));
+        creds.expect_store().returning(|_, _| Ok(()));
+        creds
+    }
+
+    #[allow(clippy::expect_used)]
+    #[gpui::test]
+    fn testing_a_saved_webhook_posts_the_message_in_the_ui_language_from_a_worker_thread(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = worker_runtime();
+        let bus = quiet_bus(&rt);
+        let listener = rt
+            .block_on(TcpListener::bind("127.0.0.1:0"))
+            .expect("a loopback listener binds");
+        let addr = listener
+            .local_addr()
+            .expect("a bound listener has an address");
+        let posted = rt.spawn(first_posted_body(listener));
+        let creds = webhook_pointing_at(format!("http://{addr}/api/webhooks/1/token"));
+        let client = {
+            let _entered = rt.enter();
+            DiscordClient::new(
+                forge_discord::DiscordConfig::default(),
+                Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
+                Arc::new(creds) as Arc<dyn CredentialsRepo>,
+            )
+        };
+        install_language(Language::Uk);
+        install_presentation(cx);
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+        let handle = rt.handle().clone();
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                DiscordScreenView::new(client, None, Arc::new(StubActions), bus, handle, cx)
+            })
+        });
+
+        view.update(cx, |view, cx| view.test_webhook("alerts".to_owned(), cx));
+        let body = rt.block_on(posted).ok().flatten();
+
+        assert_eq!(
+            body.map(|body| body["content"].clone()),
+            Some(serde_json::json!("Тестове повідомлення з forge."))
         );
     }
 }

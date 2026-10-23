@@ -829,6 +829,14 @@ pub(crate) fn runtime() -> tokio::runtime::Runtime {
         .expect("current-thread runtime")
 }
 
+pub(crate) fn worker_runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .expect("multi-thread runtime")
+}
+
 pub(crate) fn pump(rt: &tokio::runtime::Runtime) {
     rt.block_on(async {
         for _ in 0..RUNTIME_PUMPS {

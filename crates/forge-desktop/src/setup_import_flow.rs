@@ -405,9 +405,11 @@ mod tests {
     };
     use crate::i18n::install_language;
     use crate::pack_import_live::LiveRefresh;
+    use crate::restore_problem::RestoreProblem;
     use crate::setup_confirm::{SetupCount, SetupPart};
     use crate::test_support::pack_flow::{PackWorld, pack_world, queue_named, seed_queued_action};
-    use crate::test_support::{install_presentation, runtime};
+    use crate::test_support::{install_presentation, runtime, worker_runtime};
+    use forge_components::tr;
 
     const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
     const PAST_ANY_TOAST_TIMER: Duration = Duration::from_secs(120);
@@ -420,10 +422,13 @@ mod tests {
     }
 
     fn rig(cx: &mut TestAppContext) -> Rig {
+        rig_on(cx, runtime())
+    }
+
+    fn rig_on(cx: &mut TestAppContext, rt: tokio::runtime::Runtime) -> Rig {
         install_language(Language::En);
         install_presentation(cx);
         cx.update(|cx| cx.set_global(Toasts::new()));
-        let rt = runtime();
         let world = pack_world(&rt);
         let services = world.services.clone();
         let data_dir = world.data_dir();
@@ -806,6 +811,28 @@ mod tests {
         assert_eq!(
             (toast_kinds(cx), step(cx, &rig), staging_dir(cx, &rig)),
             (vec![ToastKind::Warn], "confirming", staging)
+        );
+    }
+
+    #[gpui::test]
+    fn an_unreadable_setup_staged_on_a_worker_thread_toasts_the_refusal_in_the_ui_language(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = rig_on(cx, worker_runtime());
+        install_language(Language::Uk);
+        let junk = rig.world.data_dir().join("junk.forgebundle");
+        std::fs::write(&junk, b"not a bundle").unwrap();
+
+        rig.flow.update(cx, |flow, cx| flow.open(junk, cx));
+        settle_until(cx, &rig, |cx| step(cx, &rig) == "idle");
+
+        let messages: Vec<String> = toasts(cx).into_iter().map(|toast| toast.1).collect();
+        assert_eq!(
+            messages,
+            vec![tr!(
+                "home_import_failed",
+                error = RestoreProblem::NotABundle.message()
+            )]
         );
     }
 }

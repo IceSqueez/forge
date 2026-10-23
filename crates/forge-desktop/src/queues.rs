@@ -1978,7 +1978,7 @@ mod tests {
 
     use super::*;
     use crate::i18n::install_language;
-    use crate::test_support::{StubActions, held_queue_scheduler, pump, runtime};
+    use crate::test_support::{StubActions, held_queue_scheduler, pump, runtime, worker_runtime};
     use forge_components::Presentation;
     use forge_components::Toasts;
 
@@ -2201,7 +2201,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_queue_live_reports_a_store_failure_as_text() {
+    fn apply_queue_live_carries_a_store_failure_as_its_text() {
         let rt = runtime();
         let id = QueueId::new();
         let scheduler = held_queue_scheduler(&rt, queue(id));
@@ -2215,7 +2215,46 @@ mod tests {
         let outcome = rt.block_on(apply_queue_live(Arc::new(repo), scheduler, id));
 
         assert!(
-            matches!(outcome, Err(LiveApplyFailure::Failed(ref message)) if message.contains("disk gone"))
+            matches!(&outcome, Err(LiveApplyFailure::Failed(message)) if message.contains("disk gone")),
+            "{outcome:?}"
         );
+    }
+
+    #[test]
+    fn apply_queue_live_on_a_worker_thread_reports_a_vanished_queue_untranslated_for_the_ui_thread()
+    {
+        let rt = worker_runtime();
+        let id = QueueId::new();
+        let scheduler = held_queue_scheduler(&rt, queue(id));
+        let mut repo = MockQueueRepo::new();
+        repo.expect_list().returning(|| Ok(Vec::new()));
+
+        let joined = rt.block_on(rt.spawn(apply_queue_live(Arc::new(repo), scheduler, id)));
+        install_language(Language::Uk);
+
+        assert_eq!(
+            joined
+                .ok()
+                .map(|outcome| outcome.map_err(LiveApplyFailure::message)),
+            Some(Err("черги більше не існує".to_owned()))
+        );
+    }
+
+    #[test]
+    fn live_apply_failures_resolve_their_text_in_the_installed_language() {
+        install_language(Language::Uk);
+        for (failure, expected) in [
+            (LiveApplyFailure::QueueMissing, "черги більше не існує"),
+            (
+                LiveApplyFailure::SchedulerLostQueue,
+                "планувальник не знає цієї черги",
+            ),
+            (
+                LiveApplyFailure::Failed("disk gone".to_owned()),
+                "disk gone",
+            ),
+        ] {
+            assert_eq!(failure.message(), expected);
+        }
     }
 }

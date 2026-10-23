@@ -95,6 +95,7 @@ mod obs_catalog_options;
 mod obs_connect;
 mod obs_credentials_form;
 mod obs_settings_modal;
+mod option_list_text;
 mod overlay_build_failure;
 mod overlay_frame_sink;
 mod overlay_link_token;

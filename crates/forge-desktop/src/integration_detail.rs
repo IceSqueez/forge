@@ -7,10 +7,10 @@ use forge_components::{
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_obs::ObsClient;
 use forge_platform_core::{
-    BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus,
-    CapabilityFlags, CollectionId, ConnectionState, ControlFailure, DetailSection, HeaderAction,
-    HealthDelta, HealthMetric, HealthValue, HeroBadge, HeroBadgeTone, PlatformEndpoints,
-    QuickAction, QuickActions, RevisionWait, SectionIcon,
+    BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinOptionSource,
+    BuiltinStatus, CapabilityFlags, CollectionId, ConnectionState, ControlFailure, DetailSection,
+    HeaderAction, HealthDelta, HealthMetric, HealthValue, HeroBadge, HeroBadgeTone,
+    PlatformEndpoints, QuickAction, QuickActions, RevisionWait, SectionIcon,
 };
 use forge_registry::TriggerRegistry;
 use forge_runtime::{ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
@@ -72,6 +72,7 @@ pub struct IntegrationDetail {
     quick: Arc<dyn QuickActions>,
     control: Option<Arc<dyn BuiltinControl>>,
     collections: Option<Arc<dyn BuiltinCollections>>,
+    option_source: Option<Arc<dyn BuiltinOptionSource>>,
     rt_handle: tokio::runtime::Handle,
     action_engine: ActionEngineHandle,
     obs_source: Option<Arc<ObsClient>>,
@@ -168,6 +169,7 @@ impl IntegrationDetail {
             quick,
             control,
             collections,
+            option_source,
             obs_client: obs_source,
             vtube_client: _,
             follow: _,
@@ -227,6 +229,7 @@ impl IntegrationDetail {
             quick,
             control,
             collections,
+            option_source,
             rt_handle,
             action_engine,
             obs_source,
@@ -747,8 +750,10 @@ impl IntegrationDetail {
         }
         let action = action.clone();
         let obs_source = self.obs_source.clone();
+        let option_source = self.option_source.clone();
         let rt_handle = self.rt_handle.clone();
-        let modal = cx.new(|cx| QuickActionModal::new(action, obs_source, rt_handle, cx));
+        let modal =
+            cx.new(|cx| QuickActionModal::new(action, obs_source, option_source, rt_handle, cx));
         modal.update(cx, |m, cx| m.focus(window, cx));
         self._qa_modal_sub = Some(cx.subscribe(&modal, Self::on_quick_action_modal_event));
         self.quick_action_modal = Some(modal);
@@ -1976,6 +1981,7 @@ mod tests {
                     quick: self.clone(),
                     control: None,
                     collections: None,
+                    option_source: None,
                     obs_client: None,
                     vtube_client: None,
                     follow: None,

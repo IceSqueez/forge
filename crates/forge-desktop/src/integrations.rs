@@ -4,8 +4,8 @@ use std::sync::Arc;
 use forge_events::{Event, EventPublisher, EventSource, EventStream, EventsError};
 use forge_platform_core::{
     ActingSender, BanListSource, BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth,
-    BuiltinStatus, ChatPlatform, FollowLookup, PlatformEndpoints, QuickActions, SectionIcon,
-    SenderPreference,
+    BuiltinOptionSource, BuiltinStatus, ChatPlatform, FollowLookup, PlatformEndpoints,
+    QuickActions, SectionIcon, SenderPreference,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{DonationIngest, EventBus};
@@ -38,6 +38,7 @@ pub struct BuiltinObject {
     pub quick: Arc<dyn QuickActions>,
     pub control: Option<Arc<dyn BuiltinControl>>,
     pub collections: Option<Arc<dyn BuiltinCollections>>,
+    pub option_source: Option<Arc<dyn BuiltinOptionSource>>,
     pub obs_client: Option<Arc<forge_obs::ObsClient>>,
     pub vtube_client: Option<Arc<forge_vtube::VTubeClient>>,
     pub follow: Option<Arc<dyn FollowLookup>>,
@@ -194,6 +195,7 @@ pub fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> BuiltinObj
         quick: client.clone(),
         control: Some(Arc::clone(&client) as Arc<dyn BuiltinControl>),
         collections: None,
+        option_source: None,
         obs_client: None,
         vtube_client: Some(client),
         follow: None,
@@ -210,6 +212,7 @@ pub fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinObject {
         quick: client.clone(),
         control: Some(Arc::clone(&client) as Arc<dyn BuiltinControl>),
         collections: None,
+        option_source: None,
         obs_client: Some(client),
         vtube_client: None,
         follow: None,
@@ -228,6 +231,7 @@ pub fn twitch_builtin_object(
         quick: bundle.clone(),
         control: Some(Arc::clone(&bundle) as Arc<dyn BuiltinControl>),
         collections: Some(Arc::clone(&bundle) as Arc<dyn BuiltinCollections>),
+        option_source: None,
         obs_client: None,
         vtube_client: None,
         follow: Some(Arc::clone(&bundle) as Arc<dyn FollowLookup>),
@@ -246,6 +250,7 @@ pub fn youtube_builtin_object(
         quick: bundle.clone(),
         control: Some(Arc::clone(&bundle) as Arc<dyn BuiltinControl>),
         collections: None,
+        option_source: None,
         obs_client: None,
         vtube_client: None,
         follow: Some(Arc::clone(&bundle) as Arc<dyn FollowLookup>),
@@ -264,6 +269,7 @@ pub fn kick_builtin_object(
         quick: bundle.clone(),
         control: Some(Arc::clone(&bundle) as Arc<dyn BuiltinControl>),
         collections: None,
+        option_source: None,
         obs_client: None,
         vtube_client: None,
         follow: None,
@@ -1711,6 +1717,7 @@ pub(crate) mod tests {
                 quick: probe,
                 control: None,
                 collections: None,
+                option_source: None,
                 obs_client: None,
                 vtube_client: None,
                 follow: None,

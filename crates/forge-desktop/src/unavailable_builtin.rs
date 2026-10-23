@@ -122,6 +122,7 @@ pub fn unavailable_builtin(id: &IntegrationId) -> BuiltinObject {
         quick: Arc::new(UnavailableQuickActions),
         control: None,
         collections: None,
+        option_source: None,
         obs_client: None,
         vtube_client: None,
         follow: None,

@@ -8,18 +8,20 @@ use forge_components::{
 };
 use forge_obs::{ObsClient, ObsSource};
 use forge_platform_core::{
-    PickerKind, QuickAction, QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField,
-    QuickActionFieldKind, QuickActionFieldValue,
+    BuiltinOptionSource, CollectionOutcome, OptionEntry, OptionListId, PickerKind, QuickAction,
+    QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField, QuickActionFieldKind,
+    QuickActionFieldValue, RevisionWait,
 };
 use forge_types::{SubActionStep, Variant};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, Rgba, SharedString, Subscription,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, Rgba, SharedString, Subscription, Task,
     Window, div, prelude::*, px,
 };
 use tokio::runtime::Handle;
 
 use crate::async_bridge;
 use crate::integration_quick_actions::accent_color;
+use crate::option_list_text::{option_failure_message, option_hint_text};
 use forge_components::ActivePresentation;
 use forge_components::{
     FIELD_FONT, choice_trigger, failure_with_retry, field_column, field_frame, int_entry_invalid,
@@ -37,8 +39,22 @@ enum ChoiceState {
     Failed(String),
 }
 
+struct OptionListBinding {
+    list: OptionListId,
+    depends_on: Vec<String>,
+    default: Option<SharedString>,
+    ticket: u64,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ResolveMode {
+    Load,
+    Refresh,
+}
+
 struct ChoiceControl {
     dynamic: Option<PickerKind>,
+    option_list: Option<OptionListBinding>,
     state: ChoiceState,
     selected: Option<SharedString>,
     scene: Option<String>,
@@ -79,9 +95,11 @@ pub struct QuickActionModal {
     action: QuickAction,
     fields: Vec<ModalField>,
     obs_source: Option<Arc<ObsClient>>,
+    option_source: Option<Arc<dyn BuiltinOptionSource>>,
     rt_handle: Handle,
     open_choice: Option<OpenChoice>,
     _subs: Vec<Subscription>,
+    _revision_watch: Option<Task<()>>,
 }
 
 impl EventEmitter<QuickActionModalEvent> for QuickActionModal {}
@@ -90,6 +108,7 @@ impl QuickActionModal {
     pub fn new(
         action: QuickAction,
         obs_source: Option<Arc<ObsClient>>,
+        option_source: Option<Arc<dyn BuiltinOptionSource>>,
         rt_handle: Handle,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -105,6 +124,10 @@ impl QuickActionModal {
         let mut fields = Vec::with_capacity(specs.len());
         let mut subs = Vec::new();
         let mut pending_dynamic: Vec<(usize, PickerKind)> = Vec::new();
+        let declared_lists = option_source
+            .as_ref()
+            .map(|source| source.option_lists())
+            .unwrap_or_default();
 
         for (i, spec) in specs.into_iter().enumerate() {
             let range_hint = match &spec.kind {
@@ -172,6 +195,7 @@ impl QuickActionModal {
                         let items = opts.iter().map(static_item).collect();
                         FieldControl::Choice(ChoiceControl {
                             dynamic: None,
+                            option_list: None,
                             state: ChoiceState::Ready(items),
                             selected: choice_default(&spec.default, opts),
                             scene: None,
@@ -182,6 +206,7 @@ impl QuickActionModal {
                             pending_dynamic.push((i, *pk));
                             FieldControl::Choice(ChoiceControl {
                                 dynamic: Some(*pk),
+                                option_list: None,
                                 state: ChoiceState::Loading,
                                 selected: None,
                                 scene: None,
@@ -189,18 +214,35 @@ impl QuickActionModal {
                         } else {
                             FieldControl::Choice(ChoiceControl {
                                 dynamic: Some(*pk),
+                                option_list: None,
                                 state: ChoiceState::Failed(tr!("integration_qa_field_unavailable")),
                                 selected: None,
                                 scene: None,
                             })
                         }
                     }
-                    QuickActionChoiceSource::OptionList(_) => FieldControl::Choice(ChoiceControl {
-                        dynamic: None,
-                        state: ChoiceState::Failed(tr!("integration_qa_field_unavailable")),
-                        selected: None,
-                        scene: None,
-                    }),
+                    QuickActionChoiceSource::OptionList(list) => {
+                        let binding = declared_lists
+                            .iter()
+                            .find(|metadata| &metadata.id == list)
+                            .map(|metadata| OptionListBinding {
+                                list: metadata.id.clone(),
+                                depends_on: metadata.depends_on.clone(),
+                                default: option_default(&spec.default),
+                                ticket: 0,
+                            });
+                        let state = match binding {
+                            Some(_) => ChoiceState::Loading,
+                            None => ChoiceState::Failed(tr!("integration_qa_field_unavailable")),
+                        };
+                        FieldControl::Choice(ChoiceControl {
+                            dynamic: None,
+                            option_list: binding,
+                            state,
+                            selected: None,
+                            scene: None,
+                        })
+                    }
                 },
             };
             fields.push(ModalField {
@@ -224,7 +266,24 @@ impl QuickActionModal {
             }
         }
 
-        Self {
+        let revision_watch = option_source
+            .as_ref()
+            .filter(|_| fields.iter().any(|field| field.option_list().is_some()))
+            .map(|source| {
+                let mut revisions = source.revisions();
+                cx.spawn(async move |this, cx| {
+                    while revisions.changed().await == RevisionWait::Changed {
+                        let refreshed = this.update(cx, |this, cx| {
+                            this.resolve_option_lists(ResolveMode::Refresh, cx)
+                        });
+                        if refreshed.is_err() {
+                            break;
+                        }
+                    }
+                })
+            });
+
+        let mut modal = Self {
             label,
             glyph,
             accent,
@@ -232,9 +291,148 @@ impl QuickActionModal {
             action: merge_action,
             fields,
             obs_source,
+            option_source,
             rt_handle,
             open_choice: None,
             _subs: subs,
+            _revision_watch: revision_watch,
+        };
+        modal.resolve_option_lists(ResolveMode::Load, cx);
+        modal
+    }
+
+    fn resolve_option_lists(&mut self, mode: ResolveMode, cx: &mut Context<Self>) {
+        for index in 0..self.fields.len() {
+            self.resolve_option_list(index, mode, cx);
+        }
+    }
+
+    fn resolve_dependents(&mut self, changed: usize, cx: &mut Context<Self>) {
+        let Some(key) = self.fields.get(changed).map(|field| field.key.clone()) else {
+            return;
+        };
+        let dependents: Vec<usize> = self
+            .fields
+            .iter()
+            .enumerate()
+            .filter(|(_, field)| {
+                field
+                    .option_list()
+                    .is_some_and(|binding| binding.depends_on.contains(&key))
+            })
+            .map(|(index, _)| index)
+            .collect();
+        for index in dependents {
+            self.resolve_option_list(index, ResolveMode::Load, cx);
+        }
+    }
+
+    fn dependency_values(
+        &self,
+        depends_on: &[String],
+        cx: &Context<Self>,
+    ) -> BTreeMap<String, QuickActionFieldValue> {
+        self.fields
+            .iter()
+            .filter(|field| depends_on.contains(&field.key))
+            .map(|field| (field.key.clone(), field.current_value(cx)))
+            .collect()
+    }
+
+    fn resolve_option_list(&mut self, index: usize, mode: ResolveMode, cx: &mut Context<Self>) {
+        let Some(source) = self.option_source.clone() else {
+            return;
+        };
+        let Some(depends_on) = self
+            .fields
+            .get(index)
+            .and_then(ModalField::option_list)
+            .map(|binding| binding.depends_on.clone())
+        else {
+            return;
+        };
+        let values = self.dependency_values(&depends_on, cx);
+        let Some(FieldControl::Choice(choice)) =
+            self.fields.get_mut(index).map(|field| &mut field.control)
+        else {
+            return;
+        };
+        let Some(binding) = choice.option_list.as_mut() else {
+            return;
+        };
+        binding.ticket = binding.ticket.wrapping_add(1);
+        let ticket = binding.ticket;
+        let list = binding.list.clone();
+        let reloads = mode == ResolveMode::Load || !matches!(choice.state, ChoiceState::Ready(_));
+        if reloads {
+            choice.state = ChoiceState::Loading;
+            if self
+                .open_choice
+                .as_ref()
+                .is_some_and(|open| open.index == index)
+            {
+                self.open_choice = None;
+            }
+        }
+        cx.notify();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { source.resolve(&list, &values).await },
+            move |this, outcome, cx| this.apply_option_list(index, ticket, outcome, cx),
+            cx,
+        );
+    }
+
+    fn apply_option_list(
+        &mut self,
+        index: usize,
+        ticket: u64,
+        outcome: CollectionOutcome<Vec<OptionEntry>>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(FieldControl::Choice(choice)) =
+            self.fields.get_mut(index).map(|field| &mut field.control)
+        else {
+            return;
+        };
+        let Some(binding) = &choice.option_list else {
+            return;
+        };
+        if binding.ticket != ticket {
+            return;
+        }
+        let previous = choice.selected.clone();
+        let open_picker = self
+            .open_choice
+            .as_ref()
+            .filter(|open| open.index == index)
+            .map(|open| open.picker.clone());
+        match outcome {
+            Ok(entries) => {
+                choice.selected =
+                    option_preselect(&entries, previous.as_ref(), binding.default.as_ref());
+                let items: Vec<PickerItem> = entries.iter().map(option_item).collect();
+                if let Some(picker) = open_picker {
+                    let refreshed = items.clone();
+                    picker.update(cx, |picker, cx| picker.set_items(refreshed, cx));
+                }
+                choice.state = ChoiceState::Ready(items);
+            }
+            Err(failure) => {
+                choice.selected = None;
+                choice.state = ChoiceState::Failed(option_failure_message(&failure));
+                if open_picker.is_some() {
+                    self.open_choice = None;
+                }
+            }
+        }
+        let selection_changed = self
+            .fields
+            .get(index)
+            .is_some_and(|field| field.selected_choice() != previous.as_ref());
+        cx.notify();
+        if selection_changed {
+            self.resolve_dependents(index, cx);
         }
     }
 
@@ -264,6 +462,7 @@ impl QuickActionModal {
             InputEvent::Changed(text) => {
                 self.revalidate(index, text, cx);
                 cx.notify();
+                self.resolve_dependents(index, cx);
             }
             InputEvent::Submitted(_) | InputEvent::Blurred(_) => {}
         }
@@ -332,6 +531,15 @@ impl QuickActionModal {
     }
 
     fn retry_dynamic(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self
+            .fields
+            .get(index)
+            .and_then(ModalField::option_list)
+            .is_some()
+        {
+            self.resolve_option_list(index, ResolveMode::Load, cx);
+            return;
+        }
         let pk = match self.fields.get(index).map(|f| &f.control) {
             Some(FieldControl::Choice(choice)) => choice.dynamic,
             _ => None,
@@ -369,6 +577,7 @@ impl QuickActionModal {
         {
             *value = !*value;
             cx.notify();
+            self.resolve_dependents(index, cx);
         }
     }
 
@@ -413,13 +622,18 @@ impl QuickActionModal {
     fn on_choice_picker(&mut self, index: usize, event: &PickerEvent, cx: &mut Context<Self>) {
         match event {
             PickerEvent::Selected(id) => {
+                let mut changed = false;
                 if let Some(FieldControl::Choice(choice)) =
                     self.fields.get_mut(index).map(|f| &mut f.control)
                 {
+                    changed = choice.selected.as_ref() != Some(id);
                     choice.selected = Some(id.clone());
                 }
                 self.open_choice = None;
                 cx.notify();
+                if changed {
+                    self.resolve_dependents(index, cx);
+                }
             }
             PickerEvent::Cancelled => self.close_choice(cx),
         }
@@ -432,7 +646,9 @@ impl QuickActionModal {
 
     fn can_run(&self, cx: &Context<Self>) -> bool {
         self.fields.iter().all(|field| match &field.control {
-            FieldControl::Choice(choice) => choice.selected.is_some(),
+            FieldControl::Choice(choice) => {
+                matches!(choice.state, ChoiceState::Ready(_)) && choice.selected.is_some()
+            }
             FieldControl::Text(input) => {
                 !field.required || !input.read(cx).content().trim().is_empty()
             }
@@ -675,6 +891,20 @@ impl Render for QuickActionModal {
 }
 
 impl ModalField {
+    fn option_list(&self) -> Option<&OptionListBinding> {
+        match &self.control {
+            FieldControl::Choice(choice) => choice.option_list.as_ref(),
+            _ => None,
+        }
+    }
+
+    fn selected_choice(&self) -> Option<&SharedString> {
+        match &self.control {
+            FieldControl::Choice(choice) => choice.selected.as_ref(),
+            _ => None,
+        }
+    }
+
     fn current_value(&self, cx: &Context<QuickActionModal>) -> QuickActionFieldValue {
         match &self.control {
             FieldControl::Text(input) => {
@@ -805,6 +1035,44 @@ fn choice_default(
         Some(QuickActionFieldValue::Text(value)) => Some(value.clone().into()),
         _ => opts.first().map(|opt| opt.value.clone().into()),
     }
+}
+
+fn option_item(entry: &OptionEntry) -> PickerItem {
+    PickerItem {
+        id: entry.value.clone().into(),
+        label: entry.label.clone().into(),
+        sublabel: entry
+            .hint
+            .as_ref()
+            .map(|hint| option_hint_text(hint).into()),
+        icon: entry
+            .icon
+            .as_ref()
+            .map(|icon| Icon::from_name(icon.as_str())),
+    }
+}
+
+fn option_default(default: &Option<QuickActionFieldValue>) -> Option<SharedString> {
+    match default {
+        Some(QuickActionFieldValue::Text(value)) if !value.is_empty() => Some(value.clone().into()),
+        _ => None,
+    }
+}
+
+fn option_preselect(
+    entries: &[OptionEntry],
+    previous: Option<&SharedString>,
+    default: Option<&SharedString>,
+) -> Option<SharedString> {
+    let listed = |id: &&SharedString| entries.iter().any(|entry| entry.value == id.as_ref());
+    if let Some(previous) = previous.filter(listed) {
+        return Some(previous.clone());
+    }
+    let mut current = entries.iter().filter(|entry| entry.current);
+    if let (Some(only), None) = (current.next(), current.next()) {
+        return Some(only.value.clone().into());
+    }
+    default.filter(listed).cloned()
 }
 
 fn selected_label(items: &[PickerItem], selected: &Option<SharedString>) -> SharedString {

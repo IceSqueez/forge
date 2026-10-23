@@ -435,7 +435,7 @@ impl RunHistoryModal {
                         .unwrap_or("bolt"),
                 );
                 let label = descriptor
-                    .map(|d| SharedString::from(d.label().to_owned()))
+                    .map(|d| SharedString::from(crate::kind_copy::trigger_name(d)))
                     .unwrap_or_else(|| tr!("action_editor_run_history_trigger_fallback").into());
                 (glyph, label)
             }

@@ -912,13 +912,13 @@ impl ScreenActionsView {
                 .trigger_instances
                 .iter()
                 .map(|inst| {
-                    let kind_label = self
-                        .trigger_registry
-                        .get(&inst.kind_id)
-                        .map(|desc| desc.label().to_owned())
+                    let descriptor = self.trigger_registry.get(&inst.kind_id);
+                    let kind_label = descriptor
+                        .map(crate::kind_copy::trigger_name)
                         .unwrap_or_else(|| inst.kind_id.clone());
                     TestTriggerChoice {
-                        name: inst.name.clone().into(),
+                        name: crate::kind_copy::trigger_instance_name(&inst.name, descriptor)
+                            .into(),
                         kind_label: kind_label.into(),
                     }
                 })
@@ -974,7 +974,7 @@ impl ScreenActionsView {
             super::editor::sub_action_summary(step, &self.select_options);
         let runner = self.sub_action_registry.get(&step.kind_id);
         let name = runner
-            .map(|r| r.label().to_owned())
+            .map(crate::kind_copy::step_name)
             .unwrap_or(fallback_title);
         let (icon, color) = super::editor::step_glyph(
             &step.kind_id,

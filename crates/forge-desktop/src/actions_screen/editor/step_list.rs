@@ -215,7 +215,7 @@ impl ScreenActionsView {
             sub_action_summary(step, &self.select_options);
         let runner = self.sub_action_registry.get(&step.kind_id);
         let title = runner
-            .map(|r| r.label().to_owned())
+            .map(crate::kind_copy::step_name)
             .unwrap_or(fallback_title);
         let (glyph, glyph_color) = step_glyph(
             &step.kind_id,
@@ -224,7 +224,7 @@ impl ScreenActionsView {
             palette,
         );
         let detail_str = detail_opt
-            .or_else(|| runner.map(|r| r.summary().to_owned()))
+            .or_else(|| runner.map(crate::kind_copy::step_summary))
             .unwrap_or_else(|| step.kind_id.clone());
 
         let circle = div()

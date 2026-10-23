@@ -35,7 +35,7 @@ fn build_recent_group(
                 .unwrap_or("bolt"),
         );
         let kind_label = descriptor
-            .map(|d| d.label().to_owned())
+            .map(crate::kind_copy::trigger_name)
             .unwrap_or_else(|| instance.kind_id.clone());
         let condition = crate::triggers_screen::condition_display(
             descriptor,
@@ -56,7 +56,7 @@ fn build_recent_group(
             id,
             glyph: GlyphArt::Icon(glyph),
             tint: platform_dot_color(&instance.kind_id, palette),
-            name: instance.name.clone().into(),
+            name: crate::kind_copy::trigger_instance_name(&instance.name, descriptor).into(),
             desc: desc.into(),
             state,
             matches: None,

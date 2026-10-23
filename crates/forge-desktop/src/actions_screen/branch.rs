@@ -200,7 +200,7 @@ impl ScreenActionsView {
                 .and_then(|s| {
                     self.sub_action_registry
                         .get(&s.kind_id)
-                        .map(|r| r.label().to_owned())
+                        .map(crate::kind_copy::step_name)
                 })
                 .unwrap_or_else(|| tr!("action_editor_kind_sub_action"));
             let branch_label = match frame.case_index {

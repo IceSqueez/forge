@@ -44,7 +44,7 @@ pub(super) fn feed_rows(feeds: Vec<OverlayFeed>, registry: &TriggerRegistry) -> 
                 .map(|instance| {
                     registry
                         .get(&instance.kind_id)
-                        .map_or_else(|| instance.kind_id.clone(), |held| held.label().to_owned())
+                        .map_or_else(|| instance.kind_id.clone(), crate::kind_copy::trigger_name)
                 })
                 .collect(),
         })

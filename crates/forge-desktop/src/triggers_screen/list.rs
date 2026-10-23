@@ -57,7 +57,7 @@ impl TriggersRegistryView {
     fn kind_label(&self, kind_id: &str) -> String {
         self.registry
             .get(kind_id)
-            .map(|d| d.label().to_owned())
+            .map(crate::kind_copy::trigger_name)
             .unwrap_or_else(|| kind_id.to_owned())
     }
 
@@ -679,7 +679,7 @@ impl TriggersRegistryView {
             .map(|d| Icon::from_name(d.icon_name()))
             .unwrap_or(Icon::Bolt);
         let kind_label = descriptor
-            .map(|d| d.label().to_owned())
+            .map(crate::kind_copy::trigger_name)
             .unwrap_or_else(|| instance.kind_id.clone());
 
         let stripe_color = if selected || cursor {

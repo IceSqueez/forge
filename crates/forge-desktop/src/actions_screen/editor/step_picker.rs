@@ -14,16 +14,19 @@ fn build_step_groups(
     registry: &SubActionRegistry,
     palette: &ForgePalette,
 ) -> (Vec<GridPickerGroup>, HashMap<SharedString, String>) {
-    let mut runners: Vec<&dyn SubActionRunner> = registry.all().collect();
-    runners.sort_by(|a, b| {
+    let mut runners: Vec<(String, &dyn SubActionRunner)> = registry
+        .all()
+        .map(|runner| (crate::kind_copy::step_name(runner), runner))
+        .collect();
+    runners.sort_by(|(a_name, a), (b_name, b)| {
         sub_category_slug(a.category())
             .cmp(sub_category_slug(b.category()))
-            .then_with(|| a.label().cmp(b.label()))
+            .then_with(|| a_name.cmp(b_name))
     });
 
     let mut groups: Vec<GridPickerGroup> = Vec::new();
     let mut picks: HashMap<SharedString, String> = HashMap::new();
-    for runner in runners {
+    for (name, runner) in runners {
         let cat = runner.category();
         let scope = SharedString::from(sub_category_slug(cat));
         let color = sub_category_color(cat, palette);
@@ -33,8 +36,8 @@ fn build_step_groups(
             id,
             glyph: GlyphArt::Icon(Icon::from_name(runner.icon_name())),
             tint: color,
-            name: runner.label().to_string().into(),
-            desc: runner.summary().to_string().into(),
+            name: name.into(),
+            desc: crate::kind_copy::step_summary(runner).into(),
             state: GridPickerItemState::Normal,
             matches: None,
         };

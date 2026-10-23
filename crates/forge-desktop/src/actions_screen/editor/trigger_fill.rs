@@ -27,7 +27,7 @@ impl ScreenActionsView {
         let palette = cx.palette();
         let descriptor = self.trigger_registry.get(&kind_id);
         let kind_label = descriptor
-            .map(|d| d.label().to_owned())
+            .map(crate::kind_copy::trigger_name)
             .unwrap_or_else(|| kind_id.clone());
         let default = trigger_form_defaults(descriptor);
         let specs = trigger_form_specs(descriptor);

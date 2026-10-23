@@ -120,7 +120,7 @@ impl TriggersRegistryView {
         let palette = cx.palette();
         let descriptor = self.registry.get(&kind_id);
         let kind_label = descriptor
-            .map(|d| d.label().to_owned())
+            .map(crate::kind_copy::trigger_name)
             .unwrap_or_else(|| kind_id.clone());
         let default = trigger_form_defaults(descriptor);
         let specs = trigger_form_specs(descriptor);
@@ -503,23 +503,26 @@ pub(crate) fn build_kind_groups(
 
     for cat in CATEGORY_ORDER {
         let (label, slug, color) = category_meta(cat, palette);
-        let mut descs: Vec<&dyn TriggerKindDescriptor> =
-            registry.all().filter(|d| d.category() == cat).collect();
+        let mut descs: Vec<(String, &dyn TriggerKindDescriptor)> = registry
+            .all()
+            .filter(|d| d.category() == cat)
+            .map(|d| (crate::kind_copy::trigger_name(d), d))
+            .collect();
         if descs.is_empty() {
             continue;
         }
-        descs.sort_by(|a, b| a.label().cmp(b.label()));
+        descs.sort_by(|(a, _), (b, _)| a.cmp(b));
 
         let mut items = Vec::with_capacity(descs.len());
-        for d in descs {
+        for (name, d) in descs {
             let id = SharedString::from(format!("kind-{}", d.id()));
             picks.insert(id.clone(), d.id().to_owned());
             items.push(GridPickerItem {
                 id,
                 glyph: GlyphArt::Icon(Icon::from_name(d.icon_name())),
                 tint: color,
-                name: d.label().to_string().into(),
-                desc: d.summary().to_string().into(),
+                name: name.into(),
+                desc: crate::kind_copy::trigger_summary(d).into(),
                 state: GridPickerItemState::Normal,
                 matches: None,
             });

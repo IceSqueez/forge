@@ -14,7 +14,7 @@ impl ScreenActionsView {
     pub(super) fn kind_label(&self, kind_id: &str) -> String {
         self.sub_action_registry
             .get(kind_id)
-            .map(|r| r.label().to_owned())
+            .map(crate::kind_copy::step_name)
             .unwrap_or_else(|| kind_id.to_owned())
     }
 

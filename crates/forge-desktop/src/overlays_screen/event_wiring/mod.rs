@@ -268,7 +268,7 @@ impl EventWiringView {
             .handles
             .triggers
             .get(&kind_id)
-            .map_or_else(|| kind_id.clone(), |held| held.label().to_owned());
+            .map_or_else(|| kind_id.clone(), crate::kind_copy::trigger_name);
         self.stage = Some(WiringStage::Confirm(ConfirmStage {
             trigger_kind_id: kind_id.clone(),
             trigger_label: label,

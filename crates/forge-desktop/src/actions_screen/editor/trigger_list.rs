@@ -124,7 +124,7 @@ impl ScreenActionsView {
             palette.text_faint
         };
         let kind_label = descriptor
-            .map(|d| d.label().to_owned())
+            .map(crate::kind_copy::trigger_name)
             .unwrap_or_else(|| instance.kind_id.clone());
         let mut condition = crate::triggers_screen::condition_display(
             descriptor,
@@ -168,7 +168,10 @@ impl ScreenActionsView {
                     .text_size(FONT_XS)
                     .flex_none()
                     .text_color(name_color)
-                    .child(instance.name.clone()),
+                    .child(crate::kind_copy::trigger_instance_name(
+                        &instance.name,
+                        descriptor,
+                    )),
             )
             .child(
                 div()

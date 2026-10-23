@@ -7,6 +7,7 @@ use forge_tts_core::{
 };
 
 use crate::com::{StaRequest, spawn_sta_worker};
+use crate::error::SapiError;
 
 static CAPABILITIES: EngineCapabilities = EngineCapabilities {
     ssml: true,
@@ -45,21 +46,14 @@ impl TtsEngine for SapiEngine {
         let (oneshot_tx, oneshot_rx) = tokio::sync::oneshot::channel();
         self.sta_tx
             .send(StaRequest::Synthesize {
-                voice_id: request.voice_id.clone(),
                 req: request,
                 tx: oneshot_tx,
             })
-            .map_err(|_| TtsError::EngineUnavailable {
-                id: self.id.clone(),
-                detail: "STA worker terminated".into(),
-            })?;
+            .map_err(|_| SapiError::WorkerTerminated)?;
 
         oneshot_rx
             .await
-            .map_err(|_| TtsError::EngineUnavailable {
-                id: self.id.clone(),
-                detail: "STA worker dropped request".into(),
-            })?
+            .map_err(|_| SapiError::WorkerTerminated)?
             .map_err(TtsError::from)
     }
 }
@@ -72,10 +66,7 @@ impl TtsEngineFactory for SapiEngineFactory {
         let (sta_tx, catalog) = spawn_sta_worker(engine_id.clone()).map_err(TtsError::from)?;
 
         if catalog.is_empty() {
-            return Err(TtsError::EngineUnavailable {
-                id: engine_id,
-                detail: "no SAPI 5 voices found".into(),
-            });
+            return Err(SapiError::NoCatalog.into());
         }
 
         tracing::info!(voices = catalog.len(), "SAPI 5 engine ready");

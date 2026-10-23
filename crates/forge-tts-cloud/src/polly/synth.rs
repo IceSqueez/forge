@@ -1,5 +1,5 @@
 use forge_audio::PcmBuffer;
-use forge_tts_core::{SynthesisRequest, VoiceId};
+use forge_tts_core::{SynthesisRequest, VoiceId, xml_escape};
 use reqwest::{Client, StatusCode};
 use serde_json::json;
 
@@ -7,19 +7,6 @@ use crate::credentials::PollyCredentials;
 use crate::polly::SAMPLE_RATE_HZ;
 use crate::polly::error::PollyError;
 use crate::polly::signer;
-
-fn xml_escape(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for ch in text.chars() {
-        match ch {
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '&' => out.push_str("&amp;"),
-            c => out.push(c),
-        }
-    }
-    out
-}
 
 fn format_signed_percent(val: i32) -> String {
     if val >= 0 {

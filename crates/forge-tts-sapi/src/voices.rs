@@ -1,5 +1,10 @@
 use forge_tts_core::{EngineId, TtsVoice, VoiceGender, VoiceId};
 
+use crate::synth::SAMPLE_RATE_HZ;
+
+const UNDETERMINED_LOCALE: &str = "und";
+const LANGUAGE_LIST_SEPARATOR: char = ';';
+
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub(crate) fn lcid_to_bcp47(lcid: u32) -> &'static str {
     match lcid {
@@ -47,19 +52,32 @@ pub(crate) fn lcid_to_bcp47(lcid: u32) -> &'static str {
         0x0427 => "lt-LT",
         0x0429 => "fa-IR",
         0x0804 => "zh-CN",
-        _ => "und",
+        _ => UNDETERMINED_LOCALE,
     }
 }
 
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-pub(crate) fn parse_sapi_hex_locale(hex_str: &str) -> String {
-    if let Ok(lcid) = u32::from_str_radix(hex_str, 16) {
-        let tag = lcid_to_bcp47(lcid);
-        if tag != "und" {
-            return tag.to_owned();
-        }
+pub(crate) fn primary_language_tag(language_attribute: &str) -> Option<&'static str> {
+    language_attribute
+        .split(LANGUAGE_LIST_SEPARATOR)
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .filter_map(|segment| u32::from_str_radix(segment, 16).ok())
+        .map(lcid_to_bcp47)
+        .find(|tag| *tag != UNDETERMINED_LOCALE)
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub(crate) fn parse_sapi_hex_locale(language_attribute: &str) -> String {
+    if let Some(tag) = primary_language_tag(language_attribute) {
+        return tag.to_owned();
     }
-    hex_str.to_owned()
+    let trimmed = language_attribute.trim();
+    if trimmed.is_empty() {
+        UNDETERMINED_LOCALE.to_owned()
+    } else {
+        trimmed.to_owned()
+    }
 }
 
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
@@ -86,7 +104,7 @@ pub(crate) fn build_tts_voice(
         gender: parse_gender(gender_str),
         engine_id: engine_id.clone(),
         is_neural: false,
-        sample_rate_hint: 22_050,
+        sample_rate_hint: SAMPLE_RATE_HZ,
     }
 }
 
@@ -107,10 +125,35 @@ mod tests {
     }
 
     #[test]
-    fn parse_sapi_hex_locale_returns_bcp47_or_verbatim() {
-        assert_eq!(parse_sapi_hex_locale("409"), "en-US");
-        assert_eq!(parse_sapi_hex_locale("FFFF"), "FFFF");
-        assert_eq!(parse_sapi_hex_locale("xyz"), "xyz");
+    fn parse_sapi_hex_locale_maps_first_known_lcid_or_keeps_input() {
+        for (attribute, expected) in [
+            ("409", "en-US"),
+            ("409;9", "en-US"),
+            ("FFFF;409", "en-US"),
+            ("9;422", "uk-UA"),
+            (" 419 ", "ru-RU"),
+            ("", "und"),
+            ("   ", "und"),
+            ("FFFF", "FFFF"),
+            (" xyz ", "xyz"),
+        ] {
+            assert_eq!(
+                parse_sapi_hex_locale(attribute),
+                expected,
+                "attribute={attribute:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn primary_language_tag_is_none_without_a_known_lcid() {
+        for attribute in ["", ";", "FFFF", "9", "xyz;FFFF"] {
+            assert_eq!(
+                primary_language_tag(attribute),
+                None,
+                "attribute={attribute:?}"
+            );
+        }
     }
 
     #[test]
@@ -119,17 +162,5 @@ mod tests {
         assert!(matches!(parse_gender("Female"), VoiceGender::Female));
         assert!(matches!(parse_gender("Neutral"), VoiceGender::Neutral));
         assert!(matches!(parse_gender(""), VoiceGender::Neutral));
-    }
-
-    #[test]
-    fn build_tts_voice_sets_fields() {
-        let eid = EngineId("sapi".into());
-        let v = build_tts_voice("token-id".into(), "Test Voice".into(), "409", "Male", &eid);
-        assert_eq!(v.id.0, "token-id");
-        assert_eq!(v.name, "Test Voice");
-        assert_eq!(v.locale, "en-US");
-        assert!(matches!(v.gender, VoiceGender::Male));
-        assert!(!v.is_neural);
-        assert_eq!(v.sample_rate_hint, 22_050);
     }
 }

@@ -4,7 +4,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+mod ssml;
+
 pub use forge_audio::PcmBuffer;
+pub use ssml::xml_escape;
 
 pub type Locale = String;
 
@@ -106,6 +109,9 @@ pub enum TtsError {
 
     #[error("quota exhausted for engine {id:?}: {detail}")]
     QuotaExceeded { id: EngineId, detail: String },
+
+    #[error("engine {id:?} failed to synthesize: {detail}")]
+    SynthesisFailed { id: EngineId, detail: String },
 }
 
 #[async_trait]

@@ -1,22 +1,9 @@
 use forge_audio::PcmBuffer;
-use forge_tts_core::{SynthesisRequest, VoiceId};
+use forge_tts_core::{SynthesisRequest, VoiceId, xml_escape};
 use reqwest::{Client, StatusCode};
 
 use crate::azure::SAMPLE_RATE_HZ;
 use crate::azure::error::AzureError;
-
-fn xml_escape(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for ch in text.chars() {
-        match ch {
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '&' => out.push_str("&amp;"),
-            c => out.push(c),
-        }
-    }
-    out
-}
 
 fn format_signed_percent(val: i32) -> String {
     if val >= 0 {
@@ -59,7 +46,7 @@ fn build_ssml(req: &SynthesisRequest) -> String {
 
     format!(
         r#"<speak version="1.0" xml:lang="en-US"><voice name="{}">{inner}</voice></speak>"#,
-        req.voice_id.0
+        xml_escape(&req.voice_id.0)
     )
 }
 

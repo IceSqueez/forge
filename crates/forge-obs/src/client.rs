@@ -11,8 +11,9 @@ use tokio::task::JoinHandle;
 use forge_events::{Event, EventPublisher};
 use forge_platform_core::{
     AtomicConnectionState, Backoff, BuiltinControl, BuiltinStatus, CapabilityFlags,
-    ConnectionState, ConnectionTransition, ControlFailure, ControlOutcome, HeaderAction,
-    HealthDelta, HeroBadge, HeroBadgeTone, connection_state_changed_event,
+    CollectionRevisionSignal, ConnectionState, ConnectionTransition, ControlFailure,
+    ControlOutcome, HeaderAction, HealthDelta, HeroBadge, HeroBadgeTone,
+    connection_state_changed_event,
 };
 use forge_types::IntegrationId;
 
@@ -64,6 +65,7 @@ pub struct ObsClient {
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
     pub(crate) health_tx: broadcast::Sender<HealthDelta>,
     pub(crate) catalog_state: Arc<RwLock<ObsCatalog>>,
+    pub(crate) option_revisions: Arc<CollectionRevisionSignal>,
     reconnect_host: String,
     reconnect_port: u16,
     reconnect_password: Arc<Option<String>>,
@@ -93,6 +95,7 @@ impl ObsClient {
 
         let (health_tx, health_state) = make_health_channel();
         let catalog_state = Arc::new(RwLock::new(ObsCatalog::default()));
+        let option_revisions = Arc::new(CollectionRevisionSignal::new());
 
         let stored_password = password.map(str::to_owned);
         let auto_reconnect = Arc::new(watch::Sender::new(true));
@@ -108,6 +111,7 @@ impl ObsClient {
             obs_version: Arc::clone(&obs_version),
             obs_ws_version: Arc::clone(&obs_ws_version),
             catalog_state: Arc::clone(&catalog_state),
+            option_revisions: Arc::clone(&option_revisions),
             health_state: Arc::clone(&health_state),
             health_tx: health_tx.clone(),
             publisher: Arc::clone(&publisher),
@@ -137,6 +141,7 @@ impl ObsClient {
             health_state,
             health_tx,
             catalog_state,
+            option_revisions,
             scene_item_id_cache: item_cache,
             reconnect_host: host,
             reconnect_port: port,
@@ -196,6 +201,7 @@ impl ObsClient {
             health_state,
             health_tx,
             catalog_state: Arc::new(RwLock::new(ObsCatalog::default())),
+            option_revisions: Arc::new(CollectionRevisionSignal::new()),
             scene_item_id_cache: Arc::new(Mutex::new(HashMap::new())),
             reconnect_host: host,
             reconnect_port: port,
@@ -306,6 +312,7 @@ impl BuiltinControl for ObsClient {
             obs_version: Arc::clone(&self.obs_version),
             obs_ws_version: Arc::clone(&self.obs_ws_version),
             catalog_state: Arc::clone(&self.catalog_state),
+            option_revisions: Arc::clone(&self.option_revisions),
             health_state: Arc::clone(&self.health_state),
             health_tx: self.health_tx.clone(),
             publisher: Arc::clone(&self.reconnect_publisher),
@@ -362,6 +369,7 @@ struct SupervisorContext {
     obs_version: Arc<OnceLock<String>>,
     obs_ws_version: Arc<OnceLock<String>>,
     catalog_state: Arc<RwLock<ObsCatalog>>,
+    option_revisions: Arc<CollectionRevisionSignal>,
     health_state: Arc<RwLock<HealthSnapshot>>,
     health_tx: broadcast::Sender<HealthDelta>,
     publisher: Arc<dyn EventPublisher>,
@@ -420,6 +428,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         obs_version,
         obs_ws_version,
         catalog_state,
+        option_revisions,
         health_state,
         health_tx,
         publisher,
@@ -593,16 +602,18 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         );
         tracing::info!(host = %host, port, "connected to OBS");
         publisher.publish(crate::events::make_connection_connected());
+        option_revisions.bump();
 
-        let stats_handle = spawn_stats_poll(
-            Arc::clone(&inner),
-            Arc::clone(&health_state),
-            health_tx.clone(),
-            Arc::clone(&catalog_state),
-            Arc::clone(&item_cache),
-            Arc::clone(&resync_nudge),
-            stream_output.clone(),
-        );
+        let feeds = CatalogFeeds {
+            catalog_state: Arc::clone(&catalog_state),
+            option_revisions: Arc::clone(&option_revisions),
+            health_state: Arc::clone(&health_state),
+            health_tx: health_tx.clone(),
+            item_cache: Arc::clone(&item_cache),
+            stream_output: stream_output.clone(),
+        };
+        let stats_handle =
+            spawn_stats_poll(Arc::clone(&inner), Arc::clone(&resync_nudge), feeds.clone());
 
         let mut pending_resync: Option<JoinHandle<()>> = None;
 
@@ -616,6 +627,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                     inner.write().await.take();
                     clear_connected_at(&connected_at);
                     settle_connection_state(&state, &*publisher, &stream_output, ConnectionState::Disconnected, ConnectionTransition::Expected);
+                    option_revisions.bump();
                     tracing::info!("OBS supervisor shutting down");
                     return;
                 }
@@ -635,29 +647,16 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                             &*publisher,
                         );
                         stream_output.refresh();
+                        if changes_option_lists(&ev) {
+                            option_revisions.bump();
+                        }
                         if matches!(ev, obws::events::Event::CurrentSceneCollectionChanged { .. }) {
-                            respawn_full_resync(
-                                &mut pending_resync,
-                                &session,
-                                &catalog_state,
-                                &health_state,
-                                &health_tx,
-                                &item_cache,
-                                &stream_output,
-                            );
+                            respawn_full_resync(&mut pending_resync, &session, &feeds);
                         }
                     }
                     None if session.obs().events().is_ok() => {
                         tracing::warn!("OBS events overflowed the buffer; resyncing the catalog");
-                        respawn_full_resync(
-                            &mut pending_resync,
-                            &session,
-                            &catalog_state,
-                            &health_state,
-                            &health_tx,
-                            &item_cache,
-                            &stream_output,
-                        );
+                        respawn_full_resync(&mut pending_resync, &session, &feeds);
                     }
                     None => {
                         tracing::info!(host = %host, port, "OBS connection lost; reconnecting");
@@ -674,6 +673,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         stats_handle.abort();
         inner.write().await.take();
         clear_connected_at(&connected_at);
+        option_revisions.bump();
         let retry = *auto_reconnect.borrow_and_update();
         if !retry {
             record_failure(&last_failure, Some(failure.clone()));
@@ -721,24 +721,33 @@ async fn prime_session(
     snapshot_catalog(session, catalog_state, health_state, health_tx, item_cache).await
 }
 
+#[derive(Clone)]
+struct CatalogFeeds {
+    catalog_state: Arc<RwLock<ObsCatalog>>,
+    option_revisions: Arc<CollectionRevisionSignal>,
+    health_state: Arc<RwLock<HealthSnapshot>>,
+    health_tx: broadcast::Sender<HealthDelta>,
+    item_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
+    stream_output: StreamOutputFeed,
+}
+
 fn respawn_full_resync(
     pending: &mut Option<JoinHandle<()>>,
     session: &LiveSession,
-    catalog_state: &Arc<RwLock<ObsCatalog>>,
-    health_state: &Arc<RwLock<HealthSnapshot>>,
-    health_tx: &broadcast::Sender<HealthDelta>,
-    item_cache: &Arc<Mutex<HashMap<(String, String), i64>>>,
-    stream_output: &StreamOutputFeed,
+    feeds: &CatalogFeeds,
 ) {
     if let Some(handle) = pending.take() {
         handle.abort();
     }
     let session = session.clone();
-    let catalog_state = Arc::clone(catalog_state);
-    let health_state = Arc::clone(health_state);
-    let health_tx = health_tx.clone();
-    let item_cache = Arc::clone(item_cache);
-    let stream_output = stream_output.clone();
+    let CatalogFeeds {
+        catalog_state,
+        option_revisions,
+        health_state,
+        health_tx,
+        item_cache,
+        stream_output,
+    } = feeds.clone();
     *pending = Some(tokio::spawn(async move {
         if let Err(e) = snapshot_catalog(
             &session,
@@ -751,8 +760,39 @@ fn respawn_full_resync(
         {
             tracing::debug!(error = %e, "OBS catalog resync interrupted");
         }
+        option_revisions.bump();
         stream_output.refresh();
     }));
+}
+
+fn changes_option_lists(ev: &obws::events::Event) -> bool {
+    use obws::events::Event;
+    matches!(
+        ev,
+        Event::SceneCreated { .. }
+            | Event::SceneRemoved { .. }
+            | Event::SceneNameChanged { .. }
+            | Event::SceneListChanged { .. }
+            | Event::CurrentProgramSceneChanged { .. }
+            | Event::InputCreated { .. }
+            | Event::InputRemoved { .. }
+            | Event::InputNameChanged { .. }
+            | Event::SceneItemCreated { .. }
+            | Event::SceneItemRemoved { .. }
+            | Event::SceneItemEnableStateChanged { .. }
+            | Event::CurrentSceneTransitionChanged { .. }
+            | Event::CurrentProfileChanged { .. }
+            | Event::ProfileListChanged { .. }
+            | Event::CurrentSceneCollectionChanged { .. }
+            | Event::SceneCollectionListChanged { .. }
+    )
+}
+
+fn option_fingerprint(catalog_state: &RwLock<ObsCatalog>) -> Option<u64> {
+    catalog_state
+        .read()
+        .ok()
+        .map(|catalog| catalog.option_fingerprint())
 }
 
 fn handle_obs_event(
@@ -1227,13 +1267,17 @@ const CATALOG_RECONCILE_EVERY_NTH_TICK: u32 = 3;
 
 fn spawn_stats_poll(
     inner: SessionSlot,
-    health_state: Arc<RwLock<HealthSnapshot>>,
-    health_tx: broadcast::Sender<HealthDelta>,
-    catalog_state: Arc<RwLock<ObsCatalog>>,
-    item_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
     resync_nudge: Arc<Notify>,
-    stream_output: StreamOutputFeed,
+    feeds: CatalogFeeds,
 ) -> JoinHandle<()> {
+    let CatalogFeeds {
+        catalog_state,
+        option_revisions,
+        health_state,
+        health_tx,
+        item_cache,
+        stream_output,
+    } = feeds;
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(STATS_POLL_INTERVAL);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -1313,11 +1357,16 @@ fn spawn_stats_poll(
                 stream_output.refresh();
             }
 
-            if (nudged || tick.is_multiple_of(CATALOG_RECONCILE_EVERY_NTH_TICK))
-                && let Err(e) =
+            if nudged || tick.is_multiple_of(CATALOG_RECONCILE_EVERY_NTH_TICK) {
+                let before = option_fingerprint(&catalog_state);
+                if let Err(e) =
                     reconcile_catalog_topology(&session, &catalog_state, &item_cache).await
-            {
-                tracing::debug!(error = %e, "OBS catalog reconciliation interrupted");
+                {
+                    tracing::debug!(error = %e, "OBS catalog reconciliation interrupted");
+                }
+                if option_fingerprint(&catalog_state) != before {
+                    option_revisions.bump();
+                }
             }
         }
     })

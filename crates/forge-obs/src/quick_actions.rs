@@ -1,12 +1,16 @@
 use std::collections::BTreeMap;
 
 use forge_platform_core::{
-    PickerKind, QuickAction, QuickActionAccent, QuickActionChoiceSource, QuickActionField,
+    OptionListId, QuickAction, QuickActionAccent, QuickActionChoiceSource, QuickActionField,
     QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness, QuickActions, SectionIcon,
 };
 use forge_types::{SubActionStep, Variant};
 
 use crate::client::ObsClient;
+use crate::option_source::{
+    INPUT_LIST, PROFILE_LIST, SCENE_COLLECTION_LIST, SCENE_FIELD, SCENE_LIST, SOURCE_LIST,
+    TRANSITION_LIST,
+};
 
 fn blank() -> Variant {
     Variant::String(String::new())
@@ -63,11 +67,13 @@ fn toggle_field(key: &str, label: &str, default: bool) -> QuickActionField {
     }
 }
 
-fn choice_field(key: &str, label: &str, picker: PickerKind) -> QuickActionField {
+fn choice_field(key: &str, label: &str, list: &str) -> QuickActionField {
     QuickActionField {
         key: key.to_owned(),
         label: label.to_owned(),
-        kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::Dynamic(picker)),
+        kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(OptionListId::new(
+            list,
+        ))),
         default: None,
         placeholder: None,
         hint: None,
@@ -85,7 +91,6 @@ fn quick_action(
     destructive: bool,
     kind_id: &str,
     config: BTreeMap<String, Variant>,
-    picker: Option<PickerKind>,
     fields: Vec<QuickActionField>,
 ) -> QuickAction {
     let (group_icon, group_accent) = group_badge(group);
@@ -108,7 +113,7 @@ fn quick_action(
             condition: None,
             label: None,
         },
-        picker,
+        picker: None,
         fields,
         collection: None,
     }
@@ -117,12 +122,6 @@ fn quick_action(
 impl QuickActions for ObsClient {
     fn actions(&self) -> Vec<QuickAction> {
         let connected = self.connection_state().is_connected();
-        let current_scene = self
-            .catalog_state
-            .try_read()
-            .ok()
-            .and_then(|c| c.current_scene.clone())
-            .unwrap_or_default();
 
         vec![
             quick_action(
@@ -133,9 +132,8 @@ impl QuickActions for ObsClient {
                 "Scenes",
                 false,
                 "obs.scenes.switch_current",
-                config([("scene", blank())]),
-                Some(PickerKind::Scene),
-                Vec::new(),
+                config([(SCENE_FIELD, blank())]),
+                vec![choice_field(SCENE_FIELD, "Scene", SCENE_LIST).required()],
             ),
             quick_action(
                 "Set preview scene",
@@ -145,9 +143,8 @@ impl QuickActions for ObsClient {
                 "Scenes",
                 false,
                 "obs.scenes.set_preview",
-                config([("scene", blank())]),
-                Some(PickerKind::Scene),
-                Vec::new(),
+                config([(SCENE_FIELD, blank())]),
+                vec![choice_field(SCENE_FIELD, "Scene", SCENE_LIST).required()],
             ),
             quick_action(
                 "Trigger transition",
@@ -158,8 +155,7 @@ impl QuickActions for ObsClient {
                 false,
                 "obs.scenes.set_transition",
                 config([("transition", blank())]),
-                Some(PickerKind::Transition),
-                Vec::new(),
+                vec![choice_field("transition", "Transition", TRANSITION_LIST).required()],
             ),
             quick_action(
                 "Toggle studio mode",
@@ -170,7 +166,6 @@ impl QuickActions for ObsClient {
                 false,
                 "obs.studio.set_enabled",
                 config([("on", Variant::Bool(true))]),
-                None,
                 vec![toggle_field("on", "Enabled", true)],
             ),
             quick_action(
@@ -182,13 +177,13 @@ impl QuickActions for ObsClient {
                 false,
                 "obs.sources.set_visible",
                 config([
-                    ("scene", Variant::String(current_scene.clone())),
+                    (SCENE_FIELD, blank()),
                     ("source", blank()),
                     ("visible", Variant::Bool(true)),
                 ]),
-                Some(PickerKind::Source),
                 vec![
-                    choice_field("source", "Source", PickerKind::Source).required(),
+                    choice_field(SCENE_FIELD, "Scene", SCENE_LIST).required(),
+                    choice_field("source", "Source", SOURCE_LIST).required(),
                     toggle_field("visible", "Visible", true),
                 ],
             ),
@@ -201,9 +196,8 @@ impl QuickActions for ObsClient {
                 false,
                 "obs.audio.set_mute",
                 config([("source", blank()), ("muted", Variant::Bool(false))]),
-                Some(PickerKind::Input),
                 vec![
-                    choice_field("source", "Audio source", PickerKind::Input).required(),
+                    choice_field("source", "Audio source", INPUT_LIST).required(),
                     toggle_field("muted", "Muted", false),
                 ],
             ),
@@ -219,9 +213,8 @@ impl QuickActions for ObsClient {
                     ("source", blank()),
                     ("volume_db", Variant::String("-18".to_owned())),
                 ]),
-                Some(PickerKind::Input),
                 vec![
-                    choice_field("source", "Source", PickerKind::Input).required(),
+                    choice_field("source", "Source", INPUT_LIST).required(),
                     text_field_placeholder("volume_db", "Gain (dB)", "-18", "e.g. -6.0").required(),
                 ],
             ),
@@ -238,9 +231,8 @@ impl QuickActions for ObsClient {
                     ("filter", blank()),
                     ("enabled", Variant::Bool(true)),
                 ]),
-                Some(PickerKind::Source),
                 vec![
-                    choice_field("source", "Source", PickerKind::Source).required(),
+                    choice_field("source", "Source", SOURCE_LIST).required(),
                     text_field("filter", "Filter", "Chroma Key").required(),
                     toggle_field("enabled", "Enabled", true),
                 ],
@@ -254,8 +246,7 @@ impl QuickActions for ObsClient {
                 false,
                 "obs.browser.refresh",
                 config([("source", blank())]),
-                Some(PickerKind::Source),
-                Vec::new(),
+                vec![choice_field("source", "Source", SOURCE_LIST).required()],
             ),
             quick_action(
                 "Restart media",
@@ -266,8 +257,7 @@ impl QuickActions for ObsClient {
                 false,
                 "obs.media.restart",
                 config([("source", blank())]),
-                Some(PickerKind::Source),
-                Vec::new(),
+                vec![choice_field("source", "Source", SOURCE_LIST).required()],
             ),
             quick_action(
                 "Start / stop stream",
@@ -278,7 +268,6 @@ impl QuickActions for ObsClient {
                 true,
                 "obs.stream.set_active",
                 config([("on", Variant::Bool(true))]),
-                None,
                 vec![toggle_field("on", "Streaming", true)],
             ),
             quick_action(
@@ -290,7 +279,6 @@ impl QuickActions for ObsClient {
                 false,
                 "obs.record.set_active",
                 config([("on", Variant::Bool(false))]),
-                None,
                 vec![toggle_field("on", "Recording", false)],
             ),
             quick_action(
@@ -302,7 +290,6 @@ impl QuickActions for ObsClient {
                 false,
                 "obs.record.toggle_pause",
                 BTreeMap::new(),
-                None,
                 Vec::new(),
             ),
             quick_action(
@@ -314,7 +301,6 @@ impl QuickActions for ObsClient {
                 false,
                 "obs.virtualcam.set_active",
                 config([("on", Variant::Bool(false))]),
-                None,
                 vec![toggle_field("on", "Enabled", false)],
             ),
             quick_action(
@@ -326,7 +312,6 @@ impl QuickActions for ObsClient {
                 false,
                 "obs.replay.set_active",
                 config([("on", Variant::Bool(true))]),
-                None,
                 vec![toggle_field("on", "Enabled", true)],
             ),
             quick_action(
@@ -338,7 +323,6 @@ impl QuickActions for ObsClient {
                 false,
                 "obs.replay.save",
                 BTreeMap::new(),
-                None,
                 Vec::new(),
             ),
             quick_action(
@@ -350,9 +334,8 @@ impl QuickActions for ObsClient {
                 false,
                 "obs.capture.screenshot",
                 config([("source", blank()), ("path", blank())]),
-                Some(PickerKind::Source),
                 vec![
-                    choice_field("source", "Source", PickerKind::Source).required(),
+                    choice_field("source", "Source", SOURCE_LIST).required(),
                     text_field_placeholder("path", "Save To", "", "~/Pictures/screenshot.png")
                         .required(),
                 ],
@@ -366,7 +349,6 @@ impl QuickActions for ObsClient {
                 false,
                 "obs.record.set_directory",
                 config([("path", Variant::String("~/Recordings".to_owned()))]),
-                None,
                 vec![text_field("path", "Folder", "~/Recordings").required()],
             ),
             quick_action(
@@ -378,8 +360,7 @@ impl QuickActions for ObsClient {
                 false,
                 "obs.profile.switch",
                 config([("name", blank())]),
-                Some(PickerKind::Profile),
-                vec![choice_field("name", "Profile", PickerKind::Profile).required()],
+                vec![choice_field("name", "Profile", PROFILE_LIST).required()],
             ),
             quick_action(
                 "Switch scene collection",
@@ -390,8 +371,7 @@ impl QuickActions for ObsClient {
                 false,
                 "obs.scene_collection.switch",
                 config([("name", blank())]),
-                Some(PickerKind::SceneCollection),
-                vec![choice_field("name", "Collection", PickerKind::SceneCollection).required()],
+                vec![choice_field("name", "Collection", SCENE_COLLECTION_LIST).required()],
             ),
         ]
     }
@@ -403,7 +383,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::sync::Arc;
 
-    use forge_platform_core::QuickActions;
+    use forge_platform_core::{BuiltinOptionSource, QuickActions};
     use forge_registry::SubActionRegistry;
 
     use super::*;
@@ -486,21 +466,18 @@ mod tests {
     }
 
     #[test]
-    fn every_action_with_a_blank_config_slot_offers_a_picker_or_a_field() {
+    fn every_blank_config_slot_has_a_field_that_fills_it() {
         for action in &roster() {
-            let has_blank = action
-                .subaction_template
-                .config
-                .values()
-                .any(|v| matches!(v, Variant::String(s) if s.is_empty()));
-            if !has_blank {
-                continue;
+            for (key, value) in &action.subaction_template.config {
+                if !matches!(value, Variant::String(s) if s.is_empty()) {
+                    continue;
+                }
+                assert!(
+                    action.fields.iter().any(|f| &f.key == key),
+                    "{}: blank {key:?} has no field to fill it",
+                    action.label,
+                );
             }
-            assert!(
-                action.picker.is_some() || !action.fields.is_empty(),
-                "{} has a blank config slot with no way to fill it",
-                action.label,
-            );
         }
     }
 
@@ -545,24 +522,116 @@ mod tests {
         }
     }
 
-    #[test]
-    fn name_pickers_are_wired_to_the_actions_that_switch_by_name() {
-        let by_kind: Vec<(String, Option<PickerKind>)> = roster()
+    fn option_list_fields(action: &QuickAction) -> Vec<(String, String)> {
+        action
+            .fields
             .iter()
-            .map(|a| (a.subaction_template.kind_id.clone(), a.picker))
+            .filter_map(|f| match &f.kind {
+                QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(list)) => {
+                    Some((f.key.clone(), list.as_str().to_owned()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn picker_fields_read_the_option_list_that_matches_the_runner_key() {
+        let expected: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::from([
+            ("obs.scenes.switch_current", vec![("scene", SCENE_LIST)]),
+            ("obs.scenes.set_preview", vec![("scene", SCENE_LIST)]),
+            (
+                "obs.scenes.set_transition",
+                vec![("transition", TRANSITION_LIST)],
+            ),
+            (
+                "obs.sources.set_visible",
+                vec![("scene", SCENE_LIST), ("source", SOURCE_LIST)],
+            ),
+            ("obs.audio.set_mute", vec![("source", INPUT_LIST)]),
+            ("obs.audio.set_volume", vec![("source", INPUT_LIST)]),
+            ("obs.filter.set_enabled", vec![("source", SOURCE_LIST)]),
+            ("obs.browser.refresh", vec![("source", SOURCE_LIST)]),
+            ("obs.media.restart", vec![("source", SOURCE_LIST)]),
+            ("obs.capture.screenshot", vec![("source", SOURCE_LIST)]),
+            ("obs.profile.switch", vec![("name", PROFILE_LIST)]),
+            (
+                "obs.scene_collection.switch",
+                vec![("name", SCENE_COLLECTION_LIST)],
+            ),
+        ]);
+        let actual: BTreeMap<String, Vec<(String, String)>> = roster()
+            .iter()
+            .map(|a| (a.subaction_template.kind_id.clone(), option_list_fields(a)))
+            .filter(|(_, fields)| !fields.is_empty())
             .collect();
-        for (kind_id, expected) in [
-            ("obs.scenes.switch_current", PickerKind::Scene),
-            ("obs.scenes.set_preview", PickerKind::Scene),
-            ("obs.scenes.set_transition", PickerKind::Transition),
-            ("obs.profile.switch", PickerKind::Profile),
-            ("obs.scene_collection.switch", PickerKind::SceneCollection),
-        ] {
-            let found = by_kind
-                .iter()
-                .find(|(k, _)| k == kind_id)
-                .unwrap_or_else(|| panic!("{kind_id} missing from the roster"));
-            assert_eq!(found.1, Some(expected), "{kind_id} picker");
+        let expected: BTreeMap<String, Vec<(String, String)>> = expected
+            .into_iter()
+            .map(|(kind, fields)| {
+                (
+                    kind.to_owned(),
+                    fields
+                        .into_iter()
+                        .map(|(k, l)| (k.to_owned(), l.to_owned()))
+                        .collect(),
+                )
+            })
+            .collect();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn every_option_list_a_field_reads_is_declared_by_the_option_source() {
+        let client = ObsClient::new_for_test("localhost:4455".to_owned());
+        let declared: BTreeSet<String> = client
+            .option_lists()
+            .into_iter()
+            .map(|m| m.id.as_str().to_owned())
+            .collect();
+        for action in &client.actions() {
+            for (key, list) in option_list_fields(action) {
+                assert!(
+                    declared.contains(&list),
+                    "{}: field {key:?} reads undeclared list {list:?}",
+                    action.label,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_dependent_list_gets_its_dependency_as_a_field_whenever_the_runner_reads_that_key() {
+        let client = ObsClient::new_for_test("localhost:4455".to_owned());
+        let lists = client.option_lists();
+        for action in &client.actions() {
+            for (key, list) in option_list_fields(action) {
+                let meta = lists.iter().find(|m| m.id.as_str() == list).unwrap();
+                for dependency in &meta.depends_on {
+                    if !action.subaction_template.config.contains_key(dependency) {
+                        continue;
+                    }
+                    assert!(
+                        action.fields.iter().any(|f| &f.key == dependency),
+                        "{}: {key:?} depends on {dependency:?} which the runner reads but no field sets",
+                        action.label,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn no_action_still_declares_a_legacy_picker() {
+        for action in &roster() {
+            assert!(action.picker.is_none(), "{}: picker", action.label);
+            assert!(
+                !action.fields.iter().any(|f| matches!(
+                    f.kind,
+                    QuickActionFieldKind::Choice(QuickActionChoiceSource::Dynamic(_))
+                )),
+                "{}: dynamic choice field",
+                action.label,
+            );
         }
     }
 }

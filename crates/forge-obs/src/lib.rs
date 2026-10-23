@@ -6,6 +6,7 @@ pub mod event_kinds;
 mod events;
 pub mod health;
 pub mod integration;
+pub mod option_source;
 mod payload_fields;
 pub mod probe;
 pub mod quick_actions;

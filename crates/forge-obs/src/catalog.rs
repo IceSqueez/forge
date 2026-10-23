@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 use forge_platform_core::{
     BannerLevel, BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon,
@@ -21,6 +23,26 @@ pub(crate) struct ObsCatalog {
     pub current_preview_scene: Option<String>,
     pub sources: HashMap<String, Vec<SourceInfo>>,
     pub audio_inputs: Vec<String>,
+}
+
+impl ObsCatalog {
+    pub(crate) fn option_fingerprint(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.scenes.hash(&mut hasher);
+        self.current_scene.hash(&mut hasher);
+        self.audio_inputs.hash(&mut hasher);
+        let mut scenes: Vec<(&String, &Vec<SourceInfo>)> = self.sources.iter().collect();
+        scenes.sort_by_key(|(scene, _)| *scene);
+        for (scene, infos) in scenes {
+            scene.hash(&mut hasher);
+            for info in infos {
+                info.name.hash(&mut hasher);
+                info.visible.hash(&mut hasher);
+                info.kind.hash(&mut hasher);
+            }
+        }
+        hasher.finish()
+    }
 }
 
 fn step(kind_id: &str, config: impl IntoIterator<Item = (&'static str, Variant)>) -> SubActionStep {
@@ -74,7 +96,7 @@ fn scene_to_item(
     }
 }
 
-fn icon_for_kind(kind: Option<&str>) -> SectionIcon {
+pub(crate) fn icon_for_kind(kind: Option<&str>) -> SectionIcon {
     let Some(kind) = kind else {
         return SectionIcon::new("device-desktop");
     };

@@ -212,7 +212,7 @@ pub fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinObject {
         quick: client.clone(),
         control: Some(Arc::clone(&client) as Arc<dyn BuiltinControl>),
         collections: None,
-        option_source: None,
+        option_source: Some(Arc::clone(&client) as Arc<dyn BuiltinOptionSource>),
         obs_client: Some(client),
         vtube_client: None,
         follow: None,

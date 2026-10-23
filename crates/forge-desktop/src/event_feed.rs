@@ -522,27 +522,24 @@ impl EventFeedView {
         matched: &HashSet<gpui::SharedString>,
     ) -> Option<gpui::SharedString> {
         let acted = downstream.get(&item.id).copied().unwrap_or(0);
-        let actions_tag = |n: u32| -> gpui::SharedString {
-            if n == 1 {
-                "\u{2192} 1 action".into()
-            } else {
-                format!("\u{2192} {n} actions").into()
-            }
-        };
+        let actions_tag =
+            |n: u32| -> gpui::SharedString { tr!("event_feed_outcome_actions", count = n).into() };
         match item.kind.as_ref() {
             "chat.send" | "chat.whisper.sent" => Some(sent_tag(&item.payload)),
-            "command.matched" => Some("\u{2192} trigger".into()),
+            "command.matched" => Some(tr!("event_feed_outcome_trigger").into()),
             "action.start" => item
                 .sub_action_count
                 .map(|n| tr!("event_feed_step_count", count = n).into()),
-            "action.done" => item.total_ms.map(|ms| format!("{ms:.2}ms").into()),
+            "action.done" => item
+                .total_ms
+                .map(|ms| tr!("event_feed_duration_ms", ms = format!("{ms:.2}")).into()),
             k if is_chat_message_kind(k) => {
                 if acted > 0 {
                     Some(actions_tag(acted))
                 } else if matched.contains(&item.id) {
-                    Some("\u{2192} trigger".into())
+                    Some(tr!("event_feed_outcome_trigger").into())
                 } else {
-                    Some("no match".into())
+                    Some(tr!("event_feed_outcome_no_match").into())
                 }
             }
             _ => (acted > 0).then(|| actions_tag(acted)),
@@ -1320,7 +1317,7 @@ fn sent_tag(payload: &serde_json::Value) -> gpui::SharedString {
         .and_then(|login| login.as_str())
     {
         Some(login) => tr!("event_feed_sent_as", login = login.to_owned()).into(),
-        None => "sent".into(),
+        None => tr!("event_feed_outcome_sent").into(),
     }
 }
 

@@ -16,7 +16,8 @@ use forge_events::{Event, EventPublisher};
 use forge_runtime::{EventBus, SchedulingContext, ScriptRegistry};
 use forge_script::{
     MethodDescriptor, RunResult, ScriptError, ScriptHost, content_hash, format_script,
-    inert_annotation_lines, is_engine_bound_name, run_inline, validate_syntax,
+    inert_annotation_lines, is_engine_bound_name, load_script_engine_config, run_inline,
+    validate_syntax,
 };
 use forge_storage::{
     DataProvider, ExecutionStatus, GlobalsRepo, ScriptRecord, ScriptRepo, ScriptTelemetry,
@@ -502,6 +503,7 @@ pub struct ScriptEditorView {
     telemetry: Option<ScriptTelemetry>,
     loading: bool,
     saving: bool,
+    engine_timeout_ms: Option<u64>,
 
     list_width: Pixels,
     details_width: Pixels,
@@ -653,6 +655,7 @@ impl ScriptEditorView {
             telemetry: None,
             loading: false,
             saving: false,
+            engine_timeout_ms: None,
             list_width: LEFT_PANE_W,
             details_width: DETAILS_PANE_W,
             console_height: CONSOLE_INIT_H,
@@ -683,7 +686,27 @@ impl ScriptEditorView {
         };
         view.start_log_bridge(cx);
         view.load_scripts(cx);
+        view.load_engine_timeout(cx);
         view
+    }
+
+    fn load_engine_timeout(&mut self, cx: &mut Context<Self>) {
+        let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                load_script_engine_config(settings.as_ref())
+                    .await
+                    .wall_time_ms
+            },
+            |this, wall_time_ms, cx| this.apply_engine_timeout(wall_time_ms, cx),
+            cx,
+        );
+    }
+
+    fn apply_engine_timeout(&mut self, wall_time_ms: u64, cx: &mut Context<Self>) {
+        self.engine_timeout_ms = Some(wall_time_ms);
+        cx.notify();
     }
 
     fn start_log_bridge(&self, cx: &mut Context<Self>) {
@@ -1959,16 +1982,13 @@ impl ScriptEditorView {
             .items_center()
             .gap(spacing(Spacing::Md, density))
             .child(sandbox)
-            .child(
+            .children(self.engine_timeout_ms.map(|ms| {
                 div()
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
-                    .child(tr!(
-                        "script_editor_timeout_ms",
-                        ms = forge_script::EngineConfig::default().wall_time_ms as i64
-                    )),
-            );
+                    .child(tr!("script_editor_timeout_ms", ms = ms as i64))
+            }));
 
         div()
             .w_full()

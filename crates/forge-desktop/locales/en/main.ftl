@@ -2183,6 +2183,14 @@ event_feed_events_live_stream = events · live stream
 event_feed_status_live = Live
 event_feed_status_paused = Paused
 event_feed_search_placeholder = Search events...
+event_feed_outcome_trigger = → trigger
+event_feed_outcome_actions = { $count ->
+    [one] → { $count } action
+   *[other] → { $count } actions
+}
+event_feed_outcome_no_match = no match
+event_feed_outcome_sent = sent
+event_feed_duration_ms = { $ms }ms
 
 ## Globals - page header / filters
 

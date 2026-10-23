@@ -2248,6 +2248,15 @@ event_feed_events_live_stream = подій · живий стрім
 event_feed_status_live = Наживо
 event_feed_status_paused = Пауза
 event_feed_search_placeholder = Пошук подій...
+event_feed_outcome_trigger = → тригер
+event_feed_outcome_actions = { $count ->
+    [one] → { $count } дія
+    [few] → { $count } дії
+   *[other] → { $count } дій
+}
+event_feed_outcome_no_match = немає збігу
+event_feed_outcome_sent = надіслано
+event_feed_duration_ms = { $ms } мс
 
 ## Глобальні змінні - заголовок / фільтри
 

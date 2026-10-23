@@ -172,9 +172,30 @@ fn group_integer(n: u64, sep: &str) -> String {
 
 pub fn tr_lookup(key: &str, args: Option<&FluentArgs<'_>>) -> String {
     tr_find(key, args).unwrap_or_else(|| {
-        warn_missing_once(key);
+        if bundle_installed() {
+            warn_missing_once(key);
+        } else {
+            warn_unlocalized_once(key);
+        }
         key.to_owned()
     })
+}
+
+fn bundle_installed() -> bool {
+    BUNDLE.with(|cell| cell.borrow().is_some())
+}
+
+fn warn_unlocalized_once(key: &str) {
+    WARNED_KEYS.with(|cell| {
+        if cell.borrow_mut().insert(key.to_owned()) {
+            let thread = std::thread::current();
+            tracing::warn!(
+                key,
+                thread = thread.name().unwrap_or("unnamed"),
+                "tr!: no locale bundle on this thread; resolve the text on the UI thread"
+            );
+        }
+    });
 }
 
 pub fn tr_find(key: &str, args: Option<&FluentArgs<'_>>) -> Option<String> {

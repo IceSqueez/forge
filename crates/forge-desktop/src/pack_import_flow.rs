@@ -25,6 +25,20 @@ pub(crate) struct Planned {
     plan: PackImportPlan,
 }
 
+enum PlanFailure {
+    Refused(RestoreProblem),
+    SourceUnreadable(String),
+}
+
+impl PlanFailure {
+    fn message(self) -> String {
+        match self {
+            Self::Refused(problem) => problem.message(),
+            Self::SourceUnreadable(message) => message,
+        }
+    }
+}
+
 pub(crate) enum Applied {
     Done {
         outcome: PackImportOutcome,
@@ -122,7 +136,7 @@ impl PackImportFlow {
         async_bridge::run_async(
             &self.services.rt_handle,
             async move { stage_and_plan(services, bundle, data_dir).await },
-            |this, result, cx| this.planned(result, cx),
+            |this, result, cx| this.planned(result.map_err(PlanFailure::message), cx),
             cx,
         );
         cx.notify();
@@ -314,10 +328,10 @@ async fn stage_and_plan(
     services: PackServices,
     bundle: PathBuf,
     data_dir: PathBuf,
-) -> Result<Planned, String> {
+) -> Result<Planned, PlanFailure> {
     let staged = stage_pack(bundle, data_dir)
         .await
-        .map_err(|error| RestoreProblem::of(&error).message())?;
+        .map_err(|error| PlanFailure::Refused(RestoreProblem::of(&error)))?;
     match services.load_source().await {
         Ok(source) => {
             let plan = plan_pack_import(&staged, &source.inventory, services.registries(&source));
@@ -325,7 +339,7 @@ async fn stage_and_plan(
         }
         Err(message) => {
             discard_quietly(staged).await;
-            Err(message)
+            Err(PlanFailure::SourceUnreadable(message))
         }
     }
 }

@@ -684,9 +684,9 @@ impl QueuesView {
             |this, result, cx| {
                 match result {
                     Ok(()) => cx.push_toast(ToastKind::Success, tr!("queues_apply_live_done")),
-                    Err(message) => cx.push_toast(
+                    Err(failure) => cx.push_toast(
                         ToastKind::Error,
-                        tr!("queues_apply_live_failed", error = message),
+                        tr!("queues_apply_live_failed", error = failure.message()),
                     ),
                 }
                 this.reload(cx);
@@ -1864,24 +1864,44 @@ async fn load_queues(
     Ok(rows)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LiveApplyFailure {
+    QueueMissing,
+    SchedulerLostQueue,
+    Failed(String),
+}
+
+impl LiveApplyFailure {
+    fn message(self) -> String {
+        match self {
+            Self::QueueMissing => tr!("queues_apply_live_missing"),
+            Self::SchedulerLostQueue => tr!("queues_apply_live_not_found"),
+            Self::Failed(message) => message,
+        }
+    }
+}
+
 async fn apply_queue_live(
     queue_repo: Arc<dyn QueueRepo>,
     scheduler: QueueSchedulerHandle,
     id: QueueId,
-) -> Result<(), String> {
-    let queues = queue_repo.list().await.map_err(|e| e.to_string())?;
+) -> Result<(), LiveApplyFailure> {
+    let queues = queue_repo
+        .list()
+        .await
+        .map_err(|e| LiveApplyFailure::Failed(e.to_string()))?;
     let queue = queues
         .into_iter()
         .find(|q| q.id == id)
-        .ok_or_else(|| tr!("queues_apply_live_missing"))?;
+        .ok_or(LiveApplyFailure::QueueMissing)?;
     let outcome = match scheduler.register(queue.clone()).await {
         Ok(MembershipOutcome::AlreadyRegistered) => scheduler.reconfigure(queue).await,
         other => other,
     };
     match outcome {
         Ok(MembershipOutcome::Applied | MembershipOutcome::AlreadyRegistered) => Ok(()),
-        Ok(MembershipOutcome::NotFound) => Err(tr!("queues_apply_live_not_found")),
-        Err(error) => Err(error.to_string()),
+        Ok(MembershipOutcome::NotFound) => Err(LiveApplyFailure::SchedulerLostQueue),
+        Err(error) => Err(LiveApplyFailure::Failed(error.to_string())),
     }
 }
 
@@ -2194,6 +2214,8 @@ mod tests {
 
         let outcome = rt.block_on(apply_queue_live(Arc::new(repo), scheduler, id));
 
-        assert!(outcome.is_err_and(|message| message.contains("disk gone")));
+        assert!(
+            matches!(outcome, Err(LiveApplyFailure::Failed(ref message)) if message.contains("disk gone"))
+        );
     }
 }

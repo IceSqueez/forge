@@ -331,11 +331,12 @@ impl DiscordScreenView {
         let client = Arc::clone(&self.client);
         let name = draft.name.clone();
         let url = draft.url.clone();
+        let content = tr!("discord_test_content");
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 client
-                    .post_test(&name, &url, &tr!("discord_test_content"))
+                    .post_test(&name, &url, &content)
                     .await
                     .map(|_| ())
                     .map_err(|e| e.to_string())
@@ -354,11 +355,12 @@ impl DiscordScreenView {
     fn test_webhook(&mut self, name: String, cx: &mut Context<Self>) {
         self.menu_open = None;
         let client = Arc::clone(&self.client);
+        let content = tr!("discord_test_content");
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 client
-                    .post_text(&name, &tr!("discord_test_content"))
+                    .post_text(&name, &content)
                     .await
                     .map(|_| ())
                     .map_err(|e| e.to_string())

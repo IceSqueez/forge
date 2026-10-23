@@ -101,9 +101,9 @@ impl SetupImportFlow {
             async move {
                 stage_setup(bundle, data_dir)
                     .await
-                    .map_err(|error| RestoreProblem::of(&error).message())
+                    .map_err(|error| RestoreProblem::of(&error))
             },
-            |this, result, cx| this.staged(result, cx),
+            |this, result, cx| this.staged(result.map_err(|problem| problem.message()), cx),
             cx,
         );
         cx.notify();

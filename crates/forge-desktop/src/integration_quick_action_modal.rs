@@ -1488,6 +1488,57 @@ mod tests {
                 .update(cx, |modal, cx| modal.retry_dynamic(index, cx));
             self.settle(cx);
         }
+
+        fn type_text(&self, cx: &mut TestAppContext, index: usize, text: &str) {
+            let input = self
+                .modal
+                .read_with(cx, |modal, _| match &modal.fields[index].control {
+                    FieldControl::Text(input) => input.clone(),
+                    _ => panic!("field {index} is not a text input"),
+                });
+            input.update(cx, |input, cx| input.insert_at_caret(text, cx));
+            self.settle(cx);
+        }
+
+        fn toggle(&self, cx: &mut TestAppContext, index: usize) {
+            self.modal
+                .update(cx, |modal, cx| modal.toggle_field(index, cx));
+            self.settle(cx);
+        }
+
+        fn wait(&self, cx: &mut TestAppContext, duration: Duration) {
+            cx.executor().advance_clock(duration);
+            self.settle(cx);
+        }
+    }
+
+    fn text_field(key: &str) -> QuickActionField {
+        QuickActionField {
+            key: key.to_owned(),
+            label: key.to_owned(),
+            kind: QuickActionFieldKind::Text,
+            default: None,
+            placeholder: None,
+            hint: None,
+            required: false,
+        }
+    }
+
+    fn toggle_field(key: &str) -> QuickActionField {
+        QuickActionField {
+            kind: QuickActionFieldKind::Toggle,
+            ..text_field(key)
+        }
+    }
+
+    fn text_call(list: &str, key: &str, value: &str) -> ResolveCall {
+        (
+            list.to_owned(),
+            BTreeMap::from([(
+                key.to_owned(),
+                QuickActionFieldValue::Text(value.to_owned()),
+            )]),
+        )
     }
 
     fn option_action(fields: Vec<QuickActionField>) -> QuickAction {
@@ -1775,6 +1826,179 @@ mod tests {
         harness.pick(cx, 0, "Main");
 
         assert!(fake.take_calls().is_empty());
+    }
+
+    #[gpui::test]
+    fn a_keystroke_burst_in_a_text_dependency_re_resolves_once_with_the_final_text_after_the_quiet_period(
+        cx: &mut TestAppContext,
+    ) {
+        let fake = FakeOptionSource::new(vec![list("channels").depending_on("query")], false);
+        let harness = Harness::open(
+            cx,
+            Some(Arc::clone(&fake)),
+            vec![
+                text_field("query"),
+                option_field("channel", "channels", None),
+            ],
+        );
+        fake.take_calls();
+        let gap = TEXT_DEPENDENCY_DEBOUNCE / 2;
+        let just_short = TEXT_DEPENDENCY_DEBOUNCE - Duration::from_millis(1);
+
+        for key in ["a", "b", "c"] {
+            harness.type_text(cx, 0, key);
+            harness.wait(cx, gap);
+        }
+        harness.wait(cx, just_short - gap);
+        let inside_the_window = fake.take_calls();
+        harness.wait(cx, Duration::from_millis(1));
+        let after_the_window = fake.take_calls();
+        harness.wait(cx, TEXT_DEPENDENCY_DEBOUNCE * 4);
+
+        assert_eq!(
+            (inside_the_window, after_the_window, fake.take_calls()),
+            (
+                Vec::new(),
+                vec![text_call("channels", "query", "abc")],
+                Vec::new()
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn run_is_disabled_from_a_text_dependency_edit_until_the_re_resolved_list_lands(
+        cx: &mut TestAppContext,
+    ) {
+        let fake = FakeOptionSource::new(vec![list("channels").depending_on("query")], true);
+        let harness = Harness::open(
+            cx,
+            Some(Arc::clone(&fake)),
+            vec![
+                text_field("query"),
+                option_field("channel", "channels", None),
+            ],
+        );
+        fake.release_latest("channels", Ok(vec![entry("Lobby").as_current()]));
+        harness.settle(cx);
+        let before_typing = harness.can_run(cx);
+
+        harness.type_text(cx, 0, "forge");
+        let right_after_typing = harness.can_run(cx);
+        harness.wait(cx, TEXT_DEPENDENCY_DEBOUNCE - Duration::from_millis(1));
+        let inside_the_window = harness.can_run(cx);
+        harness.wait(cx, Duration::from_millis(1));
+        let while_reloading = (harness.seen(cx, 1), harness.can_run(cx));
+        fake.release_latest("channels", Ok(vec![entry("Forge").as_current()]));
+        harness.settle(cx);
+
+        assert_eq!(
+            (
+                before_typing,
+                right_after_typing,
+                inside_the_window,
+                while_reloading,
+                harness.can_run(cx)
+            ),
+            (true, false, false, (Seen::Loading, false), true)
+        );
+    }
+
+    #[gpui::test]
+    fn edits_to_two_text_dependencies_in_one_window_re_resolve_each_dependent_once(
+        cx: &mut TestAppContext,
+    ) {
+        let fake = FakeOptionSource::new(
+            vec![
+                list("channels").depending_on("query"),
+                list("games").depending_on("genre"),
+            ],
+            false,
+        );
+        let harness = Harness::open(
+            cx,
+            Some(Arc::clone(&fake)),
+            vec![
+                text_field("query"),
+                text_field("genre"),
+                option_field("channel", "channels", None),
+                option_field("game", "games", None),
+            ],
+        );
+        fake.take_calls();
+
+        harness.type_text(cx, 0, "forge");
+        harness.type_text(cx, 1, "rpg");
+        harness.type_text(cx, 0, "!");
+        harness.wait(cx, TEXT_DEPENDENCY_DEBOUNCE);
+        let mut calls = fake.take_calls();
+        calls.sort_by(|left, right| left.0.cmp(&right.0));
+
+        assert_eq!(
+            calls,
+            vec![
+                text_call("channels", "query", "forge!"),
+                text_call("games", "genre", "rpg"),
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn flipping_a_toggle_dependency_re_resolves_its_dependent_without_waiting(
+        cx: &mut TestAppContext,
+    ) {
+        let fake = FakeOptionSource::new(vec![list("rewards").depending_on("paused")], false);
+        let harness = Harness::open(
+            cx,
+            Some(Arc::clone(&fake)),
+            vec![
+                toggle_field("paused"),
+                option_field("reward", "rewards", None),
+            ],
+        );
+        fake.take_calls();
+
+        harness.toggle(cx, 0);
+
+        assert_eq!(
+            fake.take_calls(),
+            vec![(
+                "rewards".to_owned(),
+                BTreeMap::from([("paused".to_owned(), QuickActionFieldValue::Toggle(true))]),
+            )]
+        );
+    }
+
+    #[gpui::test]
+    fn picking_a_choice_dependency_while_a_text_edit_waits_re_resolves_at_once(
+        cx: &mut TestAppContext,
+    ) {
+        let fake = FakeOptionSource::answering(
+            vec![
+                list("scenes"),
+                list("sources").depending_on("scene"),
+                list("channels").depending_on("query"),
+            ],
+            vec![("scenes", Ok(vec![entry("Main").as_current(), entry("BRB")]))],
+        );
+        let harness = Harness::open(
+            cx,
+            Some(Arc::clone(&fake)),
+            vec![
+                text_field("query"),
+                option_field("scene", "scenes", None),
+                option_field("source", "sources", None),
+                option_field("channel", "channels", None),
+            ],
+        );
+        harness.type_text(cx, 0, "forge");
+        fake.take_calls();
+
+        harness.pick(cx, 1, "BRB");
+
+        assert_eq!(
+            fake.take_calls(),
+            vec![text_call("sources", "scene", "BRB")]
+        );
     }
 
     #[gpui::test]

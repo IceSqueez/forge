@@ -76,7 +76,6 @@ pub fn test_donation_quick_action(provider: &IntegrationId) -> QuickAction {
         destructive: false,
         accent: QuickActionAccent::Bits,
         subaction_template: test_donation_step(provider),
-        picker: None,
         fields: vec![
             field(
                 TEST_DONATION_DONOR_KEY,

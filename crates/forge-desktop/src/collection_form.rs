@@ -172,9 +172,9 @@ impl CollectionForm {
                     };
                     FormControl::Choice { items, selected }
                 }
-                QuickActionFieldKind::Choice(
-                    QuickActionChoiceSource::Dynamic(_) | QuickActionChoiceSource::OptionList(_),
-                ) => FormControl::Unsupported,
+                QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(_)) => {
+                    FormControl::Unsupported
+                }
             };
             fields.push(FormField {
                 key: spec.key.clone(),

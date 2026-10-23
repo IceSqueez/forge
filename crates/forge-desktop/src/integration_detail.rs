@@ -1891,7 +1891,6 @@ mod tests {
                 condition: None,
                 label: None,
             },
-            picker: None,
             fields: Vec::new(),
             collection: collection.map(CollectionId::new),
         }

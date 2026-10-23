@@ -280,23 +280,6 @@ pub enum DetailSection {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PickerKind {
-    Scene,
-    Source,
-    Input,
-    Hotkey,
-    Expression,
-    MidiPort,
-    Transition,
-    Profile,
-    SceneCollection,
-    Model,
-    Item,
-    ItemInstance,
-}
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QuickActionAccent {
@@ -320,7 +303,6 @@ pub struct QuickActionChoiceOption {
 #[serde(rename_all = "snake_case")]
 pub enum QuickActionChoiceSource {
     Static(Vec<QuickActionChoiceOption>),
-    Dynamic(PickerKind),
     OptionList(OptionListId),
 }
 
@@ -411,7 +393,6 @@ pub struct QuickAction {
     #[serde(default)]
     pub accent: QuickActionAccent,
     pub subaction_template: SubActionStep,
-    pub picker: Option<PickerKind>,
     #[serde(default)]
     pub fields: Vec<QuickActionField>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -811,12 +792,11 @@ mod tests {
                 condition: None,
                 label: None,
             },
-            picker: Some(PickerKind::Scene),
             fields: vec![QuickActionField {
                 key: "scene".to_owned(),
                 label: "Scene".to_owned(),
-                kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::Dynamic(
-                    PickerKind::Scene,
+                kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(
+                    crate::OptionListId::new("obs.scenes"),
                 )),
                 default: None,
                 placeholder: None,
@@ -845,7 +825,6 @@ mod tests {
             "icon": "play",
             "enabled": true,
             "subaction_template": serde_json::to_value(&template).unwrap(),
-            "picker": serde_json::Value::Null,
         });
         let action: QuickAction = serde_json::from_value(legacy).unwrap();
         assert!(action.locked_reason.is_none());
@@ -853,24 +832,6 @@ mod tests {
         assert!(!action.destructive);
         assert_eq!(action.accent, QuickActionAccent::Brand);
         assert!(action.collection.is_none());
-    }
-
-    #[test]
-    fn picker_kind_serde_variants() {
-        let cases = [
-            (PickerKind::Scene, r#""scene""#),
-            (PickerKind::Source, r#""source""#),
-            (PickerKind::Input, r#""input""#),
-            (PickerKind::Hotkey, r#""hotkey""#),
-            (PickerKind::Expression, r#""expression""#),
-            (PickerKind::MidiPort, r#""midi_port""#),
-        ];
-        for (kind, expected) in &cases {
-            let json = serde_json::to_string(kind).unwrap();
-            assert_eq!(json, *expected);
-            let back: PickerKind = serde_json::from_str(&json).unwrap();
-            assert_eq!(back, *kind);
-        }
     }
 
     fn qa_template(config: BTreeMap<String, Variant>) -> SubActionStep {
@@ -913,7 +874,6 @@ mod tests {
             destructive: false,
             accent: QuickActionAccent::default(),
             subaction_template: template,
-            picker: None,
             fields,
             collection: None,
         }
@@ -1083,23 +1043,14 @@ mod tests {
     }
 
     #[test]
-    fn choice_sources_keep_their_snake_case_wire_tags_through_a_round_trip() {
-        for (source, wire) in [
-            (
-                QuickActionChoiceSource::OptionList(OptionListId::new("obs.scenes")),
-                serde_json::json!({ "option_list": "obs.scenes" }),
-            ),
-            (
-                QuickActionChoiceSource::Dynamic(PickerKind::Scene),
-                serde_json::json!({ "dynamic": "scene" }),
-            ),
-        ] {
-            assert_eq!(serde_json::to_value(&source).unwrap(), wire);
-            assert_eq!(
-                serde_json::from_value::<QuickActionChoiceSource>(wire).unwrap(),
-                source
-            );
-        }
+    fn option_list_choice_source_keeps_its_snake_case_wire_tag_through_a_round_trip() {
+        let source = QuickActionChoiceSource::OptionList(OptionListId::new("obs.scenes"));
+        let wire = serde_json::json!({ "option_list": "obs.scenes" });
+        assert_eq!(serde_json::to_value(&source).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<QuickActionChoiceSource>(wire).unwrap(),
+            source
+        );
     }
 
     #[allow(dead_code)]

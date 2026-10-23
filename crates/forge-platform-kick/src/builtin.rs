@@ -458,7 +458,6 @@ fn quick_action(
             condition: None,
             label: None,
         },
-        picker: None,
         fields,
         collection: None,
     }

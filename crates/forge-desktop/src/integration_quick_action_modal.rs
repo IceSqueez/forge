@@ -196,11 +196,6 @@ impl QuickActionModal {
                             selected: choice_default(&spec.default, opts),
                         })
                     }
-                    QuickActionChoiceSource::Dynamic(_) => FieldControl::Choice(ChoiceControl {
-                        option_list: None,
-                        state: ChoiceState::Failed(tr!("integration_qa_field_unavailable")),
-                        selected: None,
-                    }),
                     QuickActionChoiceSource::OptionList(list) => {
                         let binding = declared_lists
                             .iter()
@@ -945,8 +940,7 @@ mod tests {
     use forge_components::{Density, Presentation, ThemeId};
     use forge_platform_core::{
         CollectionFailure, CollectionRevisionSignal, CollectionRevisions, OptionHint,
-        OptionListMetadata, PickerKind, QuickActionAccent, QuickActionField, QuickActionLiveness,
-        SectionIcon,
+        OptionListMetadata, QuickActionAccent, QuickActionField, QuickActionLiveness, SectionIcon,
     };
     use forge_storage::Language;
     use forge_types::Variant;
@@ -1211,7 +1205,6 @@ mod tests {
                 condition: None,
                 label: None,
             },
-            picker: None,
             fields,
             collection: None,
         }
@@ -1742,25 +1735,6 @@ mod tests {
         assert_eq!(
             harness.step_config(cx, "scene"),
             Some(Variant::String("Gameplay".to_owned()))
-        );
-    }
-
-    #[gpui::test]
-    fn a_legacy_dynamic_choice_renders_unavailable_and_never_resolves(cx: &mut TestAppContext) {
-        let fake = FakeOptionSource::new(vec![list("scenes")], false);
-        let dynamic = QuickActionField {
-            kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::Dynamic(PickerKind::Scene)),
-            ..option_field("scene", "scenes", Some("Main"))
-        };
-        let harness = Harness::open(cx, Some(Arc::clone(&fake)), vec![dynamic]);
-
-        assert_eq!(
-            (harness.seen(cx, 0), harness.can_run(cx), fake.take_calls()),
-            (
-                Seen::Failed(message_in(Language::Uk, "integration_qa_field_unavailable")),
-                false,
-                Vec::new()
-            )
         );
     }
 }

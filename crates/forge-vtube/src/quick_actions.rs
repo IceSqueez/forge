@@ -96,7 +96,6 @@ fn quick_action(
             condition: None,
             label: None,
         },
-        picker: None,
         fields,
         collection: None,
     }
@@ -436,21 +435,6 @@ mod tests {
                     action.label,
                 );
             }
-        }
-    }
-
-    #[test]
-    fn no_action_still_declares_a_legacy_picker() {
-        for action in &roster() {
-            assert!(action.picker.is_none(), "{}: picker", action.label);
-            assert!(
-                !action.fields.iter().any(|f| matches!(
-                    f.kind,
-                    QuickActionFieldKind::Choice(QuickActionChoiceSource::Dynamic(_))
-                )),
-                "{}: dynamic choice field",
-                action.label,
-            );
         }
     }
 

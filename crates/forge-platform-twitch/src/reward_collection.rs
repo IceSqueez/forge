@@ -8,7 +8,7 @@ use forge_platform_core::{
 };
 use reqwest::StatusCode;
 
-use crate::builtin::{TwitchIntegrationBundle, int_field, text_field_placeholder, toggle_field};
+use crate::builtin::{TwitchIntegrationBundle, int_field, text_field, toggle_field};
 use crate::custom_rewards::{
     BACKGROUND_COLOR_KEY, COST_KEY, GLOBAL_COOLDOWN_SECONDS_KEY, HEX_COLOR_LEN, IS_ENABLED_KEY,
     IS_PAUSED_KEY, IS_USER_INPUT_REQUIRED_KEY, MAX_CUSTOM_REWARDS, MAX_PER_STREAM_KEY,
@@ -356,7 +356,7 @@ fn rewards_metadata() -> CollectionMetadata {
         capacity: Some(MAX_CUSTOM_REWARDS),
         fields: vec![
             CollectionField {
-                field: text_field_placeholder(TITLE_KEY, "Title", "", "Hydrate!").required(),
+                field: text_field(TITLE_KEY, "Title", "Hydrate!").required(),
                 max_chars: Some(MAX_TITLE_CHARS),
             },
             CollectionField {
@@ -371,7 +371,7 @@ fn rewards_metadata() -> CollectionMetadata {
                 max_chars: None,
             },
             CollectionField {
-                field: text_field_placeholder(PROMPT_KEY, "Prompt", "", "optional"),
+                field: text_field(PROMPT_KEY, "Prompt", "optional"),
                 max_chars: Some(MAX_PROMPT_CHARS),
             },
             CollectionField {
@@ -379,10 +379,9 @@ fn rewards_metadata() -> CollectionMetadata {
                 max_chars: None,
             },
             CollectionField {
-                field: text_field_placeholder(
+                field: text_field(
                     BACKGROUND_COLOR_KEY,
                     "Background color (#RRGGBB)",
-                    "",
                     "#9147FF",
                 ),
                 max_chars: Some(HEX_COLOR_LEN),

@@ -727,34 +727,22 @@ fn group_badge(group: &str) -> (SectionIcon, QuickActionAccent) {
     }
 }
 
-fn text_field(key: &str, label: &str, default: &str) -> QuickActionField {
+pub(crate) fn text_field(key: &str, label: &str, placeholder: &str) -> QuickActionField {
     QuickActionField {
         key: key.to_owned(),
         label: label.to_owned(),
         kind: QuickActionFieldKind::Text,
-        default: Some(QuickActionFieldValue::Text(default.to_owned())),
-        placeholder: None,
+        default: None,
+        placeholder: Some(placeholder.to_owned()),
         hint: None,
         required: false,
     }
 }
 
-pub(crate) fn text_field_placeholder(
-    key: &str,
-    label: &str,
-    default: &str,
-    placeholder: &str,
-) -> QuickActionField {
-    QuickActionField {
-        placeholder: Some(placeholder.to_owned()),
-        ..text_field(key, label, default)
-    }
-}
-
-fn multiline_field(key: &str, label: &str, default: &str) -> QuickActionField {
+fn multiline_field(key: &str, label: &str, placeholder: &str) -> QuickActionField {
     QuickActionField {
         kind: QuickActionFieldKind::Multiline,
-        ..text_field(key, label, default)
+        ..text_field(key, label, placeholder)
     }
 }
 
@@ -802,8 +790,13 @@ fn choice_field(
         })
         .collect();
     QuickActionField {
+        key: key.to_owned(),
+        label: label.to_owned(),
         kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::Static(options)),
-        ..text_field(key, label, default)
+        default: Some(QuickActionFieldValue::Text(default.to_owned())),
+        placeholder: None,
+        hint: None,
+        required: false,
     }
 }
 
@@ -944,10 +937,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel.update_title",
                 config([("title", blank())]),
-                vec![
-                    text_field("title", "Stream title", "GTNH: Aluminium grind continues")
-                        .required(),
-                ],
+                vec![text_field("title", "Stream title", "Stream title").required()],
             ),
             quick_action(
                 "Set category / game",
@@ -958,8 +948,8 @@ impl QuickActions for TwitchIntegrationBundle {
                 "Stream info",
                 false,
                 "twitch.channel.update_category",
-                config([("category_id", blank())]),
-                vec![text_field("category_id", "Category", "Minecraft").required()],
+                config([("category_name", blank())]),
+                vec![text_field("category_name", "Category", "e.g. Just Chatting").required()],
             ),
             quick_action(
                 "Update tags",
@@ -974,7 +964,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 vec![text_field(
                     "tags",
                     "Tags (comma-sep)",
-                    "Modded, Chill, English",
+                    "e.g. English, Chill",
                 )],
             ),
             quick_action(
@@ -987,12 +977,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel.create_marker",
                 config([("description", blank())]),
-                vec![text_field_placeholder(
-                    "description",
-                    "Marker note",
-                    "Nice moment",
-                    "optional",
-                )],
+                vec![text_field("description", "Marker note", "optional")],
             ),
             gated_on(
                 quick_action(
@@ -1010,13 +995,9 @@ impl QuickActions for TwitchIntegrationBundle {
                         ("duration_seconds", Variant::Int(60)),
                     ]),
                     vec![
-                        text_field("title", "Question", "Next game?").required(),
-                        multiline_field(
-                            "choices",
-                            "Choices (one per line)",
-                            "Factorio\nMinecraft\nSatisfactory",
-                        )
-                        .required(),
+                        text_field("title", "Question", "Poll question").required(),
+                        multiline_field("choices", "Choices (one per line)", "One choice per line")
+                            .required(),
                         toggle_field(
                             "channel_points_voting_enabled",
                             "Channel Points voting",
@@ -1079,11 +1060,11 @@ impl QuickActions for TwitchIntegrationBundle {
                         ("prediction_window_seconds", Variant::Int(120)),
                     ]),
                     vec![
-                        text_field("title", "Title", "Will we beat the boss?").required(),
+                        text_field("title", "Title", "Prediction question").required(),
                         multiline_field(
                             "outcomes",
                             "Outcomes (one per line)",
-                            "Yes, easy\nNo, we die",
+                            "One outcome per line",
                         )
                         .required(),
                         int_field(
@@ -1155,7 +1136,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("message", blank()),
                     ("target", Variant::String("twitch".to_owned())),
                 ]),
-                vec![multiline_field("message", "Message", "Hey chat \u{1f44b}").required()],
+                vec![multiline_field("message", "Message", "Message").required()],
             ),
             quick_action(
                 "Announcement",
@@ -1171,7 +1152,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("color", Variant::String("primary".to_owned())),
                 ]),
                 vec![
-                    multiline_field("message", "Announcement", "Big news!").required(),
+                    multiline_field("message", "Announcement", "Announcement text").required(),
                     choice_field(
                         "color",
                         "Color",
@@ -1272,9 +1253,9 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("reason", blank()),
                 ]),
                 vec![
-                    text_field("target_user_login", "Username", "@spammer").required(),
+                    text_field("target_user_login", "Username", "username").required(),
                     int_field("duration_seconds", "Duration (seconds)", 600, 1, 1_209_600),
-                    text_field_placeholder("reason", "Reason", "", "optional"),
+                    text_field("reason", "Reason", "optional"),
                 ],
             ),
             quick_action(
@@ -1288,8 +1269,8 @@ impl QuickActions for TwitchIntegrationBundle {
                 "twitch.moderation.ban_user",
                 config([("target_user_login", blank()), ("reason", blank())]),
                 vec![
-                    text_field("target_user_login", "Username", "@baduser").required(),
-                    text_field("reason", "Reason", ""),
+                    text_field("target_user_login", "Username", "username").required(),
+                    text_field("reason", "Reason", "optional"),
                 ],
             ),
             quick_action(
@@ -1302,7 +1283,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.moderation.unban_user",
                 config([("target_user_login", blank())]),
-                vec![text_field("target_user_login", "Username", "@user").required()],
+                vec![text_field("target_user_login", "Username", "username").required()],
             ),
             shield_mode_toggle(connected, self.lifecycle.shield_phase()),
             quick_action(
@@ -1315,7 +1296,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.moderation.add_vip",
                 config([("target_user_login", blank())]),
-                vec![text_field("target_user_login", "Username", "@loyalfan").required()],
+                vec![text_field("target_user_login", "Username", "username").required()],
             ),
             quick_action(
                 "Add / remove Mod",
@@ -1327,7 +1308,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.moderation.add_moderator",
                 config([("target_user_login", blank())]),
-                vec![text_field("target_user_login", "Username", "@trustedmod").required()],
+                vec![text_field("target_user_login", "Username", "username").required()],
             ),
             gated_on(
                 quick_action(
@@ -1341,7 +1322,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     "twitch.channel.start_raid",
                     config([("to_broadcaster_login", blank())]),
                     vec![
-                        text_field("to_broadcaster_login", "Raid target", "@factorio_streamer")
+                        text_field("to_broadcaster_login", "Raid target", "channel name")
                             .required(),
                     ],
                 ),
@@ -1372,9 +1353,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel.send_shoutout",
                 config([("to_broadcaster_login", blank())]),
-                vec![
-                    text_field("to_broadcaster_login", "Channel", "@factorio_streamer").required(),
-                ],
+                vec![text_field("to_broadcaster_login", "Channel", "channel name").required()],
             ),
             quick_action(
                 "Run commercial",

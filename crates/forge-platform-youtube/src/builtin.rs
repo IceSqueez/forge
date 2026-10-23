@@ -37,6 +37,7 @@ use crate::triggers::title_changed::ChannelBroadcastTitleChangedDescriptor;
 use crate::viewer_poll::{YoutubeViewerPoll, YoutubeViewerSource};
 
 const QUOTA_DAILY_BUDGET: u64 = 10_000;
+const GAMING_CATEGORY_ID: &str = "20";
 
 pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), RegistryError> {
     let mut registry = registry.owned_by(crate::YOUTUBE_INTEGRATION.id);
@@ -411,34 +412,22 @@ fn group_badge(group: &str) -> (SectionIcon, QuickActionAccent) {
     }
 }
 
-fn text_field(key: &str, label: &str, default: &str) -> QuickActionField {
+fn text_field(key: &str, label: &str, placeholder: &str) -> QuickActionField {
     QuickActionField {
         key: key.to_owned(),
         label: label.to_owned(),
         kind: QuickActionFieldKind::Text,
-        default: Some(QuickActionFieldValue::Text(default.to_owned())),
-        placeholder: None,
+        default: None,
+        placeholder: Some(placeholder.to_owned()),
         hint: None,
         required: false,
     }
 }
 
-fn text_field_placeholder(
-    key: &str,
-    label: &str,
-    default: &str,
-    placeholder: &str,
-) -> QuickActionField {
-    QuickActionField {
-        placeholder: Some(placeholder.to_owned()),
-        ..text_field(key, label, default)
-    }
-}
-
-fn multiline_field(key: &str, label: &str, default: &str) -> QuickActionField {
+fn multiline_field(key: &str, label: &str, placeholder: &str) -> QuickActionField {
     QuickActionField {
         kind: QuickActionFieldKind::Multiline,
-        ..text_field(key, label, default)
+        ..text_field(key, label, placeholder)
     }
 }
 
@@ -457,7 +446,9 @@ fn choice_field(
         .collect();
     QuickActionField {
         kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::Static(options)),
-        ..text_field(key, label, default)
+        default: Some(QuickActionFieldValue::Text(default.to_owned())),
+        placeholder: None,
+        ..text_field(key, label, "")
     }
 }
 
@@ -513,7 +504,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 false,
                 "youtube.stream.update_title",
                 config([("title", blank())]),
-                vec![text_field("title", "Title", "GTNH: stream live").required()],
+                vec![text_field("title", "Title", "Stream title").required()],
             ),
             quick_action(
                 "Update description",
@@ -525,8 +516,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 "youtube.stream.update_description",
                 config([("description", blank())]),
                 vec![
-                    multiline_field("description", "Description", "Modded Minecraft grind.")
-                        .required(),
+                    multiline_field("description", "Description", "Stream description").required(),
                 ],
             ),
             quick_action(
@@ -537,14 +527,19 @@ impl QuickActions for YoutubeIntegrationBundle {
                 "Broadcast",
                 false,
                 "youtube.stream.update_category",
-                config([("category_id", Variant::String("20".to_owned()))]),
+                config([(
+                    "category_id",
+                    Variant::String(GAMING_CATEGORY_ID.to_owned()),
+                )]),
                 vec![
-                    text_field_placeholder(
-                        "category_id",
-                        "Category ID",
-                        "20",
-                        "20 (Gaming), 24 (Entertainment)\u{2026}",
-                    )
+                    QuickActionField {
+                        default: Some(QuickActionFieldValue::Text(GAMING_CATEGORY_ID.to_owned())),
+                        ..text_field(
+                            "category_id",
+                            "Category ID",
+                            "20 (Gaming), 24 (Entertainment)\u{2026}",
+                        )
+                    }
                     .required(),
                 ],
             ),
@@ -580,7 +575,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 false,
                 "youtube.stream.set_thumbnail",
                 config([("image_path", blank())]),
-                vec![text_field("image_path", "Image path", "~/thumb.png").required()],
+                vec![text_field("image_path", "Image path", "Path to an image file").required()],
             ),
             quick_action(
                 "Insert ad break (cuepoint)",
@@ -603,13 +598,9 @@ impl QuickActions for YoutubeIntegrationBundle {
                 "youtube.chat.create_poll",
                 config([("question", blank()), ("options", blank())]),
                 vec![
-                    text_field("question", "Question", "What next?").required(),
-                    multiline_field(
-                        "options",
-                        "Choices (one per line)",
-                        "Keep grinding\nBoss fight",
-                    )
-                    .required(),
+                    text_field("question", "Question", "Poll question").required(),
+                    multiline_field("options", "Choices (one per line)", "One choice per line")
+                        .required(),
                 ],
             ),
             quick_action(
@@ -621,7 +612,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 false,
                 "youtube.chat.send_message",
                 config([("message", blank())]),
-                vec![multiline_field("message", "Message", "Hey everyone \u{1f44b}").required()],
+                vec![multiline_field("message", "Message", "Message").required()],
             ),
             quick_action(
                 "Delete message",
@@ -632,9 +623,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 true,
                 "youtube.chat.delete_message",
                 config([("message_id", blank())]),
-                vec![
-                    text_field_placeholder("message_id", "Message ID", "", "message id").required(),
-                ],
+                vec![text_field("message_id", "Message ID", "message id").required()],
             ),
             quick_action(
                 "Timeout user",
@@ -648,7 +637,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                     ("channel_id", blank()),
                     ("duration_seconds", Variant::Int(300)),
                 ]),
-                vec![text_field("channel_id", "User", "@spammer").required()],
+                vec![text_field("channel_id", "User", "Channel ID (UC...)").required()],
             ),
             quick_action(
                 "Ban user",
@@ -659,7 +648,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 true,
                 "youtube.moderation.ban_user",
                 config([("channel_id", blank())]),
-                vec![text_field("channel_id", "User", "@baduser").required()],
+                vec![text_field("channel_id", "User", "Channel ID (UC...)").required()],
             ),
             quick_action(
                 "Lookup viewer",
@@ -670,7 +659,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 false,
                 "youtube.lookup.viewer",
                 config([("identifier", blank())]),
-                vec![text_field("identifier", "Username", "koval_dev").required()],
+                vec![text_field("identifier", "Username", "@handle or UC...").required()],
             ),
             quick_action(
                 "Stream stats",

@@ -205,11 +205,15 @@ mod tests {
     }
 
     #[test]
-    fn synthesize_escapes_xml_specials() {
-        let req = plain_req("<&>");
-        let ssml = build_ssml(&req);
-        assert!(ssml.contains("&lt;&amp;&gt;"));
-        assert!(!ssml.contains("<&>"));
+    fn synthesize_escapes_xml_specials_in_text_and_voice_name() {
+        let req = SynthesisRequest {
+            voice_id: VoiceId(r#"en-US-AriaNeural"><audio src="x"#.into()),
+            ..plain_req(r#"<&> "it's""#)
+        };
+        assert_eq!(
+            build_ssml(&req),
+            r#"<speak version="1.0" xml:lang="en-US"><voice name="en-US-AriaNeural&quot;&gt;&lt;audio src=&quot;x">&lt;&amp;&gt; &quot;it&apos;s&quot;</voice></speak>"#
+        );
     }
 
     #[tokio::test]

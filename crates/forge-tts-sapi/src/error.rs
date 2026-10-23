@@ -64,3 +64,88 @@ impl From<SapiError> for TtsError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug, PartialEq)]
+    enum Kind {
+        EngineUnavailable,
+        InvalidVoice,
+        SynthesisFailed,
+        Io,
+        Unexpected,
+    }
+
+    fn kind_and_detail(error: TtsError) -> (Kind, String) {
+        match error {
+            TtsError::EngineUnavailable { id, detail } if id.0 == ENGINE_ID_SAPI => {
+                (Kind::EngineUnavailable, detail)
+            }
+            TtsError::InvalidVoice { id } => (Kind::InvalidVoice, id.0),
+            TtsError::SynthesisFailed { id, detail } if id.0 == ENGINE_ID_SAPI => {
+                (Kind::SynthesisFailed, detail)
+            }
+            TtsError::Io(io_error) => (Kind::Io, io_error.to_string()),
+            other => (Kind::Unexpected, other.to_string()),
+        }
+    }
+
+    #[test]
+    fn sapi_errors_map_to_the_matching_tts_error_keeping_call_context() {
+        for (error, expected_kind, expected_detail) in [
+            (
+                SapiError::VoiceNotFound(VoiceId("TTS_MS_EN-US_ZIRA".into())),
+                Kind::InvalidVoice,
+                "TTS_MS_EN-US_ZIRA",
+            ),
+            (
+                SapiError::Synthesis {
+                    call: "ISpVoice::Speak",
+                    hr: 0x8004_5003_u32 as i32,
+                },
+                Kind::SynthesisFailed,
+                "ISpVoice::Speak",
+            ),
+            (
+                SapiError::Catalog {
+                    call: "SpEnumTokens",
+                    hr: 0x8004_5039_u32 as i32,
+                },
+                Kind::EngineUnavailable,
+                "SpEnumTokens",
+            ),
+            (
+                SapiError::InvalidTokenString {
+                    call: "ISpObjectToken::GetId",
+                },
+                Kind::EngineUnavailable,
+                "ISpObjectToken::GetId",
+            ),
+            (
+                SapiError::ComInit(0x8001_0106_u32 as i32),
+                Kind::EngineUnavailable,
+                "80010106",
+            ),
+            (SapiError::NoCatalog, Kind::EngineUnavailable, "voices"),
+            (
+                SapiError::WorkerTerminated,
+                Kind::EngineUnavailable,
+                "worker",
+            ),
+            (
+                SapiError::Io(std::io::Error::other("pipe closed")),
+                Kind::Io,
+                "pipe closed",
+            ),
+        ] {
+            let (kind, detail) = kind_and_detail(TtsError::from(error));
+            assert_eq!(kind, expected_kind, "detail={detail:?}");
+            assert!(
+                detail.contains(expected_detail),
+                "{detail:?} lacks {expected_detail:?}"
+            );
+        }
+    }
+}

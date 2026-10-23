@@ -246,6 +246,20 @@ mod tests {
     }
 
     #[test]
+    fn synthesize_escapes_xml_specials_inside_prosody_wrapper() {
+        let req = SynthesisRequest {
+            rate_multiplier: 1.5,
+            ..plain_req(r#"</prosody><break time="10s"/> & 'q'"#)
+        };
+        let (body, _) = build_polly_body(&req);
+        let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(
+            parsed["Text"],
+            r#"<speak><prosody rate="+50%">&lt;/prosody&gt;&lt;break time=&quot;10s&quot;/&gt; &amp; &apos;q&apos;</prosody></speak>"#
+        );
+    }
+
+    #[test]
     fn synthesize_wraps_when_only_pitch_differs() {
         let req = SynthesisRequest {
             text: "test".into(),

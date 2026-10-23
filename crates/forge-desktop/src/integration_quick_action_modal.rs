@@ -1256,11 +1256,540 @@ async fn fetch_picker_items(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
-    use forge_platform_core::{QuickActionAccent, QuickActionLiveness, SectionIcon};
+    use std::sync::Mutex;
+
+    use forge_components::{Density, Presentation, ThemeId};
+    use forge_platform_core::{
+        CollectionFailure, CollectionRevisionSignal, CollectionRevisions, OptionHint,
+        OptionListMetadata, QuickActionAccent, QuickActionLiveness, SectionIcon,
+    };
+    use forge_storage::Language;
+    use gpui::TestAppContext;
+    use tokio::sync::oneshot;
 
     use super::*;
+    use crate::i18n::{install_language, message_in};
+    use crate::test_support::{pump, runtime};
+
+    const SETTLE_ROUNDS: usize = 4;
+
+    type Resolved = CollectionOutcome<Vec<OptionEntry>>;
+    type ResolveCall = (String, BTreeMap<String, QuickActionFieldValue>);
+    type HeldResolve = Option<(String, oneshot::Sender<Resolved>)>;
+
+    struct FakeOptionSource {
+        lists: Vec<OptionListMetadata>,
+        entries: Mutex<BTreeMap<String, Resolved>>,
+        held: bool,
+        pending: Mutex<Vec<HeldResolve>>,
+        calls: Mutex<Vec<ResolveCall>>,
+        signal: CollectionRevisionSignal,
+    }
+
+    impl FakeOptionSource {
+        fn new(lists: Vec<OptionListMetadata>, held: bool) -> Arc<Self> {
+            Arc::new(Self {
+                lists,
+                entries: Mutex::new(BTreeMap::new()),
+                held,
+                pending: Mutex::new(Vec::new()),
+                calls: Mutex::new(Vec::new()),
+                signal: CollectionRevisionSignal::new(),
+            })
+        }
+
+        fn answering(lists: Vec<OptionListMetadata>, answers: Vec<(&str, Resolved)>) -> Arc<Self> {
+            let fake = Self::new(lists, false);
+            for (list, answer) in answers {
+                fake.answer(list, answer);
+            }
+            fake
+        }
+
+        fn answer(&self, list: &str, answer: Resolved) {
+            self.entries.lock().unwrap().insert(list.to_owned(), answer);
+        }
+
+        fn release(&self, position: usize, answer: Resolved) {
+            let (_, sender) = self.pending.lock().unwrap()[position].take().unwrap();
+            sender.send(answer).unwrap();
+        }
+
+        fn release_latest(&self, list: &str, answer: Resolved) {
+            let position = self
+                .pending
+                .lock()
+                .unwrap()
+                .iter()
+                .rposition(|slot| slot.as_ref().is_some_and(|(name, _)| name == list))
+                .unwrap();
+            self.release(position, answer);
+        }
+
+        fn take_calls(&self) -> Vec<ResolveCall> {
+            std::mem::take(&mut *self.calls.lock().unwrap())
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl BuiltinOptionSource for FakeOptionSource {
+        fn option_lists(&self) -> Vec<OptionListMetadata> {
+            self.lists.clone()
+        }
+
+        fn revisions(&self) -> CollectionRevisions {
+            self.signal.subscribe()
+        }
+
+        async fn resolve(
+            &self,
+            list: &OptionListId,
+            depends_on_values: &BTreeMap<String, QuickActionFieldValue>,
+        ) -> Resolved {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((list.to_string(), depends_on_values.clone()));
+            if !self.held {
+                return self
+                    .entries
+                    .lock()
+                    .unwrap()
+                    .get(list.as_str())
+                    .cloned()
+                    .unwrap_or(Ok(Vec::new()));
+            }
+            let (sender, receiver) = oneshot::channel();
+            self.pending
+                .lock()
+                .unwrap()
+                .push(Some((list.to_string(), sender)));
+            receiver.await.unwrap_or(Err(CollectionFailure::Transport))
+        }
+    }
+
+    #[derive(Debug, PartialEq)]
+    enum Seen {
+        Loading,
+        Ready(Vec<String>),
+        Failed(String),
+    }
+
+    struct Harness {
+        modal: Entity<QuickActionModal>,
+        rt: tokio::runtime::Runtime,
+    }
+
+    impl Harness {
+        fn open(
+            cx: &mut TestAppContext,
+            source: Option<Arc<FakeOptionSource>>,
+            fields: Vec<QuickActionField>,
+        ) -> Self {
+            install_language(Language::Uk);
+            cx.update(|cx| {
+                cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            });
+            let rt = runtime();
+            let handle = rt.handle().clone();
+            let source = source.map(|fake| fake as Arc<dyn BuiltinOptionSource>);
+            let modal = cx.update(|cx| {
+                cx.new(|cx| QuickActionModal::new(option_action(fields), None, source, handle, cx))
+            });
+            let harness = Self { modal, rt };
+            harness.settle(cx);
+            harness
+        }
+
+        fn settle(&self, cx: &mut TestAppContext) {
+            for _ in 0..SETTLE_ROUNDS {
+                pump(&self.rt);
+                cx.run_until_parked();
+            }
+        }
+
+        fn seen(&self, cx: &mut TestAppContext, index: usize) -> Seen {
+            self.modal
+                .read_with(cx, |modal, _| match &modal.fields[index].control {
+                    FieldControl::Choice(choice) => match &choice.state {
+                        ChoiceState::Loading => Seen::Loading,
+                        ChoiceState::Ready(items) => {
+                            Seen::Ready(items.iter().map(|item| item.label.to_string()).collect())
+                        }
+                        ChoiceState::Failed(text) => Seen::Failed(text.clone()),
+                    },
+                    _ => panic!("field {index} is not a choice"),
+                })
+        }
+
+        fn selected(&self, cx: &mut TestAppContext, index: usize) -> Option<String> {
+            self.modal.read_with(cx, |modal, _| {
+                modal.fields[index]
+                    .selected_choice()
+                    .map(|selected| selected.to_string())
+            })
+        }
+
+        fn can_run(&self, cx: &mut TestAppContext) -> bool {
+            self.modal.update(cx, |modal, cx| modal.can_run(cx))
+        }
+
+        fn pick(&self, cx: &mut TestAppContext, index: usize, value: &str) {
+            let event = PickerEvent::Selected(SharedString::from(value.to_owned()));
+            self.modal
+                .update(cx, |modal, cx| modal.on_choice_picker(index, &event, cx));
+            self.settle(cx);
+        }
+
+        fn retry(&self, cx: &mut TestAppContext, index: usize) {
+            self.modal
+                .update(cx, |modal, cx| modal.retry_dynamic(index, cx));
+            self.settle(cx);
+        }
+    }
+
+    fn option_action(fields: Vec<QuickActionField>) -> QuickAction {
+        let mut action = picker_only_action(PickerKind::Scene);
+        action.picker = None;
+        action.fields = fields;
+        action
+    }
+
+    fn option_field(key: &str, list: &str, default: Option<&str>) -> QuickActionField {
+        QuickActionField {
+            key: key.to_owned(),
+            label: key.to_owned(),
+            kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(
+                OptionListId::new(list),
+            )),
+            default: default.map(|value| QuickActionFieldValue::Text(value.to_owned())),
+            placeholder: None,
+            hint: None,
+            required: true,
+        }
+    }
+
+    fn list(id: &str) -> OptionListMetadata {
+        OptionListMetadata::new(OptionListId::new(id))
+    }
+
+    fn entry(value: &str) -> OptionEntry {
+        OptionEntry::new(value, value)
+    }
+
+    fn values_of(selected: Option<SharedString>) -> Option<String> {
+        selected.map(|value| value.to_string())
+    }
+
+    #[test]
+    fn preselect_prefers_a_kept_selection_then_the_single_current_entry_then_a_listed_default() {
+        let one_current = vec![entry("Main"), entry("BRB").as_current(), entry("Ending")];
+        let no_current = vec![entry("Main"), entry("BRB")];
+        let two_current = vec![entry("Main").as_current(), entry("BRB").as_current()];
+        for (entries, previous, default, expected) in [
+            (&one_current, Some("Ending"), Some("Main"), Some("Ending")),
+            (&one_current, Some("Gone"), Some("Main"), Some("BRB")),
+            (&one_current, None, None, Some("BRB")),
+            (&no_current, Some("Gone"), Some("Main"), Some("Main")),
+            (&no_current, None, Some("Gone"), None),
+            (&no_current, None, None, None),
+            (&two_current, None, None, None),
+            (&two_current, None, Some("Main"), Some("Main")),
+            (&Vec::new(), Some("Main"), Some("Main"), None),
+        ] {
+            let previous = previous.map(SharedString::from);
+            let default = default.map(SharedString::from);
+
+            assert_eq!(
+                values_of(option_preselect(
+                    entries,
+                    previous.as_ref(),
+                    default.as_ref()
+                )),
+                expected.map(str::to_owned),
+                "previous {previous:?} default {default:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_option_entry_keeps_its_label_verbatim_and_translates_only_its_hint() {
+        install_language(Language::Uk);
+        let entry = OptionEntry::new("scene-1", "option_hint_live")
+            .with_hint(OptionHint::new("option_hint_current_scene").arg("scene", "Main"));
+
+        let item = option_item(&entry);
+
+        assert_eq!(
+            (
+                item.id.to_string(),
+                item.label.to_string(),
+                item.sublabel
+                    .map(|hint| hint.replace(['\u{2068}', '\u{2069}'], "")),
+            ),
+            (
+                "scene-1".to_owned(),
+                "option_hint_live".to_owned(),
+                Some("Зараз: Main (В ЕФІРІ)".to_owned()),
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn run_stays_disabled_while_the_list_loads_and_enables_once_a_preselected_list_arrives(
+        cx: &mut TestAppContext,
+    ) {
+        let fake = FakeOptionSource::new(vec![list("scenes")], true);
+        let harness = Harness::open(
+            cx,
+            Some(Arc::clone(&fake)),
+            vec![option_field("scene", "scenes", Some("Main"))],
+        );
+        let while_loading = harness.can_run(cx);
+
+        fake.release(0, Ok(vec![entry("Main"), entry("BRB")]));
+        harness.settle(cx);
+
+        assert_eq!((while_loading, harness.can_run(cx)), (false, true));
+    }
+
+    #[gpui::test]
+    fn run_stays_disabled_when_the_ready_list_has_nothing_to_preselect(cx: &mut TestAppContext) {
+        let fake = FakeOptionSource::answering(
+            vec![list("scenes")],
+            vec![("scenes", Ok(vec![entry("Main"), entry("BRB")]))],
+        );
+        let harness = Harness::open(
+            cx,
+            Some(fake),
+            vec![option_field("scene", "scenes", Some("Gone"))],
+        );
+
+        assert_eq!(
+            (harness.seen(cx, 0), harness.can_run(cx)),
+            (
+                Seen::Ready(vec!["Main".to_owned(), "BRB".to_owned()]),
+                false
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn run_is_disabled_while_a_dependent_list_reloads_even_though_its_selection_is_kept(
+        cx: &mut TestAppContext,
+    ) {
+        let fake = FakeOptionSource::new(
+            vec![list("scenes"), list("sources").depending_on("scene")],
+            true,
+        );
+        let harness = Harness::open(
+            cx,
+            Some(Arc::clone(&fake)),
+            vec![
+                option_field("scene", "scenes", None),
+                option_field("source", "sources", None),
+            ],
+        );
+        fake.release_latest("scenes", Ok(vec![entry("Main").as_current(), entry("BRB")]));
+        harness.settle(cx);
+        fake.release_latest("sources", Ok(vec![entry("Camera").as_current()]));
+        harness.settle(cx);
+        let before_change = harness.can_run(cx);
+
+        harness.pick(cx, 0, "BRB");
+
+        assert_eq!(
+            (
+                before_change,
+                harness.seen(cx, 1),
+                harness.selected(cx, 1),
+                harness.can_run(cx)
+            ),
+            (true, Seen::Loading, Some("Camera".to_owned()), false)
+        );
+    }
+
+    #[gpui::test]
+    fn a_list_the_source_does_not_declare_renders_unavailable_without_resolving(
+        cx: &mut TestAppContext,
+    ) {
+        for source in [
+            Some(FakeOptionSource::new(vec![list("scenes")], false)),
+            None,
+        ] {
+            let harness = Harness::open(
+                cx,
+                source.clone(),
+                vec![option_field("source", "sources", None)],
+            );
+
+            assert_eq!(
+                harness.seen(cx, 0),
+                Seen::Failed(message_in(Language::Uk, "integration_qa_field_unavailable"))
+            );
+            assert!(source.is_none_or(|fake| fake.take_calls().is_empty()));
+        }
+    }
+
+    #[gpui::test]
+    fn a_failed_resolve_shows_the_forge_failure_text_and_blocks_run(cx: &mut TestAppContext) {
+        let fake = FakeOptionSource::answering(
+            vec![list("scenes")],
+            vec![("scenes", Err(CollectionFailure::RateLimited))],
+        );
+        let harness = Harness::open(
+            cx,
+            Some(fake),
+            vec![option_field("scene", "scenes", Some("Main"))],
+        );
+
+        assert_eq!(
+            (harness.seen(cx, 0), harness.can_run(cx)),
+            (
+                Seen::Failed(message_in(
+                    Language::Uk,
+                    "integration_qa_options_rate_limited"
+                )),
+                false
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn a_late_result_from_a_superseded_resolve_is_dropped(cx: &mut TestAppContext) {
+        let fake = FakeOptionSource::new(vec![list("scenes")], true);
+        let harness = Harness::open(
+            cx,
+            Some(Arc::clone(&fake)),
+            vec![option_field("scene", "scenes", None)],
+        );
+        harness.retry(cx, 0);
+
+        fake.release(1, Ok(vec![entry("Fresh")]));
+        harness.settle(cx);
+        fake.release(0, Ok(vec![entry("Stale")]));
+        harness.settle(cx);
+
+        assert_eq!(harness.seen(cx, 0), Seen::Ready(vec!["Fresh".to_owned()]));
+    }
+
+    #[gpui::test]
+    fn changing_a_dependency_re_resolves_only_the_dependent_list_with_the_new_value(
+        cx: &mut TestAppContext,
+    ) {
+        let fake = FakeOptionSource::answering(
+            vec![
+                list("scenes"),
+                list("sources").depending_on("scene"),
+                list("devices"),
+            ],
+            vec![
+                ("scenes", Ok(vec![entry("Main").as_current(), entry("BRB")])),
+                ("sources", Ok(vec![entry("Camera")])),
+                ("devices", Ok(vec![entry("Mic")])),
+            ],
+        );
+        let harness = Harness::open(
+            cx,
+            Some(Arc::clone(&fake)),
+            vec![
+                option_field("scene", "scenes", None),
+                option_field("source", "sources", None),
+                option_field("device", "devices", None),
+            ],
+        );
+        fake.take_calls();
+
+        harness.pick(cx, 0, "BRB");
+
+        assert_eq!(
+            fake.take_calls(),
+            vec![(
+                "sources".to_owned(),
+                BTreeMap::from([(
+                    "scene".to_owned(),
+                    QuickActionFieldValue::Text("BRB".to_owned())
+                )]),
+            )]
+        );
+    }
+
+    #[gpui::test]
+    fn picking_the_already_selected_value_does_not_re_resolve_dependents(cx: &mut TestAppContext) {
+        let fake = FakeOptionSource::answering(
+            vec![list("scenes"), list("sources").depending_on("scene")],
+            vec![("scenes", Ok(vec![entry("Main").as_current()]))],
+        );
+        let harness = Harness::open(
+            cx,
+            Some(Arc::clone(&fake)),
+            vec![
+                option_field("scene", "scenes", None),
+                option_field("source", "sources", None),
+            ],
+        );
+        fake.take_calls();
+
+        harness.pick(cx, 0, "Main");
+
+        assert!(fake.take_calls().is_empty());
+    }
+
+    #[gpui::test]
+    fn a_revision_bump_re_resolves_the_open_modal_with_the_new_entries(cx: &mut TestAppContext) {
+        let fake = FakeOptionSource::answering(
+            vec![list("scenes")],
+            vec![("scenes", Ok(vec![entry("Main")]))],
+        );
+        let harness = Harness::open(
+            cx,
+            Some(Arc::clone(&fake)),
+            vec![option_field("scene", "scenes", None)],
+        );
+        fake.answer("scenes", Ok(vec![entry("Main"), entry("Live")]));
+
+        fake.signal.bump();
+        harness.settle(cx);
+
+        assert_eq!(
+            harness.seen(cx, 0),
+            Seen::Ready(vec!["Main".to_owned(), "Live".to_owned()])
+        );
+    }
+
+    #[gpui::test]
+    fn a_revision_refresh_keeps_the_ready_list_and_selection_until_the_new_result_lands(
+        cx: &mut TestAppContext,
+    ) {
+        let fake = FakeOptionSource::new(vec![list("scenes")], true);
+        let harness = Harness::open(
+            cx,
+            Some(Arc::clone(&fake)),
+            vec![option_field("scene", "scenes", None)],
+        );
+        fake.release(0, Ok(vec![entry("Main").as_current()]));
+        harness.settle(cx);
+
+        fake.signal.bump();
+        harness.settle(cx);
+
+        assert_eq!(
+            (
+                harness.seen(cx, 0),
+                harness.selected(cx, 0),
+                harness.can_run(cx),
+                fake.take_calls().len()
+            ),
+            (
+                Seen::Ready(vec!["Main".to_owned()]),
+                Some("Main".to_owned()),
+                true,
+                2
+            )
+        );
+    }
 
     fn picker_only_action(picker: PickerKind) -> QuickAction {
         QuickAction {

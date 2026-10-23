@@ -1082,6 +1082,26 @@ mod tests {
         }
     }
 
+    #[test]
+    fn choice_sources_keep_their_snake_case_wire_tags_through_a_round_trip() {
+        for (source, wire) in [
+            (
+                QuickActionChoiceSource::OptionList(OptionListId::new("obs.scenes")),
+                serde_json::json!({ "option_list": "obs.scenes" }),
+            ),
+            (
+                QuickActionChoiceSource::Dynamic(PickerKind::Scene),
+                serde_json::json!({ "dynamic": "scene" }),
+            ),
+        ] {
+            assert_eq!(serde_json::to_value(&source).unwrap(), wire);
+            assert_eq!(
+                serde_json::from_value::<QuickActionChoiceSource>(wire).unwrap(),
+                source
+            );
+        }
+    }
+
     #[allow(dead_code)]
     fn dyn_all(
         _: &dyn BuiltinStatus,

@@ -159,8 +159,11 @@ impl ObsSink for MockSink {
     }
 }
 
+pub(crate) type InputSettingsCall = (String, serde_json::Map<String, serde_json::Value>, bool);
+
 pub(crate) struct RecordingSink {
     calls: Mutex<Vec<String>>,
+    input_settings: Mutex<Vec<InputSettingsCall>>,
     fail: bool,
 }
 
@@ -168,6 +171,7 @@ impl RecordingSink {
     pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self {
             calls: Mutex::new(Vec::new()),
+            input_settings: Mutex::new(Vec::new()),
             fail: false,
         })
     }
@@ -175,12 +179,20 @@ impl RecordingSink {
     pub(crate) fn failing() -> Arc<Self> {
         Arc::new(Self {
             calls: Mutex::new(Vec::new()),
+            input_settings: Mutex::new(Vec::new()),
             fail: true,
         })
     }
 
     pub(crate) fn calls(&self) -> Vec<String> {
         self.calls.lock().unwrap_or_else(|p| p.into_inner()).clone()
+    }
+
+    pub(crate) fn input_settings_calls(&self) -> Vec<InputSettingsCall> {
+        self.input_settings
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
     }
 
     fn record(&self, call: String) -> Result<(), ObsError> {
@@ -249,9 +261,13 @@ impl ObsSink for RecordingSink {
     async fn set_input_settings(
         &self,
         input: &str,
-        _: &serde_json::Map<String, serde_json::Value>,
-        _: bool,
+        settings: &serde_json::Map<String, serde_json::Value>,
+        overlay: bool,
     ) -> Result<(), ObsError> {
+        self.input_settings
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .push((input.to_owned(), settings.clone(), overlay));
         self.record(format!("set_input_settings({input})"))
     }
     async fn pause_record(&self) -> Result<(), ObsError> {

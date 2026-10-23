@@ -546,4 +546,22 @@ mod tests {
         let result = client.set_scene("Gameplay").await;
         assert!(matches!(result, Err(ObsError::Disconnected)));
     }
+
+    #[test]
+    fn without_nulls_drops_null_keys_and_elements_at_every_depth_and_keeps_the_rest() {
+        let input = serde_json::json!({
+            "url": null,
+            "width": 1920,
+            "transform": {"crop": {"left": 4, "label": null}, "flip": true, "name": "cam"},
+            "items": [1, null, [null, "x"], {"k": null, "v": 2.5}],
+            "empty": {},
+        });
+        let expected = serde_json::json!({
+            "width": 1920,
+            "transform": {"crop": {"left": 4}, "flip": true, "name": "cam"},
+            "items": [1, ["x"], {"v": 2.5}],
+            "empty": {},
+        });
+        assert_eq!(without_nulls(input), expected);
+    }
 }

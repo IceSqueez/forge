@@ -149,60 +149,88 @@ fn parse_settings(config: &SubActionConfig) -> Result<Map<String, Value>, String
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::runners::test_support::{MockSink, make_ctx};
+    use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+    use forge_registry::RegistryError;
+    use serde_json::json;
 
-    fn runner() -> SetInputSettingsRunner {
-        SetInputSettingsRunner::new(Arc::new(MockSink))
+    fn config_with(settings: Variant, overlay: bool) -> SubActionConfig {
+        BTreeMap::from([
+            ("source".to_owned(), Variant::String("Webcam".to_owned())),
+            ("settings_json".to_owned(), settings),
+            ("overlay".to_owned(), Variant::Bool(overlay)),
+        ])
     }
 
     #[test]
     fn validate_config_accepts_valid_json_object() {
-        let config = BTreeMap::from([
-            ("source".to_owned(), Variant::String("Webcam".to_owned())),
-            (
-                "settings_json".to_owned(),
-                Variant::String(r#"{"width":1920}"#.to_owned()),
-            ),
-            ("overlay".to_owned(), Variant::Bool(true)),
-        ]);
-        assert!(runner().validate_config(&config).is_ok());
-    }
-
-    #[test]
-    fn validate_config_rejects_malformed_json() {
-        let config = BTreeMap::from([
-            ("source".to_owned(), Variant::String("Webcam".to_owned())),
-            (
-                "settings_json".to_owned(),
-                Variant::String("{not valid".to_owned()),
-            ),
-        ]);
-        assert!(runner().validate_config(&config).is_err());
-    }
-
-    #[test]
-    fn validate_config_rejects_non_string_settings() {
-        let config = BTreeMap::from([
-            ("source".to_owned(), Variant::String("Webcam".to_owned())),
-            ("settings_json".to_owned(), Variant::Int(0)),
-        ]);
-        assert!(runner().validate_config(&config).is_err());
+        let runner = SetInputSettingsRunner::new(Arc::new(MockSink));
+        let config = config_with(Variant::String(r#"{"width":1920}"#.to_owned()), true);
+        assert!(runner.validate_config(&config).is_ok());
     }
 
     #[tokio::test]
-    async fn execute_reports_success_with_correct_kind() {
-        let stack = ArgStack::new();
-        let config = BTreeMap::from([
-            ("source".to_owned(), Variant::String("Webcam".to_owned())),
-            (
-                "settings_json".to_owned(),
-                Variant::String(r#"{"width":1920}"#.to_owned()),
-            ),
-            ("overlay".to_owned(), Variant::Bool(true)),
-        ]);
-        let (tel, extra) = runner().execute(&config, &make_ctx(&stack)).await;
-        assert_eq!(tel.outcome, SubActionOutcome::Success);
-        assert_eq!(tel.kind, "obs.sources.set_input_settings");
-        assert!(extra.is_none());
+    async fn execute_hands_the_sink_the_user_object_unchanged_for_each_overlay_flag() {
+        let settings = json!({
+            "url": null,
+            "transform": {"crop": {"left": 4, "label": null}, "flip": true},
+            "source": {"type": "x", "value": 1},
+            "items": [1, null, "two"],
+        });
+        let text = serde_json::to_string(&settings).unwrap();
+        let serde_json::Value::Object(expected) = settings else {
+            unreachable!()
+        };
+        for overlay in [true, false] {
+            let sink = RecordingSink::new();
+            let runner = SetInputSettingsRunner::new(Arc::clone(&sink) as Arc<dyn ObsSink>);
+            let stack = ArgStack::new();
+            let config = config_with(Variant::String(text.clone()), overlay);
+
+            let (tel, _) = runner.execute(&config, &make_ctx(&stack)).await;
+
+            assert_eq!(tel.outcome, SubActionOutcome::Success, "overlay={overlay}");
+            assert_eq!(
+                sink.input_settings_calls(),
+                vec![("Webcam".to_owned(), expected.clone(), overlay)],
+                "overlay={overlay}",
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn settings_that_are_not_a_json_object_fail_validation_and_execution_without_a_sink_call()
+    {
+        let cases = [
+            ("malformed", Variant::String("{not valid".to_owned())),
+            ("array", Variant::String("[1,2]".to_owned())),
+            ("number", Variant::String("5".to_owned())),
+            ("string", Variant::String(r#""str""#.to_owned())),
+            ("null", Variant::String("null".to_owned())),
+            ("non-string config value", Variant::Int(0)),
+        ];
+        for (label, settings) in cases {
+            let sink = RecordingSink::new();
+            let runner = SetInputSettingsRunner::new(Arc::clone(&sink) as Arc<dyn ObsSink>);
+            let config = config_with(settings, true);
+
+            let validation = runner.validate_config(&config);
+            assert!(
+                matches!(
+                    validation,
+                    Err(RegistryError::InvalidConfig(ref problem))
+                        if problem.field.as_deref() == Some("settings_json")
+                ),
+                "{label}: validate_config must reject settings_json, got {validation:?}",
+            );
+
+            let stack = ArgStack::new();
+            let (tel, _) = runner.execute(&config, &make_ctx(&stack)).await;
+            assert!(
+                matches!(&tel.outcome, SubActionOutcome::Failed(reason) if reason.starts_with("settings_json: ")),
+                "{label}: execute must fail with a settings_json reason, got {:?}",
+                tel.outcome,
+            );
+            assert!(sink.calls().is_empty(), "{label}: sink must not be called");
+        }
     }
 }

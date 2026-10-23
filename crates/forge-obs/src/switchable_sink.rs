@@ -120,7 +120,7 @@ impl ObsSink for SwitchableObsSink {
     async fn set_input_settings(
         &self,
         input: &str,
-        settings: &Variant,
+        settings: &serde_json::Map<String, serde_json::Value>,
         overlay: bool,
     ) -> Result<(), ObsError> {
         let client = self.get()?;

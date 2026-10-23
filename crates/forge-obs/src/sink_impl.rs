@@ -15,6 +15,25 @@ use crate::error::ObsError;
 use crate::session::{CONFIG_SWITCH_TIMEOUT, LiveSession};
 use crate::sink::ObsSink;
 
+fn without_nulls(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => serde_json::Value::Object(
+            map.into_iter()
+                .filter(|(_, v)| !v.is_null())
+                .map(|(k, v)| (k, without_nulls(v)))
+                .collect(),
+        ),
+        serde_json::Value::Array(items) => serde_json::Value::Array(
+            items
+                .into_iter()
+                .filter(|v| !v.is_null())
+                .map(without_nulls)
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
 impl ObsClient {
     async fn resolve_scene_item_id(
         &self,
@@ -204,17 +223,16 @@ impl ObsSink for ObsClient {
     async fn set_input_settings(
         &self,
         input: &str,
-        settings: &Variant,
+        settings: &serde_json::Map<String, serde_json::Value>,
         overlay: bool,
     ) -> Result<(), ObsError> {
-        let json_settings = settings.to_json();
         let session = self.active_session().await?;
         session
             .request(
                 "SetInputSettings",
                 session.obs().inputs().set_settings(SetSettings {
                     input: InputId::Name(input),
-                    settings: &json_settings,
+                    settings,
                     overlay: Some(overlay),
                 }),
             )
@@ -382,8 +400,19 @@ impl ObsSink for ObsClient {
                     .settings::<serde_json::Value>(InputId::Name(input)),
             )
             .await?;
-        let settings_variant = serde_json::from_value::<Variant>(result.settings)
-            .unwrap_or(Variant::Object(BTreeMap::new()));
+        let serde_json::Value::Object(settings) = result.settings else {
+            return Err(ObsError::Protocol(
+                "GetInputSettings returned settings that are not an object".to_owned(),
+            ));
+        };
+        let settings_variant = Variant::from_plain_json(without_nulls(serde_json::Value::Object(
+            settings,
+        )))
+        .map_err(|e| {
+            ObsError::Protocol(format!(
+                "GetInputSettings returned unreadable settings: {e}"
+            ))
+        })?;
         let mut obj = BTreeMap::new();
         obj.insert("settings".to_owned(), settings_variant);
         obj.insert("kind".to_owned(), Variant::String(result.kind));

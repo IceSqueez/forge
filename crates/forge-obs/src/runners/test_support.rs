@@ -45,7 +45,12 @@ impl ObsSink for MockSink {
     async fn set_input_volume_db(&self, _: &str, _: f64) -> Result<(), ObsError> {
         Ok(())
     }
-    async fn set_input_settings(&self, _: &str, _: &Variant, _: bool) -> Result<(), ObsError> {
+    async fn set_input_settings(
+        &self,
+        _: &str,
+        _: &serde_json::Map<String, serde_json::Value>,
+        _: bool,
+    ) -> Result<(), ObsError> {
         Ok(())
     }
     async fn pause_record(&self) -> Result<(), ObsError> {
@@ -241,7 +246,12 @@ impl ObsSink for RecordingSink {
     async fn set_input_volume_db(&self, input: &str, db: f64) -> Result<(), ObsError> {
         self.record(format!("set_input_volume_db({input},{db})"))
     }
-    async fn set_input_settings(&self, input: &str, _: &Variant, _: bool) -> Result<(), ObsError> {
+    async fn set_input_settings(
+        &self,
+        input: &str,
+        _: &serde_json::Map<String, serde_json::Value>,
+        _: bool,
+    ) -> Result<(), ObsError> {
         self.record(format!("set_input_settings({input})"))
     }
     async fn pause_record(&self) -> Result<(), ObsError> {

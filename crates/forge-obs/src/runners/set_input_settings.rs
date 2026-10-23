@@ -9,6 +9,7 @@ use forge_registry::{
     SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use serde_json::{Map, Value};
 use time::OffsetDateTime;
 
 use crate::ObsSink;
@@ -85,17 +86,10 @@ impl SubActionRunner for SetInputSettingsRunner {
             ));
         }
 
-        let json_ok = config.get("settings_json").is_some_and(|v| {
-            if let Variant::String(s) = v {
-                serde_json::from_str::<serde_json::Value>(s).is_ok()
-            } else {
-                false
-            }
-        });
-        if !json_ok {
+        if let Err(reason) = parse_settings(config) {
             return Err(RegistryError::invalid_field(
                 "settings_json",
-                ConfigReason::InvalidFormat("not valid JSON".to_owned()),
+                ConfigReason::InvalidFormat(reason),
             ));
         }
 
@@ -115,24 +109,15 @@ impl SubActionRunner for SetInputSettingsRunner {
         let source = ctx.arg_stack.interpolate(raw_source);
         let overlay = matches!(config.get("overlay"), Some(Variant::Bool(true)));
 
-        let settings_variant = config
-            .get("settings_json")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    let json_val = serde_json::from_str::<serde_json::Value>(s).ok()?;
-                    Variant::from_json(json_val).ok()
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| Variant::Object(BTreeMap::new()));
-
-        let outcome = SubActionOutcome::from_result(
-            &self
-                .sink
-                .set_input_settings(&source, &settings_variant, overlay)
-                .await,
-        );
+        let outcome = match parse_settings(config) {
+            Ok(settings) => SubActionOutcome::from_result(
+                &self
+                    .sink
+                    .set_input_settings(&source, &settings, overlay)
+                    .await,
+            ),
+            Err(reason) => SubActionOutcome::Failed(format!("settings_json: {reason}")),
+        };
 
         (
             SubActionTelemetry {
@@ -146,6 +131,17 @@ impl SubActionRunner for SetInputSettingsRunner {
             },
             None,
         )
+    }
+}
+
+fn parse_settings(config: &SubActionConfig) -> Result<Map<String, Value>, String> {
+    let Some(Variant::String(text)) = config.get("settings_json") else {
+        return Err("expected JSON object text".to_owned());
+    };
+    match serde_json::from_str::<Value>(text) {
+        Ok(Value::Object(settings)) => Ok(settings),
+        Ok(_) => Err("expected a JSON object".to_owned()),
+        Err(e) => Err(format!("not valid JSON ({e})")),
     }
 }
 

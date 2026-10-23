@@ -40,7 +40,7 @@ pub trait ObsSink: Send + Sync {
     async fn set_input_settings(
         &self,
         input: &str,
-        settings: &Variant,
+        settings: &serde_json::Map<String, serde_json::Value>,
         overlay: bool,
     ) -> Result<(), ObsError>;
 

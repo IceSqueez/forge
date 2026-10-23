@@ -1,9 +1,6 @@
 use super::*;
 use forge_types::ExecutionMode;
 
-const MISSING_ACTION: &str = "action not found";
-const MISSING_CHAIN: &str = "step list not found";
-
 pub(super) struct ActionSettings {
     pub name: String,
     pub group: Option<String>,
@@ -26,6 +23,7 @@ pub(super) enum ActionWrite {
     },
     Duplicate {
         new_id: ActionId,
+        copy_suffix: String,
     },
     Archive {
         name: String,
@@ -54,9 +52,29 @@ pub(super) struct ActionWriteQueue {
     latest: Option<Action>,
 }
 
+enum ActionWriteError {
+    MissingAction,
+    MissingChain,
+    Storage(String),
+}
+
+impl ActionWriteError {
+    fn storage(error: impl ToString) -> Self {
+        Self::Storage(error.to_string())
+    }
+
+    fn message(&self) -> String {
+        match self {
+            Self::MissingAction => tr!("actions_error_missing_action"),
+            Self::MissingChain => tr!("actions_error_missing_chain"),
+            Self::Storage(message) => message.clone(),
+        }
+    }
+}
+
 struct WriteBatchOutcome {
     effects: Vec<WriteEffect>,
-    errors: Vec<String>,
+    errors: Vec<ActionWriteError>,
     saved: Option<Action>,
     listed: Result<Vec<Action>, String>,
 }
@@ -92,37 +110,42 @@ pub(super) fn apply_action_edit(action: &mut Action, write: &ActionWrite) -> boo
     }
 }
 
-async fn stored_action(repo: &dyn ActionRepo, id: ActionId) -> Result<Action, String> {
+async fn stored_action(repo: &dyn ActionRepo, id: ActionId) -> Result<Action, ActionWriteError> {
     repo.get(id)
         .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| MISSING_ACTION.to_owned())
+        .map_err(ActionWriteError::storage)?
+        .ok_or(ActionWriteError::MissingAction)
 }
 
 async fn perform_operation(
     repo: &dyn ActionRepo,
     id: ActionId,
     write: ActionWrite,
-) -> Result<Option<WriteEffect>, String> {
+) -> Result<Option<WriteEffect>, ActionWriteError> {
     match write {
         ActionWrite::Create(action) => {
-            repo.save(&action).await.map_err(|e| e.to_string())?;
+            repo.save(&action)
+                .await
+                .map_err(ActionWriteError::storage)?;
             Ok(Some(WriteEffect::Select(action.id)))
         }
-        ActionWrite::Duplicate { new_id } => {
+        ActionWrite::Duplicate {
+            new_id,
+            copy_suffix,
+        } => {
             let source = stored_action(repo, id).await?;
-            let new_name = format!("{} (copy)", source.name);
+            let new_name = format!("{} {copy_suffix}", source.name);
             repo.duplicate(id, new_id, &new_name)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(ActionWriteError::storage)?;
             Ok(None)
         }
         ActionWrite::Archive { name } => {
-            repo.archive(id).await.map_err(|e| e.to_string())?;
+            repo.archive(id).await.map_err(ActionWriteError::storage)?;
             Ok(Some(WriteEffect::ArchiveUndo { name }))
         }
         ActionWrite::Restore => {
-            repo.restore(id).await.map_err(|e| e.to_string())?;
+            repo.restore(id).await.map_err(ActionWriteError::storage)?;
             Ok(None)
         }
         ActionWrite::Settings(_)
@@ -144,21 +167,21 @@ impl EditBatch {
         repo: &dyn ActionRepo,
         id: ActionId,
         write: &ActionWrite,
-    ) -> Result<(), String> {
+    ) -> Result<(), ActionWriteError> {
         if self.working.is_none() {
             self.working = Some(stored_action(repo, id).await?);
         }
         let Some(action) = self.working.as_mut() else {
-            return Err(MISSING_ACTION.to_owned());
+            return Err(ActionWriteError::MissingAction);
         };
         if !apply_action_edit(action, write) {
-            return Err(MISSING_CHAIN.to_owned());
+            return Err(ActionWriteError::MissingChain);
         }
         self.dirty = true;
         Ok(())
     }
 
-    async fn flush(&mut self, repo: &dyn ActionRepo) -> Result<(), String> {
+    async fn flush(&mut self, repo: &dyn ActionRepo) -> Result<(), ActionWriteError> {
         if !self.dirty {
             return Ok(());
         }
@@ -166,7 +189,7 @@ impl EditBatch {
         let Some(action) = self.working.as_ref() else {
             return Ok(());
         };
-        let saved = repo.save(action).await.map_err(|e| e.to_string());
+        let saved = repo.save(action).await.map_err(ActionWriteError::storage);
         if saved.is_err() {
             self.save_failed = true;
         }
@@ -307,8 +330,8 @@ impl ScreenActionsView {
         if drained {
             self.action_writes.remove(&id);
         }
-        for message in &outcome.errors {
-            self.on_repo_error(message, cx);
+        for error in &outcome.errors {
+            self.on_repo_error(&error.message(), cx);
         }
         for effect in outcome.effects {
             match effect {
@@ -455,6 +478,7 @@ mod tests {
             (
                 ActionWrite::Duplicate {
                     new_id: ActionId::new(),
+                    copy_suffix: String::new(),
                 },
                 "duplicate",
             ),

@@ -556,7 +556,7 @@ impl GridPicker {
             .border_color(p.surface_overlay)
             .child(grid_rail_entry(
                 "forge-grid-rail-all",
-                "All",
+                tr!("widget_grid_picker_all"),
                 Some(
                     div()
                         .flex_none()

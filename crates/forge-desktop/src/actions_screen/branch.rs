@@ -1,4 +1,5 @@
 use super::*;
+use crate::config_field_label::{field_label, form_field_label};
 use forge_components::ActivePresentation;
 use forge_components::{
     Density, FONT_XS, ForgePalette, Icon, InputEvent, Spacing, TextInput, body_family, icon,
@@ -205,7 +206,13 @@ impl ScreenActionsView {
                 .unwrap_or_else(|| tr!("action_editor_kind_sub_action"));
             let branch_label = match frame.case_index {
                 Some(ci) => format!("{} {}", tr!("action_editor_branch_case"), ci + 1),
-                None => branch_field_label(&frame.chain_key),
+                None => prefix
+                    .get(frame.step_index)
+                    .and_then(|s| {
+                        let runner = self.sub_action_registry.get(&s.kind_id)?;
+                        form_field_label(&s.kind_id, &runner.config_fields(), &frame.chain_key)
+                    })
+                    .unwrap_or_else(|| branch_field_label(&frame.chain_key)),
             };
             let pop_target = if depth + 1 == self.nav_path.len() {
                 None
@@ -290,14 +297,15 @@ impl ScreenActionsView {
 
         for field in &fields {
             match field {
-                FormField::SubChain { key, label } => {
+                FormField::SubChain { key, .. } => {
+                    let label = field_label(&step.kind_id, field);
                     let count = nav::branch_step_count(step, key, None);
                     let disabled = at_cap && count == 0;
                     capped_empty |= disabled;
                     let key_owned = (*key).to_owned();
                     rows.push(drill_in_chip(
                         SharedString::from(format!("actions-drill-{step_index}-{key}")),
-                        label,
+                        &label,
                         count,
                         disabled,
                         palette,
@@ -306,7 +314,8 @@ impl ScreenActionsView {
                         }),
                     ));
                 }
-                FormField::CaseList { key, label } => {
+                FormField::CaseList { key, .. } => {
+                    let label = field_label(&step.kind_id, field);
                     let case_total = nav::case_count(step);
                     rows.push(
                         div()

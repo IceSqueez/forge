@@ -106,8 +106,12 @@ impl Render for Footer {
             .connectivity
             .read(cx)
             .tally_enabled(|integ| lifecycle.is_on(&integ.builtin_id()));
-        let connected_label = format!("{connected}/{total} connected");
-        let uptime_label = format!("{uptime} uptime");
+        let connected_label = tr!(
+            "footer_connected",
+            connected = connected as i64,
+            total = total as i64
+        );
+        let uptime_label = tr!("footer_uptime", uptime = uptime.as_str());
         let trailing: Vec<AnyElement> = [
             self.awake_badge(&palette, cx),
             self.loss_badge(&palette, cx),

@@ -93,7 +93,7 @@ impl SubActionRunner for CoreActionRunRunner {
     }
 
     fn summary(&self) -> &str {
-        "Run another action's sub-actions from inside this chain"
+        "Run another action's steps from inside this chain"
     }
 
     fn search_text(&self) -> &str {

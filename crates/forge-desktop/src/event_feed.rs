@@ -532,13 +532,9 @@ impl EventFeedView {
         match item.kind.as_ref() {
             "chat.send" | "chat.whisper.sent" => Some(sent_tag(&item.payload)),
             "command.matched" => Some("\u{2192} trigger".into()),
-            "action.start" => item.sub_action_count.map(|n| {
-                if n == 1 {
-                    "1 sub-action".into()
-                } else {
-                    format!("{n} sub-actions").into()
-                }
-            }),
+            "action.start" => item
+                .sub_action_count
+                .map(|n| tr!("event_feed_step_count", count = n).into()),
             "action.done" => item.total_ms.map(|ms| format!("{ms:.2}ms").into()),
             k if is_chat_message_kind(k) => {
                 if acted > 0 {

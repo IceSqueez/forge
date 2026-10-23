@@ -1964,7 +1964,10 @@ impl ScriptEditorView {
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
-                    .child("Timeout: 500 ms"),
+                    .child(tr!(
+                        "script_editor_timeout_ms",
+                        ms = forge_script::EngineConfig::default().wall_time_ms as i64
+                    )),
             );
 
         div()

@@ -156,6 +156,7 @@ impl ScreenActionsView {
             id,
             ActionWrite::Duplicate {
                 new_id: ActionId::new(),
+                copy_suffix: tr!("actions_duplicate_name_suffix"),
             },
             cx,
         );
@@ -762,7 +763,9 @@ impl ScreenActionsView {
             .into_any_element();
         let right_slot = div().pr(ROW_GUTTER).child(
             div()
-                .w(RIGHT_SLOT_W)
+                .flex_none()
+                .min_w(RIGHT_SLOT_W)
+                .whitespace_nowrap()
                 .flex()
                 .items_center()
                 .justify_end()

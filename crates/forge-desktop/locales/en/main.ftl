@@ -190,6 +190,8 @@ event_loss_title = Event loss
 event_loss_scope_hint = since start · resets on restart
 event_loss_none = No events lost since start
 event_loss_footer_badge = { $count } dropped
+footer_connected = { $connected }/{ $total } connected
+footer_uptime = { $uptime } uptime
 event_loss_tooltip_title = Events lost since start
 event_loss_tooltip_row = { $consumer } ({ $tier }) - { $detail }
 stay_awake_footer_label = Awake
@@ -760,6 +762,7 @@ settings_ws_lan_bullet_firewall = Your firewall must also allow the configured p
 actions_breadcrumb_automation = Automation
 actions_breadcrumb_actions = Actions
 actions_filter_all = All
+actions_group_ungrouped = Ungrouped
 actions_filter_chat = Chat
 actions_filter_timers = Timers
 actions_filter_points = Points
@@ -803,7 +806,7 @@ actions_modal_concurrent_desc = Runs right away, as if its queue allowed paralle
 actions_modal_bypass_label = Bypass queue pause
 actions_modal_bypass_desc = Always run even if queue is paused.
 actions_modal_random_pick_label = Random pick
-actions_modal_random_pick_desc = Run ONE random sub-action per trigger instead of all.
+actions_modal_random_pick_desc = Run ONE random step per trigger instead of all.
 actions_modal_create_btn = Create action
 actions_modal_save_btn = Save changes
 actions_modal_cancel_btn = Cancel
@@ -916,7 +919,10 @@ action_editor_case_match_placeholder = match value
 action_editor_branch_cap = Max nesting depth reached · cannot nest deeper here
 action_editor_no_triggers = No triggers · click Add trigger to start
 action_editor_section_triggers_count = TRIGGERS · { $count }
-action_editor_sub_actions_count = { $count } sub-actions
+action_editor_sub_actions_count = { $count ->
+    [one] { $count } step
+   *[other] { $count } steps
+}
 actions_sub_file_browse = Browse
 actions_sub_files_root_label = Files folder
 actions_sub_files_root_hint = File steps only use paths relative to this folder - absolute paths and ".." are refused.
@@ -933,7 +939,10 @@ actions_var_picker_group_trigger = Trigger
 actions_var_picker_group_some_triggers = Only some triggers
 actions_var_picker_group_steps = Earlier steps
 actions_var_picker_group_loop = Loop
-action_editor_sub_count = { $count } sub
+action_editor_sub_count = { $count ->
+    [one] { $count } step
+   *[other] { $count } steps
+}
 action_editor_enabled = Enabled
 action_editor_disabled = Disabled
 
@@ -996,12 +1005,13 @@ action_editor_test_run_subtitle_none = No trigger attached
 action_editor_test_run_trigger_pick = Simulate as trigger
 action_editor_test_run_note_no_schema = Trigger declares no outputs · running with empty values
 action_editor_test_run_note_no_triggers = No trigger attached · running with empty values
-action_editor_test_run_empty = No sub-actions to run.
+action_editor_test_run_empty = No steps to run.
 action_editor_test_run_default_error = Step execution failed
 action_editor_test_run_status_queued = queued
 action_editor_test_run_status_running = running...
 action_editor_test_run_status_failed = failed
 action_editor_test_run_status_skipped = skipped
+action_editor_step_wait_ms = { $ms } ms
 action_editor_test_run_status_ms = { $ms } ms
 action_editor_test_run_failed_banner = Run failed at step { $step } · { $name }
 action_editor_test_run_completed = Completed { $count } steps · { $errors } errors
@@ -1019,11 +1029,14 @@ action_editor_this_action = this action
 action_editor_recent_triggers = Recent
 picker_favorites = Favorites
 picker_favorites_empty = Star items to pin them here for quick access
-action_editor_picker_add_sub_title = Add sub-action
+action_editor_picker_add_sub_title = Add step
 action_editor_picker_inserting_into = Inserting into
-action_editor_picker_sub_count = · { $count } sub-actions
+action_editor_picker_sub_count = · { $count ->
+    [one] { $count } step
+   *[other] { $count } steps
+}
 action_editor_picker_footer_hint = Added with smart defaults - edit inline after
-action_editor_picker_search = Search { $count } sub-actions...
+action_editor_picker_search = Search { $count } steps...
 action_editor_picker_fires = Fires
 action_editor_picker_available_count = · { $count } available
 action_editor_trigger_picker_footer_hint = Creates a new trigger of the chosen kind and links it
@@ -1042,7 +1055,7 @@ action_editor_kind_random_int = Random int
 action_editor_kind_incr_global = Increment global
 action_editor_kind_run_script = Run script
 action_editor_persisted_note = (persisted)
-action_editor_kind_sub_action = Sub-action
+action_editor_kind_sub_action = Step
 
 ## Triggers registry - page header / filters
 
@@ -1236,10 +1249,13 @@ actions_tree_loading = Loading actions...
 actions_loading_queues = Loading queues...
 actions_no_queue = No queue available
 actions_toast_error = Actions: { $message }
+actions_error_missing_action = action not found
+actions_error_missing_chain = step list not found
+actions_duplicate_name_suffix = (copy)
 actions_rename_taken = Name '{ $name }' is already taken
 actions_deleted_toast = Deleted '{ $name }'
 actions_delete_title = Delete action?
-actions_delete_body = This will remove the action and all of its sub-actions and triggers.
+actions_delete_body = This will remove the action and all of its steps and triggers.
 actions_delete_scheduled_runs = { $count ->
     [one] Its { $count } pending scheduled run will be cancelled too.
    *[other] Its { $count } pending scheduled runs will be cancelled too.
@@ -2141,6 +2157,10 @@ chat_dispatch_cancelled = The action was cancelled before it finished
 ## Event Feed - page header / filters
 
 event_feed_filter_all = All { $n }
+event_feed_step_count = { $count ->
+    [one] { $count } step
+   *[other] { $count } steps
+}
 event_feed_filter_chat = Chat { $n }
 event_feed_filter_subs = Subs { $n }
 event_feed_filter_bits = Bits { $n }
@@ -2253,6 +2273,7 @@ script_editor_discard_confirm = Discard
 script_editor_discard_cancel = Keep editing
 script_editor_discard_esc_hint = to keep editing
 script_editor_sandbox_label = Sandbox:
+script_editor_timeout_ms = Timeout: { $ms } ms
 script_editor_sandbox_enabled = enabled
 script_editor_problems_tab = Problems
 script_editor_console_cleared = Console cleared.
@@ -4063,7 +4084,7 @@ kind_summary_core_action_disable = Prevent an action from running when triggered
 kind_name_core_action_enable = Enable Action
 kind_summary_core_action_enable = Allow an action to run when triggered
 kind_name_core_action_run = Run Action
-kind_summary_core_action_run = Run another action's sub-actions from inside this chain
+kind_summary_core_action_run = Run another action's steps from inside this chain
 kind_name_core_action_schedule = Schedule Action
 kind_summary_core_action_schedule = Run an action later, even after a restart
 kind_name_core_action_toggle = Toggle Action

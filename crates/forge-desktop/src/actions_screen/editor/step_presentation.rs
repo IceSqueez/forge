@@ -80,7 +80,7 @@ pub(in crate::actions_screen) fn sub_action_summary(
             (
                 "clock",
                 tr!("action_editor_kind_delay"),
-                Some(format!("{ms} ms")),
+                Some(tr!("action_editor_step_wait_ms", ms = ms)),
             )
         }
         "core.log.write" => {

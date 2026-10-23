@@ -42,6 +42,16 @@ widget_save_unsaved = Незбережені зміни
 
 widget_save_failed = Помилка збереження: { $error }
 
+fmt_uptime_hours_minutes = { $hours } год { $minutes } хв
+
+fmt_uptime_minutes_seconds = { $minutes } хв { $seconds } с
+
+fmt_uptime_hours = { $hours } год
+
+fmt_uptime_minutes = { $minutes } хв
+
+fmt_uptime_seconds = { $seconds } с
+
 fmt_relative_never = ніколи
 
 fmt_relative_seconds = { $count ->
@@ -81,6 +91,8 @@ widget_toggle_off = Вимк.
 widget_field_range = Дозволено: { $min }-{ $max }
 
 widget_field_range_open = Дозволено: { $min } або більше
+
+widget_grid_picker_all = Всі
 
 widget_grid_picker_no_match = Нічого не знайдено за «{ $query }»
 

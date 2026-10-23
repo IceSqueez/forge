@@ -2333,8 +2333,9 @@ mod tests {
 
     #[test]
     fn client_row_clamps_a_negative_uptime_to_zero() {
+        crate::i18n::install_language(forge_storage::Language::En);
         let row = client_row_from_snapshot(&snapshot_client("dash", 0.0, -42));
-        assert_eq!(row.uptime_short, "0s");
+        assert_eq!(row.uptime_short.replace(['\u{2068}', '\u{2069}'], ""), "0s");
     }
 
     #[test]

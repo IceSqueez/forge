@@ -190,6 +190,8 @@ event_loss_title = Втрати подій
 event_loss_scope_hint = від запуску · скидається після перезапуску
 event_loss_none = Від запуску жодної події не втрачено
 event_loss_footer_badge = { $count } втрачено
+footer_connected = { $connected }/{ $total } підключено
+footer_uptime = працює { $uptime }
 event_loss_tooltip_title = Події, втрачені від запуску
 event_loss_tooltip_row = { $consumer } ({ $tier }) - { $detail }
 stay_awake_footer_label = Без сну
@@ -781,6 +783,7 @@ settings_ws_lan_bullet_firewall = Ваш брандмауер також пов�
 actions_breadcrumb_automation = Автоматизація
 actions_breadcrumb_actions = Дії
 actions_filter_all = Всі
+actions_group_ungrouped = Без групи
 actions_filter_chat = Чат
 actions_filter_timers = Таймери
 actions_filter_points = Поінти
@@ -949,7 +952,11 @@ action_editor_case_match_placeholder = значення зіставлення
 action_editor_branch_cap = Досягнуто межі вкладеності · глибше вкладати не можна
 action_editor_no_triggers = Тригерів немає · натисніть «Додати тригер», щоб почати
 action_editor_section_triggers_count = ТРИГЕРИ · { $count }
-action_editor_sub_actions_count = { $count } підпунктів
+action_editor_sub_actions_count = { $count ->
+    [one] { $count } крок
+    [few] { $count } кроки
+   *[other] { $count } кроків
+}
 actions_sub_file_browse = Огляд
 actions_sub_files_root_label = Тека файлів
 actions_sub_files_root_hint = Кроки з файлами приймають лише шляхи відносно цієї теки - абсолютні шляхи та ".." відхиляються.
@@ -966,7 +973,11 @@ actions_var_picker_group_trigger = Тригер
 actions_var_picker_group_some_triggers = Лише деякі тригери
 actions_var_picker_group_steps = Попередні кроки
 actions_var_picker_group_loop = Цикл
-action_editor_sub_count = { $count } кр.
+action_editor_sub_count = { $count ->
+    [one] { $count } крок
+    [few] { $count } кроки
+   *[other] { $count } кроків
+}
 action_editor_enabled = Увімкнено
 action_editor_disabled = Вимкнено
 
@@ -1029,12 +1040,13 @@ action_editor_test_run_subtitle_none = Тригер не прив'язано
 action_editor_test_run_trigger_pick = Змоделювати як тригер
 action_editor_test_run_note_no_schema = Тригер не оголошує вихідних даних · запуск із порожніми значеннями
 action_editor_test_run_note_no_triggers = Тригер не прив'язано · запуск із порожніми значеннями
-action_editor_test_run_empty = Немає підпунктів для виконання.
+action_editor_test_run_empty = Немає кроків для виконання.
 action_editor_test_run_default_error = Виконання кроку не вдалося
 action_editor_test_run_status_queued = у черзі
 action_editor_test_run_status_running = виконується...
 action_editor_test_run_status_failed = помилка
 action_editor_test_run_status_skipped = пропущено
+action_editor_step_wait_ms = { $ms } мс
 action_editor_test_run_status_ms = { $ms } мс
 action_editor_test_run_failed_banner = Збій на кроці { $step } · { $name }
 action_editor_test_run_completed = Виконано кроків: { $count } · помилок: { $errors }
@@ -1052,11 +1064,15 @@ action_editor_this_action = цю дію
 action_editor_recent_triggers = Нещодавні
 picker_favorites = Обране
 picker_favorites_empty = Позначте зірочкою, щоб закріпити тут для швидкого доступу
-action_editor_picker_add_sub_title = Додати підпункт
+action_editor_picker_add_sub_title = Додати крок
 action_editor_picker_inserting_into = Вставлення у
-action_editor_picker_sub_count = · { $count } підпунктів
+action_editor_picker_sub_count = · { $count ->
+    [one] { $count } крок
+    [few] { $count } кроки
+   *[other] { $count } кроків
+}
 action_editor_picker_footer_hint = Додається з розумними типовими значеннями - редагуйте на місці
-action_editor_picker_search = Пошук серед { $count } підпунктів...
+action_editor_picker_search = Пошук серед { $count } кроків...
 action_editor_picker_fires = Запускає
 action_editor_picker_available_count = · { $count } доступно
 action_editor_trigger_picker_footer_hint = Створює новий тригер обраного типу та прив'язує його
@@ -1075,7 +1091,7 @@ action_editor_kind_random_int = Випадкове число
 action_editor_kind_incr_global = Збільшити змінну
 action_editor_kind_run_script = Запустити скрипт
 action_editor_persisted_note = (збережено)
-action_editor_kind_sub_action = Підпункт
+action_editor_kind_sub_action = Крок
 
 ## Реєстр тригерів - заголовок / фільтри
 
@@ -1273,10 +1289,13 @@ actions_tree_loading = Завантаження дій...
 actions_loading_queues = Завантаження черг...
 actions_no_queue = Немає доступної черги
 actions_toast_error = Дії: { $message }
+actions_error_missing_action = дію не знайдено
+actions_error_missing_chain = список кроків не знайдено
+actions_duplicate_name_suffix = (копія)
 actions_rename_taken = Назву '{ $name }' вже зайнято
 actions_deleted_toast = Видалено '{ $name }'
 actions_delete_title = Видалити дію?
-actions_delete_body = Це видалить дію та всі її піддії й тригери.
+actions_delete_body = Це видалить дію та всі її кроки й тригери.
 actions_delete_scheduled_runs = { $count ->
     [one] Також буде скасовано { $count } її запланований запуск.
     [few] Також буде скасовано { $count } її заплановані запуски.
@@ -2202,6 +2221,11 @@ chat_dispatch_cancelled = Дію скасовано до завершення
 ## Стрічка подій - заголовок / фільтри
 
 event_feed_filter_all = Всі { $n }
+event_feed_step_count = { $count ->
+    [one] { $count } крок
+    [few] { $count } кроки
+   *[other] { $count } кроків
+}
 event_feed_filter_chat = Чат { $n }
 event_feed_filter_subs = Підписки { $n }
 event_feed_filter_bits = Бітси { $n }
@@ -2314,6 +2338,7 @@ script_editor_discard_confirm = Відхилити
 script_editor_discard_cancel = Продовжити редагування
 script_editor_discard_esc_hint = щоб продовжити редагування
 script_editor_sandbox_label = Пісочниця:
+script_editor_timeout_ms = Тайм-аут: { $ms } мс
 script_editor_sandbox_enabled = увімкнено
 script_editor_problems_tab = Проблеми
 script_editor_console_cleared = Консоль очищено.

@@ -42,6 +42,16 @@ widget_save_unsaved = Unsaved changes
 
 widget_save_failed = Save failed: { $error }
 
+fmt_uptime_hours_minutes = { $hours }h { $minutes }m
+
+fmt_uptime_minutes_seconds = { $minutes }m { $seconds }s
+
+fmt_uptime_hours = { $hours }h
+
+fmt_uptime_minutes = { $minutes }m
+
+fmt_uptime_seconds = { $seconds }s
+
 fmt_relative_never = never
 
 fmt_relative_seconds = { $count ->
@@ -73,6 +83,8 @@ widget_toggle_off = Off
 widget_field_range = Allowed: { $min }-{ $max }
 
 widget_field_range_open = Allowed: { $min } or more
+
+widget_grid_picker_all = All
 
 widget_grid_picker_no_match = Nothing matches “{ $query }”
 

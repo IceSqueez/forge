@@ -757,7 +757,7 @@ fn group_actions(actions: Vec<Action>) -> Vec<ActionGroup> {
             .map(str::trim)
             .filter(|name| !name.is_empty())
             .map(str::to_uppercase)
-            .unwrap_or_else(|| "UNGROUPED".to_owned());
+            .unwrap_or_else(|| tr!("actions_group_ungrouped").to_uppercase());
         let summary = ActionSummary {
             id: action.id,
             name: action.name,

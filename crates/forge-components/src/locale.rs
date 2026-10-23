@@ -123,22 +123,38 @@ pub fn fmt_uptime(secs: u64) -> String {
     let minutes = (secs % 3_600) / 60;
     let seconds = secs % 60;
     if hours > 0 {
-        format!("{hours}h {minutes}m")
+        uptime_copy(
+            "fmt_uptime_hours_minutes",
+            &[("hours", hours), ("minutes", minutes)],
+        )
     } else if minutes > 0 {
-        format!("{minutes}m {seconds}s")
+        uptime_copy(
+            "fmt_uptime_minutes_seconds",
+            &[("minutes", minutes), ("seconds", seconds)],
+        )
     } else {
-        format!("{seconds}s")
+        uptime_copy("fmt_uptime_seconds", &[("seconds", seconds)])
     }
 }
 
 pub fn fmt_uptime_short(secs: u64) -> String {
     if secs < 60 {
-        format!("{secs}s")
+        uptime_copy("fmt_uptime_seconds", &[("seconds", secs)])
     } else if secs < 3_600 {
-        format!("{}m", secs / 60)
+        uptime_copy("fmt_uptime_minutes", &[("minutes", secs / 60)])
     } else {
-        format!("{}h", secs / 3_600)
+        uptime_copy("fmt_uptime_hours", &[("hours", secs / 3_600)])
     }
+}
+
+fn uptime_copy(key: &str, parts: &[(&'static str, u64)]) -> String {
+    let args = parts
+        .iter()
+        .fold(ArgsBuilder::new(), |args, (name, value)| {
+            args.set(name, i64::try_from(*value).unwrap_or(i64::MAX))
+        })
+        .build();
+    tr_lookup(key, Some(&args))
 }
 
 fn group_integer(n: u64, sep: &str) -> String {

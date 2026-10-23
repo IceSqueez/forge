@@ -7,13 +7,12 @@ use forge_components::{
     PickerLabels, TextArea, TextInput, body_family, destructive_button_with_icon, dropdown, modal,
     overlay, primary_button_with_icon, secondary_button, spinner, tr,
 };
-use forge_obs::{ObsClient, ObsSource};
 use forge_platform_core::{
-    BuiltinOptionSource, CollectionOutcome, OptionEntry, OptionListId, PickerKind, QuickAction,
-    QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField, QuickActionFieldKind,
-    QuickActionFieldValue, RevisionWait,
+    BuiltinOptionSource, CollectionOutcome, OptionEntry, OptionListId, QuickAction,
+    QuickActionChoiceOption, QuickActionChoiceSource, QuickActionFieldKind, QuickActionFieldValue,
+    RevisionWait,
 };
-use forge_types::{SubActionStep, Variant};
+use forge_types::SubActionStep;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, Rgba, SharedString, Subscription, Task,
     Window, div, prelude::*, px,
@@ -56,11 +55,9 @@ enum ResolveMode {
 }
 
 struct ChoiceControl {
-    dynamic: Option<PickerKind>,
     option_list: Option<OptionListBinding>,
     state: ChoiceState,
     selected: Option<SharedString>,
-    scene: Option<String>,
 }
 
 enum FieldControl {
@@ -97,7 +94,6 @@ pub struct QuickActionModal {
     destructive: bool,
     action: QuickAction,
     fields: Vec<ModalField>,
-    obs_source: Option<Arc<ObsClient>>,
     option_source: Option<Arc<dyn BuiltinOptionSource>>,
     rt_handle: Handle,
     open_choice: Option<OpenChoice>,
@@ -112,7 +108,6 @@ impl EventEmitter<QuickActionModalEvent> for QuickActionModal {}
 impl QuickActionModal {
     pub fn new(
         action: QuickAction,
-        obs_source: Option<Arc<ObsClient>>,
         option_source: Option<Arc<dyn BuiltinOptionSource>>,
         rt_handle: Handle,
         cx: &mut Context<Self>,
@@ -123,12 +118,9 @@ impl QuickActionModal {
         let label = action.label.clone();
         let destructive = action.destructive;
 
-        let specs = build_specs(&action);
-        let mut merge_action = action.clone();
-        merge_action.fields = specs.iter().map(spec_to_field).collect();
+        let specs = action.fields.clone();
         let mut fields = Vec::with_capacity(specs.len());
         let mut subs = Vec::new();
-        let mut pending_dynamic: Vec<(usize, PickerKind)> = Vec::new();
         let declared_lists = option_source
             .as_ref()
             .map(|source| source.option_lists())
@@ -199,33 +191,16 @@ impl QuickActionModal {
                     QuickActionChoiceSource::Static(opts) => {
                         let items = opts.iter().map(static_item).collect();
                         FieldControl::Choice(ChoiceControl {
-                            dynamic: None,
                             option_list: None,
                             state: ChoiceState::Ready(items),
                             selected: choice_default(&spec.default, opts),
-                            scene: None,
                         })
                     }
-                    QuickActionChoiceSource::Dynamic(pk) => {
-                        if obs_source.is_some() {
-                            pending_dynamic.push((i, *pk));
-                            FieldControl::Choice(ChoiceControl {
-                                dynamic: Some(*pk),
-                                option_list: None,
-                                state: ChoiceState::Loading,
-                                selected: None,
-                                scene: None,
-                            })
-                        } else {
-                            FieldControl::Choice(ChoiceControl {
-                                dynamic: Some(*pk),
-                                option_list: None,
-                                state: ChoiceState::Failed(tr!("integration_qa_field_unavailable")),
-                                selected: None,
-                                scene: None,
-                            })
-                        }
-                    }
+                    QuickActionChoiceSource::Dynamic(_) => FieldControl::Choice(ChoiceControl {
+                        option_list: None,
+                        state: ChoiceState::Failed(tr!("integration_qa_field_unavailable")),
+                        selected: None,
+                    }),
                     QuickActionChoiceSource::OptionList(list) => {
                         let binding = declared_lists
                             .iter()
@@ -241,11 +216,9 @@ impl QuickActionModal {
                             None => ChoiceState::Failed(tr!("integration_qa_field_unavailable")),
                         };
                         FieldControl::Choice(ChoiceControl {
-                            dynamic: None,
                             option_list: binding,
                             state,
                             selected: None,
-                            scene: None,
                         })
                     }
                 },
@@ -257,18 +230,6 @@ impl QuickActionModal {
                 required: spec.required,
                 control,
             });
-        }
-
-        for (i, pk) in pending_dynamic {
-            if let Some(client) = &obs_source {
-                let client = Arc::clone(client);
-                async_bridge::run_async(
-                    &rt_handle,
-                    fetch_picker_items(client, pk, fetch_labels()),
-                    move |this, result, cx| this.apply_dynamic(i, result, cx),
-                    cx,
-                );
-            }
         }
 
         let revision_watch = option_source
@@ -293,9 +254,8 @@ impl QuickActionModal {
             glyph,
             accent,
             destructive,
-            action: merge_action,
+            action,
             fields,
-            obs_source,
             option_source,
             rt_handle,
             open_choice: None,
@@ -522,81 +482,8 @@ impl QuickActionModal {
         }
     }
 
-    fn apply_dynamic(
-        &mut self,
-        index: usize,
-        result: Result<PickerFetch, String>,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(field) = self.fields.get_mut(index) else {
-            return;
-        };
-        match result {
-            Ok(fetch) => {
-                field.hint = fetch
-                    .hint_scene
-                    .map(|scene| tr!("integration_qa_scene_current_hint", scene = scene));
-                let FieldControl::Choice(choice) = &mut field.control else {
-                    return;
-                };
-                choice.selected = fetch
-                    .preselect
-                    .filter(|id| fetch.items.iter().any(|item| &item.id == id))
-                    .or_else(|| fetch.items.first().map(|item| item.id.clone()));
-                choice.scene = fetch.scene;
-                choice.state = ChoiceState::Ready(fetch.items);
-            }
-            Err(reason) => {
-                field.hint = None;
-                let FieldControl::Choice(choice) = &mut field.control else {
-                    return;
-                };
-                choice.selected = None;
-                choice.state = ChoiceState::Failed(reason);
-            }
-        }
-        cx.notify();
-    }
-
-    fn retry_dynamic(&mut self, index: usize, cx: &mut Context<Self>) {
-        if self
-            .fields
-            .get(index)
-            .and_then(ModalField::option_list)
-            .is_some()
-        {
-            self.resolve_option_list(index, ResolveMode::Load, cx);
-            return;
-        }
-        let pk = match self.fields.get(index).map(|f| &f.control) {
-            Some(FieldControl::Choice(choice)) => choice.dynamic,
-            _ => None,
-        };
-        let Some(pk) = pk else {
-            return;
-        };
-        let Some(client) = self.obs_source.clone() else {
-            if let Some(FieldControl::Choice(choice)) =
-                self.fields.get_mut(index).map(|f| &mut f.control)
-            {
-                choice.state = ChoiceState::Failed(tr!("integration_qa_field_unavailable"));
-            }
-            cx.notify();
-            return;
-        };
-        if let Some(FieldControl::Choice(choice)) =
-            self.fields.get_mut(index).map(|f| &mut f.control)
-        {
-            choice.selected = None;
-            choice.state = ChoiceState::Loading;
-        }
-        cx.notify();
-        async_bridge::run_async(
-            &self.rt_handle,
-            fetch_picker_items(client, pk, fetch_labels()),
-            move |this, result, cx| this.apply_dynamic(index, result, cx),
-            cx,
-        );
+    fn retry_option_list(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.resolve_option_list(index, ResolveMode::Load, cx);
     }
 
     fn toggle_field(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -708,17 +595,7 @@ impl QuickActionModal {
             .iter()
             .map(|field| (field.key.clone(), field.current_value(cx)))
             .collect();
-        let mut step = self.action.merge_config(&values);
-        for field in &self.fields {
-            if let FieldControl::Choice(choice) = &field.control
-                && matches!(choice.dynamic, Some(PickerKind::Source))
-                && let Some(scene) = &choice.scene
-            {
-                step.config
-                    .insert("scene".to_owned(), Variant::String(scene.clone()));
-            }
-        }
-        step
+        self.action.merge_config(&values)
     }
 
     fn run(&mut self, cx: &mut Context<Self>) {
@@ -798,7 +675,7 @@ impl QuickActionModal {
                 ("qa-retry", index),
                 reason,
                 palette,
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.retry_dynamic(index, cx)),
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.retry_option_list(index, cx)),
             ),
             ChoiceState::Ready(items) => {
                 let selected = selected_label(items, &choice.selected);
@@ -974,90 +851,6 @@ impl ModalField {
     }
 }
 
-struct FieldSpec {
-    key: String,
-    label: String,
-    hint: Option<String>,
-    kind: QuickActionFieldKind,
-    default: Option<QuickActionFieldValue>,
-    placeholder: Option<String>,
-    required: bool,
-}
-
-fn build_specs(action: &QuickAction) -> Vec<FieldSpec> {
-    if !action.fields.is_empty() {
-        return action
-            .fields
-            .iter()
-            .map(|field| FieldSpec {
-                key: field.key.clone(),
-                label: field.label.clone(),
-                hint: field.hint.clone(),
-                kind: field.kind.clone(),
-                default: field.default.clone(),
-                placeholder: field.placeholder.clone(),
-                required: field.required,
-            })
-            .collect();
-    }
-    match action.picker {
-        Some(pk) => vec![FieldSpec {
-            key: picker_key(pk).to_owned(),
-            label: picker_title(pk),
-            hint: None,
-            kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::Dynamic(pk)),
-            default: None,
-            placeholder: None,
-            required: true,
-        }],
-        None => Vec::new(),
-    }
-}
-
-fn spec_to_field(spec: &FieldSpec) -> QuickActionField {
-    QuickActionField {
-        key: spec.key.clone(),
-        label: spec.label.clone(),
-        kind: spec.kind.clone(),
-        default: spec.default.clone(),
-        placeholder: spec.placeholder.clone(),
-        hint: spec.hint.clone(),
-        required: spec.required,
-    }
-}
-
-fn picker_key(pk: PickerKind) -> &'static str {
-    match pk {
-        PickerKind::Scene => "scene",
-        PickerKind::Source | PickerKind::Input => "source",
-        PickerKind::Hotkey => "hotkey",
-        PickerKind::Expression => "expression",
-        PickerKind::MidiPort => "port",
-        PickerKind::Transition => "transition",
-        PickerKind::Profile => "profile",
-        PickerKind::SceneCollection => "collection",
-        PickerKind::Model => "model",
-        PickerKind::Item | PickerKind::ItemInstance => "item",
-    }
-}
-
-fn picker_title(pk: PickerKind) -> String {
-    match pk {
-        PickerKind::Scene => tr!("builtin_picker_scene"),
-        PickerKind::Source => tr!("builtin_picker_source"),
-        PickerKind::Input => tr!("builtin_picker_audio_input"),
-        PickerKind::Hotkey => tr!("builtin_picker_hotkey"),
-        PickerKind::Expression => tr!("builtin_picker_expression"),
-        PickerKind::MidiPort => tr!("builtin_picker_midi_port"),
-        PickerKind::Transition => tr!("builtin_picker_transition"),
-        PickerKind::Profile => tr!("builtin_picker_profile"),
-        PickerKind::SceneCollection => tr!("builtin_picker_scene_collection"),
-        PickerKind::Model => tr!("builtin_picker_model"),
-        PickerKind::Item => tr!("builtin_picker_item"),
-        PickerKind::ItemInstance => tr!("builtin_picker_item_instance"),
-    }
-}
-
 fn static_item(opt: &QuickActionChoiceOption) -> PickerItem {
     PickerItem {
         id: opt.value.clone().into(),
@@ -1144,157 +937,6 @@ fn default_int(default: &Option<QuickActionFieldValue>) -> i64 {
     }
 }
 
-struct PickerFetch {
-    items: Vec<PickerItem>,
-    scene: Option<String>,
-    preselect: Option<SharedString>,
-    hint_scene: Option<String>,
-}
-
-fn no_context(items: Vec<PickerItem>) -> PickerFetch {
-    PickerFetch {
-        items,
-        scene: None,
-        preselect: None,
-        hint_scene: None,
-    }
-}
-
-struct FetchLabels {
-    no_scene: String,
-    source_visible: String,
-    source_hidden: String,
-    unavailable: String,
-}
-
-fn fetch_labels() -> FetchLabels {
-    FetchLabels {
-        no_scene: tr!("integration_qa_field_no_scene"),
-        source_visible: tr!("integration_qa_source_visible"),
-        source_hidden: tr!("integration_qa_source_hidden"),
-        unavailable: tr!("integration_qa_field_unavailable"),
-    }
-}
-
-async fn fetch_picker_items(
-    client: Arc<ObsClient>,
-    kind: PickerKind,
-    labels: FetchLabels,
-) -> Result<PickerFetch, String> {
-    match kind {
-        PickerKind::Scene => {
-            let current = client.current_scene().await.map_err(|e| e.to_string())?;
-            let scenes = client.scenes().await.map_err(|e| e.to_string())?;
-            let items = scenes
-                .into_iter()
-                .map(|name| PickerItem {
-                    id: name.clone().into(),
-                    label: name.into(),
-                    sublabel: None,
-                    icon: Some(Icon::from_name("layout")),
-                })
-                .collect();
-            Ok(PickerFetch {
-                items,
-                scene: None,
-                preselect: current.clone().map(SharedString::from),
-                hint_scene: current,
-            })
-        }
-        PickerKind::Source => {
-            let scene = client
-                .current_scene()
-                .await
-                .map_err(|e| e.to_string())?
-                .ok_or(labels.no_scene)?;
-            let sources = client.sources(&scene).await.map_err(|e| e.to_string())?;
-            let items = sources
-                .into_iter()
-                .map(|source| PickerItem {
-                    id: source.name.clone().into(),
-                    label: source.name.into(),
-                    sublabel: Some(
-                        if source.visible {
-                            labels.source_visible.clone()
-                        } else {
-                            labels.source_hidden.clone()
-                        }
-                        .into(),
-                    ),
-                    icon: Some(Icon::from_name("device-desktop")),
-                })
-                .collect();
-            Ok(PickerFetch {
-                items,
-                scene: Some(scene),
-                preselect: None,
-                hint_scene: None,
-            })
-        }
-        PickerKind::Input => {
-            let inputs = client.audio_inputs().await.map_err(|e| e.to_string())?;
-            let items = inputs
-                .into_iter()
-                .map(|name| PickerItem {
-                    id: name.clone().into(),
-                    label: name.into(),
-                    sublabel: None,
-                    icon: Some(Icon::from_name("volume")),
-                })
-                .collect();
-            Ok(no_context(items))
-        }
-        PickerKind::Transition => {
-            let transitions = client.transitions().await.map_err(|e| e.to_string())?;
-            let items = transitions
-                .into_iter()
-                .map(|name| PickerItem {
-                    id: name.clone().into(),
-                    label: name.into(),
-                    sublabel: None,
-                    icon: Some(Icon::from_name("transition-right")),
-                })
-                .collect();
-            Ok(no_context(items))
-        }
-        PickerKind::Profile => {
-            let profiles = client.profiles().await.map_err(|e| e.to_string())?;
-            let items = profiles
-                .into_iter()
-                .map(|name| PickerItem {
-                    id: name.clone().into(),
-                    label: name.into(),
-                    sublabel: None,
-                    icon: Some(Icon::from_name("user-cog")),
-                })
-                .collect();
-            Ok(no_context(items))
-        }
-        PickerKind::SceneCollection => {
-            let collections = client
-                .scene_collections()
-                .await
-                .map_err(|e| e.to_string())?;
-            let items = collections
-                .into_iter()
-                .map(|name| PickerItem {
-                    id: name.clone().into(),
-                    label: name.into(),
-                    sublabel: None,
-                    icon: Some(Icon::from_name("layout-2")),
-                })
-                .collect();
-            Ok(no_context(items))
-        }
-        PickerKind::Hotkey
-        | PickerKind::Expression
-        | PickerKind::MidiPort
-        | PickerKind::Model
-        | PickerKind::Item
-        | PickerKind::ItemInstance => Err(labels.unavailable),
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
@@ -1303,9 +945,11 @@ mod tests {
     use forge_components::{Density, Presentation, ThemeId};
     use forge_platform_core::{
         CollectionFailure, CollectionRevisionSignal, CollectionRevisions, OptionHint,
-        OptionListMetadata, QuickActionAccent, QuickActionLiveness, SectionIcon,
+        OptionListMetadata, PickerKind, QuickActionAccent, QuickActionField, QuickActionLiveness,
+        SectionIcon,
     };
     use forge_storage::Language;
+    use forge_types::Variant;
     use gpui::TestAppContext;
     use tokio::sync::oneshot;
 
@@ -1436,7 +1080,7 @@ mod tests {
             let handle = rt.handle().clone();
             let source = source.map(|fake| fake as Arc<dyn BuiltinOptionSource>);
             let modal = cx.update(|cx| {
-                cx.new(|cx| QuickActionModal::new(option_action(fields), None, source, handle, cx))
+                cx.new(|cx| QuickActionModal::new(option_action(fields), source, handle, cx))
             });
             let harness = Self { modal, rt };
             harness.settle(cx);
@@ -1485,7 +1129,7 @@ mod tests {
 
         fn retry(&self, cx: &mut TestAppContext, index: usize) {
             self.modal
-                .update(cx, |modal, cx| modal.retry_dynamic(index, cx));
+                .update(cx, |modal, cx| modal.retry_option_list(index, cx));
             self.settle(cx);
         }
 
@@ -1504,6 +1148,12 @@ mod tests {
             self.modal
                 .update(cx, |modal, cx| modal.toggle_field(index, cx));
             self.settle(cx);
+        }
+
+        fn step_config(&self, cx: &mut TestAppContext, key: &str) -> Option<Variant> {
+            self.modal.update(cx, |modal, cx| {
+                modal.build_step(cx).config.get(key).cloned()
+            })
         }
 
         fn wait(&self, cx: &mut TestAppContext, duration: Duration) {
@@ -1542,10 +1192,29 @@ mod tests {
     }
 
     fn option_action(fields: Vec<QuickActionField>) -> QuickAction {
-        let mut action = picker_only_action(PickerKind::Scene);
-        action.picker = None;
-        action.fields = fields;
-        action
+        QuickAction {
+            label: "Switch scene".to_owned(),
+            icon: SectionIcon::new("arrows-shuffle"),
+            enabled: true,
+            locked_reason: None,
+            liveness: QuickActionLiveness::Unknown,
+            group: None,
+            group_icon: None,
+            group_accent: None,
+            destructive: false,
+            accent: QuickActionAccent::Brand,
+            subaction_template: SubActionStep {
+                kind_id: "obs.scenes.switch_current".to_owned(),
+                config: BTreeMap::from([("scene".to_owned(), Variant::String(String::new()))]),
+                enabled: true,
+                continue_on_error: false,
+                condition: None,
+                label: None,
+            },
+            picker: None,
+            fields,
+            collection: None,
+        }
     }
 
     fn option_field(key: &str, list: &str, default: Option<&str>) -> QuickActionField {
@@ -2055,66 +1724,43 @@ mod tests {
         );
     }
 
-    fn picker_only_action(picker: PickerKind) -> QuickAction {
-        QuickAction {
-            label: "Switch scene".to_owned(),
-            icon: SectionIcon::new("arrows-shuffle"),
-            enabled: true,
-            locked_reason: None,
-            liveness: QuickActionLiveness::Unknown,
-            group: None,
-            group_icon: None,
-            group_accent: None,
-            destructive: false,
-            accent: QuickActionAccent::Brand,
-            subaction_template: SubActionStep {
-                kind_id: "obs.scenes.switch_current".to_owned(),
-                config: BTreeMap::from([("scene".to_owned(), Variant::String(String::new()))]),
-                enabled: true,
-                continue_on_error: false,
-                condition: None,
-                label: None,
-            },
-            picker: Some(picker),
-            fields: Vec::new(),
-            collection: None,
-        }
-    }
+    #[gpui::test]
+    fn the_picked_option_is_merged_into_the_step_config_under_the_field_key(
+        cx: &mut TestAppContext,
+    ) {
+        let fake = FakeOptionSource::answering(
+            vec![list("scenes")],
+            vec![(
+                "scenes",
+                Ok(vec![entry("Main").as_current(), entry("Gameplay")]),
+            )],
+        );
+        let harness = Harness::open(cx, Some(fake), vec![option_field("scene", "scenes", None)]);
 
-    #[test]
-    fn a_picker_only_action_merges_the_picked_value_into_the_step_config() {
-        let action = picker_only_action(PickerKind::Scene);
-        let mut merge_action = action.clone();
-        merge_action.fields = build_specs(&action).iter().map(spec_to_field).collect();
-        let values = BTreeMap::from([(
-            "scene".to_owned(),
-            QuickActionFieldValue::Text("Gameplay".to_owned()),
-        )]);
-
-        let step = merge_action.merge_config(&values);
+        harness.pick(cx, 0, "Gameplay");
 
         assert_eq!(
-            step.config.get("scene"),
-            Some(&Variant::String("Gameplay".to_owned())),
+            harness.step_config(cx, "scene"),
+            Some(Variant::String("Gameplay".to_owned()))
         );
     }
 
-    #[test]
-    fn declared_fields_take_precedence_over_the_action_picker() {
-        let mut action = picker_only_action(PickerKind::Scene);
-        action.fields = vec![QuickActionField {
-            key: "scene".to_owned(),
-            label: "Scene".to_owned(),
-            kind: QuickActionFieldKind::Text,
-            default: Some(QuickActionFieldValue::Text("BRB".to_owned())),
-            placeholder: None,
-            hint: None,
-            required: false,
-        }];
+    #[gpui::test]
+    fn a_legacy_dynamic_choice_renders_unavailable_and_never_resolves(cx: &mut TestAppContext) {
+        let fake = FakeOptionSource::new(vec![list("scenes")], false);
+        let dynamic = QuickActionField {
+            kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::Dynamic(PickerKind::Scene)),
+            ..option_field("scene", "scenes", Some("Main"))
+        };
+        let harness = Harness::open(cx, Some(Arc::clone(&fake)), vec![dynamic]);
 
-        let specs = build_specs(&action);
-
-        assert_eq!(specs.len(), 1);
-        assert!(matches!(specs[0].kind, QuickActionFieldKind::Text));
+        assert_eq!(
+            (harness.seen(cx, 0), harness.can_run(cx), fake.take_calls()),
+            (
+                Seen::Failed(message_in(Language::Uk, "integration_qa_field_unavailable")),
+                false,
+                Vec::new()
+            )
+        );
     }
 }

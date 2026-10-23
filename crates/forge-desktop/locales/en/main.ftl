@@ -1900,21 +1900,6 @@ twitch_reauth_btn = Re-authorize
 
 ## OBS panel
 
-## Builtin detail
-
-builtin_picker_scene = Choose a Scene
-builtin_picker_source = Choose a Source
-builtin_picker_audio_input = Choose an Audio Input
-builtin_picker_hotkey = Choose a Hotkey
-builtin_picker_expression = Choose an Expression
-builtin_picker_midi_port = Choose a MIDI Port
-builtin_picker_transition = Choose a Transition
-builtin_picker_profile = Choose a Profile
-builtin_picker_scene_collection = Choose a Scene Collection
-builtin_picker_model = Choose a Model
-builtin_picker_item = Choose an Item
-builtin_picker_item_instance = Choose a Loaded Item
-
 ## OAuth / local callback flow
 
 oauth_connect_explainer_prefix = Forge uses
@@ -2329,10 +2314,6 @@ integration_qa_modal_confirm = Confirm
 integration_qa_field_loading = Loading options...
 integration_qa_field_select = Select...
 integration_qa_field_unavailable = Options are unavailable while this integration is disconnected
-integration_qa_field_no_scene = No active scene to read sources from
-integration_qa_scene_current_hint = Currently: { $scene } (LIVE)
-integration_qa_source_visible = visible
-integration_qa_source_hidden = hidden
 integration_qa_options_unauthorized = Authorization expired - sign in again to load options
 integration_qa_options_rate_limited = Rate limited - try loading options again shortly
 integration_qa_options_rejected = The integration rejected this request - check the other fields

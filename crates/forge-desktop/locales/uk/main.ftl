@@ -1951,21 +1951,6 @@ twitch_reauth_btn = Повторна авторизація
 
 ## Панель OBS
 
-## Вбудована деталь
-
-builtin_picker_scene = Оберіть сцену
-builtin_picker_source = Оберіть джерело
-builtin_picker_audio_input = Оберіть аудіовхід
-builtin_picker_hotkey = Оберіть гарячу клавішу
-builtin_picker_expression = Оберіть вираз
-builtin_picker_midi_port = Оберіть порт MIDI
-builtin_picker_transition = Оберіть перехід
-builtin_picker_profile = Оберіть профіль
-builtin_picker_scene_collection = Оберіть колекцію сцен
-builtin_picker_model = Оберіть модель
-builtin_picker_item = Оберіть предмет
-builtin_picker_item_instance = Оберіть завантажений предмет
-
 ## OAuth / локальний callback-потік
 
 oauth_connect_explainer_prefix = Forge використовує
@@ -2395,10 +2380,6 @@ integration_qa_modal_confirm = Підтвердити
 integration_qa_field_loading = Завантаження варіантів...
 integration_qa_field_select = Оберіть...
 integration_qa_field_unavailable = Варіанти недоступні, поки цю інтеграцію відключено
-integration_qa_field_no_scene = Немає активної сцени, щоб зчитати джерела
-integration_qa_scene_current_hint = Зараз: { $scene } (В ЕФІРІ)
-integration_qa_source_visible = видиме
-integration_qa_source_hidden = приховане
 integration_qa_options_unauthorized = Авторизація застаріла - увійдіть знову, щоб завантажити варіанти
 integration_qa_options_rate_limited = Забагато запитів - спробуйте завантажити варіанти трохи згодом
 integration_qa_options_rejected = Інтеграція відхилила запит - перевірте інші поля

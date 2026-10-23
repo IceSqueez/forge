@@ -749,11 +749,9 @@ impl IntegrationDetail {
             return;
         }
         let action = action.clone();
-        let obs_source = self.obs_source.clone();
         let option_source = self.option_source.clone();
         let rt_handle = self.rt_handle.clone();
-        let modal =
-            cx.new(|cx| QuickActionModal::new(action, obs_source, option_source, rt_handle, cx));
+        let modal = cx.new(|cx| QuickActionModal::new(action, option_source, rt_handle, cx));
         modal.update(cx, |m, cx| m.focus(window, cx));
         self._qa_modal_sub = Some(cx.subscribe(&modal, Self::on_quick_action_modal_event));
         self.quick_action_modal = Some(modal);

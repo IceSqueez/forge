@@ -17,6 +17,7 @@ pub mod follow_lookup;
 pub mod integration;
 pub mod live_viewers;
 pub mod net;
+pub mod option_source;
 pub mod poll;
 pub mod rate_limit;
 pub mod sender;
@@ -61,6 +62,9 @@ pub use integration::{ConnectionAffordance, IntegrationCategory, IntegrationDecl
 pub use live_viewers::{LiveViewerSource, ViewerReport, ViewerReportStream};
 pub use net::{
     HostRejection, ensure_public_host, ensure_public_host_blocking, is_private_or_special,
+};
+pub use option_source::{
+    BuiltinOptionSource, OptionEntry, OptionHint, OptionListId, OptionListMetadata,
 };
 pub use poll::DedupSet;
 pub use rate_limit::{

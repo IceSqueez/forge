@@ -10,6 +10,7 @@ use forge_types::{IntegrationId, SubActionStep, Variant};
 
 use crate::ConnectionState;
 use crate::collections::{CollectionId, CollectionRevisions};
+use crate::option_source::OptionListId;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -320,6 +321,7 @@ pub struct QuickActionChoiceOption {
 pub enum QuickActionChoiceSource {
     Static(Vec<QuickActionChoiceOption>),
     Dynamic(PickerKind),
+    OptionList(OptionListId),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

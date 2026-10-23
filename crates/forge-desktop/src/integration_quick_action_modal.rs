@@ -195,6 +195,12 @@ impl QuickActionModal {
                             })
                         }
                     }
+                    QuickActionChoiceSource::OptionList(_) => FieldControl::Choice(ChoiceControl {
+                        dynamic: None,
+                        state: ChoiceState::Failed(tr!("integration_qa_field_unavailable")),
+                        selected: None,
+                        scene: None,
+                    }),
                 },
             };
             fields.push(ModalField {

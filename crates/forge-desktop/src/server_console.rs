@@ -170,7 +170,7 @@ pub struct ServerConsoleView {
     stats: ServerStats,
     overlay_root: String,
     overlay_entries: Vec<OwnedOverlayEntry>,
-    selected_overlay_entry: Option<usize>,
+    selected_overlay_entry: Option<String>,
     pending_disconnect: Confirm<String>,
 }
 
@@ -490,8 +490,8 @@ impl ServerConsoleView {
         if let Some(overlay) = poll.overlay {
             self.overlay_root = overlay.root;
             self.overlay_entries = overlay.entries;
-            if let Some(idx) = self.selected_overlay_entry
-                && idx >= self.overlay_entries.len()
+            if let Some(name) = &self.selected_overlay_entry
+                && !self.overlay_entries.iter().any(|entry| &entry.name == name)
             {
                 self.selected_overlay_entry = None;
             }
@@ -502,7 +502,8 @@ impl ServerConsoleView {
 
     fn browser_source_entry(&self) -> Option<&OwnedOverlayEntry> {
         self.selected_overlay_entry
-            .and_then(|index| self.overlay_entries.get(index))
+            .as_deref()
+            .and_then(|name| self.overlay_entries.iter().find(|entry| entry.name == name))
             .filter(|entry| entry.is_selectable())
             .or_else(|| self.overlay_entries.iter().find(|e| e.hosts_overlay()))
             .or_else(|| self.overlay_entries.iter().find(|e| e.is_html()))
@@ -593,8 +594,8 @@ impl ServerConsoleView {
         );
     }
 
-    fn select_overlay_entry(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.selected_overlay_entry = Some(index);
+    fn select_overlay_entry(&mut self, name: String, cx: &mut Context<Self>) {
+        self.selected_overlay_entry = Some(name);
         cx.notify();
     }
 
@@ -1043,8 +1044,8 @@ impl ServerConsoleView {
                 .into_any_element()
         } else {
             let mut col = div().w_full().flex().flex_col();
-            for (index, entry) in self.overlay_entries.iter().enumerate() {
-                col = col.child(self.overlay_entry_row(index, entry, palette, density, cx));
+            for entry in &self.overlay_entries {
+                col = col.child(self.overlay_entry_row(entry, palette, density, cx));
             }
             col.into_any_element()
         };
@@ -1077,7 +1078,6 @@ impl ServerConsoleView {
 
     fn overlay_entry_row(
         &self,
-        index: usize,
         entry: &OwnedOverlayEntry,
         palette: &ForgePalette,
         density: Density,
@@ -1130,11 +1130,12 @@ impl ServerConsoleView {
             );
 
         if entry.is_selectable() {
-            row =
-                row.cursor_pointer()
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.select_overlay_entry(index, cx)
-                    }));
+            let name = entry.name.clone();
+            row = row
+                .cursor_pointer()
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.select_overlay_entry(name.clone(), cx)
+                }));
         }
 
         row.into_any_element()
@@ -1926,13 +1927,6 @@ mod tests {
         }
     }
 
-    fn index_of(entries: &[OwnedOverlayEntry], name: &str) -> usize {
-        entries
-            .iter()
-            .position(|entry| entry.name == name)
-            .expect("fixture entry")
-    }
-
     fn serve(view: &mut ServerConsoleView, entries: Vec<OwnedOverlayEntry>) {
         view.running = true;
         view.bind_address = Some(WILDCARD_BIND.to_owned());
@@ -1996,10 +1990,11 @@ mod tests {
         let view = serverless_console(cx, &rt);
 
         let url = view.update(cx, |this, cx| {
-            let entries = vec![dir_entry(OVERLAY_DIR, true), file_entry(LOOSE_PAGE)];
-            let picked = index_of(&entries, LOOSE_PAGE);
-            serve(this, entries);
-            this.select_overlay_entry(picked, cx);
+            serve(
+                this,
+                vec![dir_entry(OVERLAY_DIR, true), file_entry(LOOSE_PAGE)],
+            );
+            this.select_overlay_entry(LOOSE_PAGE.to_owned(), cx);
             this.browser_source_url()
         });
 
@@ -2018,10 +2013,11 @@ mod tests {
 
         for unhostable in [PLAIN_DIR, RESERVED_DIRECTORY] {
             let url = view.update(cx, |this, cx| {
-                let entries = vec![dir_entry(unhostable, false), dir_entry(OVERLAY_DIR, true)];
-                let picked = index_of(&entries, unhostable);
-                serve(this, entries);
-                this.select_overlay_entry(picked, cx);
+                serve(
+                    this,
+                    vec![dir_entry(unhostable, false), dir_entry(OVERLAY_DIR, true)],
+                );
+                this.select_overlay_entry(unhostable.to_owned(), cx);
                 this.browser_source_url()
             });
 
@@ -2034,24 +2030,103 @@ mod tests {
     }
 
     #[gpui::test]
-    fn a_selection_pointing_past_a_refreshed_listing_is_dropped(cx: &mut TestAppContext) {
+    fn a_picked_entry_stays_the_browser_source_across_rescans_that_shift_its_position(
+        cx: &mut TestAppContext,
+    ) {
         let rt = runtime();
         let view = serverless_console(cx, &rt);
 
-        let selected = view.update(cx, |this, cx| {
-            let entries = vec![
-                dir_entry(OVERLAY_DIR, true),
+        for (rescan, case) in [
+            (
+                vec![
+                    file_entry("intro.html"),
+                    dir_entry(OVERLAY_DIR, true),
+                    file_entry(LOOSE_PAGE),
+                ],
+                "entry inserted ahead of the pick",
+            ),
+            (
+                vec![file_entry(LOOSE_PAGE), dir_entry(OVERLAY_DIR, true)],
+                "listing reordered",
+            ),
+        ] {
+            let url = view.update(cx, |this, cx| {
+                serve(
+                    this,
+                    vec![dir_entry(OVERLAY_DIR, true), file_entry(LOOSE_PAGE)],
+                );
+                this.select_overlay_entry(LOOSE_PAGE.to_owned(), cx);
+                this.apply_poll(listing_poll(rescan));
+                this.browser_source_url()
+            });
+
+            assert_eq!(
+                url.as_deref(),
+                Some(
+                    format!("http://192.168.1.5:9515/overlays/{OVERLAY_TOKEN}/legacy.html")
+                        .as_str()
+                ),
+                "{case}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_pick_whose_entry_disappears_from_a_rescan_falls_back_to_the_default_source(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let view = serverless_console(cx, &rt);
+
+        let url = view.update(cx, |this, cx| {
+            serve(
+                this,
+                vec![
+                    dir_entry(OVERLAY_DIR, true),
+                    file_entry(LOOSE_PAGE),
+                    file_entry("spare.html"),
+                ],
+            );
+            this.select_overlay_entry("spare.html".to_owned(), cx);
+            this.apply_poll(listing_poll(vec![
                 file_entry(LOOSE_PAGE),
-                file_entry("spare.html"),
-            ];
-            let picked = index_of(&entries, "spare.html");
-            serve(this, entries);
-            this.select_overlay_entry(picked, cx);
-            this.apply_poll(listing_poll(vec![dir_entry(OVERLAY_DIR, true)]));
-            this.selected_overlay_entry
+                dir_entry(OVERLAY_DIR, true),
+            ]));
+            this.browser_source_url()
         });
 
-        assert_eq!(selected, None);
+        assert_eq!(
+            url.as_deref(),
+            Some(format!("http://192.168.1.5:9515/overlays/{OVERLAY_TOKEN}/alerts/").as_str())
+        );
+    }
+
+    #[gpui::test]
+    fn copying_the_browser_source_copies_the_picked_entry_after_a_rescan(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = serverless_console(cx, &rt);
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+
+        view.update(cx, |this, cx| {
+            serve(
+                this,
+                vec![dir_entry(OVERLAY_DIR, true), file_entry(LOOSE_PAGE)],
+            );
+            this.select_overlay_entry(LOOSE_PAGE.to_owned(), cx);
+            this.apply_poll(listing_poll(vec![
+                file_entry("intro.html"),
+                dir_entry(OVERLAY_DIR, true),
+                file_entry(LOOSE_PAGE),
+            ]));
+            this.copy_browser_source_url(cx);
+        });
+
+        assert_eq!(
+            cx.read_from_clipboard().and_then(|item| item.text()),
+            Some(format!(
+                "http://192.168.1.5:9515/overlays/{OVERLAY_TOKEN}/legacy.html"
+            ))
+        );
     }
 
     #[gpui::test]

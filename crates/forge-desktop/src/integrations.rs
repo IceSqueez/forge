@@ -134,8 +134,10 @@ impl ObsInstallSeed {
             let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
             guard.take()
         };
-        if let Some(client) = previous {
-            let _ = client.disconnect().await;
+        if let Some(client) = previous
+            && let Err(err) = client.disconnect().await
+        {
+            tracing::warn!(error = %err, "disconnecting the live client failed");
         }
     }
 
@@ -175,8 +177,10 @@ impl VTubeInstallSeed {
             let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
             guard.take()
         };
-        if let Some(client) = previous {
-            let _ = client.disconnect().await;
+        if let Some(client) = previous
+            && let Err(err) = client.disconnect().await
+        {
+            tracing::warn!(error = %err, "disconnecting the live client failed");
         }
     }
 

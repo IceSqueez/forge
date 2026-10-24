@@ -14,7 +14,7 @@ use forge_platform_core::{
 };
 use forge_registry::TriggerRegistry;
 use forge_runtime::{ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
-use forge_storage::{CredentialsRepo, HistoryRepo, SettingsRepo};
+use forge_storage::{CredentialsRepo, HistoryRepo, SettingsRepo, StorageError};
 use forge_types::{IntegrationId, PlatformId, SubActionStep};
 use futures_util::StreamExt as _;
 use gpui::{
@@ -23,6 +23,7 @@ use gpui::{
 };
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::future::Future;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -40,6 +41,7 @@ use crate::in_flight_steps::InFlightSteps;
 use crate::integration_catalog::{declaration_of, is_donation_service, look_of};
 use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
 use crate::integration_quick_actions::accent_color;
+use crate::integration_sign_out::forget_then_disconnect;
 use crate::integrations::{BuiltinObject, ObsInstallSeed, VTubeInstallSeed};
 use crate::obs_credentials_form::ObsConnected;
 use crate::obs_settings_modal::{ObsSettingsModal, ObsSettingsModalEvent};
@@ -111,6 +113,7 @@ pub struct IntegrationDetail {
     row_steps_in_flight: InFlightSteps,
     viewer_samples: VecDeque<(Instant, u64)>,
     pending_disconnect: Confirm<()>,
+    signing_out: bool,
     quick_action_modal: Option<Entity<QuickActionModal>>,
     collection_manager: Option<Entity<CollectionManager>>,
     obs_settings_modal: Option<Entity<ObsSettingsModal>>,
@@ -268,6 +271,7 @@ impl IntegrationDetail {
             row_steps_in_flight: InFlightSteps::default(),
             viewer_samples: VecDeque::new(),
             pending_disconnect: Confirm::default(),
+            signing_out: false,
             quick_action_modal: None,
             collection_manager: None,
             obs_settings_modal: None,
@@ -616,6 +620,9 @@ impl IntegrationDetail {
     }
 
     fn request_disconnect(&mut self, cx: &mut Context<Self>) {
+        if self.signing_out {
+            return;
+        }
         self.pending_disconnect.request(());
         cx.notify();
     }
@@ -966,22 +973,76 @@ impl IntegrationDetail {
 
     fn reset_to_connect(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
         let credentials = Arc::clone(&self.credentials);
-        self.control = None;
         let key = credential_key(platform);
         let slot = self.slot_of(platform);
-        self.rt_handle.spawn(async move {
-            let _ = credentials
-                .delete(&forge_storage::CredentialId::new(key))
-                .await;
+        let forget = async move {
+            forget_then_disconnect(
+                async move {
+                    credentials
+                        .delete(&forge_storage::CredentialId::new(key))
+                        .await
+                },
+                None,
+            )
+            .await?;
             if let Some(slot) = slot {
                 slot.rebuild().await;
             }
-        });
-        self.close_collection_manager();
-        self.twitch_reauth_required = false;
-        self.eventsub_tally.clear();
-        self.viewer_samples.clear();
-        self.open_connect_flow(platform, cx);
+            Ok(())
+        };
+        self.run_sign_out(
+            forget,
+            move |this, cx| {
+                this.control = None;
+                this.close_collection_manager();
+                this.twitch_reauth_required = false;
+                this.eventsub_tally.clear();
+                this.viewer_samples.clear();
+                this.open_connect_flow(platform, cx);
+            },
+            cx,
+        );
+    }
+
+    fn run_sign_out<F>(
+        &mut self,
+        forget: F,
+        apply_signed_out: impl FnOnce(&mut Self, &mut Context<Self>) + Send + 'static,
+        cx: &mut Context<Self>,
+    ) where
+        F: Future<Output = Result<(), StorageError>> + Send + 'static,
+    {
+        if self.signing_out {
+            return;
+        }
+        self.signing_out = true;
+        cx.notify();
+        async_bridge::run_async(
+            &self.rt_handle,
+            forget,
+            move |this, result, cx| {
+                this.signing_out = false;
+                match result {
+                    Ok(()) => apply_signed_out(this, cx),
+                    Err(err) => {
+                        tracing::warn!(
+                            error = %err,
+                            integration = %this.status.id(),
+                            "sign-out could not forget stored credentials"
+                        );
+                        cx.push_toast(
+                            ToastKind::Error,
+                            tr!(
+                                "integration_sign_out_failed",
+                                name = this.display_name.clone()
+                            ),
+                        );
+                    }
+                }
+                cx.notify();
+            },
+            cx,
+        );
     }
 
     fn slot_of(&self, platform: PlatformId) -> Option<IntegrationSlot<BuiltinObject>> {
@@ -994,31 +1055,37 @@ impl IntegrationDetail {
 
     fn sign_out_obs(&mut self, cx: &mut Context<Self>) {
         let credentials = Arc::clone(&self.credentials);
-        let control = self.control.take();
-        self.rt_handle.spawn(async move {
-            if let Some(ctrl) = control {
-                let _ = ctrl.disconnect().await;
-            }
-            let _ = forge_obs::credentials::clear(&*credentials).await;
-        });
-        self.obs_install_seed.clear();
-        self.obs_source = None;
-        cx.emit(ObsSignedOut);
-        cx.notify();
+        let forget = forget_then_disconnect(
+            async move { forge_obs::credentials::clear(&*credentials).await },
+            self.control.clone(),
+        );
+        self.run_sign_out(
+            forget,
+            |this, cx| {
+                this.control = None;
+                this.obs_install_seed.clear();
+                this.obs_source = None;
+                cx.emit(ObsSignedOut);
+            },
+            cx,
+        );
     }
 
     fn sign_out_vtube(&mut self, cx: &mut Context<Self>) {
         let credentials = Arc::clone(&self.credentials);
-        let control = self.control.take();
-        self.rt_handle.spawn(async move {
-            if let Some(ctrl) = control {
-                let _ = ctrl.disconnect().await;
-            }
-            let _ = forge_vtube::credentials::clear(&*credentials).await;
-        });
-        self.vtube_install_seed.clear();
-        cx.emit(VTubeSignedOut);
-        cx.notify();
+        let forget = forget_then_disconnect(
+            async move { forge_vtube::credentials::clear(&*credentials).await },
+            self.control.clone(),
+        );
+        self.run_sign_out(
+            forget,
+            |this, cx| {
+                this.control = None;
+                this.vtube_install_seed.clear();
+                cx.emit(VTubeSignedOut);
+            },
+            cx,
+        );
     }
 
     fn resync_content(&mut self, cx: &mut Context<Self>) {
@@ -1229,8 +1296,14 @@ impl IntegrationDetail {
         _density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let label = header_action_label(&action);
+        let signing_out = self.signing_out && matches!(action, HeaderAction::Disconnect);
+        let label = if signing_out {
+            tr!("integration_signing_out")
+        } else {
+            header_action_label(&action)
+        };
         let text_color = match action {
+            _ if signing_out => palette.text_muted,
             HeaderAction::Disconnect => palette.random,
             _ => palette.text_secondary,
         };
@@ -1250,11 +1323,14 @@ impl IntegrationDetail {
             .rounded(radius(Radius::Sm))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
-            .cursor_pointer()
-            .hover(move |s| s.border_color(hover_border))
-            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                this.on_header_action(action.clone(), window, cx)
-            }))
+            .when(!signing_out, |button| {
+                button
+                    .cursor_pointer()
+                    .hover(move |s| s.border_color(hover_border))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.on_header_action(action.clone(), window, cx)
+                    }))
+            })
             .child(icon(glyph, FONT_XS, text_color))
             .child(
                 div()
@@ -1945,7 +2021,7 @@ mod tests {
         use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime, test_backend};
         use forge_components::Presentation;
 
-        struct ShiftingActions {
+        pub(super) struct ShiftingActions {
             id: IntegrationId,
             label: Mutex<&'static str>,
             signal: CollectionRevisionSignal,
@@ -1956,7 +2032,7 @@ mod tests {
                 Self::for_integration("discord", label)
             }
 
-            fn for_integration(id: &'static str, label: &'static str) -> Arc<Self> {
+            pub(super) fn for_integration(id: &'static str, label: &'static str) -> Arc<Self> {
                 Arc::new(Self {
                     id: IntegrationId::new(id),
                     label: Mutex::new(label),
@@ -1969,7 +2045,7 @@ mod tests {
                 self.signal.bump();
             }
 
-            fn object(self: &Arc<Self>) -> BuiltinObject {
+            pub(super) fn object(self: &Arc<Self>) -> BuiltinObject {
                 BuiltinObject {
                     icon: SectionIcon::new("bug"),
                     status: self.clone(),
@@ -1984,6 +2060,21 @@ mod tests {
                     follow: None,
                     ban_list: None,
                 }
+            }
+        }
+
+        pub(super) struct LiveControl;
+
+        #[async_trait::async_trait]
+        impl BuiltinControl for LiveControl {
+            async fn reconnect(&self) -> forge_platform_core::ControlOutcome {
+                Ok(())
+            }
+            async fn disconnect(&self) -> forge_platform_core::ControlOutcome {
+                Ok(())
+            }
+            async fn refresh_token(&self) -> forge_platform_core::ControlOutcome {
+                Ok(())
             }
         }
 
@@ -2056,6 +2147,16 @@ mod tests {
             rt: &tokio::runtime::Runtime,
             object: BuiltinObject,
         ) -> Entity<IntegrationDetail> {
+            let (backend, _writes) = test_backend();
+            open_detail_with(cx, rt, object, backend)
+        }
+
+        pub(super) fn open_detail_with(
+            cx: &mut TestAppContext,
+            rt: &tokio::runtime::Runtime,
+            object: BuiltinObject,
+            credentials: Arc<dyn CredentialsRepo>,
+        ) -> Entity<IntegrationDetail> {
             cx.update(|cx| {
                 cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
             });
@@ -2075,7 +2176,7 @@ mod tests {
                     object,
                     rt.handle().clone(),
                     engine,
-                    Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+                    credentials,
                     backend as Arc<dyn SettingsRepo>,
                     Arc::new(StubHistory),
                     Arc::new(TriggerRegistry::new()),
@@ -2145,11 +2246,9 @@ mod tests {
         ) {
             let rt = runtime();
             let _enter = rt.enter();
-            let view = open_detail(
-                cx,
-                &rt,
-                ShiftingActions::for_integration("twitch", "x").object(),
-            );
+            let mut object = ShiftingActions::for_integration("twitch", "x").object();
+            object.control = Some(Arc::new(LiveControl));
+            let view = open_detail(cx, &rt, object);
             let (backend, _writes) = test_backend();
             let bus = EventBus::new(Arc::new(StubEventLog));
             let bot = TwitchBotAccount::new(
@@ -2175,11 +2274,228 @@ mod tests {
                 section.update(cx, |_, cx| cx.emit(StreamerSignInRequested));
             }
             cx.run_until_parked();
+            crate::test_support::pump(&rt);
+            cx.run_until_parked();
 
             let after = connect_flow(cx);
             assert!(
                 after.is_some() && after != before,
                 "{before:?} -> {after:?}"
+            );
+        }
+    }
+
+    mod sign_out {
+        use std::cell::RefCell;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use async_trait::async_trait;
+        use forge_storage::CredentialId;
+        use gpui::TestAppContext;
+        use time::OffsetDateTime;
+
+        use super::super::*;
+        use super::quick_action_bridge::{LiveControl, ShiftingActions, open_detail_with};
+        use crate::test_support::{error_toasts, pump, runtime};
+        use forge_components::Toasts;
+
+        struct ScriptedCredentials {
+            delete_fails: bool,
+            release: Option<Arc<tokio::sync::Notify>>,
+            deletes: AtomicUsize,
+        }
+
+        impl ScriptedCredentials {
+            fn new(delete_fails: bool, release: Option<Arc<tokio::sync::Notify>>) -> Arc<Self> {
+                Arc::new(Self {
+                    delete_fails,
+                    release,
+                    deletes: AtomicUsize::new(0),
+                })
+            }
+        }
+
+        #[async_trait]
+        impl CredentialsRepo for ScriptedCredentials {
+            async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
+                Ok(())
+            }
+            async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
+                Ok(None)
+            }
+            async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
+                self.deletes.fetch_add(1, Ordering::SeqCst);
+                if let Some(release) = &self.release {
+                    release.notified().await;
+                }
+                if self.delete_fails {
+                    Err(StorageError::Connection {
+                        reason: "credentials store is read-only".to_owned(),
+                    })
+                } else {
+                    Ok(true)
+                }
+            }
+            async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+                Ok(Vec::new())
+            }
+            async fn last_refresh(
+                &self,
+                _: &CredentialId,
+            ) -> Result<Option<OffsetDateTime>, StorageError> {
+                Ok(None)
+            }
+            async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+                Ok(())
+            }
+        }
+
+        #[derive(Debug, PartialEq, Eq)]
+        struct SignOutView {
+            control_kept: bool,
+            connect_flow_open: bool,
+            signed_out_events: usize,
+            error_toasts: usize,
+        }
+
+        struct SignedInDetail {
+            view: Entity<IntegrationDetail>,
+            signed_out_events: Rc<RefCell<usize>>,
+            _subs: Vec<Subscription>,
+        }
+
+        fn signed_in_detail(
+            cx: &mut TestAppContext,
+            rt: &tokio::runtime::Runtime,
+            id: &'static str,
+            credentials: Arc<dyn CredentialsRepo>,
+        ) -> SignedInDetail {
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            let mut object = ShiftingActions::for_integration(id, "x").object();
+            object.control = Some(Arc::new(LiveControl));
+            let view = open_detail_with(cx, rt, object, credentials);
+            let signed_out_events = Rc::new(RefCell::new(0));
+            let obs_events = Rc::clone(&signed_out_events);
+            let vtube_events = Rc::clone(&signed_out_events);
+            let subs = cx.update(|cx| {
+                vec![
+                    cx.subscribe(&view, move |_, _: &ObsSignedOut, _| {
+                        *obs_events.borrow_mut() += 1;
+                    }),
+                    cx.subscribe(&view, move |_, _: &VTubeSignedOut, _| {
+                        *vtube_events.borrow_mut() += 1;
+                    }),
+                ]
+            });
+            SignedInDetail {
+                view,
+                signed_out_events,
+                _subs: subs,
+            }
+        }
+
+        fn confirm_sign_out(cx: &mut TestAppContext, detail: &SignedInDetail) {
+            detail.view.update(cx, |this, cx| {
+                this.request_disconnect(cx);
+                this.confirm_disconnect(cx);
+            });
+        }
+
+        fn settle(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
+            cx.run_until_parked();
+            pump(rt);
+            cx.run_until_parked();
+        }
+
+        fn observe(cx: &mut TestAppContext, detail: &SignedInDetail) -> SignOutView {
+            let (control_kept, connect_flow_open) = detail.view.read_with(cx, |this, _| {
+                (this.control.is_some(), this.connect.is_some())
+            });
+            SignOutView {
+                control_kept,
+                connect_flow_open,
+                signed_out_events: *detail.signed_out_events.borrow(),
+                error_toasts: cx.update(|cx| error_toasts(cx)),
+            }
+        }
+
+        #[gpui::test]
+        fn a_failed_credential_delete_keeps_the_integration_signed_in_and_toasts_the_error(
+            cx: &mut TestAppContext,
+        ) {
+            let rt = runtime();
+            let _enter = rt.enter();
+            for id in ["kick", "obs", "vtube"] {
+                let detail = signed_in_detail(cx, &rt, id, ScriptedCredentials::new(true, None));
+
+                confirm_sign_out(cx, &detail);
+                settle(cx, &rt);
+
+                assert_eq!(
+                    observe(cx, &detail),
+                    SignOutView {
+                        control_kept: true,
+                        connect_flow_open: false,
+                        signed_out_events: 0,
+                        error_toasts: 1,
+                    },
+                    "{id}"
+                );
+            }
+        }
+
+        #[gpui::test]
+        fn a_forgotten_credential_applies_the_signed_out_state_once(cx: &mut TestAppContext) {
+            let rt = runtime();
+            let _enter = rt.enter();
+            for (id, connect_flow_open, signed_out_events) in
+                [("kick", true, 0), ("obs", false, 1), ("vtube", false, 1)]
+            {
+                let detail = signed_in_detail(cx, &rt, id, ScriptedCredentials::new(false, None));
+
+                confirm_sign_out(cx, &detail);
+                settle(cx, &rt);
+
+                assert_eq!(
+                    observe(cx, &detail),
+                    SignOutView {
+                        control_kept: false,
+                        connect_flow_open,
+                        signed_out_events,
+                        error_toasts: 0,
+                    },
+                    "{id}"
+                );
+            }
+        }
+
+        #[gpui::test]
+        fn sign_out_requests_while_one_is_pending_are_ignored(cx: &mut TestAppContext) {
+            let rt = runtime();
+            let _enter = rt.enter();
+            let release = Arc::new(tokio::sync::Notify::new());
+            let credentials = ScriptedCredentials::new(false, Some(Arc::clone(&release)));
+            let detail = signed_in_detail(
+                cx,
+                &rt,
+                "obs",
+                Arc::clone(&credentials) as Arc<dyn CredentialsRepo>,
+            );
+
+            confirm_sign_out(cx, &detail);
+            settle(cx, &rt);
+            confirm_sign_out(cx, &detail);
+            detail.view.update(cx, |this, cx| this.sign_out_obs(cx));
+            settle(cx, &rt);
+            release.notify_one();
+            settle(cx, &rt);
+
+            assert_eq!(
+                (
+                    credentials.deletes.load(Ordering::SeqCst),
+                    *detail.signed_out_events.borrow()
+                ),
+                (1, 1)
             );
         }
     }

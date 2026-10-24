@@ -1421,9 +1421,12 @@ name = "forge-net"
 version = "0.6.3"
 dependencies = [
  "async-trait",
+ "bytes",
  "httpdate",
  "rand 0.10.2",
  "reqwest",
+ "serde",
+ "serde_json",
  "thiserror 2.0.20",
  "tokio",
  "tokio-util",

@@ -1,10 +1,11 @@
-#![doc = "Outbound network building blocks: rate limiting, backoff, dedup and the public-address guard."]
+#![doc = "Outbound network building blocks: the HTTP gateway, rate limiting, throttle hints, capped body reads, backoff, dedup and the public-address guard."]
 
 pub mod address_guard;
 pub mod backoff;
 pub mod body_read;
 pub mod cooldown;
 pub mod dedup;
+pub mod gateway;
 pub mod header_lookup;
 pub mod rate_limit;
 #[cfg(any(test, feature = "test-support"))]
@@ -21,6 +22,12 @@ pub use body_read::{
 };
 pub use cooldown::{Cooldown, MAX_REMOTE_COOLDOWN};
 pub use dedup::DedupSet;
+pub use gateway::{
+    BodyExcerpt, CallClass, Credential, DecodeCategory, EgressKind, FailureContext,
+    FailureObserver, FormBody, Gateway, GatewayBuildError, GatewayFailure, GatewayProfile,
+    GatewayRequest, GatewayResponse, InvalidRequest, Method, MultipartBody, RequestBody,
+    RequestEncodeError, ResponseDecodeError, Secret, TransportFailure, TransportKind,
+};
 pub use header_lookup::HeaderLookup;
 pub use rate_limit::{
     DEFAULT_RETRY_AFTER_SECS, MAX_ACQUIRE_ATTEMPTS, MAX_THROTTLE_WAIT, RateLimitError,

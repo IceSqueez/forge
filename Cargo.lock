@@ -2880,12 +2880,17 @@ name = "forge-net"
 version = "0.6.3"
 dependencies = [
  "async-trait",
+ "bytes",
+ "forge-net",
  "httpdate",
  "rand 0.10.3",
  "reqwest",
+ "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
+ "wiremock",
 ]
 
 [[package]]

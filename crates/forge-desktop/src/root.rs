@@ -921,7 +921,9 @@ mod tests {
     use gpui::TestAppContext;
 
     use super::*;
-    use crate::test_support::{held_queue_scheduler, hold_one_dispatch, runtime};
+    use crate::test_support::{
+        held_queue_scheduler, hold_one_dispatch, pump, runtime, test_backend, writes_to,
+    };
 
     fn queue(id: QueueId) -> Queue {
         Queue {
@@ -1072,5 +1074,27 @@ mod tests {
             );
             assert!(body.contains('7'), "{language:?}: {body}");
         }
+    }
+
+    const BOOT_SETTLE_ROUNDS: usize = 3;
+
+    #[gpui::test]
+    fn boot_with_an_undecodable_stored_shortcut_value_leaves_it_unwritten(cx: &mut TestAppContext) {
+        let key = forge_storage::reserved_keys::KEYBOARD_SHORTCUTS;
+        let rt = runtime();
+        let (backend, mut writes) = test_backend();
+        backend.seed(key, "not json");
+
+        apply_persisted_shortcuts(
+            &mut cx.to_async(),
+            backend as Arc<dyn forge_storage::DataProvider>,
+            rt.handle().clone(),
+        );
+        for _ in 0..BOOT_SETTLE_ROUNDS {
+            pump(&rt);
+            cx.run_until_parked();
+        }
+
+        assert_eq!(writes_to(&mut writes, key), Vec::<String>::new());
     }
 }

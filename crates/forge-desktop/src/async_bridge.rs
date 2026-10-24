@@ -823,4 +823,150 @@ mod tests {
             assert_eq!(reported(cx), expected);
         }
     }
+
+    #[derive(Default)]
+    struct SettledWrites(Vec<(usize, WriteOutcome)>);
+
+    const WRITE_FAILED: &str = "disk gone";
+
+    fn write_through(
+        writer: &SnapshotWriter,
+        writes: &Entity<SettledWrites>,
+        index: usize,
+        write: impl Future<Output = Result<(), String>> + Send + 'static,
+        cx: &mut TestAppContext,
+    ) {
+        writes.update(cx, |_, cx| {
+            writer.write(
+                write,
+                move |settled: &mut SettledWrites, outcome, _| settled.0.push((index, outcome)),
+                cx,
+            );
+        });
+    }
+
+    fn settled_writes(
+        writes: &Entity<SettledWrites>,
+        cx: &mut TestAppContext,
+    ) -> Vec<(usize, WriteOutcome)> {
+        writes.read_with(cx, |settled, _| {
+            let mut outcomes = settled.0.clone();
+            outcomes.sort_by_key(|(index, _)| *index);
+            outcomes
+        })
+    }
+
+    fn counted(
+        ran: &Arc<AtomicU64>,
+        mark: u64,
+        result: Result<(), String>,
+    ) -> impl Future<Output = Result<(), String>> + Send + 'static {
+        let ran = Arc::clone(ran);
+        async move {
+            ran.fetch_add(mark, Ordering::SeqCst);
+            result
+        }
+    }
+
+    #[gpui::test]
+    fn a_snapshot_write_settles_written_or_failed_with_the_write_error(cx: &mut TestAppContext) {
+        let rt = runtime();
+        for (result, expected) in [
+            (Ok(()), WriteOutcome::Written),
+            (
+                Err(WRITE_FAILED.to_owned()),
+                WriteOutcome::Failed(WRITE_FAILED.to_owned()),
+            ),
+        ] {
+            let writer = SnapshotWriter::new(rt.handle());
+            let writes = cx.new(|_| SettledWrites::default());
+
+            write_through(&writer, &writes, 0, async move { result }, cx);
+            pump(&rt);
+            cx.run_until_parked();
+
+            assert_eq!(settled_writes(&writes, cx), vec![(0, expected)]);
+        }
+    }
+
+    #[gpui::test]
+    fn rapid_snapshot_writes_run_only_the_newest_and_settle_the_rest_superseded(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let writer = SnapshotWriter::new(rt.handle());
+        let writes = cx.new(|_| SettledWrites::default());
+        let ran = Arc::new(AtomicU64::new(0));
+
+        for (index, mark) in [(0, 1), (1, 10), (2, 100)] {
+            write_through(&writer, &writes, index, counted(&ran, mark, Ok(())), cx);
+        }
+        pump(&rt);
+        cx.run_until_parked();
+
+        assert_eq!(
+            (ran.load(Ordering::SeqCst), settled_writes(&writes, cx)),
+            (
+                100,
+                vec![
+                    (0, WriteOutcome::Superseded),
+                    (1, WriteOutcome::Superseded),
+                    (2, WriteOutcome::Written),
+                ]
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn a_running_write_that_fails_after_a_newer_one_was_queued_settles_superseded(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let writer = SnapshotWriter::new(rt.handle());
+        let writes = cx.new(|_| SettledWrites::default());
+        let gate = Arc::new(tokio::sync::Notify::new());
+        let ran = Arc::new(AtomicU64::new(0));
+
+        let held = Arc::clone(&gate);
+        write_through(
+            &writer,
+            &writes,
+            0,
+            async move {
+                held.notified().await;
+                Err(WRITE_FAILED.to_owned())
+            },
+            cx,
+        );
+        pump(&rt);
+        write_through(&writer, &writes, 1, counted(&ran, 1, Ok(())), cx);
+        gate.notify_one();
+        pump(&rt);
+        cx.run_until_parked();
+
+        assert_eq!(
+            (ran.load(Ordering::SeqCst), settled_writes(&writes, cx)),
+            (
+                1,
+                vec![(0, WriteOutcome::Superseded), (1, WriteOutcome::Written)]
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn a_write_sent_after_the_queue_closed_never_runs_or_settles(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let writer = SnapshotWriter::new(rt.handle());
+        drop(rt);
+        let writes = cx.new(|_| SettledWrites::default());
+        let ran = Arc::new(AtomicU64::new(0));
+
+        write_through(&writer, &writes, 0, counted(&ran, 1, Ok(())), cx);
+        cx.run_until_parked();
+
+        assert_eq!(
+            (ran.load(Ordering::SeqCst), settled_writes(&writes, cx)),
+            (0, Vec::new())
+        );
+    }
 }

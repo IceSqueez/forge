@@ -411,13 +411,18 @@ impl Render for HotkeysScreenView {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use forge_hotkey::HotkeyConfig;
-    use gpui::TestAppContext;
+    use gpui::{Entity, TestAppContext};
 
     use super::*;
     use crate::screen::Screen;
     use crate::test_support::{
-        hub_crumb_targets, quiet_bus, runtime, sandboxed_provider, test_backend,
+        ReadFault, SETTINGS_READ_FAILED, Sandboxed, SettingWrite, TestBackend, hub_crumb_targets,
+        install_presentation, pump, quiet_bus, runtime, sandboxed_provider, test_backend,
+        writes_to,
     };
+    use capture::Capture;
+    use forge_components::Toasts;
+    use tokio::sync::mpsc::UnboundedReceiver;
 
     #[gpui::test]
     fn the_crumb_leads_back_to_the_hotkeys_category_on_the_hub(cx: &mut TestAppContext) {
@@ -459,6 +464,247 @@ mod tests {
                 .iter()
                 .all(|screen| *screen == Screen::Integrations(Some(category))),
             "{targets:?}"
+        );
+    }
+
+    const HOME: &str = "nav.home";
+    const HOME_DEFAULT: &str = "ctrl-1";
+    const CHAT: &str = "nav.chat";
+    const STORED: &str = r#"{"nav.chat":{"chord":"ctrl-8"}}"#;
+    const SETTLE_ROUNDS: usize = 3;
+
+    struct Harness {
+        rt: tokio::runtime::Runtime,
+        settings: Arc<TestBackend>,
+        writes: UnboundedReceiver<SettingWrite>,
+        storage: Sandboxed<Arc<dyn DataProvider>>,
+    }
+
+    impl Harness {
+        fn new(stored: &str) -> Self {
+            let rt = runtime();
+            let storage = rt.block_on(sandboxed_provider());
+            let (settings, writes) = test_backend();
+            settings.seed(KEYBOARD_SHORTCUTS, stored);
+            Self {
+                rt,
+                settings,
+                writes,
+                storage,
+            }
+        }
+
+        fn open(&self, cx: &mut TestAppContext) -> Entity<HotkeysScreenView> {
+            install_presentation(cx);
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            let bus = quiet_bus(&self.rt);
+            let reconciler = {
+                let _entered = self.rt.enter();
+                let (client, _backend) = forge_hotkey::testing::test_client(
+                    HotkeyConfig::default(),
+                    Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
+                );
+                HotkeyReconciler::new(
+                    client,
+                    self.storage.trigger_instance_repo(),
+                    self.storage.soundboard_clips_repo(),
+                )
+            };
+            let backend = Arc::clone(&*self.storage);
+            let settings = Arc::clone(&self.settings) as Arc<dyn SettingsRepo>;
+            let handle = self.rt.handle().clone();
+            let view = cx.update(|cx| {
+                cx.new(|cx| {
+                    HotkeysScreenView::new(reconciler, None, backend, settings, bus, handle, cx)
+                })
+            });
+            self.settle(cx);
+            view
+        }
+
+        fn settle(&self, cx: &mut TestAppContext) {
+            for _ in 0..SETTLE_ROUNDS {
+                pump(&self.rt);
+                cx.run_until_parked();
+            }
+        }
+
+        fn shortcut_writes(&mut self) -> Vec<String> {
+            writes_to(&mut self.writes, KEYBOARD_SHORTCUTS)
+        }
+    }
+
+    fn shown_chord(
+        view: &Entity<HotkeysScreenView>,
+        id: &str,
+        cx: &mut TestAppContext,
+    ) -> Option<String> {
+        let entry = crate::actions::shortcut_entry(id).unwrap();
+        view.read_with(cx, |v, _| {
+            v.shortcuts
+                .loaded()
+                .and_then(|shortcuts| shortcuts.chord_of(entry).map(str::to_owned))
+        })
+    }
+
+    type Edit = fn(&mut HotkeysScreenView, &mut Context<HotkeysScreenView>);
+
+    fn edit_paths() -> [(&'static str, Edit); 4] {
+        [
+            ("reset", |v, cx| v.reset_app_binding(CHAT, cx)),
+            ("unbind", |v, cx| v.unbind_app_binding(HOME, cx)),
+            ("toggle", |v, cx| v.toggle_app_binding(HOME, cx)),
+            ("captured chord", |v, cx| {
+                v.apply_capture(Capture::App(HOME), "ctrl-9".to_owned(), cx)
+            }),
+        ]
+    }
+
+    #[gpui::test]
+    fn no_app_shortcut_edit_after_a_failed_load_writes_over_the_stored_shortcuts(
+        cx: &mut TestAppContext,
+    ) {
+        let unreachable = StorageError::Connection {
+            reason: SETTINGS_READ_FAILED.to_owned(),
+        }
+        .to_string();
+        let undecodable = ShortcutOverrides::from_stored(Some("not json"))
+            .err()
+            .unwrap();
+        for (fault, stored, failing_read, reason) in [
+            ("unreachable store", STORED, true, unreachable),
+            ("undecodable value", "not json", false, undecodable),
+        ] {
+            for (case, edit) in edit_paths() {
+                let mut harness = Harness::new(stored);
+                if failing_read {
+                    harness
+                        .settings
+                        .fault_reads(KEYBOARD_SHORTCUTS, ReadFault::Fails);
+                }
+                let view = harness.open(cx);
+
+                view.update(cx, edit);
+                harness.settle(cx);
+
+                let failure = view.read_with(cx, |v, _| v.shortcuts.failure().map(str::to_owned));
+                assert_eq!(
+                    (harness.shortcut_writes(), failure),
+                    (Vec::<String>::new(), Some(reason.clone())),
+                    "{fault}: {case}"
+                );
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn no_app_shortcut_edit_while_the_load_is_pending_writes_and_the_load_lands_intact(
+        cx: &mut TestAppContext,
+    ) {
+        for (case, edit) in edit_paths() {
+            let mut harness = Harness::new(STORED);
+            let gate = Arc::new(tokio::sync::Notify::new());
+            harness
+                .settings
+                .fault_reads(KEYBOARD_SHORTCUTS, ReadFault::Held(Arc::clone(&gate)));
+            let view = harness.open(cx);
+
+            view.update(cx, edit);
+            harness.settle(cx);
+            let writes_while_pending = harness.shortcut_writes();
+            harness.settings.heal_reads(KEYBOARD_SHORTCUTS);
+            gate.notify_one();
+            harness.settle(cx);
+
+            assert_eq!(
+                (writes_while_pending, shown_chord(&view, CHAT, cx)),
+                (Vec::<String>::new(), Some("ctrl-8".to_owned())),
+                "{case}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn an_app_shortcut_cannot_be_opened_or_captured_until_the_shortcuts_load(
+        cx: &mut TestAppContext,
+    ) {
+        let entry = crate::actions::shortcut_entry(HOME).unwrap();
+        for (state, fault) in [
+            ("failed", ReadFault::Fails),
+            (
+                "pending",
+                ReadFault::Held(Arc::new(tokio::sync::Notify::new())),
+            ),
+        ] {
+            let harness = Harness::new(STORED);
+            harness.settings.fault_reads(KEYBOARD_SHORTCUTS, fault);
+            let view = harness.open(cx);
+
+            view.update(cx, |v, cx| {
+                v.edit_app_binding(entry, cx);
+                v.start_capture(Capture::App(HOME), cx);
+            });
+
+            let refused = view.read_with(cx, |v, _| {
+                (v.app_modal.is_none(), matches!(v.capture, Capture::Off))
+            });
+            assert_eq!(refused, (true, true), "{state}");
+        }
+    }
+
+    #[gpui::test]
+    fn retrying_a_failed_app_shortcut_load_restores_them_and_edits_persist_again(
+        cx: &mut TestAppContext,
+    ) {
+        let mut harness = Harness::new(STORED);
+        harness
+            .settings
+            .fault_reads(KEYBOARD_SHORTCUTS, ReadFault::Fails);
+        let view = harness.open(cx);
+        harness.settings.heal_reads(KEYBOARD_SHORTCUTS);
+
+        view.update(cx, |v, cx| v.load_shortcuts(cx));
+        harness.settle(cx);
+        view.update(cx, |v, cx| v.unbind_app_binding(HOME, cx));
+        harness.settle(cx);
+
+        let written: Vec<(Option<String>, Option<String>)> = harness
+            .shortcut_writes()
+            .iter()
+            .map(|raw| {
+                let restored = ShortcutOverrides::from_stored(Some(raw)).unwrap();
+                let chord_of = |id| {
+                    restored
+                        .chord_of(crate::actions::shortcut_entry(id).unwrap())
+                        .map(str::to_owned)
+                };
+                (chord_of(HOME), chord_of(CHAT))
+            })
+            .collect();
+        assert_eq!(written, vec![(None, Some("ctrl-8".to_owned()))]);
+    }
+
+    #[gpui::test]
+    fn a_failed_app_shortcut_write_toasts_and_rolls_back_to_the_stored_shortcuts(
+        cx: &mut TestAppContext,
+    ) {
+        let harness = Harness::new(STORED);
+        harness.settings.fail_writes(KEYBOARD_SHORTCUTS);
+        let view = harness.open(cx);
+
+        view.update(cx, |v, cx| v.unbind_app_binding(HOME, cx));
+        harness.settle(cx);
+
+        let toasted = cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|toast| toast.kind)
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(
+            (toasted, shown_chord(&view, HOME, cx)),
+            (vec![ToastKind::Error], Some(HOME_DEFAULT.to_owned()))
         );
     }
 }

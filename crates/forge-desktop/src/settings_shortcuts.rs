@@ -624,3 +624,236 @@ impl Render for SettingsShortcutsView {
         root
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use gpui::{Modifiers, TestAppContext};
+    use tokio::sync::mpsc::UnboundedReceiver;
+
+    use super::*;
+    use crate::test_support::{
+        ReadFault, SETTINGS_READ_FAILED, SETTINGS_WRITE_FAILED, SettingWrite, TestBackend,
+        install_presentation, pump, runtime, test_backend, writes_to,
+    };
+
+    const HOME: &str = "nav.home";
+    const HOME_DEFAULT: &str = "ctrl-1";
+    const CHAT: &str = "nav.chat";
+    const CHAT_DEFAULT: &str = "ctrl-2";
+    const STORED: &str = r#"{"nav.chat":{"chord":"ctrl-8"}}"#;
+    const SETTLE_ROUNDS: usize = 3;
+
+    struct Harness {
+        rt: tokio::runtime::Runtime,
+        backend: Arc<TestBackend>,
+        writes: UnboundedReceiver<SettingWrite>,
+    }
+
+    impl Harness {
+        fn new(stored: &str) -> Self {
+            let (backend, writes) = test_backend();
+            backend.seed(KEYBOARD_SHORTCUTS, stored);
+            Self {
+                rt: runtime(),
+                backend,
+                writes,
+            }
+        }
+
+        fn open(&self, cx: &mut TestAppContext) -> Entity<SettingsShortcutsView> {
+            install_presentation(cx);
+            let backend = Arc::clone(&self.backend) as Arc<dyn DataProvider>;
+            let handle = self.rt.handle().clone();
+            let view =
+                cx.update(|cx| cx.new(|cx| SettingsShortcutsView::new(backend, handle, None, cx)));
+            self.settle(cx);
+            view
+        }
+
+        fn settle(&self, cx: &mut TestAppContext) {
+            for _ in 0..SETTLE_ROUNDS {
+                pump(&self.rt);
+                cx.run_until_parked();
+            }
+        }
+
+        fn shortcut_writes(&mut self) -> Vec<String> {
+            writes_to(&mut self.writes, KEYBOARD_SHORTCUTS)
+        }
+    }
+
+    fn ctrl(key: &str) -> Keystroke {
+        Keystroke {
+            modifiers: Modifiers {
+                control: true,
+                ..Default::default()
+            },
+            key: key.to_owned(),
+            key_char: None,
+        }
+    }
+
+    fn shown_chord(
+        view: &Entity<SettingsShortcutsView>,
+        id: &str,
+        cx: &mut TestAppContext,
+    ) -> Option<String> {
+        let entry = shortcut_entry(id).unwrap();
+        view.read_with(cx, |v, _| {
+            v.overrides
+                .loaded()
+                .and_then(|overrides| overrides.chord_of(entry).map(str::to_owned))
+        })
+    }
+
+    type Edit = fn(&mut SettingsShortcutsView, &mut Context<SettingsShortcutsView>);
+
+    fn edit_paths() -> [(&'static str, Edit); 5] {
+        [
+            ("rebind by capture", |v, cx| {
+                v.start_rebind(HOME, cx);
+                v.on_capture_keystroke(ctrl("9"), cx);
+            }),
+            ("a keystroke for an already armed capture", |v, cx| {
+                v.rebinding = Some(HOME);
+                v.on_capture_keystroke(ctrl("9"), cx);
+            }),
+            ("steal a taken chord", |v, cx| {
+                v.conflict = Some(ShortcutConflict {
+                    target_id: HOME,
+                    owner_id: CHAT,
+                    chord: CHAT_DEFAULT.to_owned(),
+                });
+                v.conflict_steal(cx);
+            }),
+            ("reset one shortcut", |v, cx| v.reset_entry(CHAT, cx)),
+            ("reset every shortcut", |v, cx| v.reset_all(cx)),
+        ]
+    }
+
+    #[gpui::test]
+    fn no_edit_after_a_failed_load_writes_over_the_stored_shortcuts(cx: &mut TestAppContext) {
+        let unreachable = StorageError::Connection {
+            reason: SETTINGS_READ_FAILED.to_owned(),
+        }
+        .to_string();
+        let undecodable = ShortcutOverrides::from_stored(Some("not json"))
+            .err()
+            .unwrap();
+        for (fault, stored, failing_read, reason) in [
+            ("unreachable store", STORED, true, unreachable),
+            ("undecodable value", "not json", false, undecodable),
+        ] {
+            for (case, edit) in edit_paths() {
+                let mut harness = Harness::new(stored);
+                if failing_read {
+                    harness
+                        .backend
+                        .fault_reads(KEYBOARD_SHORTCUTS, ReadFault::Fails);
+                }
+                let view = harness.open(cx);
+
+                view.update(cx, edit);
+                harness.settle(cx);
+
+                let failure = view.read_with(cx, |v, _| v.overrides.failure().map(str::to_owned));
+                assert_eq!(
+                    (harness.shortcut_writes(), failure),
+                    (Vec::<String>::new(), Some(reason.clone())),
+                    "{fault}: {case}"
+                );
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn no_edit_while_the_load_is_pending_writes_and_the_load_still_lands_intact(
+        cx: &mut TestAppContext,
+    ) {
+        for (case, edit) in edit_paths() {
+            let mut harness = Harness::new(STORED);
+            let gate = Arc::new(tokio::sync::Notify::new());
+            harness
+                .backend
+                .fault_reads(KEYBOARD_SHORTCUTS, ReadFault::Held(Arc::clone(&gate)));
+            let view = harness.open(cx);
+
+            view.update(cx, edit);
+            harness.settle(cx);
+            let writes_while_pending = harness.shortcut_writes();
+            harness.backend.heal_reads(KEYBOARD_SHORTCUTS);
+            gate.notify_one();
+            harness.settle(cx);
+
+            assert_eq!(
+                (writes_while_pending, shown_chord(&view, CHAT, cx)),
+                (Vec::<String>::new(), Some("ctrl-8".to_owned())),
+                "{case}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn retry_after_a_failed_load_restores_the_stored_shortcuts_and_a_rebind_keeps_them(
+        cx: &mut TestAppContext,
+    ) {
+        let mut harness = Harness::new(STORED);
+        harness
+            .backend
+            .fault_reads(KEYBOARD_SHORTCUTS, ReadFault::Fails);
+        let view = harness.open(cx);
+        harness.backend.heal_reads(KEYBOARD_SHORTCUTS);
+
+        view.update(cx, |v, cx| v.retry_load(cx));
+        harness.settle(cx);
+        view.update(cx, |v, cx| {
+            v.start_rebind(HOME, cx);
+            v.on_capture_keystroke(ctrl("9"), cx);
+        });
+        harness.settle(cx);
+
+        let written: Vec<(Option<String>, Option<String>)> = harness
+            .shortcut_writes()
+            .iter()
+            .map(|raw| {
+                let restored = ShortcutOverrides::from_stored(Some(raw)).unwrap();
+                let chord_of = |id| {
+                    restored
+                        .chord_of(shortcut_entry(id).unwrap())
+                        .map(str::to_owned)
+                };
+                (chord_of(HOME), chord_of(CHAT))
+            })
+            .collect();
+        assert_eq!(
+            written,
+            vec![(Some("ctrl-9".to_owned()), Some("ctrl-8".to_owned()))]
+        );
+    }
+
+    #[gpui::test]
+    fn a_failed_write_reports_the_error_and_rolls_back_to_the_stored_shortcuts(
+        cx: &mut TestAppContext,
+    ) {
+        let harness = Harness::new(STORED);
+        harness.backend.fail_writes(KEYBOARD_SHORTCUTS);
+        let view = harness.open(cx);
+
+        view.update(cx, |v, cx| {
+            v.start_rebind(HOME, cx);
+            v.on_capture_keystroke(ctrl("9"), cx);
+        });
+        harness.settle(cx);
+
+        let save_error = view.read_with(cx, |v, _| v.save_error.clone());
+        let read_only = StorageError::Connection {
+            reason: SETTINGS_WRITE_FAILED.to_owned(),
+        }
+        .to_string();
+        assert_eq!(
+            (save_error, shown_chord(&view, HOME, cx)),
+            (Some(read_only), Some(HOME_DEFAULT.to_owned()))
+        );
+    }
+}

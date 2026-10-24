@@ -39,9 +39,20 @@ const RUNTIME_PUMPS: usize = 8;
 
 pub(crate) type SettingWrite = (String, String);
 
+#[derive(Clone)]
+pub(crate) enum ReadFault {
+    Fails,
+    Held(Arc<tokio::sync::Notify>),
+}
+
+pub(crate) const SETTINGS_READ_FAILED: &str = "settings store unreachable";
+pub(crate) const SETTINGS_WRITE_FAILED: &str = "settings store is read-only";
+
 pub(crate) struct TestBackend {
     values: Mutex<HashMap<String, String>>,
     writes: UnboundedSender<SettingWrite>,
+    read_faults: Mutex<HashMap<String, ReadFault>>,
+    write_faults: Mutex<std::collections::HashSet<String>>,
     overlays: Option<Arc<dyn OverlayRepo>>,
     scripts: Option<Arc<dyn ScriptRepo>>,
     media: Arc<dyn MediaRepo>,
@@ -86,6 +97,8 @@ fn backend_over(
         Arc::new(TestBackend {
             values: Mutex::new(HashMap::new()),
             writes,
+            read_faults: Mutex::default(),
+            write_faults: Mutex::default(),
             overlays,
             scripts,
             media,
@@ -158,6 +171,8 @@ fn enabled_schedule_over_test_backend(
     let backend = Arc::new(TestBackend {
         values: Mutex::new(values),
         writes,
+        read_faults: Mutex::default(),
+        write_faults: Mutex::default(),
         overlays: None,
         scripts: None,
         media: Arc::new(EmptyMediaLibrary),
@@ -178,13 +193,62 @@ fn enabled_schedule_over_test_backend(
     }
 }
 
+pub(crate) fn writes_to(writes: &mut UnboundedReceiver<SettingWrite>, key: &str) -> Vec<String> {
+    let mut values = Vec::new();
+    while let Ok((written, value)) = writes.try_recv() {
+        if written == key {
+            values.push(value);
+        }
+    }
+    values
+}
+
+impl TestBackend {
+    pub(crate) fn seed(&self, key: &str, value: &str) {
+        self.values
+            .lock()
+            .unwrap()
+            .insert(key.to_owned(), value.to_owned());
+    }
+
+    pub(crate) fn fault_reads(&self, key: &str, fault: ReadFault) {
+        self.read_faults
+            .lock()
+            .unwrap()
+            .insert(key.to_owned(), fault);
+    }
+
+    pub(crate) fn heal_reads(&self, key: &str) {
+        self.read_faults.lock().unwrap().remove(key);
+    }
+
+    pub(crate) fn fail_writes(&self, key: &str) {
+        self.write_faults.lock().unwrap().insert(key.to_owned());
+    }
+}
+
 #[async_trait::async_trait]
 impl SettingsRepo for TestBackend {
     async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
+        let fault = self.read_faults.lock().unwrap().get(key).cloned();
+        match fault {
+            Some(ReadFault::Fails) => {
+                return Err(StorageError::Connection {
+                    reason: SETTINGS_READ_FAILED.to_owned(),
+                });
+            }
+            Some(ReadFault::Held(gate)) => gate.notified().await,
+            None => {}
+        }
         Ok(self.values.lock().unwrap().get(key).cloned())
     }
 
     async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
+        if self.write_faults.lock().unwrap().contains(key) {
+            return Err(StorageError::Connection {
+                reason: SETTINGS_WRITE_FAILED.to_owned(),
+            });
+        }
         self.values
             .lock()
             .unwrap()

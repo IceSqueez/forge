@@ -369,6 +369,9 @@ pub(crate) trait TextEditor: CaretHost + EventEmitter<InputEvent> {
         range_utf16: &Range<usize>,
         actual_range: &mut Option<Range<usize>>,
     ) -> Option<String> {
+        if self.policy().concealed {
+            return None;
+        }
         let content = self.buffer().as_str();
         let range = range_from_utf16(content, range_utf16);
         actual_range.replace(range_to_utf16(content, &range));
@@ -408,7 +411,8 @@ pub(crate) trait TextEditor: CaretHost + EventEmitter<InputEvent> {
     }
 
     fn input_compose(&mut self, composition: Composition<'_>, cx: &mut Context<Self>) {
-        if self.policy().read_only {
+        let policy = self.policy();
+        if policy.read_only || policy.concealed {
             return;
         }
         self.buffer_mut().replace_and_mark_in_utf16_range(

@@ -10,6 +10,7 @@ pub mod channel;
 pub mod channel_info;
 pub mod chat;
 pub mod chat_platform;
+mod chat_session;
 pub(crate) mod control;
 pub mod credentials;
 pub mod credentials_manager;

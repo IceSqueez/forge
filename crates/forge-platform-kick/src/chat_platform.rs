@@ -1,10 +1,10 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher, EventStream};
+use forge_events::{Event, EventStream};
 use forge_platform_core::{
     ChatPlatform, ConnectionState, PlatformCapabilities, PlatformEndpoints, PlatformError,
-    RateLimiter, connection_state_changed_event,
+    RateLimiter,
 };
 use forge_storage::BanLedgerRepo;
 use tokio::sync::{mpsc, watch};
@@ -12,13 +12,13 @@ use tokio::sync::{mpsc, watch};
 use crate::ban_ledger::{USER_BANNED_EVENT_KIND, observed_ban};
 
 use crate::capabilities::kick_capabilities;
-use crate::chat::{KickChat, KickChatHandle};
+use crate::chat::{ChatLinkStatus, KickChat};
+use crate::chat_session::{ChatSessions, PLATFORM_ID, SessionPublisher};
 use crate::credentials_manager::KickCredentialsManager;
 use crate::error::KickError;
 use crate::event_channel::PlatformEventChannel;
 use crate::send::KickSendChat;
 
-const PLATFORM_ID: &str = "kick";
 const CHAT_FORWARD_CAPACITY: usize = 256;
 
 pub struct KickPlatform {
@@ -29,8 +29,7 @@ pub struct KickPlatform {
     http: reqwest::Client,
     sender: KickSendChat,
     ban_ledger: Arc<dyn BanLedgerRepo>,
-    handle: Mutex<Option<KickChatHandle>>,
-    state_tx: watch::Sender<ConnectionState>,
+    sessions: ChatSessions,
 }
 
 impl KickPlatform {
@@ -40,22 +39,21 @@ impl KickPlatform {
         rate_limiter: Arc<dyn RateLimiter>,
         ban_ledger: Arc<dyn BanLedgerRepo>,
     ) -> Self {
-        let (state_tx, _) = watch::channel(ConnectionState::Disconnected);
+        let events = Arc::new(PlatformEventChannel::new());
         Self {
             capabilities: kick_capabilities(),
-            events: Arc::new(PlatformEventChannel::new()),
+            sessions: ChatSessions::new(Arc::clone(&events)),
+            events,
             credentials_manager,
             endpoints: endpoints.clone(),
             http: reqwest::Client::new(),
             sender: KickSendChat::new(endpoints, rate_limiter),
             ban_ledger,
-            handle: Mutex::new(None),
-            state_tx,
         }
     }
 
     pub(crate) fn state_receiver(&self) -> watch::Receiver<ConnectionState> {
-        self.state_tx.subscribe()
+        self.sessions.state_receiver()
     }
 
     pub(crate) fn ban_ledger(&self) -> &Arc<dyn BanLedgerRepo> {
@@ -78,28 +76,54 @@ impl KickPlatform {
     }
 }
 
-async fn record_observed_ban(
-    ban_ledger: &dyn BanLedgerRepo,
+struct ObservedBanRecorder {
+    ban_ledger: Arc<dyn BanLedgerRepo>,
     broadcaster_user_id: u64,
-    event: &Event,
+}
+
+impl ObservedBanRecorder {
+    async fn record(&self, event: &Event) {
+        let Some(entry) = observed_ban(&event.payload, self.broadcaster_user_id, event.timestamp)
+        else {
+            return;
+        };
+        if let Err(error) = self.ban_ledger.upsert(&entry, event.timestamp).await {
+            tracing::warn!(%error, "observed kick ban not recorded in the ban ledger");
+        }
+    }
+}
+
+async fn forward_chat_events(
+    mut chat_rx: mpsc::Receiver<Event>,
+    recorder: ObservedBanRecorder,
+    publisher: SessionPublisher,
 ) {
-    let Some(entry) = observed_ban(&event.payload, broadcaster_user_id, event.timestamp) else {
-        return;
-    };
-    if let Err(error) = ban_ledger.upsert(&entry, event.timestamp).await {
-        tracing::warn!(%error, "observed kick ban not recorded in the ban ledger");
+    while let Some(event) = chat_rx.recv().await {
+        if event.kind == USER_BANNED_EVENT_KIND {
+            recorder.record(&event).await;
+        }
+        if !publisher.publish_event(event) {
+            break;
+        }
+    }
+}
+
+async fn forward_link_status(
+    mut state_rx: watch::Receiver<ChatLinkStatus>,
+    publisher: SessionPublisher,
+) {
+    loop {
+        let status = *state_rx.borrow_and_update();
+        if !publisher.publish_status(status) || state_rx.changed().await.is_err() {
+            break;
+        }
     }
 }
 
 #[async_trait]
 impl ChatPlatform for KickPlatform {
     fn connection_state(&self) -> ConnectionState {
-        self.handle
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .as_ref()
-            .map(KickChatHandle::connection_state)
-            .unwrap_or(ConnectionState::Disconnected)
+        self.sessions.connection_state()
     }
 
     async fn connect(&self) -> Result<(), PlatformError> {
@@ -109,56 +133,37 @@ impl ChatPlatform for KickPlatform {
             }
         })?;
 
-        let previous = self.handle.lock().unwrap_or_else(|p| p.into_inner()).take();
-        if let Some(previous) = previous {
-            previous.shutdown();
-        }
-
-        let (chat_tx, mut chat_rx) = mpsc::channel::<Event>(CHAT_FORWARD_CAPACITY);
-        let handle = KickChat::new(&self.endpoints, creds.username, self.http.clone())
-            .connect(chat_tx)
-            .await
-            .map_err(map_connect_error)?;
-
-        let forward_events = self.events.clone();
-        let ban_ledger = Arc::clone(&self.ban_ledger);
-        let broadcaster_user_id = creds.user_id;
-        tokio::spawn(async move {
-            while let Some(event) = chat_rx.recv().await {
-                if event.kind == USER_BANNED_EVENT_KIND {
-                    record_observed_ban(ban_ledger.as_ref(), broadcaster_user_id, &event).await;
-                }
-                forward_events.publish(event);
+        let ticket = self.sessions.begin().await;
+        let (chat_tx, chat_rx) = mpsc::channel::<Event>(CHAT_FORWARD_CAPACITY);
+        let connected = KickChat::new(&self.endpoints, creds.username, self.http.clone())
+            .connect_until(chat_tx, ticket.cancellation())
+            .await;
+        let mut handle = match connected {
+            Ok(handle) => handle,
+            Err(KickError::ConnectCancelled) => return Ok(()),
+            Err(err) => {
+                self.sessions.abandon(&ticket);
+                return Err(map_connect_error(err));
             }
-        });
+        };
 
-        let state_events = self.events.clone();
-        let platform_state_tx = self.state_tx.clone();
-        let mut state_rx = handle.state_receiver();
-        tokio::spawn(async move {
-            loop {
-                let status = *state_rx.borrow_and_update();
-                state_events.publish(connection_state_changed_event(
-                    PLATFORM_ID,
-                    status.state,
-                    status.transition,
-                ));
-                let _ = platform_state_tx.send(status.state);
-                if state_rx.changed().await.is_err() {
-                    break;
-                }
-            }
-        });
+        let publisher = self.sessions.publisher(&ticket);
+        handle.attach(forward_chat_events(
+            chat_rx,
+            ObservedBanRecorder {
+                ban_ledger: Arc::clone(&self.ban_ledger),
+                broadcaster_user_id: creds.user_id,
+            },
+            publisher.clone(),
+        ));
+        handle.attach(forward_link_status(handle.state_receiver(), publisher));
 
-        *self.handle.lock().unwrap_or_else(|p| p.into_inner()) = Some(handle);
+        self.sessions.install(ticket, handle).await;
         Ok(())
     }
 
     async fn disconnect(&self) -> Result<(), PlatformError> {
-        let handle = self.handle.lock().unwrap_or_else(|p| p.into_inner()).take();
-        if let Some(handle) = handle {
-            handle.shutdown();
-        }
+        self.sessions.end().await;
         Ok(())
     }
 
@@ -194,6 +199,9 @@ fn map_connect_error(err: KickError) -> PlatformError {
         | KickError::ChannelInfoUnavailable { reason, .. } => PlatformError::Network { reason },
         KickError::ChatroomIdNotFound { slug } => PlatformError::Network {
             reason: format!("chatroom_id missing for '{slug}'"),
+        },
+        KickError::ConnectCancelled => PlatformError::Network {
+            reason: KickError::ConnectCancelled.to_string(),
         },
     }
 }
@@ -452,7 +460,6 @@ pub(crate) mod tests {
         socket_base: String,
         ledger: Arc<dyn BanLedgerRepo>,
     ) -> (KickPlatform, wiremock::MockServer) {
-        use forge_platform_core::EndpointSurface;
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -465,11 +472,19 @@ pub(crate) mod tests {
             })))
             .mount(&server)
             .await;
+        let platform = platform_on(socket_base, format!("{}/api/v2", server.uri()), ledger);
+        (platform, server)
+    }
+
+    fn platform_on(
+        socket_base: String,
+        channel_api_base: String,
+        ledger: Arc<dyn BanLedgerRepo>,
+    ) -> KickPlatform {
+        use forge_platform_core::EndpointSurface;
+
         let overrides = [
-            (
-                EndpointSurface::KickChannelApi.env_var(),
-                format!("{}/api/v2", server.uri()),
-            ),
+            (EndpointSurface::KickChannelApi.env_var(), channel_api_base),
             (EndpointSurface::KickChatSocket.env_var(), socket_base),
         ];
         let endpoints = PlatformEndpoints::resolve(|variable| {
@@ -485,8 +500,7 @@ pub(crate) mod tests {
             "test_cid".to_owned(),
             "test_secret".to_owned(),
         ));
-        let platform = KickPlatform::new(&endpoints, manager, Arc::new(GrantLimiter), ledger);
-        (platform, server)
+        KickPlatform::new(&endpoints, manager, Arc::new(GrantLimiter), ledger)
     }
 
     async fn next_banned_event(stream: &mut EventStream) -> Event {
@@ -627,20 +641,234 @@ pub(crate) mod tests {
         format!("ws://{socket_addr}/app")
     }
 
+    fn link_announcement(event: &Event) -> Option<(String, Option<bool>)> {
+        (event.kind == forge_platform_core::CONNECTION_STATE_CHANGED_KIND).then(|| {
+            (
+                event.payload["state"].as_str().unwrap().to_owned(),
+                event.payload["expected"].as_bool(),
+            )
+        })
+    }
+
     async fn next_link_announcement(stream: &mut EventStream) -> (String, Option<bool>) {
         tokio::time::timeout(BANNED_STEP_DEADLINE, async {
             loop {
-                let event = stream.recv().await.unwrap();
-                if event.kind == forge_platform_core::CONNECTION_STATE_CHANGED_KIND {
-                    return (
-                        event.payload["state"].as_str().unwrap().to_owned(),
-                        event.payload["expected"].as_bool(),
-                    );
+                if let Some(announcement) = link_announcement(&stream.recv().await.unwrap()) {
+                    return announcement;
                 }
             }
         })
         .await
         .unwrap()
+    }
+
+    async fn await_link_state(stream: &mut EventStream, state: &str) {
+        while next_link_announcement(stream).await.0 != state {}
+    }
+
+    fn published_link_announcements(stream: &mut EventStream) -> Vec<(String, Option<bool>)> {
+        use futures::FutureExt;
+
+        let mut announcements = Vec::new();
+        while let Some(Ok(event)) = stream.recv().now_or_never() {
+            announcements.extend(link_announcement(&event));
+        }
+        announcements
+    }
+
+    const BEYOND_ANY_BACKOFF: StdDuration = StdDuration::from_secs(120);
+    const NO_PROGRESS_HORIZON: StdDuration = StdDuration::from_secs(3600);
+
+    fn channel_found() -> wiremock::ResponseTemplate {
+        wiremock::ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+            "chatroom": { "id": 4242 },
+            "livestream": null
+        }))
+    }
+
+    async fn pusher_peer_dropping_only_the_first_link() -> String {
+        use futures_util::StreamExt;
+        use tokio_tungstenite::tungstenite::Message;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let socket_addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let mut first_link = true;
+            while let Ok((stream, _)) = listener.accept().await {
+                let drops_after_subscribe = std::mem::replace(&mut first_link, false);
+                tokio::spawn(async move {
+                    let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
+                        return;
+                    };
+                    while let Some(Ok(message)) = ws.next().await {
+                        if matches!(message, Message::Text(_)) {
+                            break;
+                        }
+                    }
+                    if drops_after_subscribe {
+                        return;
+                    }
+                    while let Some(Ok(_)) = ws.next().await {}
+                });
+            }
+        });
+        format!("ws://{socket_addr}/app")
+    }
+
+    async fn channel_api_that_never_answers() -> (String, Arc<tokio::sync::Notify>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let api_addr = listener.local_addr().unwrap();
+        let requested = Arc::new(tokio::sync::Notify::new());
+        let requested_signal = Arc::clone(&requested);
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((stream, _)) = listener.accept().await {
+                held.push(stream);
+                requested_signal.notify_one();
+            }
+        });
+        (format!("http://{api_addr}"), requested)
+    }
+
+    async fn platform_with_a_connect_in_flight() -> (
+        Arc<KickPlatform>,
+        tokio::task::JoinHandle<Result<(), PlatformError>>,
+    ) {
+        let (api_base, requested) = channel_api_that_never_answers().await;
+        let platform = Arc::new(platform_on(
+            pusher_peer_ending(PeerEnding::Holds).await,
+            api_base,
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+        ));
+        let connecting = Arc::clone(&platform);
+        let in_flight = tokio::spawn(async move { connecting.connect().await });
+        tokio::time::timeout(BANNED_STEP_DEADLINE, requested.notified())
+            .await
+            .unwrap();
+        (platform, in_flight)
+    }
+
+    #[tokio::test]
+    async fn reconnecting_while_the_retired_loop_backs_off_leaves_connected_as_the_last_announcement()
+     {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let channel_api = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(channel_found())
+            .up_to_n_times(1)
+            .mount(&channel_api)
+            .await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(
+                reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+            .mount(&channel_api)
+            .await;
+        let platform = platform_on(
+            pusher_peer_dropping_only_the_first_link().await,
+            channel_api.uri(),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+        );
+        let mut stream = platform.events();
+        platform.connect().await.unwrap();
+        await_link_state(&mut stream, "reconnecting").await;
+
+        Mock::given(method("GET"))
+            .respond_with(channel_found())
+            .with_priority(1)
+            .mount(&channel_api)
+            .await;
+        platform.connect().await.unwrap();
+        published_link_announcements(&mut stream);
+        await_link_state(&mut stream, "connected").await;
+        tokio::time::pause();
+        tokio::time::sleep(BEYOND_ANY_BACKOFF).await;
+        let late = published_link_announcements(&mut stream);
+        platform.disconnect().await.unwrap();
+
+        assert!(
+            late.is_empty(),
+            "announced after the new session connected: {late:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn disconnect_during_reconnect_backoff_settles_disconnected_expected_once_without_waiting_it_out()
+     {
+        let (platform, _server) = platform_on_socket(
+            pusher_peer_ending(PeerEnding::DropsTheSocket).await,
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+        )
+        .await;
+        let mut stream = platform.events();
+        platform.connect().await.unwrap();
+        await_link_state(&mut stream, "reconnecting").await;
+        tokio::time::pause();
+        published_link_announcements(&mut stream);
+
+        let started = tokio::time::Instant::now();
+        platform.disconnect().await.unwrap();
+
+        assert_eq!(
+            (started.elapsed(), published_link_announcements(&mut stream)),
+            (
+                StdDuration::ZERO,
+                vec![("disconnected".to_owned(), Some(true))]
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn disconnect_during_an_in_flight_connect_resolves_that_connect_ok_and_disconnected() {
+        let (platform, in_flight) = platform_with_a_connect_in_flight().await;
+        tokio::time::pause();
+
+        platform.disconnect().await.unwrap();
+        let resolved = tokio::time::timeout(NO_PROGRESS_HORIZON, in_flight).await;
+
+        assert_eq!(
+            (
+                matches!(resolved, Ok(Ok(Ok(())))),
+                platform.connection_state()
+            ),
+            (true, ConnectionState::Disconnected)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_connect_superseded_by_a_newer_connect_resolves_ok() {
+        let (platform, superseded) = platform_with_a_connect_in_flight().await;
+        tokio::time::pause();
+
+        let newer = Arc::clone(&platform);
+        let _newer = tokio::spawn(async move { newer.connect().await });
+        let resolved = tokio::time::timeout(NO_PROGRESS_HORIZON, superseded).await;
+        platform.disconnect().await.unwrap();
+
+        assert!(matches!(resolved, Ok(Ok(Ok(())))), "{resolved:?}");
+    }
+
+    #[tokio::test]
+    async fn platform_state_is_readable_by_a_receiver_subscribed_after_the_change() {
+        let (platform, _server) = platform_on_socket(
+            pusher_peer_ending(PeerEnding::Holds).await,
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+        )
+        .await;
+        let mut stream = platform.events();
+        platform.connect().await.unwrap();
+        await_link_state(&mut stream, "connected").await;
+        let after_connect = *platform.state_receiver().borrow();
+
+        platform.disconnect().await.unwrap();
+        let after_disconnect = *platform.state_receiver().borrow();
+
+        assert_eq!(
+            (after_connect, after_disconnect),
+            (ConnectionState::Connected, ConnectionState::Disconnected)
+        );
     }
 
     #[tokio::test]
@@ -662,7 +890,7 @@ pub(crate) mod tests {
             .await;
             let mut stream = platform.events();
             platform.connect().await.unwrap();
-            while next_link_announcement(&mut stream).await.0 != "connected" {}
+            await_link_state(&mut stream, "connected").await;
 
             if matches!(ending, PeerEnding::Holds) {
                 platform.disconnect().await.unwrap();

@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
@@ -6,9 +7,11 @@ use forge_platform_core::{Backoff, ConnectionTransition, EndpointSurface, Platfo
 use forge_types::ChatPayload;
 use futures_util::StreamExt;
 use serde::Deserialize;
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{mpsc, watch};
+use tokio::task::JoinSet;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::ban_ledger::USER_BANNED_EVENT_KIND;
@@ -23,6 +26,11 @@ const PUSHER_PROTOCOL_PARAMS: &str = "protocol=7&client=js&version=7.6.0&flash=f
 const PING_INTERVAL: Duration = Duration::from_secs(30);
 
 const PUSHER_RECONNECT_IMMEDIATELY_CODES: std::ops::RangeInclusive<u16> = 4200..=4299;
+
+const SESSION_STOP_GRACE: Duration = Duration::from_secs(5);
+
+type PusherSocket =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ChatLinkStatus {
@@ -56,7 +64,8 @@ pub struct KickChat {
 }
 
 pub struct KickChatHandle {
-    close_tx: oneshot::Sender<()>,
+    cancel: CancellationToken,
+    tasks: JoinSet<()>,
     state_rx: watch::Receiver<ChatLinkStatus>,
 }
 
@@ -69,8 +78,38 @@ impl KickChatHandle {
         self.state_rx.clone()
     }
 
-    pub fn shutdown(self) {
-        let _ = self.close_tx.send(());
+    pub(crate) fn attach<F>(&mut self, task: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.tasks.spawn(task);
+    }
+
+    pub fn shutdown(mut self) {
+        self.cancel.cancel();
+        self.tasks.detach_all();
+    }
+
+    pub async fn stop(mut self) {
+        self.cancel.cancel();
+        if tokio::time::timeout(SESSION_STOP_GRACE, join_all(&mut self.tasks))
+            .await
+            .is_err()
+        {
+            warn!("kick chat session tasks outlived the stop grace period; aborting");
+            self.tasks.abort_all();
+            join_all(&mut self.tasks).await;
+        }
+    }
+}
+
+async fn join_all(tasks: &mut JoinSet<()>) {
+    while let Some(joined) = tasks.join_next().await {
+        if let Err(error) = joined
+            && error.is_panic()
+        {
+            warn!("kick chat session task panicked");
+        }
     }
 }
 
@@ -83,29 +122,45 @@ impl KickChat {
     }
 
     pub async fn connect(self, event_tx: mpsc::Sender<Event>) -> Result<KickChatHandle, KickError> {
+        self.connect_until(event_tx, CancellationToken::new()).await
+    }
+
+    pub(crate) async fn connect_until(
+        self,
+        event_tx: mpsc::Sender<Event>,
+        cancel: CancellationToken,
+    ) -> Result<KickChatHandle, KickError> {
         let Self { fetcher, ws_url } = self;
-        let channel_info = fetcher.fetch().await?;
-        let chatroom_id = channel_info.chatroom_id;
+        let channel_info = cancel
+            .run_until_cancelled(fetcher.fetch())
+            .await
+            .ok_or(KickError::ConnectCancelled)??;
+        let ws_stream = cancel
+            .run_until_cancelled(connect_ws(&ws_url))
+            .await
+            .ok_or(KickError::ConnectCancelled)??;
 
-        let ws_stream = connect_ws(&ws_url).await?;
-
-        let (close_tx, close_rx) = oneshot::channel();
         let (state_tx, state_rx) =
             watch::channel(ChatLinkStatus::unexpected(ConnectionState::Connecting));
 
-        tokio::spawn(run_loop(
+        let mut tasks = JoinSet::new();
+        tasks.spawn(run_loop(
             ws_stream,
-            chatroom_id,
+            channel_info.chatroom_id,
             RunLoopContext {
                 event_tx,
-                close_rx,
+                cancel: cancel.clone(),
                 ws_url,
                 fetcher,
                 state_tx,
             },
         ));
 
-        Ok(KickChatHandle { close_tx, state_rx })
+        Ok(KickChatHandle {
+            cancel,
+            tasks,
+            state_rx,
+        })
     }
 }
 
@@ -113,12 +168,7 @@ fn pusher_ws_url(ws_base: &str) -> String {
     format!("{ws_base}/{PUSHER_APP_KEY}?{PUSHER_PROTOCOL_PARAMS}")
 }
 
-async fn connect_ws(
-    url: &str,
-) -> Result<
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
-    KickError,
-> {
+async fn connect_ws(url: &str) -> Result<PusherSocket, KickError> {
     let (ws_stream, _) =
         tokio_tungstenite::connect_async(url)
             .await
@@ -128,12 +178,7 @@ async fn connect_ws(
     Ok(ws_stream)
 }
 
-async fn send_subscribe(
-    ws: &mut tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
-    chatroom_id: u64,
-) -> Result<(), KickError> {
+async fn send_subscribe(ws: &mut PusherSocket, chatroom_id: u64) -> Result<(), KickError> {
     use futures_util::SinkExt;
     let frame = serde_json::json!({
         "event": "pusher:subscribe",
@@ -149,11 +194,7 @@ async fn send_subscribe(
         })
 }
 
-async fn send_ping(
-    ws: &mut tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
-) -> Result<(), KickError> {
+async fn send_ping(ws: &mut PusherSocket) -> Result<(), KickError> {
     use futures_util::SinkExt;
     let frame = serde_json::json!({"event": "pusher:ping", "data": {}});
     let text = serde_json::to_string(&frame).map_err(|e| KickError::WebSocket {
@@ -168,10 +209,15 @@ async fn send_ping(
 
 struct RunLoopContext {
     event_tx: mpsc::Sender<Event>,
-    close_rx: oneshot::Receiver<()>,
+    cancel: CancellationToken,
     ws_url: String,
     fetcher: ChannelInfoFetcher,
     state_tx: watch::Sender<ChatLinkStatus>,
+}
+
+enum SessionEnd {
+    Closed,
+    Lost(ConnectionTransition),
 }
 
 fn channel_info_failure(err: &KickError) -> String {
@@ -182,184 +228,147 @@ fn channel_info_failure(err: &KickError) -> String {
             format!("channel info request failed: {reason}")
         }
         KickError::ChatroomIdNotFound { .. } => "chatroom id missing".to_owned(),
+        KickError::ConnectCancelled => err.to_string(),
     }
 }
 
-async fn run_loop(
-    mut ws_stream: tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
-    chatroom_id: u64,
-    ctx: RunLoopContext,
-) {
-    let RunLoopContext {
-        event_tx,
-        mut close_rx,
-        ws_url,
-        fetcher,
-        state_tx,
-    } = ctx;
+async fn run_loop(ws_stream: PusherSocket, chatroom_id: u64, ctx: RunLoopContext) {
     let mut backoff = Backoff::default();
+    let mut link = Some((ws_stream, chatroom_id));
 
-    if let Err(e) = send_subscribe(&mut ws_stream, chatroom_id).await {
-        warn!(error = %e, "subscribe send failed");
+    while let Some((mut ws_stream, chatroom_id)) = link {
+        let SessionEnd::Lost(transition) =
+            run_session(&mut ws_stream, chatroom_id, &ctx, &mut backoff).await
+        else {
+            break;
+        };
+        let _ = ctx.state_tx.send(ChatLinkStatus {
+            state: ConnectionState::Reconnecting,
+            transition,
+        });
+        link = reconnect(&ctx, &mut backoff).await;
     }
 
-    let _ = state_tx.send(ChatLinkStatus::unexpected(ConnectionState::Connected));
+    info!("kick chat close requested");
+    let _ = ctx
+        .state_tx
+        .send(ChatLinkStatus::expected(ConnectionState::Disconnected));
+}
+
+async fn run_session(
+    ws_stream: &mut PusherSocket,
+    chatroom_id: u64,
+    ctx: &RunLoopContext,
+    backoff: &mut Backoff,
+) -> SessionEnd {
+    match ctx
+        .cancel
+        .run_until_cancelled(send_subscribe(ws_stream, chatroom_id))
+        .await
+    {
+        None => return SessionEnd::Closed,
+        Some(Err(e)) => warn!(error = %e, "subscribe send failed"),
+        Some(Ok(())) => {}
+    }
+
+    let _ = ctx
+        .state_tx
+        .send(ChatLinkStatus::unexpected(ConnectionState::Connected));
     info!(chatroom_id, "kick chat connected");
 
     let mut ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
-
-    let reconnect_transition = 'session: loop {
-        tokio::select! {
-                   _ = &mut close_rx => {
-                       info!("kick chat close requested");
-                       let _ = state_tx.send(ChatLinkStatus::expected(ConnectionState::Disconnected));
-                       return;
-                   }
-
-                   _ = tokio::time::sleep_until(ping_deadline) => {
-                       if let Err(e) = send_ping(&mut ws_stream).await {
-                           warn!(error = %e, "ping failed; reconnecting");
-                           break 'session ConnectionTransition::Unexpected;
-                       }
-                       ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
-                   }
-
-                   msg = ws_stream.next() => {
-                       match msg {
-                           None | Some(Err(_)) => {
-                               warn!("kick chat WebSocket closed; reconnecting");
-                               break 'session ConnectionTransition::Unexpected;
-                           }
-                           Some(Ok(Message::Text(text))) => {
-                               handle_ws_text(&text, &event_tx).await;
-                           }
-                           Some(Ok(Message::Close(frame))) => {
-                               let requested = is_server_requested_reconnect(frame.as_ref());
-                               match frame {
-                                   Some(frame) => warn!(
-                                       code = %frame.code,
-                                       reason = %frame.reason,
-                                       "kick chat server sent close frame; reconnecting",
-                                   ),
-                                   None => warn!("kick chat server sent close frame; reconnecting"),
-                               }
-                               break 'session if requested {
-        ConnectionTransition::Expected
-        } else {
-        ConnectionTransition::Unexpected
-        };
-                           }
-                           Some(Ok(_)) => {}
-                       }
-                   }
-               }
-    };
-
-    let _ = state_tx.send(ChatLinkStatus {
-        state: ConnectionState::Reconnecting,
-        transition: reconnect_transition,
-    });
-    tokio::time::sleep(backoff.next_delay()).await;
+    let mut session_healthy = false;
 
     loop {
-        if matches!(
-            close_rx.try_recv(),
-            Ok(()) | Err(oneshot::error::TryRecvError::Closed)
-        ) {
-            let _ = state_tx.send(ChatLinkStatus::expected(ConnectionState::Disconnected));
-            return;
-        }
+        tokio::select! {
+            biased;
 
-        let new_chatroom_id = match fetcher.fetch().await {
+            () = ctx.cancel.cancelled() => return SessionEnd::Closed,
+
+            () = tokio::time::sleep_until(ping_deadline) => {
+                match ctx.cancel.run_until_cancelled(send_ping(ws_stream)).await {
+                    None => return SessionEnd::Closed,
+                    Some(Err(e)) => {
+                        warn!(error = %e, "ping failed; reconnecting");
+                        return SessionEnd::Lost(ConnectionTransition::Unexpected);
+                    }
+                    Some(Ok(())) => ping_deadline = tokio::time::Instant::now() + PING_INTERVAL,
+                }
+            }
+
+            msg = ws_stream.next() => match msg {
+                None | Some(Err(_)) => {
+                    warn!("kick chat WebSocket closed; reconnecting");
+                    return SessionEnd::Lost(ConnectionTransition::Unexpected);
+                }
+                Some(Ok(Message::Text(text))) => {
+                    let Some(health) = ctx
+                        .cancel
+                        .run_until_cancelled(handle_ws_text(&text, &ctx.event_tx))
+                        .await
+                    else {
+                        return SessionEnd::Closed;
+                    };
+                    if health == WsFrameHealth::Healthy && !session_healthy {
+                        session_healthy = true;
+                        backoff.reset();
+                    }
+                }
+                Some(Ok(Message::Close(frame))) => {
+                    return SessionEnd::Lost(server_close_transition(frame.as_ref()));
+                }
+                Some(Ok(_)) => {}
+            }
+        }
+    }
+}
+
+fn server_close_transition(frame: Option<&CloseFrame>) -> ConnectionTransition {
+    match frame {
+        Some(frame) => warn!(
+            code = %frame.code,
+            reason = %frame.reason,
+            "kick chat server sent close frame; reconnecting",
+        ),
+        None => warn!("kick chat server sent close frame; reconnecting"),
+    }
+    if is_server_requested_reconnect(frame) {
+        ConnectionTransition::Expected
+    } else {
+        ConnectionTransition::Unexpected
+    }
+}
+
+async fn reconnect(ctx: &RunLoopContext, backoff: &mut Backoff) -> Option<(PusherSocket, u64)> {
+    loop {
+        ctx.cancel
+            .run_until_cancelled(tokio::time::sleep(backoff.next_delay()))
+            .await?;
+
+        let chatroom_id = match ctx.cancel.run_until_cancelled(ctx.fetcher.fetch()).await? {
             Ok(info) => info.chatroom_id,
             Err(e) => {
                 warn!(
                     error = %channel_info_failure(&e),
                     "channel info fetch failed on reconnect"
                 );
-                tokio::time::sleep(backoff.next_delay()).await;
                 continue;
             }
         };
 
-        let Ok(new_ws) = connect_ws(&ws_url).await else {
-            warn!("kick chat WS reconnect failed");
-            tokio::time::sleep(backoff.next_delay()).await;
-            continue;
-        };
-
-        ws_stream = new_ws;
-        if let Err(e) = send_subscribe(&mut ws_stream, new_chatroom_id).await {
-            warn!(error = %e, "subscribe failed on reconnect");
+        match ctx
+            .cancel
+            .run_until_cancelled(connect_ws(&ctx.ws_url))
+            .await?
+        {
+            Ok(ws_stream) => {
+                debug!(chatroom_id, "kick chat reconnected");
+                return Some((ws_stream, chatroom_id));
+            }
+            Err(_) => warn!("kick chat WS reconnect failed"),
         }
-
-        let _ = state_tx.send(ChatLinkStatus::unexpected(ConnectionState::Connected));
-        debug!(chatroom_id = new_chatroom_id, "kick chat reconnected");
-        ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
-
-        let mut session_healthy = false;
-        let reconnect_transition = 'session: loop {
-            tokio::select! {
-                           _ = &mut close_rx => {
-                               info!("kick chat close requested");
-                               let _ = state_tx.send(ChatLinkStatus::expected(ConnectionState::Disconnected));
-                               return;
-                           }
-
-                           _ = tokio::time::sleep_until(ping_deadline) => {
-                               if let Err(e) = send_ping(&mut ws_stream).await {
-                                   warn!(error = %e, "ping failed; reconnecting");
-                                   break 'session ConnectionTransition::Unexpected;
-                               }
-                               ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
-                           }
-
-                           msg = ws_stream.next() => {
-                               match msg {
-                                   None | Some(Err(_)) => {
-                                       warn!("kick chat WebSocket closed; reconnecting");
-                                       break 'session ConnectionTransition::Unexpected;
-                                   }
-                                   Some(Ok(Message::Text(text))) => {
-                                       if handle_ws_text(&text, &event_tx).await == WsFrameHealth::Healthy
-                                           && !session_healthy
-                                       {
-                                           session_healthy = true;
-                                           backoff.reset();
-                                       }
-                                   }
-                                   Some(Ok(Message::Close(frame))) => {
-                                       let requested = is_server_requested_reconnect(frame.as_ref());
-                                       match frame {
-                                           Some(frame) => warn!(
-                                               code = %frame.code,
-                                               reason = %frame.reason,
-                                               "kick chat server sent close frame; reconnecting",
-                                           ),
-                                           None => warn!("kick chat server sent close frame; reconnecting"),
-                                       }
-                                       break 'session if requested {
-            ConnectionTransition::Expected
-            } else {
-            ConnectionTransition::Unexpected
-            };
-                                   }
-                                   Some(Ok(_)) => {}
-                               }
-                           }
-                       }
-        };
-
-        let _ = state_tx.send(ChatLinkStatus {
-            state: ConnectionState::Reconnecting,
-            transition: reconnect_transition,
-        });
-        tokio::time::sleep(backoff.next_delay()).await;
     }
 }
-
 async fn handle_ws_text(raw: &str, event_tx: &mpsc::Sender<Event>) -> WsFrameHealth {
     let frame: PusherFrame = match serde_json::from_str(raw) {
         Ok(f) => f,
@@ -474,10 +483,77 @@ struct PusherFrame {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
-mod tests {
+pub(crate) mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     use super::*;
     use forge_events::EventSource;
     use tokio::sync::mpsc;
+
+    pub(crate) fn handle_reporting(
+        state: ConnectionState,
+        cancel: CancellationToken,
+    ) -> KickChatHandle {
+        let (_state_tx, state_rx) = watch::channel(ChatLinkStatus::unexpected(state));
+        KickChatHandle {
+            cancel,
+            tasks: JoinSet::new(),
+            state_rx,
+        }
+    }
+
+    struct RaiseOnDrop(Arc<AtomicBool>);
+
+    impl Drop for RaiseOnDrop {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum SessionTask {
+        HonoursCancellation,
+        IgnoresCancellation,
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn stop_joins_a_cancelled_task_at_once_and_aborts_one_ignoring_cancellation_after_the_grace()
+     {
+        for (task, want_elapsed, want_finished) in [
+            (SessionTask::HonoursCancellation, Duration::ZERO, true),
+            (SessionTask::IgnoresCancellation, SESSION_STOP_GRACE, false),
+        ] {
+            let cancel = CancellationToken::new();
+            let mut handle = handle_reporting(ConnectionState::Connected, cancel.clone());
+            let finished = Arc::new(AtomicBool::new(false));
+            let dropped = Arc::new(AtomicBool::new(false));
+            let guard = RaiseOnDrop(Arc::clone(&dropped));
+            let finished_flag = Arc::clone(&finished);
+            handle.attach(async move {
+                let _guard = guard;
+                match task {
+                    SessionTask::HonoursCancellation => cancel.cancelled().await,
+                    SessionTask::IgnoresCancellation => std::future::pending::<()>().await,
+                }
+                finished_flag.store(true, Ordering::SeqCst);
+            });
+            tokio::task::yield_now().await;
+
+            let started = tokio::time::Instant::now();
+            handle.stop().await;
+
+            assert_eq!(
+                (
+                    started.elapsed(),
+                    finished.load(Ordering::SeqCst),
+                    dropped.load(Ordering::SeqCst),
+                ),
+                (want_elapsed, want_finished, true),
+                "{task:?}"
+            );
+        }
+    }
 
     fn chat_payload() -> serde_json::Value {
         serde_json::json!({

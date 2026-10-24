@@ -16,4 +16,7 @@ pub enum KickError {
 
     #[error("WebSocket error: {reason}")]
     WebSocket { reason: String },
+
+    #[error("chat connect cancelled")]
+    ConnectCancelled,
 }

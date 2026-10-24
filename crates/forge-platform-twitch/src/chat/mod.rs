@@ -17,6 +17,7 @@ use crate::credentials_manager::TwitchCredentialsManager;
 use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
 use forge_events::EventPublisher;
+use forge_net::Gateway;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{oneshot, watch};
@@ -27,6 +28,7 @@ pub const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 pub struct TwitchChat {
     manager: Arc<TwitchCredentialsManager>,
+    helix: Gateway,
     config: ChatSessionConfig,
     bus: Arc<dyn EventPublisher>,
     tracker: SubscriptionTracker,
@@ -43,6 +45,7 @@ pub struct TwitchChatHandle {
 impl TwitchChat {
     pub fn new(
         manager: Arc<TwitchCredentialsManager>,
+        helix: Gateway,
         config: ChatSessionConfig,
         bus: Arc<dyn EventPublisher>,
         tracker: SubscriptionTracker,
@@ -50,6 +53,7 @@ impl TwitchChat {
     ) -> Self {
         Self {
             manager,
+            helix,
             config,
             bus,
             tracker,
@@ -66,6 +70,7 @@ impl TwitchChat {
     pub fn start(self) -> TwitchChatHandle {
         let (sess, state_rx, shutdown_tx) = session::ChatSession::new(
             self.manager,
+            self.helix,
             self.config,
             self.bus,
             self.tracker,
@@ -81,6 +86,7 @@ impl TwitchChat {
         let state_rx = state_tx.subscribe();
         let (sess, shutdown_tx) = session::ChatSession::reporting_to(
             self.manager,
+            self.helix,
             self.config,
             self.bus,
             self.tracker,

@@ -183,6 +183,7 @@ impl ChatPlatform for TwitchPlatform {
         *session = Some(
             TwitchChat::new(
                 Arc::clone(&self.credentials_manager),
+                self.helix.clone(),
                 self.config.clone(),
                 self.publisher(),
                 self.tracker.clone(),

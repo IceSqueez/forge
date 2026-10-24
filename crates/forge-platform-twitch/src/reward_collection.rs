@@ -458,7 +458,9 @@ impl TwitchIntegrationBundle {
             HelixError::RateLimited => CollectionFailure::RateLimited,
             HelixError::ReauthRequired => CollectionFailure::Unauthorized,
             HelixError::Credentials(_) => CollectionFailure::NotConnected,
-            HelixError::Transport(_) => CollectionFailure::Transport,
+            HelixError::Transport(_) | HelixError::UndecodableResponse(_) => {
+                CollectionFailure::Transport
+            }
             HelixError::Http { status, body } => match StatusCode::from_u16(status) {
                 Ok(StatusCode::BAD_REQUEST) => bad_request_failure(&body),
                 Ok(StatusCode::FORBIDDEN) => forbidden_failure(&body, call, self.tier()),

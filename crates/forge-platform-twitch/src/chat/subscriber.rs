@@ -1,9 +1,8 @@
 use crate::event_kinds;
+use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
 use crate::subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_types::OAuthToken;
 use futures_util::stream::{self, StreamExt};
-use reqwest::StatusCode;
 use serde::Deserialize;
 use std::sync::Arc;
 use thiserror::Error;
@@ -11,6 +10,8 @@ use tracing::{debug, warn};
 
 const EVENTSUB_PATH: &str = "/helix/eventsub/subscriptions";
 const SUBSCRIBE_CONCURRENCY: usize = 10;
+const UNREADABLE_RESPONSE: &str = "unreadable response";
+const FORBIDDEN: u16 = reqwest::StatusCode::FORBIDDEN.as_u16();
 
 #[derive(Debug, Error)]
 pub(crate) enum SubscribeError {
@@ -441,21 +442,15 @@ const TOPICS: &[TopicSpec] = &[
 
 #[derive(Clone)]
 struct SubscribeCtx {
-    http: reqwest::Client,
-    token: OAuthToken,
-    client_id: String,
+    helix: Arc<dyn HelixTransport>,
     session_id: String,
     broadcaster_id: String,
     user_id: String,
     bus: Arc<dyn EventPublisher>,
-    base_url: String,
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn subscribe_all_with_base_url(
-    base_url: &str,
-    token: &OAuthToken,
-    client_id: &str,
+pub(crate) async fn subscribe_all(
+    helix: &Arc<dyn HelixTransport>,
     session_id: &str,
     broadcaster_id: &str,
     user_id: &str,
@@ -476,14 +471,11 @@ pub(crate) async fn subscribe_all_with_base_url(
     }
 
     let ctx = SubscribeCtx {
-        http: crate::bounded_client::bounded_http_client(),
-        token: token.clone(),
-        client_id: client_id.to_owned(),
+        helix: Arc::clone(helix),
         session_id: session_id.to_owned(),
         broadcaster_id: broadcaster_id.to_owned(),
         user_id: user_id.to_owned(),
         bus: Arc::clone(bus),
-        base_url: base_url.to_owned(),
     };
 
     let pending: Vec<_> = TOPICS
@@ -554,110 +546,72 @@ async fn subscribe_one(
         }
     });
 
-    let url = format!("{}{EVENTSUB_PATH}", ctx.base_url);
-    let result = ctx
-        .http
-        .post(url)
-        .header("Authorization", format!("Bearer {}", ctx.token.expose()))
-        .header("Client-Id", &ctx.client_id)
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await;
-
-    match result {
-        Err(e) => {
-            let reason = e.without_url().to_string();
-            warn!(kind = topic.kind, error = %reason, "eventsub subscription network error");
+    let request = HelixRequest::new(HelixMethod::Post, EVENTSUB_PATH).body(body);
+    match ctx.helix.execute(request).await {
+        Ok(response) => record_created(&ctx, &tracker, index, response),
+        Err(error) => {
+            let (reason, outcome) = classify_failure(&error);
+            if matches!(outcome, TopicOutcome::Failed | TopicOutcome::AlreadyExists) {
+                warn!(kind = topic.kind, error = %error, "eventsub subscription failed; continuing");
+            }
             set_tracker_status(&tracker, index, SubStatus::Failed(reason));
-            TopicOutcome::Failed
-        }
-        Ok(resp) => {
-            let status_code = resp.status();
-            let status = status_code.as_u16();
-
-            if status_code == StatusCode::UNAUTHORIZED || status_code == StatusCode::FORBIDDEN {
-                let (reason, outcome) = if status_code == StatusCode::UNAUTHORIZED {
-                    ("unauthorized", TopicOutcome::Unauthorized)
-                } else {
-                    ("missing scope", TopicOutcome::ScopeRejected)
-                };
-                ctx.bus.publish(Event::new(
-                    EventSource::Twitch,
-                    "request.fail",
-                    serde_json::json!({
-                        "endpoint": EVENTSUB_PATH,
-                        "status_code": status,
-                        "body_snippet": reason,
-                        "retry_after_secs": null,
-                    }),
-                ));
-                set_tracker_status(&tracker, index, SubStatus::Failed(reason.to_owned()));
-                return outcome;
-            }
-
-            if !status_code.is_success() {
-                let retry_after = extract_retry_after(&resp);
-                let body_text = resp.text().await.unwrap_or_default();
-                let body_snippet: String = body_text.chars().take(200).collect();
-                warn!(
-                    kind = topic.kind,
-                    status,
-                    snippet = %body_snippet,
-                    "eventsub subscription failed; continuing"
-                );
-                ctx.bus.publish(Event::new(
-                    EventSource::Twitch,
-                    "request.fail",
-                    serde_json::json!({
-                        "endpoint": EVENTSUB_PATH,
-                        "status_code": status,
-                        "body_snippet": body_snippet,
-                        "retry_after_secs": retry_after,
-                    }),
-                ));
-                let (reason, outcome) = if status_code == StatusCode::CONFLICT {
-                    (
-                        "already exists on another session".to_owned(),
-                        TopicOutcome::AlreadyExists,
-                    )
-                } else {
-                    (format!("HTTP {status}"), TopicOutcome::Failed)
-                };
-                set_tracker_status(&tracker, index, SubStatus::Failed(reason));
-                return outcome;
-            }
-
-            let body_text = resp.text().await.unwrap_or_default();
-            if let Ok(parsed) = serde_json::from_str::<SubscribeResponse>(&body_text)
-                && let Some(sub) = parsed.data.first()
-            {
-                ctx.bus.publish(Event::new(
-                    EventSource::Twitch,
-                    event_kinds::EVENTSUB_SUBSCRIPTION_CREATED,
-                    serde_json::json!({
-                        "type": sub.subscription_type,
-                        "subscription_id": sub.id,
-                        "condition": sub.condition,
-                    }),
-                ));
-                let sub_id = sub.id.clone();
-                let mut records = tracker.write().unwrap_or_else(|p| p.into_inner());
-                if let Some(rec) = records.get_mut(index) {
-                    rec.status = SubStatus::Active;
-                    rec.subscription_id = Some(sub_id);
-                }
-                TopicOutcome::Active
-            } else {
-                set_tracker_status(
-                    &tracker,
-                    index,
-                    SubStatus::Failed("unreadable response".to_owned()),
-                );
-                TopicOutcome::Failed
-            }
+            outcome
         }
     }
+}
+
+fn classify_failure(error: &HelixError) -> (String, TopicOutcome) {
+    match error {
+        HelixError::ReauthRequired => ("unauthorized".to_owned(), TopicOutcome::Unauthorized),
+        HelixError::Http { status, .. } if *status == FORBIDDEN => {
+            ("missing scope".to_owned(), TopicOutcome::ScopeRejected)
+        }
+        already if already.is_already_exists() => (
+            "already exists on another session".to_owned(),
+            TopicOutcome::AlreadyExists,
+        ),
+        HelixError::Http { status, .. } => (format!("HTTP {status}"), TopicOutcome::Failed),
+        HelixError::UndecodableResponse(_) => {
+            (UNREADABLE_RESPONSE.to_owned(), TopicOutcome::Failed)
+        }
+        HelixError::RateLimited | HelixError::Credentials(_) | HelixError::Transport(_) => {
+            (error.to_string(), TopicOutcome::Failed)
+        }
+    }
+}
+
+fn record_created(
+    ctx: &SubscribeCtx,
+    tracker: &SubscriptionTracker,
+    index: usize,
+    response: serde_json::Value,
+) -> TopicOutcome {
+    let created = serde_json::from_value::<SubscribeResponse>(response)
+        .ok()
+        .and_then(|parsed| parsed.data.into_iter().next());
+    let Some(sub) = created else {
+        set_tracker_status(
+            tracker,
+            index,
+            SubStatus::Failed(UNREADABLE_RESPONSE.to_owned()),
+        );
+        return TopicOutcome::Failed;
+    };
+    ctx.bus.publish(Event::new(
+        EventSource::Twitch,
+        event_kinds::EVENTSUB_SUBSCRIPTION_CREATED,
+        serde_json::json!({
+            "type": sub.subscription_type,
+            "subscription_id": sub.id,
+            "condition": sub.condition,
+        }),
+    ));
+    let mut records = tracker.write().unwrap_or_else(|p| p.into_inner());
+    if let Some(rec) = records.get_mut(index) {
+        rec.status = SubStatus::Active;
+        rec.subscription_id = Some(sub.id);
+    }
+    TopicOutcome::Active
 }
 
 fn set_tracker_status(tracker: &SubscriptionTracker, index: usize, status: SubStatus) {
@@ -681,13 +635,6 @@ pub(crate) fn mark_revoked(
     if let Some(rec) = index.and_then(|i| records.get_mut(i)) {
         rec.status = SubStatus::Failed(format!("revoked: {status}"));
     }
-}
-
-fn extract_retry_after(resp: &reqwest::Response) -> Option<u64> {
-    resp.headers()
-        .get(reqwest::header::RETRY_AFTER)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse::<u64>().ok())
 }
 
 #[cfg(test)]
@@ -817,14 +764,81 @@ mod tests {
     }
 
     use super::{
-        EVENTSUB_PATH, StatusCode, SubStatus, SubscribeError, SubscribePass, SubscriptionTracker,
-        subscribe_all_with_base_url,
+        EVENTSUB_PATH, SubStatus, SubscribeError, SubscribePass, SubscriptionTracker, subscribe_all,
     };
+    use crate::bot_account::test_support::RecordingBus;
+    use crate::helix::{FixedTokenSource, HelixHttpTransport, HelixTransport};
     use forge_events::EventPublisher;
+    use forge_net::RateLimiter;
+    use forge_net::test_support::RecordingRateLimiter;
+    use forge_platform_core::EndpointSurface;
     use forge_types::OAuthToken;
+    use reqwest::StatusCode;
     use std::sync::Arc;
+    use std::time::Duration;
     use wiremock::matchers::{body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    const TOKEN_SENTINEL: &str = "FAKE_EVENTSUB_TOKEN_SENTINEL_k41";
+    const PROBED_TOPIC: &str = "stream.online";
+
+    struct PassRun {
+        result: Result<SubscribePass, SubscribeError>,
+        tracker: SubscriptionTracker,
+        bus: Arc<RecordingBus>,
+        limiter: Arc<RecordingRateLimiter>,
+    }
+
+    impl PassRun {
+        fn status_of(&self, kind: &str) -> SubStatus {
+            record_status(&self.tracker, kind).0
+        }
+
+        fn request_fails(&self) -> Vec<forge_events::Event> {
+            self.bus.of_kind("request.fail")
+        }
+    }
+
+    async fn pass_against(api_url: &str, limiter: RecordingRateLimiter) -> PassRun {
+        let bus = Arc::new(RecordingBus::default());
+        let limiter = Arc::new(limiter);
+        let publisher: Arc<dyn EventPublisher> = bus.clone();
+        let endpoints = crate::sub_actions::test_support::endpoints_with(&[(
+            EndpointSurface::TwitchApi,
+            api_url,
+        )]);
+        let gateway = crate::helix_gateway::helix_gateway(
+            &endpoints,
+            Arc::clone(&limiter) as Arc<dyn RateLimiter>,
+            Arc::clone(&publisher),
+        )
+        .unwrap();
+        let helix: Arc<dyn HelixTransport> = Arc::new(HelixHttpTransport::new(
+            gateway,
+            "client_id".to_owned(),
+            Arc::new(FixedTokenSource::new(OAuthToken::new(TOKEN_SENTINEL))),
+        ));
+        let tracker = SubscriptionTracker::default();
+        let result = subscribe_all(
+            &helix,
+            "session_id",
+            "broadcaster_id",
+            "user_id",
+            &publisher,
+            &tracker,
+        )
+        .await;
+        PassRun {
+            result,
+            tracker,
+            bus,
+            limiter,
+        }
+    }
+
+    async fn run_subscribe(server: &MockServer) -> PassRun {
+        pass_against(&server.uri(), RecordingRateLimiter::granting()).await
+    }
 
     async fn mount_success(server: &MockServer, kind: &str, id: &str) {
         Mock::given(method("POST"))
@@ -840,14 +854,23 @@ mod tests {
             .await;
     }
 
-    async fn mount_status(server: &MockServer, kind: &str, status: StatusCode) {
+    async fn mount_reply(server: &MockServer, kind: &str, reply: ResponseTemplate) {
         Mock::given(method("POST"))
             .and(path(EVENTSUB_PATH))
             .and(body_string_contains(format!(r#""type":"{kind}""#)))
-            .respond_with(ResponseTemplate::new(status.as_u16()).set_body_string("rejected"))
+            .respond_with(reply)
             .with_priority(1)
             .mount(server)
             .await;
+    }
+
+    async fn mount_status(server: &MockServer, kind: &str, status: StatusCode) {
+        mount_reply(
+            server,
+            kind,
+            ResponseTemplate::new(status.as_u16()).set_body_string("rejected"),
+        )
+        .await;
     }
 
     async fn mount_catch_all_success(server: &MockServer) {
@@ -878,29 +901,31 @@ mod tests {
             .await;
     }
 
-    async fn run_subscribe(
-        server: &MockServer,
-        tracker: &SubscriptionTracker,
-    ) -> Result<SubscribePass, SubscribeError> {
-        let bus: Arc<dyn EventPublisher> =
-            Arc::new(crate::event_channel::PlatformEventChannel::new());
-        subscribe_all_with_base_url(
-            &server.uri(),
-            &OAuthToken::new("test_token"),
-            "client_id",
-            "session_id",
-            "broadcaster_id",
-            "user_id",
-            &bus,
-            tracker,
-        )
-        .await
+    async fn pass_with_probed_topic_replying(reply: ResponseTemplate) -> PassRun {
+        let server = MockServer::start().await;
+        mount_reply(&server, PROBED_TOPIC, reply).await;
+        mount_catch_all_success(&server).await;
+        run_subscribe(&server).await
     }
 
     fn record_status(tracker: &SubscriptionTracker, kind: &str) -> (SubStatus, Option<String>) {
         let records = tracker.read().unwrap_or_else(|p| p.into_inner());
         let rec = records.iter().find(|r| r.kind == kind).unwrap();
         (rec.status.clone(), rec.subscription_id.clone())
+    }
+
+    fn failed(reason: &str) -> SubStatus {
+        SubStatus::Failed(reason.to_owned())
+    }
+
+    #[tokio::test]
+    async fn every_topic_post_debits_the_shared_broadcaster_limiter() {
+        let server = MockServer::start().await;
+        mount_catch_all_success(&server).await;
+
+        let run = run_subscribe(&server).await;
+
+        assert_eq!(run.limiter.acquire_count(), super::TOPICS.len());
     }
 
     #[tokio::test]
@@ -914,11 +939,10 @@ mod tests {
         mount_status(&server, "stream.online", StatusCode::INTERNAL_SERVER_ERROR).await;
         mount_catch_all_success(&server).await;
 
-        let tracker = crate::subscriptions::SubscriptionTracker::default();
-        let result = run_subscribe(&server, &tracker).await;
+        let run = run_subscribe(&server).await;
 
         assert!(
-            matches!(result, Err(SubscribeError::ScopeMissing)),
+            matches!(run.result, Err(SubscribeError::ScopeMissing)),
             "a scope rejection among the topics must surface as ScopeMissing after all futures finish"
         );
 
@@ -927,7 +951,7 @@ mod tests {
             ("channel.follow", "sub-follow"),
             ("channel.cheer", "sub-cheer"),
         ] {
-            let (status, id) = record_status(&tracker, kind);
+            let (status, id) = record_status(&run.tracker, kind);
             assert_eq!(status, SubStatus::Active, "{kind} must be recorded Active");
             assert_eq!(
                 id.as_deref(),
@@ -936,46 +960,175 @@ mod tests {
             );
         }
 
-        assert_eq!(
-            record_status(&tracker, "channel.ban").0,
-            SubStatus::Failed("unauthorized".to_owned())
-        );
-        assert_eq!(
-            record_status(&tracker, "channel.subscribe").0,
-            SubStatus::Failed("missing scope".to_owned())
-        );
-        assert_eq!(
-            record_status(&tracker, "stream.online").0,
-            SubStatus::Failed("HTTP 500".to_owned())
-        );
+        assert_eq!(run.status_of("channel.ban"), failed("unauthorized"));
+        assert_eq!(run.status_of("channel.subscribe"), failed("missing scope"));
+        assert_eq!(run.status_of("stream.online"), failed("HTTP 500"));
     }
 
     #[tokio::test]
-    async fn non_scope_failures_stay_non_fatal_with_correct_per_record_status() {
+    async fn a_topic_failing_without_an_auth_rejection_records_its_reason_and_the_pass_stands() {
+        let cases = [
+            (
+                ResponseTemplate::new(StatusCode::INTERNAL_SERVER_ERROR.as_u16()),
+                failed("HTTP 500"),
+            ),
+            (
+                ResponseTemplate::new(StatusCode::TOO_MANY_REQUESTS.as_u16())
+                    .insert_header("Retry-After", "7"),
+                failed("rate limited"),
+            ),
+            (
+                ResponseTemplate::new(StatusCode::SERVICE_UNAVAILABLE.as_u16())
+                    .insert_header("Retry-After", "4"),
+                failed("HTTP 503"),
+            ),
+            (
+                ResponseTemplate::new(StatusCode::SERVICE_UNAVAILABLE.as_u16()),
+                failed("HTTP 503"),
+            ),
+            (
+                ResponseTemplate::new(StatusCode::CONFLICT.as_u16()),
+                failed("already exists on another session"),
+            ),
+            (
+                ResponseTemplate::new(StatusCode::ACCEPTED.as_u16()),
+                failed("unreadable response"),
+            ),
+            (
+                ResponseTemplate::new(StatusCode::ACCEPTED.as_u16())
+                    .set_body_json(serde_json::json!({ "data": [] })),
+                failed("unreadable response"),
+            ),
+            (
+                ResponseTemplate::new(StatusCode::ACCEPTED.as_u16()).set_body_string("not-json"),
+                failed("unreadable response"),
+            ),
+        ];
+
+        for (reply, expected) in cases {
+            let run = pass_with_probed_topic_replying(reply).await;
+
+            assert_eq!(run.status_of(PROBED_TOPIC), expected);
+            assert!(
+                matches!(&run.result, Ok(pass) if pass.any_live()),
+                "{expected:?}: only a 401 or 403 may stop the pass"
+            );
+            assert_eq!(
+                run.status_of("channel.chat.message"),
+                SubStatus::Active,
+                "{expected:?}: the other topics must still subscribe"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn remote_throttling_on_one_topic_reaches_the_shared_limiter_and_request_fail() {
+        let cases = [
+            (
+                ResponseTemplate::new(StatusCode::TOO_MANY_REQUESTS.as_u16())
+                    .insert_header("Retry-After", "7"),
+                vec![Duration::from_secs(7)],
+                serde_json::json!(7),
+            ),
+            (
+                ResponseTemplate::new(StatusCode::TOO_MANY_REQUESTS.as_u16()),
+                vec![Duration::from_secs(5)],
+                serde_json::json!(5),
+            ),
+            (
+                ResponseTemplate::new(StatusCode::SERVICE_UNAVAILABLE.as_u16())
+                    .insert_header("Retry-After", "4"),
+                vec![Duration::from_secs(4)],
+                serde_json::json!(4),
+            ),
+            (
+                ResponseTemplate::new(StatusCode::SERVICE_UNAVAILABLE.as_u16()),
+                Vec::new(),
+                serde_json::Value::Null,
+            ),
+        ];
+
+        for (reply, expected_pauses, expected_retry_after) in cases {
+            let run = pass_with_probed_topic_replying(reply).await;
+
+            let fails = run.request_fails();
+            assert_eq!(run.limiter.observed_throttles(), expected_pauses);
+            assert_eq!(fails.len(), 1, "{expected_pauses:?}");
+            assert_eq!(fails[0].payload["endpoint"], EVENTSUB_PATH);
+            assert_eq!(
+                fails[0].payload["retry_after_secs"], expected_retry_after,
+                "{expected_pauses:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_exhausted_local_budget_fails_every_topic_as_rate_limited_without_request_fail() {
         let server = MockServer::start().await;
-        mount_success(&server, "channel.chat.message", "sub-chat").await;
-        mount_status(&server, "stream.online", StatusCode::INTERNAL_SERVER_ERROR).await;
-        mount_status(&server, "channel.cheer", StatusCode::INTERNAL_SERVER_ERROR).await;
         mount_catch_all_success(&server).await;
 
-        let tracker = crate::subscriptions::SubscriptionTracker::default();
-        let result = run_subscribe(&server, &tracker).await;
+        let run = pass_against(&server.uri(), RecordingRateLimiter::exhausted()).await;
 
+        let records = run.tracker.read().unwrap().clone();
         assert!(
-            matches!(&result, Ok(pass) if pass.any_live()),
-            "500s without any scope rejection must neither fail the pass nor cost it the topics \
-             that did subscribe"
+            records
+                .iter()
+                .all(|record| record.status == failed("rate limited")),
+            "got {records:?}"
         );
+        assert!(run.request_fails().is_empty());
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
 
-        let (chat_status, chat_id) = record_status(&tracker, "channel.chat.message");
-        assert_eq!(chat_status, SubStatus::Active);
-        assert_eq!(chat_id.as_deref(), Some("sub-chat"));
+    #[tokio::test]
+    async fn an_auth_rejection_publishes_request_fail_with_the_masked_upstream_excerpt() {
+        for (status, verdict) in [
+            (StatusCode::UNAUTHORIZED, "unauthorized"),
+            (StatusCode::FORBIDDEN, "missing scope"),
+        ] {
+            let body = format!(r#"{{"message":"Missing scope for {TOKEN_SENTINEL}"}}"#);
+            let run = pass_with_probed_topic_replying(
+                ResponseTemplate::new(status.as_u16()).set_body_string(body),
+            )
+            .await;
 
-        for kind in ["stream.online", "channel.cheer"] {
-            assert_eq!(
-                record_status(&tracker, kind).0,
-                SubStatus::Failed("HTTP 500".to_owned()),
-                "{kind} must record HTTP 500 without aborting the pass"
+            let fails = run.request_fails();
+            assert_eq!(fails.len(), 1, "{status}");
+            let snippet = fails[0].payload["body_snippet"].as_str().unwrap();
+            assert_eq!(fails[0].payload["status_code"], status.as_u16());
+            assert!(snippet.contains("Missing scope for"), "{status}: {snippet}");
+            assert!(!snippet.contains(TOKEN_SENTINEL), "{status}: {snippet}");
+            assert_eq!(run.status_of(PROBED_TOPIC), failed(verdict));
+        }
+    }
+
+    #[tokio::test]
+    async fn an_auth_rejection_stops_the_pass_with_its_own_error() {
+        for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
+            let run = pass_with_probed_topic_replying(ResponseTemplate::new(status.as_u16())).await;
+
+            let stopped = match run.result {
+                Err(SubscribeError::Unauthorized) => Some(StatusCode::UNAUTHORIZED),
+                Err(SubscribeError::ScopeMissing) => Some(StatusCode::FORBIDDEN),
+                Ok(_) => None,
+            };
+            assert_eq!(stopped, Some(status));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_transport_failure_records_a_reason_without_the_url_or_the_token() {
+        let run = pass_against("http://127.0.0.1:1", RecordingRateLimiter::granting()).await;
+
+        let records = run.tracker.read().unwrap().clone();
+        for record in records {
+            assert!(
+                matches!(&record.status, SubStatus::Failed(reason)
+                    if !reason.is_empty()
+                        && !reason.contains("127.0.0.1")
+                        && !reason.contains(EVENTSUB_PATH)
+                        && !reason.contains(TOKEN_SENTINEL)),
+                "{record:?}"
             );
         }
     }
@@ -985,17 +1138,16 @@ mod tests {
         let server = MockServer::start().await;
         mount_catch_all_conflict(&server).await;
 
-        let tracker = crate::subscriptions::SubscriptionTracker::default();
-        let result = run_subscribe(&server, &tracker).await;
+        let run = run_subscribe(&server).await;
 
         assert!(
-            matches!(&result, Ok(pass) if !pass.any_live()),
+            matches!(&run.result, Ok(pass) if !pass.any_live()),
             "a conflict is not a scope rejection, so the pass succeeds - but nothing it claimed \
              delivers on this socket, so the pass is not live either"
         );
         assert_eq!(
-            record_status(&tracker, "channel.chat.message").0,
-            SubStatus::Failed("already exists on another session".to_owned())
+            run.status_of("channel.chat.message"),
+            failed("already exists on another session")
         );
     }
 
@@ -1007,8 +1159,7 @@ mod tests {
             mount_status(&server, "stream.online", StatusCode::INTERNAL_SERVER_ERROR).await;
             mount_catch_all_conflict(&server).await;
 
-            let tracker = crate::subscriptions::SubscriptionTracker::default();
-            run_subscribe(&server, &tracker).await
+            run_subscribe(&server).await.result
         });
 
         assert!(matches!(&result, Ok(pass) if pass.any_live()));

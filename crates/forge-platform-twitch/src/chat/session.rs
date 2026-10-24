@@ -1,14 +1,13 @@
 use crate::bot_account::TwitchBotAccount;
 use crate::builtin::ChatSessionConfig;
-use crate::chat::subscriber::{
-    SubscribeError, SubscribePass, mark_revoked, subscribe_all_with_base_url,
-};
+use crate::chat::subscriber::{SubscribeError, SubscribePass, mark_revoked, subscribe_all};
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::event_kinds;
+use crate::helix::{FixedTokenSource, HelixHttpTransport, HelixTransport};
 use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_net::Backoff;
+use forge_net::{Backoff, Gateway};
 use forge_platform_core::{
     ConnectionState, ConnectionTransition, EndpointSurface, PlatformEndpoints, PlatformError,
     connection_state_changed_event,
@@ -97,6 +96,7 @@ impl ChatConnectionState {
 
 struct SessionConfig {
     manager: Arc<TwitchCredentialsManager>,
+    helix: Gateway,
     client_id: String,
     broadcaster_id: String,
     user_id: String,
@@ -119,6 +119,7 @@ pub(crate) struct ChatSession {
 impl ChatSession {
     pub(crate) fn new(
         manager: Arc<TwitchCredentialsManager>,
+        helix: Gateway,
         config: ChatSessionConfig,
         bus: Arc<dyn EventPublisher>,
         tracker: SubscriptionTracker,
@@ -130,12 +131,13 @@ impl ChatSession {
     ) {
         let (state_tx, state_rx) = watch::channel(ChatConnectionState::Connecting);
         let (session, shutdown_tx) =
-            Self::reporting_to(manager, config, bus, tracker, lifecycle, state_tx);
+            Self::reporting_to(manager, helix, config, bus, tracker, lifecycle, state_tx);
         (session, state_rx, shutdown_tx)
     }
 
     pub(crate) fn reporting_to(
         manager: Arc<TwitchCredentialsManager>,
+        helix: Gateway,
         config: ChatSessionConfig,
         bus: Arc<dyn EventPublisher>,
         tracker: SubscriptionTracker,
@@ -152,6 +154,7 @@ impl ChatSession {
         let session = Self {
             config: SessionConfig {
                 manager,
+                helix,
                 client_id,
                 broadcaster_id,
                 user_id,
@@ -465,11 +468,7 @@ impl ChatSession {
 
                 let pass = SubscriptionPassContext {
                     manager: Arc::clone(&self.config.manager),
-                    api_base_url: self
-                        .config
-                        .endpoints
-                        .base_url(EndpointSurface::TwitchApi)
-                        .to_owned(),
+                    helix: self.config.helix.clone(),
                     client_id: self.config.client_id.clone(),
                     session_id: id,
                     broadcaster_id: self.config.broadcaster_id.clone(),
@@ -4053,7 +4052,7 @@ fn warn_token_failure(e: &PlatformError) {
 
 struct SubscriptionPassContext {
     manager: Arc<TwitchCredentialsManager>,
-    api_base_url: String,
+    helix: Gateway,
     client_id: String,
     session_id: String,
     broadcaster_id: String,
@@ -4096,10 +4095,13 @@ impl SubscriptionPassContext {
     }
 
     async fn subscribe(&self, token: &OAuthToken) -> Result<SubscribePass, SubscribeError> {
-        subscribe_all_with_base_url(
-            &self.api_base_url,
-            token,
-            &self.client_id,
+        let helix: Arc<dyn HelixTransport> = Arc::new(HelixHttpTransport::new(
+            self.helix.clone(),
+            self.client_id.clone(),
+            Arc::new(FixedTokenSource::new(token.clone())),
+        ));
+        subscribe_all(
+            &helix,
             &self.session_id,
             &self.broadcaster_id,
             &self.user_id,
@@ -6579,11 +6581,24 @@ mod tests {
         let publisher: Arc<dyn EventPublisher> = bus.clone();
         ChatSession::new(
             manager,
+            helix_over(&endpoints, Arc::clone(&publisher)),
             session_config(endpoints),
             publisher,
             crate::subscriptions::SubscriptionTracker::default(),
             TwitchLifecycle::new(),
         )
+    }
+
+    fn helix_over(endpoints: &PlatformEndpoints, bus: Arc<dyn EventPublisher>) -> Gateway {
+        crate::helix_gateway::helix_gateway(
+            endpoints,
+            Arc::new(forge_net::TokenBucketRateLimiter::new(
+                crate::builtin::HELIX_BUDGET_CAPACITY,
+                crate::builtin::HELIX_BUDGET_WINDOW,
+            )),
+            bus,
+        )
+        .unwrap()
     }
 
     struct FailingCreds;
@@ -6730,6 +6745,7 @@ mod tests {
             )]);
             let (mut session, _state_rx, _shutdown_tx) = ChatSession::new(
                 manager,
+                helix_over(&endpoints, Arc::clone(&publisher)),
                 session_config(endpoints),
                 publisher,
                 crate::subscriptions::SubscriptionTracker::default(),
@@ -7868,6 +7884,7 @@ mod tests {
         };
         ChatSession::new(
             Arc::new(manager),
+            helix_over(&endpoints, Arc::clone(&publisher)),
             session_config(endpoints),
             publisher,
             tracker,
@@ -7892,9 +7909,11 @@ mod tests {
             Arc::new(MockCreds::with_identity()),
             "client".to_owned(),
         ));
+        let endpoints = socket_and_api(socket_url, api_url);
         let chat = crate::chat::TwitchChat::new(
             manager,
-            session_config(socket_and_api(socket_url, api_url)),
+            helix_over(&endpoints, bus.clone()),
+            session_config(endpoints),
             bus.clone(),
             SubscriptionTracker::default(),
             TwitchLifecycle::new(),
@@ -8118,9 +8137,11 @@ mod tests {
         ));
         let bus = Arc::new(RecordingBus::default());
         let publisher: Arc<dyn EventPublisher> = bus.clone();
+        let endpoints = socket_and_api(&base.url, &token_endpoint.url);
         let (session, state, shutdown) = ChatSession::new(
             Arc::clone(&manager),
-            session_config(socket_and_api(&base.url, &token_endpoint.url)),
+            helix_over(&endpoints, Arc::clone(&publisher)),
+            session_config(endpoints),
             publisher,
             SubscriptionTracker::default(),
             TwitchLifecycle::new(),
@@ -8341,12 +8362,13 @@ mod tests {
             Arc::clone(&creds),
             "client".to_owned(),
         ));
+        let endpoints = socket_and_api(socket_url, api_url);
         let platform = Arc::new(crate::chat_platform::TwitchPlatform::new(
-            session_config(socket_and_api(socket_url, api_url)),
+            session_config(endpoints.clone()),
             creds,
             manager,
             SubscriptionTracker::default(),
-            crate::sub_actions::test_support::unreachable_helix_gateway(),
+            helix_over(&endpoints, Arc::new(PlatformEventChannel::new())),
             TwitchLifecycle::new(),
         ));
         let bundle = crate::builtin::TwitchIntegrationBundle::new(
@@ -8767,6 +8789,18 @@ mod tests {
         reply: TopicReply,
         endpoint: TokenEndpoint,
     ) -> (Verdict, usize) {
+        let (verdict, requests) = requests_of_a_pass(reply, endpoint).await;
+        let refreshes = requests
+            .iter()
+            .filter(|request| request.url.path() == "/token")
+            .count();
+        (verdict, refreshes)
+    }
+
+    async fn requests_of_a_pass(
+        reply: TopicReply,
+        endpoint: TokenEndpoint,
+    ) -> (Verdict, Vec<wiremock::Request>) {
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, ResponseTemplate};
         let server = wiremock::MockServer::start().await;
@@ -8825,14 +8859,25 @@ mod tests {
         };
         let pass = pass.expect("a welcome with a usable token must start a subscription pass");
         let verdict = Verdict::from(pass.await);
-        let refreshes = server
-            .received_requests()
-            .await
-            .unwrap()
+        (verdict, server.received_requests().await.unwrap())
+    }
+
+    fn topic_posts_by_token(requests: &[wiremock::Request], token: &str) -> Vec<String> {
+        let authorization = format!("Bearer {token}");
+        requests
             .iter()
-            .filter(|request| request.url.path() == "/token")
-            .count();
-        (verdict, refreshes)
+            .filter(|request| request.url.path() == EVENTSUB_SUBSCRIPTIONS_PATH)
+            .filter(|request| {
+                request
+                    .headers
+                    .get("authorization")
+                    .is_some_and(|value| value.as_bytes() == authorization.as_bytes())
+            })
+            .map(|request| {
+                let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                format!("{}|{}", body["type"], body["condition"])
+            })
+            .collect()
     }
 
     #[tokio::test]
@@ -8881,6 +8926,27 @@ mod tests {
                  only a rejected refresh asks for sign-in"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn a_token_rejected_pass_posts_every_topic_once_per_token_without_per_topic_retries() {
+        let (_, requests) =
+            requests_of_a_pass(TopicReply::RejectsEveryToken, TokenEndpoint::Rotates).await;
+
+        let stale = topic_posts_by_token(&requests, STALE_ACCESS);
+        let renewed = topic_posts_by_token(&requests, RENEWED_ACCESS);
+        let distinct = |posts: &[String]| {
+            posts
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+        };
+        assert!(!stale.is_empty());
+        assert_eq!(
+            (distinct(&stale), renewed.len(), distinct(&renewed)),
+            (stale.len(), stale.len(), stale.len()),
+            "the pass must restart once on the renewed token, each topic posted once per token"
+        );
     }
 
     #[tokio::test]

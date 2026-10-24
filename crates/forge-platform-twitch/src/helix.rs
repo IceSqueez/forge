@@ -8,6 +8,7 @@ use tracing::{debug, warn};
 
 const CLIENT_ID_HEADER: &str = "Client-Id";
 const TOO_MANY_REQUESTS: u16 = reqwest::StatusCode::TOO_MANY_REQUESTS.as_u16();
+const CONFLICT: u16 = reqwest::StatusCode::CONFLICT.as_u16();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HelixMethod {
@@ -71,6 +72,14 @@ pub enum HelixError {
     Http { status: u16, body: String },
     #[error("{0}")]
     Transport(String),
+    #[error("{0}")]
+    UndecodableResponse(String),
+}
+
+impl HelixError {
+    pub(crate) fn is_already_exists(&self) -> bool {
+        matches!(self, Self::Http { status, .. } if *status == CONFLICT)
+    }
 }
 
 impl From<GatewayFailure> for HelixError {
@@ -103,6 +112,21 @@ pub trait HelixTokenSource: Send + Sync {
 #[async_trait]
 pub trait HelixTokenRefresher: Send + Sync {
     async fn refresh(&self, failed_token: &OAuthToken) -> Result<OAuthToken, HelixError>;
+}
+
+pub(crate) struct FixedTokenSource(OAuthToken);
+
+impl FixedTokenSource {
+    pub(crate) fn new(token: OAuthToken) -> Self {
+        Self(token)
+    }
+}
+
+#[async_trait]
+impl HelixTokenSource for FixedTokenSource {
+    async fn access_token(&self) -> Result<OAuthToken, HelixError> {
+        Ok(self.0.clone())
+    }
 }
 
 #[async_trait]
@@ -174,7 +198,7 @@ impl HelixHttpTransport {
         }
         response
             .json()
-            .map_err(|error| HelixError::Transport(error.to_string()))
+            .map_err(|error| HelixError::UndecodableResponse(error.to_string()))
     }
 }
 
@@ -433,13 +457,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn malformed_success_body_maps_to_transport_error() {
+    async fn malformed_success_body_maps_to_undecodable_response() {
         let server = server_answering(ResponseTemplate::new(200).set_body_string("not-json")).await;
         let h = harness(&server.uri());
 
         let err = h.transport.execute(users()).await.unwrap_err();
 
-        assert!(matches!(err, HelixError::Transport(_)));
+        assert!(matches!(err, HelixError::UndecodableResponse(_)));
     }
 
     #[tokio::test]

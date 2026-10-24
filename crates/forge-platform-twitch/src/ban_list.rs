@@ -118,9 +118,10 @@ fn unavailability_of(error: &HelixError) -> BanListUnavailable {
         HelixError::Http { status, .. } if *status == StatusCode::FORBIDDEN.as_u16() => {
             BanListUnavailable::MissingScope
         }
-        HelixError::Http { .. } | HelixError::RateLimited | HelixError::Transport(_) => {
-            BanListUnavailable::Transport
-        }
+        HelixError::Http { .. }
+        | HelixError::RateLimited
+        | HelixError::Transport(_)
+        | HelixError::UndecodableResponse(_) => BanListUnavailable::Transport,
     }
 }
 

@@ -10,6 +10,7 @@ rust-version.workspace = true
 workspace = true
 
 [dev-dependencies]
+forge-net = { path = "../forge-net", features = ["test-support"] }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
 tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber = { workspace = true }

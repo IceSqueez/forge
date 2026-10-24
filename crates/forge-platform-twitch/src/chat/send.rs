@@ -37,7 +37,9 @@ impl From<HelixError> for ChatSendError {
                 Self::Forbidden(refusal_text(&body))
             }
             HelixError::Http { status, body } => Self::Http(format!("HTTP {status}: {body}")),
-            HelixError::Credentials(msg) | HelixError::Transport(msg) => Self::Http(msg),
+            HelixError::Credentials(msg)
+            | HelixError::Transport(msg)
+            | HelixError::UndecodableResponse(msg) => Self::Http(msg),
         }
     }
 }

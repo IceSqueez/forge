@@ -1,6 +1,6 @@
 use forge_components::{
-    BORDER_THIN, ForgePalette, Icon, MenuPlacement, badge, body_family, card, icon, menu_button,
-    menu_item, mono_family, toggle, tr,
+    BORDER_THIN, DISABLED_OPACITY, ForgePalette, Icon, MenuPlacement, badge, body_family, card,
+    icon, menu_button, menu_item, mono_family, toggle, tr,
 };
 use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
 
@@ -15,6 +15,7 @@ use crate::actions::{ShortcutEntry, chord_caps};
 use crate::hotkey_action_modal::keycaps;
 
 const UNBOUND_FS: Pixels = px(11.5);
+const UNKNOWN_CHORD: &str = "-";
 const UNBOUND_RADIUS: Pixels = px(5.0);
 const UNBOUND_PAD_V: Pixels = px(3.0);
 const UNBOUND_PAD_H: Pixels = px(8.0);
@@ -31,16 +32,18 @@ impl HotkeysScreenView {
             return self.render_capture_row(palette, cx);
         }
         let id = entry.id;
-        let enabled = self.shortcuts.is_enabled(id);
-        let chord = self.shortcuts.chord_of(entry);
+        let shortcuts = self.shortcuts.loaded();
+        let enabled = shortcuts.is_some_and(|shortcuts| shortcuts.is_enabled(id));
+        let chord = shortcuts.and_then(|shortcuts| shortcuts.chord_of(entry));
         let dot_color = if chord.is_some() {
             palette.warning
         } else {
             palette.text_faint
         };
-        let combo: AnyElement = match chord {
-            Some(chord) => keycaps(&chord_caps(chord), palette).into_any_element(),
-            None => unbound_chip(palette),
+        let combo: AnyElement = match (shortcuts, chord) {
+            (_, Some(chord)) => keycaps(&chord_caps(chord), palette).into_any_element(),
+            (Some(_), None) => unbound_chip(tr!("settings_shortcuts_unbound"), palette),
+            (None, None) => unbound_chip(UNKNOWN_CHORD.to_owned(), palette),
         };
 
         let body = div()
@@ -100,7 +103,9 @@ impl HotkeysScreenView {
                 .padding_xy(ROW_PAD_V, ROW_PAD_H)
                 .full_width(),
         );
-        if !enabled {
+        if shortcuts.is_none() {
+            wrapper = wrapper.opacity(DISABLED_OPACITY);
+        } else if !enabled {
             wrapper = wrapper.opacity(ROW_OFF_OPACITY);
         }
         wrapper.into_any_element()
@@ -125,7 +130,11 @@ impl HotkeysScreenView {
             .icon(Icon::Edit)
             .into(),
         ];
-        if self.shortcuts.chord_of(entry).is_some() {
+        let shortcuts = self.shortcuts.loaded();
+        if shortcuts
+            .and_then(|shortcuts| shortcuts.chord_of(entry))
+            .is_some()
+        {
             items.push(
                 menu_item(
                     ("hotkeys-app-unbind", index),
@@ -136,7 +145,7 @@ impl HotkeysScreenView {
                 .into(),
             );
         }
-        if self.shortcuts.is_overridden(id) {
+        if shortcuts.is_some_and(|shortcuts| shortcuts.is_overridden(id)) {
             items.push(
                 menu_item(
                     ("hotkeys-app-reset", index),
@@ -165,7 +174,7 @@ impl HotkeysScreenView {
     }
 }
 
-fn unbound_chip(palette: &ForgePalette) -> AnyElement {
+fn unbound_chip(label: String, palette: &ForgePalette) -> AnyElement {
     div()
         .flex_none()
         .py(UNBOUND_PAD_V)
@@ -177,6 +186,6 @@ fn unbound_chip(palette: &ForgePalette) -> AnyElement {
         .font_family(mono_family())
         .text_size(UNBOUND_FS)
         .text_color(palette.text_faint)
-        .child(tr!("settings_shortcuts_unbound"))
+        .child(label)
         .into_any_element()
 }

@@ -11,7 +11,7 @@ use gpui::{Context, EventEmitter, Pixels, Point, Task, Window, div, prelude::*, 
 use time::OffsetDateTime;
 
 use crate::actions::SHORTCUTS;
-use crate::async_bridge::{self, BridgeFlow, drain_events};
+use crate::async_bridge::{self, BridgeFlow, Loadable, SnapshotWriter, WriteOutcome, drain_events};
 use crate::combo_capture::ComboCapture;
 use crate::combo_conflict::{ClipKey, clip_keys, combo_holder};
 use crate::hub_crumb::hub_crumb;
@@ -72,7 +72,8 @@ pub struct HotkeysScreenView {
     enabled: bool,
     bindings: Vec<BindingRow>,
     clip_keys: Vec<ClipKey>,
-    shortcuts: ShortcutOverrides,
+    shortcuts: Loadable<ShortcutOverrides>,
+    shortcut_writer: SnapshotWriter,
     conflicts: usize,
     last_fired: Option<LastFired>,
     last_synthesized: Option<OffsetDateTime>,
@@ -107,10 +108,11 @@ impl HotkeysScreenView {
             engine,
             backend,
             settings_repo,
+            shortcut_writer: SnapshotWriter::new(&rt_handle),
             rt_handle,
             bindings: Vec::new(),
             clip_keys: Vec::new(),
-            shortcuts: ShortcutOverrides::default(),
+            shortcuts: Loadable::Loading,
             last_fired: None,
             last_synthesized: None,
             capture: Capture::Off,
@@ -212,6 +214,7 @@ impl HotkeysScreenView {
     }
 
     fn load_shortcuts(&mut self, cx: &mut Context<Self>) {
+        self.shortcuts = Loadable::Loading;
         let repo = Arc::clone(&self.settings_repo);
         async_bridge::run_async(
             &self.rt_handle,
@@ -219,6 +222,24 @@ impl HotkeysScreenView {
             |this, result, cx| this.apply_shortcuts(result, cx),
             cx,
         );
+        cx.notify();
+    }
+
+    fn rollback_shortcuts(&mut self, cx: &mut Context<Self>) {
+        self.shortcuts = Loadable::Loading;
+        let repo = Arc::clone(&self.settings_repo);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { repo.get_string(KEYBOARD_SHORTCUTS).await },
+            |this, result, cx| {
+                this.apply_shortcuts(result, cx);
+                if let Some(shortcuts) = this.shortcuts.loaded() {
+                    shortcuts.apply(cx);
+                }
+            },
+            cx,
+        );
+        cx.notify();
     }
 
     fn apply_shortcuts(
@@ -226,27 +247,33 @@ impl HotkeysScreenView {
         result: Result<Option<String>, StorageError>,
         cx: &mut Context<Self>,
     ) {
-        match result {
-            Ok(raw) => self.shortcuts.replace_stored(raw.as_deref()),
-            Err(e) => self.on_repo_error(&e.to_string(), cx),
+        let decoded = result
+            .map_err(|e| e.to_string())
+            .and_then(|raw| ShortcutOverrides::from_stored(raw.as_deref()));
+        if let Err(e) = &decoded {
+            tracing::warn!(error = %e, "failed to load keyboard shortcuts");
         }
+        self.shortcuts = Loadable::settled(decoded);
         cx.notify();
     }
 
     fn persist_shortcuts(&mut self, cx: &mut Context<Self>) {
-        self.shortcuts.apply(cx);
+        let Some(shortcuts) = self.shortcuts.loaded() else {
+            return;
+        };
+        shortcuts.apply(cx);
         let repo = Arc::clone(&self.settings_repo);
-        let map = self.shortcuts.snapshot();
-        async_bridge::run_async(
-            &self.rt_handle,
-            save_overrides(repo, map),
-            |this, result: Result<(), String>, cx| match result {
-                Ok(()) => cx.notify(),
-                Err(message) => this.on_repo_error(&message, cx),
-            },
-            cx,
-        );
+        let map = shortcuts.snapshot();
+        self.shortcut_writer
+            .write(save_overrides(repo, map), Self::on_shortcuts_written, cx);
         cx.notify();
+    }
+
+    fn on_shortcuts_written(&mut self, outcome: WriteOutcome, cx: &mut Context<Self>) {
+        if let WriteOutcome::Failed(message) = outcome {
+            self.on_repo_error(&message, cx);
+            self.rollback_shortcuts(cx);
+        }
     }
 
     fn refresh_from_client(&mut self, cx: &mut Context<Self>) {
@@ -299,7 +326,11 @@ impl HotkeysScreenView {
     }
 
     fn active_count(&self) -> usize {
-        self.enabled_count() + self.shortcuts.bound_count()
+        self.enabled_count()
+            + self
+                .shortcuts
+                .loaded()
+                .map_or(0, ShortcutOverrides::bound_count)
     }
 }
 

@@ -711,6 +711,7 @@ settings_shortcuts_action_toggle_live_chat = Перемкнути живий ч�
 settings_shortcuts_action_toggle_event_feed = Перемкнути стрічку подій
 settings_shortcuts_action_run_script = Запустити скрипт
 settings_shortcuts_unbound = Не призначено
+settings_shortcuts_load_failed = Не вдалося завантажити збережені скорочення, тому редагування вимкнено, щоб їх зберегти: { $reason }
 settings_shortcuts_capture_prompt = Натисніть скорочення... Esc для скасування
 settings_shortcuts_rebind = Змінити
 settings_shortcuts_reset = Скинути
@@ -1407,6 +1408,7 @@ tts_engines_persist_disabled_failed = Не вдалося зберегти ст�
 ## TTS Filters - колонка пайплайну
 
 tts_filters_pipeline_intro = Конвеєр, який текст проходить перед озвученням.
+tts_filters_load_failed = Не вдалося завантажити збережені фільтри, тому редагування вимкнено, щоб їх зберегти: { $reason }
 
 ## TTS Filters - нумеровані картки етапів
 

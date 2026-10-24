@@ -3,19 +3,19 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, InputEvent,
     OverlayPosition, Radius, SettingRow, Spacing, TextInput, body_family, confirm_modal, error_row,
-    ghost_button, mono_family, overlay, radius, setting_block, setting_groups, setting_row,
-    setting_rows, spacing, toggle, tr, with_alpha,
+    error_row_with_retry, ghost_button, mono_family, overlay, radius, setting_block,
+    setting_groups, setting_row, setting_rows, spacing, toggle, tr, with_alpha,
 };
 use forge_hotkey::{DEFAULT_HOLD_CEILING_SECS, HotkeyClient};
 use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
-use forge_storage::{DataProvider, SettingsRepo};
+use forge_storage::{DataProvider, SettingsRepo, StorageError};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, Keystroke, Pixels, SharedString, Subscription, Window,
     div, prelude::*, px,
 };
 
 use crate::actions::{SHORTCUTS, ShortcutEntry, shortcut_entry};
-use crate::async_bridge;
+use crate::async_bridge::{self, Loadable, SnapshotWriter, WriteOutcome};
 use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 use crate::shortcut_overrides::{ChordVerdict, ShortcutOverrides, save_overrides};
@@ -25,6 +25,7 @@ use forge_hotkey::{load_hold_ceiling, save_hold_ceiling};
 const CEILING_MIN_SECS: u64 = 1;
 const CEILING_MAX_SECS: u64 = 3600;
 const CEILING_INPUT_W: Pixels = px(72.0);
+const UNKNOWN_CHORD: &str = "-";
 
 struct ShortcutConflict {
     target_id: &'static str,
@@ -36,7 +37,8 @@ pub struct SettingsShortcutsView {
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
     hotkey_client: Option<Arc<HotkeyClient>>,
-    overrides: ShortcutOverrides,
+    overrides: Loadable<ShortcutOverrides>,
+    writer: SnapshotWriter,
     rebinding: Option<&'static str>,
     rebind_error: Option<String>,
     conflict: Option<ShortcutConflict>,
@@ -77,9 +79,9 @@ impl SettingsShortcutsView {
 
         let mut view = Self {
             backend,
-            rt_handle,
             hotkey_client,
-            overrides: ShortcutOverrides::default(),
+            overrides: Loadable::Loading,
+            writer: SnapshotWriter::new(&rt_handle),
             rebinding: None,
             rebind_error: None,
             conflict: None,
@@ -91,6 +93,7 @@ impl SettingsShortcutsView {
             hold_ceiling_debounce: async_bridge::Debounced::new(
                 async_bridge::SLIDER_PERSIST_DEBOUNCE,
             ),
+            rt_handle,
             capture_sub: None,
             _subs: subs,
         };
@@ -100,6 +103,7 @@ impl SettingsShortcutsView {
     }
 
     fn load(&mut self, cx: &mut Context<Self>) {
+        self.overrides = Loadable::Loading;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         async_bridge::run_async(
             &self.rt_handle,
@@ -107,6 +111,29 @@ impl SettingsShortcutsView {
             |this, result, cx| this.apply_loaded(result, cx),
             cx,
         );
+        cx.notify();
+    }
+
+    fn rollback(&mut self, cx: &mut Context<Self>) {
+        self.overrides = Loadable::Loading;
+        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { repo.get_string(KEYBOARD_SHORTCUTS).await },
+            |this, result, cx| {
+                this.apply_loaded(result, cx);
+                if let Some(overrides) = this.overrides.loaded() {
+                    overrides.apply(cx);
+                }
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn retry_load(&mut self, cx: &mut Context<Self>) {
+        self.save_error = None;
+        self.load(cx);
     }
 
     fn load_hold_ceiling(&mut self, cx: &mut Context<Self>) {
@@ -178,20 +205,23 @@ impl SettingsShortcutsView {
 
     fn apply_loaded(
         &mut self,
-        result: Result<Option<String>, forge_storage::StorageError>,
+        result: Result<Option<String>, StorageError>,
         cx: &mut Context<Self>,
     ) {
-        match result {
-            Ok(raw) => self.overrides.replace_stored(raw.as_deref()),
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to load keyboard shortcuts");
-                self.save_error = Some(e.to_string());
-            }
+        let decoded = result
+            .map_err(|e| e.to_string())
+            .and_then(|raw| ShortcutOverrides::from_stored(raw.as_deref()));
+        if let Err(e) = &decoded {
+            tracing::warn!(error = %e, "failed to load keyboard shortcuts");
         }
+        self.overrides = Loadable::settled(decoded);
         cx.notify();
     }
 
     fn start_rebind(&mut self, id: &'static str, cx: &mut Context<Self>) {
+        if !self.overrides.is_loaded() {
+            return;
+        }
         self.rebinding = Some(id);
         self.rebind_error = None;
         self.conflict = None;
@@ -223,7 +253,11 @@ impl SettingsShortcutsView {
             self.cancel_capture(cx);
             return;
         }
-        match self.overrides.verdict(&keystroke, id) {
+        let Some(overrides) = self.overrides.loaded_mut() else {
+            self.cancel_capture(cx);
+            return;
+        };
+        match overrides.verdict(&keystroke, id) {
             ChordVerdict::Unusable => {}
             ChordVerdict::NeedsModifier => {
                 self.rebind_error = Some(tr!("settings_shortcuts_error_needs_modifier"));
@@ -240,9 +274,9 @@ impl SettingsShortcutsView {
                 cx.notify();
             }
             ChordVerdict::Free(chord) => {
+                overrides.bind(id, chord);
                 self.rebind_error = None;
                 self.end_capture();
-                self.overrides.bind(id, chord);
                 self.persist_and_apply(cx);
             }
         }
@@ -252,8 +286,12 @@ impl SettingsShortcutsView {
         let Some(conflict) = self.conflict.take() else {
             return;
         };
-        self.overrides.unbind(conflict.owner_id);
-        self.overrides.bind(conflict.target_id, conflict.chord);
+        let Some(overrides) = self.overrides.loaded_mut() else {
+            cx.notify();
+            return;
+        };
+        overrides.unbind(conflict.owner_id);
+        overrides.bind(conflict.target_id, conflict.chord);
         self.rebind_error = None;
         self.persist_and_apply(cx);
     }
@@ -264,13 +302,19 @@ impl SettingsShortcutsView {
     }
 
     fn reset_entry(&mut self, id: &'static str, cx: &mut Context<Self>) {
-        self.overrides.reset(id);
+        let Some(overrides) = self.overrides.loaded_mut() else {
+            return;
+        };
+        overrides.reset(id);
         self.rebind_error = None;
         self.persist_and_apply(cx);
     }
 
     fn reset_all(&mut self, cx: &mut Context<Self>) {
-        self.overrides.reset_all();
+        let Some(overrides) = self.overrides.loaded_mut() else {
+            return;
+        };
+        overrides.reset_all();
         self.rebind_error = None;
         self.conflict = None;
         self.end_capture();
@@ -278,31 +322,40 @@ impl SettingsShortcutsView {
     }
 
     fn persist_and_apply(&mut self, cx: &mut Context<Self>) {
-        self.overrides.apply(cx);
-
-        let map = self.overrides.snapshot();
+        let Some(overrides) = self.overrides.loaded() else {
+            return;
+        };
+        overrides.apply(cx);
+        let map = overrides.snapshot();
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        async_bridge::run_async(
-            &self.rt_handle,
-            save_overrides(repo, map),
-            |this, result, cx| this.apply_save_result(result, cx),
-            cx,
-        );
+        self.writer
+            .write(save_overrides(repo, map), Self::apply_save_result, cx);
         cx.notify();
     }
 
-    fn apply_save_result(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
-        match result {
-            Ok(()) => self.save_error = None,
-            Err(message) => {
-                tracing::warn!(error = %message, "failed to persist keyboard shortcuts");
+    fn apply_save_result(&mut self, outcome: WriteOutcome, cx: &mut Context<Self>) {
+        match outcome {
+            WriteOutcome::Written => self.save_error = None,
+            WriteOutcome::Superseded => {}
+            WriteOutcome::Failed(message) => {
                 self.save_error = Some(message);
+                self.rollback(cx);
             }
         }
-        cx.notify();
     }
 
-    fn error_banner(&self, palette: &ForgePalette) -> Option<AnyElement> {
+    fn error_banner(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if let Some(reason) = self.overrides.failure() {
+            return Some(
+                error_row_with_retry(
+                    "shortcut-load-retry",
+                    tr!("settings_shortcuts_load_failed", reason = reason),
+                    palette,
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.retry_load(cx)),
+                )
+                .into_any_element(),
+            );
+        }
         let message = self.rebind_error.as_ref().or(self.save_error.as_ref())?;
         Some(error_row(message.clone(), palette).into_any_element())
     }
@@ -351,8 +404,8 @@ impl SettingsShortcutsView {
                     SharedString::from(format!("shortcut-cancel-{}", entry.id)),
                     cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_capture(cx)),
                 ));
-        } else {
-            match self.overrides.chord_of(entry) {
+        } else if let Some(overrides) = self.overrides.loaded() {
+            match overrides.chord_of(entry) {
                 Some(chord) => {
                     controls = controls.child(self.chord_chip(chord.to_owned(), palette))
                 }
@@ -373,7 +426,7 @@ impl SettingsShortcutsView {
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.start_rebind(id, cx)),
                 ),
             );
-            if self.overrides.is_overridden(id) {
+            if overrides.is_overridden(id) {
                 controls = controls.child(
                     ghost_button(tr!("settings_shortcuts_reset"), palette).on_click(
                         SharedString::from(format!("shortcut-reset-{id}")),
@@ -381,6 +434,10 @@ impl SettingsShortcutsView {
                     ),
                 );
             }
+        } else {
+            controls = controls
+                .child(self.chord_chip(UNKNOWN_CHORD, palette))
+                .child(ghost_button(tr!("settings_shortcuts_rebind"), palette).disabled(true));
         }
 
         setting_row(tr!(entry.label_key), None, controls, palette, density)
@@ -531,13 +588,15 @@ impl Render for SettingsShortcutsView {
             list = list.row(self.entry_row(entry, &palette, density, cx));
         }
 
-        let reset_all = ghost_button(tr!("settings_shortcuts_reset_all"), &palette).on_click(
-            "shortcut-reset-all",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.reset_all(cx)),
-        );
+        let reset_all = ghost_button(tr!("settings_shortcuts_reset_all"), &palette)
+            .disabled(!self.overrides.is_loaded())
+            .on_click(
+                "shortcut-reset-all",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.reset_all(cx)),
+            );
 
         let mut groups: Vec<AnyElement> = Vec::new();
-        if let Some(banner) = self.error_banner(&palette) {
+        if let Some(banner) = self.error_banner(&palette, cx) {
             groups.push(banner);
         }
         groups.push(list.into_any_element());

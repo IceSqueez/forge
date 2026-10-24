@@ -690,6 +690,7 @@ settings_shortcuts_action_toggle_live_chat = Toggle Live Chat
 settings_shortcuts_action_toggle_event_feed = Toggle Event Feed
 settings_shortcuts_action_run_script = Run script
 settings_shortcuts_unbound = Not bound
+settings_shortcuts_load_failed = Could not load your saved shortcuts, so editing is off to protect them: { $reason }
 settings_shortcuts_capture_prompt = Press a shortcut... Esc to cancel
 settings_shortcuts_rebind = Change
 settings_shortcuts_reset = Reset
@@ -1362,6 +1363,7 @@ tts_engines_persist_disabled_failed = Failed to save engine state
 ## TTS Filters - pipeline column
 
 tts_filters_pipeline_intro = Pipeline that text passes through before being spoken.
+tts_filters_load_failed = Could not load the saved filters, so editing is off to protect them: { $reason }
 
 ## TTS Filters - numbered stage cards
 

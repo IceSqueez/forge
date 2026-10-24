@@ -39,6 +39,10 @@ impl Capture {
         }
     }
 
+    fn edits_app_shortcut(self) -> bool {
+        matches!(self, Capture::App(_) | Capture::AppModal(_))
+    }
+
     fn claimant(self) -> Claimant {
         match self.target() {
             Some(id) => Claimant::Trigger(id),
@@ -49,6 +53,10 @@ impl Capture {
 
 impl HotkeysScreenView {
     pub(super) fn start_capture(&mut self, capture: Capture, cx: &mut Context<Self>) {
+        if capture.edits_app_shortcut() && !self.shortcuts.is_loaded() {
+            cx.notify();
+            return;
+        }
         self.capture = capture;
         self.menu_open = None;
         self.key_capture.start(cx, Self::on_capture_keystroke);
@@ -76,7 +84,11 @@ impl HotkeysScreenView {
 
     fn on_app_capture(&mut self, id: &'static str, keystroke: &Keystroke, cx: &mut Context<Self>) {
         let capture = self.capture;
-        match self.shortcuts.verdict(keystroke, id) {
+        let Some(shortcuts) = self.shortcuts.loaded() else {
+            self.cancel_capture(cx);
+            return;
+        };
+        match shortcuts.verdict(keystroke, id) {
             ChordVerdict::Unusable => {}
             ChordVerdict::NeedsModifier => {
                 self.end_capture();
@@ -176,10 +188,7 @@ impl HotkeysScreenView {
                 }
                 cx.notify();
             }
-            Capture::App(id) => {
-                self.shortcuts.bind(id, combo);
-                self.persist_shortcuts(cx);
-            }
+            Capture::App(id) => self.edit_shortcuts(cx, |shortcuts| shortcuts.bind(id, combo)),
             Capture::AppModal(_) => self.push_app_modal_chord(combo, None, cx),
         }
     }

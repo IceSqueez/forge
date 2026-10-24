@@ -5,7 +5,7 @@ use gpui::{
 
 use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
-use crate::tokens::{BORDER_THIN, body_family};
+use crate::tokens::{BORDER_THIN, DISABLED_OPACITY, body_family};
 
 type SegClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -17,7 +17,6 @@ const GROUP_RADIUS: Pixels = px(7.0);
 const GROUP_PAD: Pixels = px(2.0);
 const SEG_GLYPH_GAP: Pixels = px(5.0);
 const HOVER_ALPHA: f32 = 0.06;
-const DISABLED_OPACITY: f32 = 0.5;
 
 pub struct Segment {
     id: ElementId,

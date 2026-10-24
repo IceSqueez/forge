@@ -48,12 +48,14 @@ impl OverrideEntry {
     }
 }
 
-fn parse_entries(raw: &str) -> HashMap<String, OverrideEntry> {
+fn parse_entries(raw: &str) -> Result<HashMap<String, OverrideEntry>, String> {
     let known = |id: &String| SHORTCUTS.iter().any(|entry| entry.id == id);
-    if let Ok(map) = serde_json::from_str::<HashMap<String, OverrideEntry>>(raw) {
-        return map.into_iter().filter(|(id, _)| known(id)).collect();
-    }
-    parse_stored_overrides(raw)
+    let current = match serde_json::from_str::<HashMap<String, OverrideEntry>>(raw) {
+        Ok(map) => return Ok(map.into_iter().filter(|(id, _)| known(id)).collect()),
+        Err(e) => e,
+    };
+    let chords_only = parse_stored_overrides(raw).map_err(|_| current.to_string())?;
+    Ok(chords_only
         .into_iter()
         .map(|(id, chord)| {
             (
@@ -64,7 +66,7 @@ fn parse_entries(raw: &str) -> HashMap<String, OverrideEntry> {
                 },
             )
         })
-        .collect()
+        .collect())
 }
 
 #[derive(Default)]
@@ -73,8 +75,12 @@ pub struct ShortcutOverrides {
 }
 
 impl ShortcutOverrides {
-    pub fn replace_stored(&mut self, raw: Option<&str>) {
-        self.map = raw.map(parse_entries).unwrap_or_default();
+    pub fn from_stored(raw: Option<&str>) -> Result<Self, String> {
+        let map = match raw {
+            Some(raw) => parse_entries(raw)?,
+            None => HashMap::new(),
+        };
+        Ok(Self { map })
     }
 
     pub fn is_empty(&self) -> bool {
@@ -390,8 +396,7 @@ mod tests {
             .collect();
 
         let stored = serde_json::to_string(&overrides.snapshot()).unwrap();
-        let mut restored = ShortcutOverrides::default();
-        restored.replace_stored(Some(&stored));
+        let restored = ShortcutOverrides::from_stored(Some(&stored)).unwrap();
 
         let after: Vec<Option<String>> = SHORTCUTS
             .iter()
@@ -402,37 +407,72 @@ mod tests {
 
     fn round_trip(overrides: &ShortcutOverrides) -> ShortcutOverrides {
         let stored = serde_json::to_string(&overrides.snapshot()).unwrap();
-        let mut restored = ShortcutOverrides::default();
-        restored.replace_stored(Some(&stored));
-        restored
+        ShortcutOverrides::from_stored(Some(&stored)).unwrap()
     }
 
     #[test]
-    fn a_stored_form_that_predates_per_row_toggles_reads_as_enabled() {
+    fn from_stored_decodes_the_current_form_and_reads_older_forms_as_enabled() {
         let cases = [
-            ("flat map", r#"{"nav.home":"ctrl-9","nav.chat":""}"#),
+            (
+                "current form",
+                Some(r#"{"nav.home":{"chord":"ctrl-9","enabled":false},"nav.chat":{"chord":""}}"#),
+                Some("ctrl-9"),
+                false,
+                None,
+            ),
+            (
+                "flat map",
+                Some(r#"{"nav.home":"ctrl-9","nav.chat":""}"#),
+                Some("ctrl-9"),
+                true,
+                None,
+            ),
             (
                 "object map without the toggle",
-                r#"{"nav.home":{"chord":"ctrl-9"},"nav.chat":{"chord":""}}"#,
+                Some(r#"{"nav.home":{"chord":"ctrl-9"},"nav.chat":{"chord":""}}"#),
+                Some("ctrl-9"),
+                true,
+                None,
+            ),
+            (
+                "nothing stored",
+                None,
+                Some(HOME_DEFAULT),
+                true,
+                Some(CHAT_DEFAULT),
             ),
         ];
 
-        for (case, raw) in cases {
-            let mut overrides = ShortcutOverrides::default();
-            overrides.replace_stored(Some(raw));
+        for (case, raw, home_chord, home_enabled, chat_chord) in cases {
+            let overrides = ShortcutOverrides::from_stored(raw).unwrap();
 
-            assert_eq!(chord(&overrides, HOME).as_deref(), Some("ctrl-9"), "{case}");
             assert_eq!(
-                chord(&overrides, CHAT),
-                None,
-                "{case}: an unbound entry stays unbound"
+                (
+                    chord(&overrides, HOME).as_deref(),
+                    overrides.is_enabled(HOME),
+                    chord(&overrides, CHAT).as_deref(),
+                    overrides.is_enabled(CHAT),
+                ),
+                (home_chord, home_enabled, chat_chord, true),
+                "{case}"
             );
-            for id in [HOME, CHAT] {
-                assert!(
-                    overrides.is_enabled(id),
-                    "{case}: {id} was stored before per-row toggles and must read as enabled"
-                );
-            }
+        }
+    }
+
+    #[test]
+    fn from_stored_rejects_a_value_neither_stored_form_decodes() {
+        for raw in [
+            "",
+            "not json",
+            "[]",
+            r#"{"nav.home":7}"#,
+            r#"{"nav.home":{"chord":7}}"#,
+            r#"{"nav.home":"ctrl-9","nav.chat":{"chord":"ctrl-8"}}"#,
+        ] {
+            assert!(
+                ShortcutOverrides::from_stored(Some(raw)).is_err(),
+                "expected an error for {raw:?}"
+            );
         }
     }
 
@@ -547,16 +587,5 @@ mod tests {
             round_trip(&overrides).is_empty(),
             "an unknown id must not survive a reload"
         );
-    }
-
-    #[test]
-    fn replace_stored_with_no_stored_value_returns_every_shortcut_to_its_default() {
-        let mut overrides = ShortcutOverrides::default();
-        overrides.bind(HOME, "ctrl-9".to_owned());
-
-        overrides.replace_stored(None);
-
-        assert_eq!(chord(&overrides, HOME).as_deref(), Some(HOME_DEFAULT));
-        assert!(!overrides.is_overridden(HOME));
     }
 }

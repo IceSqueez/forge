@@ -11,7 +11,9 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::overlay::enter_animation;
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, Density, FONT_XS, Spacing, body_family, mono_family, spacing};
+use crate::tokens::{
+    BORDER_THIN, DISABLED_OPACITY, Density, FONT_XS, Spacing, body_family, mono_family, spacing,
+};
 
 const PANEL_MIN_WIDTH: Pixels = px(180.0);
 const PANEL_PADDING: Pixels = px(4.0);
@@ -24,7 +26,6 @@ const ITEM_ICON_SIZE: Pixels = px(13.0);
 const SHORTCUT_FONT_SIZE: Pixels = px(10.0);
 const HEADER_FONT_SIZE: Pixels = px(9.5);
 const DIVIDER_MARGIN: Pixels = px(4.0);
-const DISABLED_OPACITY: f32 = 0.5;
 
 const TRIGGER_SIZE: Pixels = px(20.0);
 const TRIGGER_ICON_SIZE: Pixels = px(14.0);

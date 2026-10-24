@@ -4,7 +4,9 @@ use gpui::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, FONT_SM, FONT_XXS, Radius, body_family, mono_family, radius};
+use crate::tokens::{
+    BORDER_THIN, DISABLED_OPACITY, FONT_SM, FONT_XXS, Radius, body_family, mono_family, radius,
+};
 
 type RowClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -14,7 +16,6 @@ const DOT_BORDER: Pixels = px(1.5);
 const ROW_GAP: Pixels = px(10.0);
 const ROW_PAD_X: Pixels = px(11.0);
 const ROW_PAD_Y: Pixels = px(9.0);
-const DISABLED_OPACITY: f32 = 0.5;
 
 #[derive(IntoElement)]
 pub struct RadioRow {

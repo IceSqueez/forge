@@ -211,18 +211,12 @@ pub fn effective_chord<'a>(
     }
 }
 
-pub fn parse_stored_overrides(raw: &str) -> HashMap<String, String> {
-    let parsed: HashMap<String, String> = match serde_json::from_str(raw) {
-        Ok(map) => map,
-        Err(e) => {
-            tracing::warn!(error = %e, "stored keyboard shortcuts unreadable; using defaults");
-            return HashMap::new();
-        }
-    };
-    parsed
+pub fn parse_stored_overrides(raw: &str) -> Result<HashMap<String, String>, serde_json::Error> {
+    let parsed: HashMap<String, String> = serde_json::from_str(raw)?;
+    Ok(parsed
         .into_iter()
         .filter(|(id, _)| SHORTCUTS.iter().any(|entry| entry.id == id))
-        .collect()
+        .collect())
 }
 
 fn make_binding(entry_id: &str, chord: &str) -> Option<KeyBinding> {
@@ -380,18 +374,18 @@ mod tests {
     fn parse_stored_overrides_drops_ids_the_roster_no_longer_defines() {
         let raw = r#"{"nav.home":"ctrl-9","nav.gone":"ctrl-8"}"#;
 
-        let parsed = parse_stored_overrides(raw);
+        let parsed = parse_stored_overrides(raw).unwrap();
 
         assert_eq!(parsed.get("nav.home").map(String::as_str), Some("ctrl-9"));
         assert!(!parsed.contains_key("nav.gone"));
     }
 
     #[test]
-    fn parse_stored_overrides_falls_back_to_defaults_when_the_setting_is_unreadable() {
+    fn parse_stored_overrides_reports_an_unreadable_setting_instead_of_defaulting() {
         for raw in ["", "not json", "[]", r#"{"nav.home":7}"#] {
             assert!(
-                parse_stored_overrides(raw).is_empty(),
-                "expected defaults for {raw:?}"
+                parse_stored_overrides(raw).is_err(),
+                "expected an error for {raw:?}"
             );
         }
     }

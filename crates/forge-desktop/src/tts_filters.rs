@@ -1,5 +1,5 @@
 use std::ops::Range;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize,
@@ -24,8 +24,8 @@ use gpui::{
     SharedString, StyledText, Subscription, Window, div, prelude::*, px,
 };
 
-use crate::async_bridge;
-use forge_components::ActivePresentation;
+use crate::async_bridge::{self, Loadable, SnapshotWriter, WriteOutcome};
+use forge_components::{ActivePresentation, DISABLED_OPACITY, error_row_with_retry};
 
 const STAGE_CIRCLE: Pixels = px(22.0);
 const PIPELINE_PAD_Y: Pixels = px(18.0);
@@ -460,14 +460,22 @@ struct PreviewMark {
     tint: MarkTint,
 }
 
+#[derive(Clone, Default)]
+struct FilterSet {
+    rules: Vec<FilterRule>,
+    settings: TtsPipelineSettings,
+}
+
+static BLANK_FILTERS: LazyLock<FilterSet> = LazyLock::new(FilterSet::default);
+
 pub struct TtsFiltersView {
     repo: Arc<dyn TtsFiltersRepo>,
     pipeline_config: Option<PipelineConfigHandle>,
     bot_accounts: Shared<Vec<String>>,
     speak: Option<SpeakQueueHandle>,
     rt_handle: tokio::runtime::Handle,
-    rules: Vec<FilterRule>,
-    settings: TtsPipelineSettings,
+    filters: Loadable<FilterSet>,
+    writer: SnapshotWriter,
     add_modal: Option<Entity<AddFilterModal>>,
     _add_sub: Option<Subscription>,
     save_error: Option<String>,
@@ -508,9 +516,9 @@ impl TtsFiltersView {
             pipeline_config,
             bot_accounts,
             speak,
+            writer: SnapshotWriter::new(&rt_handle),
             rt_handle,
-            rules: Vec::new(),
-            settings: TtsPipelineSettings::default(),
+            filters: Loadable::Loading,
             add_modal: None,
             _add_sub: None,
             save_error: None,
@@ -524,7 +532,8 @@ impl TtsFiltersView {
         view
     }
 
-    fn reload(&self, cx: &mut Context<Self>) {
+    fn reload(&mut self, cx: &mut Context<Self>) {
+        self.filters = Loadable::Loading;
         let repo = Arc::clone(&self.repo);
         async_bridge::run_async(
             &self.rt_handle,
@@ -536,32 +545,36 @@ impl TtsFiltersView {
                     .map_err(|e| e.to_string())?;
                 Ok::<_, String>((rules, settings))
             },
-            |this, result, cx| match result {
-                Ok((rules, settings)) => this.apply_loaded(rules, settings, cx),
-                Err(message) => this.on_repo_error(&message, cx),
-            },
+            |this, result, cx| this.apply_loaded(result, cx),
             cx,
         );
+        cx.notify();
     }
 
     fn apply_loaded(
         &mut self,
-        mut rules: Vec<FilterRule>,
-        settings: TtsPipelineSettings,
+        result: Result<(Vec<FilterRule>, TtsPipelineSettings), String>,
         cx: &mut Context<Self>,
     ) {
-        rules.sort_by_key(|r| r.position);
-        self.rules = rules;
-        renumber(&mut self.rules);
-        self.settings = settings;
-        self.save_error = None;
+        if let Err(message) = &result {
+            tracing::warn!(error = %message, "tts filters load failed");
+        }
+        self.filters = Loadable::settled(result.map(|(mut rules, settings)| {
+            rules.sort_by_key(|r| r.position);
+            renumber(&mut rules);
+            FilterSet { rules, settings }
+        }));
         self.refresh_preview(cx);
         cx.notify();
     }
 
-    fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
-        eprintln!("forge-desktop: tts filters operation failed: {message}");
-        cx.notify();
+    fn shown(&self) -> &FilterSet {
+        self.filters.loaded().unwrap_or(&BLANK_FILTERS)
+    }
+
+    fn retry_load(&mut self, cx: &mut Context<Self>) {
+        self.save_error = None;
+        self.reload(cx);
     }
 
     fn refresh_preview(&mut self, cx: &mut Context<Self>) {
@@ -570,8 +583,9 @@ impl TtsFiltersView {
             self.cached_preview = None;
             return;
         }
+        let shown = self.shown();
         let (config, replacement_sources) =
-            build_config_lenient_with_sources(&self.rules, &self.settings);
+            build_config_lenient_with_sources(&shown.rules, &shown.settings);
         let speaker_name = tr!("tts_filters_preview_speaker_name");
         let context = forge_tts_pipeline::PipelineContext {
             viewer_name: &speaker_name,
@@ -586,7 +600,8 @@ impl TtsFiltersView {
     }
 
     fn replacement_ordinal(&self, row: usize) -> usize {
-        self.rules
+        self.shown()
+            .rules
             .iter()
             .take(row)
             .filter(|rule| is_replacement_kind(&rule.kind))
@@ -653,6 +668,15 @@ impl TtsFiltersView {
             .collect()
     }
 
+    fn edit(&mut self, cx: &mut Context<Self>, mutate: impl FnOnce(&mut FilterSet)) {
+        let Some(filters) = self.filters.loaded_mut() else {
+            return;
+        };
+        mutate(filters);
+        renumber(&mut filters.rules);
+        self.after_change(cx);
+    }
+
     fn after_change(&mut self, cx: &mut Context<Self>) {
         self.refresh_preview(cx);
         self.persist(cx);
@@ -660,22 +684,23 @@ impl TtsFiltersView {
     }
 
     fn persist(&mut self, cx: &mut Context<Self>) {
-        let config = match build_config_strict(&self.rules, &self.settings) {
+        let Some(filters) = self.filters.loaded() else {
+            return;
+        };
+        let config = match build_config_strict(&filters.rules, &filters.settings) {
             Ok(config) => config,
             Err(e) => {
                 self.save_error = Some(e.to_string());
                 return;
             }
         };
+        let FilterSet { rules, settings } = filters.clone();
         self.save_error = None;
 
         let repo = Arc::clone(&self.repo);
         let pipeline_config = self.pipeline_config.clone();
         let bot_accounts = self.bot_accounts.clone();
-        let rules = self.rules.clone();
-        let settings = self.settings.clone();
-        async_bridge::run_async(
-            &self.rt_handle,
+        self.writer.write(
             async move {
                 repo.replace_rules(&rules)
                     .await
@@ -689,29 +714,32 @@ impl TtsFiltersView {
                 }
                 Ok::<(), String>(())
             },
-            |this, result, cx| {
-                if let Err(message) = result {
-                    this.save_error = Some(message);
-                    cx.notify();
-                }
-            },
+            Self::on_write_settled,
             cx,
         );
     }
 
-    fn try_apply(&mut self, cx: &mut Context<Self>, mutate: impl FnOnce(&mut Self)) -> bool {
-        let backup_settings = self.settings.clone();
-        let backup_rules = self.rules.clone();
-        mutate(self);
-        renumber(&mut self.rules);
-        match build_config_strict(&self.rules, &self.settings) {
+    fn on_write_settled(&mut self, outcome: WriteOutcome, cx: &mut Context<Self>) {
+        if let WriteOutcome::Failed(message) = outcome {
+            self.save_error = Some(message);
+            self.reload(cx);
+        }
+    }
+
+    fn try_apply(&mut self, cx: &mut Context<Self>, mutate: impl FnOnce(&mut FilterSet)) -> bool {
+        let Some(filters) = self.filters.loaded_mut() else {
+            return false;
+        };
+        let mut candidate = filters.clone();
+        mutate(&mut candidate);
+        renumber(&mut candidate.rules);
+        match build_config_strict(&candidate.rules, &candidate.settings) {
             Ok(_) => {
+                *filters = candidate;
                 self.after_change(cx);
                 true
             }
             Err(e) => {
-                self.settings = backup_settings;
-                self.rules = backup_rules;
                 self.save_error = Some(e.to_string());
                 cx.notify();
                 false
@@ -720,13 +748,14 @@ impl TtsFiltersView {
     }
 
     fn skip_flag(&self, rule: SkipRule) -> bool {
+        let settings = &self.shown().settings;
         match rule {
-            SkipRule::ContainsUrl => self.settings.skip_contains_url,
-            SkipRule::BotAccounts => self.settings.skip_from_bot_accounts,
-            SkipRule::LongerThan => self.settings.skip_longer_than,
-            SkipRule::Repeat => self.settings.skip_repeat_of_recent,
-            SkipRule::EmoteOnly => self.settings.skip_emote_only,
-            SkipRule::MostlyNonLatin => self.settings.skip_mostly_non_latin,
+            SkipRule::ContainsUrl => settings.skip_contains_url,
+            SkipRule::BotAccounts => settings.skip_from_bot_accounts,
+            SkipRule::LongerThan => settings.skip_longer_than,
+            SkipRule::Repeat => settings.skip_repeat_of_recent,
+            SkipRule::EmoteOnly => settings.skip_emote_only,
+            SkipRule::MostlyNonLatin => settings.skip_mostly_non_latin,
         }
     }
 
@@ -734,15 +763,17 @@ impl TtsFiltersView {
         if self.skip_flag(rule) == value {
             return;
         }
-        match rule {
-            SkipRule::ContainsUrl => self.settings.skip_contains_url = value,
-            SkipRule::BotAccounts => self.settings.skip_from_bot_accounts = value,
-            SkipRule::LongerThan => self.settings.skip_longer_than = value,
-            SkipRule::Repeat => self.settings.skip_repeat_of_recent = value,
-            SkipRule::EmoteOnly => self.settings.skip_emote_only = value,
-            SkipRule::MostlyNonLatin => self.settings.skip_mostly_non_latin = value,
-        }
-        self.after_change(cx);
+        self.edit(cx, |filters| {
+            let settings = &mut filters.settings;
+            match rule {
+                SkipRule::ContainsUrl => settings.skip_contains_url = value,
+                SkipRule::BotAccounts => settings.skip_from_bot_accounts = value,
+                SkipRule::LongerThan => settings.skip_longer_than = value,
+                SkipRule::Repeat => settings.skip_repeat_of_recent = value,
+                SkipRule::EmoteOnly => settings.skip_emote_only = value,
+                SkipRule::MostlyNonLatin => settings.skip_mostly_non_latin = value,
+            }
+        });
     }
 
     fn toggle_skip(&mut self, rule: SkipRule, cx: &mut Context<Self>) {
@@ -751,28 +782,32 @@ impl TtsFiltersView {
     }
 
     fn clear_skip_prefix(&mut self, cx: &mut Context<Self>) {
-        if self.settings.skip_prefix.is_none() && !self.settings.skip_starts_with_bang {
+        let settings = &self.shown().settings;
+        if settings.skip_prefix.is_none() && !settings.skip_starts_with_bang {
             return;
         }
-        self.settings.skip_prefix = None;
-        self.settings.skip_starts_with_bang = false;
-        self.after_change(cx);
+        self.edit(cx, |filters| {
+            filters.settings.skip_prefix = None;
+            filters.settings.skip_starts_with_bang = false;
+        });
     }
 
     fn remove_skip_regex(&mut self, index: usize, cx: &mut Context<Self>) {
-        if index < self.settings.skip_custom_regexes.len() {
-            self.settings.skip_custom_regexes.remove(index);
-        }
-        self.after_change(cx);
+        self.edit(cx, |filters| {
+            if index < filters.settings.skip_custom_regexes.len() {
+                filters.settings.skip_custom_regexes.remove(index);
+            }
+        });
     }
 
     fn output_flag(&self, opt: OutputOpt) -> bool {
+        let settings = &self.shown().settings;
         match opt {
-            OutputOpt::ReadName => self.settings.output_read_display_name_first,
-            OutputOpt::EmoteWord => self.settings.output_emote_to_word,
-            OutputOpt::Sanitize => self.settings.output_sanitize_punctuation,
-            OutputOpt::StripTwitchEmotes => self.settings.strip_twitch_emotes,
-            OutputOpt::StripRewardEmotes => self.settings.strip_reward_emotes,
+            OutputOpt::ReadName => settings.output_read_display_name_first,
+            OutputOpt::EmoteWord => settings.output_emote_to_word,
+            OutputOpt::Sanitize => settings.output_sanitize_punctuation,
+            OutputOpt::StripTwitchEmotes => settings.strip_twitch_emotes,
+            OutputOpt::StripRewardEmotes => settings.strip_reward_emotes,
         }
     }
 
@@ -780,14 +815,16 @@ impl TtsFiltersView {
         if self.output_flag(opt) == value {
             return;
         }
-        match opt {
-            OutputOpt::ReadName => self.settings.output_read_display_name_first = value,
-            OutputOpt::EmoteWord => self.settings.output_emote_to_word = value,
-            OutputOpt::Sanitize => self.settings.output_sanitize_punctuation = value,
-            OutputOpt::StripTwitchEmotes => self.settings.strip_twitch_emotes = value,
-            OutputOpt::StripRewardEmotes => self.settings.strip_reward_emotes = value,
-        }
-        self.after_change(cx);
+        self.edit(cx, |filters| {
+            let settings = &mut filters.settings;
+            match opt {
+                OutputOpt::ReadName => settings.output_read_display_name_first = value,
+                OutputOpt::EmoteWord => settings.output_emote_to_word = value,
+                OutputOpt::Sanitize => settings.output_sanitize_punctuation = value,
+                OutputOpt::StripTwitchEmotes => settings.strip_twitch_emotes = value,
+                OutputOpt::StripRewardEmotes => settings.strip_reward_emotes = value,
+            }
+        });
     }
 
     fn toggle_output(&mut self, opt: OutputOpt, cx: &mut Context<Self>) {
@@ -796,29 +833,37 @@ impl TtsFiltersView {
     }
 
     fn clear_output_max_duration(&mut self, cx: &mut Context<Self>) {
-        if self.settings.output_max_duration_secs.is_none() {
+        if self.shown().settings.output_max_duration_secs.is_none() {
             return;
         }
-        self.settings.output_max_duration_secs = None;
-        self.after_change(cx);
+        self.edit(cx, |filters| {
+            filters.settings.output_max_duration_secs = None
+        });
     }
 
     fn clear_output_lang(&mut self, cx: &mut Context<Self>) {
-        if !self.settings.output_language_aware_voice.unwrap_or(false) {
+        if !self
+            .shown()
+            .settings
+            .output_language_aware_voice
+            .unwrap_or(false)
+        {
             return;
         }
-        self.settings.output_language_aware_voice = None;
-        self.after_change(cx);
+        self.edit(cx, |filters| {
+            filters.settings.output_language_aware_voice = None
+        });
     }
 
     fn set_blocklist_mode(&mut self, mode: BlocklistMode, cx: &mut Context<Self>) {
-        self.settings.blocklist_mode = mode;
-        for rule in self.rules.iter_mut() {
-            if let FilterRuleKind::Blocklist { mode: m, .. } = &mut rule.kind {
-                *m = mode;
+        self.edit(cx, |filters| {
+            filters.settings.blocklist_mode = mode;
+            for rule in filters.rules.iter_mut() {
+                if let FilterRuleKind::Blocklist { mode: m, .. } = &mut rule.kind {
+                    *m = mode;
+                }
             }
-        }
-        self.after_change(cx);
+        });
     }
 
     fn remove_blocklist_word(
@@ -827,20 +872,20 @@ impl TtsFiltersView {
         word_index: usize,
         cx: &mut Context<Self>,
     ) {
-        let mut drop_rule = false;
-        if let Some(rule) = self.rules.get_mut(rule_index)
-            && let FilterRuleKind::Blocklist { words, .. } = &mut rule.kind
-        {
-            if word_index < words.len() {
-                words.remove(word_index);
+        self.edit(cx, |filters| {
+            let mut drop_rule = false;
+            if let Some(rule) = filters.rules.get_mut(rule_index)
+                && let FilterRuleKind::Blocklist { words, .. } = &mut rule.kind
+            {
+                if word_index < words.len() {
+                    words.remove(word_index);
+                }
+                drop_rule = words.is_empty();
             }
-            drop_rule = words.is_empty();
-        }
-        if drop_rule && rule_index < self.rules.len() {
-            self.rules.remove(rule_index);
-            renumber(&mut self.rules);
-        }
-        self.after_change(cx);
+            if drop_rule && rule_index < filters.rules.len() {
+                filters.rules.remove(rule_index);
+            }
+        });
     }
 
     fn expand_blocklist(&mut self, cx: &mut Context<Self>) {
@@ -849,22 +894,26 @@ impl TtsFiltersView {
     }
 
     fn toggle_rule(&mut self, index: usize, cx: &mut Context<Self>) {
-        if let Some(rule) = self.rules.get_mut(index) {
-            rule.enabled = !rule.enabled;
-        }
-        self.after_change(cx);
+        self.edit(cx, |filters| {
+            if let Some(rule) = filters.rules.get_mut(index) {
+                rule.enabled = !rule.enabled;
+            }
+        });
     }
 
     fn delete_rule(&mut self, index: usize, cx: &mut Context<Self>) {
-        if index < self.rules.len() {
-            self.rules.remove(index);
-            renumber(&mut self.rules);
-        }
-        self.after_change(cx);
+        self.edit(cx, |filters| {
+            if index < filters.rules.len() {
+                filters.rules.remove(index);
+            }
+        });
     }
 
     fn open_add_modal(&mut self, stage: ModalStage, cx: &mut Context<Self>) {
-        let mode = self.settings.blocklist_mode;
+        let Some(filters) = self.filters.loaded() else {
+            return;
+        };
+        let mode = filters.settings.blocklist_mode;
         let modal = cx.new(|cx| AddFilterModal::new(stage, mode, cx));
         self._add_sub = Some(cx.subscribe(&modal, Self::on_add_event));
         self.add_modal = Some(modal);
@@ -920,23 +969,23 @@ impl TtsFiltersView {
         param: String,
         cx: &mut Context<Self>,
     ) -> bool {
-        self.try_apply(cx, |this| match preset {
-            SkipPreset::Url => this.settings.skip_contains_url = true,
+        self.try_apply(cx, |filters| match preset {
+            SkipPreset::Url => filters.settings.skip_contains_url = true,
             SkipPreset::Prefix => {
-                this.settings.skip_prefix = Some(param);
-                this.settings.skip_starts_with_bang = false;
+                filters.settings.skip_prefix = Some(param);
+                filters.settings.skip_starts_with_bang = false;
             }
-            SkipPreset::Bots => this.settings.skip_from_bot_accounts = true,
+            SkipPreset::Bots => filters.settings.skip_from_bot_accounts = true,
             SkipPreset::Length => {
-                this.settings.skip_longer_than = true;
+                filters.settings.skip_longer_than = true;
                 if let Ok(n) = param.parse::<u32>() {
-                    this.settings.longer_than_max_chars = n;
+                    filters.settings.longer_than_max_chars = n;
                 }
             }
-            SkipPreset::Repeat => this.settings.skip_repeat_of_recent = true,
-            SkipPreset::EmoteOnly => this.settings.skip_emote_only = true,
-            SkipPreset::NonLatin => this.settings.skip_mostly_non_latin = true,
-            SkipPreset::Regex => this.settings.skip_custom_regexes.push(param),
+            SkipPreset::Repeat => filters.settings.skip_repeat_of_recent = true,
+            SkipPreset::EmoteOnly => filters.settings.skip_emote_only = true,
+            SkipPreset::NonLatin => filters.settings.skip_mostly_non_latin = true,
+            SkipPreset::Regex => filters.settings.skip_custom_regexes.push(param),
         })
     }
 
@@ -950,12 +999,12 @@ impl TtsFiltersView {
         if preset == OutputPreset::MaxDur && max_duration.is_none() {
             return false;
         }
-        self.try_apply(cx, |this| match preset {
-            OutputPreset::Name => this.settings.output_read_display_name_first = true,
-            OutputPreset::Emote => this.settings.output_emote_to_word = true,
-            OutputPreset::Sanitize => this.settings.output_sanitize_punctuation = true,
-            OutputPreset::MaxDur => this.settings.output_max_duration_secs = max_duration,
-            OutputPreset::Lang => this.settings.output_language_aware_voice = Some(true),
+        self.try_apply(cx, |filters| match preset {
+            OutputPreset::Name => filters.settings.output_read_display_name_first = true,
+            OutputPreset::Emote => filters.settings.output_emote_to_word = true,
+            OutputPreset::Sanitize => filters.settings.output_sanitize_punctuation = true,
+            OutputPreset::MaxDur => filters.settings.output_max_duration_secs = max_duration,
+            OutputPreset::Lang => filters.settings.output_language_aware_voice = Some(true),
         })
     }
 
@@ -968,9 +1017,9 @@ impl TtsFiltersView {
         if words.is_empty() {
             return false;
         }
-        self.try_apply(cx, |this| {
-            this.settings.blocklist_mode = mode;
-            if let Some(rule) = this
+        self.try_apply(cx, |filters| {
+            filters.settings.blocklist_mode = mode;
+            if let Some(rule) = filters
                 .rules
                 .iter_mut()
                 .find(|r| matches!(r.kind, FilterRuleKind::Blocklist { .. }))
@@ -988,8 +1037,8 @@ impl TtsFiltersView {
                     *m = mode;
                 }
             } else {
-                let position = this.rules.len() as u32;
-                this.rules.push(FilterRule {
+                let position = filters.rules.len() as u32;
+                filters.rules.push(FilterRule {
                     id: ulid::Ulid::generate().to_string(),
                     name: String::new(),
                     enabled: true,
@@ -1008,7 +1057,7 @@ impl TtsFiltersView {
         match_inside_words: bool,
         cx: &mut Context<Self>,
     ) -> bool {
-        self.try_apply(cx, |this| {
+        self.try_apply(cx, |filters| {
             let filter_kind = match kind {
                 ReplaceKind::Text => FilterRuleKind::Literal {
                     pattern: from,
@@ -1020,8 +1069,8 @@ impl TtsFiltersView {
                     replacement: to,
                 },
             };
-            let position = this.rules.len() as u32;
-            this.rules.push(FilterRule {
+            let position = filters.rules.len() as u32;
+            filters.rules.push(FilterRule {
                 id: ulid::Ulid::generate().to_string(),
                 name: String::new(),
                 enabled: true,
@@ -1055,7 +1104,7 @@ impl TtsFiltersView {
                 message_emotes: EmoteTokenSet::default(),
             };
             if let Err(e) = handle.send(SpeakCommand::Enqueue(request)).await {
-                eprintln!("forge-desktop: filter preview speak failed: {e}");
+                tracing::warn!(error = %e, "tts filters preview speak failed");
             }
         });
     }
@@ -1097,11 +1146,27 @@ impl TtsFiltersView {
             );
         }
 
-        col = col
+        if let Some(reason) = self.filters.failure() {
+            col = col.child(error_row_with_retry(
+                "filt-load-retry",
+                tr!("tts_filters_load_failed", reason = reason),
+                palette,
+                cx.listener(|this, _: &ClickEvent, _, cx| this.retry_load(cx)),
+            ));
+        }
+
+        let mut stages = div()
+            .flex()
+            .flex_col()
+            .gap(PIPELINE_GAP)
             .child(self.skip_card(palette, density, cx))
             .child(self.blocklist_card(palette, density, cx))
             .child(self.replacements_card(palette, density, cx))
             .child(self.output_card(palette, density, cx));
+        if !self.filters.is_loaded() {
+            stages = stages.opacity(DISABLED_OPACITY);
+        }
+        col = col.child(stages);
 
         div()
             .id("filt-pipeline")
@@ -1274,6 +1339,7 @@ impl TtsFiltersView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let settings = &self.shown().settings;
         let fixed: [(SkipRule, SharedString); 6] = [
             (
                 SkipRule::ContainsUrl,
@@ -1287,7 +1353,7 @@ impl TtsFiltersView {
                 SkipRule::LongerThan,
                 tr!(
                     "tts_filters_skip_longer_than",
-                    chars = self.settings.longer_than_max_chars as i64
+                    chars = settings.longer_than_max_chars as i64
                 )
                 .into(),
             ),
@@ -1295,7 +1361,7 @@ impl TtsFiltersView {
                 SkipRule::Repeat,
                 tr!(
                     "tts_filters_skip_repeat",
-                    window = self.settings.repeat_of_recent_window as i64
+                    window = settings.repeat_of_recent_window as i64
                 )
                 .into(),
             ),
@@ -1309,13 +1375,12 @@ impl TtsFiltersView {
             ),
         ];
 
-        let prefix_display = self
-            .settings
+        let prefix_display = settings
             .skip_prefix
             .clone()
             .filter(|p| !p.is_empty())
-            .or_else(|| self.settings.skip_starts_with_bang.then(|| "!".to_owned()));
-        let regex_count = self.settings.skip_custom_regexes.len();
+            .or_else(|| settings.skip_starts_with_bang.then(|| "!".to_owned()));
+        let regex_count = settings.skip_custom_regexes.len();
         let total = fixed.len() + usize::from(prefix_display.is_some()) + regex_count;
 
         let mut body = div().flex().flex_col();
@@ -1355,7 +1420,7 @@ impl TtsFiltersView {
                 density,
             ));
         }
-        for (ri, pattern) in self.settings.skip_custom_regexes.iter().enumerate() {
+        for (ri, pattern) in settings.skip_custom_regexes.iter().enumerate() {
             i += 1;
             let x_id = SharedString::from(format!("filt-skip-regex-x-{ri}"));
             let toggle_id = SharedString::from(format!("filt-skip-regex-t-{ri}"));
@@ -1399,8 +1464,9 @@ impl TtsFiltersView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let censor_on = self.settings.blocklist_mode == BlocklistMode::Censor;
-        let skip_on = self.settings.blocklist_mode == BlocklistMode::Suppress;
+        let settings = &self.shown().settings;
+        let censor_on = settings.blocklist_mode == BlocklistMode::Censor;
+        let skip_on = settings.blocklist_mode == BlocklistMode::Suppress;
 
         let mut body = div().flex().flex_col();
         body = body.child(self.stage_row(
@@ -1464,7 +1530,7 @@ impl TtsFiltersView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let mut words: Vec<(usize, usize, String)> = Vec::new();
-        for (ri, rule) in self.rules.iter().enumerate() {
+        for (ri, rule) in self.shown().rules.iter().enumerate() {
             if let FilterRuleKind::Blocklist { words: ws, .. } = &rule.kind {
                 for (wi, w) in ws.iter().enumerate() {
                     words.push((ri, wi, w.clone()));
@@ -1560,6 +1626,7 @@ impl TtsFiltersView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let reps: Vec<(usize, &FilterRule)> = self
+            .shown()
             .rules
             .iter()
             .enumerate()
@@ -1622,41 +1689,42 @@ impl TtsFiltersView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let settings = &self.shown().settings;
         let rows: [(OutputOpt, SharedString, SharedString, bool); 5] = [
             (
                 OutputOpt::ReadName,
                 tr!("tts_filters_output_read_name").into(),
                 tr!("tts_filters_output_read_name_meta").into(),
-                self.settings.output_read_display_name_first,
+                settings.output_read_display_name_first,
             ),
             (
                 OutputOpt::EmoteWord,
                 tr!("tts_filters_output_emote").into(),
                 tr!("tts_filters_output_emote_meta").into(),
-                self.settings.output_emote_to_word,
+                settings.output_emote_to_word,
             ),
             (
                 OutputOpt::Sanitize,
                 tr!("tts_filters_output_sanitize").into(),
                 tr!("tts_filters_output_sanitize_meta").into(),
-                self.settings.output_sanitize_punctuation,
+                settings.output_sanitize_punctuation,
             ),
             (
                 OutputOpt::StripTwitchEmotes,
                 tr!("tts_filters_output_strip_twitch_emotes").into(),
                 tr!("tts_filters_output_strip_twitch_emotes_meta").into(),
-                self.settings.strip_twitch_emotes,
+                settings.strip_twitch_emotes,
             ),
             (
                 OutputOpt::StripRewardEmotes,
                 tr!("tts_filters_output_strip_reward_emotes").into(),
                 tr!("tts_filters_output_strip_reward_emotes_meta").into(),
-                self.settings.strip_reward_emotes,
+                settings.strip_reward_emotes,
             ),
         ];
 
-        let max_duration = self.settings.output_max_duration_secs;
-        let lang_on = self.settings.output_language_aware_voice.unwrap_or(false);
+        let max_duration = settings.output_max_duration_secs;
+        let lang_on = settings.output_language_aware_voice.unwrap_or(false);
         let total = rows.len() + usize::from(max_duration.is_some()) + usize::from(lang_on);
         let mut body = div().flex().flex_col();
         let mut i = 0usize;
@@ -2536,23 +2604,102 @@ mod tests {
     use super::*;
     use crate::test_support::{install_presentation, pump, runtime};
 
+    #[derive(Clone, Copy, Debug)]
+    enum LoadFault {
+        Unreachable,
+        UndecodableRuleRow,
+        SettingsUnreadable,
+    }
+
+    const STORE_UNREACHABLE: &str = "filters store unreachable";
+    const STORE_READ_ONLY: &str = "filters store is read-only";
+
+    impl LoadFault {
+        fn error(self) -> StorageError {
+            match self {
+                LoadFault::Unreachable | LoadFault::SettingsUnreadable => {
+                    StorageError::Connection {
+                        reason: STORE_UNREACHABLE.to_owned(),
+                    }
+                }
+                LoadFault::UndecodableRuleRow => StorageError::Serialization(
+                    serde_json::from_str::<FilterRuleKind>(r#"{"kind":"vanished"}"#).unwrap_err(),
+                ),
+            }
+        }
+    }
+
     #[derive(Default)]
     struct RecordingFilters {
+        stored_rules: Mutex<Vec<FilterRule>>,
+        replaced: Mutex<Vec<Vec<FilterRule>>>,
         saved: Mutex<Vec<TtsPipelineSettings>>,
+        load_fault: Mutex<Option<LoadFault>>,
+        load_gate: Mutex<Option<Arc<tokio::sync::Notify>>>,
+        write_fails: std::sync::atomic::AtomicBool,
+        loads: std::sync::atomic::AtomicUsize,
+    }
+
+    impl RecordingFilters {
+        fn storing(rules: Vec<FilterRule>) -> Arc<Self> {
+            Arc::new(Self {
+                stored_rules: Mutex::new(rules),
+                ..Self::default()
+            })
+        }
+
+        fn failing_loads(self: Arc<Self>, fault: LoadFault) -> Arc<Self> {
+            *self.load_fault.lock().unwrap() = Some(fault);
+            self
+        }
+
+        fn heal(&self) {
+            *self.load_fault.lock().unwrap() = None;
+        }
+
+        fn writes(&self) -> usize {
+            self.replaced.lock().unwrap().len() + self.saved.lock().unwrap().len()
+        }
+
+        fn loads(&self) -> usize {
+            self.loads.load(std::sync::atomic::Ordering::SeqCst)
+        }
     }
 
     #[async_trait::async_trait]
     impl TtsFiltersRepo for RecordingFilters {
         async fn list_rules(&self) -> Result<Vec<FilterRule>, StorageError> {
-            Ok(Vec::new())
+            self.loads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let gate = self.load_gate.lock().unwrap().take();
+            if let Some(gate) = gate {
+                gate.notified().await;
+            }
+            let fault = *self.load_fault.lock().unwrap();
+            match fault {
+                Some(LoadFault::Unreachable | LoadFault::UndecodableRuleRow) => {
+                    Err(fault.unwrap().error())
+                }
+                _ => Ok(self.stored_rules.lock().unwrap().clone()),
+            }
         }
 
-        async fn replace_rules(&self, _: &[FilterRule]) -> Result<(), StorageError> {
+        async fn replace_rules(&self, rules: &[FilterRule]) -> Result<(), StorageError> {
+            if self.write_fails.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(StorageError::Connection {
+                    reason: STORE_READ_ONLY.to_owned(),
+                });
+            }
+            self.replaced.lock().unwrap().push(rules.to_vec());
+            *self.stored_rules.lock().unwrap() = rules.to_vec();
             Ok(())
         }
 
         async fn get_pipeline_settings(&self) -> Result<TtsPipelineSettings, StorageError> {
-            Ok(TtsPipelineSettings::default())
+            let fault = *self.load_fault.lock().unwrap();
+            match fault {
+                Some(LoadFault::SettingsUnreadable) => Err(LoadFault::SettingsUnreadable.error()),
+                _ => Ok(TtsPipelineSettings::default()),
+            }
         }
 
         async fn set_pipeline_settings(
@@ -2589,6 +2736,190 @@ mod tests {
         pump(&rt);
         cx.run_until_parked();
         view
+    }
+
+    fn view_over(
+        repo: &Arc<RecordingFilters>,
+        rt: &tokio::runtime::Runtime,
+        cx: &mut TestAppContext,
+    ) -> Entity<TtsFiltersView> {
+        let repo = Arc::clone(repo);
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                TtsFiltersView::new(
+                    repo,
+                    None,
+                    Shared::new(Vec::new()),
+                    None,
+                    rt.handle().clone(),
+                    cx,
+                )
+            })
+        });
+        settle(rt, cx);
+        view
+    }
+
+    const SETTLE_ROUNDS: usize = 3;
+
+    fn settle(rt: &tokio::runtime::Runtime, cx: &mut TestAppContext) {
+        for _ in 0..SETTLE_ROUNDS {
+            pump(rt);
+            cx.run_until_parked();
+        }
+    }
+
+    fn stored_rules() -> Vec<FilterRule> {
+        let mut rules = vec![
+            filter_row(true, blocked(&["gtfo"])),
+            filter_row(true, literal("thanks", "дякую")),
+        ];
+        for (position, (rule, id)) in rules.iter_mut().zip(["block", "thanks"]).enumerate() {
+            rule.id = id.to_owned();
+            rule.position = position as u32;
+        }
+        rules
+    }
+
+    type Edit = fn(&mut TtsFiltersView, &mut Context<TtsFiltersView>);
+
+    fn edit_paths() -> [(&'static str, Edit); 11] {
+        [
+            ("toggle a skip rule", |v, cx| {
+                v.toggle_skip(SkipRule::ContainsUrl, cx)
+            }),
+            ("toggle an output option", |v, cx| {
+                v.toggle_output(OutputOpt::ReadName, cx)
+            }),
+            ("remove a skip regex", |v, cx| v.remove_skip_regex(0, cx)),
+            ("switch the blocklist mode", |v, cx| {
+                v.set_blocklist_mode(BlocklistMode::Suppress, cx)
+            }),
+            ("remove a blocked word", |v, cx| {
+                v.remove_blocklist_word(0, 0, cx)
+            }),
+            ("toggle a rule", |v, cx| v.toggle_rule(0, cx)),
+            ("delete a rule", |v, cx| v.delete_rule(0, cx)),
+            ("add a skip preset", |v, cx| {
+                v.apply_skip_preset(SkipPreset::Url, String::new(), cx);
+            }),
+            ("add an output preset", |v, cx| {
+                v.apply_output_preset(OutputPreset::Name, "", cx);
+            }),
+            ("add blocked words", |v, cx| {
+                v.apply_blocklist_words(vec!["nope".to_owned()], BlocklistMode::Censor, cx);
+            }),
+            ("add a replacement", |v, cx| {
+                v.apply_replacement(
+                    ReplaceKind::Text,
+                    "gg".to_owned(),
+                    "good game".to_owned(),
+                    false,
+                    cx,
+                );
+            }),
+        ]
+    }
+
+    #[gpui::test]
+    fn no_edit_after_a_failed_load_writes_over_the_stored_filters(cx: &mut TestAppContext) {
+        install_presentation(cx);
+        let rt = runtime();
+        for fault in [
+            LoadFault::Unreachable,
+            LoadFault::UndecodableRuleRow,
+            LoadFault::SettingsUnreadable,
+        ] {
+            for (case, edit) in edit_paths() {
+                let repo = RecordingFilters::storing(stored_rules()).failing_loads(fault);
+                let view = view_over(&repo, &rt, cx);
+
+                view.update(cx, edit);
+                settle(&rt, cx);
+
+                let failure = view.read_with(cx, |v, _| v.filters.failure().map(str::to_owned));
+                assert_eq!(
+                    (repo.writes(), failure),
+                    (0, Some(fault.error().to_string())),
+                    "{fault:?}: {case}"
+                );
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn no_edit_while_the_load_is_pending_writes_and_the_load_still_lands_intact(
+        cx: &mut TestAppContext,
+    ) {
+        install_presentation(cx);
+        let rt = runtime();
+        for (case, edit) in edit_paths() {
+            let repo = RecordingFilters::storing(stored_rules());
+            let gate = Arc::new(tokio::sync::Notify::new());
+            *repo.load_gate.lock().unwrap() = Some(Arc::clone(&gate));
+            let view = view_over(&repo, &rt, cx);
+
+            view.update(cx, edit);
+            settle(&rt, cx);
+            let writes_while_pending = repo.writes();
+            gate.notify_one();
+            settle(&rt, cx);
+
+            let landed = view.read_with(cx, |v, _| v.filters.loaded().map(|f| f.rules.clone()));
+            assert_eq!(
+                (writes_while_pending, landed),
+                (0, Some(stored_rules())),
+                "{case}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn retry_after_a_failed_load_loads_the_stored_filters_and_edits_persist_again(
+        cx: &mut TestAppContext,
+    ) {
+        install_presentation(cx);
+        let rt = runtime();
+        let repo = RecordingFilters::storing(stored_rules()).failing_loads(LoadFault::Unreachable);
+        let view = view_over(&repo, &rt, cx);
+        repo.heal();
+
+        view.update(cx, |v, cx| v.retry_load(cx));
+        settle(&rt, cx);
+        view.update(cx, |v, cx| v.toggle_rule(0, cx));
+        settle(&rt, cx);
+
+        let mut expected = stored_rules();
+        expected[0].enabled = false;
+        assert_eq!(repo.replaced.lock().unwrap().clone(), vec![expected]);
+    }
+
+    #[gpui::test]
+    fn a_failed_write_reports_the_error_and_reloads_what_the_store_holds(cx: &mut TestAppContext) {
+        install_presentation(cx);
+        let rt = runtime();
+        let repo = RecordingFilters::storing(stored_rules());
+        repo.write_fails
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let view = view_over(&repo, &rt, cx);
+
+        view.update(cx, |v, cx| v.toggle_rule(0, cx));
+        settle(&rt, cx);
+
+        let (save_error, shown) = view.read_with(cx, |v, _| {
+            (
+                v.save_error.clone(),
+                v.filters.loaded().map(|f| f.rules.clone()),
+            )
+        });
+        let read_only = StorageError::Connection {
+            reason: STORE_READ_ONLY.to_owned(),
+        }
+        .to_string();
+        assert_eq!(
+            (save_error, repo.loads(), shown),
+            (Some(read_only), 2, Some(stored_rules()))
+        );
     }
 
     fn filter_row(enabled: bool, kind: FilterRuleKind) -> FilterRule {
@@ -2629,7 +2960,7 @@ mod tests {
     fn preview_marks_keep_only_ranges_that_fit_the_text_in_order(cx: &mut TestAppContext) {
         let view = filters_view(cx);
         view.update(cx, |v, _| {
-            v.rules = vec![filter_row(true, literal("a", "b"))]
+            v.filters.loaded_mut().unwrap().rules = vec![filter_row(true, literal("a", "b"))]
         });
         let rule = ReplacementOrigin::ReplacementRuleIndex(0);
         let text = "ok дякую link";
@@ -2671,7 +3002,7 @@ mod tests {
     fn mark_tint_colours_by_source_and_by_replacement_row_ordinal(cx: &mut TestAppContext) {
         let view = filters_view(cx);
         view.update(cx, |v, _| {
-            v.rules = vec![
+            v.filters.loaded_mut().unwrap().rules = vec![
                 filter_row(false, literal("off", "x")),
                 filter_row(true, blocked(&["gtfo"])),
                 filter_row(
@@ -2720,11 +3051,12 @@ mod tests {
     fn spoken_marks_land_on_the_replacements_inside_the_quoted_output(cx: &mut TestAppContext) {
         let view = filters_view(cx);
         view.update(cx, |v, cx| {
-            v.rules = vec![
+            let filters = v.filters.loaded_mut().unwrap();
+            filters.rules = vec![
                 filter_row(true, blocked(&["gtfo"])),
                 filter_row(true, literal("thanks", "дякую")),
             ];
-            v.settings.url_mode = forge_storage::UrlMode::Replace;
+            filters.settings.url_mode = forge_storage::UrlMode::Replace;
             v.preview_input.update(cx, |input, cx| {
                 input.set_content("GG GTFO!!! check https://x.y/z thanks", cx)
             });
@@ -2758,7 +3090,8 @@ mod tests {
     fn spoken_marks_are_empty_for_text_other_than_the_final_stage_output(cx: &mut TestAppContext) {
         let view = filters_view(cx);
         view.update(cx, |v, cx| {
-            v.rules = vec![filter_row(true, literal("thanks", "дякую"))];
+            v.filters.loaded_mut().unwrap().rules =
+                vec![filter_row(true, literal("thanks", "дякую"))];
             v.preview_input
                 .update(cx, |input, cx| input.set_content("thanks", cx));
             v.refresh_preview(cx);
@@ -2789,7 +3122,7 @@ mod tests {
         install_presentation(cx);
         let rt = runtime();
         for (opt, saved_flag, live_flag) in cases {
-            let repo = Arc::new(RecordingFilters::default());
+            let repo = RecordingFilters::storing(Vec::new());
             let handle = initial_config();
             let view = cx.update(|cx| {
                 cx.new(|cx| {
@@ -2845,7 +3178,7 @@ mod tests {
                 m.submit(cx);
             });
             cx.run_until_parked();
-            let added = view.read_with(cx, |v, _| match v.rules.last().map(|r| &r.kind) {
+            let added = view.read_with(cx, |v, _| match v.shown().rules.last().map(|r| &r.kind) {
                 Some(FilterRuleKind::Literal {
                     match_inside_words, ..
                 }) => Some(*match_inside_words),

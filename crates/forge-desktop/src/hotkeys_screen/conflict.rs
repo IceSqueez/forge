@@ -33,7 +33,11 @@ impl HotkeysScreenView {
             if matches!(capture, Capture::AppModal(_)) {
                 self.push_app_modal_chord(combo, Some(owner), cx);
             } else {
-                self.shortcuts.unbind(owner);
+                let Some(shortcuts) = self.shortcuts.loaded_mut() else {
+                    cx.notify();
+                    return;
+                };
+                shortcuts.unbind(owner);
                 self.apply_capture(capture, combo, cx);
             }
             return;

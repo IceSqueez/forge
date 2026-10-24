@@ -1,4 +1,6 @@
-use forge_components::{ForgePalette, Icon, SectionLabel, icon, mono_family, pad_tile, tr};
+use forge_components::{
+    ForgePalette, Icon, SectionLabel, error_row_with_retry, icon, mono_family, pad_tile, tr,
+};
 use forge_types::TriggerInstanceId;
 use gpui::{AnyElement, ClickEvent, Context, Pixels, Point, div, prelude::*, px};
 
@@ -59,6 +61,14 @@ impl HotkeysScreenView {
         let mut list = div().w_full().flex().flex_col().gap(LIST_GAP);
         for (index, row) in self.bindings.iter().enumerate() {
             list = list.child(self.render_binding(index, row, palette, cx));
+        }
+        if let Some(reason) = self.shortcuts.failure() {
+            list = list.child(error_row_with_retry(
+                "hotkeys-app-load-retry",
+                tr!("settings_shortcuts_load_failed", reason = reason),
+                palette,
+                cx.listener(|this, _: &ClickEvent, _, cx| this.load_shortcuts(cx)),
+            ));
         }
         for (index, entry) in SHORTCUTS.iter().enumerate() {
             list = list.child(self.render_app_binding(index, entry, palette, cx));

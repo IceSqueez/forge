@@ -426,6 +426,128 @@ pub fn optimistic<V, S, F, E>(
     .detach();
 }
 
+pub enum Loadable<T> {
+    Loading,
+    Loaded(T),
+    Failed(String),
+}
+
+impl<T> Loadable<T> {
+    pub fn settled<E: Display>(result: Result<T, E>) -> Self {
+        match result {
+            Ok(value) => Loadable::Loaded(value),
+            Err(e) => Loadable::Failed(e.to_string()),
+        }
+    }
+
+    pub fn loaded(&self) -> Option<&T> {
+        match self {
+            Loadable::Loaded(value) => Some(value),
+            Loadable::Loading | Loadable::Failed(_) => None,
+        }
+    }
+
+    pub fn loaded_mut(&mut self) -> Option<&mut T> {
+        match self {
+            Loadable::Loaded(value) => Some(value),
+            Loadable::Loading | Loadable::Failed(_) => None,
+        }
+    }
+
+    pub fn is_loaded(&self) -> bool {
+        matches!(self, Loadable::Loaded(_))
+    }
+
+    pub fn failure(&self) -> Option<&str> {
+        match self {
+            Loadable::Failed(reason) => Some(reason),
+            Loadable::Loading | Loadable::Loaded(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WriteOutcome {
+    Written,
+    Superseded,
+    Failed(String),
+}
+
+type SnapshotWrite = std::pin::Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
+
+struct SnapshotJob {
+    write: SnapshotWrite,
+    settled: tokio::sync::oneshot::Sender<WriteOutcome>,
+}
+
+pub struct SnapshotWriter {
+    jobs: tokio::sync::mpsc::UnboundedSender<SnapshotJob>,
+    generation: Arc<AtomicU64>,
+}
+
+impl SnapshotWriter {
+    pub fn new(handle: &Handle) -> Self {
+        let (jobs, queue) = tokio::sync::mpsc::unbounded_channel();
+        handle.spawn(run_snapshot_queue(queue));
+        Self {
+            jobs,
+            generation: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    pub fn write<V, F, E>(
+        &self,
+        write: F,
+        on_settled: impl FnOnce(&mut V, WriteOutcome, &mut Context<V>) + 'static,
+        cx: &mut Context<V>,
+    ) where
+        V: 'static,
+        F: Future<Output = Result<(), E>> + Send + 'static,
+        E: Display + Send + 'static,
+    {
+        let ticket = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let generation = Arc::clone(&self.generation);
+        let (settled, outcome) = tokio::sync::oneshot::channel();
+        let job = SnapshotJob {
+            write: Box::pin(async move { write.await.map_err(|e| e.to_string()) }),
+            settled,
+        };
+        let _ = self.jobs.send(job);
+        cx.spawn(async move |this, cx| {
+            let Ok(outcome) = outcome.await else {
+                return;
+            };
+            let outcome = if generation.load(Ordering::SeqCst) == ticket {
+                outcome
+            } else {
+                WriteOutcome::Superseded
+            };
+            let _ = this.update(cx, |this, cx| {
+                on_settled(this, outcome, cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+}
+
+async fn run_snapshot_queue(mut queue: tokio::sync::mpsc::UnboundedReceiver<SnapshotJob>) {
+    while let Some(mut job) = queue.recv().await {
+        while let Ok(newer) = queue.try_recv() {
+            let _ = job.settled.send(WriteOutcome::Superseded);
+            job = newer;
+        }
+        let outcome = match job.write.await {
+            Ok(()) => WriteOutcome::Written,
+            Err(message) => {
+                tracing::warn!(error = %message, "snapshot write failed");
+                WriteOutcome::Failed(message)
+            }
+        };
+        let _ = job.settled.send(outcome);
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {

@@ -679,8 +679,13 @@ fn apply_persisted_shortcuts(
         let Ok(Ok(Some(raw))) = rx.await else {
             return;
         };
-        let mut overrides = crate::shortcut_overrides::ShortcutOverrides::default();
-        overrides.replace_stored(Some(&raw));
+        let overrides = match crate::shortcut_overrides::ShortcutOverrides::from_stored(Some(&raw)) {
+            Ok(overrides) => overrides,
+            Err(e) => {
+                tracing::warn!(error = %e, "stored keyboard shortcuts undecodable; defaults stay active");
+                return;
+            }
+        };
         if overrides.is_empty() {
             return;
         }

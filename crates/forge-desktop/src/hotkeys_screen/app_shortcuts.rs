@@ -4,6 +4,7 @@ use super::HotkeysScreenView;
 use super::capture::Capture;
 use crate::actions::ShortcutEntry;
 use crate::app_shortcut_modal::{AppShortcutModal, AppShortcutModalEvent};
+use crate::shortcut_overrides::ShortcutOverrides;
 
 pub(super) struct OpenAppModal {
     id: &'static str,
@@ -15,19 +16,31 @@ pub(super) struct OpenAppModal {
 impl HotkeysScreenView {
     pub(super) fn reset_app_binding(&mut self, id: &'static str, cx: &mut Context<Self>) {
         self.menu_open = None;
-        self.shortcuts.reset(id);
-        self.persist_shortcuts(cx);
+        self.edit_shortcuts(cx, |shortcuts| shortcuts.reset(id));
     }
 
     pub(super) fn unbind_app_binding(&mut self, id: &'static str, cx: &mut Context<Self>) {
         self.menu_open = None;
-        self.shortcuts.unbind(id);
-        self.persist_shortcuts(cx);
+        self.edit_shortcuts(cx, |shortcuts| shortcuts.unbind(id));
     }
 
     pub(super) fn toggle_app_binding(&mut self, id: &'static str, cx: &mut Context<Self>) {
-        let enabled = !self.shortcuts.is_enabled(id);
-        self.shortcuts.set_enabled(id, enabled);
+        self.edit_shortcuts(cx, |shortcuts| {
+            let enabled = !shortcuts.is_enabled(id);
+            shortcuts.set_enabled(id, enabled);
+        });
+    }
+
+    pub(super) fn edit_shortcuts(
+        &mut self,
+        cx: &mut Context<Self>,
+        mutate: impl FnOnce(&mut ShortcutOverrides),
+    ) {
+        let Some(shortcuts) = self.shortcuts.loaded_mut() else {
+            cx.notify();
+            return;
+        };
+        mutate(shortcuts);
         self.persist_shortcuts(cx);
     }
 
@@ -37,7 +50,11 @@ impl HotkeysScreenView {
         cx: &mut Context<Self>,
     ) {
         self.menu_open = None;
-        let chord = self.shortcuts.chord_of(entry).map(str::to_owned);
+        let Some(shortcuts) = self.shortcuts.loaded() else {
+            cx.notify();
+            return;
+        };
+        let chord = shortcuts.chord_of(entry).map(str::to_owned);
         let view = cx.new(|_| AppShortcutModal::new(entry, chord));
         let sub = cx.subscribe(&view, Self::on_app_modal_event);
         self.app_modal = Some(OpenAppModal {
@@ -81,14 +98,15 @@ impl HotkeysScreenView {
                 let chord = chord.clone();
                 let steal = self.app_modal.as_ref().and_then(|open| open.steal);
                 self.close_app_modal(cx);
-                if let Some(owner) = steal {
-                    self.shortcuts.unbind(owner);
-                }
-                match chord {
-                    Some(chord) => self.shortcuts.bind(id, chord),
-                    None => self.shortcuts.unbind(id),
-                }
-                self.persist_shortcuts(cx);
+                self.edit_shortcuts(cx, |shortcuts| {
+                    if let Some(owner) = steal {
+                        shortcuts.unbind(owner);
+                    }
+                    match chord {
+                        Some(chord) => shortcuts.bind(id, chord),
+                        None => shortcuts.unbind(id),
+                    }
+                });
             }
         }
     }

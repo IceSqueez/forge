@@ -231,15 +231,6 @@ impl YoutubeChatPoller {
                 }
 
                 let floor = {
-                    let qt = self.quota_tracker.lock().await;
-                    if qt.long_interval_mode {
-                        Duration::from_millis(LONG_INTERVAL_MS)
-                    } else {
-                        Duration::from_millis(POLL_FLOOR_MS)
-                    }
-                };
-
-                {
                     let today = today_pacific();
                     let mut qt = self.quota_tracker.lock().await;
                     if let Err(e) = qt.charge(CHAT_POLL_COST, today) {
@@ -251,7 +242,12 @@ impl YoutubeChatPoller {
                         }
                         break 'inner;
                     }
-                }
+                    if qt.long_interval_mode(today) {
+                        Duration::from_millis(LONG_INTERVAL_MS)
+                    } else {
+                        Duration::from_millis(POLL_FLOOR_MS)
+                    }
+                };
 
                 let token = match (self.access_token_source)().await {
                     Ok(t) => t,
@@ -1980,9 +1976,7 @@ mod tests {
     fn quota_for_two_resolutions() -> SharedQuota {
         SharedQuota::new(QuotaState {
             used_today: QUOTA_DAILY_LIMIT_FOR_TEST - 2 * BROADCAST_COST,
-            peak_seen: QUOTA_DAILY_LIMIT_FOR_TEST - 2 * BROADCAST_COST,
             last_reset_date: today_pacific(),
-            long_interval_mode: false,
         })
     }
 
@@ -2167,9 +2161,7 @@ mod tests {
 
         let quota = SharedQuota::new(QuotaState {
             used_today: QUOTA_DAILY_LIMIT_FOR_TEST - 3 * BROADCAST_COST,
-            peak_seen: QUOTA_DAILY_LIMIT_FOR_TEST - 3 * BROADCAST_COST,
             last_reset_date: today_pacific(),
-            long_interval_mode: false,
         });
 
         let (poller, live, rx) = poller_with_quota(&server, quota);
@@ -2905,9 +2897,7 @@ mod tests {
     fn quota_with_room_for(units: u32) -> SharedQuota {
         SharedQuota::new(QuotaState {
             used_today: QUOTA_DAILY_LIMIT_FOR_TEST - units,
-            peak_seen: QUOTA_DAILY_LIMIT_FOR_TEST - units,
             last_reset_date: today_pacific(),
-            long_interval_mode: false,
         })
     }
 
@@ -3081,5 +3071,61 @@ mod tests {
         .await;
         let streak_resumes_at_call = LIVE_LOOKUP_CALLS + failed_chat_polls as usize + NEXT_CALL;
         assert_eq!(reports, [(PollLinkHealth::Lost, streak_resumes_at_call)]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn first_chat_poll_after_a_pacific_rollover_waits_only_the_short_floor() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("lc-live")).await;
+        mount_chat_mock(
+            &server,
+            chat_response(json!([text_item("m-1", "hello", "Viewer")]), 0),
+        )
+        .await;
+        let previous_day = time::Date::from_calendar_date(2020, time::Month::January, 1).unwrap();
+        let quota = SharedQuota::new(QuotaState {
+            used_today: QUOTA_DAILY_LIMIT_FOR_TEST - 500,
+            last_reset_date: previous_day,
+        });
+        let (token_source, token_calls) = counting_token_source();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let poller = YoutubeChatPoller::new(
+            &crate::endpoints_test_support::unreachable_endpoints(),
+            token_source,
+            tx,
+            "UCtest".to_owned(),
+            LiveChatIdHandle::new(),
+            ActiveBroadcastIdHandle::new(),
+            quota,
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+        )
+        .with_api_base(server.uri());
+        let cancel = CancellationToken::new();
+        let cancel_clone = cancel.clone();
+        let join = tokio::spawn(async move { poller.run(cancel_clone).await });
+        let calls = || token_calls.load(std::sync::atomic::Ordering::SeqCst);
+
+        let mut chat_message_seen = false;
+        yield_until(
+            || {
+                while let Ok(event) = rx.try_recv() {
+                    chat_message_seen |= event.kind == "youtube.chat.message";
+                }
+                chat_message_seen
+            },
+            "first chat poll never published its message",
+        )
+        .await;
+        tokio::time::advance(Duration::from_millis(POLL_FLOOR_MS)).await;
+        yield_repeatedly().await;
+        let token_calls_after_short_floor = calls();
+
+        cancel.cancel();
+        join.await.unwrap().unwrap();
+
+        assert_eq!(
+            token_calls_after_short_floor, 3,
+            "discovery + first chat poll + second chat poll one short floor later"
+        );
     }
 }

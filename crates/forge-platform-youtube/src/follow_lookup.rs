@@ -236,9 +236,7 @@ mod tests {
     fn exhausted_quota() -> SharedQuota {
         SharedQuota::new(QuotaState {
             used_today: DAILY_LIMIT,
-            peak_seen: DAILY_LIMIT,
             last_reset_date: today_pacific(),
-            long_interval_mode: true,
         })
     }
 

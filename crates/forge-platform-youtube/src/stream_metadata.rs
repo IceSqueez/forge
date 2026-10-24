@@ -389,7 +389,6 @@ mod tests {
         {
             let mut qt = quota.lock().await;
             qt.used_today = 10_000;
-            qt.peak_seen = 10_000;
             qt.last_reset_date = today;
         }
         let meta = YoutubeStreamMetadata::new(

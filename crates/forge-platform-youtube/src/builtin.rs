@@ -20,7 +20,7 @@ use tokio_util::sync::CancellationToken;
 use crate::chat_platform::YoutubePlatform;
 use crate::credentials_manager::YoutubeCredentialsManager;
 use crate::follow_lookup::YoutubeFollowLookup;
-use crate::quota_state::SharedQuota;
+use crate::quota_state::{SharedQuota, today_pacific};
 use crate::triggers::channel_member::SupportNewMemberDescriptor;
 use crate::triggers::channel_member_milestone::SupportMemberMilestoneDescriptor;
 use crate::triggers::channel_user_banned::ChannelUserBannedDescriptor;
@@ -254,7 +254,7 @@ impl YoutubeIntegrationBundle {
     fn quota_metric(&self) -> HealthMetric {
         let value = match self.quota.try_lock() {
             Ok(guard) => HealthValue::Ratio {
-                used: u64::from(guard.used_today),
+                used: u64::from(guard.used_on(today_pacific())),
                 total: QUOTA_DAILY_BUDGET,
                 reset_hint: Some("resets daily (Pacific)".to_owned()),
             },

@@ -356,7 +356,6 @@ mod tests {
         {
             let mut qt = qt_arc.lock().await;
             qt.used_today = 9999;
-            qt.peak_seen = 9999;
             qt.last_reset_date = today;
         }
         let sender_at_limit = YoutubeSendChat::new(
@@ -492,7 +491,6 @@ mod tests {
         {
             let mut qt = qt_arc.lock().await;
             qt.used_today = 9999;
-            qt.peak_seen = 9999;
             qt.last_reset_date = today;
         }
         let (sender, _handle) = make_sender_with_quota(&server, qt_arc);

@@ -758,6 +758,13 @@ mod tests {
     fn make_bundle(
         repo: Arc<dyn CredentialsRepo>,
     ) -> (Arc<YoutubeIntegrationBundle>, Arc<YoutubePlatform>) {
+        make_bundle_with_quota(repo, SharedQuota::default())
+    }
+
+    fn make_bundle_with_quota(
+        repo: Arc<dyn CredentialsRepo>,
+        quota: SharedQuota,
+    ) -> (Arc<YoutubeIntegrationBundle>, Arc<YoutubePlatform>) {
         let manager = Arc::new(YoutubeCredentialsManager::new(
             repo,
             GoogleAuthFlow::new(
@@ -779,7 +786,7 @@ mod tests {
             "UCabc123".to_owned(),
             Arc::clone(&platform),
             manager,
-            SharedQuota::default(),
+            quota,
         );
         (bundle, platform)
     }
@@ -1143,6 +1150,24 @@ mod tests {
         assert!(matches!(metrics[1].value, HealthValue::Status { .. }));
         assert!(matches!(metrics[2].value, HealthValue::Text { .. }));
         assert!(matches!(metrics[3].value, HealthValue::Ratio { .. }));
+    }
+
+    #[tokio::test]
+    async fn api_calls_metric_reads_zero_once_the_pacific_day_has_rolled_over() {
+        let previous_day = time::Date::from_calendar_date(2020, time::Month::January, 1).unwrap();
+        let quota = SharedQuota::new(crate::quota_state::QuotaState {
+            used_today: 9_500,
+            last_reset_date: previous_day,
+        });
+        let (bundle, _platform) = make_bundle_with_quota(Arc::new(EmptyRepo), quota);
+
+        let metric = bundle.quota_metric();
+
+        assert!(
+            matches!(metric.value, HealthValue::Ratio { used: 0, .. }),
+            "got {:?}",
+            metric.value
+        );
     }
 
     #[tokio::test]

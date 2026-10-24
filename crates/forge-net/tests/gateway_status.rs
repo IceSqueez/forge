@@ -17,6 +17,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const ERROR_BODY_READ_CAP: usize = 64 * 1024;
 const EXCERPT_MAX_CHARS: usize = 512;
+const FAR_FUTURE_EPOCH: &str = "99999999999";
 
 async fn serving(template: ResponseTemplate) -> MockServer {
     let server = MockServer::start().await;
@@ -161,6 +162,7 @@ async fn throttle_statuses_become_rate_limited_and_feed_the_limiter_once() {
         Duration::from_secs(7200),
     );
     let secs = Duration::from_secs;
+    let epoch = || platform_with(ThrottleHintFamily::ResetEpochSeconds);
     for (profile, status, headers, retry_after, scope) in [
         (
             platform(),
@@ -219,6 +221,27 @@ async fn throttle_statuses_become_rate_limited_and_feed_the_limiter_once() {
             ThrottleScope::Bucket,
         ),
         (
+            epoch(),
+            429,
+            vec![("Ratelimit-Reset", FAR_FUTURE_EPOCH)],
+            MAX_REMOTE_COOLDOWN,
+            ThrottleScope::Bucket,
+        ),
+        (
+            epoch(),
+            503,
+            vec![("Ratelimit-Reset", FAR_FUTURE_EPOCH), ("Retry-After", "9")],
+            secs(9),
+            ThrottleScope::Bucket,
+        ),
+        (
+            discord,
+            503,
+            vec![("x-ratelimit-scope", "global"), ("Retry-After", "4")],
+            secs(4),
+            ThrottleScope::Bucket,
+        ),
+        (
             discord,
             429,
             vec![("x-ratelimit-reset-after", "2.5")],
@@ -267,6 +290,30 @@ async fn unhinted_503_is_a_server_error_without_limiter_feedback() {
         GatewayFailure::ServerError { status: 503, excerpt } if excerpt.as_str() == "maintenance"
     ));
     assert!(harness.limiter.observed_throttles().is_empty());
+}
+
+#[tokio::test]
+async fn unusable_503_hints_are_a_server_error_without_limiter_feedback() {
+    for (profile, headers) in [
+        (
+            platform_with(ThrottleHintFamily::ResetEpochSeconds),
+            vec![("Ratelimit-Reset", FAR_FUTURE_EPOCH)],
+        ),
+        (platform(), vec![("Retry-After", "soon")]),
+    ] {
+        let mut template = ResponseTemplate::new(503).set_body_string("down");
+        for (name, value) in &headers {
+            template = template.insert_header(*name, *value);
+        }
+        let server = serving(template).await;
+        let harness = Harness::new(&server.uri(), profile);
+        let failure = harness.fail(GatewayRequest::get("x")).await;
+        assert_eq!(variant(&failure), "ServerError", "{headers:?}");
+        assert!(
+            harness.limiter.observed_throttles().is_empty(),
+            "{headers:?}"
+        );
+    }
 }
 
 #[tokio::test]

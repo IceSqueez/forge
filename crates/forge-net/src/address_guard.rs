@@ -41,7 +41,60 @@ const SPECIAL_IPV4_BLOCKS: [Ipv4Block; 4] = [
     RESERVED_FOR_FUTURE_USE,
 ];
 
-const NAT64_WELL_KNOWN_PREFIX: [u16; 6] = [0x64, 0xff9b, 0, 0, 0, 0];
+struct Ipv6Block {
+    network: Ipv6Addr,
+    prefix_len: u32,
+}
+
+impl Ipv6Block {
+    const fn new(network: Ipv6Addr, prefix_len: u32) -> Self {
+        Self {
+            network,
+            prefix_len,
+        }
+    }
+
+    fn contains(&self, ip: Ipv6Addr) -> bool {
+        let mask = u128::MAX
+            .checked_shl(u128::BITS - self.prefix_len)
+            .unwrap_or(0);
+        u128::from(ip) & mask == u128::from(self.network) & mask
+    }
+}
+
+const SITE_LOCAL: Ipv6Block = Ipv6Block::new(Ipv6Addr::new(0xfec0, 0, 0, 0, 0, 0, 0, 0), 10);
+const NAT64_LOCAL_USE: Ipv6Block =
+    Ipv6Block::new(Ipv6Addr::new(0x64, 0xff9b, 1, 0, 0, 0, 0, 0), 48);
+const NON_PUBLIC_IPV6_BLOCKS: [Ipv6Block; 2] = [SITE_LOCAL, NAT64_LOCAL_USE];
+
+const IPV4_OCTET_COUNT: usize = 4;
+
+struct Ipv4Embedding {
+    block: Ipv6Block,
+    ipv4_octet_offset: usize,
+}
+
+impl Ipv4Embedding {
+    fn extract(&self, ip: Ipv6Addr) -> Option<Ipv4Addr> {
+        if !self.block.contains(ip) {
+            return None;
+        }
+        let octets = ip.octets();
+        let embedded: &[u8; IPV4_OCTET_COUNT] =
+            octets.get(self.ipv4_octet_offset..)?.first_chunk()?;
+        Some(Ipv4Addr::from(*embedded))
+    }
+}
+
+const NAT64_WELL_KNOWN: Ipv4Embedding = Ipv4Embedding {
+    block: Ipv6Block::new(Ipv6Addr::new(0x64, 0xff9b, 0, 0, 0, 0, 0, 0), 96),
+    ipv4_octet_offset: 12,
+};
+const SIX_TO_FOUR: Ipv4Embedding = Ipv4Embedding {
+    block: Ipv6Block::new(Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 0), 16),
+    ipv4_octet_offset: 2,
+};
+const IPV4_EMBEDDINGS: [Ipv4Embedding; 2] = [NAT64_WELL_KNOWN, SIX_TO_FOUR];
 
 fn unbracket(host: &str) -> &str {
     host.strip_prefix('[')
@@ -86,7 +139,7 @@ fn is_private_or_special_v4(ip: Ipv4Addr) -> bool {
 }
 
 fn is_private_or_special_v6(ip: Ipv6Addr) -> bool {
-    if let Some(embedded) = ip.to_ipv4().or_else(|| nat64_embedded_ipv4(ip)) {
+    if let Some(embedded) = ip.to_ipv4().or_else(|| embedded_ipv4(ip)) {
         return is_private_or_special_v4(embedded);
     }
     ip.is_loopback()
@@ -94,15 +147,15 @@ fn is_private_or_special_v6(ip: Ipv6Addr) -> bool {
         || ip.is_multicast()
         || ip.is_unique_local()
         || ip.is_unicast_link_local()
+        || NON_PUBLIC_IPV6_BLOCKS
+            .iter()
+            .any(|block| block.contains(ip))
 }
 
-fn nat64_embedded_ipv4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
-    let segments = ip.segments();
-    if segments[..NAT64_WELL_KNOWN_PREFIX.len()] != NAT64_WELL_KNOWN_PREFIX {
-        return None;
-    }
-    let [.., a, b, c, d] = ip.octets();
-    Some(Ipv4Addr::new(a, b, c, d))
+fn embedded_ipv4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
+    IPV4_EMBEDDINGS
+        .iter()
+        .find_map(|embedding| embedding.extract(ip))
 }
 
 fn retain_public(
@@ -195,6 +248,11 @@ mod tests {
             "::127.0.0.1",
             "64:ff9b::7f00:1",
             "64:ff9b::a00:1",
+            "fec0::1",
+            "2002:7f00:1::",
+            "2002:a9fe:a9fe::",
+            "64:ff9b:1::808:808",
+            "64:ff9b:1::a00:1",
         ];
         for addr in blocked {
             assert!(
@@ -214,6 +272,7 @@ mod tests {
             "2606:4700::1",
             "::ffff:8.8.8.8",
             "64:ff9b::808:808",
+            "2002:808:808::",
         ];
         for addr in allowed {
             assert!(
@@ -278,13 +337,21 @@ mod tests {
             ("fe7f:ffff:ffff:ffff:ffff:ffff:ffff:ffff", false),
             ("fe80::", true),
             ("febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff", true),
-            ("feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", false),
+            ("fec0::", true),
+            ("feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", true),
             ("ff00::", true),
             ("::ffff:0.0.0.0", true),
             ("::ffff:100.63.255.255", false),
             ("::ffff:100.64.0.0", true),
             ("64:ff9a::a00:1", false),
             ("64:ff9b::1:a00:1", false),
+            ("64:ff9b:0:ffff:ffff:ffff:ffff:ffff", false),
+            ("64:ff9b:1:ffff:ffff:ffff:ffff:ffff", true),
+            ("64:ff9b:2::808:808", false),
+            ("2001:ffff:ffff:ffff:ffff:ffff:ffff:ffff", false),
+            ("2002::", true),
+            ("2002:ffff:ffff:ffff:ffff:ffff:ffff:ffff", true),
+            ("2003::", false),
         ];
         for (addr, blocked) in cases {
             assert_eq!(

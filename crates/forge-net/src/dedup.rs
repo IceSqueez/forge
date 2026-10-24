@@ -28,6 +28,9 @@ impl DedupSet {
         if self.seen.contains(&id) {
             return false;
         }
+        if self.capacity == Some(0) {
+            return true;
+        }
         if let Some(capacity) = self.capacity
             && self.order.len() >= capacity
             && let Some(evicted) = self.order.pop_front()

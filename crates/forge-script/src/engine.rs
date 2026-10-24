@@ -535,4 +535,99 @@ mod tests {
         assert_eq!(events[0].kind, "chat.send.request");
         assert_eq!(events[0].caused_by, Some(caused_by));
     }
+
+    fn sample_datetime() -> time::OffsetDateTime {
+        time::OffsetDateTime::from_unix_timestamp(1_791_118_800).unwrap()
+    }
+
+    #[test]
+    fn a_script_returning_nothing_converts_to_no_value() {
+        let engine = Engine::with_config(EngineConfig::default());
+        for body in ["()", "let x = 1;", "if false { 1 }"] {
+            let result = engine.eval_script_with_scope_as_variant(body, &mut rhai::Scope::new());
+            assert!(matches!(result, Ok(None)), "{body}: {result:?}");
+        }
+    }
+
+    #[test]
+    fn a_script_returning_an_unstorable_value_fails_as_a_runtime_error() {
+        let engine = Engine::with_config(EngineConfig::default());
+        for body in ["[1, ()]", "#{a: ()}", "0.0 / 0.0", "Fn(\"x\")"] {
+            let result = engine.eval_script_with_scope_as_variant(body, &mut rhai::Scope::new());
+            assert!(
+                matches!(result, Err(ScriptError::Runtime { .. })),
+                "{body}: {result:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn globals_set_stores_arrays_maps_and_datetimes_as_their_own_type() {
+        let when = sample_datetime();
+        for (value_expr, expected) in [
+            (
+                r#"[1, "a", [true]]"#,
+                Variant::Array(vec![
+                    Variant::Int(1),
+                    Variant::String("a".to_owned()),
+                    Variant::Array(vec![Variant::Bool(true)]),
+                ]),
+            ),
+            (
+                "#{n: 1, at: when}",
+                Variant::Object(std::collections::BTreeMap::from([
+                    ("n".to_owned(), Variant::Int(1)),
+                    ("at".to_owned(), Variant::Datetime(when)),
+                ])),
+            ),
+            ("when", Variant::Datetime(when)),
+        ] {
+            let dp = open_test_dp().await;
+            let engine = Engine::with_api(unhurried(), make_api(Arc::clone(&dp)));
+            let body = format!(r#"forge::globals::set("stored", {value_expr}, false)"#);
+            let result = tokio::task::spawn_blocking(move || {
+                let mut scope = rhai::Scope::new();
+                scope.push("when", when);
+                engine.eval_script_with_scope(&body, &mut scope).map(|_| ())
+            })
+            .await
+            .unwrap();
+
+            assert!(result.is_ok(), "{value_expr}: {result:?}");
+            let stored = GlobalsRepo::get(dp.as_ref(), "stored").await.unwrap();
+            assert_eq!(stored, Some(expected), "{value_expr}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_global_read_and_written_back_by_a_script_keeps_its_stored_type() {
+        let when = sample_datetime();
+        for original in [
+            Variant::Datetime(when),
+            Variant::Array(vec![Variant::Datetime(when), Variant::Array(vec![])]),
+            Variant::Object(std::collections::BTreeMap::from([(
+                "inner".to_owned(),
+                Variant::Object(std::collections::BTreeMap::new()),
+            )])),
+        ] {
+            let dp = open_test_dp().await;
+            GlobalsRepo::set(dp.as_ref(), "source", original.clone(), false)
+                .await
+                .unwrap();
+            let engine = Engine::with_api(unhurried(), make_api(Arc::clone(&dp)));
+            let result = tokio::task::spawn_blocking(move || {
+                engine
+                    .eval_script(
+                        r#"forge::globals::set("copy", forge::globals::get("source"), false)"#,
+                    )
+                    .map(|_| ())
+            })
+            .await
+            .unwrap();
+
+            assert!(result.is_ok(), "{original:?}: {result:?}");
+            let copy = GlobalsRepo::get(dp.as_ref(), "copy").await.unwrap();
+            assert_eq!(copy, Some(original.clone()), "{original:?}");
+        }
+    }
 }

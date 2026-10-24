@@ -216,6 +216,7 @@ mod tests {
 
     const DUE_UNIX_SECS: i64 = 1_791_118_800;
     const PLACED_ID: i64 = 42;
+    const DUE_BINDING: &str = "when";
 
     struct NullPublisher;
 
@@ -301,9 +302,13 @@ mod tests {
             api = api.with_action_scheduler(scheduler as Arc<dyn ActionScheduler>);
         }
         let engine = Engine::with_api(EngineConfig::default(), api);
-        tokio::task::spawn_blocking(move || engine.eval_script(&script))
-            .await
-            .unwrap()
+        tokio::task::spawn_blocking(move || {
+            let mut scope = rhai::Scope::new();
+            scope.push(DUE_BINDING, due());
+            engine.eval_script_with_scope(&script, &mut scope)
+        })
+        .await
+        .unwrap()
     }
 
     async fn eval_ok(scheduler: Option<Arc<RecordingScheduler>>, script: String) {
@@ -452,6 +457,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn at_hands_a_datetime_due_time_over_as_a_datetime_with_and_without_options() {
+        let as_datetime = ScriptScheduleDue::At(Variant::Datetime(due()));
+        for (call, expected) in [
+            (
+                format!(r#"("Greet", {DUE_BINDING})"#),
+                defaults("Greet", as_datetime.clone()),
+            ),
+            (
+                format!(r#"("Greet", {DUE_BINDING}, #{{key: "k"}})"#),
+                ScriptScheduleRequest {
+                    key: Some("k".to_owned()),
+                    ..defaults("Greet", as_datetime)
+                },
+            ),
+        ] {
+            let scheduler = RecordingScheduler::placing();
+
+            eval_ok(
+                Some(Arc::clone(&scheduler)),
+                format!("forge::schedule::at{call}"),
+            )
+            .await;
+
+            assert_eq!(scheduler.requests(), [expected], "{call}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_placed_due_time_can_be_handed_straight_back_to_at() {
+        let scheduler = RecordingScheduler::placing();
+
+        eval_ok(
+            Some(Arc::clone(&scheduler)),
+            r#"let r = forge::schedule::after("Warmup", 90); forge::schedule::at("Greet", r.due_at)"#
+                .to_owned(),
+        )
+        .await;
+
+        assert_eq!(
+            scheduler.requests().last(),
+            Some(&defaults(
+                "Greet",
+                ScriptScheduleDue::At(Variant::Datetime(due()))
+            ))
+        );
+    }
+
+    #[tokio::test]
     async fn a_placed_run_returns_its_id_and_due_time_as_rfc3339_text() {
         let placed = eval(
             Some(RecordingScheduler::placing()),
@@ -516,6 +569,8 @@ mod tests {
             r#"forge::schedule::at("Greet", "2026-10-04T12:00:00Z", #{})"#,
             "forge::schedule::at(\"Greet\", 1791118800)",
             "forge::schedule::at(\"Greet\", 1791118800, #{})",
+            "forge::schedule::at(\"Greet\", when)",
+            "forge::schedule::at(\"Greet\", when, #{})",
             r#"forge::schedule::cancel("raid-thanks")"#,
         ] {
             let failure = runtime_reason(eval(None, script.to_owned()).await);

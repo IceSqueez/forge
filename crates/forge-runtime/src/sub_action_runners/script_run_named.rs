@@ -292,7 +292,19 @@ mod tests {
 
     const SECRET: &str = "sk-live-0123456789";
 
-    async fn run_named(body: &str) -> (SubActionOutcome, Option<Event>, Option<Event>, ScriptId) {
+    struct NamedRun {
+        outcome: SubActionOutcome,
+        stack: Option<ArgStack>,
+        exec: Option<Event>,
+        error: Option<Event>,
+        script_id: ScriptId,
+    }
+
+    async fn run_named(body: &str) -> NamedRun {
+        run_named_into(body, "").await
+    }
+
+    async fn run_named_into(body: &str, target_var: &str) -> NamedRun {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
@@ -325,6 +337,10 @@ mod tests {
             "script_name".to_owned(),
             Variant::String("greet".to_owned()),
         );
+        config.insert(
+            TARGET_VAR_KEY.to_owned(),
+            Variant::String(target_var.to_owned()),
+        );
 
         let mut sub = bus.subscribe();
         let arg_stack = ArgStack::default();
@@ -332,7 +348,7 @@ mod tests {
         let ctx =
             forge_registry::RunContext::leaf(&arg_stack, 0, EventId::new(), dummy_pub.as_ref());
 
-        let (telemetry, _) = runner.execute(&config, &ctx).await;
+        let (telemetry, stack) = runner.execute(&config, &ctx).await;
 
         let mut exec = None;
         let mut error = None;
@@ -347,12 +363,23 @@ mod tests {
                 break;
             }
         }
-        (telemetry.outcome, exec, error, script_id)
+        NamedRun {
+            outcome: telemetry.outcome,
+            stack,
+            exec,
+            error,
+            script_id,
+        }
     }
 
     #[tokio::test]
     async fn named_script_exec_and_error_carry_script_identity_and_clear_inline_flag() {
-        let (_, exec, error, script_id) = run_named("throw \"boom\";").await;
+        let NamedRun {
+            exec,
+            error,
+            script_id,
+            ..
+        } = run_named("throw \"boom\";").await;
 
         let expected_id = script_id.to_string();
         for ev in [
@@ -382,7 +409,7 @@ mod tests {
 
     #[tokio::test]
     async fn named_failure_text_and_error_event_omit_the_script_body() {
-        let (outcome, _, error, _) =
+        let NamedRun { outcome, error, .. } =
             run_named(&format!("let token = \"{SECRET}\"; let x = 1 / 0;")).await;
 
         let SubActionOutcome::Failed(message) = outcome else {
@@ -397,5 +424,42 @@ mod tests {
                 && !payload.to_string().contains(SECRET),
             "{message} / {payload}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_named_script_returning_a_map_stores_it_in_the_target_variable() {
+        let NamedRun { outcome, stack, .. } =
+            run_named_into(r#"#{name: "ana", tags: [1, 2]}"#, "result").await;
+
+        assert!(matches!(outcome, SubActionOutcome::Success), "{outcome:?}");
+        assert_eq!(
+            stack.and_then(|s| s.get("result").cloned()),
+            Some(Variant::Object(std::collections::BTreeMap::from([
+                ("name".to_owned(), Variant::String("ana".to_owned())),
+                (
+                    "tags".to_owned(),
+                    Variant::Array(vec![Variant::Int(1), Variant::Int(2)])
+                ),
+            ])))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_named_script_returning_nothing_succeeds_without_touching_variables() {
+        let NamedRun { outcome, stack, .. } = run_named_into("let x = 1;", "result").await;
+
+        assert!(matches!(outcome, SubActionOutcome::Success), "{outcome:?}");
+        assert!(stack.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_named_script_returning_an_unstorable_value_fails_the_step() {
+        let NamedRun { outcome, stack, .. } = run_named_into("[1, ()]", "result").await;
+
+        assert!(
+            matches!(&outcome, SubActionOutcome::Failed(m) if m.starts_with("script 'greet' failed:")),
+            "{outcome:?}"
+        );
+        assert!(stack.is_none());
     }
 }

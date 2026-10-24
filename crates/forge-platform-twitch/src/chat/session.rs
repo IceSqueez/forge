@@ -8346,10 +8346,7 @@ mod tests {
             creds,
             manager,
             SubscriptionTracker::default(),
-            Arc::new(forge_net::TokenBucketRateLimiter::new(
-                crate::builtin::HELIX_BUDGET_CAPACITY,
-                crate::builtin::HELIX_BUDGET_WINDOW,
-            )),
+            crate::sub_actions::test_support::unreachable_helix_gateway(),
             TwitchLifecycle::new(),
         ));
         let bundle = crate::builtin::TwitchIntegrationBundle::new(

@@ -3,6 +3,7 @@
 pub mod auth;
 mod ban_list;
 mod bot_account;
+mod bounded_client;
 pub mod builtin;
 mod cadence;
 pub mod chat;
@@ -19,6 +20,7 @@ mod event_channel;
 pub mod event_kinds;
 mod follow_lookup;
 pub mod helix;
+mod helix_gateway;
 pub mod integration;
 mod lifecycle;
 #[cfg(test)]
@@ -52,6 +54,7 @@ pub use helix::{
     HelixError, HelixHttpTransport, HelixMethod, HelixRequest, HelixTokenRefresher,
     HelixTokenSource, HelixTransport,
 };
+pub use helix_gateway::{HELIX_GATEWAY_PROFILE, helix_gateway};
 pub use integration::TWITCH_INTEGRATION;
 pub use lifecycle::TwitchLifecycle;
 pub use sub_actions::identity::BroadcasterTier;

@@ -476,7 +476,7 @@ pub(crate) async fn subscribe_all_with_base_url(
     }
 
     let ctx = SubscribeCtx {
-        http: crate::helix::bounded_http_client(),
+        http: crate::bounded_client::bounded_http_client(),
         token: token.clone(),
         client_id: client_id.to_owned(),
         session_id: session_id.to_owned(),

@@ -341,13 +341,16 @@ pub(crate) mod test_support {
 
     use async_trait::async_trait;
     use forge_events::{Event, EventPublisher};
+    use forge_net::{Gateway, TokenBucketRateLimiter};
     use forge_platform_core::{EndpointSurface, PlatformEndpoints};
     use forge_registry::RunContext;
     use forge_storage::{CredentialId, CredentialsRepo, StorageError};
     use forge_types::{ArgStack, EventId};
     use time::OffsetDateTime;
 
+    use crate::builtin::{HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
     use crate::helix::{HelixError, HelixRequest, HelixTransport};
+    use crate::helix_gateway::HELIX_GATEWAY_PROFILE;
 
     pub(crate) const TOKEN_SENTINEL: &str = "FAKE_TWITCH_TOKEN_SENTINEL_qq123";
     pub(crate) const SELF_USER_ID: &str = "9876";
@@ -472,6 +475,23 @@ pub(crate) mod test_support {
                 .map(|(_, url)| OsString::from(*url))
         })
         .unwrap()
+    }
+
+    pub(crate) fn helix_gateway_at(base_url: &str) -> Gateway {
+        Gateway::new(
+            base_url,
+            std::sync::Arc::new(TokenBucketRateLimiter::new(
+                HELIX_BUDGET_CAPACITY,
+                HELIX_BUDGET_WINDOW,
+            )),
+            HELIX_GATEWAY_PROFILE,
+            None,
+        )
+        .unwrap()
+    }
+
+    pub(crate) fn unreachable_helix_gateway() -> Gateway {
+        helix_gateway_at("http://127.0.0.1:0")
     }
 
     pub(crate) fn unreachable_twitch_endpoints() -> PlatformEndpoints {

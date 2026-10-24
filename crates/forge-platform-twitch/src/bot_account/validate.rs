@@ -5,7 +5,7 @@ use serde::Deserialize;
 use tracing::debug;
 
 use crate::auth::{TWITCH_BOT_SCOPES, twitch_validate_endpoint};
-use crate::helix::bounded_http_client;
+use crate::bounded_client::bounded_http_client;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum TokenVerdict {

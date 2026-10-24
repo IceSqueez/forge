@@ -10,8 +10,8 @@ use crate::auth::{
     DEVICE_CANCELLED_REASON, DEVICE_CODE_USED_REASON, DEVICE_DENIED_REASON, DEVICE_EXPIRED_REASON,
     DeviceCodeInfo, TwitchAuthBundle, TwitchAuthFlow, twitch_revoke_endpoint,
 };
+use crate::bounded_client::bounded_http_client;
 use crate::credentials::{TWITCH_BOT_CREDENTIAL_ID, load, load_at, store_at};
-use crate::helix::bounded_http_client;
 
 #[derive(Debug, Error)]
 pub enum BotLoginError {

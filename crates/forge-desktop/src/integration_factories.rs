@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
-use forge_net::{RateLimiter, TokenBucketRateLimiter};
+use forge_net::{Gateway, RateLimiter, TokenBucketRateLimiter};
 use forge_platform_core::{ChatPlatform, PlatformEndpoints, SectionIcon};
 use forge_registry::SubActionRegistry;
 use forge_runtime::{
@@ -44,7 +44,7 @@ pub(crate) struct TwitchFactory {
     creds: Arc<dyn CredentialsRepo>,
     manager: Arc<forge_platform_twitch::TwitchCredentialsManager>,
     lifecycle: forge_platform_twitch::TwitchLifecycle,
-    rate_limiter: Arc<dyn RateLimiter>,
+    helix: Gateway,
     bot: Arc<forge_platform_twitch::TwitchBotAccount>,
 }
 
@@ -62,22 +62,18 @@ pub(crate) fn wire_twitch(
         Arc::clone(&creds),
         client_id.clone(),
     ));
-    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
-        forge_platform_twitch::HELIX_BUDGET_CAPACITY,
-        forge_platform_twitch::HELIX_BUDGET_WINDOW,
-    ));
+    let helix = twitch_helix_gateway(endpoints, bus)?;
     let bot = forge_platform_twitch::TwitchBotAccount::new(
         endpoints,
         Arc::clone(&creds),
         client_id.clone(),
         publisher(bus),
+        twitch_helix_gateway(endpoints, bus)?,
     );
     let transport: Arc<dyn forge_platform_twitch::HelixTransport> =
         Arc::new(
             forge_platform_twitch::HelixHttpTransport::new(
-                endpoints,
-                Arc::clone(&rate_limiter),
-                publisher(bus),
+                helix.clone(),
                 client_id.clone(),
                 Arc::clone(&manager) as Arc<dyn forge_platform_twitch::HelixTokenSource>,
             )
@@ -102,9 +98,19 @@ pub(crate) fn wire_twitch(
         creds,
         manager,
         lifecycle,
-        rate_limiter,
+        helix,
         bot,
     })
+}
+
+fn twitch_helix_gateway(endpoints: &PlatformEndpoints, bus: &Arc<EventBus>) -> Option<Gateway> {
+    let limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
+        forge_platform_twitch::HELIX_BUDGET_CAPACITY,
+        forge_platform_twitch::HELIX_BUDGET_WINDOW,
+    ));
+    forge_platform_twitch::helix_gateway(endpoints, limiter, publisher(bus))
+        .inspect_err(|e| eprintln!("forge-desktop: twitch helix gateway build failed: {e}"))
+        .ok()
 }
 
 impl TwitchFactory {
@@ -147,7 +153,7 @@ impl IntegrationFactory<BuiltinObject> for TwitchFactory {
                 Arc::clone(&self.creds),
                 Arc::clone(&self.manager),
                 forge_platform_twitch::SubscriptionTracker::default(),
-                Arc::clone(&self.rate_limiter),
+                self.helix.clone(),
                 self.lifecycle.clone(),
             )
             .with_bot(Arc::clone(&self.bot)),

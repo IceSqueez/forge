@@ -57,10 +57,8 @@ impl FollowLookup for TwitchIntegrationBundle {
 mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::Duration;
 
-    use forge_events::EventPublisher;
-    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
+    use forge_net::TokenBucketRateLimiter;
     use forge_platform_core::{EndpointSurface, PlatformEndpoints};
     use forge_types::OAuthToken;
     use serde_json::{Value, json};
@@ -70,11 +68,13 @@ mod tests {
 
     use super::*;
     use crate::BroadcasterTier;
+    use crate::builtin::{HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
     use crate::chat::ChatConnectionState;
     use crate::event_channel::PlatformEventChannel;
     use crate::helix::{
         HelixError, HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport,
     };
+    use crate::helix_gateway::helix_gateway;
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, endpoints_with, unreachable_twitch_endpoints,
     };
@@ -105,17 +105,6 @@ mod tests {
             self.refreshes.fetch_add(1, Ordering::SeqCst);
             Ok(OAuthToken::new("fresh-token"))
         }
-    }
-
-    struct GrantLimiter;
-
-    #[async_trait]
-    impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Granted)
-        }
-
-        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
     }
 
     fn followed_at() -> OffsetDateTime {
@@ -164,11 +153,16 @@ mod tests {
         endpoints: &PlatformEndpoints,
         refresher: Arc<CountingRefresher>,
     ) -> Arc<TwitchIntegrationBundle> {
-        let publisher: Arc<dyn EventPublisher> = Arc::new(PlatformEventChannel::new());
         let transport = HelixHttpTransport::new(
-            endpoints,
-            Arc::new(GrantLimiter),
-            publisher,
+            helix_gateway(
+                endpoints,
+                Arc::new(TokenBucketRateLimiter::new(
+                    HELIX_BUDGET_CAPACITY,
+                    HELIX_BUDGET_WINDOW,
+                )),
+                Arc::new(PlatformEventChannel::new()),
+            )
+            .unwrap(),
             "test-client".to_owned(),
             Arc::new(StaleToken),
         )

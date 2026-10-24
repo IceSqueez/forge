@@ -9,9 +9,7 @@ use tokio_stream::wrappers::{BroadcastStream, WatchStream};
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
-use forge_net::RateLimiter;
-#[cfg(test)]
-use forge_net::TokenBucketRateLimiter;
+use forge_net::Gateway;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform, CollectionId,
     CollectionRevisions, ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric,
@@ -98,7 +96,7 @@ pub struct TwitchIntegrationBundle {
     viewer_state: std::sync::RwLock<ViewerPollState>,
     viewer_report_tx: watch::Sender<ViewerReport>,
     transport: Arc<dyn HelixTransport>,
-    rate_limiter: Arc<dyn RateLimiter>,
+    helix: Gateway,
     tier: std::sync::RwLock<BroadcasterTier>,
     token_expires_at: std::sync::RwLock<Option<SystemTime>>,
     connected_at: std::sync::RwLock<Option<OffsetDateTime>>,
@@ -113,13 +111,8 @@ impl TwitchIntegrationBundle {
         let config = platform.config().clone();
         let bus = platform.publisher();
         let credentials_manager = Arc::clone(platform.credentials_manager());
-        let rate_limiter = Arc::clone(platform.rate_limiter());
-        let transport = Self::build_helix_transport(
-            &config,
-            &bus,
-            &credentials_manager,
-            Arc::clone(&rate_limiter),
-        );
+        let helix = platform.helix_gateway().clone();
+        let transport = Self::build_helix_transport(&config, &credentials_manager, helix.clone());
         let bundle = Arc::new(Self {
             id: crate::TWITCH_INTEGRATION.id,
             login,
@@ -133,7 +126,7 @@ impl TwitchIntegrationBundle {
             viewer_state: std::sync::RwLock::new(ViewerPollState::default()),
             viewer_report_tx,
             transport: Arc::clone(&transport),
-            rate_limiter,
+            helix,
             tier: std::sync::RwLock::new(BroadcasterTier::default()),
             token_expires_at: std::sync::RwLock::new(None),
             connected_at: std::sync::RwLock::new(None),
@@ -151,15 +144,12 @@ impl TwitchIntegrationBundle {
 
     fn build_helix_transport(
         config: &ChatSessionConfig,
-        bus: &Arc<dyn EventPublisher>,
         manager: &Arc<TwitchCredentialsManager>,
-        rate_limiter: Arc<dyn RateLimiter>,
+        helix: Gateway,
     ) -> Arc<dyn HelixTransport> {
         Arc::new(
             HelixHttpTransport::new(
-                &config.endpoints,
-                rate_limiter,
-                Arc::clone(bus),
+                helix,
                 config.client_id.clone(),
                 Arc::clone(manager) as Arc<dyn HelixTokenSource>,
             )
@@ -423,17 +413,14 @@ impl TwitchIntegrationBundle {
             user_id: broadcaster_id.to_owned(),
             endpoints: crate::sub_actions::test_support::unreachable_twitch_endpoints(),
         };
-        let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
-            HELIX_BUDGET_CAPACITY,
-            HELIX_BUDGET_WINDOW,
-        ));
+        let helix = crate::sub_actions::test_support::unreachable_helix_gateway();
         let lifecycle = TwitchLifecycle::new();
         let platform = Arc::new(TwitchPlatform::new(
             config.clone(),
             Arc::clone(&creds),
             Arc::clone(&credentials_manager),
             tracker.clone(),
-            Arc::clone(&rate_limiter),
+            helix.clone(),
             lifecycle.clone(),
         ));
         Arc::new(Self {
@@ -450,7 +437,7 @@ impl TwitchIntegrationBundle {
             viewer_state: std::sync::RwLock::new(ViewerPollState::default()),
             viewer_report_tx,
             transport,
-            rate_limiter,
+            helix,
             tier: std::sync::RwLock::new(tier),
             token_expires_at: std::sync::RwLock::new(None),
             connected_at: std::sync::RwLock::new(None),
@@ -519,7 +506,7 @@ impl TwitchIntegrationBundle {
     }
 
     fn api_calls_health_value(&self) -> HealthValue {
-        let usage = self.rate_limiter.usage();
+        let usage = self.helix.limiter_usage();
         match (usage.used, usage.capacity) {
             (Some(used), Some(capacity)) => HealthValue::Ratio {
                 used: u64::from(used),
@@ -2267,10 +2254,7 @@ mod tests {
                 "test-client".to_owned(),
             )),
             SubscriptionTracker::default(),
-            Arc::new(TokenBucketRateLimiter::new(
-                HELIX_BUDGET_CAPACITY,
-                HELIX_BUDGET_WINDOW,
-            )),
+            crate::sub_actions::test_support::unreachable_helix_gateway(),
             TwitchLifecycle::new(),
         ));
         let bundle = TwitchIntegrationBundle::new(Some("streamer".to_owned()), platform);

@@ -687,10 +687,7 @@ pub(crate) mod tests {
             repo,
             Arc::clone(&mgr),
             crate::subscriptions::SubscriptionTracker::default(),
-            Arc::new(forge_net::TokenBucketRateLimiter::new(
-                crate::builtin::HELIX_BUDGET_CAPACITY,
-                crate::builtin::HELIX_BUDGET_WINDOW,
-            )),
+            crate::sub_actions::test_support::unreachable_helix_gateway(),
             crate::lifecycle::TwitchLifecycle::new(),
         ));
         let bundle =

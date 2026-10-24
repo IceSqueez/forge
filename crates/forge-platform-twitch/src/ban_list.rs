@@ -147,11 +147,7 @@ impl BanListSource for TwitchIntegrationBundle {
 mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::Duration;
 
-    use forge_events::EventPublisher;
-    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
-    use forge_platform_core::EndpointSurface;
     use forge_types::OAuthToken;
     use serde_json::{Value, json};
     use tokio::sync::watch;
@@ -161,9 +157,8 @@ mod tests {
     use super::*;
     use crate::BroadcasterTier;
     use crate::chat::ChatConnectionState;
-    use crate::event_channel::PlatformEventChannel;
     use crate::helix::{HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport};
-    use crate::sub_actions::test_support::{MockCreds, MockTransport, endpoints_with};
+    use crate::sub_actions::test_support::{MockCreds, MockTransport, helix_gateway_at};
     use crate::subscriptions::SubscriptionTracker;
 
     const BROADCASTER: &str = "100000001";
@@ -192,17 +187,6 @@ mod tests {
             self.refreshes.fetch_add(1, Ordering::SeqCst);
             Ok(OAuthToken::new("fresh-token"))
         }
-    }
-
-    struct GrantLimiter;
-
-    #[async_trait]
-    impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Granted)
-        }
-
-        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
     }
 
     fn instant(unix: i64) -> OffsetDateTime {
@@ -292,12 +276,8 @@ mod tests {
         server: &MockServer,
         refresher: Arc<CountingRefresher>,
     ) -> Arc<TwitchIntegrationBundle> {
-        let publisher: Arc<dyn EventPublisher> = Arc::new(PlatformEventChannel::new());
-        let endpoints = endpoints_with(&[(EndpointSurface::TwitchApi, &server.uri())]);
         let transport = HelixHttpTransport::new(
-            &endpoints,
-            Arc::new(GrantLimiter),
-            publisher,
+            helix_gateway_at(&server.uri()),
             "test-client".to_owned(),
             Arc::new(StaleToken),
         )
@@ -503,7 +483,7 @@ mod tests {
         assert_eq!(
             (
                 request.method,
-                request.path.as_str(),
+                request.path,
                 query_value(&request, "broadcaster_id"),
                 query_value(&request, "first"),
             ),

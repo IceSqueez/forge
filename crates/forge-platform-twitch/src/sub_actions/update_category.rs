@@ -280,7 +280,7 @@ mod tests {
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
         let lookup = transport.request(0);
         assert_eq!(
-            (lookup.method, lookup.path.as_str(), lookup.query),
+            (lookup.method, lookup.path, lookup.query),
             (
                 HelixMethod::Get,
                 "/helix/games",

@@ -743,7 +743,7 @@ mod tests {
         let all = transport.request(0);
         let manageable = transport.request(1);
         assert_eq!(
-            (all.method, all.path.as_str(), query(&all)),
+            (all.method, all.path, query(&all)),
             (
                 HelixMethod::Get,
                 "/helix/channel_points/custom_rewards",
@@ -838,12 +838,7 @@ mod tests {
 
         let request = transport.request(0);
         assert_eq!(
-            (
-                request.method,
-                request.path.as_str(),
-                query(&request),
-                request.body
-            ),
+            (request.method, request.path, query(&request), request.body),
             (
                 HelixMethod::Post,
                 "/helix/channel_points/custom_rewards",

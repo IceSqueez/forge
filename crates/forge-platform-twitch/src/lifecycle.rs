@@ -770,7 +770,7 @@ mod tests {
         assert_eq!(transport.call_count(), 1);
         let request = transport.request(0);
         assert_eq!(
-            (request.method, request.path.as_str(), request.query),
+            (request.method, request.path, request.query),
             (
                 HelixMethod::Get,
                 "/helix/moderation/shield_mode",

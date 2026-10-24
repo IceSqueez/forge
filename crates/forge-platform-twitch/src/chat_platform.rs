@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::{EventPublisher, EventStream};
-use forge_net::RateLimiter;
+use forge_net::Gateway;
 use forge_platform_core::{
     ActingSender, ChatPlatform, ConnectionState, NON_HTTP_STATUS, PlatformCapabilities,
     PlatformError, SenderPreference,
@@ -32,7 +32,7 @@ pub struct TwitchPlatform {
     creds: Arc<dyn CredentialsRepo>,
     credentials_manager: Arc<TwitchCredentialsManager>,
     tracker: SubscriptionTracker,
-    rate_limiter: Arc<dyn RateLimiter>,
+    helix: Gateway,
     lifecycle: TwitchLifecycle,
     state_tx: watch::Sender<ChatConnectionState>,
     session: Mutex<Option<TwitchChatHandle>>,
@@ -46,7 +46,7 @@ impl TwitchPlatform {
         creds: Arc<dyn CredentialsRepo>,
         credentials_manager: Arc<TwitchCredentialsManager>,
         tracker: SubscriptionTracker,
-        rate_limiter: Arc<dyn RateLimiter>,
+        helix: Gateway,
         lifecycle: TwitchLifecycle,
     ) -> Self {
         Self {
@@ -65,7 +65,7 @@ impl TwitchPlatform {
             creds,
             credentials_manager,
             tracker,
-            rate_limiter,
+            helix,
             lifecycle,
             state_tx: watch::channel(ChatConnectionState::Disconnected).0,
             session: Mutex::new(None),
@@ -107,8 +107,8 @@ impl TwitchPlatform {
         &self.tracker
     }
 
-    pub(crate) fn rate_limiter(&self) -> &Arc<dyn RateLimiter> {
-        &self.rate_limiter
+    pub(crate) fn helix_gateway(&self) -> &Gateway {
+        &self.helix
     }
 
     pub(crate) fn lifecycle(&self) -> &TwitchLifecycle {
@@ -120,9 +120,7 @@ impl TwitchPlatform {
             .get_or_try_init(|| async {
                 let transport: Arc<dyn HelixTransport> = Arc::new(
                     HelixHttpTransport::new(
-                        &self.config.endpoints,
-                        Arc::clone(&self.rate_limiter),
-                        self.publisher(),
+                        self.helix.clone(),
                         self.config.client_id.clone(),
                         Arc::clone(&self.credentials_manager) as Arc<dyn HelixTokenSource>,
                     )
@@ -349,13 +347,11 @@ fn map_send_error(err: ChatSendError) -> PlatformError {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::builtin::{HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, unreachable_twitch_endpoints,
         users_fixture,
     };
-    use forge_net::TokenBucketRateLimiter;
 
     fn platform_over(transport: &Arc<MockTransport>) -> TwitchPlatform {
         let creds: Arc<dyn CredentialsRepo> = Arc::new(MockCreds::with_identity());
@@ -373,10 +369,7 @@ mod tests {
                 "test-client".to_owned(),
             )),
             SubscriptionTracker::default(),
-            Arc::new(TokenBucketRateLimiter::new(
-                HELIX_BUDGET_CAPACITY,
-                HELIX_BUDGET_WINDOW,
-            )),
+            crate::sub_actions::test_support::unreachable_helix_gateway(),
             TwitchLifecycle::new(),
         );
         platform

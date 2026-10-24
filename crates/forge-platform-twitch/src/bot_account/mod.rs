@@ -5,14 +5,13 @@ mod validate;
 use std::sync::{Arc, OnceLock, RwLock};
 
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_net::TokenBucketRateLimiter;
+use forge_net::Gateway;
 use forge_platform_core::PlatformEndpoints;
 use forge_storage::CredentialsRepo;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::auth::TwitchAuthFlow;
-use crate::builtin::{HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
 use crate::credentials::{TWITCH_BOT_CREDENTIAL_ID, load_at};
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::helix::{HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport};
@@ -97,6 +96,7 @@ impl TwitchBotAccount {
         repo: Arc<dyn CredentialsRepo>,
         client_id: String,
         bus: Arc<dyn EventPublisher>,
+        helix: Gateway,
     ) -> Arc<Self> {
         let manager = Arc::new(TwitchCredentialsManager::for_bot(
             endpoints,
@@ -105,12 +105,7 @@ impl TwitchBotAccount {
         ));
         let transport: Arc<dyn HelixTransport> = Arc::new(
             HelixHttpTransport::new(
-                endpoints,
-                Arc::new(TokenBucketRateLimiter::new(
-                    HELIX_BUDGET_CAPACITY,
-                    HELIX_BUDGET_WINDOW,
-                )),
-                Arc::clone(&bus),
+                helix,
                 client_id.clone(),
                 Arc::clone(&manager) as Arc<dyn HelixTokenSource>,
             )
@@ -451,6 +446,15 @@ pub(crate) mod test_support {
                 Arc::clone(&repo) as Arc<dyn CredentialsRepo>,
                 CLIENT_ID.to_owned(),
                 Arc::clone(&bus) as Arc<dyn EventPublisher>,
+                crate::helix_gateway::helix_gateway(
+                    &endpoints,
+                    Arc::new(forge_net::TokenBucketRateLimiter::new(
+                        crate::builtin::HELIX_BUDGET_CAPACITY,
+                        crate::builtin::HELIX_BUDGET_WINDOW,
+                    )),
+                    Arc::clone(&bus) as Arc<dyn EventPublisher>,
+                )
+                .unwrap(),
             );
             Self {
                 server,

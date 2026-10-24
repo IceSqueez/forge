@@ -65,6 +65,7 @@ thiserror = { version = "2.0" }
 async-trait = { version = "0.1" }
 
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
+httpdate = { version = "1.0" }
 jiff = { version = "0.2", default-features = false, features = [
   "std",
   "tz-system",

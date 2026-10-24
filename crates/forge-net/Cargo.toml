@@ -14,10 +14,12 @@ test-support = []
 
 [dependencies]
 async-trait = { workspace = true }
+httpdate = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

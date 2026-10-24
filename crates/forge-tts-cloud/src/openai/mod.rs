@@ -2,17 +2,15 @@ pub mod error;
 pub mod synth;
 pub mod voices;
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use forge_audio::PcmBuffer;
-use forge_net::RateLimiter;
 use forge_tts_core::{
     ENGINE_ID_OPENAI, EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsError, TtsVoice,
 };
 
 use crate::credentials::OpenAiCredentials;
-use crate::policy::{RetryConfig, SynthesisRateLimiter, retry_synthesize};
+use crate::network::{CloudGateways, ProviderGateway, ProviderLink};
+use crate::policy::{RetryConfig, retry_synthesize};
 use error::OpenAiError;
 
 impl From<OpenAiError> for TtsError {
@@ -47,36 +45,52 @@ const DEFAULT_BASE_URL: &str = "https://api.openai.com";
 pub struct OpenAiEngine {
     id: EngineId,
     credentials: OpenAiCredentials,
-    client: reqwest::Client,
-    limiter: Arc<SynthesisRateLimiter>,
+    link: ProviderLink,
     retry_cfg: RetryConfig,
 }
 
 impl OpenAiEngine {
-    pub fn new(credentials: OpenAiCredentials) -> Self {
-        Self {
-            id: EngineId(ENGINE_ID_OPENAI.into()),
+    pub fn new(
+        credentials: OpenAiCredentials,
+        provider: &ProviderGateway,
+    ) -> Result<Self, TtsError> {
+        let id = EngineId(ENGINE_ID_OPENAI.into());
+        let base_url = credentials.base_url.as_deref().unwrap_or(DEFAULT_BASE_URL);
+        let link = provider
+            .link(base_url)
+            .map_err(|e| TtsError::EngineUnavailable {
+                id: id.clone(),
+                detail: e.to_string(),
+            })?;
+        Ok(Self {
+            id,
             credentials,
-            client: reqwest::Client::new(),
-            limiter: Arc::new(SynthesisRateLimiter::new()),
-            retry_cfg: RetryConfig::default(),
-        }
+            retry_cfg: link.retry_config(),
+            link,
+        })
     }
 }
 
 pub struct OpenAiEngineFactory {
     credentials: OpenAiCredentials,
+    provider: ProviderGateway,
 }
 
 impl OpenAiEngineFactory {
-    pub fn new(credentials: OpenAiCredentials) -> Self {
-        Self { credentials }
+    pub fn new(credentials: OpenAiCredentials, gateways: &CloudGateways) -> Self {
+        Self {
+            credentials,
+            provider: gateways.provider(ENGINE_ID_OPENAI),
+        }
     }
 }
 
 impl forge_tts_core::TtsEngineFactory for OpenAiEngineFactory {
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
-        Ok(Box::new(OpenAiEngine::new(self.credentials.clone())))
+        Ok(Box::new(OpenAiEngine::new(
+            self.credentials.clone(),
+            &self.provider,
+        )?))
     }
 }
 
@@ -101,23 +115,16 @@ impl TtsEngine for OpenAiEngine {
             });
         }
 
-        let client = self.client.clone();
+        let link = self.link.clone();
         let api_key = self.credentials.api_key.clone();
-        let base_url = self
-            .credentials
-            .base_url
-            .clone()
-            .unwrap_or_else(|| DEFAULT_BASE_URL.into());
-        let limiter = Arc::clone(&self.limiter) as Arc<dyn RateLimiter>;
-        let cfg = self.retry_cfg;
+        let cfg = self.retry_cfg.clone();
 
-        retry_synthesize(self.id.clone(), limiter, cfg, move || {
-            let client = client.clone();
+        retry_synthesize(self.id.clone(), cfg, move || {
+            let link = link.clone();
             let api_key = api_key.clone();
-            let base_url = base_url.clone();
             let req = request.clone();
             async move {
-                synth::synthesize(&client, &api_key, &base_url, req)
+                synth::synthesize(&link, &api_key, req)
                     .await
                     .map_err(TtsError::from)
             }
@@ -126,12 +133,7 @@ impl TtsEngine for OpenAiEngine {
     }
 
     async fn test_connection(&self) -> Result<(), TtsError> {
-        let base_url = self
-            .credentials
-            .base_url
-            .as_deref()
-            .unwrap_or(DEFAULT_BASE_URL);
-        synth::probe_connection(&self.client, &self.credentials.api_key, base_url)
+        synth::probe_connection(&self.link, &self.credentials.api_key)
             .await
             .map_err(TtsError::from)
     }
@@ -141,62 +143,117 @@ impl TtsEngine for OpenAiEngine {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_tts_core::VoiceId;
+    use crate::network::test_support::{
+        API_KEY, OTHER_API_KEY, PAST_WAIT_THRESHOLD_SECS, freeze_clock, request_count, serving,
+        throttled,
+    };
+    use forge_tts_core::{TtsEngineFactory, VoiceId};
+    use wiremock::ResponseTemplate;
 
-    #[tokio::test]
-    async fn synthesize_returns_ssml_unsupported_without_http_call() {
-        let engine = OpenAiEngine::new(OpenAiCredentials {
-            api_key: "sk-test".into(),
-            base_url: Some("http://localhost:0".into()),
-        });
-        let req = SynthesisRequest {
-            text: "<speak>hello</speak>".into(),
+    fn credentials(api_key: &str, base_url: &str) -> OpenAiCredentials {
+        OpenAiCredentials {
+            api_key: api_key.into(),
+            base_url: Some(base_url.into()),
+        }
+    }
+
+    fn engine_at(base_url: &str) -> OpenAiEngine {
+        OpenAiEngine::new(
+            credentials(API_KEY, base_url),
+            &CloudGateways::new().provider(ENGINE_ID_OPENAI),
+        )
+        .unwrap()
+    }
+
+    fn request(ssml: bool) -> SynthesisRequest {
+        SynthesisRequest {
+            text: "hello".into(),
             voice_id: VoiceId("alloy".into()),
             pitch_semitones: 0.0,
             rate_multiplier: 1.0,
-            ssml: true,
-        };
-        let result = engine.synthesize(req).await;
+            ssml,
+        }
+    }
+
+    #[tokio::test]
+    async fn synthesize_refuses_ssml_without_a_request() {
+        let server = serving(ResponseTemplate::new(200)).await;
+        let result = engine_at(&server.uri()).synthesize(request(true)).await;
         assert!(matches!(result, Err(TtsError::SsmlUnsupported { .. })));
+        assert_eq!(request_count(&server).await, 0);
+    }
+
+    #[test]
+    fn engine_build_refuses_a_base_the_gateway_cannot_use() {
+        for base in ["http://api.example.com", "api.openai.com"] {
+            let result = OpenAiEngine::new(
+                credentials(API_KEY, base),
+                &CloudGateways::new().provider(ENGINE_ID_OPENAI),
+            );
+            assert!(
+                matches!(&result, Err(TtsError::EngineUnavailable { detail, .. }) if !detail.contains(API_KEY)),
+                "{base}"
+            );
+        }
     }
 
     #[tokio::test]
-    async fn test_connection_maps_401_to_auth_failed() {
-        use wiremock::matchers::{method, path};
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/v1/models"))
-            .respond_with(ResponseTemplate::new(401))
-            .mount(&server)
-            .await;
-
-        let engine = OpenAiEngine::new(OpenAiCredentials {
-            api_key: "bad-key".into(),
-            base_url: Some(server.uri()),
-        });
-        let result = engine.test_connection().await;
-        assert!(matches!(result, Err(TtsError::AuthFailed { .. })));
+    async fn a_quota_429_fails_at_once_without_a_retry() {
+        let server = serving(
+            ResponseTemplate::new(429)
+                .set_body_string(r#"{"error":{"code":"insufficient_quota"}}"#),
+        )
+        .await;
+        let result = engine_at(&server.uri()).synthesize(request(false)).await;
+        assert!(
+            matches!(result, Err(TtsError::QuotaExceeded { .. })),
+            "{result:?}"
+        );
+        assert_eq!(request_count(&server).await, 1);
     }
 
     #[tokio::test]
-    async fn test_connection_returns_ok_on_200() {
-        use wiremock::matchers::{method, path};
-        use wiremock::{Mock, MockServer, ResponseTemplate};
+    async fn a_throttle_hint_past_the_wait_threshold_fails_at_once() {
+        let server = serving(throttled(61)).await;
+        let result = engine_at(&server.uri()).synthesize(request(false)).await;
+        assert!(matches!(
+            result,
+            Err(TtsError::RateLimited {
+                retry_after_secs: 61
+            })
+        ));
+        assert_eq!(request_count(&server).await, 1);
+    }
 
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/v1/models"))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"{}"))
-            .mount(&server)
-            .await;
+    #[tokio::test(start_paused = true)]
+    async fn rebuilt_and_re_registered_engines_inherit_the_provider_cool_down() {
+        let _clock = freeze_clock();
+        let throttling = serving(throttled(PAST_WAIT_THRESHOLD_SECS)).await;
+        let healthy = serving(ResponseTemplate::new(200)).await;
+        let gateways = CloudGateways::new();
+        let factory = OpenAiEngineFactory::new(credentials(API_KEY, &throttling.uri()), &gateways);
+        let first = factory.create().unwrap();
+        assert!(first.synthesize(request(false)).await.is_err());
 
-        let engine = OpenAiEngine::new(OpenAiCredentials {
-            api_key: "sk-valid".into(),
-            base_url: Some(server.uri()),
-        });
-        let result = engine.test_connection().await;
-        assert!(result.is_ok());
+        let re_registered = OpenAiEngineFactory::new(
+            credentials(OTHER_API_KEY, &healthy.uri()),
+            &gateways.clone(),
+        );
+        for engine in [factory.create().unwrap(), re_registered.create().unwrap()] {
+            for result in [
+                engine.synthesize(request(false)).await.map(|_| ()),
+                engine.test_connection().await,
+            ] {
+                assert!(
+                    matches!(
+                        result,
+                        Err(TtsError::RateLimited { retry_after_secs }) if retry_after_secs == PAST_WAIT_THRESHOLD_SECS
+                    ),
+                    "{result:?}"
+                );
+            }
+        }
+        assert_eq!(request_count(&throttling).await, 1);
+        assert_eq!(request_count(&healthy).await, 0);
     }
 }

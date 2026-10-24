@@ -3,9 +3,10 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter, TokenBucketRateLimiter};
 
-const EXHAUSTED_THRESHOLD: Duration = Duration::from_secs(60);
+pub(crate) const EXHAUSTED_THRESHOLD: Duration = Duration::from_secs(60);
 const SYNTHESIS_BURST: u32 = 10;
 const SYNTHESIS_REFILL_WINDOW: Duration = Duration::from_secs(1);
+const NON_DEBITING_WEIGHT: u32 = 0;
 
 pub struct SynthesisRateLimiter {
     bucket: TokenBucketRateLimiter,
@@ -33,6 +34,17 @@ impl SynthesisRateLimiter {
 
     pub fn observe_remote_throttle_at(&self, now: Instant, retry_after: Duration) {
         self.bucket.observe_remote_throttle_at(now, retry_after);
+    }
+
+    pub fn cooldown_remaining(&self) -> Duration {
+        self.cooldown_remaining_at(runtime_now())
+    }
+
+    pub fn cooldown_remaining_at(&self, now: Instant) -> Duration {
+        match self.bucket.acquire_at(now, NON_DEBITING_WEIGHT) {
+            RateLimitOutcome::Throttled { wait_for } => wait_for,
+            RateLimitOutcome::Granted | RateLimitOutcome::Exhausted => Duration::ZERO,
+        }
     }
 }
 

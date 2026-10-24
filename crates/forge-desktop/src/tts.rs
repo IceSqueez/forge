@@ -6,6 +6,7 @@ use forge_components::{
 };
 use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo};
+use forge_tts_cloud::CloudGateways;
 use forge_tts_core::TtsRegistry;
 use forge_types::Shared;
 use gpui::{
@@ -89,6 +90,7 @@ impl TtsView {
         pipeline_config: Option<PipelineConfigHandle>,
         bot_accounts: Shared<Vec<String>>,
         tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
+        cloud_gateways: CloudGateways,
         preselect: Option<TtsSection>,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -108,6 +110,7 @@ impl TtsView {
         let engines = cx.new(|cx| {
             TtsEnginesView::new(
                 tts_registry.clone(),
+                cloud_gateways,
                 Arc::clone(&credentials),
                 settings,
                 speak.clone(),

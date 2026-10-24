@@ -2,20 +2,19 @@ pub mod error;
 pub mod synth;
 pub mod voices;
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use forge_audio::PcmBuffer;
-use forge_net::RateLimiter;
 use forge_tts_core::{
     ENGINE_ID_AZURE, EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsError, TtsVoice,
 };
 
 use crate::credentials::AzureCredentials;
-use crate::policy::{RetryConfig, SynthesisRateLimiter, retry_synthesize};
+use crate::network::{CloudGateways, ProviderGateway, ProviderLink, is_dns_label};
+use crate::policy::{RetryConfig, retry_synthesize};
 use error::AzureError;
 
 pub(crate) const SAMPLE_RATE_HZ: u32 = 24_000;
+const INVALID_REGION: &str = "Azure region must be a single region name such as eastus";
 
 impl From<AzureError> for TtsError {
     fn from(e: AzureError) -> Self {
@@ -47,8 +46,7 @@ static CAPABILITIES: EngineCapabilities = EngineCapabilities {
 pub struct AzureEngine {
     id: EngineId,
     credentials: AzureCredentials,
-    client: reqwest::Client,
-    limiter: Arc<SynthesisRateLimiter>,
+    link: ProviderLink,
     retry_cfg: RetryConfig,
 }
 
@@ -61,30 +59,52 @@ fn resolved_base_url(creds: &AzureCredentials) -> String {
 }
 
 impl AzureEngine {
-    pub fn new(credentials: AzureCredentials) -> Self {
-        Self {
-            id: EngineId(ENGINE_ID_AZURE.into()),
-            credentials,
-            client: reqwest::Client::new(),
-            limiter: Arc::new(SynthesisRateLimiter::new()),
-            retry_cfg: RetryConfig::default(),
+    pub fn new(
+        credentials: AzureCredentials,
+        provider: &ProviderGateway,
+    ) -> Result<Self, TtsError> {
+        let id = EngineId(ENGINE_ID_AZURE.into());
+        if credentials.base_url.is_none() && !is_dns_label(&credentials.region) {
+            return Err(TtsError::EngineUnavailable {
+                id,
+                detail: INVALID_REGION.into(),
+            });
         }
+        let link = provider
+            .link(&resolved_base_url(&credentials))
+            .map_err(|e| TtsError::EngineUnavailable {
+                id: id.clone(),
+                detail: e.to_string(),
+            })?;
+        Ok(Self {
+            id,
+            credentials,
+            retry_cfg: link.retry_config(),
+            link,
+        })
     }
 }
 
 pub struct AzureEngineFactory {
     credentials: AzureCredentials,
+    provider: ProviderGateway,
 }
 
 impl AzureEngineFactory {
-    pub fn new(credentials: AzureCredentials) -> Self {
-        Self { credentials }
+    pub fn new(credentials: AzureCredentials, gateways: &CloudGateways) -> Self {
+        Self {
+            credentials,
+            provider: gateways.provider(ENGINE_ID_AZURE),
+        }
     }
 }
 
 impl forge_tts_core::TtsEngineFactory for AzureEngineFactory {
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
-        Ok(Box::new(AzureEngine::new(self.credentials.clone())))
+        Ok(Box::new(AzureEngine::new(
+            self.credentials.clone(),
+            &self.provider,
+        )?))
     }
 }
 
@@ -99,26 +119,22 @@ impl TtsEngine for AzureEngine {
     }
 
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
-        let base_url = resolved_base_url(&self.credentials);
-        voices::fetch_voices(&self.client, &self.credentials.api_key, &base_url)
+        voices::fetch_voices(&self.link, &self.credentials.api_key)
             .await
             .map_err(TtsError::from)
     }
 
     async fn synthesize(&self, request: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
-        let client = self.client.clone();
+        let link = self.link.clone();
         let api_key = self.credentials.api_key.clone();
-        let base_url = resolved_base_url(&self.credentials);
-        let limiter = Arc::clone(&self.limiter) as Arc<dyn RateLimiter>;
-        let cfg = self.retry_cfg;
+        let cfg = self.retry_cfg.clone();
 
-        retry_synthesize(self.id.clone(), limiter, cfg, move || {
-            let client = client.clone();
+        retry_synthesize(self.id.clone(), cfg, move || {
+            let link = link.clone();
             let api_key = api_key.clone();
-            let base_url = base_url.clone();
             let req = request.clone();
             async move {
-                synth::synthesize(&client, &api_key, &base_url, req)
+                synth::synthesize(&link, &api_key, req)
                     .await
                     .map_err(TtsError::from)
             }
@@ -127,8 +143,7 @@ impl TtsEngine for AzureEngine {
     }
 
     async fn test_connection(&self) -> Result<(), TtsError> {
-        let base_url = resolved_base_url(&self.credentials);
-        synth::probe_connection(&self.client, &self.credentials.api_key, &base_url)
+        synth::probe_connection(&self.link, &self.credentials.api_key)
             .await
             .map_err(TtsError::from)
     }
@@ -138,46 +153,137 @@ impl TtsEngine for AzureEngine {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::network::test_support::{
+        API_KEY, OTHER_API_KEY, PAST_WAIT_THRESHOLD_SECS, freeze_clock, request_count, serving,
+        throttled,
+    };
+    use forge_tts_core::{TtsEngineFactory, VoiceId};
+    use wiremock::ResponseTemplate;
 
-    #[tokio::test]
-    async fn test_connection_returns_ok_on_200() {
-        use wiremock::matchers::{method, path};
-        use wiremock::{Mock, MockServer, ResponseTemplate};
+    fn credentials(api_key: &str, region: &str, base_url: Option<&str>) -> AzureCredentials {
+        AzureCredentials {
+            api_key: api_key.into(),
+            region: region.into(),
+            base_url: base_url.map(str::to_owned),
+        }
+    }
 
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/cognitiveservices/voices/list"))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"[]"))
-            .mount(&server)
-            .await;
+    fn engine_at(base_url: &str) -> AzureEngine {
+        AzureEngine::new(
+            credentials(API_KEY, "eastus", Some(base_url)),
+            &CloudGateways::new().provider(ENGINE_ID_AZURE),
+        )
+        .unwrap()
+    }
 
-        let engine = AzureEngine::new(AzureCredentials {
-            api_key: "test-key".into(),
-            region: "eastus".into(),
-            base_url: Some(server.uri()),
-        });
-        let result = engine.test_connection().await;
-        assert!(result.is_ok());
+    fn request() -> SynthesisRequest {
+        SynthesisRequest {
+            text: "hello".into(),
+            voice_id: VoiceId("en-US-AriaNeural".into()),
+            pitch_semitones: 0.0,
+            rate_multiplier: 1.0,
+            ssml: false,
+        }
+    }
+
+    #[test]
+    fn engine_build_accepts_only_a_single_dns_label_region_unless_a_base_overrides_it() {
+        let longest = "a".repeat(63);
+        let too_long = "a".repeat(64);
+        for (region, base, accepted) in [
+            ("a", None, true),
+            ("eastus", None, true),
+            ("east-us-2", None, true),
+            ("EastUS", None, true),
+            (longest.as_str(), None, true),
+            (too_long.as_str(), None, false),
+            ("-eastus", None, false),
+            ("eastus-", None, false),
+            ("east.us", None, false),
+            ("east/us", None, false),
+            ("evil.example/", None, false),
+            ("", None, false),
+            ("east us", None, false),
+            ("eastus?x=1", None, false),
+            ("eastüs", None, false),
+            ("", Some("http://127.0.0.1:9"), true),
+            ("eastus", Some("http://speech.example.com"), false),
+            ("eastus", Some("speech.example.com"), false),
+        ] {
+            let result = AzureEngine::new(
+                credentials(API_KEY, region, base),
+                &CloudGateways::new().provider(ENGINE_ID_AZURE),
+            );
+            if accepted {
+                assert!(result.is_ok(), "{region:?} {base:?}");
+            } else {
+                assert!(
+                    matches!(&result, Err(TtsError::EngineUnavailable { detail, .. }) if !detail.contains(API_KEY)),
+                    "{region:?} {base:?}"
+                );
+            }
+        }
     }
 
     #[tokio::test]
-    async fn test_connection_returns_auth_failed_on_401() {
-        use wiremock::matchers::{method, path};
-        use wiremock::{Mock, MockServer, ResponseTemplate};
+    async fn a_quota_429_fails_at_once_without_a_retry() {
+        let server =
+            serving(ResponseTemplate::new(429).set_body_string("Quota Exceeded for this resource"))
+                .await;
+        let result = engine_at(&server.uri()).synthesize(request()).await;
+        assert!(
+            matches!(result, Err(TtsError::QuotaExceeded { .. })),
+            "{result:?}"
+        );
+        assert_eq!(request_count(&server).await, 1);
+    }
 
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/cognitiveservices/voices/list"))
-            .respond_with(ResponseTemplate::new(401))
-            .mount(&server)
-            .await;
+    #[tokio::test]
+    async fn a_throttle_hint_past_the_wait_threshold_fails_at_once() {
+        let server = serving(throttled(61)).await;
+        let result = engine_at(&server.uri()).synthesize(request()).await;
+        assert!(matches!(
+            result,
+            Err(TtsError::RateLimited {
+                retry_after_secs: 61
+            })
+        ));
+        assert_eq!(request_count(&server).await, 1);
+    }
 
-        let engine = AzureEngine::new(AzureCredentials {
-            api_key: "bad-key".into(),
-            region: "eastus".into(),
-            base_url: Some(server.uri()),
-        });
-        let result = engine.test_connection().await;
-        assert!(matches!(result, Err(TtsError::AuthFailed { .. })));
+    #[tokio::test(start_paused = true)]
+    async fn rebuilt_and_re_registered_engines_inherit_the_provider_cool_down() {
+        let _clock = freeze_clock();
+        let throttling = serving(throttled(PAST_WAIT_THRESHOLD_SECS)).await;
+        let healthy = serving(ResponseTemplate::new(200)).await;
+        let gateways = CloudGateways::new();
+        let factory = AzureEngineFactory::new(
+            credentials(API_KEY, "eastus", Some(&throttling.uri())),
+            &gateways,
+        );
+        let first = factory.create().unwrap();
+        assert!(first.synthesize(request()).await.is_err());
+
+        let re_registered = AzureEngineFactory::new(
+            credentials(OTHER_API_KEY, "westeurope", Some(&healthy.uri())),
+            &gateways.clone(),
+        );
+        for engine in [factory.create().unwrap(), re_registered.create().unwrap()] {
+            for result in [
+                engine.synthesize(request()).await.map(|_| ()),
+                engine.list_voices().await.map(|_| ()),
+                engine.test_connection().await,
+            ] {
+                assert!(
+                    matches!(
+                        result,
+                        Err(TtsError::RateLimited { retry_after_secs }) if retry_after_secs == PAST_WAIT_THRESHOLD_SECS
+                    ),
+                    "{result:?}"
+                );
+            }
+        }
+        assert_eq!(request_count(&throttling).await, 1);
+        assert_eq!(request_count(&healthy).await, 0);
     }
 }

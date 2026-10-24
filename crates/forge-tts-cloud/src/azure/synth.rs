@@ -1,9 +1,23 @@
 use forge_audio::PcmBuffer;
+use forge_net::{CallClass, GatewayFailure, GatewayRequest, RequestBody, Secret};
 use forge_tts_core::{SynthesisRequest, VoiceId, xml_escape};
-use reqwest::{Client, StatusCode};
 
 use crate::azure::SAMPLE_RATE_HZ;
 use crate::azure::error::AzureError;
+use crate::gateway_failure::{
+    failure_detail, probe_failure_detail, quota_excerpt, rejected_excerpt,
+};
+use crate::network::ProviderLink;
+
+pub(crate) const SUBSCRIPTION_KEY_HEADER: &str = "Ocp-Apim-Subscription-Key";
+pub(crate) const VOICES_LIST_PATH: &str = "/cognitiveservices/voices/list";
+pub(crate) const INVALID_API_KEY: &str = "invalid API key";
+const BAD_REQUEST: u16 = 400;
+const QUOTA_MARKERS: &[&str] = &["quota", "characters"];
+const SYNTHESIS_PATH: &str = "/cognitiveservices/v1";
+const SSML_CONTENT_TYPE: &str = "application/ssml+xml";
+const OUTPUT_FORMAT_HEADER: &str = "X-Microsoft-OutputFormat";
+const OUTPUT_FORMAT: &str = "raw-24khz-16bit-mono-pcm";
 
 fn format_signed_percent(val: i32) -> String {
     if val >= 0 {
@@ -50,100 +64,58 @@ fn build_ssml(req: &SynthesisRequest) -> String {
     )
 }
 
-fn classify_error(
-    status: StatusCode,
-    retry_after_secs: u64,
-    body: &str,
-    voice_id: &VoiceId,
-) -> AzureError {
-    match status {
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-            AzureError::Unauthorized("invalid API key".into())
+fn classify_error(failure: &GatewayFailure, link: &ProviderLink, voice_id: &VoiceId) -> AzureError {
+    if let Some(excerpt) = quota_excerpt(failure, QUOTA_MARKERS) {
+        return AzureError::QuotaExceeded(excerpt.to_owned());
+    }
+    if let Some(retry_after_secs) = link.throttle_secs(failure) {
+        return AzureError::RateLimited { retry_after_secs };
+    }
+    if rejected_excerpt(failure, BAD_REQUEST)
+        .is_some_and(|excerpt| excerpt.to_ascii_lowercase().contains("voice"))
+    {
+        return AzureError::VoiceNotFound(voice_id.clone());
+    }
+    match failure {
+        GatewayFailure::Unauthorized { .. } | GatewayFailure::Forbidden { .. } => {
+            AzureError::Unauthorized(INVALID_API_KEY.into())
         }
-        StatusCode::BAD_REQUEST if body.to_ascii_lowercase().contains("voice") => {
-            AzureError::VoiceNotFound(voice_id.clone())
-        }
-        StatusCode::TOO_MANY_REQUESTS if body.contains("quota") || body.contains("characters") => {
-            AzureError::QuotaExceeded(body.to_string())
-        }
-        StatusCode::TOO_MANY_REQUESTS => AzureError::RateLimited { retry_after_secs },
-        _ => AzureError::Http(format!("HTTP {}: {body}", status.as_u16())),
+        other => AzureError::Http(failure_detail(other)),
     }
 }
 
 pub(super) async fn synthesize(
-    client: &Client,
+    link: &ProviderLink,
     api_key: &str,
-    base_url: &str,
     req: SynthesisRequest,
 ) -> Result<PcmBuffer, AzureError> {
-    let url = format!("{}/cognitiveservices/v1", base_url.trim_end_matches('/'));
-    let body = build_ssml(&req);
-
-    let resp = client
-        .post(&url)
-        .header("Ocp-Apim-Subscription-Key", api_key)
-        .header("Content-Type", "application/ssml+xml")
-        .header("X-Microsoft-OutputFormat", "raw-24khz-16bit-mono-pcm")
-        .header("User-Agent", "forge-tts")
-        .body(body)
-        .send()
+    let request = GatewayRequest::post(SYNTHESIS_PATH)
+        .api_key(SUBSCRIPTION_KEY_HEADER, Secret::new(api_key))
+        .header(OUTPUT_FORMAT_HEADER, OUTPUT_FORMAT)
+        .body(RequestBody::raw(SSML_CONTENT_TYPE, build_ssml(&req)));
+    let response = link
+        .send(request)
         .await
-        .map_err(|e| AzureError::Http(e.to_string()))?;
+        .map_err(|failure| classify_error(&failure, link, &req.voice_id))?;
 
-    let status = resp.status();
-
-    if status.is_success() {
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| AzureError::Http(e.to_string()))?;
-        let (pairs, _) = bytes.as_chunks::<2>();
-        let samples: Vec<i16> = pairs.iter().map(|pair| i16::from_le_bytes(*pair)).collect();
-        Ok(PcmBuffer::new(samples, SAMPLE_RATE_HZ, 1))
-    } else {
-        let retry_after_secs = resp
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(0);
-        let body_text = resp.text().await.unwrap_or_default();
-        Err(classify_error(
-            status,
-            retry_after_secs,
-            &body_text,
-            &req.voice_id,
-        ))
-    }
+    let (pairs, _) = response.body().as_chunks::<2>();
+    let samples: Vec<i16> = pairs.iter().map(|pair| i16::from_le_bytes(*pair)).collect();
+    Ok(PcmBuffer::new(samples, SAMPLE_RATE_HZ, 1))
 }
 
-pub(super) async fn probe_connection(
-    client: &Client,
-    api_key: &str,
-    base_url: &str,
-) -> Result<(), AzureError> {
-    let url = format!(
-        "{}/cognitiveservices/voices/list",
-        base_url.trim_end_matches('/')
-    );
-    let resp = client
-        .get(&url)
-        .header("Ocp-Apim-Subscription-Key", api_key)
-        .send()
-        .await
-        .map_err(|e| AzureError::Http(e.to_string()))?;
-
-    let status = resp.status();
-    if status.is_success() {
-        Ok(())
-    } else if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-        Err(AzureError::Unauthorized("invalid API key".into()))
-    } else {
-        Err(AzureError::Http(format!(
-            "unexpected status {}",
-            status.as_u16()
-        )))
+pub(super) async fn probe_connection(link: &ProviderLink, api_key: &str) -> Result<(), AzureError> {
+    let request = GatewayRequest::get(VOICES_LIST_PATH)
+        .api_key(SUBSCRIPTION_KEY_HEADER, Secret::new(api_key))
+        .class(CallClass::Catalog);
+    match link.send(request).await {
+        Ok(_) => Ok(()),
+        Err(GatewayFailure::Unauthorized { .. } | GatewayFailure::Forbidden { .. }) => {
+            Err(AzureError::Unauthorized(INVALID_API_KEY.into()))
+        }
+        Err(failure) => match link.throttle_secs(&failure) {
+            Some(retry_after_secs) => Err(AzureError::RateLimited { retry_after_secs }),
+            None => Err(AzureError::Http(probe_failure_detail(&failure))),
+        },
     }
 }
 
@@ -151,8 +123,12 @@ pub(super) async fn probe_connection(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_tts_core::VoiceId;
-    use wiremock::matchers::{header_exists, method, path};
+    use crate::network::test_support::{
+        API_KEY, NO_HINT_WAIT_SECS, assert_reveals_nothing, catalog_cap_text, link_to,
+        over_catalog_cap, serving, throttled,
+    };
+    use forge_tts_core::TtsError;
+    use wiremock::matchers::{body_string, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn plain_req(text: &str) -> SynthesisRequest {
@@ -216,70 +192,182 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn synthesize_returns_pcm_for_valid_response() {
-        let server = MockServer::start().await;
-        let pcm_bytes = raw_pcm_bytes(&[100i16, -100i16, 200i16, -200i16]);
+    fn outcome(error: &AzureError) -> String {
+        match error {
+            AzureError::Http(_) => "Http".into(),
+            AzureError::Unauthorized(_) => "Unauthorized".into(),
+            AzureError::QuotaExceeded(_) => "QuotaExceeded".into(),
+            AzureError::RateLimited { retry_after_secs } => {
+                format!("RateLimited({retry_after_secs})")
+            }
+            AzureError::VoiceNotFound(_) => "VoiceNotFound".into(),
+            AzureError::Decode(_) => "Decode".into(),
+            AzureError::Io(_) => "Io".into(),
+        }
+    }
 
+    #[tokio::test]
+    async fn synthesize_posts_ssml_with_the_key_header_and_reads_pcm() {
+        let request = plain_req("hello");
+        let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/cognitiveservices/v1"))
-            .and(header_exists("Ocp-Apim-Subscription-Key"))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(pcm_bytes))
+            .and(header("Ocp-Apim-Subscription-Key", API_KEY))
+            .and(header(
+                "X-Microsoft-OutputFormat",
+                "raw-24khz-16bit-mono-pcm",
+            ))
+            .and(header("content-type", "application/ssml+xml"))
+            .and(body_string(build_ssml(&request)))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_bytes(raw_pcm_bytes(&[100, -100, 200, -200])),
+            )
             .mount(&server)
             .await;
 
-        let client = Client::new();
-        let result = synthesize(&client, "test-key", &server.uri(), plain_req("hello")).await;
+        let pcm = synthesize(&link_to(&server), API_KEY, request)
+            .await
+            .unwrap();
 
-        let pcm = result.unwrap();
-        assert_eq!(pcm.sample_rate, 24_000);
-        assert_eq!(pcm.channels, 1);
-        assert_eq!(pcm.samples, vec![100i16, -100, 200, -200]);
+        assert_eq!(
+            (pcm.sample_rate, pcm.channels, pcm.samples),
+            (24_000, 1, vec![100, -100, 200, -200])
+        );
     }
 
     #[tokio::test]
-    async fn synthesize_maps_401_to_auth_failed() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/cognitiveservices/v1"))
-            .respond_with(ResponseTemplate::new(401))
-            .mount(&server)
-            .await;
-
-        let client = Client::new();
-        let result = synthesize(&client, "bad-key", &server.uri(), plain_req("hello")).await;
-        assert!(matches!(result, Err(AzureError::Unauthorized(_))));
+    async fn synthesis_failures_map_to_provider_errors_without_revealing_the_key() {
+        let echo = format!("key {API_KEY} rejected");
+        let no_hint = format!("RateLimited({NO_HINT_WAIT_SECS})");
+        for (template, expected) in [
+            (
+                ResponseTemplate::new(401).set_body_string(echo.clone()),
+                "Unauthorized".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(403).set_body_string(echo.clone()),
+                "Unauthorized".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(400).set_body_string("Unsupported Voice name"),
+                "VoiceNotFound".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(400).set_body_string(echo.clone()),
+                "Http".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(429).set_body_string("slow down"),
+                no_hint.clone(),
+            ),
+            (throttled(7), "RateLimited(7)".to_owned()),
+            (
+                ResponseTemplate::new(429).set_body_string(format!("quota exceeded for {API_KEY}")),
+                "QuotaExceeded".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(429).set_body_string("monthly characters used up"),
+                "QuotaExceeded".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(429).set_body_string("Quota exceeded"),
+                "QuotaExceeded".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(429).set_body_string("CHARACTERS limit"),
+                "QuotaExceeded".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(429).set_body_string("Too many requests"),
+                no_hint.clone(),
+            ),
+            (
+                ResponseTemplate::new(503)
+                    .insert_header("Retry-After", "2")
+                    .set_body_string("quota"),
+                "RateLimited(2)".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(503).set_body_string(echo.clone()),
+                "Http".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(500).set_body_string(echo.clone()),
+                "Http".to_owned(),
+            ),
+        ] {
+            let server = serving(template).await;
+            let error = synthesize(&link_to(&server), API_KEY, plain_req("hello"))
+                .await
+                .unwrap_err();
+            assert_eq!(outcome(&error), expected, "{error}");
+            assert_reveals_nothing(&error.to_string(), &server);
+            assert_reveals_nothing(&TtsError::from(error).to_string(), &server);
+        }
     }
 
     #[tokio::test]
-    async fn probe_connection_returns_ok_on_200() {
-        let server = MockServer::start().await;
+    async fn synthesis_reads_replies_larger_than_the_catalog_cap() {
+        let body = over_catalog_cap();
+        let samples = body.len() / 2;
+        let server = serving(ResponseTemplate::new(200).set_body_bytes(body)).await;
 
-        Mock::given(method("GET"))
-            .and(path("/cognitiveservices/voices/list"))
-            .and(header_exists("Ocp-Apim-Subscription-Key"))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"[]"))
-            .mount(&server)
-            .await;
+        let pcm = synthesize(&link_to(&server), API_KEY, plain_req("hello"))
+            .await
+            .unwrap();
 
-        let client = Client::new();
-        let result = probe_connection(&client, "test-key", &server.uri()).await;
-        assert!(result.is_ok());
+        assert_eq!(pcm.samples.len(), samples);
     }
 
     #[tokio::test]
-    async fn probe_connection_returns_auth_failed_on_401() {
-        let server = MockServer::start().await;
+    async fn probe_outcomes_follow_the_voice_list_status() {
+        let no_hint = format!("RateLimited({NO_HINT_WAIT_SECS})");
+        for (template, expected) in [
+            (
+                ResponseTemplate::new(200).set_body_bytes(b"[]"),
+                "Ok".to_owned(),
+            ),
+            (ResponseTemplate::new(401), "Unauthorized".to_owned()),
+            (ResponseTemplate::new(403), "Unauthorized".to_owned()),
+            (ResponseTemplate::new(429), no_hint),
+            (throttled(9), "RateLimited(9)".to_owned()),
+            (ResponseTemplate::new(500), "Http".to_owned()),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/cognitiveservices/voices/list"))
+                .and(header("Ocp-Apim-Subscription-Key", API_KEY))
+                .respond_with(template)
+                .mount(&server)
+                .await;
+            let result = probe_connection(&link_to(&server), API_KEY).await;
+            let got = result.as_ref().map_or_else(outcome, |_| "Ok".to_owned());
+            assert_eq!(got, expected);
+        }
+    }
 
-        Mock::given(method("GET"))
-            .and(path("/cognitiveservices/voices/list"))
-            .respond_with(ResponseTemplate::new(401))
-            .mount(&server)
-            .await;
+    #[tokio::test]
+    async fn probe_reports_the_status_without_the_body() {
+        let server =
+            serving(ResponseTemplate::new(500).set_body_string(format!("boom {API_KEY}"))).await;
+        let error = probe_connection(&link_to(&server), API_KEY)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, AzureError::Http(detail) if detail == "unexpected status 500"),
+            "{error}"
+        );
+    }
 
-        let client = Client::new();
-        let result = probe_connection(&client, "bad-key", &server.uri()).await;
-        assert!(matches!(result, Err(AzureError::Unauthorized(_))));
+    #[tokio::test]
+    async fn probe_stops_reading_at_the_catalog_cap() {
+        let server = serving(ResponseTemplate::new(200).set_body_bytes(over_catalog_cap())).await;
+        let error = probe_connection(&link_to(&server), API_KEY)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, AzureError::Http(detail) if detail.contains(&catalog_cap_text())),
+            "{error}"
+        );
     }
 }

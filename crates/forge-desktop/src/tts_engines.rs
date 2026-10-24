@@ -11,6 +11,7 @@ use forge_speak_queue::{
     EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
 };
 use forge_storage::{CredentialId, CredentialsRepo, EngineParams, SettingsRepo, StorageError};
+use forge_tts_cloud::CloudGateways;
 use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceGender, VoiceId};
 use forge_voice::SynthesisDefaults;
 use gpui::{
@@ -85,6 +86,7 @@ pub struct TtsEnginesView {
 impl TtsEnginesView {
     pub fn new(
         registry: Option<Arc<RwLock<TtsRegistry>>>,
+        cloud_gateways: CloudGateways,
         credentials: Arc<dyn CredentialsRepo>,
         settings: Arc<dyn SettingsRepo>,
         speak: Option<SpeakQueueHandle>,
@@ -94,6 +96,7 @@ impl TtsEnginesView {
         let cloud = cx.new(|cx| {
             CloudCredentialsView::new(
                 registry.clone(),
+                cloud_gateways,
                 Arc::clone(&credentials),
                 rt_handle.clone(),
                 speak.clone(),
@@ -1374,7 +1377,17 @@ mod tests {
             let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
             let handle = self.rt.handle().clone();
             let view = cx.update(|cx| {
-                cx.new(|cx| TtsEnginesView::new(registry, credentials, settings, speak, handle, cx))
+                cx.new(|cx| {
+                    TtsEnginesView::new(
+                        registry,
+                        CloudGateways::new(),
+                        credentials,
+                        settings,
+                        speak,
+                        handle,
+                        cx,
+                    )
+                })
             });
             self.settle(cx);
             view

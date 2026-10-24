@@ -1,11 +1,16 @@
 use std::collections::HashMap;
 
+use forge_net::{CallClass, GatewayFailure, GatewayRequest, Secret};
 use forge_tts_core::{ENGINE_ID_ELEVENLABS, EngineId, TtsVoice, VoiceGender, VoiceId};
-use reqwest::{Client, StatusCode};
 use serde::Deserialize;
 
 use crate::elevenlabs::SAMPLE_RATE_HZ;
 use crate::elevenlabs::error::ElevenLabsError;
+use crate::elevenlabs::synth::{API_KEY_HEADER, INVALID_API_KEY};
+use crate::gateway_failure::failure_detail;
+use crate::network::ProviderLink;
+
+const VOICES_PATH: &str = "/v1/voices";
 
 #[derive(Deserialize)]
 struct VoiceList {
@@ -28,34 +33,32 @@ fn gender_from_labels(labels: &HashMap<String, String>) -> VoiceGender {
     }
 }
 
+fn classify_error(failure: &GatewayFailure, link: &ProviderLink) -> ElevenLabsError {
+    if let Some(retry_after_secs) = link.throttle_secs(failure) {
+        return ElevenLabsError::RateLimited { retry_after_secs };
+    }
+    match failure {
+        GatewayFailure::Unauthorized { .. } | GatewayFailure::Forbidden { .. } => {
+            ElevenLabsError::Unauthorized(INVALID_API_KEY.into())
+        }
+        other => ElevenLabsError::Http(failure_detail(other)),
+    }
+}
+
 pub(super) async fn fetch_voices(
-    client: &Client,
+    link: &ProviderLink,
     api_key: &str,
-    base_url: &str,
 ) -> Result<Vec<TtsVoice>, ElevenLabsError> {
-    let url = format!("{}/v1/voices", base_url.trim_end_matches('/'));
-    let resp = client
-        .get(&url)
-        .header("xi-api-key", api_key)
-        .send()
+    let request = GatewayRequest::get(VOICES_PATH)
+        .api_key(API_KEY_HEADER, Secret::new(api_key))
+        .class(CallClass::Catalog);
+    let response = link
+        .send(request)
         .await
-        .map_err(|e| ElevenLabsError::Http(e.to_string()))?;
+        .map_err(|failure| classify_error(&failure, link))?;
 
-    let status = resp.status();
-    if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-        return Err(ElevenLabsError::Unauthorized("invalid API key".into()));
-    }
-    if !status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(ElevenLabsError::Http(format!(
-            "HTTP {}: {body}",
-            status.as_u16()
-        )));
-    }
-
-    let list: VoiceList = resp
+    let list: VoiceList = response
         .json()
-        .await
         .map_err(|e| ElevenLabsError::Http(e.to_string()))?;
 
     let engine_id = EngineId(ENGINE_ID_ELEVENLABS.into());
@@ -82,7 +85,11 @@ pub(super) async fn fetch_voices(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use wiremock::matchers::{header_exists, method, path};
+    use crate::network::test_support::{
+        API_KEY, NO_HINT_WAIT_SECS, assert_reveals_nothing, catalog_cap_text, link_to,
+        over_catalog_cap, serving, throttled,
+    };
+    use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
@@ -110,15 +117,12 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/v1/voices"))
-            .and(header_exists("xi-api-key"))
+            .and(header("xi-api-key", API_KEY))
             .respond_with(ResponseTemplate::new(200).set_body_json(&body))
             .mount(&server)
             .await;
 
-        let client = Client::new();
-        let voices = fetch_voices(&client, "xi-test", &server.uri())
-            .await
-            .unwrap();
+        let voices = fetch_voices(&link_to(&server), API_KEY).await.unwrap();
 
         assert_eq!(voices.len(), 3);
         assert_eq!(voices[0].id, VoiceId("abc123".into()));
@@ -127,22 +131,55 @@ mod tests {
         assert!(matches!(voices[0].gender, VoiceGender::Female));
         assert!(matches!(voices[1].gender, VoiceGender::Male));
         assert!(matches!(voices[2].gender, VoiceGender::Neutral));
+        assert_eq!(voices[2].locale, "");
         assert_eq!(voices[0].sample_rate_hint, 24_000);
         assert!(voices[0].is_neural);
     }
 
     #[tokio::test]
-    async fn list_voices_maps_401_to_unauthorized() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("GET"))
-            .and(path("/v1/voices"))
-            .respond_with(ResponseTemplate::new(401))
-            .mount(&server)
-            .await;
-
-        let client = Client::new();
-        let result = fetch_voices(&client, "bad-key", &server.uri()).await;
-        assert!(matches!(result, Err(ElevenLabsError::Unauthorized(_))));
+    async fn catalog_failures_map_to_provider_errors_without_revealing_the_key() {
+        let echo = format!("key {API_KEY} rejected");
+        let cap = catalog_cap_text();
+        for (template, expected) in [
+            (
+                ResponseTemplate::new(401).set_body_string(echo.clone()),
+                "Unauthorized".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(403).set_body_string(echo.clone()),
+                "Unauthorized".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(429),
+                format!("RateLimited({NO_HINT_WAIT_SECS})"),
+            ),
+            (throttled(4), "RateLimited(4)".to_owned()),
+            (
+                ResponseTemplate::new(500).set_body_string(echo.clone()),
+                "Http".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(200).set_body_string(r#"{"voices":"#),
+                "Http".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(200).set_body_bytes(over_catalog_cap()),
+                format!("Http({cap})"),
+            ),
+        ] {
+            let server = serving(template).await;
+            let error = fetch_voices(&link_to(&server), API_KEY).await.unwrap_err();
+            let got = match &error {
+                ElevenLabsError::Unauthorized(_) => "Unauthorized".to_owned(),
+                ElevenLabsError::RateLimited { retry_after_secs } => {
+                    format!("RateLimited({retry_after_secs})")
+                }
+                ElevenLabsError::Http(detail) if detail.contains(&cap) => format!("Http({cap})"),
+                ElevenLabsError::Http(_) => "Http".to_owned(),
+                other => format!("{other:?}"),
+            };
+            assert_eq!(got, expected, "{error}");
+            assert_reveals_nothing(&error.to_string(), &server);
+        }
     }
 }

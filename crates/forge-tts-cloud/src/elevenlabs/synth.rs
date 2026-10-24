@@ -1,40 +1,53 @@
 use forge_audio::PcmBuffer;
+use forge_net::{CallClass, GatewayFailure, GatewayRequest, RequestBody, Secret};
 use forge_tts_core::{SynthesisRequest, VoiceId};
-use reqwest::{Client, StatusCode};
 use serde_json::json;
 
 use crate::elevenlabs::SAMPLE_RATE_HZ;
 use crate::elevenlabs::error::ElevenLabsError;
+use crate::gateway_failure::{
+    PAYMENT_REQUIRED, failure_detail, probe_failure_detail, quota_excerpt, rejected_excerpt,
+};
+use crate::network::{ProviderLink, is_plain_path_segment};
+
+pub(crate) const API_KEY_HEADER: &str = "xi-api-key";
+pub(crate) const INVALID_API_KEY: &str = "invalid API key";
+const SPEECH_PATH: &str = "/v1/text-to-speech";
+const USER_PATH: &str = "/v1/user";
+const OUTPUT_FORMAT_QUERY: &str = "output_format";
+const QUOTA_MARKERS: &[&str] = &["quota", "characters"];
 
 fn classify_error(
-    status: StatusCode,
-    retry_after_secs: u64,
-    body: &str,
+    failure: &GatewayFailure,
+    link: &ProviderLink,
     voice_id: &VoiceId,
 ) -> ElevenLabsError {
-    match status {
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-            ElevenLabsError::Unauthorized("invalid API key".into())
+    if let Some(excerpt) = quota_excerpt(failure, QUOTA_MARKERS) {
+        return ElevenLabsError::QuotaExceeded(excerpt.to_owned());
+    }
+    if let Some(retry_after_secs) = link.throttle_secs(failure) {
+        return ElevenLabsError::RateLimited { retry_after_secs };
+    }
+    if let Some(excerpt) = rejected_excerpt(failure, PAYMENT_REQUIRED) {
+        return ElevenLabsError::QuotaExceeded(excerpt.to_owned());
+    }
+    match failure {
+        GatewayFailure::Unauthorized { .. } | GatewayFailure::Forbidden { .. } => {
+            ElevenLabsError::Unauthorized(INVALID_API_KEY.into())
         }
-        StatusCode::PAYMENT_REQUIRED => ElevenLabsError::QuotaExceeded(body.to_string()),
-        StatusCode::NOT_FOUND => ElevenLabsError::VoiceNotFound(voice_id.clone()),
-        StatusCode::TOO_MANY_REQUESTS => {
-            if body.contains("quota") || body.contains("characters") {
-                ElevenLabsError::QuotaExceeded(body.to_string())
-            } else {
-                ElevenLabsError::RateLimited { retry_after_secs }
-            }
-        }
-        _ => ElevenLabsError::Http(format!("HTTP {}: {body}", status.as_u16())),
+        GatewayFailure::NotFound { .. } => ElevenLabsError::VoiceNotFound(voice_id.clone()),
+        other => ElevenLabsError::Http(failure_detail(other)),
     }
 }
 
 pub(super) async fn synthesize(
-    client: &Client,
+    link: &ProviderLink,
     api_key: &str,
-    base_url: &str,
     req: SynthesisRequest,
 ) -> Result<PcmBuffer, ElevenLabsError> {
+    if !is_plain_path_segment(&req.voice_id.0) {
+        return Err(ElevenLabsError::VoiceNotFound(req.voice_id));
+    }
     if req.rate_multiplier != 1.0 {
         tracing::debug!(
             rate_multiplier = req.rate_multiplier,
@@ -48,79 +61,46 @@ pub(super) async fn synthesize(
         );
     }
 
-    let body = json!({
+    let body = RequestBody::json(&json!({
         "text": req.text,
         "model_id": "eleven_multilingual_v2",
         "voice_settings": {
             "stability": 0.5,
             "similarity_boost": 0.75
         }
-    });
+    }))
+    .map_err(|e| ElevenLabsError::Http(e.to_string()))?;
 
-    let url = format!(
-        "{}/v1/text-to-speech/{}?output_format=pcm_{SAMPLE_RATE_HZ}",
-        base_url.trim_end_matches('/'),
-        req.voice_id.0
-    );
-
-    let resp = client
-        .post(&url)
-        .header("xi-api-key", api_key)
-        .json(&body)
-        .send()
+    let request = GatewayRequest::post(format!("{SPEECH_PATH}/{}", req.voice_id.0))
+        .query(OUTPUT_FORMAT_QUERY, format!("pcm_{SAMPLE_RATE_HZ}"))
+        .api_key(API_KEY_HEADER, Secret::new(api_key))
+        .body(body);
+    let response = link
+        .send(request)
         .await
-        .map_err(|e| ElevenLabsError::Http(e.to_string()))?;
+        .map_err(|failure| classify_error(&failure, link, &req.voice_id))?;
 
-    let status = resp.status();
-
-    if status.is_success() {
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| ElevenLabsError::Http(e.to_string()))?;
-        let (pairs, _) = bytes.as_chunks::<2>();
-        let samples: Vec<i16> = pairs.iter().map(|pair| i16::from_le_bytes(*pair)).collect();
-        Ok(PcmBuffer::new(samples, SAMPLE_RATE_HZ, 1))
-    } else {
-        let retry_after_secs = resp
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(0);
-        let body_text = resp.text().await.unwrap_or_default();
-        Err(classify_error(
-            status,
-            retry_after_secs,
-            &body_text,
-            &req.voice_id,
-        ))
-    }
+    let (pairs, _) = response.body().as_chunks::<2>();
+    let samples: Vec<i16> = pairs.iter().map(|pair| i16::from_le_bytes(*pair)).collect();
+    Ok(PcmBuffer::new(samples, SAMPLE_RATE_HZ, 1))
 }
 
 pub(super) async fn probe_connection(
-    client: &Client,
+    link: &ProviderLink,
     api_key: &str,
-    base_url: &str,
 ) -> Result<(), ElevenLabsError> {
-    let url = format!("{}/v1/user", base_url.trim_end_matches('/'));
-    let resp = client
-        .get(&url)
-        .header("xi-api-key", api_key)
-        .send()
-        .await
-        .map_err(|e| ElevenLabsError::Http(e.to_string()))?;
-
-    let status = resp.status();
-    if status.is_success() {
-        Ok(())
-    } else if status == StatusCode::UNAUTHORIZED {
-        Err(ElevenLabsError::Unauthorized("invalid API key".into()))
-    } else {
-        Err(ElevenLabsError::Http(format!(
-            "unexpected status {}",
-            status.as_u16()
-        )))
+    let request = GatewayRequest::get(USER_PATH)
+        .api_key(API_KEY_HEADER, Secret::new(api_key))
+        .class(CallClass::Catalog);
+    match link.send(request).await {
+        Ok(_) => Ok(()),
+        Err(GatewayFailure::Unauthorized { .. }) => {
+            Err(ElevenLabsError::Unauthorized(INVALID_API_KEY.into()))
+        }
+        Err(failure) => match link.throttle_secs(&failure) {
+            Some(retry_after_secs) => Err(ElevenLabsError::RateLimited { retry_after_secs }),
+            None => Err(ElevenLabsError::Http(probe_failure_detail(&failure))),
+        },
     }
 }
 
@@ -128,14 +108,18 @@ pub(super) async fn probe_connection(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_tts_core::VoiceId;
-    use wiremock::matchers::{header_exists, method, path, path_regex};
+    use crate::network::test_support::{
+        API_KEY, NO_HINT_WAIT_SECS, assert_reveals_nothing, catalog_cap_text, link_to,
+        over_catalog_cap, request_count, serving, throttled,
+    };
+    use forge_tts_core::TtsError;
+    use wiremock::matchers::{header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    fn test_request() -> SynthesisRequest {
+    fn request_for(voice: &str) -> SynthesisRequest {
         SynthesisRequest {
             text: "hello".into(),
-            voice_id: VoiceId("test-voice-id".into()),
+            voice_id: VoiceId(voice.into()),
             pitch_semitones: 0.0,
             rate_multiplier: 1.0,
             ssml: false,
@@ -146,85 +130,220 @@ mod tests {
         samples.iter().flat_map(|s| s.to_le_bytes()).collect()
     }
 
-    #[tokio::test]
-    async fn synthesize_returns_pcm_for_valid_response() {
-        let server = MockServer::start().await;
-        let pcm_bytes = raw_pcm_bytes(&[100i16, -100i16, 200i16, -200i16]);
+    fn outcome(error: &ElevenLabsError) -> String {
+        match error {
+            ElevenLabsError::Http(_) => "Http".into(),
+            ElevenLabsError::Unauthorized(_) => "Unauthorized".into(),
+            ElevenLabsError::QuotaExceeded(_) => "QuotaExceeded".into(),
+            ElevenLabsError::RateLimited { retry_after_secs } => {
+                format!("RateLimited({retry_after_secs})")
+            }
+            ElevenLabsError::VoiceNotFound(_) => "VoiceNotFound".into(),
+            ElevenLabsError::Io(_) => "Io".into(),
+        }
+    }
 
+    #[tokio::test]
+    async fn synthesize_posts_to_the_voice_path_with_the_key_header_and_reads_pcm() {
+        let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path_regex(r"/v1/text-to-speech/.*"))
-            .and(header_exists("xi-api-key"))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(pcm_bytes))
+            .and(path("/v1/text-to-speech/voice-123"))
+            .and(query_param("output_format", "pcm_24000"))
+            .and(header("xi-api-key", API_KEY))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_bytes(raw_pcm_bytes(&[100, -100, 200, -200])),
+            )
             .mount(&server)
             .await;
 
-        let client = Client::new();
-        let result = synthesize(&client, "xi-test", &server.uri(), test_request()).await;
+        let pcm = synthesize(&link_to(&server), API_KEY, request_for("voice-123"))
+            .await
+            .unwrap();
 
-        let pcm = result.unwrap();
-        assert_eq!(pcm.sample_rate, 24_000);
-        assert_eq!(pcm.channels, 1);
-        assert_eq!(pcm.samples, vec![100i16, -100, 200, -200]);
+        assert_eq!(
+            (pcm.sample_rate, pcm.channels, pcm.samples),
+            (24_000, 1, vec![100, -100, 200, -200])
+        );
     }
 
     #[tokio::test]
-    async fn synthesize_maps_401_to_auth_failed() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path_regex(r"/v1/text-to-speech/.*"))
-            .respond_with(ResponseTemplate::new(401))
-            .mount(&server)
-            .await;
-
-        let client = Client::new();
-        let result = synthesize(&client, "bad-key", &server.uri(), test_request()).await;
-        assert!(matches!(result, Err(ElevenLabsError::Unauthorized(_))));
+    async fn a_voice_id_that_is_not_path_safe_is_voice_not_found_without_a_request() {
+        for voice in [
+            "a?b",
+            "a#b",
+            "../../v1/user",
+            "../voice-123",
+            "a/b",
+            "%2e%2e/user",
+            "",
+            ".",
+            "..",
+            "a.b",
+            "a b",
+            "a\\b",
+            "é",
+            "\u{0661}",
+        ] {
+            let server = serving(ResponseTemplate::new(200)).await;
+            let result = synthesize(&link_to(&server), API_KEY, request_for(voice)).await;
+            assert!(
+                matches!(result, Err(ElevenLabsError::VoiceNotFound(_))),
+                "{voice}: {result:?}"
+            );
+            assert_eq!(
+                request_count(&server).await,
+                0,
+                "{voice} reached the network"
+            );
+        }
     }
 
     #[tokio::test]
-    async fn synthesize_maps_unknown_voice_to_voice_not_found() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/v1/text-to-speech/test-voice-id"))
-            .respond_with(ResponseTemplate::new(404))
-            .mount(&server)
-            .await;
-
-        let client = Client::new();
-        let result = synthesize(&client, "xi-test", &server.uri(), test_request()).await;
-        assert!(matches!(result, Err(ElevenLabsError::VoiceNotFound(_))));
+    async fn a_voice_id_of_ascii_word_characters_reaches_its_own_path() {
+        for voice in ["a", "Z", "0", "-", "_", "21m00Tcm4TlvDq8ikWAM", "a-b_C9"] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path(format!("/v1/text-to-speech/{voice}")))
+                .respond_with(ResponseTemplate::new(200))
+                .mount(&server)
+                .await;
+            let result = synthesize(&link_to(&server), API_KEY, request_for(voice)).await;
+            assert!(result.is_ok(), "{voice}: {result:?}");
+        }
     }
 
     #[tokio::test]
-    async fn probe_connection_returns_ok_on_200() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("GET"))
-            .and(path("/v1/user"))
-            .and(header_exists("xi-api-key"))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"{}"))
-            .mount(&server)
-            .await;
-
-        let client = Client::new();
-        let result = probe_connection(&client, "xi-test", &server.uri()).await;
-        assert!(result.is_ok());
+    async fn synthesis_failures_map_to_provider_errors_without_revealing_the_key() {
+        let echo = format!("key {API_KEY} rejected");
+        let no_hint = format!("RateLimited({NO_HINT_WAIT_SECS})");
+        for (template, expected) in [
+            (
+                ResponseTemplate::new(401).set_body_string(echo.clone()),
+                "Unauthorized".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(403).set_body_string(echo.clone()),
+                "Unauthorized".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(402).set_body_string(echo.clone()),
+                "QuotaExceeded".to_owned(),
+            ),
+            (ResponseTemplate::new(404), "VoiceNotFound".to_owned()),
+            (
+                ResponseTemplate::new(429).set_body_string("slow down"),
+                no_hint.clone(),
+            ),
+            (throttled(7), "RateLimited(7)".to_owned()),
+            (
+                ResponseTemplate::new(429).set_body_string(format!(
+                    r#"{{"status":"quota_exceeded","key":"{API_KEY}"}}"#
+                )),
+                "QuotaExceeded".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(429).set_body_string("not enough characters left"),
+                "QuotaExceeded".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(429).set_body_string("Monthly CHARACTERS limit reached"),
+                "QuotaExceeded".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(429).set_body_string("Quota_Exceeded"),
+                "QuotaExceeded".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(429).set_body_string("too_many_concurrent_requests"),
+                no_hint.clone(),
+            ),
+            (
+                ResponseTemplate::new(503)
+                    .insert_header("Retry-After", "2")
+                    .set_body_string("quota"),
+                "RateLimited(2)".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(503).set_body_string(echo.clone()),
+                "Http".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(500).set_body_string(echo.clone()),
+                "Http".to_owned(),
+            ),
+        ] {
+            let server = serving(template).await;
+            let error = synthesize(&link_to(&server), API_KEY, request_for("voice-123"))
+                .await
+                .unwrap_err();
+            assert_eq!(outcome(&error), expected, "{error}");
+            assert_reveals_nothing(&error.to_string(), &server);
+            assert_reveals_nothing(&TtsError::from(error).to_string(), &server);
+        }
     }
 
     #[tokio::test]
-    async fn probe_connection_returns_auth_failed_on_401() {
-        let server = MockServer::start().await;
+    async fn synthesis_reads_replies_larger_than_the_catalog_cap() {
+        let body = over_catalog_cap();
+        let samples = body.len() / 2;
+        let server = serving(ResponseTemplate::new(200).set_body_bytes(body)).await;
 
-        Mock::given(method("GET"))
-            .and(path("/v1/user"))
-            .respond_with(ResponseTemplate::new(401))
-            .mount(&server)
-            .await;
+        let pcm = synthesize(&link_to(&server), API_KEY, request_for("voice-123"))
+            .await
+            .unwrap();
 
-        let client = Client::new();
-        let result = probe_connection(&client, "bad-key", &server.uri()).await;
-        assert!(matches!(result, Err(ElevenLabsError::Unauthorized(_))));
+        assert_eq!(pcm.samples.len(), samples);
+    }
+
+    #[tokio::test]
+    async fn probe_outcomes_follow_the_user_endpoint_status() {
+        let no_hint = format!("RateLimited({NO_HINT_WAIT_SECS})");
+        for (template, expected) in [
+            (
+                ResponseTemplate::new(200).set_body_bytes(b"{}"),
+                "Ok".to_owned(),
+            ),
+            (ResponseTemplate::new(401), "Unauthorized".to_owned()),
+            (ResponseTemplate::new(429), no_hint),
+            (throttled(9), "RateLimited(9)".to_owned()),
+            (ResponseTemplate::new(403), "Http".to_owned()),
+            (ResponseTemplate::new(500), "Http".to_owned()),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/v1/user"))
+                .and(header("xi-api-key", API_KEY))
+                .respond_with(template)
+                .mount(&server)
+                .await;
+            let result = probe_connection(&link_to(&server), API_KEY).await;
+            let got = result.as_ref().map_or_else(outcome, |_| "Ok".to_owned());
+            assert_eq!(got, expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn probe_reports_the_status_without_the_body() {
+        let server =
+            serving(ResponseTemplate::new(500).set_body_string(format!("boom {API_KEY}"))).await;
+        let error = probe_connection(&link_to(&server), API_KEY)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, ElevenLabsError::Http(detail) if detail == "unexpected status 500"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_stops_reading_at_the_catalog_cap() {
+        let server = serving(ResponseTemplate::new(200).set_body_bytes(over_catalog_cap())).await;
+        let error = probe_connection(&link_to(&server), API_KEY)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, ElevenLabsError::Http(detail) if detail.contains(&catalog_cap_text())),
+            "{error}"
+        );
     }
 }

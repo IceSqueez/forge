@@ -137,6 +137,12 @@ impl VoiceAliasResolver {
             .unwrap_or(self.defaults)
     }
 
+    pub fn active_alias_engine(&self, viewer_id: &str, viewer_name: &str) -> Option<&EngineId> {
+        self.alias_for(viewer_id, viewer_name)
+            .filter(|alias| alias.state == AliasState::Active)
+            .map(|alias| &alias.engine_id)
+    }
+
     fn alias_for(&self, viewer_id: &str, viewer_name: &str) -> Option<&VoiceAlias> {
         let by_name = viewer_name.to_lowercase();
         let by_name = by_name.as_str();

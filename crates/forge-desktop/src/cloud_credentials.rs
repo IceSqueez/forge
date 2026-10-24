@@ -6,6 +6,7 @@ use forge_components::{
 };
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
 use forge_storage::{CredentialId, CredentialsRepo};
+use forge_tts_cloud::CloudGateways;
 use forge_tts_cloud::azure::AzureEngineFactory;
 use forge_tts_cloud::credentials::{
     AZURE_CREDENTIAL_ID, AzureCredentials, ELEVENLABS_CREDENTIAL_ID, ElevenLabsCredentials,
@@ -123,11 +124,11 @@ impl CloudCreds {
         }
     }
 
-    async fn test(self) -> Result<(), String> {
+    async fn test(self, gateways: CloudGateways) -> Result<(), String> {
         let engine = match self {
-            CloudCreds::Azure(c) => AzureEngineFactory::new(c).create(),
-            CloudCreds::ElevenLabs(c) => ElevenLabsEngineFactory::new(c).create(),
-            CloudCreds::OpenAi(c) => OpenAiEngineFactory::new(c).create(),
+            CloudCreds::Azure(c) => AzureEngineFactory::new(c, &gateways).create(),
+            CloudCreds::ElevenLabs(c) => ElevenLabsEngineFactory::new(c, &gateways).create(),
+            CloudCreds::OpenAi(c) => OpenAiEngineFactory::new(c, &gateways).create(),
             CloudCreds::Polly(c) => PollyEngineFactory::new(c).create(),
         }
         .map_err(|e| e.to_string())?;
@@ -184,6 +185,7 @@ struct PollyForm {
 
 pub struct CloudCredentialsView {
     registry: Option<Arc<RwLock<TtsRegistry>>>,
+    gateways: CloudGateways,
     credentials: Arc<dyn CredentialsRepo>,
     rt_handle: tokio::runtime::Handle,
     speak: Option<SpeakQueueHandle>,
@@ -200,6 +202,7 @@ impl EventEmitter<CloudEngineRegistered> for CloudCredentialsView {}
 impl CloudCredentialsView {
     pub fn new(
         registry: Option<Arc<RwLock<TtsRegistry>>>,
+        gateways: CloudGateways,
         credentials: Arc<dyn CredentialsRepo>,
         rt_handle: tokio::runtime::Handle,
         speak: Option<SpeakQueueHandle>,
@@ -247,6 +250,7 @@ impl CloudCredentialsView {
 
         Self {
             registry,
+            gateways,
             credentials,
             rt_handle,
             speak,
@@ -455,9 +459,11 @@ impl CloudCredentialsView {
             return;
         };
         match creds {
-            CloudCreds::Azure(c) => cloud_tts_boot::register_azure(registry, c),
-            CloudCreds::ElevenLabs(c) => cloud_tts_boot::register_elevenlabs(registry, c),
-            CloudCreds::OpenAi(c) => cloud_tts_boot::register_openai(registry, c),
+            CloudCreds::Azure(c) => cloud_tts_boot::register_azure(registry, c, &self.gateways),
+            CloudCreds::ElevenLabs(c) => {
+                cloud_tts_boot::register_elevenlabs(registry, c, &self.gateways)
+            }
+            CloudCreds::OpenAi(c) => cloud_tts_boot::register_openai(registry, c, &self.gateways),
             CloudCreds::Polly(c) => cloud_tts_boot::register_polly(registry, c),
         };
         match kind {
@@ -482,9 +488,10 @@ impl CloudCredentialsView {
         };
         self.set_test_status(kind, TestStatus::Testing);
         cx.notify();
+        let gateways = self.gateways.clone();
         async_bridge::run_async(
             &self.rt_handle,
-            async move { creds.test().await },
+            async move { creds.test(gateways).await },
             move |this, result: Result<(), String>, cx| {
                 let status = match result {
                     Ok(()) => TestStatus::Ok,

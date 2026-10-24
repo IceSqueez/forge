@@ -1,4 +1,5 @@
 mod actor;
+mod catalog;
 pub mod filters;
 
 use std::collections::{HashMap, HashSet};

@@ -437,6 +437,7 @@ impl AppShell {
                 let pipeline_config = handles.pipeline_config.clone();
                 let bot_accounts = handles.bot_accounts.clone();
                 let tts_registry = handles.tts_registry.clone();
+                let cloud_tts_gateways = handles.cloud_tts_gateways.clone();
                 let view = cx.new(|cx| {
                     TtsView::new(
                         speak_state,
@@ -446,6 +447,7 @@ impl AppShell {
                         pipeline_config,
                         bot_accounts,
                         tts_registry,
+                        cloud_tts_gateways,
                         preselect,
                         cx,
                     )

@@ -2,18 +2,16 @@ pub mod error;
 pub mod synth;
 pub mod voices;
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use forge_audio::PcmBuffer;
-use forge_net::RateLimiter;
 use forge_tts_core::{
     ENGINE_ID_ELEVENLABS, EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsError,
     TtsVoice,
 };
 
 use crate::credentials::ElevenLabsCredentials;
-use crate::policy::{RetryConfig, SynthesisRateLimiter, retry_synthesize};
+use crate::network::{CloudGateways, ProviderGateway, ProviderLink};
+use crate::policy::{RetryConfig, retry_synthesize};
 use error::ElevenLabsError;
 
 impl From<ElevenLabsError> for TtsError {
@@ -48,36 +46,52 @@ pub(crate) const SAMPLE_RATE_HZ: u32 = 24_000;
 pub struct ElevenLabsEngine {
     id: EngineId,
     credentials: ElevenLabsCredentials,
-    client: reqwest::Client,
-    limiter: Arc<SynthesisRateLimiter>,
+    link: ProviderLink,
     retry_cfg: RetryConfig,
 }
 
 impl ElevenLabsEngine {
-    pub fn new(credentials: ElevenLabsCredentials) -> Self {
-        Self {
-            id: EngineId(ENGINE_ID_ELEVENLABS.into()),
+    pub fn new(
+        credentials: ElevenLabsCredentials,
+        provider: &ProviderGateway,
+    ) -> Result<Self, TtsError> {
+        let id = EngineId(ENGINE_ID_ELEVENLABS.into());
+        let base_url = credentials.base_url.as_deref().unwrap_or(DEFAULT_BASE_URL);
+        let link = provider
+            .link(base_url)
+            .map_err(|e| TtsError::EngineUnavailable {
+                id: id.clone(),
+                detail: e.to_string(),
+            })?;
+        Ok(Self {
+            id,
             credentials,
-            client: reqwest::Client::new(),
-            limiter: Arc::new(SynthesisRateLimiter::new()),
-            retry_cfg: RetryConfig::default(),
-        }
+            retry_cfg: link.retry_config(),
+            link,
+        })
     }
 }
 
 pub struct ElevenLabsEngineFactory {
     credentials: ElevenLabsCredentials,
+    provider: ProviderGateway,
 }
 
 impl ElevenLabsEngineFactory {
-    pub fn new(credentials: ElevenLabsCredentials) -> Self {
-        Self { credentials }
+    pub fn new(credentials: ElevenLabsCredentials, gateways: &CloudGateways) -> Self {
+        Self {
+            credentials,
+            provider: gateways.provider(ENGINE_ID_ELEVENLABS),
+        }
     }
 }
 
 impl forge_tts_core::TtsEngineFactory for ElevenLabsEngineFactory {
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
-        Ok(Box::new(ElevenLabsEngine::new(self.credentials.clone())))
+        Ok(Box::new(ElevenLabsEngine::new(
+            self.credentials.clone(),
+            &self.provider,
+        )?))
     }
 }
 
@@ -92,12 +106,7 @@ impl TtsEngine for ElevenLabsEngine {
     }
 
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
-        let base_url = self
-            .credentials
-            .base_url
-            .as_deref()
-            .unwrap_or(DEFAULT_BASE_URL);
-        voices::fetch_voices(&self.client, &self.credentials.api_key, base_url)
+        voices::fetch_voices(&self.link, &self.credentials.api_key)
             .await
             .map_err(TtsError::from)
     }
@@ -109,23 +118,16 @@ impl TtsEngine for ElevenLabsEngine {
             });
         }
 
-        let client = self.client.clone();
+        let link = self.link.clone();
         let api_key = self.credentials.api_key.clone();
-        let base_url = self
-            .credentials
-            .base_url
-            .clone()
-            .unwrap_or_else(|| DEFAULT_BASE_URL.into());
-        let limiter = Arc::clone(&self.limiter) as Arc<dyn RateLimiter>;
-        let cfg = self.retry_cfg;
+        let cfg = self.retry_cfg.clone();
 
-        retry_synthesize(self.id.clone(), limiter, cfg, move || {
-            let client = client.clone();
+        retry_synthesize(self.id.clone(), cfg, move || {
+            let link = link.clone();
             let api_key = api_key.clone();
-            let base_url = base_url.clone();
             let req = request.clone();
             async move {
-                synth::synthesize(&client, &api_key, &base_url, req)
+                synth::synthesize(&link, &api_key, req)
                     .await
                     .map_err(TtsError::from)
             }
@@ -134,12 +136,7 @@ impl TtsEngine for ElevenLabsEngine {
     }
 
     async fn test_connection(&self) -> Result<(), TtsError> {
-        let base_url = self
-            .credentials
-            .base_url
-            .as_deref()
-            .unwrap_or(DEFAULT_BASE_URL);
-        synth::probe_connection(&self.client, &self.credentials.api_key, base_url)
+        synth::probe_connection(&self.link, &self.credentials.api_key)
             .await
             .map_err(TtsError::from)
     }
@@ -149,62 +146,117 @@ impl TtsEngine for ElevenLabsEngine {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_tts_core::VoiceId;
+    use crate::network::test_support::{
+        API_KEY, OTHER_API_KEY, PAST_WAIT_THRESHOLD_SECS, freeze_clock, request_count, serving,
+        throttled,
+    };
+    use forge_tts_core::{TtsEngineFactory, VoiceId};
+    use wiremock::ResponseTemplate;
 
-    #[tokio::test]
-    async fn synthesize_returns_ssml_unsupported_without_http_call() {
-        let engine = ElevenLabsEngine::new(ElevenLabsCredentials {
-            api_key: "xi-test".into(),
-            base_url: Some("http://localhost:0".into()),
-        });
-        let req = SynthesisRequest {
-            text: "<speak>hello</speak>".into(),
-            voice_id: VoiceId("abc".into()),
+    fn credentials(api_key: &str, base_url: &str) -> ElevenLabsCredentials {
+        ElevenLabsCredentials {
+            api_key: api_key.into(),
+            base_url: Some(base_url.into()),
+        }
+    }
+
+    fn engine_at(base_url: &str) -> ElevenLabsEngine {
+        ElevenLabsEngine::new(
+            credentials(API_KEY, base_url),
+            &CloudGateways::new().provider(ENGINE_ID_ELEVENLABS),
+        )
+        .unwrap()
+    }
+
+    fn request(ssml: bool) -> SynthesisRequest {
+        SynthesisRequest {
+            text: "hello".into(),
+            voice_id: VoiceId("voice-123".into()),
             pitch_semitones: 0.0,
             rate_multiplier: 1.0,
-            ssml: true,
-        };
-        let result = engine.synthesize(req).await;
+            ssml,
+        }
+    }
+
+    #[tokio::test]
+    async fn synthesize_refuses_ssml_without_a_request() {
+        let server = serving(ResponseTemplate::new(200)).await;
+        let result = engine_at(&server.uri()).synthesize(request(true)).await;
         assert!(matches!(result, Err(TtsError::SsmlUnsupported { .. })));
+        assert_eq!(request_count(&server).await, 0);
+    }
+
+    #[test]
+    fn engine_build_refuses_a_base_the_gateway_cannot_use() {
+        for base in ["http://api.example.com", "api.elevenlabs.io"] {
+            let result = ElevenLabsEngine::new(
+                credentials(API_KEY, base),
+                &CloudGateways::new().provider(ENGINE_ID_ELEVENLABS),
+            );
+            assert!(
+                matches!(&result, Err(TtsError::EngineUnavailable { detail, .. }) if !detail.contains(API_KEY)),
+                "{base}"
+            );
+        }
     }
 
     #[tokio::test]
-    async fn test_connection_maps_401_to_auth_failed() {
-        use wiremock::matchers::{method, path};
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/v1/user"))
-            .respond_with(ResponseTemplate::new(401))
-            .mount(&server)
-            .await;
-
-        let engine = ElevenLabsEngine::new(ElevenLabsCredentials {
-            api_key: "bad-key".into(),
-            base_url: Some(server.uri()),
-        });
-        let result = engine.test_connection().await;
-        assert!(matches!(result, Err(TtsError::AuthFailed { .. })));
+    async fn a_quota_429_fails_at_once_without_a_retry() {
+        let server =
+            serving(ResponseTemplate::new(429).set_body_string(r#"{"status":"quota_exceeded"}"#))
+                .await;
+        let result = engine_at(&server.uri()).synthesize(request(false)).await;
+        assert!(
+            matches!(result, Err(TtsError::QuotaExceeded { .. })),
+            "{result:?}"
+        );
+        assert_eq!(request_count(&server).await, 1);
     }
 
     #[tokio::test]
-    async fn test_connection_returns_ok_on_200() {
-        use wiremock::matchers::{method, path};
-        use wiremock::{Mock, MockServer, ResponseTemplate};
+    async fn a_throttle_hint_past_the_wait_threshold_fails_at_once() {
+        let server = serving(throttled(61)).await;
+        let result = engine_at(&server.uri()).synthesize(request(false)).await;
+        assert!(matches!(
+            result,
+            Err(TtsError::RateLimited {
+                retry_after_secs: 61
+            })
+        ));
+        assert_eq!(request_count(&server).await, 1);
+    }
 
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/v1/user"))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"{}"))
-            .mount(&server)
-            .await;
+    #[tokio::test(start_paused = true)]
+    async fn rebuilt_and_re_registered_engines_inherit_the_provider_cool_down() {
+        let _clock = freeze_clock();
+        let throttling = serving(throttled(PAST_WAIT_THRESHOLD_SECS)).await;
+        let healthy = serving(ResponseTemplate::new(200)).await;
+        let gateways = CloudGateways::new();
+        let factory =
+            ElevenLabsEngineFactory::new(credentials(API_KEY, &throttling.uri()), &gateways);
+        let first = factory.create().unwrap();
+        assert!(first.synthesize(request(false)).await.is_err());
 
-        let engine = ElevenLabsEngine::new(ElevenLabsCredentials {
-            api_key: "xi-valid".into(),
-            base_url: Some(server.uri()),
-        });
-        let result = engine.test_connection().await;
-        assert!(result.is_ok());
+        let re_registered = ElevenLabsEngineFactory::new(
+            credentials(OTHER_API_KEY, &healthy.uri()),
+            &gateways.clone(),
+        );
+        for engine in [factory.create().unwrap(), re_registered.create().unwrap()] {
+            for result in [
+                engine.synthesize(request(false)).await.map(|_| ()),
+                engine.list_voices().await.map(|_| ()),
+                engine.test_connection().await,
+            ] {
+                assert!(
+                    matches!(
+                        result,
+                        Err(TtsError::RateLimited { retry_after_secs }) if retry_after_secs == PAST_WAIT_THRESHOLD_SECS
+                    ),
+                    "{result:?}"
+                );
+            }
+        }
+        assert_eq!(request_count(&throttling).await, 1);
+        assert_eq!(request_count(&healthy).await, 0);
     }
 }

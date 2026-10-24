@@ -7,6 +7,7 @@ use forge_runtime::EventBus;
 use forge_speak_queue::{PipelineConfigHandle, QueueConfig, QueueDeps, SpeakEventStream};
 use forge_storage::paths;
 use forge_storage::{CredentialsRepo, DataProvider};
+use forge_tts_cloud::CloudGateways;
 use forge_tts_core::{EngineId, TtsEngineFactory, TtsRegistry, build_engine};
 use forge_tts_espeak::EspeakEngineFactory;
 use forge_tts_nsspeech::NsSpeechEngineFactory;
@@ -191,6 +192,7 @@ pub async fn build_speak_queue(
     bus: &Arc<EventBus>,
     backend: &Arc<dyn DataProvider>,
     audio_sink: Arc<dyn forge_audio::AudioSink>,
+    cloud_gateways: &CloudGateways,
 ) -> (
     Option<forge_speak_queue::SpeakQueueHandle>,
     Option<SpeakEventStream>,
@@ -202,7 +204,7 @@ pub async fn build_speak_queue(
 
     let registry = std::sync::RwLock::new(registry);
     let creds: Arc<dyn CredentialsRepo> = Arc::clone(backend) as Arc<dyn CredentialsRepo>;
-    register_cloud_engines(&registry, creds.as_ref()).await;
+    register_cloud_engines(&registry, creds.as_ref(), cloud_gateways).await;
     let registry = Arc::new(registry);
 
     let engine_ids = registry

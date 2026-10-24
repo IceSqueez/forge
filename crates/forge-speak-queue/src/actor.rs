@@ -8,6 +8,8 @@ use forge_events::{Event, EventPublisher, EventSource};
 use forge_tts_core::{EngineId, SynthesisRequest, TtsError, TtsVoice, VoiceId};
 use forge_tts_pipeline::{DetectionOutcome, LanguageCode, LanguageDetector, PipelineResult};
 use forge_types::Shared;
+
+use crate::catalog::{CATALOG_UPDATE_CAPACITY, CatalogUpdate, VoiceCatalogState};
 use forge_voice::{
     AliasState, ResolveResult, VoiceAliasResolver, candidate_languages, voice_speaks_language,
 };
@@ -445,7 +447,8 @@ pub(crate) async fn run_actor(
     let mut recent_messages: VecDeque<String> = VecDeque::new();
 
     let (synth_tx, mut synth_rx) = tokio::sync::mpsc::channel::<SynthTaskResult>(8);
-    let (catalog_tx, mut catalog_rx) = tokio::sync::mpsc::channel::<Arc<Vec<TtsVoice>>>(1);
+    let (catalog_tx, mut catalog_rx) =
+        tokio::sync::mpsc::channel::<CatalogUpdate>(CATALOG_UPDATE_CAPACITY);
     let (detector_tx, mut detector_rx) =
         tokio::sync::mpsc::channel::<Option<Arc<LanguageDetector>>>(1);
 
@@ -455,22 +458,20 @@ pub(crate) async fn run_actor(
             registry.invalidate(engine_id);
         }
     }
-    let voice_catalog = Arc::new(build_voice_catalog(&deps.registry, &deps.disabled_engines).await);
-    voices.store_arc(voice_catalog.clone());
     disabled_engines.store(deps.disabled_engines.clone());
     engine_gains.store(deps.engine_gains.clone());
+    let mut catalog = VoiceCatalogState::default();
+    let initial_catalog = catalog.rebuild(&deps.registry, &deps.disabled_engines, &catalog_tx);
+    voices.store_arc(initial_catalog.clone());
     let mut task_deps = SynthTaskDeps {
         resolver: deps.resolver.clone(),
         pipeline: deps.pipeline.clone(),
         registry: deps.registry.clone(),
-        voice_catalog: voice_catalog.clone(),
+        voice_catalog: initial_catalog,
         detector: None,
     };
 
     let mut language_aware = deps.pipeline.load().output.language_aware_voice;
-    if language_aware {
-        spawn_detector_rebuild(&voice_catalog, detector_tx.clone());
-    }
 
     loop {
         depth.store(high_queue.len() + normal_queue.len(), Ordering::Relaxed);
@@ -508,6 +509,13 @@ pub(crate) async fn run_actor(
         if active_request_id.is_none()
             && !paused
             && !voicegate_active
+            && next_request(&high_queue, &normal_queue).is_some_and(|req| {
+                let resolver = deps.resolver.read().unwrap_or_else(|e| e.into_inner());
+                catalog.serves(
+                    req,
+                    resolver.active_alias_engine(&req.viewer_id, &req.viewer_name),
+                )
+            })
             && let Some(req) = pop_next(&mut high_queue, &mut normal_queue, &mut per_user_counts)
         {
             let queue_len = high_queue.len() + normal_queue.len();
@@ -567,10 +575,17 @@ pub(crate) async fn run_actor(
                             .write()
                             .unwrap_or_else(|e| e.into_inner())
                             .invalidate_all();
-                        spawn_catalog_rebuild(
-                            deps.registry.clone(),
-                            (*disabled_engines.load()).clone(),
-                            catalog_tx.clone(),
+                        let rebuilt = catalog.rebuild(
+                            &deps.registry,
+                            &disabled_engines.load(),
+                            &catalog_tx,
+                        );
+                        publish_catalog(
+                            rebuilt,
+                            &voices,
+                            &mut task_deps,
+                            language_aware,
+                            &detector_tx,
                         );
                     }
                     Some(SpeakCommand::SetEngineEnabled(engine_id, enabled)) => {
@@ -586,8 +601,15 @@ pub(crate) async fn run_actor(
                                 .unwrap_or_else(|e| e.into_inner())
                                 .invalidate(&engine_id);
                         }
-                        disabled_engines.store(next.clone());
-                        spawn_catalog_rebuild(deps.registry.clone(), next, catalog_tx.clone());
+                        let rebuilt = catalog.rebuild(&deps.registry, &next, &catalog_tx);
+                        disabled_engines.store(next);
+                        publish_catalog(
+                            rebuilt,
+                            &voices,
+                            &mut task_deps,
+                            language_aware,
+                            &detector_tx,
+                        );
                     }
                     Some(SpeakCommand::SetVolume(volume)) => {
                         handle_command(
@@ -654,12 +676,14 @@ pub(crate) async fn run_actor(
                 }
             }
             result = catalog_rx.recv() => {
-                if let Some(catalog) = result {
-                    voices.store_arc(catalog.clone());
-                    if language_aware {
-                        spawn_detector_rebuild(&catalog, detector_tx.clone());
-                    }
-                    task_deps.voice_catalog = catalog;
+                if let Some(merged) = result.and_then(|update| catalog.apply(update)) {
+                    publish_catalog(
+                        merged,
+                        &voices,
+                        &mut task_deps,
+                        language_aware,
+                        &detector_tx,
+                    );
                 }
             }
             result = detector_rx.recv() => {
@@ -1498,45 +1522,25 @@ fn spawn_detector_rebuild(
     });
 }
 
-fn spawn_catalog_rebuild(
-    registry: Arc<std::sync::RwLock<forge_tts_core::TtsRegistry>>,
-    disabled: HashSet<EngineId>,
-    tx: tokio::sync::mpsc::Sender<Arc<Vec<TtsVoice>>>,
+fn publish_catalog(
+    merged: Arc<Vec<TtsVoice>>,
+    voices: &Shared<Vec<TtsVoice>>,
+    task_deps: &mut SynthTaskDeps,
+    language_aware: bool,
+    detector_tx: &tokio::sync::mpsc::Sender<Option<Arc<LanguageDetector>>>,
 ) {
-    tokio::spawn(async move {
-        let catalog = Arc::new(build_voice_catalog(&registry, &disabled).await);
-        let _ = tx.send(catalog).await;
-    });
+    voices.store_arc(merged.clone());
+    if language_aware {
+        spawn_detector_rebuild(&merged, detector_tx.clone());
+    }
+    task_deps.voice_catalog = merged;
 }
 
-async fn build_voice_catalog(
-    registry: &std::sync::RwLock<forge_tts_core::TtsRegistry>,
-    disabled: &HashSet<EngineId>,
-) -> Vec<TtsVoice> {
-    let engine_ids = registry
-        .read()
-        .unwrap_or_else(|e| e.into_inner())
-        .engine_ids();
-    let mut catalog = Vec::new();
-    for engine_id in engine_ids {
-        if disabled.contains(&engine_id) {
-            continue;
-        }
-        let slot = registry
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .slot(&engine_id);
-        if let Some(slot) = slot {
-            match slot.engine().await {
-                Ok(engine) => match engine.list_voices().await {
-                    Ok(voices) => catalog.extend(voices),
-                    Err(e) => tracing::warn!(engine = %engine_id.0, "list_voices: {e}"),
-                },
-                Err(e) => tracing::warn!(engine = %engine_id.0, "create engine: {e}"),
-            }
-        }
-    }
-    catalog
+fn next_request<'a>(
+    high_queue: &'a VecDeque<SpeakRequest>,
+    normal_queue: &'a VecDeque<SpeakRequest>,
+) -> Option<&'a SpeakRequest> {
+    high_queue.front().or_else(|| normal_queue.front())
 }
 
 #[cfg(test)]

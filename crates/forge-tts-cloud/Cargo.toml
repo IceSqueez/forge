@@ -11,9 +11,9 @@ workspace = true
 
 [features]
 default = []
-azure = ["dep:reqwest", "dep:serde_json"]
-elevenlabs = ["dep:reqwest", "dep:serde_json"]
-openai = ["dep:reqwest", "dep:serde_json"]
+azure = ["dep:serde_json"]
+elevenlabs = ["dep:serde_json"]
+openai = ["dep:serde_json"]
 polly = ["dep:reqwest", "dep:serde_json", "dep:hmac", "dep:sha2", "dep:time"]
 
 [dependencies]

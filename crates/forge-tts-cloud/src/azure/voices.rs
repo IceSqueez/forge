@@ -1,9 +1,12 @@
+use forge_net::{CallClass, GatewayFailure, GatewayRequest, Secret};
 use forge_tts_core::{ENGINE_ID_AZURE, EngineId, TtsVoice, VoiceGender, VoiceId};
-use reqwest::{Client, StatusCode};
 use serde::Deserialize;
 
 use crate::azure::SAMPLE_RATE_HZ;
 use crate::azure::error::AzureError;
+use crate::azure::synth::{INVALID_API_KEY, SUBSCRIPTION_KEY_HEADER, VOICES_LIST_PATH};
+use crate::gateway_failure::failure_detail;
+use crate::network::ProviderLink;
 
 #[derive(Deserialize)]
 struct AzureVoice {
@@ -25,37 +28,32 @@ fn gender_from_str(s: &str) -> VoiceGender {
     }
 }
 
+fn classify_error(failure: &GatewayFailure, link: &ProviderLink) -> AzureError {
+    if let Some(retry_after_secs) = link.throttle_secs(failure) {
+        return AzureError::RateLimited { retry_after_secs };
+    }
+    match failure {
+        GatewayFailure::Unauthorized { .. } | GatewayFailure::Forbidden { .. } => {
+            AzureError::Unauthorized(INVALID_API_KEY.into())
+        }
+        other => AzureError::Http(failure_detail(other)),
+    }
+}
+
 pub(super) async fn fetch_voices(
-    client: &Client,
+    link: &ProviderLink,
     api_key: &str,
-    base_url: &str,
 ) -> Result<Vec<TtsVoice>, AzureError> {
-    let url = format!(
-        "{}/cognitiveservices/voices/list",
-        base_url.trim_end_matches('/')
-    );
-    let resp = client
-        .get(&url)
-        .header("Ocp-Apim-Subscription-Key", api_key)
-        .send()
+    let request = GatewayRequest::get(VOICES_LIST_PATH)
+        .api_key(SUBSCRIPTION_KEY_HEADER, Secret::new(api_key))
+        .class(CallClass::Catalog);
+    let response = link
+        .send(request)
         .await
-        .map_err(|e| AzureError::Http(e.to_string()))?;
+        .map_err(|failure| classify_error(&failure, link))?;
 
-    let status = resp.status();
-    if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-        return Err(AzureError::Unauthorized("invalid API key".into()));
-    }
-    if !status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(AzureError::Http(format!(
-            "HTTP {}: {body}",
-            status.as_u16()
-        )));
-    }
-
-    let raw: Vec<AzureVoice> = resp
+    let raw: Vec<AzureVoice> = response
         .json()
-        .await
         .map_err(|e| AzureError::Decode(e.to_string()))?;
 
     let engine_id = EngineId(ENGINE_ID_AZURE.into());
@@ -77,7 +75,11 @@ pub(super) async fn fetch_voices(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use wiremock::matchers::{header_exists, method, path};
+    use crate::network::test_support::{
+        API_KEY, NO_HINT_WAIT_SECS, assert_reveals_nothing, catalog_cap_text, link_to,
+        over_catalog_cap, serving, throttled,
+    };
+    use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
@@ -106,15 +108,12 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/cognitiveservices/voices/list"))
-            .and(header_exists("Ocp-Apim-Subscription-Key"))
+            .and(header("Ocp-Apim-Subscription-Key", API_KEY))
             .respond_with(ResponseTemplate::new(200).set_body_json(&body))
             .mount(&server)
             .await;
 
-        let client = Client::new();
-        let voices = fetch_voices(&client, "test-key", &server.uri())
-            .await
-            .unwrap();
+        let voices = fetch_voices(&link_to(&server), API_KEY).await.unwrap();
 
         assert_eq!(voices.len(), 3);
         assert_eq!(voices[0].id, VoiceId("en-US-AriaNeural".into()));
@@ -128,17 +127,50 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_voices_maps_401_to_unauthorized() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("GET"))
-            .and(path("/cognitiveservices/voices/list"))
-            .respond_with(ResponseTemplate::new(401))
-            .mount(&server)
-            .await;
-
-        let client = Client::new();
-        let result = fetch_voices(&client, "bad-key", &server.uri()).await;
-        assert!(matches!(result, Err(AzureError::Unauthorized(_))));
+    async fn catalog_failures_map_to_provider_errors_without_revealing_the_key() {
+        let echo = format!("key {API_KEY} rejected");
+        let cap = catalog_cap_text();
+        for (template, expected) in [
+            (
+                ResponseTemplate::new(401).set_body_string(echo.clone()),
+                "Unauthorized".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(403).set_body_string(echo.clone()),
+                "Unauthorized".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(429),
+                format!("RateLimited({NO_HINT_WAIT_SECS})"),
+            ),
+            (throttled(4), "RateLimited(4)".to_owned()),
+            (
+                ResponseTemplate::new(500).set_body_string(echo.clone()),
+                "Http".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(200).set_body_string("[{"),
+                "Decode".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(200).set_body_bytes(over_catalog_cap()),
+                format!("Http({cap})"),
+            ),
+        ] {
+            let server = serving(template).await;
+            let error = fetch_voices(&link_to(&server), API_KEY).await.unwrap_err();
+            let got = match &error {
+                AzureError::Unauthorized(_) => "Unauthorized".to_owned(),
+                AzureError::RateLimited { retry_after_secs } => {
+                    format!("RateLimited({retry_after_secs})")
+                }
+                AzureError::Http(detail) if detail.contains(&cap) => format!("Http({cap})"),
+                AzureError::Http(_) => "Http".to_owned(),
+                AzureError::Decode(_) => "Decode".to_owned(),
+                other => format!("{other:?}"),
+            };
+            assert_eq!(got, expected, "{error}");
+            assert_reveals_nothing(&error.to_string(), &server);
+        }
     }
 }

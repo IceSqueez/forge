@@ -4,20 +4,23 @@ pub mod synth;
 pub mod voices;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_audio::PcmBuffer;
-use forge_net::RateLimiter;
+use forge_net::{RateLimiter, acquire_or_wait};
 use forge_tts_core::{
     ENGINE_ID_POLLY, EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsError, TtsVoice,
     VoiceId,
 };
 
 use crate::credentials::PollyCredentials;
+use crate::network::ceil_secs;
 use crate::policy::{RetryConfig, SynthesisRateLimiter, retry_synthesize};
 use error::PollyError;
 
 pub(crate) const SAMPLE_RATE_HZ: u32 = 16_000;
+const SYNTHESIS_WEIGHT: u32 = 1;
 
 impl From<PollyError> for TtsError {
     fn from(e: PollyError) -> Self {
@@ -64,12 +67,13 @@ fn resolved_base_url(creds: &PollyCredentials) -> String {
 
 impl PollyEngine {
     pub fn new(credentials: PollyCredentials) -> Self {
+        let limiter = Arc::new(SynthesisRateLimiter::new());
         Self {
             id: EngineId(ENGINE_ID_POLLY.into()),
             credentials,
             client: reqwest::Client::new(),
-            limiter: Arc::new(SynthesisRateLimiter::new()),
-            retry_cfg: RetryConfig::default(),
+            retry_cfg: RetryConfig::paced_by(Arc::clone(&limiter)),
+            limiter,
         }
     }
 }
@@ -88,6 +92,14 @@ impl forge_tts_core::TtsEngineFactory for PollyEngineFactory {
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
         Ok(Box::new(PollyEngine::new(self.credentials.clone())))
     }
+}
+
+async fn pace(limiter: &SynthesisRateLimiter) -> Result<(), TtsError> {
+    acquire_or_wait(limiter, SYNTHESIS_WEIGHT)
+        .await
+        .map_err(|_| TtsError::RateLimited {
+            retry_after_secs: ceil_secs(limiter.cooldown_remaining()),
+        })
 }
 
 #[async_trait]
@@ -111,18 +123,28 @@ impl TtsEngine for PollyEngine {
         let client = self.client.clone();
         let credentials = self.credentials.clone();
         let base_url = resolved_base_url(&self.credentials);
-        let limiter = Arc::clone(&self.limiter) as Arc<dyn RateLimiter>;
-        let cfg = self.retry_cfg;
+        let limiter = Arc::clone(&self.limiter);
+        let cfg = self.retry_cfg.clone();
 
-        retry_synthesize(self.id.clone(), limiter, cfg, move || {
+        retry_synthesize(self.id.clone(), cfg, move || {
             let client = client.clone();
             let credentials = credentials.clone();
             let base_url = base_url.clone();
+            let limiter = Arc::clone(&limiter);
             let req = request.clone();
             async move {
-                synth::synthesize(&client, &credentials, &base_url, req)
+                pace(&limiter).await?;
+                let result = synth::synthesize(&client, &credentials, &base_url, req)
                     .await
-                    .map_err(TtsError::from)
+                    .map_err(TtsError::from);
+                if let Err(TtsError::RateLimited { retry_after_secs }) = &result
+                    && *retry_after_secs > 0
+                {
+                    limiter
+                        .observe_remote_throttle(Duration::from_secs(*retry_after_secs))
+                        .await;
+                }
+                result
             }
         })
         .await

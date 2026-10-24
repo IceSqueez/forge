@@ -30,9 +30,10 @@ use forge_storage::voice_aliases::MockVoiceAliasRepo;
 use forge_storage::{
     ActionRepo, BanLedgerRepo, ChatHistoryRepo, CredentialId, CredentialsRepo, DataProvider,
     DonationRepo, EventLogRepo, ExecutionStatus, GlobalEntry, GlobalsRepo, HistoryRepo,
-    LatestValueRepo, MediaRepo, QueueRepo, ScheduledRunRepo, ScriptRecord, ScriptRepo,
-    ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
-    TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    LatestValueRepo, MediaRepo, QueueRepo, ScheduledRunRepo, ScriptRecord, ScriptReferences,
+    ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError,
+    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
+    VoiceAliasRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -308,6 +309,30 @@ impl ScriptRepo for TestDataProvider {
 
     async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
         self.script_repo.prune_executions_before(cutoff).await
+    }
+
+    async fn rename_cascading(
+        &self,
+        id: ScriptId,
+        new_name: &str,
+    ) -> Result<ScriptReferences, StorageError> {
+        self.script_repo.rename_cascading(id, new_name).await
+    }
+
+    async fn referrers(&self, name: &str) -> Result<ScriptReferences, StorageError> {
+        self.script_repo.referrers(name).await
+    }
+
+    async fn archive_script(&self, id: ScriptId) -> Result<bool, StorageError> {
+        self.script_repo.archive_script(id).await
+    }
+
+    async fn restore_script(&self, id: ScriptId) -> Result<bool, StorageError> {
+        self.script_repo.restore_script(id).await
+    }
+
+    async fn list_archived_scripts(&self) -> Result<Vec<ScriptRecord>, StorageError> {
+        self.script_repo.list_archived_scripts().await
     }
 }
 

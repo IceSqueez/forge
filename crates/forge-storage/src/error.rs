@@ -47,6 +47,9 @@ pub enum StorageError {
         sample_action_names: Vec<String>,
     },
 
+    #[error("the default queue cannot be deleted")]
+    DefaultQueueUndeletable,
+
     #[error("'{label}' is not an accepted audio or image file")]
     MediaUnsupported { label: String },
 

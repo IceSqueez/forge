@@ -16,7 +16,7 @@ use forge_runtime::{
     QueueSchedulerHandle,
 };
 use forge_storage::{ActionRepo, QueueRepo};
-use forge_types::{Queue, QueueId};
+use forge_types::{DEFAULT_QUEUE_ID, Queue, QueueId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, EventEmitter, FontWeight, Pixels, Point,
     Rgba, SharedString, Stateful, Subscription, Window, div, prelude::*, px,
@@ -810,7 +810,9 @@ impl QueuesView {
 
     fn request_delete(&mut self, id: QueueId, cx: &mut Context<Self>) {
         self.menu_open = None;
-        self.pending_delete.request(id);
+        if id != DEFAULT_QUEUE_ID {
+            self.pending_delete.request(id);
+        }
         cx.notify();
     }
 
@@ -826,11 +828,10 @@ impl QueuesView {
         cx.notify();
 
         let queue_repo = Arc::clone(&self.queue_repo);
-        let action_repo = Arc::clone(&self.action_repo);
         let scheduler = self.scheduler.clone();
         async_bridge::run_async(
             &self.rt_handle,
-            delete_queue(queue_repo, action_repo, scheduler, deleted_id),
+            delete_queue(queue_repo, scheduler, deleted_id),
             |this, result, cx| match result {
                 Ok(()) => this.reload(cx),
                 Err(message) => {
@@ -1050,7 +1051,7 @@ impl QueuesView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let id = q.id;
-        let is_default = q.name == "Default";
+        let is_default = q.id == DEFAULT_QUEUE_ID;
         let menu_open = self.menu_open == Some(id);
         let menu_pos = if menu_open { self.menu_click_pos } else { None };
         let view = cx.entity();
@@ -1295,9 +1296,18 @@ impl QueuesView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let default_name = self
+            .queues
+            .iter()
+            .find(|q| q.id == DEFAULT_QUEUE_ID)
+            .map(|q| q.name.clone())
+            .unwrap_or_default();
         let card = confirm_modal(
             tr!("queues_delete_confirm_title"),
-            tr!("queues_delete_confirm_body"),
+            tr!(
+                "queues_delete_confirm_body",
+                default = default_name.as_str()
+            ),
             ConfirmTone::Destructive,
             palette,
         )
@@ -1907,32 +1917,16 @@ async fn apply_queue_live(
 
 async fn delete_queue(
     queue_repo: Arc<dyn QueueRepo>,
-    action_repo: Arc<dyn ActionRepo>,
     scheduler: QueueSchedulerHandle,
     deleted_id: QueueId,
 ) -> Result<(), String> {
-    let queues = queue_repo.list().await.map_err(|e| e.to_string())?;
-    let Some(default) = queues.into_iter().find(|q| q.name == "Default") else {
-        return Err("default queue missing".to_string());
-    };
-    let default_id = default.id;
-    if deleted_id == default_id {
-        return Ok(());
-    }
-
-    let actions = action_repo.list().await.map_err(|e| e.to_string())?;
-    for mut action in actions {
-        if action.queue_id == deleted_id {
-            action.queue_id = default_id;
-            action_repo.save(&action).await.map_err(|e| e.to_string())?;
-        }
-    }
-
-    queue_repo
-        .delete(deleted_id)
+    let deleted = queue_repo
+        .delete_reassigning_actions(deleted_id)
         .await
         .map_err(|e| e.to_string())?;
-    if let Err(err) = scheduler.deregister(deleted_id).await {
+    if deleted.is_some()
+        && let Err(err) = scheduler.deregister(deleted_id).await
+    {
         tracing::warn!(error = %err, "queue deregister failed");
     }
     Ok(())

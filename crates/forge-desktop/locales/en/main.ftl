@@ -1774,7 +1774,7 @@ queues_menu_resume = Resume
 queues_menu_free = Free queue
 queues_menu_delete = Delete...
 queues_delete_confirm_title = Delete queue
-queues_delete_confirm_body = Actions in this queue move to Default. This cannot be undone.
+queues_delete_confirm_body = Actions in this queue move to { $default }. This cannot be undone.
 
 ## Queues - new queue modal
 
@@ -2588,6 +2588,39 @@ script_editor_stat_runs = RUNS
 script_editor_stat_avg = AVG
 script_editor_stat_runs_value = { $n } today
 script_editor_stat_avg_value = { $n } ms
+script_editor_delete_checking = Checking which actions use this script...
+script_editor_delete_unused = No action uses this script. It moves to the archive, and you can undo right after deleting.
+script_editor_delete_used_by = { $count ->
+    [one] Used by { $count } action: { $names }.
+   *[other] Used by { $count } actions: { $names }.
+}
+script_editor_delete_maybe_used_by = { $count ->
+    [one] { $count } action may pick it through a variable: { $names }.
+   *[other] { $count } actions may pick it through a variable: { $names }.
+}
+script_editor_delete_archive_note = Their steps fail until the script is restored. You can undo right after deleting.
+script_editor_deleted_toast = Deleted '{ $name }'
+script_editor_delete_failed = Could not delete the script: { $error }
+script_editor_restore_failed = Could not restore the script: { $error }
+script_editor_rename_title = Rename script?
+script_editor_rename_updates_none = No action names this script directly.
+script_editor_rename_updates = { $count ->
+    [one] { $count } action will be updated to the new name: { $names }.
+   *[other] { $count } actions will be updated to the new name: { $names }.
+}
+script_editor_rename_templated = { $count ->
+    [one] Check { $count } action by hand - it picks the script through a variable and will not be updated: { $names }.
+   *[other] Check { $count } actions by hand - they pick the script through a variable and will not be updated: { $names }.
+}
+script_editor_renamed_toast = { $count ->
+    [one] Renamed to '{ $name }' - { $count } action updated
+   *[other] Renamed to '{ $name }' - { $count } actions updated
+}
+script_editor_rename_check_toast = { $count ->
+    [one] Check { $count } action that picks the script through a variable: { $names }
+   *[other] Check { $count } actions that pick the script through a variable: { $names }
+}
+script_editor_rename_failed = Could not rename the script: { $error }
 
 ## Widget - layout chrome
 

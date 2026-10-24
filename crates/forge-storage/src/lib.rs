@@ -35,7 +35,7 @@ pub use ban_ledger::{
     BanOrigin, merge_ban_entry,
 };
 pub use catalog::{
-    CatalogChanges, CatalogRevision, RevisingActionRepo, RevisingQueueRepo,
+    CatalogChanges, CatalogRevision, RevisingActionRepo, RevisingQueueRepo, RevisingScriptRepo,
     RevisingTriggerInstanceRepo,
 };
 pub use chat_history::{
@@ -84,7 +84,10 @@ pub use scheduled_run::{
     ScheduledRunRepo, ScheduledRunSpec, ScheduledRunState,
 };
 pub use schema_file::{DatabaseFileSchema, StoredDatabase, StoredSchema};
-pub use script::{ScriptRecord, ScriptRepo, ScriptTelemetry};
+pub use script::{
+    SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND, ScriptRecord, ScriptReferences, ScriptReferrer,
+    ScriptRepo, ScriptTelemetry,
+};
 pub use settings::{
     CredentialsKeyLoss, DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
     DEFAULT_DIAGNOSTIC_LOG_LEVEL, EngineParams, Language, MAX_CHAT_HISTORY_PER_VIEWER_LIMIT,

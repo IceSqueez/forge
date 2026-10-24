@@ -11,7 +11,9 @@ use forge_script::{
     Engine, ForgeApi, ScriptError, ScriptHttpClient, build_scope_for_contract,
     load_script_engine_config, load_script_http_config,
 };
-use forge_storage::{ExecutionStatus, GlobalsRepo, ScriptRepo, SettingsRepo};
+use forge_storage::{
+    ExecutionStatus, GlobalsRepo, SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND, ScriptRepo, SettingsRepo,
+};
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
@@ -52,7 +54,7 @@ impl ScriptRunNamedRunner {
 #[async_trait]
 impl SubActionRunner for ScriptRunNamedRunner {
     fn id(&self) -> &str {
-        "script.run.named"
+        SCRIPT_RUN_NAMED_KIND
     }
 
     fn category(&self) -> SubActionCategory {
@@ -77,7 +79,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
 
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
-        cfg.insert("script_name".to_owned(), Variant::String(String::new()));
+        cfg.insert(SCRIPT_NAME_KEY.to_owned(), Variant::String(String::new()));
         cfg.insert(TARGET_VAR_KEY.to_owned(), Variant::String(String::new()));
         cfg
     }
@@ -85,7 +87,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
     fn config_fields(&self) -> Vec<FormField> {
         vec![
             FormField::DynamicSelect {
-                key: "script_name",
+                key: SCRIPT_NAME_KEY,
                 label: "Script",
                 options_key: "script.names",
             },
@@ -98,7 +100,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("script_name").map(|_| ())
+        config.require_str(SCRIPT_NAME_KEY).map(|_| ())
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -120,7 +122,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
         let started_at = OffsetDateTime::now_utc();
         let wall_start = Instant::now();
 
-        let name_template = config.str("script_name").unwrap_or_default();
+        let name_template = config.str(SCRIPT_NAME_KEY).unwrap_or_default();
         let name = ctx.arg_stack.interpolate(name_template);
 
         let target_var_template = config.str(TARGET_VAR_KEY).unwrap_or_default();
@@ -133,7 +135,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),
                     produced: ::std::collections::BTreeMap::new(),
-                    kind: "script.run.named".to_owned(),
+                    kind: SCRIPT_RUN_NAMED_KIND.to_owned(),
                     started_at,
                     duration_ms,
                     outcome: SubActionOutcome::Failed(format!(
@@ -269,7 +271,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "script.run.named".to_owned(),
+                kind: SCRIPT_RUN_NAMED_KIND.to_owned(),
                 started_at,
                 duration_ms,
                 outcome,

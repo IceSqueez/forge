@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_types::{Action, ActionId, Queue, QueueId, TriggerInstance, TriggerInstanceId};
+use forge_types::{Action, ActionId, Queue, QueueId, ScriptId, TriggerInstance, TriggerInstanceId};
 use time::OffsetDateTime;
 use tokio::sync::watch;
 
 use crate::{
-    ActionExecution, ActionRepo, ActionTelemetry, ExecutionStatus, QueueRepo, StorageError,
-    TriggerInstanceRepo,
+    ActionExecution, ActionRepo, ActionTelemetry, ExecutionStatus, QueueRepo, ScriptRecord,
+    ScriptReferences, ScriptRepo, ScriptTelemetry, StorageError, TriggerInstanceRepo,
 };
 
 #[derive(Debug, Clone)]
@@ -406,6 +406,99 @@ impl QueueRepo for RevisingQueueRepo {
             .after(async move { inner.delete(id).await })
             .await
     }
+
+    async fn delete_reassigning_actions(&self, id: QueueId) -> Result<Option<u64>, StorageError> {
+        let inner = Arc::clone(&self.inner);
+        self.revision
+            .after(async move { inner.delete_reassigning_actions(id).await })
+            .await
+    }
+}
+
+pub struct RevisingScriptRepo {
+    inner: Arc<dyn ScriptRepo>,
+    revision: CatalogRevision,
+}
+
+impl RevisingScriptRepo {
+    pub fn wrap(inner: Arc<dyn ScriptRepo>, revision: CatalogRevision) -> Arc<dyn ScriptRepo> {
+        Arc::new(Self { inner, revision })
+    }
+}
+
+#[async_trait]
+impl ScriptRepo for RevisingScriptRepo {
+    async fn get(&self, id: ScriptId) -> Result<Option<ScriptRecord>, StorageError> {
+        self.inner.get(id).await
+    }
+
+    async fn get_by_name(&self, name: &str) -> Result<Option<ScriptRecord>, StorageError> {
+        self.inner.get_by_name(name).await
+    }
+
+    async fn save(&self, record: ScriptRecord) -> Result<(), StorageError> {
+        self.inner.save(record).await
+    }
+
+    async fn delete(&self, id: ScriptId) -> Result<bool, StorageError> {
+        self.inner.delete(id).await
+    }
+
+    async fn list(&self) -> Result<Vec<ScriptRecord>, StorageError> {
+        self.inner.list().await
+    }
+
+    async fn list_enabled(&self) -> Result<Vec<ScriptRecord>, StorageError> {
+        self.inner.list_enabled().await
+    }
+
+    async fn record_execution(
+        &self,
+        script_id: ScriptId,
+        started_at: OffsetDateTime,
+        duration_ms: u64,
+        status: ExecutionStatus,
+    ) -> Result<(), StorageError> {
+        self.inner
+            .record_execution(script_id, started_at, duration_ms, status)
+            .await
+    }
+
+    async fn telemetry(&self, id: ScriptId) -> Result<ScriptTelemetry, StorageError> {
+        self.inner.telemetry(id).await
+    }
+
+    async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
+        self.inner.prune_executions_before(cutoff).await
+    }
+
+    async fn rename_cascading(
+        &self,
+        id: ScriptId,
+        new_name: &str,
+    ) -> Result<ScriptReferences, StorageError> {
+        let inner = Arc::clone(&self.inner);
+        let new_name = new_name.to_owned();
+        self.revision
+            .after(async move { inner.rename_cascading(id, &new_name).await })
+            .await
+    }
+
+    async fn referrers(&self, name: &str) -> Result<ScriptReferences, StorageError> {
+        self.inner.referrers(name).await
+    }
+
+    async fn archive_script(&self, id: ScriptId) -> Result<bool, StorageError> {
+        self.inner.archive_script(id).await
+    }
+
+    async fn restore_script(&self, id: ScriptId) -> Result<bool, StorageError> {
+        self.inner.restore_script(id).await
+    }
+
+    async fn list_archived_scripts(&self) -> Result<Vec<ScriptRecord>, StorageError> {
+        self.inner.list_archived_scripts().await
+    }
 }
 
 #[cfg(test)]
@@ -439,6 +532,12 @@ mod tests {
         }
         async fn delete(&self, _id: QueueId) -> Result<bool, StorageError> {
             Ok(false)
+        }
+        async fn delete_reassigning_actions(
+            &self,
+            _id: QueueId,
+        ) -> Result<Option<u64>, StorageError> {
+            Ok(None)
         }
     }
 

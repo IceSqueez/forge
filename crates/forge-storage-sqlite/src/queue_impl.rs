@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use forge_storage::{QueueRepo, StorageError};
-use forge_types::{Queue, QueueId};
+use forge_types::{DEFAULT_QUEUE_ID, Queue, QueueId};
 use serde_json;
 
 use crate::error::SqliteStorageError;
@@ -105,6 +105,9 @@ impl QueueRepo for SqliteQueueRepo {
     }
 
     async fn delete(&self, id: QueueId) -> Result<bool, StorageError> {
+        if id == DEFAULT_QUEUE_ID {
+            return Err(StorageError::DefaultQueueUndeletable);
+        }
         let id_str = id.to_string();
         let result = sqlx::query("DELETE FROM queues WHERE id = ?")
             .bind(&id_str)
@@ -113,5 +116,36 @@ impl QueueRepo for SqliteQueueRepo {
             .map_err(SqliteStorageError::Sqlx)?;
 
         Ok(result.rows_affected() > 0)
+    }
+
+    async fn delete_reassigning_actions(&self, id: QueueId) -> Result<Option<u64>, StorageError> {
+        if id == DEFAULT_QUEUE_ID {
+            return Err(StorageError::DefaultQueueUndeletable);
+        }
+        let id_str = id.to_string();
+        let mut tx = self
+            .db
+            .writer()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        let reassigned = sqlx::query("UPDATE actions SET queue_id = ? WHERE queue_id = ?")
+            .bind(DEFAULT_QUEUE_ID.to_string())
+            .bind(&id_str)
+            .execute(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?
+            .rows_affected();
+        let deleted = sqlx::query("DELETE FROM queues WHERE id = ?")
+            .bind(&id_str)
+            .execute(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?
+            .rows_affected();
+        if deleted == 0 {
+            return Ok(None);
+        }
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(Some(reassigned))
     }
 }

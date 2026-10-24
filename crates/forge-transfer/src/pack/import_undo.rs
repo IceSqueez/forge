@@ -18,6 +18,7 @@ pub(crate) enum Undo {
     Script {
         id: ScriptId,
         previous: Option<ScriptRecord>,
+        archived: bool,
     },
     Global {
         name: String,
@@ -99,8 +100,18 @@ pub(crate) async fn revert(provider: &dyn DataProvider, undo: Undo) -> Result<()
                 None => repo.delete(id).await.map(drop).map_err(storage),
             }
         }
-        Undo::Script { id, previous } => match previous {
-            Some(record) => ScriptRepo::save(provider, record).await.map_err(storage),
+        Undo::Script {
+            id,
+            previous,
+            archived,
+        } => match previous {
+            Some(record) => {
+                ScriptRepo::save(provider, record).await.map_err(storage)?;
+                if archived {
+                    provider.archive_script(id).await.map_err(storage)?;
+                }
+                Ok(())
+            }
             None => ScriptRepo::delete(provider, id)
                 .await
                 .map(drop)

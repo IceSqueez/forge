@@ -217,7 +217,7 @@ impl<'a> PackImport<'_, 'a> {
             PackItemKind::Queue => {
                 NameBook::new(inventory.queues.values().map(|q| q.name.as_str()))
             }
-            PackItemKind::Script => NameBook::new(inventory.scripts.keys().map(String::as_str)),
+            PackItemKind::Script => NameBook::new(inventory.script_names()),
             PackItemKind::Global => NameBook::new(inventory.globals.keys().map(String::as_str)),
             PackItemKind::Clip => NameBook::new(inventory.clips.values().map(|c| c.name.as_str())),
             PackItemKind::Overlay => {
@@ -240,13 +240,10 @@ impl<'a> PackImport<'_, 'a> {
                 .ok()
                 .and_then(|id| inventory.queues.get(&id))
                 .map(|queue| queue.name.clone()),
-            PackItemKind::Script => ulid_id::<ScriptId>(local_id).ok().and_then(|id| {
-                inventory
-                    .scripts
-                    .values()
-                    .find(|script| script.id == id)
-                    .map(|script| script.name.clone())
-            }),
+            PackItemKind::Script => ulid_id::<ScriptId>(local_id)
+                .ok()
+                .and_then(|id| inventory.stored_script(id))
+                .map(|stored| stored.row.name),
             PackItemKind::Global => Some(local_id.to_owned()),
             PackItemKind::Clip => ulid_id::<ClipId>(local_id)
                 .ok()
@@ -459,14 +456,10 @@ impl<'a> PackImport<'_, 'a> {
             let id: ScriptId = ulid_id(&target.local_id)?;
             let previous = target
                 .replaces()
-                .then(|| {
-                    self.inventory
-                        .scripts
-                        .values()
-                        .find(|script| script.id == id)
-                        .cloned()
-                })
+                .then(|| self.inventory.stored_script(id))
                 .flatten();
+            let archived = previous.as_ref().is_some_and(|stored| stored.archived);
+            let previous = previous.map(|stored| stored.row);
             let now = OffsetDateTime::now_utc();
             let record = ScriptRecord {
                 id,
@@ -479,7 +472,14 @@ impl<'a> PackImport<'_, 'a> {
                 last_modified: now,
             };
             ScriptRepo::save(self.provider, record).await?;
-            self.undo.push(Undo::Script { id, previous });
+            self.undo.push(Undo::Script {
+                id,
+                previous,
+                archived,
+            });
+            if archived {
+                self.provider.restore_script(id).await?;
+            }
             self.record_written(item, id.to_string(), &target);
         }
         Ok(())

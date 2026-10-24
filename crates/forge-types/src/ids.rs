@@ -43,6 +43,8 @@ define_id!(QueueId);
 define_id!(ScriptId);
 define_id!(ClipId);
 
+pub const DEFAULT_QUEUE_ID: QueueId = QueueId(Ulid::nil());
+
 impl FromStr for ActionId {
     type Err = ulid::DecodeError;
 

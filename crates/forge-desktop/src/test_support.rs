@@ -1,6 +1,7 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 mod config_references;
+mod memory_scripts;
 pub(crate) mod pack_flow;
 mod pack_transfer;
 mod setup_transfer;
@@ -24,9 +25,9 @@ use forge_storage::{
     CredentialId, CredentialsRepo, DataProvider, DonationRepo, EventLogRepo, ExecutionStatus,
     GlobalEntry, GlobalsRepo, HistoryRepo, LatestValueRepo, MediaBlob, MediaBlobId, MediaReferrer,
     MediaReferrerKind, MediaRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId,
-    OverlayRepo, QueueRepo, ScheduledRunRepo, ScriptRecord, ScriptRepo, ScriptTelemetry,
-    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo,
-    UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    OverlayRepo, QueueRepo, ScheduledRunRepo, ScriptRecord, ScriptReferences, ScriptRepo,
+    ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
+    TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{
     Action, ActionId, ActorRole, EventId, ExecutionContext, PlatformId, ScriptId, TriggerConfig,
@@ -34,6 +35,8 @@ use forge_types::{
 };
 use time::OffsetDateTime;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+
+pub(crate) use memory_scripts::MemoryScripts;
 
 const RUNTIME_PUMPS: usize = 8;
 
@@ -399,6 +402,30 @@ impl ScriptRepo for TestBackend {
 
     async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
         self.scripts().prune_executions_before(cutoff).await
+    }
+
+    async fn rename_cascading(
+        &self,
+        id: ScriptId,
+        new_name: &str,
+    ) -> Result<ScriptReferences, StorageError> {
+        self.scripts().rename_cascading(id, new_name).await
+    }
+
+    async fn referrers(&self, name: &str) -> Result<ScriptReferences, StorageError> {
+        self.scripts().referrers(name).await
+    }
+
+    async fn archive_script(&self, id: ScriptId) -> Result<bool, StorageError> {
+        self.scripts().archive_script(id).await
+    }
+
+    async fn restore_script(&self, id: ScriptId) -> Result<bool, StorageError> {
+        self.scripts().restore_script(id).await
+    }
+
+    async fn list_archived_scripts(&self) -> Result<Vec<ScriptRecord>, StorageError> {
+        self.scripts().list_archived_scripts().await
     }
 }
 
@@ -1432,7 +1459,7 @@ pub(crate) async fn sandboxed_provider() -> Sandboxed<Arc<dyn DataProvider>> {
 async fn default_queue(backend: &Arc<dyn DataProvider>) -> forge_types::QueueId {
     backend
         .queue_repo()
-        .get_by_name("Default")
+        .get(forge_types::DEFAULT_QUEUE_ID)
         .await
         .unwrap()
         .expect("migrations seed the default queue")

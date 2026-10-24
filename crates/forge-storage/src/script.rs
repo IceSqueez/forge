@@ -1,9 +1,24 @@
 use async_trait::async_trait;
-use forge_types::{ScriptContract, ScriptId};
+use forge_types::{ActionId, ScriptContract, ScriptId};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::{ExecutionStatus, StorageError};
+
+pub const SCRIPT_RUN_NAMED_KIND: &str = "script.run.named";
+pub const SCRIPT_NAME_KEY: &str = "script_name";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScriptReferrer {
+    pub action_id: ActionId,
+    pub action_name: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ScriptReferences {
+    pub literal: Vec<ScriptReferrer>,
+    pub templated: Vec<ScriptReferrer>,
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ScriptTelemetry {
@@ -44,6 +59,16 @@ pub trait ScriptRepo: Send + Sync {
     ) -> Result<(), StorageError>;
     async fn telemetry(&self, id: ScriptId) -> Result<ScriptTelemetry, StorageError>;
     async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
+
+    async fn rename_cascading(
+        &self,
+        id: ScriptId,
+        new_name: &str,
+    ) -> Result<ScriptReferences, StorageError>;
+    async fn referrers(&self, name: &str) -> Result<ScriptReferences, StorageError>;
+    async fn archive_script(&self, id: ScriptId) -> Result<bool, StorageError>;
+    async fn restore_script(&self, id: ScriptId) -> Result<bool, StorageError>;
+    async fn list_archived_scripts(&self) -> Result<Vec<ScriptRecord>, StorageError>;
 }
 
 #[cfg(test)]

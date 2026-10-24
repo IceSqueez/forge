@@ -20,8 +20,8 @@ use forge_script::{
     validate_syntax,
 };
 use forge_storage::{
-    DataProvider, ExecutionStatus, GlobalsRepo, ScriptRecord, ScriptRepo, ScriptTelemetry,
-    SettingsRepo,
+    DataProvider, ExecutionStatus, GlobalsRepo, SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND,
+    ScriptRecord, ScriptReferences, ScriptRepo, ScriptTelemetry, SettingsRepo,
 };
 use forge_types::{
     Action, ActionId, ArgStack, IntegrationAvailability, ScriptContract, ScriptId, ScriptInput,
@@ -38,10 +38,16 @@ use crate::async_bridge::{self, BridgeFlow, drain_events};
 use crate::globals::variant_kind_color;
 use crate::screen::Screen;
 use crate::screen_shortcuts::ScreenShortcuts;
+use crate::script_lifecycle::{
+    ScriptLifecycle, ScriptRenamed, counted_names, delete_hint, has_referrers, referrer_count,
+    rename_hint,
+};
 use crate::sidebar::NavRequested;
 use crate::unsaved_work::UnsavedWork;
 use forge_components::ActivePresentation;
+use forge_components::{PushToast, ToastAction, ToastKind};
 
+const UNDO_TOAST_MS: u64 = 6000;
 const LEFT_PANE_W: Pixels = px(200.0);
 const CODE_LINE_HEIGHT: Pixels = px(19.8);
 const LIST_MIN_W: Pixels = px(180.0);
@@ -182,14 +188,21 @@ struct ScriptEntry {
 fn find_linked_action(actions: &[Action], script_name: &str) -> Option<LinkedAction> {
     actions.iter().find_map(|action| {
         let links = action.sub_actions.iter().any(|step| {
-            step.kind_id == "script.run.named"
-                && step.config.get("script_name").and_then(|v| v.as_str()) == Some(script_name)
+            step.kind_id == SCRIPT_RUN_NAMED_KIND
+                && step.config.get(SCRIPT_NAME_KEY).and_then(|v| v.as_str()) == Some(script_name)
         });
         links.then(|| LinkedAction {
             id: action.id,
             name: action.name.clone(),
         })
     })
+}
+
+struct PendingRename {
+    id: ScriptId,
+    old_name: String,
+    new_name: String,
+    references: ScriptReferences,
 }
 
 struct OpenScript {
@@ -515,6 +528,8 @@ pub struct ScriptEditorView {
     rename: Option<RenameState>,
     row_menu: Option<RowMenu>,
     pending_delete: Confirm<ScriptId>,
+    delete_referrers: Option<ScriptReferences>,
+    pending_rename: Option<PendingRename>,
     pending_nav: Option<PendingNav>,
 
     input_rename: Option<InputRename>,
@@ -588,6 +603,7 @@ impl ScriptEditorView {
     fn prompt_open(&self) -> bool {
         self.run_modal.is_some()
             || self.pending_delete.get().is_some()
+            || self.pending_rename.is_some()
             || self.pending_nav.is_some()
     }
 }
@@ -664,6 +680,8 @@ impl ScriptEditorView {
             rename: None,
             row_menu: None,
             pending_delete: Confirm::default(),
+            delete_referrers: None,
+            pending_rename: None,
             pending_nav: None,
             input_rename: None,
             kind_menu: None,
@@ -1471,14 +1489,56 @@ impl ScriptEditorView {
         cx.notify();
     }
 
+    fn lifecycle(&self) -> ScriptLifecycle {
+        ScriptLifecycle::new(
+            Arc::clone(&self.backend) as Arc<dyn ScriptRepo>,
+            Arc::clone(&self.script_registry),
+            Arc::clone(&self.bus),
+        )
+    }
+
     fn request_delete(&mut self, id: ScriptId, cx: &mut Context<Self>) {
         self.pending_delete.request(id);
+        self.delete_referrers = None;
         self.row_menu = None;
+        cx.notify();
+        let Some(name) = self.find_entry(id).map(|e| e.name.clone()) else {
+            return;
+        };
+        let lifecycle = self.lifecycle();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { lifecycle.referrers(name).await },
+            move |this, result, cx| this.apply_delete_referrers(id, result, cx),
+            cx,
+        );
+    }
+
+    fn apply_delete_referrers(
+        &mut self,
+        id: ScriptId,
+        result: Result<ScriptReferences, String>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.pending_delete.get() != Some(&id) {
+            return;
+        }
+        match result {
+            Ok(references) => self.delete_referrers = Some(references),
+            Err(error) => {
+                self.pending_delete.cancel();
+                cx.push_toast(
+                    ToastKind::Error,
+                    tr!("script_editor_delete_failed", error = error.as_str()),
+                );
+            }
+        }
         cx.notify();
     }
 
     fn cancel_delete(&mut self, cx: &mut Context<Self>) {
         self.pending_delete.cancel();
+        self.delete_referrers = None;
         cx.notify();
     }
 
@@ -1486,24 +1546,30 @@ impl ScriptEditorView {
         let Some(id) = self.pending_delete.take() else {
             return;
         };
-        let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
+        self.delete_referrers = None;
+        let name = self
+            .find_entry(id)
+            .map(|e| e.name.clone())
+            .unwrap_or_default();
+        let lifecycle = self.lifecycle();
         async_bridge::run_async(
             &self.rt_handle,
-            async move {
-                ScriptRepo::delete(&*repo, id)
-                    .await
-                    .map(|_| ())
-                    .map_err(|e| e.to_string())
-            },
-            move |this, result, cx| this.apply_deleted(id, result, cx),
+            async move { lifecycle.archive(id).await },
+            move |this, result, cx| this.apply_deleted(id, name, result, cx),
             cx,
         );
         cx.notify();
     }
 
-    fn apply_deleted(&mut self, id: ScriptId, result: Result<(), String>, cx: &mut Context<Self>) {
+    fn apply_deleted(
+        &mut self,
+        id: ScriptId,
+        name: String,
+        result: Result<bool, String>,
+        cx: &mut Context<Self>,
+    ) {
         match result {
-            Ok(()) => {
+            Ok(archived) => {
                 self.scripts.retain(|e| e.id != id);
                 if self.selected == Some(id) {
                     self.selected = None;
@@ -1513,14 +1579,57 @@ impl ScriptEditorView {
                         area.set_content("", cx);
                     });
                 }
+                if archived {
+                    self.raise_undo_toast(id, &name, cx);
+                }
                 self.load_scripts(cx);
             }
-            Err(e) => {
-                tracing::warn!(error = %e, "script delete failed");
-                self.push_console(LogTag::Err, format!("Could not delete script: {e}"));
+            Err(error) => {
+                tracing::warn!(%error, "script archive failed");
+                cx.push_toast(
+                    ToastKind::Error,
+                    tr!("script_editor_delete_failed", error = error.as_str()),
+                );
                 cx.notify();
             }
         }
+    }
+
+    fn raise_undo_toast(&self, id: ScriptId, name: &str, cx: &mut Context<Self>) {
+        let view = cx.entity();
+        cx.push_toast_full(
+            ToastKind::Undo,
+            tr!("script_editor_deleted_toast", name = name),
+            None,
+            Some(ToastAction::new(
+                tr!("common_undo"),
+                move |_window, app: &mut App| {
+                    view.update(app, |this, cx| this.restore_archived(id, cx));
+                },
+            )),
+            Duration::from_millis(UNDO_TOAST_MS),
+        );
+    }
+
+    fn restore_archived(&mut self, id: ScriptId, cx: &mut Context<Self>) {
+        let lifecycle = self.lifecycle();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { lifecycle.restore(id).await },
+            |this, result, cx| this.apply_restored(result, cx),
+            cx,
+        );
+    }
+
+    fn apply_restored(&mut self, result: Result<bool, String>, cx: &mut Context<Self>) {
+        if let Err(error) = result {
+            tracing::warn!(%error, "script restore failed");
+            cx.push_toast(
+                ToastKind::Error,
+                tr!("script_editor_restore_failed", error = error.as_str()),
+            );
+        }
+        self.load_scripts(cx);
     }
 
     fn start_rename(&mut self, id: ScriptId, window: &mut Window, cx: &mut Context<Self>) {
@@ -1549,10 +1658,13 @@ impl ScriptEditorView {
         let Some(state) = self.rename.take() else {
             return;
         };
+        cx.notify();
         let id = state.target;
         let name = name.trim().to_owned();
-        if name.is_empty() {
-            cx.notify();
+        let Some(old_name) = self.find_entry(id).map(|e| e.name.clone()) else {
+            return;
+        };
+        if name.is_empty() || name == old_name {
             return;
         }
         let taken = self
@@ -1561,53 +1673,115 @@ impl ScriptEditorView {
             .any(|e| e.id != id && e.name.eq_ignore_ascii_case(&name));
         if taken {
             self.push_console(LogTag::Err, format!("Name \"{name}\" is already taken"));
-            cx.notify();
             return;
         }
 
-        let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
-        let name_for_task = name.clone();
+        let lifecycle = self.lifecycle();
+        let lookup = old_name.clone();
         async_bridge::run_async(
             &self.rt_handle,
-            async move {
-                let mut record = ScriptRepo::get(&*repo, id)
-                    .await
-                    .map_err(|e| e.to_string())?
-                    .ok_or_else(|| "script not found".to_owned())?;
-                record.name = name_for_task.clone();
-                ScriptRepo::save(&*repo, record)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                Ok::<(ScriptId, String), String>((id, name_for_task))
+            async move { lifecycle.referrers(lookup).await },
+            move |this, result, cx| {
+                this.stage_rename(
+                    PendingRename {
+                        id,
+                        old_name,
+                        new_name: name,
+                        references: ScriptReferences::default(),
+                    },
+                    result,
+                    cx,
+                );
             },
-            |this, result, cx| this.apply_renamed(result, cx),
             cx,
         );
-        cx.notify();
     }
 
-    fn apply_renamed(
+    fn stage_rename(
         &mut self,
-        result: Result<(ScriptId, String), String>,
+        pending: PendingRename,
+        result: Result<ScriptReferences, String>,
         cx: &mut Context<Self>,
     ) {
         match result {
-            Ok((id, new_name)) => {
-                for entry in &mut self.scripts {
-                    if entry.id == id {
-                        entry.name = new_name.clone();
-                    }
-                }
-                if let Some(open) = self.open.as_mut()
-                    && open.id == id
-                {
-                    open.record.name = new_name;
-                }
+            Ok(references) if has_referrers(&references) => {
+                self.pending_rename = Some(PendingRename {
+                    references,
+                    ..pending
+                });
+                cx.notify();
             }
-            Err(e) => {
-                tracing::warn!(error = %e, "script rename failed");
+            Ok(_) => self.run_rename(pending.id, pending.new_name, cx),
+            Err(error) => self.on_rename_failed(&error, cx),
+        }
+    }
+
+    fn cancel_pending_rename(&mut self, cx: &mut Context<Self>) {
+        self.pending_rename = None;
+        cx.notify();
+    }
+
+    fn confirm_pending_rename(&mut self, cx: &mut Context<Self>) {
+        let Some(pending) = self.pending_rename.take() else {
+            return;
+        };
+        self.run_rename(pending.id, pending.new_name, cx);
+        cx.notify();
+    }
+
+    fn run_rename(&mut self, id: ScriptId, name: String, cx: &mut Context<Self>) {
+        let lifecycle = self.lifecycle();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { lifecycle.rename(id, name).await },
+            |this, result, cx| this.apply_renamed(result, cx),
+            cx,
+        );
+    }
+
+    fn apply_renamed(&mut self, result: Result<ScriptRenamed, String>, cx: &mut Context<Self>) {
+        let renamed = match result {
+            Ok(renamed) => renamed,
+            Err(error) => {
+                self.on_rename_failed(&error, cx);
+                return;
+            }
+        };
+        for entry in &mut self.scripts {
+            if entry.id == renamed.id {
+                entry.name = renamed.name.clone();
             }
         }
+        if let Some(open) = self.open.as_mut()
+            && open.id == renamed.id
+        {
+            open.record.name = renamed.name.clone();
+        }
+        let literal = &renamed.references.literal;
+        cx.push_toast(
+            ToastKind::Success,
+            tr!(
+                "script_editor_renamed_toast",
+                name = renamed.name.as_str(),
+                count = referrer_count(literal)
+            ),
+        );
+        let templated = &renamed.references.templated;
+        if !templated.is_empty() {
+            cx.push_toast(
+                ToastKind::Warn,
+                counted_names("script_editor_rename_check_toast", templated),
+            );
+        }
+        cx.notify();
+    }
+
+    fn on_rename_failed(&mut self, error: &str, cx: &mut Context<Self>) {
+        tracing::warn!(%error, "script rename failed");
+        cx.push_toast(
+            ToastKind::Error,
+            tr!("script_editor_rename_failed", error = error),
+        );
         cx.notify();
     }
 
@@ -2710,7 +2884,7 @@ impl ScriptEditorView {
         let kind = tr!("widget_confirm_delete_kind_script");
         let card = confirm_modal(
             tr!("widget_confirm_delete_title", kind = kind.as_str()),
-            tr!("widget_confirm_delete_hint"),
+            delete_hint(self.delete_referrers.as_ref()),
             ConfirmTone::Destructive,
             palette,
         )
@@ -2733,6 +2907,37 @@ impl ScriptEditorView {
                 .position(OverlayPosition::Center)
                 .on_dismiss("script-delete-scrim", move |_window, cx| {
                     view.update(cx, |this, cx| this.cancel_delete(cx));
+                })
+                .into_any_element(),
+        )
+    }
+
+    fn rename_overlay(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let pending = self.pending_rename.as_ref()?;
+        let card = confirm_modal(
+            tr!("script_editor_rename_title"),
+            rename_hint(&pending.references),
+            ConfirmTone::Warning,
+            palette,
+        )
+        .item_name(format!("{} -> {}", pending.old_name, pending.new_name))
+        .on_cancel(
+            "script-rename-cancel",
+            tr!("widget_confirm_cancel"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_pending_rename(cx)),
+        )
+        .on_confirm(
+            "script-rename-confirm",
+            tr!("script_editor_rename_action"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_pending_rename(cx)),
+        );
+
+        let view = cx.entity();
+        Some(
+            overlay(card, palette)
+                .position(OverlayPosition::Center)
+                .on_dismiss("script-rename-scrim", move |_window, cx| {
+                    view.update(cx, |this, cx| this.cancel_pending_rename(cx));
                 })
                 .into_any_element(),
         )
@@ -3403,6 +3608,8 @@ impl Render for ScriptEditorView {
             Some(modal.into_any_element())
         } else if self.pending_delete.is_pending() {
             self.delete_overlay(&palette, cx)
+        } else if self.pending_rename.is_some() {
+            self.rename_overlay(&palette, cx)
         } else if self.pending_nav.is_some() {
             self.discard_overlay(&palette, cx)
         } else {
@@ -4159,6 +4366,322 @@ mod tests {
                 });
                 assert_eq!(runs, expected, "{case}");
             }
+        }
+    }
+
+    #[allow(clippy::expect_used)]
+    mod lifecycle {
+        use forge_components::{Density, Presentation, ThemeId, Toasts};
+        use forge_storage::{Language, ScriptReferrer};
+        use forge_types::IntegrationId;
+        use gpui::{AnyWindowHandle, AppContext, TestAppContext};
+
+        use super::*;
+        use crate::i18n::install_language;
+        use crate::test_support::{
+            MemoryScripts, StubEventLog, pump, runtime, test_backend_with_scripts,
+        };
+
+        const OLD_NAME: &str = "greet";
+        const NEW_NAME: &str = "welcome";
+        const BODY: &str = "let greeting = 1;";
+
+        struct NothingDisabled;
+
+        impl IntegrationAvailability for NothingDisabled {
+            fn is_disabled(&self, _: &IntegrationId) -> bool {
+                false
+            }
+        }
+
+        struct Blank;
+
+        impl Render for Blank {
+            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                div()
+            }
+        }
+
+        fn referrer(name: &str) -> ScriptReferrer {
+            ScriptReferrer {
+                action_id: ActionId::new(),
+                action_name: name.to_owned(),
+            }
+        }
+
+        fn references(literal: &[&str], templated: &[&str]) -> ScriptReferences {
+            ScriptReferences {
+                literal: literal.iter().map(|n| referrer(n)).collect(),
+                templated: templated.iter().map(|n| referrer(n)).collect(),
+            }
+        }
+
+        struct Rig {
+            rt: tokio::runtime::Runtime,
+            view: Entity<ScriptEditorView>,
+            scripts: Arc<MemoryScripts>,
+            registry: Arc<ScriptRegistry>,
+            id: ScriptId,
+        }
+
+        impl Rig {
+            fn mount(cx: &mut TestAppContext, uses: ScriptReferences) -> Self {
+                install_language(Language::En);
+                cx.update(|cx| {
+                    cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+                    cx.set_global(Toasts::new());
+                });
+                let rt = runtime();
+                let now = OffsetDateTime::now_utc();
+                let id = ScriptId::new();
+                let scripts = Arc::new(
+                    MemoryScripts::holding([ScriptRecord {
+                        id,
+                        name: OLD_NAME.to_owned(),
+                        body: BODY.to_owned(),
+                        contract: ScriptContract::default(),
+                        body_hash: content_hash(BODY),
+                        enabled: true,
+                        created_at: now,
+                        last_modified: now,
+                    }])
+                    .referenced_by(OLD_NAME, uses),
+                );
+                let registry = Arc::new(ScriptRegistry::new());
+                rt.block_on(registry.load_all(scripts.as_ref())).unwrap();
+                let bus = {
+                    let _entered = rt.enter();
+                    EventBus::new(Arc::new(StubEventLog))
+                };
+                let backend =
+                    test_backend_with_scripts(Arc::clone(&scripts) as Arc<dyn ScriptRepo>);
+                let handle = rt.handle().clone();
+                let shared = Arc::clone(&registry);
+                let view = cx.new(|cx| {
+                    ScriptEditorView::new(
+                        backend,
+                        shared,
+                        bus,
+                        Arc::new(NothingDisabled),
+                        handle,
+                        cx,
+                    )
+                });
+                let rig = Self {
+                    rt,
+                    view,
+                    scripts,
+                    registry,
+                    id,
+                };
+                rig.settle(cx);
+                rig
+            }
+
+            fn settle(&self, cx: &mut TestAppContext) {
+                for _ in 0..6 {
+                    pump(&self.rt);
+                    cx.run_until_parked();
+                }
+            }
+
+            fn runnable(&self, name: &str) -> bool {
+                self.rt.block_on(self.registry.get_by_name(name)).is_some()
+            }
+
+            fn listed(&self, cx: &mut TestAppContext) -> Vec<String> {
+                self.view.read_with(cx, |view, _| {
+                    view.scripts.iter().map(|e| e.name.clone()).collect()
+                })
+            }
+
+            fn stage(&self, found: ScriptReferences, cx: &mut TestAppContext) {
+                let id = self.id;
+                self.view.update(cx, |view, cx| {
+                    view.stage_rename(
+                        PendingRename {
+                            id,
+                            old_name: OLD_NAME.to_owned(),
+                            new_name: NEW_NAME.to_owned(),
+                            references: ScriptReferences::default(),
+                        },
+                        Ok(found),
+                        cx,
+                    );
+                });
+                self.settle(cx);
+            }
+
+            fn prompting_rename(&self, cx: &mut TestAppContext) -> bool {
+                self.view
+                    .read_with(cx, |view, _| view.pending_rename.is_some())
+            }
+        }
+
+        fn toasts(cx: &mut TestAppContext) -> Vec<(ToastKind, String)> {
+            cx.update(|cx| {
+                cx.global::<Toasts>()
+                    .items()
+                    .iter()
+                    .map(|t| (t.kind, t.message.to_string()))
+                    .collect()
+            })
+        }
+
+        fn press_undo(cx: &mut TestAppContext) {
+            let action = cx.update(|cx| {
+                let toasts = cx.global_mut::<Toasts>();
+                let id = toasts
+                    .items()
+                    .iter()
+                    .find(|t| t.kind == ToastKind::Undo)
+                    .map(|t| t.id)
+                    .expect("an undo toast");
+                toasts
+                    .take(id)
+                    .and_then(|t| t.action)
+                    .expect("an undo action")
+            });
+            let window: AnyWindowHandle = cx.add_window(|_, _| Blank).into();
+            cx.update(|cx| {
+                cx.update_window(window, |_, window, cx| (action.on_action)(window, cx))
+                    .unwrap();
+            });
+        }
+
+        #[gpui::test]
+        fn a_rename_no_action_uses_applies_at_once_and_a_used_one_waits_for_confirmation(
+            cx: &mut TestAppContext,
+        ) {
+            for (uses, prompted, stored, case) in [
+                (references(&[], &[]), false, NEW_NAME, "unused"),
+                (
+                    references(&["Greeter"], &[]),
+                    true,
+                    OLD_NAME,
+                    "named by an action",
+                ),
+                (
+                    references(&[], &["Picker"]),
+                    true,
+                    OLD_NAME,
+                    "picked by a variable",
+                ),
+            ] {
+                let rig = Rig::mount(cx, uses.clone());
+
+                rig.stage(uses, cx);
+
+                assert_eq!(
+                    (rig.prompting_rename(cx), rig.scripts.live_names()),
+                    (prompted, vec![stored.to_owned()]),
+                    "{case}"
+                );
+            }
+        }
+
+        #[gpui::test]
+        fn confirming_a_staged_rename_renames_the_script_everywhere_and_reports_the_updated_actions(
+            cx: &mut TestAppContext,
+        ) {
+            let uses = references(&["Greeter", "Welcomer"], &["Picker"]);
+            let rig = Rig::mount(cx, uses.clone());
+            rig.stage(uses, cx);
+
+            rig.view
+                .update(cx, |view, cx| view.confirm_pending_rename(cx));
+            rig.settle(cx);
+
+            let raised = toasts(cx);
+            assert_eq!(
+                (
+                    rig.scripts.live_names(),
+                    rig.listed(cx),
+                    rig.runnable(NEW_NAME),
+                    rig.runnable(OLD_NAME),
+                    raised.iter().map(|(kind, _)| *kind).collect::<Vec<_>>(),
+                ),
+                (
+                    vec![NEW_NAME.to_owned()],
+                    vec![NEW_NAME.to_owned()],
+                    true,
+                    false,
+                    vec![ToastKind::Success, ToastKind::Warn],
+                )
+            );
+            assert!(
+                raised[0].1.contains('2') && raised[1].1.contains("Picker"),
+                "{raised:?}"
+            );
+        }
+
+        #[gpui::test]
+        fn cancelling_a_staged_rename_keeps_the_old_name(cx: &mut TestAppContext) {
+            let uses = references(&["Greeter"], &[]);
+            let rig = Rig::mount(cx, uses.clone());
+            rig.stage(uses, cx);
+
+            rig.view
+                .update(cx, |view, cx| view.cancel_pending_rename(cx));
+            rig.settle(cx);
+
+            assert_eq!(
+                (
+                    rig.prompting_rename(cx),
+                    rig.scripts.live_names(),
+                    rig.runnable(OLD_NAME)
+                ),
+                (false, vec![OLD_NAME.to_owned()], true)
+            );
+        }
+
+        #[gpui::test]
+        fn the_delete_prompt_names_every_action_that_uses_the_script(cx: &mut TestAppContext) {
+            let rig = Rig::mount(cx, references(&["Greeter", "Welcomer"], &["Picker"]));
+            let id = rig.id;
+
+            rig.view.update(cx, |view, cx| view.request_delete(id, cx));
+            rig.settle(cx);
+
+            let hint = rig
+                .view
+                .read_with(cx, |view, _| delete_hint(view.delete_referrers.as_ref()));
+            for name in ["Greeter", "Welcomer", "Picker"] {
+                assert!(hint.contains(name), "{name} missing from {hint:?}");
+            }
+        }
+
+        #[gpui::test]
+        fn deleting_archives_the_script_out_of_reach_and_undo_brings_it_back(
+            cx: &mut TestAppContext,
+        ) {
+            let rig = Rig::mount(cx, ScriptReferences::default());
+            let id = rig.id;
+            rig.view.update(cx, |view, cx| view.request_delete(id, cx));
+            rig.settle(cx);
+
+            rig.view.update(cx, |view, cx| view.confirm_delete(cx));
+            rig.settle(cx);
+            let deleted = (
+                rig.scripts.archived_ids(),
+                rig.listed(cx),
+                rig.runnable(OLD_NAME),
+            );
+            press_undo(cx);
+            rig.settle(cx);
+            let undone = (
+                rig.scripts.archived_ids(),
+                rig.listed(cx),
+                rig.runnable(OLD_NAME),
+            );
+
+            assert_eq!(
+                (deleted, undone),
+                (
+                    (vec![id], Vec::new(), false),
+                    (Vec::new(), vec![OLD_NAME.to_owned()], true)
+                )
+            );
         }
     }
 }

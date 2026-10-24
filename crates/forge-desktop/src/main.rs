@@ -136,6 +136,7 @@ mod scheduled_runs_section;
 mod screen;
 mod screen_shortcuts;
 mod script_editor;
+mod script_lifecycle;
 mod sender_labels;
 mod server_console;
 mod server_restart;

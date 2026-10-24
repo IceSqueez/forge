@@ -1,4 +1,4 @@
-use crate::ids::QueueId;
+use crate::ids::{DEFAULT_QUEUE_ID, QueueId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -12,6 +12,10 @@ pub struct Queue {
 impl Queue {
     pub fn is_serial(&self) -> bool {
         self.concurrency <= 1
+    }
+
+    pub fn is_default(&self) -> bool {
+        self.id == DEFAULT_QUEUE_ID
     }
 }
 

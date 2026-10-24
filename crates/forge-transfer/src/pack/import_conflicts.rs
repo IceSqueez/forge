@@ -63,20 +63,24 @@ pub(crate) fn detect_conflicts(
         ));
     }
     for script in &documents.scripts {
-        let id_matches = inventory
-            .scripts
-            .values()
-            .any(|local| local.id == script.id);
-        let named = inventory
-            .scripts
-            .get(&script.name)
-            .map(|local| local.id.to_string());
-        detected.push(DetectedItem::new(
-            PackItemKind::Script,
-            script.id.to_string(),
-            &script.name,
-            conflict_of(id_matches, named),
-        ));
+        let by_id = inventory.stored_script(script.id);
+        let by_name = inventory.stored_script_named(&script.name);
+        let archived = by_id
+            .as_ref()
+            .or(by_name.as_ref())
+            .is_some_and(|stored| stored.archived);
+        detected.push(
+            DetectedItem::new(
+                PackItemKind::Script,
+                script.id.to_string(),
+                &script.name,
+                conflict_of(
+                    by_id.is_some(),
+                    by_name.map(|stored| stored.row.id.to_string()),
+                ),
+            )
+            .archived_local(archived),
+        );
     }
     for global in &documents.globals {
         let archived = inventory.archived_globals.contains_key(&global.name);

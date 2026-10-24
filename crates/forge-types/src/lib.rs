@@ -42,7 +42,7 @@ pub use execution::{
     SubActionTelemetry, integration_disabled_reason, normalize_var_name, strip_var_decoration,
     variant_preview, whispers_unsupported_reason,
 };
-pub use ids::{ActionId, ClipId, EventId, QueueId, ScriptId, TriggerInstanceId};
+pub use ids::{ActionId, ClipId, DEFAULT_QUEUE_ID, EventId, QueueId, ScriptId, TriggerInstanceId};
 pub use integration::{IntegrationAvailability, IntegrationId};
 pub use latest::{
     LATEST_DONATION_SLOT, LatestScope, LatestValue, LatestValueReader, NOW_PLAYING_SLOT,

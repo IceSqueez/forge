@@ -8,10 +8,10 @@ use forge_storage::{
     CredentialsRepo, DataProvider, DonationRepo, EXPECTED_SCHEMA_VERSION, EventLogRepo,
     ExecutionStatus, GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, LatestValueRepo,
     MediaRepo, OverlayRepo, QueueRepo, RevisingActionRepo, RevisingQueueRepo,
-    RevisingScheduledRunRepo, RevisingTriggerInstanceRepo, ScheduledRunRepo, ScriptRecord,
-    ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError,
-    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
-    VoiceAliasRepo, reserved_keys,
+    RevisingScheduledRunRepo, RevisingScriptRepo, RevisingTriggerInstanceRepo, ScheduledRunRepo,
+    ScriptRecord, ScriptReferences, ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo,
+    StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo,
+    ViewerRepo, VoiceAliasRepo, reserved_keys,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -74,7 +74,7 @@ pub struct SqliteBackend {
     catalog_revision: CatalogRevision,
     scheduled_run: Arc<dyn ScheduledRunRepo>,
     scheduled_run_revision: CatalogRevision,
-    script: SqliteScriptRepo,
+    script: Arc<dyn ScriptRepo>,
     credentials: SqliteCredentialsRepo,
     history: Arc<SqliteHistoryRepo>,
     event_log: Arc<SqliteEventLogRepo>,
@@ -213,10 +213,13 @@ impl SqliteBackend {
                 Arc::new(SqliteQueueRepo::new(pool.clone())),
                 catalog_revision.clone(),
             ),
-            catalog_revision,
+            catalog_revision: catalog_revision.clone(),
             scheduled_run,
             scheduled_run_revision,
-            script: SqliteScriptRepo::new(pool.clone()),
+            script: RevisingScriptRepo::wrap(
+                Arc::new(SqliteScriptRepo::new(pool.clone())),
+                catalog_revision.clone(),
+            ),
             history: Arc::new(SqliteHistoryRepo::new(pool.clone())),
             event_log: Arc::new(SqliteEventLogRepo::new(pool.clone())),
             soundboard: Arc::new(SqliteSoundboardClipsRepo::new(pool.clone())),
@@ -490,6 +493,30 @@ impl ScriptRepo for SqliteBackend {
 
     async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
         self.script.prune_executions_before(cutoff).await
+    }
+
+    async fn rename_cascading(
+        &self,
+        id: ScriptId,
+        new_name: &str,
+    ) -> Result<ScriptReferences, StorageError> {
+        self.script.rename_cascading(id, new_name).await
+    }
+
+    async fn referrers(&self, name: &str) -> Result<ScriptReferences, StorageError> {
+        self.script.referrers(name).await
+    }
+
+    async fn archive_script(&self, id: ScriptId) -> Result<bool, StorageError> {
+        self.script.archive_script(id).await
+    }
+
+    async fn restore_script(&self, id: ScriptId) -> Result<bool, StorageError> {
+        self.script.restore_script(id).await
+    }
+
+    async fn list_archived_scripts(&self) -> Result<Vec<ScriptRecord>, StorageError> {
+        self.script.list_archived_scripts().await
     }
 }
 

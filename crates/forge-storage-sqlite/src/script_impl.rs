@@ -1,12 +1,18 @@
+use std::str::FromStr;
+
 use async_trait::async_trait;
-use forge_storage::{ExecutionStatus, ScriptRecord, ScriptRepo, ScriptTelemetry, StorageError};
-use forge_types::{ScriptContract, ScriptId};
+use forge_storage::{
+    ExecutionStatus, SCRIPT_RUN_NAMED_KIND, ScriptRecord, ScriptReferences, ScriptReferrer,
+    ScriptRepo, ScriptTelemetry, StorageError,
+};
+use forge_types::{ActionId, ScriptContract, ScriptId, SubActionStep};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
 use crate::epoch::{epoch_ms_now, from_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
+use crate::script_name_steps::{ScriptNameEdit, ScriptNameUses, apply_script_name_edit};
 
 fn hash_body(body: &str) -> String {
     use std::fmt::Write as _;
@@ -58,6 +64,57 @@ fn decode_row(row: ScriptRow) -> Result<ScriptRecord, SqliteStorageError> {
 const SELECT_COLS: &str = "SELECT id, name, body, contract_json, body_hash, enabled, created_at, last_modified \
      FROM scripts";
 
+#[derive(sqlx::FromRow)]
+struct CandidateActionRow {
+    id: String,
+    name: String,
+    sub_actions: String,
+    archived: i64,
+}
+
+struct ScannedAction {
+    row: CandidateActionRow,
+    steps: Vec<SubActionStep>,
+    uses: ScriptNameUses,
+}
+
+const CANDIDATE_ACTIONS: &str = "SELECT id, name, sub_actions, archived_at IS NOT NULL AS archived \
+     FROM actions WHERE instr(sub_actions, ?) > 0";
+
+fn scan_action(
+    row: CandidateActionRow,
+    edit: &ScriptNameEdit<'_>,
+) -> Result<ScannedAction, SqliteStorageError> {
+    let mut steps: Vec<SubActionStep> = serde_json::from_str(&row.sub_actions)
+        .map_err(|e| SqliteStorageError::Decode(format!("invalid sub_actions json: {e}")))?;
+    let uses = apply_script_name_edit(&mut steps, edit);
+    Ok(ScannedAction { row, steps, uses })
+}
+
+fn collect_live_referrer(
+    scanned: &ScannedAction,
+    references: &mut ScriptReferences,
+) -> Result<(), SqliteStorageError> {
+    if scanned.row.archived != 0 {
+        return Ok(());
+    }
+    let referrer = || -> Result<ScriptReferrer, SqliteStorageError> {
+        Ok(ScriptReferrer {
+            action_id: ActionId::from_str(&scanned.row.id).map_err(|e| {
+                SqliteStorageError::Decode(format!("invalid action id '{}': {e}", scanned.row.id))
+            })?,
+            action_name: scanned.row.name.clone(),
+        })
+    };
+    if scanned.uses.literal {
+        references.literal.push(referrer()?);
+    }
+    if scanned.uses.templated {
+        references.templated.push(referrer()?);
+    }
+    Ok(())
+}
+
 pub struct SqliteScriptRepo {
     db: SqlitePools,
 }
@@ -72,24 +129,26 @@ impl SqliteScriptRepo {
 impl ScriptRepo for SqliteScriptRepo {
     async fn get(&self, id: ScriptId) -> Result<Option<ScriptRecord>, StorageError> {
         let id_str = id.to_string();
-        let row: Option<ScriptRow> =
-            sqlx::query_as(sqlx::AssertSqlSafe(format!("{SELECT_COLS} WHERE id = ?")))
-                .bind(&id_str)
-                .fetch_optional(self.db.reader())
-                .await
-                .map_err(SqliteStorageError::Sqlx)?;
+        let row: Option<ScriptRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "{SELECT_COLS} WHERE id = ? AND archived_at IS NULL"
+        )))
+        .bind(&id_str)
+        .fetch_optional(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
 
         row.map(|r| decode_row(r).map_err(StorageError::from))
             .transpose()
     }
 
     async fn get_by_name(&self, name: &str) -> Result<Option<ScriptRecord>, StorageError> {
-        let row: Option<ScriptRow> =
-            sqlx::query_as(sqlx::AssertSqlSafe(format!("{SELECT_COLS} WHERE name = ?")))
-                .bind(name)
-                .fetch_optional(self.db.reader())
-                .await
-                .map_err(SqliteStorageError::Sqlx)?;
+        let row: Option<ScriptRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "{SELECT_COLS} WHERE name = ? AND archived_at IS NULL"
+        )))
+        .bind(name)
+        .fetch_optional(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
 
         row.map(|r| decode_row(r).map_err(StorageError::from))
             .transpose()
@@ -128,7 +187,14 @@ impl ScriptRepo for SqliteScriptRepo {
         .bind(now_ms)
         .execute(self.db.writer())
         .await
-        .map_err(SqliteStorageError::Sqlx)?;
+        .map_err(|e| match e {
+            sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
+                StorageError::NameCollision {
+                    name: record.name.clone(),
+                }
+            }
+            other => SqliteStorageError::Sqlx(other).into(),
+        })?;
 
         Ok(())
     }
@@ -145,11 +211,12 @@ impl ScriptRepo for SqliteScriptRepo {
     }
 
     async fn list(&self) -> Result<Vec<ScriptRecord>, StorageError> {
-        let rows: Vec<ScriptRow> =
-            sqlx::query_as(sqlx::AssertSqlSafe(format!("{SELECT_COLS} ORDER BY name")))
-                .fetch_all(self.db.reader())
-                .await
-                .map_err(SqliteStorageError::Sqlx)?;
+        let rows: Vec<ScriptRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "{SELECT_COLS} WHERE archived_at IS NULL ORDER BY name"
+        )))
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
 
         rows.into_iter()
             .map(|r| decode_row(r).map_err(StorageError::from))
@@ -158,7 +225,7 @@ impl ScriptRepo for SqliteScriptRepo {
 
     async fn list_enabled(&self) -> Result<Vec<ScriptRecord>, StorageError> {
         let rows: Vec<ScriptRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "{SELECT_COLS} WHERE enabled = 1 ORDER BY name"
+            "{SELECT_COLS} WHERE enabled = 1 AND archived_at IS NULL ORDER BY name"
         )))
         .fetch_all(self.db.reader())
         .await
@@ -247,5 +314,143 @@ impl ScriptRepo for SqliteScriptRepo {
             .await
             .map_err(SqliteStorageError::Sqlx)?;
         Ok(result.rows_affected())
+    }
+
+    async fn rename_cascading(
+        &self,
+        id: ScriptId,
+        new_name: &str,
+    ) -> Result<ScriptReferences, StorageError> {
+        if new_name.trim().is_empty() {
+            return Err(StorageError::ValidationFailed {
+                field: "name".to_owned(),
+                reason: "must not be empty".to_owned(),
+            });
+        }
+        let id_str = id.to_string();
+        let mut tx = self
+            .db
+            .writer()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        let old_name: Option<(String,)> =
+            sqlx::query_as("SELECT name FROM scripts WHERE id = ? AND archived_at IS NULL")
+                .bind(&id_str)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+        let Some((old_name,)) = old_name else {
+            return Err(StorageError::NotFound { key: id_str });
+        };
+        if old_name == new_name {
+            return Ok(ScriptReferences::default());
+        }
+
+        let collision: Option<(i64,)> =
+            sqlx::query_as("SELECT 1 FROM scripts WHERE name = ? AND id != ?")
+                .bind(new_name)
+                .bind(&id_str)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+        if collision.is_some() {
+            return Err(StorageError::NameCollision {
+                name: new_name.to_owned(),
+            });
+        }
+
+        sqlx::query("UPDATE scripts SET name = ?, last_modified = ? WHERE id = ?")
+            .bind(new_name)
+            .bind(epoch_ms_now())
+            .bind(&id_str)
+            .execute(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        let candidates: Vec<CandidateActionRow> = sqlx::query_as(CANDIDATE_ACTIONS)
+            .bind(SCRIPT_RUN_NAMED_KIND)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        let edit = ScriptNameEdit {
+            old_name: &old_name,
+            new_name: Some(new_name),
+        };
+        let mut references = ScriptReferences::default();
+        for candidate in candidates {
+            let scanned = scan_action(candidate, &edit)?;
+            if scanned.uses.literal {
+                let sub_actions_json =
+                    serde_json::to_string(&scanned.steps).map_err(StorageError::Serialization)?;
+                sqlx::query("UPDATE actions SET sub_actions = ? WHERE id = ?")
+                    .bind(&sub_actions_json)
+                    .bind(&scanned.row.id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(SqliteStorageError::Sqlx)?;
+            }
+            collect_live_referrer(&scanned, &mut references)?;
+        }
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(references)
+    }
+
+    async fn referrers(&self, name: &str) -> Result<ScriptReferences, StorageError> {
+        let candidates: Vec<CandidateActionRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "{CANDIDATE_ACTIONS} AND archived_at IS NULL"
+        )))
+        .bind(SCRIPT_RUN_NAMED_KIND)
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        let edit = ScriptNameEdit {
+            old_name: name,
+            new_name: None,
+        };
+        let mut references = ScriptReferences::default();
+        for candidate in candidates {
+            collect_live_referrer(&scan_action(candidate, &edit)?, &mut references)?;
+        }
+        Ok(references)
+    }
+
+    async fn archive_script(&self, id: ScriptId) -> Result<bool, StorageError> {
+        let result =
+            sqlx::query("UPDATE scripts SET archived_at = ? WHERE id = ? AND archived_at IS NULL")
+                .bind(epoch_ms_now())
+                .bind(id.to_string())
+                .execute(self.db.writer())
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn restore_script(&self, id: ScriptId) -> Result<bool, StorageError> {
+        let result = sqlx::query(
+            "UPDATE scripts SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL",
+        )
+        .bind(id.to_string())
+        .execute(self.db.writer())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn list_archived_scripts(&self) -> Result<Vec<ScriptRecord>, StorageError> {
+        let rows: Vec<ScriptRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "{SELECT_COLS} WHERE archived_at IS NOT NULL ORDER BY name"
+        )))
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        rows.into_iter()
+            .map(|r| decode_row(r).map_err(StorageError::from))
+            .collect()
     }
 }

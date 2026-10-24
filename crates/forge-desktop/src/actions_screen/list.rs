@@ -11,7 +11,7 @@ use forge_components::{
     mono_family, overlay, primary_button, primary_button_with_icon, secondary_button, spacing,
     status_dot, toggle, tr,
 };
-use forge_types::{Action, ActionId, ExecutionMode, Queue};
+use forge_types::{Action, ActionId, DEFAULT_QUEUE_ID, ExecutionMode, Queue};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, MouseButton, MouseDownEvent, Pixels, Point, Rgba,
     SharedString, Window, div, px,
@@ -337,14 +337,15 @@ impl ScreenActionsView {
 
     fn apply_queue_options(&mut self, queues: Vec<Queue>, cx: &mut Context<Self>) {
         if let Some(form) = self.action_modal.as_mut() {
-            let default_id = queues.iter().find(|q| q.name == "Default").map(|q| q.id);
             form.queues = queues
                 .into_iter()
                 .map(|q| (q.id, SharedString::from(q.name)))
                 .collect();
-            let target = form.preselect_queue.or(default_id);
-            form.selected_queue = target
-                .and_then(|id| form.queues.iter().position(|(qid, _)| *qid == id))
+            let target = form.preselect_queue.unwrap_or(DEFAULT_QUEUE_ID);
+            form.selected_queue = form
+                .queues
+                .iter()
+                .position(|(qid, _)| *qid == target)
                 .unwrap_or(0);
             cx.notify();
         }

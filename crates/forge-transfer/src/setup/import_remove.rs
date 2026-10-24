@@ -125,19 +125,22 @@ impl SetupImport<'_, '_> {
             .iter()
             .map(|script| script.id)
             .collect();
-        let absent: Vec<_> = self
-            .inventory
-            .configuration
-            .scripts
+        let local = &self.inventory.configuration;
+        let live = local.scripts.values().map(|script| (script.clone(), false));
+        let archived = local
+            .archived_scripts
             .values()
-            .filter(|script| !kept.contains(&script.id))
-            .cloned()
+            .map(|script| (script.clone(), true));
+        let absent: Vec<_> = live
+            .chain(archived)
+            .filter(|(script, _)| !kept.contains(&script.id))
             .collect();
-        for script in absent {
+        for (script, archived) in absent {
             ScriptRepo::delete(self.provider, script.id).await?;
             self.journal.push_configuration(Undo::Script {
                 id: script.id,
                 previous: Some(script),
+                archived,
             });
             self.refresh.insert(SetupLivePart::Scripts);
         }
@@ -263,7 +266,7 @@ impl SetupImport<'_, '_> {
             .configuration
             .queues
             .values()
-            .filter(|queue| !kept.contains(&queue.id))
+            .filter(|queue| !queue.is_default() && !kept.contains(&queue.id))
             .cloned()
             .collect();
         let repo = self.provider.queue_repo();

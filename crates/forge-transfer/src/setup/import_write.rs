@@ -90,13 +90,9 @@ impl SetupImport<'_, '_> {
     pub(super) async fn write_scripts(&mut self) -> Result<(), TransferError> {
         let staged = self.staged;
         for document in &staged.documents().configuration.scripts {
-            let previous = self
-                .inventory
-                .configuration
-                .scripts
-                .values()
-                .find(|script| script.id == document.id)
-                .cloned();
+            let previous = self.inventory.configuration.stored_script(document.id);
+            let archived = previous.as_ref().is_some_and(|stored| stored.archived);
+            let previous = previous.map(|stored| stored.row);
             let now = OffsetDateTime::now_utc();
             let record = ScriptRecord {
                 id: document.id,
@@ -112,7 +108,11 @@ impl SetupImport<'_, '_> {
             self.journal.push_configuration(Undo::Script {
                 id: document.id,
                 previous,
+                archived,
             });
+            if archived {
+                self.provider.restore_script(document.id).await?;
+            }
             self.refresh.insert(SetupLivePart::Scripts);
         }
         Ok(())

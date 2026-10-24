@@ -4,7 +4,9 @@ use forge_storage::{
     DataProvider, GlobalEntry, GlobalsRepo, MediaBlob, MediaBlobId, OverlayDefinition, OverlayId,
     ScriptRecord, ScriptRepo, StoredClip, clip_source_referrer,
 };
-use forge_types::{Action, ActionId, ClipId, Queue, QueueId, TriggerInstance, TriggerInstanceId};
+use forge_types::{
+    Action, ActionId, ClipId, Queue, QueueId, ScriptId, TriggerInstance, TriggerInstanceId,
+};
 
 use crate::error::TransferError;
 
@@ -17,6 +19,7 @@ pub struct PackInventory {
     pub(crate) archived_triggers: BTreeMap<TriggerInstanceId, TriggerInstance>,
     pub(crate) queues: BTreeMap<QueueId, Queue>,
     pub(crate) scripts: BTreeMap<String, ScriptRecord>,
+    pub(crate) archived_scripts: BTreeMap<String, ScriptRecord>,
     pub(crate) globals: BTreeMap<String, GlobalEntry>,
     pub(crate) archived_globals: BTreeMap<String, GlobalEntry>,
     pub(crate) clips: BTreeMap<ClipId, StoredClip>,
@@ -40,6 +43,27 @@ impl PackInventory {
 
     pub(crate) fn stored_global(&self, name: &str) -> Option<Stored<GlobalEntry>> {
         stored(&self.globals, &self.archived_globals, name)
+    }
+
+    pub(crate) fn stored_script_named(&self, name: &str) -> Option<Stored<ScriptRecord>> {
+        stored(&self.scripts, &self.archived_scripts, name)
+    }
+
+    pub(crate) fn stored_script(&self, id: ScriptId) -> Option<Stored<ScriptRecord>> {
+        let name = self
+            .scripts
+            .values()
+            .chain(self.archived_scripts.values())
+            .find(|script| script.id == id)
+            .map(|script| script.name.clone())?;
+        self.stored_script_named(&name)
+    }
+
+    pub(crate) fn script_names(&self) -> impl Iterator<Item = &str> {
+        self.scripts
+            .keys()
+            .chain(self.archived_scripts.keys())
+            .map(String::as_str)
     }
 }
 
@@ -73,6 +97,9 @@ pub async fn load_pack_inventory(
         archived_triggers: keyed(trigger_repo.list_archived().await?, |trigger| trigger.id),
         queues: keyed(provider.queue_repo().list().await?, |queue| queue.id),
         scripts: keyed(ScriptRepo::list(provider).await?, |script| {
+            script.name.clone()
+        }),
+        archived_scripts: keyed(provider.list_archived_scripts().await?, |script| {
             script.name.clone()
         }),
         globals: keyed(GlobalsRepo::list(provider).await?, |global| {

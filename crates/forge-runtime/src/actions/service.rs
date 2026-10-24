@@ -56,8 +56,9 @@ impl ActionsService {
             let queue_name = all_queues
                 .iter()
                 .find(|q| q.id == action.queue_id)
+                .or_else(|| all_queues.iter().find(|q| q.is_default()))
                 .map(|q| q.name.clone())
-                .unwrap_or_else(|| "Default".to_string());
+                .unwrap_or_default();
 
             let (last_ran, runs_24h) = stats
                 .get(&action.id)

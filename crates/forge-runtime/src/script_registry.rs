@@ -116,6 +116,10 @@ impl ScriptRegistry {
         Ok(())
     }
 
+    pub async fn remove(&self, id: ScriptId) -> bool {
+        self.inner.write().await.remove(&id).is_some()
+    }
+
     pub async fn get_by_name(&self, name: &str) -> Option<Arc<CompiledScript>> {
         let guard = self.inner.read().await;
         guard.values().find(|c| c.record.name == name).cloned()

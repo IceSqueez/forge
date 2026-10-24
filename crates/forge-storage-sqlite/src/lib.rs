@@ -24,6 +24,7 @@ pub(crate) mod retention_task;
 pub mod scheduled_run_impl;
 pub mod schema_probe;
 pub mod script_impl;
+mod script_name_steps;
 pub mod settings_impl;
 mod snapshot;
 pub mod soundboard_impl;

@@ -1825,7 +1825,7 @@ queues_menu_resume = Продовжити
 queues_menu_free = Звільнити чергу
 queues_menu_delete = Видалити...
 queues_delete_confirm_title = Видалити чергу
-queues_delete_confirm_body = Дії з цієї черги перейдуть до черги Default. Це не можна скасувати.
+queues_delete_confirm_body = Дії з цієї черги перейдуть до черги { $default }. Це не можна скасувати.
 
 ## Черги - модальне вікно нової черги
 
@@ -2663,6 +2663,51 @@ script_editor_stat_runs = ЗАПУСКИ
 script_editor_stat_avg = СЕРЕДНЄ
 script_editor_stat_runs_value = { $n } сьогодні
 script_editor_stat_avg_value = { $n } мс
+script_editor_delete_checking = Перевіряємо, які дії використовують цей скрипт...
+script_editor_delete_unused = Жодна дія не використовує цей скрипт. Він переміститься в архів, а видалення можна скасувати одразу після нього.
+script_editor_delete_used_by = { $count ->
+    [one] Його використовує { $count } дія: { $names }.
+    [few] Його використовують { $count } дії: { $names }.
+    [many] Його використовують { $count } дій: { $names }.
+   *[other] Його використовують { $count } дій: { $names }.
+}
+script_editor_delete_maybe_used_by = { $count ->
+    [one] { $count } дія може вибирати його через змінну: { $names }.
+    [few] { $count } дії можуть вибирати його через змінну: { $names }.
+    [many] { $count } дій можуть вибирати його через змінну: { $names }.
+   *[other] { $count } дій можуть вибирати його через змінну: { $names }.
+}
+script_editor_delete_archive_note = Їхні кроки не працюватимуть, доки скрипт не буде відновлено. Видалення можна скасувати одразу після нього.
+script_editor_deleted_toast = Видалено '{ $name }'
+script_editor_delete_failed = Не вдалося видалити скрипт: { $error }
+script_editor_restore_failed = Не вдалося відновити скрипт: { $error }
+script_editor_rename_title = Перейменувати скрипт?
+script_editor_rename_updates_none = Жодна дія не називає цей скрипт напряму.
+script_editor_rename_updates = { $count ->
+    [one] { $count } дію буде оновлено на нову назву: { $names }.
+    [few] { $count } дії буде оновлено на нову назву: { $names }.
+    [many] { $count } дій буде оновлено на нову назву: { $names }.
+   *[other] { $count } дій буде оновлено на нову назву: { $names }.
+}
+script_editor_rename_templated = { $count ->
+    [one] Перевірте вручну { $count } дію - вона вибирає скрипт через змінну й не буде оновлена: { $names }.
+    [few] Перевірте вручну { $count } дії - вони вибирають скрипт через змінну й не будуть оновлені: { $names }.
+    [many] Перевірте вручну { $count } дій - вони вибирають скрипт через змінну й не будуть оновлені: { $names }.
+   *[other] Перевірте вручну { $count } дій - вони вибирають скрипт через змінну й не будуть оновлені: { $names }.
+}
+script_editor_renamed_toast = { $count ->
+    [one] Перейменовано на '{ $name }' - оновлено { $count } дію
+    [few] Перейменовано на '{ $name }' - оновлено { $count } дії
+    [many] Перейменовано на '{ $name }' - оновлено { $count } дій
+   *[other] Перейменовано на '{ $name }' - оновлено { $count } дій
+}
+script_editor_rename_check_toast = { $count ->
+    [one] Перевірте { $count } дію, що вибирає скрипт через змінну: { $names }
+    [few] Перевірте { $count } дії, що вибирають скрипт через змінну: { $names }
+    [many] Перевірте { $count } дій, що вибирають скрипт через змінну: { $names }
+   *[other] Перевірте { $count } дій, що вибирають скрипт через змінну: { $names }
+}
+script_editor_rename_failed = Не вдалося перейменувати скрипт: { $error }
 
 ## Widget - layout chrome
 

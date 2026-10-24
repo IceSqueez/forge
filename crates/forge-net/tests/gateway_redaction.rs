@@ -160,6 +160,23 @@ async fn request_response_body_credential_and_gateway_debug_never_print_values()
             ),
         ),
         (
+            "scheme credential",
+            format!(
+                "{:?}",
+                Credential::Scheme {
+                    scheme: "OAuth".to_owned(),
+                    token: Secret::new(BEARER)
+                }
+            ),
+        ),
+        (
+            "request with scheme credential",
+            format!(
+                "{:?}",
+                GatewayRequest::get(PATH_TOKEN).authorization("OAuth", Secret::new(BEARER))
+            ),
+        ),
+        (
             "bearer credential",
             format!("{:?}", Credential::Bearer(Secret::new(BEARER))),
         ),

@@ -210,6 +210,18 @@ async fn invalid_requests_fail_before_the_limiter_or_the_network() {
             InvalidRequest::InvalidHeader,
         ),
         (
+            GatewayRequest::get("users").authorization("", Secret::new("tok")),
+            InvalidRequest::InvalidHeader,
+        ),
+        (
+            GatewayRequest::get("users").authorization("O Auth", Secret::new("tok")),
+            InvalidRequest::InvalidHeader,
+        ),
+        (
+            GatewayRequest::get("users").authorization("OAuth", Secret::new("tok\nen")),
+            InvalidRequest::InvalidHeader,
+        ),
+        (
             GatewayRequest::post("users").body(RequestBody::raw("text/plain\nx", b"x".to_vec())),
             InvalidRequest::InvalidContentType,
         ),
@@ -232,25 +244,40 @@ async fn invalid_requests_fail_before_the_limiter_or_the_network() {
 }
 
 #[tokio::test]
-async fn credential_headers_are_refused_as_plain_headers_in_any_case() {
+async fn credential_headers_are_refused_as_plain_or_api_key_headers_in_any_case() {
     let server = ok_server().await;
-    for name in [
+    let plain = [
         "Authorization",
         "authorization",
         "Proxy-Authorization",
         "proxy-authorization",
         "Cookie",
         "COOKIE",
-    ] {
+    ]
+    .map(|name| (name, GatewayRequest::get("users").header(name, "secret")));
+    let api_key = [
+        "Authorization",
+        "AUTHORIZATION",
+        "authorization",
+        "Proxy-Authorization",
+        "PROXY-AUTHORIZATION",
+        "proxy-authorization",
+    ]
+    .map(|name| {
+        (
+            name,
+            GatewayRequest::get("users").api_key(name, Secret::new("secret")),
+        )
+    });
+    for (name, request) in plain.into_iter().chain(api_key) {
         let harness = Harness::new(&server.uri(), platform());
-        let failure = harness
-            .fail(GatewayRequest::get("users").header(name, "secret"))
-            .await;
+        let failure = harness.fail(request).await;
         assert_eq!(
             failure,
             GatewayFailure::InvalidRequest(InvalidRequest::SensitiveHeader),
             "{name}"
         );
+        assert_eq!(harness.limiter.acquire_count(), 0, "{name}");
     }
     assert!(received(&server).await.is_empty());
 }

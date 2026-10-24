@@ -419,6 +419,16 @@ async fn excerpt_masks_every_request_secret_but_not_plain_values() {
         ),
         (
             body,
+            GatewayRequest::get("x").authorization("OAuth", Secret::new("BEARER-1")),
+            "bearer=*** key=APIKEY-1 query=QSECRET-1 form=FSECRET-1 plain=PLAIN-1 open=OPEN-1",
+        ),
+        (
+            body,
+            GatewayRequest::get("x").bearer(Secret::new("BEARER-1")),
+            "bearer=*** key=APIKEY-1 query=QSECRET-1 form=FSECRET-1 plain=PLAIN-1 open=OPEN-1",
+        ),
+        (
+            body,
             GatewayRequest::get("x").api_key("x-api-key", Secret::new("APIKEY-1")),
             "bearer=BEARER-1 key=*** query=QSECRET-1 form=FSECRET-1 plain=PLAIN-1 open=OPEN-1",
         ),

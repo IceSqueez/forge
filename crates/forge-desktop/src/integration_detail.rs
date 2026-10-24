@@ -2259,7 +2259,6 @@ mod tests {
             let (backend, _writes) = test_backend();
             let bus = EventBus::new(Arc::new(StubEventLog));
             let bot = TwitchBotAccount::new(
-                &PlatformEndpoints::default(),
                 backend as Arc<dyn CredentialsRepo>,
                 crate::test_support::default_twitch_oauth_client(),
                 Arc::clone(&bus) as Arc<dyn EventPublisher>,

@@ -132,6 +132,11 @@ async fn credentials_reach_the_server_in_their_headers() {
             "Bearer tok-1",
         ),
         (
+            GatewayRequest::get("me").authorization("OAuth", Secret::new("tok-2")),
+            "authorization",
+            "OAuth tok-2",
+        ),
+        (
             GatewayRequest::get("me").api_key("Client-Id", Secret::new("cid-1")),
             "client-id",
             "cid-1",

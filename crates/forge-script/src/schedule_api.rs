@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use forge_types::Variant;
 use rhai::{Dynamic, EvalAltResult, INT, ImmutableString, Map, Module};
+use time::OffsetDateTime;
 use tokio::runtime::Handle;
 
 use crate::convert::variant_to_dynamic;
@@ -67,6 +68,27 @@ pub(crate) fn build_schedule_module(scheduler: Scheduler) -> Module {
         },
     );
 
+    let at_datetime = scheduler.clone();
+    m.set_native_fn(
+        "at",
+        move |action: ImmutableString, when: OffsetDateTime| -> Scripted<Map> {
+            schedule(&at_datetime, &action, due_at_datetime(when), Map::new())
+        },
+    );
+
+    let at_datetime_with_options = scheduler.clone();
+    m.set_native_fn(
+        "at",
+        move |action: ImmutableString, when: OffsetDateTime, options: Map| -> Scripted<Map> {
+            schedule(
+                &at_datetime_with_options,
+                &action,
+                due_at_datetime(when),
+                options,
+            )
+        },
+    );
+
     let at_unix = scheduler.clone();
     m.set_native_fn(
         "at",
@@ -100,6 +122,10 @@ pub(crate) fn build_schedule_module(scheduler: Scheduler) -> Module {
 
 fn due_at_text(when: &ImmutableString) -> ScriptScheduleDue {
     ScriptScheduleDue::At(Variant::String(when.to_string()))
+}
+
+fn due_at_datetime(when: OffsetDateTime) -> ScriptScheduleDue {
+    ScriptScheduleDue::At(Variant::Datetime(when))
 }
 
 fn due_at_unix(unix_seconds: INT) -> ScriptScheduleDue {

@@ -3587,8 +3587,6 @@ field_label_vtube__file_name = Item File Name
 field_label_vtube__fade_time = Fade Time (s)
 field_label_vtube__unload_on_disconnect = Unload When Plugin Disconnects
 field_label_server__payload = Payload (JSON object)
-field_label_server__client_filter = Client IDs (JSON array, empty = all)
-field_label_server__client_type_filter = Client Types (JSON array: overlay/dashboard/remote)
 field_label_overlay__overlay_id = Overlay
 field_label_overlay__duration_secs = Override duration
 field_label_overlay__wait_for_show = Wait until the show ends

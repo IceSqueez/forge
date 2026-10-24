@@ -205,10 +205,6 @@ fn every_variable_a_core_step_writes_is_in_scope_for_the_steps_after_it() {
         ),
         (step("core.file.write", &[]), vec!["file.bytes_written"]),
         (
-            step("server.broadcast", &[]),
-            vec!["broadcast.delivered_count"],
-        ),
-        (
             step("core.args.set", &[("name", s("greeting"))]),
             vec!["greeting"],
         ),

@@ -3677,8 +3677,6 @@ field_label_vtube__file_name = Назва файлу предмета
 field_label_vtube__fade_time = Час згасання (с)
 field_label_vtube__unload_on_disconnect = Вивантажити, коли плагін відключається
 field_label_server__payload = Дані (JSON-об'єкт)
-field_label_server__client_filter = ID клієнтів (JSON-масив, порожньо = усі)
-field_label_server__client_type_filter = Типи клієнтів (JSON-масив: overlay/dashboard/remote)
 field_label_overlay__overlay_id = Оверлей
 field_label_overlay__duration_secs = Власна тривалість
 field_label_overlay__wait_for_show = Чекати завершення показу

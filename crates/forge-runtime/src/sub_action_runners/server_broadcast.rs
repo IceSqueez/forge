@@ -4,11 +4,9 @@ use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionIo, SubActionRunner,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-
-const BROADCAST_DELIVERED_COUNT_VAR: &str = "broadcast.delivered_count";
 
 use super::json_object_input::{
     EMPTY_JSON_OBJECT, plain_json_object, read_json_object, validate_json_object,
@@ -59,8 +57,6 @@ impl SubActionRunner for ServerBroadcastRunner {
             PAYLOAD_KEY.to_owned(),
             Variant::String(EMPTY_JSON_OBJECT.to_owned()),
         );
-        cfg.insert("client_filter".to_owned(), Variant::Array(vec![]));
-        cfg.insert("client_type_filter".to_owned(), Variant::Array(vec![]));
         cfg
     }
 
@@ -75,29 +71,12 @@ impl SubActionRunner for ServerBroadcastRunner {
                 key: PAYLOAD_KEY,
                 label: "Payload (JSON object)",
             },
-            FormField::Text {
-                key: "client_filter",
-                label: "Client IDs (JSON array, empty = all)",
-                placeholder: "[]",
-            },
-            FormField::Text {
-                key: "client_type_filter",
-                label: "Client Types (JSON array: overlay/dashboard/remote)",
-                placeholder: "[]",
-            },
         ]
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         config.require_str("event_name")?;
         validate_json_object(config, PAYLOAD_KEY)
-    }
-
-    fn scope_io(&self) -> SubActionIo {
-        SubActionIo {
-            fixed_outputs: vec![BROADCAST_DELIVERED_COUNT_VAR.to_owned()],
-            ..SubActionIo::default()
-        }
     }
 
     async fn execute(
@@ -110,11 +89,8 @@ impl SubActionRunner for ServerBroadcastRunner {
         let name_template = config.str("event_name").unwrap_or_default();
         let event_name = ctx.arg_stack.interpolate(name_template);
 
-        let (outcome, updated_stack) = if event_name.is_empty() {
-            (
-                SubActionOutcome::Failed("event_name is required".to_owned()),
-                None,
-            )
+        let outcome = if event_name.is_empty() {
+            SubActionOutcome::Failed("event_name is required".to_owned())
         } else {
             match config_payload(config) {
                 Ok(payload) => {
@@ -124,17 +100,13 @@ impl SubActionRunner for ServerBroadcastRunner {
                         payload,
                         ctx.parent_event_id,
                     ));
-                    let new_stack = ctx
-                        .arg_stack
-                        .clone()
-                        .set(BROADCAST_DELIVERED_COUNT_VAR.to_owned(), Variant::Int(0));
-                    (SubActionOutcome::Success, Some(new_stack))
+                    SubActionOutcome::Success
                 }
-                Err(reason) => (SubActionOutcome::Failed(reason), None),
+                Err(reason) => SubActionOutcome::Failed(reason),
             }
         };
 
-        (timer.finish(outcome), updated_stack)
+        (timer.finish(outcome), None)
     }
 }
 
@@ -313,18 +285,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn broadcast_writes_delivered_count_output_var() {
-        let (_, _, updated_stack) = run(
-            &cfg("alert", empty_object()),
-            &ArgStack::new(),
-            EventId::new(),
-        )
-        .await;
-
-        let stack = updated_stack.expect("a successful broadcast must return an updated stack");
-        assert_eq!(
-            stack.get("broadcast.delivered_count"),
-            Some(&Variant::Int(0))
+    async fn a_stored_config_still_carrying_the_removed_client_filters_validates_and_broadcasts() {
+        let mut config = cfg("alert", empty_object());
+        config.insert(
+            "client_filter".to_owned(),
+            Variant::Array(vec![Variant::String("client-1".to_owned())]),
         );
+        config.insert(
+            "client_type_filter".to_owned(),
+            Variant::String(r#"["overlay"]"#.to_owned()),
+        );
+        let runner = ServerBroadcastRunner::new(Arc::new(NullPublisher));
+
+        let validation = runner.validate_config(&config);
+        let (recorder, outcome, _) = run(&config, &ArgStack::new(), EventId::new()).await;
+
+        assert!(validation.is_ok(), "{validation:?}");
+        assert!(matches!(outcome, SubActionOutcome::Success), "{outcome:?}");
+        assert_eq!(recorder.captured().len(), 1);
     }
 }

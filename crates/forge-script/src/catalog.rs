@@ -318,6 +318,42 @@ static CATALOG: &[MethodDescriptor] = &[
                 ty: "string",
             },
             ParamDescriptor {
+                name: "when",
+                ty: "datetime",
+            },
+        ],
+        return_type: "Map",
+        doc: Some("Runs the action at a datetime value; returns #{id, due_at}."),
+    },
+    MethodDescriptor {
+        namespace: Some("schedule"),
+        name: "at",
+        params: &[
+            ParamDescriptor {
+                name: "action",
+                ty: "string",
+            },
+            ParamDescriptor {
+                name: "when",
+                ty: "datetime",
+            },
+            ParamDescriptor {
+                name: "options",
+                ty: "Map",
+            },
+        ],
+        return_type: "Map",
+        doc: Some("Options: key, inherit_args, skip_if_late_minutes."),
+    },
+    MethodDescriptor {
+        namespace: Some("schedule"),
+        name: "at",
+        params: &[
+            ParamDescriptor {
+                name: "action",
+                ty: "string",
+            },
+            ParamDescriptor {
                 name: "unix_seconds",
                 ty: "int",
             },

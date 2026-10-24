@@ -2,13 +2,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use forge_storage::{SettingsRepo, reserved_keys};
-use forge_types::Variant;
+use forge_types::{VARIANT_MAX_COLLECTION_LEN, Variant};
 use rhai::Dynamic;
 use rhai::packages::{BasicArrayPackage, BasicMapPackage, CorePackage, LogicPackage, Package};
 
 use crate::ScriptError;
 use crate::api::ForgeApi;
-use crate::convert::dynamic_to_variant;
+use crate::convert::{dynamic_to_variant, register_variant_types};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EngineConfig {
@@ -61,13 +61,14 @@ pub(crate) fn register_sandbox_base(inner: &mut rhai::Engine, cfg: &EngineConfig
     inner.register_global_module(LogicPackage::new().as_shared_module());
     inner.register_global_module(BasicArrayPackage::new().as_shared_module());
     inner.register_global_module(BasicMapPackage::new().as_shared_module());
+    register_variant_types(inner);
 
     inner.set_max_operations(cfg.op_limit);
     inner.set_max_call_levels(64);
     inner.set_max_expr_depths(64, 32);
     inner.set_max_string_size(1 << 20);
-    inner.set_max_array_size(10_000);
-    inner.set_max_map_size(10_000);
+    inner.set_max_array_size(VARIANT_MAX_COLLECTION_LEN);
+    inner.set_max_map_size(VARIANT_MAX_COLLECTION_LEN);
 
     inner.disable_symbol("eval");
 }
@@ -131,7 +132,12 @@ impl Engine {
         scope: &mut rhai::Scope<'_>,
     ) -> Result<Option<Variant>, ScriptError> {
         let value = self.eval_script_with_scope(body, scope)?;
-        Ok(dynamic_to_variant(value).ok())
+        if value.is_unit() {
+            return Ok(None);
+        }
+        dynamic_to_variant(value)
+            .map(Some)
+            .map_err(|reason| ScriptError::Runtime { reason })
     }
 
     pub(crate) fn reset_timer(&self) {

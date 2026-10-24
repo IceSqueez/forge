@@ -5,8 +5,8 @@ use std::fmt;
 use crate::datetime_text::datetime_to_text;
 use crate::redaction::RedactedText;
 
-const MAX_COLLECTION_LEN: usize = 10_000;
-const MAX_DEPTH: u8 = 32;
+pub const MAX_COLLECTION_LEN: usize = 10_000;
+pub const MAX_DEPTH: u8 = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

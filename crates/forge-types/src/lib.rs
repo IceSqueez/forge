@@ -75,7 +75,10 @@ pub use unified_chat::{
     ChatPayload, ChatReply, ChatSegment, ChatViewer, KNOWN_BOT_ACCOUNTS, ModerationMarks,
     UnifiedChatRow, UserBadge, authored_by_connected_bot, is_bot_account,
 };
-pub use variant::{Variant, VariantError, VariantKind, VariantType, display_scalar};
+pub use variant::{
+    MAX_COLLECTION_LEN as VARIANT_MAX_COLLECTION_LEN, MAX_DEPTH as VARIANT_MAX_DEPTH, Variant,
+    VariantError, VariantKind, VariantType, display_scalar,
+};
 pub use vocabulary::{
     ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, MoneySlot, SlotPresence,
     VariableStanding,

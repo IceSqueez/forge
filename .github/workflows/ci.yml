@@ -56,6 +56,36 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --no-deps
 
+  emulator:
+    name: emulator
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      EMULATOR_MANIFEST: tools/forge-emulator/Cargo.toml
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust with cache
+        uses: ./.github/actions/setup-rust-cached
+        with:
+          shared-key: emulator-${{ runner.os }}
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      - name: Check formatting
+        shell: bash
+        run: cargo fmt --manifest-path "$EMULATOR_MANIFEST" -- --check
+
+      - name: Clippy
+        shell: bash
+        run: cargo clippy --manifest-path "$EMULATOR_MANIFEST" --all-targets --locked -- -D warnings
+
+      - name: Test
+        shell: bash
+        run: cargo test --manifest-path "$EMULATOR_MANIFEST" --locked
+
   test:
     name: test (${{ matrix.os }})
     needs: lint

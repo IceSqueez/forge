@@ -54,6 +54,7 @@ pub mod syntax_color;
 pub mod text_area;
 pub(crate) mod text_buffer;
 pub(crate) mod text_edit;
+pub(crate) mod text_editing;
 pub mod text_input;
 pub mod toast;
 pub mod toast_queue;

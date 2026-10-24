@@ -2,16 +2,15 @@ use std::ops::Range;
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
-    Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla,
-    KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, Point, ScrollWheelEvent, SharedString, Style, TextAlign, TextRun, UTF16Selection,
-    UnderlineStyle, Window, WrappedLine, actions, div, fill, point, prelude::*, px, relative, size,
+    Entity, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla, LayoutId, PaintQuad,
+    Pixels, Point, ScrollWheelEvent, SharedString, Style, TextAlign, TextRun, UnderlineStyle,
+    Window, WrappedLine, div, fill, point, prelude::*, px, relative, size,
 };
 
 use crate::caret_blink::{CaretBlink, CaretHost, set_caret_blinking};
 use crate::palette::{FORGE_DEFAULT, ForgePalette, with_alpha};
 use crate::text_buffer::{EditKind, TextBuffer};
-use crate::text_edit::{offset_to_utf16, range_from_utf16, range_to_utf16};
+use crate::text_editing::*;
 use crate::text_input::InputEvent;
 use crate::tokens::{
     BORDER_THIN, Density, FONT_XS, Radius, Spacing, body_family, mono_family, radius, spacing,
@@ -20,62 +19,6 @@ use crate::tokens::{
 const KEY_CONTEXT: &str = "ForgeTextArea";
 
 const DEFAULT_AREA_HEIGHT: Pixels = px(130.0);
-
-actions!(
-    forge_text_area,
-    [
-        Backspace,
-        Delete,
-        Left,
-        Right,
-        Up,
-        Down,
-        SelectLeft,
-        SelectRight,
-        SelectUp,
-        SelectDown,
-        SelectAll,
-        Home,
-        End,
-        InsertNewline,
-        Paste,
-        Cut,
-        Copy,
-        Undo,
-        Redo,
-    ]
-);
-
-pub(crate) fn editing_key_bindings(context: &str) -> Vec<KeyBinding> {
-    vec![
-        KeyBinding::new("backspace", Backspace, Some(context)),
-        KeyBinding::new("delete", Delete, Some(context)),
-        KeyBinding::new("left", Left, Some(context)),
-        KeyBinding::new("right", Right, Some(context)),
-        KeyBinding::new("up", Up, Some(context)),
-        KeyBinding::new("down", Down, Some(context)),
-        KeyBinding::new("shift-left", SelectLeft, Some(context)),
-        KeyBinding::new("shift-right", SelectRight, Some(context)),
-        KeyBinding::new("shift-up", SelectUp, Some(context)),
-        KeyBinding::new("shift-down", SelectDown, Some(context)),
-        KeyBinding::new("home", Home, Some(context)),
-        KeyBinding::new("end", End, Some(context)),
-        KeyBinding::new("enter", InsertNewline, Some(context)),
-        KeyBinding::new("cmd-a", SelectAll, Some(context)),
-        KeyBinding::new("ctrl-a", SelectAll, Some(context)),
-        KeyBinding::new("cmd-c", Copy, Some(context)),
-        KeyBinding::new("ctrl-c", Copy, Some(context)),
-        KeyBinding::new("cmd-x", Cut, Some(context)),
-        KeyBinding::new("ctrl-x", Cut, Some(context)),
-        KeyBinding::new("cmd-v", Paste, Some(context)),
-        KeyBinding::new("ctrl-v", Paste, Some(context)),
-        KeyBinding::new("cmd-z", Undo, Some(context)),
-        KeyBinding::new("ctrl-z", Undo, Some(context)),
-        KeyBinding::new("cmd-shift-z", Redo, Some(context)),
-        KeyBinding::new("ctrl-shift-z", Redo, Some(context)),
-        KeyBinding::new("ctrl-y", Redo, Some(context)),
-    ]
-}
 
 pub fn bind_text_area_keys(cx: &mut App) {
     cx.bind_keys(editing_key_bindings(KEY_CONTEXT));
@@ -123,8 +66,7 @@ pub struct TextArea {
     last_layout: Option<AreaLayout>,
     last_bounds: Option<Bounds<Pixels>>,
     scroll_offset: Pixels,
-    is_selecting: bool,
-    preferred_x: Option<Pixels>,
+    motion: CaretMotion,
     palette: ForgePalette,
     density: Density,
     font_size: Pixels,
@@ -153,8 +95,7 @@ impl TextArea {
             last_layout: None,
             last_bounds: None,
             scroll_offset: px(0.0),
-            is_selecting: false,
-            preferred_x: None,
+            motion: CaretMotion::default(),
             palette: FORGE_DEFAULT,
             density: Density::Cozy,
             font_size: FONT_XS,
@@ -215,7 +156,7 @@ impl TextArea {
 
     pub fn set_content(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.buffer.reset(text.into().into());
-        self.preferred_x = None;
+        self.motion.goal_x = None;
         self.scroll_offset = px(0.0);
         self.follow_caret = false;
         cx.notify();
@@ -226,159 +167,24 @@ impl TextArea {
     }
 
     pub fn insert_at_caret(&mut self, text: &str, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.insert(text, EditKind::Standalone);
-        self.edited(cx);
+        self.insert_text(text, cx);
     }
 
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         window.focus(&self.focus_handle, cx);
     }
 
-    fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.move_left();
-        self.caret_moved(cx);
-    }
-
-    fn right(&mut self, _: &Right, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.move_right();
-        self.caret_moved(cx);
-    }
-
-    fn up(&mut self, _: &Up, _: &mut Window, cx: &mut Context<Self>) {
-        self.move_vertical(false, false, cx);
-    }
-
-    fn down(&mut self, _: &Down, _: &mut Window, cx: &mut Context<Self>) {
-        self.move_vertical(true, false, cx);
-    }
-
-    fn select_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.select_left();
-        self.caret_moved(cx);
-    }
-
-    fn select_right(&mut self, _: &SelectRight, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.select_right();
-        self.caret_moved(cx);
-    }
-
-    fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
-        self.move_vertical(false, true, cx);
-    }
-
-    fn select_down(&mut self, _: &SelectDown, _: &mut Window, cx: &mut Context<Self>) {
-        self.move_vertical(true, true, cx);
-    }
-
-    fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.select_all();
-        self.caret_moved(cx);
-    }
-
-    fn home(&mut self, _: &Home, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.move_to_line_start();
-        self.caret_moved(cx);
-    }
-
-    fn end(&mut self, _: &End, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.move_to_line_end();
-        self.caret_moved(cx);
-    }
-
     fn insert_newline(&mut self, _: &InsertNewline, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.insert("\n", EditKind::Standalone);
-        self.edited(cx);
-    }
-
-    fn backspace(&mut self, _: &Backspace, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.delete_backward();
-        self.edited(cx);
-    }
-
-    fn delete(&mut self, _: &Delete, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.delete_forward();
-        self.edited(cx);
-    }
-
-    fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(text) = self.buffer.selected_text() {
-            cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()));
-        }
-    }
-
-    fn cut(&mut self, _: &Cut, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(text) = self.buffer.selected_text() else {
-            return;
-        };
-        cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()));
-        self.preferred_x = None;
-        self.buffer.insert("", EditKind::Standalone);
-        self.edited(cx);
+        self.edit(|buffer| buffer.insert("\n", EditKind::Standalone), cx);
     }
 
     fn paste(&mut self, _: &Paste, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-            self.preferred_x = None;
-            self.buffer.insert(&text, EditKind::Standalone);
-            self.edited(cx);
-        }
-    }
-
-    fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
-        if self.buffer.undo() {
-            self.preferred_x = None;
-            self.edited(cx);
-        }
-    }
-
-    fn redo(&mut self, _: &Redo, _: &mut Window, cx: &mut Context<Self>) {
-        if self.buffer.redo() {
-            self.preferred_x = None;
-            self.edited(cx);
-        }
-    }
-
-    fn caret_moved(&mut self, cx: &mut Context<Self>) {
-        self.follow_caret = true;
-        self.caret.wake();
-        cx.notify();
-    }
-
-    fn edited(&mut self, cx: &mut Context<Self>) {
-        self.follow_caret = true;
-        self.caret.wake();
-        cx.emit(InputEvent::Changed(self.buffer.text().into()));
-        cx.notify();
-    }
-
-    fn on_mouse_down(&mut self, event: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
-        self.is_selecting = true;
-        self.preferred_x = None;
-        if event.modifiers.shift {
-            self.select_to(self.index_for_mouse_position(event.position), cx);
-        } else {
-            self.move_to(self.index_for_mouse_position(event.position), cx);
-        }
-    }
-
-    fn on_mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, _: &mut Context<Self>) {
-        self.is_selecting = false;
-    }
-
-    fn on_mouse_move(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if self.is_selecting {
-            self.select_to(self.index_for_mouse_position(event.position), cx);
+        if let Some(text) = cx
+            .read_from_clipboard()
+            .as_ref()
+            .and_then(ClipboardItem::text)
+        {
+            self.insert_text(&text, cx);
         }
     }
 
@@ -406,48 +212,26 @@ impl TextArea {
             cx.notify();
         }
     }
+}
 
-    fn move_vertical(&mut self, down: bool, extend: bool, cx: &mut Context<Self>) {
-        let computed = self.last_layout.as_ref().and_then(|layout| {
-            let caret = layout.point_for_offset(self.cursor_offset())?;
-            let goal_x = self.preferred_x.unwrap_or(caret.x);
-            let lh = layout.line_height;
-            let target_y = if down {
-                caret.y + lh * 1.5
-            } else {
-                caret.y - lh * 0.5
-            };
-            let mut clamped_y = target_y;
-            if clamped_y < px(0.0) {
-                clamped_y = px(0.0);
-            }
-            let max_y = layout.total_height - px(1.0);
-            if max_y > px(0.0) && clamped_y > max_y {
-                clamped_y = max_y;
-            }
-            let new = layout.offset_for_point(point(goal_x, clamped_y));
-            Some((goal_x, new))
-        });
-        if let Some((goal_x, new)) = computed {
-            self.preferred_x = Some(goal_x);
-            if extend {
-                self.select_to(new, cx);
-            } else {
-                self.move_to(new, cx);
-            }
-        }
+impl TextEditor for TextArea {
+    fn buffer(&self) -> &TextBuffer {
+        &self.buffer
     }
 
-    fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
-        self.buffer.move_to(offset);
-        self.caret_moved(cx);
+    fn buffer_mut(&mut self) -> &mut TextBuffer {
+        &mut self.buffer
     }
 
-    fn cursor_offset(&self) -> usize {
-        self.buffer.cursor()
+    fn motion(&mut self) -> &mut CaretMotion {
+        &mut self.motion
     }
 
-    fn index_for_mouse_position(&self, position: Point<Pixels>) -> usize {
+    fn reveal_caret(&mut self) {
+        self.follow_caret = true;
+    }
+
+    fn offset_for_position(&self, position: Point<Pixels>) -> usize {
         if self.buffer.as_str().is_empty() {
             return 0;
         }
@@ -467,108 +251,36 @@ impl TextArea {
         layout.offset_for_point(point(x, y))
     }
 
-    fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
-        self.buffer.select_to(offset);
-        self.caret_moved(cx);
-    }
-}
-
-impl EntityInputHandler for TextArea {
-    fn text_for_range(
-        &mut self,
-        range_utf16: Range<usize>,
-        actual_range: &mut Option<Range<usize>>,
-        _: &mut Window,
-        _: &mut Context<Self>,
-    ) -> Option<String> {
-        let content = self.buffer.as_str();
-        let range = range_from_utf16(content, &range_utf16);
-        actual_range.replace(range_to_utf16(content, &range));
-        content.get(range).map(str::to_string)
-    }
-
-    fn selected_text_range(
-        &mut self,
-        _ignore_disabled_input: bool,
-        _: &mut Window,
-        _: &mut Context<Self>,
-    ) -> Option<UTF16Selection> {
-        Some(UTF16Selection {
-            range: range_to_utf16(self.buffer.as_str(), self.buffer.selected_range()),
-            reversed: self.buffer.is_reversed(),
-        })
-    }
-
-    fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
-        self.buffer
-            .marked_range()
-            .map(|range| range_to_utf16(self.buffer.as_str(), range))
-    }
-
-    fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {
-        self.buffer.unmark();
-    }
-
-    fn replace_text_in_range(
-        &mut self,
-        range_utf16: Option<Range<usize>>,
-        new_text: &str,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.buffer.replace_in_utf16_range(range_utf16, new_text);
-        self.edited(cx);
-    }
-
-    fn replace_and_mark_text_in_range(
-        &mut self,
-        range_utf16: Option<Range<usize>>,
-        new_text: &str,
-        new_selected_range_utf16: Option<Range<usize>>,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.buffer.replace_and_mark_in_utf16_range(
-            range_utf16,
-            new_text,
-            new_selected_range_utf16,
-        );
-        self.edited(cx);
-    }
-
-    fn bounds_for_range(
-        &mut self,
-        range_utf16: Range<usize>,
-        bounds: Bounds<Pixels>,
-        _: &mut Window,
-        _: &mut Context<Self>,
+    fn bounds_for_offsets(
+        &self,
+        range: Range<usize>,
+        element_bounds: Bounds<Pixels>,
     ) -> Option<Bounds<Pixels>> {
         let layout = self.last_layout.as_ref()?;
-        let range = range_from_utf16(self.buffer.as_str(), &range_utf16);
         let start = layout.point_for_offset(range.start)?;
-        let lh = layout.line_height;
+        let top = element_bounds.top() + start.y - self.scroll_offset;
+        let x = element_bounds.left() + start.x;
         Some(Bounds::from_corners(
-            point(
-                bounds.left() + start.x,
-                bounds.top() + start.y - self.scroll_offset,
-            ),
-            point(
-                bounds.left() + start.x,
-                bounds.top() + start.y - self.scroll_offset + lh,
-            ),
+            point(x, top),
+            point(x, top + layout.line_height),
         ))
     }
 
-    fn character_index_for_point(
+    fn vertical_target(
         &mut self,
-        point: gpui::Point<Pixels>,
+        below: bool,
+        goal_x: Option<Pixels>,
         _: &mut Window,
-        _: &mut Context<Self>,
-    ) -> Option<usize> {
-        let offset = self.index_for_mouse_position(point);
-        Some(offset_to_utf16(self.buffer.as_str(), offset))
+    ) -> Option<(Pixels, usize)> {
+        let layout = self.last_layout.as_ref()?;
+        let caret = layout.point_for_offset(self.buffer.cursor())?;
+        let goal_x = goal_x.unwrap_or(caret.x);
+        let probe_y = vertical_probe_y(caret.y, layout.line_height, below, layout.total_height);
+        Some((goal_x, layout.offset_for_point(point(goal_x, probe_y))))
     }
 }
+
+forward_input_handler!(TextArea);
 
 fn apply_range(runs: &mut Vec<TextRun>, start: usize, end: usize, f: impl Fn(&mut TextRun)) {
     let mut out: Vec<TextRun> = Vec::with_capacity(runs.len() + 2);
@@ -890,30 +602,10 @@ impl Render for TextArea {
             .key_context(KEY_CONTEXT)
             .track_focus(&self.focus_handle)
             .cursor(CursorStyle::IBeam)
-            .on_action(cx.listener(Self::backspace))
-            .on_action(cx.listener(Self::delete))
-            .on_action(cx.listener(Self::left))
-            .on_action(cx.listener(Self::right))
-            .on_action(cx.listener(Self::up))
-            .on_action(cx.listener(Self::down))
-            .on_action(cx.listener(Self::select_left))
-            .on_action(cx.listener(Self::select_right))
-            .on_action(cx.listener(Self::select_up))
-            .on_action(cx.listener(Self::select_down))
-            .on_action(cx.listener(Self::select_all))
-            .on_action(cx.listener(Self::home))
-            .on_action(cx.listener(Self::end))
             .on_action(cx.listener(Self::insert_newline))
-            .on_action(cx.listener(Self::copy))
-            .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::paste))
-            .on_action(cx.listener(Self::undo))
-            .on_action(cx.listener(Self::redo))
-            .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
-            .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
-            .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
-            .on_mouse_move(cx.listener(Self::on_mouse_move))
-            .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
+            .on_scroll_wheel(cx.listener(Self::on_scroll_wheel));
+        let field = with_multiline_actions(with_editing_actions(field, cx), cx)
             .w_full()
             .overflow_hidden()
             .font_family(self.font_family.clone())

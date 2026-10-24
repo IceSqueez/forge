@@ -5,21 +5,16 @@ pub(crate) mod lines;
 use std::ops::{Range, RangeInclusive};
 
 use gpui::{
-    App, Bounds, ClipboardItem, Context, CursorStyle, EntityInputHandler, EventEmitter,
-    FocusHandle, Focusable, KeyBinding, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    Pixels, Point, ScrollWheelEvent, SharedString, Subscription, UTF16Selection, Window, actions,
-    div, point, prelude::*, px,
+    App, Bounds, ClipboardItem, Context, CursorStyle, EventEmitter, FocusHandle, Focusable,
+    KeyBinding, Pixels, Point, ScrollWheelEvent, SharedString, Subscription, Window, actions, div,
+    point, prelude::*, px,
 };
 
 use crate::caret_blink::{CaretBlink, CaretHost, set_caret_blinking};
 use crate::highlight::Language;
 use crate::palette::{FORGE_DEFAULT, ForgePalette};
-use crate::text_area::{
-    Backspace, Copy, Cut, Delete, Down, End, Home, InsertNewline, Left, Paste, Redo, Right,
-    SelectAll, SelectDown, SelectLeft, SelectRight, SelectUp, Undo, Up, editing_key_bindings,
-};
-use crate::text_buffer::{EditKind, TextBuffer};
-use crate::text_edit::{offset_to_utf16, range_from_utf16, range_to_utf16};
+use crate::text_buffer::TextBuffer;
+use crate::text_editing::*;
 use crate::text_input::{FocusNextField, FocusPreviousField, InputEvent};
 use crate::tokens::{BORDER_THIN, Density, FONT_XS, Radius, Spacing, mono_family, radius, spacing};
 
@@ -29,8 +24,6 @@ use layout::{Geometry, Lines};
 const KEY_CONTEXT: &str = "ForgeCodeEditor";
 const INDENT_UNIT: &str = "  ";
 const LINE_HEIGHT_RATIO: f32 = 1.5;
-const ROW_CENTER: f32 = 0.5;
-const EDGE_INSET: Pixels = px(1.0);
 #[cfg(test)]
 const SAVE_CHORD: &str = "secondary-s";
 const SAVE_CHORDS: [&str; 2] = ["ctrl-s", "cmd-s"];
@@ -69,8 +62,7 @@ pub struct CodeEditor {
     text_left: Pixels,
     scroll_offset: Pixels,
     follow_caret: bool,
-    is_selecting: bool,
-    preferred_x: Option<Pixels>,
+    motion: CaretMotion,
     caret: CaretBlink,
     committed: SharedString,
     blur_sub: Option<Subscription>,
@@ -107,8 +99,7 @@ impl CodeEditor {
             text_left: px(0.0),
             scroll_offset: px(0.0),
             follow_caret: false,
-            is_selecting: false,
-            preferred_x: None,
+            motion: CaretMotion::default(),
             caret: CaretBlink::new(),
             committed: SharedString::default(),
             blur_sub: None,
@@ -161,7 +152,7 @@ impl CodeEditor {
         self.buffer.move_to(0);
         self.lines.sync(self.buffer.text());
         self.geometry.invalidate();
-        self.preferred_x = None;
+        self.motion.goal_x = None;
         self.scroll_offset = px(0.0);
         self.follow_caret = false;
         cx.notify();
@@ -171,7 +162,7 @@ impl CodeEditor {
         if text == self.buffer.as_str() {
             return;
         }
-        self.preferred_x = None;
+        self.motion.goal_x = None;
         self.buffer.replace_all_keeping_caret_line(text);
         self.edited(cx);
         self.follow_caret = false;
@@ -201,9 +192,7 @@ impl CodeEditor {
     }
 
     pub fn insert_at_caret(&mut self, text: &str, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.insert(text, EditKind::Standalone);
-        self.edited(cx);
+        self.insert_text(text, cx);
     }
 
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
@@ -245,71 +234,10 @@ impl CodeEditor {
         }
     }
 
-    fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.move_left();
-        self.caret_moved(cx);
-    }
-
-    fn right(&mut self, _: &Right, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.move_right();
-        self.caret_moved(cx);
-    }
-
-    fn up(&mut self, _: &Up, window: &mut Window, cx: &mut Context<Self>) {
-        self.move_vertical(false, false, window, cx);
-    }
-
-    fn down(&mut self, _: &Down, window: &mut Window, cx: &mut Context<Self>) {
-        self.move_vertical(true, false, window, cx);
-    }
-
-    fn select_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.select_left();
-        self.caret_moved(cx);
-    }
-
-    fn select_right(&mut self, _: &SelectRight, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.select_right();
-        self.caret_moved(cx);
-    }
-
-    fn select_up(&mut self, _: &SelectUp, window: &mut Window, cx: &mut Context<Self>) {
-        self.move_vertical(false, true, window, cx);
-    }
-
-    fn select_down(&mut self, _: &SelectDown, window: &mut Window, cx: &mut Context<Self>) {
-        self.move_vertical(true, true, window, cx);
-    }
-
-    fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.select_all();
-        self.caret_moved(cx);
-    }
-
-    fn home(&mut self, _: &Home, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.move_to_line_start();
-        self.caret_moved(cx);
-    }
-
-    fn end(&mut self, _: &End, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.move_to_line_end();
-        self.caret_moved(cx);
-    }
-
     fn insert_newline(&mut self, _: &InsertNewline, _: &mut Window, cx: &mut Context<Self>) {
-        if self.compact {
-            return;
+        if !self.compact {
+            self.edit(TextBuffer::insert_newline_keeping_indent, cx);
         }
-        self.preferred_x = None;
-        self.buffer.insert_newline_keeping_indent();
-        self.edited(cx);
     }
 
     fn indent(&mut self, _: &Indent, window: &mut Window, cx: &mut Context<Self>) {
@@ -318,9 +246,7 @@ impl CodeEditor {
                 .dispatch_action(&FocusNextField, window, cx);
             return;
         }
-        self.preferred_x = None;
-        self.buffer.indent(INDENT_UNIT);
-        self.edited(cx);
+        self.edit(|buffer| buffer.indent(INDENT_UNIT), cx);
     }
 
     fn outdent(&mut self, _: &Outdent, window: &mut Window, cx: &mut Context<Self>) {
@@ -329,58 +255,16 @@ impl CodeEditor {
                 .dispatch_action(&FocusPreviousField, window, cx);
             return;
         }
-        self.preferred_x = None;
-        self.buffer.outdent(INDENT_UNIT);
-        self.edited(cx);
-    }
-
-    fn backspace(&mut self, _: &Backspace, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.delete_backward();
-        self.edited(cx);
-    }
-
-    fn delete(&mut self, _: &Delete, _: &mut Window, cx: &mut Context<Self>) {
-        self.preferred_x = None;
-        self.buffer.delete_forward();
-        self.edited(cx);
-    }
-
-    fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(text) = self.buffer.selected_text() {
-            cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()));
-        }
-    }
-
-    fn cut(&mut self, _: &Cut, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(text) = self.buffer.selected_text() else {
-            return;
-        };
-        cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()));
-        self.preferred_x = None;
-        self.buffer.insert("", EditKind::Standalone);
-        self.edited(cx);
+        self.edit(|buffer| buffer.outdent(INDENT_UNIT), cx);
     }
 
     fn paste(&mut self, _: &Paste, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-            self.preferred_x = None;
-            self.buffer.insert(&text, EditKind::Standalone);
-            self.edited(cx);
-        }
-    }
-
-    fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
-        if self.buffer.undo() {
-            self.preferred_x = None;
-            self.edited(cx);
-        }
-    }
-
-    fn redo(&mut self, _: &Redo, _: &mut Window, cx: &mut Context<Self>) {
-        if self.buffer.redo() {
-            self.preferred_x = None;
-            self.edited(cx);
+        if let Some(text) = cx
+            .read_from_clipboard()
+            .as_ref()
+            .and_then(ClipboardItem::text)
+        {
+            self.insert_text(&text, cx);
         }
     }
 
@@ -388,25 +272,9 @@ impl CodeEditor {
         if !self.buffer.discard_marked() {
             return false;
         }
-        self.preferred_x = None;
+        self.motion.goal_x = None;
         self.edited(cx);
         true
-    }
-
-    fn caret_moved(&mut self, cx: &mut Context<Self>) {
-        self.follow_caret = true;
-        self.caret.wake();
-        cx.notify();
-    }
-
-    fn edited(&mut self, cx: &mut Context<Self>) {
-        if self.lines.sync(self.buffer.text()) {
-            self.geometry.invalidate();
-        }
-        self.follow_caret = true;
-        self.caret.wake();
-        cx.emit(InputEvent::Changed(self.buffer.text().into()));
-        cx.notify();
     }
 
     fn on_blur(&mut self, _: &mut Window, cx: &mut Context<Self>) {
@@ -415,30 +283,6 @@ impl CodeEditor {
         }
         self.committed = SharedString::from(self.buffer.text().clone());
         cx.emit(InputEvent::Blurred(self.committed.clone()));
-    }
-
-    fn on_mouse_down(&mut self, event: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
-        self.is_selecting = true;
-        self.preferred_x = None;
-        let offset = self.index_for_mouse_position(event.position);
-        if event.modifiers.shift {
-            self.buffer.select_to(offset);
-        } else {
-            self.buffer.move_to(offset);
-        }
-        self.caret_moved(cx);
-    }
-
-    fn on_mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, _: &mut Context<Self>) {
-        self.is_selecting = false;
-    }
-
-    fn on_mouse_move(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if self.is_selecting {
-            self.buffer
-                .select_to(self.index_for_mouse_position(event.position));
-            self.caret_moved(cx);
-        }
     }
 
     fn on_scroll_wheel(
@@ -476,42 +320,32 @@ impl CodeEditor {
         }
         self.geometry.refresh(&self.lines);
     }
+}
 
-    fn move_vertical(
-        &mut self,
-        down: bool,
-        extend: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let cursor = self.buffer.cursor();
-        self.shape_around(self.lines.line_index_at(cursor), window);
-        let Some(line_height) = self.geometry.metrics().map(|metrics| metrics.line_height) else {
-            return;
-        };
-        let Some(caret) = self.geometry.point_for_offset(&self.lines, cursor) else {
-            return;
-        };
-        let goal_x = self.preferred_x.unwrap_or(caret.x);
-        let target_y = if down {
-            caret.y + line_height + line_height * ROW_CENTER
-        } else {
-            caret.y - line_height * ROW_CENTER
-        };
-        let last_y = (self.geometry.total() - EDGE_INSET).max(px(0.0));
-        let target = self
-            .geometry
-            .offset_for_point(&self.lines, point(goal_x, target_y.clamp(px(0.0), last_y)));
-        self.preferred_x = Some(goal_x);
-        if extend {
-            self.buffer.select_to(target);
-        } else {
-            self.buffer.move_to(target);
-        }
-        self.caret_moved(cx);
+impl TextEditor for CodeEditor {
+    fn buffer(&self) -> &TextBuffer {
+        &self.buffer
     }
 
-    fn index_for_mouse_position(&self, position: Point<Pixels>) -> usize {
+    fn buffer_mut(&mut self) -> &mut TextBuffer {
+        &mut self.buffer
+    }
+
+    fn motion(&mut self) -> &mut CaretMotion {
+        &mut self.motion
+    }
+
+    fn reveal_caret(&mut self) {
+        self.follow_caret = true;
+    }
+
+    fn sync_after_edit(&mut self) {
+        if self.lines.sync(self.buffer.text()) {
+            self.geometry.invalidate();
+        }
+    }
+
+    fn offset_for_position(&self, position: Point<Pixels>) -> usize {
         let Some(bounds) = self.last_bounds else {
             return 0;
         };
@@ -519,84 +353,17 @@ impl CodeEditor {
         let y = (position.y - bounds.top() - self.pad_y() + self.scroll_offset).max(px(0.0));
         self.geometry.offset_for_point(&self.lines, point(x, y))
     }
-}
 
-impl EntityInputHandler for CodeEditor {
-    fn text_for_range(
-        &mut self,
-        range_utf16: Range<usize>,
-        actual_range: &mut Option<Range<usize>>,
-        _: &mut Window,
-        _: &mut Context<Self>,
-    ) -> Option<String> {
-        let content = self.buffer.as_str();
-        let range = range_from_utf16(content, &range_utf16);
-        actual_range.replace(range_to_utf16(content, &range));
-        content.get(range).map(str::to_string)
-    }
-
-    fn selected_text_range(
-        &mut self,
-        _ignore_disabled_input: bool,
-        _: &mut Window,
-        _: &mut Context<Self>,
-    ) -> Option<UTF16Selection> {
-        Some(UTF16Selection {
-            range: range_to_utf16(self.buffer.as_str(), self.buffer.selected_range()),
-            reversed: self.buffer.is_reversed(),
-        })
-    }
-
-    fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
-        self.buffer
-            .marked_range()
-            .map(|range| range_to_utf16(self.buffer.as_str(), range))
-    }
-
-    fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {
-        self.buffer.unmark();
-    }
-
-    fn replace_text_in_range(
-        &mut self,
-        range_utf16: Option<Range<usize>>,
-        new_text: &str,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.buffer.replace_in_utf16_range(range_utf16, new_text);
-        self.edited(cx);
-    }
-
-    fn replace_and_mark_text_in_range(
-        &mut self,
-        range_utf16: Option<Range<usize>>,
-        new_text: &str,
-        new_selected_range_utf16: Option<Range<usize>>,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.buffer.replace_and_mark_in_utf16_range(
-            range_utf16,
-            new_text,
-            new_selected_range_utf16,
-        );
-        self.edited(cx);
-    }
-
-    fn bounds_for_range(
-        &mut self,
-        range_utf16: Range<usize>,
-        bounds: Bounds<Pixels>,
-        _: &mut Window,
-        _: &mut Context<Self>,
+    fn bounds_for_offsets(
+        &self,
+        range: Range<usize>,
+        element_bounds: Bounds<Pixels>,
     ) -> Option<Bounds<Pixels>> {
         let line_height = self.geometry.metrics()?.line_height;
-        let range = range_from_utf16(self.buffer.as_str(), &range_utf16);
         let start = self.geometry.point_for_offset(&self.lines, range.start)?;
         let origin = point(
-            bounds.left() + self.text_left + start.x,
-            bounds.top() + self.pad_y() + start.y - self.scroll_offset,
+            element_bounds.left() + self.text_left + start.x,
+            element_bounds.top() + self.pad_y() + start.y - self.scroll_offset,
         );
         Some(Bounds::from_corners(
             origin,
@@ -604,16 +371,26 @@ impl EntityInputHandler for CodeEditor {
         ))
     }
 
-    fn character_index_for_point(
+    fn vertical_target(
         &mut self,
-        point: Point<Pixels>,
-        _: &mut Window,
-        _: &mut Context<Self>,
-    ) -> Option<usize> {
-        let offset = self.index_for_mouse_position(point);
-        Some(offset_to_utf16(self.buffer.as_str(), offset))
+        below: bool,
+        goal_x: Option<Pixels>,
+        window: &mut Window,
+    ) -> Option<(Pixels, usize)> {
+        let cursor = self.buffer.cursor();
+        self.shape_around(self.lines.line_index_at(cursor), window);
+        let line_height = self.geometry.metrics()?.line_height;
+        let caret = self.geometry.point_for_offset(&self.lines, cursor)?;
+        let goal_x = goal_x.unwrap_or(caret.x);
+        let probe_y = vertical_probe_y(caret.y, line_height, below, self.geometry.total());
+        let target = self
+            .geometry
+            .offset_for_point(&self.lines, point(goal_x, probe_y));
+        Some((goal_x, target))
     }
 }
+
+forward_input_handler!(CodeEditor);
 
 impl Focusable for CodeEditor {
     fn focus_handle(&self, _: &App) -> FocusHandle {
@@ -639,27 +416,10 @@ impl Render for CodeEditor {
             .key_context(KEY_CONTEXT)
             .track_focus(&self.focus_handle)
             .cursor(CursorStyle::IBeam)
-            .on_action(cx.listener(Self::backspace))
-            .on_action(cx.listener(Self::delete))
-            .on_action(cx.listener(Self::left))
-            .on_action(cx.listener(Self::right))
-            .on_action(cx.listener(Self::up))
-            .on_action(cx.listener(Self::down))
-            .on_action(cx.listener(Self::select_left))
-            .on_action(cx.listener(Self::select_right))
-            .on_action(cx.listener(Self::select_up))
-            .on_action(cx.listener(Self::select_down))
-            .on_action(cx.listener(Self::select_all))
-            .on_action(cx.listener(Self::home))
-            .on_action(cx.listener(Self::end))
             .on_action(cx.listener(Self::insert_newline))
             .on_action(cx.listener(Self::indent))
             .on_action(cx.listener(Self::outdent))
-            .on_action(cx.listener(Self::copy))
-            .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::paste))
-            .on_action(cx.listener(Self::undo))
-            .on_action(cx.listener(Self::redo))
             .on_action(move |_: &LeaveEditor, window, cx| {
                 let composing = editor_handle
                     .update(cx, |editor, cx| editor.cancel_composition(cx))
@@ -677,11 +437,8 @@ impl Render for CodeEditor {
                 }
             })
             .on_action(|_: &FocusPreviousField, window, cx| window.focus_prev(cx))
-            .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
-            .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
-            .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
-            .on_mouse_move(cx.listener(Self::on_mouse_move))
-            .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
+            .on_scroll_wheel(cx.listener(Self::on_scroll_wheel));
+        let editor = with_multiline_actions(with_editing_actions(editor, cx), cx)
             .w_full()
             .overflow_hidden()
             .font_family(mono_family())

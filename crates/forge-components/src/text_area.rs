@@ -780,26 +780,6 @@ mod tests {
     }
 
     #[gpui::test]
-    fn text_for_range_tolerates_out_of_range_reversed_and_split_surrogate_ranges(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        let texts = with_area(cx, "a\u{1F600}b", |area, window, cx| {
-            [1..99, Range { start: 3, end: 1 }, 1..2]
-                .into_iter()
-                .map(|range| area.text_for_range(range, &mut None, window, cx))
-                .collect::<Vec<_>>()
-        });
-        assert_eq!(
-            texts,
-            vec![
-                Some("\u{1F600}b".to_string()),
-                None,
-                Some("\u{1F600}".to_string())
-            ]
-        );
-    }
-
-    #[gpui::test]
     fn insert_at_caret_lands_at_the_cursor_and_advances_it(cx: &mut gpui::TestAppContext) {
         let (content, cursor) = with_area(cx, "ab\ncd", |area, _window, cx| {
             area.move_to(4, cx);

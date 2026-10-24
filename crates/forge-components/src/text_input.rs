@@ -1214,12 +1214,69 @@ mod tests {
     }
 
     #[gpui::test]
-    fn insert_at_caret_flattens_newlines_into_spaces(cx: &mut gpui::TestAppContext) {
-        let content = with_input(cx, "", |input, _window, cx| {
-            input.insert_at_caret("a\nb\n", cx);
-            input.content().to_string()
+    fn insert_at_caret_and_paste_flatten_newlines_into_spaces(cx: &mut gpui::TestAppContext) {
+        type Insert = fn(&mut TextInput, &mut Window, &mut Context<TextInput>);
+        let inserts: [(&str, Insert); 2] = [
+            ("insert at caret", |input, _window, cx| {
+                input.insert_at_caret("a\nb\n", cx)
+            }),
+            ("paste", |input, window, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string("a\nb\n".to_owned()));
+                input.paste(&Paste, window, cx)
+            }),
+        ];
+        for (label, insert) in inserts {
+            let content = with_input(cx, "", |input, window, cx| {
+                insert(input, window, cx);
+                input.content().to_string()
+            });
+            assert_eq!(content, "a b ", "{label}");
+        }
+    }
+
+    #[gpui::test]
+    fn a_secure_input_never_puts_its_text_on_the_clipboard(cx: &mut gpui::TestAppContext) {
+        type Take = fn(&mut TextInput, &mut Window, &mut Context<TextInput>);
+        let copy: Take = |input, window, cx| input.copy(&Copy, window, cx);
+        let cut: Take = |input, window, cx| input.cut(&Cut, window, cx);
+        for (secure, label, take, clipboard, content) in [
+            (false, "copy", copy, "hunter2", "hunter2"),
+            (false, "cut", cut, "hunter2", ""),
+            (true, "copy", copy, "untouched", "hunter2"),
+            (true, "cut", cut, "untouched", ""),
+        ] {
+            let window =
+                cx.add_window(|_window, cx| TextInput::new("placeholder", cx).secure(secure));
+            let seen = window
+                .update(cx, |input, window, cx| {
+                    input.set_content("hunter2", cx);
+                    cx.write_to_clipboard(ClipboardItem::new_string("untouched".to_owned()));
+                    input.select_all(&SelectAll, window, cx);
+                    take(input, window, cx);
+                    let pasted = cx
+                        .read_from_clipboard()
+                        .and_then(|item| item.text())
+                        .unwrap_or_default();
+                    (pasted, input.content().to_owned())
+                })
+                .unwrap();
+            assert_eq!(
+                seen,
+                (clipboard.to_owned(), content.to_owned()),
+                "secure {secure} {label}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn locking_an_input_read_only_blocks_undo_of_an_earlier_edit(cx: &mut gpui::TestAppContext) {
+        let content = with_input(cx, "alice", |input, window, cx| {
+            input.replace_text_in_range(None, "!", window, cx);
+            input.set_read_only(true, cx);
+            input.undo(&Undo, window, cx);
+            input.content().to_owned()
         });
-        assert_eq!(content, "a b ");
+        assert_eq!(content, "alice!");
     }
 
     #[gpui::test]

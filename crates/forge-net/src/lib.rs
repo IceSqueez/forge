@@ -4,6 +4,8 @@ pub mod address_guard;
 pub mod backoff;
 pub mod dedup;
 pub mod rate_limit;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 pub use address_guard::{
     HostRejection, PublicAddressResolver, ensure_public_ip_literal, host_rejection_cause,
     is_loopback_host, is_private_or_special,

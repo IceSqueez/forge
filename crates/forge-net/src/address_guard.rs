@@ -227,6 +227,22 @@ mod tests {
     fn special_block_edges_are_blocked_and_their_neighbours_are_public() {
         let cases = [
             ("1.0.0.0", false),
+            ("9.255.255.255", false),
+            ("10.0.0.0", true),
+            ("10.255.255.255", true),
+            ("11.0.0.0", false),
+            ("126.255.255.255", false),
+            ("127.0.0.0", true),
+            ("128.0.0.0", false),
+            ("169.253.255.255", false),
+            ("169.254.0.0", true),
+            ("169.254.255.255", true),
+            ("169.255.0.0", false),
+            ("192.167.255.255", false),
+            ("192.168.0.0", true),
+            ("192.168.255.255", true),
+            ("192.169.0.0", false),
+            ("224.0.0.0", true),
             ("100.63.255.255", false),
             ("100.64.0.0", true),
             ("100.127.255.255", true),
@@ -242,6 +258,33 @@ mod tests {
             ("223.255.255.255", false),
             ("239.255.255.255", true),
             ("240.0.0.0", true),
+        ];
+        for (addr, blocked) in cases {
+            assert_eq!(
+                is_private_or_special(ip(addr)),
+                blocked,
+                "classification of {addr}"
+            );
+        }
+    }
+
+    #[test]
+    fn ipv6_prefix_edges_are_blocked_and_their_neighbours_are_public() {
+        let cases = [
+            ("fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", false),
+            ("fc00::", true),
+            ("fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", true),
+            ("fe00::1", false),
+            ("fe7f:ffff:ffff:ffff:ffff:ffff:ffff:ffff", false),
+            ("fe80::", true),
+            ("febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff", true),
+            ("feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", false),
+            ("ff00::", true),
+            ("::ffff:0.0.0.0", true),
+            ("::ffff:100.63.255.255", false),
+            ("::ffff:100.64.0.0", true),
+            ("64:ff9a::a00:1", false),
+            ("64:ff9b::1:a00:1", false),
         ];
         for (addr, blocked) in cases {
             assert_eq!(

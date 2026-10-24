@@ -49,3 +49,99 @@ impl DedupSet {
         self.order.retain(|id| current.contains(id.as_str()));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn filled(capacity: usize, ids: &[&str]) -> DedupSet {
+        let mut set = DedupSet::bounded(capacity);
+        for id in ids {
+            set.try_insert(*id);
+        }
+        set
+    }
+
+    #[test]
+    fn first_sighting_of_an_id_is_accepted() {
+        let mut set = DedupSet::bounded(4);
+        assert!(set.try_insert("a"));
+    }
+
+    #[test]
+    fn repeated_id_is_rejected_as_duplicate() {
+        let mut set = filled(4, &["a"]);
+        assert!(!set.try_insert("a"));
+    }
+
+    #[test]
+    fn filling_to_capacity_evicts_nothing() {
+        let set = filled(3, &["a", "b", "c"]);
+        assert!(["a", "b", "c"].iter().all(|id| set.contains(id)));
+    }
+
+    #[test]
+    fn inserting_one_over_capacity_evicts_only_the_oldest() {
+        let set = filled(3, &["a", "b", "c", "d"]);
+        assert!(!set.contains("a"));
+        assert!(["b", "c", "d"].iter().all(|id| set.contains(id)));
+    }
+
+    #[test]
+    fn evicted_id_is_accepted_again() {
+        let mut set = filled(2, &["a", "b", "c"]);
+        assert!(set.try_insert("a"));
+    }
+
+    #[test]
+    fn rejected_duplicate_does_not_refresh_its_eviction_order() {
+        let mut set = filled(3, &["a", "b", "c"]);
+        set.try_insert("a");
+        set.try_insert("d");
+        assert!(!set.contains("a"));
+        assert!(set.contains("b"));
+    }
+
+    #[test]
+    fn unbounded_set_never_evicts() {
+        let mut set = DedupSet::unbounded();
+        for n in 0..10_000 {
+            set.try_insert(n.to_string());
+        }
+        assert!(set.contains("0"));
+    }
+
+    #[test]
+    fn retain_present_forgets_ids_missing_from_the_current_view() {
+        let mut set = filled(4, &["a", "b", "c"]);
+        set.retain_present(["b", "z"]);
+        assert!(!set.contains("a"));
+        assert!(!set.contains("c"));
+        assert!(set.contains("b"));
+    }
+
+    #[test]
+    fn retain_present_does_not_adopt_unseen_ids() {
+        let mut set = filled(4, &["a"]);
+        set.retain_present(["a", "z"]);
+        assert!(set.try_insert("z"));
+    }
+
+    #[test]
+    fn retain_present_frees_capacity_for_later_inserts() {
+        let mut set = filled(3, &["a", "b", "c"]);
+        set.retain_present(["b", "c"]);
+        set.try_insert("d");
+        assert!(["b", "c", "d"].iter().all(|id| set.contains(id)));
+    }
+
+    #[test]
+    fn eviction_after_retain_still_drops_the_oldest_survivor() {
+        let mut set = filled(3, &["a", "b", "c"]);
+        set.retain_present(["b", "c"]);
+        set.try_insert("d");
+        set.try_insert("e");
+        assert!(!set.contains("b"));
+        assert!(["c", "d", "e"].iter().all(|id| set.contains(id)));
+    }
+}

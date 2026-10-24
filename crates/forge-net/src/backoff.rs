@@ -52,26 +52,50 @@ impl Default for Backoff {
 mod tests {
     use super::*;
 
-    fn spec_ceiling_ms(base_ms: u64, cap_ms: u64, attempt: u32) -> u64 {
-        base_ms
-            .saturating_mul(1u64.checked_shl(attempt.min(32)).unwrap_or(u64::MAX))
-            .min(cap_ms)
-    }
-
     #[test]
-    fn next_delay_stays_within_full_jitter_ceiling_up_to_and_past_crossover() {
-        let base = Duration::from_millis(100);
-        let cap = Duration::from_millis(3200);
+    fn next_delay_stays_within_doubling_ceiling_up_to_and_past_crossover() {
+        let ceilings_ms = [
+            100, 200, 400, 800, 1600, 3200, 3200, 3200, 3200, 3200, 3200, 3200,
+        ];
         for _ in 0..64 {
-            let mut backoff = Backoff::new(base, cap);
-            for attempt in 0..12u32 {
-                let ceiling = spec_ceiling_ms(100, 3200, attempt);
+            let mut backoff = Backoff::new(Duration::from_millis(100), Duration::from_millis(3200));
+            for (attempt, ceiling) in ceilings_ms.into_iter().enumerate() {
                 let delay_ms = backoff.next_delay().as_millis() as u64;
                 assert!(
                     delay_ms <= ceiling,
                     "attempt {attempt}: {delay_ms}ms exceeded ceiling {ceiling}ms"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn next_delay_ceiling_grows_past_base_on_later_attempts() {
+        let mut backoff = Backoff::new(Duration::from_millis(100), Duration::from_secs(3_600));
+        for _ in 0..10 {
+            backoff.next_delay();
+        }
+        let grew = (0..64).any(|_| backoff.next_delay() > Duration::from_millis(100));
+        assert!(grew, "ceiling never rose above the 100ms base");
+    }
+
+    #[test]
+    fn next_delay_never_exceeds_a_cap_set_below_base() {
+        let mut backoff = Backoff::new(Duration::from_secs(5), Duration::from_millis(100));
+        for attempt in 0..16u32 {
+            let delay = backoff.next_delay();
+            assert!(
+                delay <= Duration::from_millis(100),
+                "attempt {attempt}: {delay:?} exceeded the 100ms cap"
+            );
+        }
+    }
+
+    #[test]
+    fn zero_base_always_yields_zero_delay() {
+        let mut backoff = Backoff::new(Duration::ZERO, Duration::from_secs(60));
+        for _ in 0..40 {
+            assert_eq!(backoff.next_delay(), Duration::ZERO);
         }
     }
 

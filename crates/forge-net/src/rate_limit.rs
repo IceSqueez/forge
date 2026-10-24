@@ -183,6 +183,7 @@ impl RateLimiter for TokenBucketRateLimiter {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::test_support::RecordingRateLimiter;
 
     fn limiter(capacity: u32, refill_per: Duration) -> TokenBucketRateLimiter {
         TokenBucketRateLimiter::new(capacity, refill_per)
@@ -304,5 +305,123 @@ mod tests {
         assert!(usage.used.is_none());
         assert!(usage.capacity.is_none());
         assert!(usage.resets_in.is_none());
+    }
+
+    #[tokio::test]
+    async fn acquire_weight_equal_to_capacity_is_granted_on_full_bucket() {
+        let rl = limiter(5, Duration::from_secs(3_600));
+        assert!(matches!(
+            rl.acquire(5).await.unwrap(),
+            RateLimitOutcome::Granted
+        ));
+    }
+
+    #[tokio::test]
+    async fn weighted_acquire_debits_its_full_weight() {
+        let rl = limiter(4, Duration::from_secs(3_600));
+        rl.acquire(3).await.unwrap();
+        assert!(matches!(
+            rl.acquire(2).await.unwrap(),
+            RateLimitOutcome::Throttled { .. }
+        ));
+        assert!(matches!(
+            rl.acquire(1).await.unwrap(),
+            RateLimitOutcome::Granted
+        ));
+    }
+
+    #[tokio::test]
+    async fn remote_throttle_drains_the_bucket_so_an_expired_cooldown_releases_no_burst() {
+        let rl = limiter(10, Duration::from_secs(3_600));
+        rl.observe_remote_throttle(Duration::ZERO).await;
+        assert!(matches!(
+            rl.acquire(1).await.unwrap(),
+            RateLimitOutcome::Throttled { wait_for } if wait_for > Duration::ZERO
+        ));
+    }
+
+    fn throttled(secs: u64) -> Result<RateLimitOutcome, RateLimitError> {
+        Ok(RateLimitOutcome::Throttled {
+            wait_for: Duration::from_secs(secs),
+        })
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn acquire_or_wait_returns_at_once_when_granted() {
+        let rl = RecordingRateLimiter::granting();
+        let started = tokio::time::Instant::now();
+        assert_eq!(acquire_or_wait(&rl, 1).await, Ok(()));
+        assert_eq!(started.elapsed(), Duration::ZERO);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn acquire_or_wait_sleeps_the_throttle_wait_then_retries() {
+        let rl = RecordingRateLimiter::granting().with_script([throttled(2)]);
+        let started = tokio::time::Instant::now();
+        assert_eq!(acquire_or_wait(&rl, 1).await, Ok(()));
+        assert_eq!(started.elapsed(), Duration::from_secs(2));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn acquire_or_wait_retries_with_the_callers_weight() {
+        let rl = RecordingRateLimiter::granting().with_script([throttled(1)]);
+        acquire_or_wait(&rl, 7).await.unwrap();
+        assert_eq!(rl.acquired_weights(), vec![7, 7]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn acquire_or_wait_clamps_a_single_throttle_sleep_to_the_wait_ceiling() {
+        let rl = RecordingRateLimiter::granting().with_script([throttled(600)]);
+        let started = tokio::time::Instant::now();
+        assert_eq!(acquire_or_wait(&rl, 1).await, Ok(()));
+        assert_eq!(started.elapsed(), MAX_THROTTLE_WAIT);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn acquire_or_wait_gives_up_after_the_attempt_cap() {
+        let rl = RecordingRateLimiter::answering(throttled(1));
+        assert_eq!(
+            acquire_or_wait(&rl, 1).await,
+            Err(RateLimitError::Exhausted)
+        );
+        assert_eq!(rl.acquire_count(), MAX_ACQUIRE_ATTEMPTS as usize);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn acquire_or_wait_gives_up_once_the_wait_budget_is_spent() {
+        let rl = RecordingRateLimiter::granting().with_script([throttled(10), throttled(1)]);
+        assert_eq!(
+            acquire_or_wait(&rl, 1).await,
+            Err(RateLimitError::Exhausted)
+        );
+        assert_eq!(rl.acquire_count(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn acquire_or_wait_keeps_retrying_just_under_the_wait_budget() {
+        let rl = RecordingRateLimiter::granting().with_script([throttled(9), throttled(1)]);
+        assert_eq!(acquire_or_wait(&rl, 1).await, Ok(()));
+        assert_eq!(rl.acquire_count(), 3);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn acquire_or_wait_fails_without_sleeping_on_an_exhausted_outcome() {
+        let rl = RecordingRateLimiter::exhausted();
+        let started = tokio::time::Instant::now();
+        assert_eq!(
+            acquire_or_wait(&rl, 1).await,
+            Err(RateLimitError::Exhausted)
+        );
+        assert_eq!(started.elapsed(), Duration::ZERO);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn acquire_or_wait_propagates_a_limiter_error_without_retrying() {
+        let rl = RecordingRateLimiter::failing();
+        assert_eq!(
+            acquire_or_wait(&rl, 1).await,
+            Err(RateLimitError::Exhausted)
+        );
+        assert_eq!(rl.acquire_count(), 1);
     }
 }

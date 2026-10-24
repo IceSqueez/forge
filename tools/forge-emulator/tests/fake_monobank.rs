@@ -12,9 +12,8 @@ use forge_emulator::monobank::{
     UNKNOWN_TOKEN_MESSAGE,
 };
 use forge_monobank::{MonobankConfig, MonobankError, MonobankProvider, MonobankRateLimits};
-use forge_platform_core::{
-    DonationProvider, DonationStream, PlatformEndpoints, PlatformError, TokenBucketRateLimiter,
-};
+use forge_net::TokenBucketRateLimiter;
+use forge_platform_core::{DonationProvider, DonationStream, PlatformEndpoints, PlatformError};
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::{Donation, DonationOrigin, Donor};
 use futures_util::StreamExt;

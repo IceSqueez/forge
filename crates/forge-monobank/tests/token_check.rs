@@ -6,7 +6,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_monobank::{MonobankError, MonobankJar, MonobankProvider, MonobankRateLimits};
-use forge_platform_core::{PlatformError, RateLimitOutcome};
+use forge_net::RateLimitOutcome;
+use forge_platform_core::PlatformError;
 use serde_json::json;
 use support::{
     Bank, CLIENT_INFO, JAR, Limits, MemCreds, OTHER_JAR, OTHER_TOKEN, ScriptedLimiter, TOKEN,

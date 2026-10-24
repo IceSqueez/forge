@@ -31,6 +31,7 @@ workspace = true
 forge-donatello = { path = "../../crates/forge-donatello" }
 forge-events = { path = "../../crates/forge-events" }
 forge-monobank = { path = "../../crates/forge-monobank" }
+forge-net = { path = "../../crates/forge-net" }
 forge-obs = { path = "../../crates/forge-obs" }
 forge-overlay = { path = "../../crates/forge-overlay" }
 forge-platform-core = { path = "../../crates/forge-platform-core" }

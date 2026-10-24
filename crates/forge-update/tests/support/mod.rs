@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use forge_platform_core::TokenBucketRateLimiter;
+use forge_net::TokenBucketRateLimiter;
 use forge_update::UpdateClient;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};

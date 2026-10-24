@@ -8,9 +8,8 @@ use async_trait::async_trait;
 use forge_donatello::{
     DONATELLO_CREDENTIAL_ID, DonatelloConfig, DonatelloProvider, MAX_POLL_INTERVAL, PollStatus,
 };
-use forge_platform_core::{
-    DonationProvider, DonationStream, PlatformError, RateLimitOutcome, RateLimiter,
-};
+use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
+use forge_platform_core::{DonationProvider, DonationStream, PlatformError};
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::Donation;
 use serde_json::{Value, json};
@@ -115,7 +114,7 @@ impl ScriptedLimiter {
 
 #[async_trait]
 impl RateLimiter for ScriptedLimiter {
-    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
         Ok(if self.exhausted {
             RateLimitOutcome::Exhausted
         } else {

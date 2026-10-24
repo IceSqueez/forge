@@ -6,9 +6,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_platform_core::{
-    ChatPlatform, EndpointSurface, PlatformEndpoints, PlatformError, RateLimitOutcome, RateLimiter,
-};
+use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
+use forge_platform_core::{ChatPlatform, EndpointSurface, PlatformEndpoints};
 use forge_platform_kick::chat::PUSHER_APP_KEY;
 use forge_platform_kick::{
     ChannelInfoFetcher, KickAuthBundle, KickCategories, KickChannel, KickChat,
@@ -35,7 +34,7 @@ struct GrantLimiter;
 
 #[async_trait]
 impl RateLimiter for GrantLimiter {
-    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
         Ok(RateLimitOutcome::Granted)
     }
 

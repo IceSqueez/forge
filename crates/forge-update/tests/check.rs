@@ -5,7 +5,7 @@ mod support;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
+use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
 use forge_update::{
     ManifestSource, TrustedKeys, UpdateClient, UpdateError, check_for_update, parse_version,
 };
@@ -170,7 +170,7 @@ struct ExhaustedLimiter;
 
 #[async_trait]
 impl RateLimiter for ExhaustedLimiter {
-    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
         Ok(RateLimitOutcome::Exhausted)
     }
 

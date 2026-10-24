@@ -1547,12 +1547,12 @@ fn kick_endpoints(fake: &FakeKick) -> forge_platform_core::PlatformEndpoints {
 struct KickGrant;
 
 #[async_trait::async_trait]
-impl forge_platform_core::RateLimiter for KickGrant {
+impl forge_net::RateLimiter for KickGrant {
     async fn acquire(
         &self,
         _weight: u32,
-    ) -> Result<forge_platform_core::RateLimitOutcome, forge_platform_core::PlatformError> {
-        Ok(forge_platform_core::RateLimitOutcome::Granted)
+    ) -> Result<forge_net::RateLimitOutcome, forge_net::RateLimitError> {
+        Ok(forge_net::RateLimitOutcome::Granted)
     }
 
     async fn observe_remote_throttle(&self, _retry_after: Duration) {}

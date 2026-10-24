@@ -9,9 +9,10 @@ use async_trait::async_trait;
 use forge_emulator::fixture::TwitchAccount;
 use forge_emulator::twitch::{FakeTwitch, FakeTwitchConfig, MAX_CUSTOM_REWARDS};
 use forge_events::{Event, EventPublisher};
+use forge_net::{RateLimiter, TokenBucketRateLimiter};
 use forge_platform_core::{
     BuiltinCollections, CollectionFailure, CollectionId, CollectionItemAccess, CollectionItemId,
-    PlatformEndpoints, QuickActionFieldValue, RateLimiter, RevisionWait, TokenBucketRateLimiter,
+    PlatformEndpoints, QuickActionFieldValue, RevisionWait,
 };
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{

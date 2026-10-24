@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher};
-use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
+use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
+use forge_platform_core::PlatformError;
 use forge_registry::RunContext;
 use forge_types::{ArgStack, EventId};
 use futures::future::BoxFuture;
@@ -18,7 +19,7 @@ pub(crate) struct GrantLimiter;
 
 #[async_trait]
 impl RateLimiter for GrantLimiter {
-    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
         Ok(RateLimitOutcome::Granted)
     }
 

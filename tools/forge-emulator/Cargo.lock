@@ -1324,6 +1324,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-net",
  "forge-platform-core",
  "forge-storage",
  "forge-types",
@@ -1351,6 +1352,7 @@ dependencies = [
  "forge-donatello",
  "forge-events",
  "forge-monobank",
+ "forge-net",
  "forge-obs",
  "forge-overlay",
  "forge-platform-core",
@@ -1398,6 +1400,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-net",
  "forge-platform-core",
  "forge-storage",
  "forge-types",
@@ -1413,11 +1416,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-net"
+version = "0.6.3"
+dependencies = [
+ "async-trait",
+ "rand 0.10.2",
+ "reqwest",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "forge-obs"
 version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-net",
  "forge-platform-core",
  "forge-registry",
  "forge-storage",
@@ -1454,6 +1469,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "forge-events",
+ "forge-net",
  "forge-storage",
  "forge-types",
  "futures-core",
@@ -1474,6 +1490,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-net",
  "forge-platform-core",
  "forge-registry",
  "forge-storage",
@@ -1499,6 +1516,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-net",
  "forge-platform-core",
  "forge-registry",
  "forge-storage",
@@ -1524,6 +1542,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-net",
  "forge-platform-core",
  "forge-registry",
  "forge-storage",
@@ -1563,6 +1582,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "forge-events",
+ "forge-net",
  "forge-overlay",
  "forge-platform-core",
  "forge-registry",
@@ -1593,6 +1613,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-net",
  "forge-platform-core",
  "forge-storage",
  "forge-types",
@@ -1733,6 +1754,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-net",
  "forge-platform-core",
  "forge-registry",
  "forge-storage",

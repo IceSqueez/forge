@@ -13,9 +13,8 @@ use forge_emulator::kick::{
     KickSurface, RefreshAnswer,
 };
 use forge_events::Event;
-use forge_platform_core::{
-    EndpointSurface, PlatformEndpoints, PlatformError, RateLimitOutcome, RateLimiter,
-};
+use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
+use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
 use forge_platform_kick::chat::PUSHER_APP_KEY;
 use forge_platform_kick::error::KickError;
 use forge_platform_kick::{
@@ -41,7 +40,7 @@ struct GrantLimiter;
 
 #[async_trait]
 impl RateLimiter for GrantLimiter {
-    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
         Ok(RateLimitOutcome::Granted)
     }
 

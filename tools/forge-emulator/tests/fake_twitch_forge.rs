@@ -9,9 +9,10 @@ use async_trait::async_trait;
 use forge_emulator::fixture::TwitchAccount;
 use forge_emulator::twitch::{CredentialCheck, FakeTwitch, FakeTwitchConfig, Viewer, ViewerBadge};
 use forge_events::{Event, EventPublisher, EventStream};
+use forge_net::{RateLimiter, TokenBucketRateLimiter};
 use forge_platform_core::{
     BuiltinControl, CONNECTION_STATE_CHANGED_KIND, ChatPlatform, ConnectionState, EndpointSurface,
-    PlatformEndpoints, RateLimiter, TokenBucketRateLimiter,
+    PlatformEndpoints,
 };
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{

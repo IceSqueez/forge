@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_platform_core::{Backoff, DedupSet, PlatformError};
+use forge_net::{Backoff, DedupSet};
+use forge_platform_core::PlatformError;
 use forge_storage::CredentialsRepo;
 use forge_types::{Donation, DonationOrigin, IntegrationId};
 use time::OffsetDateTime;

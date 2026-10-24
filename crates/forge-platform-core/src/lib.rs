@@ -1,7 +1,6 @@
-#![doc = "ChatPlatform trait, AuthFlow taxonomy, RateLimiter, Integration page traits."]
+#![doc = "ChatPlatform trait, AuthFlow taxonomy, Integration page traits."]
 
 pub mod auth;
-pub mod backoff;
 pub mod ban_list;
 pub mod builtin;
 pub mod capabilities;
@@ -16,13 +15,9 @@ pub mod error;
 pub mod follow_lookup;
 pub mod integration;
 pub mod live_viewers;
-pub mod net;
 pub mod option_source;
-pub mod poll;
-pub mod rate_limit;
 pub mod sender;
 pub use auth::AuthFlow;
-pub use backoff::Backoff;
 pub use ban_list::{
     BanDuration, BanEntry, BanListOutcome, BanListSource, BanListUnavailable, BanPage,
     BanPageToken, UnbanAbility, UnbanRefusal,
@@ -60,17 +55,8 @@ pub use error::{HTTP_UNAUTHORIZED, NON_HTTP_STATUS, PlatformError};
 pub use follow_lookup::{FollowLookup, FollowStatus};
 pub use integration::{ConnectionAffordance, IntegrationCategory, IntegrationDeclaration};
 pub use live_viewers::{LiveViewerSource, ViewerReport, ViewerReportStream};
-pub use net::{
-    HostRejection, PublicAddressResolver, ensure_public_ip_literal, host_rejection_cause,
-    is_loopback_host, is_private_or_special,
-};
 pub use option_source::{
     BuiltinOptionSource, OptionEntry, OptionHint, OptionListId, OptionListMetadata,
-};
-pub use poll::DedupSet;
-pub use rate_limit::{
-    DEFAULT_RETRY_AFTER_SECS, MAX_ACQUIRE_ATTEMPTS, MAX_THROTTLE_WAIT, RateLimitOutcome,
-    RateLimitUsage, RateLimiter, TokenBucketRateLimiter, acquire_or_wait,
 };
 pub use sender::{
     ActingSender, SENDER_FIELD, SENT_AS_FIELD, SenderPreference, SenderRole, unknown_sender_reason,

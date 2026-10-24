@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventStream};
+use forge_net::RateLimiter;
 use forge_platform_core::{
     ChatPlatform, ConnectionState, PlatformCapabilities, PlatformEndpoints, PlatformError,
-    RateLimiter,
 };
 use forge_storage::BanLedgerRepo;
 use tokio::sync::{mpsc, watch};
@@ -213,7 +213,7 @@ pub(crate) mod tests {
     use std::sync::Mutex as StdMutex;
     use std::time::Duration as StdDuration;
 
-    use forge_platform_core::{RateLimitOutcome, RateLimiter};
+    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
     use forge_storage::{CredentialId, CredentialsRepo, StorageError};
     use time::{Duration, OffsetDateTime};
 
@@ -277,7 +277,7 @@ pub(crate) mod tests {
     struct GrantLimiter;
     #[async_trait]
     impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Granted)
         }
         async fn observe_remote_throttle(&self, _retry_after: StdDuration) {}
@@ -286,7 +286,7 @@ pub(crate) mod tests {
     struct ExhaustedLimiter;
     #[async_trait]
     impl RateLimiter for ExhaustedLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Exhausted)
         }
         async fn observe_remote_throttle(&self, _retry_after: StdDuration) {}

@@ -1,9 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_platform_core::{
-    DEFAULT_RETRY_AFTER_SECS, RateLimiter, TokenBucketRateLimiter, acquire_or_wait,
-};
+use forge_net::{DEFAULT_RETRY_AFTER_SECS, RateLimiter, TokenBucketRateLimiter, acquire_or_wait};
 use reqwest::StatusCode;
 use reqwest::header::RETRY_AFTER;
 use serde::de::DeserializeOwned;

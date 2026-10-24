@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
+use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 
@@ -27,7 +27,7 @@ impl Default for SynthesisRateLimiter {
 
 #[async_trait]
 impl RateLimiter for SynthesisRateLimiter {
-    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
         let guard = self.next_allowed.lock().await;
         let floor = match *guard {
             None => return Ok(RateLimitOutcome::Granted),

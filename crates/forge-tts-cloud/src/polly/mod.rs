@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_audio::PcmBuffer;
-use forge_platform_core::RateLimiter;
+use forge_net::RateLimiter;
 use forge_tts_core::{
     ENGINE_ID_POLLY, EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsError, TtsVoice,
     VoiceId,

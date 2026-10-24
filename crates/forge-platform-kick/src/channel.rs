@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
-use forge_platform_core::{
-    DEFAULT_RETRY_AFTER_SECS, EndpointSurface, NON_HTTP_STATUS, PlatformEndpoints, PlatformError,
-    RateLimiter, acquire_or_wait,
-};
+use forge_net::{DEFAULT_RETRY_AFTER_SECS, RateLimiter, acquire_or_wait};
+use forge_platform_core::{EndpointSurface, NON_HTTP_STATUS, PlatformEndpoints, PlatformError};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -189,7 +187,9 @@ impl KickChannel {
     }
 
     async fn acquire_slot(&self) -> Result<(), PlatformError> {
-        acquire_or_wait(self.limiter.as_ref(), 1).await
+        acquire_or_wait(self.limiter.as_ref(), 1)
+            .await
+            .map_err(PlatformError::from)
     }
 }
 
@@ -238,7 +238,7 @@ async fn map_channel_error<T>(
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use forge_platform_core::RateLimitOutcome;
+    use forge_net::{RateLimitError, RateLimitOutcome};
     use std::time::Duration;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -246,7 +246,7 @@ mod tests {
     struct GrantLimiter;
     #[async_trait::async_trait]
     impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Granted)
         }
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}
@@ -255,7 +255,7 @@ mod tests {
     struct ExhaustedLimiter;
     #[async_trait::async_trait]
     impl RateLimiter for ExhaustedLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Exhausted)
         }
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}

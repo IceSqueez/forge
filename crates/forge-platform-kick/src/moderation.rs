@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
-use forge_platform_core::{
-    DEFAULT_RETRY_AFTER_SECS, EndpointSurface, PlatformEndpoints, PlatformError, RateLimiter,
-    acquire_or_wait,
-};
+use forge_net::{DEFAULT_RETRY_AFTER_SECS, RateLimiter, acquire_or_wait};
+use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
 use forge_storage::{BanLedgerKey, BanLedgerRepo};
 use reqwest::StatusCode;
 use time::{Duration, OffsetDateTime};
@@ -197,7 +195,9 @@ impl KickModeration {
     }
 
     async fn acquire_slot(&self) -> Result<(), PlatformError> {
-        acquire_or_wait(self.limiter.as_ref(), 1).await
+        acquire_or_wait(self.limiter.as_ref(), 1)
+            .await
+            .map_err(PlatformError::from)
     }
 }
 
@@ -237,7 +237,7 @@ async fn map_moderation_response(response: reqwest::Response) -> Result<(), Plat
 mod tests {
     use super::*;
     use crate::ban_ledger_test_support::{LedgerOp, MemoryBanLedger};
-    use forge_platform_core::RateLimitOutcome;
+    use forge_net::{RateLimitError, RateLimitOutcome};
     use forge_storage::{BanLedgerEntry, BanOrigin};
     use forge_types::PlatformId;
     use std::time::Duration;
@@ -247,7 +247,7 @@ mod tests {
     struct GrantLimiter;
     #[async_trait::async_trait]
     impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Granted)
         }
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}
@@ -256,7 +256,7 @@ mod tests {
     struct ExhaustedLimiter;
     #[async_trait::async_trait]
     impl RateLimiter for ExhaustedLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Exhausted)
         }
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}

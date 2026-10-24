@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
-use forge_platform_core::{
+use forge_net::{
     HostRejection, PublicAddressResolver, ensure_public_ip_literal, host_rejection_cause,
     is_loopback_host,
 };

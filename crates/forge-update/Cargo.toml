@@ -11,7 +11,7 @@ workspace = true
 
 [dependencies]
 flate2 = { workspace = true }
-forge-platform-core = { path = "../forge-platform-core" }
+forge-net = { path = "../forge-net" }
 minisign-verify = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }

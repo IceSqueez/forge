@@ -2,8 +2,9 @@ use std::future::Future;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
+use forge_net::Backoff;
 use forge_platform_core::chat::ConnectionState;
-use forge_platform_core::{Backoff, ConnectionTransition, EndpointSurface, PlatformEndpoints};
+use forge_platform_core::{ConnectionTransition, EndpointSurface, PlatformEndpoints};
 use forge_types::ChatPayload;
 use futures_util::StreamExt;
 use serde::Deserialize;

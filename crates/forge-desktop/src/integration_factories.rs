@@ -3,9 +3,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
-use forge_platform_core::{
-    ChatPlatform, PlatformEndpoints, RateLimiter, SectionIcon, TokenBucketRateLimiter,
-};
+use forge_net::{RateLimiter, TokenBucketRateLimiter};
+use forge_platform_core::{ChatPlatform, PlatformEndpoints, SectionIcon};
 use forge_registry::SubActionRegistry;
 use forge_runtime::{
     DEFAULT_TEARDOWN_GRACE, EventBus, IntegrationFactory, RunningIntegration, TaskGroup,

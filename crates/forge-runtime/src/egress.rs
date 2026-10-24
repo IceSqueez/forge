@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_platform_core::{
+use forge_net::{
     HostRejection, PublicAddressResolver, ensure_public_ip_literal, host_rejection_cause,
 };
 use reqwest::StatusCode;

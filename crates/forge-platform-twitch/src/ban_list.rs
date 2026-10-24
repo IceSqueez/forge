@@ -150,7 +150,8 @@ mod tests {
     use std::time::Duration;
 
     use forge_events::EventPublisher;
-    use forge_platform_core::{EndpointSurface, PlatformError, RateLimitOutcome, RateLimiter};
+    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
+    use forge_platform_core::EndpointSurface;
     use forge_types::OAuthToken;
     use serde_json::{Value, json};
     use tokio::sync::watch;
@@ -197,7 +198,7 @@ mod tests {
 
     #[async_trait]
     impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Granted)
         }
 

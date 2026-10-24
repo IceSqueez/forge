@@ -9,15 +9,16 @@ use tokio_stream::wrappers::{BroadcastStream, WatchStream};
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
+use forge_net::RateLimiter;
 #[cfg(test)]
-use forge_platform_core::TokenBucketRateLimiter;
+use forge_net::TokenBucketRateLimiter;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform, CollectionId,
     CollectionRevisions, ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric,
     HealthStream, HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, PlatformEndpoints,
     QuickAction, QuickActionAccent, QuickActionChoiceOption, QuickActionChoiceSource,
     QuickActionField, QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness,
-    QuickActions, RateLimiter, SectionIcon, SubscriptionRow, SubscriptionStatus, ViewerReport,
+    QuickActions, SectionIcon, SubscriptionRow, SubscriptionStatus, ViewerReport,
     ViewerReportStream,
 };
 use forge_types::IntegrationId;

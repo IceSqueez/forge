@@ -660,8 +660,8 @@ pub(crate) fn spawn_connect(
 pub(crate) mod tests {
     use super::*;
     use forge_events::EventStream;
-    use forge_platform_core::ConnectionState;
-    use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
+    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
+    use forge_platform_core::{ConnectionState, PlatformError};
     use forge_platform_core::{SENDER_FIELD, SENT_AS_FIELD, SenderRole, unknown_sender_reason};
     use forge_runtime::NullEventLogRepo;
     use std::time::Duration;
@@ -671,7 +671,7 @@ pub(crate) mod tests {
 
     #[async_trait::async_trait]
     impl RateLimiter for NoopRateLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Granted)
         }
 

@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_platform_core::{EndpointSurface, PlatformEndpoints, RateLimiter, acquire_or_wait};
+use forge_net::{RateLimiter, acquire_or_wait};
+use forge_platform_core::{EndpointSurface, PlatformEndpoints};
 use forge_types::OAuthToken;
 use reqwest::StatusCode;
 use thiserror::Error;
@@ -270,7 +271,7 @@ mod tests {
     use super::*;
     use crate::event_channel::PlatformEventChannel;
     use forge_events::EventStream;
-    use forge_platform_core::{PlatformError, RateLimitOutcome};
+    use forge_net::{RateLimitError, RateLimitOutcome};
     use wiremock::matchers::{header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -299,7 +300,7 @@ mod tests {
 
     #[async_trait]
     impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Granted)
         }
 
@@ -310,7 +311,7 @@ mod tests {
 
     #[async_trait]
     impl RateLimiter for ExhaustedLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Exhausted)
         }
 
@@ -325,7 +326,7 @@ mod tests {
 
     #[async_trait]
     impl RateLimiter for ThrottleThenGrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             let n = self.seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             if n < self.throttle_count {
                 Ok(RateLimitOutcome::Throttled {
@@ -345,7 +346,7 @@ mod tests {
 
     #[async_trait]
     impl RateLimiter for AlwaysThrottleLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Throttled {
                 wait_for: self.wait_for,
             })
@@ -368,7 +369,7 @@ mod tests {
 
     #[async_trait]
     impl RateLimiter for RecordingLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Granted)
         }
 

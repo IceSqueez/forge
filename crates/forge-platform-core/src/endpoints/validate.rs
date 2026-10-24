@@ -4,7 +4,7 @@ use std::fmt;
 use reqwest::Url;
 
 use super::surface::EndpointProtocol;
-use crate::net::is_loopback_host;
+use forge_net::is_loopback_host;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EndpointRefusal {

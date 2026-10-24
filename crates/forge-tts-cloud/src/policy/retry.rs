@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_audio::PcmBuffer;
-use forge_platform_core::{RateLimitOutcome, RateLimiter};
+use forge_net::{RateLimitOutcome, RateLimiter};
 use forge_tts_core::{EngineId, TtsError};
 
 const BACKOFF: [Duration; 3] = [

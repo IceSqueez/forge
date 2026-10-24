@@ -1,9 +1,8 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use forge_platform_core::{
-    DEFAULT_RETRY_AFTER_SECS, EndpointSurface, PlatformEndpoints, PlatformError,
-};
+use forge_net::DEFAULT_RETRY_AFTER_SECS;
+use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
 use forge_types::Variant;
 use futures::future::BoxFuture;
 use reqwest::StatusCode;

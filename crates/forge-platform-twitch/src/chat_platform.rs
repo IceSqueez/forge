@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::{EventPublisher, EventStream};
+use forge_net::RateLimiter;
 use forge_platform_core::{
     ActingSender, ChatPlatform, ConnectionState, NON_HTTP_STATUS, PlatformCapabilities,
-    PlatformError, RateLimiter, SenderPreference,
+    PlatformError, SenderPreference,
 };
 use forge_storage::CredentialsRepo;
 use reqwest::StatusCode;
@@ -354,7 +355,7 @@ mod tests {
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, unreachable_twitch_endpoints,
         users_fixture,
     };
-    use forge_platform_core::TokenBucketRateLimiter;
+    use forge_net::TokenBucketRateLimiter;
 
     fn platform_over(transport: &Arc<MockTransport>) -> TwitchPlatform {
         let creds: Arc<dyn CredentialsRepo> = Arc::new(MockCreds::with_identity());

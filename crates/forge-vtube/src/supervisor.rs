@@ -9,8 +9,9 @@ use tokio::time::Instant;
 use tokio_tungstenite::tungstenite::Message;
 
 use forge_events::{Event, EventPublisher, EventSource};
+use forge_net::Backoff;
 use forge_platform_core::{
-    AtomicConnectionState, Backoff, ConnectionState, ConnectionTransition, HealthDelta,
+    AtomicConnectionState, ConnectionState, ConnectionTransition, HealthDelta,
     connection_state_changed_event,
 };
 use forge_storage::CredentialsRepo;

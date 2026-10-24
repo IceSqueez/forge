@@ -19,7 +19,7 @@ polly = ["dep:reqwest", "dep:serde_json", "dep:hmac", "dep:sha2", "dep:time"]
 [dependencies]
 forge-tts-core = { path = "../forge-tts-core" }
 forge-audio = { path = "../forge-audio" }
-forge-platform-core = { path = "../forge-platform-core" }
+forge-net = { path = "../forge-net" }
 async-trait = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }

@@ -5,7 +5,8 @@ mod validate;
 use std::sync::{Arc, OnceLock, RwLock};
 
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_platform_core::{PlatformEndpoints, TokenBucketRateLimiter};
+use forge_net::TokenBucketRateLimiter;
+use forge_platform_core::PlatformEndpoints;
 use forge_storage::CredentialsRepo;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};

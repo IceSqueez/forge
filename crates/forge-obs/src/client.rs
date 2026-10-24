@@ -9,8 +9,9 @@ use tokio::sync::{Notify, broadcast, watch};
 use tokio::task::JoinHandle;
 
 use forge_events::{Event, EventPublisher};
+use forge_net::Backoff;
 use forge_platform_core::{
-    AtomicConnectionState, Backoff, BuiltinControl, BuiltinStatus, CapabilityFlags,
+    AtomicConnectionState, BuiltinControl, BuiltinStatus, CapabilityFlags,
     CollectionRevisionSignal, ConnectionState, ConnectionTransition, ControlFailure,
     ControlOutcome, HeaderAction, HealthDelta, HeroBadge, HeroBadgeTone,
     connection_state_changed_event,

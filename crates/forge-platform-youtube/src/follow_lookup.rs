@@ -2,9 +2,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use forge_net::{RateLimitOutcome, RateLimiter, TokenBucketRateLimiter};
 use forge_platform_core::{
     EndpointSurface, FollowLookup, FollowStatus, PlatformEndpoints, PlatformError,
-    RateLimitOutcome, RateLimiter, TokenBucketRateLimiter,
 };
 use futures::future::BoxFuture;
 use reqwest::StatusCode;

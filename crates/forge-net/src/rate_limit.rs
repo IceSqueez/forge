@@ -1,7 +1,13 @@
-use crate::PlatformError;
 use async_trait::async_trait;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+use thiserror::Error;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum RateLimitError {
+    #[error("client-side rate limit exhausted; no budget remaining")]
+    Exhausted,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RateLimitOutcome {
@@ -19,7 +25,7 @@ pub struct RateLimitUsage {
 
 #[async_trait]
 pub trait RateLimiter: Send + Sync {
-    async fn acquire(&self, weight: u32) -> Result<RateLimitOutcome, PlatformError>;
+    async fn acquire(&self, weight: u32) -> Result<RateLimitOutcome, RateLimitError>;
     async fn observe_remote_throttle(&self, retry_after: Duration);
 
     fn usage(&self) -> RateLimitUsage {
@@ -31,7 +37,7 @@ pub const MAX_THROTTLE_WAIT: Duration = Duration::from_secs(10);
 pub const MAX_ACQUIRE_ATTEMPTS: u32 = 3;
 pub const DEFAULT_RETRY_AFTER_SECS: u32 = 30;
 
-pub async fn acquire_or_wait(limiter: &dyn RateLimiter, weight: u32) -> Result<(), PlatformError> {
+pub async fn acquire_or_wait(limiter: &dyn RateLimiter, weight: u32) -> Result<(), RateLimitError> {
     let mut waited = Duration::ZERO;
     let mut attempts = 0;
     loop {
@@ -40,13 +46,13 @@ pub async fn acquire_or_wait(limiter: &dyn RateLimiter, weight: u32) -> Result<(
             RateLimitOutcome::Throttled { wait_for } => {
                 attempts += 1;
                 if attempts >= MAX_ACQUIRE_ATTEMPTS || waited >= MAX_THROTTLE_WAIT {
-                    return Err(PlatformError::RateLimitExhausted);
+                    return Err(RateLimitError::Exhausted);
                 }
                 let sleep_for = wait_for.min(MAX_THROTTLE_WAIT);
                 tokio::time::sleep(sleep_for).await;
                 waited += sleep_for;
             }
-            RateLimitOutcome::Exhausted => return Err(PlatformError::RateLimitExhausted),
+            RateLimitOutcome::Exhausted => return Err(RateLimitError::Exhausted),
         }
     }
 }
@@ -110,7 +116,7 @@ impl TokenBucketRateLimiter {
 
 #[async_trait]
 impl RateLimiter for TokenBucketRateLimiter {
-    async fn acquire(&self, weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+    async fn acquire(&self, weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
         if weight > self.capacity {
             return Ok(RateLimitOutcome::Exhausted);
         }
@@ -286,7 +292,7 @@ mod tests {
 
     #[async_trait]
     impl RateLimiter for NoIntrospectionLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Granted)
         }
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}

@@ -1,3 +1,4 @@
+use forge_net::RateLimitError;
 use thiserror::Error;
 
 use crate::endpoints::EndpointRefusal;
@@ -48,6 +49,14 @@ pub enum PlatformError {
         variable: &'static str,
         reason: EndpointRefusal,
     },
+}
+
+impl From<RateLimitError> for PlatformError {
+    fn from(error: RateLimitError) -> Self {
+        match error {
+            RateLimitError::Exhausted => Self::RateLimitExhausted,
+        }
+    }
 }
 
 #[cfg(test)]

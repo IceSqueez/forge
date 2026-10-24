@@ -2696,6 +2696,7 @@ dependencies = [
  "forge-hotkey",
  "forge-midi",
  "forge-monobank",
+ "forge-net",
  "forge-obs",
  "forge-overlay",
  "forge-platform-core",
@@ -2776,6 +2777,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-net",
  "forge-platform-core",
  "forge-storage",
  "forge-types",
@@ -2855,6 +2857,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-net",
  "forge-platform-core",
  "forge-storage",
  "forge-types",
@@ -2872,11 +2875,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-net"
+version = "0.6.3"
+dependencies = [
+ "async-trait",
+ "rand 0.10.3",
+ "reqwest",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
 name = "forge-obs"
 version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-net",
  "forge-platform-core",
  "forge-registry",
  "forge-storage",
@@ -2919,6 +2934,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "forge-events",
+ "forge-net",
  "forge-storage",
  "forge-types",
  "futures-core",
@@ -2940,6 +2956,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-net",
  "forge-platform-core",
  "forge-registry",
  "forge-storage",
@@ -2967,6 +2984,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-net",
  "forge-platform-core",
  "forge-registry",
  "forge-storage",
@@ -2995,6 +3013,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-net",
  "forge-platform-core",
  "forge-registry",
  "forge-storage",
@@ -3039,6 +3058,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "forge-events",
+ "forge-net",
  "forge-overlay",
  "forge-platform-core",
  "forge-registry",
@@ -3072,6 +3092,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-net",
  "forge-platform-core",
  "forge-storage",
  "forge-storage-sqlite",
@@ -3237,7 +3258,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-audio",
- "forge-platform-core",
+ "forge-net",
  "forge-tts-core",
  "hmac 0.13.0",
  "reqwest",
@@ -3352,7 +3373,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "flate2",
- "forge-platform-core",
+ "forge-net",
  "minisign-verify",
  "reqwest",
  "serde",
@@ -3386,6 +3407,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-net",
  "forge-platform-core",
  "forge-registry",
  "forge-storage",

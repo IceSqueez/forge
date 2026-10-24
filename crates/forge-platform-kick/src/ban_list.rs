@@ -63,7 +63,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration as StdDuration;
 
-    use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter, ViewerReport};
+    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
+    use forge_platform_core::ViewerReport;
     use forge_storage::{
         BanLedgerKey, BanLedgerRepo, BanOrigin, CredentialId, CredentialsRepo, StorageError,
     };
@@ -137,7 +138,7 @@ mod tests {
     struct GrantLimiter;
     #[async_trait]
     impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Granted)
         }
         async fn observe_remote_throttle(&self, _: StdDuration) {}

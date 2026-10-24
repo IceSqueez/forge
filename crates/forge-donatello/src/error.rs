@@ -1,3 +1,4 @@
+use forge_net::RateLimitError;
 use forge_platform_core::PlatformError;
 use reqwest::StatusCode;
 use thiserror::Error;
@@ -74,15 +75,9 @@ impl DonatelloError {
         }
     }
 
-    pub(crate) fn from_limiter(error: PlatformError) -> Self {
+    pub(crate) fn from_limiter(error: RateLimitError) -> Self {
         match error {
-            PlatformError::RateLimited { retry_after_secs } => {
-                Self::RateLimited { retry_after_secs }
-            }
-            PlatformError::RateLimitExhausted => Self::RateLimitExhausted,
-            other => Self::Network {
-                reason: other.to_string(),
-            },
+            RateLimitError::Exhausted => Self::RateLimitExhausted,
         }
     }
 }

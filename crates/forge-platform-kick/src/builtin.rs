@@ -2,12 +2,13 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
+use forge_net::RateLimiter;
 use forge_platform_core::{
     BannerLevel, BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform,
     ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream,
     HealthValue, HeroBadge, HeroBadgeTone, QuickAction, QuickActionAccent, QuickActionField,
-    QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness, QuickActions, RateLimiter,
-    SectionIcon, ViewerReport,
+    QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness, QuickActions, SectionIcon,
+    ViewerReport,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
 use forge_types::IntegrationId;
@@ -748,9 +749,8 @@ mod tests {
         use std::time::Duration as StdDuration;
 
         use async_trait::async_trait;
-        use forge_platform_core::{
-            BuiltinControl, ControlFailure, PlatformError, RateLimitOutcome, RateLimiter,
-        };
+        use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
+        use forge_platform_core::{BuiltinControl, ControlFailure};
         use forge_storage::{CredentialId, CredentialsRepo, StorageError};
         use time::OffsetDateTime;
 
@@ -786,7 +786,7 @@ mod tests {
         pub(super) struct GrantLimiter;
         #[async_trait]
         impl RateLimiter for GrantLimiter {
-            async fn acquire(&self, _: u32) -> Result<RateLimitOutcome, PlatformError> {
+            async fn acquire(&self, _: u32) -> Result<RateLimitOutcome, RateLimitError> {
                 Ok(RateLimitOutcome::Granted)
             }
             async fn observe_remote_throttle(&self, _: StdDuration) {}

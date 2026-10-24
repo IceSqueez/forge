@@ -197,7 +197,7 @@ mod tests {
     use super::*;
     use crate::ban_ledger_test_support::MemoryBanLedger;
     use forge_events::{Event, EventPublisher};
-    use forge_platform_core::{RateLimitOutcome, RateLimiter};
+    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
     use forge_types::EventId;
     use std::time::Duration;
     use wiremock::matchers::{method, path};
@@ -211,7 +211,7 @@ mod tests {
     struct GrantLimiter;
     #[async_trait]
     impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Granted)
         }
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}

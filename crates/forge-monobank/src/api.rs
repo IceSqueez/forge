@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_platform_core::{RateLimitOutcome, RateLimiter, TokenBucketRateLimiter};
+use forge_net::{RateLimitOutcome, RateLimiter, TokenBucketRateLimiter};
 use reqwest::StatusCode;
 use reqwest::header::RETRY_AFTER;
 use serde::de::DeserializeOwned;

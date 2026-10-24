@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
-use forge_platform_core::{
-    DEFAULT_RETRY_AFTER_SECS, EndpointSurface, PlatformEndpoints, PlatformError, RateLimiter,
-    acquire_or_wait,
-};
+use forge_net::{DEFAULT_RETRY_AFTER_SECS, RateLimiter, acquire_or_wait};
+use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
 use reqwest::StatusCode;
 
 const CHAT_PATH: &str = "/chat";
@@ -176,7 +174,8 @@ impl KickSendChat {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
+    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
+    use forge_platform_core::PlatformError;
 
     use std::sync::Arc;
     use std::time::Duration;
@@ -187,7 +186,7 @@ mod tests {
 
     #[async_trait]
     impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Granted)
         }
 
@@ -198,7 +197,7 @@ mod tests {
 
     #[async_trait]
     impl RateLimiter for ExhaustedLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Exhausted)
         }
 

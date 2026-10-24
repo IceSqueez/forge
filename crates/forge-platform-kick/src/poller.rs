@@ -2,9 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
-use forge_platform_core::{
-    DedupSet, LiveViewerSource, PlatformError, ViewerReport, ViewerReportStream,
-};
+use forge_net::DedupSet;
+use forge_platform_core::{LiveViewerSource, PlatformError, ViewerReport, ViewerReportStream};
 use futures::future::BoxFuture;
 use tokio::sync::{mpsc, watch};
 use tokio::task::AbortHandle;
@@ -428,7 +427,7 @@ async fn run_loop(
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use forge_platform_core::{RateLimitOutcome, RateLimiter};
+    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
     use std::time::Duration as StdDuration;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -436,7 +435,7 @@ mod tests {
     struct GrantLimiter;
     #[async_trait::async_trait]
     impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Granted)
         }
         async fn observe_remote_throttle(&self, _retry_after: StdDuration) {}

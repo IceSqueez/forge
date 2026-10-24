@@ -687,7 +687,7 @@ pub(crate) mod tests {
             repo,
             Arc::clone(&mgr),
             crate::subscriptions::SubscriptionTracker::default(),
-            Arc::new(forge_platform_core::TokenBucketRateLimiter::new(
+            Arc::new(forge_net::TokenBucketRateLimiter::new(
                 crate::builtin::HELIX_BUDGET_CAPACITY,
                 crate::builtin::HELIX_BUDGET_WINDOW,
             )),

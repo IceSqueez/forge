@@ -2,7 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::EventPublisher;
-use forge_platform_core::{DonationProvider, DonationStream, RateLimiter};
+use forge_net::RateLimiter;
+use forge_platform_core::{DonationProvider, DonationStream};
 use forge_storage::CredentialsRepo;
 use forge_types::IntegrationId;
 use tokio::runtime::Handle;

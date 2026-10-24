@@ -8,9 +8,10 @@ use crate::event_kinds;
 use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
 use forge_events::{Event, EventPublisher, EventSource};
+use forge_net::Backoff;
 use forge_platform_core::{
-    Backoff, ConnectionState, ConnectionTransition, EndpointSurface, PlatformEndpoints,
-    PlatformError, connection_state_changed_event,
+    ConnectionState, ConnectionTransition, EndpointSurface, PlatformEndpoints, PlatformError,
+    connection_state_changed_event,
 };
 use forge_types::{
     AUTHOR_IS_CONNECTED_BOT_FIELD, ChatModerationAction, ChatModerationPayload, ChatPayload,
@@ -8345,7 +8346,7 @@ mod tests {
             creds,
             manager,
             SubscriptionTracker::default(),
-            Arc::new(forge_platform_core::TokenBucketRateLimiter::new(
+            Arc::new(forge_net::TokenBucketRateLimiter::new(
                 crate::builtin::HELIX_BUDGET_CAPACITY,
                 crate::builtin::HELIX_BUDGET_WINDOW,
             )),

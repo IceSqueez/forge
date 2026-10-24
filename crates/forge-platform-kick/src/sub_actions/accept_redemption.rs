@@ -160,7 +160,7 @@ impl SubActionRunner for AcceptRedemptionRunner {
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
-    use forge_platform_core::{RateLimitOutcome, RateLimiter};
+    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
     use forge_registry::ConfigProblem;
     use forge_types::EventId;
     use std::time::Duration;
@@ -175,7 +175,7 @@ mod tests {
     struct GrantLimiter;
     #[async_trait]
     impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
             Ok(RateLimitOutcome::Granted)
         }
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}

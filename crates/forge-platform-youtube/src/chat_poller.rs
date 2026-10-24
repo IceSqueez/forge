@@ -2,7 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
-use forge_platform_core::{DedupSet, EndpointSurface, PlatformEndpoints, PlatformError};
+use forge_net::DedupSet;
+use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
 use forge_storage::BanLedgerRepo;
 use forge_types::{
     ChatEventDetail, ChatPayload, ChatSegment, ChatViewer, ModerationMarks, UserBadge,

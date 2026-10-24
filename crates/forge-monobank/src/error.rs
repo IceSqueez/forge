@@ -1,3 +1,4 @@
+use forge_net::RateLimitError;
 use forge_platform_core::PlatformError;
 use reqwest::StatusCode;
 use thiserror::Error;
@@ -82,16 +83,10 @@ impl MonobankError {
         }
     }
 
-    pub(crate) fn from_limiter(error: PlatformError) -> Self {
+    pub(crate) fn from_limiter(error: RateLimitError) -> Self {
         match error {
-            PlatformError::RateLimited { retry_after_secs } => {
-                Self::CoolingDown { retry_after_secs }
-            }
-            PlatformError::RateLimitExhausted => Self::CoolingDown {
+            RateLimitError::Exhausted => Self::CoolingDown {
                 retry_after_secs: crate::api::whole_seconds(crate::config::STATEMENT_CALL_INTERVAL),
-            },
-            other => Self::Network {
-                reason: other.to_string(),
             },
         }
     }

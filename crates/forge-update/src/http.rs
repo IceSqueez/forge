@@ -1,7 +1,7 @@
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use forge_platform_core::{RateLimiter, TokenBucketRateLimiter, acquire_or_wait};
+use forge_net::{RateLimiter, TokenBucketRateLimiter, acquire_or_wait};
 
 use crate::UpdateError;
 

@@ -3,8 +3,8 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{FromSample, I24, Sample, SampleFormat, SizedSample, U24};
 use tokio::sync::oneshot;
 
 use crate::convert;
@@ -276,15 +276,16 @@ fn try_start_stream(
         .map(|d| d.name().to_owned())
         .unwrap_or_default();
 
-    let stream = build_output_stream(
-        device,
-        stream_config,
+    let feed = PlaybackFeed {
+        samples: rx,
+        stop: Arc::clone(stop),
+        paused: Arc::clone(paused),
+    };
+    let format = OutputFormat {
+        config: stream_config,
         sample_format,
-        rx,
-        Arc::clone(stop),
-        Arc::clone(paused),
-        failure,
-    )?;
+    };
+    let stream = build_output_stream(device, format, feed, failure)?;
 
     stream.play().map_err(|e| AudioError::Host(e.to_string()))?;
 
@@ -295,58 +296,53 @@ fn try_start_stream(
     })
 }
 
-fn build_output_stream(
-    device: &cpal::Device,
-    stream_config: cpal::StreamConfig,
-    sample_format: SampleFormat,
-    rx: crossbeam_channel::Receiver<i16>,
+struct PlaybackFeed {
+    samples: crossbeam_channel::Receiver<i16>,
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
+}
+
+impl PlaybackFeed {
+    fn fill<T: Sample + FromSample<i16>>(&self, data: &mut [T]) {
+        if self.stop.load(Ordering::Relaxed) || self.paused.load(Ordering::Relaxed) {
+            data.fill(T::EQUILIBRIUM);
+            return;
+        }
+        for slot in data.iter_mut() {
+            *slot = self
+                .samples
+                .try_recv()
+                .map(T::from_sample)
+                .unwrap_or(T::EQUILIBRIUM);
+        }
+    }
+}
+
+struct OutputFormat {
+    config: cpal::StreamConfig,
+    sample_format: SampleFormat,
+}
+
+fn build_output_stream(
+    device: &cpal::Device,
+    format: OutputFormat,
+    feed: PlaybackFeed,
     failure: &StreamFailure,
 ) -> Result<cpal::Stream, AudioError> {
-    let stream = match sample_format {
-        SampleFormat::F32 => device.build_output_stream(
-            stream_config,
-            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                if stop.load(Ordering::Relaxed) || paused.load(Ordering::Relaxed) {
-                    data.fill(0.0);
-                    return;
-                }
-                for s in data.iter_mut() {
-                    *s = rx.try_recv().map(|v| v as f32 / 32767.0).unwrap_or(0.0);
-                }
-            },
-            stream_error_callback(Arc::clone(failure)),
-            None,
-        ),
-        SampleFormat::I16 => device.build_output_stream(
-            stream_config,
-            move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                if stop.load(Ordering::Relaxed) || paused.load(Ordering::Relaxed) {
-                    data.fill(0);
-                    return;
-                }
-                for s in data.iter_mut() {
-                    *s = rx.try_recv().unwrap_or(0);
-                }
-            },
-            stream_error_callback(Arc::clone(failure)),
-            None,
-        ),
-        SampleFormat::I32 => device.build_output_stream(
-            stream_config,
-            move |data: &mut [i32], _: &cpal::OutputCallbackInfo| {
-                if stop.load(Ordering::Relaxed) || paused.load(Ordering::Relaxed) {
-                    data.fill(0);
-                    return;
-                }
-                for s in data.iter_mut() {
-                    *s = rx.try_recv().map(|v| v as i32).unwrap_or(0);
-                }
-            },
-            stream_error_callback(Arc::clone(failure)),
-            None,
-        ),
+    let stream_config = format.config;
+    let stream = match format.sample_format {
+        SampleFormat::I8 => typed_output_stream::<i8>(device, stream_config, feed, failure),
+        SampleFormat::I16 => typed_output_stream::<i16>(device, stream_config, feed, failure),
+        SampleFormat::I24 => typed_output_stream::<I24>(device, stream_config, feed, failure),
+        SampleFormat::I32 => typed_output_stream::<i32>(device, stream_config, feed, failure),
+        SampleFormat::I64 => typed_output_stream::<i64>(device, stream_config, feed, failure),
+        SampleFormat::U8 => typed_output_stream::<u8>(device, stream_config, feed, failure),
+        SampleFormat::U16 => typed_output_stream::<u16>(device, stream_config, feed, failure),
+        SampleFormat::U24 => typed_output_stream::<U24>(device, stream_config, feed, failure),
+        SampleFormat::U32 => typed_output_stream::<u32>(device, stream_config, feed, failure),
+        SampleFormat::U64 => typed_output_stream::<u64>(device, stream_config, feed, failure),
+        SampleFormat::F32 => typed_output_stream::<f32>(device, stream_config, feed, failure),
+        SampleFormat::F64 => typed_output_stream::<f64>(device, stream_config, feed, failure),
         other => {
             return Err(AudioError::Host(format!(
                 "unsupported sample format {:?}",
@@ -356,6 +352,20 @@ fn build_output_stream(
     };
 
     stream.map_err(|e| AudioError::Host(e.to_string()))
+}
+
+fn typed_output_stream<T: SizedSample + FromSample<i16>>(
+    device: &cpal::Device,
+    stream_config: cpal::StreamConfig,
+    feed: PlaybackFeed,
+    failure: &StreamFailure,
+) -> Result<cpal::Stream, cpal::Error> {
+    device.build_output_stream(
+        stream_config,
+        move |data: &mut [T], _: &cpal::OutputCallbackInfo| feed.fill(data),
+        stream_error_callback(Arc::clone(failure)),
+        None,
+    )
 }
 
 fn wait_for_completion(

@@ -10,7 +10,7 @@ rust-version.workspace = true
 [dependencies]
 forge-tts-core = { path = "../forge-tts-core" }
 async-trait = { workspace = true }
-tokio = { workspace = true, features = ["process", "io-util", "sync"] }
+tokio = { workspace = true, features = ["process", "io-util", "sync", "time", "macros"] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 

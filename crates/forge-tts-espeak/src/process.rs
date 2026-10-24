@@ -1,8 +1,18 @@
-use std::process::Stdio;
+use std::process::{Output, Stdio};
+use std::time::Duration;
 
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::process::Child;
 
 use crate::error::EspeakError;
+
+const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(10);
+
+fn timeout_error() -> EspeakError {
+    EspeakError::Timeout {
+        ms: u64::try_from(SUBPROCESS_TIMEOUT.as_millis()).unwrap_or(u64::MAX),
+    }
+}
 
 pub(crate) fn check_espeak_version() -> Result<(), EspeakError> {
     let status = std::process::Command::new("espeak-ng")
@@ -29,13 +39,16 @@ pub fn pitch_from_semitones(pitch_semitones: f32) -> u32 {
 }
 
 pub(crate) async fn list_voices_from_binary() -> Result<String, EspeakError> {
-    let output = tokio::process::Command::new("espeak-ng")
+    let listing = tokio::process::Command::new("espeak-ng")
         .arg("--voices")
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true)
-        .output()
+        .output();
+    let output = tokio::time::timeout(SUBPROCESS_TIMEOUT, listing)
         .await
+        .map_err(|_| timeout_error())?
         .map_err(EspeakError::Io)?;
 
     if !output.status.success() {
@@ -77,15 +90,22 @@ pub(crate) async fn run_synthesis(
         .spawn()
         .map_err(EspeakError::Io)?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        let mut bytes = text.as_bytes().to_vec();
-        if bytes.last() != Some(&b'\n') {
-            bytes.push(b'\n');
-        }
-        stdin.write_all(&bytes).await.map_err(EspeakError::Io)?;
+    let mut input = text.as_bytes().to_vec();
+    if input.last() != Some(&b'\n') {
+        input.push(b'\n');
     }
 
-    let output = child.wait_with_output().await.map_err(EspeakError::Io)?;
+    let output = match tokio::time::timeout(SUBPROCESS_TIMEOUT, exchange(&mut child, input)).await {
+        Ok(Ok(output)) => output,
+        Ok(Err(e)) => {
+            kill_and_reap(&mut child).await;
+            return Err(EspeakError::Io(e));
+        }
+        Err(_) => {
+            kill_and_reap(&mut child).await;
+            return Err(timeout_error());
+        }
+    };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
@@ -93,6 +113,44 @@ pub(crate) async fn run_synthesis(
     }
 
     Ok(output.stdout)
+}
+
+async fn read_all(pipe: Option<impl AsyncRead + Unpin>) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    if let Some(mut pipe) = pipe {
+        pipe.read_to_end(&mut bytes).await?;
+    }
+    Ok(bytes)
+}
+
+async fn exchange(child: &mut Child, input: Vec<u8>) -> std::io::Result<Output> {
+    let stdin = child.stdin.take();
+    let write = async move {
+        if let Some(mut stdin) = stdin {
+            stdin.write_all(&input).await?;
+        }
+        Ok::<(), std::io::Error>(())
+    };
+    let (written, stdout, stderr) = tokio::join!(
+        write,
+        read_all(child.stdout.take()),
+        read_all(child.stderr.take())
+    );
+    let status = child.wait().await?;
+    if status.success() {
+        written?;
+    }
+    Ok(Output {
+        status,
+        stdout: stdout?,
+        stderr: stderr?,
+    })
+}
+
+async fn kill_and_reap(child: &mut Child) {
+    if let Err(e) = child.kill().await {
+        tracing::debug!(error = %e, "espeak-ng process already gone");
+    }
 }
 
 #[cfg(test)]

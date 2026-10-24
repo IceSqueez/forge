@@ -8,6 +8,9 @@ pub(crate) enum EspeakError {
     #[error("espeak-ng exited with error: {0}")]
     SubprocessFailed(String),
 
+    #[error("espeak-ng did not finish within {ms} ms")]
+    Timeout { ms: u64 },
+
     #[error("{0}")]
     Io(#[from] std::io::Error),
 }
@@ -20,6 +23,7 @@ impl From<EspeakError> for TtsError {
                 detail: "espeak-ng binary not found on PATH".into(),
             },
             EspeakError::SubprocessFailed(msg) => TtsError::Io(std::io::Error::other(msg)),
+            EspeakError::Timeout { ms } => TtsError::Timeout { ms },
             EspeakError::Io(io_err) => TtsError::Io(io_err),
         }
     }

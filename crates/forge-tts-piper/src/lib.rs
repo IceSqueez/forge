@@ -8,6 +8,11 @@ use forge_tts_core::{
     TtsEngineFactory, TtsError, TtsVoice, VoiceGender, VoiceId,
 };
 
+mod locate;
+mod subprocess;
+
+const MODEL_FLAG: &str = "--model";
+
 static CAPABILITIES: EngineCapabilities = EngineCapabilities {
     ssml: false,
     neural_voices: false,
@@ -212,7 +217,7 @@ impl TtsEngine for PiperEngine {
         }
 
         let mut args: Vec<std::ffi::OsString> =
-            vec!["--model".into(), model_path.into(), "--output_raw".into()];
+            vec![MODEL_FLAG.into(), model_path.into(), "--output_raw".into()];
 
         if (request.rate_multiplier - 1.0_f32).abs() > f32::EPSILON {
             let length_scale = 1.0_f32 / request.rate_multiplier;
@@ -225,33 +230,11 @@ impl TtsEngine for PiperEngine {
             args.push(speaker.to_string().into());
         }
 
-        let piper_binary = self.piper_binary.clone();
-        let text = request.text.clone();
-        let timeout = self.timeout;
-
-        let mut child = tokio::process::Command::new(&piper_binary)
-            .args(&args)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .map_err(TtsError::Io)?;
-
-        if let Some(mut stdin) = child.stdin.take() {
-            use tokio::io::AsyncWriteExt;
-            let mut text_bytes = text.into_bytes();
-            if text_bytes.last() != Some(&b'\n') {
-                text_bytes.push(b'\n');
-            }
-            stdin.write_all(&text_bytes).await.map_err(TtsError::Io)?;
+        let mut input = request.text.into_bytes();
+        if input.last() != Some(&b'\n') {
+            input.push(b'\n');
         }
-
-        let output = tokio::time::timeout(timeout, child.wait_with_output())
-            .await
-            .map_err(|_| TtsError::Timeout {
-                ms: timeout.as_millis() as u64,
-            })?
-            .map_err(TtsError::Io)?;
+        let output = self.run_piper(args, input).await?;
 
         if !output.status.success() {
             let stderr: String = String::from_utf8_lossy(&output.stderr)

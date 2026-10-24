@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -17,48 +16,8 @@ use forge_voice::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAli
 
 use crate::cloud_tts_boot::register_cloud_engines;
 
-async fn is_piper_tts(path: &PathBuf) -> bool {
-    let probe = tokio::process::Command::new(path)
-        .arg("--help")
-        .stdin(std::process::Stdio::null())
-        .output();
-    match tokio::time::timeout(std::time::Duration::from_secs(2), probe).await {
-        Ok(Ok(out)) => {
-            let mut text = out.stdout;
-            text.extend_from_slice(&out.stderr);
-            String::from_utf8_lossy(&text).contains("--model")
-        }
-        _ => false,
-    }
-}
-
-async fn find_piper_binary() -> Option<PathBuf> {
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(dir) = exe.parent()
-    {
-        candidates.push(dir.join("piper"));
-    }
-    if let Some(paths) = std::env::var_os("PATH") {
-        for name in ["piper-tts", "piper"] {
-            for dir in std::env::split_paths(&paths) {
-                candidates.push(dir.join(name));
-            }
-        }
-    }
-    for candidate in candidates {
-        if candidate.exists() {
-            if is_piper_tts(&candidate).await {
-                return Some(candidate);
-            }
-            tracing::info!(path = %candidate.display(), "ignoring a binary that is not piper TTS");
-        }
-    }
-    None
-}
-
 async fn register_local_engines(registry: &mut TtsRegistry) {
-    if let Some(piper_binary) = find_piper_binary().await {
+    if let Some(piper_binary) = PiperEngine::locate().await {
         let voices_dir = PiperEngine::voices_dir(&paths::data_dir());
         if let Err(e) = std::fs::create_dir_all(&voices_dir) {
             tracing::warn!(error = %e, path = %voices_dir.display(), "failed to create the piper voices dir");

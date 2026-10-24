@@ -22,7 +22,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 const DEADLINE: Duration = Duration::from_secs(30);
 const TOKEN: &str = "fixture-bearer-token";
-const BIND_FAILURE_LINE: &str = "forge-desktop: server failed to start, leaving it off: could not bind to 127.0.0.1:40000: Address already in use (os error 98)";
+const BIND_FAILURE_LINE: &str = "2026-10-24T15:22:05.467435Z ERROR server failed to start, leaving it off error=could not bind to 127.0.0.1:40000: Address already in use (os error 98)";
 const OVERRIDE_REFUSAL_LINE: &str = "2026-09-13T10:00:00.000000Z ERROR platform endpoint override refused; exiting error=endpoint override FORGE_TWITCH_EVENTSUB_WS_URL refused: host is not 127.0.0.0/8, ::1 or localhost";
 
 struct Stage {
@@ -206,7 +206,7 @@ async fn endpoint_override_refusal_exit_is_its_own_failure_class() {
 async fn lost_server_port_race_is_reported_without_waiting_out_the_deadline() {
     let stage = Stage::new();
     let mut process = stage
-        .spawn(&format!("echo '{BIND_FAILURE_LINE}' >&2; exec sleep 600"))
+        .spawn(&format!("echo '{BIND_FAILURE_LINE}'; exec sleep 600"))
         .await;
     let (_reserved, port) = reserved_port();
     let failure = timeout(

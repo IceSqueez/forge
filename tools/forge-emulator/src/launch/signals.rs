@@ -1,11 +1,23 @@
 use forge_platform_core::EndpointSurface;
 
-const SERVER_START_FAILURE: &str = "forge-desktop: server failed to start";
-const BIND_FAILURE: &str = "could not bind to";
+const SERVER_START_FAILURE_MESSAGE: &str = "server failed to start";
+const ERROR_FIELD: &str = "error";
+const BIND_FAILURE_REASON: &str = "could not bind to";
 const ERROR_LEVEL: &str = "ERROR";
 
 pub(crate) fn is_server_bind_failure(line: &str) -> bool {
-    line.starts_with(SERVER_START_FAILURE) && line.contains(BIND_FAILURE)
+    let Some((_timestamp, after_timestamp)) = line.split_once(' ') else {
+        return false;
+    };
+    let Some(body) = after_timestamp
+        .trim_start()
+        .strip_prefix(ERROR_LEVEL)
+        .and_then(|rest| rest.strip_prefix(' '))
+    else {
+        return false;
+    };
+    body.starts_with(SERVER_START_FAILURE_MESSAGE)
+        && body.contains(&format!(" {ERROR_FIELD}={BIND_FAILURE_REASON} "))
 }
 
 pub(crate) fn is_endpoint_override_refusal(line: &str) -> bool {
@@ -36,26 +48,52 @@ pub(crate) fn strip_ansi(line: &str) -> String {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
+    use forge_server::ServerError;
+
     use super::*;
 
+    const CAPTURED_BIND_FAILURE: &str = "2026-10-24T15:22:05.467435Z ERROR server failed to start, leaving it off error=could not bind to 127.0.0.1:39555: Address already in use (os error 98)";
+
+    fn server_start_failure(level: &str, message: &str, error: &ServerError) -> String {
+        format!("2026-10-24T15:22:05.467435Z {level:>5} {message} error={error}")
+    }
+
+    fn bind_error() -> ServerError {
+        ServerError::Bind {
+            addr: "127.0.0.1:40123".to_owned(),
+            reason: "Address already in use (os error 98)".to_owned(),
+        }
+    }
+
     #[test]
-    fn server_bind_failure_is_recognised_only_on_the_server_start_line() {
-        for (line, expected) in [
-            (
-                "forge-desktop: server failed to start, leaving it off: could not bind to 127.0.0.1:40123: Address already in use (os error 98)",
-                true,
-            ),
-            (
-                "forge-desktop: server failed to start, leaving it off: storage error: locked",
-                false,
-            ),
-            (
-                "2026-09-13T10:00:00Z  WARN obs: could not bind to 127.0.0.1:4455",
-                false,
-            ),
-            ("", false),
+    fn captured_console_bind_failure_is_recognised() {
+        assert!(is_server_bind_failure(CAPTURED_BIND_FAILURE));
+    }
+
+    #[test]
+    fn server_bind_failure_follows_the_server_crate_bind_error_text() {
+        let line = server_start_failure(
+            "ERROR",
+            "server failed to start, leaving it off",
+            &bind_error(),
+        );
+        assert!(is_server_bind_failure(&line), "{line:?}");
+    }
+
+    #[test]
+    fn server_bind_failure_needs_the_error_level_the_start_message_and_a_bind_error() {
+        let lan_refusal = ServerError::LanBindNotEnabled {
+            addr: "0.0.0.0:8080".to_owned(),
+        };
+        for line in [
+            server_start_failure("WARN", "server failed to start, leaving it off", &bind_error()),
+            server_start_failure("ERROR", "server state unavailable, leaving it off", &bind_error()),
+            server_start_failure("ERROR", "server failed to start, leaving it off", &lan_refusal),
+            "forge-desktop: server failed to start, leaving it off: could not bind to 127.0.0.1:1: in use".to_owned(),
+            "2026-10-24T15:22:05Z ERRORserver failed to start error=could not bind to 127.0.0.1:1: in use".to_owned(),
+            String::new(),
         ] {
-            assert_eq!(is_server_bind_failure(line), expected, "{line:?}");
+            assert!(!is_server_bind_failure(&line), "{line:?}");
         }
     }
 

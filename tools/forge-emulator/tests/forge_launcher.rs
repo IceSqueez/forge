@@ -15,7 +15,7 @@ use tokio::time::timeout;
 
 const EMULATOR: &str = env!("CARGO_BIN_EXE_forge-emulator");
 const DEADLINE: Duration = Duration::from_secs(60);
-const LOST_RACE: &str = "echo 'forge-desktop: server failed to start, leaving it off: could not bind to 127.0.0.1:40000: Address already in use (os error 98)' >&2";
+const LOST_RACE: &str = "echo '2026-10-24T15:22:05.467435Z ERROR server failed to start, leaving it off error=could not bind to 127.0.0.1:40000: Address already in use (os error 98)'";
 
 fn options(root: &TempDir, stub_body: &str, max_attempts: u32) -> LaunchOptions {
     let script = root.path().join("stub-forge.sh");

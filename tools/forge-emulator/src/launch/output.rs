@@ -120,7 +120,7 @@ impl CapturedOutput {
         let text = strip_ansi(raw.trim_end_matches(['\n', '\r']));
         {
             let mut captured = self.lock();
-            if stream == OutputStream::Stderr && is_server_bind_failure(&text) {
+            if is_server_bind_failure(&text) {
                 captured.server_bind_failed = true;
             }
             if captured.override_refusal.is_none() && is_endpoint_override_refusal(&text) {
@@ -197,14 +197,13 @@ mod tests {
     }
 
     #[test]
-    fn bind_failure_counts_only_on_stderr() {
-        let line = "forge-desktop: server failed to start, leaving it off: could not bind to 127.0.0.1:1: in use";
-        let on_stdout = CapturedOutput::new();
-        on_stdout.push(OutputStream::Stdout, line);
-        let on_stderr = CapturedOutput::new();
-        on_stderr.push(OutputStream::Stderr, line);
-        assert!(!on_stdout.server_bind_failed());
-        assert!(on_stderr.server_bind_failed());
+    fn coloured_console_bind_failure_on_stdout_is_flagged() {
+        let output = CapturedOutput::new();
+        output.push(
+            OutputStream::Stdout,
+            "\u{1b}[2m2026-10-24T15:22:05.468045Z\u{1b}[0m \u{1b}[31mERROR\u{1b}[0m server failed to start, leaving it off \u{1b}[3merror\u{1b}[0m\u{1b}[2m=\u{1b}[0mcould not bind to 127.0.0.1:40647: Address already in use (os error 98)\n",
+        );
+        assert!(output.server_bind_failed());
     }
 
     #[test]

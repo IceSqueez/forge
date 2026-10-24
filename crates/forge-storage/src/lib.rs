@@ -100,8 +100,8 @@ pub use settings::{
     set_soundboard_master_volume, set_soundboard_output_device, set_voice_gate_enabled,
     set_voice_gate_hold_ms, set_voice_gate_input_device_id, set_voice_gate_threshold,
     soundboard_also_headphones, soundboard_enabled, soundboard_master_volume,
-    soundboard_output_device, stored_display_formats, synthesis_defaults,
-    take_credentials_key_loss, voice_gate_settings,
+    soundboard_output_device, stored_bool_setting, stored_display_formats, stored_json_setting,
+    synthesis_defaults, take_credentials_key_loss, voice_gate_settings,
 };
 pub use soundboard::{CLIP_SOURCE_SLOT, SoundboardClipsRepo, StoredClip, clip_source_referrer};
 pub use transit::{CURRENT_FORMAT_VERSION, GlobalTransit, GlobalsExport};

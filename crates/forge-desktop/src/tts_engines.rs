@@ -2,14 +2,15 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use forge_components::{
-    BORDER_THIN, Density, FONT_MD, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
-    avatar_tile, body_family, card, empty_state, hash_accent, icon, mono_family, radius,
-    section_label, slider, spacing, status_dot, toggle, tr,
+    BORDER_THIN, DISABLED_OPACITY, Density, FONT_MD, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    PushToast, Radius, Spacing, ToastKind, avatar_tile, body_family, card, empty_state,
+    error_row_with_retry, hash_accent, icon, mono_family, radius, section_label, slider, spacing,
+    status_dot, toggle, tr,
 };
 use forge_speak_queue::{
     EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
 };
-use forge_storage::{CredentialId, CredentialsRepo, EngineParams, SettingsRepo};
+use forge_storage::{CredentialId, CredentialsRepo, EngineParams, SettingsRepo, StorageError};
 use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceGender, VoiceId};
 use forge_voice::SynthesisDefaults;
 use gpui::{
@@ -17,7 +18,9 @@ use gpui::{
     Window, div, prelude::*, px,
 };
 
-use crate::async_bridge::{self, ErrorSink};
+use crate::async_bridge::{
+    self, ErrorSink, Generation, Loadable, SLIDER_PERSIST_DEBOUNCE, SnapshotWriter, WriteOutcome,
+};
 use crate::cloud_credentials::{CloudCredentialsView, CloudEngineKind, CloudEngineRegistered};
 use forge_components::ActivePresentation;
 
@@ -28,12 +31,24 @@ const PARAM_LABEL_W: Pixels = px(60.0);
 const PARAM_VALUE_W: Pixels = px(60.0);
 const STATUS_DOT: Pixels = px(7.0);
 const PLUS_GLYPH: Pixels = px(12.0);
+const PITCH_MIN_SEMITONES: f32 = -12.0;
+const PITCH_MAX_SEMITONES: f32 = 12.0;
+const SPEED_MIN: f32 = 0.5;
+const SPEED_MAX: f32 = 2.0;
+const GAIN_MIN: f32 = 0.0;
+const GAIN_MAX: f32 = 1.0;
 const TILE_GLYPH: Pixels = px(18.0);
 const PLAY_GLYPH: Pixels = px(14.0);
 const GRID_COLS: usize = 3;
 const FS_10: Pixels = px(10.0);
 const FS_11: Pixels = px(11.0);
 const FS_11_5: Pixels = px(11.5);
+
+struct ParamsSave {
+    engine_id: String,
+    ticket: u64,
+    params: EngineParams,
+}
 
 struct EngineEntry {
     id: String,
@@ -56,14 +71,14 @@ pub struct TtsEnginesView {
     rt_handle: tokio::runtime::Handle,
     engines: Vec<EngineEntry>,
     selected: Selection,
-    disabled: HashSet<String>,
-    pitch_semitones: f32,
-    rate_multiplier: f32,
-    volume: f32,
+    disabled: Loadable<HashSet<String>>,
+    disabled_writer: SnapshotWriter,
+    params: Loadable<EngineParams>,
+    params_saves: HashMap<String, Generation>,
+    params_writers: HashMap<String, SnapshotWriter>,
     add_open: bool,
     regions: HashMap<String, String>,
     cloud: Entity<CloudCredentialsView>,
-    params_debounce: async_bridge::Debounced,
     _subs: Vec<Subscription>,
 }
 
@@ -76,11 +91,6 @@ impl TtsEnginesView {
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
-        let disabled = speak
-            .as_ref()
-            .map(|h| h.disabled_engines().iter().map(|e| e.0.clone()).collect())
-            .unwrap_or_default();
-
         let cloud = cx.new(|cx| {
             CloudCredentialsView::new(
                 registry.clone(),
@@ -97,23 +107,118 @@ impl TtsEnginesView {
             },
         );
 
-        Self {
+        let mut view = Self {
             engines: load_roster(registry.as_ref()),
             registry,
             credentials,
             settings,
             speak,
+            disabled_writer: SnapshotWriter::new(&rt_handle),
             rt_handle,
             selected: Selection::None,
-            disabled,
-            pitch_semitones: SynthesisDefaults::default().pitch_semitones,
-            rate_multiplier: SynthesisDefaults::default().rate_multiplier,
-            volume: 1.0,
+            disabled: Loadable::Loading,
+            params: Loadable::Loading,
+            params_saves: HashMap::new(),
+            params_writers: HashMap::new(),
             add_open: false,
             regions: HashMap::new(),
             cloud,
-            params_debounce: async_bridge::Debounced::new(async_bridge::SLIDER_PERSIST_DEBOUNCE),
             _subs: vec![sub],
+        };
+        view.load_disabled(cx);
+        view
+    }
+
+    fn load_disabled(&mut self, cx: &mut Context<Self>) {
+        self.disabled = Loadable::Loading;
+        let settings = Arc::clone(&self.settings);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { forge_storage::disabled_tts_engines(settings.as_ref()).await },
+            |this, result: Result<Vec<String>, StorageError>, cx| {
+                if let Err(error) = &result {
+                    tracing::warn!(%error, "failed to load the disabled TTS engines");
+                }
+                this.disabled = Loadable::settled(result.map(|ids| ids.into_iter().collect()));
+                cx.notify();
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn rollback_disabled(&mut self, cx: &mut Context<Self>) {
+        self.disabled = Loadable::Loading;
+        let settings = Arc::clone(&self.settings);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { forge_storage::disabled_tts_engines(settings.as_ref()).await },
+            |this, result: Result<Vec<String>, StorageError>, cx| {
+                if let Err(error) = &result {
+                    tracing::warn!(%error, "failed to reload the disabled TTS engines");
+                }
+                this.disabled = Loadable::settled(result.map(|ids| ids.into_iter().collect()));
+                this.resync_live_engines(cx);
+                cx.notify();
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn resync_live_engines(&self, cx: &mut Context<Self>) {
+        let (Some(disabled), Some(speak)) = (self.disabled.loaded(), self.speak.clone()) else {
+            return;
+        };
+        let commands: Vec<SpeakCommand> = self
+            .engines
+            .iter()
+            .map(|engine| {
+                SpeakCommand::SetEngineEnabled(
+                    EngineId(engine.id.clone()),
+                    !disabled.contains(&engine.id),
+                )
+            })
+            .collect();
+        async_bridge::report_failure(
+            &self.rt_handle,
+            async move {
+                for command in commands {
+                    speak.send(command).await?;
+                }
+                Ok::<(), forge_speak_queue::SpeakError>(())
+            },
+            ErrorSink::Toast,
+            tr!("tts_engines_toggle_failed"),
+            cx,
+        );
+    }
+
+    fn load_params(&mut self, engine_id: String, cx: &mut Context<Self>) {
+        self.params = Loadable::Loading;
+        let settings = Arc::clone(&self.settings);
+        let requested = engine_id.clone();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { forge_storage::engine_params(settings.as_ref(), &requested).await },
+            move |this, result: Result<EngineParams, StorageError>, cx| {
+                if this.selected_engine_id().as_deref() != Some(engine_id.as_str()) {
+                    return;
+                }
+                if let Err(error) = &result {
+                    tracing::warn!(%error, engine = %engine_id, "failed to load TTS engine params");
+                }
+                this.params = Loadable::settled(result);
+                cx.notify();
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn retry_params(&mut self, cx: &mut Context<Self>) {
+        if let Some(engine_id) = self.selected_engine_id() {
+            self.load_params(engine_id, cx);
         }
     }
 
@@ -136,20 +241,9 @@ impl TtsEnginesView {
         if let Some(engine) = self.engines.get(index) {
             let id = engine.id.clone();
             self.ensure_region_loaded(&id, cx);
-            self.seed_engine_params(&id);
+            self.load_params(id, cx);
         }
         cx.notify();
-    }
-
-    fn seed_engine_params(&mut self, engine_id: &str) {
-        let Some(speak) = self.speak.as_ref() else {
-            return;
-        };
-        let id = EngineId(engine_id.to_owned());
-        let defaults = speak.engine_synthesis_defaults(&id);
-        self.pitch_semitones = defaults.pitch_semitones;
-        self.rate_multiplier = defaults.rate_multiplier;
-        self.volume = speak.engine_gain(&id);
     }
 
     fn selected_engine_id(&self) -> Option<String> {
@@ -173,12 +267,14 @@ impl TtsEnginesView {
     }
 
     fn toggle_engine(&mut self, engine_id: String, cx: &mut Context<Self>) {
-        if self.disabled.contains(&engine_id) {
-            self.disabled.remove(&engine_id);
-        } else {
-            self.disabled.insert(engine_id.clone());
+        let Some(disabled) = self.disabled.loaded_mut() else {
+            return;
+        };
+        if !disabled.remove(&engine_id) {
+            disabled.insert(engine_id.clone());
         }
-        let now_enabled = !self.disabled.contains(&engine_id);
+        let now_enabled = !disabled.contains(&engine_id);
+        let ids: Vec<String> = disabled.iter().cloned().collect();
         if let Some(speak) = self.speak.clone() {
             let eid = EngineId(engine_id);
             async_bridge::report_failure(
@@ -193,77 +289,138 @@ impl TtsEnginesView {
                 cx,
             );
         }
-        self.persist_disabled(cx);
+        let settings = Arc::clone(&self.settings);
+        self.disabled_writer.write(
+            async move { forge_storage::set_disabled_tts_engines(settings.as_ref(), &ids).await },
+            Self::disabled_write_settled,
+            cx,
+        );
         cx.notify();
     }
 
-    fn persist_disabled(&self, cx: &mut Context<Self>) {
-        let settings = Arc::clone(&self.settings);
-        let ids: Vec<String> = self.disabled.iter().cloned().collect();
-        async_bridge::report_failure(
+    fn disabled_write_settled(&mut self, outcome: WriteOutcome, cx: &mut Context<Self>) {
+        if let WriteOutcome::Failed(error) = outcome {
+            cx.push_toast(
+                ToastKind::Error,
+                tr!(
+                    "tts_engines_persist_disabled_failed_reason",
+                    reason = error.as_str()
+                ),
+            );
+            self.rollback_disabled(cx);
+        }
+    }
+
+    fn edit_params(&mut self, edit: impl FnOnce(&mut EngineParams), cx: &mut Context<Self>) {
+        let Some(engine_id) = self.selected_engine_id() else {
+            return;
+        };
+        let Some(params) = self.params.loaded_mut() else {
+            return;
+        };
+        edit(params);
+        let params = *params;
+        let ticket = self
+            .params_saves
+            .entry(engine_id.clone())
+            .or_default()
+            .next();
+        let pending = ParamsSave {
+            engine_id,
+            ticket,
+            params,
+        };
+        async_bridge::run_async(
             &self.rt_handle,
-            async move { forge_storage::set_disabled_tts_engines(settings.as_ref(), &ids).await },
-            ErrorSink::Toast,
-            tr!("tts_engines_persist_disabled_failed"),
+            async move { tokio::time::sleep(SLIDER_PERSIST_DEBOUNCE).await },
+            move |this, (), cx| this.save_params(pending, cx),
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn set_pitch(&mut self, value: f32, cx: &mut Context<Self>) {
+        self.edit_params(
+            |p| p.pitch_semitones = value.clamp(PITCH_MIN_SEMITONES, PITCH_MAX_SEMITONES),
             cx,
         );
     }
 
-    fn set_pitch(&mut self, value: f32, cx: &mut Context<Self>) {
-        self.pitch_semitones = value.clamp(-12.0, 12.0);
-        self.push_engine_params();
-        cx.notify();
-    }
-
     fn set_speed(&mut self, value: f32, cx: &mut Context<Self>) {
-        self.rate_multiplier = value.clamp(0.5, 2.0);
-        self.push_engine_params();
-        cx.notify();
+        self.edit_params(
+            |p| p.rate_multiplier = value.clamp(SPEED_MIN, SPEED_MAX),
+            cx,
+        );
     }
 
     fn set_engine_volume(&mut self, value: f32, cx: &mut Context<Self>) {
-        self.volume = value.clamp(0.0, 1.0);
-        self.push_engine_params();
-        cx.notify();
+        self.edit_params(|p| p.gain = value.clamp(GAIN_MIN, GAIN_MAX), cx);
     }
 
-    fn push_engine_params(&mut self) {
-        let Some(engine_id) = self.selected_engine_id() else {
+    fn save_params(&mut self, pending: ParamsSave, cx: &mut Context<Self>) {
+        let ParamsSave {
+            engine_id,
+            ticket,
+            params,
+        } = pending;
+        if !self
+            .params_saves
+            .get(&engine_id)
+            .is_some_and(|saves| saves.is_current(ticket))
+        {
             return;
-        };
-        let defaults = SynthesisDefaults {
-            pitch_semitones: self.pitch_semitones,
-            rate_multiplier: self.rate_multiplier,
-        };
-        let gain = self.volume;
+        }
         let speak = self.speak.clone();
         let settings = Arc::clone(&self.settings);
-        let params = EngineParams {
-            pitch_semitones: defaults.pitch_semitones,
-            rate_multiplier: defaults.rate_multiplier,
-            gain,
-        };
-        let persist_id = engine_id.clone();
-        let eid = EngineId(engine_id);
-        self.params_debounce
-            .schedule(&self.rt_handle, "engine params", async move {
-                if let Some(speak) = speak {
-                    speak
-                        .send(SpeakCommand::SetEngineParams(eid, defaults, gain))
+        let eid = EngineId(engine_id.clone());
+        let handle = self.rt_handle.clone();
+        self.params_writers
+            .entry(engine_id.clone())
+            .or_insert_with(|| SnapshotWriter::new(&handle))
+            .write(
+                async move {
+                    forge_storage::set_engine_params(settings.as_ref(), &eid.0, params)
                         .await
                         .map_err(|e| e.to_string())?;
-                }
-                forge_storage::set_engine_params(settings.as_ref(), &persist_id, params)
-                    .await
-                    .map_err(|e| e.to_string())
-            });
+                    if let Some(speak) = speak {
+                        let defaults = SynthesisDefaults {
+                            pitch_semitones: params.pitch_semitones,
+                            rate_multiplier: params.rate_multiplier,
+                        };
+                        speak
+                            .send(SpeakCommand::SetEngineParams(eid, defaults, params.gain))
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
+                    Ok::<(), String>(())
+                },
+                move |this, outcome, cx| this.params_write_settled(&engine_id, outcome, cx),
+                cx,
+            );
+    }
+
+    fn params_write_settled(
+        &mut self,
+        engine_id: &str,
+        outcome: WriteOutcome,
+        cx: &mut Context<Self>,
+    ) {
+        if let WriteOutcome::Failed(error) = outcome {
+            cx.push_toast(
+                ToastKind::Error,
+                tr!("tts_engines_persist_params_failed", reason = error.as_str()),
+            );
+            if self.selected_engine_id().as_deref() == Some(engine_id) {
+                self.load_params(engine_id.to_owned(), cx);
+            }
+        }
     }
 
     fn on_engine_registered(&mut self, engine_id: &EngineId, cx: &mut Context<Self>) {
         self.engines = load_roster(self.registry.as_ref());
         if let Some(index) = self.engines.iter().position(|e| e.id == engine_id.0) {
             self.selected = Selection::Engine(index);
-            self.seed_engine_params(&engine_id.0.clone());
+            self.load_params(engine_id.0.clone(), cx);
         }
         self.ensure_region_loaded(&engine_id.0.clone(), cx);
         cx.notify();
@@ -372,16 +529,31 @@ impl TtsEnginesView {
             .gap(spacing(Spacing::Xxs, density));
         for (index, engine) in self.engines.iter().enumerate() {
             let count = engine_voice_count(catalog, &engine.id);
-            let disabled = self.disabled.contains(&engine.id);
+            let disabled = self
+                .disabled
+                .loaded()
+                .is_some_and(|set| set.contains(&engine.id));
             entries = entries
                 .child(self.engine_entry(index, engine, count, disabled, palette, density, cx));
         }
 
+        let failure = self.disabled.failure().map(|reason| {
+            div()
+                .w_full()
+                .pb(spacing(Spacing::Sm, density))
+                .child(error_row_with_retry(
+                    "tts-engines-disabled-retry",
+                    tr!("tts_engines_disabled_load_failed", reason = reason),
+                    palette,
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.load_disabled(cx)),
+                ))
+        });
         let column = div()
             .w_full()
             .flex()
             .flex_col()
             .child(header)
+            .children(failure)
             .child(entries)
             .child(self.add_engine_button(palette, density, cx))
             .child(self.add_picker(palette, density, cx));
@@ -725,18 +897,23 @@ impl TtsEnginesView {
             );
 
         let right: AnyElement = match engine_id {
-            Some(id) => {
-                let on = !self.disabled.contains(id);
-                let id_owned = id.to_owned();
-                toggle(on, palette)
-                    .on_click(
-                        SharedString::from(format!("engine-toggle-{id}")),
-                        cx.listener(move |this, _: &ClickEvent, _, cx| {
-                            this.toggle_engine(id_owned.clone(), cx)
-                        }),
-                    )
-                    .into_any_element()
-            }
+            Some(id) => match self.disabled.loaded() {
+                Some(disabled) => {
+                    let id_owned = id.to_owned();
+                    toggle(!disabled.contains(id), palette)
+                        .on_click(
+                            SharedString::from(format!("engine-toggle-{id}")),
+                            cx.listener(move |this, _: &ClickEvent, _, cx| {
+                                this.toggle_engine(id_owned.clone(), cx)
+                            }),
+                        )
+                        .into_any_element()
+                }
+                None => div()
+                    .opacity(DISABLED_OPACITY)
+                    .child(toggle(false, palette))
+                    .into_any_element(),
+            },
             None => div().into_any_element(),
         };
 
@@ -890,16 +1067,29 @@ impl TtsEnginesView {
         density: Density,
         cx: &Context<Self>,
     ) -> impl IntoElement {
+        let params = self.params.loaded().copied().unwrap_or_default();
+        let failure = self.params.failure().map(|reason| {
+            div()
+                .w_full()
+                .pb(spacing(Spacing::Sm, density))
+                .child(error_row_with_retry(
+                    "tts-engines-params-retry",
+                    tr!("tts_engines_params_load_failed", reason = reason),
+                    palette,
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.retry_params(cx)),
+                ))
+        });
         let rows = div()
             .w_full()
             .flex()
             .flex_col()
+            .when(!self.params.is_loaded(), |d| d.opacity(DISABLED_OPACITY))
             .child(param_row(
                 tr!("tts_engines_param_pitch"),
-                format!("{:+.0} st", self.pitch_semitones),
-                self.pitch_semitones,
-                -12.0,
-                12.0,
+                format!("{:+.0} st", params.pitch_semitones),
+                params.pitch_semitones,
+                PITCH_MIN_SEMITONES,
+                PITCH_MAX_SEMITONES,
                 "tts-engines-pitch",
                 cx.listener(|this, v: &f32, _, cx| this.set_pitch(*v, cx)),
                 palette,
@@ -907,10 +1097,10 @@ impl TtsEnginesView {
             ))
             .child(param_row(
                 tr!("tts_engines_param_speed"),
-                format!("{:.1}x", self.rate_multiplier),
-                self.rate_multiplier,
-                0.5,
-                2.0,
+                format!("{:.1}x", params.rate_multiplier),
+                params.rate_multiplier,
+                SPEED_MIN,
+                SPEED_MAX,
                 "tts-engines-speed",
                 cx.listener(|this, v: &f32, _, cx| this.set_speed(*v, cx)),
                 palette,
@@ -918,10 +1108,10 @@ impl TtsEnginesView {
             ))
             .child(param_row(
                 tr!("tts_engines_param_volume"),
-                format!("{}%", (self.volume * 100.0).round() as i64),
-                self.volume,
-                0.0,
-                1.0,
+                format!("{}%", (params.gain * 100.0).round() as i64),
+                params.gain,
+                GAIN_MIN,
+                GAIN_MAX,
                 "tts-engines-volume",
                 cx.listener(|this, v: &f32, _, cx| this.set_engine_volume(*v, cx)),
                 palette,
@@ -935,6 +1125,7 @@ impl TtsEnginesView {
             .gap(spacing(Spacing::Xs, density))
             .mb(spacing(Spacing::Md, density))
             .child(section_label(tr!("tts_engines_section_params"), palette))
+            .children(failure)
             .child(
                 card(rows, palette)
                     .radius(Radius::Md)

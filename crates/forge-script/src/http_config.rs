@@ -1,4 +1,6 @@
-use forge_storage::{SettingsRepo, get_bool_setting, get_json_setting, reserved_keys};
+use forge_storage::{
+    SettingsRepo, StorageError, get_bool_setting, reserved_keys, stored_json_setting,
+};
 
 pub struct ScriptHttpConfig {
     pub allowed_domains: Vec<String>,
@@ -23,13 +25,9 @@ impl Default for ScriptHttpConfig {
 pub async fn load_script_http_config(repo: &dyn SettingsRepo) -> ScriptHttpConfig {
     let defaults = ScriptHttpConfig::default();
 
-    let allowed_domains =
-        match get_json_setting::<Vec<String>>(repo, reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS)
-            .await
-        {
-            Some(domains) => domains,
-            None => legacy_csv_domains(repo).await,
-        };
+    let allowed_domains = stored_script_http_allowed_domains(repo)
+        .await
+        .unwrap_or_default();
 
     let max_calls_per_script = repo
         .get_string(reserved_keys::SCRIPT_HTTP_MAX_CALLS)
@@ -71,18 +69,28 @@ pub async fn load_script_http_config(repo: &dyn SettingsRepo) -> ScriptHttpConfi
     }
 }
 
-async fn legacy_csv_domains(repo: &dyn SettingsRepo) -> Vec<String> {
-    repo.get_string(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS)
-        .await
-        .ok()
-        .flatten()
-        .map(|s| {
-            s.split(',')
-                .map(|d| d.trim().to_string())
-                .filter(|d| !d.is_empty())
-                .collect()
-        })
-        .unwrap_or_default()
+pub async fn stored_script_http_allowed_domains(
+    repo: &dyn SettingsRepo,
+) -> Result<Vec<String>, StorageError> {
+    let key = reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS;
+    match stored_json_setting::<Vec<String>>(repo, key).await {
+        Ok(domains) => Ok(domains.unwrap_or_default()),
+        Err(StorageError::UndecodableSetting { .. }) => Ok(repo
+            .get_string(key)
+            .await?
+            .map(|legacy| parse_legacy_csv_domains(&legacy))
+            .unwrap_or_default()),
+        Err(error) => Err(error),
+    }
+}
+
+fn parse_legacy_csv_domains(legacy: &str) -> Vec<String> {
+    legacy
+        .split(',')
+        .map(str::trim)
+        .filter(|domain| !domain.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 #[cfg(test)]

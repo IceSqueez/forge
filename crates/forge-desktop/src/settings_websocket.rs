@@ -3,12 +3,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_ACCENT, BORDER_THIN, BulletItem, BulletKind, ConfirmTone, Density, FONT_SM, FONT_XS,
-    FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SaveState, Spacing,
-    TextArea, TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, confirm_modal,
-    field_title, ghost_button_with_icon, grow_cell, icon, mono_family, overlay, radio_row, radius,
-    save_indicator, setting_block, setting_row, setting_rows, setting_sections, spacing, toggle,
-    tr, type_to_confirm,
+    BORDER_ACCENT, BORDER_THIN, BulletItem, BulletKind, ConfirmTone, DISABLED_OPACITY, Density,
+    FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SaveState,
+    Spacing, TextArea, TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, confirm_modal,
+    error_row, error_row_with_retry, field_title, ghost_button_with_icon, grow_cell, icon,
+    mono_family, overlay, radio_row, radius, save_indicator, setting_block, setting_row,
+    setting_rows, setting_sections, spacing, toggle, tr, type_to_confirm,
 };
 use forge_runtime::OverlayServiceHandle;
 use forge_server::{ServerHandle, ServerSettings};
@@ -61,6 +61,7 @@ struct WebSocketSnapshot {
     cors_any_origin: bool,
     overlay_root: Option<String>,
     additional_origins: Vec<String>,
+    additional_origins_unreadable: bool,
 }
 
 pub struct SettingsWebSocketView {
@@ -77,6 +78,7 @@ pub struct SettingsWebSocketView {
     cors_any_origin: bool,
     overlay_root: Option<String>,
     additional_origins: Vec<String>,
+    additional_origins_unreadable: bool,
 
     bearer_token: String,
     token_revealed: bool,
@@ -85,6 +87,7 @@ pub struct SettingsWebSocketView {
     overlay_token_confirm_open: bool,
 
     loading: bool,
+    load_failure: Option<SharedString>,
     save_state: SaveState,
     restarting: bool,
     restart_queued: bool,
@@ -163,12 +166,14 @@ impl SettingsWebSocketView {
             cors_any_origin: true,
             overlay_root: None,
             additional_origins: Vec::new(),
+            additional_origins_unreadable: false,
             bearer_token: String::new(),
             token_revealed: false,
             overlay_token,
             overlay_token_regenerating: false,
             overlay_token_confirm_open: false,
             loading: false,
+            load_failure: None,
             save_state: SaveState::default(),
             restarting: false,
             restart_queued: false,
@@ -217,6 +222,7 @@ impl SettingsWebSocketView {
 
     fn load(&mut self, cx: &mut Context<Self>) {
         self.loading = true;
+        self.load_failure = None;
         self.save_state = SaveState::Saved;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         async_bridge::run_async(
@@ -246,6 +252,7 @@ impl SettingsWebSocketView {
                 self.cors_any_origin = snap.cors_any_origin;
                 self.overlay_root = snap.overlay_root.filter(|s| !s.is_empty());
                 self.additional_origins = snap.additional_origins;
+                self.additional_origins_unreadable = snap.additional_origins_unreadable;
                 let joined = self.additional_origins.join("\n");
                 self.origins_input
                     .update(cx, |i, cx| i.set_content(joined, cx));
@@ -254,7 +261,7 @@ impl SettingsWebSocketView {
             }
             Err(message) => {
                 tracing::warn!(error = %message, "failed to load websocket settings");
-                self.save_state = SaveState::Error(message.into());
+                self.load_failure = Some(message.into());
             }
         }
         cx.notify();
@@ -363,6 +370,9 @@ impl SettingsWebSocketView {
     }
 
     fn toggle_enable(&mut self, cx: &mut Context<Self>) {
+        if !self.settings_loaded() {
+            return;
+        }
         let prev = self.enable_server;
         let value = !prev;
         self.enable_server = value;
@@ -477,6 +487,9 @@ impl SettingsWebSocketView {
     }
 
     fn select_localhost(&mut self, cx: &mut Context<Self>) {
+        if !self.settings_loaded() {
+            return;
+        }
         self.bind_choice = BindChoice::Localhost;
         self.close_lan_modal();
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
@@ -494,6 +507,9 @@ impl SettingsWebSocketView {
     }
 
     fn open_lan_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.settings_loaded() {
+            return;
+        }
         let palette = cx.palette();
         let modal = cx.new(|cx| {
             type_to_confirm(LAN_PHRASE, &palette, cx)
@@ -526,6 +542,9 @@ impl SettingsWebSocketView {
     }
 
     fn confirm_lan(&mut self, cx: &mut Context<Self>) {
+        if !self.settings_loaded() {
+            return;
+        }
         self.bind_choice = BindChoice::Lan;
         self.close_lan_modal();
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
@@ -549,6 +568,9 @@ impl SettingsWebSocketView {
     }
 
     fn commit_port(&mut self, cx: &mut Context<Self>) {
+        if !self.settings_loaded() {
+            return;
+        }
         let parsed = self
             .port_input
             .read(cx)
@@ -598,7 +620,18 @@ impl SettingsWebSocketView {
         cx.notify();
     }
 
+    fn settings_loaded(&self) -> bool {
+        !self.loading && self.load_failure.is_none()
+    }
+
+    fn origins_editable(&self) -> bool {
+        self.settings_loaded() && !self.additional_origins_unreadable
+    }
+
     fn commit_origins(&mut self, cx: &mut Context<Self>) {
+        if !self.origins_editable() {
+            return;
+        }
         let raw = self.origins_input.read(cx).content().to_owned();
         match parse_origins(&raw) {
             Ok(origins) => {
@@ -632,6 +665,9 @@ impl SettingsWebSocketView {
     }
 
     fn persist_origins_on_release(&mut self, cx: &mut App) {
+        if !self.origins_editable() {
+            return;
+        }
         let raw = self.origins_input.read(cx).content().to_owned();
         let Ok(origins) = parse_origins(&raw) else {
             return;
@@ -654,6 +690,9 @@ impl SettingsWebSocketView {
     }
 
     fn toggle_require_ws_token(&mut self, cx: &mut Context<Self>) {
+        if !self.settings_loaded() {
+            return;
+        }
         let prev = self.require_ws_token;
         let value = !prev;
         self.require_ws_token = value;
@@ -676,6 +715,9 @@ impl SettingsWebSocketView {
     }
 
     fn toggle_require_overlay_token(&mut self, cx: &mut Context<Self>) {
+        if !self.settings_loaded() {
+            return;
+        }
         let prev = self.require_overlay_token;
         let value = !prev;
         self.require_overlay_token = value;
@@ -791,6 +833,9 @@ impl SettingsWebSocketView {
     }
 
     fn toggle_cors(&mut self, cx: &mut Context<Self>) {
+        if !self.settings_loaded() {
+            return;
+        }
         let prev = self.cors_any_origin;
         let value = !prev;
         self.cors_any_origin = value;
@@ -821,6 +866,9 @@ impl SettingsWebSocketView {
     }
 
     fn apply_overlay_root(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if !self.settings_loaded() {
+            return;
+        }
         let path_str = path.to_string_lossy().into_owned();
         self.overlay_root = Some(path_str.clone());
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
@@ -1025,6 +1073,14 @@ impl SettingsWebSocketView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        if self.additional_origins_unreadable {
+            return setting_block(
+                tr!("settings_ws_origins_section_title"),
+                Some(tr!("settings_ws_origins_subtitle").into()),
+                error_row(tr!("settings_ws_origins_unreadable"), palette),
+                palette,
+            );
+        }
         let apply =
             ghost_button_with_icon(Icon::Check, tr!("settings_ws_origins_apply_btn"), palette)
                 .on_click(
@@ -1499,19 +1555,31 @@ impl Render for SettingsWebSocketView {
             .flex_col()
             .gap(spacing(Spacing::Md, density))
             .children(crate::server_unavailable::unavailable_banner(cx, &palette))
-            .child(setting_sections(
-                [
-                    enable_row.into_any_element(),
-                    self.bind_section(&palette, density, cx).into_any_element(),
-                    self.origins_section(&palette, density, cx)
-                        .into_any_element(),
-                    port_token.into_any_element(),
-                    self.auth_section(&palette, density, cx).into_any_element(),
-                    self.overlay_section(&palette, density, cx)
-                        .into_any_element(),
-                ],
-                &palette,
-            ));
+            .children(self.load_failure.clone().map(|reason| {
+                error_row_with_retry(
+                    "settings-ws-load-retry",
+                    tr!("settings_ws_load_failed", reason = reason.as_ref()),
+                    &palette,
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.load(cx)),
+                )
+            }))
+            .child(
+                div()
+                    .when(!self.settings_loaded(), |d| d.opacity(DISABLED_OPACITY))
+                    .child(setting_sections(
+                        [
+                            enable_row.into_any_element(),
+                            self.bind_section(&palette, density, cx).into_any_element(),
+                            self.origins_section(&palette, density, cx)
+                                .into_any_element(),
+                            port_token.into_any_element(),
+                            self.auth_section(&palette, density, cx).into_any_element(),
+                            self.overlay_section(&palette, density, cx)
+                                .into_any_element(),
+                        ],
+                        &palette,
+                    )),
+            );
 
         let mut root = div()
             .flex()
@@ -1541,6 +1609,7 @@ async fn load_websocket_settings(repo: Arc<dyn SettingsRepo>) -> Result<WebSocke
         cors_any_origin: snap.overlay_cors_any_origin,
         overlay_root: snap.overlay_root,
         additional_origins: snap.additional_origins,
+        additional_origins_unreadable: snap.additional_origins_unreadable,
     })
 }
 
@@ -1702,19 +1771,17 @@ mod tests {
         let rt = runtime();
         let (backend, mut writes) = test_backend();
         let view = settings_view(cx, &rt, backend);
+        settle(cx, &rt);
 
         type_origins(cx, &view, TYPED_ORIGIN);
         release(cx, view);
         pump(&rt);
 
-        let (key, value) = writes
-            .try_recv()
-            .expect("the released pane never wrote the typed origins");
-        assert_eq!(key, reserved_keys::SERVER_ADDITIONAL_ORIGINS);
-        assert_eq!(
-            serde_json::from_str::<Vec<String>>(&value).expect("origins json"),
-            vec![TYPED_ORIGIN.to_owned()],
-        );
+        let written: Vec<Vec<String>> = origin_writes(&mut writes)
+            .iter()
+            .map(|value| serde_json::from_str(value).expect("origins json"))
+            .collect();
+        assert_eq!(written, vec![vec![TYPED_ORIGIN.to_owned()]]);
     }
 
     #[gpui::test]
@@ -1725,17 +1792,110 @@ mod tests {
         ] {
             let rt = runtime();
             let (backend, mut writes) = test_backend();
+            backend.seed(
+                reserved_keys::SERVER_ADDITIONAL_ORIGINS,
+                &serde_json::to_string(&[STORED_ORIGIN]).unwrap(),
+            );
             let view = settings_view(cx, &rt, backend);
-            view.update(cx, |this, _| {
-                this.additional_origins = vec![STORED_ORIGIN.to_owned()];
-            });
+            settle(cx, &rt);
 
             type_origins(cx, &view, typed);
             release(cx, view);
             pump(&rt);
 
-            assert!(writes.try_recv().is_err(), "{case}");
+            assert_eq!(origin_writes(&mut writes), Vec::<String>::new(), "{case}");
         }
+    }
+
+    fn origin_writes(
+        writes: &mut tokio::sync::mpsc::UnboundedReceiver<crate::test_support::SettingWrite>,
+    ) -> Vec<String> {
+        crate::test_support::writes_to(writes, reserved_keys::SERVER_ADDITIONAL_ORIGINS)
+    }
+
+    fn commit_and_leave(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        view: Entity<SettingsWebSocketView>,
+    ) {
+        type_origins(cx, &view, TYPED_ORIGIN);
+        view.update(cx, |this, cx| this.commit_origins(cx));
+        settle(cx, rt);
+        type_origins(cx, &view, STORED_ORIGIN);
+        release(cx, view);
+        pump(rt);
+    }
+
+    #[gpui::test]
+    fn unreadable_stored_origins_lock_origin_edits_while_other_toggles_still_save(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (backend, mut writes) = test_backend();
+        backend.seed(reserved_keys::SERVER_ADDITIONAL_ORIGINS, "not json");
+        let view = settings_view(cx, &rt, Arc::clone(&backend));
+        settle(cx, &rt);
+
+        let flagged = view.read_with(cx, |this, _| this.additional_origins_unreadable);
+        view.update(cx, |this, cx| this.toggle_require_ws_token(cx));
+        settle(cx, &rt);
+        commit_and_leave(cx, &rt, view);
+        let written: Vec<_> = std::iter::from_fn(|| writes.try_recv().ok()).collect();
+        let written_to = |key: &str| -> Vec<String> {
+            written
+                .iter()
+                .filter(|(written, _)| written == key)
+                .map(|(_, value)| value.clone())
+                .collect()
+        };
+
+        assert_eq!(
+            (
+                flagged,
+                written_to(reserved_keys::SERVER_AUTH_REQUIRED_FOR_READS),
+                written_to(reserved_keys::SERVER_ADDITIONAL_ORIGINS),
+                rt.block_on(backend.get_string(reserved_keys::SERVER_ADDITIONAL_ORIGINS))
+                    .unwrap(),
+            ),
+            (
+                true,
+                vec!["true".to_owned()],
+                Vec::<String>::new(),
+                Some("not json".to_owned()),
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn no_origin_edit_writes_while_the_settings_are_still_loading(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (backend, mut writes) = test_backend();
+        backend.fault_reads(
+            reserved_keys::SERVER_ADDITIONAL_ORIGINS,
+            crate::test_support::ReadFault::Held(Arc::new(tokio::sync::Notify::new())),
+        );
+        let view = settings_view(cx, &rt, backend);
+        settle(cx, &rt);
+
+        commit_and_leave(cx, &rt, view);
+
+        assert_eq!(origin_writes(&mut writes), Vec::<String>::new());
+    }
+
+    #[gpui::test]
+    fn no_origin_edit_writes_after_the_settings_fail_to_load(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (backend, mut writes) = test_backend();
+        backend.fault_reads(
+            reserved_keys::SERVER_ADDITIONAL_ORIGINS,
+            crate::test_support::ReadFault::Fails,
+        );
+        let view = settings_view(cx, &rt, backend);
+        settle(cx, &rt);
+
+        commit_and_leave(cx, &rt, view);
+
+        assert_eq!(origin_writes(&mut writes), Vec::<String>::new());
     }
     #[gpui::test]
     fn restart_is_offered_only_once_an_enabled_server_is_loaded_and_idle(cx: &mut TestAppContext) {

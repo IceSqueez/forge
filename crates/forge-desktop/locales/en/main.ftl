@@ -540,7 +540,6 @@ backup_schedule_folder_hint = Scheduled backups are written here. Only the defau
 backup_schedule_folder_choose = Choose...
 backup_schedule_folder_reset = Use default
 backup_schedule_folder_failed = Could not open the folder picker: { $error }
-backup_schedule_persist_failed = Could not save the backup schedule setting
 backup_schedule_persist_failed_reason = Could not save the backup schedule setting: { $reason }
 backup_schedule_load_failed = Could not load the backup schedule settings, so editing is off to protect them: { $reason }
 backup_schedule_key_failed = Could not set the schedule passphrase: { $error }
@@ -729,6 +728,8 @@ settings_ws_badge_recommended = Recommended
 settings_ws_badge_requires_confirmation = Requires confirmation
 settings_ws_origins_section_title = Additional allowed origins
 settings_ws_origins_subtitle = One per line. A page Forge serves itself is accepted automatically, including a browser source pointed at your machine's IP. Needed only for a page served from somewhere else - another host, or a domain name that reaches Forge through a proxy. Without a match the WebSocket handshake is rejected.
+settings_ws_origins_unreadable = The saved list of extra allowed origins cannot be read, so the server accepts only the pages it serves itself. Editing is locked so the saved list is not overwritten.
+settings_ws_load_failed = Could not load the WebSocket server settings: { $reason }
 settings_ws_origins_placeholder = http://192.168.1.5:8081
 settings_ws_origins_apply_btn = Apply
 settings_ws_origins_invalid = Not a valid origin (scheme + host, optional port):
@@ -1221,6 +1222,8 @@ settings_scripting_ssrf_warning = WARNING - disables SSRF protections. Only enab
 settings_scripting_http_action_section = HTTP action
 settings_scripting_range_error = Allowed: { $min } - { $max }
 settings_scripting_persist_failed = Could not save the Scripting & HTTP setting. It will revert on restart.
+settings_scripting_domains_load_failed = Could not load the allowed domains: { $reason }
+settings_scripting_domains_save_failed = Could not save the allowed domains: { $reason }
 
 ## Actions trigger picker - category labels
 
@@ -1362,7 +1365,10 @@ tts_engines_voices_available = { $count } available
 tts_engines_voices_empty = No voices found
 tts_engines_voice_preview_sample = This is my voice.
 tts_engines_toggle_failed = Failed to change engine state
-tts_engines_persist_disabled_failed = Failed to save engine state
+tts_engines_persist_disabled_failed_reason = Could not save which engines are enabled: { $reason }
+tts_engines_persist_params_failed = Could not save the engine parameters: { $reason }
+tts_engines_disabled_load_failed = Could not load which engines are enabled: { $reason }
+tts_engines_params_load_failed = Could not load the engine parameters: { $reason }
 
 ## TTS Filters - pipeline column
 

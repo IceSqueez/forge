@@ -4,7 +4,6 @@ use forge_components::{BreadcrumbCrumb, Icon, ToastKind, body_family, icon, page
 use forge_events::Event;
 use forge_hotkey::{HotkeyClient, event_kinds};
 use forge_runtime::EventBus;
-use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
 use forge_storage::{DataProvider, SettingsRepo, StorageError};
 use forge_types::TriggerInstanceId;
 use gpui::{Context, EventEmitter, Pixels, Point, Task, Window, div, prelude::*, px};
@@ -16,7 +15,7 @@ use crate::combo_capture::ComboCapture;
 use crate::combo_conflict::{ClipKey, clip_keys, combo_holder};
 use crate::hub_crumb::hub_crumb;
 use crate::integrations::BuiltinObject;
-use crate::shortcut_overrides::{ShortcutOverrides, save_overrides};
+use crate::shortcut_overrides::{ShortcutOverrides, load_overrides, save_overrides};
 use crate::sidebar::NavRequested;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
@@ -218,7 +217,7 @@ impl HotkeysScreenView {
         let repo = Arc::clone(&self.settings_repo);
         async_bridge::run_async(
             &self.rt_handle,
-            async move { repo.get_string(KEYBOARD_SHORTCUTS).await },
+            load_overrides(repo),
             |this, result, cx| this.apply_shortcuts(result, cx),
             cx,
         );
@@ -230,7 +229,7 @@ impl HotkeysScreenView {
         let repo = Arc::clone(&self.settings_repo);
         async_bridge::run_async(
             &self.rt_handle,
-            async move { repo.get_string(KEYBOARD_SHORTCUTS).await },
+            load_overrides(repo),
             |this, result, cx| {
                 this.apply_shortcuts(result, cx);
                 if let Some(shortcuts) = this.shortcuts.loaded() {
@@ -244,16 +243,13 @@ impl HotkeysScreenView {
 
     fn apply_shortcuts(
         &mut self,
-        result: Result<Option<String>, StorageError>,
+        result: Result<ShortcutOverrides, StorageError>,
         cx: &mut Context<Self>,
     ) {
-        let decoded = result
-            .map_err(|e| e.to_string())
-            .and_then(|raw| ShortcutOverrides::from_stored(raw.as_deref()));
-        if let Err(e) = &decoded {
+        if let Err(e) = &result {
             tracing::warn!(error = %e, "failed to load keyboard shortcuts");
         }
-        self.shortcuts = Loadable::settled(decoded);
+        self.shortcuts = Loadable::settled(result);
         cx.notify();
     }
 
@@ -422,6 +418,7 @@ mod tests {
     };
     use capture::Capture;
     use forge_components::Toasts;
+    use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
     use tokio::sync::mpsc::UnboundedReceiver;
 
     #[gpui::test]
@@ -568,9 +565,7 @@ mod tests {
             reason: SETTINGS_READ_FAILED.to_owned(),
         }
         .to_string();
-        let undecodable = ShortcutOverrides::from_stored(Some("not json"))
-            .err()
-            .unwrap();
+        let undecodable = format!("stored setting '{KEYBOARD_SHORTCUTS}' cannot be decoded");
         for (fault, stored, failing_read, reason) in [
             ("unreachable store", STORED, true, unreachable),
             ("undecodable value", "not json", false, undecodable),
@@ -672,7 +667,7 @@ mod tests {
             .shortcut_writes()
             .iter()
             .map(|raw| {
-                let restored = ShortcutOverrides::from_stored(Some(raw)).unwrap();
+                let restored = crate::test_support::stored_shortcut_overrides(Some(raw)).unwrap();
                 let chord_of = |id| {
                     restored
                         .chord_of(crate::actions::shortcut_entry(id).unwrap())

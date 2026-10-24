@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use forge_components::{FavoritesStatus, GridPicker, GridPickerEvent, PushToast, ToastKind, tr};
-use forge_storage::{SettingsRepo, reserved_keys, set_json_setting};
+use forge_storage::{SettingsRepo, reserved_keys, set_json_setting, stored_json_setting};
 use gpui::{App, AppContext, Context, Entity, Global, SharedString, Subscription};
 use tokio::runtime::Handle;
 
@@ -30,17 +30,6 @@ pub fn to_set(ids: Vec<String>) -> HashSet<SharedString> {
 
 pub fn to_ids(favorites: &HashSet<SharedString>) -> Vec<String> {
     favorites.iter().map(|s| s.to_string()).collect()
-}
-
-pub fn decode_favorites(
-    raw: Option<&str>,
-    from_stored: fn(Vec<String>) -> HashSet<SharedString>,
-) -> Result<HashSet<SharedString>, String> {
-    let Some(raw) = raw else {
-        return Ok(HashSet::new());
-    };
-    let ids: Vec<String> = serde_json::from_str(raw).map_err(|e| e.to_string())?;
-    Ok(from_stored(ids))
 }
 
 #[derive(Default)]
@@ -99,8 +88,9 @@ impl StoredFavorites {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let raw = repo.get_string(list.key).await.map_err(|e| e.to_string())?;
-                decode_favorites(raw.as_deref(), list.from_stored)
+                stored_json_setting::<Vec<String>>(repo.as_ref(), list.key)
+                    .await
+                    .map(|ids| (list.from_stored)(ids.unwrap_or_default()))
             },
             move |this, result, cx| {
                 if let Err(error) = &result {
@@ -295,26 +285,6 @@ pub(crate) mod tests {
 
     fn ids(list: &[&str]) -> Vec<String> {
         list.iter().map(|id| (*id).to_owned()).collect()
-    }
-
-    #[test]
-    fn stored_favorites_decode_strictly_and_an_absent_value_is_an_empty_set() {
-        for (raw, expected) in [
-            (None, Some(Vec::new())),
-            (Some("[]"), Some(Vec::new())),
-            (Some(r#"["b","a","a"]"#), Some(ids(&["a", "b"]))),
-            (Some(UNDECODABLE), None),
-            (Some(r#"{"a":true}"#), None),
-            (Some("[1,2]"), None),
-            (Some(""), None),
-        ] {
-            let decoded = decode_favorites(raw, to_set).ok().map(|set| {
-                let mut ids = to_ids(&set);
-                ids.sort();
-                ids
-            });
-            assert_eq!(decoded, expected, "{raw:?}");
-        }
     }
 
     #[gpui::test]

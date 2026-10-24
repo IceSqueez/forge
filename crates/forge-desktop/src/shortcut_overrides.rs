@@ -2,13 +2,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
-use forge_storage::{SettingsRepo, set_json_setting};
+use forge_storage::{SettingsRepo, StorageError, set_json_setting, stored_json_setting};
 use gpui::{App, Keystroke};
 use serde::{Deserialize, Serialize};
 
 use crate::actions::{
     SHORTCUTS, ShortcutEntry, canonical_chord, chord_is_bindable, effective_chord,
-    parse_stored_overrides, reapply_key_bindings, shortcut_entry,
+    reapply_key_bindings, shortcut_entry,
 };
 
 pub enum ChordVerdict {
@@ -48,25 +48,46 @@ impl OverrideEntry {
     }
 }
 
-fn parse_entries(raw: &str) -> Result<HashMap<String, OverrideEntry>, String> {
-    let known = |id: &String| SHORTCUTS.iter().any(|entry| entry.id == id);
-    let current = match serde_json::from_str::<HashMap<String, OverrideEntry>>(raw) {
-        Ok(map) => return Ok(map.into_iter().filter(|(id, _)| known(id)).collect()),
-        Err(e) => e,
-    };
-    let chords_only = parse_stored_overrides(raw).map_err(|_| current.to_string())?;
-    Ok(chords_only
-        .into_iter()
-        .map(|(id, chord)| {
-            (
-                id,
-                OverrideEntry {
-                    chord: Some(chord),
-                    enabled: true,
-                },
-            )
-        })
-        .collect())
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum StoredOverrides {
+    Entries(HashMap<String, OverrideEntry>),
+    ChordsOnly(HashMap<String, String>),
+}
+
+impl StoredOverrides {
+    fn into_known_entries(self) -> HashMap<String, OverrideEntry> {
+        let entries: HashMap<String, OverrideEntry> = match self {
+            Self::Entries(map) => map,
+            Self::ChordsOnly(chords) => chords
+                .into_iter()
+                .map(|(id, chord)| {
+                    (
+                        id,
+                        OverrideEntry {
+                            chord: Some(chord),
+                            enabled: true,
+                        },
+                    )
+                })
+                .collect(),
+        };
+        entries
+            .into_iter()
+            .filter(|(id, _)| SHORTCUTS.iter().any(|entry| entry.id == id))
+            .collect()
+    }
+}
+
+pub async fn load_overrides(
+    repo: Arc<dyn SettingsRepo>,
+) -> Result<ShortcutOverrides, StorageError> {
+    let stored = stored_json_setting::<StoredOverrides>(repo.as_ref(), KEYBOARD_SHORTCUTS).await?;
+    Ok(ShortcutOverrides {
+        map: stored
+            .map(StoredOverrides::into_known_entries)
+            .unwrap_or_default(),
+    })
 }
 
 #[derive(Default)]
@@ -75,14 +96,6 @@ pub struct ShortcutOverrides {
 }
 
 impl ShortcutOverrides {
-    pub fn from_stored(raw: Option<&str>) -> Result<Self, String> {
-        let map = match raw {
-            Some(raw) => parse_entries(raw)?,
-            None => HashMap::new(),
-        };
-        Ok(Self { map })
-    }
-
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
@@ -212,6 +225,7 @@ mod tests {
     use gpui::Modifiers;
 
     use super::*;
+    use crate::test_support::stored_shortcut_overrides;
 
     const HOME: &str = "nav.home";
     const HOME_DEFAULT: &str = "ctrl-1";
@@ -396,7 +410,7 @@ mod tests {
             .collect();
 
         let stored = serde_json::to_string(&overrides.snapshot()).unwrap();
-        let restored = ShortcutOverrides::from_stored(Some(&stored)).unwrap();
+        let restored = stored_shortcut_overrides(Some(&stored)).unwrap();
 
         let after: Vec<Option<String>> = SHORTCUTS
             .iter()
@@ -407,11 +421,11 @@ mod tests {
 
     fn round_trip(overrides: &ShortcutOverrides) -> ShortcutOverrides {
         let stored = serde_json::to_string(&overrides.snapshot()).unwrap();
-        ShortcutOverrides::from_stored(Some(&stored)).unwrap()
+        stored_shortcut_overrides(Some(&stored)).unwrap()
     }
 
     #[test]
-    fn from_stored_decodes_the_current_form_and_reads_older_forms_as_enabled() {
+    fn load_overrides_decodes_the_current_form_and_reads_older_forms_as_enabled() {
         let cases = [
             (
                 "current form",
@@ -444,7 +458,7 @@ mod tests {
         ];
 
         for (case, raw, home_chord, home_enabled, chat_chord) in cases {
-            let overrides = ShortcutOverrides::from_stored(raw).unwrap();
+            let overrides = stored_shortcut_overrides(raw).unwrap();
 
             assert_eq!(
                 (
@@ -460,7 +474,36 @@ mod tests {
     }
 
     #[test]
-    fn from_stored_rejects_a_value_neither_stored_form_decodes() {
+    fn load_overrides_drops_ids_the_roster_no_longer_defines_in_either_form() {
+        for raw in [
+            r#"{"nav.home":"ctrl-9","nav.gone":"ctrl-8"}"#,
+            r#"{"nav.home":{"chord":"ctrl-9"},"nav.gone":{"chord":"ctrl-8"}}"#,
+        ] {
+            let overrides = stored_shortcut_overrides(Some(raw)).unwrap();
+
+            assert_eq!(
+                (
+                    chord(&overrides, HOME).as_deref(),
+                    overrides.map.contains_key("nav.gone"),
+                ),
+                (Some("ctrl-9"), false),
+                "{raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn load_overrides_passes_a_store_failure_through() {
+        let (backend, _writes) = crate::test_support::test_backend();
+        backend.fault_reads(KEYBOARD_SHORTCUTS, crate::test_support::ReadFault::Fails);
+
+        let loaded = crate::test_support::runtime().block_on(load_overrides(backend));
+
+        assert!(matches!(loaded, Err(StorageError::Connection { .. })));
+    }
+
+    #[test]
+    fn load_overrides_rejects_a_value_neither_stored_form_decodes_naming_the_key() {
         for raw in [
             "",
             "not json",
@@ -470,8 +513,11 @@ mod tests {
             r#"{"nav.home":"ctrl-9","nav.chat":{"chord":"ctrl-8"}}"#,
         ] {
             assert!(
-                ShortcutOverrides::from_stored(Some(raw)).is_err(),
-                "expected an error for {raw:?}"
+                matches!(
+                    stored_shortcut_overrides(Some(raw)),
+                    Err(StorageError::UndecodableSetting { key }) if key == KEYBOARD_SHORTCUTS
+                ),
+                "expected an undecodable-setting error for {raw:?}"
             );
         }
     }

@@ -51,10 +51,7 @@ async fn find_piper_binary() -> Option<PathBuf> {
             if is_piper_tts(&candidate).await {
                 return Some(candidate);
             }
-            eprintln!(
-                "forge-desktop: ignoring {} - not a piper TTS binary",
-                candidate.display()
-            );
+            tracing::info!(path = %candidate.display(), "ignoring a binary that is not piper TTS");
         }
     }
     None
@@ -64,10 +61,7 @@ async fn register_local_engines(registry: &mut TtsRegistry) {
     if let Some(piper_binary) = find_piper_binary().await {
         let voices_dir = PiperEngine::voices_dir(&paths::data_dir());
         if let Err(e) = std::fs::create_dir_all(&voices_dir) {
-            eprintln!(
-                "forge-desktop: failed to create piper voices dir {}: {e}",
-                voices_dir.display()
-            );
+            tracing::warn!(error = %e, path = %voices_dir.display(), "failed to create the piper voices dir");
         }
         registry.register(
             EngineId(forge_tts_core::ENGINE_ID_PIPER.into()),
@@ -77,36 +71,35 @@ async fn register_local_engines(registry: &mut TtsRegistry) {
                 timeout: Duration::from_secs(30),
             }),
         );
-        eprintln!(
-            "forge-desktop: registered Piper TTS engine ({})",
-            piper_binary.display()
-        );
+        tracing::info!(path = %piper_binary.display(), "registered the Piper TTS engine");
     } else {
-        eprintln!("forge-desktop: Piper binary not found in <exe_dir>/piper or PATH; TTS disabled");
+        tracing::info!(
+            "Piper binary not found next to the executable or on PATH; Piper TTS disabled"
+        );
     }
 
     match EspeakEngineFactory.create() {
         Ok(engine) => {
             registry.register(engine.engine_id().clone(), Arc::new(EspeakEngineFactory));
-            eprintln!("forge-desktop: registered eSpeak-NG TTS engine");
+            tracing::info!("registered the eSpeak-NG TTS engine");
         }
-        Err(e) => eprintln!("forge-desktop: eSpeak-NG TTS engine unavailable: {e}"),
+        Err(e) => tracing::info!(error = %e, "eSpeak-NG TTS engine unavailable"),
     }
 
     match SapiEngineFactory.create() {
         Ok(engine) => {
             registry.register(engine.engine_id().clone(), Arc::new(SapiEngineFactory));
-            eprintln!("forge-desktop: registered SAPI 5 TTS engine");
+            tracing::info!("registered the SAPI 5 TTS engine");
         }
-        Err(e) => eprintln!("forge-desktop: SAPI 5 TTS engine unavailable: {e}"),
+        Err(e) => tracing::info!(error = %e, "SAPI 5 TTS engine unavailable"),
     }
 
     match NsSpeechEngineFactory.create() {
         Ok(engine) => {
             registry.register(engine.engine_id().clone(), Arc::new(NsSpeechEngineFactory));
-            eprintln!("forge-desktop: registered AVFoundation TTS engine");
+            tracing::info!("registered the AVFoundation TTS engine");
         }
-        Err(e) => eprintln!("forge-desktop: AVFoundation TTS engine unavailable: {e}"),
+        Err(e) => tracing::info!(error = %e, "AVFoundation TTS engine unavailable"),
     }
 }
 
@@ -122,7 +115,7 @@ async fn load_resolver(backend: &Arc<dyn DataProvider>) -> VoiceAliasResolver {
     let (aliases, strategy, profile) = match loaded {
         Ok(loaded) => loaded,
         Err(e) => {
-            eprintln!("forge-desktop: failed to load voice aliases on boot; using defaults: {e}");
+            tracing::warn!(error = %e, "failed to load voice aliases on boot; using defaults");
             (
                 Vec::new(),
                 AssignmentStrategy::default(),
@@ -133,9 +126,7 @@ async fn load_resolver(backend: &Arc<dyn DataProvider>) -> VoiceAliasResolver {
     let defaults = match forge_storage::synthesis_defaults(backend.as_ref()).await {
         Ok(defaults) => defaults,
         Err(e) => {
-            eprintln!(
-                "forge-desktop: failed to load synthesis defaults on boot; using defaults: {e}"
-            );
+            tracing::warn!(error = %e, "failed to load synthesis defaults on boot; using defaults");
             SynthesisDefaults::default()
         }
     };
@@ -163,9 +154,10 @@ async fn load_engine_params(
                 );
                 gains.insert(engine_id.clone(), params.gain);
             }
-            Err(e) => eprintln!(
-                "forge-desktop: failed to load engine params for {}; using defaults: {e}",
-                engine_id.0
+            Err(e) => tracing::warn!(
+                error = %e,
+                engine = %engine_id.0,
+                "failed to load TTS engine params on boot; using defaults"
             ),
         }
     }
@@ -176,7 +168,7 @@ async fn load_master_volume(backend: &Arc<dyn DataProvider>) -> f32 {
     match forge_storage::master_volume(backend.as_ref()).await {
         Ok(volume) => volume,
         Err(e) => {
-            eprintln!("forge-desktop: failed to load master volume on boot; using 1.0: {e}");
+            tracing::warn!(error = %e, "failed to load the master volume on boot; using full volume");
             1.0
         }
     }
@@ -188,9 +180,7 @@ async fn load_disabled_engines(
     match forge_storage::disabled_tts_engines(backend.as_ref()).await {
         Ok(ids) => ids.into_iter().map(EngineId).collect(),
         Err(e) => {
-            eprintln!(
-                "forge-desktop: failed to load disabled TTS engines on boot; using none: {e}"
-            );
+            tracing::warn!(error = %e, "failed to load the disabled TTS engines on boot; all engines stay enabled");
             std::collections::HashSet::new()
         }
     }
@@ -207,7 +197,7 @@ async fn load_pipeline(backend: &Arc<dyn DataProvider>) -> forge_tts_pipeline::P
     match loaded {
         Ok((rules, settings)) => forge_speak_queue::build_config_lenient(&rules, &settings),
         Err(e) => {
-            eprintln!("forge-desktop: failed to load tts filters on boot; using defaults: {e}");
+            tracing::warn!(error = %e, "failed to load TTS filters on boot; using defaults");
             forge_tts_pipeline::PipelineConfig::default()
         }
     }
@@ -217,7 +207,7 @@ pub async fn build_speech_output(backend: &Arc<dyn DataProvider>) -> Arc<DeviceS
     let stored_device_id = match backend.audio_output_device_id().await {
         Ok(id) => id,
         Err(e) => {
-            eprintln!("forge-desktop: failed to read stored audio output device preference: {e}");
+            tracing::warn!(error = %e, "failed to read the stored audio output device preference");
             None
         }
     };

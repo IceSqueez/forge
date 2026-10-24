@@ -7,7 +7,6 @@ use forge_components::{
     setting_groups, setting_row, setting_rows, spacing, toggle, tr, with_alpha,
 };
 use forge_hotkey::{DEFAULT_HOLD_CEILING_SECS, HotkeyClient};
-use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
 use forge_storage::{DataProvider, SettingsRepo, StorageError};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, Keystroke, Pixels, SharedString, Subscription, Window,
@@ -18,7 +17,7 @@ use crate::actions::{SHORTCUTS, ShortcutEntry, shortcut_entry};
 use crate::async_bridge::{self, Loadable, SnapshotWriter, WriteOutcome};
 use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
-use crate::shortcut_overrides::{ChordVerdict, ShortcutOverrides, save_overrides};
+use crate::shortcut_overrides::{ChordVerdict, ShortcutOverrides, load_overrides, save_overrides};
 use forge_components::ActivePresentation;
 use forge_hotkey::{load_hold_ceiling, save_hold_ceiling};
 
@@ -107,7 +106,7 @@ impl SettingsShortcutsView {
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         async_bridge::run_async(
             &self.rt_handle,
-            async move { repo.get_string(KEYBOARD_SHORTCUTS).await },
+            load_overrides(repo),
             |this, result, cx| this.apply_loaded(result, cx),
             cx,
         );
@@ -119,7 +118,7 @@ impl SettingsShortcutsView {
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         async_bridge::run_async(
             &self.rt_handle,
-            async move { repo.get_string(KEYBOARD_SHORTCUTS).await },
+            load_overrides(repo),
             |this, result, cx| {
                 this.apply_loaded(result, cx);
                 if let Some(overrides) = this.overrides.loaded() {
@@ -205,16 +204,13 @@ impl SettingsShortcutsView {
 
     fn apply_loaded(
         &mut self,
-        result: Result<Option<String>, StorageError>,
+        result: Result<ShortcutOverrides, StorageError>,
         cx: &mut Context<Self>,
     ) {
-        let decoded = result
-            .map_err(|e| e.to_string())
-            .and_then(|raw| ShortcutOverrides::from_stored(raw.as_deref()));
-        if let Err(e) = &decoded {
+        if let Err(e) = &result {
             tracing::warn!(error = %e, "failed to load keyboard shortcuts");
         }
-        self.overrides = Loadable::settled(decoded);
+        self.overrides = Loadable::settled(result);
         cx.notify();
     }
 
@@ -636,6 +632,7 @@ mod tests {
         ReadFault, SETTINGS_READ_FAILED, SETTINGS_WRITE_FAILED, SettingWrite, TestBackend,
         install_presentation, pump, runtime, test_backend, writes_to,
     };
+    use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
 
     const HOME: &str = "nav.home";
     const HOME_DEFAULT: &str = "ctrl-1";
@@ -738,9 +735,7 @@ mod tests {
             reason: SETTINGS_READ_FAILED.to_owned(),
         }
         .to_string();
-        let undecodable = ShortcutOverrides::from_stored(Some("not json"))
-            .err()
-            .unwrap();
+        let undecodable = format!("stored setting '{KEYBOARD_SHORTCUTS}' cannot be decoded");
         for (fault, stored, failing_read, reason) in [
             ("unreachable store", STORED, true, unreachable),
             ("undecodable value", "not json", false, undecodable),
@@ -817,7 +812,7 @@ mod tests {
             .shortcut_writes()
             .iter()
             .map(|raw| {
-                let restored = ShortcutOverrides::from_stored(Some(raw)).unwrap();
+                let restored = crate::test_support::stored_shortcut_overrides(Some(raw)).unwrap();
                 let chord_of = |id| {
                     restored
                         .chord_of(shortcut_entry(id).unwrap())

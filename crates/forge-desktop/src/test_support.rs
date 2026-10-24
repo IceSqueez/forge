@@ -901,6 +901,16 @@ pub(crate) fn worker_runtime() -> tokio::runtime::Runtime {
         .expect("multi-thread runtime")
 }
 
+pub(crate) fn stored_shortcut_overrides(
+    raw: Option<&str>,
+) -> Result<crate::shortcut_overrides::ShortcutOverrides, StorageError> {
+    let (backend, _writes) = test_backend();
+    if let Some(raw) = raw {
+        backend.seed(forge_storage::reserved_keys::KEYBOARD_SHORTCUTS, raw);
+    }
+    runtime().block_on(crate::shortcut_overrides::load_overrides(backend))
+}
+
 pub(crate) fn pump(rt: &tokio::runtime::Runtime) {
     rt.block_on(async {
         for _ in 0..RUNTIME_PUMPS {

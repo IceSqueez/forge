@@ -554,7 +554,6 @@ backup_schedule_folder_hint = Сюди записуються запланова
 backup_schedule_folder_choose = Вибрати...
 backup_schedule_folder_reset = За замовчуванням
 backup_schedule_folder_failed = Не вдалося відкрити вибір теки: { $error }
-backup_schedule_persist_failed = Не вдалося зберегти налаштування розкладу копій
 backup_schedule_persist_failed_reason = Не вдалося зберегти налаштування розкладу копій: { $reason }
 backup_schedule_load_failed = Не вдалося завантажити налаштування розкладу копій, тому редагування вимкнено, щоб їх зберегти: { $reason }
 backup_schedule_key_failed = Не вдалося встановити пароль розкладу: { $error }
@@ -750,6 +749,8 @@ settings_ws_badge_recommended = Рекомендовано
 settings_ws_badge_requires_confirmation = Потребує підтвердження
 settings_ws_origins_section_title = Додаткові дозволені походження
 settings_ws_origins_subtitle = По одному в рядку. Сторінка, яку роздає сам Forge, приймається автоматично, зокрема браузерне джерело, спрямоване на IP вашого компʼютера. Потрібно лише для сторінки з іншого джерела - з іншого хоста або за доменним іменем, що веде до Forge через проксі. Без збігу WebSocket-підключення відхиляється.
+settings_ws_origins_unreadable = Збережений список додаткових дозволених джерел не читається, тому сервер приймає лише сторінки, які роздає сам. Редагування заблоковано, щоб не перезаписати збережений список.
+settings_ws_load_failed = Не вдалося завантажити налаштування WebSocket-сервера: { $reason }
 settings_ws_origins_placeholder = http://192.168.1.5:8081
 settings_ws_origins_apply_btn = Застосувати
 settings_ws_origins_invalid = Некоректне походження (схема + хост, порт необовʼязковий):
@@ -1261,6 +1262,8 @@ settings_scripting_ssrf_warning = УВАГА - вимикає захист ві�
 settings_scripting_http_action_section = HTTP-дія
 settings_scripting_range_error = Дозволено: { $min } - { $max }
 settings_scripting_persist_failed = Не вдалося зберегти налаштування скриптів та HTTP. Після перезапуску повернеться попереднє значення.
+settings_scripting_domains_load_failed = Не вдалося завантажити дозволені домени: { $reason }
+settings_scripting_domains_save_failed = Не вдалося зберегти дозволені домени: { $reason }
 
 ## Actions trigger picker - category labels
 
@@ -1407,7 +1410,10 @@ tts_engines_voices_available = доступно: { $count }
 tts_engines_voices_empty = Голосів не знайдено
 tts_engines_voice_preview_sample = Це мій голос.
 tts_engines_toggle_failed = Не вдалося змінити стан рушія
-tts_engines_persist_disabled_failed = Не вдалося зберегти стан рушія
+tts_engines_persist_disabled_failed_reason = Не вдалося зберегти, які рушії увімкнено: { $reason }
+tts_engines_persist_params_failed = Не вдалося зберегти параметри рушія: { $reason }
+tts_engines_disabled_load_failed = Не вдалося завантажити, які рушії увімкнено: { $reason }
+tts_engines_params_load_failed = Не вдалося завантажити параметри рушія: { $reason }
 
 ## TTS Filters - колонка пайплайну
 

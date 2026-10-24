@@ -10,7 +10,10 @@ use forge_components::{
 use forge_midi::event_kinds::{INPUT_PREFIX, PORT_PREFIX};
 use forge_midi::{MidiClient, MidiMonitorEvent, SwitchableMidiSink};
 use forge_runtime::EventBus;
-use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, set_json_setting};
+use forge_storage::{
+    ActionRepo, SettingsRepo, StorageError, TriggerInstanceRepo, set_json_setting,
+    stored_json_setting,
+};
 use forge_types::{ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 use futures_util::StreamExt;
 use gpui::{
@@ -36,12 +39,6 @@ use forge_runtime::{IntegrationSlot, LifecycleState};
 pub const MIDI_KNOWN_DEVICES_KEY: &str = forge_storage::settings::reserved_keys::MIDI_KNOWN_DEVICES;
 
 const UNKNOWN_VALUE: &str = "-";
-
-fn decode_known_devices(stored: Option<&str>) -> Result<Vec<String>, String> {
-    stored.map_or(Ok(Vec::new()), |raw| {
-        serde_json::from_str(raw).map_err(|e| e.to_string())
-    })
-}
 
 const SCROLL_PAD_X: Pixels = px(22.0);
 const SCROLL_PAD_Y: Pixels = px(18.0);
@@ -490,13 +487,11 @@ impl MidiScreenView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let stored = settings
-                    .get_string(MIDI_KNOWN_DEVICES_KEY)
+                stored_json_setting::<Vec<String>>(settings.as_ref(), MIDI_KNOWN_DEVICES_KEY)
                     .await
-                    .map_err(|e| e.to_string())?;
-                decode_known_devices(stored.as_deref())
+                    .map(Option::unwrap_or_default)
             },
-            |this, result: Result<Vec<String>, String>, cx| {
+            |this, result: Result<Vec<String>, StorageError>, cx| {
                 if let Err(error) = &result {
                     tracing::warn!(%error, "failed to load known MIDI devices");
                 }
@@ -2285,7 +2280,7 @@ mod tests {
             reason: crate::test_support::SETTINGS_READ_FAILED.to_owned(),
         }
         .to_string();
-        let undecodable = decode_known_devices(Some("not json")).unwrap_err();
+        let undecodable = format!("stored setting '{MIDI_KNOWN_DEVICES_KEY}' cannot be decoded");
         for (fault, stored, failing_read, reason) in [
             ("unreachable store", STORED_DEVICES, true, unreachable),
             ("undecodable value", "not json", false, undecodable),

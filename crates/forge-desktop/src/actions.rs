@@ -211,14 +211,6 @@ pub fn effective_chord<'a>(
     }
 }
 
-pub fn parse_stored_overrides(raw: &str) -> Result<HashMap<String, String>, serde_json::Error> {
-    let parsed: HashMap<String, String> = serde_json::from_str(raw)?;
-    Ok(parsed
-        .into_iter()
-        .filter(|(id, _)| SHORTCUTS.iter().any(|entry| entry.id == id))
-        .collect())
-}
-
 fn make_binding(entry_id: &str, chord: &str) -> Option<KeyBinding> {
     if Keystroke::parse(chord).is_err() {
         return None;
@@ -366,26 +358,6 @@ mod tests {
                 "{}: label key {:?} is missing from the en catalog",
                 entry.id,
                 entry.label_key
-            );
-        }
-    }
-
-    #[test]
-    fn parse_stored_overrides_drops_ids_the_roster_no_longer_defines() {
-        let raw = r#"{"nav.home":"ctrl-9","nav.gone":"ctrl-8"}"#;
-
-        let parsed = parse_stored_overrides(raw).unwrap();
-
-        assert_eq!(parsed.get("nav.home").map(String::as_str), Some("ctrl-9"));
-        assert!(!parsed.contains_key("nav.gone"));
-    }
-
-    #[test]
-    fn parse_stored_overrides_reports_an_unreadable_setting_instead_of_defaulting() {
-        for raw in ["", "not json", "[]", r#"{"nav.home":7}"#] {
-            assert!(
-                parse_stored_overrides(raw).is_err(),
-                "expected an error for {raw:?}"
             );
         }
     }

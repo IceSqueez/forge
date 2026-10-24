@@ -18,7 +18,9 @@ use forge_storage::settings::{
     MIN_BACKUP_SCHEDULE_INTERVAL_MINUTES, MIN_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
     MIN_BACKUP_SCHEDULE_KEEP_NEWEST,
 };
-use forge_storage::{DataProvider, SettingsRepo, StorageError, reserved_keys, set_bool_setting};
+use forge_storage::{
+    DataProvider, SettingsRepo, StorageError, reserved_keys, set_bool_setting, stored_bool_setting,
+};
 use forge_transfer::{
     BackupCategory, FailureCategory, Passphrase, ScheduleKey, ScheduleState, ScheduledBackupHandle,
     ScheduledBackupStatus, StorageUsed, TransferError, TransferExclusivity, backups_dir,
@@ -31,7 +33,7 @@ use gpui::{
 use time::OffsetDateTime;
 
 use crate::async_bridge::{
-    self, DIALOG_CANCELLED, Debounced, ErrorSink, Loadable, SLIDER_PERSIST_DEBOUNCE,
+    self, DIALOG_CANCELLED, ErrorSink, Generation, Loadable, SLIDER_PERSIST_DEBOUNCE,
     SnapshotWriter, WriteOutcome,
 };
 use crate::backup_passphrase_modal::{
@@ -320,24 +322,6 @@ async fn stored_text(repo: &dyn SettingsRepo, key: &str) -> Result<Option<String
         .filter(|value| !value.trim().is_empty()))
 }
 
-async fn stored_flag(
-    repo: &dyn SettingsRepo,
-    key: &str,
-    default: bool,
-) -> Result<bool, StorageError> {
-    let Some(raw) = stored_text(repo, key).await? else {
-        return Ok(default);
-    };
-    let flag = raw.trim();
-    if flag == "1" || flag.eq_ignore_ascii_case("true") {
-        Ok(true)
-    } else if flag == "0" || flag.eq_ignore_ascii_case("false") {
-        Ok(false)
-    } else {
-        Err(StorageError::Parse(format!("{key}: not a flag: {flag}")))
-    }
-}
-
 pub(crate) async fn load_schedule(
     repo: Arc<dyn SettingsRepo>,
 ) -> Result<ScheduleSnapshot, StorageError> {
@@ -350,7 +334,9 @@ pub(crate) async fn load_schedule(
     let mut included = Vec::with_capacity(OPTIONAL_CATEGORIES.len());
     for category in OPTIONAL_CATEGORIES {
         if let Some(key) = include_key(category)
-            && stored_flag(repo, key, DEFAULT_BACKUP_SCHEDULE_INCLUDE_CATEGORY).await?
+            && stored_bool_setting(repo, key)
+                .await?
+                .unwrap_or(DEFAULT_BACKUP_SCHEDULE_INCLUDE_CATEGORY)
         {
             included.push(category);
         }
@@ -358,12 +344,9 @@ pub(crate) async fn load_schedule(
     let key = stored_text(repo, reserved_keys::BACKUP_SCHEDULE_KEY)
         .await?
         .and_then(|stored| ScheduleKey::decode(&stored).ok());
-    let enabled = stored_flag(
-        repo,
-        reserved_keys::BACKUP_SCHEDULE_ENABLED,
-        DEFAULT_BACKUP_SCHEDULE_ENABLED,
-    )
-    .await?;
+    let enabled = stored_bool_setting(repo, reserved_keys::BACKUP_SCHEDULE_ENABLED)
+        .await?
+        .unwrap_or(DEFAULT_BACKUP_SCHEDULE_ENABLED);
     Ok(ScheduleSnapshot {
         settings: ScheduleSettings {
             enabled,
@@ -412,7 +395,7 @@ async fn store_key(
 struct NumberField {
     number: ScheduleNumber,
     input: Entity<TextInput>,
-    debounce: Debounced,
+    pending_save: Generation,
     value: u32,
     invalid: bool,
 }
@@ -503,7 +486,7 @@ impl BackupScheduleView {
             numbers.push(NumberField {
                 number,
                 input,
-                debounce: Debounced::new(SLIDER_PERSIST_DEBOUNCE),
+                pending_save: Generation::default(),
                 value,
                 invalid: false,
             });
@@ -554,6 +537,7 @@ impl BackupScheduleView {
 
     fn lock_numbers(&mut self, cx: &mut Context<Self>) {
         for field in &self.numbers {
+            field.pending_save.next();
             field
                 .input
                 .update(cx, |input, cx| input.set_read_only(true, cx));
@@ -678,9 +662,6 @@ impl BackupScheduleView {
             return;
         }
         let parsed = number.parse(text);
-        let repo = self.settings_repo();
-        let service = self.service.clone();
-        let handle = self.rt_handle.clone();
         let Some(field) = self.numbers.iter_mut().find(|f| f.number == number) else {
             return;
         };
@@ -691,20 +672,34 @@ impl BackupScheduleView {
             .update(cx, |input, cx| input.set_invalid(invalid, cx));
         if let Some(value) = parsed {
             field.value = value;
-            field.debounce.schedule_reporting(
-                &handle,
-                tr!("backup_schedule_persist_failed"),
-                async move {
-                    repo.set_string(number.storage_key(), &value.to_string())
-                        .await?;
-                    service.settings_changed();
-                    Ok::<(), StorageError>(())
-                },
-                ErrorSink::Toast,
+            let ticket = field.pending_save.next();
+            async_bridge::run_async(
+                &self.rt_handle,
+                async move { tokio::time::sleep(SLIDER_PERSIST_DEBOUNCE).await },
+                move |this, (), cx| this.save_number(number, ticket, cx),
                 cx,
             );
         }
         cx.notify();
+    }
+
+    fn save_number(&mut self, number: ScheduleNumber, ticket: u64, cx: &mut Context<Self>) {
+        if !self.settings.is_loaded() {
+            return;
+        }
+        let Some(field) = self.numbers.iter().find(|f| f.number == number) else {
+            return;
+        };
+        if !field.pending_save.is_current(ticket) || field.invalid {
+            return;
+        }
+        let value = field.value.to_string();
+        let repo = self.settings_repo();
+        self.persist(
+            number.storage_key(),
+            async move { repo.set_string(number.storage_key(), &value).await },
+            cx,
+        );
     }
 
     pub(crate) fn toggle_enabled(&mut self, cx: &mut Context<Self>) {
@@ -1987,6 +1982,7 @@ pub(crate) mod tests {
     #[gpui::test]
     fn an_out_of_range_number_is_flagged_and_never_saved(cx: &mut TestAppContext) {
         let rig = schedule_rig(cx, &[]);
+        let _runtime = rig.rt.enter();
         let below = (MIN_INTERVAL - 1).to_string();
 
         let flagged = rig.view.update(cx, |view, cx| {
@@ -2025,6 +2021,7 @@ pub(crate) mod tests {
     #[gpui::test]
     fn each_number_saves_its_boundary_values(cx: &mut TestAppContext) {
         let rig = schedule_rig(cx, &[]);
+        let _runtime = rig.rt.enter();
 
         let accepted = rig.view.update(cx, |view, cx| {
             let mut accepted = Vec::new();
@@ -2059,6 +2056,7 @@ pub(crate) mod tests {
             .unwrap();
         let last = OffsetDateTime::parse(stored_last, &Rfc3339).unwrap();
         let rig = schedule_rig(cx, &seeds);
+        let _runtime = rig.rt.enter();
 
         rig.view.update(cx, |view, cx| {
             view.commit_number(ScheduleNumber::Interval, "30", cx)
@@ -2496,7 +2494,7 @@ pub(crate) mod tests {
             .value_from_stored(Some("abc"))
             .unwrap_err()
             .to_string();
-        let faults: [(&str, &str, Option<&str>); 3] = [
+        let faults: [(&str, &str, Option<&str>); 4] = [
             (
                 "unreachable store",
                 reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES,
@@ -2512,6 +2510,11 @@ pub(crate) mod tests {
                 reserved_keys::BACKUP_SCHEDULE_INCLUDE_MEDIA,
                 Some("maybe"),
             ),
+            (
+                "blank flag",
+                reserved_keys::BACKUP_SCHEDULE_ENABLED,
+                Some(""),
+            ),
         ];
         for (fault, faulty_key, stored) in faults {
             for (case, edit) in edit_paths() {
@@ -2522,12 +2525,7 @@ pub(crate) mod tests {
                         if faulty_key == reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES {
                             bad_number.clone()
                         } else {
-                            let repo = Arc::clone(&schedule.backend) as Arc<dyn SettingsRepo>;
-                            schedule
-                                .rt
-                                .block_on(super::stored_flag(repo.as_ref(), faulty_key, true))
-                                .unwrap_err()
-                                .to_string()
+                            format!("stored setting '{faulty_key}' cannot be decoded")
                         }
                     }
                     None => {
@@ -2603,6 +2601,7 @@ pub(crate) mod tests {
     #[gpui::test]
     fn retry_after_a_failed_load_restores_the_schedule_and_edits_persist(cx: &mut TestAppContext) {
         let schedule = FakeSchedule::new(cx, &key_for(OLD_PASSPHRASE));
+        let _runtime = schedule.rt.enter();
         schedule.backend.fault_reads(
             reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES,
             crate::test_support::ReadFault::Fails,
@@ -2681,5 +2680,39 @@ pub(crate) mod tests {
                 "{case}"
             );
         }
+    }
+
+    #[gpui::test]
+    fn a_failed_number_save_reports_the_error_and_reloads_the_stored_number(
+        cx: &mut TestAppContext,
+    ) {
+        let schedule = FakeSchedule::new(cx, &key_for(OLD_PASSPHRASE));
+        let _runtime = schedule.rt.enter();
+        schedule
+            .backend
+            .fail_writes(reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES);
+        let view = schedule.open(cx);
+
+        view.update(cx, |view, cx| {
+            view.commit_number(ScheduleNumber::Interval, "90", cx)
+        });
+        schedule.past_the_save_debounce(cx);
+
+        let shown = view.read_with(cx, |view, cx| {
+            view.numbers
+                .iter()
+                .find(|field| field.number == ScheduleNumber::Interval)
+                .map(|field| (field.value, field.input.read(cx).content().to_owned()))
+        });
+        assert_eq!(
+            (cx.update(|cx| crate::test_support::error_toasts(cx)), shown),
+            (
+                1,
+                Some((
+                    STORED_INTERVAL.parse::<u32>().unwrap(),
+                    STORED_INTERVAL.to_owned()
+                ))
+            )
+        );
     }
 }

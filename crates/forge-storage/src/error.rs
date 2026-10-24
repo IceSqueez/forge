@@ -74,6 +74,9 @@ pub enum StorageError {
     #[error("parse error: {0}")]
     Parse(String),
 
+    #[error("stored setting '{key}' cannot be decoded")]
+    UndecodableSetting { key: String },
+
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 

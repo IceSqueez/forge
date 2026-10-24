@@ -414,6 +414,7 @@ pub trait SettingsRepo: Send + Sync {
 }
 
 pub(crate) fn decode_bool_setting(s: &str) -> Option<bool> {
+    let s = s.trim();
     if s == "1" || s.eq_ignore_ascii_case("true") {
         Some(true)
     } else if s == "0" || s.eq_ignore_ascii_case("false") {
@@ -423,11 +424,28 @@ pub(crate) fn decode_bool_setting(s: &str) -> Option<bool> {
     }
 }
 
-pub async fn get_bool_setting(repo: &dyn SettingsRepo, key: &str, default: bool) -> bool {
-    match repo.get_string(key).await {
-        Ok(Some(s)) => decode_bool_setting(&s).unwrap_or(default),
-        _ => default,
+fn undecodable(key: &str) -> StorageError {
+    StorageError::UndecodableSetting {
+        key: key.to_owned(),
     }
+}
+
+pub async fn stored_bool_setting(
+    repo: &dyn SettingsRepo,
+    key: &str,
+) -> Result<Option<bool>, StorageError> {
+    repo.get_string(key)
+        .await?
+        .map(|raw| decode_bool_setting(&raw).ok_or_else(|| undecodable(key)))
+        .transpose()
+}
+
+pub async fn get_bool_setting(repo: &dyn SettingsRepo, key: &str, default: bool) -> bool {
+    stored_bool_setting(repo, key)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(default)
 }
 
 pub async fn set_bool_setting(
@@ -458,14 +476,21 @@ pub async fn stored_display_formats(
     })
 }
 
+pub async fn stored_json_setting<T: serde::de::DeserializeOwned>(
+    repo: &dyn SettingsRepo,
+    key: &str,
+) -> Result<Option<T>, StorageError> {
+    repo.get_string(key)
+        .await?
+        .map(|raw| serde_json::from_str(&raw).map_err(|_| undecodable(key)))
+        .transpose()
+}
+
 pub async fn get_json_setting<T: serde::de::DeserializeOwned>(
     repo: &dyn SettingsRepo,
     key: &str,
 ) -> Option<T> {
-    match repo.get_string(key).await {
-        Ok(Some(s)) => serde_json::from_str(&s).ok(),
-        _ => None,
-    }
+    stored_json_setting(repo, key).await.ok().flatten()
 }
 
 pub async fn set_json_setting<T: Serialize>(
@@ -509,11 +534,11 @@ pub async fn set_chat_history_per_viewer_limit(
 }
 
 pub async fn disabled_tts_engines(repo: &dyn SettingsRepo) -> Result<Vec<String>, StorageError> {
-    let raw = repo.get_string(reserved_keys::TTS_DISABLED_ENGINES).await?;
-    Ok(raw
-        .as_deref()
-        .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
-        .unwrap_or_default())
+    Ok(
+        stored_json_setting(repo, reserved_keys::TTS_DISABLED_ENGINES)
+            .await?
+            .unwrap_or_default(),
+    )
 }
 
 pub async fn set_disabled_tts_engines(
@@ -559,11 +584,7 @@ pub async fn engine_params(
     engine_id: &str,
 ) -> Result<EngineParams, StorageError> {
     let key = format!("{}{engine_id}", reserved_keys::TTS_ENGINE_PARAMS_PREFIX);
-    let raw = repo.get_string(&key).await?;
-    Ok(raw
-        .as_deref()
-        .and_then(|s| serde_json::from_str(s).ok())
-        .unwrap_or_default())
+    Ok(stored_json_setting(repo, &key).await?.unwrap_or_default())
 }
 
 pub async fn set_engine_params(

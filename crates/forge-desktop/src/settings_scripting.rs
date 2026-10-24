@@ -2,22 +2,27 @@ use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 use forge_components::{
-    Density, FONT_SM, FONT_XS, ForgePalette, Icon, InputEvent, Radius, SettingRow, Spacing,
-    TextInput, body_family, icon, icon_button, radius, setting_block, setting_groups, setting_row,
-    setting_rows, spacing, toggle, tr,
+    DISABLED_OPACITY, Density, FONT_SM, FONT_XS, ForgePalette, Icon, InputEvent, PushToast, Radius,
+    SettingRow, Spacing, TextInput, ToastKind, body_family, error_row_with_retry, icon,
+    icon_button, radius, setting_block, setting_groups, setting_row, setting_rows, spacing, toggle,
+    tr,
 };
 use forge_script::{
     EngineConfig, ScriptHttpConfig, load_script_engine_config, load_script_http_config,
+    stored_script_http_allowed_domains,
 };
 use forge_storage::{
-    DataProvider, SettingsRepo, get_bool_setting, reserved_keys, set_bool_setting, set_json_setting,
+    DataProvider, SettingsRepo, StorageError, get_bool_setting, reserved_keys, set_bool_setting,
+    set_json_setting,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
     prelude::*, px,
 };
 
-use crate::async_bridge::{self, Debounced, ErrorSink, SLIDER_PERSIST_DEBOUNCE};
+use crate::async_bridge::{
+    self, Debounced, ErrorSink, Loadable, SLIDER_PERSIST_DEBOUNCE, SnapshotWriter, WriteOutcome,
+};
 use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 use forge_components::ActivePresentation;
@@ -126,7 +131,6 @@ struct NumericField {
 }
 
 struct ScriptingSnapshot {
-    allowed_domains: Vec<String>,
     allow_local: bool,
     core_allow_local: bool,
     stored_numbers: [(NumericSetting, u64); 5],
@@ -135,7 +139,8 @@ struct ScriptingSnapshot {
 pub struct SettingsScriptingView {
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
-    allowed_domains: Vec<String>,
+    allowed_domains: Loadable<Vec<String>>,
+    domains_writer: SnapshotWriter,
     allow_local: bool,
     core_allow_local: bool,
     numeric: Vec<NumericField>,
@@ -181,6 +186,7 @@ impl SettingsScriptingView {
             TextInput::new(tr!("settings_scripting_domains_placeholder"), cx)
                 .with_palette(palette)
                 .with_font_size(FONT_SM)
+                .read_only(true)
         });
         subs.push(
             cx.subscribe(&domain_draft, |this, _input, event: &InputEvent, cx| {
@@ -192,8 +198,9 @@ impl SettingsScriptingView {
 
         let mut view = Self {
             backend,
+            domains_writer: SnapshotWriter::new(&rt_handle),
             rt_handle,
-            allowed_domains: defaults.allowed_domains,
+            allowed_domains: Loadable::Loading,
             allow_local: defaults.allow_local,
             core_allow_local: defaults.core_allow_local,
             numeric,
@@ -201,6 +208,7 @@ impl SettingsScriptingView {
             _subs: subs,
         };
         view.load(cx);
+        view.load_domains(cx);
         view
     }
 
@@ -217,8 +225,31 @@ impl SettingsScriptingView {
         );
     }
 
+    fn load_domains(&mut self, cx: &mut Context<Self>) {
+        self.allowed_domains = Loadable::Loading;
+        self.domain_draft
+            .update(cx, |input, cx| input.set_read_only(true, cx));
+        async_bridge::run_async(
+            &self.rt_handle,
+            load_allowed_domains(self.settings_repo()),
+            |this, result, cx| this.apply_domains(result, cx),
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn apply_domains(&mut self, result: Result<Vec<String>, StorageError>, cx: &mut Context<Self>) {
+        if let Err(error) = &result {
+            tracing::warn!(%error, "failed to load the script HTTP allowlist");
+        }
+        self.allowed_domains = Loadable::settled(result);
+        let locked = !self.allowed_domains.is_loaded();
+        self.domain_draft
+            .update(cx, |input, cx| input.set_read_only(locked, cx));
+        cx.notify();
+    }
+
     fn apply_loaded(&mut self, snapshot: ScriptingSnapshot, cx: &mut Context<Self>) {
-        self.allowed_domains = snapshot.allowed_domains;
         self.allow_local = snapshot.allow_local;
         self.core_allow_local = snapshot.core_allow_local;
         for (setting, stored) in snapshot.stored_numbers {
@@ -261,11 +292,9 @@ impl SettingsScriptingView {
         cx.notify();
     }
 
-    fn persist_domains(&self, cx: &mut Context<Self>) {
+    fn persist_domains(&self, domains: Vec<String>, cx: &mut Context<Self>) {
         let repo = self.settings_repo();
-        let domains = self.allowed_domains.clone();
-        async_bridge::report_failure(
-            &self.rt_handle,
+        self.domains_writer.write(
             async move {
                 set_json_setting(
                     repo.as_ref(),
@@ -274,10 +303,22 @@ impl SettingsScriptingView {
                 )
                 .await
             },
-            ErrorSink::Toast,
-            tr!("settings_scripting_persist_failed"),
+            Self::domains_write_settled,
             cx,
         );
+    }
+
+    fn domains_write_settled(&mut self, outcome: WriteOutcome, cx: &mut Context<Self>) {
+        if let WriteOutcome::Failed(error) = outcome {
+            cx.push_toast(
+                ToastKind::Error,
+                tr!(
+                    "settings_scripting_domains_save_failed",
+                    reason = error.as_str()
+                ),
+            );
+            self.load_domains(cx);
+        }
     }
 
     fn persist_bool(&self, key: &'static str, value: bool, cx: &mut Context<Self>) {
@@ -293,18 +334,26 @@ impl SettingsScriptingView {
 
     fn add_domain(&mut self, cx: &mut Context<Self>) {
         let draft = self.domain_draft.read(cx).content().trim().to_owned();
-        if !draft.is_empty() && !self.allowed_domains.contains(&draft) {
-            self.allowed_domains.push(draft);
+        let Some(domains) = self.allowed_domains.loaded_mut() else {
+            return;
+        };
+        if !draft.is_empty() && !domains.contains(&draft) {
+            domains.push(draft);
+            let snapshot = domains.clone();
             self.domain_draft.update(cx, |i, cx| i.clear(cx));
-            self.persist_domains(cx);
+            self.persist_domains(snapshot, cx);
         }
         cx.notify();
     }
 
     fn remove_domain(&mut self, index: usize, cx: &mut Context<Self>) {
-        if index < self.allowed_domains.len() {
-            self.allowed_domains.remove(index);
-            self.persist_domains(cx);
+        let Some(domains) = self.allowed_domains.loaded_mut() else {
+            return;
+        };
+        if index < domains.len() {
+            domains.remove(index);
+            let snapshot = domains.clone();
+            self.persist_domains(snapshot, cx);
         }
         cx.notify();
     }
@@ -362,9 +411,23 @@ impl SettingsScriptingView {
             .flex_row()
             .flex_wrap()
             .gap(spacing(Spacing::Xxs, density));
-        for (idx, domain) in self.allowed_domains.iter().enumerate() {
+        for (idx, domain) in self
+            .allowed_domains
+            .loaded()
+            .map_or(&[][..], Vec::as_slice)
+            .iter()
+            .enumerate()
+        {
             chips = chips.child(self.domain_chip(idx, domain, palette, cx));
         }
+        let failure = self.allowed_domains.failure().map(|reason| {
+            error_row_with_retry(
+                "settings-scripting-domains-retry",
+                tr!("settings_scripting_domains_load_failed", reason = reason),
+                palette,
+                cx.listener(|this, _: &ClickEvent, _, cx| this.load_domains(cx)),
+            )
+        });
 
         let add_btn = icon_button(Icon::Plus, palette).on_click(
             "settings-scripting-domain-add",
@@ -382,12 +445,16 @@ impl SettingsScriptingView {
                     .min_w(px(0.0))
                     .child(self.domain_draft.clone()),
             )
-            .child(add_btn);
+            .child(add_btn)
+            .when(!self.allowed_domains.is_loaded(), |row| {
+                row.opacity(DISABLED_OPACITY)
+            });
 
         div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
+            .children(failure)
             .child(chips)
             .child(input_row)
     }
@@ -583,7 +650,6 @@ fn snapshot_from(
                 u64::from(http.max_response_bytes),
             ),
         ],
-        allowed_domains: http.allowed_domains,
         allow_local: http.allow_local,
         core_allow_local,
     }
@@ -599,6 +665,10 @@ async fn load_scripting_settings(repo: Arc<dyn SettingsRepo>) -> ScriptingSnapsh
     let core_allow_local =
         get_bool_setting(repo.as_ref(), reserved_keys::CORE_HTTP_ALLOW_LOCAL, false).await;
     snapshot_from(http, engine, core_allow_local)
+}
+
+async fn load_allowed_domains(repo: Arc<dyn SettingsRepo>) -> Result<Vec<String>, StorageError> {
+    stored_script_http_allowed_domains(repo.as_ref()).await
 }
 
 #[cfg(test)]

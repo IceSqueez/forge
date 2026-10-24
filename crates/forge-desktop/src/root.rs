@@ -671,20 +671,15 @@ fn apply_persisted_shortcuts(
         let repo = backend as Arc<dyn forge_storage::SettingsRepo>;
         let (tx, rx) = tokio::sync::oneshot::channel();
         rt_handle.spawn(async move {
-            let raw = repo
-                .get_string(forge_storage::reserved_keys::KEYBOARD_SHORTCUTS)
-                .await;
-            let _ = tx.send(raw);
+            let _ = tx.send(crate::shortcut_overrides::load_overrides(repo).await);
         });
-        let Ok(Ok(Some(raw))) = rx.await else {
-            return;
-        };
-        let overrides = match crate::shortcut_overrides::ShortcutOverrides::from_stored(Some(&raw)) {
-            Ok(overrides) => overrides,
-            Err(e) => {
-                tracing::warn!(error = %e, "stored keyboard shortcuts undecodable; defaults stay active");
+        let overrides = match rx.await {
+            Ok(Ok(overrides)) => overrides,
+            Ok(Err(e)) => {
+                tracing::warn!(error = %e, "stored keyboard shortcuts unreadable; defaults stay active");
                 return;
             }
+            Err(_) => return,
         };
         if overrides.is_empty() {
             return;

@@ -29,7 +29,9 @@ pub use engine::{Engine, EngineConfig, load_script_engine_config, validate_synta
 pub use error::ScriptError;
 pub use format::format_script;
 pub use http_client::{HttpError, HttpResponse, ScriptHttpClient};
-pub use http_config::{ScriptHttpConfig, load_script_http_config};
+pub use http_config::{
+    ScriptHttpConfig, load_script_http_config, stored_script_http_allowed_domains,
+};
 pub use math_evaluator::MathEvaluator;
 pub use runner::{RunResult, ScriptHost, content_hash, run_inline};
 pub use schedule::{

@@ -4,6 +4,7 @@ use crate::config_form::CollectionChoices;
 use crate::integration_switch::SwitchWatch;
 use crate::integrations::BuiltinRegistry;
 use crate::obs_catalog_options::ObsCatalogField;
+use crate::picker_favorites::{SUB_ACTION_FAVORITES, StoredFavorites, TRIGGER_FAVORITES};
 use crate::run_history_modal::RunHistoryModal;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
@@ -24,7 +25,7 @@ use forge_soundboard::ClipLibrary;
 use forge_speak_queue::SpeakQueueHandle;
 use forge_storage::{
     ActionRepo, ActionTelemetry, GlobalsRepo, OverlayRepo, QueueRepo, ScriptRepo, SettingsRepo,
-    StorageError, TriggerInstanceRepo, reserved_keys,
+    StorageError, TriggerInstanceRepo,
 };
 use forge_tts_core::TtsRegistry;
 use forge_types::{Action, ActionId, ExecutionOutcome, QueueId, SubActionStep, TriggerInstanceId};
@@ -190,11 +191,10 @@ pub struct ScreenActionsView {
     script_repo: Arc<dyn ScriptRepo>,
     clip_library: Arc<ClipLibrary>,
     globals_repo: Arc<dyn GlobalsRepo>,
-    settings_repo: Arc<dyn SettingsRepo>,
     overlay_repo: Arc<dyn OverlayRepo>,
     overlay_schema: Arc<overlay_schema::OverlayContentSchema>,
-    sub_action_favorites: HashSet<SharedString>,
-    trigger_favorites: HashSet<SharedString>,
+    sub_action_favorites: Entity<StoredFavorites>,
+    trigger_favorites: Entity<StoredFavorites>,
     tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
     speak: Option<SpeakQueueHandle>,
     sub_action_registry: Arc<SubActionRegistry>,
@@ -274,6 +274,18 @@ impl ScreenActionsView {
         let palette = cx.palette();
         let search = SearchState::new(cx, palette, tr!("actions_search_placeholder"));
         let search_sub = cx.subscribe(search.field(), Self::on_search_event);
+        let sub_action_favorites = StoredFavorites::shared(
+            SUB_ACTION_FAVORITES,
+            Arc::clone(&settings_repo),
+            &rt_handle,
+            cx,
+        );
+        let trigger_favorites = StoredFavorites::shared(
+            TRIGGER_FAVORITES,
+            Arc::clone(&settings_repo),
+            &rt_handle,
+            cx,
+        );
 
         let view = Self {
             action_repo,
@@ -283,11 +295,10 @@ impl ScreenActionsView {
             script_repo,
             clip_library,
             globals_repo,
-            settings_repo,
             overlay_repo,
             overlay_schema: Arc::new(overlay_schema::OverlayContentSchema::new(overlay_kinds)),
-            sub_action_favorites: HashSet::new(),
-            trigger_favorites: HashSet::new(),
+            sub_action_favorites,
+            trigger_favorites,
             tts_registry,
             speak,
             sub_action_registry,
@@ -341,60 +352,8 @@ impl ScreenActionsView {
             _search_sub: search_sub,
         };
         view.reload(cx);
-        view.load_favorites(cx);
         view.fetch_select_options(cx);
         view
-    }
-
-    fn load_favorites(&self, cx: &mut Context<Self>) {
-        let repo = Arc::clone(&self.settings_repo);
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move {
-                let subs = forge_storage::get_json_setting::<Vec<String>>(
-                    repo.as_ref(),
-                    reserved_keys::PICKER_FAVORITES_SUB_ACTIONS,
-                )
-                .await
-                .unwrap_or_default();
-                let trigs = forge_storage::get_json_setting::<Vec<String>>(
-                    repo.as_ref(),
-                    reserved_keys::PICKER_FAVORITES_TRIGGERS,
-                )
-                .await
-                .unwrap_or_default();
-                (subs, trigs)
-            },
-            |this, (subs, trigs): (Vec<String>, Vec<String>), _cx| {
-                this.sub_action_favorites = crate::picker_favorites::to_set(subs);
-                this.trigger_favorites = crate::picker_favorites::to_set(trigs);
-            },
-            cx,
-        );
-    }
-
-    fn persist_favorites(
-        &self,
-        key: &'static str,
-        favorites: HashSet<SharedString>,
-        cx: &mut Context<Self>,
-    ) {
-        let repo = Arc::clone(&self.settings_repo);
-        let ids = crate::picker_favorites::to_ids(&favorites);
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move {
-                forge_storage::set_json_setting(repo.as_ref(), key, &ids)
-                    .await
-                    .map_err(|e| e.to_string())
-            },
-            |this, result: Result<(), String>, cx| {
-                if let Err(message) = result {
-                    this.on_repo_error(&message, cx);
-                }
-            },
-            cx,
-        );
     }
 
     fn set_tree_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
@@ -811,6 +770,7 @@ struct GridPickerForm {
     picks: HashMap<SharedString, String>,
     action_id: ActionId,
     _sub: Subscription,
+    _favorites: Subscription,
 }
 
 enum AddTriggerStage {
@@ -824,6 +784,7 @@ struct AddTriggerPicker {
     picks_instance: HashMap<SharedString, TriggerInstanceId>,
     action_id: ActionId,
     _sub: Subscription,
+    _favorites: Subscription,
 }
 
 struct AddTriggerFill {

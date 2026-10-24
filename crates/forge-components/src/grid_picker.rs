@@ -6,6 +6,7 @@ use gpui::{
     Subscription, Window, div, list, prelude::*, px, relative,
 };
 
+use crate::error_row::compact_error_with_retry;
 use crate::glyph::{GlyphArt, glyph_art};
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
@@ -13,8 +14,8 @@ use crate::picker::{PICKER_CONTEXT, SelectNext, SelectPrev};
 use crate::status::badge;
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
-    BORDER_ACCENT, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, body_family, mono_family,
-    radius, spacing,
+    BORDER_ACCENT, DISABLED_OPACITY, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing,
+    body_family, mono_family, radius, spacing,
 };
 use crate::tr;
 
@@ -137,7 +138,15 @@ pub struct GridPickerConfig {
 pub enum GridPickerEvent {
     Picked(SharedString),
     FavoriteToggled(SharedString),
+    FavoritesRetry,
     Dismissed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FavoritesStatus {
+    Ready,
+    Pending,
+    Failed(SharedString),
 }
 
 #[derive(Clone, PartialEq)]
@@ -156,6 +165,7 @@ struct CardData {
     desc: SharedString,
     state: GridPickerItemState,
     favorite: bool,
+    favorite_editable: bool,
     cursored: bool,
 }
 
@@ -173,6 +183,7 @@ pub struct GridPicker {
     query: String,
     rail: RailSel,
     favorites: HashSet<SharedString>,
+    favorites_status: FavoritesStatus,
     groups: Vec<GridPickerGroup>,
     config: GridPickerConfig,
     palette: ForgePalette,
@@ -216,6 +227,7 @@ impl GridPicker {
             query: String::new(),
             rail: RailSel::All,
             favorites,
+            favorites_status: FavoritesStatus::Ready,
             groups,
             config,
             palette,
@@ -354,6 +366,12 @@ impl GridPicker {
         cx.notify();
     }
 
+    pub fn set_favorites_status(&mut self, status: FavoritesStatus, cx: &mut Context<Self>) {
+        self.favorites_status = status;
+        self.rebuild_rows(false);
+        cx.notify();
+    }
+
     fn on_search_event(
         &mut self,
         field: Entity<TextInput>,
@@ -404,6 +422,9 @@ impl GridPicker {
     }
 
     fn toggle_favorite(&mut self, id: SharedString, cx: &mut Context<Self>) {
+        if self.favorites_status != FavoritesStatus::Ready {
+            return;
+        }
         if self.favorites.contains(&id) {
             self.favorites.remove(&id);
         } else {
@@ -577,6 +598,14 @@ impl GridPicker {
                 &p,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.set_rail(RailSel::Favorites, cx)),
             ));
+        if let FavoritesStatus::Failed(message) = &self.favorites_status {
+            col = col.child(compact_error_with_retry(
+                "forge-grid-rail-fav-retry",
+                message.clone(),
+                &p,
+                cx.listener(|_, _: &ClickEvent, _, cx| cx.emit(GridPickerEvent::FavoritesRetry)),
+            ));
+        }
 
         if let Some((scope_id, label, dot)) = self.leading_band_entry() {
             let active = matches!(&self.rail, RailSel::Group(s) if s == &scope_id);
@@ -719,6 +748,7 @@ impl GridPicker {
             desc: item.desc.clone(),
             state: item.state,
             favorite: self.favorites.contains(&item.id),
+            favorite_editable: self.favorites_status == FavoritesStatus::Ready,
             cursored,
         }
     }
@@ -891,22 +921,25 @@ fn render_card_el(
         Icon::Star
     };
     let star_tint = if card.favorite { accent } else { p.text_faint };
-    let star = div()
+    let mut star = div()
         .id(SharedString::from(format!("forge-grid-star-{}", card.id)))
         .flex_none()
         .flex()
         .items_center()
         .justify_center()
         .p(px(2.0))
-        .cursor_pointer()
         .on_mouse_down(MouseButton::Left, |_: &MouseDownEvent, _, cx| {
             cx.stop_propagation()
         })
-        .on_click(cx.listener({
+        .child(icon(star_glyph, GRID_CARD_ICON, star_tint));
+    star = if card.favorite_editable {
+        star.cursor_pointer().on_click(cx.listener({
             let id = card.id.clone();
             move |this, _: &ClickEvent, _, cx| this.toggle_favorite(id.clone(), cx)
         }))
-        .child(icon(star_glyph, GRID_CARD_ICON, star_tint));
+    } else {
+        star.opacity(DISABLED_OPACITY)
+    };
 
     let trailing: Option<AnyElement> = match card.state {
         GridPickerItemState::Added => Some(

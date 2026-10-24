@@ -99,7 +99,7 @@ pub use dropdown::{
     Dropdown, DropdownRow, dropdown, dropdown_group_header, dropdown_list, dropdown_row,
     dropdown_surface,
 };
-pub use error_row::{error_row, error_row_with_retry};
+pub use error_row::{compact_error_with_retry, error_row, error_row_with_retry};
 pub use fonts::embedded_fonts;
 pub use footer::{FOOTER_HEIGHT, app_footer, footer_alert, footer_indicator, split_version_stage};
 pub use form_field::{
@@ -108,8 +108,8 @@ pub use form_field::{
 };
 pub use glyph::{GlyphArt, glyph_art};
 pub use grid_picker::{
-    GridItemQuery, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent, GridPickerGroup,
-    GridPickerItem, GridPickerItemState, GridPickerSubtitle,
+    FavoritesStatus, GridItemQuery, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent,
+    GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle,
 };
 pub use hub_card::{
     BadgeMarker, CompactButton, CompactTone, HUB_CARD_HEIGHT, HUB_TILE_SIZE, HubCard, HubNote,

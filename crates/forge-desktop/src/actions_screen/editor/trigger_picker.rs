@@ -1,5 +1,6 @@
 use super::*;
 use crate::async_bridge;
+use crate::picker_favorites::{bind_picker, follow_picker_event};
 use crate::triggers_screen::platform_dot_color;
 use forge_components::ActivePresentation;
 use forge_components::{
@@ -143,9 +144,15 @@ impl ScreenActionsView {
             favorites_label: tr!("picker_favorites").into(),
             favorites_empty: tr!("picker_favorites_empty").into(),
         };
-        let favorites = self.trigger_favorites.clone();
+        let favorites = self
+            .trigger_favorites
+            .read(cx)
+            .ids()
+            .cloned()
+            .unwrap_or_default();
         let picker = cx.new(|cx| GridPicker::new(config, groups, favorites, palette, cx));
         let sub = cx.subscribe(&picker, Self::on_trigger_picker_event);
+        let favorites_sub = bind_picker(&self.trigger_favorites, &picker, cx);
         picker.update(cx, |f, cx| f.focus(window, cx));
         self.add_trigger = Some(AddTriggerStage::Pick(AddTriggerPicker {
             picker,
@@ -153,6 +160,7 @@ impl ScreenActionsView {
             picks_instance,
             action_id,
             _sub: sub,
+            _favorites: favorites_sub,
         }));
         cx.notify();
     }
@@ -175,14 +183,8 @@ impl ScreenActionsView {
                     self.enter_trigger_fill(action_id, kind_id, cx);
                 }
             }
-            GridPickerEvent::FavoriteToggled(id) => {
-                if self.trigger_favorites.contains(id) {
-                    self.trigger_favorites.remove(id);
-                } else {
-                    self.trigger_favorites.insert(id.clone());
-                }
-                let favorites = self.trigger_favorites.clone();
-                self.persist_favorites(reserved_keys::PICKER_FAVORITES_TRIGGERS, favorites, cx);
+            GridPickerEvent::FavoriteToggled(_) | GridPickerEvent::FavoritesRetry => {
+                follow_picker_event(&self.trigger_favorites, event, cx);
             }
             GridPickerEvent::Dismissed => self.cancel_trigger_picker(cx),
         }

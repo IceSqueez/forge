@@ -541,6 +541,8 @@ backup_schedule_folder_choose = Choose...
 backup_schedule_folder_reset = Use default
 backup_schedule_folder_failed = Could not open the folder picker: { $error }
 backup_schedule_persist_failed = Could not save the backup schedule setting
+backup_schedule_persist_failed_reason = Could not save the backup schedule setting: { $reason }
+backup_schedule_load_failed = Could not load the backup schedule settings, so editing is off to protect them: { $reason }
 backup_schedule_key_failed = Could not set the schedule passphrase: { $error }
 backup_schedule_setup_title = Protect scheduled backups
 backup_schedule_setup_subtitle = Asked once - scheduled backups then run on their own
@@ -1030,6 +1032,8 @@ action_editor_this_action = this action
 action_editor_recent_triggers = Recent
 picker_favorites = Favorites
 picker_favorites_empty = Star items to pin them here for quick access
+picker_favorites_load_failed = Favorites could not load, so starring is off to keep them safe
+picker_favorites_save_failed = Could not save your favorites: { $reason }
 action_editor_picker_add_sub_title = Add step
 action_editor_picker_inserting_into = Inserting into
 action_editor_picker_sub_count = · { $count ->
@@ -1528,6 +1532,8 @@ tts_cloud_save_failed_toast = Failed to save { $name } credentials: { $error }
 
 tts_aliases_strategy_label = Default assignment strategy
 tts_aliases_strategy_sublabel = How a voice is chosen for viewers without a manual alias
+tts_aliases_strategy_load_failed = Could not load the voice assignment strategy, so changing it is off to protect it: { $reason }
+tts_aliases_strategy_save_failed = Could not save the voice assignment strategy: { $reason }
 tts_aliases_strategy_deterministic = Deterministic by name
 tts_aliases_strategy_random = Random
 tts_aliases_strategy_single = Single voice
@@ -2709,6 +2715,7 @@ midi_device_port = in · port { $index }
 midi_device_offline = offline
 midi_device_maps = { $count } maps
 midi_devices_empty = No MIDI devices seen yet
+midi_devices_load_failed = Could not load the remembered MIDI devices, so new ones are not added to protect the list: { $reason }
 midi_rescan_ports = Rescan ports
 
 ## MIDI - input monitor

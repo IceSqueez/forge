@@ -5,7 +5,7 @@ use forge_components::{
 };
 use forge_registry::TriggerRegistry;
 use forge_runtime::EventBus;
-use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, reserved_keys};
+use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo};
 use forge_types::{
     ActionId, PermissionRung, PlatformId, TriggerConfig, TriggerInstance, TriggerInstanceId,
 };
@@ -13,7 +13,6 @@ use gpui::{
     App, Context, Entity, EventEmitter, FocusHandle, Pixels, Point, Rgba, SharedString,
     Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
 };
-use std::collections::HashSet;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -23,6 +22,7 @@ use crate::collection_options::ChoiceOptions;
 use crate::config_form::{CollectionChoices, ConfigField};
 use crate::integration_switch::{IntegrationSwitch, SwitchWatch};
 use crate::integrations::BuiltinRegistry;
+use crate::picker_favorites::{StoredFavorites, TRIGGER_FAVORITES};
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use forge_components::ActivePresentation;
@@ -251,8 +251,7 @@ pub struct TriggersRegistryView {
     repo: Arc<dyn TriggerInstanceRepo>,
     action_repo: Arc<dyn ActionRepo>,
     registry: Arc<TriggerRegistry>,
-    settings_repo: Arc<dyn SettingsRepo>,
-    favorites: HashSet<SharedString>,
+    favorites: Entity<StoredFavorites>,
     rt_handle: tokio::runtime::Handle,
     detail_width: Pixels,
     loading: bool,
@@ -297,13 +296,18 @@ impl TriggersRegistryView {
         let search = SearchState::new(cx, palette, tr!("triggers_search_placeholder"));
         let search_sub = cx.subscribe(search.field(), Self::on_search_event);
         let release = cx.on_release(|this, cx| this.persist_detail_on_release(cx));
+        let favorites = StoredFavorites::shared(
+            TRIGGER_FAVORITES,
+            Arc::clone(&settings_repo),
+            &rt_handle,
+            cx,
+        );
 
         let view = Self {
             repo,
             action_repo,
             registry,
-            settings_repo,
-            favorites: HashSet::new(),
+            favorites,
             rt_handle,
             detail_width: detail::DETAIL_SHEET_W,
             loading: true,
@@ -334,7 +338,6 @@ impl TriggersRegistryView {
             _release: release,
         };
         view.reload(cx);
-        view.load_favorites(cx);
         view
     }
 
@@ -364,52 +367,6 @@ impl TriggersRegistryView {
         integrations
             .off_owner(self.registry.owning_integration(kind_id))
             .cloned()
-    }
-
-    fn load_favorites(&self, cx: &mut Context<Self>) {
-        let repo = Arc::clone(&self.settings_repo);
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move {
-                forge_storage::get_json_setting::<Vec<String>>(
-                    repo.as_ref(),
-                    reserved_keys::PICKER_FAVORITES_TRIGGERS,
-                )
-                .await
-                .unwrap_or_default()
-            },
-            |this, ids: Vec<String>, _cx| {
-                this.favorites = crate::picker_favorites::to_set(ids);
-            },
-            cx,
-        );
-    }
-
-    pub(super) fn persist_favorites(
-        &self,
-        favorites: HashSet<SharedString>,
-        cx: &mut Context<Self>,
-    ) {
-        let repo = Arc::clone(&self.settings_repo);
-        let ids = crate::picker_favorites::to_ids(&favorites);
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move {
-                forge_storage::set_json_setting(
-                    repo.as_ref(),
-                    reserved_keys::PICKER_FAVORITES_TRIGGERS,
-                    &ids,
-                )
-                .await
-                .map_err(|e| e.to_string())
-            },
-            |this, result: Result<(), String>, cx| {
-                if let Err(message) = result {
-                    this.on_repo_error(&message, cx);
-                }
-            },
-            cx,
-        );
     }
 
     fn set_detail_width(&mut self, width: Pixels, cx: &mut Context<Self>) {

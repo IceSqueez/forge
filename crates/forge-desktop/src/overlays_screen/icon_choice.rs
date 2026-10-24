@@ -26,6 +26,7 @@ use super::property_panel::{IconPickRequested, IconPickResult, OverlayPropertyPa
 use crate::async_bridge::{self, DialogFilter};
 use crate::clip_messages::refusal_message;
 use crate::config_form::{CHOICE_GLYPH, CHOICE_PAD_H, CHOICE_PAD_V, FILL_VAL_FS};
+use crate::picker_favorites::{FavoritesList, bind_picker, follow_picker_event};
 use forge_components::ActivePresentation;
 
 pub(super) const NO_ICON_ID: &str = "forge-icon-none";
@@ -91,6 +92,11 @@ pub(super) enum IconPick {
     Import,
     Store(String),
 }
+
+pub(super) const ICON_FAVORITES: FavoritesList = FavoritesList {
+    key: reserved_keys::PICKER_FAVORITES_ICONS,
+    from_stored: known_icon_favorites,
+};
 
 pub(super) fn known_icon_favorites(stored: Vec<String>) -> HashSet<SharedString> {
     stored
@@ -301,6 +307,7 @@ pub(super) struct OpenIconPicker {
     view: Entity<GridPicker>,
     focused: bool,
     _sub: Subscription,
+    _favorites: Subscription,
 }
 
 impl OverlaysView {
@@ -364,62 +371,6 @@ impl OverlaysView {
         cx.notify();
     }
 
-    pub(super) fn load_icon_favorites(&self, cx: &mut Context<Self>) {
-        let repo = Arc::clone(&self.handles.settings_repo);
-        async_bridge::run_async(
-            &self.handles.rt_handle,
-            async move {
-                forge_storage::get_json_setting::<Vec<String>>(
-                    repo.as_ref(),
-                    reserved_keys::PICKER_FAVORITES_ICONS,
-                )
-                .await
-                .unwrap_or_default()
-            },
-            |this, stored: Vec<String>, cx| {
-                this.apply_icon_favorites(known_icon_favorites(stored), cx);
-            },
-            cx,
-        );
-    }
-
-    fn apply_icon_favorites(&mut self, favorites: HashSet<SharedString>, cx: &mut Context<Self>) {
-        self.catalog.icon_favorites = favorites;
-        let pushed = self.catalog.icon_favorites.clone();
-        if let Some(picker) = self
-            .catalog
-            .icon_picker
-            .as_ref()
-            .map(|open| open.view.clone())
-        {
-            picker.update(cx, |picker, cx| picker.set_favorites(pushed, cx));
-        }
-        cx.notify();
-    }
-
-    fn persist_icon_favorites(&self, cx: &mut Context<Self>) {
-        let repo = Arc::clone(&self.handles.settings_repo);
-        let ids = crate::picker_favorites::to_ids(&self.catalog.icon_favorites);
-        async_bridge::run_async(
-            &self.handles.rt_handle,
-            async move {
-                forge_storage::set_json_setting(
-                    repo.as_ref(),
-                    reserved_keys::PICKER_FAVORITES_ICONS,
-                    &ids,
-                )
-                .await
-                .map_err(|error| error.to_string())
-            },
-            |this, result: Result<(), String>, cx| {
-                if let Err(message) = result {
-                    this.report(&message, cx);
-                }
-            },
-            cx,
-        );
-    }
-
     fn icon_accent(&self, palette: &ForgePalette) -> Rgba {
         self.selected_definition()
             .map(|definition| self.visuals(definition, palette).accent)
@@ -455,14 +406,22 @@ impl OverlaysView {
             favorites_label: tr!("picker_favorites").into(),
             favorites_empty: tr!("picker_favorites_empty").into(),
         };
-        let favorites = self.catalog.icon_favorites.clone();
+        let favorites = self
+            .handles
+            .icon_favorites
+            .read(cx)
+            .ids()
+            .cloned()
+            .unwrap_or_default();
         let view = cx.new(|cx| GridPicker::new(config, groups, favorites, palette, cx));
         let sub = cx.subscribe(&view, Self::on_icon_picker_event);
+        let favorites_sub = bind_picker(&self.handles.icon_favorites, &view, cx);
         self.catalog.icon_picker = Some(OpenIconPicker {
             key,
             view,
             focused: false,
             _sub: sub,
+            _favorites: favorites_sub,
         });
         cx.notify();
     }
@@ -475,12 +434,8 @@ impl OverlaysView {
     ) {
         match event {
             GridPickerEvent::Picked(id) => self.apply_icon_pick(id.to_string(), cx),
-            GridPickerEvent::FavoriteToggled(id) => {
-                if !self.catalog.icon_favorites.remove(id) {
-                    self.catalog.icon_favorites.insert(id.clone());
-                }
-                self.persist_icon_favorites(cx);
-                cx.notify();
+            GridPickerEvent::FavoriteToggled(_) | GridPickerEvent::FavoritesRetry => {
+                follow_picker_event(&self.handles.icon_favorites, event, cx);
             }
             GridPickerEvent::Dismissed => self.close_icon_picker(cx),
         }

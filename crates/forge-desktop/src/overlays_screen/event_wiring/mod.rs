@@ -256,6 +256,7 @@ impl EventWiringView {
                 }
                 cx.notify();
             }
+            GridPickerEvent::FavoritesRetry => {}
             GridPickerEvent::Dismissed => self.close(cx),
         }
     }

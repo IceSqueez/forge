@@ -1,12 +1,14 @@
+use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_components::{
-    ActivePresentation, BORDER_THIN, DateShape, Density, FONT_SM, FONT_XS, ForgePalette, Icon,
-    InputEvent, PushToast, Radius, SettingRow, Spacing, TextInput, ToastKind, body_family,
-    checkbox, fmt_bytes, fmt_display, fmt_display_relative, ghost_button, ghost_button_with_icon,
-    mono_family, radius, setting_row, setting_rows, spacing, toggle, tr,
+    ActivePresentation, BORDER_THIN, DISABLED_OPACITY, DateShape, Density, FONT_SM, FONT_XS,
+    ForgePalette, Icon, InputEvent, PushToast, Radius, SettingRow, Spacing, TextInput, ToastKind,
+    body_family, checkbox, error_row_with_retry, fmt_bytes, fmt_display, fmt_display_relative,
+    ghost_button, ghost_button_with_icon, mono_family, radius, setting_row, setting_rows, spacing,
+    toggle, tr,
 };
 use forge_storage::settings::{
     DEFAULT_BACKUP_SCHEDULE_ENABLED, DEFAULT_BACKUP_SCHEDULE_INCLUDE_CATEGORY,
@@ -16,9 +18,7 @@ use forge_storage::settings::{
     MIN_BACKUP_SCHEDULE_INTERVAL_MINUTES, MIN_BACKUP_SCHEDULE_KEEP_DAILY_DAYS,
     MIN_BACKUP_SCHEDULE_KEEP_NEWEST,
 };
-use forge_storage::{
-    DataProvider, SettingsRepo, StorageError, get_bool_setting, reserved_keys, set_bool_setting,
-};
+use forge_storage::{DataProvider, SettingsRepo, StorageError, reserved_keys, set_bool_setting};
 use forge_transfer::{
     BackupCategory, FailureCategory, Passphrase, ScheduleKey, ScheduleState, ScheduledBackupHandle,
     ScheduledBackupStatus, StorageUsed, TransferError, TransferExclusivity, backups_dir,
@@ -30,12 +30,16 @@ use gpui::{
 };
 use time::OffsetDateTime;
 
-use crate::async_bridge::{self, DIALOG_CANCELLED, Debounced, ErrorSink, SLIDER_PERSIST_DEBOUNCE};
+use crate::async_bridge::{
+    self, DIALOG_CANCELLED, Debounced, ErrorSink, Loadable, SLIDER_PERSIST_DEBOUNCE,
+    SnapshotWriter, WriteOutcome,
+};
 use crate::backup_passphrase_modal::{
     BackupPassphraseEvent, BackupPassphraseModal, PassphrasePurpose,
 };
 
 const NUMBER_INPUT_W: Pixels = px(120.0);
+const UNKNOWN_VALUE: &str = "-";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ScheduleNumber {
@@ -82,13 +86,16 @@ impl ScheduleNumber {
             .filter(|value| self.range().contains(value))
     }
 
-    pub(crate) fn value_from_stored(self, stored: Option<&str>) -> u32 {
+    pub(crate) fn value_from_stored(self, stored: Option<&str>) -> Result<u32, StorageError> {
         let range = self.range();
-        stored
-            .and_then(|raw| raw.trim().parse::<u32>().ok())
-            .map_or(self.default_value(), |value| {
-                value.clamp(*range.start(), *range.end())
-            })
+        let Some(raw) = stored else {
+            return Ok(self.default_value());
+        };
+        let value = raw
+            .trim()
+            .parse::<u32>()
+            .map_err(|error| StorageError::Parse(format!("{}: {error}", self.storage_key())))?;
+        Ok(value.clamp(*range.start(), *range.end()))
     }
 
     fn label(self) -> String {
@@ -294,12 +301,16 @@ impl StatusLine {
     }
 }
 
-pub(crate) struct ScheduleSnapshot {
+pub(crate) struct ScheduleSettings {
     pub enabled: bool,
     pub key: Option<ScheduleKey>,
-    pub numbers: Vec<(ScheduleNumber, u32)>,
     pub included: Vec<BackupCategory>,
     pub destination: Option<String>,
+}
+
+pub(crate) struct ScheduleSnapshot {
+    pub settings: ScheduleSettings,
+    pub numbers: Vec<(ScheduleNumber, u32)>,
 }
 
 async fn stored_text(repo: &dyn SettingsRepo, key: &str) -> Result<Option<String>, StorageError> {
@@ -309,6 +320,24 @@ async fn stored_text(repo: &dyn SettingsRepo, key: &str) -> Result<Option<String
         .filter(|value| !value.trim().is_empty()))
 }
 
+async fn stored_flag(
+    repo: &dyn SettingsRepo,
+    key: &str,
+    default: bool,
+) -> Result<bool, StorageError> {
+    let Some(raw) = stored_text(repo, key).await? else {
+        return Ok(default);
+    };
+    let flag = raw.trim();
+    if flag == "1" || flag.eq_ignore_ascii_case("true") {
+        Ok(true)
+    } else if flag == "0" || flag.eq_ignore_ascii_case("false") {
+        Ok(false)
+    } else {
+        Err(StorageError::Parse(format!("{key}: not a flag: {flag}")))
+    }
+}
+
 pub(crate) async fn load_schedule(
     repo: Arc<dyn SettingsRepo>,
 ) -> Result<ScheduleSnapshot, StorageError> {
@@ -316,12 +345,12 @@ pub(crate) async fn load_schedule(
     let mut numbers = Vec::with_capacity(ScheduleNumber::ALL.len());
     for number in ScheduleNumber::ALL {
         let stored = stored_text(repo, number.storage_key()).await?;
-        numbers.push((number, number.value_from_stored(stored.as_deref())));
+        numbers.push((number, number.value_from_stored(stored.as_deref())?));
     }
     let mut included = Vec::with_capacity(OPTIONAL_CATEGORIES.len());
     for category in OPTIONAL_CATEGORIES {
         if let Some(key) = include_key(category)
-            && get_bool_setting(repo, key, DEFAULT_BACKUP_SCHEDULE_INCLUDE_CATEGORY).await
+            && stored_flag(repo, key, DEFAULT_BACKUP_SCHEDULE_INCLUDE_CATEGORY).await?
         {
             included.push(category);
         }
@@ -329,17 +358,20 @@ pub(crate) async fn load_schedule(
     let key = stored_text(repo, reserved_keys::BACKUP_SCHEDULE_KEY)
         .await?
         .and_then(|stored| ScheduleKey::decode(&stored).ok());
+    let enabled = stored_flag(
+        repo,
+        reserved_keys::BACKUP_SCHEDULE_ENABLED,
+        DEFAULT_BACKUP_SCHEDULE_ENABLED,
+    )
+    .await?;
     Ok(ScheduleSnapshot {
-        enabled: get_bool_setting(
-            repo,
-            reserved_keys::BACKUP_SCHEDULE_ENABLED,
-            DEFAULT_BACKUP_SCHEDULE_ENABLED,
-        )
-        .await,
-        key,
+        settings: ScheduleSettings {
+            enabled,
+            key,
+            included,
+            destination: stored_text(repo, reserved_keys::BACKUP_SCHEDULE_DESTINATION).await?,
+        },
         numbers,
-        included,
-        destination: stored_text(repo, reserved_keys::BACKUP_SCHEDULE_DESTINATION).await?,
     })
 }
 
@@ -432,10 +464,8 @@ pub struct BackupScheduleView {
     service: ScheduledBackupHandle,
     exclusivity: TransferExclusivity,
     data_dir: PathBuf,
-    enabled: bool,
-    key: Option<ScheduleKey>,
-    included: Vec<BackupCategory>,
-    destination: Option<String>,
+    settings: Loadable<ScheduleSettings>,
+    writers: HashMap<&'static str, SnapshotWriter>,
     status: ScheduledBackupStatus,
     manual_run: Option<ManualRunWatch>,
     numbers: Vec<NumberField>,
@@ -458,9 +488,10 @@ impl BackupScheduleView {
         for number in ScheduleNumber::ALL {
             let value = number.default_value();
             let input = cx.new(|cx| {
-                TextInput::new(value.to_string(), cx)
+                TextInput::new(UNKNOWN_VALUE, cx)
                     .with_palette(palette)
                     .with_font_size(FONT_SM)
+                    .read_only(true)
             });
             subs.push(
                 cx.subscribe(&input, move |this, _input, event: &InputEvent, cx| {
@@ -484,10 +515,8 @@ impl BackupScheduleView {
             service,
             exclusivity,
             data_dir,
-            enabled: DEFAULT_BACKUP_SCHEDULE_ENABLED,
-            key: None,
-            included: OPTIONAL_CATEGORIES.to_vec(),
-            destination: None,
+            settings: Loadable::Loading,
+            writers: HashMap::new(),
             status,
             manual_run: None,
             numbers,
@@ -505,6 +534,8 @@ impl BackupScheduleView {
     }
 
     fn load(&mut self, cx: &mut Context<Self>) {
+        self.settings = Loadable::Loading;
+        self.lock_numbers(cx);
         async_bridge::run_async(
             &self.rt_handle,
             load_schedule(self.settings_repo()),
@@ -512,17 +543,25 @@ impl BackupScheduleView {
                 Ok(snapshot) => this.apply_snapshot(snapshot, cx),
                 Err(error) => {
                     tracing::warn!(%error, "failed to load the backup schedule settings");
+                    this.settings = Loadable::Failed(error.to_string());
+                    cx.notify();
                 }
             },
             cx,
         );
+        cx.notify();
+    }
+
+    fn lock_numbers(&mut self, cx: &mut Context<Self>) {
+        for field in &self.numbers {
+            field
+                .input
+                .update(cx, |input, cx| input.set_read_only(true, cx));
+        }
     }
 
     pub(crate) fn apply_snapshot(&mut self, snapshot: ScheduleSnapshot, cx: &mut Context<Self>) {
-        self.enabled = snapshot.enabled;
-        self.key = snapshot.key;
-        self.included = snapshot.included;
-        self.destination = snapshot.destination;
+        self.settings = Loadable::Loaded(snapshot.settings);
         for (number, value) in snapshot.numbers {
             if let Some(field) = self.numbers.iter_mut().find(|f| f.number == number) {
                 field.value = value;
@@ -530,6 +569,7 @@ impl BackupScheduleView {
                 field.input.update(cx, |input, cx| {
                     input.set_content(value.to_string(), cx);
                     input.set_invalid(false, cx);
+                    input.set_read_only(false, cx);
                 });
             }
         }
@@ -569,7 +609,10 @@ impl BackupScheduleView {
     }
 
     pub fn backs_up_unattended(&self) -> bool {
-        self.key.is_some() && self.enabled && self.status.state != ScheduleState::Suspended
+        self.settings
+            .loaded()
+            .is_some_and(|settings| settings.key.is_some() && settings.enabled)
+            && self.status.state != ScheduleState::Suspended
     }
 
     pub fn is_running(&self) -> bool {
@@ -592,22 +635,37 @@ impl BackupScheduleView {
             .map(|prompt| AnyView::from(prompt.modal.clone()))
     }
 
-    fn persist<F>(&self, write: F, cx: &mut Context<Self>)
+    fn persist<F>(&mut self, key: &'static str, write: F, cx: &mut Context<Self>)
     where
         F: Future<Output = Result<(), StorageError>> + Send + 'static,
     {
         let service = self.service.clone();
-        async_bridge::report_failure(
-            &self.rt_handle,
-            async move {
-                write.await?;
-                service.settings_changed();
-                Ok::<(), StorageError>(())
-            },
-            ErrorSink::Toast,
-            tr!("backup_schedule_persist_failed"),
-            cx,
-        );
+        let handle = self.rt_handle.clone();
+        self.writers
+            .entry(key)
+            .or_insert_with(|| SnapshotWriter::new(&handle))
+            .write(
+                async move {
+                    write.await?;
+                    service.settings_changed();
+                    Ok::<(), StorageError>(())
+                },
+                Self::persist_settled,
+                cx,
+            );
+    }
+
+    fn persist_settled(&mut self, outcome: WriteOutcome, cx: &mut Context<Self>) {
+        if let WriteOutcome::Failed(error) = outcome {
+            ErrorSink::Toast.report(
+                tr!(
+                    "backup_schedule_persist_failed_reason",
+                    reason = error.as_str()
+                ),
+                cx,
+            );
+            self.load(cx);
+        }
     }
 
     pub(crate) fn commit_number(
@@ -616,6 +674,9 @@ impl BackupScheduleView {
         text: &str,
         cx: &mut Context<Self>,
     ) {
+        if !self.settings.is_loaded() {
+            return;
+        }
         let parsed = number.parse(text);
         let repo = self.settings_repo();
         let service = self.service.clone();
@@ -647,9 +708,12 @@ impl BackupScheduleView {
     }
 
     pub(crate) fn toggle_enabled(&mut self, cx: &mut Context<Self>) {
-        if self.enabled {
+        let Some(settings) = self.settings.loaded() else {
+            return;
+        };
+        if settings.enabled {
             self.set_enabled(false, cx);
-        } else if self.key.is_some() {
+        } else if settings.key.is_some() {
             self.set_enabled(true, cx);
         } else {
             self.open_prompt(PassphrasePurpose::ScheduleSetup, cx);
@@ -658,9 +722,13 @@ impl BackupScheduleView {
     }
 
     fn set_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
-        self.enabled = enabled;
+        let Some(settings) = self.settings.loaded_mut() else {
+            return;
+        };
+        settings.enabled = enabled;
         let repo = self.settings_repo();
         self.persist(
+            reserved_keys::BACKUP_SCHEDULE_ENABLED,
             async move {
                 set_bool_setting(
                     repo.as_ref(),
@@ -677,14 +745,18 @@ impl BackupScheduleView {
         let Some(key) = include_key(category) else {
             return;
         };
-        let include = !self.included.contains(&category);
+        let Some(settings) = self.settings.loaded_mut() else {
+            return;
+        };
+        let include = !settings.included.contains(&category);
         if include {
-            self.included.push(category);
+            settings.included.push(category);
         } else {
-            self.included.retain(|kept| *kept != category);
+            settings.included.retain(|kept| *kept != category);
         }
         let repo = self.settings_repo();
         self.persist(
+            key,
             async move { set_bool_setting(repo.as_ref(), key, include).await },
             cx,
         );
@@ -692,6 +764,9 @@ impl BackupScheduleView {
     }
 
     fn choose_folder(&mut self, cx: &mut Context<Self>) {
+        if !self.settings.is_loaded() {
+            return;
+        }
         async_bridge::spawn_dialog(
             &self.rt_handle,
             async_bridge::pick_folder(),
@@ -707,10 +782,14 @@ impl BackupScheduleView {
     ) {
         match result {
             Ok(path) => {
+                let Some(settings) = self.settings.loaded_mut() else {
+                    return;
+                };
                 let shown = path.to_string_lossy().into_owned();
-                self.destination = Some(shown.clone());
+                settings.destination = Some(shown.clone());
                 let repo = self.settings_repo();
                 self.persist(
+                    reserved_keys::BACKUP_SCHEDULE_DESTINATION,
                     async move {
                         repo.set_string(reserved_keys::BACKUP_SCHEDULE_DESTINATION, &shown)
                             .await
@@ -731,9 +810,13 @@ impl BackupScheduleView {
     }
 
     pub(crate) fn reset_folder(&mut self, cx: &mut Context<Self>) {
-        self.destination = None;
+        let Some(settings) = self.settings.loaded_mut() else {
+            return;
+        };
+        settings.destination = None;
         let repo = self.settings_repo();
         self.persist(
+            reserved_keys::BACKUP_SCHEDULE_DESTINATION,
             async move {
                 repo.delete(reserved_keys::BACKUP_SCHEDULE_DESTINATION)
                     .await
@@ -745,7 +828,7 @@ impl BackupScheduleView {
     }
 
     fn open_prompt(&mut self, purpose: PassphrasePurpose, cx: &mut Context<Self>) {
-        if self.prompt.is_some() {
+        if self.prompt.is_some() || !self.settings.is_loaded() {
             return;
         }
         let modal = cx.new(|cx| BackupPassphraseModal::with_purpose(purpose, cx));
@@ -765,7 +848,11 @@ impl BackupScheduleView {
     }
 
     fn change_passphrase(&mut self, cx: &mut Context<Self>) {
-        if self.key.is_some() {
+        if self
+            .settings
+            .loaded()
+            .is_some_and(|settings| settings.key.is_some())
+        {
             self.open_prompt(PassphrasePurpose::ScheduleChange, cx);
         }
     }
@@ -782,7 +869,13 @@ impl BackupScheduleView {
         let Some(replacement) = replacement else {
             return;
         };
-        let wrapped_identity = self.key.as_ref().map(|key| key.wrapped_identity.clone());
+        let Some(settings) = self.settings.loaded() else {
+            return;
+        };
+        let wrapped_identity = settings
+            .key
+            .as_ref()
+            .map(|key| key.wrapped_identity.clone());
         let work = match (purpose, current, wrapped_identity) {
             (PassphrasePurpose::ScheduleChange, Some(current), Some(wrapped)) => KeyWork::Change {
                 wrapped,
@@ -819,9 +912,11 @@ impl BackupScheduleView {
     ) {
         match result {
             Ok(key) => {
-                self.key = Some(key);
-                if purpose == PassphrasePurpose::ScheduleSetup {
-                    self.enabled = true;
+                if let Some(settings) = self.settings.loaded_mut() {
+                    settings.key = Some(key);
+                    if purpose == PassphrasePurpose::ScheduleSetup {
+                        settings.enabled = true;
+                    }
                 }
                 self.prompt = None;
                 if purpose == PassphrasePurpose::ScheduleChange {
@@ -854,21 +949,29 @@ impl BackupScheduleView {
         cx: &mut Context<Self>,
     ) -> SettingRow {
         let line = StatusLine::of(&self.status);
-        let change = self.key.is_some().then(|| {
+        let settings = self.settings.loaded();
+        let change = settings.and_then(|s| s.key.as_ref()).map(|_| {
             ghost_button(tr!("backup_schedule_change_btn"), palette).on_click(
                 "backup-schedule-change-passphrase",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.change_passphrase(cx)),
             )
         });
+        let enabled = settings.is_some_and(|s| s.enabled);
+        let switch = toggle(enabled, palette);
+        let switch = if settings.is_some() {
+            div().child(switch.on_click(
+                "backup-schedule-enabled",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_enabled(cx)),
+            ))
+        } else {
+            div().opacity(DISABLED_OPACITY).child(switch)
+        };
         let controls = div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
             .children(change)
-            .child(toggle(self.enabled, palette).on_click(
-                "backup-schedule-enabled",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_enabled(cx)),
-            ));
+            .child(switch);
         let row = setting_row(
             tr!("backup_schedule_label"),
             Some(line.text().into()),
@@ -895,7 +998,7 @@ impl BackupScheduleView {
         } else {
             number.hint()
         };
-        let control = div()
+        let mut control = div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
@@ -913,6 +1016,9 @@ impl BackupScheduleView {
                     .text_color(palette.text_muted)
                     .child(number.unit(field.value)),
             );
+        if !self.settings.is_loaded() {
+            control = control.opacity(DISABLED_OPACITY);
+        }
         let row = setting_row(
             number.label(),
             Some(SharedString::from(hint)),
@@ -935,7 +1041,8 @@ impl BackupScheduleView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let fixed = include_key(category).is_none();
-        let checked = fixed || self.included.contains(&category);
+        let settings = self.settings.loaded();
+        let checked = fixed || settings.is_some_and(|s| s.included.contains(&category));
         let label_color = if fixed {
             palette.text_muted
         } else {
@@ -967,6 +1074,8 @@ impl BackupScheduleView {
                     .text_color(palette.text_faint)
                     .child(tr!("backup_schedule_category_database_reason")),
             );
+        } else if settings.is_none() {
+            item = item.opacity(DISABLED_OPACITY);
         } else {
             let hover_bg = palette.base;
             item = item
@@ -1010,10 +1119,14 @@ impl BackupScheduleView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> SettingRow {
-        let shown = self
-            .destination
-            .clone()
-            .unwrap_or_else(|| backups_dir(&self.data_dir).to_string_lossy().into_owned());
+        let settings = self.settings.loaded();
+        let destination = settings.and_then(|s| s.destination.clone());
+        let has_destination = destination.is_some();
+        let shown = match settings {
+            Some(_) => destination
+                .unwrap_or_else(|| backups_dir(&self.data_dir).to_string_lossy().into_owned()),
+            None => UNKNOWN_VALUE.to_owned(),
+        };
         let path_box = div()
             .flex_1()
             .min_w(px(0.0))
@@ -1034,11 +1147,12 @@ impl BackupScheduleView {
             tr!("backup_schedule_folder_choose"),
             palette,
         )
+        .disabled(settings.is_none())
         .on_click(
             "backup-schedule-folder-choose",
             cx.listener(|this, _: &ClickEvent, _, cx| this.choose_folder(cx)),
         );
-        let reset = self.destination.is_some().then(|| {
+        let reset = has_destination.then(|| {
             ghost_button(tr!("backup_schedule_folder_reset"), palette).on_click(
                 "backup-schedule-folder-reset",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.reset_folder(cx)),
@@ -1145,7 +1259,20 @@ impl Render for BackupScheduleView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
+        let failure = self.settings.failure().map(|reason| {
+            div()
+                .w_full()
+                .p(spacing(Spacing::Sm, density))
+                .child(error_row_with_retry(
+                    "backup-schedule-load-retry",
+                    tr!("backup_schedule_load_failed", reason = reason),
+                    &palette,
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.load(cx)),
+                ))
+                .into_any_element()
+        });
         let mut rows = setting_rows(&palette)
+            .rows(failure)
             .row(self.schedule_row(&palette, density, cx))
             .rows(
                 self.number_row(ScheduleNumber::Interval, &palette, density)
@@ -1173,7 +1300,7 @@ pub(crate) mod tests {
 
     use forge_components::{DateShape, Toasts, fmt_display, fmt_display_relative, tr};
     use forge_storage::settings::portability::{SettingPortability, portability_of};
-    use forge_storage::{DataProvider, Language, reserved_keys};
+    use forge_storage::{DataProvider, Language, SettingsRepo, reserved_keys};
     use forge_transfer::{
         BackupCategory, FailureCategory, FailureStreak, Passphrase, ScheduleKey, ScheduleState,
         ScheduledBackupHandle, ScheduledBackupParts, ScheduledBackupStatus, SystemBackupClock,
@@ -1186,8 +1313,8 @@ pub(crate) mod tests {
     use time::format_description::well_known::Rfc3339;
 
     use super::{
-        BackupScheduleView, OPTIONAL_CATEGORIES, ScheduleNumber, ScheduleSnapshot, StatusLine,
-        failure_reason, load_schedule,
+        BackupScheduleView, OPTIONAL_CATEGORIES, ScheduleNumber, ScheduleSettings,
+        ScheduleSnapshot, StatusLine, failure_reason, load_schedule,
     };
     use crate::backup_passphrase_modal::PassphrasePurpose;
     use crate::i18n::install_language;
@@ -1282,7 +1409,10 @@ pub(crate) mod tests {
         };
         let loaded = rig.settle(cx, |cx| {
             rig.view.read_with(cx, |view, _| {
-                view.destination.as_deref() == Some(shown_destination.as_str())
+                view.settings
+                    .loaded()
+                    .and_then(|settings| settings.destination.as_deref())
+                    == Some(shown_destination.as_str())
             })
         });
         assert!(loaded, "the schedule settings never loaded");
@@ -1330,7 +1460,25 @@ pub(crate) mod tests {
         }
 
         fn view_key(&self, cx: &mut TestAppContext) -> Option<ScheduleKey> {
-            self.view.read_with(cx, |view, _| view.key.clone())
+            self.view.read_with(cx, |view, _| {
+                view.settings
+                    .loaded()
+                    .and_then(|settings| settings.key.clone())
+            })
+        }
+
+        fn view_enabled(&self, cx: &mut TestAppContext) -> bool {
+            self.view.read_with(cx, |view, _| {
+                view.settings
+                    .loaded()
+                    .is_some_and(|settings| settings.enabled)
+            })
+        }
+
+        fn view_included(&self, cx: &mut TestAppContext) -> Vec<BackupCategory> {
+            self.view.read_with(cx, |view, _| {
+                view.settings.loaded().unwrap().included.clone()
+            })
         }
 
         fn answer_prompt(
@@ -1405,21 +1553,25 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn stored_number_falls_back_to_the_default_when_unreadable_and_clamps_when_out_of_range() {
+    fn stored_number_defaults_when_absent_clamps_when_out_of_range_and_rejects_non_numbers() {
         for number in ScheduleNumber::ALL {
             let (min, max) = (*number.range().start(), *number.range().end());
             let mut cases = vec![
-                (None, number.default_value()),
-                (Some("abc".to_owned()), number.default_value()),
-                (Some((max + 1).to_string()), max),
-                (Some(min.to_string()), min),
+                (None, Some(number.default_value())),
+                (Some((max + 1).to_string()), Some(max)),
+                (Some(format!(" {max} ")), Some(max)),
+                (Some(min.to_string()), Some(min)),
+                (Some("abc".to_owned()), None),
+                (Some("1.5".to_owned()), None),
+                (Some("-1".to_owned()), None),
+                (Some(u64::MAX.to_string()), None),
             ];
             if min > 0 {
-                cases.push((Some((min - 1).to_string()), min));
+                cases.push((Some((min - 1).to_string()), Some(min)));
             }
             for (stored, expected) in cases {
                 assert_eq!(
-                    number.value_from_stored(stored.as_deref()),
+                    number.value_from_stored(stored.as_deref()).ok(),
                     expected,
                     "{number:?} stored {stored:?}"
                 );
@@ -1597,11 +1749,13 @@ pub(crate) mod tests {
             let unattended = rig.view.update(cx, |view, cx| {
                 view.apply_snapshot(
                     ScheduleSnapshot {
-                        enabled,
-                        key: has_key.then(|| key.clone()),
+                        settings: ScheduleSettings {
+                            enabled,
+                            key: has_key.then(|| key.clone()),
+                            included: OPTIONAL_CATEGORIES.to_vec(),
+                            destination: None,
+                        },
                         numbers: Vec::new(),
-                        included: OPTIONAL_CATEGORIES.to_vec(),
-                        destination: None,
                     },
                     cx,
                 );
@@ -1627,7 +1781,7 @@ pub(crate) mod tests {
         rig.view.update(cx, |view, cx| view.toggle_enabled(cx));
         cx.run_until_parked();
 
-        let enabled = rig.view.read_with(cx, |view, _| view.enabled);
+        let enabled = rig.view_enabled(cx);
         assert_eq!(
             (
                 rig.prompt_purpose(cx),
@@ -1673,7 +1827,7 @@ pub(crate) mod tests {
         rig.settle_until_prompt_closes(cx);
 
         let key = rig.view_key(cx).expect("a schedule key");
-        let enabled = rig.view.read_with(cx, |view, _| view.enabled);
+        let enabled = rig.view_enabled(cx);
         assert_eq!(
             (
                 rig.stored_key(),
@@ -1934,6 +2088,7 @@ pub(crate) mod tests {
             .rt
             .block_on(load_schedule(Arc::clone(rig.world.provider()) as _))
             .unwrap()
+            .settings
             .included;
 
         assert_eq!(
@@ -1963,7 +2118,7 @@ pub(crate) mod tests {
                 == Some("true")
         });
 
-        let included = rig.view.read_with(cx, |view, _| view.included.clone());
+        let included = rig.view_included(cx);
         assert!(persisted && included.contains(&BackupCategory::Voices));
     }
 
@@ -1976,7 +2131,7 @@ pub(crate) mod tests {
         });
         cx.run_until_parked();
 
-        let included = rig.view.read_with(cx, |view, _| view.included.clone());
+        let included = rig.view_included(cx);
         assert_eq!(included, OPTIONAL_CATEGORIES.to_vec());
     }
 
@@ -2168,5 +2323,363 @@ pub(crate) mod tests {
             (saved, success_toasts(cx), rig.scheduled_bundles().len()),
             (true, Vec::<String>::new(), 1)
         );
+    }
+
+    type Edit = fn(&mut BackupScheduleView, &mut gpui::Context<BackupScheduleView>);
+
+    const STORED_DESTINATION: &str = "/stored/backups";
+    const STORED_INTERVAL: &str = "120";
+    const CHOSEN_DESTINATION: &str = "/chosen/backups";
+
+    struct FakeSchedule {
+        rt: tokio::runtime::Runtime,
+        backend: Arc<crate::test_support::TestBackend>,
+        writes: std::cell::RefCell<
+            tokio::sync::mpsc::UnboundedReceiver<crate::test_support::SettingWrite>,
+        >,
+        service: ScheduledBackupHandle,
+        _service_rt: tokio::runtime::Runtime,
+        data_dir: TempDir,
+    }
+
+    impl FakeSchedule {
+        fn new(cx: &mut TestAppContext, key: &ScheduleKey) -> Self {
+            install_language(Language::En);
+            install_presentation(cx);
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .start_paused(true)
+                .build()
+                .unwrap();
+            let service_rt = runtime();
+            let (backend, writes) = crate::test_support::test_backend();
+            for (stored_key, value) in [
+                (reserved_keys::BACKUP_SCHEDULE_ENABLED, "true".to_owned()),
+                (reserved_keys::BACKUP_SCHEDULE_KEY, key.encode().unwrap()),
+                (
+                    reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES,
+                    STORED_INTERVAL.to_owned(),
+                ),
+                (
+                    reserved_keys::BACKUP_SCHEDULE_INCLUDE_MEDIA,
+                    "false".to_owned(),
+                ),
+                (
+                    reserved_keys::BACKUP_SCHEDULE_DESTINATION,
+                    STORED_DESTINATION.to_owned(),
+                ),
+            ] {
+                backend.seed(stored_key, &value);
+            }
+            let (service_backend, _) = crate::test_support::test_backend();
+            let data_dir = tempfile::tempdir().unwrap();
+            let service = {
+                let _entered = service_rt.enter();
+                spawn_scheduled_backups(ScheduledBackupParts {
+                    provider: service_backend,
+                    data_dir: data_dir.path().to_path_buf(),
+                    exclusivity: TransferExclusivity::new(),
+                    clock: Arc::new(SystemBackupClock),
+                })
+            };
+            Self {
+                rt,
+                backend,
+                writes: std::cell::RefCell::new(writes),
+                service,
+                _service_rt: service_rt,
+                data_dir,
+            }
+        }
+
+        fn open(&self, cx: &mut TestAppContext) -> Entity<BackupScheduleView> {
+            let backend = Arc::clone(&self.backend) as Arc<dyn DataProvider>;
+            let handle = self.rt.handle().clone();
+            let service = self.service.clone();
+            let data_dir = self.data_dir.path().to_path_buf();
+            let view = cx.update(|cx| {
+                cx.new(|cx| {
+                    BackupScheduleView::new(
+                        backend,
+                        handle,
+                        service,
+                        TransferExclusivity::new(),
+                        data_dir,
+                        cx,
+                    )
+                })
+            });
+            self.settle(cx);
+            view
+        }
+
+        fn settle(&self, cx: &mut TestAppContext) {
+            for _ in 0..3 {
+                pump(&self.rt);
+                cx.run_until_parked();
+            }
+        }
+
+        fn past_the_save_debounce(&self, cx: &mut TestAppContext) {
+            self.settle(cx);
+            self.rt
+                .block_on(tokio::time::advance(super::SLIDER_PERSIST_DEBOUNCE * 2));
+            self.settle(cx);
+        }
+
+        fn stored(&self) -> std::collections::HashMap<String, String> {
+            self.rt.block_on(self.backend.load_all()).unwrap()
+        }
+
+        fn untouched_since(&self, before: &std::collections::HashMap<String, String>) -> bool {
+            let mut writes = self.writes.borrow_mut();
+            let mut written = Vec::new();
+            while let Ok(write) = writes.try_recv() {
+                written.push(write);
+            }
+            written.is_empty() && self.stored() == *before
+        }
+    }
+
+    fn edit_paths() -> [(&'static str, Edit); 11] {
+        [
+            ("type an interval", |v, cx| {
+                v.commit_number(ScheduleNumber::Interval, "30", cx)
+            }),
+            ("type a newest-kept count", |v, cx| {
+                v.commit_number(ScheduleNumber::KeepNewest, "30", cx)
+            }),
+            ("type a daily-kept count", |v, cx| {
+                v.commit_number(ScheduleNumber::KeepDailyDays, "30", cx)
+            }),
+            ("flip the schedule switch", |v, cx| v.toggle_enabled(cx)),
+            ("flip media", |v, cx| {
+                v.toggle_category(BackupCategory::Media, cx)
+            }),
+            ("flip voices", |v, cx| {
+                v.toggle_category(BackupCategory::Voices, cx)
+            }),
+            ("flip overlays", |v, cx| {
+                v.toggle_category(BackupCategory::Overlays, cx)
+            }),
+            ("flip assets", |v, cx| {
+                v.toggle_category(BackupCategory::Assets, cx)
+            }),
+            ("choose a folder", |v, cx| {
+                v.folder_chosen(Ok(std::path::PathBuf::from(CHOSEN_DESTINATION)), cx)
+            }),
+            ("reset the folder", |v, cx| v.reset_folder(cx)),
+            ("change the passphrase", |v, cx| v.change_passphrase(cx)),
+        ]
+    }
+
+    fn view_failure(view: &Entity<BackupScheduleView>, cx: &mut TestAppContext) -> Option<String> {
+        view.read_with(cx, |view, _| view.settings.failure().map(str::to_owned))
+    }
+
+    fn view_prompt(
+        view: &Entity<BackupScheduleView>,
+        cx: &mut TestAppContext,
+    ) -> Option<PassphrasePurpose> {
+        view.read_with(cx, |view, _| view.prompt.as_ref().map(|p| p.purpose))
+    }
+
+    #[gpui::test]
+    fn no_edit_after_a_failed_load_writes_over_the_stored_schedule(cx: &mut TestAppContext) {
+        let key = key_for(OLD_PASSPHRASE);
+        let unreachable = forge_storage::StorageError::Connection {
+            reason: crate::test_support::SETTINGS_READ_FAILED.to_owned(),
+        }
+        .to_string();
+        let bad_number = ScheduleNumber::Interval
+            .value_from_stored(Some("abc"))
+            .unwrap_err()
+            .to_string();
+        let faults: [(&str, &str, Option<&str>); 3] = [
+            (
+                "unreachable store",
+                reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES,
+                None,
+            ),
+            (
+                "undecodable number",
+                reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES,
+                Some("abc"),
+            ),
+            (
+                "undecodable flag",
+                reserved_keys::BACKUP_SCHEDULE_INCLUDE_MEDIA,
+                Some("maybe"),
+            ),
+        ];
+        for (fault, faulty_key, stored) in faults {
+            for (case, edit) in edit_paths() {
+                let schedule = FakeSchedule::new(cx, &key);
+                let reason = match stored {
+                    Some(raw) => {
+                        schedule.backend.seed(faulty_key, raw);
+                        if faulty_key == reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES {
+                            bad_number.clone()
+                        } else {
+                            let repo = Arc::clone(&schedule.backend) as Arc<dyn SettingsRepo>;
+                            schedule
+                                .rt
+                                .block_on(super::stored_flag(repo.as_ref(), faulty_key, true))
+                                .unwrap_err()
+                                .to_string()
+                        }
+                    }
+                    None => {
+                        schedule
+                            .backend
+                            .fault_reads(faulty_key, crate::test_support::ReadFault::Fails);
+                        unreachable.clone()
+                    }
+                };
+                let before = schedule.stored();
+                let view = schedule.open(cx);
+
+                view.update(cx, edit);
+                schedule.past_the_save_debounce(cx);
+
+                assert_eq!(
+                    (
+                        schedule.untouched_since(&before),
+                        view_failure(&view, cx),
+                        view_prompt(&view, cx),
+                    ),
+                    (true, Some(reason), None),
+                    "{fault}: {case}"
+                );
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn no_edit_while_the_load_is_pending_writes_and_the_load_still_lands_intact(
+        cx: &mut TestAppContext,
+    ) {
+        let key = key_for(OLD_PASSPHRASE);
+        for (case, edit) in edit_paths() {
+            let schedule = FakeSchedule::new(cx, &key);
+            let gate = Arc::new(tokio::sync::Notify::new());
+            schedule.backend.fault_reads(
+                reserved_keys::BACKUP_SCHEDULE_DESTINATION,
+                crate::test_support::ReadFault::Held(Arc::clone(&gate)),
+            );
+            let before = schedule.stored();
+            let view = schedule.open(cx);
+
+            view.update(cx, edit);
+            schedule.past_the_save_debounce(cx);
+            let untouched_while_pending = schedule.untouched_since(&before);
+            schedule
+                .backend
+                .heal_reads(reserved_keys::BACKUP_SCHEDULE_DESTINATION);
+            gate.notify_one();
+            schedule.settle(cx);
+
+            let landed = view.read_with(cx, |view, _| {
+                view.settings.loaded().map(|settings| {
+                    (
+                        settings.enabled,
+                        settings.included.contains(&BackupCategory::Media),
+                        settings.destination.clone(),
+                    )
+                })
+            });
+            assert_eq!(
+                (untouched_while_pending, landed),
+                (
+                    true,
+                    Some((true, false, Some(STORED_DESTINATION.to_owned())))
+                ),
+                "{case}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn retry_after_a_failed_load_restores_the_schedule_and_edits_persist(cx: &mut TestAppContext) {
+        let schedule = FakeSchedule::new(cx, &key_for(OLD_PASSPHRASE));
+        schedule.backend.fault_reads(
+            reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES,
+            crate::test_support::ReadFault::Fails,
+        );
+        let view = schedule.open(cx);
+        schedule
+            .backend
+            .heal_reads(reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES);
+
+        view.update(cx, |view, cx| view.load(cx));
+        schedule.settle(cx);
+        view.update(cx, |view, cx| {
+            view.toggle_category(BackupCategory::Media, cx);
+            view.commit_number(ScheduleNumber::KeepNewest, "30", cx);
+        });
+        schedule.past_the_save_debounce(cx);
+
+        let stored = schedule.stored();
+        let read = |key: &str| stored.get(key).cloned();
+        assert_eq!(
+            (
+                read(reserved_keys::BACKUP_SCHEDULE_INCLUDE_MEDIA),
+                read(reserved_keys::BACKUP_SCHEDULE_KEEP_NEWEST),
+                read(reserved_keys::BACKUP_SCHEDULE_INTERVAL_MINUTES),
+                read(reserved_keys::BACKUP_SCHEDULE_DESTINATION),
+            ),
+            (
+                Some("true".to_owned()),
+                Some("30".to_owned()),
+                Some(STORED_INTERVAL.to_owned()),
+                Some(STORED_DESTINATION.to_owned()),
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn a_failed_save_reports_the_error_and_reloads_the_stored_schedule(cx: &mut TestAppContext) {
+        let key = key_for(OLD_PASSPHRASE);
+        let cases: [(&str, &str, Edit); 3] = [
+            (
+                "flip media",
+                reserved_keys::BACKUP_SCHEDULE_INCLUDE_MEDIA,
+                |v, cx| v.toggle_category(BackupCategory::Media, cx),
+            ),
+            (
+                "flip the schedule switch",
+                reserved_keys::BACKUP_SCHEDULE_ENABLED,
+                |v, cx| v.toggle_enabled(cx),
+            ),
+            (
+                "choose a folder",
+                reserved_keys::BACKUP_SCHEDULE_DESTINATION,
+                |v, cx| v.folder_chosen(Ok(std::path::PathBuf::from(CHOSEN_DESTINATION)), cx),
+            ),
+        ];
+        for (case, failing_key, edit) in cases {
+            let schedule = FakeSchedule::new(cx, &key);
+            schedule.backend.fail_writes(failing_key);
+            let view = schedule.open(cx);
+
+            view.update(cx, edit);
+            schedule.settle(cx);
+
+            let shown = view.read_with(cx, |view, _| {
+                view.settings.loaded().map(|settings| {
+                    (
+                        settings.enabled,
+                        settings.included.contains(&BackupCategory::Media),
+                        settings.destination.clone(),
+                    )
+                })
+            });
+            assert_eq!(
+                (cx.update(|cx| crate::test_support::error_toasts(cx)), shown),
+                (1, Some((true, false, Some(STORED_DESTINATION.to_owned())))),
+                "{case}"
+            );
+        }
     }
 }

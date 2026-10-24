@@ -3,9 +3,9 @@ use std::time::Duration;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, FONT_XS, ForgePalette, Icon, MenuPlacement, Radius, SectionLabel,
-    ToastAction, ToastKind, badge, body_family, card, ghost_button_with_icon, header_status, icon,
-    menu_button, menu_divider, menu_item, mono_family, pad_tile, page_frame, radius, status_dot,
-    toggle, tr,
+    ToastAction, ToastKind, badge, body_family, card, error_row_with_retry, ghost_button_with_icon,
+    header_status, icon, menu_button, menu_divider, menu_item, mono_family, pad_tile, page_frame,
+    radius, status_dot, toggle, tr,
 };
 use forge_midi::event_kinds::{INPUT_PREFIX, PORT_PREFIX};
 use forge_midi::{MidiClient, MidiMonitorEvent, SwitchableMidiSink};
@@ -18,7 +18,9 @@ use gpui::{
     Task, Window, div, prelude::*, px,
 };
 
-use crate::async_bridge::{self, BridgeFlow, ErrorSink, drain_events};
+use crate::async_bridge::{
+    self, BridgeFlow, ErrorSink, Loadable, SnapshotWriter, WriteOutcome, drain_events,
+};
 use crate::hub_crumb::hub_crumb;
 use crate::integrations::BuiltinObject;
 use crate::midi_mapping_modal::{
@@ -32,6 +34,14 @@ use forge_components::grow_cell;
 use forge_runtime::{IntegrationSlot, LifecycleState};
 
 pub const MIDI_KNOWN_DEVICES_KEY: &str = forge_storage::settings::reserved_keys::MIDI_KNOWN_DEVICES;
+
+const UNKNOWN_VALUE: &str = "-";
+
+fn decode_known_devices(stored: Option<&str>) -> Result<Vec<String>, String> {
+    stored.map_or(Ok(Vec::new()), |raw| {
+        serde_json::from_str(raw).map_err(|e| e.to_string())
+    })
+}
 
 const SCROLL_PAD_X: Pixels = px(22.0);
 const SCROLL_PAD_Y: Pixels = px(18.0);
@@ -309,8 +319,8 @@ pub struct MidiScreenView {
     rt_handle: tokio::runtime::Handle,
     enabled: bool,
     live_ports: Vec<String>,
-    known_devices: Vec<String>,
-    known_devices_loaded: bool,
+    known_devices: Loadable<Vec<String>>,
+    device_writer: SnapshotWriter,
     selected_device: Option<String>,
     monitor: Vec<MidiMonitorEvent>,
     mappings: Vec<MappingRow>,
@@ -356,9 +366,9 @@ impl MidiScreenView {
             trigger_repo,
             action_repo,
             settings_repo,
+            device_writer: SnapshotWriter::new(&rt_handle),
             rt_handle,
-            known_devices: Vec::new(),
-            known_devices_loaded: false,
+            known_devices: Loadable::Loading,
             selected_device: None,
             monitor: Vec::new(),
             mappings: Vec::new(),
@@ -475,32 +485,39 @@ impl MidiScreenView {
     }
 
     fn load_known_devices(&mut self, cx: &mut Context<Self>) {
+        self.known_devices = Loadable::Loading;
         let settings = Arc::clone(&self.settings_repo);
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                settings
+                let stored = settings
                     .get_string(MIDI_KNOWN_DEVICES_KEY)
                     .await
-                    .map(|stored| {
-                        stored
-                            .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
-                            .unwrap_or_default()
-                    })
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| e.to_string())?;
+                decode_known_devices(stored.as_deref())
             },
-            |this, result: Result<Vec<String>, String>, cx| match result {
-                Ok(known) => {
-                    this.known_devices = known;
-                    this.known_devices_loaded = true;
-                    this.remember_live_ports(cx);
-                    this.ensure_device_selection();
-                    cx.notify();
+            |this, result: Result<Vec<String>, String>, cx| {
+                if let Err(error) = &result {
+                    tracing::warn!(%error, "failed to load known MIDI devices");
                 }
-                Err(message) => this.on_repo_error(&message, cx),
+                this.known_devices = Loadable::settled(result);
+                this.remember_live_ports(cx);
+                this.ensure_device_selection();
+                cx.notify();
             },
             cx,
         );
+        cx.notify();
+    }
+
+    fn known(&self) -> &[String] {
+        self.known_devices.loaded().map_or(&[], Vec::as_slice)
+    }
+
+    fn device_write_settled(&mut self, outcome: WriteOutcome, _: &mut Context<Self>) {
+        if let WriteOutcome::Failed(error) = outcome {
+            self.known_devices = Loadable::Failed(error);
+        }
     }
 
     fn apply_mappings(&mut self, result: Result<Vec<MappingRow>, String>, cx: &mut Context<Self>) {
@@ -514,7 +531,7 @@ impl MidiScreenView {
     }
 
     fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
-        eprintln!("forge-desktop: midi operation failed: {message}");
+        tracing::warn!(error = %message, "midi operation failed");
         cx.push_toast(ToastKind::Error, tr!("midi_toast_error", message = message));
         cx.notify();
     }
@@ -585,14 +602,11 @@ impl MidiScreenView {
     }
 
     fn ensure_device_selection(&mut self) {
-        self.selected_device =
-            resolve_selection(&self.known_devices, self.selected_device.as_deref());
+        self.selected_device = resolve_selection(self.known(), self.selected_device.as_deref());
     }
 
     fn follow_saved_device(&mut self, device: Option<&str>) {
-        if let Some(next) =
-            follow_device(&self.known_devices, self.selected_device.as_deref(), device)
-        {
+        if let Some(next) = follow_device(self.known(), self.selected_device.as_deref(), device) {
             self.selected_device = Some(next);
         }
     }
@@ -612,7 +626,7 @@ impl MidiScreenView {
             instance_id,
             signal,
             linked_action,
-            devices: self.known_devices.clone(),
+            devices: self.known().to_vec(),
             input_enabled: self.enabled,
         };
         let action_repo = Arc::clone(&self.action_repo);
@@ -703,28 +717,26 @@ impl MidiScreenView {
     }
 
     fn remember_live_ports(&mut self, cx: &mut Context<Self>) {
-        if !self.known_devices_loaded {
+        let Some(known) = self.known_devices.loaded_mut() else {
             return;
-        }
+        };
         let discovered: Vec<String> = self
             .live_ports
             .iter()
-            .filter(|port| !self.known_devices.contains(port))
+            .filter(|port| !known.contains(port))
             .cloned()
             .collect();
         if discovered.is_empty() {
             return;
         }
-        self.known_devices.extend(discovered);
-        self.known_devices.sort();
+        known.extend(discovered);
+        known.sort();
+        let devices = known.clone();
         self.ensure_device_selection();
         let repo = Arc::clone(&self.settings_repo);
-        let devices = self.known_devices.clone();
-        async_bridge::report_failure(
-            &self.rt_handle,
+        self.device_writer.write(
             async move { set_json_setting(repo.as_ref(), MIDI_KNOWN_DEVICES_KEY, &devices).await },
-            ErrorSink::Silent,
-            "midi known devices",
+            Self::device_write_settled,
             cx,
         );
     }
@@ -755,7 +767,7 @@ impl MidiScreenView {
     }
 
     fn rescan(&mut self, cx: &mut Context<Self>) {
-        if !self.known_devices_loaded {
+        if self.known_devices.failure().is_some() {
             self.load_known_devices(cx);
         }
         let Some(client) = self.client.clone() else {
@@ -973,20 +985,33 @@ impl MidiScreenView {
     }
 
     fn render_devices(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        let mut cards: Vec<AnyElement> = Vec::with_capacity(self.known_devices.len());
-        for (index, name) in self.known_devices.iter().enumerate() {
+        let known = self.known();
+        let mut cards: Vec<AnyElement> = Vec::with_capacity(known.len());
+        for (index, name) in known.iter().enumerate() {
             let live_index = self.live_ports.iter().position(|port| port == name);
             cards.push(self.render_device(index, name, live_index, palette, cx));
         }
 
         let mut list = div().w_full().flex().flex_col().gap(LIST_GAP);
-        if cards.is_empty() {
+        if let Some(reason) = self.known_devices.failure() {
+            list = list.child(error_row_with_retry(
+                "midi-devices-retry",
+                tr!("midi_devices_load_failed", reason = reason),
+                palette,
+                cx.listener(|this, _: &ClickEvent, _, cx| this.load_known_devices(cx)),
+            ));
+        } else if cards.is_empty() {
+            let note = if self.known_devices.is_loaded() {
+                tr!("midi_devices_empty")
+            } else {
+                UNKNOWN_VALUE.to_owned()
+            };
             list = list.child(
                 div()
                     .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
-                    .child(tr!("midi_devices_empty")),
+                    .child(note),
             );
         } else {
             list = list.children(cards);

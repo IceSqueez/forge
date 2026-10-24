@@ -236,6 +236,13 @@ impl TextInput {
         }
     }
 
+    pub fn set_read_only(&mut self, read_only: bool, cx: &mut Context<Self>) {
+        if self.read_only != read_only {
+            self.read_only = read_only;
+            cx.notify();
+        }
+    }
+
     pub fn set_invalid(&mut self, invalid: bool, cx: &mut Context<Self>) {
         if self.invalid != invalid {
             self.invalid = invalid;

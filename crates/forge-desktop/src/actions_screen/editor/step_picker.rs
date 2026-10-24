@@ -1,6 +1,7 @@
 use super::step_presentation::{sub_category_label, sub_category_slug};
 use super::*;
 use crate::actions_screen::sub_action_modal::{SubFormLaunch, SubFormTarget};
+use crate::picker_favorites::{bind_picker, follow_picker_event};
 use forge_components::ActivePresentation;
 use forge_components::{
     ForgePalette, GlyphArt, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent,
@@ -85,9 +86,15 @@ impl ScreenActionsView {
             favorites_label: tr!("picker_favorites").into(),
             favorites_empty: tr!("picker_favorites_empty").into(),
         };
-        let favorites = self.sub_action_favorites.clone();
+        let favorites = self
+            .sub_action_favorites
+            .read(cx)
+            .ids()
+            .cloned()
+            .unwrap_or_default();
         let picker = cx.new(|cx| GridPicker::new(config, groups, favorites, palette, cx));
         let sub = cx.subscribe(&picker, Self::on_grid_picker_event);
+        let favorites_sub = bind_picker(&self.sub_action_favorites, &picker, cx);
         picker.update(cx, |f, cx| f.focus(window, cx));
         self.step_menu_open = None;
         self.grid_picker = Some(GridPickerForm {
@@ -95,6 +102,7 @@ impl ScreenActionsView {
             picks,
             action_id,
             _sub: sub,
+            _favorites: favorites_sub,
         });
         cx.notify();
     }
@@ -115,14 +123,8 @@ impl ScreenActionsView {
                     self.grid_pick_step(kind_id, cx);
                 }
             }
-            GridPickerEvent::FavoriteToggled(id) => {
-                if self.sub_action_favorites.contains(id) {
-                    self.sub_action_favorites.remove(id);
-                } else {
-                    self.sub_action_favorites.insert(id.clone());
-                }
-                let favorites = self.sub_action_favorites.clone();
-                self.persist_favorites(reserved_keys::PICKER_FAVORITES_SUB_ACTIONS, favorites, cx);
+            GridPickerEvent::FavoriteToggled(_) | GridPickerEvent::FavoritesRetry => {
+                follow_picker_event(&self.sub_action_favorites, event, cx);
             }
             GridPickerEvent::Dismissed => self.cancel_grid_picker(cx),
         }

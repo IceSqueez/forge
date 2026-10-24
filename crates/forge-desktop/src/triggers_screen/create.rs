@@ -7,6 +7,7 @@ use crate::config_form::{
     FILL_VAL_FS, FoldContext, collect_field_values, fold_config_field, render_config_row,
     set_picked_value, sparse_overrides,
 };
+use crate::picker_favorites::{bind_picker, follow_picker_event};
 use crate::trigger_form_shape::{trigger_form_defaults, trigger_form_specs};
 use forge_components::ActivePresentation;
 use forge_components::{
@@ -33,6 +34,7 @@ pub(super) struct KindPickerForm {
     picker: Entity<GridPicker>,
     picks: HashMap<SharedString, String>,
     _sub: Subscription,
+    _favorites: Subscription,
 }
 
 pub(super) struct CreateFillForm {
@@ -74,15 +76,17 @@ impl TriggersRegistryView {
             favorites_label: tr!("picker_favorites").into(),
             favorites_empty: tr!("picker_favorites_empty").into(),
         };
-        let favorites = self.favorites.clone();
+        let favorites = self.favorites.read(cx).ids().cloned().unwrap_or_default();
         let picker = cx.new(|cx| GridPicker::new(config, groups, favorites, palette, cx));
         let sub = cx.subscribe(&picker, Self::on_create_picker_event);
+        let favorites_sub = bind_picker(&self.favorites, &picker, cx);
         picker.update(cx, |f, cx| f.focus(window, cx));
         self.menu_open = None;
         self.create = Some(CreateStage::PickKind(KindPickerForm {
             picker,
             picks,
             _sub: sub,
+            _favorites: favorites_sub,
         }));
         cx.notify();
     }
@@ -103,14 +107,8 @@ impl TriggersRegistryView {
                     self.enter_fill(kind_id, cx);
                 }
             }
-            GridPickerEvent::FavoriteToggled(id) => {
-                if self.favorites.contains(id) {
-                    self.favorites.remove(id);
-                } else {
-                    self.favorites.insert(id.clone());
-                }
-                let favorites = self.favorites.clone();
-                self.persist_favorites(favorites, cx);
+            GridPickerEvent::FavoriteToggled(_) | GridPickerEvent::FavoritesRetry => {
+                follow_picker_event(&self.favorites, event, cx);
             }
             GridPickerEvent::Dismissed => self.cancel_create(cx),
         }

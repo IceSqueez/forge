@@ -5,9 +5,9 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_XS, FONT_XXS,
     ForgePalette, Icon, OverlayPosition, Radius, SearchState, Spacing, ToastKind, avatar_tile,
-    badge, body_family, card, column, confirm_modal, data_table, empty_state, hash_accent, icon,
-    mono_family, overlay, primary_button_with_icon, radius, segment, segmented, spacing,
-    status_dot, toolbar_row, tr, virtual_table, with_alpha,
+    badge, body_family, card, column, confirm_modal, data_table, empty_state, error_row,
+    error_row_with_retry, hash_accent, icon, mono_family, overlay, primary_button_with_icon,
+    radius, segment, segmented, spacing, status_dot, toolbar_row, tr, virtual_table, with_alpha,
 };
 use forge_speak_queue::{
     EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
@@ -22,7 +22,7 @@ use gpui::{
     UniformListScrollHandle, Window, div, prelude::*, px,
 };
 
-use crate::async_bridge;
+use crate::async_bridge::{self, Loadable, SnapshotWriter, WriteOutcome};
 use crate::voice_alias_form::{
     AliasForm, AliasFormEvent, AliasIdentity, AliasScope, AliasValues, alias_key, fmt_field,
     split_alias_key,
@@ -111,7 +111,9 @@ pub struct VoiceAliasesView {
     speak: Option<SpeakQueueHandle>,
     rt_handle: tokio::runtime::Handle,
     loading: bool,
-    strategy: StrategyChoice,
+    strategy: Loadable<StrategyChoice>,
+    strategy_writer: SnapshotWriter,
+    strategy_error: Option<String>,
     aliases: Vec<AliasRow>,
     visible: Vec<usize>,
     total_count: usize,
@@ -141,13 +143,16 @@ impl VoiceAliasesView {
             }
         });
 
-        let view = Self {
+        let strategy_writer = SnapshotWriter::new(&rt_handle);
+        let mut view = Self {
             repo,
             viewer_repo,
             speak,
             rt_handle,
             loading: true,
-            strategy: StrategyChoice::DeterministicByName,
+            strategy: Loadable::Loading,
+            strategy_writer,
+            strategy_error: None,
             aliases: Vec::new(),
             visible: Vec::new(),
             total_count: 0,
@@ -160,7 +165,42 @@ impl VoiceAliasesView {
             _search_sub: search_sub,
         };
         view.reload(cx);
+        view.load_strategy(cx);
         view
+    }
+
+    fn load_strategy(&mut self, cx: &mut Context<Self>) {
+        self.strategy = Loadable::Loading;
+        let repo = Arc::clone(&self.repo);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { repo.get_strategy().await },
+            |this, result: Result<AssignmentStrategy, StorageError>, cx| {
+                if let Err(error) = &result {
+                    tracing::warn!(%error, "failed to load the voice assignment strategy");
+                }
+                this.strategy = Loadable::settled(result.map(|s| choice_from_strategy(&s)));
+                cx.notify();
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn retry_strategy(&mut self, cx: &mut Context<Self>) {
+        self.strategy_error = None;
+        self.load_strategy(cx);
+    }
+
+    fn strategy_write_settled(&mut self, outcome: WriteOutcome, cx: &mut Context<Self>) {
+        match outcome {
+            WriteOutcome::Written => self.strategy_error = None,
+            WriteOutcome::Superseded => {}
+            WriteOutcome::Failed(error) => {
+                self.strategy_error = Some(error);
+                self.load_strategy(cx);
+            }
+        }
     }
 
     fn reload(&self, cx: &mut Context<Self>) {
@@ -170,14 +210,11 @@ impl VoiceAliasesView {
             &self.rt_handle,
             async move {
                 let aliases = repo.list().await.map_err(|e| e.to_string())?;
-                let strategy = repo.get_strategy().await.map_err(|e| e.to_string())?;
                 let viewers = viewer_repo.count().await.map_err(|e| e.to_string())?;
-                Ok::<_, String>((aliases, strategy, viewers))
+                Ok::<_, String>((aliases, viewers))
             },
             |this, result, cx| match result {
-                Ok((aliases, strategy, viewers)) => {
-                    this.apply_loaded(aliases, strategy, viewers, cx)
-                }
+                Ok((aliases, viewers)) => this.apply_loaded(aliases, viewers, cx),
                 Err(message) => this.on_repo_error(&message, cx),
             },
             cx,
@@ -200,14 +237,7 @@ impl VoiceAliasesView {
         );
     }
 
-    fn apply_loaded(
-        &mut self,
-        aliases: Vec<VoiceAlias>,
-        strategy: AssignmentStrategy,
-        viewers: u64,
-        cx: &mut Context<Self>,
-    ) {
-        self.strategy = choice_from_strategy(&strategy);
+    fn apply_loaded(&mut self, aliases: Vec<VoiceAlias>, viewers: u64, cx: &mut Context<Self>) {
         self.viewer_count = usize::try_from(viewers).unwrap_or(usize::MAX);
         self.set_roster(aliases);
         cx.notify();
@@ -236,29 +266,37 @@ impl VoiceAliasesView {
     }
 
     fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
-        eprintln!("forge-desktop: voice aliases operation failed: {message}");
+        tracing::warn!(error = %message, "voice aliases operation failed");
         self.loading = false;
         cx.notify();
     }
 
     fn set_strategy(&mut self, choice: StrategyChoice, cx: &mut Context<Self>) {
-        self.strategy = choice;
-        cx.notify();
+        if !self.strategy.is_loaded() {
+            return;
+        }
         let Some(strategy) = self.strategy_to_assignment(choice) else {
             return;
         };
+        if let Some(current) = self.strategy.loaded_mut() {
+            *current = choice;
+        }
         let repo = Arc::clone(&self.repo);
         let speak = self.speak.clone();
-        self.rt_handle.spawn(async move {
-            if let Err(e) = repo.set_strategy(&strategy).await {
-                eprintln!("forge-desktop: voice strategy persist failed: {e}");
-            }
-            if let Some(handle) = speak
-                && let Err(e) = handle.send(SpeakCommand::SetStrategy(strategy)).await
-            {
-                eprintln!("forge-desktop: voice strategy hot-reload failed: {e}");
-            }
-        });
+        self.strategy_writer.write(
+            async move {
+                repo.set_strategy(&strategy).await?;
+                if let Some(handle) = speak
+                    && let Err(error) = handle.send(SpeakCommand::SetStrategy(strategy)).await
+                {
+                    tracing::warn!(%error, "voice strategy hot-reload failed");
+                }
+                Ok::<(), StorageError>(())
+            },
+            Self::strategy_write_settled,
+            cx,
+        );
+        cx.notify();
     }
 
     fn strategy_to_assignment(&self, choice: StrategyChoice) -> Option<AssignmentStrategy> {
@@ -393,7 +431,7 @@ impl VoiceAliasesView {
                 message_emotes: EmoteTokenSet::default(),
             };
             if let Err(e) = handle.send(SpeakCommand::Enqueue(request)).await {
-                eprintln!("forge-desktop: voice alias preview failed: {e}");
+                tracing::warn!(error = %e, "voice alias preview failed");
             }
         });
     }
@@ -427,7 +465,7 @@ impl VoiceAliasesView {
                 if let Some(handle) = speak
                     && let Err(e) = handle.send(SpeakCommand::RemoveAlias(id)).await
                 {
-                    eprintln!("forge-desktop: voice alias hot-reload (remove) failed: {e}");
+                    tracing::warn!(error = %e, "voice alias hot-reload (remove) failed");
                 }
                 repo.list().await.map_err(|e| e.to_string())
             },
@@ -436,16 +474,17 @@ impl VoiceAliasesView {
     }
 
     fn strategy_banner(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let current = self.strategy.loaded().copied();
         let segments = StrategyChoice::ALL
             .into_iter()
             .map(|choice| {
-                let active = self.strategy == choice;
                 segment(
                     SharedString::from(format!("va-strat-{}", choice.key())),
                     choice.label(),
-                    active,
+                    current == Some(choice),
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.set_strategy(choice, cx)),
                 )
+                .disabled(current.is_none())
             })
             .collect();
         let strategy_segments = segmented(segments, palette);
@@ -479,13 +518,39 @@ impl VoiceAliasesView {
             .child(icon(Icon::Wand, BANNER_ICON, palette.brand))
             .child(heading)
             .child(strategy_segments);
+        let notice: Option<AnyElement> = if let Some(reason) = self.strategy.failure() {
+            Some(
+                error_row_with_retry(
+                    "va-strategy-retry",
+                    tr!("tts_aliases_strategy_load_failed", reason = reason),
+                    palette,
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.retry_strategy(cx)),
+                )
+                .into_any_element(),
+            )
+        } else {
+            self.strategy_error.as_ref().map(|reason| {
+                error_row(
+                    tr!("tts_aliases_strategy_save_failed", reason = reason.as_str()),
+                    palette,
+                )
+                .into_any_element()
+            })
+        };
+        let body = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(BANNER_GAP)
+            .child(row)
+            .children(notice);
 
         div()
             .w_full()
             .px(PAGE_PAD_H)
             .py(PAGE_GAP_V)
             .child(
-                card(row, palette)
+                card(body, palette)
                     .padding_xy(BANNER_PAD_V, BANNER_PAD_H)
                     .full_width(),
             )

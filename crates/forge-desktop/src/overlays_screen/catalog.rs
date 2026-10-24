@@ -1,9 +1,8 @@
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use forge_soundboard::SoundboardError;
 use forge_storage::StoredClip;
-use gpui::{Context, Entity, SharedString};
+use gpui::{Context, Entity};
 
 use super::OverlaysView;
 use super::icon_choice::{IconImage, OpenIconPicker};
@@ -16,7 +15,6 @@ pub(super) struct MediaCatalog {
     pub(super) clip_choices: Vec<(String, String)>,
     clips_gen: async_bridge::Generation,
     pub(super) icon_images: Vec<IconImage>,
-    pub(super) icon_favorites: HashSet<SharedString>,
     pub(super) icon_picker: Option<OpenIconPicker>,
     pub(super) images_gen: async_bridge::Generation,
 }

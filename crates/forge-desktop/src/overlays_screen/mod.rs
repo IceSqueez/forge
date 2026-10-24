@@ -49,6 +49,7 @@ use gpui::{
 
 use crate::audio_router::AudioRouter;
 use crate::hub_crumb::{core_category, hub_crumb};
+use crate::picker_favorites::StoredFavorites;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use forge_components::ActivePresentation;
@@ -59,6 +60,7 @@ use delete_prompt::PendingDelete;
 use editor_state::EditorState;
 use event_wiring::{EventWiringView, WiringLaunch};
 use form_link::OpenForm;
+use icon_choice::ICON_FAVORITES;
 use kind_visuals::{KindVisuals, kind_visuals};
 use latest_section::LatestSource;
 use preview_stage::StageState;
@@ -85,6 +87,7 @@ struct OverlayHandles {
     settings_repo: Arc<dyn SettingsRepo>,
     audio_router: Arc<AudioRouter>,
     speak: Option<SpeakQueueHandle>,
+    icon_favorites: Entity<StoredFavorites>,
 }
 
 pub struct OverlaysView {
@@ -143,6 +146,12 @@ impl OverlaysView {
         });
         let repaint = cx.observe(&wiring, |_, _, cx| cx.notify());
 
+        let icon_favorites = StoredFavorites::shared(
+            ICON_FAVORITES,
+            Arc::clone(&launch.settings_repo),
+            &launch.rt_handle,
+            cx,
+        );
         let latest = LatestSource {
             values: launch.latest_values,
             bus: launch.bus,
@@ -160,6 +169,7 @@ impl OverlaysView {
                 settings_repo: launch.settings_repo,
                 audio_router: launch.audio_router,
                 speak: launch.speak,
+                icon_favorites,
             },
             registry: RegistryState::default(),
             served: ServerStatus::new(server_running),
@@ -180,7 +190,6 @@ impl OverlaysView {
         view.load_receiver(cx);
         view.load_clips(cx);
         view.load_images(cx);
-        view.load_icon_favorites(cx);
         view.start_server_bridge(cx);
         view
     }

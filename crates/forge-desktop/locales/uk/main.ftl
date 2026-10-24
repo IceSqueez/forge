@@ -555,6 +555,8 @@ backup_schedule_folder_choose = Вибрати...
 backup_schedule_folder_reset = За замовчуванням
 backup_schedule_folder_failed = Не вдалося відкрити вибір теки: { $error }
 backup_schedule_persist_failed = Не вдалося зберегти налаштування розкладу копій
+backup_schedule_persist_failed_reason = Не вдалося зберегти налаштування розкладу копій: { $reason }
+backup_schedule_load_failed = Не вдалося завантажити налаштування розкладу копій, тому редагування вимкнено, щоб їх зберегти: { $reason }
 backup_schedule_key_failed = Не вдалося встановити пароль розкладу: { $error }
 backup_schedule_setup_title = Захист запланованих копій
 backup_schedule_setup_subtitle = Запитується один раз - далі заплановані копії створюються самі
@@ -1065,6 +1067,8 @@ action_editor_this_action = цю дію
 action_editor_recent_triggers = Нещодавні
 picker_favorites = Обране
 picker_favorites_empty = Позначте зірочкою, щоб закріпити тут для швидкого доступу
+picker_favorites_load_failed = Не вдалося завантажити обране, тому позначення вимкнено, щоб його зберегти
+picker_favorites_save_failed = Не вдалося зберегти обране: { $reason }
 action_editor_picker_add_sub_title = Додати крок
 action_editor_picker_inserting_into = Вставлення у
 action_editor_picker_sub_count = · { $count ->
@@ -1573,6 +1577,8 @@ tts_cloud_save_failed_toast = Не вдалося зберегти обліко�
 
 tts_aliases_strategy_label = Типова стратегія призначення
 tts_aliases_strategy_sublabel = Як обирається голос для глядачів без ручного псевдоніма
+tts_aliases_strategy_load_failed = Не вдалося завантажити стратегію призначення голосу, тому її зміну вимкнено, щоб її зберегти: { $reason }
+tts_aliases_strategy_save_failed = Не вдалося зберегти стратегію призначення голосу: { $reason }
 tts_aliases_strategy_deterministic = Детерміновано за ім'ям
 tts_aliases_strategy_random = Випадково
 tts_aliases_strategy_single = Один голос
@@ -2786,6 +2792,7 @@ midi_device_port = вхід · порт { $index }
 midi_device_offline = офлайн
 midi_device_maps = { $count } зіставлень
 midi_devices_empty = MIDI-пристроїв ще не виявлено
+midi_devices_load_failed = Не вдалося завантажити запам'ятовані MIDI-пристрої, тому нові не додаються, щоб зберегти список: { $reason }
 midi_rescan_ports = Пересканувати порти
 
 ## MIDI - input monitor

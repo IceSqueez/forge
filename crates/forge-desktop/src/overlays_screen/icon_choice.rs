@@ -976,4 +976,34 @@ mod tests {
 
         assert_eq!(art_name(icon_art(&icon_choice(stored, &[]))), "none");
     }
+
+    #[gpui::test]
+    fn icon_favorites_keep_only_the_stored_icons_a_card_still_answers_to(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let harness = crate::picker_favorites::tests::Harness::new(cx);
+        harness.backend.seed(
+            ICON_FAVORITES.key,
+            &serde_json::to_string(&[GLYPH, NOT_A_GLYPH]).expect("fixture ids encode"),
+        );
+
+        let store = harness.shared(ICON_FAVORITES, cx);
+
+        assert_eq!(
+            crate::picker_favorites::tests::shown(&store, cx),
+            Some(vec![GLYPH.to_owned()])
+        );
+    }
+
+    #[gpui::test]
+    fn a_star_on_undecodable_icon_favorites_writes_nothing(cx: &mut gpui::TestAppContext) {
+        let mut harness = crate::picker_favorites::tests::Harness::new(cx);
+        harness.backend.seed(ICON_FAVORITES.key, "not json");
+        let store = harness.shared(ICON_FAVORITES, cx);
+
+        crate::picker_favorites::tests::star(&store, GLYPH, cx);
+        harness.settle(cx);
+
+        assert_eq!(harness.written(ICON_FAVORITES), Vec::<Vec<String>>::new());
+    }
 }

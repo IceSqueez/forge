@@ -1438,4 +1438,48 @@ mod tests {
             vec![BETA.to_owned(), "betamax".to_owned()],
         );
     }
+
+    struct Starred {
+        toggles: usize,
+        _sub: Subscription,
+    }
+
+    #[gpui::test]
+    fn a_star_click_toggles_and_reports_only_while_favorites_are_ready(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (status, expected) in [
+            (FavoritesStatus::Ready, (true, 1)),
+            (FavoritesStatus::Pending, (false, 0)),
+            (FavoritesStatus::Failed("unreadable".into()), (false, 0)),
+        ] {
+            let (picker, _picked, vcx) = open(cx, plain_roster());
+            let starred = vcx.update(|_window, cx| {
+                cx.new(|cx| Starred {
+                    toggles: 0,
+                    _sub: cx.subscribe(&picker, |this: &mut Starred, _view, event, _cx| {
+                        if let GridPickerEvent::FavoriteToggled(_) = event {
+                            this.toggles += 1;
+                        }
+                    }),
+                })
+            });
+
+            vcx.update(|_window, cx| {
+                picker.update(cx, |view, cx| {
+                    view.set_favorites_status(status.clone(), cx);
+                    view.toggle_favorite(SharedString::from(ALPHA), cx);
+                });
+            });
+            vcx.run_until_parked();
+
+            let seen = vcx.update(|_window, cx| {
+                (
+                    picker.read(cx).favorites.contains(ALPHA),
+                    starred.read(cx).toggles,
+                )
+            });
+            assert_eq!(seen, expected, "{status:?}");
+        }
+    }
 }

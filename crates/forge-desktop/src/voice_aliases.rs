@@ -1327,4 +1327,255 @@ mod tests {
             );
         }
     }
+
+    const UNDECODABLE_STRATEGY: &str = "strategy: not a known shape";
+
+    #[derive(Default, Clone, Copy, Debug)]
+    enum StrategyRead {
+        #[default]
+        Stored,
+        Unreachable,
+        Undecodable,
+    }
+
+    impl StrategyRead {
+        fn failure(self) -> Result<(), StorageError> {
+            match self {
+                Self::Stored => Ok(()),
+                Self::Unreachable => Err(StorageError::Connection {
+                    reason: crate::test_support::SETTINGS_READ_FAILED.to_owned(),
+                }),
+                Self::Undecodable => Err(StorageError::Parse(UNDECODABLE_STRATEGY.to_owned())),
+            }
+        }
+    }
+
+    #[derive(Default)]
+    struct StrategyStore {
+        stored: AssignmentStrategy,
+        read: StrategyRead,
+        read_gate: Option<Arc<tokio::sync::Notify>>,
+        writes_fail: bool,
+        writes: Vec<AssignmentStrategy>,
+    }
+
+    #[derive(Default)]
+    struct FakeStrategyRepo(std::sync::Mutex<StrategyStore>);
+
+    impl FakeStrategyRepo {
+        fn holding(stored: AssignmentStrategy) -> Arc<Self> {
+            let repo = Self::default();
+            repo.lock().stored = stored;
+            Arc::new(repo)
+        }
+
+        fn lock(&self) -> std::sync::MutexGuard<'_, StrategyStore> {
+            self.0.lock().unwrap_or_else(|p| p.into_inner())
+        }
+
+        fn writes(&self) -> Vec<AssignmentStrategy> {
+            std::mem::take(&mut self.lock().writes)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl VoiceAliasRepo for FakeStrategyRepo {
+        async fn list(&self) -> Result<Vec<VoiceAlias>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn upsert(&self, alias: &VoiceAlias) -> Result<VoiceAlias, StorageError> {
+            Ok(alias.clone())
+        }
+
+        async fn delete(&self, _id: &AliasId) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn find_by_viewer(
+            &self,
+            _viewer_id: &str,
+        ) -> Result<Option<VoiceAlias>, StorageError> {
+            Ok(None)
+        }
+
+        async fn get_strategy(&self) -> Result<AssignmentStrategy, StorageError> {
+            let gate = self.lock().read_gate.clone();
+            if let Some(gate) = gate {
+                gate.notified().await;
+            }
+            let store = self.lock();
+            store.read.failure()?;
+            Ok(store.stored.clone())
+        }
+
+        async fn set_strategy(&self, strategy: &AssignmentStrategy) -> Result<(), StorageError> {
+            let mut store = self.lock();
+            if store.writes_fail {
+                return Err(StorageError::Connection {
+                    reason: crate::test_support::SETTINGS_WRITE_FAILED.to_owned(),
+                });
+            }
+            store.stored = strategy.clone();
+            store.writes.push(strategy.clone());
+            Ok(())
+        }
+
+        async fn get_ignore_profile(&self) -> Result<forge_voice::IgnoreProfile, StorageError> {
+            Ok(forge_voice::IgnoreProfile::default())
+        }
+
+        async fn set_ignore_profile(
+            &self,
+            _profile: &forge_voice::IgnoreProfile,
+        ) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    struct StrategyHarness {
+        rt: tokio::runtime::Runtime,
+        repo: Arc<FakeStrategyRepo>,
+    }
+
+    impl StrategyHarness {
+        fn new(stored: AssignmentStrategy, cx: &mut TestAppContext) -> Self {
+            install_language(Language::En);
+            cx.update(|cx| {
+                cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+                cx.set_global(Toasts::new());
+            });
+            Self {
+                rt: runtime(),
+                repo: FakeStrategyRepo::holding(stored),
+            }
+        }
+
+        fn open(&self, cx: &mut TestAppContext) -> Entity<VoiceAliasesView> {
+            let mut viewers = forge_storage::viewer::MockViewerRepo::new();
+            viewers.expect_count().returning(|| Ok(0));
+            let repo = Arc::clone(&self.repo) as Arc<dyn VoiceAliasRepo>;
+            let handle = self.rt.handle().clone();
+            let view = cx.update(|cx| {
+                cx.new(|cx| VoiceAliasesView::new(repo, Arc::new(viewers), None, handle, cx))
+            });
+            self.settle(cx);
+            view
+        }
+
+        fn settle(&self, cx: &mut TestAppContext) {
+            for _ in 0..3 {
+                crate::test_support::pump(&self.rt);
+                cx.run_until_parked();
+            }
+        }
+    }
+
+    fn shown_strategy(
+        view: &Entity<VoiceAliasesView>,
+        cx: &mut TestAppContext,
+    ) -> Option<StrategyChoice> {
+        view.read_with(cx, |view, _| view.strategy.loaded().copied())
+    }
+
+    const STRATEGY_EDITS: [StrategyChoice; 2] =
+        [StrategyChoice::DeterministicByName, StrategyChoice::Random];
+
+    #[gpui::test]
+    fn no_strategy_pick_after_a_failed_load_writes_over_the_stored_strategy(
+        cx: &mut TestAppContext,
+    ) {
+        for read in [StrategyRead::Unreachable, StrategyRead::Undecodable] {
+            let reason = read.failure().expect_err("a faulty read fails").to_string();
+            for choice in STRATEGY_EDITS {
+                let harness = StrategyHarness::new(AssignmentStrategy::Random, cx);
+                harness.repo.lock().read = read;
+                let view = harness.open(cx);
+
+                view.update(cx, |view, cx| view.set_strategy(choice, cx));
+                harness.settle(cx);
+
+                let failure_shown =
+                    view.read_with(cx, |view, _| view.strategy.failure().map(str::to_owned));
+                assert_eq!(
+                    (harness.repo.writes(), failure_shown),
+                    (Vec::new(), Some(reason.clone())),
+                    "{read:?}: {choice:?}"
+                );
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn no_strategy_pick_while_the_load_is_pending_writes_and_the_load_still_lands_intact(
+        cx: &mut TestAppContext,
+    ) {
+        for choice in STRATEGY_EDITS {
+            let harness = StrategyHarness::new(AssignmentStrategy::Random, cx);
+            let gate = Arc::new(tokio::sync::Notify::new());
+            harness.repo.lock().read_gate = Some(Arc::clone(&gate));
+            let view = harness.open(cx);
+
+            view.update(cx, |view, cx| view.set_strategy(choice, cx));
+            harness.settle(cx);
+            let while_pending = harness.repo.writes();
+            harness.repo.lock().read_gate = None;
+            gate.notify_one();
+            harness.settle(cx);
+
+            assert_eq!(
+                (while_pending, shown_strategy(&view, cx)),
+                (Vec::new(), Some(StrategyChoice::Random)),
+                "{choice:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn retry_after_a_failed_strategy_load_restores_it_and_a_pick_persists(cx: &mut TestAppContext) {
+        let harness = StrategyHarness::new(AssignmentStrategy::Random, cx);
+        harness.repo.lock().read = StrategyRead::Unreachable;
+        let view = harness.open(cx);
+        harness.repo.lock().read = StrategyRead::Stored;
+
+        view.update(cx, |view, cx| view.retry_strategy(cx));
+        harness.settle(cx);
+        let restored = shown_strategy(&view, cx);
+        view.update(cx, |view, cx| {
+            view.set_strategy(StrategyChoice::DeterministicByName, cx)
+        });
+        harness.settle(cx);
+
+        assert_eq!(
+            (restored, harness.repo.writes()),
+            (
+                Some(StrategyChoice::Random),
+                vec![AssignmentStrategy::DeterministicByName]
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn a_failed_strategy_save_shows_the_error_and_reloads_the_stored_strategy(
+        cx: &mut TestAppContext,
+    ) {
+        let harness = StrategyHarness::new(AssignmentStrategy::Random, cx);
+        harness.repo.lock().writes_fail = true;
+        let view = harness.open(cx);
+
+        view.update(cx, |view, cx| {
+            view.set_strategy(StrategyChoice::DeterministicByName, cx)
+        });
+        harness.settle(cx);
+
+        let read_only = StorageError::Connection {
+            reason: crate::test_support::SETTINGS_WRITE_FAILED.to_owned(),
+        }
+        .to_string();
+        let save_error = view.read_with(cx, |view, _| view.strategy_error.clone());
+        assert_eq!(
+            (save_error, shown_strategy(&view, cx)),
+            (Some(read_only), Some(StrategyChoice::Random))
+        );
+    }
 }

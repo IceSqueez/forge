@@ -2196,4 +2196,185 @@ mod tests {
             "{targets:?}"
         );
     }
+
+    const STORED_DEVICES: &str = r#"["Keys B"]"#;
+    const KNOWN_PORT: &str = "Keys B";
+    const NEW_PORT: &str = "Pads A";
+
+    struct DeviceHarness {
+        rt: tokio::runtime::Runtime,
+        backend: Arc<crate::test_support::TestBackend>,
+        writes: tokio::sync::mpsc::UnboundedReceiver<crate::test_support::SettingWrite>,
+    }
+
+    impl DeviceHarness {
+        fn new(stored: &str, cx: &mut gpui::TestAppContext) -> Self {
+            crate::test_support::install_presentation(cx);
+            cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+            let (backend, writes) = crate::test_support::test_backend();
+            backend.seed(MIDI_KNOWN_DEVICES_KEY, stored);
+            Self {
+                rt: crate::test_support::runtime(),
+                backend,
+                writes,
+            }
+        }
+
+        fn open(&self, cx: &mut gpui::TestAppContext) -> Entity<MidiScreenView> {
+            let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+            let bus = crate::test_support::quiet_bus(&self.rt);
+            let handle = self.rt.handle().clone();
+            let view = cx.update(|cx| {
+                cx.new(|cx| {
+                    MidiScreenView::new(
+                        SwitchableMidiSink::new(),
+                        None,
+                        Arc::new(FakeTriggerRepo::default()),
+                        Arc::new(FakeActionRepo::with(Vec::new())),
+                        settings,
+                        bus,
+                        handle,
+                        cx,
+                    )
+                })
+            });
+            self.settle(cx);
+            view
+        }
+
+        fn settle(&self, cx: &mut gpui::TestAppContext) {
+            for _ in 0..3 {
+                crate::test_support::pump(&self.rt);
+                cx.run_until_parked();
+            }
+        }
+
+        fn device_writes(&mut self) -> Vec<Vec<String>> {
+            crate::test_support::writes_to(&mut self.writes, MIDI_KNOWN_DEVICES_KEY)
+                .iter()
+                .map(|raw| serde_json::from_str(raw).unwrap())
+                .collect()
+        }
+    }
+
+    fn plug_in(view: &Entity<MidiScreenView>, cx: &mut gpui::TestAppContext) {
+        view.update(cx, |view, cx| {
+            view.live_ports = vec![NEW_PORT.to_owned()];
+            view.remember_live_ports(cx);
+        });
+    }
+
+    fn device_failure(
+        view: &Entity<MidiScreenView>,
+        cx: &mut gpui::TestAppContext,
+    ) -> Option<String> {
+        view.read_with(cx, |view, _| {
+            view.known_devices.failure().map(str::to_owned)
+        })
+    }
+
+    fn merged() -> Vec<String> {
+        vec![KNOWN_PORT.to_owned(), NEW_PORT.to_owned()]
+    }
+
+    #[gpui::test]
+    fn a_live_port_after_a_failed_load_writes_nothing_over_the_known_devices(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let unreachable = StorageError::Connection {
+            reason: crate::test_support::SETTINGS_READ_FAILED.to_owned(),
+        }
+        .to_string();
+        let undecodable = decode_known_devices(Some("not json")).unwrap_err();
+        for (fault, stored, failing_read, reason) in [
+            ("unreachable store", STORED_DEVICES, true, unreachable),
+            ("undecodable value", "not json", false, undecodable),
+        ] {
+            let mut harness = DeviceHarness::new(stored, cx);
+            if failing_read {
+                harness.backend.fault_reads(
+                    MIDI_KNOWN_DEVICES_KEY,
+                    crate::test_support::ReadFault::Fails,
+                );
+            }
+            let view = harness.open(cx);
+
+            plug_in(&view, cx);
+            harness.settle(cx);
+
+            assert_eq!(
+                (harness.device_writes(), device_failure(&view, cx)),
+                (Vec::<Vec<String>>::new(), Some(reason)),
+                "{fault}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_port_seen_while_the_load_is_pending_is_merged_and_written_once_the_load_lands(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut harness = DeviceHarness::new(STORED_DEVICES, cx);
+        let gate = Arc::new(tokio::sync::Notify::new());
+        harness.backend.fault_reads(
+            MIDI_KNOWN_DEVICES_KEY,
+            crate::test_support::ReadFault::Held(Arc::clone(&gate)),
+        );
+        let view = harness.open(cx);
+
+        plug_in(&view, cx);
+        harness.settle(cx);
+        let while_pending = harness.device_writes();
+        harness.backend.heal_reads(MIDI_KNOWN_DEVICES_KEY);
+        gate.notify_one();
+        harness.settle(cx);
+
+        assert_eq!(
+            (while_pending, harness.device_writes()),
+            (Vec::<Vec<String>>::new(), vec![merged()])
+        );
+    }
+
+    #[gpui::test]
+    fn retry_after_a_failed_load_restores_the_known_devices_and_a_new_port_keeps_them(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut harness = DeviceHarness::new(STORED_DEVICES, cx);
+        harness.backend.fault_reads(
+            MIDI_KNOWN_DEVICES_KEY,
+            crate::test_support::ReadFault::Fails,
+        );
+        let view = harness.open(cx);
+        harness.backend.heal_reads(MIDI_KNOWN_DEVICES_KEY);
+
+        view.update(cx, |view, cx| view.load_known_devices(cx));
+        harness.settle(cx);
+        plug_in(&view, cx);
+        harness.settle(cx);
+
+        assert_eq!(harness.device_writes(), vec![merged()]);
+    }
+
+    #[gpui::test]
+    fn a_failed_device_write_shows_the_error_without_reloading_into_another_write(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let harness = DeviceHarness::new(STORED_DEVICES, cx);
+        harness.backend.fail_writes(MIDI_KNOWN_DEVICES_KEY);
+        let view = harness.open(cx);
+        let reload_gate = Arc::new(tokio::sync::Notify::new());
+        harness.backend.fault_reads(
+            MIDI_KNOWN_DEVICES_KEY,
+            crate::test_support::ReadFault::Held(reload_gate),
+        );
+
+        plug_in(&view, cx);
+        harness.settle(cx);
+
+        let read_only = StorageError::Connection {
+            reason: crate::test_support::SETTINGS_WRITE_FAILED.to_owned(),
+        }
+        .to_string();
+        assert_eq!(device_failure(&view, cx), Some(read_only));
+    }
 }

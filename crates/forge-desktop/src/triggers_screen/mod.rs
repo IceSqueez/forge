@@ -641,4 +641,43 @@ mod tests {
 
         assert_eq!((before, off, back_on), (None, Some(twitch()), None));
     }
+
+    #[gpui::test]
+    fn the_create_picker_stars_into_the_app_wide_trigger_favorites(cx: &mut gpui::TestAppContext) {
+        use crate::picker_favorites::{StoredFavorites, TRIGGER_FAVORITES};
+        cx.update(|cx| cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy)));
+        let rt = runtime();
+        let mut repo = MockTriggerInstanceRepo::new();
+        repo.expect_list_all().returning(|| Ok(Vec::new()));
+        let (settings, _writes) = test_backend();
+        let handle = rt.handle().clone();
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                TriggersRegistryView::new(
+                    Arc::new(repo),
+                    Arc::new(StubActions),
+                    Arc::new(owned_triggers(&[(TWITCH_CHAT, "twitch")])),
+                    Arc::clone(&settings) as Arc<dyn SettingsRepo>,
+                    handle.clone(),
+                    None,
+                    cx,
+                )
+            })
+        });
+
+        let app_wide = cx.update(|cx| {
+            StoredFavorites::shared(
+                TRIGGER_FAVORITES,
+                settings as Arc<dyn SettingsRepo>,
+                &handle,
+                cx,
+            )
+            .entity_id()
+        });
+
+        assert_eq!(
+            view.read_with(cx, |view, _| view.favorites.entity_id()),
+            app_wide
+        );
+    }
 }

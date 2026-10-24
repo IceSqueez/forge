@@ -1576,4 +1576,29 @@ mod tests {
             );
         }
     }
+
+    #[gpui::test]
+    fn the_editor_pickers_star_into_the_app_wide_favorites_copies(cx: &mut gpui::TestAppContext) {
+        use crate::picker_favorites::{SUB_ACTION_FAVORITES, StoredFavorites, TRIGGER_FAVORITES};
+        let fixture = Fixture::new(cx, &[]);
+        let (elsewhere, _writes) = test_backend();
+        let handle = fixture.rt.handle().clone();
+
+        let app_wide = cx.update(|cx| {
+            let repo = elsewhere as Arc<dyn SettingsRepo>;
+            (
+                StoredFavorites::shared(SUB_ACTION_FAVORITES, Arc::clone(&repo), &handle, cx)
+                    .entity_id(),
+                StoredFavorites::shared(TRIGGER_FAVORITES, repo, &handle, cx).entity_id(),
+            )
+        });
+
+        let own = fixture.view.read_with(cx, |view, _| {
+            (
+                view.sub_action_favorites.entity_id(),
+                view.trigger_favorites.entity_id(),
+            )
+        });
+        assert_eq!(own, app_wide);
+    }
 }

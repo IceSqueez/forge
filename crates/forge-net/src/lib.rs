@@ -2,6 +2,7 @@
 
 pub mod address_guard;
 pub mod backoff;
+pub mod cooldown;
 pub mod dedup;
 pub mod rate_limit;
 #[cfg(any(test, feature = "test-support"))]
@@ -11,6 +12,7 @@ pub use address_guard::{
     is_loopback_host, is_private_or_special,
 };
 pub use backoff::Backoff;
+pub use cooldown::{Cooldown, MAX_REMOTE_COOLDOWN};
 pub use dedup::DedupSet;
 pub use rate_limit::{
     DEFAULT_RETRY_AFTER_SECS, MAX_ACQUIRE_ATTEMPTS, MAX_THROTTLE_WAIT, RateLimitError,

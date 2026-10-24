@@ -1,5 +1,5 @@
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use forge_events::EventPublisher;
 use forge_platform_core::ConnectionState;
@@ -618,13 +618,14 @@ impl DiscordClient {
 
     fn check_pre_send(&self, webhook_name: &str) -> Result<(), DiscordError> {
         let mut rl = self.rate_limiter.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(wait) = rl.global_wait_duration() {
+        let now = Instant::now();
+        if let Some(wait) = rl.global_wait_duration(now) {
             let ra = wait.as_secs_f64();
             return Err(DiscordError::RateLimited {
                 retry_after_secs: ra,
             });
         }
-        if let RateLimitOutcome::Throttled { wait_for } = rl.acquire(webhook_name) {
+        if let RateLimitOutcome::Throttled { wait_for } = rl.acquire(now, webhook_name) {
             let ra = wait_for.as_secs_f64();
             publish_rate_limited(self.publisher.as_ref(), webhook_name, ra);
             return Err(DiscordError::RateLimited {
@@ -637,16 +638,16 @@ impl DiscordClient {
     fn record_429(&self, webhook_name: &str, wait: Duration, is_global: bool) {
         let mut rl = self.rate_limiter.lock().unwrap_or_else(|p| p.into_inner());
         if is_global {
-            rl.observe_global_throttle(wait);
+            rl.observe_global_throttle(Instant::now(), wait);
         } else {
-            rl.observe_remote_throttle(webhook_name, wait);
+            rl.observe_remote_throttle(Instant::now(), webhook_name, wait);
         }
     }
 
     fn update_bucket(&self, webhook_name: &str, limit: u32, remaining: u32, reset_after: f64) {
         if limit > 0 {
             let mut rl = self.rate_limiter.lock().unwrap_or_else(|p| p.into_inner());
-            rl.record_response(webhook_name, limit, remaining, reset_after);
+            rl.record_response(Instant::now(), webhook_name, limit, remaining, reset_after);
         }
     }
 
@@ -665,7 +666,8 @@ impl DiscordClient {
         };
         let reset_hint = {
             let rl = self.rate_limiter.lock().unwrap_or_else(|p| p.into_inner());
-            rl.reset_hint_secs(webhook_name).map(|s| format!("{s:.0}"))
+            rl.reset_hint_secs(Instant::now(), webhook_name)
+                .map(|s| format!("{s:.0}"))
         };
 
         let deltas = {

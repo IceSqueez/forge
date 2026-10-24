@@ -1,7 +1,9 @@
 use async_trait::async_trait;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use thiserror::Error;
+
+use crate::cooldown::Cooldown;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum RateLimitError {
@@ -66,20 +68,79 @@ pub struct TokenBucketRateLimiter {
 struct BucketState {
     tokens: f64,
     last_refill: Instant,
-    cooldown_until: Option<Instant>,
+    cooldown: Cooldown,
 }
 
 impl TokenBucketRateLimiter {
     pub fn new(capacity: u32, refill_per: Duration) -> Self {
+        Self::new_at(capacity, refill_per, Instant::now())
+    }
+
+    pub fn new_at(capacity: u32, refill_per: Duration, now: Instant) -> Self {
         Self {
             capacity,
             refill_per,
             state: Mutex::new(BucketState {
-                tokens: capacity as f64,
-                last_refill: Instant::now(),
-                cooldown_until: None,
+                tokens: f64::from(capacity),
+                last_refill: now,
+                cooldown: Cooldown::default(),
             }),
         }
+    }
+
+    pub fn acquire_at(&self, now: Instant, weight: u32) -> RateLimitOutcome {
+        if weight > self.capacity {
+            return RateLimitOutcome::Exhausted;
+        }
+        let mut state = self.lock_state();
+
+        let cooling_for = state.cooldown.remaining(now);
+        if cooling_for > Duration::ZERO {
+            return RateLimitOutcome::Throttled {
+                wait_for: cooling_for,
+            };
+        }
+
+        self.refill(&mut state, now);
+        let needed = f64::from(weight);
+        if state.tokens >= needed {
+            state.tokens -= needed;
+            RateLimitOutcome::Granted
+        } else {
+            RateLimitOutcome::Throttled {
+                wait_for: self.wait_for_tokens(state.tokens, weight),
+            }
+        }
+    }
+
+    pub fn observe_remote_throttle_at(&self, now: Instant, retry_after: Duration) {
+        let mut state = self.lock_state();
+        state.cooldown.extend(now, retry_after);
+        state.tokens = 0.0;
+        state.last_refill = state.last_refill.max(now);
+    }
+
+    pub fn usage_at(&self, now: Instant) -> RateLimitUsage {
+        let state = self.lock_state();
+        let current = self.current_tokens(&state, now);
+        let used = (f64::from(self.capacity) - current).round().max(0.0) as u32;
+        let rate = self.tokens_per_sec();
+        let resets_in = if used == 0 || rate <= 0.0 {
+            Duration::ZERO
+        } else {
+            secs_to_duration(f64::from(used) / rate)
+        };
+        RateLimitUsage {
+            used: Some(used),
+            capacity: Some(self.capacity),
+            resets_in: Some(resets_in),
+        }
+    }
+
+    fn lock_state(&self) -> MutexGuard<'_, BucketState> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     fn tokens_per_sec(&self) -> f64 {
@@ -87,95 +148,47 @@ impl TokenBucketRateLimiter {
         if secs <= 0.0 {
             0.0
         } else {
-            self.capacity as f64 / secs
+            f64::from(self.capacity) / secs
         }
     }
 
     fn refill(&self, state: &mut BucketState, now: Instant) {
-        let elapsed = now.saturating_duration_since(state.last_refill);
-        state.last_refill = now;
-        let gained = elapsed.as_secs_f64() * self.tokens_per_sec();
-        state.tokens = (state.tokens + gained).min(self.capacity as f64);
+        state.tokens = self.current_tokens(state, now);
+        state.last_refill = state.last_refill.max(now);
     }
 
     fn wait_for_tokens(&self, current: f64, weight: u32) -> Duration {
-        let deficit = weight as f64 - current;
+        let deficit = f64::from(weight) - current;
         let rate = self.tokens_per_sec();
         if deficit <= 0.0 || rate <= 0.0 {
             return Duration::ZERO;
         }
-        Duration::from_secs_f64(deficit / rate)
+        secs_to_duration(deficit / rate)
     }
 
     fn current_tokens(&self, state: &BucketState, now: Instant) -> f64 {
         let elapsed = now.saturating_duration_since(state.last_refill);
         let gained = elapsed.as_secs_f64() * self.tokens_per_sec();
-        (state.tokens + gained).min(self.capacity as f64)
+        (state.tokens + gained).min(f64::from(self.capacity))
     }
+}
+
+fn secs_to_duration(secs: f64) -> Duration {
+    Duration::try_from_secs_f64(secs).unwrap_or(Duration::MAX)
 }
 
 #[async_trait]
 impl RateLimiter for TokenBucketRateLimiter {
     async fn acquire(&self, weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-        if weight > self.capacity {
-            return Ok(RateLimitOutcome::Exhausted);
-        }
-        let now = Instant::now();
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-        if let Some(deadline) = state.cooldown_until {
-            let remaining = deadline.saturating_duration_since(now);
-            if remaining > Duration::ZERO {
-                return Ok(RateLimitOutcome::Throttled {
-                    wait_for: remaining,
-                });
-            }
-            state.cooldown_until = None;
-        }
-
-        self.refill(&mut state, now);
-        if state.tokens >= weight as f64 {
-            state.tokens -= weight as f64;
-            Ok(RateLimitOutcome::Granted)
-        } else {
-            let wait_for = self.wait_for_tokens(state.tokens, weight);
-            Ok(RateLimitOutcome::Throttled { wait_for })
-        }
+        Ok(self.acquire_at(Instant::now(), weight))
     }
 
     async fn observe_remote_throttle(&self, retry_after: Duration) {
-        let now = Instant::now();
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        state.cooldown_until = Some(now + retry_after);
-        state.tokens = 0.0;
-        state.last_refill = now;
+        self.observe_remote_throttle_at(Instant::now(), retry_after);
     }
 
     fn usage(&self) -> RateLimitUsage {
-        let now = Instant::now();
-        let state = self
-            .state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let current = self.current_tokens(&state, now);
-        let used = (self.capacity as f64 - current).round().max(0.0) as u32;
-        let rate = self.tokens_per_sec();
-        let resets_in = if used == 0 || rate <= 0.0 {
-            Duration::ZERO
-        } else {
-            Duration::from_secs_f64(used as f64 / rate)
-        };
-        RateLimitUsage {
-            used: Some(used),
-            capacity: Some(self.capacity),
-            resets_in: Some(resets_in),
-        }
+        self.usage_at(Instant::now())
     }
 }
 
@@ -185,159 +198,197 @@ mod tests {
     use super::*;
     use crate::test_support::RecordingRateLimiter;
 
-    fn limiter(capacity: u32, refill_per: Duration) -> TokenBucketRateLimiter {
-        TokenBucketRateLimiter::new(capacity, refill_per)
+    const HOUR: Duration = Duration::from_secs(3_600);
+
+    fn secs(n: u64) -> Duration {
+        Duration::from_secs(n)
     }
 
-    #[tokio::test]
-    async fn acquire_weight_above_capacity_is_exhausted_on_full_bucket() {
-        let rl = limiter(5, Duration::from_secs(1));
-        let outcome = rl.acquire(6).await.unwrap();
-        assert!(matches!(outcome, RateLimitOutcome::Exhausted));
+    fn bucket(capacity: u32, refill_per: Duration) -> (TokenBucketRateLimiter, Instant) {
+        let t0 = Instant::now();
+        (TokenBucketRateLimiter::new_at(capacity, refill_per, t0), t0)
     }
 
-    #[tokio::test]
-    async fn fresh_bucket_grants_capacity_then_throttles() {
-        let capacity = 4;
-        let window = Duration::from_secs(3_600);
-        let rl = limiter(capacity, window);
-        for i in 0..capacity {
-            assert!(
-                matches!(rl.acquire(1).await.unwrap(), RateLimitOutcome::Granted),
-                "acquire {i} should be granted on a fresh bucket"
-            );
-        }
-        match rl.acquire(1).await.unwrap() {
-            RateLimitOutcome::Throttled { wait_for } => {
-                assert!(wait_for > Duration::ZERO);
-                assert!(
-                    wait_for <= window,
-                    "wait_for {wait_for:?} should not exceed the refill window"
-                );
-            }
-            other => panic!("expected Throttled after exhausting the bucket, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn remote_throttle_gates_next_acquire_for_cooldown_span() {
-        let rl = limiter(10, Duration::from_secs(1));
-        let retry_after = Duration::from_secs(8);
-        rl.observe_remote_throttle(retry_after).await;
-
-        match rl.acquire(1).await.unwrap() {
-            RateLimitOutcome::Throttled { wait_for } => {
-                assert!(wait_for > Duration::ZERO);
-                assert!(
-                    wait_for <= retry_after,
-                    "cooldown wait {wait_for:?} must not exceed retry_after {retry_after:?}"
-                );
-            }
-            other => panic!("expected Throttled while cooldown is active, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn zero_refill_window_never_regenerates_tokens() {
-        let rl = limiter(1, Duration::ZERO);
-        assert!(matches!(
-            rl.acquire(1).await.unwrap(),
-            RateLimitOutcome::Granted
-        ));
-        match rl.acquire(1).await.unwrap() {
-            RateLimitOutcome::Throttled { wait_for } => {
-                assert_eq!(wait_for, Duration::ZERO);
-            }
-            other => panic!("expected Throttled with no ETA on a dead bucket, got {other:?}"),
+    fn wait_of(outcome: RateLimitOutcome) -> Duration {
+        match outcome {
+            RateLimitOutcome::Throttled { wait_for } => wait_for,
+            other => panic!("expected Throttled, got {other:?}"),
         }
     }
 
     #[test]
-    fn usage_on_fresh_bucket_reports_zero_used_and_no_reset() {
-        let rl = limiter(10, Duration::from_secs(60));
-        let usage = rl.usage();
-        assert_eq!(usage.used, Some(0));
-        assert_eq!(usage.resets_in, Some(Duration::ZERO));
-    }
-
-    #[tokio::test]
-    async fn usage_after_acquires_counts_consumed_against_capacity() {
-        let rl = limiter(10, Duration::from_secs(3_600));
-        for _ in 0..3 {
-            rl.acquire(1).await.unwrap();
+    fn weight_against_a_full_bucket_grants_up_to_capacity_only() {
+        let cases = [
+            (4, RateLimitOutcome::Granted),
+            (5, RateLimitOutcome::Granted),
+            (6, RateLimitOutcome::Exhausted),
+        ];
+        for (weight, expected) in cases {
+            let (rl, t0) = bucket(5, HOUR);
+            assert_eq!(rl.acquire_at(t0, weight), expected, "weight {weight}");
         }
-        let usage = rl.usage();
-        assert_eq!(usage.used, Some(3));
-        assert_eq!(usage.capacity, Some(10));
-        let resets_in = usage.resets_in.unwrap();
-        assert!(resets_in > Duration::ZERO);
-        assert!(
-            resets_in <= Duration::from_secs(3_600),
-            "reset ETA {resets_in:?} must not exceed the refill window"
-        );
-    }
-
-    #[tokio::test]
-    async fn usage_on_exhausted_bucket_reports_full_capacity_and_window_reset() {
-        let window = Duration::from_secs(8 * 3_600);
-        let rl = limiter(4, window);
-        for _ in 0..4 {
-            rl.acquire(1).await.unwrap();
-        }
-        let usage = rl.usage();
-        assert_eq!(usage.used, Some(4));
-        assert_eq!(usage.resets_in, Some(window));
-    }
-
-    struct NoIntrospectionLimiter;
-
-    #[async_trait]
-    impl RateLimiter for NoIntrospectionLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Granted)
-        }
-        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
     }
 
     #[test]
-    fn default_usage_offers_no_introspection() {
-        let usage = NoIntrospectionLimiter.usage();
-        assert!(usage.used.is_none());
-        assert!(usage.capacity.is_none());
-        assert!(usage.resets_in.is_none());
+    fn weighted_acquire_debits_its_full_weight() {
+        let (rl, t0) = bucket(4, HOUR);
+        assert_eq!(rl.acquire_at(t0, 3), RateLimitOutcome::Granted);
+        assert!(matches!(
+            rl.acquire_at(t0, 2),
+            RateLimitOutcome::Throttled { .. }
+        ));
+        assert_eq!(rl.acquire_at(t0, 1), RateLimitOutcome::Granted);
     }
 
-    #[tokio::test]
-    async fn acquire_weight_equal_to_capacity_is_granted_on_full_bucket() {
-        let rl = limiter(5, Duration::from_secs(3_600));
+    #[test]
+    fn throttle_wait_is_the_time_to_refill_the_deficit() {
+        let (rl, t0) = bucket(10, secs(10));
+        assert_eq!(rl.acquire_at(t0, 10), RateLimitOutcome::Granted);
+        assert_eq!(wait_of(rl.acquire_at(t0, 3)), secs(3));
+    }
+
+    #[test]
+    fn drained_bucket_refills_at_the_configured_rate() {
+        let (rl, t0) = bucket(10, secs(10));
+        assert_eq!(rl.acquire_at(t0, 10), RateLimitOutcome::Granted);
+        assert_eq!(rl.acquire_at(t0 + secs(2), 2), RateLimitOutcome::Granted);
         assert!(matches!(
-            rl.acquire(5).await.unwrap(),
-            RateLimitOutcome::Granted
+            rl.acquire_at(t0 + secs(2), 1),
+            RateLimitOutcome::Throttled { .. }
         ));
     }
 
-    #[tokio::test]
-    async fn weighted_acquire_debits_its_full_weight() {
-        let rl = limiter(4, Duration::from_secs(3_600));
-        rl.acquire(3).await.unwrap();
+    #[test]
+    fn refill_never_overfills_past_capacity() {
+        let (rl, t0) = bucket(3, secs(3));
+        assert_eq!(rl.acquire_at(t0 + HOUR, 3), RateLimitOutcome::Granted);
         assert!(matches!(
-            rl.acquire(2).await.unwrap(),
+            rl.acquire_at(t0 + HOUR, 1),
+            RateLimitOutcome::Throttled { .. }
+        ));
+    }
+
+    #[test]
+    fn earlier_now_never_moves_the_refill_clock_backwards() {
+        let (rl, t0) = bucket(2, secs(2));
+        assert_eq!(rl.acquire_at(t0, 2), RateLimitOutcome::Granted);
+        assert_eq!(rl.acquire_at(t0 + secs(1), 1), RateLimitOutcome::Granted);
+        assert!(matches!(
+            rl.acquire_at(t0, 1),
             RateLimitOutcome::Throttled { .. }
         ));
         assert!(matches!(
-            rl.acquire(1).await.unwrap(),
-            RateLimitOutcome::Granted
+            rl.acquire_at(t0 + secs(1), 1),
+            RateLimitOutcome::Throttled { .. }
         ));
     }
 
-    #[tokio::test]
-    async fn remote_throttle_drains_the_bucket_so_an_expired_cooldown_releases_no_burst() {
-        let rl = limiter(10, Duration::from_secs(3_600));
-        rl.observe_remote_throttle(Duration::ZERO).await;
+    #[test]
+    fn zero_refill_window_never_regenerates_tokens() {
+        let (rl, t0) = bucket(1, Duration::ZERO);
+        assert_eq!(rl.acquire_at(t0, 1), RateLimitOutcome::Granted);
+        assert_eq!(wait_of(rl.acquire_at(t0 + HOUR, 1)), Duration::ZERO);
+    }
+
+    #[test]
+    fn huge_refill_eta_saturates_without_panicking() {
+        let (rl, t0) = bucket(1, Duration::MAX);
+        assert_eq!(rl.acquire_at(t0, 1), RateLimitOutcome::Granted);
+        assert!(wait_of(rl.acquire_at(t0, 1)) >= Duration::from_secs(u64::MAX >> 1));
+        assert!(rl.usage_at(t0).resets_in.unwrap() >= Duration::from_secs(u64::MAX >> 1));
+    }
+
+    #[test]
+    fn remote_throttle_gates_acquires_until_the_cooldown_ends() {
+        let (rl, t0) = bucket(10, secs(1));
+        rl.observe_remote_throttle_at(t0, secs(8));
+        assert_eq!(wait_of(rl.acquire_at(t0 + secs(3), 1)), secs(5));
+        assert_eq!(rl.acquire_at(t0 + secs(8), 1), RateLimitOutcome::Granted);
+    }
+
+    #[test]
+    fn remote_throttle_hint_is_clamped_to_the_cooldown_ceiling() {
+        let (rl, t0) = bucket(10, secs(1));
+        rl.observe_remote_throttle_at(t0, Duration::MAX);
+        assert_eq!(wait_of(rl.acquire_at(t0, 1)), crate::MAX_REMOTE_COOLDOWN);
+    }
+
+    #[test]
+    fn shorter_later_remote_throttle_does_not_shorten_the_cooldown() {
+        let (rl, t0) = bucket(10, secs(1));
+        rl.observe_remote_throttle_at(t0, secs(30));
+        rl.observe_remote_throttle_at(t0 + secs(10), secs(1));
+        assert_eq!(wait_of(rl.acquire_at(t0 + secs(10), 1)), secs(20));
+    }
+
+    #[test]
+    fn longer_later_remote_throttle_extends_the_cooldown() {
+        let (rl, t0) = bucket(10, secs(1));
+        rl.observe_remote_throttle_at(t0, secs(5));
+        rl.observe_remote_throttle_at(t0 + secs(1), secs(30));
+        assert_eq!(wait_of(rl.acquire_at(t0 + secs(1), 1)), secs(30));
+    }
+
+    #[test]
+    fn remote_throttle_drains_the_bucket_so_an_expired_cooldown_releases_no_burst() {
+        let (rl, t0) = bucket(10, HOUR);
+        rl.observe_remote_throttle_at(t0, Duration::ZERO);
+        assert!(wait_of(rl.acquire_at(t0, 1)) > Duration::ZERO);
+    }
+
+    #[test]
+    fn non_extending_remote_throttle_still_drains_tokens() {
+        let (rl, t0) = bucket(10, secs(100));
+        rl.observe_remote_throttle_at(t0, secs(60));
+        rl.observe_remote_throttle_at(t0 + secs(59), secs(1));
         assert!(matches!(
-            rl.acquire(1).await.unwrap(),
-            RateLimitOutcome::Throttled { wait_for } if wait_for > Duration::ZERO
+            rl.acquire_at(t0 + secs(60), 1),
+            RateLimitOutcome::Throttled { .. }
         ));
+    }
+
+    #[test]
+    fn remote_throttle_at_an_earlier_now_keeps_the_refill_clock() {
+        let (rl, t0) = bucket(10, secs(10));
+        rl.observe_remote_throttle_at(t0 + secs(5), Duration::ZERO);
+        rl.observe_remote_throttle_at(t0, Duration::ZERO);
+        assert_eq!(wait_of(rl.acquire_at(t0 + secs(5), 1)), secs(1));
+    }
+
+    #[tokio::test]
+    async fn trait_path_feeds_the_remote_throttle_into_acquire() {
+        let rl = TokenBucketRateLimiter::new(10, secs(1));
+        rl.observe_remote_throttle(secs(8)).await;
+        let wait = wait_of(rl.acquire(1).await.unwrap());
+        assert!(wait > Duration::ZERO && wait <= secs(8));
+    }
+
+    #[test]
+    fn usage_tracks_consumed_tokens_and_the_refill_eta() {
+        let (rl, t0) = bucket(10, secs(10));
+        let cases = [(0, 0, Duration::ZERO), (3, 3, secs(3)), (7, 10, secs(10))];
+        for (weight, expected_used, expected_reset) in cases {
+            if weight > 0 {
+                assert_eq!(rl.acquire_at(t0, weight), RateLimitOutcome::Granted);
+            }
+            let usage = rl.usage_at(t0);
+            assert_eq!(usage.used, Some(expected_used), "after debiting {weight}");
+            assert_eq!(usage.capacity, Some(10));
+            assert_eq!(
+                usage.resets_in,
+                Some(expected_reset),
+                "after debiting {weight}"
+            );
+        }
+    }
+
+    #[test]
+    fn usage_reflects_refill_since_the_last_acquire() {
+        let (rl, t0) = bucket(10, secs(10));
+        assert_eq!(rl.acquire_at(t0, 10), RateLimitOutcome::Granted);
+        let usage = rl.usage_at(t0 + secs(4));
+        assert_eq!(usage.used, Some(6));
+        assert_eq!(usage.resets_in, Some(secs(6)));
     }
 
     fn throttled(secs: u64) -> Result<RateLimitOutcome, RateLimitError> {

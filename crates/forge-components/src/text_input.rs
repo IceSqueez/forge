@@ -1268,6 +1268,75 @@ mod tests {
         }
     }
 
+    fn with_secure_input<R>(
+        cx: &mut gpui::TestAppContext,
+        secure: bool,
+        f: impl FnOnce(&mut TextInput, &mut Window, &mut Context<TextInput>) -> R,
+    ) -> R {
+        let window = cx.add_window(|_window, cx| TextInput::new("placeholder", cx).secure(secure));
+        window
+            .update(cx, |input, window, cx| {
+                input.set_content("pa\u{1F600}ss", cx);
+                f(input, window, cx)
+            })
+            .unwrap()
+    }
+
+    #[gpui::test]
+    fn a_secure_input_reveals_no_text_to_the_input_method(cx: &mut gpui::TestAppContext) {
+        type Read = (Option<String>, Option<Range<usize>>);
+        let plain: Vec<Read> = vec![
+            (Some("pa\u{1F600}ss".to_owned()), Some(0..6)),
+            (Some("a".to_owned()), Some(1..2)),
+            (Some(String::new()), Some(6..6)),
+        ];
+        let hidden: Vec<Read> = vec![(None, None); 3];
+        for (secure, want) in [(false, plain), (true, hidden)] {
+            let got = with_secure_input(cx, secure, |input, window, cx| {
+                [0..6, 1..2, 9..12]
+                    .into_iter()
+                    .map(|range| {
+                        let mut actual = None;
+                        let text = input.text_for_range(range, &mut actual, window, cx);
+                        (text, actual)
+                    })
+                    .collect::<Vec<Read>>()
+            });
+            assert_eq!(got, want, "secure {secure}");
+        }
+    }
+
+    #[gpui::test]
+    fn a_secure_input_ignores_compositions_but_accepts_committed_text(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (secure, composed, marked, typed) in [
+            (
+                false,
+                "pa\u{1F600}ss\u{304B}",
+                true,
+                "pa\u{1F600}ss\u{304B}x",
+            ),
+            (true, "pa\u{1F600}ss", false, "pa\u{1F600}ssx"),
+        ] {
+            let got = with_secure_input(cx, secure, |input, window, cx| {
+                input.replace_and_mark_text_in_range(None, "\u{304B}", Some(1..1), window, cx);
+                let after_compose = (
+                    input.content().to_owned(),
+                    input.marked_text_range(window, cx).is_some(),
+                );
+                input.unmark_text(window, cx);
+                input.replace_text_in_range(None, "x", window, cx);
+                (after_compose, input.content().to_owned())
+            });
+            assert_eq!(
+                got,
+                ((composed.to_owned(), marked), typed.to_owned()),
+                "secure {secure}"
+            );
+        }
+    }
+
     #[gpui::test]
     fn locking_an_input_read_only_blocks_undo_of_an_earlier_edit(cx: &mut gpui::TestAppContext) {
         let content = with_input(cx, "alice", |input, window, cx| {

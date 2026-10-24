@@ -235,7 +235,8 @@ mod tests {
     use crate::helix_gateway::helix_gateway;
     use crate::sub_actions::test_support::endpoints_with;
     use forge_events::{Event, EventPublisher, EventSource};
-    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
+    use forge_net::RateLimiter;
+    use forge_net::test_support::RecordingRateLimiter;
     use forge_platform_core::EndpointSurface;
     use wiremock::matchers::{header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -276,43 +277,6 @@ mod tests {
         }
     }
 
-    struct RecordingLimiter {
-        outcome: RateLimitOutcome,
-        observed: Mutex<Vec<Duration>>,
-    }
-
-    impl RecordingLimiter {
-        fn granting() -> Arc<Self> {
-            Self::with(RateLimitOutcome::Granted)
-        }
-
-        fn exhausted() -> Arc<Self> {
-            Self::with(RateLimitOutcome::Exhausted)
-        }
-
-        fn with(outcome: RateLimitOutcome) -> Arc<Self> {
-            Arc::new(Self {
-                outcome,
-                observed: Mutex::new(Vec::new()),
-            })
-        }
-
-        fn observed(&self) -> Vec<Duration> {
-            self.observed.lock().unwrap().clone()
-        }
-    }
-
-    #[async_trait]
-    impl RateLimiter for RecordingLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(self.outcome)
-        }
-
-        async fn observe_remote_throttle(&self, retry_after: Duration) {
-            self.observed.lock().unwrap().push(retry_after);
-        }
-    }
-
     #[derive(Default)]
     struct RecordingBus(Mutex<Vec<Event>>);
 
@@ -342,13 +306,13 @@ mod tests {
 
     struct Harness {
         transport: HelixHttpTransport,
-        limiter: Arc<RecordingLimiter>,
+        limiter: Arc<RecordingRateLimiter>,
         bus: Arc<RecordingBus>,
     }
 
     fn harness_with(
         base_url: &str,
-        limiter: Arc<RecordingLimiter>,
+        limiter: Arc<RecordingRateLimiter>,
         tokens: Arc<dyn HelixTokenSource>,
     ) -> Harness {
         let bus = Arc::new(RecordingBus::default());
@@ -369,7 +333,7 @@ mod tests {
     fn harness(base_url: &str) -> Harness {
         harness_with(
             base_url,
-            RecordingLimiter::granting(),
+            Arc::new(RecordingRateLimiter::granting()),
             Arc::new(StaticTokenSource),
         )
     }
@@ -575,7 +539,7 @@ mod tests {
             harness("http://127.0.0.1:1"),
             harness_with(
                 &server.uri(),
-                RecordingLimiter::exhausted(),
+                Arc::new(RecordingRateLimiter::exhausted()),
                 Arc::new(StaticTokenSource),
             ),
         ];
@@ -609,7 +573,7 @@ mod tests {
                 "{headers:?}: {err:?}"
             );
             assert_eq!(
-                h.limiter.observed(),
+                h.limiter.observed_throttles(),
                 vec![Duration::from_secs(expected_secs)],
                 "{headers:?}"
             );
@@ -636,7 +600,7 @@ mod tests {
             matches!(err, HelixError::Http { status: 503, .. }),
             "got {err:?}"
         );
-        assert!(h.limiter.observed().is_empty());
+        assert!(h.limiter.observed_throttles().is_empty());
     }
 
     #[tokio::test]
@@ -651,7 +615,7 @@ mod tests {
             matches!(err, HelixError::Http { status: 503, .. }),
             "got {err:?}"
         );
-        assert_eq!(h.limiter.observed(), vec![Duration::from_secs(7)]);
+        assert_eq!(h.limiter.observed_throttles(), vec![Duration::from_secs(7)]);
         assert_eq!(h.bus.single_request_fail().payload["retry_after_secs"], 7);
     }
 
@@ -714,7 +678,7 @@ mod tests {
         let server = MockServer::start().await;
         let h = harness_with(
             &server.uri(),
-            RecordingLimiter::exhausted(),
+            Arc::new(RecordingRateLimiter::exhausted()),
             Arc::new(StaticTokenSource),
         );
 
@@ -729,7 +693,7 @@ mod tests {
         let server = MockServer::start().await;
         let h = harness_with(
             &server.uri(),
-            RecordingLimiter::granting(),
+            Arc::new(RecordingRateLimiter::granting()),
             Arc::new(FailingTokenSource),
         );
 

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_net::{
-    CallClass, Credential, FormBody, Gateway, GatewayBuildError, GatewayFailure, GatewayProfile,
+    CallClass, FormBody, Gateway, GatewayBuildError, GatewayFailure, GatewayProfile,
     GatewayRequest, GatewayResponse, RateLimiter, Secret, ThrottleHintFamily,
 };
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError, reauth_required};
@@ -17,8 +17,8 @@ const PLATFORM: &str = "twitch";
 const DEVICE_PATH: &str = "/device";
 const TOKEN_PATH: &str = "/token";
 const VALIDATE_PATH: &str = "/validate";
-const AUTHORIZATION_HEADER: &str = "Authorization";
-const VALIDATE_SCHEME_PREFIX: &str = "OAuth ";
+const REVOKE_PATH: &str = "/revoke";
+const VALIDATE_SCHEME: &str = "OAuth";
 
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const REFRESH_GRANT_TYPE: &str = "refresh_token";
@@ -78,6 +78,7 @@ pub(crate) struct TokenGrant {
 pub(crate) enum DevicePoll {
     Pending,
     SlowDown,
+    Throttled { wait: Duration },
     Granted(TokenGrant),
 }
 
@@ -85,6 +86,8 @@ pub(crate) enum DevicePoll {
 pub(crate) struct ValidatedToken {
     pub(crate) client_id: String,
     pub(crate) user_id: String,
+    #[serde(default)]
+    pub(crate) scopes: Vec<String>,
     #[serde(default)]
     pub(crate) expires_in: u64,
 }
@@ -132,6 +135,14 @@ impl TwitchOAuthClient {
             .cancel_on(cancel.clone());
         let failure = match self.gateway.send(request).await {
             Ok(response) => return decode(&response).map(DevicePoll::Granted),
+            Err(GatewayFailure::RateLimited { retry_after, .. }) => {
+                return Ok(DevicePoll::Throttled { wait: retry_after });
+            }
+            Err(GatewayFailure::BudgetExhausted) => {
+                return Ok(DevicePoll::Throttled {
+                    wait: Duration::ZERO,
+                });
+            }
             Err(failure) => failure,
         };
         match error_message(&failure).as_deref() {
@@ -175,13 +186,24 @@ impl TwitchOAuthClient {
     ) -> Result<ValidatedToken, PlatformError> {
         let request = GatewayRequest::get(VALIDATE_PATH)
             .label(VALIDATE_PATH)
-            .credential(Credential::ApiKey {
-                header: AUTHORIZATION_HEADER.to_owned(),
-                key: Secret::new(format!("{VALIDATE_SCHEME_PREFIX}{}", access_token.expose())),
-            })
+            .authorization(VALIDATE_SCHEME, Secret::new(access_token.expose()))
             .cancel_on(cancel.clone());
         let response = self.gateway.send(request).await.map_err(oauth_error)?;
         decode(&response)
+    }
+
+    pub(crate) async fn revoke(&self, token: &OAuthToken) -> Result<(), PlatformError> {
+        let form = FormBody::new()
+            .field("client_id", self.client_id.as_str())
+            .secret_field("token", Secret::new(token.expose()));
+        let request = GatewayRequest::post(REVOKE_PATH)
+            .label(REVOKE_PATH)
+            .body(form);
+        self.gateway
+            .send(request)
+            .await
+            .map(drop)
+            .map_err(oauth_error)
     }
 }
 
@@ -531,5 +553,104 @@ mod tests {
             (validated.user_id.as_str(), validated.expires_in),
             ("42", 0)
         );
+    }
+
+    #[tokio::test]
+    async fn throttled_device_polls_report_a_wait_instead_of_failing() {
+        let cases = [
+            (
+                ResponseTemplate::new(429).insert_header("Retry-After", "7"),
+                RecordingRateLimiter::granting(),
+                Duration::from_secs(7),
+                1,
+            ),
+            (
+                ResponseTemplate::new(200),
+                RecordingRateLimiter::exhausted(),
+                Duration::ZERO,
+                0,
+            ),
+        ];
+
+        for (response, limiter, expected_wait, expected_requests) in cases {
+            let server = answering("/token", response).await;
+            let client = oauth_client_limited_by(&server.uri(), CLIENT, Arc::new(limiter));
+
+            let outcome = client
+                .poll_device_token(DEVICE_CODE, &CancellationToken::new())
+                .await;
+
+            let Ok(DevicePoll::Throttled { wait }) = outcome else {
+                panic!("expected a throttled poll for {expected_wait:?}");
+            };
+            assert_eq!(wait, expected_wait);
+            assert_eq!(
+                server.received_requests().await.unwrap().len(),
+                expected_requests
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn revoke_posts_the_token_and_the_client_id_as_form_fields() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/revoke"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        client_for(&server)
+            .revoke(&OAuthToken::new(ACCESS_TOKEN))
+            .await
+            .unwrap();
+
+        let body = only_body(&server).await;
+        assert!(body.contains(&format!("token={ACCESS_TOKEN}")), "{body}");
+        assert!(body.contains("client_id=test_client"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn revoke_failure_excerpt_masks_the_token() {
+        let server = answering(
+            "/revoke",
+            ResponseTemplate::new(400).set_body_string(format!("invalid token {ACCESS_TOKEN}")),
+        )
+        .await;
+
+        let Err(PlatformError::Http { status, body }) = client_for(&server)
+            .revoke(&OAuthToken::new(ACCESS_TOKEN))
+            .await
+        else {
+            panic!("a rejected revoke must be an Http error");
+        };
+
+        assert_eq!(status, 400);
+        assert!(!body.contains(ACCESS_TOKEN), "{body}");
+        assert!(body.contains("***"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn validate_failure_excerpt_never_carries_the_access_token() {
+        for (status, body) in [
+            (503, format!("upstream saw {ACCESS_TOKEN}")),
+            (403, format!("forbidden {ACCESS_TOKEN}")),
+            (403, format!("forbidden OAuth {ACCESS_TOKEN}")),
+        ] {
+            let server = answering(
+                "/validate",
+                ResponseTemplate::new(status).set_body_string(body),
+            )
+            .await;
+
+            let Err(PlatformError::Http { body: excerpt, .. }) = client_for(&server)
+                .validate(&OAuthToken::new(ACCESS_TOKEN), &CancellationToken::new())
+                .await
+            else {
+                panic!("HTTP {status}: a rejected validate must be an Http error");
+            };
+
+            assert!(!excerpt.contains(ACCESS_TOKEN), "HTTP {status}: {excerpt}");
+        }
     }
 }

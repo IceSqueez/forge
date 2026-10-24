@@ -1,5 +1,7 @@
 use std::time::{Duration, SystemTime};
 
+use tokio::time::Instant;
+
 use forge_net::{Gateway, GatewayRequest, Secret};
 use forge_platform_core::{AuthFlow, EndpointSurface, PlatformEndpoints, PlatformError};
 use forge_types::OAuthToken;
@@ -15,8 +17,6 @@ use crate::sub_actions::identity::BroadcasterTier;
 
 const TWITCH_DEVICE_PATH: &str = "/device";
 const TWITCH_TOKEN_PATH: &str = "/token";
-const TWITCH_VALIDATE_PATH: &str = "/validate";
-const TWITCH_REVOKE_PATH: &str = "/revoke";
 const HELIX_USERS_PATH: &str = "/helix/users";
 
 const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(5);
@@ -75,21 +75,8 @@ pub const TWITCH_BOT_SCOPES: &[&str] = &[
 pub(crate) const DEVICE_CANCELLED_REASON: &str = "device authorization cancelled";
 pub(crate) const DEVICE_DENIED_REASON: &str = "authorization denied by user";
 pub(crate) const DEVICE_EXPIRED_REASON: &str = "device code expired";
+const DEVICE_LIFETIME_OUT_OF_RANGE_REASON: &str = "device code lifetime out of range";
 pub(crate) const DEVICE_CODE_USED_REASON: &str = "device code expired or already used";
-
-pub(crate) fn twitch_validate_endpoint(endpoints: &PlatformEndpoints) -> String {
-    format!(
-        "{}{TWITCH_VALIDATE_PATH}",
-        endpoints.base_url(EndpointSurface::TwitchOAuth)
-    )
-}
-
-pub(crate) fn twitch_revoke_endpoint(endpoints: &PlatformEndpoints) -> String {
-    format!(
-        "{}{TWITCH_REVOKE_PATH}",
-        endpoints.base_url(EndpointSurface::TwitchOAuth)
-    )
-}
 
 pub(crate) fn twitch_device_endpoint(endpoints: &PlatformEndpoints) -> String {
     format!(
@@ -188,7 +175,7 @@ pub struct TwitchAuthFlow {
     scopes: &'static [&'static str],
     device_code: Option<String>,
     poll_interval: Duration,
-    expires_at: Option<SystemTime>,
+    deadline: Option<Instant>,
 }
 
 impl TwitchAuthFlow {
@@ -199,7 +186,7 @@ impl TwitchAuthFlow {
             scopes: TWITCH_BROADCASTER_SCOPES,
             device_code: None,
             poll_interval: DEFAULT_POLL_INTERVAL,
-            expires_at: None,
+            deadline: None,
         }
     }
 
@@ -211,11 +198,17 @@ impl TwitchAuthFlow {
 
     pub async fn start(&mut self) -> Result<DeviceCodeInfo, PlatformError> {
         let authorization = self.oauth.request_device_code(self.scopes).await?;
-        let expires_at = SystemTime::now() + Duration::from_secs(authorization.expires_in);
+        let lifetime = Duration::from_secs(authorization.expires_in);
+        let deadline = Instant::now()
+            .checked_add(lifetime)
+            .ok_or_else(lifetime_out_of_range)?;
+        let expires_at = SystemTime::now()
+            .checked_add(lifetime)
+            .ok_or_else(lifetime_out_of_range)?;
         self.device_code = Some(authorization.device_code);
         self.poll_interval =
             Duration::from_secs(authorization.interval.max(MIN_POLL_INTERVAL_SECS));
-        self.expires_at = Some(expires_at);
+        self.deadline = Some(deadline);
         info!(
             scopes = self.scopes.len(),
             expires_in_secs = authorization.expires_in,
@@ -239,16 +232,13 @@ impl TwitchAuthFlow {
             .ok_or_else(|| PlatformError::Auth {
                 reason: "wait_for_authorization called before start".into(),
             })?;
-        let expires_at = self.expires_at.ok_or_else(|| PlatformError::Auth {
+        let deadline = self.deadline.ok_or_else(|| PlatformError::Auth {
             reason: "wait_for_authorization called before start".into(),
         })?;
 
+        let mut next_wait = self.poll_interval;
         let grant = loop {
-            if SystemTime::now() >= expires_at {
-                return Err(PlatformError::Auth {
-                    reason: DEVICE_EXPIRED_REASON.into(),
-                });
-            }
+            let remaining = time_left(deadline)?;
             tokio::select! {
                 biased;
                 () = cancel.cancelled() => {
@@ -256,17 +246,26 @@ impl TwitchAuthFlow {
                         reason: DEVICE_CANCELLED_REASON.into(),
                     });
                 }
-                () = tokio::time::sleep(self.poll_interval) => {}
+                () = tokio::time::sleep(next_wait.min(remaining)) => {}
             }
+            next_wait = self.poll_interval;
             match self.oauth.poll_device_token(&device_code, &cancel).await? {
                 DevicePoll::Pending => {
                     trace!("twitch device authorization still pending");
                 }
                 DevicePoll::SlowDown => {
                     self.poll_interval += SLOW_DOWN_INCREMENT;
+                    next_wait = self.poll_interval;
                     debug!(
                         poll_interval_secs = self.poll_interval.as_secs(),
                         "twitch asked us to slow the device-code polling"
+                    );
+                }
+                DevicePoll::Throttled { wait } => {
+                    next_wait = wait.max(self.poll_interval);
+                    debug!(
+                        wait_secs = next_wait.as_secs(),
+                        "twitch device-code polling throttled; waiting before the next poll"
                     );
                 }
                 DevicePoll::Granted(grant) => break grant,
@@ -301,7 +300,7 @@ impl TwitchAuthFlow {
             .expires_in
             .filter(|secs| *secs > 0)
             .or(Some(validated.expires_in).filter(|secs| *secs > 0))
-            .map(|secs| SystemTime::now() + Duration::from_secs(secs));
+            .and_then(|secs| SystemTime::now().checked_add(Duration::from_secs(secs)));
 
         Ok(TwitchAuthBundle {
             access_token,
@@ -343,6 +342,21 @@ impl TwitchAuthFlow {
             display_name: user.display_name,
             broadcaster_type: BroadcasterTier::from_helix_str(&user.broadcaster_type),
         })
+    }
+}
+
+fn time_left(deadline: Instant) -> Result<Duration, PlatformError> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|remaining| !remaining.is_zero())
+        .ok_or_else(|| PlatformError::Auth {
+            reason: DEVICE_EXPIRED_REASON.into(),
+        })
+}
+
+fn lifetime_out_of_range() -> PlatformError {
+    PlatformError::MalformedResponse {
+        reason: DEVICE_LIFETIME_OUT_OF_RANGE_REASON.into(),
     }
 }
 
@@ -399,7 +413,7 @@ mod tests {
 
     fn armed(mut flow: TwitchAuthFlow) -> TwitchAuthFlow {
         flow.device_code = Some("DEV123".to_owned());
-        flow.expires_at = Some(SystemTime::now() + Duration::from_secs(3600));
+        flow.deadline = Some(tokio::time::Instant::now() + Duration::from_secs(3600));
         flow.poll_interval = QUICK_POLL;
         flow
     }
@@ -807,5 +821,339 @@ mod tests {
             panic!("twitch must use the device-code auth flow");
         };
         assert!(!scopes.is_empty(), "device grant must request scopes");
+    }
+
+    const POLL_INTERVAL: Duration = Duration::from_secs(5);
+    const TICK: Duration = Duration::from_millis(1);
+    const SETTLE_YIELDS: usize = 16;
+    const LIFETIME: Duration = Duration::from_secs(3600);
+    const CLAMP_MARGIN: Duration = Duration::from_secs(60);
+
+    struct AnsweredPolls(Arc<Notify>);
+
+    impl forge_net::FailureObserver for AnsweredPolls {
+        fn on_failure(&self, _: &forge_net::GatewayFailure, _: forge_net::FailureContext) {
+            self.0.notify_one();
+        }
+    }
+
+    struct ScriptedAnswers {
+        queued: std::sync::Mutex<std::collections::VecDeque<ResponseTemplate>>,
+        then: ResponseTemplate,
+    }
+
+    impl Respond for ScriptedAnswers {
+        fn respond(&self, _: &Request) -> ResponseTemplate {
+            self.queued
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| self.then.clone())
+        }
+    }
+
+    fn poll_answer(message: &str) -> ResponseTemplate {
+        ResponseTemplate::new(400).set_body_json(serde_json::json!({ "message": message }))
+    }
+
+    fn throttled(retry_after_secs: u64) -> ResponseTemplate {
+        ResponseTemplate::new(429).insert_header("Retry-After", retry_after_secs.to_string())
+    }
+
+    async fn settle() {
+        for _ in 0..SETTLE_YIELDS {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    struct PollRig {
+        server: MockServer,
+        limiter: Arc<forge_net::test_support::RecordingRateLimiter>,
+        answered: Arc<Notify>,
+        cancel: CancellationToken,
+        waiting: tokio::task::JoinHandle<Result<TwitchAuthBundle, PlatformError>>,
+        _frozen: std::sync::mpsc::Sender<()>,
+    }
+
+    impl PollRig {
+        async fn start(
+            answers: Vec<ResponseTemplate>,
+            then: ResponseTemplate,
+            limiter: forge_net::test_support::RecordingRateLimiter,
+        ) -> Self {
+            Self::launch(answers, then, limiter, None).await
+        }
+
+        async fn started_by_device_grant(
+            device_lifetime_secs: u64,
+            then: ResponseTemplate,
+        ) -> Self {
+            Self::launch(
+                Vec::new(),
+                then,
+                forge_net::test_support::RecordingRateLimiter::granting(),
+                Some(device_lifetime_secs),
+            )
+            .await
+        }
+
+        async fn launch(
+            answers: Vec<ResponseTemplate>,
+            then: ResponseTemplate,
+            limiter: forge_net::test_support::RecordingRateLimiter,
+            device_lifetime_secs: Option<u64>,
+        ) -> Self {
+            let server = MockServer::start().await;
+            if let Some(secs) = device_lifetime_secs {
+                mount_device(&server, secs, POLL_INTERVAL.as_secs()).await;
+            }
+            mount(
+                &server,
+                "/token",
+                ScriptedAnswers {
+                    queued: std::sync::Mutex::new(answers.into()),
+                    then,
+                },
+            )
+            .await;
+            let (frozen, release) = std::sync::mpsc::channel::<()>();
+            tokio::task::spawn_blocking(move || release.recv());
+            let limiter = Arc::new(limiter);
+            let answered = Arc::new(Notify::new());
+            let gateway = Gateway::new(
+                &server.uri(),
+                Arc::clone(&limiter) as Arc<dyn forge_net::RateLimiter>,
+                crate::oauth_client::TWITCH_OAUTH_GATEWAY_PROFILE,
+                Some(Arc::new(AnsweredPolls(Arc::clone(&answered)))),
+            )
+            .unwrap();
+            let mut flow = TwitchAuthFlow::new(
+                TwitchOAuthClient::new(gateway, CLIENT.to_owned()),
+                crate::sub_actions::test_support::unreachable_helix_gateway(),
+            );
+            if device_lifetime_secs.is_some() {
+                flow.start().await.unwrap();
+            } else {
+                flow.device_code = Some("DEV123".to_owned());
+                flow.deadline = Some(tokio::time::Instant::now() + LIFETIME);
+                flow.poll_interval = POLL_INTERVAL;
+            }
+            let cancel = CancellationToken::new();
+            let waiting = tokio::spawn({
+                let cancel = cancel.clone();
+                async move { flow.wait_for_authorization(cancel).await }
+            });
+            settle().await;
+            Self {
+                server,
+                limiter,
+                answered,
+                cancel,
+                waiting,
+                _frozen: frozen,
+            }
+        }
+
+        fn polls(&self) -> usize {
+            self.limiter.acquire_count()
+        }
+
+        async fn advance(&self, by: Duration) {
+            tokio::time::advance(by).await;
+            settle().await;
+        }
+
+        async fn expect_poll_after(&self, pause: Duration) {
+            let before = self.polls();
+            self.advance(pause - TICK).await;
+            assert_eq!(
+                self.polls(),
+                before,
+                "polled before the {pause:?} pause ended"
+            );
+            self.advance(TICK * 2).await;
+            assert_eq!(
+                self.polls(),
+                before + 1,
+                "no poll once the {pause:?} pause ended"
+            );
+            self.answered.notified().await;
+        }
+
+        async fn ended_reason(self) -> String {
+            let Err(PlatformError::Auth { reason }) = self.waiting.await.unwrap() else {
+                panic!("the wait must end with an Auth error");
+            };
+            reason
+        }
+
+        async fn cancelled_reason(self) -> String {
+            self.cancel.cancel();
+            let Err(PlatformError::Auth { reason }) = self.waiting.await.unwrap() else {
+                panic!("a cancelled wait must end with an Auth error");
+            };
+            reason
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_throttled_poll_waits_the_longer_of_the_retry_hint_and_the_poll_interval() {
+        let rig = PollRig::start(
+            vec![throttled(30), throttled(1)],
+            poll_answer("authorization_pending"),
+            forge_net::test_support::RecordingRateLimiter::granting(),
+        )
+        .await;
+
+        for pause in [POLL_INTERVAL, Duration::from_secs(30), POLL_INTERVAL] {
+            rig.expect_poll_after(pause).await;
+        }
+
+        assert_eq!(rig.server.received_requests().await.unwrap().len(), 3);
+        assert_eq!(rig.cancelled_reason().await, DEVICE_CANCELLED_REASON);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn only_slow_down_raises_the_poll_interval() {
+        let rig = PollRig::start(
+            vec![
+                throttled(1),
+                poll_answer("authorization_pending"),
+                poll_answer("slow_down"),
+            ],
+            poll_answer("authorization_pending"),
+            forge_net::test_support::RecordingRateLimiter::granting(),
+        )
+        .await;
+        let slowed = POLL_INTERVAL + SLOW_DOWN_INCREMENT;
+
+        for pause in [POLL_INTERVAL, POLL_INTERVAL, POLL_INTERVAL, slowed, slowed] {
+            rig.expect_poll_after(pause).await;
+        }
+
+        assert_eq!(rig.cancelled_reason().await, DEVICE_CANCELLED_REASON);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_exhausted_local_budget_waits_one_poll_interval_and_keeps_polling() {
+        let rig = PollRig::start(
+            Vec::new(),
+            poll_answer("authorization_pending"),
+            forge_net::test_support::RecordingRateLimiter::granting().with_script([
+                Ok(forge_net::RateLimitOutcome::Exhausted),
+                Ok(forge_net::RateLimitOutcome::Exhausted),
+            ]),
+        )
+        .await;
+
+        for _ in 0..3 {
+            rig.expect_poll_after(POLL_INTERVAL).await;
+        }
+
+        assert_eq!(
+            rig.server.received_requests().await.unwrap().len(),
+            1,
+            "only the poll with budget left may reach Twitch"
+        );
+        assert_eq!(rig.cancelled_reason().await, DEVICE_CANCELLED_REASON);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_throttle_pause_past_expiry_polls_once_at_the_deadline_then_reports_expired() {
+        let rig = PollRig::start(
+            Vec::new(),
+            throttled(2 * LIFETIME.as_secs()),
+            forge_net::test_support::RecordingRateLimiter::granting(),
+        )
+        .await;
+        rig.expect_poll_after(POLL_INTERVAL).await;
+
+        rig.advance(LIFETIME - CLAMP_MARGIN).await;
+        let polls_before_expiry = rig.polls();
+        rig.advance(CLAMP_MARGIN + TICK).await;
+        rig.answered.notified().await;
+        let polls_at_expiry = rig.polls();
+        let limiter = Arc::clone(&rig.limiter);
+
+        assert_eq!(polls_before_expiry, 1);
+        assert_eq!(
+            polls_at_expiry, 2,
+            "the pause must end by the code's expiry"
+        );
+        assert_eq!(rig.ended_reason().await, DEVICE_EXPIRED_REASON);
+        assert_eq!(limiter.acquire_count(), 2, "no poll after the deadline");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_started_device_code_expires_after_a_final_poll_at_its_lifetime() {
+        let lifetime = Duration::from_secs(12);
+        let rig = PollRig::started_by_device_grant(
+            lifetime.as_secs(),
+            poll_answer("authorization_pending"),
+        )
+        .await;
+
+        rig.expect_poll_after(POLL_INTERVAL).await;
+        rig.expect_poll_after(POLL_INTERVAL).await;
+        rig.expect_poll_after(lifetime - (POLL_INTERVAL + TICK) * 2)
+            .await;
+        let limiter = Arc::clone(&rig.limiter);
+
+        assert_eq!(rig.ended_reason().await, DEVICE_EXPIRED_REASON);
+        assert_eq!(
+            limiter.acquire_count(),
+            4,
+            "one device request and three polls"
+        );
+    }
+
+    #[tokio::test]
+    async fn start_rejects_a_device_lifetime_past_the_clock_range_and_stays_unarmed() {
+        let server = MockServer::start().await;
+        mount_device(&server, u64::MAX, 5).await;
+        let mut flow = flow_at(&server);
+
+        let Err(PlatformError::MalformedResponse { reason }) = flow.start().await else {
+            panic!("an out-of-range device lifetime must be a malformed response");
+        };
+
+        assert_eq!(reason, DEVICE_LIFETIME_OUT_OF_RANGE_REASON);
+        assert!(flow.device_code.is_none() && flow.deadline.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancelling_during_a_throttle_pause_ends_the_wait_without_another_poll() {
+        let rig = PollRig::start(
+            Vec::new(),
+            throttled(LIFETIME.as_secs()),
+            forge_net::test_support::RecordingRateLimiter::granting(),
+        )
+        .await;
+        rig.expect_poll_after(POLL_INTERVAL).await;
+        let paused_at = tokio::time::Instant::now();
+        let limiter = Arc::clone(&rig.limiter);
+
+        let reason = rig.cancelled_reason().await;
+
+        assert_eq!(reason, DEVICE_CANCELLED_REASON);
+        assert_eq!(limiter.acquire_count(), 1);
+        assert_eq!(paused_at.elapsed(), Duration::ZERO);
+    }
+
+    #[tokio::test]
+    async fn an_already_expired_device_code_ends_the_wait_without_polling() {
+        let server = MockServer::start().await;
+        mount(&server, "/token", poll_answer("authorization_pending")).await;
+        let mut flow = armed(flow_at(&server));
+        flow.deadline = Some(tokio::time::Instant::now());
+
+        let Err(PlatformError::Auth { reason }) =
+            flow.wait_for_authorization(CancellationToken::new()).await
+        else {
+            panic!("an expired device code must end with an Auth error");
+        };
+
+        assert_eq!(reason, DEVICE_EXPIRED_REASON);
+        assert!(server.received_requests().await.unwrap().is_empty());
     }
 }

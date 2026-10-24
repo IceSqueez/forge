@@ -8,9 +8,8 @@ use tracing::debug;
 use super::{BotStatus, TwitchBotAccount};
 use crate::auth::{
     DEVICE_CANCELLED_REASON, DEVICE_CODE_USED_REASON, DEVICE_DENIED_REASON, DEVICE_EXPIRED_REASON,
-    DeviceCodeInfo, TwitchAuthBundle, TwitchAuthFlow, twitch_revoke_endpoint,
+    DeviceCodeInfo, TwitchAuthBundle, TwitchAuthFlow,
 };
-use crate::bounded_client::bounded_http_client;
 use crate::credentials::{TWITCH_BOT_CREDENTIAL_ID, load, load_at, store_at};
 
 #[derive(Debug, Error)]
@@ -126,18 +125,9 @@ impl TwitchBotAccount {
     }
 
     async fn revoke(&self, token: &OAuthToken) {
-        let form = [
-            ("client_id", self.client_id.as_str()),
-            ("token", token.expose()),
-        ];
-        match bounded_http_client()
-            .post(twitch_revoke_endpoint(&self.endpoints))
-            .form(&form)
-            .send()
-            .await
-        {
-            Ok(response) => debug!(status = response.status().as_u16(), "bot token revoke sent"),
-            Err(e) => debug!(error = %e.without_url(), "bot token revoke failed"),
+        match self.oauth.revoke(token).await {
+            Ok(()) => debug!("bot token revoked"),
+            Err(e) => debug!(error = %e, "bot token revoke failed"),
         }
     }
 }

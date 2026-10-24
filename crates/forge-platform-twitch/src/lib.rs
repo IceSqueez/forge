@@ -3,7 +3,6 @@
 pub mod auth;
 mod ban_list;
 mod bot_account;
-mod bounded_client;
 pub mod builtin;
 mod cadence;
 pub mod chat;

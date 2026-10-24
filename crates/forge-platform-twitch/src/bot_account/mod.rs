@@ -6,7 +6,6 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_net::Gateway;
-use forge_platform_core::PlatformEndpoints;
 use forge_storage::CredentialsRepo;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -82,10 +81,8 @@ pub struct TwitchBotAccount {
     manager: Arc<TwitchCredentialsManager>,
     transport: Arc<dyn HelixTransport>,
     validator: TokenValidator,
-    endpoints: PlatformEndpoints,
     oauth: TwitchOAuthClient,
     helix: Gateway,
-    client_id: String,
     bus: Arc<dyn EventPublisher>,
     state: RwLock<BotState>,
     broadcaster_transport: OnceLock<Arc<dyn HelixTransport>>,
@@ -95,7 +92,6 @@ pub struct TwitchBotAccount {
 
 impl TwitchBotAccount {
     pub fn new(
-        endpoints: &PlatformEndpoints,
         repo: Arc<dyn CredentialsRepo>,
         oauth: TwitchOAuthClient,
         bus: Arc<dyn EventPublisher>,
@@ -118,11 +114,9 @@ impl TwitchBotAccount {
             repo,
             manager,
             transport,
-            validator: TokenValidator::new(endpoints, client_id.clone()),
-            endpoints: endpoints.clone(),
+            validator: TokenValidator::new(oauth.clone()),
             oauth,
             helix,
-            client_id,
             bus,
             state: RwLock::new(BotState {
                 status: BotStatus::NotConnected,
@@ -447,7 +441,6 @@ pub(crate) mod test_support {
                 (EndpointSurface::TwitchOAuth, server.uri().as_str()),
             ]);
             let bot = TwitchBotAccount::new(
-                &endpoints,
                 Arc::clone(&repo) as Arc<dyn CredentialsRepo>,
                 crate::sub_actions::test_support::oauth_client_at(&server.uri(), CLIENT_ID),
                 Arc::clone(&bus) as Arc<dyn EventPublisher>,
@@ -531,35 +524,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sync_status_classifies_the_stored_bot_token_by_its_validation_answer() {
-        let missing_whispers: Vec<&str> = TWITCH_BOT_SCOPES
-            .iter()
-            .copied()
-            .filter(|scope| *scope != "user:manage:whispers")
-            .collect();
-        let cases: [(&str, u16, &[&str], &str, BotStatus); 5] = [
-            ("valid", 200, TWITCH_BOT_SCOPES, CLIENT_ID, connected()),
-            ("rejected", 401, TWITCH_BOT_SCOPES, CLIENT_ID, reauth()),
-            ("missing scope", 200, &missing_whispers, CLIENT_ID, reauth()),
-            (
-                "foreign client",
-                200,
-                TWITCH_BOT_SCOPES,
-                "other-app",
-                reauth(),
-            ),
-            (
-                "validator down",
-                503,
-                TWITCH_BOT_SCOPES,
-                CLIENT_ID,
-                connected(),
-            ),
+    async fn sync_status_maps_each_validation_verdict_to_a_bot_status() {
+        let cases = [
+            ("valid", 200, connected()),
+            ("invalid", 401, reauth()),
+            ("inconclusive", 503, connected()),
         ];
 
-        for (label, status, scopes, client_id, expected) in cases {
+        for (label, status, expected) in cases {
             let harness = BotHarness::with_bot_row().await;
-            harness.mount_validate(status, scopes, client_id).await;
+            harness
+                .mount_validate(status, TWITCH_BOT_SCOPES, CLIENT_ID)
+                .await;
 
             harness.bot.sync_status().await;
 

@@ -68,7 +68,6 @@ pub(crate) fn wire_twitch(
     ));
     let helix = twitch_helix_gateway(endpoints, bus)?;
     let bot = forge_platform_twitch::TwitchBotAccount::new(
-        endpoints,
         Arc::clone(&creds),
         oauth.clone(),
         publisher(bus),

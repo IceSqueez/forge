@@ -307,3 +307,79 @@ fn compute_last_step_outcomes(
     }
     outcomes
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::collections::HashMap;
+
+    use forge_storage::action::MockActionRepo;
+    use forge_storage::history::MockHistoryRepo;
+    use forge_storage::queue::MockQueueRepo;
+    use forge_storage::soundboard::MockSoundboardClipsRepo;
+    use forge_storage::trigger_instance::MockTriggerInstanceRepo;
+    use forge_types::{Action, DEFAULT_QUEUE_ID, ExecutionMode, Queue, QueueId};
+
+    use super::*;
+
+    fn queue(id: QueueId, name: &str) -> Queue {
+        Queue {
+            id,
+            name: name.to_owned(),
+            description: String::new(),
+            concurrency: 1,
+        }
+    }
+
+    #[tokio::test]
+    async fn an_action_whose_queue_is_gone_is_listed_under_the_default_queue_by_id_not_by_name() {
+        let orphan = Action {
+            id: ActionId::new(),
+            name: "Greeter".to_owned(),
+            group: None,
+            queue_id: QueueId::new(),
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: ExecutionMode::Sequential,
+            description: None,
+            sub_actions: Vec::new(),
+        };
+        let mut actions = MockActionRepo::new();
+        actions
+            .expect_list()
+            .returning(move || Ok(vec![orphan.clone()]));
+        let mut queues = MockQueueRepo::new();
+        queues.expect_list().returning(|| {
+            Ok(vec![
+                queue(QueueId::new(), "Default"),
+                queue(DEFAULT_QUEUE_ID, "Main"),
+            ])
+        });
+        let mut history = MockHistoryRepo::new();
+        history
+            .expect_stats_summary()
+            .returning(|_| Ok(HashMap::new()));
+        let mut triggers = MockTriggerInstanceRepo::new();
+        triggers
+            .expect_list_for_action()
+            .returning(|_| Ok(Vec::new()));
+        let service = ActionsService::new(
+            Arc::new(actions),
+            Arc::new(queues),
+            Arc::new(history),
+            Arc::new(triggers),
+            Arc::new(MockSoundboardClipsRepo::new()),
+        );
+
+        let summaries = service.list_summaries().await.unwrap();
+
+        assert_eq!(
+            summaries
+                .iter()
+                .map(|s| s.queue_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Main"]
+        );
+    }
+}

@@ -532,3 +532,28 @@ async fn a_setup_import_trims_older_pre_setup_copies_to_the_kept_count() {
         "{pre_setup:?}"
     );
 }
+
+#[tokio::test]
+async fn a_setup_carrying_no_queues_removes_the_local_ones_but_keeps_the_default_queue() {
+    let store = Store::open().await;
+    let queues = store.provider.queue_repo();
+    let local = forge_types::Queue {
+        id: forge_types::QueueId::new(),
+        name: "Alerts".to_owned(),
+        description: String::new(),
+        concurrency: 1,
+    };
+    queues.save(&local).await.unwrap();
+    let path = bundle(store.data_dir(), &empty_setup(), &[]);
+
+    store.import(path).await.unwrap();
+
+    let left: Vec<_> = queues
+        .list()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|queue| queue.id)
+        .collect();
+    assert_eq!(left, vec![forge_types::DEFAULT_QUEUE_ID]);
+}

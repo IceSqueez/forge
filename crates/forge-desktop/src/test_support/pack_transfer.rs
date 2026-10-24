@@ -31,7 +31,7 @@ use crate::integrations::tests::every_registry_entry;
 use crate::test_support::STORAGE_KEY;
 
 pub(super) const QUEUE_NAME: &str = "Alerts queue";
-const SCRIPT_NAME: &str = "greet";
+pub(super) const SCRIPT_NAME: &str = "greet";
 const SCRIPT_BODY: &str = "let greeting = 1;";
 pub(super) const GLOBAL_NAME: &str = "score";
 const CLIP_NAME: &str = "Ding";
@@ -1446,6 +1446,131 @@ async fn a_failed_import_keeps_an_archived_action_that_shares_an_imported_id() {
     assert!(
         actions.restore(pack.f.root).await.unwrap(),
         "the archived action was deleted by the rollback"
+    );
+}
+
+async fn archive_script(store: &Store) -> ScriptId {
+    let id = store.script(SCRIPT_NAME).await.unwrap().id;
+    assert!(store.provider.archive_script(id).await.unwrap());
+    id
+}
+
+async fn archived_scripts(store: &Store) -> Vec<ScriptId> {
+    store
+        .provider
+        .list_archived_scripts()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|script| script.id)
+        .collect()
+}
+
+fn script_item(plan: &PackImportPlan) -> (PackConflict, bool) {
+    plan.items()
+        .iter()
+        .find(|item| item.key.kind == PackItemKind::Script)
+        .map(|item| (item.conflict.clone(), item.archived))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_pack_script_matching_an_archived_local_script_by_id_is_an_archived_conflict() {
+    let registries = Registries::real().await;
+    let store = Store::open().await;
+    let f = seed(&store).await;
+    let bundle = export(&store, &registries, &[f.root]).await;
+    archive_script(&store).await;
+
+    let (_staged, plan) = preview(&store, &registries, &bundle).await;
+
+    assert_eq!(script_item(&plan), (PackConflict::IdMatch, true));
+}
+
+#[tokio::test]
+async fn a_pack_script_matching_an_archived_local_script_by_name_is_an_archived_conflict() {
+    let registries = Registries::real().await;
+    let source = Store::open().await;
+    let f = seed(&source).await;
+    let bundle = export(&source, &registries, &[f.root]).await;
+    let target = Store::open().await;
+    seed(&target).await;
+    let local = archive_script(&target).await;
+
+    let (_staged, plan) = preview(&target, &registries, &bundle).await;
+
+    assert_eq!(
+        script_item(&plan),
+        (
+            PackConflict::NameMatch {
+                local_id: local.to_string()
+            },
+            true
+        )
+    );
+}
+
+#[tokio::test]
+async fn replacing_an_archived_local_script_brings_it_back_live_with_the_pack_body() {
+    let registries = Registries::real().await;
+    let store = Store::open().await;
+    let f = seed(&store).await;
+    let bundle = export(&store, &registries, &[f.root]).await;
+    let local = store.script(SCRIPT_NAME).await.unwrap();
+    ScriptRepo::save(
+        store.provider.as_ref(),
+        ScriptRecord {
+            body: "let edited = 2;".to_owned(),
+            ..local
+        },
+    )
+    .await
+    .unwrap();
+    archive_script(&store).await;
+
+    import(
+        &store,
+        &registries,
+        &bundle,
+        on_conflict(PackResolution::Replace),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        (
+            store.script(SCRIPT_NAME).await.map(|script| script.body),
+            archived_scripts(&store).await
+        ),
+        (Some(SCRIPT_BODY.to_owned()), Vec::new())
+    );
+}
+
+#[tokio::test]
+async fn a_failed_import_that_replaced_an_archived_script_archives_it_again() {
+    let registries = Registries::real().await;
+    let pack = pack_whose_last_action_lacks_its_queue(&registries).await;
+    let target = Store::open().await;
+    import(&target, &registries, &pack.root_only, defaults)
+        .await
+        .unwrap();
+    let local = archive_script(&target).await;
+
+    let failed = import(
+        &target,
+        &registries,
+        &pack.failing,
+        on_conflict(PackResolution::Replace),
+    )
+    .await;
+
+    assert!(is_late_without_queue(&failed), "{failed:?}");
+    assert_eq!(
+        (
+            target.script(SCRIPT_NAME).await.map(|script| script.id),
+            archived_scripts(&target).await
+        ),
+        (None, vec![local])
     );
 }
 

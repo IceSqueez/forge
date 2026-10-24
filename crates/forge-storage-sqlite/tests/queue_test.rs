@@ -2,7 +2,7 @@
 
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{Queue, QueueId};
+use forge_types::{DEFAULT_QUEUE_ID, Queue, QueueId};
 
 mod common;
 use common::Sandboxed;
@@ -23,15 +23,15 @@ fn make_queue(name: &str, concurrency: u32) -> Queue {
 }
 
 #[tokio::test]
-async fn default_queue_exists_after_migration() {
+async fn migrations_seed_the_default_queue_under_the_default_queue_id() {
     let backend = setup().await;
     let got = backend
         .queue_repo()
-        .get_by_name("Default")
+        .get(DEFAULT_QUEUE_ID)
         .await
-        .expect("get_by_name");
-    assert!(got.is_some());
-    assert_eq!(got.unwrap().name, "Default");
+        .expect("get")
+        .map(|q| q.name);
+    assert_eq!(got.as_deref(), Some("Default"));
 }
 
 #[tokio::test]

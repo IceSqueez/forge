@@ -8,8 +8,9 @@ use forge_storage::settings::portability::is_portable;
 use forge_storage::settings::reserved_keys as key;
 use forge_storage::{
     AliasId, AssignmentStrategy, BanLedgerEntry, BanLedgerKey, BanOrigin, CredentialId, FilterRule,
-    FilterRuleKind, GlobalsRepo, IgnoreProfile, LatestRecord, MediaBlobId, OverlayId, SettingsRepo,
-    StoredClip, StoredDonation, TtsPipelineSettings, Viewer, VoiceAlias, clip_source_referrer,
+    FilterRuleKind, GlobalsRepo, IgnoreProfile, LatestRecord, MediaBlobId, OverlayId, ScriptRepo,
+    SettingsRepo, StoredClip, StoredDonation, TtsPipelineSettings, Viewer, VoiceAlias,
+    clip_source_referrer,
 };
 use forge_storage_sqlite::SqliteDatabaseFileSchema;
 use forge_transfer::{
@@ -877,5 +878,68 @@ async fn a_portable_setting_only_the_target_holds_is_removed_and_recommends_a_re
             settings_of(&store).await.get(key::DENSITY).cloned()
         ),
         (true, None)
+    );
+}
+
+async fn archive_greet(store: &Store) -> forge_types::ScriptId {
+    let id = ScriptRepo::get_by_name(store.provider.as_ref(), super::pack_transfer::SCRIPT_NAME)
+        .await
+        .unwrap()
+        .unwrap()
+        .id;
+    assert!(store.provider.archive_script(id).await.unwrap());
+    id
+}
+
+async fn archived_scripts(store: &Store) -> Vec<forge_types::ScriptId> {
+    store
+        .provider
+        .list_archived_scripts()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|script| script.id)
+        .collect()
+}
+
+async fn live_greet(store: &Store) -> Option<forge_types::ScriptId> {
+    ScriptRepo::get_by_name(store.provider.as_ref(), super::pack_transfer::SCRIPT_NAME)
+        .await
+        .unwrap()
+        .map(|script| script.id)
+}
+
+#[tokio::test]
+async fn a_setup_replaces_the_targets_archived_same_named_script_with_its_own() {
+    let m = source_and_target().await;
+    archive_greet(&m.target).await;
+
+    m.import().await.unwrap();
+
+    assert_eq!(
+        (
+            live_greet(&m.target).await,
+            archived_scripts(&m.target).await
+        ),
+        (live_greet(&m.source).await, Vec::new())
+    );
+}
+
+#[tokio::test]
+async fn a_failed_import_keeps_the_targets_archived_script_archived() {
+    let m = source_and_target().await;
+    let archived = archive_greet(&m.target).await;
+    let blocked_root = m.target.data_dir().join("overlays-blocked");
+    std::fs::write(&blocked_root, b"not a directory").unwrap();
+
+    let failed = import_into(&m.target, &m.registries, &m.bundle, blocked_root).await;
+
+    assert!(failed.is_err(), "{failed:?}");
+    assert_eq!(
+        (
+            live_greet(&m.target).await,
+            archived_scripts(&m.target).await
+        ),
+        (None, vec![archived])
     );
 }

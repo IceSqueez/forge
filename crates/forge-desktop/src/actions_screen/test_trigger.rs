@@ -57,7 +57,7 @@ mod tests {
             let action_id = seed_action(&provider, "Scene", Vec::new()).await;
             let queue = provider
                 .queue_repo()
-                .get_by_name("Default")
+                .get(forge_types::DEFAULT_QUEUE_ID)
                 .await
                 .unwrap()
                 .expect("migrations seed the default queue");

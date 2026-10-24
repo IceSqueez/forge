@@ -1963,6 +1963,7 @@ fn not_live_badge(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_components::{Density, ThemeId};
     use forge_runtime::{QueueDepth, QueueDepths};
@@ -2172,6 +2173,85 @@ mod tests {
                         error = tr!("queues_apply_live_missing")
                     )
                 )]
+            )
+        );
+    }
+
+    fn named(id: QueueId, name: &str) -> Queue {
+        Queue {
+            name: name.to_owned(),
+            ..queue(id)
+        }
+    }
+
+    #[gpui::test]
+    fn only_a_queue_other_than_the_default_can_be_staged_for_delete_whatever_its_name(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let impostor = QueueId::new();
+        let scheduler = held_queue_scheduler(&rt, named(DEFAULT_QUEUE_ID, "Main"));
+        let view = mount_stored(
+            cx,
+            &rt,
+            scheduler,
+            vec![named(DEFAULT_QUEUE_ID, "Main"), named(impostor, "Default")],
+        );
+
+        for (asked, staged) in [(DEFAULT_QUEUE_ID, None), (impostor, Some(impostor))] {
+            let pending = view.update(cx, |view, cx| {
+                view.request_delete(asked, cx);
+                let pending = view.pending_delete.get().copied();
+                view.cancel_delete(cx);
+                pending
+            });
+
+            assert_eq!(pending, staged, "{asked}");
+        }
+    }
+
+    #[test]
+    fn deleting_a_queue_named_default_moves_its_actions_to_the_real_default_queue() {
+        let rt = runtime();
+        let impostor = named(QueueId::new(), "Default");
+        let scheduler = held_queue_scheduler(&rt, impostor.clone());
+        let (moved_to, remaining) = rt.block_on(async {
+            let provider = crate::test_support::sandboxed_provider().await;
+            let queues = provider.queue_repo();
+            queues.save(&named(DEFAULT_QUEUE_ID, "Main")).await.unwrap();
+            queues.save(&impostor).await.unwrap();
+            let action = forge_types::Action {
+                queue_id: impostor.id,
+                ..crate::test_support::action_running("Greeter", Vec::new())
+            };
+            provider.action_repo().save(&action).await.unwrap();
+
+            delete_queue(queues.clone(), scheduler, impostor.id)
+                .await
+                .unwrap();
+
+            let moved_to = provider
+                .action_repo()
+                .get(action.id)
+                .await
+                .unwrap()
+                .map(|a| a.queue_id);
+            let mut remaining: Vec<_> = queues
+                .list()
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|q| (q.id, q.name))
+                .collect();
+            remaining.sort();
+            (moved_to, remaining)
+        });
+
+        assert_eq!(
+            (moved_to, remaining),
+            (
+                Some(DEFAULT_QUEUE_ID),
+                vec![(DEFAULT_QUEUE_ID, "Main".to_owned())]
             )
         );
     }

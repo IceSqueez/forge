@@ -1076,7 +1076,7 @@ mod tests {
             let action_id = seed_action(&provider, "Scene", vec![step(OBS_SCENE, true)]).await;
             let queue = provider
                 .queue_repo()
-                .get_by_name("Default")
+                .get(forge_types::DEFAULT_QUEUE_ID)
                 .await
                 .unwrap()
                 .expect("migrations seed the default queue");

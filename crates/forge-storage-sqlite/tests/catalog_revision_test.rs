@@ -1,10 +1,10 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use forge_storage::{CatalogRevision, DataProvider, ExecutionStatus};
+use forge_storage::{CatalogRevision, DataProvider, ExecutionStatus, ScriptRecord, ScriptRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, PermissionRung, Queue, QueueId, TriggerConfig, TriggerInstance,
-    TriggerInstanceId,
+    Action, ActionId, PermissionRung, Queue, QueueId, ScriptContract, ScriptId, TriggerConfig,
+    TriggerInstance, TriggerInstanceId,
 };
 use time::OffsetDateTime;
 
@@ -44,6 +44,20 @@ fn instance() -> TriggerInstance {
         cooldown_secs: 0,
         cooldown_global: true,
         permission_rung: PermissionRung::Everyone,
+    }
+}
+
+fn script() -> ScriptRecord {
+    let now = OffsetDateTime::now_utc();
+    ScriptRecord {
+        id: ScriptId::new(),
+        name: "greet".to_owned(),
+        body: "let x = 1;".to_owned(),
+        contract: ScriptContract::default(),
+        body_hash: String::new(),
+        enabled: true,
+        created_at: now,
+        last_modified: now,
     }
 }
 
@@ -141,6 +155,24 @@ async fn every_catalog_write_through_the_provider_advances_its_revision() {
 
     advances!(revision, "action delete", actions.delete(a.id));
     advances!(revision, "queue delete", queues.delete(q.id));
+
+    let reassigned = queue();
+    queues.save(&reassigned).await.unwrap();
+    actions.save(&action(reassigned.id)).await.unwrap();
+    advances!(
+        revision,
+        "queue delete_reassigning_actions",
+        queues.delete_reassigning_actions(reassigned.id)
+    );
+
+    let script = script();
+    let script_id = script.id;
+    ScriptRepo::save(&*backend, script).await.unwrap();
+    advances!(
+        revision,
+        "script rename_cascading",
+        backend.rename_cascading(script_id, "renamed")
+    );
 }
 
 #[tokio::test]

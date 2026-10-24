@@ -182,6 +182,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn load_all_leaves_out_an_archived_script() {
+        let dp = make_dp().await;
+        let kept = make_record("kept", "let x = 1;", true);
+        let shelved = make_record("shelved", "let y = 2;", true);
+        let shelved_id = shelved.id;
+        ScriptRepo::save(dp.as_ref(), kept).await.unwrap();
+        ScriptRepo::save(dp.as_ref(), shelved).await.unwrap();
+        assert!(dp.archive_script(shelved_id).await.unwrap());
+
+        let registry = ScriptRegistry::new();
+        registry.load_all(dp.as_ref()).await.unwrap();
+
+        assert_eq!(
+            (
+                registry.get_by_name("kept").await.is_some(),
+                registry.get_by_name("shelved").await.is_some()
+            ),
+            (true, false)
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_takes_a_loaded_script_out_of_reach_and_reports_whether_it_was_loaded() {
+        let dp = make_dp().await;
+        let record = make_record("greet", "let x = 1;", true);
+        let id = record.id;
+        ScriptRepo::save(dp.as_ref(), record).await.unwrap();
+        let registry = ScriptRegistry::new();
+        registry.load_all(dp.as_ref()).await.unwrap();
+
+        let removals = [registry.remove(id).await, registry.remove(id).await];
+
+        assert_eq!(
+            (removals, registry.get_by_name("greet").await.is_some()),
+            ([true, false], false)
+        );
+    }
+
+    #[tokio::test]
     async fn load_all_skips_scripts_with_invalid_syntax() {
         let dp = make_dp().await;
         let valid = make_record("valid_script", "let x = 1;", true);

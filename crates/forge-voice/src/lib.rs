@@ -673,4 +673,47 @@ mod tests {
 
         assert_eq!(voice, "id-voice");
     }
+
+    #[test]
+    fn active_alias_engine_follows_alias_lookup_and_ignores_blocked_aliases() {
+        let alias = |viewer_id: &str, engine: &str, state: AliasState| VoiceAlias {
+            id: AliasId(viewer_id.into()),
+            viewer_id: viewer_id.into(),
+            viewer_name: viewer_id.into(),
+            engine_id: EngineId(engine.into()),
+            voice_id: VoiceId("v".into()),
+            pitch_semitones: None,
+            rate_multiplier: None,
+            state,
+        };
+        let resolver = VoiceAliasResolver::new(
+            vec![
+                alias("twitch:123", "piper", AliasState::Active),
+                alias("twitch:alice", "elevenlabs", AliasState::Active),
+                alias("dave", "azure", AliasState::Active),
+                alias("twitch:bob", "openai", AliasState::Blocked),
+            ],
+            AssignmentStrategy::DeterministicByName,
+            IgnoreProfile::default(),
+            SynthesisDefaults::default(),
+        );
+        for (viewer_id, viewer_name, expected) in [
+            ("twitch:123", "anyone", Some("piper")),
+            ("twitch:555", "Alice", Some("elevenlabs")),
+            ("youtube:555", "Alice", None),
+            ("kick:9", "DAVE", Some("azure")),
+            ("dave", "someone-else", Some("azure")),
+            ("twitch:bob", "bob", None),
+            ("twitch:777", "nobody", None),
+            ("", "", None),
+        ] {
+            assert_eq!(
+                resolver
+                    .active_alias_engine(viewer_id, viewer_name)
+                    .map(|e| e.0.as_str()),
+                expected,
+                "{viewer_id} {viewer_name}"
+            );
+        }
+    }
 }

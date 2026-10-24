@@ -267,16 +267,57 @@ async fn throttle_statuses_become_rate_limited_and_feed_the_limiter_once() {
         let server = serving(template).await;
         let harness = Harness::new(&server.uri(), profile);
         let failure = harness.fail(GatewayRequest::get("x")).await;
-        assert_eq!(
-            failure,
-            GatewayFailure::RateLimited {
-                status,
-                retry_after,
-                scope
-            },
-            "{status} {headers:?}"
+        assert!(
+            matches!(
+                &failure,
+                GatewayFailure::RateLimited { status: s, retry_after: r, scope: sc, .. }
+                    if *s == status && *r == retry_after && *sc == scope
+            ),
+            "{status} {headers:?}: {failure:?}"
         );
         assert_eq!(harness.limiter.observed_throttles(), vec![retry_after]);
+    }
+}
+
+#[tokio::test]
+async fn throttle_excerpts_are_trimmed_masked_and_capped_like_other_error_bodies() {
+    let secret = "THROTTLE-SECRET";
+    let long_tail = "é".repeat(EXCERPT_MAX_CHARS);
+    for status in [429, 503] {
+        for (body, expected) in [
+            (
+                format!("  quota for {secret} reached \n"),
+                "quota for *** reached".to_owned(),
+            ),
+            (
+                format!("{secret}{long_tail}"),
+                format!(
+                    "***{}",
+                    "é".repeat(EXCERPT_MAX_CHARS - "***".chars().count())
+                ),
+            ),
+            ("z".repeat(ERROR_BODY_READ_CAP + 1), String::new()),
+        ] {
+            let server = serving(
+                ResponseTemplate::new(status)
+                    .insert_header("Retry-After", "3")
+                    .set_body_string(body),
+            )
+            .await;
+            let harness = Harness::new(&server.uri(), platform());
+            let failure = harness
+                .fail(GatewayRequest::get("x").bearer(Secret::new(secret)))
+                .await;
+            assert!(
+                matches!(&failure, GatewayFailure::RateLimited { .. }),
+                "{status}: {failure:?}"
+            );
+            assert_eq!(
+                failure.excerpt().map(|e| e.as_str()),
+                Some(expected.as_str()),
+                "status {status}"
+            );
+        }
     }
 }
 

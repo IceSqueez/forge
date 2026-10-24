@@ -124,7 +124,7 @@ mod tests {
 
         let result = engine
             .run_piper(
-                shell_args("exec tail -f \"$0\"", &marker),
+                shell_args("mkfifo \"$0.fifo\" && read -r _ < \"$0.fifo\"", &marker),
                 b"hello\n".to_vec(),
             )
             .await;

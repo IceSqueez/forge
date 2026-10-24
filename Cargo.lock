@@ -3259,6 +3259,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "tokio",
  "tracing",
 ]
 
@@ -3268,6 +3269,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-tts-core",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tracing",

@@ -258,4 +258,206 @@ mod tests {
             "stderr was lost"
         );
     }
+
+    #[cfg(unix)]
+    const GENEROUS_TIMEOUT: Duration = Duration::from_secs(60);
+
+    #[cfg(unix)]
+    const SHORT_TIMEOUT: Duration = Duration::from_millis(50);
+
+    #[cfg(unix)]
+    fn fake_espeak(dir: &std::path::Path, body: &str) -> std::path::PathBuf {
+        let path = dir.join("fake-espeak-ng");
+        let status = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg("printf '%s' \"$1\" > \"$0\" && chmod 755 \"$0\"")
+            .arg(&path)
+            .arg(format!("#!/bin/sh\n{body}\n"))
+            .status()
+            .expect("run /bin/sh");
+        assert!(status.success(), "could not install {}", path.display());
+        path
+    }
+
+    #[cfg(unix)]
+    fn invocation(text: &str) -> SynthesisInvocation<'_> {
+        SynthesisInvocation {
+            voice_id: "en-us",
+            text,
+            rate_wpm: DEFAULT_RATE_WPM,
+            pitch_0_99: DEFAULT_PITCH,
+            ssml: false,
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    const BLOCKS_FOREVER: &str = "mkfifo \"$0.fifo\" && read -r _ < \"$0.fifo\"";
+
+    #[cfg(target_os = "linux")]
+    fn live_processes_mentioning(marker: &std::path::Path) -> usize {
+        let needle = marker.to_string_lossy().into_owned();
+        std::fs::read_dir("/proc")
+            .expect("procfs")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().parse::<u32>().is_ok())
+            .filter_map(|entry| std::fs::read(entry.path().join("cmdline")).ok())
+            .filter(|cmdline| String::from_utf8_lossy(cmdline).contains(&needle))
+            .count()
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn synthesis_feeds_the_text_as_one_newline_terminated_line_and_returns_stdout() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let binary = fake_espeak(dir.path(), "cat");
+        for (text, expected) in [
+            ("hello", "hello\n"),
+            ("hello\n", "hello\n"),
+            ("", "\n"),
+            ("привіт", "привіт\n"),
+        ] {
+            let out = run_synthesis_via(&binary, GENEROUS_TIMEOUT, &invocation(text))
+                .await
+                .unwrap_or_else(|e| panic!("{text:?}: {e:?}"));
+
+            assert_eq!(String::from_utf8_lossy(&out), expected, "{text:?}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn synthesis_passes_only_the_non_default_prosody_and_ssml_flags() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let binary = fake_espeak(dir.path(), "cat > /dev/null; printf '%s ' \"$@\"");
+        for (rate_wpm, pitch_0_99, ssml, expected) in [
+            (DEFAULT_RATE_WPM, DEFAULT_PITCH, false, "--stdout -v en-us "),
+            (200, DEFAULT_PITCH, false, "--stdout -v en-us -s 200 "),
+            (DEFAULT_RATE_WPM, 0, false, "--stdout -v en-us -p 0 "),
+            (
+                DEFAULT_RATE_WPM,
+                DEFAULT_PITCH,
+                true,
+                "--stdout -v en-us -m ",
+            ),
+            (88, 99, true, "--stdout -v en-us -s 88 -p 99 -m "),
+        ] {
+            let call = SynthesisInvocation {
+                rate_wpm,
+                pitch_0_99,
+                ssml,
+                ..invocation("hi")
+            };
+
+            let out = run_synthesis_via(&binary, GENEROUS_TIMEOUT, &call)
+                .await
+                .expect("synthesis");
+
+            assert_eq!(String::from_utf8_lossy(&out), expected);
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_failing_synthesis_reports_the_engines_stderr() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let binary = fake_espeak(
+            dir.path(),
+            "cat > /dev/null; echo unknown voice >&2; exit 1",
+        );
+
+        let result = run_synthesis_via(&binary, GENEROUS_TIMEOUT, &invocation("hi")).await;
+
+        assert!(
+            matches!(&result, Err(EspeakError::SubprocessFailed(stderr)) if stderr.contains("unknown voice")),
+            "expected SubprocessFailed with stderr, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_binary_that_cannot_be_started_is_an_io_error_for_both_calls() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let missing = dir.path().join("no-such-espeak");
+
+        let synthesis = run_synthesis_via(&missing, SHORT_TIMEOUT, &invocation("hi")).await;
+        let listing = list_voices_via(&missing, SHORT_TIMEOUT).await;
+
+        assert!(
+            matches!(synthesis, Err(EspeakError::Io(_))),
+            "{synthesis:?}"
+        );
+        assert!(matches!(listing, Err(EspeakError::Io(_))), "{listing:?}");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_synthesis_that_never_finishes_times_out_and_is_killed() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let binary = fake_espeak(dir.path(), BLOCKS_FOREVER);
+
+        let result = run_synthesis_via(&binary, SHORT_TIMEOUT, &invocation("hi")).await;
+
+        assert!(
+            matches!(result, Err(EspeakError::Timeout { ms: 50 })),
+            "expected a timeout, got {result:?}"
+        );
+        assert_eq!(
+            live_processes_mentioning(&binary),
+            0,
+            "the timed-out espeak-ng process is still alive"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_voice_listing_asks_for_voices_and_returns_stdout() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let binary = fake_espeak(
+            dir.path(),
+            "[ \"$1\" = --voices ] || exit 9; printf 'Pty Language Age/Gender VoiceName\\n 5  uk  --/M  Ukrainian\\n'",
+        );
+
+        let listing = list_voices_via(&binary, GENEROUS_TIMEOUT)
+            .await
+            .expect("listing");
+
+        assert_eq!(
+            listing,
+            "Pty Language Age/Gender VoiceName\n 5  uk  --/M  Ukrainian\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_voice_listing_that_exits_with_failure_reports_the_binary_as_missing() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let binary = fake_espeak(dir.path(), "echo partial; exit 1");
+
+        let result = list_voices_via(&binary, GENEROUS_TIMEOUT).await;
+
+        assert!(
+            matches!(result, Err(EspeakError::BinaryNotFound)),
+            "{result:?}"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_voice_listing_that_never_finishes_times_out_and_is_killed() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let binary = fake_espeak(dir.path(), BLOCKS_FOREVER);
+
+        let result = list_voices_via(&binary, SHORT_TIMEOUT).await;
+
+        assert!(
+            matches!(result, Err(EspeakError::Timeout { ms: 50 })),
+            "expected a timeout, got {result:?}"
+        );
+        tokio::time::timeout(GENEROUS_TIMEOUT, async {
+            while live_processes_mentioning(&binary) > 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the timed-out espeak-ng process is still alive");
+    }
 }

@@ -106,6 +106,21 @@ mod tests {
     }
 
     #[test]
+    fn zero_capacity_set_accepts_every_insert_and_stores_nothing() {
+        let mut set = DedupSet::bounded(0);
+        assert!(set.try_insert("a"));
+        assert!(set.try_insert("a"));
+        assert!(!set.contains("a"));
+    }
+
+    #[test]
+    fn capacity_one_set_keeps_only_the_latest_id() {
+        let mut set = filled(1, &["a", "b"]);
+        assert!(!set.contains("a"));
+        assert!(!set.try_insert("b"));
+    }
+
+    #[test]
     fn unbounded_set_never_evicts() {
         let mut set = DedupSet::unbounded();
         for n in 0..10_000 {

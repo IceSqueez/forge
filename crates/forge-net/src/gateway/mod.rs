@@ -194,10 +194,14 @@ impl Gateway {
                 .limiter
                 .observe_remote_throttle(throttle.wait)
                 .await;
+            let body = read_capped(ResponseBody::new(response), ERROR_BODY_READ_CAP)
+                .await
+                .unwrap_or_default();
             return Err(GatewayFailure::RateLimited {
                 status: status.as_u16(),
                 retry_after: throttle.wait,
                 scope: throttle.scope,
+                excerpt: excerpt_of(&body, &request.secrets()),
             });
         }
         let body = read_capped(ResponseBody::new(response), ERROR_BODY_READ_CAP)

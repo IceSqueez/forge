@@ -130,6 +130,7 @@ pub enum GatewayFailure {
         status: u16,
         retry_after: Duration,
         scope: ThrottleScope,
+        excerpt: BodyExcerpt,
     },
     #[error("request was rejected (status {status})")]
     ClientRejected { status: u16, excerpt: BodyExcerpt },
@@ -175,11 +176,11 @@ impl GatewayFailure {
             Self::Unauthorized { excerpt }
             | Self::Forbidden { excerpt }
             | Self::NotFound { excerpt }
+            | Self::RateLimited { excerpt, .. }
             | Self::ClientRejected { excerpt, .. }
             | Self::ServerError { excerpt, .. }
             | Self::UnexpectedStatus { excerpt, .. } => Some(excerpt),
-            Self::RateLimited { .. }
-            | Self::BudgetExhausted
+            Self::BudgetExhausted
             | Self::ResponseTooLarge { .. }
             | Self::Transport(_)
             | Self::Cancelled

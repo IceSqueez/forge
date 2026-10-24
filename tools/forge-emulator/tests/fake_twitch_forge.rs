@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use forge_emulator::fixture::TwitchAccount;
 use forge_emulator::twitch::{CredentialCheck, FakeTwitch, FakeTwitchConfig, Viewer, ViewerBadge};
 use forge_events::{Event, EventPublisher, EventStream};
-use forge_net::{RateLimiter, TokenBucketRateLimiter};
+use forge_net::{Gateway, TokenBucketRateLimiter};
 use forge_platform_core::{
     BuiltinControl, CONNECTION_STATE_CHANGED_KIND, ChatPlatform, ConnectionState, EndpointSurface,
     PlatformEndpoints,
@@ -18,7 +18,8 @@ use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{
     ChatSessionConfig, CredentialsTokenSource, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW,
     HelixHttpTransport, SubscriptionTracker, TwitchChat, TwitchChatHandle,
-    TwitchCredentialsManager, TwitchIntegrationBundle, TwitchLifecycle, TwitchPlatform, send_chat,
+    TwitchCredentialsManager, TwitchIntegrationBundle, TwitchLifecycle, TwitchPlatform,
+    helix_gateway, send_chat,
 };
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::{ChatPayload, OAuthToken, PermissionRung};
@@ -146,16 +147,21 @@ impl Forge {
             Arc::clone(&self.creds),
             manager,
             SubscriptionTracker::default(),
-            Self::rate_limiter(),
+            self.helix(),
             TwitchLifecycle::new(),
         ))
     }
 
-    fn rate_limiter() -> Arc<dyn RateLimiter> {
-        Arc::new(TokenBucketRateLimiter::new(
-            HELIX_BUDGET_CAPACITY,
-            HELIX_BUDGET_WINDOW,
-        ))
+    fn helix(&self) -> Gateway {
+        helix_gateway(
+            &self.config.endpoints,
+            Arc::new(TokenBucketRateLimiter::new(
+                HELIX_BUDGET_CAPACITY,
+                HELIX_BUDGET_WINDOW,
+            )),
+            Arc::clone(&self.bus),
+        )
+        .unwrap()
     }
 
     async fn next_event_of(&mut self, kind: &str) -> Event {
@@ -364,9 +370,7 @@ async fn forge_chat_send_returns_the_message_id_the_fake_issued() {
         .unwrap();
     let forge = Forge::against(&fake, &account, &account.access_token).await;
     let transport = HelixHttpTransport::new(
-        &forge.config.endpoints,
-        Forge::rate_limiter(),
-        Arc::clone(&forge.bus),
+        forge.helix(),
         account.client_id.clone(),
         Arc::new(CredentialsTokenSource::new(Arc::clone(&forge.creds))),
     );
@@ -523,21 +527,15 @@ async fn a_refused_chat_send_through_the_platform_publishes_request_fail_without
     let fake = FakeTwitch::start(FakeTwitchConfig::for_account(&account))
         .await
         .unwrap();
-    let forge = Forge::against(&fake, &account, NEVER_ISSUED).await;
+    let mut forge = Forge::against(&fake, &account, NEVER_ISSUED).await;
     let platform = forge.platform();
-    let mut events = platform.events();
 
     platform
         .send_message(&account.login, "pong")
         .await
         .unwrap_err();
 
-    let failure = loop {
-        let event = next_platform_event(&mut events).await;
-        if event.kind == "request.fail" {
-            break event;
-        }
-    };
+    let failure = forge.next_event_of("request.fail").await;
     assert_eq!(failure.payload["endpoint"], "/helix/chat/messages");
     assert!(
         !failure.payload.to_string().contains(NEVER_ISSUED),

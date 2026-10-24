@@ -2255,7 +2255,8 @@ mod tests {
                 &PlatformEndpoints::default(),
                 backend as Arc<dyn CredentialsRepo>,
                 "client".to_owned(),
-                bus as Arc<dyn EventPublisher>,
+                Arc::clone(&bus) as Arc<dyn EventPublisher>,
+                crate::test_support::default_twitch_helix_gateway(bus as Arc<dyn EventPublisher>),
             );
             let presence = cx.new(|_| TwitchBotPresence::new());
             view.update(cx, |detail, cx| detail.attach_twitch_bot(bot, presence, cx));

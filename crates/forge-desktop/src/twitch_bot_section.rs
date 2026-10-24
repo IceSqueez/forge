@@ -856,7 +856,8 @@ mod tests {
             &PlatformEndpoints::default(),
             backend as Arc<dyn CredentialsRepo>,
             "client".to_owned(),
-            bus as Arc<dyn EventPublisher>,
+            Arc::clone(&bus) as Arc<dyn EventPublisher>,
+            crate::test_support::default_twitch_helix_gateway(bus as Arc<dyn EventPublisher>),
         );
         let handle = rt.handle().clone();
         let presence = cx.new(|_| TwitchBotPresence::new());

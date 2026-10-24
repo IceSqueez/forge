@@ -1898,9 +1898,7 @@ pub(crate) mod tests {
         ));
         let transport: Arc<dyn forge_platform_twitch::HelixTransport> =
             Arc::new(forge_platform_twitch::HelixHttpTransport::new(
-                &PlatformEndpoints::default(),
-                Arc::new(NoopRateLimiter),
-                publisher(bus),
+                crate::test_support::default_twitch_helix_gateway(publisher(bus)),
                 "test-client".to_owned(),
                 manager as Arc<dyn forge_platform_twitch::HelixTokenSource>,
             ));

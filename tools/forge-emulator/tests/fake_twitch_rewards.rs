@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use forge_emulator::fixture::TwitchAccount;
 use forge_emulator::twitch::{FakeTwitch, FakeTwitchConfig, MAX_CUSTOM_REWARDS};
 use forge_events::{Event, EventPublisher};
-use forge_net::{RateLimiter, TokenBucketRateLimiter};
+use forge_net::TokenBucketRateLimiter;
 use forge_platform_core::{
     BuiltinCollections, CollectionFailure, CollectionId, CollectionItemAccess, CollectionItemId,
     PlatformEndpoints, QuickActionFieldValue, RevisionWait,
@@ -18,7 +18,7 @@ use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{
     BroadcasterTier, ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW,
     SubscriptionTracker, TwitchChat, TwitchChatHandle, TwitchCredentialsManager,
-    TwitchIntegrationBundle, TwitchLifecycle, TwitchPlatform,
+    TwitchIntegrationBundle, TwitchLifecycle, TwitchPlatform, helix_gateway,
 };
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::OAuthToken;
@@ -105,10 +105,15 @@ impl Forge {
             endpoints,
         };
         let lifecycle = TwitchLifecycle::new();
-        let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
-            HELIX_BUDGET_CAPACITY,
-            HELIX_BUDGET_WINDOW,
-        ));
+        let helix = helix_gateway(
+            &config.endpoints,
+            Arc::new(TokenBucketRateLimiter::new(
+                HELIX_BUDGET_CAPACITY,
+                HELIX_BUDGET_WINDOW,
+            )),
+            Arc::new(DiscardBus),
+        )
+        .unwrap();
         let platform = Arc::new(TwitchPlatform::new(
             config.clone(),
             Arc::clone(&creds),
@@ -118,7 +123,7 @@ impl Forge {
                 account.client_id.clone(),
             )),
             SubscriptionTracker::default(),
-            rate_limiter,
+            helix,
             lifecycle.clone(),
         ));
         let bundle = TwitchIntegrationBundle::new(Some(account.login.clone()), platform);

@@ -913,6 +913,20 @@ pub(crate) fn trigger_registry(stubs: Vec<StubTrigger>) -> TriggerRegistry {
     registry
 }
 
+pub(crate) fn default_twitch_helix_gateway(
+    bus: Arc<dyn forge_events::EventPublisher>,
+) -> forge_net::Gateway {
+    forge_platform_twitch::helix_gateway(
+        &forge_platform_core::PlatformEndpoints::default(),
+        Arc::new(forge_net::TokenBucketRateLimiter::new(
+            forge_platform_twitch::HELIX_BUDGET_CAPACITY,
+            forge_platform_twitch::HELIX_BUDGET_WINDOW,
+        )),
+        bus,
+    )
+    .unwrap()
+}
+
 pub(crate) fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()

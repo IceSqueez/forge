@@ -71,7 +71,7 @@ impl BroadcasterTier {
         }
     }
 
-    fn from_helix_str(raw: &str) -> Self {
+    pub(crate) fn from_helix_str(raw: &str) -> Self {
         match raw {
             "partner" => Self::Partner,
             "affiliate" => Self::Affiliate,

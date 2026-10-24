@@ -609,6 +609,7 @@ pub async fn build_runtime(
         hotkey_reconciler: integrations.hotkey_reconciler,
         donation_services: integrations.donation_services,
         twitch_bot: integrations.twitch_bot,
+        twitch_sign_in: integrations.twitch_sign_in,
         server,
         overlays,
         overlay_kinds,

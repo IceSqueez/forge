@@ -149,7 +149,10 @@ impl ConnectFlow {
         } else {
             "compiled default"
         };
-        let Some(cid) = forge_platform_twitch::client_id() else {
+        let (Some(cid), Some(sign_in)) = (
+            forge_platform_twitch::client_id(),
+            self.twitch_sign_in.clone(),
+        ) else {
             self.twitch_device = Some(TwitchDeviceState::failed(
                 TwitchDevicePhase::Failed,
                 tr!("auth_error_credentials_missing_twitch").to_string(),
@@ -162,9 +165,8 @@ impl ConnectFlow {
             id_prefix = &cid[..cid.len().min(6)],
             "starting twitch device flow"
         );
-        let handle: TwitchFlowHandle = Arc::new(tokio::sync::Mutex::new(Some(
-            TwitchAuthFlow::new(&self.endpoints, cid),
-        )));
+        let handle: TwitchFlowHandle =
+            Arc::new(tokio::sync::Mutex::new(Some(sign_in.broadcaster_flow())));
         self.twitch_flow = Some(Arc::clone(&handle));
         self.twitch_device = Some(TwitchDeviceState::starting());
         async_bridge::run_async(
@@ -1029,6 +1031,7 @@ mod tests {
             kick_slot: None,
             youtube_slot: None,
             endpoints: forge_platform_core::PlatformEndpoints::default(),
+            twitch_sign_in: None,
         };
         let flow = cx.new(|cx| ConnectFlow::new(launch, cx));
         let outcome = TwitchAuthOutcome {

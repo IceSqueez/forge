@@ -6,7 +6,7 @@ use forge_types::OAuthToken;
 use thiserror::Error;
 use tracing::{debug, warn};
 
-const CLIENT_ID_HEADER: &str = "Client-Id";
+pub(crate) const CLIENT_ID_HEADER: &str = "Client-Id";
 const TOO_MANY_REQUESTS: u16 = reqwest::StatusCode::TOO_MANY_REQUESTS.as_u16();
 const CONFLICT: u16 = reqwest::StatusCode::CONFLICT.as_u16();
 

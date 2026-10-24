@@ -98,6 +98,7 @@ pub struct Integrations {
     pub hotkey_reconciler: Option<Arc<HotkeyReconciler>>,
     pub donation_services: DonationServices,
     pub twitch_bot: Option<Arc<forge_platform_twitch::TwitchBotAccount>>,
+    pub twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
 }
 
 #[derive(Clone)]
@@ -295,8 +296,10 @@ pub async fn build_integrations(
 
     let mut factories: Vec<Arc<dyn IntegrationFactory<BuiltinObject>>> = Vec::new();
     let mut twitch_bot = None;
+    let mut twitch_sign_in = None;
     if let Some(twitch) = wire_twitch(sub_actions, backend, bus, endpoints) {
         twitch_bot = Some(twitch.bot());
+        twitch_sign_in = Some(twitch.sign_in());
         factories.push(Arc::new(twitch));
     }
     let obs = wire_obs(sub_actions, backend, bus);
@@ -343,6 +346,7 @@ pub async fn build_integrations(
         hotkey_reconciler: Some(hotkey_reconciler),
         donation_services,
         twitch_bot,
+        twitch_sign_in,
     }
 }
 
@@ -1892,9 +1896,8 @@ pub(crate) mod tests {
     ) {
         let creds = creds_of(backend);
         let manager = Arc::new(forge_platform_twitch::TwitchCredentialsManager::new(
-            &PlatformEndpoints::default(),
+            crate::test_support::default_twitch_oauth_client(),
             Arc::clone(&creds),
-            "test-client".to_owned(),
         ));
         let transport: Arc<dyn forge_platform_twitch::HelixTransport> =
             Arc::new(forge_platform_twitch::HelixHttpTransport::new(

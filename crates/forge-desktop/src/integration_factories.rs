@@ -46,6 +46,7 @@ pub(crate) struct TwitchFactory {
     lifecycle: forge_platform_twitch::TwitchLifecycle,
     helix: Gateway,
     bot: Arc<forge_platform_twitch::TwitchBotAccount>,
+    sign_in: forge_platform_twitch::TwitchSignIn,
 }
 
 pub(crate) fn wire_twitch(
@@ -57,19 +58,23 @@ pub(crate) fn wire_twitch(
     let client_id = forge_platform_twitch::client_id()?;
     let creds = creds_of(backend);
     let lifecycle = forge_platform_twitch::TwitchLifecycle::new();
-    let manager = Arc::new(forge_platform_twitch::TwitchCredentialsManager::new(
-        endpoints,
-        Arc::clone(&creds),
+    let oauth = forge_platform_twitch::TwitchOAuthClient::new(
+        twitch_oauth_gateway(endpoints)?,
         client_id.clone(),
+    );
+    let manager = Arc::new(forge_platform_twitch::TwitchCredentialsManager::new(
+        oauth.clone(),
+        Arc::clone(&creds),
     ));
     let helix = twitch_helix_gateway(endpoints, bus)?;
     let bot = forge_platform_twitch::TwitchBotAccount::new(
         endpoints,
         Arc::clone(&creds),
-        client_id.clone(),
+        oauth.clone(),
         publisher(bus),
         twitch_helix_gateway(endpoints, bus)?,
     );
+    let sign_in = forge_platform_twitch::TwitchSignIn::new(oauth, helix.clone());
     let transport: Arc<dyn forge_platform_twitch::HelixTransport> =
         Arc::new(
             forge_platform_twitch::HelixHttpTransport::new(
@@ -100,7 +105,18 @@ pub(crate) fn wire_twitch(
         lifecycle,
         helix,
         bot,
+        sign_in,
     })
+}
+
+fn twitch_oauth_gateway(endpoints: &PlatformEndpoints) -> Option<Gateway> {
+    let limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
+        forge_platform_twitch::TWITCH_OAUTH_BUDGET_CAPACITY,
+        forge_platform_twitch::TWITCH_OAUTH_BUDGET_WINDOW,
+    ));
+    forge_platform_twitch::twitch_oauth_gateway(endpoints, limiter)
+        .inspect_err(|e| eprintln!("forge-desktop: twitch oauth gateway build failed: {e}"))
+        .ok()
 }
 
 fn twitch_helix_gateway(endpoints: &PlatformEndpoints, bus: &Arc<EventBus>) -> Option<Gateway> {
@@ -116,6 +132,10 @@ fn twitch_helix_gateway(endpoints: &PlatformEndpoints, bus: &Arc<EventBus>) -> O
 impl TwitchFactory {
     pub(crate) fn bot(&self) -> Arc<forge_platform_twitch::TwitchBotAccount> {
         Arc::clone(&self.bot)
+    }
+
+    pub(crate) fn sign_in(&self) -> forge_platform_twitch::TwitchSignIn {
+        self.sign_in.clone()
     }
 }
 

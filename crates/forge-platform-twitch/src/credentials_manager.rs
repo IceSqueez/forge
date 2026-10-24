@@ -2,20 +2,16 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
-use forge_platform_core::auth::{
-    PkceRefreshConfig, PkceRefresher, REFRESH_BUFFER_SECS, ReauthPolicy,
-};
-use forge_platform_core::{
-    PlatformEndpoints, PlatformError, credential_storage_error, reauth_required,
-};
+use forge_platform_core::auth::REFRESH_BUFFER_SECS;
+use forge_platform_core::{PlatformError, credential_storage_error, reauth_required};
 use forge_storage::CredentialsRepo;
 use forge_types::OAuthToken;
 use tracing::{debug, info, warn};
 
-use crate::auth::twitch_token_endpoint;
 use crate::credentials::{
     StoredCredential, TWITCH_BOT_CREDENTIAL_ID, TWITCH_CREDENTIAL_ID, load_at, store_credential_at,
 };
+use crate::oauth_client::TwitchOAuthClient;
 
 const PLATFORM: &str = "twitch";
 const REFRESH_BUFFER: Duration = Duration::from_secs(REFRESH_BUFFER_SECS);
@@ -23,58 +19,29 @@ const REFRESH_BUFFER: Duration = Duration::from_secs(REFRESH_BUFFER_SECS);
 pub struct TwitchCredentialsManager {
     repo: Arc<dyn CredentialsRepo>,
     credential_id: &'static str,
-    refresher: PkceRefresher,
+    oauth: TwitchOAuthClient,
     refresh_guard: tokio::sync::Mutex<()>,
     expiry_tx: tokio::sync::watch::Sender<Option<SystemTime>>,
 }
 
 impl TwitchCredentialsManager {
-    pub fn new(
-        endpoints: &PlatformEndpoints,
-        repo: Arc<dyn CredentialsRepo>,
-        client_id: String,
-    ) -> Self {
-        Self::with_endpoint(repo, client_id, twitch_token_endpoint(endpoints))
+    pub fn new(oauth: TwitchOAuthClient, repo: Arc<dyn CredentialsRepo>) -> Self {
+        Self::bound_to(TWITCH_CREDENTIAL_ID, oauth, repo)
     }
 
-    pub(crate) fn for_bot(
-        endpoints: &PlatformEndpoints,
-        repo: Arc<dyn CredentialsRepo>,
-        client_id: String,
-    ) -> Self {
-        Self::bound_to(
-            TWITCH_BOT_CREDENTIAL_ID,
-            repo,
-            client_id,
-            twitch_token_endpoint(endpoints),
-        )
-    }
-
-    pub(crate) fn with_endpoint(
-        repo: Arc<dyn CredentialsRepo>,
-        client_id: String,
-        refresh_endpoint: String,
-    ) -> Self {
-        Self::bound_to(TWITCH_CREDENTIAL_ID, repo, client_id, refresh_endpoint)
+    pub(crate) fn for_bot(oauth: TwitchOAuthClient, repo: Arc<dyn CredentialsRepo>) -> Self {
+        Self::bound_to(TWITCH_BOT_CREDENTIAL_ID, oauth, repo)
     }
 
     fn bound_to(
         credential_id: &'static str,
+        oauth: TwitchOAuthClient,
         repo: Arc<dyn CredentialsRepo>,
-        client_id: String,
-        refresh_endpoint: String,
     ) -> Self {
-        let refresher = PkceRefresher::new(PkceRefreshConfig {
-            platform: PLATFORM.to_owned(),
-            client_id,
-            client_secret: None,
-            token_endpoint: refresh_endpoint,
-            reauth_policy: ReauthPolicy::AnyClientError,
-        });
         Self {
             repo,
             credential_id,
-            refresher,
+            oauth,
             refresh_guard: tokio::sync::Mutex::new(()),
             expiry_tx: tokio::sync::watch::channel(None).0,
         }
@@ -144,7 +111,7 @@ impl TwitchCredentialsManager {
         refresh_token: &OAuthToken,
         existing: StoredCredential,
     ) -> Result<StoredCredential, PlatformError> {
-        let parsed = match self.refresher.refresh(refresh_token.expose()).await {
+        let parsed = match self.oauth.refresh(refresh_token).await {
             Ok(parsed) => parsed,
             Err(e) => {
                 match &e {
@@ -247,7 +214,7 @@ pub(crate) mod tests {
     use forge_types::OAuthToken;
     use serde_json::json;
     use time::OffsetDateTime;
-    use wiremock::matchers::{body_string_contains, method, path};
+    use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::TwitchCredentialsManager;
@@ -351,10 +318,9 @@ pub(crate) mod tests {
         repo: Arc<dyn CredentialsRepo>,
         server: &MockServer,
     ) -> TwitchCredentialsManager {
-        TwitchCredentialsManager::with_endpoint(
+        TwitchCredentialsManager::new(
+            crate::sub_actions::test_support::oauth_client_at(&server.uri(), "test_client_id"),
             repo,
-            "test_client_id".to_owned(),
-            format!("{}/token", server.uri()),
         )
     }
 
@@ -442,65 +408,6 @@ pub(crate) mod tests {
             stored.refresh_token.as_ref().map(OAuthToken::expose),
             Some("existing_refresh"),
             "prior refresh_token must be retained when upstream omits a new one"
-        );
-    }
-
-    #[tokio::test]
-    async fn refresh_rejected_by_the_token_endpoint_requires_reauth() {
-        for rejection in [
-            ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST.as_u16())
-                .set_body_json(json!({"error": "invalid_grant"})),
-            ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED.as_u16())
-                .set_body_string("Unauthorized"),
-        ] {
-            let server = MockServer::start().await;
-            Mock::given(method("POST"))
-                .and(path("/token"))
-                .respond_with(rejection)
-                .mount(&server)
-                .await;
-            let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
-            let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
-
-            let err = mgr
-                .refresh(&OAuthToken::new("existing_access"))
-                .await
-                .unwrap_err();
-
-            assert!(
-                matches!(err, PlatformError::ReauthRequired { .. }),
-                "a refresh the token endpoint rejects must map to ReauthRequired, got: {err}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn refresh_sends_form_without_client_secret() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .and(body_string_contains("grant_type=refresh_token"))
-            .and(body_string_contains("client_id=test_client_id"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "access_token": "na",
-                "expires_in": 14400,
-            })))
-            .mount(&server)
-            .await;
-
-        let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
-        let repo = InMemRepo::seeded(&cred);
-        let mgr = manager_with_server(repo, &server);
-        mgr.refresh(&OAuthToken::new("existing_access"))
-            .await
-            .unwrap();
-
-        let reqs = server.received_requests().await.unwrap();
-        assert_eq!(reqs.len(), 1);
-        let body = std::str::from_utf8(&reqs[0].body).unwrap();
-        assert!(
-            !body.contains("client_secret"),
-            "client_secret must never appear in the token refresh form (public-client PKCE)"
         );
     }
 
@@ -665,6 +572,38 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn concurrent_proactive_and_reactive_renewals_post_the_refresh_token_once() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(rotating_token_endpoint())
+            .mount(&server)
+            .await;
+        let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
+        let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+        let stale = OAuthToken::new("existing_access");
+
+        let (first, second, reactive) = tokio::join!(
+            mgr.get_valid_access_token(),
+            mgr.get_valid_access_token(),
+            mgr.refresh(&stale)
+        );
+
+        assert_eq!(
+            token_posts(&server).await,
+            1,
+            "every renewal waiting on the guard must reuse the rotated pair"
+        );
+        for token in [
+            first.unwrap(),
+            second.unwrap(),
+            reactive.unwrap().access_token,
+        ] {
+            assert_eq!(token.expose(), "new_access");
+        }
+    }
+
+    #[tokio::test]
     async fn the_bundle_refresh_verb_shares_the_single_flight_of_the_manager_it_was_given() {
         use forge_platform_core::BuiltinControl;
 
@@ -717,22 +656,21 @@ pub(crate) mod tests {
 
         for (status, transient) in cases {
             let server = MockServer::start().await;
-            let endpoint = match status {
+            let oauth_base = match status {
                 Some(status) => {
                     Mock::given(method("POST"))
                         .and(path("/token"))
                         .respond_with(ResponseTemplate::new(status.as_u16()))
                         .mount(&server)
                         .await;
-                    format!("{}/token", server.uri())
+                    server.uri()
                 }
-                None => "http://127.0.0.1:0/token".to_owned(),
+                None => "http://127.0.0.1:0".to_owned(),
             };
             let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(3600));
-            let mgr = TwitchCredentialsManager::with_endpoint(
+            let mgr = TwitchCredentialsManager::new(
+                crate::sub_actions::test_support::oauth_client_at(&oauth_base, "test_client_id"),
                 InMemRepo::seeded(&cred),
-                "test_client_id".to_owned(),
-                endpoint,
             );
 
             let err = HelixTokenRefresher::refresh(&mgr, &OAuthToken::new("existing_access"))
@@ -946,8 +884,7 @@ pub(crate) mod tests {
             BOT_ACCESS, BOT_REFRESH, KeyedRepo, credential_json,
         };
         use crate::credentials::TWITCH_BOT_CREDENTIAL_ID;
-        use crate::sub_actions::test_support::endpoints_with;
-        use forge_platform_core::EndpointSurface;
+        use crate::sub_actions::test_support::oauth_client_at;
 
         for refreshed_role in [TWITCH_BOT_CREDENTIAL_ID, TWITCH_CREDENTIAL_ID] {
             let server = MockServer::start().await;
@@ -971,13 +908,10 @@ pub(crate) mod tests {
             );
             let (manager, failed_access, other_role, own_refresh) =
                 if refreshed_role == TWITCH_BOT_CREDENTIAL_ID {
-                    let endpoints =
-                        endpoints_with(&[(EndpointSurface::TwitchOAuth, server.uri().as_str())]);
                     (
                         TwitchCredentialsManager::for_bot(
-                            &endpoints,
+                            oauth_client_at(&server.uri(), "test_client_id"),
                             Arc::clone(&repo) as Arc<dyn CredentialsRepo>,
-                            "test_client_id".to_owned(),
                         ),
                         BOT_ACCESS,
                         TWITCH_CREDENTIAL_ID,

@@ -15,6 +15,7 @@ use crate::auth::TwitchAuthFlow;
 use crate::credentials::{TWITCH_BOT_CREDENTIAL_ID, load_at};
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::helix::{HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport};
+use crate::oauth_client::TwitchOAuthClient;
 use validate::{TokenValidator, TokenVerdict};
 
 pub use login::BotLoginError;
@@ -82,6 +83,8 @@ pub struct TwitchBotAccount {
     transport: Arc<dyn HelixTransport>,
     validator: TokenValidator,
     endpoints: PlatformEndpoints,
+    oauth: TwitchOAuthClient,
+    helix: Gateway,
     client_id: String,
     bus: Arc<dyn EventPublisher>,
     state: RwLock<BotState>,
@@ -94,18 +97,18 @@ impl TwitchBotAccount {
     pub fn new(
         endpoints: &PlatformEndpoints,
         repo: Arc<dyn CredentialsRepo>,
-        client_id: String,
+        oauth: TwitchOAuthClient,
         bus: Arc<dyn EventPublisher>,
         helix: Gateway,
     ) -> Arc<Self> {
+        let client_id = oauth.client_id().to_owned();
         let manager = Arc::new(TwitchCredentialsManager::for_bot(
-            endpoints,
+            oauth.clone(),
             Arc::clone(&repo),
-            client_id.clone(),
         ));
         let transport: Arc<dyn HelixTransport> = Arc::new(
             HelixHttpTransport::new(
-                helix,
+                helix.clone(),
                 client_id.clone(),
                 Arc::clone(&manager) as Arc<dyn HelixTokenSource>,
             )
@@ -117,6 +120,8 @@ impl TwitchBotAccount {
             transport,
             validator: TokenValidator::new(endpoints, client_id.clone()),
             endpoints: endpoints.clone(),
+            oauth,
+            helix,
             client_id,
             bus,
             state: RwLock::new(BotState {
@@ -444,7 +449,7 @@ pub(crate) mod test_support {
             let bot = TwitchBotAccount::new(
                 &endpoints,
                 Arc::clone(&repo) as Arc<dyn CredentialsRepo>,
-                CLIENT_ID.to_owned(),
+                crate::sub_actions::test_support::oauth_client_at(&server.uri(), CLIENT_ID),
                 Arc::clone(&bus) as Arc<dyn EventPublisher>,
                 crate::helix_gateway::helix_gateway(
                     &endpoints,

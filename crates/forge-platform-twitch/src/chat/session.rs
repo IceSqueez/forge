@@ -6574,9 +6574,8 @@ mod tests {
         oneshot::Sender<()>,
     ) {
         let manager = Arc::new(TwitchCredentialsManager::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::sub_actions::test_support::unreachable_oauth_client("client"),
             repo,
-            "client".to_owned(),
         ));
         let publisher: Arc<dyn EventPublisher> = bus.clone();
         ChatSession::new(
@@ -6732,10 +6731,9 @@ mod tests {
                 .mount(&server)
                 .await;
 
-            let manager = Arc::new(TwitchCredentialsManager::with_endpoint(
+            let manager = Arc::new(TwitchCredentialsManager::new(
+                crate::sub_actions::test_support::oauth_client_at(&server.uri(), "client"),
                 Arc::new(NearExpiryCreds),
-                "client".to_owned(),
-                format!("{}/token", server.uri()),
             ));
             let bus = Arc::new(PlatformEventChannel::new());
             let publisher: Arc<dyn EventPublisher> = bus.clone();
@@ -7864,7 +7862,7 @@ mod tests {
     fn session_over(
         publisher: Arc<dyn EventPublisher>,
         repo: Arc<dyn forge_storage::CredentialsRepo>,
-        manager_endpoint: Option<String>,
+        oauth_base: Option<String>,
         tracker: SubscriptionTracker,
         endpoints: PlatformEndpoints,
     ) -> (
@@ -7872,14 +7870,14 @@ mod tests {
         watch::Receiver<ChatConnectionState>,
         oneshot::Sender<()>,
     ) {
-        let manager = match manager_endpoint {
-            Some(endpoint) => {
-                TwitchCredentialsManager::with_endpoint(repo, "client".to_owned(), endpoint)
-            }
-            None => TwitchCredentialsManager::new(
-                &crate::endpoints_test_support::unreachable_endpoints(),
+        let manager = match oauth_base {
+            Some(oauth_base) => TwitchCredentialsManager::new(
+                crate::sub_actions::test_support::oauth_client_at(&oauth_base, "client"),
                 repo,
-                "client".to_owned(),
+            ),
+            None => TwitchCredentialsManager::new(
+                crate::sub_actions::test_support::unreachable_oauth_client("client"),
+                repo,
             ),
         };
         ChatSession::new(
@@ -7905,9 +7903,8 @@ mod tests {
     ) -> (crate::chat::TwitchChat, Arc<PlatformEventChannel>) {
         let bus = Arc::new(PlatformEventChannel::new());
         let manager = Arc::new(TwitchCredentialsManager::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::sub_actions::test_support::unreachable_oauth_client("client"),
             Arc::new(MockCreds::with_identity()),
-            "client".to_owned(),
         ));
         let endpoints = socket_and_api(socket_url, api_url);
         let chat = crate::chat::TwitchChat::new(
@@ -8130,10 +8127,9 @@ mod tests {
             ),
             stored: tokio::sync::Notify::new(),
         });
-        let manager = Arc::new(TwitchCredentialsManager::with_endpoint(
+        let manager = Arc::new(TwitchCredentialsManager::new(
+            crate::sub_actions::test_support::oauth_client_at(&token_endpoint.url, "client"),
             repo.clone(),
-            "client".to_owned(),
-            token_endpoint.url.clone(),
         ));
         let bus = Arc::new(RecordingBus::default());
         let publisher: Arc<dyn EventPublisher> = bus.clone();
@@ -8358,9 +8354,8 @@ mod tests {
         use forge_platform_core::ChatPlatform;
         let creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::new(MockCreds::with_identity());
         let manager = Arc::new(TwitchCredentialsManager::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::sub_actions::test_support::unreachable_oauth_client("client"),
             Arc::clone(&creds),
-            "client".to_owned(),
         ));
         let endpoints = socket_and_api(socket_url, api_url);
         let platform = Arc::new(crate::chat_platform::TwitchPlatform::new(
@@ -8820,7 +8815,7 @@ mod tests {
                     )
                     .mount(&server)
                     .await;
-                format!("{}/token", server.uri())
+                server.uri()
             }
             TokenEndpoint::RejectsTheRefresh => {
                 Mock::given(method("POST"))
@@ -8831,12 +8826,9 @@ mod tests {
                     )
                     .mount(&server)
                     .await;
-                format!("{}/token", server.uri())
+                server.uri()
             }
-            TokenEndpoint::Unreachable => format!(
-                "{}/token",
-                unreachable_ws_url().replacen("ws://", "http://", 1)
-            ),
+            TokenEndpoint::Unreachable => unreachable_ws_url().replacen("ws://", "http://", 1),
         };
         let mut stored = crate::credentials_manager::tests::stub_cred(
             std::time::SystemTime::now() + Duration::from_secs(3600),

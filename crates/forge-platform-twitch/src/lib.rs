@@ -25,6 +25,7 @@ pub mod integration;
 mod lifecycle;
 #[cfg(test)]
 mod log_capture;
+mod oauth_client;
 mod payload_fields;
 mod reward_collection;
 pub mod sub_actions;
@@ -34,7 +35,7 @@ pub mod triggers;
 
 pub use auth::{
     DeviceCodeInfo, TWITCH_BOT_SCOPES, TWITCH_BROADCASTER_SCOPES, TwitchAuthBundle, TwitchAuthFlow,
-    UserInfo, client_id, twitch_auth_flow,
+    TwitchSignIn, UserInfo, client_id, twitch_auth_flow,
 };
 pub use bot_account::{
     BOT_STATUS_CHANGED_KIND, BotLoginError, BotModerator, BotModeratorError, BotStatus,
@@ -57,6 +58,10 @@ pub use helix::{
 pub use helix_gateway::{HELIX_GATEWAY_PROFILE, helix_gateway};
 pub use integration::TWITCH_INTEGRATION;
 pub use lifecycle::TwitchLifecycle;
+pub use oauth_client::{
+    TWITCH_OAUTH_BUDGET_CAPACITY, TWITCH_OAUTH_BUDGET_WINDOW, TWITCH_OAUTH_GATEWAY_PROFILE,
+    TwitchOAuthClient, twitch_oauth_gateway,
+};
 pub use sub_actions::identity::BroadcasterTier;
 pub use sub_actions::register_twitch_sub_actions;
 pub use subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};

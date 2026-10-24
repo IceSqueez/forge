@@ -757,6 +757,9 @@ impl AppShell {
                 detail.attach_donation_settings(service, cx)
             });
         }
+        if let Some(sign_in) = handles.twitch_sign_in.clone() {
+            detail.update(cx, |detail, _| detail.attach_twitch_sign_in(sign_in));
+        }
         if let Some(bot) = handles.twitch_bot.clone() {
             let presence = topics.twitch_bot.clone();
             detail.update(cx, |detail, cx| detail.attach_twitch_bot(bot, presence, cx));

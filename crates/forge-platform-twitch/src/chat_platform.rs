@@ -365,9 +365,8 @@ mod tests {
             },
             Arc::clone(&creds),
             Arc::new(TwitchCredentialsManager::new(
-                &crate::endpoints_test_support::unreachable_endpoints(),
+                crate::sub_actions::test_support::unreachable_oauth_client("test-client"),
                 creds,
-                "test-client".to_owned(),
             )),
             SubscriptionTracker::default(),
             crate::sub_actions::test_support::unreachable_helix_gateway(),

@@ -403,9 +403,8 @@ impl TwitchIntegrationBundle {
         let (health_tx, _) = broadcast::channel(16);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
         let credentials_manager = Arc::new(TwitchCredentialsManager::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::sub_actions::test_support::unreachable_oauth_client("test-client"),
             Arc::clone(&creds),
-            "test-client".to_owned(),
         ));
         let config = ChatSessionConfig {
             client_id: "test-client".to_owned(),
@@ -2249,9 +2248,8 @@ mod tests {
             },
             Arc::clone(&creds),
             Arc::new(TwitchCredentialsManager::new(
-                &crate::endpoints_test_support::unreachable_endpoints(),
+                crate::sub_actions::test_support::unreachable_oauth_client("test-client"),
                 creds,
-                "test-client".to_owned(),
             )),
             SubscriptionTracker::default(),
             crate::sub_actions::test_support::unreachable_helix_gateway(),
@@ -2319,10 +2317,9 @@ mod tests {
             BroadcasterTier::Standard,
         );
         let mut inner = Arc::into_inner(built).unwrap();
-        inner.credentials_manager = Arc::new(TwitchCredentialsManager::with_endpoint(
+        inner.credentials_manager = Arc::new(TwitchCredentialsManager::new(
+            crate::sub_actions::test_support::oauth_client_at(&server.uri(), "test-client"),
             repo,
-            "test-client".to_owned(),
-            format!("{}/token", server.uri()),
         ));
         let bundle = Arc::new(inner);
         TwitchIntegrationBundle::spawn_token_expiry_bridge(&bundle);

@@ -341,7 +341,7 @@ pub(crate) mod test_support {
 
     use async_trait::async_trait;
     use forge_events::{Event, EventPublisher};
-    use forge_net::{Gateway, TokenBucketRateLimiter};
+    use forge_net::{Gateway, RateLimiter, TokenBucketRateLimiter};
     use forge_platform_core::{EndpointSurface, PlatformEndpoints};
     use forge_registry::RunContext;
     use forge_storage::{CredentialId, CredentialsRepo, StorageError};
@@ -351,6 +351,10 @@ pub(crate) mod test_support {
     use crate::builtin::{HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
     use crate::helix::{HelixError, HelixRequest, HelixTransport};
     use crate::helix_gateway::HELIX_GATEWAY_PROFILE;
+    use crate::oauth_client::{
+        TWITCH_OAUTH_BUDGET_CAPACITY, TWITCH_OAUTH_BUDGET_WINDOW, TwitchOAuthClient,
+        twitch_oauth_gateway,
+    };
 
     pub(crate) const TOKEN_SENTINEL: &str = "FAKE_TWITCH_TOKEN_SENTINEL_qq123";
     pub(crate) const SELF_USER_ID: &str = "9876";
@@ -492,6 +496,33 @@ pub(crate) mod test_support {
 
     pub(crate) fn unreachable_helix_gateway() -> Gateway {
         helix_gateway_at("http://127.0.0.1:0")
+    }
+
+    pub(crate) fn oauth_client_limited_by(
+        base_url: &str,
+        client_id: &str,
+        limiter: std::sync::Arc<dyn RateLimiter>,
+    ) -> TwitchOAuthClient {
+        let endpoints = endpoints_with(&[(EndpointSurface::TwitchOAuth, base_url)]);
+        TwitchOAuthClient::new(
+            twitch_oauth_gateway(&endpoints, limiter).unwrap(),
+            client_id.to_owned(),
+        )
+    }
+
+    pub(crate) fn oauth_client_at(base_url: &str, client_id: &str) -> TwitchOAuthClient {
+        oauth_client_limited_by(
+            base_url,
+            client_id,
+            std::sync::Arc::new(TokenBucketRateLimiter::new(
+                TWITCH_OAUTH_BUDGET_CAPACITY,
+                TWITCH_OAUTH_BUDGET_WINDOW,
+            )),
+        )
+    }
+
+    pub(crate) fn unreachable_oauth_client(client_id: &str) -> TwitchOAuthClient {
+        oauth_client_at("http://127.0.0.1:0", client_id)
     }
 
     pub(crate) fn unreachable_twitch_endpoints() -> PlatformEndpoints {

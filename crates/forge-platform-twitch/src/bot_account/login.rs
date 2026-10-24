@@ -48,7 +48,7 @@ impl From<PlatformError> for BotLoginError {
 impl TwitchBotAccount {
     pub async fn begin_login(&self) -> Result<DeviceCodeInfo, BotLoginError> {
         self.cancel_login();
-        let mut flow = TwitchAuthFlow::for_bot(&self.endpoints, self.client_id.clone());
+        let mut flow = TwitchAuthFlow::for_bot(self.oauth.clone(), self.helix.clone());
         let info = flow.start().await?;
         *self.pending_flow.lock().await = Some(flow);
         Ok(info)

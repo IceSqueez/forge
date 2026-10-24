@@ -1,23 +1,26 @@
 use std::time::{Duration, SystemTime};
 
+use forge_net::{Gateway, GatewayRequest, Secret};
 use forge_platform_core::{AuthFlow, EndpointSurface, PlatformEndpoints, PlatformError};
 use forge_types::OAuthToken;
-use reqwest::StatusCode;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace};
-use twitch_api::HelixClient;
-use twitch_api::twitch_oauth2::{AccessToken, ClientId, TwitchToken, UserToken};
 
+use crate::helix::CLIENT_ID_HEADER;
+use crate::oauth_client::{
+    DevicePoll, TokenGrant, TwitchOAuthClient, ValidatedToken, decode, oauth_error,
+};
 use crate::sub_actions::identity::BroadcasterTier;
 
 const TWITCH_DEVICE_PATH: &str = "/device";
 const TWITCH_TOKEN_PATH: &str = "/token";
 const TWITCH_VALIDATE_PATH: &str = "/validate";
 const TWITCH_REVOKE_PATH: &str = "/revoke";
+const HELIX_USERS_PATH: &str = "/helix/users";
 
-const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(5);
+const MIN_POLL_INTERVAL_SECS: u64 = 1;
 const SLOW_DOWN_INCREMENT: Duration = Duration::from_secs(5);
 
 pub const TWITCH_BROADCASTER_SCOPES: &[&str] = &[
@@ -149,105 +152,79 @@ impl std::fmt::Debug for TwitchAuthBundle {
     }
 }
 
-enum DevicePollOutcome {
-    Pending,
-    SlowDown,
-    Granted(DeviceTokenResponse),
+#[derive(Deserialize)]
+struct HelixUsers {
+    data: Vec<HelixUser>,
 }
 
 #[derive(Deserialize)]
-struct DeviceCodeResponse {
-    device_code: String,
-    user_code: String,
-    verification_uri: String,
-    expires_in: u64,
-    interval: u64,
+struct HelixUser {
+    id: String,
+    login: String,
+    display_name: String,
+    #[serde(default)]
+    broadcaster_type: String,
 }
 
-#[derive(Deserialize)]
-struct DeviceTokenResponse {
-    access_token: String,
-    refresh_token: Option<String>,
-    expires_in: Option<u64>,
+#[derive(Clone)]
+pub struct TwitchSignIn {
+    oauth: TwitchOAuthClient,
+    helix: Gateway,
 }
 
-#[derive(Deserialize)]
-struct DevicePollErrorBody {
-    message: String,
+impl TwitchSignIn {
+    pub fn new(oauth: TwitchOAuthClient, helix: Gateway) -> Self {
+        Self { oauth, helix }
+    }
+
+    pub fn broadcaster_flow(&self) -> TwitchAuthFlow {
+        TwitchAuthFlow::new(self.oauth.clone(), self.helix.clone())
+    }
 }
 
 pub struct TwitchAuthFlow {
-    client_id: String,
-    device_endpoint: String,
-    token_endpoint: String,
+    oauth: TwitchOAuthClient,
+    helix: Gateway,
     scopes: &'static [&'static str],
-    http: reqwest::Client,
-    helix: HelixClient<'static, reqwest::Client>,
     device_code: Option<String>,
     poll_interval: Duration,
     expires_at: Option<SystemTime>,
 }
 
 impl TwitchAuthFlow {
-    pub fn new(endpoints: &PlatformEndpoints, client_id: String) -> Self {
-        Self::with_endpoints(
-            client_id,
-            twitch_device_endpoint(endpoints),
-            twitch_token_endpoint(endpoints),
-        )
-    }
-
-    pub(crate) fn for_bot(endpoints: &PlatformEndpoints, client_id: String) -> Self {
-        let mut flow = Self::new(endpoints, client_id);
-        flow.scopes = TWITCH_BOT_SCOPES;
-        flow
-    }
-
-    pub(crate) fn with_endpoints(
-        client_id: String,
-        device_endpoint: String,
-        token_endpoint: String,
-    ) -> Self {
+    pub fn new(oauth: TwitchOAuthClient, helix: Gateway) -> Self {
         Self {
-            client_id,
-            device_endpoint,
-            token_endpoint,
+            oauth,
+            helix,
             scopes: TWITCH_BROADCASTER_SCOPES,
-            http: reqwest::Client::new(),
-            helix: HelixClient::with_client(reqwest::Client::new()),
             device_code: None,
-            poll_interval: Duration::from_secs(5),
+            poll_interval: DEFAULT_POLL_INTERVAL,
             expires_at: None,
         }
     }
 
+    pub(crate) fn for_bot(oauth: TwitchOAuthClient, helix: Gateway) -> Self {
+        let mut flow = Self::new(oauth, helix);
+        flow.scopes = TWITCH_BOT_SCOPES;
+        flow
+    }
+
     pub async fn start(&mut self) -> Result<DeviceCodeInfo, PlatformError> {
-        let scopes = self.scopes.join(" ");
-        let form = [
-            ("client_id", self.client_id.as_str()),
-            ("scopes", scopes.as_str()),
-        ];
-        let (status, body) = post_form(&self.http, &self.device_endpoint, &form).await?;
-        if status != StatusCode::OK {
-            return Err(PlatformError::Http {
-                status: status.as_u16(),
-                body,
-            });
-        }
-        let parsed: DeviceCodeResponse = serde_json::from_str(&body)?;
-        let expires_at = SystemTime::now() + Duration::from_secs(parsed.expires_in);
-        self.device_code = Some(parsed.device_code);
-        self.poll_interval = Duration::from_secs(parsed.interval.max(1));
+        let authorization = self.oauth.request_device_code(self.scopes).await?;
+        let expires_at = SystemTime::now() + Duration::from_secs(authorization.expires_in);
+        self.device_code = Some(authorization.device_code);
+        self.poll_interval =
+            Duration::from_secs(authorization.interval.max(MIN_POLL_INTERVAL_SECS));
         self.expires_at = Some(expires_at);
         info!(
             scopes = self.scopes.len(),
-            expires_in_secs = parsed.expires_in,
+            expires_in_secs = authorization.expires_in,
             poll_interval_secs = self.poll_interval.as_secs(),
             "twitch device authorization started"
         );
         Ok(DeviceCodeInfo {
-            user_code: parsed.user_code,
-            verification_uri: parsed.verification_uri,
+            user_code: authorization.user_code,
+            verification_uri: authorization.verification_uri,
             expires_at,
         })
     }
@@ -266,168 +243,115 @@ impl TwitchAuthFlow {
             reason: "wait_for_authorization called before start".into(),
         })?;
 
-        let token_response = loop {
+        let grant = loop {
             if SystemTime::now() >= expires_at {
                 return Err(PlatformError::Auth {
                     reason: DEVICE_EXPIRED_REASON.into(),
                 });
             }
             tokio::select! {
-                _ = cancel.cancelled() => {
+                biased;
+                () = cancel.cancelled() => {
                     return Err(PlatformError::Auth {
                         reason: DEVICE_CANCELLED_REASON.into(),
                     });
                 }
-                _ = tokio::time::sleep(self.poll_interval) => {}
+                () = tokio::time::sleep(self.poll_interval) => {}
             }
-            match self.poll_token(&device_code).await? {
-                DevicePollOutcome::Pending => {
+            match self.oauth.poll_device_token(&device_code, &cancel).await? {
+                DevicePoll::Pending => {
                     trace!("twitch device authorization still pending");
-                    continue;
                 }
-                DevicePollOutcome::SlowDown => {
+                DevicePoll::SlowDown => {
                     self.poll_interval += SLOW_DOWN_INCREMENT;
                     debug!(
                         poll_interval_secs = self.poll_interval.as_secs(),
                         "twitch asked us to slow the device-code polling"
                     );
-                    continue;
                 }
-                DevicePollOutcome::Granted(response) => break response,
+                DevicePoll::Granted(grant) => break grant,
             }
         };
 
         info!("twitch device authorization granted; validating token");
-        self.finish(token_response).await
-    }
-
-    async fn poll_token(&self, device_code: &str) -> Result<DevicePollOutcome, PlatformError> {
-        let form = [
-            ("client_id", self.client_id.as_str()),
-            ("device_code", device_code),
-            ("grant_type", DEVICE_GRANT_TYPE),
-        ];
-        let (status, body) = post_form(&self.http, &self.token_endpoint, &form).await?;
-        if status == StatusCode::OK {
-            let parsed: DeviceTokenResponse = serde_json::from_str(&body)?;
-            return Ok(DevicePollOutcome::Granted(parsed));
-        }
-
-        let message = serde_json::from_str::<DevicePollErrorBody>(&body)
-            .map(|e| e.message)
-            .unwrap_or_default();
-        match message.as_str() {
-            "authorization_pending" => Ok(DevicePollOutcome::Pending),
-            "slow_down" => Ok(DevicePollOutcome::SlowDown),
-            "expired_token" | "invalid device code" => Err(PlatformError::Auth {
-                reason: DEVICE_CODE_USED_REASON.into(),
-            }),
-            "access_denied" => Err(PlatformError::Auth {
-                reason: DEVICE_DENIED_REASON.into(),
-            }),
-            _ => Err(PlatformError::Http {
-                status: status.as_u16(),
-                body: message,
-            }),
-        }
+        self.finish(grant, &cancel).await
     }
 
     async fn finish(
         &self,
-        token_response: DeviceTokenResponse,
+        grant: TokenGrant,
+        cancel: &CancellationToken,
     ) -> Result<TwitchAuthBundle, PlatformError> {
-        let access = AccessToken::new(token_response.access_token.clone());
-        let user_token = UserToken::from_existing(&self.helix, access, None, None)
+        let access_token = OAuthToken::new(grant.access_token);
+        let validated = self
+            .oauth
+            .validate(&access_token, cancel)
             .await
-            .map_err(|e| PlatformError::Auth {
-                reason: format!(
-                    "token validate failed: {}",
-                    sanitize_validation_error(&e.error)
-                ),
-            })?;
-
-        if user_token.client_id() != &ClientId::new(self.client_id.clone()) {
+            .map_err(|e| step_failed("token validate", e))?;
+        if validated.client_id != self.oauth.client_id() {
             return Err(PlatformError::Auth {
                 reason: "token client_id does not match configured client_id".into(),
             });
         }
 
-        let user_info = fetch_user_info_from_token(&user_token, &self.helix).await?;
-        let expires_at = token_response
+        let user_info = self
+            .fetch_user_info(&access_token, &validated, cancel)
+            .await?;
+        let expires_at = grant
             .expires_in
             .filter(|secs| *secs > 0)
-            .map(|secs| SystemTime::now() + Duration::from_secs(secs))
-            .or_else(|| expires_at_from_token(&user_token));
+            .or(Some(validated.expires_in).filter(|secs| *secs > 0))
+            .map(|secs| SystemTime::now() + Duration::from_secs(secs));
 
         Ok(TwitchAuthBundle {
-            access_token: OAuthToken::new(token_response.access_token),
-            refresh_token: token_response.refresh_token.map(OAuthToken::new),
+            access_token,
+            refresh_token: grant.refresh_token.map(OAuthToken::new),
             user_info,
-            client_id: self.client_id.clone(),
+            client_id: self.oauth.client_id().to_owned(),
             expires_at,
+        })
+    }
+
+    async fn fetch_user_info(
+        &self,
+        access_token: &OAuthToken,
+        validated: &ValidatedToken,
+        cancel: &CancellationToken,
+    ) -> Result<UserInfo, PlatformError> {
+        let request = GatewayRequest::get(HELIX_USERS_PATH)
+            .label(HELIX_USERS_PATH)
+            .header(CLIENT_ID_HEADER, self.oauth.client_id())
+            .bearer(Secret::new(access_token.expose()))
+            .query("id", validated.user_id.as_str())
+            .cancel_on(cancel.clone());
+        let response = self
+            .helix
+            .send(request)
+            .await
+            .map_err(|failure| step_failed("helix get_user", oauth_error(failure)))?;
+        let users: HelixUsers = decode(&response).map_err(|e| step_failed("helix get_user", e))?;
+        let user = users
+            .data
+            .into_iter()
+            .next()
+            .ok_or_else(|| PlatformError::Auth {
+                reason: "helix returned empty user list".into(),
+            })?;
+        Ok(UserInfo {
+            id: user.id,
+            login: user.login,
+            display_name: user.display_name,
+            broadcaster_type: BroadcasterTier::from_helix_str(&user.broadcaster_type),
         })
     }
 }
 
-async fn post_form(
-    http: &reqwest::Client,
-    url: &str,
-    form: &[(&str, &str)],
-) -> Result<(StatusCode, String), PlatformError> {
-    let resp = tokio::time::timeout(REQUEST_TIMEOUT, http.post(url).form(form).send())
-        .await
-        .map_err(|_| PlatformError::Network {
-            reason: "request timed out".into(),
-        })?
-        .map_err(|e| PlatformError::Network {
-            reason: e.without_url().to_string(),
-        })?;
-    let status = resp.status();
-    let body = tokio::time::timeout(REQUEST_TIMEOUT, resp.text())
-        .await
-        .map_err(|_| PlatformError::Network {
-            reason: "response read timed out".into(),
-        })?
-        .map_err(|e| PlatformError::Network {
-            reason: e.without_url().to_string(),
-        })?;
-    Ok((status, body))
-}
-
-fn expires_at_from_token(token: &UserToken) -> Option<std::time::SystemTime> {
-    if token.never_expires() {
-        return None;
-    }
-    Some(std::time::SystemTime::now() + token.expires_in())
-}
-
-async fn fetch_user_info_from_token(
-    token: &UserToken,
-    helix: &HelixClient<'static, reqwest::Client>,
-) -> Result<UserInfo, PlatformError> {
-    let user = helix
-        .get_user_from_id(&token.user_id, token)
-        .await
-        .map_err(|e| PlatformError::Auth {
-            reason: format!("helix get_user failed: {}", sanitize_helix_error(&e)),
-        })?
-        .ok_or_else(|| PlatformError::Auth {
-            reason: "helix returned empty user list".into(),
-        })?;
-    Ok(UserInfo {
-        id: user.id.to_string(),
-        login: user.login.to_string(),
-        display_name: user.display_name.to_string(),
-        broadcaster_type: map_broadcaster_type(user.broadcaster_type),
-    })
-}
-
-fn map_broadcaster_type(bt: Option<twitch_api::types::BroadcasterType>) -> BroadcasterTier {
-    use twitch_api::types::BroadcasterType as TwitchApiTier;
-    match bt {
-        Some(TwitchApiTier::Partner) => BroadcasterTier::Partner,
-        Some(TwitchApiTier::Affiliate) => BroadcasterTier::Affiliate,
-        Some(TwitchApiTier::None) | None => BroadcasterTier::Standard,
+fn step_failed(step: &str, error: PlatformError) -> PlatformError {
+    match error {
+        PlatformError::Auth { .. } => error,
+        other => PlatformError::Auth {
+            reason: format!("{step} failed: {other}"),
+        },
     }
 }
 
@@ -446,71 +370,106 @@ fn resolve_client_id(
         .or_else(|| compile_env.filter(|s| !s.is_empty()).map(str::to_owned))
 }
 
-fn sanitize_validation_error<E>(
-    e: &twitch_api::twitch_oauth2::tokens::errors::ValidationError<E>,
-) -> String
-where
-    E: std::error::Error + Send + Sync + 'static,
-{
-    use twitch_api::twitch_oauth2::tokens::errors::ValidationError as VE;
-    match e {
-        VE::NotAuthorized => "not authorized".to_owned(),
-        VE::RequestParseError(_) => "response parse error".to_owned(),
-        VE::Request(_) => "network error".to_owned(),
-        VE::InvalidToken(s) => format!("invalid token type: {s}"),
-        _ => "validation error".to_owned(),
-    }
-}
-
-fn sanitize_helix_error<E>(e: &twitch_api::helix::ClientRequestError<E>) -> String
-where
-    E: std::error::Error + Send + Sync + 'static,
-{
-    use twitch_api::helix::{ClientRequestError as CE, HelixRequestGetError as HRGE};
-    match e {
-        CE::RequestError(_) => "network error".to_owned(),
-        CE::NoPage => "no pagination".to_owned(),
-        CE::HelixRequestGetError(HRGE::Error { status, .. }) => {
-            format!("HTTP {}", status.as_u16())
-        }
-        _ => "helix error".to_owned(),
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
-    use super::*;
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use std::sync::Arc;
 
-    fn flow_for(device_url: String, token_url: String) -> TwitchAuthFlow {
-        TwitchAuthFlow::with_endpoints("test_client".to_owned(), device_url, token_url)
+    use forge_events::EventPublisher;
+    use tokio::sync::Notify;
+    use wiremock::matchers::{header, method, path, query_param};
+    use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
+
+    use super::*;
+    use crate::bot_account::test_support::RecordingBus;
+    use crate::sub_actions::test_support::{endpoints_with, helix_gateway_at, oauth_client_at};
+
+    const CLIENT: &str = "test_client";
+    const ACCESS: &str = "ACCESS_SENTINEL_r7";
+    const USER_ID: &str = "4242";
+    const HOLD: Duration = Duration::from_secs(60);
+    const QUICK_POLL: Duration = Duration::from_millis(5);
+
+    fn flow_at(server: &MockServer) -> TwitchAuthFlow {
+        TwitchAuthFlow::new(
+            oauth_client_at(&server.uri(), CLIENT),
+            helix_gateway_at(&server.uri()),
+        )
+    }
+
+    fn armed(mut flow: TwitchAuthFlow) -> TwitchAuthFlow {
+        flow.device_code = Some("DEV123".to_owned());
+        flow.expires_at = Some(SystemTime::now() + Duration::from_secs(3600));
+        flow.poll_interval = QUICK_POLL;
+        flow
+    }
+
+    fn grant(expires_in: Option<u64>) -> TokenGrant {
+        TokenGrant {
+            access_token: ACCESS.to_owned(),
+            refresh_token: Some("REFRESH".to_owned()),
+            expires_in,
+        }
+    }
+
+    fn validate_body(client_id: &str, expires_in: Option<u64>) -> serde_json::Value {
+        let mut body = serde_json::json!({
+            "client_id": client_id,
+            "login": "streamer",
+            "user_id": USER_ID,
+            "scopes": [],
+        });
+        if let Some(secs) = expires_in {
+            body["expires_in"] = secs.into();
+        }
+        body
+    }
+
+    fn users_body() -> serde_json::Value {
+        serde_json::json!({ "data": [{
+            "id": USER_ID,
+            "login": "streamer",
+            "display_name": "Streamer",
+            "broadcaster_type": "partner",
+        }]})
+    }
+
+    async fn mount(server: &MockServer, route: &str, response: impl Respond + 'static) {
+        Mock::given(path(route))
+            .respond_with(response)
+            .mount(server)
+            .await;
     }
 
     async fn mount_device(server: &MockServer, expires_in: u64, interval: u64) {
-        Mock::given(method("POST"))
-            .and(path("/device"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+        mount(
+            server,
+            "/device",
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "device_code": "DEV123",
                 "user_code": "WXYZ-1234",
                 "verification_uri": "https://www.twitch.tv/activate",
                 "expires_in": expires_in,
                 "interval": interval,
-            })))
-            .mount(server)
-            .await;
+            })),
+        )
+        .await;
     }
 
-    async fn mount_token_message(server: &MockServer, status: u16, message: &str) {
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .respond_with(
-                ResponseTemplate::new(status)
-                    .set_body_json(serde_json::json!({ "message": message })),
-            )
-            .mount(server)
-            .await;
+    async fn sign_in_server(validate: ResponseTemplate, users: ResponseTemplate) -> MockServer {
+        let server = MockServer::start().await;
+        mount(&server, "/validate", validate).await;
+        mount(&server, HELIX_USERS_PATH, users).await;
+        server
+    }
+
+    async fn finish_against(
+        server: &MockServer,
+        grant: TokenGrant,
+    ) -> Result<TwitchAuthBundle, PlatformError> {
+        flow_at(server)
+            .finish(grant, &CancellationToken::new())
+            .await
     }
 
     async fn first_body(server: &MockServer) -> String {
@@ -522,10 +481,7 @@ mod tests {
     async fn start_requests_scopes_and_parses_device_code_response() {
         let server = MockServer::start().await;
         mount_device(&server, 1800, 5).await;
-        let mut flow = flow_for(
-            format!("{}/device", server.uri()),
-            "http://unused".to_owned(),
-        );
+        let mut flow = flow_at(&server);
 
         let info = flow.start().await.unwrap();
 
@@ -545,116 +501,24 @@ mod tests {
     #[tokio::test]
     async fn start_maps_non_200_device_response_to_http_error() {
         let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/device"))
-            .respond_with(ResponseTemplate::new(400).set_body_string("bad client"))
-            .mount(&server)
-            .await;
-        let mut flow = flow_for(
-            format!("{}/device", server.uri()),
-            "http://unused".to_owned(),
-        );
+        mount(
+            &server,
+            "/device",
+            ResponseTemplate::new(400).set_body_string("bad client"),
+        )
+        .await;
 
-        let err = flow.start().await.unwrap_err();
+        let err = flow_at(&server).start().await.unwrap_err();
 
         assert!(matches!(err, PlatformError::Http { status: 400, .. }));
     }
 
     #[tokio::test]
-    async fn poll_token_grant_carries_device_code_urn_grant_and_omits_scopes() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "access_token": "ACCESS_XYZ",
-                "refresh_token": "REFRESH_XYZ",
-                "expires_in": 3600,
-            })))
-            .mount(&server)
-            .await;
-        let flow = flow_for(
-            "http://unused".to_owned(),
-            format!("{}/token", server.uri()),
-        );
-
-        let outcome = flow.poll_token("DEV123").await.unwrap();
-
-        let DevicePollOutcome::Granted(resp) = outcome else {
-            panic!("expected Granted outcome");
-        };
-        assert_eq!(resp.access_token, "ACCESS_XYZ");
-        assert_eq!(resp.refresh_token.as_deref(), Some("REFRESH_XYZ"));
-
-        let body = first_body(&server).await;
-        assert!(body.contains("device_code=DEV123"), "{body}");
-        assert!(body.contains("grant_type=urn"), "{body}");
-        assert!(
-            !body.contains("scopes"),
-            "poll must not send scopes: {body}"
-        );
-    }
-
-    #[tokio::test]
-    async fn poll_token_maps_pending_and_slow_down_to_retry_outcomes() {
-        for (message, want_slow_down) in [("authorization_pending", false), ("slow_down", true)] {
-            let server = MockServer::start().await;
-            mount_token_message(&server, 400, message).await;
-            let flow = flow_for(
-                "http://unused".to_owned(),
-                format!("{}/token", server.uri()),
-            );
-
-            let outcome = flow.poll_token("DEV123").await.unwrap();
-
-            match (outcome, want_slow_down) {
-                (DevicePollOutcome::Pending, false) => {}
-                (DevicePollOutcome::SlowDown, true) => {}
-                _ => panic!("wrong retry outcome for {message}"),
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn terminal_device_poll_answers_map_to_typed_bot_login_errors() {
-        type Expectation = fn(&crate::BotLoginError) -> bool;
-        let cases: [(u16, &str, Expectation); 4] = [
-            (400, "access_denied", |e| {
-                matches!(e, crate::BotLoginError::Denied)
-            }),
-            (400, "expired_token", |e| {
-                matches!(e, crate::BotLoginError::Expired)
-            }),
-            (400, "invalid device code", |e| {
-                matches!(e, crate::BotLoginError::Expired)
-            }),
-            (418, "teapot", |e| {
-                matches!(
-                    e,
-                    crate::BotLoginError::Platform(PlatformError::Http { status: 418, .. })
-                )
-            }),
-        ];
-
-        for (status, message, expected) in cases {
-            let server = MockServer::start().await;
-            mount_token_message(&server, status, message).await;
-            let flow = flow_for(
-                "http://unused".to_owned(),
-                format!("{}/token", server.uri()),
-            );
-
-            let Err(error) = flow.poll_token("DEV123").await else {
-                panic!("{message} must end the poll");
-            };
-            let mapped = crate::BotLoginError::from(error);
-
-            assert!(expected(&mapped), "{message} mapped to {mapped:?}");
-        }
-    }
-
-    #[tokio::test]
     async fn wait_before_start_reports_auth_error() {
-        let mut flow = flow_for("http://unused".to_owned(), "http://unused".to_owned());
+        let mut flow = TwitchAuthFlow::new(
+            crate::sub_actions::test_support::unreachable_oauth_client(CLIENT),
+            crate::sub_actions::test_support::unreachable_helix_gateway(),
+        );
 
         let err = flow
             .wait_for_authorization(CancellationToken::new())
@@ -666,18 +530,10 @@ mod tests {
 
     #[tokio::test]
     async fn wait_cancelled_before_first_poll_returns_promptly_without_polling() {
-        let device_server = MockServer::start().await;
-        mount_device(&device_server, 3600, 5).await;
-        let token_server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&token_server)
-            .await;
-        let mut flow = flow_for(
-            format!("{}/device", device_server.uri()),
-            format!("{}/token", token_server.uri()),
-        );
+        let server = MockServer::start().await;
+        mount_device(&server, 3600, 5).await;
+        mount(&server, "/token", ResponseTemplate::new(200)).await;
+        let mut flow = flow_at(&server);
         flow.start().await.unwrap();
 
         let cancel = CancellationToken::new();
@@ -687,16 +543,19 @@ mod tests {
         let PlatformError::Auth { reason } = err else {
             panic!("expected Auth error");
         };
-        assert!(reason.contains("cancelled"), "{reason}");
-        assert!(
-            token_server.received_requests().await.unwrap().is_empty(),
-            "cancellation must abort before any token poll",
-        );
+        assert_eq!(reason, DEVICE_CANCELLED_REASON);
+        let polled = server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .any(|request| request.url.path() == "/token");
+        assert!(!polled, "cancellation must abort before any token poll");
     }
 
     #[tokio::test]
     async fn wait_polls_again_after_authorization_pending_until_terminal() {
-        let token_server = MockServer::start().await;
+        let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/token"))
             .respond_with(
@@ -704,23 +563,16 @@ mod tests {
                     .set_body_json(serde_json::json!({ "message": "authorization_pending" })),
             )
             .up_to_n_times(1)
-            .mount(&token_server)
+            .mount(&server)
             .await;
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .respond_with(
-                ResponseTemplate::new(400)
-                    .set_body_json(serde_json::json!({ "message": "access_denied" })),
-            )
-            .mount(&token_server)
-            .await;
-        let mut flow = flow_for(
-            "http://unused".to_owned(),
-            format!("{}/token", token_server.uri()),
-        );
-        flow.device_code = Some("DEV123".to_owned());
-        flow.expires_at = Some(SystemTime::now() + Duration::from_secs(3600));
-        flow.poll_interval = Duration::from_millis(5);
+        mount(
+            &server,
+            "/token",
+            ResponseTemplate::new(400)
+                .set_body_json(serde_json::json!({ "message": "access_denied" })),
+        )
+        .await;
+        let mut flow = armed(flow_at(&server));
 
         let err = flow
             .wait_for_authorization(CancellationToken::new())
@@ -729,10 +581,205 @@ mod tests {
 
         assert!(matches!(err, PlatformError::Auth { .. }));
         assert_eq!(
-            token_server.received_requests().await.unwrap().len(),
+            server.received_requests().await.unwrap().len(),
             2,
             "loop must poll again after authorization_pending",
         );
+    }
+
+    #[tokio::test]
+    async fn finish_identifies_the_validated_user_through_the_helix_users_lookup() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/validate"))
+            .and(header("Authorization", format!("OAuth {ACCESS}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(validate_body(CLIENT, None)))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(HELIX_USERS_PATH))
+            .and(query_param("id", USER_ID))
+            .and(header("Client-Id", CLIENT))
+            .and(header("Authorization", format!("Bearer {ACCESS}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(users_body()))
+            .mount(&server)
+            .await;
+
+        let bundle = finish_against(&server, grant(None)).await.unwrap();
+
+        assert_eq!(
+            (
+                bundle.user_info.id.as_str(),
+                bundle.user_info.login.as_str(),
+                bundle.user_info.display_name.as_str(),
+                bundle.user_info.broadcaster_type,
+            ),
+            (USER_ID, "streamer", "Streamer", BroadcasterTier::Partner)
+        );
+    }
+
+    #[tokio::test]
+    async fn finish_failure_reason_names_the_step_that_failed() {
+        let ok_validate = || ResponseTemplate::new(200).set_body_json(validate_body(CLIENT, None));
+        let ok_users = || ResponseTemplate::new(200).set_body_json(users_body());
+        let cases = [
+            (
+                ResponseTemplate::new(401).set_body_string("invalid access token"),
+                ok_users(),
+                "token validate failed: HTTP 401",
+            ),
+            (
+                ResponseTemplate::new(200).set_body_string("not json"),
+                ok_users(),
+                "token validate failed: malformed response",
+            ),
+            (
+                ResponseTemplate::new(200).set_body_json(validate_body("other_client", None)),
+                ok_users(),
+                "token client_id does not match configured client_id",
+            ),
+            (
+                ok_validate(),
+                ResponseTemplate::new(500).set_body_string(format!("Bearer {ACCESS} rejected")),
+                "helix get_user failed: HTTP 500",
+            ),
+            (
+                ok_validate(),
+                ResponseTemplate::new(200).set_body_string("not json"),
+                "helix get_user failed: malformed response",
+            ),
+            (
+                ok_validate(),
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "data": [] })),
+                "helix returned empty user list",
+            ),
+        ];
+
+        for (validate, users, expected) in cases {
+            let server = sign_in_server(validate, users).await;
+
+            let Err(PlatformError::Auth { reason }) = finish_against(&server, grant(None)).await
+            else {
+                panic!("{expected}: finishing must fail with an Auth error");
+            };
+
+            assert!(reason.starts_with(expected), "{expected}: got {reason}");
+            assert!(
+                !reason.contains(ACCESS),
+                "{expected}: token leaked into {reason}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn finish_expiry_prefers_the_grant_lifetime_then_the_validated_one() {
+        const GRANT_SECS: u64 = 3600;
+        const VALIDATE_SECS: u64 = 7200;
+        let cases = [
+            (Some(GRANT_SECS), Some(VALIDATE_SECS), Some(GRANT_SECS)),
+            (Some(0), Some(VALIDATE_SECS), Some(VALIDATE_SECS)),
+            (None, Some(VALIDATE_SECS), Some(VALIDATE_SECS)),
+            (Some(0), Some(0), None),
+            (None, None, None),
+        ];
+
+        for (granted, validated, expected) in cases {
+            let server = sign_in_server(
+                ResponseTemplate::new(200).set_body_json(validate_body(CLIENT, validated)),
+                ResponseTemplate::new(200).set_body_json(users_body()),
+            )
+            .await;
+            let before = SystemTime::now();
+
+            let bundle = finish_against(&server, grant(granted)).await.unwrap();
+
+            let lifetime = bundle
+                .expires_at
+                .map(|at| at.duration_since(before).unwrap().as_secs());
+            assert!(
+                match (lifetime, expected) {
+                    (Some(got), Some(want)) => got == want || got == want + 1,
+                    (None, None) => true,
+                    _ => false,
+                },
+                "grant {granted:?} validate {validated:?}: lifetime {lifetime:?}, want {expected:?}"
+            );
+        }
+    }
+
+    struct HeldAnswer(Arc<Notify>);
+
+    impl Respond for HeldAnswer {
+        fn respond(&self, _: &Request) -> ResponseTemplate {
+            self.0.notify_one();
+            ResponseTemplate::new(200).set_delay(HOLD)
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum InFlight {
+        TokenPoll,
+        Validate,
+        HelixUsers,
+    }
+
+    #[tokio::test]
+    async fn cancelling_aborts_the_in_flight_sign_in_call_without_publishing_a_failure() {
+        for stage in [
+            InFlight::TokenPoll,
+            InFlight::Validate,
+            InFlight::HelixUsers,
+        ] {
+            let server = MockServer::start().await;
+            let reached = Arc::new(Notify::new());
+            let held = || HeldAnswer(Arc::clone(&reached));
+            let token = ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": ACCESS,
+                "expires_in": 3600,
+            }));
+            let validate = ResponseTemplate::new(200).set_body_json(validate_body(CLIENT, None));
+            match stage {
+                InFlight::TokenPoll => mount(&server, "/token", held()).await,
+                InFlight::Validate => {
+                    mount(&server, "/token", token).await;
+                    mount(&server, "/validate", held()).await;
+                }
+                InFlight::HelixUsers => {
+                    mount(&server, "/token", token).await;
+                    mount(&server, "/validate", validate).await;
+                    mount(&server, HELIX_USERS_PATH, held()).await;
+                }
+            }
+            let bus = Arc::new(RecordingBus::default());
+            let helix = crate::helix_gateway::helix_gateway(
+                &endpoints_with(&[(EndpointSurface::TwitchApi, server.uri().as_str())]),
+                Arc::new(forge_net::TokenBucketRateLimiter::new(
+                    crate::builtin::HELIX_BUDGET_CAPACITY,
+                    crate::builtin::HELIX_BUDGET_WINDOW,
+                )),
+                Arc::clone(&bus) as Arc<dyn EventPublisher>,
+            )
+            .unwrap();
+            let mut flow = armed(TwitchAuthFlow::new(
+                oauth_client_at(&server.uri(), CLIENT),
+                helix,
+            ));
+            let cancel = CancellationToken::new();
+
+            let (outcome, ()) = tokio::join!(flow.wait_for_authorization(cancel.clone()), async {
+                reached.notified().await;
+                cancel.cancel();
+            });
+
+            let Err(PlatformError::Auth { reason }) = outcome else {
+                panic!("{stage:?}: a cancelled sign-in must end with an Auth error");
+            };
+            assert_eq!(reason, DEVICE_CANCELLED_REASON, "{stage:?}");
+            assert!(
+                bus.of_kind("request.fail").is_empty(),
+                "{stage:?}: a cancelled call must not publish a failure"
+            );
+        }
     }
 
     #[test]
@@ -760,16 +807,5 @@ mod tests {
             panic!("twitch must use the device-code auth flow");
         };
         assert!(!scopes.is_empty(), "device grant must request scopes");
-    }
-
-    #[test]
-    fn helix_error_sanitizer_strips_bearer_from_custom_variant() {
-        use std::borrow::Cow;
-        use twitch_api::helix::ClientRequestError;
-
-        let e: ClientRequestError<reqwest::Error> =
-            ClientRequestError::Custom(Cow::Borrowed("Bearer FAKE_BEARER_VALUE_123 is invalid"));
-        let msg = sanitize_helix_error(&e);
-        assert!(!msg.contains("FAKE_BEARER_VALUE_123"));
     }
 }

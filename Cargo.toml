@@ -120,11 +120,6 @@ reqwest = { version = "0.13", features = [
   "multipart",
 ], default-features = false }
 
-twitch_api = { version = "0.8", features = [
-  "reqwest",
-  "helix",
-], default-features = false }
-
 obws = { version = "0.15", features = ["events"] }
 
 windows = { version = "0.62", features = [

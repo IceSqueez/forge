@@ -92,6 +92,7 @@ pub struct IntegrationDetail {
     connect: Option<ActiveConnect>,
     donation_settings: Option<DonationSettingsLink>,
     twitch_bot: Option<Entity<TwitchBotSection>>,
+    twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
     _twitch_bot_subs: Vec<Subscription>,
     is_twitch: bool,
     is_obs: bool,
@@ -250,6 +251,7 @@ impl IntegrationDetail {
             connect: None,
             donation_settings: None,
             twitch_bot: None,
+            twitch_sign_in: None,
             _twitch_bot_subs: Vec::new(),
             is_twitch,
             is_obs,
@@ -335,6 +337,10 @@ impl IntegrationDetail {
         cx.notify();
     }
 
+    pub fn attach_twitch_sign_in(&mut self, sign_in: forge_platform_twitch::TwitchSignIn) {
+        self.twitch_sign_in = Some(sign_in);
+    }
+
     fn open_connect_flow(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
         let launch = ConnectFlowLaunch {
             platform,
@@ -345,6 +351,7 @@ impl IntegrationDetail {
             kick_slot: self.kick_slot.clone(),
             youtube_slot: self.youtube_slot.clone(),
             endpoints: self.endpoints.clone(),
+            twitch_sign_in: self.twitch_sign_in.clone(),
         };
         let view = cx.new(|cx| ConnectFlow::new(launch, cx));
         let subs = vec![
@@ -2254,7 +2261,7 @@ mod tests {
             let bot = TwitchBotAccount::new(
                 &PlatformEndpoints::default(),
                 backend as Arc<dyn CredentialsRepo>,
-                "client".to_owned(),
+                crate::test_support::default_twitch_oauth_client(),
                 Arc::clone(&bus) as Arc<dyn EventPublisher>,
                 crate::test_support::default_twitch_helix_gateway(bus as Arc<dyn EventPublisher>),
             );

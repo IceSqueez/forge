@@ -44,13 +44,14 @@ impl FieldValue {
 #[derive(Clone)]
 pub enum Credential {
     Bearer(Secret),
+    Scheme { scheme: String, token: Secret },
     ApiKey { header: String, key: Secret },
 }
 
 impl Credential {
     pub(crate) fn secret(&self) -> &str {
         match self {
-            Self::Bearer(token) => token.expose(),
+            Self::Bearer(token) | Self::Scheme { token, .. } => token.expose(),
             Self::ApiKey { key, .. } => key.expose(),
         }
     }
@@ -58,10 +59,11 @@ impl Credential {
 
 impl fmt::Debug for Credential {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Bearer(_) => "Bearer",
-            Self::ApiKey { .. } => "ApiKey",
-        })
+        match self {
+            Self::Bearer(_) => f.write_str("Bearer"),
+            Self::Scheme { scheme, .. } => f.debug_tuple("Scheme").field(scheme).finish(),
+            Self::ApiKey { .. } => f.write_str("ApiKey"),
+        }
     }
 }
 
@@ -296,6 +298,13 @@ impl GatewayRequest {
 
     pub fn bearer(self, token: Secret) -> Self {
         self.credential(Credential::Bearer(token))
+    }
+
+    pub fn authorization(self, scheme: impl Into<String>, token: Secret) -> Self {
+        self.credential(Credential::Scheme {
+            scheme: scheme.into(),
+            token,
+        })
     }
 
     pub fn api_key(self, header: impl Into<String>, key: Secret) -> Self {

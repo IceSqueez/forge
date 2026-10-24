@@ -377,11 +377,20 @@ fn plain_header(name: &str, value: &str) -> Result<(HeaderName, HeaderValue), Ga
 fn credential_header(credential: &Credential) -> Result<(HeaderName, HeaderValue), GatewayFailure> {
     let (name, raw) = match credential {
         Credential::Bearer(token) => (AUTHORIZATION, format!("{BEARER_PREFIX}{}", token.expose())),
-        Credential::ApiKey { header, key } => (
-            HeaderName::from_bytes(header.as_bytes())
-                .map_err(|_| invalid(InvalidRequest::InvalidHeader))?,
-            key.expose().to_owned(),
-        ),
+        Credential::Scheme { scheme, token } => {
+            if scheme.is_empty() || scheme.contains(char::is_whitespace) {
+                return Err(invalid(InvalidRequest::InvalidHeader));
+            }
+            (AUTHORIZATION, format!("{scheme} {}", token.expose()))
+        }
+        Credential::ApiKey { header, key } => {
+            let name = HeaderName::from_bytes(header.as_bytes())
+                .map_err(|_| invalid(InvalidRequest::InvalidHeader))?;
+            if name == AUTHORIZATION || name == PROXY_AUTHORIZATION {
+                return Err(invalid(InvalidRequest::SensitiveHeader));
+            }
+            (name, key.expose().to_owned())
+        }
     };
     let mut value =
         HeaderValue::from_str(&raw).map_err(|_| invalid(InvalidRequest::InvalidHeader))?;

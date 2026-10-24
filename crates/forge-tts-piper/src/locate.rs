@@ -64,3 +64,82 @@ impl PiperEngine {
         None
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_candidate_is_a_platform_executable_named_piper() {
+        let found = candidates();
+
+        assert!(!found.is_empty(), "no candidate next to the running binary");
+        for candidate in found {
+            let name = candidate
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            assert!(
+                [BUNDLED_STEM, "piper-tts"]
+                    .iter()
+                    .any(|stem| name == format!("{stem}{EXE_SUFFIX}")),
+                "unexpected candidate {}",
+                candidate.display()
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    fn install_script(path: &Path, body: &str) {
+        let status = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg("printf '%s' \"$1\" > \"$0\" && chmod 755 \"$0\"")
+            .arg(path)
+            .arg(body)
+            .status()
+            .expect("run /bin/sh");
+        assert!(status.success(), "could not install {}", path.display());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_probe_accepts_only_a_binary_whose_help_mentions_the_model_flag() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let cases = [
+            (
+                "help on stdout",
+                "#!/bin/sh\necho 'usage: piper --model FILE'\n",
+                true,
+            ),
+            (
+                "help on stderr",
+                "#!/bin/sh\necho 'usage: piper --model FILE' >&2\n",
+                true,
+            ),
+            (
+                "other program",
+                "#!/bin/sh\necho 'usage: piper [--json] FILE'\n",
+                false,
+            ),
+            ("silent program", "#!/bin/sh\nexit 0\n", false),
+        ];
+        for (name, body, accepted) in cases {
+            let path = dir.path().join(name.replace(' ', "-"));
+            install_script(&path, body);
+
+            assert_eq!(is_piper_tts(&path).await, accepted, "{name}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_probe_rejects_a_file_that_is_not_executable() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let path = dir.path().join("piper");
+        std::fs::write(&path, b"#!/bin/sh\necho --model\n").expect("write");
+
+        assert!(!is_piper_tts(&path).await);
+    }
+}

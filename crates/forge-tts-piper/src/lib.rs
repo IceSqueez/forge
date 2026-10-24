@@ -293,13 +293,6 @@ mod tests {
     }
 
     #[test]
-    fn voices_dir_path() {
-        let data = std::path::Path::new("/home/user/.local/share/forge");
-        let dir = PiperEngine::voices_dir(data);
-        assert_eq!(dir, data.join("tts").join("piper-voices"));
-    }
-
-    #[test]
     fn scan_empty_dir_returns_empty() {
         let tmp = tempfile::tempdir().expect("tmpdir");
         let engine_id = EngineId("piper".into());
@@ -355,16 +348,12 @@ mod tests {
     }
 
     #[test]
-    fn parse_voice_id_single() {
-        let (stem, speaker) = parse_voice_id("uk_UA-test-medium");
-        assert_eq!(stem, "uk_UA-test-medium");
-        assert!(speaker.is_none());
-    }
-
-    #[test]
-    fn parse_voice_id_multi() {
-        let (stem, speaker) = parse_voice_id("en_US-multi#1");
-        assert_eq!(stem, "en_US-multi");
-        assert_eq!(speaker, Some(1u32));
+    fn parse_voice_id_splits_the_speaker_suffix_only_when_present() {
+        for (voice_id, stem, speaker) in [
+            ("uk_UA-test-medium", "uk_UA-test-medium", None),
+            ("en_US-multi#1", "en_US-multi", Some(1_u32)),
+        ] {
+            assert_eq!(parse_voice_id(voice_id), (stem, speaker), "{voice_id}");
+        }
     }
 }

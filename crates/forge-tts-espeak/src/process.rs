@@ -154,6 +154,7 @@ async fn kill_and_reap(child: &mut Child) {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -169,5 +170,74 @@ mod tests {
         for (semi, expected) in [(0.0, 50), (12.0, 99), (-12.0, 0), (6.0, 75), (-6.0, 25)] {
             assert_eq!(pitch_from_semitones(semi), expected, "semi={semi}");
         }
+    }
+
+    #[cfg(unix)]
+    const LARGER_THAN_A_PIPE_BUFFER: usize = 1 << 20;
+
+    #[cfg(unix)]
+    fn piped_shell(script: &str) -> Child {
+        tokio::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(script)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("spawn /bin/sh")
+    }
+
+    #[cfg(unix)]
+    fn patterned_input(len: usize) -> Vec<u8> {
+        (0..len).map(|i| (i % 251) as u8).collect()
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_exchange_survives_output_larger_than_a_pipe_buffer_before_input_is_read() {
+        let input = patterned_input(LARGER_THAN_A_PIPE_BUFFER);
+        let cases = [
+            ("echoes stdin", "cat".to_owned(), input.clone()),
+            (
+                "floods stdout before reading stdin",
+                format!("head -c {LARGER_THAN_A_PIPE_BUFFER} /dev/zero; cat > /dev/null"),
+                vec![0_u8; LARGER_THAN_A_PIPE_BUFFER],
+            ),
+        ];
+        for (name, script, expected_stdout) in cases {
+            let mut child = piped_shell(&script);
+            let exchanged =
+                tokio::time::timeout(SUBPROCESS_TIMEOUT, exchange(&mut child, input.clone()))
+                    .await
+                    .unwrap_or_else(|_| panic!("{name}: the exchange deadlocked"))
+                    .unwrap_or_else(|e| panic!("{name}: exchange failed with {e:?}"));
+
+            assert!(
+                exchanged.status.success(),
+                "{name}: exit {}",
+                exchanged.status
+            );
+            assert!(
+                exchanged.stdout == expected_stdout,
+                "{name}: stdout differs"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_espeak_that_exits_without_reading_its_input_still_reports_its_stderr() {
+        let mut child = piped_shell("echo unknown voice >&2; exit 2");
+
+        let exchanged = exchange(&mut child, patterned_input(LARGER_THAN_A_PIPE_BUFFER))
+            .await
+            .expect("a failed exit is an output, not an io error");
+
+        assert_eq!(exchanged.status.code(), Some(2));
+        assert!(
+            String::from_utf8_lossy(&exchanged.stderr).contains("unknown voice"),
+            "stderr was lost"
+        );
     }
 }

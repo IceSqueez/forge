@@ -18,23 +18,19 @@ impl MathEvaluator {
     }
 
     pub fn eval(&self, expr: &str) -> Result<Variant, ScriptError> {
-        self.run(expr, expr, rhai::Scope::new())
+        self.run(expr, rhai::Scope::new())
     }
 
     pub fn eval_bound(&self, expr: &BoundExpression) -> Result<Variant, ScriptError> {
-        self.run(expr.original(), expr.source(), expr.scope())
+        self.run(expr.source(), expr.scope())
     }
 
-    fn run(
-        &self,
-        label: &str,
-        source: &str,
-        mut scope: rhai::Scope<'static>,
-    ) -> Result<Variant, ScriptError> {
+    fn run(&self, source: &str, mut scope: rhai::Scope<'static>) -> Result<Variant, ScriptError> {
         let mut inner = rhai::Engine::new_raw();
         register_sandbox_base(&mut inner, &self.config);
 
-        let deadline = Instant::now() + Duration::from_millis(self.config.wall_time_ms);
+        let started_at = Instant::now();
+        let deadline = started_at + Duration::from_millis(self.config.wall_time_ms);
         inner.on_progress(move |_ops| {
             if Instant::now() >= deadline {
                 Some(Dynamic::UNIT)
@@ -45,14 +41,13 @@ impl MathEvaluator {
 
         let value = inner
             .eval_with_scope::<Dynamic>(&mut scope, source)
-            .map_err(|e| map_eval_error(label, &self.config, *e))?;
+            .map_err(|e| map_eval_error(&self.config, *e, started_at))?;
 
         if let Ok(n) = value.as_int() {
             Ok(Variant::Int(n))
         } else if let Ok(f) = value.as_float() {
             if f.is_nan() || f.is_infinite() {
                 Err(ScriptError::Runtime {
-                    script: label.to_owned(),
                     reason: "non-finite result".to_owned(),
                 })
             } else {
@@ -60,7 +55,6 @@ impl MathEvaluator {
             }
         } else {
             Err(ScriptError::Runtime {
-                script: label.to_owned(),
                 reason: format!("expected numeric result, got {}", value.type_name()),
             })
         }

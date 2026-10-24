@@ -216,6 +216,8 @@ impl TextArea {
     pub fn set_content(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.buffer.reset(text.into().into());
         self.preferred_x = None;
+        self.scroll_offset = px(0.0);
+        self.follow_caret = false;
         cx.notify();
     }
 

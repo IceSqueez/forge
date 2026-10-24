@@ -36,6 +36,7 @@ mod combo_capture;
 mod combo_conflict;
 mod config_field_label;
 mod config_form;
+mod config_text;
 mod connect_flow;
 mod connect_scaffold;
 mod crash_hook;

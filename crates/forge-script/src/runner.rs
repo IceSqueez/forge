@@ -52,7 +52,6 @@ pub async fn run_inline(
     } = host;
     let mut scope =
         build_scope_for_contract(&contract, &arg_stack).map_err(|e| ScriptError::Runtime {
-            script: body.chars().take(80).collect(),
             reason: e.to_string(),
         })?;
     let cfg = load_script_engine_config(settings.as_ref()).await;
@@ -73,7 +72,6 @@ pub async fn run_inline(
         tokio::task::spawn_blocking(move || engine.eval_script_with_scope(&body, &mut scope))
             .await
             .map_err(|e| ScriptError::Runtime {
-                script: String::new(),
                 reason: e.to_string(),
             })?;
     let duration_ms = start.elapsed().as_secs_f64() * 1000.0;

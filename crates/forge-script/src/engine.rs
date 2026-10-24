@@ -111,7 +111,7 @@ impl Engine {
         self.reset_timer();
         self.inner
             .eval::<rhai::Dynamic>(script)
-            .map_err(|e| map_eval_error(script, &self.config, *e))
+            .map_err(|e| map_eval_error(&self.config, *e, self.started_at()))
     }
 
     pub fn eval_script_with_scope(
@@ -122,7 +122,7 @@ impl Engine {
         self.reset_timer();
         self.inner
             .eval_with_scope::<rhai::Dynamic>(scope, body)
-            .map_err(|e| map_eval_error(body, &self.config, *e))
+            .map_err(|e| map_eval_error(&self.config, *e, self.started_at()))
     }
 
     pub fn eval_script_with_scope_as_variant(
@@ -137,6 +137,10 @@ impl Engine {
     pub(crate) fn reset_timer(&self) {
         *self.wall_timer.lock().unwrap_or_else(|p| p.into_inner()) = Instant::now();
     }
+
+    fn started_at(&self) -> Instant {
+        *self.wall_timer.lock().unwrap_or_else(|p| p.into_inner())
+    }
 }
 
 pub fn validate_syntax(body: &str) -> Result<(), ScriptError> {
@@ -146,35 +150,26 @@ pub fn validate_syntax(body: &str) -> Result<(), ScriptError> {
         .compile(body)
         .map(|_| ())
         .map_err(|e| ScriptError::Compile {
-            script: body.chars().take(80).collect(),
             reason: e.to_string(),
         })
 }
 
 pub(crate) fn map_eval_error(
-    script: &str,
     cfg: &EngineConfig,
     err: rhai::EvalAltResult,
+    started_at: Instant,
 ) -> ScriptError {
     let reason = err.to_string();
     match err {
-        rhai::EvalAltResult::ErrorParsing(..) => ScriptError::Compile {
-            script: script.to_owned(),
-            reason,
-        },
-        rhai::EvalAltResult::ErrorTooManyOperations(..) => ScriptError::OperationLimit {
-            script: script.to_owned(),
-            ops: cfg.op_limit,
-        },
+        rhai::EvalAltResult::ErrorParsing(..) => ScriptError::Compile { reason },
+        rhai::EvalAltResult::ErrorTooManyOperations(..) => {
+            ScriptError::OperationLimit { ops: cfg.op_limit }
+        }
         rhai::EvalAltResult::ErrorTerminated(..) => ScriptError::Timeout {
-            script: script.to_owned(),
-            elapsed_ms: cfg.wall_time_ms,
+            elapsed_ms: u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
             limit_ms: cfg.wall_time_ms,
         },
-        _ => ScriptError::Runtime {
-            script: script.to_owned(),
-            reason,
-        },
+        _ => ScriptError::Runtime { reason },
     }
 }
 

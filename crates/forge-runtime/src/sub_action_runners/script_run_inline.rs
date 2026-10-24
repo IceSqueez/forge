@@ -127,7 +127,6 @@ impl SubActionRunner for ScriptRunInlineRunner {
             let contract = forge_types::ScriptContract::default();
             let scope = build_scope_for_contract(&contract, &arg_stack_clone).map_err(|e| {
                 ScriptError::Runtime {
-                    script: body.clone(),
                     reason: e.to_string(),
                 }
             })?;
@@ -135,7 +134,6 @@ impl SubActionRunner for ScriptRunInlineRunner {
             let deadline = Instant::now() + Duration::from_millis(cfg.wall_time_ms);
             let http_client =
                 ScriptHttpClient::new(http_cfg).map_err(|e| ScriptError::Runtime {
-                    script: body.clone(),
                     reason: e.to_string(),
                 })?;
             let mut api = ForgeApi::new(publisher_arc, globals_arc, parent_event_id, deadline)
@@ -163,6 +161,7 @@ impl SubActionRunner for ScriptRunInlineRunner {
         let outcome = match exec_result {
             Ok(Ok(_)) => SubActionOutcome::Success,
             Ok(Err(script_err)) => {
+                let message = format!("inline script failed: {script_err}");
                 self.publisher.publish(Event::caused_by(
                     EventSource::Rhai,
                     "script.error",
@@ -170,12 +169,12 @@ impl SubActionRunner for ScriptRunInlineRunner {
                         "script_id": serde_json::Value::Null,
                         "script_name": serde_json::Value::Null,
                         "is_inline": true,
-                        "error_type": error_kind(&script_err),
-                        "message": script_err.to_string(),
+                        "error_type": script_err.error_type(),
+                        "message": message.as_str(),
                     }),
                     script_event_id,
                 ));
-                SubActionOutcome::Failed(script_err.to_string())
+                SubActionOutcome::Failed(message)
             }
             Err(join_err) => {
                 self.publisher.publish(Event::caused_by(
@@ -206,15 +205,6 @@ impl SubActionRunner for ScriptRunInlineRunner {
             },
             None,
         )
-    }
-}
-
-fn error_kind(err: &ScriptError) -> &'static str {
-    match err {
-        ScriptError::Compile { .. } => "syntax",
-        ScriptError::Timeout { .. } => "timeout",
-        ScriptError::OperationLimit { .. } => "ops_exceeded",
-        _ => "runtime",
     }
 }
 

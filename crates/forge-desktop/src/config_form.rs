@@ -690,7 +690,7 @@ fn read_int(config: &FieldConfig, key: &str) -> Option<i64> {
 fn read_text(config: &FieldConfig, key: &str) -> String {
     config
         .get(key)
-        .map(forge_types::display_scalar)
+        .map(crate::config_text::editable_line)
         .unwrap_or_default()
 }
 
@@ -842,7 +842,12 @@ fn build_config_code<V: 'static>(
     ctx: &FoldContext<'_, V>,
     cx: &mut Context<V>,
 ) -> ConfigField {
-    let editor = code_field_editor(language, kind, read_text(ctx.config, key), *ctx.palette, cx);
+    let seed = ctx
+        .config
+        .get(key)
+        .map(crate::config_text::editable_text)
+        .unwrap_or_default();
+    let editor = code_field_editor(language, kind, seed, *ctx.palette, cx);
     let on_committed = ctx.on_committed;
     let sub = cx.subscribe(&editor, move |view, _, event: &InputEvent, cx| {
         if matches!(event, InputEvent::Blurred(_)) {

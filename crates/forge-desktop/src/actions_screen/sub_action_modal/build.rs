@@ -98,7 +98,7 @@ fn build_input_field(
 ) -> SubFormField {
     let seed = config
         .get(key)
-        .map(forge_types::display_scalar)
+        .map(crate::config_text::editable_line)
         .unwrap_or_default();
     let is_var = is_var_key(key);
     let invalid_seed = if is_var {
@@ -207,7 +207,7 @@ fn build_code_field(
 fn config_seed(config: &SubActionConfig, key: &str) -> String {
     config
         .get(key)
-        .map(forge_types::display_scalar)
+        .map(crate::config_text::editable_text)
         .unwrap_or_default()
 }
 
@@ -294,7 +294,7 @@ pub(super) fn push_form_field(
         FormField::Select { key, options, .. } | FormField::Swatch { key, options, .. } => {
             let selected = config
                 .get(*key)
-                .map(forge_types::display_scalar)
+                .map(crate::config_text::editable_line)
                 .unwrap_or_default();
             let options = options
                 .iter()
@@ -315,7 +315,7 @@ pub(super) fn push_form_field(
         } => {
             let selected = config
                 .get(*key)
-                .map(forge_types::display_scalar)
+                .map(crate::config_text::editable_line)
                 .unwrap_or_default();
             let options = copy
                 .options_map
@@ -340,11 +340,11 @@ pub(super) fn push_form_field(
         } => {
             let selected = config
                 .get(*key)
-                .map(forge_types::display_scalar)
+                .map(crate::config_text::editable_line)
                 .unwrap_or_default();
             let sibling = config
                 .get(*depends_on)
-                .map(forge_types::display_scalar)
+                .map(crate::config_text::editable_line)
                 .unwrap_or_default();
             out.push(SubFormField::Select {
                 key: (*key).to_owned(),

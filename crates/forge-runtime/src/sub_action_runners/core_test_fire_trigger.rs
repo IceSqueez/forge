@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use super::json_object_input::{EMPTY_JSON_OBJECT, read_json_object, validate_json_object};
+use crate::{QueueAdmission, SchedulerCell, SchedulerRequest};
 use async_trait::async_trait;
 use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
@@ -9,9 +11,8 @@ use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, TriggerInstanceId, Variant,
 };
-use std::collections::BTreeMap;
 
-use crate::{QueueAdmission, SchedulerCell, SchedulerRequest};
+const OUTPUTS_KEY: &str = "override_outputs";
 
 pub struct CoreTestFireTriggerRunner {
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
@@ -68,7 +69,12 @@ impl CoreTestFireTriggerRunner {
             }
         };
 
-        let synthetic_args = synthetic_outputs(config);
+        let synthetic_args = match synthetic_outputs(config) {
+            Ok(args) => args,
+            Err(reason) => {
+                return SubActionOutcome::Failed(format!("core.test.fire_trigger: {reason}"));
+            }
+        };
 
         for action_id in action_ids {
             let action = match self.actions.get(action_id).await {
@@ -133,8 +139,8 @@ impl SubActionRunner for CoreTestFireTriggerRunner {
             Variant::String(String::new()),
         );
         cfg.insert(
-            "override_outputs".to_owned(),
-            Variant::Object(BTreeMap::new()),
+            OUTPUTS_KEY.to_owned(),
+            Variant::String(EMPTY_JSON_OBJECT.to_owned()),
         );
         cfg
     }
@@ -147,14 +153,15 @@ impl SubActionRunner for CoreTestFireTriggerRunner {
                 options_key: "trigger_instance.ids",
             },
             FormField::TextArea {
-                key: "override_outputs",
+                key: OUTPUTS_KEY,
                 label: "Synthetic Outputs (JSON object)",
             },
         ]
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("trigger_instance_id").map(|_| ())
+        config.require_str("trigger_instance_id")?;
+        validate_json_object(config, OUTPUTS_KEY)
     }
 
     async fn execute(
@@ -168,12 +175,8 @@ impl SubActionRunner for CoreTestFireTriggerRunner {
     }
 }
 
-fn synthetic_outputs(config: &SubActionConfig) -> ArgStack {
-    let mut stack = ArgStack::new();
-    if let Some(Variant::Object(map)) = config.get("override_outputs") {
-        for (key, value) in map {
-            stack = stack.set(key.clone(), value.clone());
-        }
-    }
-    stack
+fn synthetic_outputs(config: &SubActionConfig) -> Result<ArgStack, String> {
+    Ok(read_json_object(config, OUTPUTS_KEY)?
+        .into_iter()
+        .fold(ArgStack::new(), |stack, (key, value)| stack.set(key, value)))
 }

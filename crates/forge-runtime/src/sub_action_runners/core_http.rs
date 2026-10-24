@@ -10,10 +10,14 @@ use forge_registry::{
 use forge_storage::{SettingsRepo, get_bool_setting, reserved_keys};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
+use super::json_object_input::{EMPTY_JSON_OBJECT, read_json_object, validate_json_object};
 use crate::egress::{EgressClient, EgressRequest, EgressResponse, HttpMethod};
 
 const TIMEOUT_MIN_MS: i64 = 100;
 const TIMEOUT_MAX_MS: i64 = 60_000;
+
+const HEADERS_KEY: &str = "headers";
+const QUERY_PARAMS_KEY: &str = "query_params";
 
 const HTTP_STATUS_CODE_VAR: &str = "http.status_code";
 const HTTP_HEADERS_VAR: &str = "http.headers";
@@ -125,8 +129,14 @@ impl SubActionRunner for CoreHttpRunner {
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
         cfg.insert("url".to_owned(), Variant::String(String::new()));
-        cfg.insert("headers".to_owned(), Variant::Object(BTreeMap::new()));
-        cfg.insert("query_params".to_owned(), Variant::Object(BTreeMap::new()));
+        cfg.insert(
+            HEADERS_KEY.to_owned(),
+            Variant::String(EMPTY_JSON_OBJECT.to_owned()),
+        );
+        cfg.insert(
+            QUERY_PARAMS_KEY.to_owned(),
+            Variant::String(EMPTY_JSON_OBJECT.to_owned()),
+        );
         cfg.insert("timeout_ms".to_owned(), Variant::Int(10_000));
         cfg.insert("follow_redirects".to_owned(), Variant::Bool(true));
         cfg.insert(
@@ -166,11 +176,11 @@ impl SubActionRunner for CoreHttpRunner {
             });
         }
         fields.push(FormField::TextArea {
-            key: "headers",
+            key: HEADERS_KEY,
             label: "Headers (JSON object)",
         });
         fields.push(FormField::TextArea {
-            key: "query_params",
+            key: QUERY_PARAMS_KEY,
             label: "Query Parameters (JSON object)",
         });
         fields.push(FormField::Duration {
@@ -192,11 +202,11 @@ impl SubActionRunner for CoreHttpRunner {
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         let url_ok = config.str("url").is_some_and(|s| !s.trim().is_empty());
-        if url_ok {
-            Ok(())
-        } else {
-            Err(RegistryError::invalid_field("url", ConfigReason::Required))
+        if !url_ok {
+            return Err(RegistryError::invalid_field("url", ConfigReason::Required));
         }
+        validate_json_object(config, HEADERS_KEY)?;
+        validate_json_object(config, QUERY_PARAMS_KEY)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -221,9 +231,16 @@ impl SubActionRunner for CoreHttpRunner {
         let url_template = config.str("url").unwrap_or_default();
         let url = ctx.arg_stack.interpolate(url_template);
 
-        let mut headers = interpolate_map(config_string_map(config, "headers"), ctx.arg_stack);
-        let query_params =
-            interpolate_map(config_string_map(config, "query_params"), ctx.arg_stack);
+        let (mut headers, query_params) = match (
+            config_string_map(config, HEADERS_KEY),
+            config_string_map(config, QUERY_PARAMS_KEY),
+        ) {
+            (Ok(headers), Ok(query_params)) => (
+                interpolate_map(headers, ctx.arg_stack),
+                interpolate_map(query_params, ctx.arg_stack),
+            ),
+            (Err(reason), _) | (_, Err(reason)) => return (timer.failed(reason), None),
+        };
 
         let timeout_ms = config
             .int("timeout_ms")
@@ -284,27 +301,15 @@ fn interpolate_map(
         .collect()
 }
 
-fn config_string_map(config: &SubActionConfig, key: &str) -> BTreeMap<String, String> {
-    match config.get(key) {
-        Some(Variant::Object(map)) => map
-            .iter()
+fn config_string_map(
+    config: &SubActionConfig,
+    key: &str,
+) -> Result<BTreeMap<String, String>, String> {
+    read_json_object(config, key).map(|map| {
+        map.iter()
             .map(|(k, v)| (k.clone(), variant_plain_string(v)))
-            .collect(),
-        Some(Variant::String(s)) if !s.trim().is_empty() => {
-            serde_json::from_str::<serde_json::Value>(s)
-                .ok()
-                .and_then(|v| match v {
-                    serde_json::Value::Object(obj) => Some(
-                        obj.iter()
-                            .map(|(k, val)| (k.clone(), json_plain_string(val)))
-                            .collect(),
-                    ),
-                    _ => None,
-                })
-                .unwrap_or_default()
-        }
-        _ => BTreeMap::new(),
-    }
+            .collect()
+    })
 }
 
 fn variant_plain_string(value: &Variant) -> String {
@@ -312,13 +317,6 @@ fn variant_plain_string(value: &Variant) -> String {
         .as_str()
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| value.to_string())
-}
-
-fn json_plain_string(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::String(s) => s.clone(),
-        other => other.to_string(),
-    }
 }
 
 fn apply_response(arg_stack: &ArgStack, response: EgressResponse, parse_as: &str) -> ArgStack {

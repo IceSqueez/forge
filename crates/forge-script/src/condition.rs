@@ -33,7 +33,8 @@ impl ConditionEvaluator {
         let mut inner = rhai::Engine::new_raw();
         register_sandbox_base(&mut inner, &self.config);
 
-        let deadline = Instant::now() + Duration::from_millis(self.config.wall_time_ms);
+        let started_at = Instant::now();
+        let deadline = started_at + Duration::from_millis(self.config.wall_time_ms);
         inner.on_progress(move |_ops| {
             if Instant::now() >= deadline {
                 Some(Dynamic::UNIT)
@@ -44,7 +45,7 @@ impl ConditionEvaluator {
 
         let value = inner
             .eval_with_scope::<Dynamic>(&mut scope, source)
-            .map_err(|e| map_eval_error(label, &self.config, *e))?;
+            .map_err(|e| map_eval_error(&self.config, *e, started_at))?;
 
         value
             .as_bool()

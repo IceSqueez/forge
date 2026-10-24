@@ -202,7 +202,7 @@ impl EditSubActionForm {
             {
                 let sibling = values
                     .get(&dependency.depends_on)
-                    .map(forge_types::display_scalar)
+                    .map(crate::config_text::editable_line)
                     .unwrap_or_default();
                 *opts = dependent_options(options, &dependency.options_prefix, &sibling);
             }

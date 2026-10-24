@@ -149,7 +149,7 @@ impl AmountScale {
 fn stored_text(config: &SubActionConfig, key: &str) -> String {
     config
         .get(key)
-        .map(forge_types::display_scalar)
+        .map(crate::config_text::editable_line)
         .unwrap_or_default()
 }
 

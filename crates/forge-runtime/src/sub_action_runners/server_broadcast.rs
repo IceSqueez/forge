@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -10,6 +9,12 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
 const BROADCAST_DELIVERED_COUNT_VAR: &str = "broadcast.delivered_count";
+
+use super::json_object_input::{
+    EMPTY_JSON_OBJECT, plain_json_object, read_json_object, validate_json_object,
+};
+
+const PAYLOAD_KEY: &str = "payload";
 
 pub struct ServerBroadcastRunner {
     publisher: Arc<dyn EventPublisher>,
@@ -50,7 +55,10 @@ impl SubActionRunner for ServerBroadcastRunner {
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
         cfg.insert("event_name".to_owned(), Variant::String(String::new()));
-        cfg.insert("payload".to_owned(), Variant::Object(BTreeMap::new()));
+        cfg.insert(
+            PAYLOAD_KEY.to_owned(),
+            Variant::String(EMPTY_JSON_OBJECT.to_owned()),
+        );
         cfg.insert("client_filter".to_owned(), Variant::Array(vec![]));
         cfg.insert("client_type_filter".to_owned(), Variant::Array(vec![]));
         cfg
@@ -64,7 +72,7 @@ impl SubActionRunner for ServerBroadcastRunner {
                 placeholder: "alert_donation",
             },
             FormField::TextArea {
-                key: "payload",
+                key: PAYLOAD_KEY,
                 label: "Payload (JSON object)",
             },
             FormField::Text {
@@ -81,7 +89,8 @@ impl SubActionRunner for ServerBroadcastRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str("event_name").map(|_| ())
+        config.require_str("event_name")?;
+        validate_json_object(config, PAYLOAD_KEY)
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -107,41 +116,39 @@ impl SubActionRunner for ServerBroadcastRunner {
                 None,
             )
         } else {
-            let payload = config_payload(config);
-            self.publisher.publish(Event::caused_by(
-                EventSource::Server,
-                format!("broadcast.{event_name}"),
-                payload,
-                ctx.parent_event_id,
-            ));
-            let new_stack = ctx
-                .arg_stack
-                .clone()
-                .set(BROADCAST_DELIVERED_COUNT_VAR.to_owned(), Variant::Int(0));
-            (SubActionOutcome::Success, Some(new_stack))
+            match config_payload(config) {
+                Ok(payload) => {
+                    self.publisher.publish(Event::caused_by(
+                        EventSource::Server,
+                        format!("broadcast.{event_name}"),
+                        payload,
+                        ctx.parent_event_id,
+                    ));
+                    let new_stack = ctx
+                        .arg_stack
+                        .clone()
+                        .set(BROADCAST_DELIVERED_COUNT_VAR.to_owned(), Variant::Int(0));
+                    (SubActionOutcome::Success, Some(new_stack))
+                }
+                Err(reason) => (SubActionOutcome::Failed(reason), None),
+            }
         };
 
         (timer.finish(outcome), updated_stack)
     }
 }
 
-fn config_payload(config: &SubActionConfig) -> serde_json::Value {
-    match config.get("payload") {
-        Some(Variant::Object(map)) => {
-            let json_map = map.iter().map(|(k, v)| (k.clone(), v.to_json())).collect();
-            serde_json::Value::Object(json_map)
-        }
-        Some(Variant::String(s)) if !s.is_empty() => serde_json::from_str(s)
-            .unwrap_or_else(|_| serde_json::Value::Object(Default::default())),
-        _ => serde_json::Value::Object(Default::default()),
-    }
+fn config_payload(config: &SubActionConfig) -> Result<serde_json::Value, String> {
+    read_json_object(config, PAYLOAD_KEY).map(|map| plain_json_object(&map))
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use forge_registry::{ConfigProblem, ConfigReason};
     use forge_types::EventId;
+    use std::collections::BTreeMap;
     use std::sync::Mutex;
 
     #[derive(Default)]
@@ -217,22 +224,68 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn broadcast_carries_config_object_payload_into_event() {
-        let mut payload = BTreeMap::new();
-        payload.insert("amount".to_owned(), Variant::Int(5));
-        let (recorder, _, _) = run(
-            &cfg("alert", Variant::Object(payload)),
-            &ArgStack::new(),
-            EventId::new(),
-        )
-        .await;
+    async fn published_payload_is_plain_json_for_every_accepted_config_shape() {
+        let legacy = Variant::Object(BTreeMap::from([
+            ("greeting".to_owned(), Variant::String("hi".to_owned())),
+            (
+                "tags".to_owned(),
+                Variant::Array(vec![Variant::Int(5), Variant::Bool(true)]),
+            ),
+        ]));
+        for (payload, expected) in [
+            (
+                legacy,
+                serde_json::json!({"greeting": "hi", "tags": [5, true]}),
+            ),
+            (
+                Variant::String(r#"{"greeting": "hi", "nested": {"n": 2}}"#.to_owned()),
+                serde_json::json!({"greeting": "hi", "nested": {"n": 2}}),
+            ),
+            (Variant::String(String::new()), serde_json::json!({})),
+        ] {
+            let (recorder, ..) = run(
+                &cfg("alert", payload.clone()),
+                &ArgStack::new(),
+                EventId::new(),
+            )
+            .await;
+            assert_eq!(recorder.captured()[0].payload, expected, "{payload:?}");
+        }
+    }
 
-        let landed = recorder.captured()[0]
-            .payload
-            .get("amount")
-            .cloned()
-            .expect("amount key must be present in the published payload");
-        assert_eq!(Variant::from_json(landed).unwrap(), Variant::Int(5));
+    #[tokio::test]
+    async fn invalid_payload_fails_naming_the_field_without_publishing() {
+        for payload in ["object{0}", "[1]", "null", r#"{"a": null}"#] {
+            let (recorder, outcome, updated_stack) = run(
+                &cfg("alert", Variant::String(payload.to_owned())),
+                &ArgStack::new(),
+                EventId::new(),
+            )
+            .await;
+            assert!(
+                matches!(&outcome, SubActionOutcome::Failed(m) if m.starts_with("payload")),
+                "{payload}: {outcome:?}"
+            );
+            assert!(recorder.captured().is_empty(), "{payload}");
+            assert!(updated_stack.is_none(), "{payload:?}");
+        }
+    }
+
+    #[test]
+    fn validate_config_rejects_a_non_object_payload_as_invalid_format() {
+        let err = ServerBroadcastRunner::new(Arc::new(NullPublisher))
+            .validate_config(&cfg("alert", Variant::String("object{0}".to_owned())))
+            .unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                RegistryError::InvalidConfig(ConfigProblem {
+                    field: Some(field),
+                    reason: ConfigReason::InvalidFormat(_),
+                }) if field == "payload"
+            ),
+            "{err:?}"
+        );
     }
 
     #[tokio::test]

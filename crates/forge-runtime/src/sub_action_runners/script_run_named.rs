@@ -177,7 +177,6 @@ impl SubActionRunner for ScriptRunNamedRunner {
         let exec_result = tokio::task::spawn_blocking(move || {
             let scope = build_scope_for_contract(&contract, &arg_stack_clone).map_err(|e| {
                 ScriptError::Runtime {
-                    script: body.clone(),
                     reason: e.to_string(),
                 }
             })?;
@@ -185,7 +184,6 @@ impl SubActionRunner for ScriptRunNamedRunner {
             let deadline = Instant::now() + Duration::from_millis(cfg.wall_time_ms);
             let http_client =
                 ScriptHttpClient::new(http_cfg).map_err(|e| ScriptError::Runtime {
-                    script: body.clone(),
                     reason: e.to_string(),
                 })?;
             let mut api = ForgeApi::new(publisher_arc, globals_arc, parent_event_id, deadline)
@@ -219,7 +217,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
                 _ => (SubActionOutcome::Success, None),
             },
             Ok(Err(script_err)) => {
-                let message = format!("script '{name}' failed: {}", body_free_message(&script_err));
+                let message = format!("script '{name}' failed: {script_err}");
                 self.publisher.publish(Event::caused_by(
                     EventSource::Rhai,
                     "script.error",
@@ -227,7 +225,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
                         "script_id": script_id.to_string(),
                         "script_name": name.as_str(),
                         "is_inline": false,
-                        "error_type": error_kind(&script_err),
+                        "error_type": script_err.error_type(),
                         "message": message.as_str(),
                     }),
                     script_event_id,
@@ -282,31 +280,6 @@ impl SubActionRunner for ScriptRunNamedRunner {
     }
 }
 
-fn error_kind(err: &ScriptError) -> &'static str {
-    match err {
-        ScriptError::Compile { .. } => "syntax",
-        ScriptError::Timeout { .. } => "timeout",
-        ScriptError::OperationLimit { .. } => "ops_exceeded",
-        _ => "runtime",
-    }
-}
-
-fn body_free_message(err: &ScriptError) -> String {
-    match err {
-        ScriptError::Compile { reason, .. } => format!("compile error: {reason}"),
-        ScriptError::Runtime { reason, .. } => format!("runtime error: {reason}"),
-        ScriptError::Timeout {
-            elapsed_ms,
-            limit_ms,
-            ..
-        } => format!("timed out after {elapsed_ms}ms (limit {limit_ms}ms)"),
-        ScriptError::OperationLimit { ops, .. } => {
-            format!("exceeded op-count limit ({ops} operations)")
-        }
-        other => other.to_string(),
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
@@ -317,10 +290,9 @@ mod tests {
     use forge_types::{EventId, ScriptContract, ScriptId};
     use time::OffsetDateTime;
 
-    const BODY: &str = "let secret_token = 42; print(secret_token);";
+    const SECRET: &str = "sk-live-0123456789";
 
-    #[tokio::test]
-    async fn named_script_exec_and_error_carry_script_identity_and_clear_inline_flag() {
+    async fn run_named(body: &str) -> (SubActionOutcome, Option<Event>, Option<Event>, ScriptId) {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
@@ -330,7 +302,7 @@ mod tests {
         let record = ScriptRecord {
             id: script_id,
             name: "greet".to_owned(),
-            body: "throw \"boom\";".to_owned(),
+            body: body.to_owned(),
             contract: ScriptContract::default(),
             body_hash: "h".to_owned(),
             enabled: true,
@@ -360,7 +332,7 @@ mod tests {
         let ctx =
             forge_registry::RunContext::leaf(&arg_stack, 0, EventId::new(), dummy_pub.as_ref());
 
-        let _ = runner.execute(&config, &ctx).await;
+        let (telemetry, _) = runner.execute(&config, &ctx).await;
 
         let mut exec = None;
         let mut error = None;
@@ -375,6 +347,12 @@ mod tests {
                 break;
             }
         }
+        (telemetry.outcome, exec, error, script_id)
+    }
+
+    #[tokio::test]
+    async fn named_script_exec_and_error_carry_script_identity_and_clear_inline_flag() {
+        let (_, exec, error, script_id) = run_named("throw \"boom\";").await;
 
         let expected_id = script_id.to_string();
         for ev in [
@@ -402,55 +380,22 @@ mod tests {
         }
     }
 
-    #[test]
-    fn body_free_message_reports_the_reason_without_leaking_the_script_body() {
-        for (err, expected) in [
-            (
-                ScriptError::Compile {
-                    script: BODY.to_owned(),
-                    reason: "unexpected token".to_owned(),
-                },
-                "compile error: unexpected token",
-            ),
-            (
-                ScriptError::Runtime {
-                    script: BODY.to_owned(),
-                    reason: "divide by zero".to_owned(),
-                },
-                "runtime error: divide by zero",
-            ),
-            (
-                ScriptError::Timeout {
-                    script: BODY.to_owned(),
-                    elapsed_ms: 200,
-                    limit_ms: 100,
-                },
-                "timed out after 200ms (limit 100ms)",
-            ),
-            (
-                ScriptError::OperationLimit {
-                    script: BODY.to_owned(),
-                    ops: 5000,
-                },
-                "exceeded op-count limit (5000 operations)",
-            ),
-        ] {
-            let msg = body_free_message(&err);
-            assert_eq!(msg, expected);
-            assert!(
-                !msg.contains("secret_token"),
-                "body-free message leaked the script body: {msg}",
-            );
-        }
-    }
+    #[tokio::test]
+    async fn named_failure_text_and_error_event_omit_the_script_body() {
+        let (outcome, _, error, _) =
+            run_named(&format!("let token = \"{SECRET}\"; let x = 1 / 0;")).await;
 
-    #[test]
-    fn default_display_leaks_the_body_that_body_free_message_strips() {
-        let err = ScriptError::Compile {
-            script: BODY.to_owned(),
-            reason: "unexpected token".to_owned(),
+        let SubActionOutcome::Failed(message) = outcome else {
+            panic!("expected Failed, got {outcome:?}");
         };
-        assert!(err.to_string().contains("secret_token"));
-        assert!(!body_free_message(&err).contains("secret_token"));
+        let payload = error
+            .expect("failing named run must emit script.error")
+            .payload;
+        assert!(
+            message.starts_with("script 'greet' failed: runtime error:")
+                && !message.contains(SECRET)
+                && !payload.to_string().contains(SECRET),
+            "{message} / {payload}"
+        );
     }
 }

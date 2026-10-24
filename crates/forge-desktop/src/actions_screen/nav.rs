@@ -132,7 +132,7 @@ pub(super) fn case_match_display(step: &SubActionStep, case_index: usize) -> Opt
         .and_then(Variant::as_object)?;
     match case.get("match") {
         Some(Variant::Array(_)) => None,
-        Some(other) => Some(forge_types::display_scalar(other)),
+        Some(other) => Some(crate::config_text::editable_line(other)),
         None => Some(String::new()),
     }
 }

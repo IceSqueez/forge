@@ -1,12 +1,21 @@
 use forge_audio::PcmBuffer;
+use forge_net::{CallClass, GatewayFailure, Method};
 use forge_tts_core::{SynthesisRequest, VoiceId, xml_escape};
-use reqwest::{Client, StatusCode};
 use serde_json::json;
 
-use crate::credentials::PollyCredentials;
+use crate::gateway_failure::{
+    failure_detail, probe_failure_detail, quota_excerpt, rejected_excerpt,
+};
+use crate::network::ProviderLink;
 use crate::polly::SAMPLE_RATE_HZ;
 use crate::polly::error::PollyError;
-use crate::polly::signer;
+use crate::polly::signer::{PollySigner, SignedCall};
+
+pub(crate) const VOICES_PATH: &str = "/v1/voices";
+pub(crate) const INVALID_CREDENTIALS: &str = "invalid credentials";
+const SPEECH_PATH: &str = "/v1/speech";
+const BAD_REQUEST: u16 = 400;
+const QUOTA_MARKERS: &[&str] = &["quota", "characters"];
 
 fn format_signed_percent(val: i32) -> String {
     if val >= 0 {
@@ -72,100 +81,74 @@ pub(super) fn build_polly_body(req: &SynthesisRequest) -> (String, bool) {
     }
 }
 
-fn classify_error(
-    status: StatusCode,
-    retry_after_secs: u64,
-    body: &str,
-    voice_id: &VoiceId,
-) -> PollyError {
-    match status {
-        StatusCode::FORBIDDEN => PollyError::Unauthorized("invalid credentials".into()),
-        StatusCode::BAD_REQUEST if body.to_ascii_lowercase().contains("voice") => {
-            PollyError::VoiceNotFound(voice_id.0.clone())
+fn classify_error(failure: &GatewayFailure, link: &ProviderLink, voice_id: &VoiceId) -> PollyError {
+    if let Some(excerpt) = quota_excerpt(failure, QUOTA_MARKERS) {
+        return PollyError::QuotaExceeded(excerpt.to_owned());
+    }
+    if let Some(retry_after_secs) = link.throttle_secs(failure) {
+        return PollyError::RateLimited { retry_after_secs };
+    }
+    if rejected_excerpt(failure, BAD_REQUEST)
+        .is_some_and(|excerpt| excerpt.to_ascii_lowercase().contains("voice"))
+    {
+        return PollyError::VoiceNotFound(voice_id.0.clone());
+    }
+    match failure {
+        GatewayFailure::Unauthorized { .. } | GatewayFailure::Forbidden { .. } => {
+            PollyError::Unauthorized(INVALID_CREDENTIALS.into())
         }
-        StatusCode::TOO_MANY_REQUESTS if body.contains("quota") || body.contains("characters") => {
-            PollyError::QuotaExceeded(body.to_string())
-        }
-        StatusCode::TOO_MANY_REQUESTS => PollyError::RateLimited { retry_after_secs },
-        _ => PollyError::Http(format!("HTTP {}: {body}", status.as_u16())),
+        other => PollyError::Http(failure_detail(other)),
     }
 }
 
 pub(super) async fn synthesize(
-    client: &Client,
-    credentials: &PollyCredentials,
-    base_url: &str,
+    link: &ProviderLink,
+    signer: &PollySigner,
     req: SynthesisRequest,
 ) -> Result<PcmBuffer, PollyError> {
-    let url = format!("{}/v1/speech", base_url.trim_end_matches('/'));
-    let (body_str, _is_ssml) = build_polly_body(&req);
-    let body_bytes = body_str.as_bytes();
-
-    let signed = signer::sign("POST", &url, body_bytes, credentials)?;
-
-    let resp = client
-        .post(&url)
-        .header("content-type", "application/json")
-        .header("x-amz-date", &signed.x_amz_date)
-        .header("Authorization", &signed.authorization)
-        .body(body_str)
-        .send()
+    let (body, _is_ssml) = build_polly_body(&req);
+    let request = signer.request(
+        link,
+        SignedCall {
+            method: Method::Post,
+            path: SPEECH_PATH,
+            query: &[],
+            json_body: Some(body.into_bytes()),
+        },
+    )?;
+    let response = link
+        .send(request)
         .await
-        .map_err(|e| PollyError::Http(e.to_string()))?;
-
-    let status = resp.status();
-
-    if status.is_success() {
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| PollyError::Http(e.to_string()))?;
-        let (pairs, _) = bytes.as_chunks::<2>();
-        let samples: Vec<i16> = pairs.iter().map(|pair| i16::from_le_bytes(*pair)).collect();
-        Ok(PcmBuffer::new(samples, SAMPLE_RATE_HZ, 1))
-    } else {
-        let retry_after_secs = resp
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(0);
-        let body_text = resp.text().await.unwrap_or_default();
-        Err(classify_error(
-            status,
-            retry_after_secs,
-            &body_text,
-            &req.voice_id,
-        ))
-    }
+        .map_err(|failure| classify_error(&failure, link, &req.voice_id))?;
+    let (pairs, _) = response.body().as_chunks::<2>();
+    let samples: Vec<i16> = pairs.iter().map(|pair| i16::from_le_bytes(*pair)).collect();
+    Ok(PcmBuffer::new(samples, SAMPLE_RATE_HZ, 1))
 }
 
 pub(super) async fn probe_connection(
-    client: &Client,
-    credentials: &PollyCredentials,
-    base_url: &str,
+    link: &ProviderLink,
+    signer: &PollySigner,
 ) -> Result<(), PollyError> {
-    let url = format!("{}/v1/voices", base_url.trim_end_matches('/'));
-    let signed = signer::sign("GET", &url, b"", credentials)?;
-
-    let resp = client
-        .get(&url)
-        .header("x-amz-date", &signed.x_amz_date)
-        .header("Authorization", &signed.authorization)
-        .send()
-        .await
-        .map_err(|e| PollyError::Http(e.to_string()))?;
-
-    let status = resp.status();
-    if status.is_success() {
-        Ok(())
-    } else if status == StatusCode::FORBIDDEN {
-        Err(PollyError::Unauthorized("invalid credentials".into()))
-    } else {
-        Err(PollyError::Http(format!(
-            "unexpected status {}",
-            status.as_u16()
-        )))
+    let request = signer
+        .request(
+            link,
+            SignedCall {
+                method: Method::Get,
+                path: VOICES_PATH,
+                query: &[],
+                json_body: None,
+            },
+        )?
+        .class(CallClass::Catalog);
+    match link.send(request).await {
+        Ok(_) => Ok(()),
+        Err(GatewayFailure::Unauthorized { .. } | GatewayFailure::Forbidden { .. }) => {
+            Err(PollyError::Unauthorized(INVALID_CREDENTIALS.into()))
+        }
+        Err(failure) => match link.throttle_secs(&failure) {
+            Some(retry_after_secs) => Err(PollyError::RateLimited { retry_after_secs }),
+            None => Err(PollyError::Http(probe_failure_detail(&failure))),
+        },
     }
 }
 
@@ -173,8 +156,12 @@ pub(super) async fn probe_connection(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_tts_core::VoiceId;
-    use wiremock::matchers::{header_exists, method, path};
+    use crate::network::test_support::{NO_HINT_WAIT_SECS, assert_reveals_nothing, link_to};
+    use crate::polly::signer::test_support::{
+        assert_reveals_no_credential, credentials, echo_server, echoing, outcome,
+    };
+    use forge_tts_core::TtsError;
+    use wiremock::matchers::{body_string, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn plain_req(text: &str) -> SynthesisRequest {
@@ -191,13 +178,8 @@ mod tests {
         samples.iter().flat_map(|s| s.to_le_bytes()).collect()
     }
 
-    fn test_creds(base_url: &str) -> PollyCredentials {
-        PollyCredentials {
-            access_key_id: "AKID".into(),
-            secret_access_key: "secret".into(),
-            region: "us-east-1".into(),
-            base_url: Some(base_url.to_string()),
-        }
+    fn signer() -> PollySigner {
+        PollySigner::new(credentials(None))
     }
 
     #[test]
@@ -275,93 +257,97 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn synthesize_returns_pcm_for_valid_response() {
+    async fn synthesize_posts_the_json_body_and_reads_little_endian_pcm() {
+        let request = plain_req("hello");
         let server = MockServer::start().await;
-        let pcm_bytes = raw_pcm_bytes(&[100i16, -100i16, 200i16, -200i16]);
-
         Mock::given(method("POST"))
-            .and(path("/v1/speech"))
-            .and(header_exists("Authorization"))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(pcm_bytes))
+            .and(path(SPEECH_PATH))
+            .and(header("content-type", "application/json"))
+            .and(body_string(build_polly_body(&request).0))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_bytes(raw_pcm_bytes(&[100, -100, 200, -200])),
+            )
             .mount(&server)
             .await;
 
-        let creds = test_creds(&server.uri());
-        let result = synthesize(&Client::new(), &creds, &server.uri(), plain_req("hello")).await;
+        let pcm = synthesize(&link_to(&server), &signer(), request)
+            .await
+            .unwrap();
 
-        let pcm = result.unwrap();
-        assert_eq!(pcm.sample_rate, 16_000);
-        assert_eq!(pcm.channels, 1);
-        assert_eq!(pcm.samples, vec![100i16, -100, 200, -200]);
-    }
-
-    #[tokio::test]
-    async fn synthesize_maps_403_to_auth_failed() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/v1/speech"))
-            .respond_with(ResponseTemplate::new(403))
-            .mount(&server)
-            .await;
-
-        let creds = test_creds(&server.uri());
-        let result = synthesize(&Client::new(), &creds, &server.uri(), plain_req("hello")).await;
-        assert!(matches!(result, Err(PollyError::Unauthorized(_))));
-    }
-
-    #[tokio::test]
-    async fn synthesize_includes_authorization_header() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/v1/speech"))
-            .and(header_exists("Authorization"))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(raw_pcm_bytes(&[0i16, 0i16])))
-            .mount(&server)
-            .await;
-
-        let creds = test_creds(&server.uri());
-        let result = synthesize(&Client::new(), &creds, &server.uri(), plain_req("test")).await;
-        assert!(result.is_ok(), "expected Ok but got: {result:?}");
-
-        let requests = server.received_requests().await.unwrap();
-        assert_eq!(requests.len(), 1);
-        let auth = requests[0]
-            .headers
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
-        assert!(
-            auth.starts_with("AWS4-HMAC-SHA256 "),
-            "unexpected Authorization header: {auth}"
+        assert_eq!(
+            (pcm.sample_rate, pcm.channels, pcm.samples),
+            (16_000, 1, vec![100, -100, 200, -200])
         );
     }
 
     #[tokio::test]
-    async fn probe_connection_returns_ok_on_200() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/v1/voices"))
-            .and(header_exists("Authorization"))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"{\"Voices\":[]}"))
-            .mount(&server)
-            .await;
-
-        let creds = test_creds(&server.uri());
-        let result = probe_connection(&Client::new(), &creds, &server.uri()).await;
-        assert!(result.is_ok());
+    async fn synthesis_failures_map_to_provider_errors_without_revealing_credentials() {
+        let no_hint = format!("RateLimited({NO_HINT_WAIT_SECS})");
+        for (status, text, retry_after, expected) in [
+            (401, "denied", None, "Unauthorized".to_owned()),
+            (
+                403,
+                "SignatureDoesNotMatch",
+                None,
+                "Unauthorized".to_owned(),
+            ),
+            (
+                400,
+                "Voice Joanna is not supported",
+                None,
+                "VoiceNotFound".to_owned(),
+            ),
+            (400, "malformed request", None, "Http".to_owned()),
+            (429, "slow down", None, no_hint.clone()),
+            (429, "slow down", Some(7), "RateLimited(7)".to_owned()),
+            (429, "quota exceeded", None, "QuotaExceeded".to_owned()),
+            (429, "QUOTA reached", Some(7), "QuotaExceeded".to_owned()),
+            (
+                429,
+                "monthly Characters used up",
+                None,
+                "QuotaExceeded".to_owned(),
+            ),
+            (503, "quota", Some(2), "RateLimited(2)".to_owned()),
+            (503, "unavailable", None, "Http".to_owned()),
+            (500, "internal", None, "Http".to_owned()),
+        ] {
+            let server = echo_server(echoing(status, text, retry_after)).await;
+            let error = synthesize(&link_to(&server), &signer(), plain_req("hello"))
+                .await
+                .unwrap_err();
+            assert_eq!(outcome(&error), expected, "{status} {text}: {error}");
+            for shown in [error.to_string(), TtsError::from(error).to_string()] {
+                assert_reveals_no_credential(&shown, &server).await;
+                assert_reveals_nothing(&shown, &server);
+            }
+        }
     }
 
     #[tokio::test]
-    async fn probe_connection_auth_failed_on_403() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/v1/voices"))
-            .respond_with(ResponseTemplate::new(403))
-            .mount(&server)
-            .await;
-
-        let creds = test_creds(&server.uri());
-        let result = probe_connection(&Client::new(), &creds, &server.uri()).await;
-        assert!(matches!(result, Err(PollyError::Unauthorized(_))));
+    async fn probe_outcomes_follow_the_voice_list_status_without_the_body() {
+        let no_hint = format!("RateLimited({NO_HINT_WAIT_SECS})");
+        for (status, retry_after, expected) in [
+            (200, None, "Ok".to_owned()),
+            (401, None, "Unauthorized".to_owned()),
+            (403, None, "Unauthorized".to_owned()),
+            (429, None, no_hint.clone()),
+            (429, Some(7), "RateLimited(7)".to_owned()),
+            (500, None, "Http(unexpected status 500)".to_owned()),
+        ] {
+            let server = echo_server(echoing(status, "probe reply", retry_after)).await;
+            let result = probe_connection(&link_to(&server), &signer()).await;
+            let seen = match &result {
+                Ok(()) => "Ok".to_owned(),
+                Err(PollyError::Http(detail)) => format!("Http({detail})"),
+                Err(error) => outcome(error),
+            };
+            assert_eq!(seen, expected, "{status}");
+            let requests = server.received_requests().await.unwrap();
+            assert_eq!(
+                (requests[0].method.as_str(), requests[0].url.path()),
+                ("GET", VOICES_PATH)
+            );
+        }
     }
 }

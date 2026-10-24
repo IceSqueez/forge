@@ -20,7 +20,7 @@ pub async fn register_cloud_engines(
     try_register_azure(registry, creds, gateways).await;
     try_register_elevenlabs(registry, creds, gateways).await;
     try_register_openai(registry, creds, gateways).await;
-    try_register_polly(registry, creds).await;
+    try_register_polly(registry, creds, gateways).await;
 }
 
 pub fn register_azure(
@@ -71,12 +71,19 @@ pub fn register_openai(
     id
 }
 
-pub fn register_polly(registry: &RwLock<TtsRegistry>, creds: PollyCredentials) -> EngineId {
+pub fn register_polly(
+    registry: &RwLock<TtsRegistry>,
+    creds: PollyCredentials,
+    gateways: &CloudGateways,
+) -> EngineId {
     let id = EngineId(forge_tts_core::ENGINE_ID_POLLY.into());
     registry
         .write()
         .unwrap_or_else(|e| e.into_inner())
-        .register(id.clone(), Arc::new(PollyEngineFactory::new(creds)));
+        .register(
+            id.clone(),
+            Arc::new(PollyEngineFactory::new(creds, gateways)),
+        );
     id
 }
 
@@ -155,7 +162,11 @@ async fn try_register_openai(
     eprintln!("forge-desktop: registered OpenAI TTS engine");
 }
 
-async fn try_register_polly(registry: &RwLock<TtsRegistry>, creds: &dyn CredentialsRepo) {
+async fn try_register_polly(
+    registry: &RwLock<TtsRegistry>,
+    creds: &dyn CredentialsRepo,
+    gateways: &CloudGateways,
+) {
     let json = match creds.load(&CredentialId::new(POLLY_CREDENTIAL_ID)).await {
         Ok(Some(j)) => j,
         Ok(None) => return,
@@ -171,6 +182,6 @@ async fn try_register_polly(registry: &RwLock<TtsRegistry>, creds: &dyn Credenti
             return;
         }
     };
-    register_polly(registry, polly_creds);
+    register_polly(registry, polly_creds, gateways);
     eprintln!("forge-desktop: registered Polly TTS engine");
 }

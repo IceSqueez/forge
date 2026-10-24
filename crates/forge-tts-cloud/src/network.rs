@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use forge_net::{
     CallClass, Gateway, GatewayBuildError, GatewayFailure, GatewayProfile, GatewayRequest,
-    GatewayResponse, RateLimiter, ThrottleHintFamily,
+    GatewayResponse, RateLimiter, ResolvedTarget, ThrottleHintFamily,
 };
 
 use crate::policy::{RetryConfig, SynthesisRateLimiter};
@@ -105,6 +105,10 @@ impl ProviderLink {
         self.gateway.send(request).await
     }
 
+    pub fn resolve_path(&self, path: &str) -> Result<ResolvedTarget, GatewayFailure> {
+        self.gateway.resolve_path(path)
+    }
+
     pub fn throttle_secs(&self, failure: &GatewayFailure) -> Option<u64> {
         match failure {
             GatewayFailure::RateLimited { retry_after, .. } => Some(ceil_secs(*retry_after)),
@@ -149,18 +153,22 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, dead_code)]
 pub(crate) mod test_support {
+    use std::sync::Arc;
     use std::sync::mpsc;
+    use std::time::Duration;
 
-    use forge_net::CallClass;
+    use forge_net::{CallClass, Gateway, TokenBucketRateLimiter};
     use wiremock::matchers::any;
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use super::{CloudGateways, ProviderLink};
+    use super::{CLOUD_TTS_PROFILE, CloudGateways, ProviderLink};
+    use crate::policy::SynthesisRateLimiter;
 
     pub(crate) const API_KEY: &str = "sk-SECRET-7f3a91";
     pub(crate) const OTHER_API_KEY: &str = "sk-OTHER-b2c4d6";
     pub(crate) const PAST_WAIT_THRESHOLD_SECS: u64 = 120;
     pub(crate) const NO_HINT_WAIT_SECS: u64 = 1;
+    const UNPACED_BURST: u32 = 1_000;
 
     pub(crate) struct FrozenClock {
         _release: mpsc::Sender<()>,
@@ -186,6 +194,22 @@ pub(crate) mod test_support {
             .provider("test")
             .link(&server.uri())
             .unwrap()
+    }
+
+    pub(crate) fn unpaced_link_to(server: &MockServer) -> ProviderLink {
+        ProviderLink {
+            gateway: Gateway::new(
+                &server.uri(),
+                Arc::new(TokenBucketRateLimiter::new(
+                    UNPACED_BURST,
+                    Duration::from_secs(1),
+                )),
+                CLOUD_TTS_PROFILE,
+                None,
+            )
+            .unwrap(),
+            limiter: Arc::new(SynthesisRateLimiter::new()),
+        }
     }
 
     pub(crate) async fn request_count(server: &MockServer) -> usize {

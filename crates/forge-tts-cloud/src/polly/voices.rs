@@ -1,16 +1,26 @@
+use forge_net::{CallClass, GatewayFailure, Method};
 use forge_tts_core::{ENGINE_ID_POLLY, EngineId, TtsVoice, VoiceGender, VoiceId};
-use reqwest::{Client, StatusCode};
 use serde::Deserialize;
+use tokio::time::{Instant, timeout_at};
 
-use crate::credentials::PollyCredentials;
+use crate::gateway_failure::failure_detail;
+use crate::network::ProviderLink;
 use crate::polly::SAMPLE_RATE_HZ;
 use crate::polly::error::PollyError;
-use crate::polly::signer;
+use crate::polly::signer::{PollySigner, SignedCall};
+use crate::polly::synth::{INVALID_CREDENTIALS, VOICES_PATH};
+
+const NEXT_TOKEN_PARAM: &str = "NextToken";
+const MAX_VOICE_PAGES: usize = 32;
+const LISTING_BUDGET_ELAPSED: &str = "voice listing exceeded its time budget";
+const LISTING_PAGE_LIMIT: &str = "voice listing exceeded its page limit";
 
 #[derive(Deserialize)]
 struct PollyVoiceList {
     #[serde(rename = "Voices")]
     voices: Vec<PollyVoice>,
+    #[serde(rename = "NextToken", default)]
+    next_token: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -33,42 +43,94 @@ fn gender_from_str(s: &str) -> VoiceGender {
     }
 }
 
+fn classify_error(failure: &GatewayFailure, link: &ProviderLink) -> PollyError {
+    if let Some(retry_after_secs) = link.throttle_secs(failure) {
+        return PollyError::RateLimited { retry_after_secs };
+    }
+    match failure {
+        GatewayFailure::Unauthorized { .. } | GatewayFailure::Forbidden { .. } => {
+            PollyError::Unauthorized(INVALID_CREDENTIALS.into())
+        }
+        other => PollyError::Http(failure_detail(other)),
+    }
+}
+
 pub(super) async fn fetch_voices(
-    client: &Client,
-    credentials: &PollyCredentials,
-    base_url: &str,
+    link: &ProviderLink,
+    signer: &PollySigner,
 ) -> Result<Vec<TtsVoice>, PollyError> {
-    let url = format!("{}/v1/voices", base_url.trim_end_matches('/'));
-    let signed = signer::sign("GET", &url, b"", credentials)?;
-
-    let resp = client
-        .get(&url)
-        .header("x-amz-date", &signed.x_amz_date)
-        .header("Authorization", &signed.authorization)
-        .send()
+    let deadline = Instant::now() + CallClass::Catalog.total_budget();
+    timeout_at(deadline, fetch_all_pages(link, signer))
         .await
-        .map_err(|e| PollyError::Http(e.to_string()))?;
+        .unwrap_or_else(|_| Err(PollyError::Http(LISTING_BUDGET_ELAPSED.into())))
+}
 
-    let status = resp.status();
-    if status == StatusCode::FORBIDDEN {
-        return Err(PollyError::Unauthorized("invalid credentials".into()));
+async fn fetch_all_pages(
+    link: &ProviderLink,
+    signer: &PollySigner,
+) -> Result<Vec<TtsVoice>, PollyError> {
+    let body_cap = CallClass::Catalog.body_cap();
+    let mut received: u64 = 0;
+    let mut voices = Vec::new();
+    let mut next_token: Option<String> = None;
+    for _ in 0..MAX_VOICE_PAGES {
+        let page = fetch_page(link, signer, next_token.as_deref()).await?;
+        received = received.saturating_add(page.body_len);
+        if received > body_cap {
+            return Err(PollyError::Http(failure_detail(
+                &GatewayFailure::ResponseTooLarge { cap: body_cap },
+            )));
+        }
+        voices.extend(page.list.voices);
+        match page.list.next_token.filter(|token| !token.is_empty()) {
+            Some(token) => next_token = Some(token),
+            None => return Ok(into_tts_voices(voices)),
+        }
     }
-    if !status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(PollyError::Http(format!(
-            "HTTP {}: {body}",
-            status.as_u16()
-        )));
-    }
+    Err(PollyError::Http(LISTING_PAGE_LIMIT.into()))
+}
 
-    let list: PollyVoiceList = resp
+struct VoicePage {
+    list: PollyVoiceList,
+    body_len: u64,
+}
+
+async fn fetch_page(
+    link: &ProviderLink,
+    signer: &PollySigner,
+    next_token: Option<&str>,
+) -> Result<VoicePage, PollyError> {
+    let query: Vec<(&str, &str)> = next_token
+        .map(|token| (NEXT_TOKEN_PARAM, token))
+        .into_iter()
+        .collect();
+    let request = signer
+        .request(
+            link,
+            SignedCall {
+                method: Method::Get,
+                path: VOICES_PATH,
+                query: &query,
+                json_body: None,
+            },
+        )?
+        .class(CallClass::Catalog);
+    let response = link
+        .send(request)
+        .await
+        .map_err(|failure| classify_error(&failure, link))?;
+    let list: PollyVoiceList = response
         .json()
-        .await
         .map_err(|e| PollyError::Http(e.to_string()))?;
+    Ok(VoicePage {
+        list,
+        body_len: u64::try_from(response.body().len()).unwrap_or(u64::MAX),
+    })
+}
 
+fn into_tts_voices(voices: Vec<PollyVoice>) -> Vec<TtsVoice> {
     let engine_id = EngineId(ENGINE_ID_POLLY.into());
-    Ok(list
-        .voices
+    voices
         .into_iter()
         .map(|v| TtsVoice {
             id: VoiceId(v.id),
@@ -79,85 +141,395 @@ pub(super) async fn fetch_voices(
             is_neural: true,
             sample_rate_hint: SAMPLE_RATE_HZ,
         })
-        .collect())
+        .collect()
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use super::*;
-    use wiremock::matchers::{header_exists, method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use std::sync::Mutex;
+    use std::sync::mpsc as std_mpsc;
+    use std::time::Duration;
 
-    fn test_creds(base_url: &str) -> PollyCredentials {
-        PollyCredentials {
-            access_key_id: "AKID".into(),
-            secret_access_key: "secret".into(),
-            region: "us-east-1".into(),
-            base_url: Some(base_url.to_string()),
+    use super::*;
+    use crate::network::test_support::{
+        NO_HINT_WAIT_SECS, freeze_clock, link_to, request_count, unpaced_link_to,
+    };
+    use crate::polly::signer::test_support::{
+        assert_reveals_no_credential, credentials, echo_server, echoing, outcome,
+    };
+    use wiremock::matchers::any;
+    use wiremock::{Mock, MockServer, Respond, ResponseTemplate};
+
+    const PADDED_TOKEN: &str = "a+b/c=d==";
+
+    fn signer() -> PollySigner {
+        PollySigner::new(credentials(None))
+    }
+
+    fn voice(id: &str, gender: &str) -> serde_json::Value {
+        serde_json::json!({
+            "Id": id,
+            "Name": format!("{id} name"),
+            "LanguageCode": "en-US",
+            "Gender": gender
+        })
+    }
+
+    fn page(ids: &[&str], next: Option<&str>) -> ResponseTemplate {
+        let voices: Vec<serde_json::Value> = ids.iter().map(|id| voice(id, "Female")).collect();
+        let mut body = serde_json::json!({ "Voices": voices });
+        if let Some(token) = next {
+            body["NextToken"] = token.into();
+        }
+        ResponseTemplate::new(200).set_body_json(body)
+    }
+
+    fn padded_page(next: Option<&str>, total_len: usize) -> ResponseTemplate {
+        let shell = |pad: &str| match next {
+            Some(token) => format!(r#"{{"Voices":[],"NextToken":"{token}","Pad":"{pad}"}}"#),
+            None => format!(r#"{{"Voices":[],"Pad":"{pad}"}}"#),
+        };
+        let pad = "x".repeat(total_len - shell("").len());
+        let body = shell(&pad);
+        assert_eq!(body.len(), total_len);
+        ResponseTemplate::new(200).set_body_raw(body.into_bytes(), "application/json")
+    }
+
+    fn incoming_token(request: &wiremock::Request) -> Option<String> {
+        request
+            .url
+            .query_pairs()
+            .find(|(name, _)| name == NEXT_TOKEN_PARAM)
+            .map(|(_, value)| value.into_owned())
+    }
+
+    struct ByToken(Vec<(Option<String>, ResponseTemplate)>);
+
+    impl Respond for ByToken {
+        fn respond(&self, request: &wiremock::Request) -> ResponseTemplate {
+            let token = incoming_token(request);
+            self.0
+                .iter()
+                .find(|(expected, _)| *expected == token)
+                .map(|(_, template)| template.clone())
+                .unwrap_or_else(|| ResponseTemplate::new(404))
+        }
+    }
+
+    fn chain(pages: Vec<ResponseTemplate>, tokens: &[&str]) -> ByToken {
+        let incoming = std::iter::once(None).chain(tokens.iter().map(|t| Some((*t).to_owned())));
+        ByToken(incoming.zip(pages).collect())
+    }
+
+    async fn serving(responder: impl Respond + 'static) -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(responder)
+            .mount(&server)
+            .await;
+        server
+    }
+
+    async fn sent_tokens(server: &MockServer) -> Vec<Option<String>> {
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .map(incoming_token)
+            .collect()
+    }
+
+    fn page_chain(total_pages: usize) -> ByToken {
+        let tokens: Vec<String> = (1..total_pages).map(|k| format!("p{k}")).collect();
+        let pages = (0..total_pages)
+            .map(|k| page(&[&format!("v{k}")], tokens.get(k).map(String::as_str)))
+            .collect();
+        let refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
+        chain(pages, &refs)
+    }
+
+    #[tokio::test]
+    async fn list_voices_maps_each_polly_voice_into_a_neural_tts_voice() {
+        let body = serde_json::json!({
+            "Voices": [voice("Joanna", "Female"), voice("Matthew", "Male"), voice("Other", "")]
+        });
+        let server = serving(ResponseTemplate::new(200).set_body_json(body)).await;
+
+        let voices = fetch_voices(&link_to(&server), &signer()).await.unwrap();
+
+        let mapped: Vec<(String, String, String, VoiceGender, bool, u32)> = voices
+            .into_iter()
+            .map(|v| {
+                (
+                    v.id.0,
+                    v.name,
+                    v.locale,
+                    v.gender,
+                    v.is_neural,
+                    v.sample_rate_hint,
+                )
+            })
+            .collect();
+        assert_eq!(
+            mapped,
+            vec![
+                (
+                    "Joanna".into(),
+                    "Joanna name".into(),
+                    "en-US".into(),
+                    VoiceGender::Female,
+                    true,
+                    16_000
+                ),
+                (
+                    "Matthew".into(),
+                    "Matthew name".into(),
+                    "en-US".into(),
+                    VoiceGender::Male,
+                    true,
+                    16_000
+                ),
+                (
+                    "Other".into(),
+                    "Other name".into(),
+                    "en-US".into(),
+                    VoiceGender::Neutral,
+                    true,
+                    16_000
+                ),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn catalog_failures_map_to_provider_errors_without_revealing_credentials() {
+        let no_hint = format!("RateLimited({NO_HINT_WAIT_SECS})");
+        for (status, text, retry_after, expected) in [
+            (401, "denied", None, "Unauthorized".to_owned()),
+            (
+                403,
+                "SignatureDoesNotMatch",
+                None,
+                "Unauthorized".to_owned(),
+            ),
+            (429, "slow down", None, no_hint.clone()),
+            (429, "quota exceeded", None, no_hint.clone()),
+            (429, "slow down", Some(7), "RateLimited(7)".to_owned()),
+            (500, "internal", None, "Http".to_owned()),
+            (200, "not json", None, "Http".to_owned()),
+        ] {
+            let server = echo_server(echoing(status, text, retry_after)).await;
+            let error = fetch_voices(&link_to(&server), &signer())
+                .await
+                .unwrap_err();
+            assert_eq!(outcome(&error), expected, "{status} {text}: {error}");
+            assert_reveals_no_credential(&error.to_string(), &server).await;
         }
     }
 
     #[tokio::test]
-    async fn list_voices_parses_json() {
-        let server = MockServer::start().await;
-        let body = serde_json::json!({
-            "Voices": [
-                {
-                    "Id": "Joanna",
-                    "Name": "Joanna",
-                    "LanguageCode": "en-US",
-                    "Gender": "Female"
-                },
-                {
-                    "Id": "Matthew",
-                    "Name": "Matthew",
-                    "LanguageCode": "en-US",
-                    "Gender": "Male"
-                },
-                {
-                    "Id": "Oxana",
-                    "Name": "Oxana",
-                    "LanguageCode": "ru-RU",
-                    "Gender": "Female"
-                }
-            ]
-        });
+    async fn listing_follows_next_tokens_and_keeps_page_order() {
+        let server = serving(chain(
+            vec![
+                page(&["a1", "a2"], Some(PADDED_TOKEN)),
+                page(&["b1"], Some("t2")),
+                page(&["c1"], None),
+            ],
+            &[PADDED_TOKEN, "t2"],
+        ))
+        .await;
 
-        Mock::given(method("GET"))
-            .and(path("/v1/voices"))
-            .and(header_exists("Authorization"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(&body))
-            .mount(&server)
-            .await;
+        let voices = fetch_voices(&link_to(&server), &signer()).await.unwrap();
 
-        let creds = test_creds(&server.uri());
-        let voices = fetch_voices(&Client::new(), &creds, &server.uri())
-            .await
-            .unwrap();
-
-        assert_eq!(voices.len(), 3);
-        assert_eq!(voices[0].id, VoiceId("Joanna".into()));
-        assert_eq!(voices[0].name, "Joanna");
-        assert_eq!(voices[0].locale, "en-US");
-        assert!(matches!(voices[0].gender, VoiceGender::Female));
-        assert!(matches!(voices[1].gender, VoiceGender::Male));
-        assert_eq!(voices[2].locale, "ru-RU");
-        assert_eq!(voices[0].sample_rate_hint, 16_000);
-        assert!(voices[0].is_neural);
+        let ids: Vec<String> = voices.into_iter().map(|v| v.id.0).collect();
+        assert_eq!(ids, ["a1", "a2", "b1", "c1"]);
+        assert_eq!(
+            sent_tokens(&server).await,
+            [None, Some(PADDED_TOKEN.to_owned()), Some("t2".to_owned())]
+        );
     }
 
     #[tokio::test]
-    async fn list_voices_maps_403_to_unauthorized() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/v1/voices"))
-            .respond_with(ResponseTemplate::new(403))
-            .mount(&server)
+    async fn an_empty_next_token_ends_the_listing() {
+        let server = serving(chain(
+            vec![page(&["a1"], Some("")), page(&["never"], None)],
+            &[""],
+        ))
+        .await;
+
+        let voices = fetch_voices(&link_to(&server), &signer()).await.unwrap();
+
+        assert_eq!(voices.len(), 1);
+        assert_eq!(request_count(&server).await, 1);
+    }
+
+    #[tokio::test]
+    async fn listing_accepts_the_page_cap_and_fails_one_page_past_it() {
+        for (total_pages, expected_ok) in [(MAX_VOICE_PAGES, true), (MAX_VOICE_PAGES + 1, false)] {
+            let server = serving(page_chain(total_pages)).await;
+
+            let result = fetch_voices(&unpaced_link_to(&server), &signer()).await;
+
+            match result {
+                Ok(voices) => {
+                    assert!(expected_ok, "{total_pages}");
+                    assert_eq!(voices.len(), MAX_VOICE_PAGES);
+                }
+                Err(error) => {
+                    assert!(!expected_ok, "{total_pages}: {error}");
+                    assert!(
+                        matches!(&error, PollyError::Http(detail) if detail == LISTING_PAGE_LIMIT),
+                        "{error}"
+                    );
+                }
+            }
+            assert_eq!(
+                request_count(&server).await,
+                MAX_VOICE_PAGES,
+                "{total_pages}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn listing_body_cap_spans_all_pages_up_to_the_byte() {
+        let cap = usize::try_from(CallClass::Catalog.body_cap()).unwrap();
+        let first_len = cap / 2;
+        for (second_len, expected_ok) in [(cap - first_len, true), (cap - first_len + 1, false)] {
+            let server = serving(chain(
+                vec![
+                    padded_page(Some("t"), first_len),
+                    padded_page(None, second_len),
+                ],
+                &["t"],
+            ))
             .await;
 
-        let creds = test_creds(&server.uri());
-        let result = fetch_voices(&Client::new(), &creds, &server.uri()).await;
-        assert!(matches!(result, Err(PollyError::Unauthorized(_))));
+            let result = fetch_voices(&link_to(&server), &signer()).await;
+
+            match result {
+                Ok(_) => assert!(expected_ok, "{second_len}"),
+                Err(error) => {
+                    assert!(!expected_ok, "{second_len}: {error}");
+                    assert!(
+                        matches!(&error, PollyError::Http(detail) if detail.contains(&cap.to_string())),
+                        "{error}"
+                    );
+                }
+            }
+            assert_eq!(request_count(&server).await, 2);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failing_middle_page_fails_the_whole_listing() {
+        let no_hint = format!("RateLimited({NO_HINT_WAIT_SECS})");
+        for (failure, expected) in [
+            (ResponseTemplate::new(500), "Http".to_owned()),
+            (ResponseTemplate::new(403), "Unauthorized".to_owned()),
+            (ResponseTemplate::new(429), no_hint.clone()),
+            (
+                ResponseTemplate::new(200).set_body_string("{"),
+                "Http".to_owned(),
+            ),
+        ] {
+            let server = serving(chain(
+                vec![page(&["a1"], Some("t2")), failure, page(&["c1"], None)],
+                &["t2", "t3"],
+            ))
+            .await;
+
+            let error = fetch_voices(&link_to(&server), &signer())
+                .await
+                .unwrap_err();
+
+            assert_eq!(outcome(&error), expected);
+            assert_eq!(request_count(&server).await, 2);
+        }
+    }
+
+    struct Gated {
+        arrivals: tokio::sync::mpsc::UnboundedSender<()>,
+        release: Mutex<std_mpsc::Receiver<()>>,
+        pages: ByToken,
+    }
+
+    impl Respond for Gated {
+        fn respond(&self, request: &wiremock::Request) -> ResponseTemplate {
+            self.arrivals.send(()).ok();
+            self.release.lock().unwrap().recv().ok();
+            self.pages.respond(request)
+        }
+    }
+
+    struct GatedListing {
+        server: MockServer,
+        arrivals: tokio::sync::mpsc::UnboundedReceiver<()>,
+        release: std_mpsc::Sender<()>,
+        listing: tokio::task::JoinHandle<Result<Vec<TtsVoice>, PollyError>>,
+    }
+
+    const FIRST_PAGE_TIME: Duration = Duration::from_secs(1);
+
+    async fn second_page_in_flight() -> GatedListing {
+        let (arrivals_tx, mut arrivals) = tokio::sync::mpsc::unbounded_channel();
+        let (release, release_rx) = std_mpsc::channel();
+        let server = serving(Gated {
+            arrivals: arrivals_tx,
+            release: Mutex::new(release_rx),
+            pages: chain(
+                vec![page(&["a1"], Some("t2")), page(&["b1"], None)],
+                &["t2"],
+            ),
+        })
+        .await;
+        let link = link_to(&server);
+        let listing = tokio::spawn(async move { fetch_voices(&link, &signer()).await });
+        arrivals.recv().await.unwrap();
+        tokio::time::advance(FIRST_PAGE_TIME).await;
+        release.send(()).unwrap();
+        arrivals.recv().await.unwrap();
+        GatedListing {
+            server,
+            arrivals,
+            release,
+            listing,
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pages_finishing_just_inside_the_catalog_budget_complete_the_listing() {
+        let _clock = freeze_clock();
+        let gated = second_page_in_flight().await;
+        let started = Instant::now() - FIRST_PAGE_TIME;
+
+        tokio::time::advance(
+            CallClass::Catalog.total_budget() - FIRST_PAGE_TIME - Duration::from_millis(1),
+        )
+        .await;
+        gated.release.send(()).unwrap();
+        let voices = gated.listing.await.unwrap().unwrap();
+
+        assert_eq!(voices.len(), 2);
+        assert!(started.elapsed() < CallClass::Catalog.total_budget());
+        drop((gated.arrivals, gated.server));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pages_outlasting_the_catalog_budget_together_fail_the_listing() {
+        let _clock = freeze_clock();
+        let gated = second_page_in_flight().await;
+
+        tokio::time::advance(CallClass::Catalog.total_budget() - FIRST_PAGE_TIME).await;
+        let result = gated.listing.await.unwrap();
+
+        assert!(
+            matches!(&result, Err(PollyError::Http(detail)) if detail == LISTING_BUDGET_ELAPSED),
+            "{result:?}"
+        );
+        drop(gated.release);
+        assert_eq!(request_count(&gated.server).await, 2);
     }
 }

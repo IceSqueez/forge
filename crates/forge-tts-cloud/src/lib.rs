@@ -2,7 +2,12 @@ pub mod credentials;
 pub mod network;
 pub mod policy;
 
-#[cfg(any(feature = "azure", feature = "elevenlabs", feature = "openai"))]
+#[cfg(any(
+    feature = "azure",
+    feature = "elevenlabs",
+    feature = "openai",
+    feature = "polly"
+))]
 mod gateway_failure;
 
 #[cfg(feature = "azure")]

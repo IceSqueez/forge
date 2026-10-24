@@ -3,24 +3,21 @@ mod signer;
 pub mod synth;
 pub mod voices;
 
-use std::sync::Arc;
-use std::time::Duration;
-
 use async_trait::async_trait;
 use forge_audio::PcmBuffer;
-use forge_net::{RateLimiter, acquire_or_wait};
 use forge_tts_core::{
     ENGINE_ID_POLLY, EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsError, TtsVoice,
     VoiceId,
 };
 
 use crate::credentials::PollyCredentials;
-use crate::network::ceil_secs;
-use crate::policy::{RetryConfig, SynthesisRateLimiter, retry_synthesize};
+use crate::network::{CloudGateways, ProviderGateway, ProviderLink, is_dns_label};
+use crate::policy::{RetryConfig, retry_synthesize};
 use error::PollyError;
+use signer::PollySigner;
 
 pub(crate) const SAMPLE_RATE_HZ: u32 = 16_000;
-const SYNTHESIS_WEIGHT: u32 = 1;
+const INVALID_REGION: &str = "AWS region must be a single region name such as us-east-1";
 
 impl From<PollyError> for TtsError {
     fn from(e: PollyError) -> Self {
@@ -51,9 +48,8 @@ static CAPABILITIES: EngineCapabilities = EngineCapabilities {
 
 pub struct PollyEngine {
     id: EngineId,
-    credentials: PollyCredentials,
-    client: reqwest::Client,
-    limiter: Arc<SynthesisRateLimiter>,
+    signer: PollySigner,
+    link: ProviderLink,
     retry_cfg: RetryConfig,
 }
 
@@ -66,40 +62,54 @@ fn resolved_base_url(creds: &PollyCredentials) -> String {
 }
 
 impl PollyEngine {
-    pub fn new(credentials: PollyCredentials) -> Self {
-        let limiter = Arc::new(SynthesisRateLimiter::new());
-        Self {
-            id: EngineId(ENGINE_ID_POLLY.into()),
-            credentials,
-            client: reqwest::Client::new(),
-            retry_cfg: RetryConfig::paced_by(Arc::clone(&limiter)),
-            limiter,
+    pub fn new(
+        credentials: PollyCredentials,
+        provider: &ProviderGateway,
+    ) -> Result<Self, TtsError> {
+        let id = EngineId(ENGINE_ID_POLLY.into());
+        if credentials.base_url.is_none() && !is_dns_label(&credentials.region) {
+            return Err(TtsError::EngineUnavailable {
+                id,
+                detail: INVALID_REGION.into(),
+            });
         }
+        let base_url = resolved_base_url(&credentials);
+        let link = provider
+            .link(&base_url)
+            .map_err(|e| TtsError::EngineUnavailable {
+                id: id.clone(),
+                detail: e.to_string(),
+            })?;
+        Ok(Self {
+            id,
+            signer: PollySigner::new(credentials),
+            retry_cfg: link.retry_config(),
+            link,
+        })
     }
 }
 
 pub struct PollyEngineFactory {
     credentials: PollyCredentials,
+    provider: ProviderGateway,
 }
 
 impl PollyEngineFactory {
-    pub fn new(credentials: PollyCredentials) -> Self {
-        Self { credentials }
+    pub fn new(credentials: PollyCredentials, gateways: &CloudGateways) -> Self {
+        Self {
+            credentials,
+            provider: gateways.provider(ENGINE_ID_POLLY),
+        }
     }
 }
 
 impl forge_tts_core::TtsEngineFactory for PollyEngineFactory {
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
-        Ok(Box::new(PollyEngine::new(self.credentials.clone())))
+        Ok(Box::new(PollyEngine::new(
+            self.credentials.clone(),
+            &self.provider,
+        )?))
     }
-}
-
-async fn pace(limiter: &SynthesisRateLimiter) -> Result<(), TtsError> {
-    acquire_or_wait(limiter, SYNTHESIS_WEIGHT)
-        .await
-        .map_err(|_| TtsError::RateLimited {
-            retry_after_secs: ceil_secs(limiter.cooldown_remaining()),
-        })
 }
 
 #[async_trait]
@@ -113,46 +123,31 @@ impl TtsEngine for PollyEngine {
     }
 
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
-        let base_url = resolved_base_url(&self.credentials);
-        voices::fetch_voices(&self.client, &self.credentials, &base_url)
+        voices::fetch_voices(&self.link, &self.signer)
             .await
             .map_err(TtsError::from)
     }
 
     async fn synthesize(&self, request: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
-        let client = self.client.clone();
-        let credentials = self.credentials.clone();
-        let base_url = resolved_base_url(&self.credentials);
-        let limiter = Arc::clone(&self.limiter);
+        let link = self.link.clone();
+        let signer = self.signer.clone();
         let cfg = self.retry_cfg.clone();
 
         retry_synthesize(self.id.clone(), cfg, move || {
-            let client = client.clone();
-            let credentials = credentials.clone();
-            let base_url = base_url.clone();
-            let limiter = Arc::clone(&limiter);
+            let link = link.clone();
+            let signer = signer.clone();
             let req = request.clone();
             async move {
-                pace(&limiter).await?;
-                let result = synth::synthesize(&client, &credentials, &base_url, req)
+                synth::synthesize(&link, &signer, req)
                     .await
-                    .map_err(TtsError::from);
-                if let Err(TtsError::RateLimited { retry_after_secs }) = &result
-                    && *retry_after_secs > 0
-                {
-                    limiter
-                        .observe_remote_throttle(Duration::from_secs(*retry_after_secs))
-                        .await;
-                }
-                result
+                    .map_err(TtsError::from)
             }
         })
         .await
     }
 
     async fn test_connection(&self) -> Result<(), TtsError> {
-        let base_url = resolved_base_url(&self.credentials);
-        synth::probe_connection(&self.client, &self.credentials, &base_url)
+        synth::probe_connection(&self.link, &self.signer)
             .await
             .map_err(TtsError::from)
     }
@@ -162,44 +157,160 @@ impl TtsEngine for PollyEngine {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use wiremock::matchers::{method, path};
+    use crate::network::test_support::{
+        PAST_WAIT_THRESHOLD_SECS, freeze_clock, request_count, serving, throttled,
+    };
+    use crate::polly::signer::test_support::{
+        POLLY_SERVICE, REGION, SECRET_ACCESS_KEY, WireRequest, credentials,
+    };
+    use forge_tts_core::TtsEngineFactory;
+    use wiremock::matchers::any;
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    fn test_creds(base_url: &str) -> PollyCredentials {
+    fn credentials_at(region: &str, base_url: Option<&str>) -> PollyCredentials {
         PollyCredentials {
-            access_key_id: "AKID".into(),
-            secret_access_key: "secret".into(),
-            region: "us-east-1".into(),
-            base_url: Some(base_url.to_string()),
+            region: region.into(),
+            ..credentials(base_url)
+        }
+    }
+
+    fn engine_at(base_url: &str) -> PollyEngine {
+        PollyEngine::new(
+            credentials(Some(base_url)),
+            &CloudGateways::new().provider(ENGINE_ID_POLLY),
+        )
+        .unwrap()
+    }
+
+    fn request() -> SynthesisRequest {
+        SynthesisRequest {
+            text: "hello".into(),
+            voice_id: VoiceId("Joanna".into()),
+            pitch_semitones: 0.0,
+            rate_multiplier: 1.0,
+            ssml: false,
+        }
+    }
+
+    #[test]
+    fn engine_build_accepts_only_a_single_dns_label_region_unless_a_base_overrides_it() {
+        let longest = "a".repeat(63);
+        let too_long = "a".repeat(64);
+        for (region, base, accepted) in [
+            ("a", None, true),
+            ("us-east-1", None, true),
+            ("EU-WEST-1", None, true),
+            (longest.as_str(), None, true),
+            (too_long.as_str(), None, false),
+            ("-us-east-1", None, false),
+            ("us-east-1-", None, false),
+            ("us.east-1", None, false),
+            ("us-east-1/", None, false),
+            ("evil.example/x", None, false),
+            ("", None, false),
+            ("us east 1", None, false),
+            ("us-east-1?x=1", None, false),
+            ("us-eäst-1", None, false),
+            ("", Some("http://127.0.0.1:9"), true),
+            ("us-east-1", Some("http://localhost:9"), true),
+            ("us-east-1", Some("https://polly.example.com/prefix"), true),
+            ("us-east-1", Some("http://polly.example.com"), false),
+            ("us-east-1", Some("ftp://127.0.0.1"), false),
+            ("us-east-1", Some("polly.example.com"), false),
+        ] {
+            let result = PollyEngine::new(
+                credentials_at(region, base),
+                &CloudGateways::new().provider(ENGINE_ID_POLLY),
+            );
+            if accepted {
+                assert!(result.is_ok(), "{region:?} {base:?}");
+            } else {
+                assert!(
+                    matches!(&result, Err(TtsError::EngineUnavailable { detail, .. }) if !detail.contains(SECRET_ACCESS_KEY)),
+                    "{region:?} {base:?}"
+                );
+            }
         }
     }
 
     #[tokio::test]
-    async fn test_connection_returns_ok_on_200() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/v1/voices"))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"{\"Voices\":[]}"))
-            .mount(&server)
-            .await;
-
-        let engine = PollyEngine::new(test_creds(&server.uri()));
-        assert!(engine.test_connection().await.is_ok());
+    async fn a_quota_429_fails_at_once_without_a_retry() {
+        let server =
+            serving(ResponseTemplate::new(429).set_body_string("Character quota exceeded")).await;
+        let result = engine_at(&server.uri()).synthesize(request()).await;
+        assert!(
+            matches!(result, Err(TtsError::QuotaExceeded { .. })),
+            "{result:?}"
+        );
+        assert_eq!(request_count(&server).await, 1);
     }
 
     #[tokio::test]
-    async fn test_connection_auth_failed_on_403() {
+    async fn every_synthesis_retry_is_signed_afresh() {
         let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/v1/voices"))
-            .respond_with(ResponseTemplate::new(403))
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(429))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0_u8; 4]))
             .mount(&server)
             .await;
 
-        let engine = PollyEngine::new(test_creds(&server.uri()));
-        assert!(matches!(
-            engine.test_connection().await,
-            Err(TtsError::AuthFailed { .. })
-        ));
+        engine_at(&server.uri())
+            .synthesize(request())
+            .await
+            .unwrap();
+
+        let wire: Vec<WireRequest> = server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .map(WireRequest::from)
+            .collect();
+        assert_eq!(wire.len(), 2);
+        assert!(wire[0].header("x-amz-date") < wire[1].header("x-amz-date"));
+        assert_ne!(wire[0].sent_signature(), wire[1].sent_signature());
+        for attempt in &wire {
+            assert_eq!(
+                attempt.sent_signature(),
+                attempt.verified_signature(SECRET_ACCESS_KEY, REGION, POLLY_SERVICE)
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn rebuilt_and_re_registered_engines_inherit_the_provider_cool_down() {
+        let _clock = freeze_clock();
+        let throttling = serving(throttled(PAST_WAIT_THRESHOLD_SECS)).await;
+        let healthy = serving(ResponseTemplate::new(200)).await;
+        let gateways = CloudGateways::new();
+        let factory = PollyEngineFactory::new(credentials(Some(&throttling.uri())), &gateways);
+        let first = factory.create().unwrap();
+        assert!(first.synthesize(request()).await.is_err());
+
+        let re_registered = PollyEngineFactory::new(
+            credentials_at("eu-west-1", Some(&healthy.uri())),
+            &gateways.clone(),
+        );
+        for engine in [factory.create().unwrap(), re_registered.create().unwrap()] {
+            for result in [
+                engine.synthesize(request()).await.map(|_| ()),
+                engine.list_voices().await.map(|_| ()),
+                engine.test_connection().await,
+            ] {
+                assert!(
+                    matches!(
+                        result,
+                        Err(TtsError::RateLimited { retry_after_secs }) if retry_after_secs == PAST_WAIT_THRESHOLD_SECS
+                    ),
+                    "{result:?}"
+                );
+            }
+        }
+        assert_eq!(request_count(&throttling).await, 1);
+        assert_eq!(request_count(&healthy).await, 0);
     }
 }

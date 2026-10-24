@@ -129,7 +129,7 @@ impl CloudCreds {
             CloudCreds::Azure(c) => AzureEngineFactory::new(c, &gateways).create(),
             CloudCreds::ElevenLabs(c) => ElevenLabsEngineFactory::new(c, &gateways).create(),
             CloudCreds::OpenAi(c) => OpenAiEngineFactory::new(c, &gateways).create(),
-            CloudCreds::Polly(c) => PollyEngineFactory::new(c).create(),
+            CloudCreds::Polly(c) => PollyEngineFactory::new(c, &gateways).create(),
         }
         .map_err(|e| e.to_string())?;
         engine
@@ -464,7 +464,7 @@ impl CloudCredentialsView {
                 cloud_tts_boot::register_elevenlabs(registry, c, &self.gateways)
             }
             CloudCreds::OpenAi(c) => cloud_tts_boot::register_openai(registry, c, &self.gateways),
-            CloudCreds::Polly(c) => cloud_tts_boot::register_polly(registry, c),
+            CloudCreds::Polly(c) => cloud_tts_boot::register_polly(registry, c, &self.gateways),
         };
         match kind {
             CloudEngineKind::Azure => self.azure.is_registered = true,

@@ -677,7 +677,12 @@ mod tests {
     use gpui::TestAppContext;
 
     use super::*;
-    use crate::test_support::{TestBackend, install_presentation, pump, test_backend};
+    use tokio::sync::mpsc::UnboundedReceiver;
+
+    use crate::test_support::{
+        ReadFault, SETTINGS_READ_FAILED, SettingWrite, TestBackend, install_presentation, pump,
+        test_backend, writes_to,
+    };
 
     #[test]
     fn stored_value_from_text_accepts_inclusive_range_bounds() {
@@ -928,5 +933,142 @@ mod tests {
         commit(cx, &view, NumericSetting::HttpTimeoutMs, "100");
 
         assert!(!is_invalid(cx, &view, NumericSetting::HttpTimeoutMs));
+    }
+
+    const STORED_DOMAIN: &str = "keep.example.com";
+    const TYPED_DOMAIN: &str = "new.example.com";
+
+    type DomainEdit = fn(&mut SettingsScriptingView, &mut Context<SettingsScriptingView>);
+
+    fn domain_edits() -> [(&'static str, DomainEdit); 2] {
+        [
+            ("add a domain", |v, cx| {
+                v.domain_draft.update(cx, |input, cx| {
+                    input.set_content(TYPED_DOMAIN.to_owned(), cx)
+                });
+                v.add_domain(cx);
+            }),
+            ("remove a domain", |v, cx| v.remove_domain(0, cx)),
+        ]
+    }
+
+    fn domains_rig(
+        cx: &mut TestAppContext,
+    ) -> (
+        tokio::runtime::Runtime,
+        Arc<TestBackend>,
+        UnboundedReceiver<SettingWrite>,
+    ) {
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+        let rt = paused_runtime();
+        let (backend, writes) = test_backend();
+        backend.seed(
+            reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS,
+            &serde_json::to_string(&[STORED_DOMAIN]).unwrap(),
+        );
+        (rt, backend, writes)
+    }
+
+    fn settle(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
+        for _ in 0..3 {
+            pump(rt);
+            cx.run_until_parked();
+        }
+    }
+
+    fn domain_writes(writes: &mut UnboundedReceiver<SettingWrite>) -> Vec<Vec<String>> {
+        writes_to(writes, reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS)
+            .iter()
+            .map(|raw| serde_json::from_str(raw).unwrap())
+            .collect()
+    }
+
+    fn shown_domains(
+        cx: &mut TestAppContext,
+        view: &Entity<SettingsScriptingView>,
+    ) -> Option<Vec<String>> {
+        view.read_with(cx, |this, _| this.allowed_domains.loaded().cloned())
+    }
+
+    #[gpui::test]
+    fn no_domain_edit_writes_the_allowlist_until_it_loads(cx: &mut TestAppContext) {
+        let unreachable = StorageError::Connection {
+            reason: SETTINGS_READ_FAILED.to_owned(),
+        }
+        .to_string();
+        for (state, fault, reason) in [
+            ("failed", ReadFault::Fails, Some(unreachable)),
+            (
+                "pending",
+                ReadFault::Held(Arc::new(tokio::sync::Notify::new())),
+                None,
+            ),
+        ] {
+            for (case, edit) in domain_edits() {
+                let (rt, backend, mut writes) = domains_rig(cx);
+                backend.fault_reads(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS, fault.clone());
+                let view = mounted_view(cx, &rt, backend);
+                settle(cx, &rt);
+
+                view.update(cx, edit);
+                settle(cx, &rt);
+
+                let failure = view.read_with(cx, |this, _| {
+                    this.allowed_domains.failure().map(str::to_owned)
+                });
+                assert_eq!(
+                    (domain_writes(&mut writes), failure),
+                    (Vec::<Vec<String>>::new(), reason.clone()),
+                    "{state}: {case}"
+                );
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn retrying_a_failed_allowlist_load_lets_domain_edits_persist(cx: &mut TestAppContext) {
+        for (case, edit, expected) in [
+            (
+                domain_edits()[0].0,
+                domain_edits()[0].1,
+                vec![STORED_DOMAIN.to_owned(), TYPED_DOMAIN.to_owned()],
+            ),
+            (domain_edits()[1].0, domain_edits()[1].1, Vec::new()),
+        ] {
+            let (rt, backend, mut writes) = domains_rig(cx);
+            backend.fault_reads(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS, ReadFault::Fails);
+            let view = mounted_view(cx, &rt, Arc::clone(&backend));
+            settle(cx, &rt);
+            backend.heal_reads(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS);
+
+            view.update(cx, |this, cx| this.load_domains(cx));
+            settle(cx, &rt);
+            view.update(cx, edit);
+            settle(cx, &rt);
+
+            assert_eq!(domain_writes(&mut writes), vec![expected], "{case}");
+        }
+    }
+
+    #[gpui::test]
+    fn a_failed_allowlist_write_toasts_and_reloads_the_stored_domains(cx: &mut TestAppContext) {
+        for (case, edit) in domain_edits() {
+            let (rt, backend, _writes) = domains_rig(cx);
+            backend.fail_writes(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS);
+            let view = mounted_view(cx, &rt, backend);
+            settle(cx, &rt);
+
+            view.update(cx, edit);
+            settle(cx, &rt);
+
+            assert_eq!(
+                (
+                    cx.update(|cx| crate::test_support::error_toasts(cx)),
+                    shown_domains(cx, &view)
+                ),
+                (1, Some(vec![STORED_DOMAIN.to_owned()])),
+                "{case}"
+            );
+        }
     }
 }

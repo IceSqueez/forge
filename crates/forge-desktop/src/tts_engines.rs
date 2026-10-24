@@ -1268,3 +1268,360 @@ fn engine_kind(id: &str) -> &'static str {
         _ => "cloud",
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+mod tests {
+    use std::cell::RefCell;
+
+    use forge_components::Toasts;
+    use forge_storage::{Language, reserved_keys};
+    use forge_tts_core::{
+        ENGINE_ID_ESPEAK_NG, ENGINE_ID_PIPER, TtsEngine, TtsEngineFactory, TtsError,
+    };
+    use gpui::{Entity, TestAppContext};
+    use tokio::sync::mpsc::UnboundedReceiver;
+
+    use super::*;
+    use crate::i18n::install_language;
+    use crate::test_support::{
+        ReadFault, SETTINGS_READ_FAILED, SettingWrite, TestBackend, error_toasts,
+        install_presentation, pump, spawn_speak_queue, test_backend, writes_to,
+    };
+
+    const ESPEAK: usize = 0;
+    const PIPER: usize = 1;
+    const SETTLE_ROUNDS: usize = 3;
+    const STORED_PIPER: EngineParams = EngineParams {
+        pitch_semitones: 4.0,
+        rate_multiplier: 1.5,
+        gain: 0.5,
+    };
+    const STORED_ESPEAK: EngineParams = EngineParams {
+        pitch_semitones: -6.0,
+        rate_multiplier: 0.75,
+        gain: 0.25,
+    };
+
+    struct NeverCreated;
+
+    impl TtsEngineFactory for NeverCreated {
+        fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
+            Err(TtsError::AuthFailed {
+                reason: "the engines pane never builds an engine".to_owned(),
+            })
+        }
+    }
+
+    fn params_key(engine_id: &str) -> String {
+        format!("{}{engine_id}", reserved_keys::TTS_ENGINE_PARAMS_PREFIX)
+    }
+
+    fn undecodable(key: &str) -> String {
+        format!("stored setting '{key}' cannot be decoded")
+    }
+
+    fn unreachable() -> String {
+        StorageError::Connection {
+            reason: SETTINGS_READ_FAILED.to_owned(),
+        }
+        .to_string()
+    }
+
+    struct EnginesRig {
+        rt: tokio::runtime::Runtime,
+        backend: Arc<TestBackend>,
+        writes: RefCell<UnboundedReceiver<SettingWrite>>,
+    }
+
+    impl EnginesRig {
+        fn new(cx: &mut TestAppContext) -> Self {
+            install_language(Language::En);
+            install_presentation(cx);
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .start_paused(true)
+                .build()
+                .unwrap();
+            let (backend, writes) = test_backend();
+            backend.seed(
+                &params_key(ENGINE_ID_PIPER),
+                &serde_json::to_string(&STORED_PIPER).unwrap(),
+            );
+            backend.seed(
+                &params_key(ENGINE_ID_ESPEAK_NG),
+                &serde_json::to_string(&STORED_ESPEAK).unwrap(),
+            );
+            Self {
+                rt,
+                backend,
+                writes: RefCell::new(writes),
+            }
+        }
+
+        fn open(
+            &self,
+            speak: Option<SpeakQueueHandle>,
+            cx: &mut TestAppContext,
+        ) -> Entity<TtsEnginesView> {
+            let mut registry = TtsRegistry::new();
+            for id in [ENGINE_ID_PIPER, ENGINE_ID_ESPEAK_NG] {
+                registry.register(EngineId(id.to_owned()), Arc::new(NeverCreated));
+            }
+            let registry = Some(Arc::new(RwLock::new(registry)));
+            let credentials = Arc::clone(&self.backend) as Arc<dyn CredentialsRepo>;
+            let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+            let handle = self.rt.handle().clone();
+            let view = cx.update(|cx| {
+                cx.new(|cx| TtsEnginesView::new(registry, credentials, settings, speak, handle, cx))
+            });
+            self.settle(cx);
+            view
+        }
+
+        fn settle(&self, cx: &mut TestAppContext) {
+            for _ in 0..SETTLE_ROUNDS {
+                pump(&self.rt);
+                cx.run_until_parked();
+            }
+        }
+
+        fn past_the_save_debounce(&self, cx: &mut TestAppContext) {
+            self.settle(cx);
+            self.rt
+                .block_on(tokio::time::advance(SLIDER_PERSIST_DEBOUNCE * 2));
+            self.settle(cx);
+        }
+
+        fn writes_to(&self, key: &str) -> Vec<String> {
+            writes_to(&mut self.writes.borrow_mut(), key)
+        }
+
+        fn written_params(&self, engine_id: &str) -> Vec<EngineParams> {
+            self.writes_to(&params_key(engine_id))
+                .iter()
+                .map(|raw| serde_json::from_str(raw).unwrap())
+                .collect()
+        }
+
+        fn written_disabled_and_params(&self, engine_id: &str) -> (Vec<String>, Vec<EngineParams>) {
+            let key = params_key(engine_id);
+            let mut disabled = Vec::new();
+            let mut params = Vec::new();
+            while let Ok((written, value)) = self.writes.borrow_mut().try_recv() {
+                if written == reserved_keys::TTS_DISABLED_ENGINES {
+                    disabled.push(value);
+                } else if written == key {
+                    params.push(serde_json::from_str(&value).unwrap());
+                }
+            }
+            (disabled, params)
+        }
+    }
+
+    type Edit = fn(&mut TtsEnginesView, &mut Context<TtsEnginesView>);
+
+    fn slider_edits() -> [(&'static str, Edit); 3] {
+        [
+            ("drag pitch", |v, cx| v.set_pitch(3.0, cx)),
+            ("drag speed", |v, cx| v.set_speed(1.25, cx)),
+            ("drag volume", |v, cx| v.set_engine_volume(0.75, cx)),
+        ]
+    }
+
+    fn select(
+        view: &Entity<TtsEnginesView>,
+        index: usize,
+        rig: &EnginesRig,
+        cx: &mut TestAppContext,
+    ) {
+        view.update(cx, |v, cx| v.select_engine(index, cx));
+        rig.settle(cx);
+    }
+
+    fn shown_params(
+        view: &Entity<TtsEnginesView>,
+        cx: &mut TestAppContext,
+    ) -> Option<EngineParams> {
+        view.read_with(cx, |v, _| v.params.loaded().copied())
+    }
+
+    fn shown_disabled(
+        view: &Entity<TtsEnginesView>,
+        cx: &mut TestAppContext,
+    ) -> Option<Vec<String>> {
+        view.read_with(cx, |v, _| {
+            v.disabled.loaded().map(|set| {
+                let mut ids: Vec<String> = set.iter().cloned().collect();
+                ids.sort();
+                ids
+            })
+        })
+    }
+
+    enum Fault {
+        Unreachable,
+        Undecodable,
+        Pending,
+    }
+
+    fn apply_fault(rig: &EnginesRig, key: &str, fault: &Fault) -> Option<String> {
+        match fault {
+            Fault::Unreachable => {
+                rig.backend.fault_reads(key, ReadFault::Fails);
+                Some(unreachable())
+            }
+            Fault::Undecodable => {
+                rig.backend.seed(key, "not json");
+                Some(undecodable(key))
+            }
+            Fault::Pending => {
+                rig.backend
+                    .fault_reads(key, ReadFault::Held(Arc::new(tokio::sync::Notify::new())));
+                None
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn no_engine_toggle_writes_until_the_disabled_engines_load(cx: &mut TestAppContext) {
+        for fault in [Fault::Unreachable, Fault::Undecodable, Fault::Pending] {
+            let rig = EnginesRig::new(cx);
+            let reason = apply_fault(&rig, reserved_keys::TTS_DISABLED_ENGINES, &fault);
+            let view = rig.open(None, cx);
+
+            view.update(cx, |v, cx| v.toggle_engine(ENGINE_ID_PIPER.to_owned(), cx));
+            rig.settle(cx);
+
+            let failure = view.read_with(cx, |v, _| v.disabled.failure().map(str::to_owned));
+            assert_eq!(
+                (rig.writes_to(reserved_keys::TTS_DISABLED_ENGINES), failure),
+                (Vec::<String>::new(), reason.clone()),
+                "{reason:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn no_slider_drag_writes_until_the_selected_engine_params_load(cx: &mut TestAppContext) {
+        let key = params_key(ENGINE_ID_PIPER);
+        for fault in [Fault::Unreachable, Fault::Undecodable, Fault::Pending] {
+            for (case, edit) in slider_edits() {
+                let rig = EnginesRig::new(cx);
+                let _runtime = rig.rt.enter();
+                let reason = apply_fault(&rig, &key, &fault);
+                let view = rig.open(None, cx);
+                select(&view, PIPER, &rig, cx);
+
+                view.update(cx, edit);
+                rig.past_the_save_debounce(cx);
+
+                let failure = view.read_with(cx, |v, _| v.params.failure().map(str::to_owned));
+                assert_eq!(
+                    (rig.written_params(ENGINE_ID_PIPER), failure),
+                    (Vec::new(), reason.clone()),
+                    "{reason:?}: {case}"
+                );
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn retrying_failed_loads_lets_a_toggle_and_a_slider_drag_persist(cx: &mut TestAppContext) {
+        let rig = EnginesRig::new(cx);
+        let _runtime = rig.rt.enter();
+        let key = params_key(ENGINE_ID_PIPER);
+        rig.backend
+            .fault_reads(reserved_keys::TTS_DISABLED_ENGINES, ReadFault::Fails);
+        rig.backend.fault_reads(&key, ReadFault::Fails);
+        let view = rig.open(None, cx);
+        select(&view, PIPER, &rig, cx);
+        rig.backend.heal_reads(reserved_keys::TTS_DISABLED_ENGINES);
+        rig.backend.heal_reads(&key);
+
+        view.update(cx, |v, cx| {
+            v.load_disabled(cx);
+            v.retry_params(cx);
+        });
+        rig.settle(cx);
+        view.update(cx, |v, cx| {
+            v.toggle_engine(ENGINE_ID_PIPER.to_owned(), cx);
+            v.set_pitch(-2.0, cx);
+        });
+        rig.past_the_save_debounce(cx);
+
+        assert_eq!(
+            rig.written_disabled_and_params(ENGINE_ID_PIPER),
+            (
+                vec![serde_json::to_string(&[ENGINE_ID_PIPER]).unwrap()],
+                vec![EngineParams {
+                    pitch_semitones: -2.0,
+                    ..STORED_PIPER
+                }],
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn a_params_load_landing_after_another_engine_was_selected_is_dropped(cx: &mut TestAppContext) {
+        let rig = EnginesRig::new(cx);
+        let gate = Arc::new(tokio::sync::Notify::new());
+        let key = params_key(ENGINE_ID_PIPER);
+        rig.backend
+            .fault_reads(&key, ReadFault::Held(Arc::clone(&gate)));
+        let view = rig.open(None, cx);
+
+        select(&view, PIPER, &rig, cx);
+        select(&view, ESPEAK, &rig, cx);
+        rig.backend.heal_reads(&key);
+        gate.notify_one();
+        rig.settle(cx);
+
+        assert_eq!(shown_params(&view, cx), Some(STORED_ESPEAK));
+    }
+
+    #[gpui::test]
+    fn a_failed_params_write_toasts_and_reloads_the_stored_params(cx: &mut TestAppContext) {
+        for (case, edit) in slider_edits() {
+            let rig = EnginesRig::new(cx);
+            let _runtime = rig.rt.enter();
+            rig.backend.fail_writes(&params_key(ENGINE_ID_PIPER));
+            let view = rig.open(None, cx);
+            select(&view, PIPER, &rig, cx);
+
+            view.update(cx, edit);
+            rig.past_the_save_debounce(cx);
+
+            assert_eq!(
+                (cx.update(|cx| error_toasts(cx)), shown_params(&view, cx)),
+                (1, Some(STORED_PIPER)),
+                "{case}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_failed_disabled_write_toasts_reloads_and_resyncs_the_live_queue(cx: &mut TestAppContext) {
+        let rig = EnginesRig::new(cx);
+        let (speak, _events, _aliases) = {
+            let _runtime = rig.rt.enter();
+            spawn_speak_queue(Vec::new())
+        };
+        rig.backend.fail_writes(reserved_keys::TTS_DISABLED_ENGINES);
+        let view = rig.open(Some(speak.clone()), cx);
+
+        view.update(cx, |v, cx| v.toggle_engine(ENGINE_ID_PIPER.to_owned(), cx));
+        rig.settle(cx);
+        rig.settle(cx);
+
+        assert_eq!(
+            (
+                cx.update(|cx| error_toasts(cx)),
+                shown_disabled(&view, cx),
+                speak.disabled_engines().is_empty(),
+            ),
+            (1, Some(Vec::new()), true)
+        );
+    }
+}

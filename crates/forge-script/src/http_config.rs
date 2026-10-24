@@ -97,7 +97,6 @@ fn parse_legacy_csv_domains(legacy: &str) -> Vec<String> {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use forge_storage::set_json_setting;
     use forge_storage_sqlite::SqliteBackend;
 
     use crate::test_support::{Sandboxed, sandboxed_backend};
@@ -125,48 +124,70 @@ mod tests {
         assert_eq!(cfg.max_response_bytes, defaults.max_response_bytes);
     }
 
-    #[tokio::test]
-    async fn allowed_domains_reads_legacy_csv_when_value_is_not_json() {
-        let backend = backend().await;
-        backend
-            .set_string(
-                reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS,
-                "a.com, b.com ,c.com,",
-            )
-            .await
-            .unwrap();
-        let cfg = load_script_http_config(&*backend).await;
-        assert_eq!(cfg.allowed_domains, vec!["a.com", "b.com", "c.com"]);
-    }
+    struct UnreachableStore;
 
-    #[tokio::test]
-    async fn allowed_domains_prefers_json_array_over_csv_split() {
-        let backend = backend().await;
-        let domains = vec!["good.com".to_owned(), "also.com".to_owned()];
-        set_json_setting(
-            &*backend,
-            reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS,
-            &domains,
-        )
-        .await
-        .unwrap();
-        let cfg = load_script_http_config(&*backend).await;
-        assert_eq!(cfg.allowed_domains, domains);
-    }
-
-    #[tokio::test]
-    async fn allowed_domains_blank_value_stays_deny_by_default() {
-        for blank in ["", "   ", ",,", " , , "] {
-            let backend = backend().await;
-            backend
-                .set_string(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS, blank)
-                .await
-                .unwrap();
-            let cfg = load_script_http_config(&*backend).await;
-            assert!(
-                cfg.allowed_domains.is_empty(),
-                "blank value {blank:?} must grant no domains",
-            );
+    #[async_trait::async_trait]
+    impl SettingsRepo for UnreachableStore {
+        async fn get_string(&self, _: &str) -> Result<Option<String>, StorageError> {
+            Err(StorageError::Connection {
+                reason: "settings store unreachable".to_owned(),
+            })
         }
+        async fn set_string(&self, _: &str, _: &str) -> Result<(), StorageError> {
+            unreachable!("loading the allowlist never writes")
+        }
+        async fn delete(&self, _: &str) -> Result<bool, StorageError> {
+            unreachable!("loading the allowlist never deletes")
+        }
+        async fn load_all(
+            &self,
+        ) -> Result<std::collections::HashMap<String, String>, StorageError> {
+            unreachable!("loading the allowlist reads single keys")
+        }
+    }
+
+    #[tokio::test]
+    async fn stored_allowlist_reads_json_falls_back_to_legacy_csv_and_keeps_blank_values_empty() {
+        let json = serde_json::to_string(&["good.com", "also.com"]).unwrap();
+        for (stored, expected) in [
+            (None, Vec::<&str>::new()),
+            (Some(json.as_str()), vec!["good.com", "also.com"]),
+            (Some("[]"), Vec::new()),
+            (
+                Some("a.com, b.com ,c.com,"),
+                vec!["a.com", "b.com", "c.com"],
+            ),
+            (Some("solo.com"), vec!["solo.com"]),
+            (Some(""), Vec::new()),
+            (Some("   "), Vec::new()),
+            (Some(",,"), Vec::new()),
+            (Some(" , , "), Vec::new()),
+        ] {
+            let backend = backend().await;
+            if let Some(raw) = stored {
+                backend
+                    .set_string(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS, raw)
+                    .await
+                    .unwrap();
+            }
+
+            let domains = stored_script_http_allowed_domains(&*backend).await.unwrap();
+
+            assert_eq!(domains, expected, "{stored:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn stored_allowlist_reports_a_store_failure_instead_of_an_empty_list() {
+        let loaded = stored_script_http_allowed_domains(&UnreachableStore).await;
+
+        assert!(matches!(loaded, Err(StorageError::Connection { .. })));
+    }
+
+    #[tokio::test]
+    async fn script_http_config_stays_deny_by_default_when_the_allowlist_cannot_be_read() {
+        let cfg = load_script_http_config(&UnreachableStore).await;
+
+        assert!(cfg.allowed_domains.is_empty());
     }
 }

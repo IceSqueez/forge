@@ -328,6 +328,83 @@ mod tests {
         );
     }
 
+    struct UnreachableOrigins(MapRepo);
+
+    #[async_trait]
+    impl SettingsRepo for UnreachableOrigins {
+        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
+            if key == reserved_keys::SERVER_ADDITIONAL_ORIGINS {
+                return Err(StorageError::Connection {
+                    reason: "settings store unreachable".to_owned(),
+                });
+            }
+            self.0.get_string(key).await
+        }
+
+        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
+            self.0.set_string(key, value).await
+        }
+
+        async fn delete(&self, key: &str) -> Result<bool, StorageError> {
+            self.0.delete(key).await
+        }
+
+        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
+            self.0.load_all().await
+        }
+    }
+
+    #[tokio::test]
+    async fn load_flags_undecodable_origins_and_still_serves_the_other_settings() {
+        for (stored, origins, unreadable) in [
+            (None, Vec::<&str>::new(), false),
+            (
+                Some(r#"["https://overlay.example.com"]"#),
+                vec!["https://overlay.example.com"],
+                false,
+            ),
+            (Some("https://overlay.example.com"), Vec::new(), true),
+            (
+                Some(r#"{"origin":"https://overlay.example.com"}"#),
+                Vec::new(),
+                true,
+            ),
+        ] {
+            let repo = MapRepo::empty();
+            ServerSettings::save_port(&repo, 9000).await.unwrap();
+            if let Some(raw) = stored {
+                repo.set_string(reserved_keys::SERVER_ADDITIONAL_ORIGINS, raw)
+                    .await
+                    .unwrap();
+            }
+
+            let s = ServerSettings::load(&repo).await.unwrap();
+
+            assert_eq!(
+                (
+                    s.additional_origins,
+                    s.additional_origins_unreadable,
+                    s.port
+                ),
+                (
+                    origins.into_iter().map(str::to_owned).collect::<Vec<_>>(),
+                    unreadable,
+                    9000
+                ),
+                "{stored:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn load_fails_when_the_origins_cannot_be_read_from_the_store() {
+        let repo = UnreachableOrigins(MapRepo::empty());
+
+        let loaded = ServerSettings::load(&repo).await;
+
+        assert!(matches!(loaded, Err(StorageError::Connection { .. })));
+    }
+
     #[tokio::test]
     async fn save_bind_address_rejects_non_allowlisted() {
         let repo = MapRepo::empty();

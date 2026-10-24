@@ -886,11 +886,13 @@ mod tests {
 
     use super::disclosure::{self, SettingDisclosure};
     use super::{
-        CredentialsKeyLoss, DEFAULT_DIAGNOSTIC_LOG_LEVEL, Density, Language, SettingsRepo,
-        StorageError, StoredDisplayFormats, chat_history_per_viewer_limit, diagnostic_log_level,
+        CredentialsKeyLoss, DEFAULT_DIAGNOSTIC_LOG_LEVEL, Density, EngineParams, Language,
+        SettingsRepo, StorageError, StoredDisplayFormats, chat_history_per_viewer_limit,
+        diagnostic_log_level, disabled_tts_engines, engine_params, get_bool_setting,
         get_json_setting, record_credentials_key_loss, reserved_keys,
         set_chat_history_per_viewer_limit, set_diagnostic_log_level, set_json_setting,
-        stored_display_formats, take_credentials_key_loss,
+        stored_bool_setting, stored_display_formats, stored_json_setting,
+        take_credentials_key_loss,
     };
 
     #[derive(Default)]
@@ -916,6 +918,41 @@ mod tests {
         async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
             Ok(self.map.lock().unwrap().clone())
         }
+    }
+
+    struct UnreachableRepo;
+
+    const UNREACHABLE: &str = "settings store unreachable";
+
+    #[async_trait]
+    impl SettingsRepo for UnreachableRepo {
+        async fn get_string(&self, _: &str) -> Result<Option<String>, StorageError> {
+            Err(StorageError::Connection {
+                reason: UNREACHABLE.to_owned(),
+            })
+        }
+        async fn set_string(&self, _: &str, _: &str) -> Result<(), StorageError> {
+            unreachable!("the strict getters never write")
+        }
+        async fn delete(&self, _: &str) -> Result<bool, StorageError> {
+            unreachable!("the strict getters never delete")
+        }
+        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
+            unreachable!("the strict getters read one key")
+        }
+    }
+
+    async fn seeded(key: &str, raw: Option<&str>) -> MapRepo {
+        let repo = MapRepo::default();
+        if let Some(raw) = raw {
+            repo.set_string(key, raw).await.unwrap();
+        }
+        repo
+    }
+
+    fn names_only_the_key(error: &StorageError, key: &str, raw: &str) -> bool {
+        matches!(error, StorageError::UndecodableSetting { key: named } if named == key)
+            && (raw.is_empty() || !error.to_string().contains(raw))
     }
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -955,6 +992,154 @@ mod tests {
         assert_eq!(
             get_json_setting::<Sample>(&repo, "sample").await,
             Some(sample)
+        );
+    }
+
+    #[tokio::test]
+    async fn stored_json_setting_separates_absent_valid_and_undecodable_values() {
+        let key = "sample";
+        for (raw, expected) in [
+            (None, Ok(None)),
+            (
+                Some(r#"{"name":"nova","count":3}"#),
+                Ok(Some(Sample {
+                    name: "nova".into(),
+                    count: 3,
+                })),
+            ),
+            (Some(r#"{"name":"secret-raw-value""#), Err(true)),
+            (Some(r#"["secret-raw-value"]"#), Err(true)),
+            (Some(r#"{"name":"secret-raw-value","count":-1}"#), Err(true)),
+            (Some(""), Err(true)),
+        ] {
+            let repo = seeded(key, raw).await;
+
+            let decoded = stored_json_setting::<Sample>(&repo, key)
+                .await
+                .map_err(|error| names_only_the_key(&error, key, "secret-raw-value"));
+
+            assert_eq!(decoded, expected, "{raw:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn stored_bool_setting_trims_and_rejects_blank_or_unknown_spellings() {
+        let key = "flag";
+        for (raw, expected) in [
+            (None, Ok(None)),
+            (Some("true"), Ok(Some(true))),
+            (Some("TRUE"), Ok(Some(true))),
+            (Some("1"), Ok(Some(true))),
+            (Some(" true\n"), Ok(Some(true))),
+            (Some("false"), Ok(Some(false))),
+            (Some("0"), Ok(Some(false))),
+            (Some("\tFalse "), Ok(Some(false))),
+            (Some(""), Err(true)),
+            (Some("   "), Err(true)),
+            (Some("maybe"), Err(true)),
+            (Some("2"), Err(true)),
+            (Some("yes"), Err(true)),
+        ] {
+            let repo = seeded(key, raw).await;
+
+            let decoded = stored_bool_setting(&repo, key)
+                .await
+                .map_err(|error| names_only_the_key(&error, key, raw.unwrap_or_default().trim()));
+
+            assert_eq!(decoded, expected, "{raw:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn strict_getters_pass_a_store_failure_through_instead_of_reporting_it_undecodable() {
+        let failures = [
+            stored_bool_setting(&UnreachableRepo, "flag").await.err(),
+            stored_json_setting::<Sample>(&UnreachableRepo, "sample")
+                .await
+                .err(),
+            disabled_tts_engines(&UnreachableRepo).await.err(),
+            engine_params(&UnreachableRepo, "piper").await.err(),
+        ];
+
+        for failure in failures {
+            assert!(
+                matches!(&failure, Some(StorageError::Connection { reason }) if reason == UNREACHABLE),
+                "{failure:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn get_bool_setting_falls_back_to_the_default_only_for_absent_or_undecodable_values() {
+        for (raw, default, expected) in [
+            (None, true, true),
+            (None, false, false),
+            (Some("maybe"), true, true),
+            (Some("maybe"), false, false),
+            (Some(" false "), true, false),
+            (Some(" 1 "), false, true),
+        ] {
+            let repo = seeded("flag", raw).await;
+
+            assert_eq!(
+                get_bool_setting(&repo, "flag", default).await,
+                expected,
+                "{raw:?} with default {default}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn disabled_tts_engines_reports_an_undecodable_list_instead_of_enabling_every_engine() {
+        let key = reserved_keys::TTS_DISABLED_ENGINES;
+        let absent = disabled_tts_engines(&MapRepo::default()).await.unwrap();
+        let stored = disabled_tts_engines(&seeded(key, Some(r#"["piper","espeak"]"#)).await)
+            .await
+            .unwrap();
+        let undecodable = disabled_tts_engines(&seeded(key, Some(r#"{"piper":true}"#)).await)
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            (
+                absent,
+                stored,
+                names_only_the_key(&undecodable, key, "piper")
+            ),
+            (
+                Vec::<String>::new(),
+                vec!["piper".to_owned(), "espeak".to_owned()],
+                true
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn engine_params_reports_undecodable_params_under_the_engine_key_instead_of_defaults() {
+        let key = format!("{}piper", reserved_keys::TTS_ENGINE_PARAMS_PREFIX);
+        let custom = EngineParams {
+            pitch_semitones: 3.0,
+            rate_multiplier: 1.5,
+            gain: 0.25,
+        };
+        let absent = engine_params(&MapRepo::default(), "piper").await.unwrap();
+        let stored = engine_params(
+            &seeded(&key, Some(&serde_json::to_string(&custom).unwrap())).await,
+            "piper",
+        )
+        .await
+        .unwrap();
+        let undecodable = engine_params(&seeded(&key, Some(r#"{"gain":"loud"}"#)).await, "piper")
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            (
+                absent,
+                stored,
+                names_only_the_key(&undecodable, &key, "loud")
+            ),
+            (EngineParams::default(), custom, true)
         );
     }
 

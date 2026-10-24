@@ -379,3 +379,92 @@ async fn guarded_user_directed_refuses_private_literals_before_the_limiter() {
         assert_eq!(harness.limiter.acquire_count(), 0);
     }
 }
+
+#[test]
+fn resolve_path_reports_the_host_header_and_path_a_request_would_carry() {
+    for (base, path, host, resolved) in [
+        (
+            "https://api.example.com",
+            "v1/x",
+            "api.example.com",
+            "/v1/x",
+        ),
+        (
+            "https://api.example.com:443",
+            "/v1/x",
+            "api.example.com",
+            "/v1/x",
+        ),
+        (
+            "https://API.Example.com",
+            "/v1/x",
+            "api.example.com",
+            "/v1/x",
+        ),
+        (
+            "https://api.example.com:8443/base/",
+            "/v1/x",
+            "api.example.com:8443",
+            "/base/v1/x",
+        ),
+        ("http://127.0.0.1:80", "v1", "127.0.0.1", "/v1"),
+        ("http://127.0.0.1:9000", "v1", "127.0.0.1:9000", "/v1"),
+        ("http://[::1]:9000", "v1", "[::1]:9000", "/v1"),
+        (
+            "https://api.example.com/a b",
+            "c d",
+            "api.example.com",
+            "/a%20b/c%20d",
+        ),
+        ("https://api.example.com", "", "api.example.com", "/"),
+    ] {
+        let target = build(base, platform()).unwrap().resolve_path(path).unwrap();
+        assert_eq!(
+            (target.host_header(), target.path()),
+            (host, resolved),
+            "{base} + {path}"
+        );
+    }
+}
+
+#[test]
+fn resolve_path_refuses_a_path_carrying_a_query_or_fragment() {
+    let gateway = build("https://api.example.com", platform()).unwrap();
+    for path in ["v1?x=1", "v1#top", "?", "#"] {
+        assert_eq!(
+            gateway.resolve_path(path),
+            Err(GatewayFailure::InvalidRequest(InvalidRequest::QueryInPath)),
+            "{path}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn resolved_host_and_path_equal_what_the_request_puts_on_the_wire() {
+    for (base_path, path) in [
+        ("", "v1/voices"),
+        ("/prefix", "/v1/voices"),
+        ("/a b", "c d"),
+    ] {
+        let server = ok_server().await;
+        let base = format!("{}{base_path}", server.uri());
+        let harness = Harness::new(&base, platform());
+        let target = build(&base, platform())
+            .unwrap()
+            .resolve_path(path)
+            .unwrap();
+
+        harness.ok(GatewayRequest::get(path)).await;
+
+        let seen = received(&server).await;
+        let host = seen[0]
+            .headers
+            .get("host")
+            .and_then(|value| value.to_str().ok());
+        assert_eq!(
+            (host, seen[0].url.path()),
+            (Some(target.host_header()), target.path()),
+            "{base_path:?} + {path:?}"
+        );
+    }
+}

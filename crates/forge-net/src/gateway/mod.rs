@@ -4,6 +4,7 @@ mod failure;
 mod observer;
 mod profile;
 mod request;
+mod resolved_target;
 mod response;
 mod response_body;
 mod secret;
@@ -27,6 +28,7 @@ pub use profile::{EgressKind, GatewayProfile};
 pub use request::{
     Credential, FormBody, GatewayRequest, Method, MultipartBody, RequestBody, RequestEncodeError,
 };
+pub use resolved_target::ResolvedTarget;
 pub use response::{DecodeCategory, GatewayResponse, ResponseDecodeError};
 pub use secret::Secret;
 pub use target::GatewayBuildError;
@@ -94,6 +96,10 @@ impl Gateway {
 
     pub fn limiter_usage(&self) -> RateLimitUsage {
         self.inner.limiter.usage()
+    }
+
+    pub fn resolve_path(&self, path: &str) -> Result<ResolvedTarget, GatewayFailure> {
+        target::resolve_path(&self.inner.base, path).map(|url| ResolvedTarget::from_url(&url))
     }
 
     pub async fn send(

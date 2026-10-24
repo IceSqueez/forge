@@ -26,7 +26,8 @@ pub use gateway::{
     BodyExcerpt, CallClass, Credential, DecodeCategory, EgressKind, FailureContext,
     FailureObserver, FormBody, Gateway, GatewayBuildError, GatewayFailure, GatewayProfile,
     GatewayRequest, GatewayResponse, InvalidRequest, Method, MultipartBody, RequestBody,
-    RequestEncodeError, ResponseDecodeError, Secret, TransportFailure, TransportKind,
+    RequestEncodeError, ResolvedTarget, ResponseDecodeError, Secret, TransportFailure,
+    TransportKind,
 };
 pub use header_lookup::HeaderLookup;
 pub use rate_limit::{

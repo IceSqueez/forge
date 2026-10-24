@@ -226,64 +226,25 @@ mod tests {
             .await
             .unwrap();
         backend
+            .set_string(forge_storage::reserved_keys::SCRIPT_OP_LIMIT, "500")
+            .await
+            .unwrap();
+        backend
     }
 
-    #[tokio::test]
-    async fn http_module_wired_denied_domain_returns_failed() {
+    async fn run_inline(body: &str) -> (SubActionOutcome, Option<Event>, Option<Event>) {
         let backend = make_backend().await;
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
-        let globals: Arc<dyn GlobalsRepo> = Arc::clone(&backend) as Arc<dyn GlobalsRepo>;
-        let settings: Arc<dyn SettingsRepo> = Arc::clone(&backend) as Arc<dyn SettingsRepo>;
-
         let runner = ScriptRunInlineRunner::new(
             Arc::new(ScriptRegistry::new()),
-            globals,
+            Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
             publisher,
-            settings,
-        );
-
-        let body = r#"forge::http::get("https://nope.invalid")"#;
-        let mut config = runner.default_config();
-        config.insert("body".to_owned(), Variant::String(body.to_owned()));
-
-        let arg_stack = ArgStack::default();
-        let dummy_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
-        let ctx =
-            forge_registry::RunContext::leaf(&arg_stack, 0, EventId::new(), dummy_pub.as_ref());
-
-        let (telemetry, _) = runner.execute(&config, &ctx).await;
-
-        let msg = match telemetry.outcome {
-            SubActionOutcome::Failed(m) => m,
-            other => panic!("expected Failed, got {other:?}"),
-        };
-        assert!(
-            msg.contains("domain not allowed"),
-            "expected domain-not-allowed error from wired http module, got: {msg}"
-        );
-    }
-
-    #[tokio::test]
-    async fn inline_script_exec_and_error_carry_null_identity_and_inline_flag() {
-        let backend = make_backend().await;
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
-        let globals: Arc<dyn GlobalsRepo> = Arc::clone(&backend) as Arc<dyn GlobalsRepo>;
-        let settings: Arc<dyn SettingsRepo> = Arc::clone(&backend) as Arc<dyn SettingsRepo>;
-
-        let runner = ScriptRunInlineRunner::new(
-            Arc::new(ScriptRegistry::new()),
-            globals,
-            publisher,
-            settings,
+            Arc::clone(&backend) as Arc<dyn SettingsRepo>,
         );
 
         let mut config = runner.default_config();
-        config.insert(
-            "body".to_owned(),
-            Variant::String("throw \"boom\";".to_owned()),
-        );
+        config.insert("body".to_owned(), Variant::String(body.to_owned()));
 
         let mut sub = bus.subscribe();
         let arg_stack = ArgStack::default();
@@ -291,7 +252,7 @@ mod tests {
         let ctx =
             forge_registry::RunContext::leaf(&arg_stack, 0, EventId::new(), dummy_pub.as_ref());
 
-        let _ = runner.execute(&config, &ctx).await;
+        let (telemetry, _) = runner.execute(&config, &ctx).await;
 
         let mut exec = None;
         let mut error = None;
@@ -306,6 +267,25 @@ mod tests {
                 break;
             }
         }
+        (telemetry.outcome, exec, error)
+    }
+
+    #[tokio::test]
+    async fn http_module_wired_denied_domain_returns_failed() {
+        let (outcome, _, _) = run_inline(r#"forge::http::get("https://nope.invalid")"#).await;
+
+        let SubActionOutcome::Failed(msg) = outcome else {
+            panic!("expected Failed, got {outcome:?}");
+        };
+        assert!(
+            msg.contains("domain not allowed"),
+            "expected domain-not-allowed error from wired http module, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn inline_script_exec_and_error_carry_null_identity_and_inline_flag() {
+        let (_, exec, error) = run_inline("throw \"boom\";").await;
 
         for ev in [
             exec.expect("inline run must emit script.exec"),
@@ -326,6 +306,37 @@ mod tests {
                 Some(true),
                 "inline {} must flag is_inline=true",
                 ev.kind
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn inline_failure_text_and_error_event_omit_the_script_body() {
+        const SECRET: &str = "sk-live-0123456789";
+        for (body, error_type) in [
+            (
+                format!("let token = \"{SECRET}\"; let x = 1 / 0;"),
+                "runtime",
+            ),
+            (format!("let token = \"{SECRET}\"; @@@"), "syntax"),
+            (
+                format!("let token = \"{SECRET}\"; loop {{}}"),
+                "ops_exceeded",
+            ),
+        ] {
+            let (outcome, _, error) = run_inline(&body).await;
+            let SubActionOutcome::Failed(message) = outcome else {
+                panic!("expected Failed for {error_type}, got {outcome:?}");
+            };
+            let payload = error
+                .expect("failing inline run must emit script.error")
+                .payload;
+            assert_eq!(payload["error_type"].as_str(), Some(error_type));
+            assert!(
+                message.starts_with("inline script failed:")
+                    && !message.contains(SECRET)
+                    && !payload.to_string().contains(SECRET),
+                "{error_type}: {message} / {payload}"
             );
         }
     }

@@ -564,6 +564,57 @@ mod tests {
         }
     }
 
+    #[gpui::test]
+    fn a_stored_object_survives_an_unedited_save_in_every_text_field_kind(cx: &mut TestAppContext) {
+        let stored = Variant::Object(
+            [
+                ("amount".to_owned(), Variant::Int(5)),
+                (
+                    "tags".to_owned(),
+                    Variant::Array(vec![Variant::String("a".to_owned()), Variant::Bool(true)]),
+                ),
+                (
+                    "nested".to_owned(),
+                    Variant::Object(
+                        [("k".to_owned(), Variant::String("v".to_owned()))]
+                            .into_iter()
+                            .collect(),
+                    ),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        for spec in [
+            FormField::TextArea {
+                key: CODE_FIELD,
+                label: "Payload",
+            },
+            code_spec(CodeLanguage::Json),
+            FormField::Text {
+                key: CODE_FIELD,
+                label: "Payload",
+                placeholder: "",
+            },
+        ] {
+            let label = format!("{spec:?}");
+            let config: SubActionConfig = [(CODE_FIELD.to_owned(), stored.clone())]
+                .into_iter()
+                .collect();
+            let overrides = committed_overrides(vec![spec], config, cx);
+            let Some(Variant::String(saved)) = override_for(&overrides, CODE_FIELD) else {
+                panic!("{label}: expected a text override, got {overrides:?}");
+            };
+            let json: serde_json::Value = serde_json::from_str(saved)
+                .unwrap_or_else(|e| panic!("{label}: saved {saved:?} is not JSON ({e})"));
+            assert_eq!(
+                Variant::from_plain_json(json).ok(),
+                Some(stored.clone()),
+                "{label}"
+            );
+        }
+    }
+
     const COUNT_FIELD: &str = "count";
     const COUNT_GATE: &str = "use_count";
 

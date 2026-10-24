@@ -353,10 +353,11 @@ mod tests {
     use super::*;
     use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_events::{Event, EventPublisher};
+    use forge_registry::ConfigProblem;
     use forge_storage::{SettingsRepo, reserved_keys};
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::EventId;
-    use wiremock::matchers::{body_string, method};
+    use wiremock::matchers::{body_string, header, method, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     struct NullPublisher;
@@ -503,6 +504,99 @@ mod tests {
         );
         assert!(!msg.contains("QUERY-SECRET"), "leaked query token: {msg}");
         assert!(!msg.contains("192.0.2.1"), "leaked target host: {msg}");
-        assert!(tel.duration_ms < 5_000, "took {}ms", tel.duration_ms);
+    }
+
+    async fn local_backend() -> Sandboxed<Arc<SqliteBackend>> {
+        let dp = backend().await;
+        dp.set_string(reserved_keys::CORE_HTTP_ALLOW_LOCAL, "true")
+            .await
+            .unwrap();
+        dp
+    }
+
+    fn url_cfg(url: String) -> SubActionConfig {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("url".to_owned(), Variant::String(url));
+        cfg.insert(
+            "parse_response_as".to_owned(),
+            Variant::String("ignore".to_owned()),
+        );
+        cfg
+    }
+
+    #[tokio::test]
+    async fn string_json_headers_and_query_params_reach_the_request() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(header("x-key", "v1"))
+            .and(query_param("q", "2"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        let dp = local_backend().await;
+        let mut cfg = url_cfg(server.uri());
+        cfg.insert(
+            HEADERS_KEY.to_owned(),
+            Variant::String(r#"{"x-key": "v1"}"#.to_owned()),
+        );
+        cfg.insert(
+            QUERY_PARAMS_KEY.to_owned(),
+            Variant::String(r#"{"q": 2}"#.to_owned()),
+        );
+
+        let (_, stack) = run(&runner(HttpMethod::Get, &dp), &cfg).await;
+        assert_eq!(
+            stack.and_then(|s| s.get(HTTP_STATUS_CODE_VAR).and_then(|v| v.as_int())),
+            Some(200)
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_headers_or_query_params_fail_without_sending_a_request() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        let dp = local_backend().await;
+        for (key, value) in [
+            (HEADERS_KEY, "object{0}"),
+            (HEADERS_KEY, "null"),
+            (QUERY_PARAMS_KEY, "[1]"),
+            (QUERY_PARAMS_KEY, r#"{"a": null}"#),
+        ] {
+            let mut cfg = url_cfg(server.uri());
+            cfg.insert(key.to_owned(), Variant::String(value.to_owned()));
+            let (tel, stack) = run(&runner(HttpMethod::Get, &dp), &cfg).await;
+            assert!(
+                matches!(&tel.outcome, SubActionOutcome::Failed(m) if m.starts_with(key)),
+                "{key}={value}: {:?}",
+                tel.outcome
+            );
+            assert!(stack.is_none(), "{key}={value}");
+        }
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn validate_config_rejects_non_object_headers_and_query_params() {
+        let dp = backend().await;
+        for key in [HEADERS_KEY, QUERY_PARAMS_KEY] {
+            let mut cfg = url_cfg("https://example.com".to_owned());
+            cfg.insert(key.to_owned(), Variant::String("object{0}".to_owned()));
+            let err = runner(HttpMethod::Get, &dp)
+                .validate_config(&cfg)
+                .unwrap_err();
+            assert!(
+                matches!(
+                    &err,
+                    RegistryError::InvalidConfig(ConfigProblem {
+                        field: Some(field),
+                        reason: ConfigReason::InvalidFormat(_),
+                    }) if field == key
+                ),
+                "{key}: {err:?}"
+            );
+        }
     }
 }

@@ -1137,4 +1137,43 @@ mod tests {
         });
         assert_eq!(changes, vec!["ab%x%", "ab", "ab%x%"]);
     }
+
+    fn tall_content() -> String {
+        (0..200)
+            .map(|n| format!("line {n}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[gpui::test]
+    fn set_content_shows_the_top_with_the_caret_at_the_end(cx: &mut gpui::TestAppContext) {
+        let content = tall_content();
+        let (scroll, cursor) = with_painted_area(cx, &content, |area, _window, _cx| {
+            (area.scroll_offset, area.cursor_offset())
+        });
+        assert_eq!((scroll, cursor), (px(0.0), content.len()));
+    }
+
+    #[gpui::test]
+    fn set_content_on_a_scrolled_area_returns_to_the_top(cx: &mut gpui::TestAppContext) {
+        let content = tall_content();
+        let window = cx.add_window(|_window, cx| TextArea::new("placeholder", cx));
+        window
+            .update(cx, |area, _window, cx| {
+                area.set_content(content.clone(), cx);
+                area.insert_at_caret("x", cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+        let scrolled = window.update(cx, |area, _, _| area.scroll_offset).unwrap();
+        window
+            .update(cx, |area, _, cx| area.set_content(content.clone(), cx))
+            .unwrap();
+        cx.run_until_parked();
+        let after = window.update(cx, |area, _, _| area.scroll_offset).unwrap();
+        assert!(
+            scrolled > px(0.0) && after == px(0.0),
+            "{scrolled:?} -> {after:?}"
+        );
+    }
 }

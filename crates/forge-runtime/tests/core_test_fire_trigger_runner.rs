@@ -5,7 +5,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventPublisher};
-use forge_registry::{RunContext, SubActionRegistry, SubActionRunner};
+use forge_registry::{
+    ConfigProblem, ConfigReason, RegistryError, RunContext, SubActionRegistry, SubActionRunner,
+};
 use forge_runtime::sub_action_runners::{CoreGlobalsSetRunner, CoreTestFireTriggerRunner};
 use forge_runtime::{
     EventBus, EventSubscription, NullEventLogRepo, QueueAdmission, QueueScheduler,
@@ -123,23 +125,25 @@ fn action(id: ActionId, queue_id: QueueId, enabled: bool, set_global: &str) -> A
     }
 }
 
-fn fire_cfg(instance_id: &str, override_outputs: BTreeMap<String, Variant>) -> SubActionConfig {
+fn fire_cfg(instance_id: &str, override_outputs: Variant) -> SubActionConfig {
     let mut c = SubActionConfig::new();
     c.insert(
         "trigger_instance_id".to_owned(),
         Variant::String(instance_id.to_owned()),
     );
-    c.insert(
-        "override_outputs".to_owned(),
-        Variant::Object(override_outputs),
-    );
+    c.insert("override_outputs".to_owned(), override_outputs);
     c
 }
 
-fn one_output(key: &str, value: &str) -> BTreeMap<String, Variant> {
-    let mut m = BTreeMap::new();
-    m.insert(key.to_owned(), Variant::String(value.to_owned()));
-    m
+fn one_output(key: &str, value: &str) -> Variant {
+    Variant::Object(BTreeMap::from([(
+        key.to_owned(),
+        Variant::String(value.to_owned()),
+    )]))
+}
+
+fn no_outputs() -> Variant {
+    Variant::String(String::new())
 }
 
 async fn run_outcome(runner: &dyn SubActionRunner, config: &SubActionConfig) -> SubActionOutcome {
@@ -214,15 +218,21 @@ async fn fired_trigger_runs_the_chain_of_its_one_bound_enabled_action() {
     h.handle.shutdown();
 }
 
-#[tokio::test]
-async fn override_outputs_reach_the_fired_actions_execution_context() {
-    let q_id = QueueId::new();
-    let h = harness(nonblocking(q_id)).await;
-    let mut sub = h.bus.subscribe();
+struct Fired {
+    outcome: SubActionOutcome,
+    h: Harness,
+    sub: EventSubscription,
+    queue_id: QueueId,
+    bound: ActionId,
+}
 
-    let a_id = ActionId::new();
+async fn fire_bound_action(override_outputs: Variant) -> Fired {
+    let queue_id = QueueId::new();
+    let h = harness(blocking(queue_id)).await;
+    let sub = h.bus.subscribe();
+    let bound = ActionId::new();
     h.actions
-        .save(&action(a_id, q_id, true, "captured"))
+        .save(&action(bound, queue_id, true, "captured"))
         .await
         .unwrap();
     let instance_id = h
@@ -231,28 +241,116 @@ async fn override_outputs_reach_the_fired_actions_execution_context() {
         .await
         .unwrap();
     h.trigger_instances
-        .link_action(a_id, instance_id, 0)
+        .link_action(bound, instance_id, 0)
         .await
         .unwrap();
 
     let runner = fire_runner(&h);
-    let cfg = fire_cfg(
-        &instance_id.to_string(),
-        one_output("out_key", "synthetic-output-marker"),
-    );
-    let outcome = run_outcome(&runner, &cfg).await;
-    assert!(matches!(outcome, SubActionOutcome::Success));
+    let outcome = run_outcome(
+        &runner,
+        &fire_cfg(&instance_id.to_string(), override_outputs),
+    )
+    .await;
+    Fired {
+        outcome,
+        h,
+        sub,
+        queue_id,
+        bound,
+    }
+}
 
-    assert!(
-        await_action_done(&mut sub, a_id).await,
-        "the bound action must complete before its global is read"
+#[tokio::test]
+async fn override_outputs_reach_the_fired_actions_execution_context() {
+    for outputs in [
+        one_output("out_key", "synthetic-output-marker"),
+        Variant::String(r#"{"out_key": "synthetic-output-marker"}"#.to_owned()),
+    ] {
+        let mut fired = fire_bound_action(outputs.clone()).await;
+        assert!(
+            matches!(fired.outcome, SubActionOutcome::Success),
+            "{outputs:?}"
+        );
+        assert!(
+            await_action_done(&mut fired.sub, fired.bound).await,
+            "the bound action must complete before its global is read"
+        );
+        let captured = fired.h.globals.get("captured").await.unwrap();
+        assert!(
+            matches!(captured, Some(Variant::String(ref s)) if s == "synthetic-output-marker"),
+            "{outputs:?}: override_outputs must arrive as the fired action's ArgStack, got {captured:?}"
+        );
+        fired.h.handle.shutdown();
+    }
+}
+
+#[tokio::test]
+async fn invalid_override_outputs_fail_naming_the_field_and_dispatch_nothing() {
+    for outputs in ["object{0}", "[1]", "null"] {
+        let mut fired = fire_bound_action(Variant::String(outputs.to_owned())).await;
+        assert!(
+            matches!(&fired.outcome, SubActionOutcome::Failed(m) if m.contains("override_outputs")),
+            "{outputs}: {:?}",
+            fired.outcome
+        );
+
+        let barrier = ActionId::new();
+        fired
+            .h
+            .actions
+            .save(&action(barrier, fired.queue_id, true, "barrier_ran"))
+            .await
+            .unwrap();
+        fired
+            .h
+            .handle
+            .dispatch(SchedulerRequest {
+                queue_id: fired.queue_id,
+                action_id: barrier,
+                trigger_event_id: EventId::new(),
+                trigger_kind: None,
+                manual_test: false,
+                initial_args: ArgStack::new(),
+                admission: QueueAdmission::default(),
+            })
+            .await
+            .unwrap();
+        assert!(
+            await_action_done(&mut fired.sub, barrier).await,
+            "barrier must complete so the FIFO queue is fully drained"
+        );
+        assert!(
+            fired.h.globals.get("captured").await.unwrap().is_none(),
+            "{outputs}: a rejected override must not dispatch the bound action"
+        );
+        fired.h.handle.shutdown();
+    }
+}
+
+#[tokio::test]
+async fn validate_config_rejects_non_object_override_outputs_as_invalid_format() {
+    let (backend, _media) = backend().await;
+    let runner = CoreTestFireTriggerRunner::new(
+        backend.trigger_instance_repo(),
+        backend.action_repo(),
+        SchedulerCell::new(),
     );
-    let captured = h.globals.get("captured").await.unwrap();
+    let err = runner
+        .validate_config(&fire_cfg(
+            &TriggerInstanceId::new().to_string(),
+            Variant::String("object{0}".to_owned()),
+        ))
+        .unwrap_err();
     assert!(
-        matches!(captured, Some(Variant::String(ref s)) if s == "synthetic-output-marker"),
-        "override_outputs must arrive as the fired action's ArgStack, got {captured:?}"
+        matches!(
+            &err,
+            RegistryError::InvalidConfig(ConfigProblem {
+                field: Some(field),
+                reason: ConfigReason::InvalidFormat(_),
+            }) if field == "override_outputs"
+        ),
+        "{err:?}"
     );
-    h.handle.shutdown();
 }
 
 #[tokio::test]
@@ -261,7 +359,7 @@ async fn unknown_trigger_instance_id_fails() {
     let runner = fire_runner(&h);
 
     let missing = TriggerInstanceId::new();
-    let outcome = run_outcome(&runner, &fire_cfg(&missing.to_string(), BTreeMap::new())).await;
+    let outcome = run_outcome(&runner, &fire_cfg(&missing.to_string(), no_outputs())).await;
 
     assert!(
         matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("unknown trigger instance")),
@@ -284,11 +382,7 @@ async fn fire_with_empty_scheduler_cell_reports_scheduler_not_ready() {
         backend.action_repo(),
         SchedulerCell::new(),
     );
-    let outcome = run_outcome(
-        &runner,
-        &fire_cfg(&instance_id.to_string(), BTreeMap::new()),
-    )
-    .await;
+    let outcome = run_outcome(&runner, &fire_cfg(&instance_id.to_string(), no_outputs())).await;
 
     assert!(
         matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("queue scheduler not ready")),
@@ -306,7 +400,7 @@ async fn unparseable_trigger_instance_id_fails() {
         SchedulerCell::new(),
     );
 
-    let outcome = run_outcome(&runner, &fire_cfg(SENTINEL, BTreeMap::new())).await;
+    let outcome = run_outcome(&runner, &fire_cfg(SENTINEL, no_outputs())).await;
 
     let SubActionOutcome::Failed(msg) = outcome else {
         panic!("an unparseable trigger_instance_id must fail before any lookup, got {outcome:?}");
@@ -336,11 +430,7 @@ async fn instance_with_no_bound_actions_succeeds_and_dispatches_nothing() {
         .unwrap();
 
     let runner = fire_runner(&h);
-    let outcome = run_outcome(
-        &runner,
-        &fire_cfg(&instance_id.to_string(), BTreeMap::new()),
-    )
-    .await;
+    let outcome = run_outcome(&runner, &fire_cfg(&instance_id.to_string(), no_outputs())).await;
     assert!(
         matches!(outcome, SubActionOutcome::Success),
         "an instance found with no bound actions must succeed, got {outcome:?}"

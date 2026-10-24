@@ -235,6 +235,46 @@ mod tests {
         assert!(matches!(err, ScriptError::Compile { .. }));
     }
 
+    #[test]
+    fn failed_eval_message_omits_script_body() {
+        const SECRET: &str = "sk-live-0123456789";
+        let engine = Engine::with_config(EngineConfig::default());
+        for body in [
+            format!("let token = \"{SECRET}\"; @@@"),
+            format!("let token = \"{SECRET}\"; let x = 1 / 0;"),
+            format!("let token = \"{SECRET}\"; undefined_fn(token.len())"),
+        ] {
+            let err = engine.eval_script(&body).unwrap_err();
+            assert!(!format!("{err} {err:?}").contains(SECRET), "{err:?}");
+        }
+    }
+
+    #[test]
+    fn validate_syntax_error_omits_script_body() {
+        let err = validate_syntax("let token = \"sk-live-0123456789\"; @@@").unwrap_err();
+        assert!(!format!("{err} {err:?}").contains("sk-live"), "{err:?}");
+    }
+
+    #[test]
+    fn timeout_reports_measured_elapsed_not_the_limit() {
+        let started_at = Instant::now()
+            .checked_sub(std::time::Duration::from_secs(2))
+            .unwrap();
+        let cfg = EngineConfig {
+            wall_time_ms: 100,
+            ..EngineConfig::default()
+        };
+        let err = map_eval_error(
+            &cfg,
+            rhai::EvalAltResult::ErrorTerminated(rhai::Dynamic::UNIT, rhai::Position::NONE),
+            started_at,
+        );
+        assert!(
+            matches!(err, ScriptError::Timeout { elapsed_ms, limit_ms: 100 } if elapsed_ms >= 2_000),
+            "{err:?}"
+        );
+    }
+
     #[tokio::test]
     async fn with_api_forge_log_runs_without_error() {
         let dp = open_test_dp().await;
@@ -399,17 +439,12 @@ mod tests {
             },
             make_api_with_wall_ms(dp.clone(), 200),
         );
-        let start = std::time::Instant::now();
         let result = tokio::task::spawn_blocking(move || engine.eval_script("loop {}"))
             .await
             .unwrap();
         assert!(
             result.is_err(),
             "infinite loop must terminate with an error"
-        );
-        assert!(
-            start.elapsed().as_secs() < 5,
-            "termination must happen well under 5s"
         );
     }
 

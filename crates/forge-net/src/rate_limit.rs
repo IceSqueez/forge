@@ -117,7 +117,11 @@ impl TokenBucketRateLimiter {
         let mut state = self.lock_state();
         state.cooldown.extend(now, retry_after);
         state.tokens = 0.0;
-        state.last_refill = state.last_refill.max(now);
+        let refill_from = state
+            .cooldown
+            .deadline()
+            .map_or(now, |deadline| deadline.max(now));
+        state.last_refill = state.last_refill.max(refill_from);
     }
 
     pub fn usage_at(&self, now: Instant) -> RateLimitUsage {
@@ -128,7 +132,10 @@ impl TokenBucketRateLimiter {
         let resets_in = if used == 0 || rate <= 0.0 {
             Duration::ZERO
         } else {
-            secs_to_duration(f64::from(used) / rate)
+            state
+                .last_refill
+                .saturating_duration_since(now)
+                .saturating_add(secs_to_duration(f64::from(used) / rate))
         };
         RateLimitUsage {
             used: Some(used),
@@ -301,9 +308,45 @@ mod tests {
     #[test]
     fn remote_throttle_gates_acquires_until_the_cooldown_ends() {
         let (rl, t0) = bucket(10, secs(1));
+        let one_token = Duration::from_millis(100);
         rl.observe_remote_throttle_at(t0, secs(8));
         assert_eq!(wait_of(rl.acquire_at(t0 + secs(3), 1)), secs(5));
-        assert_eq!(rl.acquire_at(t0 + secs(8), 1), RateLimitOutcome::Granted);
+        assert_eq!(wait_of(rl.acquire_at(t0 + secs(8), 1)), one_token);
+        assert_eq!(
+            rl.acquire_at(t0 + secs(8) + one_token, 1),
+            RateLimitOutcome::Granted
+        );
+    }
+
+    #[test]
+    fn long_cooldown_on_a_fast_bucket_refills_from_the_deadline_without_a_burst() {
+        let one_token = Duration::from_millis(100);
+        for k in 0..=10u32 {
+            let (rl, t0) = bucket(10, secs(1));
+            rl.observe_remote_throttle_at(t0, secs(60));
+            let usage = rl.usage_at(t0 + secs(60) + one_token * k);
+            assert_eq!(
+                usage.used,
+                Some(10 - k),
+                "{k} refill steps past the deadline"
+            );
+        }
+    }
+
+    #[test]
+    fn full_weight_acquire_at_the_cooldown_deadline_waits_a_whole_refill_window() {
+        let (rl, t0) = bucket(10, secs(1));
+        rl.observe_remote_throttle_at(t0, secs(60));
+        assert_eq!(wait_of(rl.acquire_at(t0 + secs(60), 10)), secs(1));
+    }
+
+    #[test]
+    fn shorter_later_remote_throttle_never_moves_the_refill_clock_back() {
+        let (rl, t0) = bucket(10, secs(10));
+        rl.observe_remote_throttle_at(t0, secs(30));
+        rl.observe_remote_throttle_at(t0 + secs(10), secs(1));
+        assert_eq!(wait_of(rl.acquire_at(t0 + secs(30), 1)), secs(1));
+        assert_eq!(rl.usage_at(t0 + secs(33)).used, Some(7));
     }
 
     #[test]
@@ -380,6 +423,32 @@ mod tests {
                 "after debiting {weight}"
             );
         }
+    }
+
+    #[test]
+    fn usage_reset_eta_adds_the_remaining_cooldown_to_the_refill_time() {
+        let cases = [
+            (0, 10, secs(40)),
+            (10, 10, secs(30)),
+            (29, 10, secs(11)),
+            (30, 10, secs(10)),
+            (35, 5, secs(5)),
+            (40, 0, Duration::ZERO),
+        ];
+        for (at, expected_used, expected_reset) in cases {
+            let (rl, t0) = bucket(10, secs(10));
+            rl.observe_remote_throttle_at(t0, secs(30));
+            let usage = rl.usage_at(t0 + secs(at));
+            assert_eq!(usage.used, Some(expected_used), "at +{at}s");
+            assert_eq!(usage.resets_in, Some(expected_reset), "at +{at}s");
+        }
+    }
+
+    #[test]
+    fn usage_reset_eta_saturates_when_cooldown_plus_refill_overflows() {
+        let (rl, t0) = bucket(1, Duration::MAX);
+        rl.observe_remote_throttle_at(t0, secs(60));
+        assert_eq!(rl.usage_at(t0).resets_in, Some(Duration::MAX));
     }
 
     #[test]

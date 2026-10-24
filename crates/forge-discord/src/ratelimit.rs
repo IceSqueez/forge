@@ -39,9 +39,11 @@ impl DiscordBucket {
         if self.limit == 0 {
             return RateLimitOutcome::Granted;
         }
-        let elapsed = now.saturating_duration_since(self.updated_at);
+        let mut elapsed = now.saturating_duration_since(self.updated_at);
         if elapsed >= self.reset_after {
             self.remaining = self.limit;
+            self.updated_at = self.updated_at.max(now);
+            elapsed = Duration::ZERO;
         }
         if self.remaining == 0 {
             let wait_for = self.reset_after.saturating_sub(elapsed);

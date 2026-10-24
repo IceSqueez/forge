@@ -131,15 +131,20 @@ mod tests {
     }
 
     #[test]
-    fn grants_again_exactly_when_the_floor_passes() {
+    fn grants_again_one_refill_interval_after_the_floor_passes() {
         let (lim, t0) = limiter();
+        let one_token = SYNTHESIS_REFILL_WINDOW / SYNTHESIS_BURST;
         lim.observe_remote_throttle_at(t0, secs(5));
         let just_before = t0 + secs(5) - Duration::from_millis(1);
         assert_eq!(
             wait_of(lim.acquire_at(just_before, 1)),
             Duration::from_millis(1)
         );
-        assert_eq!(lim.acquire_at(t0 + secs(5), 1), RateLimitOutcome::Granted);
+        assert_eq!(wait_of(lim.acquire_at(t0 + secs(5), 1)), one_token);
+        assert_eq!(
+            lim.acquire_at(t0 + secs(5) + one_token, 1),
+            RateLimitOutcome::Granted
+        );
     }
 
     #[test]
@@ -166,7 +171,15 @@ mod tests {
             lim.acquire(1).await.unwrap(),
             RateLimitOutcome::Throttled { wait_for: secs(5) }
         );
+        let one_token = SYNTHESIS_REFILL_WINDOW / SYNTHESIS_BURST;
         tokio::time::advance(secs(5)).await;
+        assert_eq!(
+            lim.acquire(1).await.unwrap(),
+            RateLimitOutcome::Throttled {
+                wait_for: one_token
+            }
+        );
+        tokio::time::advance(one_token).await;
         assert_eq!(lim.acquire(1).await.unwrap(), RateLimitOutcome::Granted);
     }
 }

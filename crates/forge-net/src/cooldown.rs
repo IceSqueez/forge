@@ -19,6 +19,10 @@ impl Cooldown {
         }
     }
 
+    pub fn deadline(&self) -> Option<Instant> {
+        self.until
+    }
+
     pub fn remaining(&self, now: Instant) -> Duration {
         self.until
             .map_or(Duration::ZERO, |until| until.saturating_duration_since(now))

@@ -204,6 +204,51 @@ mod tests {
     }
 
     #[test]
+    fn stale_refill_opens_one_window_counted_from_the_refill_moment() {
+        let t0 = Instant::now();
+        let cases = [
+            ("refill at the window edge", secs(10)),
+            ("refill after a long idle", secs(25)),
+            ("refill after a day idle", secs(86_400)),
+        ];
+        for (label, refill_at) in cases {
+            let mut b = DiscordBucket::new_at(t0);
+            b.update_from_headers(t0, 3, 0, 10.0);
+            let r = t0 + refill_at;
+            for _ in 0..3 {
+                assert!(granted(b.check(r)), "{label}");
+            }
+            assert_eq!(wait_of(b.check(r)), secs(10), "{label}");
+            assert_eq!(wait_of(b.check(r + secs(5))), secs(5), "{label}");
+            assert_eq!(b.reset_hint_secs(r + secs(5)), Some(5.0), "{label}");
+            assert!(granted(b.check(r + secs(10))), "{label}");
+        }
+    }
+
+    #[test]
+    fn earlier_now_after_a_refill_never_moves_the_window_back() {
+        let t0 = Instant::now();
+        let mut b = DiscordBucket::new_at(t0);
+        b.update_from_headers(t0, 2, 0, 10.0);
+        assert!(granted(b.check(t0 + secs(20))));
+        assert!(granted(b.check(t0 + secs(12))));
+        assert_eq!(wait_of(b.check(t0 + secs(12))), secs(10));
+        assert_eq!(wait_of(b.check(t0 + secs(25))), secs(5));
+        assert!(granted(b.check(t0 + secs(30))));
+    }
+
+    #[test]
+    fn zero_reset_window_refills_on_every_check() {
+        let t0 = Instant::now();
+        let mut b = DiscordBucket::new_at(t0);
+        b.update_from_headers(t0, 2, 0, 0.0);
+        for n in 0..5 {
+            assert!(granted(b.check(t0)), "check {n}");
+        }
+        assert_eq!(b.reset_hint_secs(t0), None);
+    }
+
+    #[test]
     fn remote_throttle_gates_a_bucket_with_no_header_state() {
         let t0 = Instant::now();
         let mut b = DiscordBucket::new_at(t0);

@@ -6,7 +6,7 @@ use super::failure::{BodyExcerpt, GatewayFailure};
 use super::profile::GatewayProfile;
 use super::secret::MASK;
 use crate::cooldown::MAX_REMOTE_COOLDOWN;
-use crate::throttle_hint::{ThrottleScope, parse_throttle_hint};
+use crate::throttle_hint::{ThrottleHintFamily, ThrottleScope, parse_throttle_hint};
 
 pub(crate) const ERROR_BODY_READ_CAP: u64 = 64 * 1024;
 const EXCERPT_MAX_CHARS: usize = 512;
@@ -23,16 +23,21 @@ pub(crate) fn throttle_for(
     profile: &GatewayProfile,
     now: SystemTime,
 ) -> Option<Throttle> {
-    let hint = parse_throttle_hint(headers, profile.hint_family, now);
     match status {
-        StatusCode::TOO_MANY_REQUESTS => Some(Throttle {
-            wait: hint.wait_or(profile.no_hint_default),
-            scope: hint.scope,
-        }),
-        StatusCode::SERVICE_UNAVAILABLE => hint.wait.map(|wait| Throttle {
-            wait: wait.min(MAX_REMOTE_COOLDOWN),
-            scope: hint.scope,
-        }),
+        StatusCode::TOO_MANY_REQUESTS => {
+            let hint = parse_throttle_hint(headers, profile.hint_family, now);
+            Some(Throttle {
+                wait: hint.wait_or(profile.no_hint_default),
+                scope: hint.scope,
+            })
+        }
+        StatusCode::SERVICE_UNAVAILABLE => {
+            let hint = parse_throttle_hint(headers, ThrottleHintFamily::RetryAfter, now);
+            hint.wait.map(|wait| Throttle {
+                wait: wait.min(MAX_REMOTE_COOLDOWN),
+                scope: hint.scope,
+            })
+        }
         _ => None,
     }
 }

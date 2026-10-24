@@ -61,7 +61,8 @@ pub use follow_lookup::{FollowLookup, FollowStatus};
 pub use integration::{ConnectionAffordance, IntegrationCategory, IntegrationDeclaration};
 pub use live_viewers::{LiveViewerSource, ViewerReport, ViewerReportStream};
 pub use net::{
-    HostRejection, ensure_public_host, ensure_public_host_blocking, is_private_or_special,
+    HostRejection, PublicAddressResolver, ensure_public_ip_literal, host_rejection_cause,
+    is_loopback_host, is_private_or_special,
 };
 pub use option_source::{
     BuiltinOptionSource, OptionEntry, OptionHint, OptionListId, OptionListMetadata,

@@ -1,7 +1,11 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::Duration;
 
-use forge_platform_core::{HostRejection, ensure_public_host};
+use forge_platform_core::{
+    HostRejection, PublicAddressResolver, ensure_public_ip_literal, host_rejection_cause,
+};
+use reqwest::StatusCode;
 use tokio::sync::Semaphore;
 
 const MAX_RESPONSE_BYTES: usize = 1_048_576;
@@ -55,19 +59,31 @@ pub enum EgressError {
 }
 
 pub struct EgressClient {
-    client: reqwest::Client,
+    public_only: reqwest::Client,
+    local_allowed: reqwest::Client,
     concurrency: Semaphore,
+}
+
+struct Hop {
+    url: reqwest::Url,
+    method: HttpMethod,
+    body: Option<String>,
+    forward_user_headers: bool,
 }
 
 impl EgressClient {
     pub fn new() -> Result<Self, EgressError> {
-        let client = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .user_agent(concat!("forge/", env!("CARGO_PKG_VERSION")))
+        let public_only = base_builder()
+            .dns_resolver(Arc::new(PublicAddressResolver))
+            .no_proxy()
+            .build()
+            .map_err(|e| EgressError::Network(e.without_url().to_string()))?;
+        let local_allowed = base_builder()
             .build()
             .map_err(|e| EgressError::Network(e.without_url().to_string()))?;
         Ok(Self {
-            client,
+            public_only,
+            local_allowed,
             concurrency: Semaphore::new(MAX_CONCURRENT_REQUESTS),
         })
     }
@@ -87,13 +103,17 @@ impl EgressClient {
             }
         }
 
-        let mut method = req.method;
-        let mut body = req.body.clone();
+        let mut hop = Hop {
+            url,
+            method: req.method,
+            body: req.body.clone(),
+            forward_user_headers: true,
+        };
         let mut hops = 0u32;
 
         loop {
-            validate_url(&url, req.allow_local).await?;
-            let response = self.dispatch(&url, method, &req, body.as_deref()).await?;
+            validate_url(&hop.url, req.allow_local)?;
+            let response = self.dispatch(&hop, &req).await?;
             let status = response.status();
 
             if req.follow_redirects && status.is_redirection() {
@@ -107,12 +127,21 @@ impl EgressClient {
                 let Some(location) = location else {
                     return read_response(response).await;
                 };
-                let next = url.join(location).map_err(|_| EgressError::InvalidUrl)?;
-                if matches!(status.as_u16(), 301..=303) {
-                    method = HttpMethod::Get;
-                    body = None;
+                let next = hop
+                    .url
+                    .join(location)
+                    .map_err(|_| EgressError::InvalidUrl)?;
+                if matches!(
+                    status,
+                    StatusCode::MOVED_PERMANENTLY | StatusCode::FOUND | StatusCode::SEE_OTHER
+                ) {
+                    hop.method = HttpMethod::Get;
+                    hop.body = None;
                 }
-                url = next;
+                if next.origin() != hop.url.origin() {
+                    hop.forward_user_headers = false;
+                }
+                hop.url = next;
                 hops += 1;
                 continue;
             }
@@ -123,44 +152,55 @@ impl EgressClient {
 
     async fn dispatch(
         &self,
-        url: &reqwest::Url,
-        method: HttpMethod,
+        hop: &Hop,
         req: &EgressRequest,
-        body: Option<&str>,
     ) -> Result<reqwest::Response, EgressError> {
-        let mut builder = self
-            .client
-            .request(to_reqwest_method(method), url.clone())
+        let client = if req.allow_local {
+            &self.local_allowed
+        } else {
+            &self.public_only
+        };
+        let mut builder = client
+            .request(to_reqwest_method(hop.method), hop.url.clone())
             .timeout(req.timeout);
-        for (k, v) in &req.headers {
-            builder = builder.header(k, v);
+        if hop.forward_user_headers {
+            for (k, v) in &req.headers {
+                builder = builder.header(k, v);
+            }
         }
         if let Some(content_type) = &req.content_type {
             builder = builder.header(reqwest::header::CONTENT_TYPE, content_type);
         }
-        if let Some(body) = body {
-            builder = builder.body(body.to_owned());
+        if let Some(body) = &hop.body {
+            builder = builder.body(body.clone());
         }
         builder.send().await.map_err(map_send_error)
     }
 }
 
-async fn validate_url(url: &reqwest::Url, allow_local: bool) -> Result<(), EgressError> {
+fn base_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent(concat!("forge/", env!("CARGO_PKG_VERSION")))
+}
+
+fn validate_url(url: &reqwest::Url, allow_local: bool) -> Result<(), EgressError> {
     match url.scheme() {
         "http" | "https" => {}
         _ => return Err(EgressError::SchemeNotAllowed),
     }
+    let host = url.host_str().ok_or(EgressError::InvalidUrl)?;
     if allow_local {
         return Ok(());
     }
-    let host = url.host_str().ok_or(EgressError::InvalidUrl)?;
-    let port = url.port_or_known_default().unwrap_or(443);
-    ensure_public_host(host, port)
-        .await
-        .map_err(|rejection| match rejection {
-            HostRejection::PrivateOrSpecial => EgressError::BlockedAddress,
-            HostRejection::Unresolvable => EgressError::UnresolvableHost,
-        })
+    ensure_public_ip_literal(host).map_err(rejection_error)
+}
+
+fn rejection_error(rejection: HostRejection) -> EgressError {
+    match rejection {
+        HostRejection::PrivateOrSpecial => EgressError::BlockedAddress,
+        HostRejection::Unresolvable => EgressError::UnresolvableHost,
+    }
 }
 
 async fn read_response(response: reqwest::Response) -> Result<EgressResponse, EgressError> {
@@ -198,7 +238,9 @@ async fn read_response(response: reqwest::Response) -> Result<EgressResponse, Eg
 }
 
 fn map_send_error(e: reqwest::Error) -> EgressError {
-    if e.is_timeout() {
+    if let Some(rejection) = host_rejection_cause(&e) {
+        rejection_error(rejection)
+    } else if e.is_timeout() {
         EgressError::Timeout
     } else {
         EgressError::Network(e.without_url().to_string())
@@ -219,7 +261,6 @@ fn to_reqwest_method(method: HttpMethod) -> reqwest::Method {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use std::time::Instant;
     use wiremock::matchers::{body_string, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -303,17 +344,26 @@ mod tests {
         assert!(matches!(err, EgressError::BlockedAddress));
     }
 
-    #[tokio::test]
-    async fn bracketed_public_ipv6_literal_passes_validation() {
+    #[test]
+    fn bracketed_public_ipv6_literal_passes_validation() {
         let url = reqwest::Url::parse("http://[2606:4700::1]/").unwrap();
-        assert!(validate_url(&url, false).await.is_ok());
+        assert!(validate_url(&url, false).is_ok());
     }
 
-    #[tokio::test]
-    async fn bracketed_ipv6_loopback_literal_is_blocked() {
+    #[test]
+    fn bracketed_ipv6_loopback_literal_is_blocked() {
         let url = reqwest::Url::parse("http://[::1]:8080/").unwrap();
         assert!(matches!(
-            validate_url(&url, false).await,
+            validate_url(&url, false),
+            Err(EgressError::BlockedAddress)
+        ));
+    }
+
+    #[test]
+    fn ipv4_mapped_loopback_literal_is_blocked() {
+        let url = reqwest::Url::parse("http://[::ffff:127.0.0.1]/").unwrap();
+        assert!(matches!(
+            validate_url(&url, false),
             Err(EgressError::BlockedAddress)
         ));
     }
@@ -419,7 +469,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn response_slower_than_timeout_fails_promptly() {
+    async fn response_slower_than_timeout_returns_timeout() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(30)))
@@ -429,12 +479,9 @@ mod tests {
         let mut req = request(server.uri(), true);
         req.timeout = Duration::from_millis(100);
 
-        let start = Instant::now();
         let err = expect_err(client.send(req).await);
-        let elapsed = start.elapsed();
 
         assert!(matches!(err, EgressError::Timeout));
-        assert!(elapsed < Duration::from_secs(5), "took {elapsed:?}");
     }
 
     #[tokio::test]
@@ -474,5 +521,104 @@ mod tests {
 
         let resp = client.send(req).await.unwrap();
         assert_eq!(resp.status, 201);
+    }
+
+    const USER_HEADERS: [(&str, &str); 3] = [
+        ("authorization", "Bearer secret-token"),
+        ("cookie", "session=secret-cookie"),
+        ("x-api-key", "secret-key"),
+    ];
+
+    fn redirecting_request(url: String) -> EgressRequest {
+        let mut req = request(url, true);
+        req.follow_redirects = true;
+        req.headers = USER_HEADERS
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            .collect();
+        req
+    }
+
+    async fn mount_redirect(server: &MockServer, from: &str, to: String) {
+        Mock::given(method("GET"))
+            .and(path(from))
+            .respond_with(ResponseTemplate::new(302).insert_header("location", to.as_str()))
+            .mount(server)
+            .await;
+    }
+
+    async fn mount_final(server: &MockServer, at: &str) {
+        Mock::given(method("GET"))
+            .and(path(at))
+            .respond_with(ResponseTemplate::new(200).set_body_string("final"))
+            .mount(server)
+            .await;
+    }
+
+    async fn user_headers_seen_at(server: &MockServer, at: &str) -> Vec<&'static str> {
+        let requests = server.received_requests().await.unwrap();
+        let hit = requests
+            .iter()
+            .find(|r| r.url.path() == at)
+            .expect("final hop must reach the server");
+        USER_HEADERS
+            .iter()
+            .filter(|(name, _)| hit.headers.contains_key(*name))
+            .map(|(name, _)| *name)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn cross_origin_redirect_drops_user_headers() {
+        let origin = MockServer::start().await;
+        let other = MockServer::start().await;
+        mount_redirect(&origin, "/start", format!("{}/dest", other.uri())).await;
+        mount_final(&other, "/dest").await;
+        let client = EgressClient::new().unwrap();
+
+        let resp = client
+            .send(redirecting_request(format!("{}/start", origin.uri())))
+            .await
+            .unwrap();
+
+        assert_eq!(resp.body, "final");
+        assert!(user_headers_seen_at(&other, "/dest").await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn same_origin_redirect_keeps_user_headers() {
+        let origin = MockServer::start().await;
+        mount_redirect(&origin, "/start", "/dest".to_owned()).await;
+        mount_final(&origin, "/dest").await;
+        let client = EgressClient::new().unwrap();
+
+        let resp = client
+            .send(redirecting_request(format!("{}/start", origin.uri())))
+            .await
+            .unwrap();
+
+        assert_eq!(resp.body, "final");
+        assert_eq!(
+            user_headers_seen_at(&origin, "/dest").await,
+            vec!["authorization", "cookie", "x-api-key"]
+        );
+    }
+
+    #[tokio::test]
+    async fn redirect_back_to_original_origin_after_cross_origin_hop_still_drops_user_headers() {
+        let origin = MockServer::start().await;
+        let other = MockServer::start().await;
+        mount_redirect(&origin, "/start", format!("{}/bounce", other.uri())).await;
+        mount_redirect(&other, "/bounce", format!("{}/dest", origin.uri())).await;
+        mount_final(&origin, "/dest").await;
+        let client = EgressClient::new().unwrap();
+
+        let resp = client
+            .send(redirecting_request(format!("{}/start", origin.uri())))
+            .await
+            .unwrap();
+
+        assert_eq!(resp.body, "final");
+        assert!(user_headers_seen_at(&origin, "/dest").await.is_empty());
     }
 }

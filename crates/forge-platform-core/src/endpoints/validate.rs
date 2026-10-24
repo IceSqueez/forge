@@ -1,10 +1,10 @@
 use std::ffi::OsStr;
 use std::fmt;
-use std::net::IpAddr;
 
 use reqwest::Url;
 
 use super::surface::EndpointProtocol;
+use crate::net::is_loopback_host;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EndpointRefusal {
@@ -48,15 +48,4 @@ pub(crate) fn validate_override(
         return Err(EndpointRefusal::NotLoopback);
     }
     Ok(url.as_str().trim_end_matches('/').to_owned())
-}
-
-fn is_loopback_host(host: &str) -> bool {
-    if host.eq_ignore_ascii_case("localhost") {
-        return true;
-    }
-    let bare = host
-        .strip_prefix('[')
-        .and_then(|inner| inner.strip_suffix(']'))
-        .unwrap_or(host);
-    bare.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
 }

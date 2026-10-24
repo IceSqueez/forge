@@ -875,7 +875,6 @@ fn build_globals_module(
 mod tests {
     use super::*;
     use crate::engine::{Engine, EngineConfig};
-    use crate::http_client::new_without_tls_enforcement;
     use crate::http_config::ScriptHttpConfig;
     use forge_events::Event;
     use forge_storage::GlobalsRepo;
@@ -1015,7 +1014,7 @@ mod tests {
         config: Arc<ScriptHttpConfig>,
     ) -> Engine {
         let caused_by = EventId::new();
-        let http_client = Arc::new(new_without_tls_enforcement(config).unwrap());
+        let http_client = Arc::new(ScriptHttpClient::new(config).unwrap());
         let api = ForgeApi::new(
             Arc::new(CapturingPublisher(captured)),
             dp.clone() as Arc<dyn GlobalsRepo>,

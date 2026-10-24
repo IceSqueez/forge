@@ -3,7 +3,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
-use forge_platform_core::{HostRejection, ensure_public_host_blocking};
+use forge_platform_core::{
+    HostRejection, PublicAddressResolver, ensure_public_ip_literal, host_rejection_cause,
+    is_loopback_host,
+};
 
 use crate::http_config::ScriptHttpConfig;
 
@@ -39,11 +42,19 @@ pub struct ScriptHttpClient {
 
 impl ScriptHttpClient {
     pub fn new(config: Arc<ScriptHttpConfig>) -> Result<Self, HttpError> {
-        let client = reqwest::blocking::Client::builder()
-            .https_only(true)
+        let builder = reqwest::blocking::Client::builder()
+            .https_only(!config.allow_local)
             .redirect(reqwest::redirect::Policy::none())
             .timeout(Duration::from_millis(config.timeout_ms as u64))
-            .user_agent(concat!("forge/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("forge/", env!("CARGO_PKG_VERSION")));
+        let builder = if config.allow_local {
+            builder
+        } else {
+            builder
+                .dns_resolver(Arc::new(PublicAddressResolver))
+                .no_proxy()
+        };
+        let client = builder
             .build()
             .map_err(|e| HttpError::Network(e.without_url().to_string()))?;
         Ok(Self { config, client })
@@ -84,22 +95,22 @@ impl ScriptHttpClient {
             return Err(HttpError::RateLimitExceeded);
         }
 
-        if url.scheme() != "https" {
-            let host = url.host_str().unwrap_or_default();
-            let is_loopback =
-                host == "127.0.0.1" || host == "::1" || host.eq_ignore_ascii_case("localhost");
-            if !(self.config.allow_local && is_loopback) {
-                return Err(HttpError::HttpsRequired);
-            }
+        let host_str = url.host_str().unwrap_or_default();
+        let scheme_permitted = match url.scheme() {
+            "https" => true,
+            "http" => self.config.allow_local && is_loopback_host(host_str),
+            _ => false,
+        };
+        if !scheme_permitted {
+            return Err(HttpError::HttpsRequired);
         }
 
-        let host_str = url.host_str().unwrap_or_default();
         if !domain_allowed(host_str, &self.config.allowed_domains) {
             return Err(HttpError::DomainNotAllowed);
         }
 
         if !self.config.allow_local {
-            check_private_ip(host_str, url.port_or_known_default().unwrap_or(443))?;
+            ensure_public_ip_literal(host_str).map_err(rejection_error)?;
         }
 
         Ok(())
@@ -150,7 +161,9 @@ impl ScriptHttpClient {
 }
 
 fn map_send_error(e: reqwest::Error) -> HttpError {
-    if e.is_timeout() {
+    if let Some(rejection) = host_rejection_cause(&e) {
+        rejection_error(rejection)
+    } else if e.is_timeout() {
         HttpError::Timeout
     } else {
         HttpError::Network(e.without_url().to_string())
@@ -181,24 +194,11 @@ fn domain_allowed(host: &str, allowed: &[String]) -> bool {
     })
 }
 
-fn check_private_ip(host: &str, port: u16) -> Result<(), HttpError> {
-    ensure_public_host_blocking(host, port).map_err(|rejection| match rejection {
+fn rejection_error(rejection: HostRejection) -> HttpError {
+    match rejection {
         HostRejection::PrivateOrSpecial => HttpError::PrivateAddress,
         HostRejection::Unresolvable => HttpError::Network(rejection.to_string()),
-    })
-}
-
-#[cfg(test)]
-pub(crate) fn new_without_tls_enforcement(
-    config: Arc<ScriptHttpConfig>,
-) -> Result<ScriptHttpClient, HttpError> {
-    let client = reqwest::blocking::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_millis(config.timeout_ms as u64))
-        .user_agent(concat!("forge/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(|e| HttpError::Network(e.without_url().to_string()))?;
-    Ok(ScriptHttpClient { config, client })
+    }
 }
 
 #[cfg(test)]
@@ -284,6 +284,85 @@ mod tests {
         ));
     }
 
+    fn validate_url(client: &ScriptHttpClient, url: &str) -> Result<(), HttpError> {
+        let counter = Arc::new(AtomicU32::new(0));
+        client.validate(&reqwest::Url::parse(url).unwrap(), &counter)
+    }
+
+    #[test]
+    fn non_http_scheme_to_loopback_returns_https_required_even_with_allow_local() {
+        let client = ScriptHttpClient::new(allowlisted_local(&["localhost"])).unwrap();
+        assert!(matches!(
+            validate_url(&client, "ftp://localhost/file"),
+            Err(HttpError::HttpsRequired)
+        ));
+    }
+
+    #[test]
+    fn plain_http_is_permitted_for_each_loopback_host_spelling_with_allow_local() {
+        for host in ["localhost", "127.0.0.1", "[::1]"] {
+            let client = ScriptHttpClient::new(allowlisted_local(&[host])).unwrap();
+            assert!(
+                validate_url(&client, &format!("http://{host}:8080/")).is_ok(),
+                "plain http to {host} must pass validation"
+            );
+        }
+    }
+
+    #[test]
+    fn plain_http_to_non_loopback_host_returns_https_required_with_allow_local() {
+        for host in ["10.0.0.1", "[::ffff:127.0.0.1]"] {
+            let client = ScriptHttpClient::new(allowlisted_local(&[host])).unwrap();
+            assert!(
+                matches!(
+                    validate_url(&client, &format!("http://{host}/")),
+                    Err(HttpError::HttpsRequired)
+                ),
+                "plain http to {host} must require https"
+            );
+        }
+    }
+
+    #[test]
+    fn https_localhost_is_blocked_at_resolution_when_allow_local_false() {
+        let client = ScriptHttpClient::new(allowlisted(&["localhost"])).unwrap();
+        let counter = Arc::new(AtomicU32::new(0));
+        assert!(matches!(
+            client.get("https://localhost:9/", &counter),
+            Err(HttpError::PrivateAddress)
+        ));
+    }
+
+    #[test]
+    fn ipv4_mapped_loopback_literal_is_blocked_when_allow_local_false() {
+        let client = ScriptHttpClient::new(allowlisted(&["[::ffff:7f00:1]"])).unwrap();
+        assert!(matches!(
+            validate_url(&client, "https://[::ffff:7f00:1]/"),
+            Err(HttpError::PrivateAddress)
+        ));
+    }
+
+    #[tokio::test]
+    async fn get_localhost_name_over_plain_http_returns_200_with_allow_local() {
+        let server = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_body_string("hello"))
+            .mount(&server)
+            .await;
+        let url = format!("http://localhost:{}/test", server.address().port());
+        let config = allowlisted_local(&["localhost"]);
+
+        let result = tokio::task::spawn_blocking(move || {
+            let client = ScriptHttpClient::new(config).unwrap();
+            let counter = Arc::new(AtomicU32::new(0));
+            client.get(&url, &counter)
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(result.unwrap().status, 200);
+    }
+
     #[tokio::test]
     async fn get_allowlisted_local_server_returns_200() {
         let server = MockServer::start().await;
@@ -300,7 +379,7 @@ mod tests {
         let url = format!("{server_url}/test");
 
         let result = tokio::task::spawn_blocking(move || {
-            let client = new_without_tls_enforcement(config).unwrap();
+            let client = ScriptHttpClient::new(config).unwrap();
             let counter = Arc::new(AtomicU32::new(0));
             client.get(&url, &counter)
         })
@@ -336,7 +415,7 @@ mod tests {
         let url = format!("{server_url}/big");
 
         let result = tokio::task::spawn_blocking(move || {
-            let client = new_without_tls_enforcement(config).unwrap();
+            let client = ScriptHttpClient::new(config).unwrap();
             let counter = Arc::new(AtomicU32::new(0));
             client.get(&url, &counter)
         })

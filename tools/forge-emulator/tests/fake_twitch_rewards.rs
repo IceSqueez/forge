@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use forge_emulator::fixture::TwitchAccount;
 use forge_emulator::twitch::{FakeTwitch, FakeTwitchConfig, MAX_CUSTOM_REWARDS};
 use forge_events::{Event, EventPublisher};
-use forge_net::TokenBucketRateLimiter;
+use forge_net::{Gateway, TokenBucketRateLimiter};
 use forge_platform_core::{
     BuiltinCollections, CollectionFailure, CollectionId, CollectionItemAccess, CollectionItemId,
     PlatformEndpoints, QuickActionFieldValue, RevisionWait,
@@ -77,6 +77,7 @@ struct Forge {
     lifecycle: TwitchLifecycle,
     creds: Arc<dyn CredentialsRepo>,
     config: ChatSessionConfig,
+    helix: Gateway,
 }
 
 impl Forge {
@@ -123,7 +124,7 @@ impl Forge {
                 account.client_id.clone(),
             )),
             SubscriptionTracker::default(),
-            helix,
+            helix.clone(),
             lifecycle.clone(),
         ));
         let bundle = TwitchIntegrationBundle::new(Some(account.login.clone()), platform);
@@ -132,6 +133,7 @@ impl Forge {
             lifecycle,
             creds,
             config,
+            helix,
         }
     }
 
@@ -142,6 +144,7 @@ impl Forge {
                 Arc::clone(&self.creds),
                 self.config.client_id.clone(),
             )),
+            self.helix.clone(),
             self.config.clone(),
             Arc::new(DiscardBus),
             SubscriptionTracker::default(),

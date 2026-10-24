@@ -128,6 +128,7 @@ impl Forge {
         ));
         TwitchChat::new(
             manager,
+            self.helix(),
             self.config.clone(),
             Arc::clone(&self.bus),
             tracker.clone(),

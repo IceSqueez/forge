@@ -2731,7 +2731,6 @@ dependencies = [
  "percent-encoding",
  "rand 0.10.3",
  "regex",
- "reqwest",
  "rfd",
  "serde",
  "serde_json",

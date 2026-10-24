@@ -855,7 +855,7 @@ mod tests {
         let bot = TwitchBotAccount::new(
             &PlatformEndpoints::default(),
             backend as Arc<dyn CredentialsRepo>,
-            "client".to_owned(),
+            crate::test_support::default_twitch_oauth_client(),
             Arc::clone(&bus) as Arc<dyn EventPublisher>,
             crate::test_support::default_twitch_helix_gateway(bus as Arc<dyn EventPublisher>),
         );

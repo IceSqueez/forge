@@ -17,8 +17,9 @@ use forge_platform_core::{
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{
     BroadcasterTier, ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW,
-    SubscriptionTracker, TwitchChat, TwitchChatHandle, TwitchCredentialsManager,
-    TwitchIntegrationBundle, TwitchLifecycle, TwitchPlatform, helix_gateway,
+    SubscriptionTracker, TWITCH_OAUTH_BUDGET_CAPACITY, TWITCH_OAUTH_BUDGET_WINDOW, TwitchChat,
+    TwitchChatHandle, TwitchCredentialsManager, TwitchIntegrationBundle, TwitchLifecycle,
+    TwitchOAuthClient, TwitchPlatform, helix_gateway, twitch_oauth_gateway,
 };
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::OAuthToken;
@@ -119,9 +120,8 @@ impl Forge {
             config.clone(),
             Arc::clone(&creds),
             Arc::new(TwitchCredentialsManager::new(
-                &config.endpoints,
+                twitch_oauth(&config.endpoints, &account.client_id),
                 Arc::clone(&creds),
-                account.client_id.clone(),
             )),
             SubscriptionTracker::default(),
             helix.clone(),
@@ -140,9 +140,8 @@ impl Forge {
     fn start_chat(&self) -> TwitchChatHandle {
         TwitchChat::new(
             Arc::new(TwitchCredentialsManager::new(
-                &self.config.endpoints,
+                twitch_oauth(&self.config.endpoints, &self.config.client_id),
                 Arc::clone(&self.creds),
-                self.config.client_id.clone(),
             )),
             self.helix.clone(),
             self.config.clone(),
@@ -412,4 +411,18 @@ async fn fake_only_manageable_listing_hides_rewards_another_app_owns() {
     .unwrap();
 
     assert_eq!(listed["data"], json!([]));
+}
+
+fn twitch_oauth(endpoints: &PlatformEndpoints, client_id: &str) -> TwitchOAuthClient {
+    TwitchOAuthClient::new(
+        twitch_oauth_gateway(
+            endpoints,
+            Arc::new(TokenBucketRateLimiter::new(
+                TWITCH_OAUTH_BUDGET_CAPACITY,
+                TWITCH_OAUTH_BUDGET_WINDOW,
+            )),
+        )
+        .unwrap(),
+        client_id.to_owned(),
+    )
 }

@@ -141,11 +141,19 @@ async fn seeded_twitch_access_token_is_served_without_entering_the_refresh_path(
             .then(|| std::ffi::OsString::from("http://127.0.0.1:9/oauth2"))
     })
     .unwrap();
-    let manager = TwitchCredentialsManager::new(
-        &unroutable_oauth,
-        Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+    let oauth = forge_platform_twitch::TwitchOAuthClient::new(
+        forge_platform_twitch::twitch_oauth_gateway(
+            &unroutable_oauth,
+            Arc::new(forge_net::TokenBucketRateLimiter::new(
+                forge_platform_twitch::TWITCH_OAUTH_BUDGET_CAPACITY,
+                forge_platform_twitch::TWITCH_OAUTH_BUDGET_WINDOW,
+            )),
+        )
+        .unwrap(),
         client_id,
     );
+    let manager =
+        TwitchCredentialsManager::new(oauth, Arc::clone(&backend) as Arc<dyn CredentialsRepo>);
     let served = manager.get_valid_access_token().await;
     backend.shutdown().await;
 

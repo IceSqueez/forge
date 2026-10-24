@@ -927,6 +927,20 @@ pub(crate) fn default_twitch_helix_gateway(
     .unwrap()
 }
 
+pub(crate) fn default_twitch_oauth_client() -> forge_platform_twitch::TwitchOAuthClient {
+    forge_platform_twitch::TwitchOAuthClient::new(
+        forge_platform_twitch::twitch_oauth_gateway(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(forge_net::TokenBucketRateLimiter::new(
+                forge_platform_twitch::TWITCH_OAUTH_BUDGET_CAPACITY,
+                forge_platform_twitch::TWITCH_OAUTH_BUDGET_WINDOW,
+            )),
+        )
+        .unwrap(),
+        "client".to_owned(),
+    )
+}
+
 pub(crate) fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()

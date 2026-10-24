@@ -17,9 +17,10 @@ use forge_platform_core::{
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{
     ChatSessionConfig, CredentialsTokenSource, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW,
-    HelixHttpTransport, SubscriptionTracker, TwitchChat, TwitchChatHandle,
-    TwitchCredentialsManager, TwitchIntegrationBundle, TwitchLifecycle, TwitchPlatform,
-    helix_gateway, send_chat,
+    HelixHttpTransport, SubscriptionTracker, TWITCH_OAUTH_BUDGET_CAPACITY,
+    TWITCH_OAUTH_BUDGET_WINDOW, TwitchChat, TwitchChatHandle, TwitchCredentialsManager,
+    TwitchIntegrationBundle, TwitchLifecycle, TwitchOAuthClient, TwitchPlatform, helix_gateway,
+    send_chat, twitch_oauth_gateway,
 };
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::{ChatPayload, OAuthToken, PermissionRung};
@@ -122,9 +123,8 @@ impl Forge {
         tracker: &SubscriptionTracker,
     ) -> TwitchChatHandle {
         let manager = Arc::new(TwitchCredentialsManager::new(
-            &self.config.endpoints,
+            twitch_oauth(&self.config.endpoints, &self.config.client_id),
             Arc::clone(&self.creds),
-            self.config.client_id.clone(),
         ));
         TwitchChat::new(
             manager,
@@ -139,9 +139,8 @@ impl Forge {
 
     fn platform(&self) -> Arc<TwitchPlatform> {
         let manager = Arc::new(TwitchCredentialsManager::new(
-            &self.config.endpoints,
+            twitch_oauth(&self.config.endpoints, &self.config.client_id),
             Arc::clone(&self.creds),
-            self.config.client_id.clone(),
         ));
         Arc::new(TwitchPlatform::new(
             self.config.clone(),
@@ -543,4 +542,18 @@ async fn a_refused_chat_send_through_the_platform_publishes_request_fail_without
         "token leaked into request.fail: {}",
         failure.payload
     );
+}
+
+fn twitch_oauth(endpoints: &PlatformEndpoints, client_id: &str) -> TwitchOAuthClient {
+    TwitchOAuthClient::new(
+        twitch_oauth_gateway(
+            endpoints,
+            Arc::new(TokenBucketRateLimiter::new(
+                TWITCH_OAUTH_BUDGET_CAPACITY,
+                TWITCH_OAUTH_BUDGET_WINDOW,
+            )),
+        )
+        .unwrap(),
+        client_id.to_owned(),
+    )
 }

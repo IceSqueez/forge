@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::process::{Output, Stdio};
 use std::time::Duration;
 
@@ -7,15 +8,26 @@ use tokio::process::Child;
 use crate::error::EspeakError;
 
 const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(10);
+const ESPEAK_BINARY: &str = "espeak-ng";
+const DEFAULT_RATE_WPM: u32 = 175;
+const DEFAULT_PITCH: u32 = 50;
 
-fn timeout_error() -> EspeakError {
+pub(crate) struct SynthesisInvocation<'a> {
+    pub voice_id: &'a str,
+    pub text: &'a str,
+    pub rate_wpm: u32,
+    pub pitch_0_99: u32,
+    pub ssml: bool,
+}
+
+fn timeout_error(timeout: Duration) -> EspeakError {
     EspeakError::Timeout {
-        ms: u64::try_from(SUBPROCESS_TIMEOUT.as_millis()).unwrap_or(u64::MAX),
+        ms: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
     }
 }
 
 pub(crate) fn check_espeak_version() -> Result<(), EspeakError> {
-    let status = std::process::Command::new("espeak-ng")
+    let status = std::process::Command::new(ESPEAK_BINARY)
         .arg("--version")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -39,49 +51,56 @@ pub fn pitch_from_semitones(pitch_semitones: f32) -> u32 {
 }
 
 pub(crate) async fn list_voices_from_binary() -> Result<String, EspeakError> {
-    let listing = tokio::process::Command::new("espeak-ng")
+    list_voices_via(Path::new(ESPEAK_BINARY), SUBPROCESS_TIMEOUT).await
+}
+
+pub(crate) async fn list_voices_via(
+    binary: &Path,
+    timeout: Duration,
+) -> Result<String, EspeakError> {
+    let listing = tokio::process::Command::new(binary)
         .arg("--voices")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true)
         .output();
-    let output = tokio::time::timeout(SUBPROCESS_TIMEOUT, listing)
+    let output = tokio::time::timeout(timeout, listing)
         .await
-        .map_err(|_| timeout_error())?
+        .map_err(|_| timeout_error(timeout))?
         .map_err(EspeakError::Io)?;
-
     if !output.status.success() {
         return Err(EspeakError::BinaryNotFound);
     }
-
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 pub(crate) async fn run_synthesis(
-    voice_id: &str,
-    text: &str,
-    rate_wpm: u32,
-    pitch_0_99: u32,
-    ssml: bool,
+    invocation: &SynthesisInvocation<'_>,
 ) -> Result<Vec<u8>, EspeakError> {
-    let mut args: Vec<std::ffi::OsString> = vec!["--stdout".into(), "-v".into(), voice_id.into()];
+    run_synthesis_via(Path::new(ESPEAK_BINARY), SUBPROCESS_TIMEOUT, invocation).await
+}
 
-    if rate_wpm != 175 {
+pub(crate) async fn run_synthesis_via(
+    binary: &Path,
+    timeout: Duration,
+    invocation: &SynthesisInvocation<'_>,
+) -> Result<Vec<u8>, EspeakError> {
+    let mut args: Vec<std::ffi::OsString> =
+        vec!["--stdout".into(), "-v".into(), invocation.voice_id.into()];
+    if invocation.rate_wpm != DEFAULT_RATE_WPM {
         args.push("-s".into());
-        args.push(rate_wpm.to_string().into());
+        args.push(invocation.rate_wpm.to_string().into());
     }
-
-    if pitch_0_99 != 50 {
+    if invocation.pitch_0_99 != DEFAULT_PITCH {
         args.push("-p".into());
-        args.push(pitch_0_99.to_string().into());
+        args.push(invocation.pitch_0_99.to_string().into());
     }
-
-    if ssml {
+    if invocation.ssml {
         args.push("-m".into());
     }
 
-    let mut child = tokio::process::Command::new("espeak-ng")
+    let mut child = tokio::process::Command::new(binary)
         .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -90,12 +109,12 @@ pub(crate) async fn run_synthesis(
         .spawn()
         .map_err(EspeakError::Io)?;
 
-    let mut input = text.as_bytes().to_vec();
+    let mut input = invocation.text.as_bytes().to_vec();
     if input.last() != Some(&b'\n') {
         input.push(b'\n');
     }
 
-    let output = match tokio::time::timeout(SUBPROCESS_TIMEOUT, exchange(&mut child, input)).await {
+    let output = match tokio::time::timeout(timeout, exchange(&mut child, input)).await {
         Ok(Ok(output)) => output,
         Ok(Err(e)) => {
             kill_and_reap(&mut child).await;
@@ -103,7 +122,7 @@ pub(crate) async fn run_synthesis(
         }
         Err(_) => {
             kill_and_reap(&mut child).await;
-            return Err(timeout_error());
+            return Err(timeout_error(timeout));
         }
     };
 
@@ -111,7 +130,6 @@ pub(crate) async fn run_synthesis(
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
         return Err(EspeakError::SubprocessFailed(stderr));
     }
-
     Ok(output.stdout)
 }
 

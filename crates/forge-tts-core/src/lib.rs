@@ -130,27 +130,95 @@ pub trait TtsEngineFactory: Send + Sync {
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError>;
 }
 
+pub async fn build_engine(
+    id: &EngineId,
+    factory: Arc<dyn TtsEngineFactory>,
+) -> Result<Arc<dyn TtsEngine>, TtsError> {
+    tokio::task::spawn_blocking(move || factory.create())
+        .await
+        .map_err(|e| TtsError::EngineUnavailable {
+            id: id.clone(),
+            detail: e.to_string(),
+        })?
+        .map(Arc::from)
+}
+
+pub struct EngineSlot {
+    id: EngineId,
+    factory: Arc<dyn TtsEngineFactory>,
+    engine: tokio::sync::OnceCell<Arc<dyn TtsEngine>>,
+}
+
+impl EngineSlot {
+    fn unbuilt(id: EngineId, factory: Arc<dyn TtsEngineFactory>) -> Self {
+        Self {
+            id,
+            factory,
+            engine: tokio::sync::OnceCell::new(),
+        }
+    }
+
+    fn built(id: EngineId, factory: Arc<dyn TtsEngineFactory>, engine: Arc<dyn TtsEngine>) -> Self {
+        Self {
+            id,
+            factory,
+            engine: tokio::sync::OnceCell::new_with(Some(engine)),
+        }
+    }
+
+    pub async fn engine(&self) -> Result<Arc<dyn TtsEngine>, TtsError> {
+        self.engine
+            .get_or_try_init(|| build_engine(&self.id, Arc::clone(&self.factory)))
+            .await
+            .cloned()
+    }
+}
+
 pub struct TtsRegistry {
-    factories: HashMap<EngineId, Arc<dyn TtsEngineFactory>>,
+    slots: HashMap<EngineId, Arc<EngineSlot>>,
 }
 
 impl TtsRegistry {
     pub fn new() -> Self {
         Self {
-            factories: HashMap::new(),
+            slots: HashMap::new(),
         }
     }
 
     pub fn register(&mut self, id: EngineId, factory: Arc<dyn TtsEngineFactory>) {
-        self.factories.insert(id, factory);
+        let slot = EngineSlot::unbuilt(id.clone(), factory);
+        self.slots.insert(id, Arc::new(slot));
     }
 
-    pub fn get(&self, id: &EngineId) -> Option<Arc<dyn TtsEngineFactory>> {
-        self.factories.get(id).cloned()
+    pub fn register_built(
+        &mut self,
+        id: EngineId,
+        factory: Arc<dyn TtsEngineFactory>,
+        engine: Arc<dyn TtsEngine>,
+    ) {
+        let slot = EngineSlot::built(id.clone(), factory, engine);
+        self.slots.insert(id, Arc::new(slot));
+    }
+
+    pub fn slot(&self, id: &EngineId) -> Option<Arc<EngineSlot>> {
+        self.slots.get(id).cloned()
+    }
+
+    pub fn invalidate(&mut self, id: &EngineId) {
+        if let Some(slot) = self.slots.get_mut(id) {
+            *slot = Arc::new(EngineSlot::unbuilt(id.clone(), Arc::clone(&slot.factory)));
+        }
+    }
+
+    pub fn invalidate_all(&mut self) {
+        let ids: Vec<EngineId> = self.slots.keys().cloned().collect();
+        for id in ids {
+            self.invalidate(&id);
+        }
     }
 
     pub fn engine_ids(&self) -> Vec<EngineId> {
-        let mut ids: Vec<_> = self.factories.keys().cloned().collect();
+        let mut ids: Vec<_> = self.slots.keys().cloned().collect();
         ids.sort_by(|a, b| a.0.cmp(&b.0));
         ids
     }
@@ -163,12 +231,109 @@ impl Default for TtsRegistry {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use super::*;
 
-    fn _dyn_engine(_: &dyn TtsEngine) {}
-    fn _dyn_factory(_: &dyn TtsEngineFactory) {}
+    struct NullEngine {
+        id: EngineId,
+        caps: EngineCapabilities,
+    }
+
+    #[async_trait]
+    impl TtsEngine for NullEngine {
+        fn engine_id(&self) -> &EngineId {
+            &self.id
+        }
+        fn capabilities(&self) -> &EngineCapabilities {
+            &self.caps
+        }
+        async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
+            Ok(Vec::new())
+        }
+        async fn synthesize(&self, _request: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
+            Ok(PcmBuffer::new(vec![0; 4], 22_050, 1))
+        }
+    }
+
+    fn null_engine(id: &str) -> Arc<dyn TtsEngine> {
+        Arc::new(NullEngine {
+            id: EngineId(id.into()),
+            caps: EngineCapabilities::default(),
+        })
+    }
+
+    struct CountingFactory {
+        id: EngineId,
+        creates: AtomicUsize,
+        failing_first: usize,
+        gate: Option<std::sync::Mutex<std::sync::mpsc::Receiver<()>>>,
+        entered: Option<tokio::sync::mpsc::UnboundedSender<()>>,
+    }
+
+    impl CountingFactory {
+        fn new(id: &str) -> Arc<Self> {
+            Arc::new(Self::plain(id))
+        }
+
+        fn plain(id: &str) -> Self {
+            Self {
+                id: EngineId(id.into()),
+                creates: AtomicUsize::new(0),
+                failing_first: 0,
+                gate: None,
+                entered: None,
+            }
+        }
+
+        fn creates(&self) -> usize {
+            self.creates.load(Ordering::SeqCst)
+        }
+    }
+
+    impl TtsEngineFactory for CountingFactory {
+        fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
+            let attempt = self.creates.fetch_add(1, Ordering::SeqCst);
+            if let Some(entered) = &self.entered {
+                entered.send(()).expect("test still listening");
+            }
+            if let Some(gate) = &self.gate {
+                gate.lock().unwrap().recv().expect("gate opened");
+            }
+            if attempt < self.failing_first {
+                return Err(TtsError::EngineUnavailable {
+                    id: self.id.clone(),
+                    detail: "not ready yet".into(),
+                });
+            }
+            Ok(Box::new(NullEngine {
+                id: self.id.clone(),
+                caps: EngineCapabilities::default(),
+            }))
+        }
+    }
+
+    struct PanickingFactory;
+
+    impl TtsEngineFactory for PanickingFactory {
+        fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
+            panic!("engine constructor crashed")
+        }
+    }
+
+    fn id(name: &str) -> EngineId {
+        EngineId(name.into())
+    }
+
+    async fn engine_of(reg: &TtsRegistry, name: &str) -> Arc<dyn TtsEngine> {
+        reg.slot(&id(name))
+            .expect("registered")
+            .engine()
+            .await
+            .expect("engine builds")
+    }
 
     #[test]
     fn engine_ids_show_their_product_names_and_unknown_ids_show_as_is() {
@@ -190,41 +355,165 @@ mod tests {
     }
 
     #[test]
-    fn registry_register_and_lookup() {
-        struct FakeFactory;
-        impl TtsEngineFactory for FakeFactory {
-            fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
-                Err(TtsError::EngineUnavailable {
-                    id: EngineId("fake".into()),
-                    detail: "test".into(),
-                })
-            }
+    fn engine_ids_lists_every_registered_engine_sorted_by_id() {
+        let mut reg = TtsRegistry::new();
+        reg.register(id("zzz"), CountingFactory::new("zzz"));
+        reg.register(id("aaa"), CountingFactory::new("aaa"));
+        reg.register_built(id("mmm"), CountingFactory::new("mmm"), null_engine("mmm"));
+
+        assert_eq!(reg.engine_ids(), vec![id("aaa"), id("mmm"), id("zzz")]);
+    }
+
+    #[tokio::test]
+    async fn every_use_of_a_registered_engine_shares_one_built_instance() {
+        let factory = CountingFactory::new("alpha");
+        let mut reg = TtsRegistry::new();
+        reg.register(id("alpha"), factory.clone());
+
+        let first = engine_of(&reg, "alpha").await;
+        for _ in 0..4 {
+            assert!(Arc::ptr_eq(&first, &engine_of(&reg, "alpha").await));
+        }
+        assert_eq!(factory.creates(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_failed_build_leaves_the_slot_empty_and_the_next_use_retries() {
+        let factory = Arc::new(CountingFactory {
+            failing_first: 1,
+            ..CountingFactory::plain("alpha")
+        });
+        let mut reg = TtsRegistry::new();
+        reg.register(id("alpha"), factory.clone());
+        let slot = reg.slot(&id("alpha")).expect("registered");
+
+        let failed = slot.engine().await;
+        let served = slot.engine().await;
+
+        assert!(matches!(failed, Err(TtsError::EngineUnavailable { .. })));
+        assert!(served.is_ok(), "the retry must serve the engine");
+        assert_eq!(factory.creates(), 2);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_first_uses_build_the_engine_once() {
+        const USERS: usize = 8;
+        let (open_gate, gate) = std::sync::mpsc::channel();
+        let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
+        let factory = Arc::new(CountingFactory {
+            gate: Some(std::sync::Mutex::new(gate)),
+            entered: Some(entered_tx),
+            ..CountingFactory::plain("alpha")
+        });
+        let mut reg = TtsRegistry::new();
+        reg.register(id("alpha"), factory.clone());
+        let slot = reg.slot(&id("alpha")).expect("registered");
+
+        let users: Vec<_> = (0..USERS)
+            .map(|_| {
+                let slot = Arc::clone(&slot);
+                tokio::spawn(async move { slot.engine().await })
+            })
+            .collect();
+        entered_rx.recv().await.expect("a build started");
+        for _ in 0..USERS {
+            tokio::task::yield_now().await;
+        }
+        for _ in 0..USERS {
+            open_gate.send(()).expect("factory listening");
+        }
+        let mut engines = Vec::new();
+        for user in users {
+            engines.push(user.await.expect("task").expect("engine"));
         }
 
+        assert_eq!(factory.creates(), 1);
+        assert!(engines.iter().all(|e| Arc::ptr_eq(e, &engines[0])));
+    }
+
+    #[tokio::test]
+    async fn a_pre_built_engine_is_served_without_calling_its_factory() {
+        let factory = CountingFactory::new("alpha");
+        let prebuilt = null_engine("alpha");
         let mut reg = TtsRegistry::new();
-        let id = EngineId("fake".into());
-        reg.register(id.clone(), Arc::new(FakeFactory));
-        assert!(reg.get(&id).is_some());
-        assert_eq!(reg.engine_ids(), vec![EngineId("fake".into())]);
+        reg.register_built(id("alpha"), factory.clone(), prebuilt.clone());
+
+        let served = engine_of(&reg, "alpha").await;
+
+        assert!(Arc::ptr_eq(&served, &prebuilt));
+        assert_eq!(factory.creates(), 0);
+    }
+
+    #[tokio::test]
+    async fn invalidating_one_engine_rebuilds_only_that_engine_from_its_factory() {
+        let alpha = CountingFactory::new("alpha");
+        let beta = CountingFactory::new("beta");
+        let alpha_prebuilt = null_engine("alpha");
+        let mut reg = TtsRegistry::new();
+        reg.register_built(id("alpha"), alpha.clone(), alpha_prebuilt.clone());
+        reg.register(id("beta"), beta.clone());
+        let beta_before = engine_of(&reg, "beta").await;
+
+        reg.invalidate(&id("alpha"));
+        let alpha_after = engine_of(&reg, "alpha").await;
+        let beta_after = engine_of(&reg, "beta").await;
+
+        assert!(!Arc::ptr_eq(&alpha_after, &alpha_prebuilt));
+        assert_eq!(alpha.creates(), 1);
+        assert!(Arc::ptr_eq(&beta_before, &beta_after));
+        assert_eq!(beta.creates(), 1);
+    }
+
+    #[tokio::test]
+    async fn invalidating_all_engines_rebuilds_each_on_its_next_use() {
+        let factories = [CountingFactory::new("alpha"), CountingFactory::new("beta")];
+        let mut reg = TtsRegistry::new();
+        for (name, factory) in ["alpha", "beta"].into_iter().zip(&factories) {
+            reg.register(id(name), factory.clone());
+            engine_of(&reg, name).await;
+        }
+
+        reg.invalidate_all();
+        for name in ["alpha", "beta"] {
+            engine_of(&reg, name).await;
+            engine_of(&reg, name).await;
+        }
+
+        assert_eq!(factories.map(|f| f.creates()), [2, 2]);
+    }
+
+    #[tokio::test]
+    async fn a_slot_taken_before_invalidation_keeps_serving_its_engine() {
+        let factory = CountingFactory::new("alpha");
+        let mut reg = TtsRegistry::new();
+        reg.register(id("alpha"), factory.clone());
+        let in_flight = reg.slot(&id("alpha")).expect("registered");
+        let old = in_flight.engine().await.expect("engine");
+
+        reg.invalidate(&id("alpha"));
+        let still_old = in_flight.engine().await.expect("engine");
+
+        assert!(Arc::ptr_eq(&old, &still_old));
+        assert_eq!(factory.creates(), 1);
     }
 
     #[test]
-    fn engine_ids_sorted() {
-        struct FakeFactory;
-        impl TtsEngineFactory for FakeFactory {
-            fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
-                Err(TtsError::EngineUnavailable {
-                    id: EngineId("x".into()),
-                    detail: "test".into(),
-                })
-            }
-        }
-
+    fn invalidating_an_unregistered_engine_registers_nothing() {
         let mut reg = TtsRegistry::new();
-        reg.register(EngineId("zzz".into()), Arc::new(FakeFactory));
-        reg.register(EngineId("aaa".into()), Arc::new(FakeFactory));
-        let ids = reg.engine_ids();
-        assert_eq!(ids[0], EngineId("aaa".into()));
-        assert_eq!(ids[1], EngineId("zzz".into()));
+
+        reg.invalidate(&id("ghost"));
+
+        assert!(reg.slot(&id("ghost")).is_none());
+        assert!(reg.engine_ids().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_factory_that_panics_reports_its_engine_as_unavailable() {
+        let result = build_engine(&id("alpha"), Arc::new(PanickingFactory)).await;
+
+        assert!(
+            matches!(&result, Err(TtsError::EngineUnavailable { id, .. }) if id.0 == "alpha"),
+            "expected EngineUnavailable for alpha"
+        );
     }
 }

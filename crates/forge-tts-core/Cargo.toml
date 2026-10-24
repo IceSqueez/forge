@@ -13,6 +13,7 @@ workspace = true
 forge-audio = { path = "../forge-audio" }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

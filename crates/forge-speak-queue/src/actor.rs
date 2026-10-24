@@ -201,13 +201,13 @@ async fn run_synthesis(
         }
     };
 
-    let factory = match deps
+    let slot = deps
         .registry
         .read()
         .unwrap_or_else(|e| e.into_inner())
-        .get(&engine_id)
-    {
-        Some(f) => f,
+        .slot(&engine_id);
+    let slot = match slot {
+        Some(slot) => slot,
         None => {
             return SynthTaskResult {
                 request_id: req.request_id.clone(),
@@ -220,7 +220,7 @@ async fn run_synthesis(
         }
     };
 
-    let engine = match factory.create() {
+    let engine = match slot.engine().await {
         Ok(e) => e,
         Err(e) => {
             return SynthTaskResult {
@@ -449,6 +449,12 @@ pub(crate) async fn run_actor(
     let (detector_tx, mut detector_rx) =
         tokio::sync::mpsc::channel::<Option<Arc<LanguageDetector>>>(1);
 
+    {
+        let mut registry = deps.registry.write().unwrap_or_else(|e| e.into_inner());
+        for engine_id in &deps.disabled_engines {
+            registry.invalidate(engine_id);
+        }
+    }
     let voice_catalog = Arc::new(build_voice_catalog(&deps.registry, &deps.disabled_engines).await);
     voices.store_arc(voice_catalog.clone());
     disabled_engines.store(deps.disabled_engines.clone());
@@ -557,6 +563,10 @@ pub(crate) async fn run_actor(
                 match cmd {
                     None => break,
                     Some(SpeakCommand::RefreshVoiceCatalog) => {
+                        deps.registry
+                            .write()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .invalidate_all();
                         spawn_catalog_rebuild(
                             deps.registry.clone(),
                             (*disabled_engines.load()).clone(),
@@ -565,10 +575,16 @@ pub(crate) async fn run_actor(
                     }
                     Some(SpeakCommand::SetEngineEnabled(engine_id, enabled)) => {
                         let mut next = (*disabled_engines.load()).clone();
-                        if enabled {
-                            next.remove(&engine_id);
+                        let changed = if enabled {
+                            next.remove(&engine_id)
                         } else {
-                            next.insert(engine_id);
+                            next.insert(engine_id.clone())
+                        };
+                        if changed {
+                            deps.registry
+                                .write()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .invalidate(&engine_id);
                         }
                         disabled_engines.store(next.clone());
                         spawn_catalog_rebuild(deps.registry.clone(), next, catalog_tx.clone());
@@ -1506,12 +1522,12 @@ async fn build_voice_catalog(
         if disabled.contains(&engine_id) {
             continue;
         }
-        let factory = registry
+        let slot = registry
             .read()
             .unwrap_or_else(|e| e.into_inner())
-            .get(&engine_id);
-        if let Some(factory) = factory {
-            match factory.create() {
+            .slot(&engine_id);
+        if let Some(slot) = slot {
+            match slot.engine().await {
                 Ok(engine) => match engine.list_voices().await {
                     Ok(voices) => catalog.extend(voices),
                     Err(e) => tracing::warn!(engine = %engine_id.0, "list_voices: {e}"),

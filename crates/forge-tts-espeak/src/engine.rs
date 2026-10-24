@@ -75,13 +75,13 @@ impl TtsEngine for EspeakEngine {
         let rate_wpm = process::rate_wpm_from_multiplier(request.rate_multiplier);
         let pitch_0_99 = process::pitch_from_semitones(request.pitch_semitones);
 
-        let raw_bytes = process::run_synthesis(
-            &request.voice_id.0,
-            &request.text,
+        let raw_bytes = process::run_synthesis(&process::SynthesisInvocation {
+            voice_id: &request.voice_id.0,
+            text: &request.text,
             rate_wpm,
             pitch_0_99,
-            request.ssml,
-        )
+            ssml: request.ssml,
+        })
         .await
         .map_err(TtsError::from)?;
 

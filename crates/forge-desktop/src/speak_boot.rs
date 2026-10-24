@@ -7,7 +7,7 @@ use forge_runtime::EventBus;
 use forge_speak_queue::{PipelineConfigHandle, QueueConfig, QueueDeps, SpeakEventStream};
 use forge_storage::paths;
 use forge_storage::{CredentialsRepo, DataProvider};
-use forge_tts_core::{EngineId, TtsEngineFactory, TtsRegistry};
+use forge_tts_core::{EngineId, TtsEngineFactory, TtsRegistry, build_engine};
 use forge_tts_espeak::EspeakEngineFactory;
 use forge_tts_nsspeech::NsSpeechEngineFactory;
 use forge_tts_piper::{PiperEngine, PiperEngineFactory};
@@ -37,28 +37,39 @@ async fn register_local_engines(registry: &mut TtsRegistry) {
         );
     }
 
-    match EspeakEngineFactory.create() {
-        Ok(engine) => {
-            registry.register(engine.engine_id().clone(), Arc::new(EspeakEngineFactory));
-            tracing::info!("registered the eSpeak-NG TTS engine");
-        }
-        Err(e) => tracing::info!(error = %e, "eSpeak-NG TTS engine unavailable"),
-    }
+    register_probed(
+        registry,
+        forge_tts_core::ENGINE_ID_ESPEAK_NG,
+        Arc::new(EspeakEngineFactory),
+    )
+    .await;
+    register_probed(
+        registry,
+        forge_tts_core::ENGINE_ID_SAPI,
+        Arc::new(SapiEngineFactory),
+    )
+    .await;
+    register_probed(
+        registry,
+        forge_tts_core::ENGINE_ID_NSSPEECH,
+        Arc::new(NsSpeechEngineFactory),
+    )
+    .await;
+}
 
-    match SapiEngineFactory.create() {
+async fn register_probed(
+    registry: &mut TtsRegistry,
+    engine_id: &str,
+    factory: Arc<dyn TtsEngineFactory>,
+) {
+    let id = EngineId(engine_id.into());
+    let name = forge_tts_core::engine_display_name(engine_id);
+    match build_engine(&id, Arc::clone(&factory)).await {
         Ok(engine) => {
-            registry.register(engine.engine_id().clone(), Arc::new(SapiEngineFactory));
-            tracing::info!("registered the SAPI 5 TTS engine");
+            registry.register_built(id, factory, engine);
+            tracing::info!(engine = name, "registered a TTS engine");
         }
-        Err(e) => tracing::info!(error = %e, "SAPI 5 TTS engine unavailable"),
-    }
-
-    match NsSpeechEngineFactory.create() {
-        Ok(engine) => {
-            registry.register(engine.engine_id().clone(), Arc::new(NsSpeechEngineFactory));
-            tracing::info!("registered the AVFoundation TTS engine");
-        }
-        Err(e) => tracing::info!(error = %e, "AVFoundation TTS engine unavailable"),
+        Err(e) => tracing::info!(engine = name, error = %e, "TTS engine unavailable"),
     }
 }
 

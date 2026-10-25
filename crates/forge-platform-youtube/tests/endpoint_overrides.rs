@@ -6,14 +6,15 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use forge_events::{Event, EventPublisher};
 use forge_platform_core::{
     ChatPlatform, EndpointSurface, PlatformEndpoints, PlatformError, ViewerReport,
 };
 use forge_platform_youtube::{
     ActiveBroadcastIdHandle, GoogleAuthFlow, LiveChatIdHandle, SharedQuota, YoutubeAdBreak,
     YoutubeAuthBundle, YoutubeBroadcaster, YoutubeChannelLookup, YoutubeCredentialsManager,
-    YoutubeModeration, YoutubePlatform, YoutubeSendChat, YoutubeStreamMetadata, YoutubeStreamStats,
-    YoutubeThumbnail, YoutubeViewerPoll,
+    YoutubeDataApi, YoutubeModeration, YoutubePlatform, YoutubeSendChat, YoutubeStreamMetadata,
+    YoutubeStreamStats, YoutubeThumbnail, YoutubeViewerPoll,
 };
 use forge_storage::ban_ledger::MockBanLedgerRepo;
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
@@ -103,8 +104,14 @@ fn token_source() -> TokenSource {
     Arc::new(|| Box::pin(async { Ok("override-token".to_owned()) }))
 }
 
-fn quota() -> SharedQuota {
-    SharedQuota::default()
+struct SilentBus;
+
+impl EventPublisher for SilentBus {
+    fn publish(&self, _event: Event) {}
+}
+
+fn api(endpoints: &PlatformEndpoints) -> YoutubeDataApi {
+    YoutubeDataApi::new(endpoints, SharedQuota::default(), Arc::new(SilentBus)).unwrap()
 }
 
 fn live_chat() -> LiveChatIdHandle {
@@ -173,34 +180,33 @@ async fn data_api_override_carries_every_rest_client_to_the_override_host() {
         .await;
     let endpoints = data_api_override(&server);
 
-    YoutubeSendChat::new(&endpoints, token_source(), live_chat(), quota())
+    YoutubeSendChat::new(api(&endpoints), token_source(), live_chat())
         .send("hi")
         .await
         .ok();
     YoutubeModeration::new(
-        &endpoints,
+        api(&endpoints),
         token_source(),
         broadcaster_source(),
         live_chat(),
-        quota(),
         Arc::new(MockBanLedgerRepo::new()),
     )
     .add_moderator("UCviewer")
     .await
     .ok();
-    YoutubeStreamMetadata::new(&endpoints, token_source(), active_broadcast(), quota())
+    YoutubeStreamMetadata::new(api(&endpoints), token_source(), active_broadcast())
         .set_title("New title")
         .await
         .ok();
-    YoutubeStreamStats::new(&endpoints, token_source(), active_broadcast(), quota())
+    YoutubeStreamStats::new(api(&endpoints), token_source(), active_broadcast())
         .fetch()
         .await
         .ok();
-    YoutubeAdBreak::new(&endpoints, token_source(), active_broadcast(), quota())
+    YoutubeAdBreak::new(api(&endpoints), token_source(), active_broadcast())
         .insert_cuepoint(30)
         .await
         .ok();
-    YoutubeChannelLookup::new(&endpoints, token_source(), quota())
+    YoutubeChannelLookup::new(api(&endpoints), token_source())
         .lookup("@viewer")
         .await
         .ok();
@@ -235,7 +241,7 @@ async fn upload_api_override_carries_the_thumbnail_upload_to_the_override_host()
     ));
     std::fs::write(&image, b"\x89PNG\r\n\x1a\n").unwrap();
 
-    let result = YoutubeThumbnail::new(&endpoints, token_source(), active_broadcast(), quota())
+    let result = YoutubeThumbnail::new(api(&endpoints), token_source(), active_broadcast())
         .set(image.to_str().unwrap())
         .await;
     std::fs::remove_file(&image).unwrap();
@@ -315,10 +321,9 @@ async fn data_api_override_carries_the_viewer_poll_to_the_override_host() {
         .await;
     let (reports_tx, mut reports_rx) = watch::channel(ViewerReport::Absent);
     let poll = YoutubeViewerPoll::new(
-        &data_api_override(&server),
+        api(&data_api_override(&server)),
         token_source(),
         active_broadcast(),
-        quota(),
         reports_tx,
     );
 
@@ -365,12 +370,11 @@ async fn platform_carries_its_override_into_the_chat_poller_and_the_sender() {
     let endpoints = data_api_override(&server);
     let manager = manager_holding(&endpoints, bundle(one_hour_from_now(), Some("@override"))).await;
     let platform = YoutubePlatform::new(
-        &endpoints,
+        api(&endpoints),
         "UCoverride".to_owned(),
         Arc::new(manager),
         LiveChatIdHandle::new(),
         ActiveBroadcastIdHandle::new(),
-        quota(),
         Arc::new(MockBanLedgerRepo::new()),
     );
     let mut events = platform.events();

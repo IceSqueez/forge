@@ -17,7 +17,8 @@ use forge_events::Event;
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError, ViewerReport};
 use forge_platform_youtube::{
     ActiveBroadcastIdHandle, GoogleAuthFlow, LiveChatIdHandle, SharedQuota, YoutubeAuthBundle,
-    YoutubeChatPoller, YoutubeCredentialsManager, YoutubeSendChat, YoutubeViewerPoll,
+    YoutubeChatPoller, YoutubeCredentialsManager, YoutubeDataApi, YoutubeSendChat,
+    YoutubeViewerPoll,
 };
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::OAuthToken;
@@ -118,8 +119,14 @@ fn token_source(token: String) -> TokenSource {
     })
 }
 
-fn quota() -> SharedQuota {
-    SharedQuota::default()
+struct SilentBus;
+
+impl forge_events::EventPublisher for SilentBus {
+    fn publish(&self, _: Event) {}
+}
+
+fn youtube_data_api(endpoints: &PlatformEndpoints) -> YoutubeDataApi {
+    YoutubeDataApi::new(endpoints, SharedQuota::default(), Arc::new(SilentBus)).unwrap()
 }
 
 fn alice() -> YouTubeChatter {
@@ -185,13 +192,12 @@ impl ForgePoller {
     fn start(fake: &FakeYouTube) -> Self {
         let (tx, events) = mpsc::unbounded_channel();
         let poller = YoutubeChatPoller::new(
-            &endpoints(fake),
+            youtube_data_api(&endpoints(fake)),
             token_source(fake.access_token()),
             tx,
             fake.config().channel_id.clone(),
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
-            quota(),
             Arc::new(forge_storage::ban_ledger::MockBanLedgerRepo::new()),
         );
         let cancel = tokio_util::sync::CancellationToken::new();
@@ -472,10 +478,9 @@ async fn forge_send_inserts_a_text_message_that_comes_back_as_the_owner() {
     let live_chat = LiveChatIdHandle::new();
     live_chat.set(Some(fake.config().live_chat_id.clone()));
     let sender = YoutubeSendChat::new(
-        &endpoints(&fake),
+        youtube_data_api(&endpoints(&fake)),
         token_source(fake.access_token()),
         live_chat,
-        quota(),
     );
 
     sender.send("hello chat").await.unwrap();
@@ -497,10 +502,9 @@ async fn forge_send_into_an_ended_chat_is_refused_as_live_chat_ended() {
     let live_chat = LiveChatIdHandle::new();
     live_chat.set(Some(fake.config().live_chat_id.clone()));
     let sender = YoutubeSendChat::new(
-        &endpoints(&fake),
+        youtube_data_api(&endpoints(&fake)),
         token_source(fake.access_token()),
         live_chat,
-        quota(),
     );
 
     let refused = sender.send("too late").await;
@@ -616,10 +620,9 @@ async fn forge_viewer_poll_reports_the_live_concurrent_viewers() {
     broadcast.set(Some(fake.config().broadcast_id.clone()));
     let (reports_tx, mut reports) = watch::channel(ViewerReport::Absent);
     let poll = YoutubeViewerPoll::new(
-        &endpoints(&fake),
+        youtube_data_api(&endpoints(&fake)),
         token_source(fake.access_token()),
         broadcast,
-        quota(),
         reports_tx,
     );
     let _task = CancelOnDrop(tokio::spawn(poll.run()));

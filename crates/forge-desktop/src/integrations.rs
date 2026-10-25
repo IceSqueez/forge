@@ -1861,7 +1861,7 @@ pub(crate) mod tests {
         wire_discord(&mut sub_actions, &backend, &bus);
         wire_midi(&mut sub_actions, &backend, &bus, Vec::new());
         register_twitch_runners(&mut sub_actions, &backend, &bus);
-        register_youtube_runners(&mut sub_actions, &backend);
+        register_youtube_runners(&mut sub_actions, &bus);
         register_kick_runners(&mut sub_actions, &backend);
         forge_runtime::register_scheduled_run_sub_actions(
             &mut sub_actions,
@@ -1923,21 +1923,25 @@ pub(crate) mod tests {
         Arc::new(|| Box::pin(async { Ok("token".to_owned()) }))
     }
 
-    fn register_youtube_runners(sub_actions: &mut SubActionRegistry, _: &Arc<dyn DataProvider>) {
+    fn register_youtube_runners(sub_actions: &mut SubActionRegistry, bus: &Arc<EventBus>) {
         use forge_platform_youtube as yt;
-        let quota = yt::SharedQuota::default();
+        let api = yt::YoutubeDataApi::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            yt::SharedQuota::default(),
+            publisher(bus),
+        )
+        .unwrap();
         let chat = yt::LiveChatIdHandle::new();
         let broadcast = yt::ActiveBroadcastIdHandle::new();
         yt::register_youtube_sub_actions(
             sub_actions,
             Arc::new(yt::YoutubeSendChat::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                api.clone(),
                 youtube_token_source(),
                 chat.clone(),
-                quota.clone(),
             )),
             Arc::new(yt::YoutubeModeration::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                api.clone(),
                 youtube_token_source(),
                 Arc::new(|| {
                     Box::pin(async {
@@ -1948,38 +1952,29 @@ pub(crate) mod tests {
                     })
                 }),
                 chat,
-                quota.clone(),
                 Arc::new(forge_storage::ban_ledger::MockBanLedgerRepo::new()),
             )),
             Arc::new(yt::YoutubeStreamMetadata::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                api.clone(),
                 youtube_token_source(),
                 broadcast.clone(),
-                quota.clone(),
             )),
             Arc::new(yt::YoutubeStreamStats::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                api.clone(),
                 youtube_token_source(),
                 broadcast.clone(),
-                quota.clone(),
             )),
             Arc::new(yt::YoutubeAdBreak::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                api.clone(),
                 youtube_token_source(),
                 broadcast.clone(),
-                quota.clone(),
             )),
             Arc::new(yt::YoutubeThumbnail::new(
-                &forge_platform_core::PlatformEndpoints::default(),
+                api.clone(),
                 youtube_token_source(),
                 broadcast,
-                quota.clone(),
             )),
-            Arc::new(yt::YoutubeChannelLookup::new(
-                &forge_platform_core::PlatformEndpoints::default(),
-                youtube_token_source(),
-                quota,
-            )),
+            Arc::new(yt::YoutubeChannelLookup::new(api, youtube_token_source())),
         )
         .unwrap();
     }

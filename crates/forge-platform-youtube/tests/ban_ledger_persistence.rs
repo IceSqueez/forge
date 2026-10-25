@@ -5,9 +5,10 @@ use std::ffi::OsString;
 use std::path::Path;
 use std::sync::Arc;
 
+use forge_events::{Event, EventPublisher};
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
 use forge_platform_youtube::{
-    LiveChatIdHandle, SharedQuota, YoutubeBroadcaster, YoutubeModeration,
+    LiveChatIdHandle, SharedQuota, YoutubeBroadcaster, YoutubeDataApi, YoutubeModeration,
 };
 use forge_storage::{BanLedgerKey, DataProvider};
 use forge_storage_sqlite::SqliteBackend;
@@ -30,6 +31,12 @@ fn data_api_override(server: &MockServer) -> PlatformEndpoints {
         format!("{}{DATA_API_PREFIX}", server.uri()),
     )]);
     PlatformEndpoints::resolve(|variable| table.get(variable).map(OsString::from)).unwrap()
+}
+
+struct SilentBus;
+
+impl EventPublisher for SilentBus {
+    fn publish(&self, _event: Event) {}
 }
 
 async fn open_backend(dir: &Path) -> SqliteBackend {
@@ -55,12 +62,17 @@ fn moderation_over(server: &MockServer, backend: &SqliteBackend) -> YoutubeModer
             })
         })
     });
-    YoutubeModeration::new(
+    let api = YoutubeDataApi::new(
         &data_api_override(server),
+        SharedQuota::default(),
+        Arc::new(SilentBus),
+    )
+    .unwrap();
+    YoutubeModeration::new(
+        api,
         token_source,
         broadcaster_source,
         live_chat_id,
-        SharedQuota::default(),
         backend.ban_ledger_repo(),
     )
 }

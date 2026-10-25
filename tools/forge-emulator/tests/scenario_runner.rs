@@ -1775,27 +1775,32 @@ fn youtube_token(
     })
 }
 
+fn youtube_data_api(
+    endpoints: &forge_platform_core::PlatformEndpoints,
+) -> forge_platform_youtube::YoutubeDataApi {
+    forge_platform_youtube::YoutubeDataApi::new(
+        endpoints,
+        forge_platform_youtube::SharedQuota::default(),
+        Arc::new(QuietPublisher),
+    )
+    .unwrap()
+}
+
 fn forge_youtube_echo(fake: &FakeYouTube) -> tokio::task::JoinHandle<()> {
     let endpoints = youtube_endpoints(fake);
     let live_chat = forge_platform_youtube::LiveChatIdHandle::new();
-    let quota = forge_platform_youtube::SharedQuota::default();
+    let api = youtube_data_api(&endpoints);
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
     let poller = forge_platform_youtube::YoutubeChatPoller::new(
-        &endpoints,
+        api.clone(),
         youtube_token(fake),
         event_tx,
         fake.config().channel_id.clone(),
         live_chat.clone(),
         forge_platform_youtube::ActiveBroadcastIdHandle::new(),
-        quota.clone(),
         Arc::new(forge_storage::ban_ledger::MockBanLedgerRepo::new()),
     );
-    let sender = forge_platform_youtube::YoutubeSendChat::new(
-        &endpoints,
-        youtube_token(fake),
-        live_chat,
-        quota,
-    );
+    let sender = forge_platform_youtube::YoutubeSendChat::new(api, youtube_token(fake), live_chat);
     tokio::spawn(async move {
         let polling = tokio::spawn(poller.run(tokio_util::sync::CancellationToken::new()));
         while let Some(event) = event_rx.recv().await {

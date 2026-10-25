@@ -35,6 +35,7 @@ const GLOBAL_COOLDOWN_SETTING_KEY: &str = "global_cooldown_setting";
 const SETTING_ENABLED_KEY: &str = "is_enabled";
 const ERROR_MESSAGE_KEY: &str = "message";
 
+const NOT_FOUND: u16 = StatusCode::NOT_FOUND.as_u16();
 const NOT_OWNED_REASON: &str = "Created outside forge - edit it in the Twitch dashboard";
 
 const CAPACITY_NEEDLES: &[&str] = &["too many", "maximum number", "max number", "reward limit"];
@@ -535,7 +536,7 @@ impl BuiltinCollections for TwitchIntegrationBundle {
         let broadcaster_id = self.rewards_broadcaster(collection)?;
         let body = RewardDraft::from_values(values)?.into_body(RewardCall::Modify);
         self.write_reward(
-            update_request(broadcaster_id, item.as_str(), body),
+            update_request(broadcaster_id, item.as_str(), body).expect_status(NOT_FOUND),
             RewardCall::Modify,
         )
         .await
@@ -548,7 +549,7 @@ impl BuiltinCollections for TwitchIntegrationBundle {
     ) -> CollectionOutcome<()> {
         let broadcaster_id = self.rewards_broadcaster(collection)?;
         self.reward_call(
-            delete_request(broadcaster_id, item.as_str()),
+            delete_request(broadcaster_id, item.as_str()).expect_status(NOT_FOUND),
             RewardCall::Modify,
         )
         .await
@@ -569,7 +570,7 @@ impl BuiltinCollections for TwitchIntegrationBundle {
             other => return Err(unknown_toggle(other)),
         };
         self.write_reward(
-            update_request(broadcaster_id, item.as_str(), body),
+            update_request(broadcaster_id, item.as_str(), body).expect_status(NOT_FOUND),
             RewardCall::Modify,
         )
         .await

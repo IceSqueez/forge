@@ -1,5 +1,5 @@
 use crate::event_kinds;
-use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::helix::{CONFLICT, HelixError, HelixMethod, HelixRequest, HelixTransport};
 use crate::subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
 use forge_events::{Event, EventPublisher, EventSource};
 use futures_util::stream::{self, StreamExt};
@@ -546,7 +546,9 @@ async fn subscribe_one(
         }
     });
 
-    let request = HelixRequest::new(HelixMethod::Post, EVENTSUB_PATH).body(body);
+    let request = HelixRequest::new(HelixMethod::Post, EVENTSUB_PATH)
+        .body(body)
+        .expect_status(CONFLICT);
     match ctx.helix.execute(request).await {
         Ok(response) => record_created(&ctx, &tracker, index, response),
         Err(error) => {

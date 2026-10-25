@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_net::{Gateway, GatewayFailure, GatewayRequest, Method, RequestBody, Secret};
+use forge_net::{
+    ExpectedRefusal, Gateway, GatewayFailure, GatewayRequest, Method, RequestBody, Secret,
+};
 use forge_types::OAuthToken;
 use thiserror::Error;
 use tracing::{debug, warn};
 
 pub(crate) const CLIENT_ID_HEADER: &str = "Client-Id";
 const TOO_MANY_REQUESTS: u16 = reqwest::StatusCode::TOO_MANY_REQUESTS.as_u16();
-const CONFLICT: u16 = reqwest::StatusCode::CONFLICT.as_u16();
+pub(crate) const CONFLICT: u16 = reqwest::StatusCode::CONFLICT.as_u16();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HelixMethod {
@@ -37,6 +39,7 @@ pub struct HelixRequest {
     pub path: &'static str,
     pub query: Vec<(String, String)>,
     pub body: Option<serde_json::Value>,
+    pub expected_refusals: Vec<ExpectedRefusal>,
 }
 
 impl HelixRequest {
@@ -46,6 +49,7 @@ impl HelixRequest {
             path,
             query: Vec::new(),
             body: None,
+            expected_refusals: Vec::new(),
         }
     }
 
@@ -56,6 +60,17 @@ impl HelixRequest {
 
     pub fn body(mut self, body: serde_json::Value) -> Self {
         self.body = Some(body);
+        self
+    }
+
+    pub fn expect_status(mut self, status: u16) -> Self {
+        self.expected_refusals.push(ExpectedRefusal::status(status));
+        self
+    }
+
+    pub fn expect_status_with_excerpt(mut self, status: u16, marker: &'static str) -> Self {
+        self.expected_refusals
+            .push(ExpectedRefusal::status_with_excerpt(status, marker));
         self
     }
 }
@@ -167,6 +182,9 @@ impl HelixHttpTransport {
             .bearer(Secret::new(token.expose()));
         for (name, value) in &request.query {
             outbound = outbound.query(name.as_str(), value.as_str());
+        }
+        for refusal in &request.expected_refusals {
+            outbound = outbound.expect_refusal(refusal.clone());
         }
         if let Some(body) = &request.body {
             let body = RequestBody::json(body)

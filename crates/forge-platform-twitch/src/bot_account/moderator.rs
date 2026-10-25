@@ -8,6 +8,8 @@ use crate::credentials::load;
 use crate::helix::{HelixError, HelixMethod, HelixRequest};
 
 const MODERATORS_PATH: &str = "/helix/moderation/moderators";
+const ALREADY_MODERATOR_MARKER: &str = "already";
+const BAD_REQUEST: u16 = StatusCode::BAD_REQUEST.as_u16();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BotModerator {
@@ -82,7 +84,8 @@ impl TwitchBotAccount {
             .ok_or(BotModeratorError::BroadcasterReauthRequired)?;
         let request = HelixRequest::new(HelixMethod::Post, MODERATORS_PATH)
             .query("broadcaster_id", broadcaster.user_id)
-            .query("user_id", bot_id);
+            .query("user_id", bot_id)
+            .expect_status_with_excerpt(BAD_REQUEST, ALREADY_MODERATOR_MARKER);
         match transport.execute(request).await {
             Ok(_) => {
                 self.set_moderator(BotModerator::Moderator);
@@ -103,8 +106,8 @@ impl TwitchBotAccount {
         if status == StatusCode::UNPROCESSABLE_ENTITY.as_u16() {
             return Err(BotModeratorError::BotIsVip);
         }
-        if status == StatusCode::BAD_REQUEST.as_u16() {
-            if lowered.contains("already") {
+        if status == BAD_REQUEST {
+            if lowered.contains(ALREADY_MODERATOR_MARKER) {
                 self.set_moderator(BotModerator::Moderator);
                 return Ok(());
             }

@@ -18,12 +18,12 @@ const TARGET_KEYS: TargetKeys = TargetKeys {
 };
 const KIND_ID: &str = "twitch.moderation.unban_user";
 const NOT_BANNED_MARKER: &str = "not banned";
+const BAD_REQUEST: u16 = reqwest::StatusCode::BAD_REQUEST.as_u16();
 
 fn already_unbanned(error: &HelixError) -> bool {
     match error {
         HelixError::Http { status, body } => {
-            *status == reqwest::StatusCode::BAD_REQUEST.as_u16()
-                && body.to_lowercase().contains(NOT_BANNED_MARKER)
+            *status == BAD_REQUEST && body.to_lowercase().contains(NOT_BANNED_MARKER)
         }
         _ => false,
     }
@@ -57,7 +57,8 @@ impl UnbanUserRunner {
         let request = HelixRequest::new(HelixMethod::Delete, "/helix/moderation/bans")
             .query("broadcaster_id", user_id.clone())
             .query("moderator_id", user_id)
-            .query("user_id", target_user_id);
+            .query("user_id", target_user_id)
+            .expect_status_with_excerpt(BAD_REQUEST, NOT_BANNED_MARKER);
         match self.transport.execute(request).await {
             Err(error) if already_unbanned(&error) => SubActionOutcome::Success,
             result => SubActionOutcome::from_result(&result),

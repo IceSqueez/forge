@@ -8,6 +8,7 @@ use crate::sub_actions::user_target::UserTarget;
 
 const WHISPERS_PATH: &str = "/helix/whispers";
 const MAX_WHISPER_CHARS: usize = 500;
+const BAD_REQUEST: u16 = StatusCode::BAD_REQUEST.as_u16();
 const WHISPER_BLOCK_MARKERS: [&str; 3] = ["stranger", "block", "doesn't allow"];
 
 #[derive(Debug, Error)]
@@ -32,7 +33,7 @@ fn classify_rejection(error: HelixError) -> WhisperError {
     let blocks_strangers = WHISPER_BLOCK_MARKERS
         .iter()
         .any(|marker| lowered.contains(marker));
-    if *status == StatusCode::BAD_REQUEST.as_u16() && blocks_strangers {
+    if *status == BAD_REQUEST && blocks_strangers {
         return WhisperError::RecipientRejectsWhispers;
     }
     WhisperError::Helix(error)
@@ -68,6 +69,11 @@ pub(crate) async fn send_whisper_to(
         .query("from_user_id", from_user_id)
         .query("to_user_id", to_user_id)
         .body(serde_json::json!({ "message": message }));
+    let request = WHISPER_BLOCK_MARKERS
+        .iter()
+        .fold(request, |request, marker| {
+            request.expect_status_with_excerpt(BAD_REQUEST, marker)
+        });
     transport
         .execute(request)
         .await

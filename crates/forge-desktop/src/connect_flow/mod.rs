@@ -34,6 +34,7 @@ pub struct ConnectFlowLaunch {
     pub youtube_slot: Option<IntegrationSlot<BuiltinObject>>,
     pub endpoints: PlatformEndpoints,
     pub twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
+    pub youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
 }
 
 pub struct ConnectFlow {
@@ -46,6 +47,7 @@ pub struct ConnectFlow {
     youtube_slot: Option<IntegrationSlot<BuiltinObject>>,
     endpoints: PlatformEndpoints,
     twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
+    youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
     phase: LocalCallbackFlowPhase,
     auth_url: Option<String>,
     error: Option<String>,
@@ -79,6 +81,7 @@ impl ConnectFlow {
             youtube_slot,
             endpoints,
             twitch_sign_in,
+            youtube_sign_in,
         } = launch;
 
         if platform == PlatformId::Twitch {
@@ -98,6 +101,7 @@ impl ConnectFlow {
             youtube_slot,
             endpoints,
             twitch_sign_in,
+            youtube_sign_in,
             phase: LocalCallbackFlowPhase::Idle,
             auth_url: None,
             error: None,

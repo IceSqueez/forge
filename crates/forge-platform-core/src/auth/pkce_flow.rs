@@ -77,17 +77,44 @@ pub struct PkceTokenResponse {
     pub expires_in: Option<u64>,
 }
 
-pub struct PkceFlow {
-    config: PkceClientConfig,
-    http: reqwest::Client,
+#[derive(Debug, Clone)]
+pub struct PkceAuthorizeConfig {
+    pub client_id: String,
+    pub authorize_endpoint: String,
+    pub scopes: Vec<String>,
+    pub authorize_pre_redirect_params: Vec<(String, String)>,
+    pub authorize_trailing_params: Vec<(String, String)>,
+    pub preferred_port: Option<u16>,
+}
+
+impl From<&PkceClientConfig> for PkceAuthorizeConfig {
+    fn from(config: &PkceClientConfig) -> Self {
+        Self {
+            client_id: config.client_id.clone(),
+            authorize_endpoint: config.authorize_endpoint.clone(),
+            scopes: config.scopes.clone(),
+            authorize_pre_redirect_params: config.authorize_pre_redirect_params.clone(),
+            authorize_trailing_params: config.authorize_trailing_params.clone(),
+            preferred_port: config.preferred_port,
+        }
+    }
+}
+
+pub struct PkceAuthorization {
+    pub code: String,
+    pub redirect_uri: String,
+    pub code_verifier: String,
+}
+
+pub struct PkceLoopback {
+    config: PkceAuthorizeConfig,
     pending: Option<LocalCallbackDriver>,
 }
 
-impl PkceFlow {
-    pub fn new(config: PkceClientConfig) -> Self {
+impl PkceLoopback {
+    pub fn new(config: PkceAuthorizeConfig) -> Self {
         Self {
             config,
-            http: token_http_client(),
             pending: None,
         }
     }
@@ -102,28 +129,66 @@ impl PkceFlow {
         Ok(PkceAuthorizeUrl { auth_url })
     }
 
-    pub async fn exchange(
+    pub async fn await_authorization(
         &mut self,
         timeout: Duration,
-    ) -> Result<PkceTokenResponse, PlatformError> {
+    ) -> Result<PkceAuthorization, PlatformError> {
         let driver = self.pending.take().ok_or_else(|| PlatformError::Auth {
             reason: "exchange called before start".into(),
         })?;
         let redirect_uri = driver.redirect_uri().to_owned();
         let code_verifier = driver.code_verifier().to_owned();
         let callback = driver.await_callback(timeout).await?;
+        Ok(PkceAuthorization {
+            code: callback.code,
+            redirect_uri,
+            code_verifier,
+        })
+    }
+}
 
+pub struct PkceFlow {
+    loopback: PkceLoopback,
+    client_id: String,
+    client_secret: Option<String>,
+    token_endpoint: String,
+    http: reqwest::Client,
+}
+
+impl PkceFlow {
+    pub fn new(config: PkceClientConfig) -> Self {
+        Self {
+            loopback: PkceLoopback::new(PkceAuthorizeConfig::from(&config)),
+            client_id: config.client_id,
+            client_secret: config.client_secret,
+            token_endpoint: config.token_endpoint,
+            http: token_http_client(),
+        }
+    }
+
+    pub async fn start(
+        &mut self,
+        extra_trailing_params: &[(&str, &str)],
+    ) -> Result<PkceAuthorizeUrl, PlatformError> {
+        self.loopback.start(extra_trailing_params).await
+    }
+
+    pub async fn exchange(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<PkceTokenResponse, PlatformError> {
+        let authorization = self.loopback.await_authorization(timeout).await?;
         let mut form: Vec<(&str, &str)> = vec![
-            ("client_id", &self.config.client_id),
-            ("code", &callback.code),
+            ("client_id", &self.client_id),
+            ("code", &authorization.code),
             ("grant_type", "authorization_code"),
-            ("redirect_uri", &redirect_uri),
-            ("code_verifier", &code_verifier),
+            ("redirect_uri", &authorization.redirect_uri),
+            ("code_verifier", &authorization.code_verifier),
         ];
-        if let Some(secret) = &self.config.client_secret {
+        if let Some(secret) = &self.client_secret {
             form.push(("client_secret", secret));
         }
-        post_token_request(&self.http, &self.config.token_endpoint, &form).await
+        post_token_request(&self.http, &self.token_endpoint, &form).await
     }
 }
 
@@ -182,7 +247,7 @@ impl PkceRefresher {
 }
 
 fn build_authorize_url(
-    config: &PkceClientConfig,
+    config: &PkceAuthorizeConfig,
     driver: &LocalCallbackDriver,
     extra_trailing_params: &[(&str, &str)],
 ) -> Result<String, PlatformError> {

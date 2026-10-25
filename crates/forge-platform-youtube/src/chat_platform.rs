@@ -296,7 +296,6 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::*;
-    use crate::auth::GoogleAuthFlow;
 
     struct EmptyRepo;
     #[async_trait]
@@ -325,10 +324,10 @@ mod tests {
     }
 
     fn platform() -> YoutubePlatform {
-        let endpoints = crate::endpoints_test_support::unreachable_endpoints();
         let manager = Arc::new(YoutubeCredentialsManager::new(
             Arc::new(EmptyRepo),
-            GoogleAuthFlow::new(&endpoints, "test_cid".to_owned(), "test_secret".to_owned()),
+            crate::endpoints_test_support::unreachable_oauth_client(),
+            crate::endpoints_test_support::unreachable_data_api(),
         ));
         YoutubePlatform::new(
             crate::endpoints_test_support::unreachable_data_api(),

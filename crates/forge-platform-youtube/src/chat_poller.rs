@@ -117,7 +117,12 @@ impl YoutubeChatPoller {
                 return Ok(());
             }
 
-            let token = match (self.access_token_source)().await {
+            let fetched_token = tokio::select! {
+                biased;
+                () = cancel.cancelled() => return Ok(()),
+                fetched = (self.access_token_source)() => fetched,
+            };
+            let token = match fetched_token {
                 Ok(t) => t,
                 Err(e) => {
                     health.failed();
@@ -242,7 +247,12 @@ impl YoutubeChatPoller {
                     break 'inner;
                 }
 
-                let token = match (self.access_token_source)().await {
+                let fetched_token = tokio::select! {
+                    biased;
+                    () = cancel.cancelled() => return Ok(()),
+                    fetched = (self.access_token_source)() => fetched,
+                };
+                let token = match fetched_token {
                     Ok(t) => t,
                     Err(e) => {
                         health.failed();
@@ -3151,6 +3161,61 @@ mod tests {
                 ),
                 (ended, request_fails)
             );
+        }
+    }
+
+    fn token_source_hanging_from_call(
+        hang_from: usize,
+    ) -> (TokenSource, Arc<std::sync::atomic::AtomicUsize>) {
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = Arc::clone(&calls);
+        let source: TokenSource = Arc::new(move || {
+            let call = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            Box::pin(async move {
+                if call >= hang_from {
+                    std::future::pending::<()>().await;
+                }
+                Ok("test-token".to_owned())
+            })
+        });
+        (source, calls)
+    }
+
+    #[tokio::test]
+    async fn cancelling_while_the_access_token_is_being_fetched_returns_at_once() {
+        const CANCEL_GRACE: Duration = Duration::from_secs(1);
+        for (label, hang_from) in [("broadcast resolution", 1), ("chat poll", 2)] {
+            let server = StubServer::start().await;
+            server.reply_always(BROADCASTS, live_broadcast());
+            server.reply_always(
+                CHAT_MESSAGES,
+                StubReply::ok(&chat_response(json!([]), POLL_FLOOR_MS)),
+            );
+            let (source, calls) = token_source_hanging_from_call(hang_from);
+            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let poller = YoutubeChatPoller::new(
+                crate::endpoints_test_support::data_api_at(&server.uri()),
+                source,
+                tx,
+                "UCtest".to_owned(),
+                LiveChatIdHandle::new(),
+                ActiveBroadcastIdHandle::new(),
+                crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            );
+            let cancel = CancellationToken::new();
+            let join = tokio::spawn(poller.run(cancel.clone()));
+            spin_until(
+                || calls.load(std::sync::atomic::Ordering::SeqCst) == hang_from,
+                "the poller never asked for the hanging token",
+            )
+            .await;
+
+            tokio::time::pause();
+            cancel.cancel();
+            let finished = tokio::time::timeout(CANCEL_GRACE, join).await;
+            tokio::time::resume();
+
+            assert!(matches!(finished, Ok(Ok(Ok(())))), "{label}");
         }
     }
 }

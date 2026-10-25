@@ -214,6 +214,7 @@ pub(crate) struct YoutubeFactory {
     live_chat_id: forge_platform_youtube::LiveChatIdHandle,
     active_broadcast: forge_platform_youtube::ActiveBroadcastIdHandle,
     ban_ledger: Arc<dyn BanLedgerRepo>,
+    sign_in: forge_platform_youtube::YoutubeSignIn,
 }
 
 pub(crate) fn wire_youtube(
@@ -223,14 +224,11 @@ pub(crate) fn wire_youtube(
     endpoints: &PlatformEndpoints,
 ) -> Option<YoutubeFactory> {
     let (client_id, client_secret) = forge_platform_youtube::client_credentials()?;
-    let google = forge_platform_youtube::GoogleAuthFlow::new(endpoints, client_id, client_secret);
-    let creds = creds_of(backend);
-    let manager = Arc::new(forge_platform_youtube::YoutubeCredentialsManager::new(
-        Arc::clone(&creds),
-        google,
-    ));
-    let live_chat_id = forge_platform_youtube::LiveChatIdHandle::new();
-    let active_broadcast = forge_platform_youtube::ActiveBroadcastIdHandle::new();
+    let oauth = forge_platform_youtube::GoogleOAuthClient::new(
+        google_oauth_gateway(endpoints)?,
+        client_id,
+        client_secret,
+    );
     let api = forge_platform_youtube::YoutubeDataApi::new(
         endpoints,
         forge_platform_youtube::SharedQuota::default(),
@@ -238,6 +236,15 @@ pub(crate) fn wire_youtube(
     )
     .inspect_err(|e| eprintln!("forge-desktop: youtube data api gateway build failed: {e}"))
     .ok()?;
+    let creds = creds_of(backend);
+    let manager = Arc::new(forge_platform_youtube::YoutubeCredentialsManager::new(
+        Arc::clone(&creds),
+        oauth,
+        api.clone(),
+    ));
+    let sign_in = forge_platform_youtube::YoutubeSignIn::new(Arc::clone(&manager));
+    let live_chat_id = forge_platform_youtube::LiveChatIdHandle::new();
+    let active_broadcast = forge_platform_youtube::ActiveBroadcastIdHandle::new();
     let ban_ledger = backend.ban_ledger_repo();
 
     let token_source = || {
@@ -310,7 +317,24 @@ pub(crate) fn wire_youtube(
         live_chat_id,
         active_broadcast,
         ban_ledger,
+        sign_in,
     })
+}
+
+fn google_oauth_gateway(endpoints: &PlatformEndpoints) -> Option<Gateway> {
+    let limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
+        forge_platform_youtube::GOOGLE_OAUTH_BUDGET_CAPACITY,
+        forge_platform_youtube::GOOGLE_OAUTH_BUDGET_WINDOW,
+    ));
+    forge_platform_youtube::google_oauth_gateway(endpoints, limiter)
+        .inspect_err(|e| eprintln!("forge-desktop: youtube oauth gateway build failed: {e}"))
+        .ok()
+}
+
+impl YoutubeFactory {
+    pub(crate) fn sign_in(&self) -> forge_platform_youtube::YoutubeSignIn {
+        self.sign_in.clone()
+    }
 }
 
 #[async_trait]

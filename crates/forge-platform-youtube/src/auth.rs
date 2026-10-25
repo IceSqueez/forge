@@ -1,24 +1,27 @@
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use forge_platform_core::auth::{
-    CALLBACK_PATH, PkceClientConfig, PkceFlow, PkceRefreshConfig, ReauthPolicy,
-};
-use forge_platform_core::{AuthFlow, EndpointSurface, PlatformEndpoints, PlatformError};
+use forge_net::{GatewayRequest, Secret};
+use forge_platform_core::auth::{CALLBACK_PATH, PkceAuthorizeConfig, PkceLoopback};
+use forge_platform_core::{AuthFlow, PlatformError};
 use forge_types::OAuthToken;
-use reqwest::StatusCode;
 use serde::Deserialize;
+
+use crate::credentials_manager::YoutubeCredentialsManager;
+use crate::data_api::{YoutubeDataApi, malformed};
+use crate::oauth_client::GoogleOAuthClient;
 
 pub const GOOGLE_AUTHORIZE_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 pub const GOOGLE_TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
 
-const GOOGLE_TOKEN_PATH: &str = "/token";
-
 const YOUTUBE_CHANNELS_PATH: &str = "/channels";
+const OWN_CHANNEL_COST: u32 = 1;
+const OWN_CHANNEL_MISSING_SCOPE: &str = "channel identity scope missing";
+const NO_CHANNEL_FOUND: &str = "no channel found";
+const NO_CHANNEL_STATUS: u16 = reqwest::StatusCode::OK.as_u16();
 
 pub const YOUTUBE_BROADCASTER_SCOPES: &[&str] =
     &["https://www.googleapis.com/auth/youtube.force-ssl"];
-
-const PLATFORM: &str = "youtube";
 
 pub fn youtube_auth_flow() -> AuthFlow {
     AuthFlow::LocalCallback {
@@ -57,45 +60,40 @@ pub fn client_credentials() -> Option<(String, String)> {
     Some((id.to_owned(), secret.to_owned()))
 }
 
-pub struct GoogleAuthFlow {
-    http: reqwest::Client,
-    client_id: String,
-    client_secret: String,
-    token_endpoint: String,
-    channels_endpoint: String,
-    force_consent: bool,
-    pkce: PkceFlow,
+#[derive(Clone)]
+pub struct YoutubeSignIn {
+    manager: Arc<YoutubeCredentialsManager>,
 }
 
-impl GoogleAuthFlow {
-    pub fn new(endpoints: &PlatformEndpoints, client_id: String, client_secret: String) -> Self {
-        Self::with_endpoints(
-            client_id,
-            client_secret,
-            GOOGLE_AUTHORIZE_ENDPOINT.to_owned(),
-            format!(
-                "{}{GOOGLE_TOKEN_PATH}",
-                endpoints.base_url(EndpointSurface::YouTubeOAuth)
-            ),
-            format!(
-                "{}{YOUTUBE_CHANNELS_PATH}",
-                endpoints.base_url(EndpointSurface::YouTubeDataApi)
-            ),
+impl YoutubeSignIn {
+    pub fn new(manager: Arc<YoutubeCredentialsManager>) -> Self {
+        Self { manager }
+    }
+
+    pub fn flow(&self) -> GoogleAuthFlow {
+        GoogleAuthFlow::new(
+            self.manager.oauth_client().clone(),
+            self.manager.data_api().clone(),
         )
     }
 
-    pub(crate) fn with_endpoints(
-        client_id: String,
-        client_secret: String,
-        authorize_endpoint: String,
-        token_endpoint: String,
-        channels_endpoint: String,
-    ) -> Self {
-        let pkce = PkceFlow::new(PkceClientConfig {
-            client_id: client_id.clone(),
-            client_secret: Some(client_secret.clone()),
-            authorize_endpoint,
-            token_endpoint: token_endpoint.clone(),
+    pub async fn save(&self, bundle: YoutubeAuthBundle) -> Result<(), PlatformError> {
+        self.manager.save_from_bundle(bundle).await
+    }
+}
+
+pub struct GoogleAuthFlow {
+    oauth: GoogleOAuthClient,
+    api: YoutubeDataApi,
+    force_consent: bool,
+    loopback: PkceLoopback,
+}
+
+impl GoogleAuthFlow {
+    pub fn new(oauth: GoogleOAuthClient, api: YoutubeDataApi) -> Self {
+        let loopback = PkceLoopback::new(PkceAuthorizeConfig {
+            client_id: oauth.client_id().to_owned(),
+            authorize_endpoint: GOOGLE_AUTHORIZE_ENDPOINT.to_owned(),
             scopes: YOUTUBE_BROADCASTER_SCOPES
                 .iter()
                 .map(|s| (*s).to_owned())
@@ -105,32 +103,15 @@ impl GoogleAuthFlow {
             preferred_port: None,
         });
         Self {
-            http: reqwest::Client::new(),
-            client_id,
-            client_secret,
-            token_endpoint,
-            channels_endpoint,
+            oauth,
+            api,
             force_consent: false,
-            pkce,
+            loopback,
         }
     }
 
     pub fn set_force_consent(&mut self, force: bool) {
         self.force_consent = force;
-    }
-
-    pub(crate) fn channels_endpoint(&self) -> &str {
-        &self.channels_endpoint
-    }
-
-    pub(crate) fn refresh_config(&self) -> PkceRefreshConfig {
-        PkceRefreshConfig {
-            platform: PLATFORM.to_owned(),
-            client_id: self.client_id.clone(),
-            client_secret: Some(self.client_secret.clone()),
-            token_endpoint: self.token_endpoint.clone(),
-            reauth_policy: ReauthPolicy::InvalidGrantOn400,
-        }
     }
 
     pub async fn start(&mut self) -> Result<LoopbackCode, PlatformError> {
@@ -139,7 +120,7 @@ impl GoogleAuthFlow {
         } else {
             &[]
         };
-        let url = self.pkce.start(extra).await?;
+        let url = self.loopback.start(extra).await?;
         Ok(LoopbackCode {
             auth_url: url.auth_url,
         })
@@ -149,76 +130,55 @@ impl GoogleAuthFlow {
         &mut self,
         timeout: Duration,
     ) -> Result<YoutubeAuthBundle, PlatformError> {
-        let token = self.pkce.exchange(timeout).await?;
-        let refresh_token = token.refresh_token.ok_or_else(|| PlatformError::Auth {
+        let authorization = self.loopback.await_authorization(timeout).await?;
+        let grant = self.oauth.exchange_code(&authorization).await?;
+        let refresh_token = grant.refresh_token.ok_or_else(|| PlatformError::Auth {
             reason: "Google did not return a refresh_token; retry with consent prompt".into(),
         })?;
+        let expires_at = SystemTime::now()
+            .checked_add(Duration::from_secs(grant.expires_in.unwrap_or(0)))
+            .ok_or_else(|| malformed("token lifetime out of range"))?;
 
-        self.resolve_channel(
-            token.access_token,
-            refresh_token,
-            token.expires_in.unwrap_or(0),
-        )
-        .await
-    }
-
-    async fn resolve_channel(
-        &self,
-        access_token: String,
-        refresh_token: String,
-        expires_in: u64,
-    ) -> Result<YoutubeAuthBundle, PlatformError> {
-        let response = self
-            .http
-            .get(&self.channels_endpoint)
-            .query(&[("part", "snippet"), ("mine", "true")])
-            .header(
-                reqwest::header::AUTHORIZATION,
-                format!("Bearer {access_token}"),
-            )
-            .send()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = response.status();
-        if status != StatusCode::OK {
-            let body = response.text().await.unwrap_or_default();
-            return Err(PlatformError::Http {
-                status: status.as_u16(),
-                body,
-            });
-        }
-
-        let channels: ChannelsListResponse =
-            response.json().await.map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let channel = channels
-            .items
-            .into_iter()
-            .next()
+        let channel = fetch_own_channel(&self.api, &grant.access_token)
+            .await?
             .ok_or_else(|| PlatformError::Http {
-                status: StatusCode::OK.as_u16(),
-                body: "no channel found".to_owned(),
+                status: NO_CHANNEL_STATUS,
+                body: NO_CHANNEL_FOUND.to_owned(),
             })?;
 
         Ok(YoutubeAuthBundle {
-            access_token: OAuthToken::new(access_token),
+            access_token: OAuthToken::new(grant.access_token),
             refresh_token: OAuthToken::new(refresh_token),
             channel_id: channel.id,
             channel_title: channel.snippet.title,
             channel_handle: channel.snippet.custom_url,
-            client_id: self.client_id.clone(),
-            expires_at: SystemTime::now() + Duration::from_secs(expires_in),
+            client_id: self.oauth.client_id().to_owned(),
+            expires_at,
         })
     }
 }
 
+pub(crate) async fn fetch_own_channel(
+    api: &YoutubeDataApi,
+    access_token: &str,
+) -> Result<Option<ChannelItem>, PlatformError> {
+    let request = GatewayRequest::get(YOUTUBE_CHANNELS_PATH)
+        .label(YOUTUBE_CHANNELS_PATH)
+        .bearer(Secret::new(access_token))
+        .query("part", "snippet")
+        .query("mine", "true");
+    let channels: ChannelsListResponse = api
+        .send(OWN_CHANNEL_COST, request)
+        .await
+        .map_err(|e| e.into_platform_error(OWN_CHANNEL_MISSING_SCOPE))?
+        .json()
+        .map_err(malformed)?;
+    Ok(channels.items.into_iter().next())
+}
+
 #[derive(Deserialize)]
 pub(crate) struct ChannelsListResponse {
+    #[serde(default)]
     pub(crate) items: Vec<ChannelItem>,
 }
 
@@ -236,14 +196,32 @@ pub(crate) struct ChannelSnippet {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
-    use super::*;
-    use forge_platform_core::AuthFlow;
-    use serde_json::json;
+    use std::collections::HashMap;
     use std::ffi::OsString;
+
+    use forge_net::TokenBucketRateLimiter;
+    use forge_platform_core::{EndpointSurface, PlatformEndpoints};
+    use reqwest::StatusCode;
+    use serde_json::json;
     use wiremock::matchers::{body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::*;
+    use crate::endpoints_test_support::{
+        OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, RecordingPublisher, StubReply, StubServer,
+        data_api_at, data_api_charging, data_api_with, oauth_client_at, unreachable_data_api,
+        unreachable_oauth_client, used_today,
+    };
+    use crate::oauth_client::{
+        GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW, google_oauth_gateway,
+    };
+    use crate::quota_state::SharedQuota;
+
+    const CALLBACK_DEADLINE: Duration = Duration::from_secs(30);
+    const ACCESS_TOKEN: &str = "ya29.test_access";
+    const REQUEST_FAIL_KIND: &str = "request.fail";
 
     fn overrides(pairs: &[(EndpointSurface, String)]) -> PlatformEndpoints {
         PlatformEndpoints::resolve(|variable| {
@@ -265,57 +243,9 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn default_endpoints_keep_the_production_urls() {
-        let flow = GoogleAuthFlow::new(
-            &PlatformEndpoints::default(),
-            "cid".to_owned(),
-            "csec".to_owned(),
-        );
-        assert_eq!(flow.refresh_config().token_endpoint, GOOGLE_TOKEN_ENDPOINT);
-        assert_eq!(
-            flow.channels_endpoint(),
-            "https://www.googleapis.com/youtube/v3/channels"
-        );
-    }
-
-    #[tokio::test]
-    async fn overrides_route_token_exchange_and_channel_lookup_to_their_own_hosts() {
-        let oauth = MockServer::start().await;
-        let api = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(token_success_body()))
-            .mount(&oauth)
-            .await;
-        mount_channel_mock(&api).await;
-        let endpoints = overrides(&[
-            (EndpointSurface::YouTubeOAuth, oauth.uri()),
-            (EndpointSurface::YouTubeDataApi, api.uri()),
-        ]);
-
-        let mut flow = GoogleAuthFlow::new(&endpoints, "cid".to_owned(), "csec".to_owned());
-        let auth_url = flow.start().await.unwrap().auth_url;
-        trigger_callback(&auth_url, "code123").await;
-        let bundle = flow
-            .wait_for_authorization(Duration::from_secs(30))
-            .await
-            .unwrap();
-
-        assert_eq!(bundle.channel_id, "UCtest123");
-        assert_eq!(
-            routes_of(&oauth).await,
-            vec![("POST".to_owned(), "/token".to_owned())]
-        );
-        assert_eq!(
-            routes_of(&api).await,
-            vec![("GET".to_owned(), "/channels".to_owned())]
-        );
-    }
-
     fn token_success_body() -> serde_json::Value {
         json!({
-            "access_token": "ya29.test_access",
+            "access_token": ACCESS_TOKEN,
             "refresh_token": "1//test_refresh",
             "expires_in": 3599,
             "token_type": "Bearer",
@@ -334,110 +264,222 @@ mod tests {
         })
     }
 
-    async fn mount_channel_mock(server: &MockServer) {
-        Mock::given(method("GET"))
-            .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(channel_body()))
+    async fn mount_token(server: &MockServer, status: StatusCode, body: serde_json::Value) {
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(status.as_u16()).set_body_json(body))
             .mount(server)
             .await;
     }
 
-    #[test]
-    fn client_credentials_result_is_consistent() {
-        let result = client_credentials();
-        if let Some((id, secret)) = result {
-            assert!(!id.is_empty());
-            assert!(!secret.is_empty());
-        }
+    async fn mount_channels(server: &MockServer, body: serde_json::Value) {
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(server)
+            .await;
     }
 
-    #[test]
-    fn youtube_auth_flow_returns_local_callback_variant() {
-        let flow = youtube_auth_flow();
-        let AuthFlow::LocalCallback {
-            authorize_url,
-            token_endpoint,
-            redirect_path,
-            scopes,
-        } = flow
-        else {
-            unreachable!("youtube_auth_flow must return LocalCallback variant");
-        };
-        assert_eq!(authorize_url, GOOGLE_AUTHORIZE_ENDPOINT);
-        assert_eq!(token_endpoint, GOOGLE_TOKEN_ENDPOINT);
-        assert_eq!(redirect_path, CALLBACK_PATH);
-        assert_eq!(
-            scopes,
-            YOUTUBE_BROADCASTER_SCOPES
-                .iter()
-                .map(|s| (*s).to_owned())
-                .collect::<Vec<_>>()
+    async fn sign_in(mut flow: GoogleAuthFlow) -> Result<YoutubeAuthBundle, PlatformError> {
+        let auth_url = flow.start().await.unwrap().auth_url;
+        trigger_callback(&auth_url, "auth_code_abc");
+        flow.wait_for_authorization(CALLBACK_DEADLINE).await
+    }
+
+    fn query_of(url: &str) -> HashMap<String, String> {
+        reqwest::Url::parse(url)
+            .unwrap()
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect()
+    }
+
+    fn trigger_callback(auth_url: &str, code: &str) {
+        let query = query_of(auth_url);
+        let url = format!(
+            "{}?code={code}&state={}",
+            query["redirect_uri"], query["state"]
         );
+        tokio::spawn(async move { reqwest::Client::new().get(&url).send().await.ok() });
     }
 
-    #[test]
-    fn scope_list_contains_force_ssl() {
-        assert!(
-            YOUTUBE_BROADCASTER_SCOPES
-                .iter()
-                .any(|s| s.contains("youtube.force-ssl"))
+    #[tokio::test]
+    async fn overrides_route_token_exchange_and_channel_lookup_to_their_own_hosts() {
+        let oauth = MockServer::start().await;
+        let api = MockServer::start().await;
+        mount_token(&oauth, StatusCode::OK, token_success_body()).await;
+        mount_channels(&api, channel_body()).await;
+        let endpoints = overrides(&[
+            (EndpointSurface::YouTubeOAuth, oauth.uri()),
+            (EndpointSurface::YouTubeDataApi, api.uri()),
+        ]);
+        let gateway = google_oauth_gateway(
+            &endpoints,
+            Arc::new(TokenBucketRateLimiter::new(
+                GOOGLE_OAUTH_BUDGET_CAPACITY,
+                GOOGLE_OAUTH_BUDGET_WINDOW,
+            )),
+        )
+        .unwrap();
+        let flow = GoogleAuthFlow::new(
+            GoogleOAuthClient::new(gateway, "cid".to_owned(), "csec".to_owned()),
+            YoutubeDataApi::new(
+                &endpoints,
+                SharedQuota::default(),
+                Arc::new(RecordingPublisher::default()),
+            )
+            .unwrap(),
+        );
+
+        sign_in(flow).await.unwrap();
+
+        assert_eq!(
+            (routes_of(&oauth).await, routes_of(&api).await),
+            (
+                vec![("POST".to_owned(), "/token".to_owned())],
+                vec![("GET".to_owned(), "/channels".to_owned())]
+            )
         );
     }
 
     #[tokio::test]
-    async fn start_builds_authorize_url_with_offline_access_and_no_prompt_by_default() {
-        let mut flow = GoogleAuthFlow::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            "test_client".to_owned(),
-            "test_secret".to_owned(),
-        );
+    async fn start_builds_the_google_authorize_url_for_offline_pkce_access() {
+        let mut flow = GoogleAuthFlow::new(unreachable_oauth_client(), unreachable_data_api());
+
         let url = flow.start().await.unwrap().auth_url;
-        assert!(url.starts_with(GOOGLE_AUTHORIZE_ENDPOINT));
-        assert!(url.contains("client_id=test_client"));
-        assert!(url.contains("access_type=offline"));
-        assert!(!url.contains("prompt=consent"));
+
+        let query = query_of(&url);
+        assert_eq!(
+            (
+                url.starts_with(GOOGLE_AUTHORIZE_ENDPOINT),
+                query.get("client_id").map(String::as_str),
+                query.get("scope").map(String::as_str),
+                query.get("access_type").map(String::as_str),
+                query.get("code_challenge_method").map(String::as_str),
+                query.contains_key("code_challenge"),
+                query
+                    .get("redirect_uri")
+                    .map(|uri| uri.starts_with("http://127.0.0.1:")),
+                query.contains_key("prompt"),
+            ),
+            (
+                true,
+                Some(OAUTH_CLIENT_ID),
+                Some(YOUTUBE_BROADCASTER_SCOPES.join(" ").as_str()),
+                Some("offline"),
+                Some("S256"),
+                true,
+                Some(true),
+                false,
+            )
+        );
     }
 
     #[tokio::test]
     async fn start_appends_prompt_when_force_consent_enabled() {
-        let mut flow = GoogleAuthFlow::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            "test_client".to_owned(),
-            "test_secret".to_owned(),
-        );
+        let mut flow = GoogleAuthFlow::new(unreachable_oauth_client(), unreachable_data_api());
         flow.set_force_consent(true);
+
         let url = flow.start().await.unwrap().auth_url;
-        assert!(url.contains("prompt=consent"));
+
+        assert_eq!(
+            query_of(&url).get("prompt").map(String::as_str),
+            Some("consent")
+        );
+    }
+
+    #[tokio::test]
+    async fn wait_for_authorization_exchanges_the_code_and_resolves_the_channel() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("grant_type=authorization_code"))
+            .and(body_string_contains("code=auth_code_abc"))
+            .and(body_string_contains("code_verifier="))
+            .and(body_string_contains(format!(
+                "client_secret={OAUTH_CLIENT_SECRET}"
+            )))
+            .respond_with(ResponseTemplate::new(200).set_body_json(token_success_body()))
+            .mount(&server)
+            .await;
+        mount_channels(&server, channel_body()).await;
+        let flow = GoogleAuthFlow::new(oauth_client_at(&server.uri()), data_api_at(&server.uri()));
+
+        let bundle = sign_in(flow).await.unwrap();
+
+        assert_eq!(
+            (
+                bundle.access_token.expose(),
+                bundle.channel_id.as_str(),
+                bundle.channel_title.as_str(),
+                bundle.client_id.as_str()
+            ),
+            (ACCESS_TOKEN, "UCtest123", "Test Channel", OAUTH_CLIENT_ID)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_sign_in_charges_one_quota_unit_for_the_channel_lookup() {
+        let server = MockServer::start().await;
+        mount_token(&server, StatusCode::OK, token_success_body()).await;
+        mount_channels(&server, channel_body()).await;
+        let quota = SharedQuota::default();
+        let flow = GoogleAuthFlow::new(
+            oauth_client_at(&server.uri()),
+            data_api_charging(&server.uri(), quota.clone()),
+        );
+
+        sign_in(flow).await.unwrap();
+
+        assert_eq!(used_today(&quota).await, OWN_CHANNEL_COST);
+    }
+
+    #[tokio::test]
+    async fn a_refused_code_exchange_never_reaches_the_channel_lookup_or_the_quota() {
+        let server = MockServer::start().await;
+        mount_token(
+            &server,
+            StatusCode::BAD_REQUEST,
+            json!({ "error": "invalid_grant" }),
+        )
+        .await;
+        mount_channels(&server, channel_body()).await;
+        let quota = SharedQuota::default();
+        let flow = GoogleAuthFlow::new(
+            oauth_client_at(&server.uri()),
+            data_api_charging(&server.uri(), quota.clone()),
+        );
+
+        let outcome = sign_in(flow).await;
+
+        assert_eq!(
+            (
+                outcome.is_err(),
+                routes_of(&server).await,
+                used_today(&quota).await
+            ),
+            (true, vec![("POST".to_owned(), "/token".to_owned())], 0)
+        );
     }
 
     #[tokio::test]
     async fn token_response_without_refresh_token_returns_auth_error() {
         let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+        mount_token(
+            &server,
+            StatusCode::OK,
+            json!({
                 "access_token": "ya29.access_only",
                 "expires_in": 3599,
                 "token_type": "Bearer",
-            })))
-            .mount(&server)
-            .await;
-        mount_channel_mock(&server).await;
+            }),
+        )
+        .await;
+        mount_channels(&server, channel_body()).await;
+        let flow = GoogleAuthFlow::new(oauth_client_at(&server.uri()), data_api_at(&server.uri()));
 
-        let mut flow = GoogleAuthFlow::with_endpoints(
-            "cid".to_owned(),
-            "csec".to_owned(),
-            format!("{}/auth", server.uri()),
-            format!("{}/token", server.uri()),
-            format!("{}/channels", server.uri()),
-        );
-        let auth_url = flow.start().await.unwrap().auth_url;
-        trigger_callback(&auth_url, "auth_code_xyz").await;
+        let err = sign_in(flow).await.unwrap_err();
 
-        let err = flow
-            .wait_for_authorization(Duration::from_secs(30))
-            .await
-            .unwrap_err();
         assert!(
             matches!(err, PlatformError::Auth { ref reason } if reason.contains("refresh_token")),
             "expected Auth error mentioning refresh_token, got: {err:?}"
@@ -445,59 +487,95 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn wait_for_authorization_exchanges_code_and_resolves_channel() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .and(body_string_contains("grant_type=authorization_code"))
-            .and(body_string_contains("code_verifier="))
-            .and(body_string_contains("client_secret=csec"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(token_success_body()))
-            .mount(&server)
-            .await;
-        mount_channel_mock(&server).await;
+    async fn a_sign_in_whose_account_has_no_channel_reports_no_channel_found() {
+        for body in [
+            json!({ "items": [] }),
+            json!({ "kind": "youtube#channelListResponse" }),
+        ] {
+            let server = MockServer::start().await;
+            mount_token(&server, StatusCode::OK, token_success_body()).await;
+            mount_channels(&server, body.clone()).await;
+            let flow =
+                GoogleAuthFlow::new(oauth_client_at(&server.uri()), data_api_at(&server.uri()));
 
-        let mut flow = GoogleAuthFlow::with_endpoints(
-            "cid".to_owned(),
-            "csec".to_owned(),
-            format!("{}/auth", server.uri()),
-            format!("{}/token", server.uri()),
-            format!("{}/channels", server.uri()),
-        );
-        let auth_url = flow.start().await.unwrap().auth_url;
-        trigger_callback(&auth_url, "auth_code_abc").await;
+            let err = sign_in(flow).await.unwrap_err();
 
-        let bundle = flow
-            .wait_for_authorization(Duration::from_secs(30))
-            .await
-            .unwrap();
-        assert_eq!(bundle.channel_id, "UCtest123");
-        assert_eq!(bundle.channel_title, "Test Channel");
-        assert_eq!(bundle.client_id, "cid");
+            assert!(
+                matches!(&err, PlatformError::Http { status, body } if *status == StatusCode::OK.as_u16() && body == NO_CHANNEL_FOUND),
+                "{body}: {err:?}"
+            );
+        }
     }
 
-    async fn trigger_callback(auth_url: &str, code: &str) {
-        let redirect_uri = auth_url
-            .split("redirect_uri=")
-            .nth(1)
-            .unwrap()
-            .split('&')
-            .next()
-            .unwrap()
-            .replace("%3A", ":")
-            .replace("%2F", "/");
-        let state = auth_url
-            .split("state=")
-            .nth(1)
-            .unwrap()
-            .split('&')
-            .next()
-            .unwrap()
-            .to_owned();
-        let url = format!("{redirect_uri}?code={code}&state={state}");
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-            let _ = reqwest::Client::new().get(&url).send().await;
-        });
+    fn channels_refusal(status: StatusCode, reason: &str) -> StubReply {
+        StubReply::json(
+            status.as_u16(),
+            &json!({ "error": { "code": status.as_u16(), "errors": [{ "reason": reason }] } }),
+        )
+    }
+
+    #[tokio::test]
+    async fn own_channel_lookup_maps_each_refusal_to_its_platform_error() {
+        for (label, reply, expected) in [
+            (
+                "403 quotaExceeded",
+                channels_refusal(StatusCode::FORBIDDEN, "quotaExceeded"),
+                "quota",
+            ),
+            (
+                "403 insufficientPermissions",
+                channels_refusal(StatusCode::FORBIDDEN, "insufficientPermissions"),
+                "scope",
+            ),
+            (
+                "undecodable 200",
+                StubReply::text(StatusCode::OK.as_u16(), "<html>"),
+                "malformed",
+            ),
+        ] {
+            let server = StubServer::start().await;
+            server.reply_always(YOUTUBE_CHANNELS_PATH, reply);
+
+            let outcome = fetch_own_channel(&data_api_at(&server.uri()), ACCESS_TOKEN).await;
+
+            let mapped = match &outcome {
+                Err(PlatformError::QuotaExhausted) => "quota",
+                Err(PlatformError::Auth { reason }) if reason == OWN_CHANNEL_MISSING_SCOPE => {
+                    "scope"
+                }
+                Err(PlatformError::MalformedResponse { .. }) => "malformed",
+                _ => "other",
+            };
+            assert_eq!(mapped, expected, "{label}: {:?}", outcome.err());
+        }
+    }
+
+    #[tokio::test]
+    async fn a_refused_own_channel_lookup_publishes_request_fail_and_stays_charged() {
+        for reply in [
+            channels_refusal(StatusCode::FORBIDDEN, "quotaExceeded"),
+            channels_refusal(StatusCode::FORBIDDEN, "insufficientPermissions"),
+            StubReply::status(StatusCode::INTERNAL_SERVER_ERROR.as_u16()),
+        ] {
+            let server = StubServer::start().await;
+            server.reply_always(YOUTUBE_CHANNELS_PATH, reply);
+            let bus = Arc::new(RecordingPublisher::default());
+            let quota = SharedQuota::default();
+            let api = data_api_with(&server.uri(), quota.clone(), bus.clone());
+
+            fetch_own_channel(&api, ACCESS_TOKEN).await.err().unwrap();
+
+            let events = bus.events_of_kind(REQUEST_FAIL_KIND);
+            assert_eq!(
+                (
+                    events
+                        .iter()
+                        .map(|event| event.payload["endpoint"].clone())
+                        .collect::<Vec<_>>(),
+                    used_today(&quota).await
+                ),
+                (vec![json!(YOUTUBE_CHANNELS_PATH)], OWN_CHANNEL_COST)
+            );
+        }
     }
 }

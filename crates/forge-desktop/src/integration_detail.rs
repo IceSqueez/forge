@@ -93,6 +93,7 @@ pub struct IntegrationDetail {
     donation_settings: Option<DonationSettingsLink>,
     twitch_bot: Option<Entity<TwitchBotSection>>,
     twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
+    youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
     _twitch_bot_subs: Vec<Subscription>,
     is_twitch: bool,
     is_obs: bool,
@@ -252,6 +253,7 @@ impl IntegrationDetail {
             donation_settings: None,
             twitch_bot: None,
             twitch_sign_in: None,
+            youtube_sign_in: None,
             _twitch_bot_subs: Vec::new(),
             is_twitch,
             is_obs,
@@ -341,6 +343,10 @@ impl IntegrationDetail {
         self.twitch_sign_in = Some(sign_in);
     }
 
+    pub fn attach_youtube_sign_in(&mut self, sign_in: forge_platform_youtube::YoutubeSignIn) {
+        self.youtube_sign_in = Some(sign_in);
+    }
+
     fn open_connect_flow(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
         let launch = ConnectFlowLaunch {
             platform,
@@ -352,6 +358,7 @@ impl IntegrationDetail {
             youtube_slot: self.youtube_slot.clone(),
             endpoints: self.endpoints.clone(),
             twitch_sign_in: self.twitch_sign_in.clone(),
+            youtube_sign_in: self.youtube_sign_in.clone(),
         };
         let view = cx.new(|cx| ConnectFlow::new(launch, cx));
         let subs = vec![

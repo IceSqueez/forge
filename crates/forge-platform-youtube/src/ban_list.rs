@@ -68,7 +68,6 @@ mod tests {
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-    use crate::auth::GoogleAuthFlow;
     use crate::ban_ledger_test_support::{LedgerOp, MemoryBanLedger};
     use crate::chat_platform::YoutubePlatform;
     use crate::credentials_manager::YoutubeCredentialsManager;
@@ -80,10 +79,10 @@ mod tests {
         broadcaster_channel_id: &str,
         ledger: Arc<dyn BanLedgerRepo>,
     ) -> Arc<YoutubeIntegrationBundle> {
-        let endpoints = crate::endpoints_test_support::unreachable_endpoints();
         let manager = Arc::new(YoutubeCredentialsManager::new(
             Arc::new(MockCredentialsRepo::new()),
-            GoogleAuthFlow::new(&endpoints, "client".to_owned(), "secret".to_owned()),
+            crate::endpoints_test_support::unreachable_oauth_client(),
+            crate::endpoints_test_support::unreachable_data_api(),
         ));
         let platform = Arc::new(YoutubePlatform::new(
             crate::endpoints_test_support::unreachable_data_api(),

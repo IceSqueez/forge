@@ -687,7 +687,6 @@ mod tests {
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-    use crate::auth::GoogleAuthFlow;
     use crate::credentials::YoutubeCredentials;
     use crate::live_chat_id::LiveChatIdHandle;
     use crate::moderation::YoutubeModeration;
@@ -765,11 +764,8 @@ mod tests {
     ) -> (Arc<YoutubeIntegrationBundle>, Arc<YoutubePlatform>) {
         let manager = Arc::new(YoutubeCredentialsManager::new(
             repo,
-            GoogleAuthFlow::new(
-                &crate::endpoints_test_support::unreachable_endpoints(),
-                "test_cid".to_owned(),
-                "test_secret".to_owned(),
-            ),
+            crate::endpoints_test_support::unreachable_oauth_client(),
+            crate::endpoints_test_support::unreachable_data_api(),
         ));
         let platform = Arc::new(YoutubePlatform::new(
             crate::endpoints_test_support::data_api_charging("http://127.0.0.1:0", quota),

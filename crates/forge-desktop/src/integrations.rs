@@ -99,6 +99,7 @@ pub struct Integrations {
     pub donation_services: DonationServices,
     pub twitch_bot: Option<Arc<forge_platform_twitch::TwitchBotAccount>>,
     pub twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
+    pub youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
 }
 
 #[derive(Clone)]
@@ -317,7 +318,9 @@ pub async fn build_integrations(
     let (hotkey, hotkey_reconciler) = wire_hotkey(backend, bus, hotkey_main_thread).await;
     let hotkey_client = hotkey.client();
     factories.push(Arc::new(hotkey));
+    let mut youtube_sign_in = None;
     if let Some(youtube) = wire_youtube(sub_actions, backend, bus, endpoints) {
+        youtube_sign_in = Some(youtube.sign_in());
         factories.push(Arc::new(youtube));
     }
     if let Some(kick) = wire_kick(sub_actions, backend, bus, endpoints) {
@@ -347,6 +350,7 @@ pub async fn build_integrations(
         donation_services,
         twitch_bot,
         twitch_sign_in,
+        youtube_sign_in,
     }
 }
 

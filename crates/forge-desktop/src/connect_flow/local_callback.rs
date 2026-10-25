@@ -54,15 +54,13 @@ impl ConnectFlow {
         self.local_cancel = cancel.clone();
         match self.platform {
             PlatformId::YouTube => {
-                let Some((cid, csec)) = forge_platform_youtube::client_credentials() else {
+                let Some(sign_in) = self.youtube_sign_in.clone() else {
                     self.phase = LocalCallbackFlowPhase::Failed;
                     self.error = Some(tr!("auth_error_credentials_missing_youtube").to_string());
                     cx.notify();
                     return;
                 };
-                let handle = Arc::new(tokio::sync::Mutex::new(Some(
-                    forge_platform_youtube::GoogleAuthFlow::new(&self.endpoints, cid, csec),
-                )));
+                let handle = Arc::new(tokio::sync::Mutex::new(Some(sign_in.flow())));
                 self.youtube_flow = Some(Arc::clone(&handle));
                 self.spawn_start(cancel, async move { start_youtube_oauth(handle).await }, cx);
             }
@@ -129,7 +127,9 @@ impl ConnectFlow {
         let credentials = Arc::clone(&self.credentials);
         match self.platform {
             PlatformId::YouTube => {
-                let Some(flow) = self.youtube_flow.clone() else {
+                let (Some(flow), Some(sign_in)) =
+                    (self.youtube_flow.clone(), self.youtube_sign_in.clone())
+                else {
                     self.phase = LocalCallbackFlowPhase::Failed;
                     self.error = Some("no active YouTube flow handle".to_owned());
                     cx.notify();
@@ -138,7 +138,7 @@ impl ConnectFlow {
                 let wait_cancel = cancel.clone();
                 self.spawn_wait(
                     cancel,
-                    async move { wait_for_youtube_authorization(flow, credentials, wait_cancel).await },
+                    async move { wait_for_youtube_authorization(flow, sign_in, wait_cancel).await },
                     cx,
                 );
             }
@@ -992,7 +992,7 @@ async fn start_kick_oauth(flow_handle: KickFlowHandle) -> Result<LocalCallbackDa
 
 async fn wait_for_youtube_authorization(
     flow_handle: YoutubeFlowHandle,
-    credentials_repo: Arc<dyn CredentialsRepo>,
+    sign_in: forge_platform_youtube::YoutubeSignIn,
     cancel: CancellationToken,
 ) -> Result<(), String> {
     let mut flow = {
@@ -1008,11 +1008,7 @@ async fn wait_for_youtube_authorization(
             outcome.map_err(|e| e.to_string())?
         }
     };
-    let manager = forge_platform_youtube::YoutubeCredentialsManager::new(credentials_repo, flow);
-    manager
-        .save_from_bundle(bundle)
-        .await
-        .map_err(|e| e.to_string())
+    sign_in.save(bundle).await.map_err(|e| e.to_string())
 }
 
 async fn wait_for_kick_authorization(

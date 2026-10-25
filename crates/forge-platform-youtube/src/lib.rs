@@ -23,6 +23,7 @@ pub mod live_chat_id;
 #[cfg(test)]
 mod log_capture;
 pub mod moderation;
+pub mod oauth_client;
 mod payload_fields;
 mod poll_health;
 pub mod quota_state;
@@ -39,7 +40,8 @@ pub use active_broadcast_id::ActiveBroadcastIdHandle;
 pub use ad_break::YoutubeAdBreak;
 pub use auth::{
     GOOGLE_AUTHORIZE_ENDPOINT, GOOGLE_TOKEN_ENDPOINT, GoogleAuthFlow, LoopbackCode,
-    YOUTUBE_BROADCASTER_SCOPES, YoutubeAuthBundle, client_credentials, youtube_auth_flow,
+    YOUTUBE_BROADCASTER_SCOPES, YoutubeAuthBundle, YoutubeSignIn, client_credentials,
+    youtube_auth_flow,
 };
 pub use builtin::{YoutubeIntegrationBundle, register_youtube_triggers};
 pub use channel_lookup::YoutubeChannelLookup;
@@ -51,6 +53,10 @@ pub use data_api::YoutubeDataApi;
 pub use integration::YOUTUBE_INTEGRATION;
 pub use live_chat_id::LiveChatIdHandle;
 pub use moderation::YoutubeModeration;
+pub use oauth_client::{
+    GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW, GOOGLE_OAUTH_GATEWAY_PROFILE,
+    GoogleOAuthClient, google_oauth_gateway,
+};
 pub use quota_state::SharedQuota;
 pub use send_chat::YoutubeSendChat;
 pub use stream_metadata::YoutubeStreamMetadata;

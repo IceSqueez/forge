@@ -54,6 +54,7 @@ pub struct RuntimeHandles {
     pub donation_services: crate::donation_services::DonationServices,
     pub twitch_bot: Option<Arc<forge_platform_twitch::TwitchBotAccount>>,
     pub twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
+    pub youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
     pub midi_sink: Arc<forge_midi::SwitchableMidiSink>,
     pub server: Option<forge_server::ServerHandle>,
     pub server_unavailable: Option<String>,

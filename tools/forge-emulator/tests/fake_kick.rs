@@ -12,14 +12,14 @@ use forge_emulator::kick::{
     FakeKick, FakeKickConfig, FakeKickSetup, KickChatter, KickCredentialCheck, KickLedger,
     KickSurface, RefreshAnswer,
 };
-use forge_events::Event;
-use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
+use forge_events::{Event, EventPublisher};
+use forge_net::{Gateway, RateLimitError, RateLimitOutcome, RateLimiter};
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
 use forge_platform_kick::chat::PUSHER_APP_KEY;
 use forge_platform_kick::error::KickError;
 use forge_platform_kick::{
     ChannelInfoFetcher, KickAuthBundle, KickChannel, KickChat, KickChatHandle,
-    KickCredentialsManager, KickRewards, KickSendChat,
+    KickCredentialsManager, KickRewards, KickSendChat, kick_api_gateway, kick_channel_info_gateway,
 };
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use futures_util::{SinkExt, StreamExt};
@@ -102,6 +102,23 @@ fn limiter() -> Arc<dyn RateLimiter> {
     Arc::new(GrantLimiter)
 }
 
+struct DiscardingPublisher;
+
+impl EventPublisher for DiscardingPublisher {
+    fn publish(&self, _event: Event) {}
+}
+
+fn api(fake: &FakeKick) -> Gateway {
+    kick_api_gateway(&endpoints(fake), limiter(), Arc::new(DiscardingPublisher)).unwrap()
+}
+
+fn channel_info(fake: &FakeKick) -> Arc<ChannelInfoFetcher> {
+    Arc::new(ChannelInfoFetcher::new(
+        kick_channel_info_gateway(&endpoints(fake), limiter(), Arc::new(DiscardingPublisher))
+            .unwrap(),
+    ))
+}
+
 fn http_base(fake: &FakeKick) -> String {
     let public = &fake.endpoint_overrides()[0].1;
     public.trim_end_matches("/public/v1").to_owned()
@@ -112,7 +129,7 @@ async fn join_chat(fake: &FakeKick) -> (KickChatHandle, mpsc::Receiver<Event>) {
     let handle = KickChat::new(
         &endpoints(fake),
         fake.config().username.clone(),
-        reqwest::Client::new(),
+        channel_info(fake),
     )
     .connect(event_tx)
     .await
@@ -358,7 +375,7 @@ async fn unsubscribed_connection_stops_receiving_chatroom_events() {
 async fn forge_send_posts_the_message_as_the_broadcaster() {
     let fake = start(FakeKickSetup::default()).await;
     let account = KickAccount::default();
-    KickSendChat::new(&endpoints(&fake), limiter())
+    KickSendChat::new(api(&fake))
         .send("hi chat", &account.access_token, account.user_id, false)
         .await
         .unwrap();
@@ -423,7 +440,7 @@ async fn malformed_send_bodies_are_refused_with_400() {
 #[tokio::test]
 async fn forge_delete_message_is_answered_with_no_content() {
     let fake = start(FakeKickSetup::default()).await;
-    let deleted = KickSendChat::new(&endpoints(&fake), limiter())
+    let deleted = KickSendChat::new(api(&fake))
         .delete("msg-1", &KickAccount::default().access_token)
         .await;
     assert!(deleted.is_ok(), "{deleted:?}");
@@ -437,7 +454,7 @@ async fn forge_channel_read_follows_the_stream_state() {
         ..FakeKickSetup::default()
     })
     .await;
-    let channel = KickChannel::new(&endpoints(&fake), limiter());
+    let channel = KickChannel::new(api(&fake));
     let token = KickAccount::default().access_token;
     let offline = channel.get_channel(&token).await.unwrap();
     fake.set_live(true);
@@ -454,7 +471,7 @@ async fn forge_channel_read_follows_the_stream_state() {
 #[tokio::test]
 async fn channel_read_for_a_foreign_slug_finds_no_channel() {
     let fake = start(FakeKickSetup::default()).await;
-    let read = KickChannel::new(&endpoints(&fake), limiter())
+    let read = KickChannel::new(api(&fake))
         .get_channel_by_slug(&KickAccount::default().access_token, FOREIGN_SLUG)
         .await;
     assert!(
@@ -467,13 +484,7 @@ async fn channel_read_for_a_foreign_slug_finds_no_channel() {
 #[tokio::test]
 async fn channel_info_for_an_unknown_slug_is_not_found() {
     let fake = start(FakeKickSetup::default()).await;
-    let fetched = ChannelInfoFetcher::new(
-        &endpoints(&fake),
-        FOREIGN_SLUG.to_owned(),
-        reqwest::Client::new(),
-    )
-    .fetch()
-    .await;
+    let fetched = channel_info(&fake).fetch(FOREIGN_SLUG).await;
     assert!(
         matches!(fetched, Err(KickError::Http { status: 404, .. })),
         "{fetched:?}"
@@ -483,7 +494,7 @@ async fn channel_info_for_an_unknown_slug_is_not_found() {
 #[tokio::test]
 async fn forge_redemption_poll_finds_nothing_pending() {
     let fake = start(FakeKickSetup::default()).await;
-    let pending = KickRewards::new(&endpoints(&fake), limiter())
+    let pending = KickRewards::new(api(&fake))
         .list_pending_redemptions(&KickAccount::default().access_token)
         .await
         .unwrap();
@@ -507,7 +518,7 @@ async fn token_retired_by_a_refresh_is_unauthorized() {
     let manager = manager(&fake, &KickAccount::default().client_secret).await;
     manager.get_valid_access_token().await.unwrap();
     let account = KickAccount::default();
-    let sent = KickSendChat::new(&endpoints(&fake), limiter())
+    let sent = KickSendChat::new(api(&fake))
         .send("hi", &account.access_token, account.user_id, false)
         .await;
     assert!(matches!(sent, Err(PlatformError::Auth { .. })), "{sent:?}");

@@ -6,12 +6,14 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
+use forge_events::{Event, EventPublisher};
+use forge_net::{Gateway, RateLimitError, RateLimitOutcome, RateLimiter};
 use forge_platform_core::{ChatPlatform, EndpointSurface, PlatformEndpoints};
 use forge_platform_kick::chat::PUSHER_APP_KEY;
 use forge_platform_kick::{
     ChannelInfoFetcher, KickAuthBundle, KickCategories, KickChannel, KickChat,
     KickCredentialsManager, KickModeration, KickPlatform, KickRewards, KickSendChat,
+    kick_api_gateway, kick_channel_info_gateway,
 };
 use forge_storage::ban_ledger::MockBanLedgerRepo;
 use forge_storage::{BanLedgerRepo, CredentialId, CredentialsRepo, StorageError};
@@ -92,6 +94,22 @@ fn limiter() -> Arc<dyn RateLimiter> {
     Arc::new(GrantLimiter)
 }
 
+struct DiscardingPublisher;
+
+impl EventPublisher for DiscardingPublisher {
+    fn publish(&self, _event: Event) {}
+}
+
+fn api(endpoints: &PlatformEndpoints) -> Gateway {
+    kick_api_gateway(endpoints, limiter(), Arc::new(DiscardingPublisher)).unwrap()
+}
+
+fn channel_info(endpoints: &PlatformEndpoints) -> Arc<ChannelInfoFetcher> {
+    Arc::new(ChannelInfoFetcher::new(
+        kick_channel_info_gateway(endpoints, limiter(), Arc::new(DiscardingPublisher)).unwrap(),
+    ))
+}
+
 fn ban_ledger() -> Arc<dyn BanLedgerRepo> {
     let mut ledger = MockBanLedgerRepo::new();
     ledger.expect_get().returning(|_, _| Ok(None));
@@ -123,22 +141,22 @@ async fn public_api_override_carries_every_rest_client_to_the_override_host() {
         format!("{}/public/v1", server.uri()),
     )]);
 
-    let sender = KickSendChat::new(&endpoints, limiter());
+    let sender = KickSendChat::new(api(&endpoints));
     sender.send("hi", "tok", 7, false).await.ok();
     sender.delete("msg-1", "tok").await.ok();
-    KickModeration::new(&endpoints, limiter(), ban_ledger())
+    KickModeration::new(api(&endpoints), ban_ledger())
         .ban(9, 7, None, None, "tok")
         .await
         .ok();
-    KickChannel::new(&endpoints, limiter())
+    KickChannel::new(api(&endpoints))
         .get_channel("tok")
         .await
         .ok();
-    KickRewards::new(&endpoints, limiter())
+    KickRewards::new(api(&endpoints))
         .delete("reward-1", "tok")
         .await
         .ok();
-    KickCategories::new(&endpoints, limiter())
+    KickCategories::new(api(&endpoints))
         .search("tok", "chess")
         .await
         .ok();
@@ -173,10 +191,7 @@ async fn channel_api_override_carries_the_channel_info_fetch_to_the_override_hos
         format!("{}/api/v2", server.uri()),
     )]);
 
-    let info = ChannelInfoFetcher::new(&endpoints, "streamer".to_owned(), reqwest::Client::new())
-        .fetch()
-        .await
-        .unwrap();
+    let info = channel_info(&endpoints).fetch("streamer").await.unwrap();
 
     assert_eq!((info.chatroom_id, info.viewer_count), (CHATROOM_ID, 31));
 }
@@ -286,7 +301,7 @@ async fn chat_socket_override_carries_the_pusher_handshake_and_subscribe_to_the_
     ]);
     let (event_tx, _event_rx) = mpsc::channel(8);
 
-    let handle = KickChat::new(&endpoints, "streamer".to_owned(), reqwest::Client::new())
+    let handle = KickChat::new(&endpoints, "streamer".to_owned(), channel_info(&endpoints))
         .connect(event_tx)
         .await
         .unwrap();
@@ -338,7 +353,13 @@ async fn platform_carries_its_overrides_into_the_chat_session_and_the_sender() {
         })
         .await
         .unwrap();
-    let platform = KickPlatform::new(&endpoints, Arc::new(manager), limiter(), ban_ledger());
+    let platform = KickPlatform::new(
+        &endpoints,
+        Arc::new(manager),
+        Arc::new(KickSendChat::new(api(&endpoints))),
+        channel_info(&endpoints),
+        ban_ledger(),
+    );
 
     platform.connect().await.unwrap();
     platform.send_message("streamer", "hello").await.unwrap();

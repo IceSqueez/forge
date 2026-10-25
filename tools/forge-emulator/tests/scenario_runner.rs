@@ -1558,18 +1558,42 @@ impl forge_net::RateLimiter for KickGrant {
     async fn observe_remote_throttle(&self, _retry_after: Duration) {}
 }
 
+struct KickDiscard;
+
+impl forge_events::EventPublisher for KickDiscard {
+    fn publish(&self, _event: Event) {}
+}
+
+fn kick_api(endpoints: &forge_platform_core::PlatformEndpoints) -> forge_net::Gateway {
+    forge_platform_kick::kick_api_gateway(endpoints, Arc::new(KickGrant), Arc::new(KickDiscard))
+        .unwrap()
+}
+
+fn kick_channel_info(
+    endpoints: &forge_platform_core::PlatformEndpoints,
+) -> Arc<forge_platform_kick::ChannelInfoFetcher> {
+    Arc::new(forge_platform_kick::ChannelInfoFetcher::new(
+        forge_platform_kick::kick_channel_info_gateway(
+            endpoints,
+            Arc::new(KickGrant),
+            Arc::new(KickDiscard),
+        )
+        .unwrap(),
+    ))
+}
+
 async fn forge_kick_echo(fake: &FakeKick) -> forge_platform_kick::KickChatHandle {
     let endpoints = kick_endpoints(fake);
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<Event>(16);
     let handle = forge_platform_kick::KickChat::new(
         &endpoints,
         fake.config().username.clone(),
-        reqwest::Client::new(),
+        kick_channel_info(&endpoints),
     )
     .connect(event_tx)
     .await
     .unwrap();
-    let sender = forge_platform_kick::KickSendChat::new(&endpoints, Arc::new(KickGrant));
+    let sender = forge_platform_kick::KickSendChat::new(kick_api(&endpoints));
     let token = fake.access_token();
     let broadcaster = fake.config().user_id;
     tokio::spawn(async move {
@@ -1690,7 +1714,7 @@ async fn kick_no_unexpected_requests_fails_after_an_unmodeled_call() {
 async fn kick_channel_polled_passes_once_a_polling_forge_reads_the_channel() {
     let harness = harness_with_kick().await;
     let fake = harness.kick.as_ref().unwrap();
-    let channel = forge_platform_kick::KickChannel::new(&kick_endpoints(fake), Arc::new(KickGrant));
+    let channel = forge_platform_kick::KickChannel::new(kick_api(&kick_endpoints(fake)));
     let token = fake.access_token();
     let poller = tokio::spawn(async move {
         loop {

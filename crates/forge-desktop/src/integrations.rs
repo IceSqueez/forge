@@ -1866,7 +1866,7 @@ pub(crate) mod tests {
         wire_midi(&mut sub_actions, &backend, &bus, Vec::new());
         register_twitch_runners(&mut sub_actions, &backend, &bus);
         register_youtube_runners(&mut sub_actions, &bus);
-        register_kick_runners(&mut sub_actions, &backend);
+        register_kick_runners(&mut sub_actions, &bus);
         forge_runtime::register_scheduled_run_sub_actions(
             &mut sub_actions,
             forge_runtime::ScheduledRunsCell::new(),
@@ -1983,35 +1983,27 @@ pub(crate) mod tests {
         .unwrap();
     }
 
-    fn register_kick_runners(sub_actions: &mut SubActionRegistry, _: &Arc<dyn DataProvider>) {
+    fn register_kick_runners(sub_actions: &mut SubActionRegistry, bus: &Arc<EventBus>) {
         use forge_platform_kick as kick;
-        let limiter: Arc<dyn RateLimiter> = Arc::new(NoopRateLimiter);
+        let api = kick::kick_api_gateway(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(NoopRateLimiter),
+            publisher(bus),
+        )
+        .unwrap();
         kick::register_kick_sub_actions(
             sub_actions,
             kick::KickSubActionDeps {
-                client: Arc::new(kick::KickSendChat::new(
-                    &forge_platform_core::PlatformEndpoints::default(),
-                    Arc::clone(&limiter),
-                )),
+                client: Arc::new(kick::KickSendChat::new(api.clone())),
                 token_source: Arc::new(|| Box::pin(async { Ok("token".to_owned()) })),
                 broadcaster_id_source: Arc::new(|| Box::pin(async { Ok(1) })),
                 moderation: Arc::new(kick::KickModeration::new(
-                    &forge_platform_core::PlatformEndpoints::default(),
-                    Arc::clone(&limiter),
+                    api.clone(),
                     Arc::new(forge_storage::ban_ledger::MockBanLedgerRepo::new()),
                 )),
-                channel: Arc::new(kick::KickChannel::new(
-                    &forge_platform_core::PlatformEndpoints::default(),
-                    Arc::clone(&limiter),
-                )),
-                rewards: Arc::new(kick::KickRewards::new(
-                    &forge_platform_core::PlatformEndpoints::default(),
-                    Arc::clone(&limiter),
-                )),
-                categories: Arc::new(kick::KickCategories::new(
-                    &forge_platform_core::PlatformEndpoints::default(),
-                    limiter,
-                )),
+                channel: Arc::new(kick::KickChannel::new(api.clone())),
+                rewards: Arc::new(kick::KickRewards::new(api.clone())),
+                categories: Arc::new(kick::KickCategories::new(api)),
             },
         )
         .unwrap();

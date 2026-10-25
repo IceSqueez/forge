@@ -263,7 +263,10 @@ impl Gateway {
         let status = response.status();
         let headers = collect_headers(&response);
         if status.is_success() {
-            let body = read_capped(ResponseBody::new(response), class.body_cap())
+            let effective_cap = request
+                .body_cap
+                .map_or(class.body_cap(), |cap| cap.min(class.body_cap()));
+            let body = read_capped(ResponseBody::new(response), effective_cap)
                 .await
                 .map_err(|error| match error {
                     CappedReadError::TooLarge { cap } => GatewayFailure::ResponseTooLarge { cap },

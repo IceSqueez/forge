@@ -224,6 +224,7 @@ pub struct GatewayRequest {
     pub(crate) masked: Vec<Secret>,
     pub(crate) follow_redirects: bool,
     pub(crate) wait_for_limiter: bool,
+    pub(crate) body_cap: Option<u64>,
 }
 
 impl GatewayRequest {
@@ -271,6 +272,7 @@ impl GatewayRequest {
             masked: Vec::new(),
             follow_redirects: true,
             wait_for_limiter: true,
+            body_cap: None,
         }
     }
 
@@ -345,6 +347,11 @@ impl GatewayRequest {
 
     pub fn mask(mut self, secret: Secret) -> Self {
         self.masked.push(secret);
+        self
+    }
+
+    pub fn body_cap(mut self, cap: u64) -> Self {
+        self.body_cap = Some(cap);
         self
     }
 

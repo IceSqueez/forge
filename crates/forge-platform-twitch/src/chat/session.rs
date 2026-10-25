@@ -9023,4 +9023,329 @@ mod tests {
             serde_json::to_string_pretty(&actual).unwrap()
         );
     }
+
+    const RETRIED_TOPIC: &str = "stream.online";
+
+    fn topic_post(kind: &str) -> wiremock::MockBuilder {
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path(EVENTSUB_SUBSCRIPTIONS_PATH))
+            .and(wiremock::matchers::body_string_contains(format!(
+                r#""type":"{kind}""#
+            )))
+    }
+
+    fn topic_post_on_session(kind: &str, session_id: &str) -> wiremock::MockBuilder {
+        topic_post(kind).and(wiremock::matchers::body_string_contains(format!(
+            r#""session_id":"{session_id}""#
+        )))
+    }
+
+    fn status_reply(status: reqwest::StatusCode) -> wiremock::ResponseTemplate {
+        wiremock::ResponseTemplate::new(status.as_u16())
+    }
+
+    async fn mount_accept_every_other_topic(server: &wiremock::MockServer) {
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path(EVENTSUB_SUBSCRIPTIONS_PATH))
+            .respond_with(subscription_accepted())
+            .mount(server)
+            .await;
+    }
+
+    fn spawn_tracked_session(
+        socket_url: &str,
+        api_url: &str,
+    ) -> (RunningSession, SubscriptionTracker) {
+        let bus = Arc::new(PlatformEventChannel::new());
+        let tracker = SubscriptionTracker::default();
+        let publisher: Arc<dyn EventPublisher> = bus.clone();
+        let (session, state, shutdown) = session_over(
+            publisher,
+            Arc::new(MockCreds::with_identity()),
+            None,
+            Arc::clone(&tracker),
+            socket_and_api(socket_url, api_url),
+        );
+        let running = RunningSession {
+            bus,
+            state,
+            task: tokio::spawn(session.run()),
+            _shutdown: shutdown,
+        };
+        (running, tracker)
+    }
+
+    fn tracked_status(
+        tracker: &SubscriptionTracker,
+        kind: &str,
+    ) -> crate::subscriptions::SubStatus {
+        tracker
+            .read()
+            .unwrap()
+            .iter()
+            .find(|record| record.kind == kind)
+            .map(|record| record.status.clone())
+            .expect("the pass must have recorded every topic")
+    }
+
+    async fn next_created(events: &mut EventStream, kind: &str) -> Event {
+        let found = within_real_time(FAKE_WAIT, async {
+            loop {
+                let event = events.recv().await.expect("the bus must stay open");
+                if event.kind == crate::event_kinds::EVENTSUB_SUBSCRIPTION_CREATED
+                    && event.payload["type"] == kind
+                {
+                    return event;
+                }
+            }
+        })
+        .await;
+        found.expect("the retried topic must be announced once it subscribes")
+    }
+
+    #[tokio::test]
+    async fn a_retry_pending_across_a_successor_swap_subscribes_on_the_successor_session() {
+        let api = wiremock::MockServer::start().await;
+        topic_post_on_session(RETRIED_TOPIC, "sess-1")
+            .respond_with(status_reply(reqwest::StatusCode::INTERNAL_SERVER_ERROR))
+            .with_priority(1)
+            .mount(&api)
+            .await;
+        topic_post_on_session(RETRIED_TOPIC, "sess-2")
+            .respond_with(status_reply(reqwest::StatusCode::ACCEPTED).set_body_json(
+                serde_json::json!({
+                    "data": [{ "id": "sub-on-successor", "type": RETRIED_TOPIC, "condition": {} }]
+                }),
+            ))
+            .with_priority(1)
+            .mount(&api)
+            .await;
+        mount_accept_every_other_topic(&api).await;
+        let mut base = FakeEventSub::bind().await;
+        let (session, _tracker) = spawn_tracked_session(&base.url, &api.uri());
+        let mut events = session.bus.subscribe();
+        let predecessor = base.accept().await;
+        predecessor.send(welcome_frame("sess-1"));
+        predecessor.send(chat_frame("first", "before the swap"));
+        assert_eq!(next_chat_text(&mut events).await, "before the swap");
+        let mut successor_socket = FakeEventSub::bind().await;
+        predecessor.send(reconnect_frame(&successor_socket.url));
+        let successor = successor_socket.accept().await;
+
+        successor.send(welcome_frame("sess-2"));
+
+        assert_eq!(
+            next_created(&mut events, RETRIED_TOPIC).await.payload["subscription_id"],
+            "sub-on-successor",
+            "Twitch carries only the live subscriptions to the successor, so a topic still \
+             retrying must be created against the successor's session id"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_session_ending_while_a_topic_retries_leaves_that_topic_failed() {
+        let api = wiremock::MockServer::start().await;
+        topic_post(RETRIED_TOPIC)
+            .respond_with(status_reply(reqwest::StatusCode::INTERNAL_SERVER_ERROR))
+            .with_priority(1)
+            .mount(&api)
+            .await;
+        mount_accept_every_other_topic(&api).await;
+        let mut base = FakeEventSub::bind().await;
+        let (mut session, tracker) = spawn_tracked_session(&base.url, &api.uri());
+        let mut events = session.bus.subscribe();
+        let peer = base.accept().await;
+        peer.send(welcome_frame("sess-1"));
+        peer.send(chat_frame("first", "while the topic retries"));
+        assert_eq!(next_chat_text(&mut events).await, "while the topic retries");
+        assert_eq!(
+            tracked_status(&tracker, RETRIED_TOPIC),
+            crate::subscriptions::SubStatus::Retrying("HTTP 500".to_owned())
+        );
+
+        peer.close();
+        next_retry_attempt(&mut session.state).await;
+
+        assert_eq!(
+            tracked_status(&tracker, RETRIED_TOPIC),
+            crate::subscriptions::SubStatus::Failed("HTTP 500".to_owned()),
+            "the retry ends with the socket session that owns it, so its row must not keep \
+             promising a retry"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_pass_that_does_not_go_live_leaves_no_topic_retrying() {
+        for (forbidden, expected) in [
+            (None, Verdict::NothingLive),
+            (Some("channel.follow"), Verdict::ReauthRequired),
+        ] {
+            let api = wiremock::MockServer::start().await;
+            topic_post(RETRIED_TOPIC)
+                .respond_with(status_reply(reqwest::StatusCode::INTERNAL_SERVER_ERROR))
+                .with_priority(1)
+                .mount(&api)
+                .await;
+            match forbidden {
+                Some(kind) => {
+                    topic_post(kind)
+                        .respond_with(status_reply(reqwest::StatusCode::FORBIDDEN))
+                        .with_priority(1)
+                        .mount(&api)
+                        .await;
+                    mount_accept_every_other_topic(&api).await;
+                }
+                None => {
+                    wiremock::Mock::given(wiremock::matchers::method("POST"))
+                        .respond_with(status_reply(reqwest::StatusCode::SERVICE_UNAVAILABLE))
+                        .mount(&api)
+                        .await;
+                }
+            }
+            let tracker = SubscriptionTracker::default();
+            let (mut session, _state, _shutdown) = session_over(
+                Arc::new(RecordingBus::default()),
+                Arc::new(MockCreds::with_identity()),
+                None,
+                Arc::clone(&tracker),
+                socket_and_api("ws://127.0.0.1:1", &api.uri()),
+            );
+            let pass = match session
+                .handle_frame(&welcome_frame("sess-1"), &mut None)
+                .await
+            {
+                FrameAction::Subscribe(pass) => Some(pass),
+                _ => None,
+            }
+            .expect("a welcome with a usable token must start a subscription pass");
+
+            let verdict = Verdict::from(pass.await);
+
+            assert_eq!(
+                (verdict, tracked_status(&tracker, RETRIED_TOPIC)),
+                (
+                    expected,
+                    crate::subscriptions::SubStatus::Failed("HTTP 500".to_owned())
+                )
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_retry_rejected_as_unauthorized_ends_the_topic_without_refreshing_the_token() {
+        let server = wiremock::MockServer::start().await;
+        topic_post(RETRIED_TOPIC)
+            .respond_with(status_reply(reqwest::StatusCode::INTERNAL_SERVER_ERROR))
+            .up_to_n_times(1)
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        topic_post(RETRIED_TOPIC)
+            .respond_with(status_reply(reqwest::StatusCode::UNAUTHORIZED))
+            .with_priority(2)
+            .mount(&server)
+            .await;
+        mount_accept_every_other_topic(&server).await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/token"))
+            .respond_with(
+                status_reply(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "access_token": RENEWED_ACCESS,
+                    "refresh_token": "rotated_refresh",
+                    "expires_in": 14400,
+                })),
+            )
+            .mount(&server)
+            .await;
+        let mut stored = crate::credentials_manager::tests::stub_cred(
+            std::time::SystemTime::now() + Duration::from_secs(3600),
+        );
+        stored.access_token = forge_types::OAuthToken::new(STALE_ACCESS);
+        let tracker = SubscriptionTracker::default();
+        let (mut session, _state, _shutdown) = session_over(
+            Arc::new(RecordingBus::default()),
+            crate::credentials_manager::tests::InMemRepo::seeded(&stored),
+            Some(server.uri()),
+            Arc::clone(&tracker),
+            socket_and_api("ws://127.0.0.1:1", &server.uri()),
+        );
+        let pass = match session
+            .handle_frame(&welcome_frame("sess-1"), &mut None)
+            .await
+        {
+            FrameAction::Subscribe(pass) => Some(pass),
+            _ => None,
+        }
+        .expect("a welcome with a usable token must start a subscription pass");
+        assert_eq!(Verdict::from(pass.await), Verdict::Live);
+        let mut retries = session
+            .retries_rx
+            .take()
+            .and_then(|mut handoff| handoff.try_recv().ok())
+            .and_then(TopicRetries::into_run)
+            .expect("a live pass with a failed topic must hand its retries to the session");
+
+        let finished = within_real_time(FAKE_WAIT, retries.finished()).await;
+
+        let refreshes = server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|request| request.url.path() == "/token")
+            .count();
+        assert_eq!(
+            (
+                finished.is_ok(),
+                refreshes,
+                tracked_status(&tracker, RETRIED_TOPIC)
+            ),
+            (
+                true,
+                0,
+                crate::subscriptions::SubStatus::Failed("unauthorized".to_owned())
+            ),
+            "a retry keeps the pass's token: a 401 closes the topic and never spends a refresh"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_revocation_of_a_raid_topic_recovered_without_an_id_fails_its_direction_row() {
+        use crate::subscriptions::SubStatus;
+        let (mut session, tracker) = session_tracking(
+            Arc::default(),
+            vec![
+                active("channel.raid (incoming)", None),
+                active("channel.raid (outgoing)", None),
+            ],
+        );
+        let mut frame: serde_json::Value = serde_json::from_str(&revocation_frame(
+            "sub-unlisted",
+            "channel.raid",
+            "user_removed",
+        ))
+        .unwrap();
+        frame["payload"]["subscription"]["condition"] =
+            serde_json::json!({ "to_broadcaster_user_id": "bcast" });
+
+        session
+            .handle_frame(&frame.to_string(), &mut Some("sess-1".to_owned()))
+            .await;
+
+        let statuses: Vec<SubStatus> = tracker
+            .read()
+            .unwrap()
+            .iter()
+            .map(|record| record.status.clone())
+            .collect();
+        assert_eq!(
+            statuses,
+            vec![
+                SubStatus::Failed("revoked: user_removed".to_owned()),
+                SubStatus::Active
+            ],
+            "a conflict-recovered raid row carries no subscription id, so its revocation must \
+             still find it by type and direction"
+        );
+    }
 }

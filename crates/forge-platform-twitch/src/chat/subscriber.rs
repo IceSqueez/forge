@@ -996,6 +996,10 @@ mod tests {
         SubStatus::Failed(reason.to_owned())
     }
 
+    fn retrying(reason: &str) -> SubStatus {
+        SubStatus::Retrying(reason.to_owned())
+    }
+
     #[tokio::test]
     async fn every_topic_post_debits_the_shared_broadcaster_limiter() {
         let server = MockServer::start().await;
@@ -1044,25 +1048,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_topic_failing_without_an_auth_rejection_records_its_reason_and_the_pass_stands() {
+    async fn a_topic_failing_without_an_auth_rejection_records_its_retry_class_and_the_pass_stands()
+    {
         let cases = [
             (
                 ResponseTemplate::new(StatusCode::INTERNAL_SERVER_ERROR.as_u16()),
-                failed("HTTP 500"),
+                retrying("HTTP 500"),
             ),
             (
                 ResponseTemplate::new(StatusCode::TOO_MANY_REQUESTS.as_u16())
                     .insert_header("Retry-After", "7"),
-                failed("rate limited"),
+                retrying("rate limited"),
             ),
             (
                 ResponseTemplate::new(StatusCode::SERVICE_UNAVAILABLE.as_u16())
                     .insert_header("Retry-After", "4"),
-                failed("HTTP 503"),
+                retrying("HTTP 503"),
             ),
             (
                 ResponseTemplate::new(StatusCode::SERVICE_UNAVAILABLE.as_u16()),
-                failed("HTTP 503"),
+                retrying("HTTP 503"),
             ),
             (
                 ResponseTemplate::new(StatusCode::CONFLICT.as_u16()),
@@ -1070,16 +1075,16 @@ mod tests {
             ),
             (
                 ResponseTemplate::new(StatusCode::ACCEPTED.as_u16()),
-                failed("unreadable response"),
+                retrying("unreadable response"),
             ),
             (
                 ResponseTemplate::new(StatusCode::ACCEPTED.as_u16())
                     .set_body_json(serde_json::json!({ "data": [] })),
-                failed("unreadable response"),
+                retrying("unreadable response"),
             ),
             (
                 ResponseTemplate::new(StatusCode::ACCEPTED.as_u16()).set_body_string("not-json"),
-                failed("unreadable response"),
+                retrying("unreadable response"),
             ),
         ];
 
@@ -1173,7 +1178,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_exhausted_local_budget_fails_every_topic_as_rate_limited_without_request_fail() {
+    async fn an_exhausted_local_budget_marks_every_topic_retrying_without_request_fail() {
         let server = MockServer::start().await;
         mount_catch_all_success(&server).await;
 
@@ -1183,7 +1188,7 @@ mod tests {
         assert!(
             records
                 .iter()
-                .all(|record| record.status == failed("rate limited")),
+                .all(|record| record.status == retrying("rate limited")),
             "got {records:?}"
         );
         assert!(run.request_fails().is_empty());
@@ -1227,13 +1232,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_transport_failure_records_a_reason_without_the_url_or_the_token() {
+    async fn a_transport_failure_marks_retrying_with_a_reason_free_of_the_url_and_the_token() {
         let run = pass_against("http://127.0.0.1:1", RecordingRateLimiter::granting()).await;
 
         let records = run.tracker.read().unwrap().clone();
         for record in records {
             assert!(
-                matches!(&record.status, SubStatus::Failed(reason)
+                matches!(&record.status, SubStatus::Retrying(reason)
                     if !reason.is_empty()
                         && !reason.contains("127.0.0.1")
                         && !reason.contains(EVENTSUB_PATH)
@@ -1267,6 +1272,7 @@ mod tests {
             let server = MockServer::start().await;
             mount_success(&server, "channel.chat.message", "sub-chat").await;
             mount_status(&server, "stream.online", StatusCode::INTERNAL_SERVER_ERROR).await;
+            mount_status(&server, "stream.offline", StatusCode::BAD_REQUEST).await;
             mount_catch_all_conflict(&server).await;
 
             run_subscribe(&server).await.result
@@ -1282,14 +1288,16 @@ mod tests {
             (
                 counted("active"),
                 counted("failed"),
+                counted("retryable"),
                 counted("scope_rejected"),
                 counted("already_exists"),
             ),
             (
                 "1".to_owned(),
                 "1".to_owned(),
+                "1".to_owned(),
                 "0".to_owned(),
-                (TOPICS.len() - 2).to_string(),
+                (TOPICS.len() - 3).to_string(),
             ),
             "got {:?}",
             summary.fields

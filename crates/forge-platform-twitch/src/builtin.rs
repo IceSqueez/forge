@@ -1855,7 +1855,13 @@ mod tests {
             records.push(SubscriptionRecord {
                 kind: "channel.cheer".to_owned(),
                 version: "1".to_owned(),
-                status: SubStatus::Failed("HTTP 403".to_owned()),
+                status: SubStatus::Retrying("HTTP 503".to_owned()),
+                subscription_id: None,
+            });
+            records.push(SubscriptionRecord {
+                kind: "channel.follow".to_owned(),
+                version: "2".to_owned(),
+                status: SubStatus::Failed("missing scope".to_owned()),
                 subscription_id: None,
             });
         }
@@ -1881,6 +1887,12 @@ mod tests {
                 SubscriptionStatus::Error,
                 Some("retry pending"),
             ),
+            (
+                &items[3],
+                "channel.follow",
+                SubscriptionStatus::Error,
+                Some("missing scope"),
+            ),
         ] {
             assert_eq!(row.name, name);
             assert_eq!(row.status, expected_status);
@@ -1890,6 +1902,30 @@ mod tests {
             banner.as_deref(),
             Some("channel.cheer subscription dropped")
         );
+    }
+
+    #[test]
+    fn a_given_up_row_raises_the_dropped_banner_without_a_retrying_one() {
+        let tracker = SubscriptionTracker::default();
+        tracker.write().unwrap().extend([
+            SubscriptionRecord {
+                kind: "channel.chat.message".to_owned(),
+                version: "1".to_owned(),
+                status: SubStatus::Active,
+                subscription_id: Some("sub-abc".to_owned()),
+            },
+            SubscriptionRecord {
+                kind: "channel.ban".to_owned(),
+                version: "1".to_owned(),
+                status: SubStatus::Failed("revoked: user_removed".to_owned()),
+                subscription_id: None,
+            },
+        ]);
+        let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
+
+        let (_, banner) = subscription_list(&b);
+
+        assert_eq!(banner.as_deref(), Some("channel.ban subscription dropped"));
     }
 
     #[test]

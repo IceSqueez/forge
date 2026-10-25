@@ -767,6 +767,10 @@ impl AppShell {
         if let Some(sign_in) = handles.kick_sign_in.clone() {
             detail.update(cx, |detail, _| detail.attach_kick_sign_in(sign_in));
         }
+        let platform_credentials = handles.platform_credentials.clone();
+        detail.update(cx, |detail, _| {
+            detail.attach_platform_credentials(platform_credentials)
+        });
         if let Some(bot) = handles.twitch_bot.clone() {
             let presence = topics.twitch_bot.clone();
             detail.update(cx, |detail, cx| detail.attach_twitch_bot(bot, presence, cx));

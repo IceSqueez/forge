@@ -9,12 +9,12 @@ use forge_obs::ObsClient;
 use forge_platform_core::{
     BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinOptionSource,
     BuiltinStatus, CapabilityFlags, CollectionId, ConnectionState, ControlFailure, DetailSection,
-    HeaderAction, HealthDelta, HealthMetric, HealthValue, HeroBadge, HeroBadgeTone, QuickAction,
-    QuickActions, RevisionWait, SectionIcon,
+    HeaderAction, HealthDelta, HealthMetric, HealthValue, HeroBadge, HeroBadgeTone, PlatformError,
+    QuickAction, QuickActions, RevisionWait, SectionIcon,
 };
 use forge_registry::TriggerRegistry;
 use forge_runtime::{ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
-use forge_storage::{CredentialsRepo, HistoryRepo, SettingsRepo, StorageError};
+use forge_storage::{CredentialsRepo, HistoryRepo, SettingsRepo};
 use forge_types::{IntegrationId, PlatformId, SubActionStep};
 use futures_util::StreamExt as _;
 use gpui::{
@@ -45,6 +45,7 @@ use crate::integration_sign_out::forget_then_disconnect;
 use crate::integrations::{BuiltinObject, ObsInstallSeed, VTubeInstallSeed};
 use crate::obs_credentials_form::ObsConnected;
 use crate::obs_settings_modal::{ObsSettingsModal, ObsSettingsModalEvent};
+use crate::platform_credentials::PlatformCredentialManagers;
 use crate::platforms::PlatformConnectivity;
 use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal, RunHistoryOpenIntegration};
 use crate::screen::Screen;
@@ -94,6 +95,7 @@ pub struct IntegrationDetail {
     twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
     youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
     kick_sign_in: Option<forge_platform_kick::KickSignIn>,
+    platform_credentials: PlatformCredentialManagers,
     _twitch_bot_subs: Vec<Subscription>,
     is_twitch: bool,
     is_obs: bool,
@@ -253,6 +255,7 @@ impl IntegrationDetail {
             twitch_sign_in: None,
             youtube_sign_in: None,
             kick_sign_in: None,
+            platform_credentials: PlatformCredentialManagers::default(),
             _twitch_bot_subs: Vec::new(),
             is_twitch,
             is_obs,
@@ -348,6 +351,10 @@ impl IntegrationDetail {
 
     pub fn attach_kick_sign_in(&mut self, sign_in: forge_platform_kick::KickSignIn) {
         self.kick_sign_in = Some(sign_in);
+    }
+
+    pub fn attach_platform_credentials(&mut self, managers: PlatformCredentialManagers) {
+        self.platform_credentials = managers;
     }
 
     fn open_connect_flow(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
@@ -990,22 +997,18 @@ impl IntegrationDetail {
 
     fn reset_to_connect(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
         let credentials = Arc::clone(&self.credentials);
-        let key = credential_key(platform);
+        let managers = self.platform_credentials.clone();
         let slot = self.slot_of(platform);
         let forget = async move {
             forget_then_disconnect(
-                async move {
-                    credentials
-                        .delete(&forge_storage::CredentialId::new(key))
-                        .await
-                },
+                async move { managers.forget(platform, credentials.as_ref()).await },
                 None,
             )
             .await?;
             if let Some(slot) = slot {
                 slot.rebuild().await;
             }
-            Ok(())
+            Ok::<(), PlatformError>(())
         };
         self.run_sign_out(
             forget,
@@ -1021,13 +1024,14 @@ impl IntegrationDetail {
         );
     }
 
-    fn run_sign_out<F>(
+    fn run_sign_out<F, E>(
         &mut self,
         forget: F,
         apply_signed_out: impl FnOnce(&mut Self, &mut Context<Self>) + Send + 'static,
         cx: &mut Context<Self>,
     ) where
-        F: Future<Output = Result<(), StorageError>> + Send + 'static,
+        F: Future<Output = Result<(), E>> + Send + 'static,
+        E: std::fmt::Display + Send + 'static,
     {
         if self.signing_out {
             return;
@@ -1740,14 +1744,6 @@ fn platform_of(id: &str) -> Option<PlatformId> {
     }
 }
 
-fn credential_key(platform: PlatformId) -> &'static str {
-    match platform {
-        PlatformId::Twitch => forge_platform_twitch::TWITCH_CREDENTIAL_ID,
-        PlatformId::YouTube => forge_platform_youtube::CREDENTIAL_KEY,
-        PlatformId::Kick => forge_platform_kick::CREDENTIAL_KEY,
-    }
-}
-
 fn reachable_quick_actions(
     quick: &dyn QuickActions,
     collections: Option<&dyn BuiltinCollections>,
@@ -2172,6 +2168,16 @@ mod tests {
             object: BuiltinObject,
             credentials: Arc<dyn CredentialsRepo>,
         ) -> Entity<IntegrationDetail> {
+            open_detail_over(cx, rt, object, credentials, None)
+        }
+
+        pub(super) fn open_detail_over(
+            cx: &mut TestAppContext,
+            rt: &tokio::runtime::Runtime,
+            object: BuiltinObject,
+            credentials: Arc<dyn CredentialsRepo>,
+            kick_slot: Option<IntegrationSlot<BuiltinObject>>,
+        ) -> Entity<IntegrationDetail> {
             cx.update(|cx| {
                 cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
             });
@@ -2199,7 +2205,7 @@ mod tests {
                     Arc::clone(&bus),
                     spawn_live_viewer_aggregator(),
                     None,
-                    None,
+                    kick_slot,
                     None,
                     ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
                     VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
@@ -2299,17 +2305,20 @@ mod tests {
         }
     }
 
+    #[allow(clippy::unwrap_used)]
     mod sign_out {
         use std::cell::RefCell;
         use std::sync::atomic::{AtomicUsize, Ordering};
 
         use async_trait::async_trait;
-        use forge_storage::CredentialId;
+        use forge_storage::{CredentialId, StorageError};
         use gpui::TestAppContext;
         use time::OffsetDateTime;
 
         use super::super::*;
-        use super::quick_action_bridge::{LiveControl, ShiftingActions, open_detail_with};
+        use super::quick_action_bridge::{
+            LiveControl, ShiftingActions, open_detail_over, open_detail_with,
+        };
         use crate::test_support::{error_toasts, pump, runtime};
         use forge_components::Toasts;
 
@@ -2511,6 +2520,146 @@ mod tests {
                 ),
                 (1, 1)
             );
+        }
+
+        type Journal = Arc<std::sync::Mutex<Vec<&'static str>>>;
+
+        struct JournalingKick {
+            journal: Journal,
+        }
+
+        #[async_trait]
+        impl forge_runtime::IntegrationFactory<BuiltinObject> for JournalingKick {
+            fn id(&self) -> IntegrationId {
+                IntegrationId::new("kick")
+            }
+            fn teardown_grace(&self) -> Duration {
+                Duration::from_millis(1)
+            }
+            async fn is_configured(&self) -> Result<bool, StorageError> {
+                Ok(true)
+            }
+            async fn start(
+                &self,
+            ) -> Result<forge_runtime::RunningIntegration<BuiltinObject>, String> {
+                self.journal.lock().unwrap().push("start");
+                let journal = Arc::clone(&self.journal);
+                Ok(
+                    forge_runtime::RunningIntegration::idle().with_teardown(Box::pin(async move {
+                        journal.lock().unwrap().push("teardown");
+                    })),
+                )
+            }
+        }
+
+        struct JournalingRows {
+            journal: Journal,
+            delete_fails: bool,
+        }
+
+        #[async_trait]
+        impl CredentialsRepo for JournalingRows {
+            async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
+                Ok(())
+            }
+            async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
+                Ok(None)
+            }
+            async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
+                self.journal.lock().unwrap().push("forget");
+                if self.delete_fails {
+                    Err(StorageError::Connection {
+                        reason: "credentials store is read-only".to_owned(),
+                    })
+                } else {
+                    Ok(true)
+                }
+            }
+            async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+                Ok(Vec::new())
+            }
+            async fn last_refresh(
+                &self,
+                _: &CredentialId,
+            ) -> Result<Option<OffsetDateTime>, StorageError> {
+                Ok(None)
+            }
+            async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+                Ok(())
+            }
+        }
+
+        fn running_kick_slot(
+            rt: &tokio::runtime::Runtime,
+            journal: &Journal,
+        ) -> IntegrationSlot<BuiltinObject> {
+            let (settings, _writes) = crate::test_support::test_backend();
+            let supervisor = forge_runtime::IntegrationSupervisor::launch(
+                vec![Arc::new(JournalingKick {
+                    journal: Arc::clone(journal),
+                })
+                    as Arc<dyn forge_runtime::IntegrationFactory<BuiltinObject>>],
+                settings as Arc<dyn SettingsRepo>,
+                forge_runtime::IntegrationGate::new(),
+                Arc::new(crate::integrations::BuiltinRegistry::default()),
+                forge_runtime::spawn_live_viewer_aggregator(),
+            );
+            let slot = supervisor.slot(&IntegrationId::new("kick")).unwrap();
+            rt.block_on(slot.set_enabled(true)).unwrap();
+            slot
+        }
+
+        #[gpui::test]
+        fn kick_sign_out_forgets_through_the_wired_manager_before_rebuilding(
+            cx: &mut TestAppContext,
+        ) {
+            let rt = runtime();
+            let _enter = rt.enter();
+            for (delete_fails, expected) in [
+                (false, vec!["start", "forget", "teardown", "start"]),
+                (true, vec!["start", "forget"]),
+            ] {
+                let journal: Journal = Arc::default();
+                let slot = running_kick_slot(&rt, &journal);
+                let managed = Arc::new(JournalingRows {
+                    journal: Arc::clone(&journal),
+                    delete_fails,
+                });
+                let managers = PlatformCredentialManagers {
+                    kick: Some(crate::platform_credentials::tests::kick_manager_over(
+                        managed as Arc<dyn CredentialsRepo>,
+                    )),
+                    ..PlatformCredentialManagers::default()
+                };
+                let unmanaged = ScriptedCredentials::new(false, None);
+                cx.update(|cx| cx.set_global(Toasts::new()));
+                let mut object = ShiftingActions::for_integration("kick", "x").object();
+                object.control = Some(Arc::new(LiveControl));
+                let view = open_detail_over(
+                    cx,
+                    &rt,
+                    object,
+                    Arc::clone(&unmanaged) as Arc<dyn CredentialsRepo>,
+                    Some(slot),
+                );
+                view.update(cx, |this, _| this.attach_platform_credentials(managers));
+
+                view.update(cx, |this, cx| {
+                    this.request_disconnect(cx);
+                    this.confirm_disconnect(cx);
+                });
+                settle(cx, &rt);
+
+                assert_eq!(
+                    (
+                        journal.lock().unwrap().clone(),
+                        unmanaged.deletes.load(Ordering::SeqCst),
+                        view.read_with(cx, |this, _| this.connect.is_some()),
+                    ),
+                    (expected, 0, !delete_fails),
+                    "delete_fails={delete_fails}"
+                );
+            }
         }
     }
 }

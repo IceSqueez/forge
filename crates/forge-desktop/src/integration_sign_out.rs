@@ -2,14 +2,13 @@ use std::future::Future;
 use std::sync::Arc;
 
 use forge_platform_core::BuiltinControl;
-use forge_storage::StorageError;
 
-pub async fn forget_then_disconnect<F, T>(
+pub async fn forget_then_disconnect<F, T, E>(
     forget: F,
     control: Option<Arc<dyn BuiltinControl>>,
-) -> Result<(), StorageError>
+) -> Result<(), E>
 where
-    F: Future<Output = Result<T, StorageError>>,
+    F: Future<Output = Result<T, E>>,
 {
     forget.await?;
     if let Some(control) = control
@@ -26,6 +25,7 @@ mod tests {
 
     use async_trait::async_trait;
     use forge_platform_core::{ControlFailure, ControlOutcome};
+    use forge_storage::StorageError;
 
     use super::*;
     use crate::test_support::runtime;

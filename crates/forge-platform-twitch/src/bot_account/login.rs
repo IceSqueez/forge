@@ -1,5 +1,4 @@
 use forge_platform_core::PlatformError;
-use forge_storage::CredentialId;
 use forge_types::OAuthToken;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -10,7 +9,7 @@ use crate::auth::{
     DEVICE_CANCELLED_REASON, DEVICE_CODE_USED_REASON, DEVICE_DENIED_REASON, DEVICE_EXPIRED_REASON,
     DeviceCodeInfo, TwitchAuthBundle, TwitchAuthFlow,
 };
-use crate::credentials::{TWITCH_BOT_CREDENTIAL_ID, load, load_at, store_at};
+use crate::credentials::{TWITCH_BOT_CREDENTIAL_ID, load, store_at};
 
 #[derive(Debug, Error)]
 pub enum BotLoginError {
@@ -102,15 +101,11 @@ impl TwitchBotAccount {
     pub async fn logout(&self) -> Result<(), BotLoginError> {
         self.cancel_login();
         *self.pending_flow.lock().await = None;
-        let stored = load_at(self.repo.as_ref(), TWITCH_BOT_CREDENTIAL_ID)
-            .await
-            .map_err(|e| BotLoginError::Storage(e.to_string()))?;
-        if let Some(stored) = stored {
-            self.revoke_pair(&stored.access_token, stored.refresh_token.as_ref())
-                .await;
-        }
-        self.repo
-            .delete(&CredentialId::new(TWITCH_BOT_CREDENTIAL_ID))
+        self.manager
+            .revoke_and_clear(|stored| async move {
+                self.revoke_pair(&stored.access_token, stored.refresh_token.as_ref())
+                    .await;
+            })
             .await
             .map_err(|e| BotLoginError::Storage(e.to_string()))?;
         self.set_state(BotStatus::NotConnected, None);
@@ -146,6 +141,9 @@ mod tests {
     };
     use crate::credentials::TWITCH_CREDENTIAL_ID;
     use crate::sub_actions::test_support::{SELF_USER_ID, TOKEN_SENTINEL};
+
+    const ROTATED_BOT_ACCESS: &str = "ROTATED_BOT_ACCESS_q4x";
+    const ROTATED_BOT_REFRESH: &str = "ROTATED_BOT_REFRESH_q4x";
 
     async fn revoked_tokens(harness: &BotHarness) -> Vec<String> {
         harness
@@ -342,6 +340,60 @@ mod tests {
                 .user_id,
             SELF_USER_ID,
             "the streamer row must stay the streamer's"
+        );
+    }
+
+    #[tokio::test]
+    async fn logout_during_a_bot_refresh_revokes_the_rotated_pair_and_stays_signed_out() {
+        use crate::auth::TWITCH_BOT_SCOPES;
+        use crate::bot_account::test_support::{CLIENT_ID, StoreGate, settle};
+
+        let gate = StoreGate::armed();
+        let harness = BotHarness::with_bot_row_gated_by(Arc::clone(&gate)).await;
+        harness
+            .mount(
+                "POST",
+                "/token",
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "access_token": ROTATED_BOT_ACCESS,
+                    "refresh_token": ROTATED_BOT_REFRESH,
+                    "expires_in": 14400,
+                })),
+            )
+            .await;
+        harness
+            .mount("POST", "/revoke", ResponseTemplate::new(200))
+            .await;
+        let refreshing = tokio::spawn({
+            let bot = Arc::clone(&harness.bot);
+            async move { bot.manager.refresh(&OAuthToken::new(BOT_ACCESS)).await }
+        });
+        gate.arrival().await;
+        let logging_out = tokio::spawn({
+            let bot = Arc::clone(&harness.bot);
+            async move { bot.logout().await }
+        });
+        settle().await;
+        gate.open();
+        refreshing.await.unwrap().unwrap();
+        logging_out.await.unwrap().unwrap();
+        harness
+            .mount_validate(200, TWITCH_BOT_SCOPES, CLIENT_ID)
+            .await;
+
+        harness.bot.sync_status().await;
+
+        let revoked = revoked_tokens(&harness).await;
+        assert_eq!(
+            (
+                harness.repo.raw(TWITCH_BOT_CREDENTIAL_ID),
+                harness.bot.status(),
+                revoked.iter().any(|body| body.contains(ROTATED_BOT_ACCESS)),
+                revoked
+                    .iter()
+                    .any(|body| body.contains(ROTATED_BOT_REFRESH)),
+            ),
+            (None, BotStatus::NotConnected, true, true)
         );
     }
 }

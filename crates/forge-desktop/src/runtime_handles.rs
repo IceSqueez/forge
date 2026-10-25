@@ -14,6 +14,7 @@ use forge_storage::{CredentialsKeyLoss, DataProvider, Language};
 use crate::audio_router::AudioRouter;
 use crate::integrations::{BuiltinObject, BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed};
 use crate::log_tail::LogTail;
+use crate::platform_credentials::PlatformCredentialManagers;
 use crate::voice_gate::VoiceGateOwner;
 use forge_runtime::IntegrationSupervisor;
 
@@ -56,6 +57,7 @@ pub struct RuntimeHandles {
     pub twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
     pub youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
     pub kick_sign_in: Option<forge_platform_kick::KickSignIn>,
+    pub platform_credentials: PlatformCredentialManagers,
     pub midi_sink: Arc<forge_midi::SwitchableMidiSink>,
     pub server: Option<forge_server::ServerHandle>,
     pub server_unavailable: Option<String>,

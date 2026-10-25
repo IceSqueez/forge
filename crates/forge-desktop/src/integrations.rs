@@ -23,6 +23,7 @@ use crate::integration_factories::{
     wire_discord, wire_hotkey, wire_kick, wire_midi, wire_obs, wire_twitch, wire_vtube,
     wire_youtube,
 };
+use crate::platform_credentials::PlatformCredentialManagers;
 use forge_hotkey::HotkeyReconciler;
 use forge_runtime::{IntegrationFactory, IntegrationObjects, TaskGroup};
 
@@ -101,6 +102,7 @@ pub struct Integrations {
     pub twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
     pub youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
     pub kick_sign_in: Option<forge_platform_kick::KickSignIn>,
+    pub platform_credentials: PlatformCredentialManagers,
 }
 
 #[derive(Clone)]
@@ -299,9 +301,11 @@ pub async fn build_integrations(
     let mut factories: Vec<Arc<dyn IntegrationFactory<BuiltinObject>>> = Vec::new();
     let mut twitch_bot = None;
     let mut twitch_sign_in = None;
+    let mut platform_credentials = PlatformCredentialManagers::default();
     if let Some(twitch) = wire_twitch(sub_actions, backend, bus, endpoints) {
         twitch_bot = Some(twitch.bot());
         twitch_sign_in = Some(twitch.sign_in());
+        platform_credentials.twitch = Some(twitch.credentials_manager());
         factories.push(Arc::new(twitch));
     }
     let obs = wire_obs(sub_actions, backend, bus);
@@ -322,11 +326,13 @@ pub async fn build_integrations(
     let mut youtube_sign_in = None;
     if let Some(youtube) = wire_youtube(sub_actions, backend, bus, endpoints) {
         youtube_sign_in = Some(youtube.sign_in());
+        platform_credentials.youtube = Some(youtube.credentials_manager());
         factories.push(Arc::new(youtube));
     }
     let mut kick_sign_in = None;
     if let Some(kick) = wire_kick(sub_actions, backend, bus, endpoints) {
         kick_sign_in = Some(kick.sign_in());
+        platform_credentials.kick = Some(kick.credentials_manager());
         factories.push(Arc::new(kick));
     }
     let mut donation_services = DonationServices::default();
@@ -355,6 +361,7 @@ pub async fn build_integrations(
         twitch_sign_in,
         youtube_sign_in,
         kick_sign_in,
+        platform_credentials,
     }
 }
 

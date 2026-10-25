@@ -110,6 +110,7 @@ mod pack_import_live;
 mod pack_import_modal;
 mod pack_services;
 mod picker_favorites;
+mod platform_credentials;
 mod platform_visuals;
 mod platforms;
 mod presentation;

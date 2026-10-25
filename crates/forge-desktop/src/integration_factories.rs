@@ -134,6 +134,12 @@ impl TwitchFactory {
     pub(crate) fn sign_in(&self) -> forge_platform_twitch::TwitchSignIn {
         self.sign_in.clone()
     }
+
+    pub(crate) fn credentials_manager(
+        &self,
+    ) -> Arc<forge_platform_twitch::TwitchCredentialsManager> {
+        Arc::clone(&self.manager)
+    }
 }
 
 #[async_trait]
@@ -333,6 +339,12 @@ impl YoutubeFactory {
     pub(crate) fn sign_in(&self) -> forge_platform_youtube::YoutubeSignIn {
         self.sign_in.clone()
     }
+
+    pub(crate) fn credentials_manager(
+        &self,
+    ) -> Arc<forge_platform_youtube::YoutubeCredentialsManager> {
+        Arc::clone(&self.manager)
+    }
 }
 
 #[async_trait]
@@ -501,6 +513,10 @@ fn kick_oauth_gateway(endpoints: &PlatformEndpoints) -> Option<Gateway> {
 impl KickFactory {
     pub(crate) fn sign_in(&self) -> forge_platform_kick::KickSignIn {
         self.sign_in.clone()
+    }
+
+    pub(crate) fn credentials_manager(&self) -> Arc<forge_platform_kick::KickCredentialsManager> {
+        Arc::clone(&self.manager)
     }
 }
 

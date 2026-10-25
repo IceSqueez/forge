@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use forge_net::TokenBucketRateLimiter;
@@ -26,11 +26,14 @@ pub enum Reply {
         prefix: Vec<u8>,
     },
     Status(u16),
+    Redirect(String),
+    Silent,
 }
 
 pub struct TestServer {
     addr: SocketAddr,
     hits: Arc<AtomicUsize>,
+    heads: Arc<Mutex<Vec<String>>>,
 }
 
 impl TestServer {
@@ -44,17 +47,27 @@ impl TestServer {
                 .map(|(path, reply)| (path.to_owned(), reply))
                 .collect(),
         );
+        let heads = Arc::new(Mutex::new(Vec::new()));
         let counter = Arc::clone(&hits);
+        let recorded = Arc::clone(&heads);
         tokio::spawn(async move {
             loop {
                 let Ok((stream, _)) = listener.accept().await else {
                     return;
                 };
                 counter.fetch_add(1, Ordering::SeqCst);
-                tokio::spawn(serve(stream, Arc::clone(&routes)));
+                tokio::spawn(serve(stream, Arc::clone(&routes), Arc::clone(&recorded)));
             }
         });
-        Self { addr, hits }
+        Self { addr, hits, heads }
+    }
+
+    pub fn plain_url(&self, host: &str, path: &str) -> String {
+        format!("http://{host}:{}{path}", self.addr.port())
+    }
+
+    pub fn heads(&self) -> Vec<String> {
+        self.heads.lock().unwrap().clone()
     }
 
     pub fn url(&self, path: &str) -> String {
@@ -66,7 +79,11 @@ impl TestServer {
     }
 }
 
-async fn serve(mut stream: TcpStream, routes: Arc<HashMap<String, Reply>>) {
+async fn serve(
+    mut stream: TcpStream,
+    routes: Arc<HashMap<String, Reply>>,
+    heads: Arc<Mutex<Vec<String>>>,
+) {
     let mut head = Vec::new();
     let mut byte = [0u8; 1];
     while !head.ends_with(b"\r\n\r\n") {
@@ -75,7 +92,8 @@ async fn serve(mut stream: TcpStream, routes: Arc<HashMap<String, Reply>>) {
             _ => return,
         }
     }
-    let head = String::from_utf8_lossy(&head);
+    let head = String::from_utf8_lossy(&head).into_owned();
+    heads.lock().unwrap().push(head.clone());
     let target = head.split_whitespace().nth(1).unwrap_or_default();
     let path = target.split('?').next().unwrap_or_default();
     let reply = routes.get(path).cloned().unwrap_or(Reply::Status(404));
@@ -117,6 +135,13 @@ async fn serve(mut stream: TcpStream, routes: Arc<HashMap<String, Reply>>) {
             }
             std::future::pending::<()>().await;
         }
+        Reply::Redirect(location) => {
+            let header = format!(
+                "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+            write_all(&mut stream, header.as_bytes(), &[]).await;
+        }
+        Reply::Silent => std::future::pending::<()>().await,
         Reply::Status(code) => {
             let header =
                 format!("HTTP/1.1 {code} Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");

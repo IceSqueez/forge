@@ -113,19 +113,64 @@ async fn a_manifest_exactly_at_the_size_cap_is_read_and_checked_against_its_sign
 }
 
 #[tokio::test]
-async fn a_signature_over_its_size_cap_is_refused() {
-    let (_server, source) = serve(
-        Reply::Full(MANIFEST.to_vec()),
-        Reply::CloseDelimited(vec![b'A'; SIGNATURE_LIMIT as usize + 1]),
-    )
-    .await;
+async fn a_signature_is_read_at_its_size_cap_and_refused_one_byte_over() {
+    for (length, refused) in [
+        (SIGNATURE_LIMIT as usize, false),
+        (SIGNATURE_LIMIT as usize + 1, true),
+    ] {
+        let (_server, source) = serve(
+            Reply::Full(MANIFEST.to_vec()),
+            Reply::CloseDelimited(vec![b'A'; length]),
+        )
+        .await;
 
-    let result = check(&source, "0.0.1").await;
+        let result = check(&source, "0.0.1").await;
 
-    assert!(
-        matches!(result, Err(UpdateError::ResponseTooLarge { limit }) if limit == SIGNATURE_LIMIT),
-        "{result:?}",
-    );
+        if refused {
+            assert!(
+                matches!(result, Err(UpdateError::ResponseTooLarge { limit }) if limit == SIGNATURE_LIMIT),
+                "{length}: {result:?}",
+            );
+        } else {
+            assert!(
+                matches!(result, Err(UpdateError::MalformedSignature)),
+                "{length}: {result:?}",
+            );
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_release_file_declaring_more_than_its_limit_is_refused_without_reading_the_body() {
+    let declared_over = |limit: u64| Reply::Stall {
+        content_length: limit + 1,
+        prefix: Vec::new(),
+    };
+    for (label, manifest, signature, limit) in [
+        (
+            "manifest",
+            declared_over(MANIFEST_LIMIT),
+            Reply::Full(SIGNATURE.to_vec()),
+            MANIFEST_LIMIT,
+        ),
+        (
+            "signature",
+            Reply::Full(MANIFEST.to_vec()),
+            declared_over(SIGNATURE_LIMIT),
+            SIGNATURE_LIMIT,
+        ),
+    ] {
+        let (_server, source) = serve(manifest, signature).await;
+        let started = tokio::time::Instant::now();
+
+        let result = check(&source, "0.0.1").await;
+
+        assert!(
+            matches!(result, Err(UpdateError::ResponseTooLarge { limit: refused }) if refused == limit),
+            "{label}: {result:?}",
+        );
+        assert_eq!(started.elapsed(), std::time::Duration::ZERO, "{label}");
+    }
 }
 
 #[tokio::test]

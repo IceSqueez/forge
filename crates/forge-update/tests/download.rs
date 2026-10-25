@@ -3,7 +3,14 @@
 mod support;
 
 use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
 
+use async_trait::async_trait;
+use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter, STREAMING_READ_IDLE_BUDGET};
+use tokio::sync::Notify;
+
+use forge_update::UpdateClient;
 use forge_update::{
     Artifact, CancelSignal, DownloadProgress, Sha256Digest, StagedArtifact, UpdateError,
     download_artifact, progress_channel,
@@ -14,6 +21,8 @@ type ErrorCheck = fn(&UpdateError) -> bool;
 
 const NAME: &str = "forge-0.6.2-linux-x64.AppImage";
 const STAGED_NAME: &str = ".forge-update-forge-0.6.2-linux-x64.AppImage";
+const PARTIAL_NAME: &str = ".forge-update-forge-0.6.2-linux-x64.AppImage.part";
+const OFF_LOOPBACK_HTTP: &str = "http://192.0.2.1/forge-0.6.2-linux-x64.AppImage";
 
 fn payload() -> Vec<u8> {
     (0..64 * 1024).map(|index| (index % 251) as u8).collect()
@@ -135,6 +144,17 @@ async fn every_rejected_download_leaves_nothing_in_the_staging_dir() {
         ("server error", Reply::Status(500), |error| {
             matches!(error, UpdateError::Status(500))
         }),
+        ("throttled", Reply::Status(429), |error| {
+            matches!(error, UpdateError::Status(429))
+        }),
+        ("forbidden", Reply::Status(403), |error| {
+            matches!(error, UpdateError::Status(403))
+        }),
+        (
+            "redirect onto plain http off loopback",
+            Reply::Redirect(OFF_LOOPBACK_HTTP.to_owned()),
+            |error| matches!(error, UpdateError::Network(_)),
+        ),
     ];
     for (label, reply, expected) in cases {
         let server = serve(reply).await;
@@ -292,4 +312,103 @@ async fn an_artifact_name_that_is_not_a_plain_file_name_is_refused_before_any_re
     }
     assert_eq!(server.hits(), 0);
     assert_eq!(staging_entries(outer.path()), ["staging"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_download_whose_response_headers_never_arrive_fails_after_the_read_idle_budget() {
+    let body = payload();
+    let server = serve(Reply::Silent).await;
+    let staging = tempfile::tempdir().unwrap();
+    let started = tokio::time::Instant::now();
+
+    let error = download(&artifact(server.url("/artifact"), &body), staging.path())
+        .await
+        .unwrap_err();
+
+    assert!(matches!(error, UpdateError::Network(_)), "{error:?}");
+    assert_eq!(started.elapsed(), STREAMING_READ_IDLE_BUDGET);
+    assert!(staging_entries(staging.path()).is_empty());
+}
+
+#[derive(Default)]
+struct StuckLimiter {
+    entered: Notify,
+}
+
+#[async_trait]
+impl RateLimiter for StuckLimiter {
+    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
+        self.entered.notify_one();
+        std::future::pending().await
+    }
+
+    async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+}
+
+#[tokio::test]
+async fn cancelling_a_download_waiting_on_the_rate_limiter_sends_nothing_and_removes_the_partial_file()
+ {
+    let body = payload();
+    let server = serve(Reply::Full(body.clone())).await;
+    let staging = tempfile::tempdir().unwrap();
+    let (progress, _receiver) = progress_channel();
+    let cancel = CancelSignal::new();
+    let limiter = Arc::new(StuckLimiter::default());
+    let client = UpdateClient::new(limiter.clone()).unwrap();
+    let artifact = artifact(server.url("/artifact"), &body);
+
+    let download = download_artifact(&client, &artifact, staging.path(), &progress, &cancel);
+    let canceller = async {
+        limiter.entered.notified().await;
+        assert_eq!(staging_entries(staging.path()), [PARTIAL_NAME]);
+        cancel.cancel();
+    };
+    let (result, ()) = tokio::join!(download, canceller);
+
+    assert!(matches!(result, Err(UpdateError::Cancelled)), "{result:?}");
+    assert_eq!(server.hits(), 0);
+    assert!(staging_entries(staging.path()).is_empty());
+}
+
+#[tokio::test]
+async fn a_release_redirect_chain_onto_a_cdn_host_stages_the_artifact_without_adding_headers() {
+    let body = payload();
+    let cdn = TestServer::start(vec![("/objects/artifact", Reply::Full(body.clone()))]).await;
+    let release = TestServer::start(vec![
+        (
+            "/releases/latest/download/artifact",
+            Reply::Redirect("/releases/download/v0.6.2/artifact".to_owned()),
+        ),
+        (
+            "/releases/download/v0.6.2/artifact",
+            Reply::Redirect(cdn.plain_url("localhost", "/objects/artifact")),
+        ),
+    ])
+    .await;
+    let staging = tempfile::tempdir().unwrap();
+
+    let staged = download(
+        &artifact(release.url("/releases/latest/download/artifact"), &body),
+        staging.path(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(std::fs::read(&staged.path).unwrap(), body);
+    let first_hop_headers = header_names(&release.heads()[0]);
+    let cdn_heads = cdn.heads();
+    assert_eq!(cdn_heads.len(), 1);
+    let extra: Vec<String> = header_names(&cdn_heads[0])
+        .into_iter()
+        .filter(|name| !first_hop_headers.contains(name))
+        .collect();
+    assert!(extra.is_empty(), "cdn hop gained {extra:?}");
+}
+
+fn header_names(head: &str) -> Vec<String> {
+    head.lines()
+        .skip(1)
+        .filter_map(|line| line.split_once(':'))
+        .map(|(name, _)| name.trim().to_ascii_lowercase())
+        .collect()
 }

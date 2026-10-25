@@ -3,11 +3,12 @@
 mod gateway_support;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use forge_net::test_support::RecordingRateLimiter;
 use forge_net::{
     Gateway, GatewayBuildError, GatewayFailure, GatewayProfile, GatewayRequest, HostRejection,
-    InvalidRequest, Method, MultipartBody, RequestBody, Secret,
+    InvalidRequest, Method, MultipartBody, RateLimitOutcome, RequestBody, Secret,
 };
 use gateway_support::{Harness, platform, received};
 use wiremock::matchers::any;
@@ -304,8 +305,118 @@ async fn exhausted_limiter_fails_with_budget_exhausted_and_sends_nothing() {
     ] {
         let harness = Harness::with_limiter(&server.uri(), platform(), limiter);
         let failure = harness.fail(GatewayRequest::get("a")).await;
-        assert_eq!(failure, GatewayFailure::BudgetExhausted);
+        assert_eq!(
+            failure,
+            GatewayFailure::BudgetExhausted { retry_after: None }
+        );
     }
+    assert!(received(&server).await.is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_no_wait_request_reports_the_exact_throttle_wait_at_once_and_sends_nothing() {
+    let server = ok_server().await;
+    let wait = Duration::from_millis(42_137);
+    let limiter =
+        RecordingRateLimiter::answering(Ok(RateLimitOutcome::Throttled { wait_for: wait }));
+    let harness = Harness::with_limiter(&server.uri(), platform(), limiter);
+    let started = tokio::time::Instant::now();
+
+    let failure = harness
+        .fail(GatewayRequest::get("a").without_limiter_wait())
+        .await;
+
+    assert_eq!(
+        failure,
+        GatewayFailure::BudgetExhausted {
+            retry_after: Some(wait)
+        }
+    );
+    assert_eq!(started.elapsed(), Duration::ZERO);
+    assert_eq!(harness.limiter.acquire_count(), 1);
+    assert!(received(&server).await.is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_no_wait_request_reports_no_wait_when_the_limiter_is_exhausted_or_fails() {
+    let server = ok_server().await;
+    for limiter in [
+        RecordingRateLimiter::exhausted(),
+        RecordingRateLimiter::failing(),
+    ] {
+        let harness = Harness::with_limiter(&server.uri(), platform(), limiter);
+        let failure = harness
+            .fail(GatewayRequest::get("a").without_limiter_wait())
+            .await;
+        assert_eq!(
+            failure,
+            GatewayFailure::BudgetExhausted { retry_after: None }
+        );
+    }
+    assert!(received(&server).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_no_wait_request_goes_through_once_the_limiter_grants_again() {
+    let server = ok_server().await;
+    let limiter = RecordingRateLimiter::granting().with_script([Ok(RateLimitOutcome::Throttled {
+        wait_for: Duration::from_secs(60),
+    })]);
+    let harness = Harness::with_limiter(&server.uri(), platform(), limiter);
+
+    let throttled = harness
+        .gateway
+        .send(GatewayRequest::get("a").without_limiter_wait())
+        .await;
+    let granted = harness
+        .gateway
+        .send(GatewayRequest::get("a").without_limiter_wait())
+        .await;
+
+    assert!(
+        matches!(
+            throttled,
+            Err(GatewayFailure::BudgetExhausted {
+                retry_after: Some(_)
+            })
+        ),
+        "{throttled:?}"
+    );
+    assert!(granted.is_ok(), "{granted:?}");
+    assert_eq!(received(&server).await.len(), 1);
+}
+
+#[tokio::test]
+async fn a_waiting_request_sleeps_through_a_throttle_and_then_sends() {
+    let server = ok_server().await;
+    let wait = Duration::from_millis(20);
+    let limiter = RecordingRateLimiter::granting()
+        .with_script([Ok(RateLimitOutcome::Throttled { wait_for: wait })]);
+    let harness = Harness::with_limiter(&server.uri(), platform(), limiter);
+    let started = tokio::time::Instant::now();
+
+    harness.ok(GatewayRequest::get("a")).await;
+
+    assert!(started.elapsed() >= wait);
+    assert_eq!(harness.limiter.acquire_count(), 2);
+    assert_eq!(received(&server).await.len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_waiting_request_that_stays_throttled_fails_without_a_wait_hint() {
+    let server = ok_server().await;
+    let limiter = RecordingRateLimiter::answering(Ok(RateLimitOutcome::Throttled {
+        wait_for: Duration::from_secs(1),
+    }));
+    let harness = Harness::with_limiter(&server.uri(), platform(), limiter);
+
+    let failure = harness.fail(GatewayRequest::get("a")).await;
+
+    assert_eq!(
+        failure,
+        GatewayFailure::BudgetExhausted { retry_after: None }
+    );
+    assert!(harness.limiter.acquire_count() > 1);
     assert!(received(&server).await.is_empty());
 }
 

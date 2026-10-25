@@ -7,6 +7,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_donatello::{
     DONATELLO_CREDENTIAL_ID, DonatelloConfig, DonatelloProvider, MAX_POLL_INTERVAL, PollStatus,
+    donatello_gateway,
 };
 use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
 use forge_platform_core::{DonationProvider, DonationStream, PlatformError};
@@ -89,22 +90,35 @@ impl CredentialsRepo for MemCreds {
 
 pub struct ScriptedLimiter {
     exhausted: bool,
+    first_wait: Mutex<Option<Duration>>,
+    acquires: Mutex<usize>,
     throttles: Mutex<Vec<Duration>>,
 }
 
 impl ScriptedLimiter {
-    pub fn open() -> Arc<Self> {
+    fn build(exhausted: bool, first_wait: Option<Duration>) -> Arc<Self> {
         Arc::new(Self {
-            exhausted: false,
+            exhausted,
+            first_wait: Mutex::new(first_wait),
+            acquires: Mutex::new(0),
             throttles: Mutex::new(Vec::new()),
         })
     }
 
+    pub fn open() -> Arc<Self> {
+        Self::build(false, None)
+    }
+
     pub fn exhausted() -> Arc<Self> {
-        Arc::new(Self {
-            exhausted: true,
-            throttles: Mutex::new(Vec::new()),
-        })
+        Self::build(true, None)
+    }
+
+    pub fn throttled_once(wait: Duration) -> Arc<Self> {
+        Self::build(false, Some(wait))
+    }
+
+    pub fn acquires(&self) -> usize {
+        *self.acquires.lock().unwrap()
     }
 
     pub fn throttles(&self) -> Vec<Duration> {
@@ -115,6 +129,10 @@ impl ScriptedLimiter {
 #[async_trait]
 impl RateLimiter for ScriptedLimiter {
     async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
+        *self.acquires.lock().unwrap() += 1;
+        if let Some(wait_for) = self.first_wait.lock().unwrap().take() {
+            return Ok(RateLimitOutcome::Throttled { wait_for });
+        }
         Ok(if self.exhausted {
             RateLimitOutcome::Exhausted
         } else {
@@ -131,8 +149,17 @@ pub fn config(base_url: &str) -> DonatelloConfig {
     DonatelloConfig {
         base_url: base_url.to_owned(),
         poll_interval: MAX_POLL_INTERVAL,
-        request_timeout: WAIT,
     }
+}
+
+pub fn provider_on(
+    base_url: &str,
+    creds: Arc<dyn CredentialsRepo>,
+    limiter: Arc<dyn RateLimiter>,
+) -> DonatelloProvider {
+    let config = config(base_url);
+    let gateway = donatello_gateway(&config, limiter).unwrap();
+    DonatelloProvider::new(config, creds, gateway)
 }
 
 pub fn donate(id: &str, created_at: &str) -> Value {
@@ -284,12 +311,7 @@ impl Harness {
     }
 
     pub fn with_server(server: MockServer, list: DonatesList, creds: Arc<MemCreds>) -> Self {
-        let provider = DonatelloProvider::new(
-            config(&server.uri()),
-            creds.clone(),
-            ScriptedLimiter::open(),
-        )
-        .unwrap();
+        let provider = provider_on(&server.uri(), creds.clone(), ScriptedLimiter::open());
         let stream = provider.donations();
         Self {
             server,

@@ -279,12 +279,11 @@ async fn provider_against(fake: &FakeDonatello) -> (DonatelloProvider, DonationS
         )
         .await
         .unwrap();
-    let provider = DonatelloProvider::new(
-        DonatelloConfig::new(&endpoints_addressing(fake)),
-        creds,
-        forge_donatello::default_rate_limiter(),
-    )
-    .unwrap();
+    let config = DonatelloConfig::new(&endpoints_addressing(fake));
+    let gateway =
+        forge_donatello::donatello_gateway(&config, forge_donatello::default_rate_limiter())
+            .unwrap();
+    let provider = DonatelloProvider::new(config, creds, gateway);
     let stream = provider.donations();
     (provider, stream)
 }

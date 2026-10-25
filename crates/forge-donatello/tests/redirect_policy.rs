@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used)]
 mod support;
-use forge_donatello::DonatelloProvider;
+use forge_donatello::DonatelloError;
 use std::sync::Arc;
-use support::{ScriptedLimiter, TOKEN, config};
+use support::{ScriptedLimiter, TOKEN, provider_on};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -22,12 +22,11 @@ async fn token_is_not_forwarded_across_a_cross_origin_redirect() {
         )
         .mount(&donatello)
         .await;
-    let provider = DonatelloProvider::new(
-        config(&donatello.uri()),
+    let provider = provider_on(
+        &donatello.uri(),
         Arc::new(support::MemCreds::default()),
         ScriptedLimiter::open(),
-    )
-    .unwrap();
+    );
     let _ = provider.verify_token(TOKEN).await;
     let leaked = elsewhere
         .received_requests()
@@ -41,4 +40,41 @@ async fn token_is_not_forwarded_across_a_cross_origin_redirect() {
         })
         .count();
     assert_eq!(leaked, 0, "X-Token forwarded to another origin");
+}
+
+#[tokio::test]
+async fn a_redirect_answer_is_an_http_error_and_is_never_followed() {
+    for status in [301, 302, 307, 308] {
+        let donatello = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/me"))
+            .respond_with(ResponseTemplate::new(status).insert_header("Location", "/moved"))
+            .mount(&donatello)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/moved"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+            .mount(&donatello)
+            .await;
+        let provider = provider_on(
+            &donatello.uri(),
+            Arc::new(support::MemCreds::default()),
+            ScriptedLimiter::open(),
+        );
+
+        let result = provider.verify_token(TOKEN).await;
+
+        assert!(
+            matches!(result, Err(DonatelloError::Http { status: got }) if got == status),
+            "status {status}: {result:?}"
+        );
+        let paths: Vec<String> = donatello
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .map(|request| request.url.path().to_owned())
+            .collect();
+        assert_eq!(paths, vec!["/me".to_owned()], "status {status}");
+    }
 }

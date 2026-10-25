@@ -279,7 +279,10 @@ mod tests {
         for (failure, expected) in [
             (rate_limited(Duration::from_millis(1_500)), Some(2)),
             (rate_limited(Duration::ZERO), Some(0)),
-            (GatewayFailure::BudgetExhausted, Some(0)),
+            (
+                GatewayFailure::BudgetExhausted { retry_after: None },
+                Some(0),
+            ),
             (
                 GatewayFailure::ServerError {
                     status: 503,
@@ -314,7 +317,10 @@ mod tests {
             gateways.clone().provider("p").link(&second.uri()).unwrap(),
         ] {
             let failure = link.send(GatewayRequest::get("x")).await.unwrap_err();
-            assert_eq!(failure, GatewayFailure::BudgetExhausted);
+            assert_eq!(
+                failure,
+                GatewayFailure::BudgetExhausted { retry_after: None }
+            );
             assert_eq!(link.throttle_secs(&failure), Some(PAST_WAIT_THRESHOLD_SECS));
         }
         assert_eq!(request_count(&first).await, 1);

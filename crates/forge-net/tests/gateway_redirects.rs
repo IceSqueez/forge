@@ -187,3 +187,28 @@ async fn platform_redirect_off_https_or_onto_userinfo_is_refused_without_followi
         assert_eq!(received(&server).await.len(), 1);
     }
 }
+
+#[tokio::test]
+async fn a_redirect_is_returned_unfollowed_as_an_unexpected_status_when_following_is_off() {
+    for status in [301, 302, 303, 307, 308] {
+        let server = MockServer::start().await;
+        redirect(&server, "/start", status, "/landing").await;
+        land(&server, "/landing").await;
+        let harness = Harness::new(&server.uri(), platform());
+
+        let failure = harness
+            .fail(GatewayRequest::get("start").follow_redirects(false))
+            .await;
+
+        assert!(
+            matches!(failure, GatewayFailure::UnexpectedStatus { status: got, .. } if got == status),
+            "status {status}: {failure:?}"
+        );
+        let paths: Vec<String> = received(&server)
+            .await
+            .iter()
+            .map(|request| request.url.path().to_owned())
+            .collect();
+        assert_eq!(paths, vec!["/start".to_owned()], "status {status}");
+    }
+}

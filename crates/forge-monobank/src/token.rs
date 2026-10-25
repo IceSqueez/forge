@@ -78,8 +78,14 @@ mod tests {
     }
 
     #[test]
-    fn header_value_is_marked_sensitive() {
-        let header = MonobankToken::parse(RAW).and_then(|token| token.header_value());
-        assert!(header.is_ok_and(|value| value.is_sensitive()));
+    fn parse_keeps_inner_tabs_and_non_ascii_text_that_a_header_can_carry() {
+        for raw in ["tok\ten", "токен-é"] {
+            let token = MonobankToken::parse(raw).ok();
+            assert_eq!(
+                token.as_ref().map(MonobankToken::expose),
+                Some(raw),
+                "raw {raw:?}"
+            );
+        }
     }
 }

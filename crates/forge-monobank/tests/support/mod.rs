@@ -7,7 +7,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_monobank::{
     DEFAULT_HISTORY_LOOKBACK, DEFAULT_WINDOW_OVERLAP, MONOBANK_CREDENTIAL_ID, MonobankConfig,
-    MonobankProvider, MonobankRateLimits, PollStatus,
+    MonobankProvider, MonobankRateLimits, PollStatus, monobank_gateways,
 };
 use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
 use forge_platform_core::{DonationProvider, DonationStream, PlatformError};
@@ -149,10 +149,19 @@ impl Limits {
 pub fn config(base_url: &str) -> MonobankConfig {
     MonobankConfig {
         base_url: base_url.to_owned(),
-        request_timeout: WAIT,
         history_lookback: DEFAULT_HISTORY_LOOKBACK,
         window_overlap: DEFAULT_WINDOW_OVERLAP,
     }
+}
+
+pub fn provider_on(
+    base_url: &str,
+    creds: Arc<dyn CredentialsRepo>,
+    limits: MonobankRateLimits,
+) -> MonobankProvider {
+    let config = config(base_url);
+    let gateways = monobank_gateways(&config, limits).unwrap();
+    MonobankProvider::new(config, creds, gateways)
 }
 
 pub fn now_unix() -> i64 {
@@ -340,8 +349,7 @@ impl Harness {
         let server = MockServer::start().await;
         mount(&server, &bank).await;
         let limits = Limits::open();
-        let provider =
-            MonobankProvider::new(config(&server.uri()), creds.clone(), limits.shared()).unwrap();
+        let provider = provider_on(&server.uri(), creds.clone(), limits.shared());
         let stream = provider.donations();
         Self {
             server,

@@ -592,25 +592,26 @@ mod tests {
     }
 
     fn monobank(vault: &Arc<Vault>) -> DonationService {
-        DonationService::Monobank(Arc::new(
-            MonobankProvider::new(
-                MonobankConfig::new(&PlatformEndpoints::default()),
-                Arc::clone(vault) as Arc<dyn CredentialsRepo>,
-                MonobankRateLimits::official(),
-            )
-            .expect("the provider builds offline"),
-        ))
+        let config = MonobankConfig::new(&PlatformEndpoints::default());
+        let gateways = forge_monobank::monobank_gateways(&config, MonobankRateLimits::official())
+            .expect("the gateways build offline");
+        DonationService::Monobank(Arc::new(MonobankProvider::new(
+            config,
+            Arc::clone(vault) as Arc<dyn CredentialsRepo>,
+            gateways,
+        )))
     }
 
     fn donatello(vault: &Arc<Vault>) -> DonationService {
-        DonationService::Donatello(Arc::new(
-            DonatelloProvider::new(
-                DonatelloConfig::new(&PlatformEndpoints::default()),
-                Arc::clone(vault) as Arc<dyn CredentialsRepo>,
-                forge_donatello::default_rate_limiter(),
-            )
-            .expect("the provider builds offline"),
-        ))
+        let config = DonatelloConfig::new(&PlatformEndpoints::default());
+        let gateway =
+            forge_donatello::donatello_gateway(&config, forge_donatello::default_rate_limiter())
+                .expect("the gateway builds offline");
+        DonationService::Donatello(Arc::new(DonatelloProvider::new(
+            config,
+            Arc::clone(vault) as Arc<dyn CredentialsRepo>,
+            gateway,
+        )))
     }
 
     fn settle_until(

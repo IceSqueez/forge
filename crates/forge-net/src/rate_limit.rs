@@ -555,4 +555,24 @@ mod tests {
         );
         assert_eq!(rl.acquire_count(), 1);
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn acquire_without_wait_answers_each_outcome_in_one_attempt_without_sleeping() {
+        let wait = Duration::from_millis(42_137);
+        for (answer, expected) in [
+            (Ok(RateLimitOutcome::Granted), Ok(())),
+            (
+                Ok(RateLimitOutcome::Throttled { wait_for: wait }),
+                Err(Some(wait)),
+            ),
+            (Ok(RateLimitOutcome::Exhausted), Err(None)),
+            (Err(RateLimitError::Exhausted), Err(None)),
+        ] {
+            let rl = RecordingRateLimiter::answering(answer);
+            let started = tokio::time::Instant::now();
+            assert_eq!(acquire_without_wait(&rl, 3).await, expected, "{answer:?}");
+            assert_eq!(started.elapsed(), Duration::ZERO, "{answer:?}");
+            assert_eq!(rl.acquired_weights(), vec![3], "{answer:?}");
+        }
+    }
 }

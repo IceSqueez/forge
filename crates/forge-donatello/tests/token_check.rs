@@ -7,19 +7,21 @@ use std::time::Duration;
 
 use forge_donatello::{
     DonatelloAccount, DonatelloError, DonatelloProvider, MAX_POLL_INTERVAL, MIN_POLL_INTERVAL,
+    default_rate_limiter,
 };
+use forge_net::RateLimitOutcome;
 use forge_platform_core::PlatformError;
 use serde_json::json;
-use support::{MemCreds, ScriptedLimiter, TOKEN, config};
+use support::{MemCreds, ScriptedLimiter, TOKEN};
 use wiremock::matchers::{header, method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
 fn provider(
     base_url: &str,
     creds: Arc<MemCreds>,
     limiter: Arc<ScriptedLimiter>,
 ) -> DonatelloProvider {
-    DonatelloProvider::new(config(base_url), creds, limiter).unwrap()
+    support::provider_on(base_url, creds, limiter)
 }
 
 async fn me_answering(response: ResponseTemplate) -> MockServer {
@@ -207,17 +209,59 @@ async fn unreachable_service_is_a_network_error() {
     );
 }
 
+struct EchoToken {
+    status: u16,
+    retry_after: Option<&'static str>,
+}
+
+impl Respond for EchoToken {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        let echoed = request
+            .headers
+            .get("x-token")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        let mut response = ResponseTemplate::new(self.status)
+            .insert_header("Location", format!("/moved?token={echoed}"))
+            .insert_header("X-Echo", echoed.as_str())
+            .set_body_string(format!(
+                "{{\"message\": \"bad token {echoed}\", \"nickname\": {echoed}"
+            ));
+        if let Some(value) = self.retry_after {
+            response = response.insert_header("Retry-After", value);
+        }
+        response
+    }
+}
+
 #[tokio::test]
-async fn no_failure_renders_the_token() {
+async fn no_failure_renders_a_token_the_server_echoes_back() {
     let mut errors = Vec::new();
-    for response in [
-        ResponseTemplate::new(401),
-        ResponseTemplate::new(404),
-        ResponseTemplate::new(429).insert_header("Retry-After", "3"),
-        ResponseTemplate::new(503),
-        ResponseTemplate::new(200).set_body_string(format!("{{\"nickname\": \"{TOKEN}")),
+    for (status, retry_after) in [
+        (200, None),
+        (302, None),
+        (400, None),
+        (401, None),
+        (403, None),
+        (404, None),
+        (429, Some("3")),
+        (500, None),
+        (503, Some("4")),
+        (503, None),
     ] {
-        errors.push(verify_against(response).await.unwrap_err());
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(EchoToken {
+                status,
+                retry_after,
+            })
+            .mount(&server)
+            .await;
+        let result = provider(&server.uri(), Arc::default(), ScriptedLimiter::open())
+            .verify_token(TOKEN)
+            .await;
+        errors.push(result.unwrap_err());
     }
     errors.push(
         provider(
@@ -231,12 +275,72 @@ async fn no_failure_renders_the_token() {
     );
 
     for error in errors {
-        let debug = format!("{error:?}");
+        let rendered_error = [format!("{error:?}"), error.to_string()];
         let platform = PlatformError::from(error);
-        for rendered in [debug, platform.to_string(), format!("{platform:?}")] {
+        for rendered in rendered_error
+            .into_iter()
+            .chain([platform.to_string(), format!("{platform:?}")])
+        {
             assert!(!rendered.contains(TOKEN), "token leaked: {rendered}");
         }
     }
+}
+
+#[tokio::test]
+async fn service_unavailable_is_a_rate_limit_only_when_it_names_a_retry_after() {
+    for (retry_after, expected) in [(Some("9"), "rate limited 9"), (None, "http 503")] {
+        let mut response = ResponseTemplate::new(503);
+        if let Some(value) = retry_after {
+            response = response.insert_header("Retry-After", value);
+        }
+        let result = verify_against(response).await;
+        let matched = match expected {
+            "rate limited 9" => matches!(
+                result,
+                Err(DonatelloError::RateLimited {
+                    retry_after_secs: 9
+                })
+            ),
+            _ => matches!(result, Err(DonatelloError::Http { status: 503 })),
+        };
+        assert!(matched, "{expected}: {result:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_throttled_client_budget_is_waited_out_before_the_request() {
+    let server =
+        me_answering(ResponseTemplate::new(200).set_body_json(json!({ "nickname": "s" }))).await;
+    let limiter = ScriptedLimiter::throttled_once(Duration::from_millis(20));
+
+    let result = provider(&server.uri(), Arc::default(), Arc::clone(&limiter))
+        .verify_token(TOKEN)
+        .await;
+
+    assert!(result.is_ok(), "{result:?}");
+    assert_eq!(limiter.acquires(), 2);
+}
+
+#[tokio::test]
+async fn the_default_budget_grants_twenty_calls_then_paces_one_call_per_three_seconds() {
+    let limiter = default_rate_limiter();
+    for call in 0..20 {
+        assert_eq!(
+            limiter.acquire(1).await,
+            Ok(RateLimitOutcome::Granted),
+            "call {call}"
+        );
+    }
+
+    let twenty_first = limiter.acquire(1).await;
+
+    let Ok(RateLimitOutcome::Throttled { wait_for }) = twenty_first else {
+        panic!("expected the 21st call to be throttled, got {twenty_first:?}");
+    };
+    assert!(
+        wait_for > Duration::from_secs(2) && wait_for <= Duration::from_secs(3),
+        "{wait_for:?}"
+    );
 }
 
 #[tokio::test]

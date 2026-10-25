@@ -200,7 +200,7 @@ fn a_refusal_never_matches_a_failure_that_carries_no_status() {
     ];
     let statusless = [
         GatewayFailure::Cancelled,
-        GatewayFailure::BudgetExhausted,
+        GatewayFailure::BudgetExhausted { retry_after: None },
         GatewayFailure::ResponseTooLarge { cap: 1 },
     ];
 

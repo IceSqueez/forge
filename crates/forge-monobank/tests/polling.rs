@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_monobank::{MonobankProvider, MonobankRateLimits, PollFailure, PollPhase};
+use forge_monobank::{MonobankRateLimits, PollFailure, PollPhase};
 use forge_net::RateLimitOutcome;
 use forge_platform_core::{BuiltinControl, DonationProvider, PlatformError};
 use forge_types::DonationOrigin;
@@ -230,12 +230,7 @@ async fn local_cooldown_waits_silently_without_calling_the_bank() {
             wait_for: Duration::from_secs(30),
         }),
     };
-    let provider = MonobankProvider::new(
-        support::config(&server.uri()),
-        MemCreds::with(TOKEN, Some(JAR)),
-        limits,
-    )
-    .unwrap();
+    let provider = support::provider_on(&server.uri(), MemCreds::with(TOKEN, Some(JAR)), limits);
     let mut stream = provider.donations();
 
     let quiet = tokio::time::timeout(support::QUIET, tokio_stream::StreamExt::next(&mut stream))

@@ -155,12 +155,15 @@ mod tests {
                 .await
                 .expect("the test backend stores");
         }
+        let config = DonatelloConfig::new(&PlatformEndpoints::default());
+        let gateway =
+            forge_donatello::donatello_gateway(&config, forge_donatello::default_rate_limiter())
+                .expect("the gateway builds offline");
         let provider = DonatelloProvider::new(
-            DonatelloConfig::new(&PlatformEndpoints::default()),
+            config,
             Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
-            forge_donatello::default_rate_limiter(),
-        )
-        .expect("the provider builds offline");
+            gateway,
+        );
 
         restore_donatello_poll_interval(&provider, backend.as_ref()).await;
 

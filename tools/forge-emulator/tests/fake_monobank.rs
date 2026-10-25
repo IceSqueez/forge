@@ -376,12 +376,9 @@ fn generous_limits() -> MonobankRateLimits {
 }
 
 fn provider_against(fake: &FakeMonobank, limits: MonobankRateLimits) -> MonobankProvider {
-    MonobankProvider::new(
-        MonobankConfig::new(&endpoints_addressing(fake)),
-        Arc::new(MemCreds::default()),
-        limits,
-    )
-    .unwrap()
+    let config = MonobankConfig::new(&endpoints_addressing(fake));
+    let gateways = forge_monobank::monobank_gateways(&config, limits).unwrap();
+    MonobankProvider::new(config, Arc::new(MemCreds::default()), gateways)
 }
 
 async fn next(stream: &mut DonationStream) -> Result<Donation, PlatformError> {

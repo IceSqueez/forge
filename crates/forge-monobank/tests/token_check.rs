@@ -5,19 +5,20 @@ mod support;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_monobank::{MonobankError, MonobankJar, MonobankProvider, MonobankRateLimits};
-use forge_net::RateLimitOutcome;
+use forge_monobank::{
+    MonobankError, MonobankJar, MonobankProvider, MonobankRateLimits, STATEMENT_CALL_INTERVAL,
+};
+use forge_net::{RateLimitOutcome, RateLimiter, TokenBucketRateLimiter};
 use forge_platform_core::PlatformError;
 use serde_json::json;
 use support::{
     Bank, CLIENT_INFO, JAR, Limits, MemCreds, OTHER_JAR, OTHER_TOKEN, ScriptedLimiter, TOKEN,
-    config,
 };
 use wiremock::matchers::{header, method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
 fn provider(base_url: &str, creds: Arc<MemCreds>, limits: MonobankRateLimits) -> MonobankProvider {
-    MonobankProvider::new(config(base_url), creds, limits).unwrap()
+    support::provider_on(base_url, creds, limits)
 }
 
 async fn bank_server(bank: &Bank) -> MockServer {
@@ -134,14 +135,14 @@ async fn verify_token_rejects_a_blank_or_unsendable_token_without_a_request() {
 }
 
 #[tokio::test]
-async fn too_many_requests_cools_the_endpoint_down_for_at_least_a_minute() {
-    for (retry_after, secs) in [
-        (Some("5"), 60),
-        (Some("60"), 60),
-        (Some("61"), 61),
-        (Some("120"), 120),
-        (None, 60),
-        (Some("soon"), 60),
+async fn too_many_requests_reports_at_least_a_minute_and_feeds_the_hint_to_the_limiter() {
+    for (retry_after, reported, cooled) in [
+        (Some("5"), 60, 5),
+        (Some("60"), 60, 60),
+        (Some("61"), 61, 61),
+        (Some("120"), 120, 120),
+        (None, 60, 60),
+        (Some("soon"), 60, 60),
     ] {
         let mut response = ResponseTemplate::new(429);
         if let Some(value) = retry_after {
@@ -155,14 +156,70 @@ async fn too_many_requests_cools_the_endpoint_down_for_at_least_a_minute() {
             .await;
 
         assert!(
-            matches!(result, Err(MonobankError::RateLimited { retry_after_secs }) if retry_after_secs == secs),
+            matches!(result, Err(MonobankError::RateLimited { retry_after_secs }) if retry_after_secs == reported),
             "{retry_after:?}: {result:?}"
         );
         assert_eq!(
             limits.client_info.throttles(),
-            vec![Duration::from_secs(u64::from(secs))],
+            vec![Duration::from_secs(cooled)],
             "{retry_after:?}"
         );
+    }
+}
+
+#[tokio::test]
+async fn too_many_requests_without_a_hint_cools_a_spare_budget_for_the_full_call_interval() {
+    let server = client_info_answering(ResponseTemplate::new(429)).await;
+    let spare: Arc<dyn RateLimiter> =
+        Arc::new(TokenBucketRateLimiter::new(10, STATEMENT_CALL_INTERVAL));
+    let limits = MonobankRateLimits {
+        client_info: spare,
+        statement: ScriptedLimiter::open(),
+    };
+    let provider = provider(&server.uri(), Arc::default(), limits);
+
+    let throttled = provider.verify_token(TOKEN).await;
+    let retried = provider.verify_token(TOKEN).await;
+
+    assert!(
+        matches!(throttled, Err(MonobankError::RateLimited { .. })),
+        "{throttled:?}"
+    );
+    assert!(
+        matches!(retried, Err(MonobankError::CoolingDown { retry_after_secs }) if (59..=60).contains(&retry_after_secs)),
+        "{retried:?}"
+    );
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn service_unavailable_is_a_rate_limit_only_when_it_names_a_retry_after() {
+    for (retry_after, expected) in [
+        (Some("90"), "rate limited 90"),
+        (Some("7"), "rate limited 60"),
+        (None, "http 503"),
+    ] {
+        let mut response = ResponseTemplate::new(503);
+        if let Some(value) = retry_after {
+            response = response.insert_header("Retry-After", value);
+        }
+        let result = verify_against(response).await;
+        let matched = match expected {
+            "rate limited 90" => matches!(
+                result,
+                Err(MonobankError::RateLimited {
+                    retry_after_secs: 90
+                })
+            ),
+            "rate limited 60" => matches!(
+                result,
+                Err(MonobankError::RateLimited {
+                    retry_after_secs: 60
+                })
+            ),
+            _ => matches!(result, Err(MonobankError::Http { status: 503 })),
+        };
+        assert!(matched, "{expected}: {result:?}");
     }
 }
 
@@ -178,14 +235,20 @@ async fn throttle_lands_only_on_the_endpoint_that_was_throttled() {
     assert!(limits.statement.throttles().is_empty());
 }
 
-#[tokio::test]
-async fn local_cooldown_answers_without_a_request() {
+#[tokio::test(start_paused = true)]
+async fn a_local_cooldown_answers_at_once_with_the_remaining_wait_and_no_request() {
     for (outcome, secs) in [
         (
             RateLimitOutcome::Throttled {
                 wait_for: Duration::from_millis(41_200),
             },
             42,
+        ),
+        (
+            RateLimitOutcome::Throttled {
+                wait_for: Duration::from_secs(7),
+            },
+            7,
         ),
         (RateLimitOutcome::Exhausted, 60),
     ] {
@@ -194,15 +257,19 @@ async fn local_cooldown_answers_without_a_request() {
             client_info: ScriptedLimiter::answering(outcome),
             statement: ScriptedLimiter::open(),
         };
+        let provider = provider(&server.uri(), MemCreds::with(TOKEN, Some(JAR)), limits);
+        let started = tokio::time::Instant::now();
 
-        let result = provider(&server.uri(), Arc::default(), limits)
-            .verify_token(TOKEN)
-            .await;
+        let verified = provider.verify_token(TOKEN).await;
+        let listed = provider.stored_jars().await;
 
-        assert!(
-            matches!(result, Err(MonobankError::CoolingDown { retry_after_secs }) if retry_after_secs == secs),
-            "{outcome:?}: {result:?}"
-        );
+        assert_eq!(started.elapsed(), Duration::ZERO, "{outcome:?}");
+        for result in [verified, listed] {
+            assert!(
+                matches!(result, Err(MonobankError::CoolingDown { retry_after_secs }) if retry_after_secs == secs),
+                "{outcome:?}: {result:?}"
+            );
+        }
     }
 }
 
@@ -398,17 +465,59 @@ async fn unreachable_service_is_a_network_error() {
     );
 }
 
+struct EchoToken {
+    status: u16,
+    retry_after: Option<&'static str>,
+}
+
+impl Respond for EchoToken {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        let echoed = request
+            .headers
+            .get("x-token")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        let mut response = ResponseTemplate::new(self.status)
+            .insert_header("Location", format!("/moved?token={echoed}"))
+            .insert_header("X-Echo", echoed.as_str())
+            .set_body_string(format!(
+                "{{\"errorDescription\": \"bad token {echoed}\", \"jars\": {echoed}"
+            ));
+        if let Some(value) = self.retry_after {
+            response = response.insert_header("Retry-After", value);
+        }
+        response
+    }
+}
+
 #[tokio::test]
-async fn no_failure_renders_the_token() {
+async fn no_failure_renders_a_token_the_server_echoes_back() {
     let mut errors = Vec::new();
-    for response in [
-        ResponseTemplate::new(401),
-        ResponseTemplate::new(403),
-        ResponseTemplate::new(429).insert_header("Retry-After", "3"),
-        ResponseTemplate::new(503),
-        ResponseTemplate::new(200).set_body_string(format!("{{\"jars\": \"{TOKEN}")),
+    for (status, retry_after) in [
+        (200, None),
+        (302, None),
+        (400, None),
+        (401, None),
+        (403, None),
+        (404, None),
+        (429, Some("3")),
+        (500, None),
+        (503, Some("4")),
+        (503, None),
     ] {
-        errors.push(verify_against(response).await.unwrap_err());
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(EchoToken {
+                status,
+                retry_after,
+            })
+            .mount(&server)
+            .await;
+        let result = provider(&server.uri(), Arc::default(), Limits::open().shared())
+            .verify_token(TOKEN)
+            .await;
+        errors.push(result.unwrap_err());
     }
     errors.push(
         provider(
@@ -422,9 +531,12 @@ async fn no_failure_renders_the_token() {
     );
 
     for error in errors {
-        let debug = format!("{error:?}");
+        let rendered_error = [format!("{error:?}"), error.to_string()];
         let platform = PlatformError::from(error);
-        for rendered in [debug, platform.to_string(), format!("{platform:?}")] {
+        for rendered in rendered_error
+            .into_iter()
+            .chain([platform.to_string(), format!("{platform:?}")])
+        {
             assert!(!rendered.contains(TOKEN), "token leaked: {rendered}");
         }
     }

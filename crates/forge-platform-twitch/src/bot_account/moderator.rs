@@ -121,6 +121,7 @@ impl TwitchBotAccount {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
+    use reqwest::StatusCode;
     use std::sync::Arc;
 
     use wiremock::ResponseTemplate;

@@ -66,7 +66,6 @@ pub fn spawn_record_completed(settings: Arc<dyn SettingsRepo>, rt_handle: &tokio
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::collections::HashMap;
 

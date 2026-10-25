@@ -178,7 +178,6 @@ impl<W: io::Write> Drop for ScrubbingWriter<W> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::io::Write as _;
     use std::sync::{Arc, Mutex};

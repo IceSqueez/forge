@@ -122,7 +122,6 @@ pub fn conflict_count(client: &HotkeyClient) -> usize {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 

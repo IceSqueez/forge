@@ -248,7 +248,6 @@ impl SubActionRunner for ItemLoadRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, make_ctx};

@@ -125,7 +125,6 @@ fn capped<'a>(requests: impl Iterator<Item = &'a RecordedRequest>) -> Vec<Record
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use serde_json::{Value, json};
 

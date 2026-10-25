@@ -101,7 +101,6 @@ pub(crate) fn build_transition_arg_stack(event: &Event) -> ArgStack {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::super::{
         TransitionEndedDescriptor, TransitionStartedDescriptor, TransitionVideoEndedDescriptor,

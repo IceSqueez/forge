@@ -84,7 +84,6 @@ pub fn spawn_twitch_emote_learning(bus: &EventBus, lexicon: TwitchEmoteLexicon) 
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_types::ChatPayload;
     use serde_json::json;

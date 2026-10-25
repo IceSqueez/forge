@@ -117,7 +117,6 @@ impl SubActionRunner for CoreRandomFloatRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};

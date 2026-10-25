@@ -252,7 +252,6 @@ fn fill_of(shape: PreviewShape, config: &OverlayConfig) -> Option<f32> {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use forge_types::Variant;
 

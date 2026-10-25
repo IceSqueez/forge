@@ -143,7 +143,6 @@ impl BanListSource for TwitchIntegrationBundle {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};

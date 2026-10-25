@@ -539,7 +539,6 @@ async fn load_rows(repo: &dyn TriggerInstanceRepo) -> Result<Vec<TriggerInstance
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_components::{Density, ThemeId};
     use forge_storage::MockTriggerInstanceRepo;

@@ -18,7 +18,6 @@ pub fn register_midi_sub_actions(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::sink::tests::NoopSink;

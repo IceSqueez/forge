@@ -595,7 +595,6 @@ fn run_command(flow: &WeakEntity<UpdateFlow>, command: UpdateCommand, cx: &mut A
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;

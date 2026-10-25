@@ -81,7 +81,6 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use forge_types::ChatViewer;

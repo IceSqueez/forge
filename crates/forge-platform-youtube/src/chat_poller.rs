@@ -1032,7 +1032,6 @@ fn extract_badges(author_details: Option<&serde_json::Value>) -> Vec<UserBadge> 
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::time::Duration;
 

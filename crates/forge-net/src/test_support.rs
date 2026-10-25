@@ -89,7 +89,6 @@ impl RateLimiter for RecordingRateLimiter {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

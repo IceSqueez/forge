@@ -1287,7 +1287,6 @@ impl Render for BackupScheduleView {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 pub(crate) mod tests {
     use std::path::Path;
     use std::sync::Arc;

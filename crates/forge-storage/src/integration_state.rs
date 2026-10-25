@@ -96,7 +96,6 @@ pub async fn has_setting(settings: &dyn SettingsRepo, key: &str) -> Result<bool,
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;

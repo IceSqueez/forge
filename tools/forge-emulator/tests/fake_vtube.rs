@@ -1,5 +1,4 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};

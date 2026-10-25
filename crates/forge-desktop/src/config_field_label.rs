@@ -104,7 +104,6 @@ fn descriptor_label(spec: &FormField) -> &'static str {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::collections::BTreeSet;
     use std::rc::Rc;

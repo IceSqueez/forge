@@ -128,7 +128,6 @@ fn first_giftee_identity(event: &Event) -> ActorIdentity {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

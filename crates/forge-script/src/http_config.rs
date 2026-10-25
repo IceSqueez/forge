@@ -94,7 +94,6 @@ fn parse_legacy_csv_domains(legacy: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use forge_storage_sqlite::SqliteBackend;

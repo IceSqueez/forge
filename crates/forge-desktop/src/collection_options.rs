@@ -188,7 +188,6 @@ fn watch_revisions<V: 'static>(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_platform_core::CollectionFailure;
     use gpui::{AppContext, TestAppContext};

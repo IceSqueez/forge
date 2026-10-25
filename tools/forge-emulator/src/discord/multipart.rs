@@ -80,7 +80,6 @@ fn find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

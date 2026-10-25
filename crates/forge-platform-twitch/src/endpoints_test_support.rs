@@ -1,5 +1,3 @@
-#![allow(clippy::unwrap_used)]
-
 use forge_platform_core::{EndpointSurface, PlatformEndpoints};
 
 pub(crate) fn unreachable_endpoints() -> PlatformEndpoints {

@@ -1,5 +1,3 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 use forge_tts_core::{EngineId, VoiceGender, VoiceId};
 use forge_voice::{
     AliasId, AliasState, AssignmentStrategy, IgnoreProfile, ResolveResult, SynthesisDefaults,

@@ -296,7 +296,6 @@ fn serve_on(listener: TcpListener, state: AppState) -> ServerHandle {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 pub(crate) mod tests {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};

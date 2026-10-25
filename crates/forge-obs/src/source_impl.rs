@@ -81,7 +81,6 @@ impl ObsSource for ObsClient {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use crate::client::ObsClient;
     use crate::source::{ObsSource, SourceInfo};

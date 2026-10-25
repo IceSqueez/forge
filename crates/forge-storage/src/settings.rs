@@ -875,7 +875,6 @@ pub async fn take_credentials_key_loss(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;

@@ -196,7 +196,6 @@ fn placement_map(placement: ScriptSchedulePlacement) -> Map {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::sync::Mutex;
     use std::time::{Duration, Instant};

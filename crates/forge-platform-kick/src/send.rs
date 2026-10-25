@@ -99,7 +99,6 @@ impl KickSendChat {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use wiremock::matchers::{header, method, path};

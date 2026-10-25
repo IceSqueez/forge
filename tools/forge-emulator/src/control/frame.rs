@@ -82,7 +82,6 @@ fn refusal(error: Option<Value>) -> Refusal {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use serde_json::json;
 

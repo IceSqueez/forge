@@ -83,7 +83,6 @@ impl fmt::Debug for DonationReceived {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_types::{DonationOrigin, Donor};
 

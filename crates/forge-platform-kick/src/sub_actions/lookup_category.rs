@@ -165,7 +165,6 @@ impl SubActionRunner for LookupCategoryRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::sub_actions::test_support::{make_ctx, token_source};

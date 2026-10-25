@@ -43,7 +43,6 @@ impl OverlayKindRegistry {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use crate::descriptor::{DeliveryDisposition, SectionedField};
     use forge_types::Variant;

@@ -106,7 +106,6 @@ pub fn is_newer(current: &Version, latest: &Version) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::{Version, is_newer, parse_version};
 

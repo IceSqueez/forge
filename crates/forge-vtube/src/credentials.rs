@@ -89,7 +89,6 @@ pub async fn clear(creds: &dyn CredentialsRepo) -> Result<bool, StorageError> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::client::tests::{MockCreds, MockPublisher};

@@ -133,7 +133,6 @@ fn is_valid_port(port: &str) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 

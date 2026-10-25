@@ -220,7 +220,6 @@ pub async fn save_overrides(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use gpui::Modifiers;
 

@@ -106,7 +106,6 @@ pub(crate) fn settle_pending_restore(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use forge_components::{ToastKind, Toasts};

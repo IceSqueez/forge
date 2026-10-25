@@ -45,7 +45,6 @@ fn parse_voice_line(line: &str, engine_id: &EngineId) -> Option<TtsVoice> {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
 

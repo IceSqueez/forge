@@ -59,7 +59,6 @@ pub fn clamp_event_log_retention_days(days: u32) -> u32 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 pub(crate) mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;

@@ -749,7 +749,6 @@ impl Render for TextInput {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

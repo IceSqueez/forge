@@ -426,7 +426,6 @@ impl Render for PackImportFlow {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::path::PathBuf;
     use std::time::Duration;

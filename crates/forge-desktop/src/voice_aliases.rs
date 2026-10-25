@@ -1030,7 +1030,6 @@ fn fmt_rate(value: Option<f32>, blocked: bool) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic)]
 mod tests {
     use std::time::Duration;
 

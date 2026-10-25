@@ -322,7 +322,6 @@ async fn emit(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use serde_json::{Value, json};
 

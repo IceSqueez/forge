@@ -512,7 +512,6 @@ fn key_code_to_name(code: u16) -> Option<&'static str> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

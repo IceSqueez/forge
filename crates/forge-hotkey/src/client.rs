@@ -335,7 +335,6 @@ async fn select_and_start(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 pub(crate) mod tests {
     use forge_events::EventPublisher;
 

@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::unwrap_used)]
 use forge_tts_pipeline::{
     AppliedReplacement, BlocklistMode, EmoteTokenSet, OutputConfig, PipelineConfig,
     PipelineContext, PipelineResult, ReplacementOrigin, ReplacementRule, SkipReason,

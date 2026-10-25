@@ -72,7 +72,6 @@ pub trait ScriptRepo: Send + Sync {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use forge_types::{ScriptInput, VariantKind};

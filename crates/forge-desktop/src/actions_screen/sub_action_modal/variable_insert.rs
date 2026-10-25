@@ -357,7 +357,6 @@ fn variable_entry(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 pub(super) mod tests {
     use forge_components::{
         FORGE_DEFAULT, Presentation, ThemeId, bind_picker_keys, bind_text_input_keys,

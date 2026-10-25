@@ -150,7 +150,6 @@ pub(crate) fn record_midi_event(snap: &mut MidiContentSnapshot, port: &str) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_platform_core::{BuiltinContent, DetailSection};
 

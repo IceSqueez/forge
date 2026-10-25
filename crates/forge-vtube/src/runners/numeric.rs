@@ -68,7 +68,6 @@ pub(crate) fn accepts_number(value: Option<&Variant>) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeMap;
 

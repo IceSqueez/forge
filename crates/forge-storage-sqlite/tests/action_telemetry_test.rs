@@ -1,5 +1,4 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
+#![allow(clippy::expect_used)]
 use forge_storage::{DataProvider, ExecutionStatus};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId, ExecutionMode, QueueId};

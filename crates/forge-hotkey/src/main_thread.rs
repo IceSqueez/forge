@@ -81,7 +81,6 @@ impl MainThreadLink {
 }
 
 #[cfg(all(test, any(target_os = "windows", target_os = "macos")))]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::error::HotkeyError;

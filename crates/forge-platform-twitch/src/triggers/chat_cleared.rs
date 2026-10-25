@@ -115,7 +115,6 @@ impl TriggerKindDescriptor for ChatClearedDescriptor {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

@@ -168,7 +168,6 @@ pub fn register_donation_sub_actions(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeSet;
     use std::sync::Mutex;

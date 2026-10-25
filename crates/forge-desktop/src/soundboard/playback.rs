@@ -211,7 +211,6 @@ pub(super) fn time_readout(elapsed_secs: f64, total_secs: Option<f64>) -> String
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use forge_storage::StorageError;
 

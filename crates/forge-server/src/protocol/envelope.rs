@@ -134,7 +134,6 @@ pub fn serialize_response_frame(envelope: &WsEnvelope<WsResponse>) -> serde_json
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use forge_overlay::PREVIEW_CONNECTION_FIELD;
 

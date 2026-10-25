@@ -148,7 +148,6 @@ fn backoff_index(retry_count: u32) -> usize {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};

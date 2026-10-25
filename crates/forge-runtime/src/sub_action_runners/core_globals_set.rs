@@ -128,7 +128,6 @@ impl SubActionRunner for CoreGlobalsSetRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::sub_action_runners::interpolate::parse_variant;

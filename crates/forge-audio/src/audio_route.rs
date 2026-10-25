@@ -57,7 +57,6 @@ impl FromStr for AudioRoute {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

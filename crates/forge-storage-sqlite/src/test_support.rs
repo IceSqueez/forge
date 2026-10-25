@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used)]
-
 use std::ops::Deref;
 
 use tempfile::TempDir;

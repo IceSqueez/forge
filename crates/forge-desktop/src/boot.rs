@@ -759,7 +759,6 @@ async fn build_server(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_components::{AccentColor, Density, ThemeId};
     use forge_storage::{SettingsRepo, reserved_keys};

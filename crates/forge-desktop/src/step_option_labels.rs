@@ -240,7 +240,6 @@ pub(crate) fn step_option_label(key: &str, option: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::collections::BTreeSet;
 

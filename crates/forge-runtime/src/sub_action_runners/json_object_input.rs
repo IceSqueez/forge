@@ -54,7 +54,6 @@ fn not_an_object() -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use forge_registry::ConfigProblem;

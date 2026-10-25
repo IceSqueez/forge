@@ -107,7 +107,6 @@ fn cross_origin_headers(state: &AppState, request_headers: &HeaderMap) -> Header
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeMap;
     use std::net::SocketAddr;

@@ -143,7 +143,7 @@ fn decode_stream(mss: MediaSourceStream, hint: Hint) -> Result<PcmBuffer, AudioE
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::cast_possible_truncation)]
+#[allow(clippy::cast_possible_truncation)]
 mod tests {
     use std::io::Write as _;
 

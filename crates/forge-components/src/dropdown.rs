@@ -334,7 +334,6 @@ impl RenderOnce for Dropdown {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use gpui::{Context, Entity, Modifiers, Render, VisualTestContext, point};
 

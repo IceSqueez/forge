@@ -14,7 +14,6 @@ pub fn spawn_latest_projector(bus: &Arc<EventBus>, values: LatestValues) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::time::Duration;
 

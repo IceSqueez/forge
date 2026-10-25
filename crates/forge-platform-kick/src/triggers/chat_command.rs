@@ -242,7 +242,6 @@ fn command_args(event: &Event) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

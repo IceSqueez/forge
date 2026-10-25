@@ -104,7 +104,6 @@ impl TriggerKindDescriptor for ChannelBroadcastTitleChangedDescriptor {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

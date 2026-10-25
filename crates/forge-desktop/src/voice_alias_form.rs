@@ -536,7 +536,6 @@ fn form_to_alias(form: &AliasForm, cx: &App) -> VoiceAlias {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use forge_storage::Language;
     use forge_types::PlatformId;

@@ -818,7 +818,6 @@ fn copy_row(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Arc;
     use std::time::SystemTime;

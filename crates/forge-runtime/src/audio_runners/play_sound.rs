@@ -95,7 +95,6 @@ impl SubActionRunner for PlaySoundRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use async_trait::async_trait;
     use forge_types::{ClipId, EventId, OutputDevice, SubActionOutcome};

@@ -624,7 +624,6 @@ impl Render for TextArea {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

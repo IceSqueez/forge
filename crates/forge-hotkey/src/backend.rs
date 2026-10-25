@@ -81,7 +81,6 @@ pub(crate) trait HotkeyBackend: Send + Sync {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 pub(crate) mod tests {
     use std::collections::{HashMap, HashSet};
     use std::sync::Arc;

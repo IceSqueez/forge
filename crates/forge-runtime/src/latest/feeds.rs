@@ -208,7 +208,6 @@ pub fn read_now_playing(event: &Event, _context: &FeedContext<'_>) -> Option<Slo
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use forge_events::EventSource;
     use forge_types::{DonorVisibility, IntegrationId};

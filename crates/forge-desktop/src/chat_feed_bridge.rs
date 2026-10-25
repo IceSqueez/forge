@@ -222,7 +222,6 @@ async fn forward(mut subscription: EventSubscription, channel: Arc<FeedChannel>)
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::cell::Cell;
     use std::rc::Rc;

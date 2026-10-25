@@ -1,5 +1,4 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use std::fmt::Debug;
 use std::future::Future;
 use std::sync::Arc;

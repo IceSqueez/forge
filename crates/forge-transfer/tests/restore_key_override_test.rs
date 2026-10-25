@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::unwrap_used)]
 use std::path::Path;
 
 use forge_storage::paths::CREDENTIALS_KEY_FILE_NAME;

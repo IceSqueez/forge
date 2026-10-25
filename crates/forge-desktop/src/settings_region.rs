@@ -330,7 +330,6 @@ impl Render for SettingsRegionView {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_components::{FOLLOW_REGION_CODE, active_display_formats};
     use forge_storage::Language;

@@ -13,7 +13,6 @@ pub(super) fn sends_order_sensitive_overlay(
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use std::sync::Arc;
 

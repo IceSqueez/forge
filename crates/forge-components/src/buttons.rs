@@ -413,7 +413,6 @@ mod tests {
         (a.r - b.r).abs() < EPS && (a.g - b.g).abs() < EPS && (a.b - b.b).abs() < EPS
     }
 
-    #[allow(clippy::panic)]
     fn assert_slot(actual: Option<Rgba>, expected: Slot, label: &str) {
         match (actual, expected) {
             (None, None) => {}

@@ -1,5 +1,4 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
+#![allow(clippy::expect_used)]
 use forge_storage::{CredentialId, CredentialsKeyLoss, CredentialsRepo, take_credentials_key_loss};
 use forge_storage_sqlite::SqliteBackend;
 

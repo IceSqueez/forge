@@ -33,7 +33,6 @@ fn finite(key: &str, value: f64) -> Result<f64, String> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};

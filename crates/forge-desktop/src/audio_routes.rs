@@ -252,7 +252,6 @@ pub fn report_plan(domain: AudioDomain, plan: &RoutePlan) {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use std::cell::Cell;
 

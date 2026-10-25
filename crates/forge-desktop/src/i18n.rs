@@ -172,7 +172,6 @@ pub fn install_language(lang: Language) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::HashMap;
 

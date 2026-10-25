@@ -274,7 +274,6 @@ macro_rules! tr {
 mod tests {
     use super::*;
 
-    #[allow(clippy::unwrap_used)]
     fn install_source(source: &str) {
         let mut bundle = FluentBundle::new(vec!["en-US".parse().unwrap()]);
         bundle
@@ -362,7 +361,6 @@ mod tests {
         }
     }
 
-    #[allow(clippy::unwrap_used)]
     fn install_catalog(language: CatalogLanguage) {
         let tag = match language {
             CatalogLanguage::En => "en-US",
@@ -477,7 +475,6 @@ mod tests {
         fn exit(&self, _: &tracing::span::Id) {}
     }
 
-    #[allow(clippy::unwrap_used)]
     fn warnings_on_a_bundleless_thread(name: &str, keys: &'static [&'static str]) -> Vec<Warning> {
         std::thread::Builder::new()
             .name(name.to_owned())

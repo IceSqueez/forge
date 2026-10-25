@@ -302,7 +302,6 @@ fn teardown(reason: String) -> EmulatorError {
 }
 
 #[cfg(all(test, unix))]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::os::unix::process::ExitStatusExt;
 

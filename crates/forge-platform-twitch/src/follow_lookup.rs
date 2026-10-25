@@ -53,7 +53,6 @@ impl FollowLookup for TwitchIntegrationBundle {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};

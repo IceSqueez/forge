@@ -421,7 +421,6 @@ impl ChainExecutor for ChainScope {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::collections::BTreeMap;
     use std::sync::Mutex;

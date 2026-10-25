@@ -137,7 +137,6 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

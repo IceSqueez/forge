@@ -143,7 +143,6 @@ impl SubActionRunner for CoreTimeFormatRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};

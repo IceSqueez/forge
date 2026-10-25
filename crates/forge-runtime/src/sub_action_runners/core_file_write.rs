@@ -193,7 +193,6 @@ async fn do_write(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

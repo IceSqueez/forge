@@ -21,7 +21,6 @@ pub fn register_builtin_kinds(reg: &mut OverlayKindRegistry) -> Result<(), Overl
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic)]
 mod tests {
     use std::collections::BTreeSet;
 

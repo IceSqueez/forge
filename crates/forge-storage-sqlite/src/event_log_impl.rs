@@ -247,7 +247,6 @@ impl EventLogRepo for SqliteEventLogRepo {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::{apply_migrations, connect};

@@ -70,7 +70,6 @@ pub struct MidiMonitorEvent {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

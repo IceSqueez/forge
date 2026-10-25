@@ -1419,7 +1419,6 @@ impl QuickActions for TwitchIntegrationBundle {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use async_trait::async_trait;
     use forge_platform_core::{BuiltinContent, BuiltinHealth, BuiltinStatus};

@@ -263,7 +263,6 @@ impl Drop for RunningPoller {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Arc;
 

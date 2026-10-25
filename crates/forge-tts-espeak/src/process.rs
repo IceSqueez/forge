@@ -172,7 +172,6 @@ async fn kill_and_reap(child: &mut Child) {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

@@ -25,7 +25,6 @@ pub(crate) fn protection_for(data_dir: &Path) -> Protection {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::ffi::OsString;
     use std::path::{Path, PathBuf};

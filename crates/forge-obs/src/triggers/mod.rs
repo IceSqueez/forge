@@ -155,7 +155,6 @@ pub fn register_obs_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryEr
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

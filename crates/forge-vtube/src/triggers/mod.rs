@@ -35,7 +35,6 @@ pub fn register_vtube_triggers(reg: &mut TriggerRegistry) -> Result<(), Registry
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 

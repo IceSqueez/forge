@@ -166,7 +166,6 @@ async fn withdraw(data_dir: PathBuf, staged: StagedRestore) -> Result<(), String
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use std::cell::Cell;
     use std::rc::Rc;

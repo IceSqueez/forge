@@ -194,7 +194,6 @@ impl Render for PackExportFlow {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
     use forge_components::{ToastKind, Toasts};
     use forge_storage::Language;

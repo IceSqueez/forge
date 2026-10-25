@@ -76,7 +76,6 @@ fn expired_in_kind(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeSet;
     use std::ffi::OsString;

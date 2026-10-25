@@ -910,7 +910,6 @@ impl Render for BannedPanel {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 pub(super) mod tests {
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex};

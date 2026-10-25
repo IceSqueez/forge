@@ -61,7 +61,6 @@ async fn run_probe(host: &str, port: u16, password: &str) -> Result<ObsProbeResu
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

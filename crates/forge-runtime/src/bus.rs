@@ -486,7 +486,6 @@ const _: () = {
 };
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::test_support::{Sandboxed, sandboxed_backend};

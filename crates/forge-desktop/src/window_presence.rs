@@ -39,7 +39,6 @@ pub fn track_window_presence(window: &Window, cx: &mut App) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::cell::Cell;
     use std::rc::Rc;

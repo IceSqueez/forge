@@ -1,5 +1,4 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
+#![allow(clippy::expect_used)]
 use forge_storage::{BAN_LEDGER_LIST_CAP, BanLedgerEntry, BanLedgerKey, BanLedgerRepo, BanOrigin};
 use forge_storage_sqlite::{MIGRATIONS, SqliteBanLedgerRepo, apply_migrations, connect};
 use forge_types::PlatformId;

@@ -172,7 +172,6 @@ fn play_cue_detached(rt: &Handle) {
 }
 
 #[cfg(test)]
-#[allow(clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex;

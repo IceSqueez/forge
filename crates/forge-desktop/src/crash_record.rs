@@ -204,7 +204,6 @@ pub fn mark_handled(dir: &Path, current_process_id: u32) -> io::Result<()> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::fs;
     use std::path::Path;

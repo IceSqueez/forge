@@ -217,7 +217,6 @@ impl BuiltinOptionSource for ObsClient {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::collections::HashMap;
 

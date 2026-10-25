@@ -220,7 +220,6 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

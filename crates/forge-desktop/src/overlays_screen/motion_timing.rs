@@ -315,7 +315,6 @@ impl OverlaysView {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use forge_overlay::config::DURATION;
     use forge_overlay::kinds::alert::AlertOverlayKind;

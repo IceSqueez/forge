@@ -50,7 +50,6 @@ fn scope_at(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_registry::{
         CASE_CHAIN_KEY, FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory,

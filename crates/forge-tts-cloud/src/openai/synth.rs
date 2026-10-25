@@ -98,7 +98,7 @@ pub(super) async fn probe_connection(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::cast_possible_truncation)]
+#[allow(clippy::cast_possible_truncation)]
 mod tests {
     use super::*;
     use crate::network::test_support::{

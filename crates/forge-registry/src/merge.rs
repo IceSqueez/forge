@@ -14,7 +14,6 @@ pub fn effective_config(
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use std::collections::BTreeMap;
 

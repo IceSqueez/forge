@@ -616,7 +616,6 @@ fn multipart_form(multipart: &MultipartBody) -> Result<Form, GatewayFailure> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::test_support::RecordingRateLimiter;

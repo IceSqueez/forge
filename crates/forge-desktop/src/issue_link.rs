@@ -194,7 +194,6 @@ pub fn encode(text: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::path::Path;
 

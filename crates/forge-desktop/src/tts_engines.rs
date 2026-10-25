@@ -1273,7 +1273,6 @@ fn engine_kind(id: &str) -> &'static str {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::cell::RefCell;
 

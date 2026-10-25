@@ -1,5 +1,4 @@
 #![allow(clippy::expect_used)]
-
 mod legacy_fixture;
 
 use std::path::PathBuf;

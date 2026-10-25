@@ -207,7 +207,6 @@ fn settle_retrying(tracker: &SubscriptionTracker, index: usize) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::super::{TOPICS, mark_revoked, subscribe_all};
     use super::TopicRetryRun;

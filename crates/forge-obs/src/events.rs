@@ -650,7 +650,6 @@ pub(crate) fn apply_record_status_update(
 }
 
 #[cfg(test)]
-#[allow(clippy::panic)]
 mod tests {
     use std::time::Duration;
 

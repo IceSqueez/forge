@@ -298,7 +298,6 @@ fn offset_hours_minutes(hour: &Component, rest: &[Item]) -> Result<(String, usiz
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use time::{Date, Month, OffsetDateTime, UtcOffset};
 

@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::unwrap_used, clippy::panic)]
 use std::time::Duration;
 
 use forge_vtube::{VTubeError, probe_connection};

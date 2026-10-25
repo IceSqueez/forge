@@ -108,7 +108,6 @@ fn map_to_variant(entries: rhai::Map, depth: u8) -> Result<Variant, String> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::engine::{Engine, EngineConfig};

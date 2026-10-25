@@ -290,7 +290,6 @@ impl TwitchBotAccount {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 pub(crate) mod test_support {
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -601,7 +600,6 @@ pub(crate) mod test_support {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use wiremock::ResponseTemplate;
 

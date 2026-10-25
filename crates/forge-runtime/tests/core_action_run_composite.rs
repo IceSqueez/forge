@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};

@@ -355,7 +355,6 @@ fn in_system_zone(civil_time: PrimitiveDateTime) -> Result<OffsetDateTime, DateT
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use time::{Date, Month, OffsetDateTime, UtcOffset};
 

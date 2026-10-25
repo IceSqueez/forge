@@ -393,7 +393,6 @@ const ITEM_IGNORE_SENTINEL_ORDER: i64 = -1000;
 const EXPRESSION_ERROR_ID_UNKNOWN: i64 = -1;
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::time::Duration;
 

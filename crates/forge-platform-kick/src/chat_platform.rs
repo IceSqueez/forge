@@ -212,7 +212,6 @@ fn map_connect_error(err: KickError) -> PlatformError {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 pub(crate) mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex as StdMutex;

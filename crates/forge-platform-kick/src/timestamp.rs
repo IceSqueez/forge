@@ -27,7 +27,6 @@ pub(crate) fn variant(value: Option<OffsetDateTime>) -> Option<Variant> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 pub(crate) mod tests {
     use super::*;
     use std::io::Write;

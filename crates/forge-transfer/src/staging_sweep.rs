@@ -12,7 +12,6 @@ pub fn sweep_import_staging(data_dir: &Path) -> Result<(), TransferError> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::path::{Path, PathBuf};
 

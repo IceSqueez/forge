@@ -287,7 +287,6 @@ fn apply_transition(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use async_trait::async_trait;
     use forge_events::Event;

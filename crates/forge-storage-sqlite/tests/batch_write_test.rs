@@ -1,5 +1,4 @@
 #![allow(clippy::unwrap_used)]
-
 use std::collections::BTreeMap;
 use std::sync::Arc;
 

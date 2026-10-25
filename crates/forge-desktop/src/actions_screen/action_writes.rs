@@ -355,7 +355,6 @@ impl ScreenActionsView {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::HashSet;
     use std::sync::Mutex;

@@ -42,7 +42,6 @@ pub fn message_emote_codes(args: &ArgStack) -> Vec<String> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_events::EventSource;
     use serde_json::json;

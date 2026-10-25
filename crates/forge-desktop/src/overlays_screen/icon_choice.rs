@@ -554,7 +554,6 @@ impl OverlaysView {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use forge_overlay::config::{DEFAULT_ICON, ICON};
     use forge_overlay::kinds::alert::AlertOverlayKind;

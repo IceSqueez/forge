@@ -99,7 +99,6 @@ impl DiscordClient {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Arc;
 

@@ -731,7 +731,6 @@ fn parse_shortcut_signal(msg: &zbus::Message, edge: HotkeyEdge) -> Option<Shortc
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

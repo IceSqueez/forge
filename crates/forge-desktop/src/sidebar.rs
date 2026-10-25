@@ -540,7 +540,6 @@ impl Render for SidebarNav {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use forge_components::ThemeId;
     use forge_types::IntegrationId;

@@ -59,7 +59,7 @@ fn declared_len(bytes: usize) -> u32 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(clippy::indexing_slicing)]
 pub(crate) mod tests {
     use super::*;
 

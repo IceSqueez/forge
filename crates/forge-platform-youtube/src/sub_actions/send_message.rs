@@ -115,7 +115,6 @@ impl SubActionRunner for SendMessageRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::sync::Arc;
 

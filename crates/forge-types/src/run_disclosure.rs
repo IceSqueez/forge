@@ -212,7 +212,6 @@ fn disclose_rendered(values: &BTreeMap<String, String>) -> BTreeMap<String, Disc
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use time::Duration;

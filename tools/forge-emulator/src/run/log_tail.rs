@@ -135,7 +135,6 @@ fn read_complete_lines(file: &Path, offset: u64) -> io::Result<(Vec<String>, u64
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::io::Write;
 

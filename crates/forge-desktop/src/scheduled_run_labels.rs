@@ -135,7 +135,6 @@ pub(crate) fn reason_label(reason: &str, late_by: Option<Span>) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::path::Path;
 

@@ -31,7 +31,6 @@ fn config_accepts_combo(config: &TriggerConfig, event: &Event) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

@@ -1,4 +1,4 @@
-#![allow(dead_code, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(dead_code, clippy::unwrap_used, clippy::panic)]
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};

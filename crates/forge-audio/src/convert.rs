@@ -98,7 +98,6 @@ pub fn remix(src: &[i16], src_channels: u16, dst_channels: u16) -> Vec<i16> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

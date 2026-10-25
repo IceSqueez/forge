@@ -534,7 +534,6 @@ fn format_amount(micros: u64) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use crate::platform_visuals::BadgeKind;
     use forge_components::ChatBody;

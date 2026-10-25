@@ -1,5 +1,5 @@
+#![allow(clippy::unwrap_used)]
 #![cfg(target_os = "linux")]
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;

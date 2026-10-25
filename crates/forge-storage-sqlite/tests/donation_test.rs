@@ -1,5 +1,4 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
+#![allow(clippy::expect_used)]
 mod common;
 
 use std::sync::Arc;

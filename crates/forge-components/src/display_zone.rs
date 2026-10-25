@@ -102,7 +102,6 @@ pub fn display_zone() -> DisplayZone {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_types::datetime_from_text;
     use time::{Date, Month, Time};

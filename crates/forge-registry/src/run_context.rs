@@ -63,7 +63,6 @@ impl ChainExecutor for NoopChainExecutor {
 static NOOP_EXECUTOR: NoopChainExecutor = NoopChainExecutor;
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use forge_events::Event;
     use forge_types::{ArgStack, SubActionConfig, Variant};

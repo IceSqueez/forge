@@ -117,7 +117,6 @@ impl fmt::Debug for Donation {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use crate::money::CurrencyCode;
 

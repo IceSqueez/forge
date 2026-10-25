@@ -146,7 +146,6 @@ fn parse_settings(config: &SubActionConfig) -> Result<Map<String, Value>, String
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};

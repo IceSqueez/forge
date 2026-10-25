@@ -121,7 +121,6 @@ impl UrlOpenPort for SystemUrlOpenPort {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::{OsPortError, SystemUrlOpenPort, UrlOpenPort};
 
@@ -147,7 +146,6 @@ mod tests {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 pub(crate) mod test_ports {
     use std::sync::Mutex;
 

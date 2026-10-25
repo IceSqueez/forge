@@ -216,7 +216,6 @@ impl SubActionRunner for LockPredictionRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_types::SubActionOutcome;
 

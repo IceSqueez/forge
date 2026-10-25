@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::unwrap_used)]
 mod common;
 
 use forge_speak_queue::{QueueConfig, SpeakCommand, SpeakRequest};

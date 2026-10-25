@@ -190,7 +190,6 @@ impl BuiltinOptionSource for VTubeClient {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::time::Duration;
 

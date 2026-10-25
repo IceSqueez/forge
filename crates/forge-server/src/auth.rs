@@ -169,7 +169,6 @@ pub fn generate_token() -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};

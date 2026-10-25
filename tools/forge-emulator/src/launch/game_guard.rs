@@ -137,7 +137,6 @@ pub fn assess_hyprland_clients(json: &[u8]) -> Result<(), EmulatorError> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

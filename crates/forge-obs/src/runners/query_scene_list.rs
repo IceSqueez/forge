@@ -107,7 +107,6 @@ impl SubActionRunner for QuerySceneListRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, make_ctx};

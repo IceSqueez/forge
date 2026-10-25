@@ -209,7 +209,6 @@ fn route_failure(reasons: Vec<String>) -> AudioError {
 }
 
 #[cfg(test)]
-#[allow(clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::pin::pin;
     use std::sync::Mutex;

@@ -293,7 +293,6 @@ impl Render for EditSubActionForm {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use forge_components::{ThemeId, bind_picker_keys, bind_text_input_keys};
     use gpui::{TestAppContext, VisualTestContext};

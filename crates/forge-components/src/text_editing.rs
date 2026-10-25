@@ -561,7 +561,6 @@ macro_rules! forward_input_handler {
 pub(crate) use forward_input_handler;
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::highlight::Language;

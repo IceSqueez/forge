@@ -137,7 +137,6 @@ pub(super) fn notes_block(notes: Vec<String>, palette: &ForgePalette) -> Option<
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::path::PathBuf;
 

@@ -32,7 +32,6 @@ define_redacted_token!(OAuthToken);
 define_redacted_token!(RefreshToken);
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

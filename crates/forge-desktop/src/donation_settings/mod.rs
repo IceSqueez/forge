@@ -497,7 +497,6 @@ fn account_line(plain_key: &str, named_key: &str, nickname: Option<String>) -> S
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;

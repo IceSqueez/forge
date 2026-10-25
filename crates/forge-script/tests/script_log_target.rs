@@ -1,5 +1,4 @@
-#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
-
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};

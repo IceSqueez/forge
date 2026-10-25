@@ -60,7 +60,6 @@ fn posts_to(action: &Action, webhook_name: &str) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeMap;
 

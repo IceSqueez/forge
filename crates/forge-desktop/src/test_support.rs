@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
-
 mod config_references;
 mod memory_scripts;
 pub(crate) mod pack_flow;

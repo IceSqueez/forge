@@ -288,7 +288,6 @@ impl Drop for VTubeClient {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 pub(crate) mod tests {
     use std::sync::atomic::{AtomicU32, Ordering as AO};
     use std::time::Duration;

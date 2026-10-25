@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::expect_used)]
 use std::time::Duration;
 
 use forge_overlay::config::{DURATION, SOUND, SPEECH, SPEECH_VOICE};

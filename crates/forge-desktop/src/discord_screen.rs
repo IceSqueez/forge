@@ -1091,7 +1091,6 @@ mod tests {
         worker_runtime,
     };
 
-    #[allow(clippy::expect_used)]
     #[gpui::test]
     fn the_crumb_leads_back_to_the_discord_category_on_the_hub(cx: &mut TestAppContext) {
         let rt = runtime();
@@ -1179,7 +1178,6 @@ mod tests {
         creds
     }
 
-    #[allow(clippy::expect_used)]
     #[gpui::test]
     fn testing_a_saved_webhook_posts_the_message_in_the_ui_language_from_a_worker_thread(
         cx: &mut TestAppContext,

@@ -47,7 +47,6 @@ pub(super) fn mention_policy(config: &SubActionConfig) -> MentionPolicy {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};

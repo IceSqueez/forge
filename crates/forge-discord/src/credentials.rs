@@ -18,7 +18,6 @@ impl std::fmt::Debug for WebhookCredential {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

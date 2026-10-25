@@ -67,7 +67,6 @@ fn viewer_message(event: &Event) -> Option<ViewerMessage> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::time::Duration;
 

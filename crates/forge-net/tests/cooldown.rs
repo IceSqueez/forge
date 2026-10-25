@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used)]
-
 use std::time::{Duration, Instant};
 
 use forge_net::{Cooldown, MAX_REMOTE_COOLDOWN};

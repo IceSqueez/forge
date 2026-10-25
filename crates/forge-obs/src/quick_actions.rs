@@ -377,7 +377,6 @@ impl QuickActions for ObsClient {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::collections::BTreeSet;
     use std::sync::Arc;

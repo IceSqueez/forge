@@ -136,7 +136,6 @@ fn apply_connection(
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use forge_donatello::{
         DEFAULT_POLL_INTERVAL, DonatelloConfig, MAX_POLL_INTERVAL, MIN_POLL_INTERVAL,

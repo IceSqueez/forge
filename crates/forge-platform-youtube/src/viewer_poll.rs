@@ -107,7 +107,6 @@ fn extract_concurrent_viewers(body: &serde_json::Value) -> Option<u64> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use serde_json::json;

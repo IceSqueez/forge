@@ -111,7 +111,6 @@ impl TriggerKindDescriptor for SourceInputCreatedDescriptor {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::super::{
         SourceInputCreatedDescriptor, SourceInputRemovedDescriptor, SourceInputRenamedDescriptor,

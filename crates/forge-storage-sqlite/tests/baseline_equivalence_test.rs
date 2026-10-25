@@ -1,5 +1,4 @@
 #![allow(clippy::expect_used)]
-
 mod legacy_fixture;
 
 use forge_storage_sqlite::legacy_chain::LEGACY_CHAIN;

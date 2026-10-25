@@ -277,7 +277,6 @@ pub fn reapply_key_bindings(cx: &mut App, overrides: &HashMap<String, String>) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

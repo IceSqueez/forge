@@ -1,5 +1,4 @@
 #![cfg(unix)]
-#![allow(clippy::unwrap_used)]
 
 use forge_events::{Event, EventPublisher};
 use forge_registry::{RunContext, SubActionRunner};

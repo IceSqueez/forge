@@ -151,7 +151,6 @@ pub(crate) fn gateway_error(failure: GatewayFailure) -> PlatformError {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::sync::Mutex;
 

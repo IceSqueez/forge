@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used)]
-
 use std::ops::Deref;
 
 use forge_storage_sqlite::SqliteBackend;

@@ -72,7 +72,6 @@ pub(super) async fn fetch_voices(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::network::test_support::{

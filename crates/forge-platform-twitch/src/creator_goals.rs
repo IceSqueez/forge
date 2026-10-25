@@ -70,7 +70,6 @@ pub(crate) async fn publish_current_goals(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Mutex;
 

@@ -228,7 +228,6 @@ impl crate::helix::HelixTokenRefresher for TwitchCredentialsManager {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 pub(crate) mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;

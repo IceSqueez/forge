@@ -62,7 +62,6 @@ pub fn unknown_chat_target_reason(target: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

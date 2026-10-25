@@ -333,7 +333,6 @@ pub(crate) fn build_raid_chat_payload(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use forge_types::ChatEventDetail;
 

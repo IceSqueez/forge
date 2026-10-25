@@ -105,7 +105,6 @@ pub(crate) fn pacific_date(at: OffsetDateTime) -> time::Date {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use forge_platform_core::PlatformError;
     use time::{Month, PrimitiveDateTime, Time};

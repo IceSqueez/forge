@@ -89,7 +89,6 @@ async fn wait_for_cancel(cancel: &CancelSignal) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};

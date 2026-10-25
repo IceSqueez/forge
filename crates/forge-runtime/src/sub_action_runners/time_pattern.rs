@@ -118,7 +118,6 @@ fn translate_legacy_time_config(kind_id: &str, config: &mut SubActionConfig) -> 
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeMap;
 

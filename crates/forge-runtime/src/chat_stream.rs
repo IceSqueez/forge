@@ -82,7 +82,6 @@ fn try_map_chat_event(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use forge_events::{Event, EventSource};
     use forge_types::{ChatModerationAction, ChatModerationPayload, ChatSegment, ModerationMarks};

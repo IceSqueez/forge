@@ -974,7 +974,6 @@ fn step_card(n: u8, circle_bg: Rgba, circle_fg: Rgba, palette: &ForgePalette) ->
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::connect_flow::ConnectFlowLaunch;

@@ -49,7 +49,6 @@ pub(super) fn resolve(config: &SubActionConfig, ctx: &RunContext<'_>) -> Option<
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeMap;
 

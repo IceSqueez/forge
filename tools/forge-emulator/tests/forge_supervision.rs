@@ -1,5 +1,5 @@
+#![allow(clippy::unwrap_used)]
 #![cfg(target_os = "linux")]
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::collections::BTreeSet;
 use std::net::Ipv4Addr;

@@ -95,7 +95,6 @@ fn host_identity(event: &Event) -> ActorIdentity {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

@@ -150,7 +150,6 @@ fn offset_hours_minutes(offset_seconds: i32) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use time::{Date, Month, OffsetDateTime, UtcOffset};
 

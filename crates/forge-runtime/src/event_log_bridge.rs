@@ -181,7 +181,6 @@ fn identity_entries(map: &Map<String, Value>) -> Option<Vec<(&String, &Value)>> 
 }
 
 #[cfg(test)]
-#[allow(clippy::panic)]
 mod tests {
     use super::*;
     use serde_json::json;

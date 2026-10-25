@@ -421,7 +421,6 @@ fn ends_playback(kind: cpal::ErrorKind) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

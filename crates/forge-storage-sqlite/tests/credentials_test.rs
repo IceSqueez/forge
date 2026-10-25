@@ -1,5 +1,4 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
+#![allow(clippy::expect_used)]
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_storage_sqlite::{SqliteCredentialsRepo, apply_migrations};
 

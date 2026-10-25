@@ -1,5 +1,4 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
-
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};

@@ -14,7 +14,6 @@ pub(crate) mod stream_online;
 pub(crate) mod title_changed;
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_events::{Event, EventSource};
     use forge_registry::{TriggerKindDescriptor, TriggerRegistry};

@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::panic)]
 mod gateway_support;
 
 use forge_net::{GatewayFailure, GatewayRequest, RequestBody, Secret, TransportKind};

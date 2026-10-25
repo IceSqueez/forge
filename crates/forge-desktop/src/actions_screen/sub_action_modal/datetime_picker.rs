@@ -84,7 +84,6 @@ impl EditSubActionForm {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use gpui::TestAppContext;
 

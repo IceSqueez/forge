@@ -503,7 +503,6 @@ pub trait BuiltinControl: Send + Sync {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeMap;
 

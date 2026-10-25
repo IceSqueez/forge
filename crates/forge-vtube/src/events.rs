@@ -131,7 +131,6 @@ pub(crate) fn dispatch_vts_event(env: &RawEnvelope, publisher: &dyn EventPublish
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Arc;
 

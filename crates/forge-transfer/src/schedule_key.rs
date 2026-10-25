@@ -92,7 +92,6 @@ pub(crate) fn unwrap_identity(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::ScheduleKey;
 

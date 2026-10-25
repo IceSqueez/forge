@@ -121,7 +121,6 @@ fn init_supervisor_logging(data_dir: &Path) {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
 
     use forge_storage::{DATABASE_FILE_NAME, DataProvider, EXPECTED_SCHEMA_VERSION};
     use forge_update::{SchemaProbe, SupervisorOutcome};

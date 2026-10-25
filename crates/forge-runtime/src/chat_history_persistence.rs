@@ -256,7 +256,6 @@ async fn stored_per_viewer_limit(settings: &dyn SettingsRepo) -> usize {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use forge_storage::chat_history::MockChatHistoryRepo;
     use forge_storage::{DataProvider, StorageError};

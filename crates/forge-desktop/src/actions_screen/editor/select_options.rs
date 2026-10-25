@@ -200,7 +200,6 @@ impl ScreenActionsView {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_storage::{
         MEDIA_CONTENT_DIGEST_BYTES, MediaBlobId, MockMediaRepo, StoredClip, clip_source_referrer,

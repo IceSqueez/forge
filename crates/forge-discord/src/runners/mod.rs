@@ -33,7 +33,6 @@ pub fn register_discord_sub_actions(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::embed::DiscordEmbed;

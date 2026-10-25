@@ -66,7 +66,6 @@ pub(super) fn cached_pattern(pattern: &str) -> CachedPattern {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

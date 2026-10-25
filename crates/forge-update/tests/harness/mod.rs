@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, clippy::unwrap_used)]
 
 use std::cell::Cell;
 use std::collections::VecDeque;

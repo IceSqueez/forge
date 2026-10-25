@@ -114,7 +114,6 @@ impl SubActionRunner for BanUserRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use futures::future::BoxFuture;
 

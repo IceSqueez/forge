@@ -393,7 +393,6 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 

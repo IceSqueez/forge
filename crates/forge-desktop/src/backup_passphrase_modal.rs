@@ -383,7 +383,6 @@ impl Render for BackupPassphraseModal {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 pub(crate) mod tests {
     use gpui::TestAppContext;
 

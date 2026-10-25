@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
-
+#![allow(clippy::expect_used)]
 use forge_overlay::config::{
     ACCENT, DEFAULT_ICON, DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, ELEMENT_HEIGHT, ELEMENT_WIDTH,
     FONT, HEADLINE, ICON, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP,

@@ -1694,7 +1694,6 @@ fn lan_bind_bullets() -> Vec<BulletItem> {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
     use forge_components::ThemeId;
     use forge_overlay::OverlayKindRegistry;

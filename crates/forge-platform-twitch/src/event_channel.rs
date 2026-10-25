@@ -25,7 +25,6 @@ impl EventPublisher for PlatformEventChannel {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use forge_events::EventSource;

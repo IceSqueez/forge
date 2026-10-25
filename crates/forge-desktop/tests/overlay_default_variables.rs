@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::expect_used, clippy::panic)]
 use std::collections::BTreeSet;
 
 use forge_overlay::{ContentFeed, OverlayKindRegistry, register_builtin_kinds};

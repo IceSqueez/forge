@@ -2305,7 +2305,6 @@ mod tests {
         }
     }
 
-    #[allow(clippy::unwrap_used)]
     mod sign_out {
         use std::cell::RefCell;
         use std::sync::atomic::{AtomicUsize, Ordering};

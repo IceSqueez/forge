@@ -46,7 +46,6 @@ pub(crate) fn decode_history_entry(entry: Value) -> Result<Event, serde_json::Er
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use serde_json::json;
     use time::format_description::well_known::Rfc3339;

@@ -155,7 +155,6 @@ pub fn connection_state_changed_event(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

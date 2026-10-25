@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::panic)]
 use forge_events::{Event, EventPublisher};
 use forge_registry::{RunContext, SubActionRunner};
 use forge_runtime::sub_action_runners::{

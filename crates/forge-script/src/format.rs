@@ -28,7 +28,6 @@ pub fn format_script(source: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

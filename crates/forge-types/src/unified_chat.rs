@@ -356,7 +356,6 @@ impl fmt::Debug for ChatEventDetail {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use serde_json::{from_str, to_string};
     use time::OffsetDateTime;

@@ -1070,7 +1070,6 @@ async fn load_detail_data(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Mutex;
 

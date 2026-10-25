@@ -1,5 +1,3 @@
-#![allow(clippy::unwrap_used)]
-
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 

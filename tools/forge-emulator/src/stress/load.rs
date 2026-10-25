@@ -154,7 +154,6 @@ pub fn due(per_second: f64, elapsed_ms: u64) -> u64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::super::marker::find_marker;
     use super::*;

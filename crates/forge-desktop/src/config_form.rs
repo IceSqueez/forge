@@ -1339,7 +1339,6 @@ pub(crate) fn config_label_cell(
 }
 
 #[cfg(test)]
-#[allow(clippy::panic)]
 mod tests {
     use super::*;
     use forge_registry::UnitAmountBounds;

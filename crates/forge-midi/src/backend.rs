@@ -115,7 +115,6 @@ impl MidiBackend for MidirBackend {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 pub(crate) mod tests {
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex};

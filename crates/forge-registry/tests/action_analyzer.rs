@@ -1,5 +1,4 @@
 #![allow(clippy::expect_used)]
-
 mod fakes;
 
 use std::collections::HashSet;

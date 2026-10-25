@@ -47,7 +47,6 @@ pub(crate) fn check_response(data: &serde_json::Value) -> Result<(), VTubeError>
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

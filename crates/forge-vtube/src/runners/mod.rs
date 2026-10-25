@@ -79,7 +79,6 @@ pub fn register_vtube_sub_actions(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::collections::BTreeSet;
 

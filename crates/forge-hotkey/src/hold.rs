@@ -142,7 +142,6 @@ fn now_us() -> u64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::sync::Arc;
     use std::time::Duration;

@@ -20,7 +20,6 @@ pub(crate) fn resolve_datetime(v: &Variant, stack_interp: &str) -> Result<Offset
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use time::UtcOffset;

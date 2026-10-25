@@ -145,7 +145,6 @@ fn into_tts_voices(voices: Vec<PollyVoice>) -> Vec<TtsVoice> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::sync::Mutex;
     use std::sync::mpsc as std_mpsc;

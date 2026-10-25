@@ -164,7 +164,6 @@ pub(crate) fn current_name(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use crate::platform_visuals::BadgeKind;
     use forge_components::{

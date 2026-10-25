@@ -92,7 +92,6 @@ fn compute_bps(window: &VecDeque<(Instant, u64)>, now: Instant) -> u64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::time::Duration;
 

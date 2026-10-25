@@ -40,7 +40,6 @@ pub(crate) fn expired(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::path::PathBuf;
 

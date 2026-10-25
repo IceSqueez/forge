@@ -577,7 +577,6 @@ impl BuiltinCollections for TwitchIntegrationBundle {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use reqwest::StatusCode;
     use std::sync::Arc;

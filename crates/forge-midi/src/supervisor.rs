@@ -450,7 +450,6 @@ fn build_event_deltas(snap: &mut MidiHealthSnapshot, is_note_on: bool) -> Vec<He
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Arc;
     use std::time::Duration;

@@ -333,7 +333,6 @@ pub fn register_twitch_sub_actions(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 pub(crate) mod test_support {
     use std::collections::VecDeque;
     use std::ffi::OsString;
@@ -562,7 +561,6 @@ pub(crate) mod test_support {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::test_support::{MockCreds, MockTransport};
     use super::*;

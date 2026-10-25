@@ -49,7 +49,6 @@ pub(crate) fn classify(name: &OsStr, is_dir: bool) -> Option<Classified> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::ffi::OsStr;
 

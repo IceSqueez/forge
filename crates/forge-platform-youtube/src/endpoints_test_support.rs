@@ -1,5 +1,3 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
-
 use std::ffi::OsString;
 use std::sync::{Arc, Mutex};
 

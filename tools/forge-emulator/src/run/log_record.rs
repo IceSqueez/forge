@@ -166,7 +166,6 @@ fn unquote(text: &str) -> Option<(String, usize)> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

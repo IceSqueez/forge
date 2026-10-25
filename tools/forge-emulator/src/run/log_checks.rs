@@ -53,7 +53,6 @@ pub(crate) async fn observe_log_line(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::io::Write;
     use std::path::Path;

@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
-
+#![allow(clippy::expect_used)]
 use std::collections::BTreeSet;
 
 use forge_overlay::config::{ANIMATION_OPTIONS, POSITION_OPTIONS};

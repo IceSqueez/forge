@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::panic)]
 use std::collections::BTreeMap;
 
 use forge_script::{BoundExpression, ConditionEvaluator, EngineConfig, MathEvaluator};

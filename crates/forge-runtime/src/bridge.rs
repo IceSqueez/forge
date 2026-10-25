@@ -19,7 +19,6 @@ pub fn bus_subscription(bus: Arc<EventBus>) -> impl Stream<Item = Event> + Send 
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::{Config, NullEventLogRepo};

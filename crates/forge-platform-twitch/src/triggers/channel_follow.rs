@@ -94,7 +94,6 @@ fn follower_identity(event: &Event) -> ActorIdentity {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::timestamp::tests::instant;

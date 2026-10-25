@@ -663,7 +663,6 @@ fn parse_history_retention_days(raw: &str) -> Option<u32> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Arc;
 

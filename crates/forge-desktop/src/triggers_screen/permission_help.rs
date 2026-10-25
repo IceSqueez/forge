@@ -65,7 +65,6 @@ fn rung_meaning(platform: PlatformId, rung: PermissionRung) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeSet;
 

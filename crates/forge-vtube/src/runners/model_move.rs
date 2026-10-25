@@ -170,7 +170,7 @@ impl SubActionRunner for ModelMoveRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::type_complexity)]
+#[allow(clippy::type_complexity)]
 mod tests {
     use super::*;
     use crate::error::VTubeError;

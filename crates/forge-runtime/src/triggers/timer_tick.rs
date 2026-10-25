@@ -201,7 +201,6 @@ fn payload_int(event: &Event, field: &str) -> i64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_registry::{SynthesisSample, declared_variables, synthesize_args};
 

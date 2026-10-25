@@ -1,4 +1,4 @@
-#![allow(dead_code, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(dead_code, clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};

@@ -178,7 +178,6 @@ impl BuiltinHealth for VTubeClient {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
 
     use forge_platform_core::{BuiltinHealth, HealthValue};

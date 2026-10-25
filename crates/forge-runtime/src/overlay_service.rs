@@ -929,7 +929,6 @@ where
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use forge_storage::overlay::MockOverlayRepo;
     use forge_storage::settings::MockSettingsRepo;

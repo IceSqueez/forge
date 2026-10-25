@@ -107,7 +107,6 @@ fn predicted_request_path(conn: &Connection, handle_token: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use zbus::ObjectPath;

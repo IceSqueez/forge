@@ -26,7 +26,6 @@ pub(crate) fn option_hint_text(hint: &OptionHint) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_storage::Language;
 

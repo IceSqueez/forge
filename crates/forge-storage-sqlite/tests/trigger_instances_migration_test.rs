@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
 use forge_storage_sqlite::{apply_migrations, connect};
 
 #[tokio::test]

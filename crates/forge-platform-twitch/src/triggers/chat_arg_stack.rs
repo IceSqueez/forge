@@ -68,7 +68,6 @@ fn user_field(event: &Event, key: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_events::EventSource;
     use forge_types::ArgStack;

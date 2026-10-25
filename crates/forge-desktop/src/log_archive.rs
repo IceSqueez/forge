@@ -111,7 +111,6 @@ fn active_file_name() -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic)]
 mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 

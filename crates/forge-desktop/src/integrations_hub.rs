@@ -865,7 +865,6 @@ impl Render for IntegrationsHubView {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use std::collections::HashSet;
     use std::time::Duration;

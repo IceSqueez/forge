@@ -230,7 +230,6 @@ async fn overlay_serving_enabled(
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use std::collections::HashMap;
     use std::net::SocketAddr;

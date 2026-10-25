@@ -662,7 +662,6 @@ pub fn spawn_action_engine(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::collections::BTreeMap;
     use std::sync::Mutex;

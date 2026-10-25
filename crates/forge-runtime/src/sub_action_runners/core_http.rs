@@ -348,7 +348,6 @@ fn apply_response(arg_stack: &ArgStack, response: EgressResponse, parse_as: &str
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::test_support::{Sandboxed, sandboxed_backend};

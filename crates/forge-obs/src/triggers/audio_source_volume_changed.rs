@@ -139,7 +139,6 @@ impl TriggerKindDescriptor for AudioSourceVolumeChangedDescriptor {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use forge_registry::TriggerKindDescriptor;

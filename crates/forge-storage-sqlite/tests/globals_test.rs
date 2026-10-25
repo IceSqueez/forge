@@ -1,5 +1,4 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
+#![allow(clippy::expect_used)]
 use std::sync::Arc;
 
 use forge_storage::{GlobalsExport, GlobalsRepo, StorageError};

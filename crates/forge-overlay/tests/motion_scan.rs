@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::expect_used)]
 use forge_overlay::{
     MotionIssue, OverlayKindDescriptor, OverlayKindRegistry, OverriddenSources, motion_issues,
     register_builtin_kinds,

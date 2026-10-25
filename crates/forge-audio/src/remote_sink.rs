@@ -391,7 +391,6 @@ fn bounded_reason(reason: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::AtomicUsize;

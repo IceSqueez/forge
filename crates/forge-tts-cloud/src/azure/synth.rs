@@ -120,7 +120,6 @@ pub(super) async fn probe_connection(link: &ProviderLink, api_key: &str) -> Resu
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::network::test_support::{

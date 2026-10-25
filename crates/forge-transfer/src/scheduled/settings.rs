@@ -186,7 +186,6 @@ impl Progress {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_storage::settings::{
         DEFAULT_BACKUP_SCHEDULE_INTERVAL_MINUTES, MAX_BACKUP_SCHEDULE_INTERVAL_MINUTES,

@@ -86,7 +86,6 @@ fn bundle_bytes(folder: &Path) -> u64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::path::Path;
 

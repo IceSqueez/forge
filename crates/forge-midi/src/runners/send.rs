@@ -309,7 +309,6 @@ fn extract_raw_bytes(config: &SubActionConfig) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Arc;
 

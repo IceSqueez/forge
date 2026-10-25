@@ -74,7 +74,6 @@ pub(crate) fn to_monitor_event(event: &MidiEvent, port_name: &str) -> MidiMonito
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

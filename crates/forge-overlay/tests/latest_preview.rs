@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::expect_used)]
 use forge_overlay::config::{HEADLINE, SLOT};
 use forge_overlay::{
     OverlayConfig, OverlayKindRegistry, PreviewLineRole, PreviewMark, PreviewShape,

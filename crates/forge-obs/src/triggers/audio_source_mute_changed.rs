@@ -139,7 +139,6 @@ pub(crate) fn source_name_matches(config: &TriggerConfig, event: &Event) -> bool
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::super::{
         AudioSourceBalanceChangedDescriptor, AudioSourceMuteChangedDescriptor,

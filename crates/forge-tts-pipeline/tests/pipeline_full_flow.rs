@@ -1,5 +1,3 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 use forge_tts_pipeline::{
     BlocklistMode, EmoteTokenSet, PipelineConfig, PipelineContext, PipelineResult, ReplacementRule,
     SkipReason, SkipRulesConfig, process,

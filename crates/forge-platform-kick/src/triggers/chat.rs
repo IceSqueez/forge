@@ -164,7 +164,6 @@ pub(super) fn sender_color(event: &Event) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use forge_types::ChatViewer;

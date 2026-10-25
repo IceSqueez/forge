@@ -114,7 +114,6 @@ impl BuiltinHealth for MidiClient {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_platform_core::BuiltinHealth;
 

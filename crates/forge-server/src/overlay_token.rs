@@ -107,7 +107,6 @@ pub fn masked_overlay_token(token: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;

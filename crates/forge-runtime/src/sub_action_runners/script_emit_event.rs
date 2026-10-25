@@ -115,7 +115,6 @@ fn config_payload(config: &SubActionConfig) -> Result<serde_json::Value, String>
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use forge_registry::{ConfigProblem, ConfigReason};

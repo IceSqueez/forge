@@ -933,7 +933,6 @@ fn default_int(default: &Option<QuickActionFieldValue>) -> i64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::sync::Mutex;
 

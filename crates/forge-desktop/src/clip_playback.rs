@@ -76,7 +76,6 @@ fn toast_text(payload: &Value) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_storage::Language;
     use gpui::TestAppContext;

@@ -721,7 +721,6 @@ async fn load_routing(
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeSet;
 

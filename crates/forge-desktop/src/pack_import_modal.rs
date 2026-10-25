@@ -688,7 +688,6 @@ impl Render for PackImportModal {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::cell::RefCell;
     use std::path::PathBuf;

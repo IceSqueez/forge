@@ -645,7 +645,6 @@ mod tests {
         raw.iter().map(|id| SharedString::new_static(id)).collect()
     }
 
-    #[allow(clippy::unwrap_used)]
     fn with_bar<R>(
         cx: &mut gpui::TestAppContext,
         targets: Vec<(SendTarget, bool)>,
@@ -764,7 +763,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[allow(clippy::unwrap_used)]
     fn send_carries_only_the_available_selected_targets(cx: &mut gpui::TestAppContext) {
         let window = cx.add_window(|_window, cx| {
             InputBar::new("placeholder", FORGE_DEFAULT, cx).with_targets(strip(true, true, true))
@@ -813,7 +811,6 @@ mod tests {
         })
     }
 
-    #[allow(clippy::unwrap_used)]
     fn pick_on_switch(
         cx: &mut gpui::TestAppContext,
         switch: Option<InputBarSwitch>,

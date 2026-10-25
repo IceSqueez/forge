@@ -1,5 +1,4 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
+#![allow(clippy::expect_used)]
 use forge_storage::reserved_keys::{
     AUDIO_VOICE_GATE_HOLD_MS, AUDIO_VOICE_GATE_INPUT_DEVICE_ID, AUDIO_VOICE_GATE_THRESHOLD,
     EVENT_LOG_RETENTION_DAYS,

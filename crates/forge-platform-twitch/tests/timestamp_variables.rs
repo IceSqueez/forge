@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::expect_used)]
 use forge_events::{Event, EventSource};
 use forge_platform_twitch::register_twitch_triggers;
 use forge_registry::{

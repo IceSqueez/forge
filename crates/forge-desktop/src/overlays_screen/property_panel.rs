@@ -789,7 +789,6 @@ impl Render for OverlayPropertyPanel {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 pub(crate) mod tests {
     use std::sync::Mutex;
 

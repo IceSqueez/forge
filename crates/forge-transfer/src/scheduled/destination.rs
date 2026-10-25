@@ -75,7 +75,6 @@ fn segments(path: &Path) -> Vec<String> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::path::{Path, PathBuf};
 

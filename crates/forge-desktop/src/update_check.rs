@@ -263,7 +263,6 @@ async fn latest_release(client: &UpdateClient, repo: &GithubRepo) -> CheckOutcom
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use std::path::PathBuf;
 

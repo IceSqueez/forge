@@ -87,7 +87,6 @@ impl InterpolatedTarget {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;

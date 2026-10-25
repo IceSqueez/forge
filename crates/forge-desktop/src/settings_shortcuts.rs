@@ -622,7 +622,6 @@ impl Render for SettingsShortcutsView {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use gpui::{Modifiers, TestAppContext};
     use tokio::sync::mpsc::UnboundedReceiver;

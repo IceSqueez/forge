@@ -721,7 +721,6 @@ impl Render for PackExportModal {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeSet;
 

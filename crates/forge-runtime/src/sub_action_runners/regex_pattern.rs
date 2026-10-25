@@ -21,7 +21,6 @@ fn one_line_summary(error: &regex::Error) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use forge_registry::ConfigProblem;
 

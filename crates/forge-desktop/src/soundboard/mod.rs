@@ -322,7 +322,6 @@ impl Render for SoundboardView {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use forge_soundboard::SoundboardError;
     use forge_storage::{MediaFormat, MediaKind, StorageError};

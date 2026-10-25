@@ -164,7 +164,6 @@ pub(super) fn build_charity_lifecycle_schema() -> VariableSchema {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

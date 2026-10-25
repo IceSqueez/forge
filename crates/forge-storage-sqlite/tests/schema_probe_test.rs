@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
-
+#![allow(clippy::unwrap_used)]
 mod legacy_fixture;
 
 use std::collections::BTreeSet;

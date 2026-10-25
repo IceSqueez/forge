@@ -216,7 +216,6 @@ fn format_date(t: &OffsetDateTime) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 pub(crate) mod test_support {
     use std::fmt::Write as _;
 
@@ -470,7 +469,6 @@ pub(crate) mod test_support {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::test_support::{
         ACCESS_KEY_ID, FIXED_AMZ_DATE, POLLY_SERVICE, REGION, SECRET_ACCESS_KEY, WireRequest,

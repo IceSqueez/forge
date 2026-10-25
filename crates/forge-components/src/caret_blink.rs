@@ -91,7 +91,6 @@ pub(crate) fn set_caret_blinking<T: CaretHost>(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use gpui::{
         Entity, InteractiveElement, IntoElement, Render, VisualTestContext, WindowVisibility, div,

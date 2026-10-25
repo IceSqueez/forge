@@ -170,7 +170,6 @@ pub fn category_inactive_badge(
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use std::sync::Arc;
 

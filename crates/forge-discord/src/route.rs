@@ -129,7 +129,6 @@ fn saved_query(query: &str) -> Vec<(String, String)> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

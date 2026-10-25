@@ -1023,7 +1023,6 @@ impl ScreenActionsView {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use forge_runtime::{ActionCancelRegistry, Catalog, QueueScheduler, spawn_action_engine};
     use forge_types::{IntegrationId, integration_disabled_reason};

@@ -162,7 +162,6 @@ async fn post_chat_message(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use async_trait::async_trait;

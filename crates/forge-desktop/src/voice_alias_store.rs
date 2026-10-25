@@ -51,7 +51,6 @@ pub(crate) async fn block_viewer(
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use std::time::Duration;
 

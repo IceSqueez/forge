@@ -30,7 +30,6 @@ fn is_scalar(value: &Variant) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeMap;
 

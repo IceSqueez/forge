@@ -403,7 +403,6 @@ pub(crate) fn failed_step(reason: &str) -> StepResult {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use forge_registry::runner::SubActionConfig;
     use forge_types::Variant;

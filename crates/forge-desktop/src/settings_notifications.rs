@@ -299,7 +299,6 @@ impl Render for SettingsNotificationsView {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_components::{Density, Presentation, ThemeId, Toasts};
     use forge_runtime::spawn_notification_policy;

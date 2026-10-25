@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used)]
-
 use std::ops::Deref;
 
 use forge_storage_sqlite::SqliteBackend;
@@ -39,7 +37,6 @@ pub(crate) async fn sandboxed_backend(key: [u8; 32]) -> Sandboxed<SqliteBackend>
 }
 
 pub(crate) mod log_capture {
-    #![allow(clippy::unwrap_used)]
 
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};

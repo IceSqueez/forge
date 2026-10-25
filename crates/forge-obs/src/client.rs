@@ -1450,7 +1450,6 @@ mod tests {
     ];
 
     #[test]
-    #[allow(clippy::unwrap_used)]
     fn a_state_transition_announces_the_new_state_only_when_it_actually_changed() {
         for previous in EVERY_CONNECTION_STATE {
             for next in EVERY_CONNECTION_STATE {
@@ -1492,7 +1491,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::unwrap_used)]
     fn parse_endpoint_drops_the_scheme_and_falls_back_to_the_obs_websocket_port() {
         for (endpoint, expected_host, expected_port) in [
             ("ws://localhost:4455", "localhost", 4455),
@@ -2086,7 +2084,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::unwrap_used, clippy::panic)]
     fn catalog_rows_offer_actions_only_while_connected() {
         use forge_platform_core::{BuiltinContent, DetailSection, TrailingToken};
         use forge_types::Variant;
@@ -2251,7 +2248,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[allow(clippy::unwrap_used)]
     async fn a_connected_client_lists_sources_of_the_scene_the_form_picked() {
         use forge_platform_core::{BuiltinOptionSource, OptionListId, QuickActionFieldValue};
 

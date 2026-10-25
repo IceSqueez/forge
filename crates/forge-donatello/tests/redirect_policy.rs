@@ -1,4 +1,3 @@
-#![allow(clippy::unwrap_used)]
 mod support;
 use forge_donatello::DonatelloError;
 use std::sync::Arc;

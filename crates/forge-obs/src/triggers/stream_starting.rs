@@ -112,7 +112,6 @@ pub(crate) fn build_stream_arg_stack(event: &Event) -> ArgStack {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::super::{
         StreamStartedDescriptor, StreamStartingDescriptor, StreamStatusChangedDescriptor,

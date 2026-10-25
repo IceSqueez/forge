@@ -690,7 +690,6 @@ impl Render for SafetyCopiesView {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::path::Path;
     use std::time::{Duration, Instant};

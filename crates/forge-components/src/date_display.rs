@@ -125,7 +125,6 @@ pub fn fmt_day_period(time_of_day: Time) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::rc::Rc;
 

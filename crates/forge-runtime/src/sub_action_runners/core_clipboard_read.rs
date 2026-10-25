@@ -108,7 +108,6 @@ impl SubActionRunner for CoreClipboardReadRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::sub_action_runners::os_ports::test_ports::{

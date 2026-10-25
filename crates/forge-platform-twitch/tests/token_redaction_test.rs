@@ -1,5 +1,4 @@
 #![allow(clippy::unwrap_used)]
-
 use forge_types::OAuthToken;
 use std::sync::{Arc, Mutex};
 use tracing::subscriber::with_default;

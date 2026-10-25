@@ -60,7 +60,6 @@ impl FormSchemaSource for OverlayContentSchema {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use forge_overlay::register_builtin_kinds;
 

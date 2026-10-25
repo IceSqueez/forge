@@ -65,7 +65,6 @@ impl AudioEventSink for BusAudioEventSink {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::time::Duration;
 

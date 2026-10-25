@@ -12,7 +12,6 @@ pub(crate) fn next_due(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use time::{Date, Duration, Month, OffsetDateTime};
 

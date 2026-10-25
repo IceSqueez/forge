@@ -149,7 +149,6 @@ impl fmt::Display for MoneyAmount {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

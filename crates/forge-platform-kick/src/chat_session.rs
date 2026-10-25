@@ -217,7 +217,6 @@ impl ChatSessions {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 

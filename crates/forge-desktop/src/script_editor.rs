@@ -3824,7 +3824,6 @@ fn api_fn_row(entry: &MethodDescriptor, palette: &ForgePalette) -> impl IntoElem
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
@@ -4369,7 +4368,6 @@ mod tests {
         }
     }
 
-    #[allow(clippy::expect_used)]
     mod lifecycle {
         use forge_components::{Density, Presentation, ThemeId, Toasts};
         use forge_storage::{Language, ScriptReferrer};

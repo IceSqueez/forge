@@ -10,7 +10,6 @@ pub fn datetime_from_text(text: &str) -> Option<OffsetDateTime> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::run_disclosure::DisclosedValue;

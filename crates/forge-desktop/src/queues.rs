@@ -1963,7 +1963,6 @@ fn not_live_badge(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_components::{Density, ThemeId};
     use forge_runtime::{QueueDepth, QueueDepths};

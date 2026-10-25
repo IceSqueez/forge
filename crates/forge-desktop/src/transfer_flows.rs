@@ -337,7 +337,6 @@ impl TransferFlows {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::path::{Path, PathBuf};
     use std::time::Duration;

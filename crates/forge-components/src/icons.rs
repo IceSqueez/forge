@@ -421,7 +421,6 @@ pub fn spinner(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use gpui::AssetSource;
 

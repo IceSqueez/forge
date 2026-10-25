@@ -23,7 +23,6 @@ pub(crate) fn render_inline_pattern(value: OffsetDateTime, pattern: &str) -> Str
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};

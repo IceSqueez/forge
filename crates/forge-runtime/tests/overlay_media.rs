@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
-
+#![allow(clippy::expect_used)]
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};

@@ -905,7 +905,6 @@ fn apply_seed(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex, RwLock};

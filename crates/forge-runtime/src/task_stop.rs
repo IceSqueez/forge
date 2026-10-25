@@ -46,7 +46,6 @@ pub(crate) fn task_stop() -> (TaskStop, StopListener) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::time::Duration;
 

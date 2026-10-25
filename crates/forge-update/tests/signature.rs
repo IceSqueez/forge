@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::unwrap_used)]
 use forge_update::{
     ArtifactKind, Platform, TrustedKeys, UpdateError, parse_version, verify_manifest,
 };

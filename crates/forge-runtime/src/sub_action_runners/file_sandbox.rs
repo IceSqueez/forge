@@ -110,7 +110,6 @@ pub(super) fn glob_matches(pattern: &str, name: &str) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

@@ -120,7 +120,6 @@ impl ViewerMessages {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use forge_components::ChatBody;
     use forge_storage::{ChatAuthorKey, ChatAuthorTally};

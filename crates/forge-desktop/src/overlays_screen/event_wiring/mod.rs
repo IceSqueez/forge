@@ -551,7 +551,6 @@ impl Render for EventWiringView {
 }
 
 #[cfg(test)]
-#[allow(clippy::panic, clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use forge_components::{Density, ThemeId, ToastKind};
     use forge_overlay::kinds::alert::{self, AlertOverlayKind};

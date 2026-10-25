@@ -78,7 +78,6 @@ impl ScreenActionsView {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use gpui::TestAppContext;
 

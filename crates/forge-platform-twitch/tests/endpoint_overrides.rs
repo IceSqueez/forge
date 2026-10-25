@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::unwrap_used)]
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::sync::{Arc, Mutex};

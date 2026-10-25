@@ -301,7 +301,6 @@ fn code_ranges(text: &str, tokens: &[&str]) -> Vec<Range<usize>> {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use forge_overlay::{OverlayKindRegistry, look_contract, register_builtin_kinds};
     use forge_storage::Language;

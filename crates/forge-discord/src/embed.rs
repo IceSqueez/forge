@@ -95,7 +95,6 @@ fn check_no_nul(field: &str, s: &str) -> Result<(), DiscordError> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

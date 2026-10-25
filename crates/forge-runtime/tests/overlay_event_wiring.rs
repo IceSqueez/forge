@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::expect_used, clippy::panic)]
 use std::sync::{Arc, Mutex};
 
 use forge_events::Event;

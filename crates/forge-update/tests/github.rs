@@ -1,5 +1,3 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 use forge_update::{
     GithubRepo, ManifestSource, PublishedRelease, UpdateError, parse_latest_release,
 };

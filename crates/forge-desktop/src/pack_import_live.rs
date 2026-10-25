@@ -302,7 +302,6 @@ fn same_members<T: Eq + Hash>(before: &[T], after: &[T]) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeSet;
     use std::path::PathBuf;

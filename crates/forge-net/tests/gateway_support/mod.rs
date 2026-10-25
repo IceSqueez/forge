@@ -1,4 +1,4 @@
-#![allow(dead_code, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(dead_code, clippy::unwrap_used)]
 
 use std::io::{Read, Write};
 use std::net::{TcpListener as StdTcpListener, TcpStream as StdTcpStream};

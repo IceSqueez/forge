@@ -183,7 +183,6 @@ fn push_to_picker(store: &Entity<StoredFavorites>, picker: &Entity<GridPicker>, 
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 pub(crate) mod tests {
     use forge_components::Toasts;
     use tokio::sync::mpsc::UnboundedReceiver;

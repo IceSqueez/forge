@@ -167,7 +167,6 @@ fn parse_literal(s: &str) -> Option<Lit> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};

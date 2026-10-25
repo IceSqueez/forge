@@ -502,7 +502,6 @@ impl ScriptRepo for RevisingScriptRepo {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::pin::pin;
     use std::task::Poll;

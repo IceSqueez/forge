@@ -549,7 +549,6 @@ async fn run_snapshot_queue(mut queue: tokio::sync::mpsc::UnboundedReceiver<Snap
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use forge_registry::{
         FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionRegistry,

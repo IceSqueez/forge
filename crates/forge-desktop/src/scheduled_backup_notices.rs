@@ -170,7 +170,6 @@ fn dismiss_toast(id: u64, cx: &mut App) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Mutex;
 

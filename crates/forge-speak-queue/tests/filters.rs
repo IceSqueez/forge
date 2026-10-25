@@ -1,4 +1,3 @@
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod filters {
     use forge_speak_queue::{
         PipelineConfigHandle, ReplacementSource, build_config_lenient,

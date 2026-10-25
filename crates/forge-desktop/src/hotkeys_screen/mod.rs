@@ -404,7 +404,6 @@ impl Render for HotkeysScreenView {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use forge_hotkey::HotkeyConfig;
     use gpui::{Entity, TestAppContext};

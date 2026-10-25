@@ -230,7 +230,6 @@ impl CriticalSubscription {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_registry::{
         EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,

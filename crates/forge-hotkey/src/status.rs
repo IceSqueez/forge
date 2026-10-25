@@ -61,7 +61,6 @@ impl BuiltinStatus for HotkeyClient {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_platform_core::{BuiltinStatus, ConnectionState, HeaderAction};
 

@@ -130,7 +130,6 @@ impl ClipKeyState {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use forge_hotkey::HotkeyCombo;
     use forge_types::{ActionId, TriggerInstanceId};

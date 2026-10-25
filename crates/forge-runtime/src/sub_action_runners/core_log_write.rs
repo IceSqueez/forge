@@ -97,7 +97,6 @@ fn parse_level(s: &str) -> LogLevel {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

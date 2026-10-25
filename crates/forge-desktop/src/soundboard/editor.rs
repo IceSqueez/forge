@@ -251,7 +251,6 @@ pub(crate) fn audio_dialog_extensions() -> Vec<&'static str> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

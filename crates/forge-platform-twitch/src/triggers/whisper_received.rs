@@ -260,7 +260,6 @@ fn whisper_text(event: &Event) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

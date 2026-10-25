@@ -119,7 +119,6 @@ fn session_host_identity(event: &Event) -> ActorIdentity {
 }
 
 #[cfg(test)]
-#[allow(clippy::panic)]
 mod tests {
     use super::*;
     use forge_events::Event;

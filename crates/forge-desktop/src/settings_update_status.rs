@@ -99,7 +99,6 @@ pub fn status_line(status: &UpdateCheckStatus, palette: &ForgePalette) -> Option
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use forge_components::{DateShape, fmt_display};
     use forge_storage::Language;

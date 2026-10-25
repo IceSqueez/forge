@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use std::process::Command;
 
 use forge_events::{Event, EventPublisher};

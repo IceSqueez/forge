@@ -105,7 +105,6 @@ async fn connected_clients_snapshot(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::collections::HashSet;
     use std::sync::Arc;

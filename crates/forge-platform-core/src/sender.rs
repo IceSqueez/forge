@@ -69,7 +69,6 @@ impl ActingSender {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use serde_json::json;
 

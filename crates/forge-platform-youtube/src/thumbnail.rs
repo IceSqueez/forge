@@ -77,7 +77,6 @@ fn content_type_for(path: &str) -> &'static str {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};

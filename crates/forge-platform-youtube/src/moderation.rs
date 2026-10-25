@@ -308,7 +308,6 @@ fn ledger_failure(error: StorageError) -> PlatformError {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use serde_json::json;
     use wiremock::matchers::{method, path, query_param, query_param_is_missing};

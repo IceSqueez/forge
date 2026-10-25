@@ -92,7 +92,6 @@ impl InputDirWatcher {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::time::Duration;

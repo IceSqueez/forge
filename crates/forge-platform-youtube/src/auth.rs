@@ -196,7 +196,6 @@ pub(crate) struct ChannelSnippet {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::collections::HashMap;
     use std::ffi::OsString;

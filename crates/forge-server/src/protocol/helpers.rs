@@ -53,7 +53,6 @@ pub(crate) fn build_arg_stack(args: serde_json::Value) -> ArgStack {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use time::{Date, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset};

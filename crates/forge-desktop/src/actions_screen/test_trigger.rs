@@ -36,7 +36,6 @@ pub(super) async fn dispatch_test_run(
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use std::sync::Arc;
     use std::time::Duration;

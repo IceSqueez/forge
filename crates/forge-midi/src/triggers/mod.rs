@@ -29,7 +29,6 @@ pub fn register_midi_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryE
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeMap;
 

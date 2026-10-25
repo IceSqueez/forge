@@ -78,8 +78,8 @@ impl PiperEngine {
 }
 
 #[cfg(all(test, unix))]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
+    #![allow(clippy::expect_used)]
     use std::path::{Path, PathBuf};
     use std::time::Duration;
 

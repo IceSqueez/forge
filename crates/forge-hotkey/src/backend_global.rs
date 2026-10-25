@@ -290,7 +290,6 @@ fn str_to_code(s: &str) -> Option<Code> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

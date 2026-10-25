@@ -208,7 +208,6 @@ async fn sleep_until_due(deadline: Option<Instant>) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::time::Duration;
 

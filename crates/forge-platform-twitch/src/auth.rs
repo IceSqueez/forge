@@ -385,7 +385,6 @@ fn resolve_client_id(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::sync::Arc;
 

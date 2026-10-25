@@ -1,5 +1,4 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
+#![allow(clippy::expect_used)]
 use forge_storage::{ActionRepo, DataProvider};
 use forge_storage_sqlite::{SqliteActionRepo, apply_migrations, connect, registry_migration};
 use forge_types::{Action, ActionId, ExecutionMode, QueueId, SubActionStep, Variant};

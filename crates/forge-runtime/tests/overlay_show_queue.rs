@@ -1,5 +1,4 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

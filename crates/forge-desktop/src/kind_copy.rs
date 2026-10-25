@@ -41,7 +41,6 @@ fn kind_copy(prefix: &str, kind_id: &str, english: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::rc::Rc;
 

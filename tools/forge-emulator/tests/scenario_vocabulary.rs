@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::unwrap_used)]
 use forge_emulator::scenario::{
     ChatViewer, Crowd, CrowdLine, EventPattern, ObservedEvent, PayloadMatchers,
 };

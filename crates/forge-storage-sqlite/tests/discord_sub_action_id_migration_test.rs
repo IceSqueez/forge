@@ -1,5 +1,4 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
+#![allow(clippy::expect_used)]
 use forge_storage_sqlite::{connect, registry_migration};
 use forge_types::{ActionId, SubActionStep, Variant};
 use sqlx::SqlitePool;

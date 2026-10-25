@@ -1090,7 +1090,6 @@ mod tests {
             && (a.a - b.a).abs() < EPS
     }
 
-    #[allow(clippy::panic)]
     fn assert_border(actual: Option<Rgba>, want: Option<Rgba>, label: &str) {
         match (actual, want) {
             (None, None) => {}

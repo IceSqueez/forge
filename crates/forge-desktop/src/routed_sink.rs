@@ -39,7 +39,6 @@ impl AudioSink for RoutedSink {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::panic::AssertUnwindSafe;
     use std::sync::atomic::{AtomicUsize, Ordering};

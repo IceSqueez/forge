@@ -182,7 +182,6 @@ pub fn type_mismatch(name: &str, found: &Variant) -> StorageError {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

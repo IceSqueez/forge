@@ -373,7 +373,6 @@ pub fn register_core_sub_actions(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::{
         CoreActionScheduleRunner, CoreHttpRunner, CoreLogicIfThenElseRunner, CoreLogicLoopRunner,

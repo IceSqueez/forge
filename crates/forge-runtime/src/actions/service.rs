@@ -309,7 +309,6 @@ fn compute_last_step_outcomes(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::HashMap;
 

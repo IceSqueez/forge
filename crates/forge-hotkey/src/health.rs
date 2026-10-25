@@ -203,7 +203,6 @@ fn backend_label(_portal_available: Option<bool>) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_platform_core::BuiltinHealth;
 

@@ -180,7 +180,6 @@ pub(super) fn landed_note(records: &OverlayWiringRecords) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeSet;
 

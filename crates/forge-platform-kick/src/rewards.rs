@@ -291,7 +291,6 @@ fn check_redemption_batch(operation: &str, ids: &[String]) -> Result<(), Platfor
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use wiremock::matchers::{method, path, query_param};

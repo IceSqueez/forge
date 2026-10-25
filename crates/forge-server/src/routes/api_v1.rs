@@ -217,7 +217,6 @@ pub fn router() -> Router<AppState> {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};

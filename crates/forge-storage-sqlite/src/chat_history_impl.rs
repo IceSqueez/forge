@@ -452,7 +452,6 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_storage::ChatHistoryRepo;
     use forge_types::EventId;

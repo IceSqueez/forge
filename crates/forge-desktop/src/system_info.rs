@@ -489,7 +489,6 @@ pub fn directory_size(root: &Path) -> Option<u64> {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use std::collections::HashSet;
     use std::fs;

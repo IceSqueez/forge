@@ -1120,7 +1120,6 @@ impl ScreenActionsView {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::HashMap;
 

@@ -151,7 +151,6 @@ fn updated_user_identity(event: &Event) -> ActorIdentity {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use forge_registry::TriggerKindDescriptor;

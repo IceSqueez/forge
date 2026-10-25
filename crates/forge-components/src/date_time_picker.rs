@@ -660,7 +660,6 @@ fn month_name(month: Month) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::rc::Rc;
 

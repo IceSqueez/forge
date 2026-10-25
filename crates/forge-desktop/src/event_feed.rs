@@ -1322,7 +1322,6 @@ fn sent_tag(payload: &serde_json::Value) -> gpui::SharedString {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Mutex;
 

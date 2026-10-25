@@ -93,7 +93,6 @@ pub(crate) fn build_studio_arg_stack(event: &Event) -> ArgStack {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::super::{StudioDisabledDescriptor, StudioEnabledDescriptor};
     use super::*;

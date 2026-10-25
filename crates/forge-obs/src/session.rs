@@ -88,7 +88,6 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    #[allow(clippy::unwrap_used, clippy::expect_used)]
     async fn an_unanswered_request_times_out_exactly_when_its_deadline_elapses() {
         let request = tokio::spawn(with_deadline(REQUEST_TIMEOUT, "GetStats", unanswered()));
 

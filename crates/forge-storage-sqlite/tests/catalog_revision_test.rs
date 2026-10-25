@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
 use forge_storage::{CatalogRevision, DataProvider, ExecutionStatus, ScriptRecord, ScriptRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{

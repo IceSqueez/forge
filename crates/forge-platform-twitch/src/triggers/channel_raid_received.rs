@@ -141,7 +141,6 @@ fn raid_viewer_count(event: &Event) -> i64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::triggers::raid_sent::RaidSentDescriptor;

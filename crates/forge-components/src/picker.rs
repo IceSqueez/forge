@@ -378,7 +378,6 @@ impl Render for Picker {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use gpui::{AppContext, Modifiers, VisualTestContext, point};
 

@@ -141,7 +141,6 @@ pub fn register_obs_sub_actions(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeMap;
 

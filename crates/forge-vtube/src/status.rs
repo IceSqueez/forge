@@ -51,7 +51,6 @@ impl BuiltinStatus for VTubeClient {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_platform_core::BuiltinStatus;
 

@@ -100,7 +100,6 @@ pub(crate) fn message_to_bytes(message: &MidiOutMessage) -> Result<Vec<u8>, Midi
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

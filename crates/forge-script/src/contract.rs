@@ -55,7 +55,6 @@ pub fn build_scope_for_contract(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_types::{ArgStack, ScriptInput, Variant, VariantKind};
 

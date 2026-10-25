@@ -445,7 +445,6 @@ fn interrupted_before_ready(scenario: &Scenario) -> ScenarioOutcome {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::path::Path;
 

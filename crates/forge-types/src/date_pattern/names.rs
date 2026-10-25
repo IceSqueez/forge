@@ -216,7 +216,6 @@ static UK: CalendarNames = CalendarNames {
 };
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use time::{Date, Month, OffsetDateTime, UtcOffset};
 

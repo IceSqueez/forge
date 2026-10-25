@@ -123,7 +123,6 @@ async fn created_at_if_ours(path: &Path, key_fingerprint: &str) -> Option<Offset
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeSet;
     use std::path::Path;

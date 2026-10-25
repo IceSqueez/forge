@@ -81,7 +81,6 @@ pub(crate) async fn send_whisper_to(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::sub_actions::test_support::{

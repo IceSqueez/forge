@@ -57,7 +57,6 @@ impl ConditionEvaluator {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};

@@ -203,7 +203,6 @@ pub fn host_rejection_cause(error: &(dyn Error + 'static)) -> Option<HostRejecti
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use reqwest::dns::{Name, Resolve};

@@ -381,7 +381,6 @@ impl Render for SetupImportFlow {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::cell::Cell;
     use std::collections::BTreeSet;

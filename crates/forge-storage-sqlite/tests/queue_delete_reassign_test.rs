@@ -1,5 +1,4 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use forge_storage::{ActionRepo, QueueRepo, StorageError};
 use forge_storage_sqlite::{SqliteActionRepo, SqliteQueueRepo, apply_migrations, connect};
 use forge_types::{Action, ActionId, DEFAULT_QUEUE_ID, ExecutionMode, Queue, QueueId};

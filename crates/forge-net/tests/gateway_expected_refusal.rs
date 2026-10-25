@@ -1,5 +1,3 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 mod gateway_support;
 
 use forge_net::test_support::RecordingRateLimiter;

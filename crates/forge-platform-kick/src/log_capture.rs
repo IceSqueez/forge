@@ -1,5 +1,3 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
-
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex, OnceLock};

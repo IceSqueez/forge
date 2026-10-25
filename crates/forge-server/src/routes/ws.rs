@@ -291,7 +291,6 @@ fn message_limit(client: &WsClient, auth: &AuthState) -> usize {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::dropped_notification;
 

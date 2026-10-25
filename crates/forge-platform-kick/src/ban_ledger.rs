@@ -79,7 +79,6 @@ fn non_empty_str<'a>(object: &'a Value, field: &str) -> Option<&'a str> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use serde_json::json;
 

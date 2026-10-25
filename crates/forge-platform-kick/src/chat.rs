@@ -510,7 +510,6 @@ struct PusherFrame {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 pub(crate) mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};

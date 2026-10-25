@@ -1,5 +1,3 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
-
 use std::path::{Path, PathBuf};
 
 const COMMAND_TARGET: &str = "forge::command";

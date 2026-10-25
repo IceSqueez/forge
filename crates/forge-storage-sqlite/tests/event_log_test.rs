@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
 use forge_events::{Event, EventSource};
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;

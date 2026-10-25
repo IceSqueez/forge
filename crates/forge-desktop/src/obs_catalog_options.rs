@@ -191,7 +191,6 @@ pub(crate) fn watch_obs_catalog<V: 'static>(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use async_trait::async_trait;
     use forge_obs::{ObsError, SourceInfo};

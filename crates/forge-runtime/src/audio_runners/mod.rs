@@ -61,7 +61,6 @@ pub fn register_audio_sub_actions(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::sync::{Arc, Mutex};
 

@@ -95,7 +95,6 @@ pub async fn resolve_broadcaster_tier(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::sub_actions::test_support::{MockTransport, users_fixture};

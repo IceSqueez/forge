@@ -178,7 +178,6 @@ fn near_expiry(creds: &KickCredentials) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicBool, Ordering};

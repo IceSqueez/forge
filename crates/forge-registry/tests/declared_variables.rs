@@ -1,5 +1,3 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
-
 use forge_events::Event;
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,

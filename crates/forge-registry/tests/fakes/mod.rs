@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used)]
-
 use async_trait::async_trait;
 use forge_events::Event;
 use forge_registry::{

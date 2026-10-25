@@ -34,7 +34,6 @@ pub(crate) fn set(stack: ArgStack, name: &str, value: Option<Variant>) -> ArgSta
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 pub(crate) mod tests {
     use super::*;
     use std::io::Write;

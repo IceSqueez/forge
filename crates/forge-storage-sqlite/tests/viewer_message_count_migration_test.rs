@@ -1,5 +1,4 @@
 #![allow(clippy::expect_used)]
-
 use forge_storage::{ViewerMessage, ViewerRepo};
 use forge_storage_sqlite::{MIGRATIONS, SqliteViewerRepo, apply_migrations, connect};
 use forge_types::PlatformId;

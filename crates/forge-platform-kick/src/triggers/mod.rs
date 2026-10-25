@@ -11,7 +11,6 @@ pub(crate) mod sub;
 pub(crate) mod sub_gift;
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_events::{Event, EventSource};
     use forge_registry::{TriggerKindDescriptor, TriggerRegistry};

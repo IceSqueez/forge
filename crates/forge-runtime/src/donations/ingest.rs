@@ -196,7 +196,6 @@ fn verdict(donation: &Donation, baseline: bool, now: OffsetDateTime) -> Verdict 
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, Ordering};

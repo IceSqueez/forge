@@ -109,7 +109,6 @@ fn is_running(pid: Pid) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::process::{Command, Stdio};
 

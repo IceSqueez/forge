@@ -116,7 +116,6 @@ impl AudioRouter {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::time::Duration;
 

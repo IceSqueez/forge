@@ -108,7 +108,6 @@ async fn snapshot_and_plan(
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
     use forge_update::InstallLayout;
     use time::{Date, Month, PrimitiveDateTime, Time};

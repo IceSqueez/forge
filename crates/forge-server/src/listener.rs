@@ -232,7 +232,6 @@ impl Connected<IncomingStream<'_, GuardedListener>> for PeerInfo {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use std::cell::Cell;
     use std::io;

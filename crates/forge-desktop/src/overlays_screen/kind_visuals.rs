@@ -47,7 +47,6 @@ pub(super) fn kind_visuals(
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use std::collections::HashSet;
 

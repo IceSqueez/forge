@@ -123,7 +123,6 @@ impl FollowLookup for YoutubeIntegrationBundle {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::time::Duration;
 

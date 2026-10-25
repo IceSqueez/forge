@@ -415,7 +415,6 @@ impl Render for VariablePicker {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use gpui::{AppContext, VisualTestContext};
 

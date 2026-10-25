@@ -53,7 +53,6 @@ fn credential_key(platform: PlatformId) -> &'static str {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 pub(crate) mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Mutex;

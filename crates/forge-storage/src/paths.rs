@@ -79,7 +79,6 @@ pub fn credentials_key_path() -> PathBuf {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::path::Path;
 

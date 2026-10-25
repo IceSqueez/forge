@@ -114,7 +114,6 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::runners::test_support::{RecordingSink, make_ctx};

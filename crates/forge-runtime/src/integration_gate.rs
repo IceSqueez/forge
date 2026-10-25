@@ -184,7 +184,6 @@ where
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::pin::pin;
     use std::sync::atomic::{AtomicBool, Ordering};

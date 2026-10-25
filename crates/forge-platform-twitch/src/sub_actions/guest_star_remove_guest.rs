@@ -154,7 +154,6 @@ impl SubActionRunner for GuestStarRemoveGuestRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::helix::HelixError;

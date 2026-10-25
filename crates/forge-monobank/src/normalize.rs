@@ -67,7 +67,6 @@ fn donor_name(counter_name: Option<&str>, description: Option<&str>) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_types::{Donation, DonationOrigin, Donor, IntegrationId};
     use serde_json::{Value, json};

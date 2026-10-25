@@ -9,7 +9,6 @@ pub(crate) async fn restart_ignoring_disabled(handle: &ServerHandle) -> Result<(
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use std::sync::Arc;
 

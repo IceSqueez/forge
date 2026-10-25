@@ -148,7 +148,6 @@ fn hex_to_key(hex: &str) -> Result<[u8; 32], SqliteStorageError> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

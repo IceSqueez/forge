@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
+#![allow(clippy::panic)]
 use forge_overlay::config::{HEADLINE, SUBLINE};
 use forge_overlay::kinds::alert::AlertOverlayKind;
 use forge_overlay::{OverlayConfig, SampleContext, SampleTrigger, sample_content, sample_context};

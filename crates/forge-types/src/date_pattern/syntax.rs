@@ -190,7 +190,6 @@ fn field_for_spelling(spelling: &str) -> Option<DateField> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use time::{Date, Month, UtcOffset};
 

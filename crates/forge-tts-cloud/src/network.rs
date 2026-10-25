@@ -153,7 +153,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, dead_code)]
+#[allow(dead_code)]
 pub(crate) mod test_support {
     use std::sync::Arc;
     use std::sync::mpsc;
@@ -241,7 +241,6 @@ pub(crate) mod test_support {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::test_support::{
         PAST_WAIT_THRESHOLD_SECS, freeze_clock, request_count, serving, throttled,

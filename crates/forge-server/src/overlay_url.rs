@@ -56,7 +56,6 @@ pub fn overlay_file_url(origin: &str, token: &str, file_name: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 

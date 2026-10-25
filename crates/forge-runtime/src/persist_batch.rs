@@ -232,7 +232,6 @@ async fn linger<I: BatchIntake>(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Mutex;
 

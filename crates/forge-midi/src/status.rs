@@ -57,7 +57,6 @@ impl BuiltinStatus for MidiClient {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::events::{MidiPortInfo, PortDirection};

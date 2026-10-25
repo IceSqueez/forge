@@ -1544,7 +1544,6 @@ fn next_request<'a>(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use async_trait::async_trait;
     use forge_audio::{AudioError, AudioSink};

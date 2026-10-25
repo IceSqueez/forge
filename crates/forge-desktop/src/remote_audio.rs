@@ -226,7 +226,6 @@ fn verdict_of(outcome: ClipOutcome) -> RemoteVerdict {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::sync::Arc;
     use std::time::Duration;

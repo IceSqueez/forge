@@ -2593,7 +2593,6 @@ fn is_replacement_kind(kind: &FilterRuleKind) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Mutex;
 

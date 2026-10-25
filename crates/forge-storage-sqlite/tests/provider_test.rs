@@ -1,5 +1,4 @@
 #![allow(clippy::expect_used)]
-
 use forge_storage::{DataProvider, GlobalsRepo};
 use forge_types::Variant;
 

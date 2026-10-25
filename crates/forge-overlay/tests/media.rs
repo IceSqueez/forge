@@ -1,5 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
-
+#![allow(clippy::expect_used)]
 use forge_overlay::config::{DEFAULT_ICON, HEADLINE, ICON, SOUND, SUBLINE};
 use forge_overlay::{
     CLIP_REFERENCE_PREFIX, ClipReference, EmittedIcon, GENERATED_MEDIA_DIRECTORY,

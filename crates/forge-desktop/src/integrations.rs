@@ -677,7 +677,6 @@ pub(crate) fn spawn_connect(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 pub(crate) mod tests {
     use super::*;
     use forge_events::EventStream;

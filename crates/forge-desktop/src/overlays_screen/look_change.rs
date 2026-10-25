@@ -115,7 +115,6 @@ impl OverlaysView {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use forge_overlay::config::{ACCENT, DURATION, HEADLINE, ICON, SOUND, SPEECH, SPEECH_VOICE};
     use forge_overlay::kinds::alert::AlertOverlayKind;

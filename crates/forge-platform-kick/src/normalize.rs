@@ -197,7 +197,6 @@ pub(crate) fn channel_hosted(raw: &Value) -> Value {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use serde_json::json;
 

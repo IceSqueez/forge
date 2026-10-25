@@ -209,7 +209,6 @@ impl SubActionRunner for ScriptRunInlineRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::test_support::{Sandboxed, sandboxed_backend};

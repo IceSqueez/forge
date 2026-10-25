@@ -306,7 +306,6 @@ pub fn percentile(samples: &[u32], pct: f64) -> Option<u32> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::time::Duration;
 

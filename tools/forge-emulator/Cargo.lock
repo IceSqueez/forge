@@ -1457,7 +1457,6 @@ dependencies = [
  "forge-types",
  "futures-core",
  "rand 0.10.2",
- "reqwest",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -1465,6 +1464,7 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -1481,7 +1481,6 @@ dependencies = [
  "futures",
  "futures-core",
  "futures-util",
- "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -1506,7 +1505,6 @@ dependencies = [
  "forge-types",
  "futures-util",
  "regex",
- "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -1531,7 +1529,6 @@ dependencies = [
  "forge-types",
  "futures",
  "jiff",
- "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.20",

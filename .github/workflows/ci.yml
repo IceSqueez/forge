@@ -42,6 +42,10 @@ jobs:
         with:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
+      - name: HTTP client boundary
+        shell: bash
+        run: python3 .github/scripts/http-client-boundary.py
+
       - name: Check formatting
         shell: bash
         run: cargo fmt --all -- --check

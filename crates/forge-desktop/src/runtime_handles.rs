@@ -51,7 +51,7 @@ pub struct RuntimeHandles {
     pub integrations: IntegrationSupervisor<BuiltinObject>,
     pub obs_install_seed: ObsInstallSeed,
     pub vtube_install_seed: VTubeInstallSeed,
-    pub discord_client: Arc<forge_discord::DiscordClient>,
+    pub discord_client: Option<Arc<forge_discord::DiscordClient>>,
     pub donation_services: crate::donation_services::DonationServices,
     pub twitch_bot: Option<Arc<forge_platform_twitch::TwitchBotAccount>>,
     pub twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,

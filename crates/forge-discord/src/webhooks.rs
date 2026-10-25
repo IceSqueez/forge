@@ -1,30 +1,12 @@
 use forge_storage::CredentialId;
 
-use crate::client::DiscordClient;
+use crate::client::{DiscordClient, SendRecord};
 use crate::credentials::{DISCORD_CRED_PREFIX, WebhookCredential};
 use crate::error::DiscordError;
-
-const WEBHOOK_HOSTS: [&str; 2] = ["discord.com", "discordapp.com"];
+use crate::route::WebhookRoute;
 
 pub fn validate_webhook_url(url: &str) -> Result<(), DiscordError> {
-    let rejected = || DiscordError::Validation("not a discord webhook endpoint".to_owned());
-
-    let rest = url.trim().strip_prefix("https://").ok_or_else(rejected)?;
-    let (host, path) = rest.split_once('/').ok_or_else(rejected)?;
-    let host_allowed = WEBHOOK_HOSTS
-        .iter()
-        .any(|allowed| host == *allowed || host.ends_with(&format!(".{allowed}")));
-
-    let mut segments = path.split('/');
-    let route_allowed = segments.next() == Some("api") && segments.next() == Some("webhooks");
-    let has_id = segments.next().is_some_and(|segment| !segment.is_empty());
-    let has_token = segments.next().is_some_and(|segment| !segment.is_empty());
-
-    if host_allowed && route_allowed && has_id && has_token {
-        Ok(())
-    } else {
-        Err(rejected())
-    }
+    WebhookRoute::parse(url).map(|_| ())
 }
 
 fn credential_id(name: &str) -> CredentialId {
@@ -106,10 +88,13 @@ impl DiscordClient {
         url: &str,
         content: &str,
     ) -> Result<String, DiscordError> {
-        let url = url.trim();
-        validate_webhook_url(url)?;
+        let route = WebhookRoute::parse(url)?;
         let body = serde_json::json!({ "content": content });
-        self.execute_post(url, body, webhook_name, 0, false).await
+        let record = SendRecord {
+            embed_count: 0,
+            register_name: false,
+        };
+        self.execute_post(&route, &body, webhook_name, record).await
     }
 }
 
@@ -139,14 +124,50 @@ mod tests {
         Some(blob["url"].as_str().unwrap().to_owned())
     }
 
+    const ACCEPTED_HOSTS: [&str; 6] = [
+        "discord.com",
+        "discordapp.com",
+        "ptb.discord.com",
+        "canary.discord.com",
+        "canary.discordapp.com",
+        "a.b.discord.com",
+    ];
+
+    const REFUSED_URLS: [&str; 29] = [
+        "http://discord.com/api/webhooks/1/tok",
+        "ftp://discord.com/api/webhooks/1/tok",
+        "discord.com/api/webhooks/1/tok",
+        "https://evildiscord.com/api/webhooks/1/tok",
+        "https://evildiscordapp.com/api/webhooks/1/tok",
+        "https://evil-discord.com/api/webhooks/1/tok",
+        "https://discord.community/api/webhooks/1/tok",
+        "https://discord.com.attacker.io/api/webhooks/1/tok",
+        "https://discord.com@attacker.io/api/webhooks/1/tok",
+        "https://discord.com:8443/api/webhooks/1/tok",
+        "https://attacker.io/api/webhooks/1/tok",
+        "https://discord.com",
+        "https://discord.com/api/webhooks/1",
+        "https://discord.com/api/webhooks/1/",
+        "https://discord.com/api/webhooks//tok",
+        "https://discord.com/v1/webhooks/1/tok",
+        "https://discord.com/api/channels/1/tok",
+        "https://discord.com/api/webhooks/12a/tok",
+        "https://discord.com/api/webhooks/+1/tok",
+        "https://discord.com/api/webhooks/-1/tok",
+        "https://discord.com/api/webhooks/18446744073709551616/tok",
+        "https://discord.com/api/webhooks/\u{0661}/tok",
+        "https://discord.com/api/webhooks/1/..",
+        "https://discord.com/api/webhooks/1/to..ken",
+        "https://discord.com/api/webhooks/1/%2e%2e",
+        "https://discord.com/api/webhooks/1/tok%2Fen",
+        "https://discord.com/api/webhooks/1/tok%20en",
+        "",
+        "not a url at all",
+    ];
+
     #[test]
-    fn validate_webhook_url_accepts_official_and_staging_hosts() {
-        for host in [
-            "discord.com",
-            "discordapp.com",
-            "ptb.discord.com",
-            "canary.discord.com",
-        ] {
+    fn validate_webhook_url_accepts_discord_and_discordapp_hosts_and_their_subdomains() {
+        for host in ACCEPTED_HOSTS {
             let url = format!("https://{host}/api/webhooks/1234567890/token-value");
             assert!(
                 validate_webhook_url(&url).is_ok(),
@@ -157,22 +178,7 @@ mod tests {
 
     #[test]
     fn validate_webhook_url_rejects_urls_outside_the_webhook_contract() {
-        for bad in [
-            "http://discord.com/api/webhooks/1/tok",
-            "ftp://discord.com/api/webhooks/1/tok",
-            "discord.com/api/webhooks/1/tok",
-            "https://evildiscord.com/api/webhooks/1/tok",
-            "https://discord.com.attacker.io/api/webhooks/1/tok",
-            "https://discord.com@attacker.io/api/webhooks/1/tok",
-            "https://discord.com",
-            "https://discord.com/api/webhooks/1",
-            "https://discord.com/api/webhooks/1/",
-            "https://discord.com/api/webhooks//tok",
-            "https://discord.com/v1/webhooks/1/tok",
-            "https://discord.com/api/channels/1/tok",
-            "",
-            "not a url at all",
-        ] {
+        for bad in REFUSED_URLS {
             assert!(
                 matches!(validate_webhook_url(bad), Err(DiscordError::Validation(_))),
                 "expected rejection for {bad:?}"
@@ -279,18 +285,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn save_webhook_rejects_a_non_discord_url_without_touching_storage() {
+    async fn save_webhook_refuses_every_url_a_send_would_refuse_without_touching_storage() {
         let creds = MockCreds::new();
         let client = client_with(&creds);
 
-        let err = client
-            .save_webhook("alerts", "https://attacker.io/api/webhooks/1/tok")
-            .await
-            .unwrap_err();
+        for bad in REFUSED_URLS {
+            let err = client.save_webhook("alerts", bad).await.unwrap_err();
 
-        assert!(matches!(err, DiscordError::Validation(_)));
+            assert!(
+                matches!(err, DiscordError::Validation(_)),
+                "{bad:?}: {err:?}"
+            );
+        }
         assert!(creds.keys().is_empty());
         assert!(client.webhook_names().is_empty());
+    }
+
+    #[tokio::test]
+    async fn save_webhook_accepts_discord_and_discordapp_subdomains() {
+        let creds = MockCreds::new();
+        let client = client_with(&creds);
+
+        for (index, host) in ACCEPTED_HOSTS.into_iter().enumerate() {
+            let url = format!("https://{host}/api/webhooks/1234567890/token-value");
+            client
+                .save_webhook(&format!("hook-{index}"), &url)
+                .await
+                .unwrap();
+
+            assert_eq!(
+                stored_url(&creds, &format!("discord:hook-{index}")),
+                Some(url)
+            );
+        }
     }
 
     #[tokio::test]

@@ -2,12 +2,16 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use forge_events::EventPublisher;
+use forge_net::{
+    CallClass, Gateway, GatewayFailure, GatewayProfile, GatewayRequest, GatewayResponse,
+    HeaderLookup, MAX_THROTTLE_WAIT, Method, MultipartBody, RequestBody, ThrottleHintFamily,
+    ThrottleScope,
+};
 use forge_platform_core::ConnectionState;
 use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::IntegrationId;
 use tokio::sync::broadcast;
 
-use crate::config::DiscordConfig;
 use crate::content::{DiscordContentSnapshot, make_content_state, record_send, record_test_send};
 use crate::credentials::{DISCORD_CRED_PREFIX, WebhookCredential};
 use crate::embed::DiscordEmbed;
@@ -17,43 +21,80 @@ use crate::health::{
     DiscordHealthSnapshot, make_health_state, record_missing_webhook, update_on_send,
 };
 use crate::mention::MentionPolicy;
-use crate::ratelimit::{DiscordRateLimiter, RateLimitOutcome};
+use crate::ratelimit::{
+    DiscordRateLimiter, GlobalThrottleGate, RateLimitOutcome, SharedDiscordRateLimiter,
+};
+use crate::route::WebhookRoute;
 use crate::sink::DiscordSink;
 
 pub(crate) type HealthTx = broadcast::Sender<forge_platform_core::HealthDelta>;
+
+const NO_HINT_RETRY_WAIT: Duration = Duration::from_secs(1);
+
+const DISCORD_GATEWAY_PROFILE: GatewayProfile = GatewayProfile::platform_api(
+    CallClass::Interactive,
+    ThrottleHintFamily::ResetAfterSeconds,
+    NO_HINT_RETRY_WAIT,
+);
+
+const BUCKET_LIMIT_HEADER: &str = "x-ratelimit-limit";
+const BUCKET_REMAINING_HEADER: &str = "x-ratelimit-remaining";
+const BUCKET_RESET_AFTER_HEADER: &str = "x-ratelimit-reset-after";
+const PAYLOAD_JSON_PART: &str = "payload_json";
+const FIRST_FILE_PART: &str = "files[0]";
+const UPLOAD_CONTENT_TYPE: &str = "application/octet-stream";
+
+#[derive(Clone, Copy)]
+pub(crate) struct SendRecord {
+    pub(crate) embed_count: u8,
+    pub(crate) register_name: bool,
+}
+
+const PLAIN_SEND: SendRecord = SendRecord {
+    embed_count: 0,
+    register_name: true,
+};
+
+struct Delivered {
+    response: GatewayResponse,
+    latency_ms: u64,
+}
 
 pub struct DiscordClient {
     pub(crate) id: IntegrationId,
     pub(crate) publisher: Arc<dyn EventPublisher>,
     pub(crate) creds: Arc<dyn CredentialsRepo>,
-    pub(crate) http: reqwest::Client,
+    pub(crate) gateway: Gateway,
     pub(crate) health_tx: HealthTx,
     pub(crate) health_state: Arc<Mutex<DiscordHealthSnapshot>>,
     pub(crate) content_state: Arc<Mutex<DiscordContentSnapshot>>,
-    pub(crate) rate_limiter: Arc<Mutex<DiscordRateLimiter>>,
+    pub(crate) rate_limiter: SharedDiscordRateLimiter,
     pub(crate) webhook_registry_serial: tokio::sync::Mutex<()>,
 }
 
 impl DiscordClient {
     pub fn new(
-        config: DiscordConfig,
+        api_base: &str,
         publisher: Arc<dyn EventPublisher>,
         creds: Arc<dyn CredentialsRepo>,
-    ) -> Arc<Self> {
-        #[allow(clippy::expect_used)]
-        let http = reqwest::Client::builder()
-            .timeout(config.request_timeout)
-            .build()
-            .expect("reqwest TLS client init failed; system certificates may be missing");
+    ) -> Result<Arc<Self>, DiscordError> {
+        let rate_limiter: SharedDiscordRateLimiter =
+            Arc::new(Mutex::new(DiscordRateLimiter::new()));
+        let gateway = Gateway::new(
+            api_base,
+            Arc::new(GlobalThrottleGate::new(Arc::clone(&rate_limiter))),
+            DISCORD_GATEWAY_PROFILE,
+            None,
+        )
+        .map_err(|e| DiscordError::Connect(e.to_string()))?;
         let (health_tx, health_state) = make_health_state();
         let content_state = make_content_state();
-        let rate_limiter = Arc::new(Mutex::new(DiscordRateLimiter::new()));
 
         let client = Arc::new(Self {
             id: crate::DISCORD_INTEGRATION.id,
             publisher,
             creds,
-            http,
+            gateway,
             health_tx,
             health_state,
             content_state: Arc::clone(&content_state),
@@ -66,7 +107,7 @@ impl DiscordClient {
             let _ = boot_sync.list_webhooks().await;
         });
 
-        client
+        Ok(client)
     }
 
     pub(crate) fn connection_state(&self) -> ConnectionState {
@@ -99,14 +140,15 @@ impl DiscordClient {
         })
     }
 
-    async fn load_webhook_checked(&self, name: &str) -> Result<WebhookCredential, DiscordError> {
-        match self.load_webhook(name).await {
-            Ok(cred) => Ok(cred),
+    async fn load_route(&self, name: &str) -> Result<WebhookRoute, DiscordError> {
+        let cred = match self.load_webhook(name).await {
+            Ok(cred) => cred,
             Err(err) => {
                 self.record_missing_webhook_failure(name, &err);
-                Err(err)
+                return Err(err);
             }
-        }
+        };
+        WebhookRoute::parse(&cred.url)
     }
 
     fn record_missing_webhook_failure(&self, webhook_name: &str, err: &DiscordError) {
@@ -139,12 +181,12 @@ impl DiscordClient {
         content: &str,
         mentions: MentionPolicy,
     ) -> Result<String, DiscordError> {
-        let cred = self.load_webhook_checked(webhook_name).await?;
+        let route = self.load_route(webhook_name).await?;
         let body = serde_json::json!({
             "content": content,
             "allowed_mentions": mentions.to_wire(),
         });
-        self.execute_post(&cred.url, body, webhook_name, 0, true)
+        self.execute_post(&route, &body, webhook_name, PLAIN_SEND)
             .await
     }
 
@@ -154,10 +196,13 @@ impl DiscordClient {
         embed: DiscordEmbed,
     ) -> Result<String, DiscordError> {
         embed.validate()?;
-        let cred = self.load_webhook_checked(webhook_name).await?;
+        let route = self.load_route(webhook_name).await?;
         let body = serde_json::json!({ "embeds": [embed_to_wire(&embed)] });
-        self.execute_post(&cred.url, body, webhook_name, 1, true)
-            .await
+        let record = SendRecord {
+            embed_count: 1,
+            register_name: true,
+        };
+        self.execute_post(&route, &body, webhook_name, record).await
     }
 
     pub async fn edit_message(
@@ -188,8 +233,7 @@ impl DiscordClient {
         if let Some(e) = &embed {
             e.validate()?;
         }
-        let cred = self.load_webhook_checked(webhook_name).await?;
-        let edit_url = format!("{}/messages/{message_id}", cred.url);
+        let route = self.load_route(webhook_name).await?;
 
         let mut map = serde_json::Map::new();
         if let Some(c) = content {
@@ -202,8 +246,10 @@ impl DiscordClient {
         if let Some(e) = &embed {
             map.insert("embeds".to_owned(), serde_json::json!([embed_to_wire(e)]));
         }
-        let body = serde_json::Value::Object(map);
-        self.execute_patch(&edit_url, body, webhook_name).await
+        let request = route
+            .message(Method::Patch, message_id)?
+            .body(json_body(&serde_json::Value::Object(map))?);
+        self.execute_without_reply(request, webhook_name).await
     }
 
     pub async fn send_file(
@@ -214,7 +260,7 @@ impl DiscordClient {
         file_bytes: &[u8],
         mentions: MentionPolicy,
     ) -> Result<String, DiscordError> {
-        let cred = self.load_webhook_checked(webhook_name).await?;
+        let route = self.load_route(webhook_name).await?;
 
         let mut payload = serde_json::Map::new();
         payload.insert("allowed_mentions".to_owned(), mentions.to_wire());
@@ -225,77 +271,12 @@ impl DiscordClient {
             );
         }
         let payload_json = serde_json::Value::Object(payload).to_string();
-
-        self.check_pre_send(webhook_name)?;
-        let post_url = format!("{}?wait=true", cred.url);
-
-        let build_form = |payload_json: &str, file_name: &str, bytes: &[u8]| {
-            let file_part =
-                reqwest::multipart::Part::bytes(bytes.to_vec()).file_name(file_name.to_owned());
-            reqwest::multipart::Form::new()
-                .text("payload_json", payload_json.to_owned())
-                .part("files[0]", file_part)
-        };
-
-        let start = std::time::Instant::now();
-        let resp = self
-            .http
-            .post(&post_url)
-            .multipart(build_form(&payload_json, file_name, file_bytes))
-            .send()
-            .await
-            .map_err(|e| DiscordError::Connect(e.without_url().to_string()))?;
-
-        let status = resp.status();
-        if status.as_u16() == 429 {
-            let retry_after = parse_retry_after(resp.headers());
-            let is_global = is_global_rate_limit(resp.headers());
-            let wait = Duration::from_secs_f64(retry_after.unwrap_or(1.0));
-
-            self.record_429(webhook_name, wait, is_global);
-            publish_rate_limited(
-                self.publisher.as_ref(),
-                webhook_name,
-                retry_after.unwrap_or(1.0),
-            );
-
-            tokio::time::sleep(wait).await;
-
-            let retry_start = std::time::Instant::now();
-            let retry_resp = self
-                .http
-                .post(&post_url)
-                .multipart(build_form(&payload_json, file_name, file_bytes))
-                .send()
-                .await
-                .map_err(|e| DiscordError::Connect(e.without_url().to_string()))?;
-
-            if retry_resp.status().as_u16() == 429 {
-                let ra = parse_retry_after(retry_resp.headers()).unwrap_or(1.0);
-                let err = DiscordError::RateLimited {
-                    retry_after_secs: ra,
-                };
-                self.apply_send_result(
-                    webhook_name,
-                    retry_start.elapsed().as_millis() as u64,
-                    false,
-                    None,
-                    0,
-                    true,
-                );
-                publish_failed(self.publisher.as_ref(), webhook_name, &err);
-                return Err(err);
-            }
-
-            let latency = retry_start.elapsed().as_millis() as u64;
-            return self
-                .handle_post_response(retry_resp, webhook_name, latency, 0, true)
-                .await;
-        }
-
-        let latency = start.elapsed().as_millis() as u64;
-        self.handle_post_response(resp, webhook_name, latency, 0, true)
-            .await
+        let upload = MultipartBody::new()
+            .text(PAYLOAD_JSON_PART, payload_json)
+            .file(FIRST_FILE_PART, file_name, UPLOAD_CONTENT_TYPE, file_bytes);
+        let request = route.execute().class(CallClass::Media).body(upload);
+        let delivered = self.send(request, webhook_name, PLAIN_SEND).await?;
+        Ok(self.finish_post(webhook_name, &delivered, PLAIN_SEND))
     }
 
     pub async fn delete_message(
@@ -303,317 +284,166 @@ impl DiscordClient {
         webhook_name: &str,
         message_id: &str,
     ) -> Result<(), DiscordError> {
-        let cred = self.load_webhook_checked(webhook_name).await?;
-        let delete_url = format!("{}/messages/{message_id}", cred.url);
-        self.execute_delete(&delete_url, webhook_name).await
-    }
-
-    async fn execute_delete(&self, url: &str, webhook_name: &str) -> Result<(), DiscordError> {
-        self.check_pre_send(webhook_name)?;
-        let start = std::time::Instant::now();
-        let resp = self
-            .http
-            .delete(url)
-            .send()
+        let route = self.load_route(webhook_name).await?;
+        self.execute_without_reply(route.message(Method::Delete, message_id)?, webhook_name)
             .await
-            .map_err(|e| DiscordError::Connect(e.without_url().to_string()))?;
-
-        let status = resp.status();
-        if status.as_u16() == 429 {
-            let retry_after = parse_retry_after(resp.headers());
-            let is_global = is_global_rate_limit(resp.headers());
-            let wait = Duration::from_secs_f64(retry_after.unwrap_or(1.0));
-
-            self.record_429(webhook_name, wait, is_global);
-            publish_rate_limited(
-                self.publisher.as_ref(),
-                webhook_name,
-                retry_after.unwrap_or(1.0),
-            );
-
-            tokio::time::sleep(wait).await;
-
-            let retry_resp = self
-                .http
-                .delete(url)
-                .send()
-                .await
-                .map_err(|e| DiscordError::Connect(e.without_url().to_string()))?;
-
-            if retry_resp.status().as_u16() == 429 {
-                let ra = parse_retry_after(retry_resp.headers()).unwrap_or(1.0);
-                let err = DiscordError::RateLimited {
-                    retry_after_secs: ra,
-                };
-                self.apply_send_result(
-                    webhook_name,
-                    start.elapsed().as_millis() as u64,
-                    false,
-                    None,
-                    0,
-                    true,
-                );
-                publish_failed(self.publisher.as_ref(), webhook_name, &err);
-                return Err(err);
-            }
-
-            return self
-                .handle_delete_response(
-                    retry_resp,
-                    webhook_name,
-                    start.elapsed().as_millis() as u64,
-                )
-                .await;
-        }
-
-        let latency = start.elapsed().as_millis() as u64;
-        self.handle_delete_response(resp, webhook_name, latency)
-            .await
-    }
-
-    async fn handle_delete_response(
-        &self,
-        resp: reqwest::Response,
-        webhook_name: &str,
-        latency_ms: u64,
-    ) -> Result<(), DiscordError> {
-        let status = resp.status();
-        let (rl_limit, rl_remaining, rl_reset) = parse_bucket_headers(resp.headers());
-        self.update_bucket(webhook_name, rl_limit, rl_remaining, rl_reset);
-
-        if status.is_success() {
-            self.apply_send_result(webhook_name, latency_ms, true, None, 0, true);
-            Ok(())
-        } else {
-            let code = status.as_u16();
-            let body_text = resp.text().await.unwrap_or_default();
-            let err = DiscordError::BadResponse {
-                status: code,
-                body: body_text,
-            };
-            self.apply_send_result(webhook_name, latency_ms, false, None, 0, true);
-            publish_failed(self.publisher.as_ref(), webhook_name, &err);
-            Err(err)
-        }
     }
 
     pub(crate) async fn execute_post(
         &self,
-        url: &str,
-        body: serde_json::Value,
+        route: &WebhookRoute,
+        body: &serde_json::Value,
         webhook_name: &str,
-        embed_count: u8,
-        register_name: bool,
+        record: SendRecord,
     ) -> Result<String, DiscordError> {
-        self.check_pre_send(webhook_name)?;
-        let post_url = format!("{url}?wait=true");
-        let start = std::time::Instant::now();
-        let resp = self
-            .http
-            .post(&post_url)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| DiscordError::Connect(e.without_url().to_string()))?;
-
-        let status = resp.status();
-        if status.as_u16() == 429 {
-            let retry_after = parse_retry_after(resp.headers());
-            let is_global = is_global_rate_limit(resp.headers());
-            let wait = Duration::from_secs_f64(retry_after.unwrap_or(1.0));
-
-            self.record_429(webhook_name, wait, is_global);
-            publish_rate_limited(
-                self.publisher.as_ref(),
-                webhook_name,
-                retry_after.unwrap_or(1.0),
-            );
-
-            tokio::time::sleep(wait).await;
-
-            let retry_start = std::time::Instant::now();
-            let retry_resp = self
-                .http
-                .post(&post_url)
-                .json(&body)
-                .send()
-                .await
-                .map_err(|e| DiscordError::Connect(e.without_url().to_string()))?;
-
-            if retry_resp.status().as_u16() == 429 {
-                let ra = parse_retry_after(retry_resp.headers()).unwrap_or(1.0);
-                let err = DiscordError::RateLimited {
-                    retry_after_secs: ra,
-                };
-                self.apply_send_result(
-                    webhook_name,
-                    retry_start.elapsed().as_millis() as u64,
-                    false,
-                    None,
-                    embed_count,
-                    register_name,
-                );
-                publish_failed(self.publisher.as_ref(), webhook_name, &err);
-                return Err(err);
-            }
-
-            let latency = retry_start.elapsed().as_millis() as u64;
-            return self
-                .handle_post_response(
-                    retry_resp,
-                    webhook_name,
-                    latency,
-                    embed_count,
-                    register_name,
-                )
-                .await;
-        }
-
-        let latency = start.elapsed().as_millis() as u64;
-        self.handle_post_response(resp, webhook_name, latency, embed_count, register_name)
-            .await
+        let request = route.execute().body(json_body(body)?);
+        let delivered = self.send(request, webhook_name, record).await?;
+        Ok(self.finish_post(webhook_name, &delivered, record))
     }
 
-    async fn handle_post_response(
-        &self,
-        resp: reqwest::Response,
-        webhook_name: &str,
-        latency_ms: u64,
-        embed_count: u8,
-        register_name: bool,
-    ) -> Result<String, DiscordError> {
-        let status = resp.status();
-        let (rl_limit, rl_remaining, rl_reset) = parse_bucket_headers(resp.headers());
-        self.update_bucket(webhook_name, rl_limit, rl_remaining, rl_reset);
-
-        if status.is_success() {
-            let body: serde_json::Value = resp.json().await.unwrap_or_default();
-            let message_id = body["id"].as_str().unwrap_or("").to_owned();
-            self.apply_send_result(
-                webhook_name,
-                latency_ms,
-                true,
-                Some(message_id.clone()),
-                embed_count,
-                register_name,
-            );
-            publish_posted(
-                self.publisher.as_ref(),
-                webhook_name,
-                &message_id,
-                embed_count,
-            );
-            Ok(message_id)
-        } else {
-            let code = status.as_u16();
-            let body_text = resp.text().await.unwrap_or_default();
-            let err = DiscordError::BadResponse {
-                status: code,
-                body: body_text.clone(),
-            };
-            self.apply_send_result(
-                webhook_name,
-                latency_ms,
-                false,
-                None,
-                embed_count,
-                register_name,
-            );
-            publish_failed(self.publisher.as_ref(), webhook_name, &err);
-            Err(err)
-        }
+    fn finish_post(&self, webhook_name: &str, delivered: &Delivered, record: SendRecord) -> String {
+        let message_id = delivered
+            .response
+            .json::<serde_json::Value>()
+            .ok()
+            .and_then(|body| body["id"].as_str().map(str::to_owned))
+            .unwrap_or_default();
+        self.apply_send_result(
+            webhook_name,
+            delivered.latency_ms,
+            true,
+            Some(message_id.clone()),
+            record,
+        );
+        publish_posted(
+            self.publisher.as_ref(),
+            webhook_name,
+            &message_id,
+            record.embed_count,
+        );
+        message_id
     }
 
-    async fn execute_patch(
+    async fn execute_without_reply(
         &self,
-        url: &str,
-        body: serde_json::Value,
+        request: GatewayRequest,
         webhook_name: &str,
     ) -> Result<(), DiscordError> {
-        self.check_pre_send(webhook_name)?;
-        let start = std::time::Instant::now();
-        let resp = self
-            .http
-            .patch(url)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| DiscordError::Connect(e.without_url().to_string()))?;
-
-        let status = resp.status();
-        if status.as_u16() == 429 {
-            let retry_after = parse_retry_after(resp.headers());
-            let is_global = is_global_rate_limit(resp.headers());
-            let wait = Duration::from_secs_f64(retry_after.unwrap_or(1.0));
-
-            self.record_429(webhook_name, wait, is_global);
-            publish_rate_limited(
-                self.publisher.as_ref(),
-                webhook_name,
-                retry_after.unwrap_or(1.0),
-            );
-
-            tokio::time::sleep(wait).await;
-
-            let retry_resp = self
-                .http
-                .patch(url)
-                .json(&body)
-                .send()
-                .await
-                .map_err(|e| DiscordError::Connect(e.without_url().to_string()))?;
-
-            if retry_resp.status().as_u16() == 429 {
-                let ra = parse_retry_after(retry_resp.headers()).unwrap_or(1.0);
-                let err = DiscordError::RateLimited {
-                    retry_after_secs: ra,
-                };
-                self.apply_send_result(
-                    webhook_name,
-                    start.elapsed().as_millis() as u64,
-                    false,
-                    None,
-                    0,
-                    true,
-                );
-                publish_failed(self.publisher.as_ref(), webhook_name, &err);
-                return Err(err);
-            }
-
-            return self
-                .handle_patch_response(retry_resp, webhook_name, start.elapsed().as_millis() as u64)
-                .await;
-        }
-
-        let latency = start.elapsed().as_millis() as u64;
-        self.handle_patch_response(resp, webhook_name, latency)
-            .await
+        let delivered = self.send(request, webhook_name, PLAIN_SEND).await?;
+        self.apply_send_result(webhook_name, delivered.latency_ms, true, None, PLAIN_SEND);
+        Ok(())
     }
 
-    async fn handle_patch_response(
+    async fn send(
         &self,
-        resp: reqwest::Response,
+        request: GatewayRequest,
         webhook_name: &str,
-        latency_ms: u64,
-    ) -> Result<(), DiscordError> {
-        let status = resp.status();
-        let (rl_limit, rl_remaining, rl_reset) = parse_bucket_headers(resp.headers());
-        self.update_bucket(webhook_name, rl_limit, rl_remaining, rl_reset);
-
-        if status.is_success() {
-            self.apply_send_result(webhook_name, latency_ms, true, None, 0, true);
-            Ok(())
-        } else {
-            let code = status.as_u16();
-            let body_text = resp.text().await.unwrap_or_default();
-            let err = DiscordError::BadResponse {
-                status: code,
-                body: body_text,
-            };
-            self.apply_send_result(webhook_name, latency_ms, false, None, 0, true);
-            publish_failed(self.publisher.as_ref(), webhook_name, &err);
-            Err(err)
+        record: SendRecord,
+    ) -> Result<Delivered, DiscordError> {
+        self.check_pre_send(webhook_name)?;
+        let start = Instant::now();
+        let (retry_after, scope) = match self.gateway.send(request.clone()).await {
+            Ok(response) => return Ok(self.delivered(webhook_name, response, start)),
+            Err(GatewayFailure::RateLimited {
+                retry_after, scope, ..
+            }) => (retry_after, scope),
+            Err(failure) => return Err(self.rejected(webhook_name, &failure, start, record)),
+        };
+        self.observe_throttle(webhook_name, retry_after, scope);
+        publish_rate_limited(
+            self.publisher.as_ref(),
+            webhook_name,
+            retry_after.as_secs_f64(),
+        );
+        if retry_after > MAX_THROTTLE_WAIT {
+            return Err(self.rate_limited(webhook_name, retry_after, start, record));
         }
+
+        tokio::time::sleep(retry_after).await;
+
+        let retry_start = Instant::now();
+        match self.gateway.send(request).await {
+            Ok(response) => Ok(self.delivered(webhook_name, response, retry_start)),
+            Err(GatewayFailure::RateLimited {
+                retry_after, scope, ..
+            }) => {
+                self.observe_throttle(webhook_name, retry_after, scope);
+                Err(self.rate_limited(webhook_name, retry_after, retry_start, record))
+            }
+            Err(failure) => Err(self.rejected(webhook_name, &failure, retry_start, record)),
+        }
+    }
+
+    fn delivered(
+        &self,
+        webhook_name: &str,
+        response: GatewayResponse,
+        start: Instant,
+    ) -> Delivered {
+        if let Some((limit, remaining, reset_after)) = bucket_headers(&response) {
+            let mut rl = self.rate_limiter.lock().unwrap_or_else(|p| p.into_inner());
+            rl.record_response(Instant::now(), webhook_name, limit, remaining, reset_after);
+        }
+        Delivered {
+            response,
+            latency_ms: elapsed_ms(start),
+        }
+    }
+
+    fn rejected(
+        &self,
+        webhook_name: &str,
+        failure: &GatewayFailure,
+        start: Instant,
+        record: SendRecord,
+    ) -> DiscordError {
+        if matches!(failure, GatewayFailure::BudgetExhausted) {
+            let global_wait = self
+                .rate_limiter
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .global_wait_duration(Instant::now())
+                .unwrap_or_default();
+            return DiscordError::RateLimited {
+                retry_after_secs: global_wait.as_secs_f64(),
+            };
+        }
+        let Some(status) = failure.status() else {
+            return DiscordError::Connect(failure.to_string());
+        };
+        let err = DiscordError::BadResponse {
+            status,
+            body: failure
+                .excerpt()
+                .map(|excerpt| excerpt.as_str().to_owned())
+                .unwrap_or_default(),
+        };
+        self.record_failure(webhook_name, start, err, record)
+    }
+
+    fn rate_limited(
+        &self,
+        webhook_name: &str,
+        retry_after: Duration,
+        start: Instant,
+        record: SendRecord,
+    ) -> DiscordError {
+        let err = DiscordError::RateLimited {
+            retry_after_secs: retry_after.as_secs_f64(),
+        };
+        self.record_failure(webhook_name, start, err, record)
+    }
+
+    fn record_failure(
+        &self,
+        webhook_name: &str,
+        start: Instant,
+        err: DiscordError,
+        record: SendRecord,
+    ) -> DiscordError {
+        self.apply_send_result(webhook_name, elapsed_ms(start), false, None, record);
+        publish_failed(self.publisher.as_ref(), webhook_name, &err);
+        err
     }
 
     fn check_pre_send(&self, webhook_name: &str) -> Result<(), DiscordError> {
@@ -635,19 +465,11 @@ impl DiscordClient {
         Ok(())
     }
 
-    fn record_429(&self, webhook_name: &str, wait: Duration, is_global: bool) {
+    fn observe_throttle(&self, webhook_name: &str, wait: Duration, scope: ThrottleScope) {
         let mut rl = self.rate_limiter.lock().unwrap_or_else(|p| p.into_inner());
-        if is_global {
-            rl.observe_global_throttle(Instant::now(), wait);
-        } else {
-            rl.observe_remote_throttle(Instant::now(), webhook_name, wait);
-        }
-    }
-
-    fn update_bucket(&self, webhook_name: &str, limit: u32, remaining: u32, reset_after: f64) {
-        if limit > 0 {
-            let mut rl = self.rate_limiter.lock().unwrap_or_else(|p| p.into_inner());
-            rl.record_response(Instant::now(), webhook_name, limit, remaining, reset_after);
+        match scope {
+            ThrottleScope::Global => rl.observe_global_throttle(Instant::now(), wait),
+            ThrottleScope::Bucket => rl.observe_remote_throttle(Instant::now(), webhook_name, wait),
         }
     }
 
@@ -657,8 +479,7 @@ impl DiscordClient {
         latency_ms: u64,
         ok: bool,
         message_id: Option<String>,
-        embed_count: u8,
-        register_name: bool,
+        record: SendRecord,
     ) {
         let (rl_remaining, rl_total) = {
             let rl = self.rate_limiter.lock().unwrap_or_else(|p| p.into_inner());
@@ -686,86 +507,14 @@ impl DiscordClient {
         }
 
         {
+            let has_embed = record.embed_count > 0;
             let mut snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
-            if register_name {
-                record_send(&mut snap, webhook_name, message_id, embed_count > 0, ok);
+            if record.register_name {
+                record_send(&mut snap, webhook_name, message_id, has_embed, ok);
             } else {
-                record_test_send(&mut snap, webhook_name, message_id, embed_count > 0, ok);
+                record_test_send(&mut snap, webhook_name, message_id, has_embed, ok);
             }
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn new_for_test_with_creds(creds: Arc<dyn CredentialsRepo>) -> Arc<Self> {
-        struct NoopPublisher;
-        impl EventPublisher for NoopPublisher {
-            fn publish(&self, _: forge_events::Event) {}
-        }
-
-        let (health_tx, health_state) = make_health_state();
-        Arc::new(Self {
-            id: IntegrationId::new("discord"),
-            publisher: Arc::new(NoopPublisher),
-            creds,
-            http: reqwest::Client::new(),
-            health_tx,
-            health_state,
-            content_state: make_content_state(),
-            rate_limiter: Arc::new(Mutex::new(DiscordRateLimiter::new())),
-            webhook_registry_serial: tokio::sync::Mutex::new(()),
-        })
-    }
-
-    #[cfg(test)]
-    pub(crate) fn new_for_test() -> Arc<Self> {
-        use forge_storage::{CredentialId, StorageError};
-        use time::OffsetDateTime;
-
-        struct NoopPublisher;
-        impl EventPublisher for NoopPublisher {
-            fn publish(&self, _: forge_events::Event) {}
-        }
-
-        struct EmptyCreds;
-        #[async_trait::async_trait]
-        impl CredentialsRepo for EmptyCreds {
-            async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
-                Ok(())
-            }
-            async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
-                Ok(None)
-            }
-            async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
-                Ok(false)
-            }
-            async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-                Ok(vec![])
-            }
-            async fn last_refresh(
-                &self,
-                _: &CredentialId,
-            ) -> Result<Option<OffsetDateTime>, StorageError> {
-                Ok(None)
-            }
-            async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-                Ok(())
-            }
-        }
-
-        let (health_tx, health_state) = make_health_state();
-        let content_state = make_content_state();
-        let http = reqwest::Client::new();
-        Arc::new(Self {
-            id: IntegrationId::new("discord"),
-            publisher: Arc::new(NoopPublisher),
-            creds: Arc::new(EmptyCreds),
-            http,
-            health_tx,
-            health_state,
-            content_state,
-            rate_limiter: Arc::new(Mutex::new(DiscordRateLimiter::new())),
-            webhook_registry_serial: tokio::sync::Mutex::new(()),
-        })
     }
 }
 
@@ -868,30 +617,23 @@ fn embed_to_wire(embed: &DiscordEmbed) -> serde_json::Value {
     serde_json::Value::Object(m)
 }
 
-fn parse_bucket_headers(headers: &reqwest::header::HeaderMap) -> (u32, u32, f64) {
-    let limit = header_u32(headers, "x-ratelimit-limit").unwrap_or(0);
-    let remaining = header_u32(headers, "x-ratelimit-remaining").unwrap_or(0);
-    let reset_after = header_f64(headers, "x-ratelimit-reset-after").unwrap_or(0.0);
-    (limit, remaining, reset_after)
+fn json_body(body: &serde_json::Value) -> Result<RequestBody, DiscordError> {
+    RequestBody::json(body).map_err(|e| DiscordError::Validation(e.to_string()))
 }
 
-fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<f64> {
-    header_f64(headers, "retry-after")
+fn bucket_headers(response: &impl HeaderLookup) -> Option<(u32, u32, f64)> {
+    let limit = header_number::<u32>(response, BUCKET_LIMIT_HEADER).filter(|limit| *limit > 0)?;
+    let remaining = header_number(response, BUCKET_REMAINING_HEADER).unwrap_or(0);
+    let reset_after = header_number(response, BUCKET_RESET_AFTER_HEADER).unwrap_or(0.0);
+    Some((limit, remaining, reset_after))
 }
 
-fn is_global_rate_limit(headers: &reqwest::header::HeaderMap) -> bool {
-    headers
-        .get("x-ratelimit-global")
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| v.eq_ignore_ascii_case("true"))
+fn header_number<T: std::str::FromStr>(response: &impl HeaderLookup, name: &str) -> Option<T> {
+    response.header_value(name)?.trim().parse().ok()
 }
 
-fn header_u32(headers: &reqwest::header::HeaderMap, key: &str) -> Option<u32> {
-    headers.get(key)?.to_str().ok()?.parse().ok()
-}
-
-fn header_f64(headers: &reqwest::header::HeaderMap, key: &str) -> Option<f64> {
-    headers.get(key)?.to_str().ok()?.parse().ok()
+fn elapsed_ms(start: Instant) -> u64 {
+    u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]
@@ -904,11 +646,61 @@ pub(crate) mod tests {
     use forge_events::{Event, EventPublisher};
     use forge_storage::{CredentialId, CredentialsRepo, StorageError};
     use time::OffsetDateTime;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
     use crate::embed::{DiscordEmbed, DiscordEmbedField};
+
+    pub(crate) const HOOK_ID: &str = "1300000000000000001";
+    pub(crate) const HOOK_TOKEN: &str = "hook-token-Qx7vT2";
+    const MESSAGE_ID: &str = "1400000000000000001";
+    const UNROUTABLE_API_BASE: &str = "https://192.0.2.1/api";
+    const OVER_CAP_HINT_SECS: f64 = 30.0;
+    const SHORT_HINT_SECS: f64 = 0.05;
+
+    pub(crate) fn hook_url(host: &str, query: &str) -> String {
+        format!("https://{host}/api/webhooks/{HOOK_ID}/{HOOK_TOKEN}{query}")
+    }
+
+    fn hook_path() -> String {
+        format!("/webhooks/{HOOK_ID}/{HOOK_TOKEN}")
+    }
+
+    fn message_path() -> String {
+        format!("{}/messages/{MESSAGE_ID}", hook_path())
+    }
+
+    impl DiscordClient {
+        pub(crate) fn new_for_test() -> Arc<Self> {
+            Self::new_for_test_with_creds(MockCreds::new().creds())
+        }
+
+        pub(crate) fn new_for_test_with_creds(creds: Arc<dyn CredentialsRepo>) -> Arc<Self> {
+            let rate_limiter: SharedDiscordRateLimiter =
+                Arc::new(Mutex::new(DiscordRateLimiter::new()));
+            let gateway = Gateway::new(
+                UNROUTABLE_API_BASE,
+                Arc::new(GlobalThrottleGate::new(Arc::clone(&rate_limiter))),
+                DISCORD_GATEWAY_PROFILE,
+                None,
+            )
+            .unwrap();
+            let (health_tx, health_state) = make_health_state();
+            Arc::new(Self {
+                id: crate::DISCORD_INTEGRATION.id,
+                publisher: MockPublisher::new().publisher(),
+                creds,
+                gateway,
+                health_tx,
+                health_state,
+                content_state: make_content_state(),
+                rate_limiter,
+                webhook_registry_serial: tokio::sync::Mutex::new(()),
+            })
+        }
+    }
 
     pub(crate) struct MockPublisher {
         pub events: Arc<Mutex<Vec<Event>>>,
@@ -936,6 +728,15 @@ pub(crate) mod tests {
                 .iter()
                 .find(|e| e.kind == kind)
                 .cloned()
+        }
+
+        fn rendered(&self) -> Vec<String> {
+            self.events
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|e| e.payload.to_string())
+                .collect()
         }
     }
 
@@ -975,6 +776,13 @@ pub(crate) mod tests {
             let mut keys: Vec<String> = self.store.lock().unwrap().keys().cloned().collect();
             keys.sort();
             keys
+        }
+
+        fn store_hook(&self, name: &str, url: &str) {
+            self.insert(
+                &format!("{DISCORD_CRED_PREFIX}{name}"),
+                &serde_json::json!({ "url": url }).to_string(),
+            );
         }
     }
 
@@ -1018,12 +826,18 @@ pub(crate) mod tests {
         }
     }
 
-    fn make_standard_response(message_id: &str) -> ResponseTemplate {
-        ResponseTemplate::new(200)
-            .set_body_json(serde_json::json!({ "id": message_id }))
-            .insert_header("x-ratelimit-limit", "5")
+    fn with_bucket_headers(template: ResponseTemplate, limit: &str) -> ResponseTemplate {
+        template
+            .insert_header("x-ratelimit-limit", limit)
             .insert_header("x-ratelimit-remaining", "4")
             .insert_header("x-ratelimit-reset-after", "1.0")
+    }
+
+    fn make_standard_response(message_id: &str) -> ResponseTemplate {
+        with_bucket_headers(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "id": message_id })),
+            "5",
+        )
     }
 
     fn make_429_response(retry_after_secs: f64) -> ResponseTemplate {
@@ -1032,21 +846,25 @@ pub(crate) mod tests {
             .insert_header("retry-after", retry_after_secs.to_string().as_str())
     }
 
+    fn client_at(
+        api_base: &str,
+        publisher: &Arc<MockPublisher>,
+        creds: &Arc<MockCreds>,
+    ) -> Arc<DiscordClient> {
+        DiscordClient::new(api_base, publisher.publisher(), creds.creds()).unwrap()
+    }
+
     async fn make_client(
         server: &MockServer,
         pub_ref: Arc<MockPublisher>,
         creds_ref: Arc<MockCreds>,
     ) -> Arc<DiscordClient> {
-        let hook_url = format!("{}/webhooks/test-id/test-token", server.uri());
-        creds_ref.insert(
-            "discord:alerts",
-            &serde_json::json!({ "url": hook_url }).to_string(),
-        );
-        DiscordClient::new(
-            DiscordConfig::default(),
-            pub_ref.publisher(),
-            creds_ref.creds(),
-        )
+        creds_ref.store_hook("alerts", &hook_url("discord.com", ""));
+        client_at(&server.uri(), &pub_ref, &creds_ref)
+    }
+
+    async fn received_count(server: &MockServer) -> usize {
+        server.received_requests().await.unwrap().len()
     }
 
     #[tokio::test]
@@ -1057,14 +875,13 @@ pub(crate) mod tests {
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
         Mock::given(method("POST"))
-            .and(path("/webhooks/test-id/test-token"))
+            .and(path(hook_path()))
             .and(query_param("wait", "true"))
             .respond_with(make_standard_response("msg001"))
             .mount(&server)
             .await;
 
         let result = client.post_text("alerts", "hello world").await;
-        assert!(result.is_ok());
         assert_eq!(result.unwrap(), "msg001");
     }
 
@@ -1076,14 +893,13 @@ pub(crate) mod tests {
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
         Mock::given(method("POST"))
-            .and(path("/webhooks/test-id/test-token"))
+            .and(path(hook_path()))
             .and(query_param("wait", "true"))
             .respond_with(make_standard_response("msg002"))
             .mount(&server)
             .await;
 
         client.post_text("alerts", "hello").await.unwrap();
-        assert!(publisher.has_kind("discord.webhook.posted"));
 
         let ev = publisher.find_kind("discord.webhook.posted").unwrap();
         assert_eq!(ev.payload["webhook_name"], "alerts");
@@ -1099,7 +915,7 @@ pub(crate) mod tests {
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
         Mock::given(method("POST"))
-            .and(path("/webhooks/test-id/test-token"))
+            .and(path(hook_path()))
             .and(query_param("wait", "true"))
             .respond_with(make_standard_response("msg010"))
             .mount(&server)
@@ -1110,8 +926,7 @@ pub(crate) mod tests {
             description: Some("Hello".to_owned()),
             ..Default::default()
         };
-        let result = client.post_embed("alerts", embed).await;
-        assert!(result.is_ok());
+        assert_eq!(client.post_embed("alerts", embed).await.unwrap(), "msg010");
 
         let ev = publisher.find_kind("discord.webhook.posted").unwrap();
         assert_eq!(ev.payload["embed_count"], 1);
@@ -1125,22 +940,21 @@ pub(crate) mod tests {
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
         Mock::given(method("POST"))
-            .and(path("/webhooks/test-id/test-token"))
-            .respond_with(make_429_response(0.05))
+            .and(path(hook_path()))
+            .respond_with(make_429_response(SHORT_HINT_SECS))
             .up_to_n_times(1)
             .mount(&server)
             .await;
 
         Mock::given(method("POST"))
-            .and(path("/webhooks/test-id/test-token"))
+            .and(path(hook_path()))
             .respond_with(make_standard_response("msg_retry"))
             .mount(&server)
             .await;
 
         let result = client.post_text("alerts", "retry test").await;
-        assert!(result.is_ok());
         assert_eq!(result.unwrap(), "msg_retry");
-
+        assert_eq!(received_count(&server).await, 2);
         assert!(publisher.has_kind("discord.webhook.rate_limited"));
         assert!(publisher.has_kind("discord.webhook.posted"));
     }
@@ -1153,16 +967,261 @@ pub(crate) mod tests {
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
         Mock::given(method("POST"))
-            .and(path("/webhooks/test-id/test-token"))
-            .respond_with(make_429_response(0.05))
+            .and(path(hook_path()))
+            .respond_with(make_429_response(SHORT_HINT_SECS))
             .mount(&server)
             .await;
 
         let result = client.post_text("alerts", "double retry").await;
         assert!(matches!(result, Err(DiscordError::RateLimited { .. })));
+        assert_eq!(received_count(&server).await, 2);
+        assert!(publisher.has_kind("discord.webhook.failed"));
+    }
 
+    #[tokio::test]
+    async fn a_second_consecutive_429_holds_the_webhook_until_its_hint_runs_out() {
+        let server = MockServer::start().await;
+        let client = make_client(&server, MockPublisher::new(), MockCreds::new()).await;
+        Mock::given(method("POST"))
+            .respond_with(make_429_response(SHORT_HINT_SECS))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .respond_with(make_429_response(OVER_CAP_HINT_SECS))
+            .mount(&server)
+            .await;
+
+        client.post_text("alerts", "first").await.unwrap_err();
+        let held = client.post_text("alerts", "second").await;
+
+        assert!(matches!(held, Err(DiscordError::RateLimited { .. })));
+        assert_eq!(received_count(&server).await, 2);
+    }
+
+    #[tokio::test]
+    async fn a_hint_over_the_wait_cap_fails_at_once_without_a_retry() {
+        let server = MockServer::start().await;
+        let publisher = MockPublisher::new();
+        let client = make_client(&server, Arc::clone(&publisher), MockCreds::new()).await;
+        Mock::given(method("POST"))
+            .respond_with(make_429_response(OVER_CAP_HINT_SECS))
+            .mount(&server)
+            .await;
+
+        let result = client.post_text("alerts", "hi").await;
+
+        assert!(
+            matches!(result, Err(DiscordError::RateLimited { retry_after_secs }) if retry_after_secs == OVER_CAP_HINT_SECS),
+            "{result:?}"
+        );
+        assert_eq!(received_count(&server).await, 1);
         assert!(publisher.has_kind("discord.webhook.rate_limited"));
         assert!(publisher.has_kind("discord.webhook.failed"));
+    }
+
+    #[tokio::test]
+    async fn a_throttle_scope_decides_whether_other_webhooks_are_held_too() {
+        for (scope_header, other_webhook_held) in [
+            (("x-ratelimit-global", "true"), true),
+            (("x-ratelimit-scope", "global"), true),
+            (("x-ratelimit-scope", "user"), false),
+            (("x-ratelimit-scope", "shared"), false),
+        ] {
+            let server = MockServer::start().await;
+            let creds = MockCreds::new();
+            creds.store_hook("clips", &hook_url("discord.com", ""));
+            let client = make_client(&server, MockPublisher::new(), Arc::clone(&creds)).await;
+            Mock::given(method("POST"))
+                .respond_with(
+                    make_429_response(OVER_CAP_HINT_SECS)
+                        .insert_header(scope_header.0, scope_header.1),
+                )
+                .up_to_n_times(1)
+                .mount(&server)
+                .await;
+            Mock::given(method("POST"))
+                .respond_with(make_standard_response("msg_other"))
+                .mount(&server)
+                .await;
+
+            client.post_text("alerts", "throttled").await.unwrap_err();
+            let same = client.post_text("alerts", "again").await;
+            let other = client.post_text("clips", "elsewhere").await;
+
+            assert!(
+                matches!(same, Err(DiscordError::RateLimited { .. })),
+                "{scope_header:?}: the throttled webhook went out again"
+            );
+            assert_eq!(
+                matches!(other, Err(DiscordError::RateLimited { .. })),
+                other_webhook_held,
+                "{scope_header:?}"
+            );
+            let expected_requests = if other_webhook_held { 1 } else { 2 };
+            assert_eq!(
+                received_count(&server).await,
+                expected_requests,
+                "{scope_header:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_503_counts_as_a_throttle_only_when_it_carries_retry_after() {
+        let server = MockServer::start().await;
+        let publisher = MockPublisher::new();
+        let client = make_client(&server, Arc::clone(&publisher), MockCreds::new()).await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(503)
+                    .insert_header("retry-after", SHORT_HINT_SECS.to_string().as_str()),
+            )
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .respond_with(make_standard_response("msg_after_503"))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+
+        let throttled = client.post_text("alerts", "hinted").await;
+        let bare = client.post_text("alerts", "bare").await;
+
+        assert_eq!(throttled.unwrap(), "msg_after_503");
+        assert!(publisher.has_kind("discord.webhook.rate_limited"));
+        assert!(
+            matches!(bare, Err(DiscordError::BadResponse { status: 503, .. })),
+            "{bare:?}"
+        );
+    }
+
+    struct ScriptedHttp {
+        base: String,
+        served: Arc<Mutex<usize>>,
+    }
+
+    impl ScriptedHttp {
+        fn served(&self) -> usize {
+            *self.served.lock().unwrap()
+        }
+    }
+
+    fn http_reply(status_line: &str, headers: &[(&str, &str)], body: &str) -> String {
+        let mut reply = format!("HTTP/1.1 {status_line}\r\n");
+        for (name, value) in headers {
+            reply.push_str(&format!("{name}: {value}\r\n"));
+        }
+        reply.push_str(&format!(
+            "content-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        ));
+        reply
+    }
+
+    fn declared_length(head: &[u8]) -> usize {
+        String::from_utf8_lossy(head)
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case("content-length")
+                    .then(|| value.trim().parse().ok())
+                    .flatten()
+            })
+            .unwrap_or_default()
+    }
+
+    async fn read_request(socket: &mut tokio::net::TcpStream) {
+        let mut seen = Vec::new();
+        let mut chunk = [0_u8; 4096];
+        loop {
+            let read = socket.read(&mut chunk).await.unwrap();
+            if read == 0 {
+                return;
+            }
+            seen.extend_from_slice(&chunk[..read]);
+            if let Some(end) = seen.windows(4).position(|w| w == b"\r\n\r\n")
+                && seen.len() >= end + 4 + declared_length(&seen[..end])
+            {
+                return;
+            }
+        }
+    }
+
+    async fn scripted_http(replies: Vec<String>) -> ScriptedHttp {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let served = Arc::new(Mutex::new(0));
+        let counter = Arc::clone(&served);
+        tokio::spawn(async move {
+            for reply in replies {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                read_request(&mut socket).await;
+                *counter.lock().unwrap() += 1;
+                socket.write_all(reply.as_bytes()).await.unwrap();
+                socket.shutdown().await.unwrap();
+            }
+        });
+        ScriptedHttp { base, served }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_hint_of_exactly_the_wait_cap_is_waited_out_and_retried() {
+        for (hint, retried) in [("10", true), ("10.5", false)] {
+            let stub = scripted_http(vec![
+                http_reply("429 Too Many Requests", &[("retry-after", hint)], "{}"),
+                http_reply("200 OK", &[], r#"{"id":"msg_cap"}"#),
+            ])
+            .await;
+            let creds = MockCreds::new();
+            creds.store_hook("alerts", &hook_url("discord.com", ""));
+            let client = client_at(&stub.base, &MockPublisher::new(), &creds);
+
+            let result = client.post_text("alerts", "at the cap").await;
+
+            assert_eq!(result.is_ok(), retried, "hint {hint}: {result:?}");
+            assert_eq!(stub.served(), if retried { 2 } else { 1 }, "hint {hint}");
+        }
+    }
+
+    #[tokio::test]
+    async fn bucket_headers_feed_the_limiter_only_from_a_successful_response() {
+        for (reply, expected_budget) in [
+            (make_standard_response("msg_bucket"), (4, 5)),
+            (
+                with_bucket_headers(
+                    ResponseTemplate::new(200).set_body_json(serde_json::json!({ "id": "m" })),
+                    "0",
+                ),
+                (0, 0),
+            ),
+            (
+                with_bucket_headers(
+                    ResponseTemplate::new(200).set_body_json(serde_json::json!({ "id": "m" })),
+                    "five",
+                ),
+                (0, 0),
+            ),
+            (with_bucket_headers(ResponseTemplate::new(404), "5"), (0, 0)),
+            (with_bucket_headers(ResponseTemplate::new(500), "5"), (0, 0)),
+        ] {
+            let server = MockServer::start().await;
+            let client = make_client(&server, MockPublisher::new(), MockCreds::new()).await;
+            Mock::given(method("POST"))
+                .respond_with(reply)
+                .mount(&server)
+                .await;
+
+            let outcome = client.post_text("alerts", "bucket test").await;
+
+            let budget = client.rate_limiter.lock().unwrap().budget("alerts");
+            assert_eq!(budget, expected_budget, "{outcome:?}");
+        }
     }
 
     #[tokio::test]
@@ -1173,7 +1232,7 @@ pub(crate) mod tests {
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
         Mock::given(method("POST"))
-            .and(path("/webhooks/test-id/test-token"))
+            .and(path(hook_path()))
             .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
                 "code": 10015,
                 "message": "Unknown Webhook"
@@ -1187,6 +1246,7 @@ pub(crate) mod tests {
             Err(DiscordError::BadResponse { status: 404, .. })
         ));
         assert!(publisher.has_kind("discord.webhook.failed"));
+        assert!(!publisher.has_kind("request.fail"));
     }
 
     #[tokio::test]
@@ -1197,7 +1257,7 @@ pub(crate) mod tests {
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
         Mock::given(method("POST"))
-            .and(path("/webhooks/test-id/test-token"))
+            .and(path(hook_path()))
             .respond_with(ResponseTemplate::new(404).set_body_string("Unknown Webhook"))
             .mount(&server)
             .await;
@@ -1211,6 +1271,67 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn an_error_body_echoing_the_webhook_id_or_token_never_surfaces_either() {
+        let server = MockServer::start().await;
+        let publisher = MockPublisher::new();
+        let client = make_client(&server, Arc::clone(&publisher), MockCreds::new()).await;
+        Mock::given(wiremock::matchers::any())
+            .respond_with(ResponseTemplate::new(404).set_body_string(format!(
+                r#"{{"message":"Unknown Webhook {HOOK_ID}/{HOOK_TOKEN}","code":10015}}"#
+            )))
+            .mount(&server)
+            .await;
+
+        let errors = [
+            client.post_text("alerts", "hi").await.unwrap_err(),
+            client
+                .edit_message("alerts", MESSAGE_ID, Some("hi"), None)
+                .await
+                .unwrap_err(),
+            client
+                .send_file("alerts", None, "a.png", &[1], MentionPolicy::default())
+                .await
+                .unwrap_err(),
+            client
+                .delete_message("alerts", MESSAGE_ID)
+                .await
+                .unwrap_err(),
+        ];
+
+        let mut surfaced = publisher.rendered();
+        surfaced.extend(errors.iter().map(ToString::to_string));
+        assert_eq!(surfaced.len(), 8, "{surfaced:?}");
+        for shown in surfaced {
+            assert!(!shown.contains(HOOK_TOKEN), "token surfaced: {shown}");
+            assert!(!shown.contains(HOOK_ID), "webhook id surfaced: {shown}");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_discord_api_override_carries_webhook_posts_to_its_base() {
+        let server = MockServer::start().await;
+        let creds = MockCreds::new();
+        creds.store_hook("alerts", &hook_url("discord.com", ""));
+        let override_base = format!("{}/api", server.uri());
+        let endpoints = forge_platform_core::PlatformEndpoints::resolve(|name| {
+            (name == forge_platform_core::EndpointSurface::DiscordApi.env_var())
+                .then(|| override_base.clone().into())
+        })
+        .unwrap();
+        let client = client_at(
+            endpoints.base_url(forge_platform_core::EndpointSurface::DiscordApi),
+            &MockPublisher::new(),
+            &creds,
+        );
+        mount_accepting(&server, "POST").await;
+
+        client.post_text("alerts", "hi").await.unwrap();
+
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests[0].url.path(), format!("/api{}", hook_path()));
+    }
+
+    #[tokio::test]
     async fn rate_limited_event_payload_carries_webhook_name_and_retry_after() {
         let server = MockServer::start().await;
         let publisher = MockPublisher::new();
@@ -1218,14 +1339,14 @@ pub(crate) mod tests {
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
         Mock::given(method("POST"))
-            .and(path("/webhooks/test-id/test-token"))
-            .respond_with(make_429_response(0.05))
+            .and(path(hook_path()))
+            .respond_with(make_429_response(SHORT_HINT_SECS))
             .up_to_n_times(1)
             .mount(&server)
             .await;
 
         Mock::given(method("POST"))
-            .and(path("/webhooks/test-id/test-token"))
+            .and(path(hook_path()))
             .respond_with(make_standard_response("msg_rl"))
             .mount(&server)
             .await;
@@ -1235,7 +1356,7 @@ pub(crate) mod tests {
         let ev = publisher.find_kind("discord.webhook.rate_limited").unwrap();
         assert_eq!(ev.payload["webhook_name"], "alerts");
         let ra = ev.payload["retry_after_secs"].as_f64().unwrap();
-        assert!((ra - 0.05).abs() < 1e-9);
+        assert!((ra - SHORT_HINT_SECS).abs() < 1e-9);
     }
 
     #[tokio::test]
@@ -1258,12 +1379,7 @@ pub(crate) mod tests {
         };
         let result = client.post_embed("alerts", embed).await;
         assert!(matches!(result, Err(DiscordError::Validation(_))));
-
-        let received = server.received_requests().await.unwrap();
-        assert!(
-            received.is_empty(),
-            "no HTTP request should be made when validation fails"
-        );
+        assert_eq!(received_count(&server).await, 0);
     }
 
     #[tokio::test]
@@ -1274,94 +1390,228 @@ pub(crate) mod tests {
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
         Mock::given(method("PATCH"))
-            .and(path("/webhooks/test-id/test-token/messages/msg123"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!({ "id": "msg123" }))
-                    .insert_header("x-ratelimit-limit", "5")
-                    .insert_header("x-ratelimit-remaining", "4")
-                    .insert_header("x-ratelimit-reset-after", "1.0"),
-            )
+            .and(path(message_path()))
+            .respond_with(make_standard_response(MESSAGE_ID))
             .mount(&server)
             .await;
 
         let result = client
-            .edit_message("alerts", "msg123", Some("updated"), None)
+            .edit_message("alerts", MESSAGE_ID, Some("updated"), None)
             .await;
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[tokio::test]
-    async fn bucket_remaining_decremented_after_send() {
-        let server = MockServer::start().await;
-        let publisher = MockPublisher::new();
-        let creds = MockCreds::new();
-        let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
+    async fn a_stored_endpoint_outside_the_webhook_route_is_refused_before_any_request() {
+        for (id, token) in [
+            ("12a4", HOOK_TOKEN),
+            ("+123", HOOK_TOKEN),
+            ("\u{0661}\u{0662}\u{0663}", HOOK_TOKEN),
+            ("18446744073709551616", HOOK_TOKEN),
+            ("", HOOK_TOKEN),
+            (HOOK_ID, ".."),
+            (HOOK_ID, "tok..en"),
+            (HOOK_ID, "%2e%2e"),
+            (HOOK_ID, "tok%2Fen"),
+            (HOOK_ID, ""),
+        ] {
+            let server = MockServer::start().await;
+            let creds = MockCreds::new();
+            creds.store_hook(
+                "alerts",
+                &format!("https://discord.com/api/webhooks/{id}/{token}"),
+            );
+            let client = client_at(&server.uri(), &MockPublisher::new(), &creds);
 
-        Mock::given(method("POST"))
-            .and(path("/webhooks/test-id/test-token"))
-            .and(query_param("wait", "true"))
-            .respond_with(make_standard_response("msg_bucket"))
+            let err = client.post_text("alerts", "hi").await.unwrap_err();
+
+            assert!(
+                matches!(err, DiscordError::Validation(_)),
+                "{id:?}/{token:?}: {err:?}"
+            );
+            assert!(!err.to_string().contains(HOOK_TOKEN), "{err}");
+            assert_eq!(received_count(&server).await, 0, "{id:?}/{token:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_message_id_that_is_not_a_snowflake_is_refused_before_any_request() {
+        let server = MockServer::start().await;
+        let client = make_client(&server, MockPublisher::new(), MockCreds::new()).await;
+        Mock::given(wiremock::matchers::any())
+            .respond_with(make_standard_response(MESSAGE_ID))
             .mount(&server)
             .await;
 
-        client.post_text("alerts", "bucket test").await.unwrap();
+        for bad in [
+            "",
+            "abc",
+            "12a",
+            "+1",
+            "18446744073709551616",
+            "1/2",
+            "..",
+            "1%2F2",
+            "\u{0661}",
+        ] {
+            let edited = client.edit_message("alerts", bad, Some("x"), None).await;
+            let deleted = client.delete_message("alerts", bad).await;
 
-        let rl = client.rate_limiter.lock().unwrap();
-        let (remaining, total) = rl.budget("alerts");
-        assert_eq!(total, 5);
-        assert_eq!(remaining, 4);
+            assert!(
+                matches!(edited, Err(DiscordError::Validation(_))),
+                "edit {bad:?}: {edited:?}"
+            );
+            assert!(
+                matches!(deleted, Err(DiscordError::Validation(_))),
+                "delete {bad:?}: {deleted:?}"
+            );
+        }
+        assert_eq!(received_count(&server).await, 0);
+    }
+
+    type SentRequest = (String, String, Vec<(String, String)>);
+
+    fn sorted_query(request: &wiremock::Request) -> Vec<(String, String)> {
+        let mut pairs: Vec<(String, String)> = request
+            .url
+            .query_pairs()
+            .map(|(name, value)| (name.into_owned(), value.into_owned()))
+            .collect();
+        pairs.sort();
+        pairs
+    }
+
+    fn owned_pairs(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            .collect()
     }
 
     #[tokio::test]
-    async fn no_request_path_error_display_echoes_the_webhook_secret() {
-        const SECRET: &str = "SECRET_WEBHOOK_TOKEN";
-        let unreachable = format!("http://127.0.0.1:0/api/webhooks/123/{SECRET}");
-        let malformed = format!("http://[::1/api/webhooks/123/{SECRET}");
-        for url in [unreachable, malformed] {
+    async fn every_webhook_host_posts_to_the_api_base_with_its_saved_thread() {
+        for host in [
+            "discord.com",
+            "discordapp.com",
+            "canary.discord.com",
+            "ptb.discord.com",
+        ] {
+            let server = MockServer::start().await;
             let creds = MockCreds::new();
-            creds.insert(
-                "discord:leaky",
-                &serde_json::json!({ "url": url }).to_string(),
+            creds.store_hook("alerts", &hook_url(host, "?wait=false&thread_id=987"));
+            let client = client_at(&server.uri(), &MockPublisher::new(), &creds);
+            mount_accepting(&server, "POST").await;
+
+            client.post_text("alerts", "hi").await.unwrap();
+
+            let requests = server.received_requests().await.unwrap();
+            assert_eq!(requests[0].url.path(), hook_path(), "{host}");
+            assert_eq!(
+                sorted_query(&requests[0]),
+                owned_pairs(&[("thread_id", "987"), ("wait", "true")]),
+                "{host}"
             );
-            let client = DiscordClient::new(
-                DiscordConfig::default(),
-                MockPublisher::new().publisher(),
-                creds.creds(),
-            );
-            let embed = DiscordEmbed {
-                title: Some("t".to_owned()),
-                ..Default::default()
-            };
-            let errors = [
-                client
-                    .post_text_with_mentions("leaky", "hi", MentionPolicy::default())
-                    .await
-                    .unwrap_err(),
-                client.post_embed("leaky", embed).await.unwrap_err(),
-                client
-                    .edit_message_with_mentions(
-                        "leaky",
-                        "1",
-                        Some("hi"),
-                        None,
-                        MentionPolicy::default(),
-                    )
-                    .await
-                    .unwrap_err(),
-                client
-                    .send_file("leaky", Some("hi"), "a.png", &[1], MentionPolicy::default())
-                    .await
-                    .unwrap_err(),
-                client.delete_message("leaky", "1").await.unwrap_err(),
-            ];
-            for err in errors {
-                assert!(matches!(err, DiscordError::Connect(_)), "{err:?}");
-                let shown = err.to_string();
-                assert!(!shown.contains(SECRET), "secret leaked from {url}: {shown}");
-                assert!(!shown.contains("/api/webhooks/"), "url leaked: {shown}");
-            }
         }
+    }
+
+    #[tokio::test]
+    async fn edit_and_delete_address_the_message_under_the_saved_thread() {
+        let server = MockServer::start().await;
+        let creds = MockCreds::new();
+        creds.store_hook("alerts", &hook_url("discordapp.com", "?thread_id=987"));
+        let client = client_at(&server.uri(), &MockPublisher::new(), &creds);
+        Mock::given(wiremock::matchers::any())
+            .respond_with(make_standard_response(MESSAGE_ID))
+            .mount(&server)
+            .await;
+
+        client
+            .edit_message("alerts", MESSAGE_ID, Some("edited"), None)
+            .await
+            .unwrap();
+        client.delete_message("alerts", MESSAGE_ID).await.unwrap();
+
+        let sent: Vec<SentRequest> = server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .map(|r| {
+                (
+                    r.method.to_string(),
+                    r.url.path().to_owned(),
+                    sorted_query(r),
+                )
+            })
+            .collect();
+        let thread = owned_pairs(&[("thread_id", "987")]);
+        assert_eq!(
+            sent,
+            [
+                ("PATCH".to_owned(), message_path(), thread.clone()),
+                ("DELETE".to_owned(), message_path(), thread),
+            ]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn transport_failures_surface_as_connect_without_the_endpoint() {
+        let creds = MockCreds::new();
+        creds.store_hook("leaky", &hook_url("discord.com", ""));
+        let client = client_at(UNROUTABLE_API_BASE, &MockPublisher::new(), &creds);
+        let embed = DiscordEmbed {
+            title: Some("t".to_owned()),
+            ..Default::default()
+        };
+
+        let errors = [
+            client
+                .post_text_with_mentions("leaky", "hi", MentionPolicy::default())
+                .await
+                .unwrap_err(),
+            client.post_embed("leaky", embed).await.unwrap_err(),
+            client
+                .edit_message_with_mentions(
+                    "leaky",
+                    MESSAGE_ID,
+                    Some("hi"),
+                    None,
+                    MentionPolicy::default(),
+                )
+                .await
+                .unwrap_err(),
+            client
+                .send_file("leaky", Some("hi"), "a.png", &[1], MentionPolicy::default())
+                .await
+                .unwrap_err(),
+            client
+                .delete_message("leaky", MESSAGE_ID)
+                .await
+                .unwrap_err(),
+        ];
+
+        for err in errors {
+            assert!(matches!(err, DiscordError::Connect(_)), "{err:?}");
+            let shown = err.to_string();
+            assert!(!shown.contains(HOOK_TOKEN), "token leaked: {shown}");
+            assert!(!shown.contains(HOOK_ID), "webhook id leaked: {shown}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_transport_failure_writes_no_health_and_publishes_no_failed_event() {
+        let creds = MockCreds::new();
+        creds.store_hook("alerts", &hook_url("discord.com", ""));
+        let publisher = MockPublisher::new();
+        let client = client_at(UNROUTABLE_API_BASE, &publisher, &creds);
+
+        client.post_text("alerts", "hi").await.unwrap_err();
+
+        let health = client.send_health();
+        assert_eq!(health.latency_samples, 0);
+        assert_eq!(health.last_send_ok, None);
+        assert!(!publisher.has_kind("discord.webhook.failed"));
+        assert!(!publisher.has_kind("request.fail"));
     }
 
     fn mention_cases() -> [(MentionPolicy, serde_json::Value); 4] {
@@ -1452,7 +1702,7 @@ pub(crate) mod tests {
 
         for (policy, _) in mention_cases() {
             client
-                .edit_message_with_mentions("alerts", "msg1", Some("<@&42> live"), None, policy)
+                .edit_message_with_mentions("alerts", MESSAGE_ID, Some("<@&42> live"), None, policy)
                 .await
                 .unwrap();
         }
@@ -1480,7 +1730,7 @@ pub(crate) mod tests {
         client
             .edit_message_with_mentions(
                 "alerts",
-                "msg1",
+                MESSAGE_ID,
                 None,
                 Some(embed),
                 MentionPolicy {
@@ -1512,12 +1762,42 @@ pub(crate) mod tests {
         assert!(body.get("allowed_mentions").is_none(), "{body}");
     }
 
-    fn multipart_field<'a>(body: &'a str, name: &str) -> &'a str {
+    struct FormPart {
+        head: String,
+        body: Vec<u8>,
+    }
+
+    fn find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
+        haystack
+            .get(from..)?
+            .windows(needle.len())
+            .position(|w| w == needle)
+            .map(|at| at + from)
+    }
+
+    fn form_parts(request: &wiremock::Request) -> Vec<FormPart> {
+        let content_type = request.headers["content-type"].to_str().unwrap();
+        let boundary = content_type.split("boundary=").nth(1).unwrap();
+        let delimiter = format!("\r\n--{boundary}").into_bytes();
+        let mut framed = b"\r\n".to_vec();
+        framed.extend_from_slice(&request.body);
+        let mut parts = Vec::new();
+        let mut at = find(&framed, &delimiter, 0).unwrap() + delimiter.len();
+        while framed.get(at..at + 2) == Some(b"\r\n") {
+            let head_end = find(&framed, b"\r\n\r\n", at).unwrap();
+            let next = find(&framed, &delimiter, head_end).unwrap();
+            parts.push(FormPart {
+                head: String::from_utf8_lossy(&framed[at + 2..head_end]).to_lowercase(),
+                body: framed[head_end + 4..next].to_vec(),
+            });
+            at = next + delimiter.len();
+        }
+        parts
+    }
+
+    fn part<'a>(parts: &'a [FormPart], name: &str) -> &'a FormPart {
         let marker = format!("name=\"{name}\"");
-        let after_header = &body[body.find(&marker).unwrap()..];
-        let value_start = after_header.find("\r\n\r\n").unwrap() + 4;
-        let value = &after_header[value_start..];
-        &value[..value.find("\r\n--").unwrap()]
+        parts.iter().find(|p| p.head.contains(&marker)).unwrap()
     }
 
     #[tokio::test]
@@ -1538,9 +1818,9 @@ pub(crate) mod tests {
             .unwrap();
 
         let requests = server.received_requests().await.unwrap();
-        let body = String::from_utf8_lossy(&requests[0].body).into_owned();
+        let parts = form_parts(&requests[0]);
         let payload: serde_json::Value =
-            serde_json::from_str(multipart_field(&body, "payload_json")).unwrap();
+            serde_json::from_slice(&part(&parts, "payload_json").body).unwrap();
         assert_eq!(
             payload,
             serde_json::json!({
@@ -1551,6 +1831,31 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn send_file_uploads_the_bytes_as_the_first_octet_stream_file_part() {
+        let server = MockServer::start().await;
+        let client = make_client(&server, MockPublisher::new(), MockCreds::new()).await;
+        mount_accepting(&server, "POST").await;
+        let bytes = [0, 13, 10, b'-', b'-', 255];
+
+        client
+            .send_file("alerts", None, "clip.png", &bytes, MentionPolicy::default())
+            .await
+            .unwrap();
+
+        let requests = server.received_requests().await.unwrap();
+        let parts = form_parts(&requests[0]);
+        let file = part(&parts, "files[0]");
+        assert_eq!(parts.len(), 2);
+        assert!(file.head.contains("filename=\"clip.png\""), "{}", file.head);
+        assert!(
+            file.head.contains("content-type: application/octet-stream"),
+            "{}",
+            file.head
+        );
+        assert_eq!(file.body, bytes);
+    }
+
+    #[tokio::test]
     async fn embed_with_fields_serialized_correctly() {
         let server = MockServer::start().await;
         let publisher = MockPublisher::new();
@@ -1558,7 +1863,7 @@ pub(crate) mod tests {
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
         Mock::given(method("POST"))
-            .and(path("/webhooks/test-id/test-token"))
+            .and(path(hook_path()))
             .and(query_param("wait", "true"))
             .respond_with(make_standard_response("msg_fields"))
             .mount(&server)
@@ -1573,12 +1878,12 @@ pub(crate) mod tests {
             }],
             ..Default::default()
         };
-        let result = client.post_embed("alerts", embed).await;
-        assert!(result.is_ok());
+        client.post_embed("alerts", embed).await.unwrap();
 
-        let reqs = server.received_requests().await.unwrap();
-        assert!(!reqs.is_empty());
-        let body: serde_json::Value = serde_json::from_slice(&reqs[0].body).unwrap();
-        assert!(body["embeds"][0]["fields"].is_array());
+        let body = &request_bodies(&server).await[0];
+        assert_eq!(
+            body["embeds"][0]["fields"],
+            serde_json::json!([{ "name": "key", "value": "value", "inline": true }])
+        );
     }
 }

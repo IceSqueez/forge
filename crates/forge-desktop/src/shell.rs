@@ -706,7 +706,10 @@ impl AppShell {
                 Some(reconciler) => return Self::hotkeys_screen(handles, reconciler, cx),
                 None => handles.builtins.get(id),
             },
-            DISCORD_BUILTIN_ID => return Self::discord_screen(handles, cx),
+            DISCORD_BUILTIN_ID => match handles.discord_client.clone() {
+                Some(client) => return Self::discord_screen(handles, client, cx),
+                None => handles.builtins.get(id),
+            },
             _ => handles.builtins.get(id),
         };
         let object = builtin.unwrap_or_else(|| unavailable_builtin(id));
@@ -879,8 +882,11 @@ impl AppShell {
         Self::routed(view, cx)
     }
 
-    fn discord_screen(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) -> AnyView {
-        let client = Arc::clone(&handles.discord_client);
+    fn discord_screen(
+        handles: &Arc<RuntimeHandles>,
+        client: Arc<forge_discord::DiscordClient>,
+        cx: &mut Context<Self>,
+    ) -> AnyView {
         let action_repo = handles.backend.action_repo();
         let bus = Arc::clone(&handles.bus);
         let rt_handle = handles.rt_handle.clone();

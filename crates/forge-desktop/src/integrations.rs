@@ -93,7 +93,7 @@ pub struct Integrations {
     pub factories: Vec<Arc<dyn IntegrationFactory<BuiltinObject>>>,
     pub obs_install_seed: ObsInstallSeed,
     pub vtube_install_seed: VTubeInstallSeed,
-    pub discord_client: Arc<forge_discord::DiscordClient>,
+    pub discord_client: Option<Arc<forge_discord::DiscordClient>>,
     pub midi_sink: Arc<forge_midi::SwitchableMidiSink>,
     pub hotkey_client: Option<Arc<forge_hotkey::HotkeyClient>>,
     pub hotkey_reconciler: Option<Arc<HotkeyReconciler>>,
@@ -314,9 +314,11 @@ pub async fn build_integrations(
     let vtube = wire_vtube(sub_actions, backend, bus);
     let vtube_install_seed = vtube.seed();
     factories.push(Arc::new(vtube));
-    let discord = wire_discord(sub_actions, backend, bus);
-    let discord_client = discord.client();
-    factories.push(Arc::new(discord));
+    let mut discord_client = None;
+    if let Some(discord) = wire_discord(sub_actions, backend, bus, endpoints) {
+        discord_client = Some(discord.client());
+        factories.push(Arc::new(discord));
+    }
     let midi = wire_midi(sub_actions, backend, bus, midi_kinds);
     let midi_sink = midi.sink();
     factories.push(Arc::new(midi));
@@ -1872,7 +1874,12 @@ pub(crate) mod tests {
         .unwrap();
         wire_obs(&mut sub_actions, &backend, &bus);
         wire_vtube(&mut sub_actions, &backend, &bus);
-        wire_discord(&mut sub_actions, &backend, &bus);
+        wire_discord(
+            &mut sub_actions,
+            &backend,
+            &bus,
+            &PlatformEndpoints::default(),
+        );
         wire_midi(&mut sub_actions, &backend, &bus, Vec::new());
         register_twitch_runners(&mut sub_actions, &backend, &bus);
         register_youtube_runners(&mut sub_actions, &bus);

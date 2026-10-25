@@ -1,5 +1,4 @@
 pub mod client;
-pub mod config;
 pub(crate) mod content;
 pub(crate) mod credentials;
 pub mod embed;
@@ -10,13 +9,13 @@ pub mod integration;
 pub mod mention;
 pub mod quick_actions;
 pub(crate) mod ratelimit;
+pub(crate) mod route;
 pub mod runners;
 pub mod sink;
 pub mod status;
 pub mod webhooks;
 
 pub use client::DiscordClient;
-pub use config::DiscordConfig;
 pub use content::WebhookPost;
 pub use embed::{DiscordEmbed, DiscordEmbedField};
 pub use error::DiscordError;

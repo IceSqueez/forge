@@ -2739,7 +2739,6 @@ dependencies = [
  "forge-registry",
  "forge-storage",
  "forge-types",
- "reqwest",
  "serde",
  "serde_json",
  "tempfile",

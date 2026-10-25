@@ -1091,6 +1091,7 @@ mod tests {
         worker_runtime,
     };
 
+    #[allow(clippy::expect_used)]
     #[gpui::test]
     fn the_crumb_leads_back_to_the_discord_category_on_the_hub(cx: &mut TestAppContext) {
         let rt = runtime();
@@ -1099,10 +1100,12 @@ mod tests {
         let client = {
             let _entered = rt.enter();
             DiscordClient::new(
-                forge_discord::DiscordConfig::default(),
+                forge_platform_core::PlatformEndpoints::default()
+                    .base_url(forge_platform_core::EndpointSurface::DiscordApi),
                 Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
                 backend as Arc<dyn CredentialsRepo>,
             )
+            .expect("the discord gateway builds")
         };
         let handle = rt.handle().clone();
 
@@ -1190,14 +1193,15 @@ mod tests {
             .local_addr()
             .expect("a bound listener has an address");
         let posted = rt.spawn(first_posted_body(listener));
-        let creds = webhook_pointing_at(format!("http://{addr}/api/webhooks/1/token"));
+        let creds = webhook_pointing_at("https://discord.com/api/webhooks/1/token".to_owned());
         let client = {
             let _entered = rt.enter();
             DiscordClient::new(
-                forge_discord::DiscordConfig::default(),
+                &format!("http://{addr}/api"),
                 Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
                 Arc::new(creds) as Arc<dyn CredentialsRepo>,
             )
+            .expect("the discord gateway builds")
         };
         install_language(Language::Uk);
         install_presentation(cx);

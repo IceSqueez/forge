@@ -4,7 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
 use forge_net::{Gateway, RateLimiter, TokenBucketRateLimiter};
-use forge_platform_core::{ChatPlatform, PlatformEndpoints, SectionIcon};
+use forge_platform_core::{ChatPlatform, EndpointSurface, PlatformEndpoints, SectionIcon};
 use forge_registry::SubActionRegistry;
 use forge_runtime::{
     DEFAULT_TEARDOWN_GRACE, EventBus, IntegrationFactory, RunningIntegration, TaskGroup,
@@ -773,19 +773,22 @@ pub(crate) fn wire_discord(
     sub_actions: &mut SubActionRegistry,
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
-) -> DiscordFactory {
+    endpoints: &PlatformEndpoints,
+) -> Option<DiscordFactory> {
     let client = forge_discord::DiscordClient::new(
-        forge_discord::DiscordConfig::default(),
+        endpoints.base_url(EndpointSurface::DiscordApi),
         publisher(bus),
         creds_of(backend),
-    );
+    )
+    .inspect_err(|e| eprintln!("forge-desktop: discord gateway build failed: {e}"))
+    .ok()?;
     if let Err(e) = forge_discord::register_discord_sub_actions(sub_actions, Arc::clone(&client)) {
         eprintln!("forge-desktop: discord sub-action registration failed: {e}");
     }
-    DiscordFactory {
+    Some(DiscordFactory {
         creds: creds_of(backend),
         client,
-    }
+    })
 }
 
 impl DiscordFactory {

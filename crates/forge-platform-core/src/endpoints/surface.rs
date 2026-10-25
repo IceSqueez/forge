@@ -12,6 +12,7 @@ pub enum EndpointSurface {
     YouTubeOAuth,
     DonatelloApi,
     MonobankApi,
+    DiscordApi,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,7 +31,7 @@ impl EndpointProtocol {
 }
 
 impl EndpointSurface {
-    pub const ALL: [EndpointSurface; 12] = [
+    pub const ALL: [EndpointSurface; 13] = [
         Self::TwitchApi,
         Self::TwitchEventSubSocket,
         Self::TwitchOAuth,
@@ -43,6 +44,7 @@ impl EndpointSurface {
         Self::YouTubeOAuth,
         Self::DonatelloApi,
         Self::MonobankApi,
+        Self::DiscordApi,
     ];
 
     pub const fn env_var(self) -> &'static str {
@@ -59,6 +61,7 @@ impl EndpointSurface {
             Self::YouTubeOAuth => "FORGE_YOUTUBE_OAUTH_BASE_URL",
             Self::DonatelloApi => "FORGE_DONATELLO_API_BASE_URL",
             Self::MonobankApi => "FORGE_MONOBANK_API_BASE_URL",
+            Self::DiscordApi => "FORGE_DISCORD_API_BASE_URL",
         }
     }
 
@@ -76,6 +79,7 @@ impl EndpointSurface {
             Self::YouTubeOAuth => "https://oauth2.googleapis.com",
             Self::DonatelloApi => "https://donatello.to/api/v1",
             Self::MonobankApi => "https://api.monobank.ua",
+            Self::DiscordApi => "https://discord.com/api",
         }
     }
 
@@ -90,7 +94,8 @@ impl EndpointSurface {
             | Self::YouTubeUploadApi
             | Self::YouTubeOAuth
             | Self::DonatelloApi
-            | Self::MonobankApi => EndpointProtocol::Http,
+            | Self::MonobankApi
+            | Self::DiscordApi => EndpointProtocol::Http,
             Self::TwitchEventSubSocket | Self::KickChatSocket => EndpointProtocol::WebSocket,
         }
     }

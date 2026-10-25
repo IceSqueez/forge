@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use forge_net::{Cooldown, MAX_REMOTE_COOLDOWN};
+use async_trait::async_trait;
+use forge_net::{Cooldown, MAX_REMOTE_COOLDOWN, RateLimitError, RateLimiter};
 
 #[derive(Debug, Clone)]
 pub(crate) struct DiscordBucket {
@@ -157,6 +159,36 @@ impl DiscordRateLimiter {
     pub(crate) fn reset_hint_secs(&self, now: Instant, name: &str) -> Option<f64> {
         self.buckets.get(name)?.reset_hint_secs(now)
     }
+}
+
+pub(crate) type SharedDiscordRateLimiter = Arc<Mutex<DiscordRateLimiter>>;
+
+pub(crate) struct GlobalThrottleGate {
+    limiter: SharedDiscordRateLimiter,
+}
+
+impl GlobalThrottleGate {
+    pub(crate) fn new(limiter: SharedDiscordRateLimiter) -> Self {
+        Self { limiter }
+    }
+}
+
+#[async_trait]
+impl RateLimiter for GlobalThrottleGate {
+    async fn acquire(&self, _weight: u32) -> Result<forge_net::RateLimitOutcome, RateLimitError> {
+        let global_wait = self
+            .limiter
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .global_wait_duration(Instant::now());
+        Ok(
+            global_wait.map_or(forge_net::RateLimitOutcome::Granted, |wait_for| {
+                forge_net::RateLimitOutcome::Throttled { wait_for }
+            }),
+        )
+    }
+
+    async fn observe_remote_throttle(&self, _retry_after: Duration) {}
 }
 
 #[cfg(test)]

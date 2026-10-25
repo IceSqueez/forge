@@ -293,6 +293,7 @@ impl TwitchBotAccount {
 #[allow(clippy::unwrap_used)]
 pub(crate) mod test_support {
     use std::collections::HashMap;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
@@ -300,6 +301,7 @@ pub(crate) mod test_support {
     use forge_platform_core::EndpointSurface;
     use forge_storage::{CredentialId, CredentialsRepo, StorageError};
     use time::OffsetDateTime;
+    use tokio::sync::Notify;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -313,6 +315,85 @@ pub(crate) mod test_support {
     pub(crate) const BOT_LOGIN: &str = "helper_bot";
     pub(crate) const BOT_ACCESS: &str = "BOT_ACCESS_SENTINEL_z9k";
     pub(crate) const BOT_REFRESH: &str = "BOT_REFRESH_SENTINEL_z9k";
+    const SETTLE_TURNS: usize = 32;
+
+    #[derive(Default)]
+    pub(crate) struct StoreGate {
+        armed: AtomicBool,
+        arrived: Notify,
+        release: Notify,
+    }
+
+    impl StoreGate {
+        pub(crate) fn armed() -> Arc<Self> {
+            let gate = Self::default();
+            gate.armed.store(true, Ordering::SeqCst);
+            Arc::new(gate)
+        }
+
+        pub(crate) async fn arrival(&self) {
+            self.arrived.notified().await;
+        }
+
+        pub(crate) fn open(&self) {
+            self.release.notify_one();
+        }
+
+        async fn pass(&self) {
+            if self.armed.swap(false, Ordering::SeqCst) {
+                self.arrived.notify_one();
+                self.release.notified().await;
+            }
+        }
+    }
+
+    pub(crate) struct GatedRepo {
+        rows: Arc<KeyedRepo>,
+        gate: Arc<StoreGate>,
+    }
+
+    impl GatedRepo {
+        pub(crate) fn over(rows: Arc<KeyedRepo>, gate: Arc<StoreGate>) -> Arc<Self> {
+            Arc::new(Self { rows, gate })
+        }
+    }
+
+    #[async_trait]
+    impl CredentialsRepo for GatedRepo {
+        async fn store(&self, id: &CredentialId, plaintext: &str) -> Result<(), StorageError> {
+            self.gate.pass().await;
+            self.rows.store(id, plaintext).await
+        }
+
+        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
+            self.rows.load(id).await
+        }
+
+        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
+            self.rows.delete(id).await
+        }
+
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            self.rows.list_ids().await
+        }
+
+        async fn last_refresh(
+            &self,
+            id: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            self.rows.last_refresh(id).await
+        }
+
+        async fn mark_refreshed(&self, id: &CredentialId) -> Result<(), StorageError> {
+            self.rows.mark_refreshed(id).await
+        }
+    }
+
+    pub(crate) async fn settle() {
+        for _ in 0..SETTLE_TURNS {
+            tokio::task::yield_now().await;
+        }
+    }
 
     #[derive(Default)]
     pub(crate) struct KeyedRepo(Mutex<HashMap<String, String>>);
@@ -428,20 +509,37 @@ pub(crate) mod test_support {
             harness
         }
 
+        pub(crate) async fn with_bot_row_gated_by(gate: Arc<StoreGate>) -> Self {
+            let harness = Self::over(Some(gate)).await;
+            harness.repo.put(
+                TWITCH_BOT_CREDENTIAL_ID,
+                credential_json(BOT_ACCESS, BOT_REFRESH, BOT_USER_ID, BOT_LOGIN),
+            );
+            harness
+        }
+
         pub(crate) async fn without_bot_row() -> Self {
+            Self::over(None).await
+        }
+
+        async fn over(gate: Option<Arc<StoreGate>>) -> Self {
             let server = MockServer::start().await;
             let repo = Arc::new(KeyedRepo::default());
             repo.put(
                 TWITCH_CREDENTIAL_ID,
                 credential_json(TOKEN_SENTINEL, "streamer_refresh", SELF_USER_ID, "streamer"),
             );
+            let bot_repo: Arc<dyn CredentialsRepo> = match gate {
+                Some(gate) => GatedRepo::over(Arc::clone(&repo), gate),
+                None => Arc::clone(&repo) as Arc<dyn CredentialsRepo>,
+            };
             let bus = Arc::new(RecordingBus::default());
             let endpoints = endpoints_with(&[
                 (EndpointSurface::TwitchApi, server.uri().as_str()),
                 (EndpointSurface::TwitchOAuth, server.uri().as_str()),
             ]);
             let bot = TwitchBotAccount::new(
-                Arc::clone(&repo) as Arc<dyn CredentialsRepo>,
+                bot_repo,
                 crate::sub_actions::test_support::oauth_client_at(&server.uri(), CLIENT_ID),
                 Arc::clone(&bus) as Arc<dyn EventPublisher>,
                 crate::helix_gateway::helix_gateway(

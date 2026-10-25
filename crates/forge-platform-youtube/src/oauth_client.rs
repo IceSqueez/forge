@@ -160,7 +160,8 @@ mod tests {
 
     use super::TOKEN_PATH;
     use crate::endpoints_test_support::{
-        OAUTH_CLIENT_SECRET, StubReply, StubServer, oauth_client_at, oauth_client_limited_by,
+        OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, StubReply, StubServer, oauth_client_at,
+        oauth_client_limited_by,
     };
 
     const REFRESH_TOKEN: &str = "1//refresh-token-secret";
@@ -208,6 +209,44 @@ mod tests {
             Ok(_) => panic!("the refresh must fail"),
             Err(error) => error,
         }
+    }
+
+    #[tokio::test]
+    async fn refresh_posts_exactly_the_refresh_grant_form() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path(TOKEN_PATH))
+            .respond_with(
+                wiremock::ResponseTemplate::new(StatusCode::OK.as_u16()).set_body_json(
+                    json!({ "access_token": "ya29.new-access", "expires_in": 3599 }),
+                ),
+            )
+            .mount(&server)
+            .await;
+
+        oauth_client_at(&server.uri())
+            .refresh(REFRESH_TOKEN)
+            .await
+            .unwrap();
+
+        let requests = server.received_requests().await.unwrap();
+        let body = std::str::from_utf8(&requests[0].body).unwrap();
+        let sent: std::collections::BTreeMap<String, String> =
+            reqwest::Url::parse(&format!("http://form.invalid/?{body}"))
+                .unwrap()
+                .query_pairs()
+                .map(|(key, value)| (key.into_owned(), value.into_owned()))
+                .collect();
+        let expected: std::collections::BTreeMap<String, String> = [
+            ("client_id", OAUTH_CLIENT_ID),
+            ("client_secret", OAUTH_CLIENT_SECRET),
+            ("grant_type", "refresh_token"),
+            ("refresh_token", REFRESH_TOKEN),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .collect();
+        assert_eq!((requests.len(), sent), (1, expected));
     }
 
     #[tokio::test]

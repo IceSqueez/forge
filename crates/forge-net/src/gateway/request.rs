@@ -221,6 +221,7 @@ pub struct GatewayRequest {
     pub(crate) label: Option<&'static str>,
     pub(crate) cancel: Option<CancellationToken>,
     pub(crate) expected_refusals: Vec<ExpectedRefusal>,
+    pub(crate) masked: Vec<Secret>,
 }
 
 impl GatewayRequest {
@@ -265,6 +266,7 @@ impl GatewayRequest {
             label: None,
             cancel: None,
             expected_refusals: Vec::new(),
+            masked: Vec::new(),
         }
     }
 
@@ -337,6 +339,11 @@ impl GatewayRequest {
         self
     }
 
+    pub fn mask(mut self, secret: Secret) -> Self {
+        self.masked.push(secret);
+        self
+    }
+
     pub(crate) fn secrets(&self) -> Vec<&str> {
         let query = self.query.iter().filter_map(|(_, value)| value.secret());
         let form = match &self.body.0 {
@@ -354,6 +361,7 @@ impl GatewayRequest {
             .map(Credential::secret)
             .chain(query)
             .chain(form)
+            .chain(self.masked.iter().map(Secret::expose))
             .filter(|secret| !secret.is_empty())
             .collect()
     }

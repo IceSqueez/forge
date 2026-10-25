@@ -23,6 +23,8 @@ pub enum GatewayBuildError {
     QueryOrFragment,
     #[error("base URL refused by the address guard: {0}")]
     AddressRefused(HostRejection),
+    #[error("a gateway without a base URL needs a profile that accepts absolute URLs")]
+    BaseRequired,
     #[error("HTTP client could not be built: {0}")]
     ClientUnavailable(String),
 }
@@ -50,7 +52,10 @@ pub(crate) fn validate_base(raw: &str, profile: &GatewayProfile) -> Result<Url, 
     Ok(url)
 }
 
-pub(crate) fn resolve_path(base: &Url, path: &str) -> Result<Url, GatewayFailure> {
+pub(crate) fn resolve_path(base: Option<&Url>, path: &str) -> Result<Url, GatewayFailure> {
+    let base = base.ok_or(GatewayFailure::InvalidRequest(
+        InvalidRequest::PathWithoutBase,
+    ))?;
     if path.contains([QUERY_MARK, FRAGMENT_MARK]) {
         return Err(GatewayFailure::InvalidRequest(InvalidRequest::QueryInPath));
     }
@@ -91,7 +96,7 @@ pub(crate) fn check_hop(url: &Url, profile: &GatewayProfile) -> Result<(), Gatew
         .ok_or(GatewayFailure::InvalidRequest(InvalidRequest::MalformedUrl))?;
     let scheme_allowed = match url.scheme() {
         HTTPS => true,
-        HTTP => profile.accepts_absolute_urls() || is_loopback_host(host),
+        HTTP => profile.allows_plain_http_to_any_host() || is_loopback_host(host),
         _ => false,
     };
     if !scheme_allowed {

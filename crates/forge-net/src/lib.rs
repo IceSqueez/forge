@@ -28,7 +28,8 @@ pub use gateway::{
     BodyExcerpt, CallClass, Credential, DecodeCategory, EgressKind, ExpectedRefusal,
     FailureContext, FailureObserver, FormBody, Gateway, GatewayBuildError, GatewayFailure,
     GatewayProfile, GatewayRequest, GatewayResponse, InvalidRequest, Method, MultipartBody,
-    RequestBody, RequestEncodeError, ResolvedTarget, ResponseDecodeError, Secret, TransportFailure,
+    RequestBody, RequestEncodeError, ResolvedTarget, ResponseDecodeError, STREAMING_CONNECT_BUDGET,
+    STREAMING_READ_IDLE_BUDGET, Secret, StreamFailure, StreamedResponse, TransportFailure,
     TransportKind,
 };
 pub use header_lookup::HeaderLookup;

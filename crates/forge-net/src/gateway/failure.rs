@@ -99,8 +99,12 @@ fn url_free_cause(error: reqwest::Error) -> String {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Error)]
 pub enum InvalidRequest {
-    #[error("absolute URLs are accepted only for user-directed egress")]
+    #[error("absolute URLs are not accepted by this gateway profile")]
     AbsoluteUrlNotAllowed,
+    #[error("request paths need a gateway built with a base URL")]
+    PathWithoutBase,
+    #[error("this gateway profile does not attach credentials")]
+    CredentialNotAllowed,
     #[error("request target is not a valid URL")]
     MalformedUrl,
     #[error("only http and https targets are allowed")]

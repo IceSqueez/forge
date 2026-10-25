@@ -10,6 +10,7 @@ const USER_DIRECTED_NO_HINT_WAIT: Duration = Duration::from_secs(DEFAULT_RETRY_A
 pub enum EgressKind {
     PlatformApi,
     UserDirected { allow_local: bool },
+    TrustedAbsolute,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -43,7 +44,31 @@ impl GatewayProfile {
         }
     }
 
+    pub const fn absolute_https(
+        default_class: CallClass,
+        hint_family: ThrottleHintFamily,
+        no_hint_default: Duration,
+    ) -> Self {
+        Self {
+            default_class,
+            hint_family,
+            no_hint_default,
+            egress: EgressKind::TrustedAbsolute,
+        }
+    }
+
     pub const fn accepts_absolute_urls(&self) -> bool {
+        matches!(
+            self.egress,
+            EgressKind::UserDirected { .. } | EgressKind::TrustedAbsolute
+        )
+    }
+
+    pub(crate) const fn attaches_credentials(&self) -> bool {
+        !matches!(self.egress, EgressKind::TrustedAbsolute)
+    }
+
+    pub(crate) const fn allows_plain_http_to_any_host(&self) -> bool {
         matches!(self.egress, EgressKind::UserDirected { .. })
     }
 

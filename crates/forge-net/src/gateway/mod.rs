@@ -9,11 +9,12 @@ mod resolved_target;
 mod response;
 mod response_body;
 mod secret;
+mod streaming;
 mod target;
 
 use std::fmt;
-use std::sync::Arc;
-use std::time::SystemTime;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, SystemTime};
 
 use reqwest::header::{
     AUTHORIZATION, CONTENT_TYPE, COOKIE, HeaderMap, HeaderName, HeaderValue, LOCATION,
@@ -33,10 +34,13 @@ pub use request::{
 pub use resolved_target::ResolvedTarget;
 pub use response::{DecodeCategory, GatewayResponse, ResponseDecodeError};
 pub use secret::Secret;
+pub use streaming::{
+    STREAMING_CONNECT_BUDGET, STREAMING_READ_IDLE_BUDGET, StreamFailure, StreamedResponse,
+};
 pub use target::GatewayBuildError;
 
 use crate::address_guard::{PublicAddressResolver, host_rejection_cause};
-use crate::body_read::{CappedReadError, read_capped};
+use crate::body_read::{BodySource, CappedReadError, read_capped};
 use crate::rate_limit::{RateLimitUsage, RateLimiter, acquire_or_wait, acquire_without_wait};
 use classify::{ERROR_BODY_READ_CAP, excerpt_of, status_failure, throttle_for};
 use request::{BodyRepr, PartContent, Target};
@@ -50,6 +54,7 @@ const TOTAL_BUDGET_ELAPSED: &str = "total time budget elapsed";
 const TOO_MANY_REDIRECTS: &str = "too many redirects";
 const REDIRECT_TARGET_MALFORMED: &str = "redirect target is not a valid URL";
 const REDIRECT_TARGET_DISALLOWED: &str = "redirect target is not allowed";
+const HEADERS_IDLE_ELAPSED: &str = "no response within the read-idle time budget";
 
 #[derive(Clone)]
 pub struct Gateway {
@@ -58,7 +63,8 @@ pub struct Gateway {
 
 struct Inner {
     client: reqwest::Client,
-    base: Url,
+    streaming_client: Mutex<Option<reqwest::Client>>,
+    base: Option<Url>,
     limiter: Arc<dyn RateLimiter>,
     profile: GatewayProfile,
     observer: Option<Arc<dyn FailureObserver>>,
@@ -80,10 +86,32 @@ impl Gateway {
         observer: Option<Arc<dyn FailureObserver>>,
     ) -> Result<Self, GatewayBuildError> {
         let base = target::validate_base(base_url, &profile)?;
-        let client = build_client(&profile)?;
+        Self::build(Some(base), limiter, profile, observer)
+    }
+
+    pub fn without_base(
+        limiter: Arc<dyn RateLimiter>,
+        profile: GatewayProfile,
+        observer: Option<Arc<dyn FailureObserver>>,
+    ) -> Result<Self, GatewayBuildError> {
+        if !profile.accepts_absolute_urls() {
+            return Err(GatewayBuildError::BaseRequired);
+        }
+        Self::build(None, limiter, profile, observer)
+    }
+
+    fn build(
+        base: Option<Url>,
+        limiter: Arc<dyn RateLimiter>,
+        profile: GatewayProfile,
+        observer: Option<Arc<dyn FailureObserver>>,
+    ) -> Result<Self, GatewayBuildError> {
+        let client = build_client(&profile, profile.default_class.connect_budget())
+            .map_err(|failure| GatewayBuildError::ClientUnavailable(failure.cause().to_owned()))?;
         Ok(Self {
             inner: Arc::new(Inner {
                 client,
+                streaming_client: Mutex::new(None),
                 base,
                 limiter,
                 profile,
@@ -101,19 +129,16 @@ impl Gateway {
     }
 
     pub fn resolve_path(&self, path: &str) -> Result<ResolvedTarget, GatewayFailure> {
-        target::resolve_path(&self.inner.base, path).map(|url| ResolvedTarget::from_url(&url))
+        target::resolve_path(self.inner.base.as_ref(), path)
+            .map(|url| ResolvedTarget::from_url(&url))
     }
 
     pub async fn send(
         &self,
         mut request: GatewayRequest,
     ) -> Result<GatewayResponse, GatewayFailure> {
-        let class = request.class.unwrap_or(self.inner.profile.default_class);
-        let context = FailureContext {
-            method: request.method,
-            class,
-            label: request.label,
-        };
+        let context = self.failure_context(&request);
+        let class = context.class;
         let outcome = match request.cancel.take() {
             Some(token) => tokio::select! {
                 biased;
@@ -122,17 +147,32 @@ impl Gateway {
             },
             None => self.execute(&request, class).await,
         };
-        if let Err(failure) = &outcome
-            && !matches!(failure, GatewayFailure::Cancelled)
-            && !request
+        if let Err(failure) = &outcome {
+            self.report(&request, context, failure);
+        }
+        outcome
+    }
+
+    fn failure_context(&self, request: &GatewayRequest) -> FailureContext {
+        FailureContext {
+            method: request.method,
+            class: request.class.unwrap_or(self.inner.profile.default_class),
+            label: request.label,
+        }
+    }
+
+    fn report(&self, request: &GatewayRequest, context: FailureContext, failure: &GatewayFailure) {
+        if matches!(failure, GatewayFailure::Cancelled)
+            || request
                 .expected_refusals
                 .iter()
                 .any(|refusal| refusal.matches(failure))
-            && let Some(observer) = &self.inner.observer
         {
+            return;
+        }
+        if let Some(observer) = &self.inner.observer {
             observer.on_failure(failure, context);
         }
-        outcome
     }
 
     async fn execute(
@@ -140,13 +180,16 @@ impl Gateway {
         request: &GatewayRequest,
         class: CallClass,
     ) -> Result<GatewayResponse, GatewayFailure> {
+        let client = &self.inner.client;
         let first = self.first_hop(request)?;
-        let first_builder = self.build_hop(request, &first)?;
+        let first_builder = self.build_hop(client, request, &first)?;
         self.acquire_budget(request).await?;
-        tokio::time::timeout(
-            class.total_budget(),
-            self.exchange(request, class, first, first_builder),
-        )
+        tokio::time::timeout(class.total_budget(), async {
+            let response = self
+                .follow(client, request, first, first_builder, None)
+                .await?;
+            self.finish(request, class, response).await
+        })
         .await
         .unwrap_or_else(|_| {
             Err(GatewayFailure::Transport(TransportFailure::new(
@@ -168,31 +211,45 @@ impl Gateway {
         refused.map_err(|retry_after| GatewayFailure::BudgetExhausted { retry_after })
     }
 
-    async fn exchange(
+    async fn follow(
         &self,
+        client: &reqwest::Client,
         request: &GatewayRequest,
-        class: CallClass,
         first: Hop,
         first_builder: reqwest::RequestBuilder,
-    ) -> Result<GatewayResponse, GatewayFailure> {
+        idle_budget: Option<Duration>,
+    ) -> Result<reqwest::Response, GatewayFailure> {
         let mut hop = first;
         let mut builder = first_builder;
         let mut followed = 0_usize;
         loop {
-            let response = builder.send().await.map_err(send_failure)?;
+            let response = match idle_budget {
+                Some(budget) => {
+                    tokio::time::timeout(budget, builder.send())
+                        .await
+                        .map_err(|_| {
+                            GatewayFailure::Transport(TransportFailure::new(
+                                TransportKind::Timeout,
+                                HEADERS_IDLE_ELAPSED,
+                            ))
+                        })?
+                }
+                None => builder.send().await,
+            }
+            .map_err(send_failure)?;
             let next = if request.follow_redirects {
                 self.redirect_hop(&hop, &response)?
             } else {
                 None
             };
             let Some(next) = next else {
-                return self.finish(request, class, response).await;
+                return Ok(response);
             };
             followed += 1;
             if followed > MAX_REDIRECT_HOPS {
                 return Err(redirect_refused(TOO_MANY_REDIRECTS));
             }
-            builder = self.build_hop(request, &next)?;
+            builder = self.build_hop(client, request, &next)?;
             hop = next;
         }
     }
@@ -214,35 +271,58 @@ impl Gateway {
                 })?;
             return Ok(GatewayResponse::new(status.as_u16(), headers, body));
         }
-        if let Some(throttle) =
-            throttle_for(status, &headers, &self.inner.profile, SystemTime::now())
-        {
+        Err(self
+            .refusal(request, status, &headers, ResponseBody::new(response))
+            .await)
+    }
+
+    async fn refusal<B: BodySource>(
+        &self,
+        request: &GatewayRequest,
+        status: StatusCode,
+        headers: &[(String, String)],
+        body: B,
+    ) -> GatewayFailure {
+        let throttle = throttle_for(status, headers, &self.inner.profile, SystemTime::now());
+        if let Some(throttle) = throttle {
             self.inner
                 .limiter
                 .observe_remote_throttle(throttle.wait)
                 .await;
-            let body = read_capped(ResponseBody::new(response), ERROR_BODY_READ_CAP)
-                .await
-                .unwrap_or_default();
-            return Err(GatewayFailure::RateLimited {
+        }
+        let body = read_capped(body, ERROR_BODY_READ_CAP)
+            .await
+            .unwrap_or_default();
+        let excerpt = excerpt_of(&body, &request.secrets());
+        match throttle {
+            Some(throttle) => GatewayFailure::RateLimited {
                 status: status.as_u16(),
                 retry_after: throttle.wait,
                 scope: throttle.scope,
-                excerpt: excerpt_of(&body, &request.secrets()),
-            });
+                excerpt,
+            },
+            None => status_failure(status, excerpt),
         }
-        let body = read_capped(ResponseBody::new(response), ERROR_BODY_READ_CAP)
-            .await
-            .unwrap_or_default();
-        Err(status_failure(
-            status,
-            excerpt_of(&body, &request.secrets()),
-        ))
+    }
+
+    fn streaming_client(&self) -> Result<reqwest::Client, GatewayFailure> {
+        let mut slot = self
+            .inner
+            .streaming_client
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some(client) = slot.as_ref() {
+            return Ok(client.clone());
+        }
+        let client = build_client(&self.inner.profile, STREAMING_CONNECT_BUDGET)
+            .map_err(GatewayFailure::Transport)?;
+        *slot = Some(client.clone());
+        Ok(client)
     }
 
     fn first_hop(&self, request: &GatewayRequest) -> Result<Hop, GatewayFailure> {
         let url = match &request.target {
-            Target::Path(path) => target::resolve_path(&self.inner.base, path)?,
+            Target::Path(path) => target::resolve_path(self.inner.base.as_ref(), path)?,
             Target::Absolute(raw) => target::resolve_absolute(raw, &self.inner.profile)?,
         };
         Ok(Hop {
@@ -298,13 +378,14 @@ impl Gateway {
 
     fn build_hop(
         &self,
+        client: &reqwest::Client,
         request: &GatewayRequest,
         hop: &Hop,
     ) -> Result<reqwest::RequestBuilder, GatewayFailure> {
-        let mut builder = self
-            .inner
-            .client
-            .request(reqwest_method(hop.method), hop.url.clone());
+        if request.credential.is_some() && !self.inner.profile.attaches_credentials() {
+            return Err(invalid(InvalidRequest::CredentialNotAllowed));
+        }
+        let mut builder = client.request(reqwest_method(hop.method), hop.url.clone());
         if hop.apply_query && !request.query.is_empty() {
             let pairs: Vec<(&str, &str)> = request
                 .query
@@ -340,21 +421,20 @@ impl fmt::Debug for Gateway {
     }
 }
 
-fn build_client(profile: &GatewayProfile) -> Result<reqwest::Client, GatewayBuildError> {
+fn build_client(
+    profile: &GatewayProfile,
+    connect_budget: Duration,
+) -> Result<reqwest::Client, TransportFailure> {
     let mut builder = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .user_agent(USER_AGENT)
-        .connect_timeout(profile.default_class.connect_budget());
+        .connect_timeout(connect_budget);
     if profile.guards_addresses() {
         builder = builder
             .dns_resolver(Arc::new(PublicAddressResolver))
             .no_proxy();
     }
-    builder.build().map_err(|error| {
-        GatewayBuildError::ClientUnavailable(
-            TransportFailure::from_reqwest(error).cause().to_owned(),
-        )
-    })
+    builder.build().map_err(TransportFailure::from_reqwest)
 }
 
 fn send_failure(error: reqwest::Error) -> GatewayFailure {

@@ -6,6 +6,7 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use super::call_class::CallClass;
+use super::expected_refusal::ExpectedRefusal;
 use super::secret::Secret;
 
 const DEFAULT_WEIGHT: u32 = 1;
@@ -219,6 +220,7 @@ pub struct GatewayRequest {
     pub(crate) credential: Option<Credential>,
     pub(crate) label: Option<&'static str>,
     pub(crate) cancel: Option<CancellationToken>,
+    pub(crate) expected_refusals: Vec<ExpectedRefusal>,
 }
 
 impl GatewayRequest {
@@ -262,6 +264,7 @@ impl GatewayRequest {
             credential: None,
             label: None,
             cancel: None,
+            expected_refusals: Vec::new(),
         }
     }
 
@@ -326,6 +329,11 @@ impl GatewayRequest {
 
     pub fn cancel_on(mut self, token: CancellationToken) -> Self {
         self.cancel = Some(token);
+        self
+    }
+
+    pub fn expect_refusal(mut self, refusal: ExpectedRefusal) -> Self {
+        self.expected_refusals.push(refusal);
         self
     }
 

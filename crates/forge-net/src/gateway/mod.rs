@@ -1,5 +1,6 @@
 mod call_class;
 mod classify;
+mod expected_refusal;
 mod failure;
 mod observer;
 mod profile;
@@ -22,6 +23,7 @@ use reqwest::multipart::{Form, Part};
 use reqwest::{StatusCode, Url};
 
 pub use call_class::CallClass;
+pub use expected_refusal::ExpectedRefusal;
 pub use failure::{BodyExcerpt, GatewayFailure, InvalidRequest, TransportFailure, TransportKind};
 pub use observer::{FailureContext, FailureObserver};
 pub use profile::{EgressKind, GatewayProfile};
@@ -122,6 +124,10 @@ impl Gateway {
         };
         if let Err(failure) = &outcome
             && !matches!(failure, GatewayFailure::Cancelled)
+            && !request
+                .expected_refusals
+                .iter()
+                .any(|refusal| refusal.matches(failure))
             && let Some(observer) = &self.inner.observer
         {
             observer.on_failure(failure, context);

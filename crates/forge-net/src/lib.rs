@@ -23,10 +23,10 @@ pub use body_read::{
 pub use cooldown::{Cooldown, MAX_REMOTE_COOLDOWN};
 pub use dedup::DedupSet;
 pub use gateway::{
-    BodyExcerpt, CallClass, Credential, DecodeCategory, EgressKind, FailureContext,
-    FailureObserver, FormBody, Gateway, GatewayBuildError, GatewayFailure, GatewayProfile,
-    GatewayRequest, GatewayResponse, InvalidRequest, Method, MultipartBody, RequestBody,
-    RequestEncodeError, ResolvedTarget, ResponseDecodeError, Secret, TransportFailure,
+    BodyExcerpt, CallClass, Credential, DecodeCategory, EgressKind, ExpectedRefusal,
+    FailureContext, FailureObserver, FormBody, Gateway, GatewayBuildError, GatewayFailure,
+    GatewayProfile, GatewayRequest, GatewayResponse, InvalidRequest, Method, MultipartBody,
+    RequestBody, RequestEncodeError, ResolvedTarget, ResponseDecodeError, Secret, TransportFailure,
     TransportKind,
 };
 pub use header_lookup::HeaderLookup;

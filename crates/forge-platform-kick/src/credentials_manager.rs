@@ -1,83 +1,57 @@
 use std::sync::Arc;
 
-use forge_platform_core::auth::{
-    PkceRefreshConfig, PkceRefresher, REFRESH_BUFFER_SECS, ReauthPolicy,
-};
-use forge_platform_core::{
-    PlatformEndpoints, PlatformError, credential_storage_error, reauth_required,
-};
+use forge_net::Gateway;
+use forge_platform_core::auth::REFRESH_BUFFER_SECS;
+use forge_platform_core::{PlatformError, credential_storage_error, reauth_required};
 use forge_storage::{CredentialId, CredentialsRepo};
 use time::{Duration, OffsetDateTime};
+use tokio::sync::Mutex;
 
-use crate::auth::{KickAuthBundle, kick_token_endpoint};
+use crate::auth::{KickAuthBundle, expiry_after};
 use crate::credentials::{CREDENTIAL_KEY, KickCredentials};
+use crate::oauth_client::KickOAuthClient;
 
 const PLATFORM: &str = "kick";
 const REFRESH_BUFFER: Duration = Duration::seconds(REFRESH_BUFFER_SECS as i64);
+const REFRESH_TASK_LOST: &str = "token refresh did not complete";
 
 pub struct KickCredentialsManager {
+    store: CredentialStore,
+    oauth: KickOAuthClient,
+    api: Gateway,
+    refresh_guard: Arc<Mutex<()>>,
+}
+
+#[derive(Clone)]
+struct CredentialStore {
     repo: Arc<dyn CredentialsRepo>,
-    refresher: PkceRefresher,
-    refresh_guard: tokio::sync::Mutex<()>,
+}
+
+enum RefreshTrigger {
+    NearExpiry,
+    Rejected(String),
 }
 
 impl KickCredentialsManager {
-    pub fn new(
-        endpoints: &PlatformEndpoints,
-        repo: Arc<dyn CredentialsRepo>,
-        client_id: String,
-        client_secret: String,
-    ) -> Self {
-        Self::with_refresh_endpoint(
-            repo,
-            client_id,
-            client_secret,
-            kick_token_endpoint(endpoints),
-        )
-    }
-
-    fn with_refresh_endpoint(
-        repo: Arc<dyn CredentialsRepo>,
-        client_id: String,
-        client_secret: String,
-        refresh_endpoint: String,
-    ) -> Self {
-        let refresher = PkceRefresher::new(PkceRefreshConfig {
-            platform: PLATFORM.to_owned(),
-            client_id,
-            client_secret: Some(client_secret),
-            token_endpoint: refresh_endpoint,
-            reauth_policy: ReauthPolicy::AnyClientError,
-        });
+    pub fn new(repo: Arc<dyn CredentialsRepo>, oauth: KickOAuthClient, api: Gateway) -> Self {
         Self {
-            repo,
-            refresher,
-            refresh_guard: tokio::sync::Mutex::new(()),
+            store: CredentialStore { repo },
+            oauth,
+            api,
+            refresh_guard: Arc::new(Mutex::new(())),
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn for_test(
-        repo: Arc<dyn CredentialsRepo>,
-        client_id: String,
-        client_secret: String,
-        refresh_endpoint: String,
-    ) -> Self {
-        Self::with_refresh_endpoint(repo, client_id, client_secret, refresh_endpoint)
+    pub(crate) fn oauth_client(&self) -> &KickOAuthClient {
+        &self.oauth
+    }
+
+    pub(crate) fn api(&self) -> &Gateway {
+        &self.api
     }
 
     pub async fn load(&self) -> Result<Option<KickCredentials>, PlatformError> {
-        let key = CredentialId::new(CREDENTIAL_KEY);
-        let Some(json) = self
-            .repo
-            .load(&key)
-            .await
-            .map_err(|e| credential_storage_error(PLATFORM, e))?
-        else {
-            return Ok(None);
-        };
-        let creds: KickCredentials = serde_json::from_str(&json)?;
-        Ok(Some(creds))
+        self.store.load().await
     }
 
     pub async fn save_from_bundle(&self, bundle: KickAuthBundle) -> Result<(), PlatformError> {
@@ -89,82 +63,97 @@ impl KickCredentialsManager {
             client_id: bundle.client_id,
             expires_at: bundle.expires_at,
         };
-        self.persist(&creds).await
+        let _guard = self.refresh_guard.lock().await;
+        self.store.persist(&creds).await
     }
 
     pub async fn get_valid_access_token(&self) -> Result<String, PlatformError> {
-        let creds = self
-            .load()
-            .await?
-            .ok_or_else(|| reauth_required(PLATFORM))?;
+        let creds = self.store.require().await?;
         if !near_expiry(&creds) {
             return Ok(creds.access_token);
         }
-        let _guard = self.refresh_guard.lock().await;
-        let creds = self
-            .load()
-            .await?
-            .ok_or_else(|| reauth_required(PLATFORM))?;
-        if !near_expiry(&creds) {
-            return Ok(creds.access_token);
-        }
-        let refresh_token = creds.refresh_token.clone();
-        let refreshed = self.perform_refresh(&refresh_token, creds).await?;
-        Ok(refreshed.access_token)
+        self.detached_refresh(RefreshTrigger::NearExpiry)
+            .await
+            .map(|creds| creds.access_token)
     }
 
     pub async fn user_id(&self) -> Result<u64, PlatformError> {
-        Ok(self
-            .load()
-            .await?
-            .ok_or_else(|| reauth_required(PLATFORM))?
-            .user_id)
+        Ok(self.store.require().await?.user_id)
     }
 
     pub async fn refresh(
         &self,
         failed_access_token: &str,
     ) -> Result<KickCredentials, PlatformError> {
-        let _guard = self.refresh_guard.lock().await;
-        let existing = self
-            .load()
-            .await?
-            .ok_or_else(|| reauth_required(PLATFORM))?;
-        if existing.access_token != failed_access_token {
-            return Ok(existing);
-        }
-        let refresh_token = existing.refresh_token.clone();
-        self.perform_refresh(&refresh_token, existing).await
+        self.detached_refresh(RefreshTrigger::Rejected(failed_access_token.to_owned()))
+            .await
     }
 
-    async fn perform_refresh(
+    async fn detached_refresh(
         &self,
-        refresh_token: &str,
-        existing: KickCredentials,
+        trigger: RefreshTrigger,
     ) -> Result<KickCredentials, PlatformError> {
-        let parsed = self.refresher.refresh(refresh_token).await?;
-        let expires_in = parsed.expires_in.unwrap_or(0);
-
-        let updated = KickCredentials {
-            access_token: parsed.access_token,
-            refresh_token: parsed
-                .refresh_token
-                .unwrap_or_else(|| refresh_token.to_owned()),
-            user_id: existing.user_id,
-            username: existing.username,
-            client_id: existing.client_id,
-            expires_at: OffsetDateTime::now_utc() + Duration::seconds(expires_in as i64),
-        };
-        self.persist(&updated).await?;
-        Ok(updated)
+        let store = self.store.clone();
+        let oauth = self.oauth.clone();
+        let guard = Arc::clone(&self.refresh_guard);
+        tokio::spawn(async move {
+            let _guard = guard.lock().await;
+            refresh_under_guard(&store, &oauth, trigger).await
+        })
+        .await
+        .map_err(|_| PlatformError::Auth {
+            reason: REFRESH_TASK_LOST.to_owned(),
+        })?
     }
 
     pub async fn clear(&self) -> Result<(), PlatformError> {
-        self.repo
-            .delete(&CredentialId::new(CREDENTIAL_KEY))
+        let _guard = self.refresh_guard.lock().await;
+        self.store.clear().await
+    }
+}
+
+async fn refresh_under_guard(
+    store: &CredentialStore,
+    oauth: &KickOAuthClient,
+    trigger: RefreshTrigger,
+) -> Result<KickCredentials, PlatformError> {
+    let existing = store.require().await?;
+    let already_rotated = match &trigger {
+        RefreshTrigger::NearExpiry => !near_expiry(&existing),
+        RefreshTrigger::Rejected(failed) => existing.access_token != *failed,
+    };
+    if already_rotated {
+        return Ok(existing);
+    }
+
+    let grant = oauth.refresh(&existing.refresh_token).await?;
+    let updated = KickCredentials {
+        access_token: grant.access_token,
+        refresh_token: grant.refresh_token.unwrap_or(existing.refresh_token),
+        user_id: existing.user_id,
+        username: existing.username,
+        client_id: existing.client_id,
+        expires_at: expiry_after(grant.expires_in)?,
+    };
+    store.persist(&updated).await?;
+    Ok(updated)
+}
+
+impl CredentialStore {
+    async fn load(&self) -> Result<Option<KickCredentials>, PlatformError> {
+        let Some(json) = self
+            .repo
+            .load(&CredentialId::new(CREDENTIAL_KEY))
             .await
-            .map_err(|e| credential_storage_error(PLATFORM, e))?;
-        Ok(())
+            .map_err(|e| credential_storage_error(PLATFORM, e))?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(serde_json::from_str(&json)?))
+    }
+
+    async fn require(&self) -> Result<KickCredentials, PlatformError> {
+        self.load().await?.ok_or_else(|| reauth_required(PLATFORM))
     }
 
     async fn persist(&self, creds: &KickCredentials) -> Result<(), PlatformError> {
@@ -174,6 +163,14 @@ impl KickCredentialsManager {
             .await
             .map_err(|e| credential_storage_error(PLATFORM, e))
     }
+
+    async fn clear(&self) -> Result<(), PlatformError> {
+        self.repo
+            .delete(&CredentialId::new(CREDENTIAL_KEY))
+            .await
+            .map_err(|e| credential_storage_error(PLATFORM, e))?;
+        Ok(())
+    }
 }
 
 fn near_expiry(creds: &KickCredentials) -> bool {
@@ -181,40 +178,90 @@ fn near_expiry(creds: &KickCredentials) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::collections::HashMap;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
+    use forge_platform_core::PlatformError;
     use forge_storage::{CredentialId, CredentialsRepo, StorageError};
     use serde_json::json;
     use time::{Duration, OffsetDateTime};
-    use wiremock::matchers::{body_string_contains, method, path};
+    use tokio::sync::Notify;
+    use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::KickCredentialsManager;
     use crate::auth::KickAuthBundle;
-    use crate::credentials::KickCredentials;
+    use crate::credentials::{CREDENTIAL_KEY, KickCredentials};
+    use crate::endpoints_test_support::{oauth_client_at, offline_manager, unreachable_api};
 
-    struct InMemRepo(Mutex<HashMap<String, String>>);
+    const TOKEN_PATH: &str = "/token";
+    const EXISTING_ACCESS: &str = "kick_access_existing";
+    const EXISTING_REFRESH: &str = "kick_refresh_existing";
+    const REFRESHED_ACCESS: &str = "kick_access_refreshed";
+    const ROTATED_REFRESH: &str = "kick_refresh_rotated";
+    const SECOND_ACCESS: &str = "kick_access_second_refresh";
+    const BUNDLE_ACCESS: &str = "kick_access_from_new_sign_in";
+    const CONCURRENT_CALLERS: usize = 4;
+    const SETTLE_TURNS: usize = 256;
+
+    #[derive(Default)]
+    struct FirstStoreGate {
+        armed: AtomicBool,
+        arrived: Notify,
+        release: Notify,
+    }
+
+    impl FirstStoreGate {
+        fn armed() -> Arc<Self> {
+            let gate = Self::default();
+            gate.armed.store(true, Ordering::SeqCst);
+            Arc::new(gate)
+        }
+
+        async fn arrival(&self) {
+            self.arrived.notified().await;
+        }
+
+        fn open(&self) {
+            self.release.notify_one();
+        }
+
+        async fn pass(&self) {
+            if self.armed.swap(false, Ordering::SeqCst) {
+                self.arrived.notify_one();
+                self.release.notified().await;
+            }
+        }
+    }
+
+    #[derive(Default)]
+    struct InMemRepo {
+        rows: Mutex<HashMap<String, String>>,
+        gate: Option<Arc<FirstStoreGate>>,
+    }
 
     impl InMemRepo {
-        fn empty() -> Arc<Self> {
-            Arc::new(Self(Mutex::new(HashMap::new())))
+        fn holding(creds: &KickCredentials, gate: Option<Arc<FirstStoreGate>>) -> Arc<Self> {
+            let repo = Self {
+                rows: Mutex::default(),
+                gate,
+            };
+            repo.rows.lock().unwrap().insert(
+                CREDENTIAL_KEY.to_owned(),
+                serde_json::to_string(creds).unwrap(),
+            );
+            Arc::new(repo)
         }
 
-        fn with_creds(creds: &KickCredentials) -> Arc<Self> {
-            let json = serde_json::to_string(creds).unwrap();
-            let mut map = HashMap::new();
-            map.insert(crate::credentials::CREDENTIAL_KEY.to_owned(), json);
-            Arc::new(Self(Mutex::new(map)))
-        }
-
-        fn get_stored_creds(&self) -> Option<KickCredentials> {
-            let guard = self.0.lock().unwrap();
-            guard
-                .get(crate::credentials::CREDENTIAL_KEY)
+        fn stored(&self) -> Option<KickCredentials> {
+            self.rows
+                .lock()
+                .unwrap()
+                .get(CREDENTIAL_KEY)
                 .and_then(|s| serde_json::from_str(s).ok())
         }
     }
@@ -222,7 +269,10 @@ mod tests {
     #[async_trait]
     impl CredentialsRepo for InMemRepo {
         async fn store(&self, id: &CredentialId, plaintext: &str) -> Result<(), StorageError> {
-            self.0
+            if let Some(gate) = &self.gate {
+                gate.pass().await;
+            }
+            self.rows
                 .lock()
                 .unwrap()
                 .insert(id.as_str().to_owned(), plaintext.to_owned());
@@ -230,16 +280,16 @@ mod tests {
         }
 
         async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
+            Ok(self.rows.lock().unwrap().get(id.as_str()).cloned())
         }
 
         async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-            Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
+            Ok(self.rows.lock().unwrap().remove(id.as_str()).is_some())
         }
 
         async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
             Ok(self
-                .0
+                .rows
                 .lock()
                 .unwrap()
                 .keys()
@@ -259,10 +309,42 @@ mod tests {
         }
     }
 
+    struct PanickingRepo;
+
+    #[async_trait]
+    impl CredentialsRepo for PanickingRepo {
+        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
+            panic!("credential store crashed")
+        }
+
+        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn last_refresh(
+            &self,
+            _: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+
+        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
     fn stub_creds(expires_at: OffsetDateTime) -> KickCredentials {
         KickCredentials {
-            access_token: "kick_access_existing".to_owned(),
-            refresh_token: "kick_refresh_existing".to_owned(),
+            access_token: EXISTING_ACCESS.to_owned(),
+            refresh_token: EXISTING_REFRESH.to_owned(),
             user_id: 42,
             username: "streamer".to_owned(),
             client_id: "test_cid".to_owned(),
@@ -270,221 +352,398 @@ mod tests {
         }
     }
 
-    fn manager_with_server(
-        repo: Arc<dyn CredentialsRepo>,
-        server: &MockServer,
-    ) -> KickCredentialsManager {
-        KickCredentialsManager::for_test(
-            repo,
-            "test_cid".to_owned(),
-            "test_secret".to_owned(),
-            format!("{}/token", server.uri()),
-        )
+    fn fresh() -> KickCredentials {
+        stub_creds(OffsetDateTime::now_utc() + Duration::hours(1))
     }
 
-    #[tokio::test]
-    async fn load_returns_none_when_no_row() {
-        let server = MockServer::start().await;
-        let mgr = manager_with_server(InMemRepo::empty(), &server);
-        let result = mgr.load().await.unwrap();
-        assert!(result.is_none());
+    fn near_expiry() -> KickCredentials {
+        stub_creds(OffsetDateTime::now_utc() + Duration::seconds(60))
     }
 
-    #[tokio::test]
-    async fn load_returns_some_when_row_present() {
-        let creds = stub_creds(OffsetDateTime::now_utc() + Duration::hours(1));
-        let server = MockServer::start().await;
-        let mgr = manager_with_server(InMemRepo::with_creds(&creds), &server);
-        let loaded = mgr.load().await.unwrap().unwrap();
-        assert_eq!(loaded.user_id, 42);
-        assert_eq!(loaded.access_token, "kick_access_existing");
+    fn refreshed_grant(access: &str) -> ResponseTemplate {
+        ResponseTemplate::new(reqwest::StatusCode::OK.as_u16()).set_body_json(json!({
+            "access_token": access,
+            "refresh_token": ROTATED_REFRESH,
+            "expires_in": 86400
+        }))
     }
 
-    #[tokio::test]
-    async fn save_from_bundle_persists_credentials() {
-        let server = MockServer::start().await;
-        let repo = InMemRepo::empty();
-        let mgr = manager_with_server(repo.clone(), &server);
-
-        let bundle = KickAuthBundle {
-            access_token: "new_access".to_owned(),
-            refresh_token: "new_refresh".to_owned(),
+    fn bundle() -> KickAuthBundle {
+        KickAuthBundle {
+            access_token: BUNDLE_ACCESS.to_owned(),
+            refresh_token: "kick_refresh_from_new_sign_in".to_owned(),
             user_id: 99,
             username: "bundle_streamer".to_owned(),
             client_id: "bundle_cid".to_owned(),
             expires_at: OffsetDateTime::now_utc() + Duration::hours(1),
-        };
-        mgr.save_from_bundle(bundle).await.unwrap();
+        }
+    }
 
-        let stored = repo.get_stored_creds().unwrap();
-        assert_eq!(stored.access_token, "new_access");
-        assert_eq!(stored.refresh_token, "new_refresh");
-        assert_eq!(stored.user_id, 99);
-        assert_eq!(stored.username, "bundle_streamer");
+    struct Rig {
+        server: MockServer,
+        repo: Arc<InMemRepo>,
+        manager: Arc<KickCredentialsManager>,
+    }
+
+    impl Rig {
+        async fn token_posts(&self) -> usize {
+            self.server
+                .received_requests()
+                .await
+                .unwrap()
+                .iter()
+                .filter(|request| request.url.path() == TOKEN_PATH)
+                .count()
+        }
+
+        async fn answer_once_then_always(&self, first: ResponseTemplate, rest: ResponseTemplate) {
+            Mock::given(method("POST"))
+                .and(path(TOKEN_PATH))
+                .respond_with(first)
+                .up_to_n_times(1)
+                .with_priority(1)
+                .mount(&self.server)
+                .await;
+            self.answer_always(rest).await;
+        }
+
+        async fn answer_always(&self, reply: ResponseTemplate) {
+            Mock::given(method("POST"))
+                .and(path(TOKEN_PATH))
+                .respond_with(reply)
+                .mount(&self.server)
+                .await;
+        }
+    }
+
+    async fn rig_gated(creds: &KickCredentials, gate: Option<Arc<FirstStoreGate>>) -> Rig {
+        let server = MockServer::start().await;
+        let repo = InMemRepo::holding(creds, gate);
+        let manager = Arc::new(KickCredentialsManager::new(
+            repo.clone(),
+            oauth_client_at(&server.uri()),
+            unreachable_api(),
+        ));
+        Rig {
+            server,
+            repo,
+            manager,
+        }
+    }
+
+    async fn rig(creds: &KickCredentials) -> Rig {
+        rig_gated(creds, None).await
+    }
+
+    async fn settle() {
+        for _ in 0..SETTLE_TURNS {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn load_returns_none_when_no_row() {
+        let manager = offline_manager(Arc::new(InMemRepo::default()));
+
+        assert!(manager.load().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn save_from_bundle_persists_credentials() {
+        let repo = Arc::new(InMemRepo::default());
+        let manager = offline_manager(repo.clone());
+
+        manager.save_from_bundle(bundle()).await.unwrap();
+
+        let stored = repo.stored().unwrap();
+        assert_eq!(
+            (
+                stored.access_token.as_str(),
+                stored.refresh_token.as_str(),
+                stored.user_id,
+                stored.username.as_str(),
+                stored.client_id.as_str()
+            ),
+            (
+                BUNDLE_ACCESS,
+                "kick_refresh_from_new_sign_in",
+                99,
+                "bundle_streamer",
+                "bundle_cid"
+            )
+        );
     }
 
     #[tokio::test]
     async fn get_valid_access_token_returns_existing_when_fresh() {
-        let server = MockServer::start().await;
-        let creds = stub_creds(OffsetDateTime::now_utc() + Duration::hours(1));
-        let mgr = manager_with_server(InMemRepo::with_creds(&creds), &server);
+        let rig = rig(&fresh()).await;
 
-        let token = mgr.get_valid_access_token().await.unwrap();
-        assert_eq!(token, "kick_access_existing");
+        let token = rig.manager.get_valid_access_token().await.unwrap();
 
-        assert!(
-            server.received_requests().await.unwrap().is_empty(),
-            "refresh endpoint must not be called for fresh credentials",
+        assert_eq!(
+            (token.as_str(), rig.token_posts().await),
+            (EXISTING_ACCESS, 0)
         );
     }
 
     #[tokio::test]
-    async fn get_valid_access_token_refreshes_when_within_5min() {
-        let server = MockServer::start().await;
-        let creds = stub_creds(OffsetDateTime::now_utc() + Duration::seconds(60));
+    async fn get_valid_access_token_refreshes_and_persists_a_token_near_expiry() {
+        let rig = rig(&near_expiry()).await;
+        rig.answer_always(refreshed_grant(REFRESHED_ACCESS)).await;
 
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "access_token": "refreshed_access",
-                "refresh_token": "refreshed_refresh",
-                "expires_in": 86400
-            })))
-            .mount(&server)
-            .await;
+        let token = rig.manager.get_valid_access_token().await.unwrap();
 
-        let repo = InMemRepo::with_creds(&creds);
-        let mgr = manager_with_server(repo.clone(), &server);
-
-        let token = mgr.get_valid_access_token().await.unwrap();
-        assert_eq!(token, "refreshed_access");
-
-        let stored = repo.get_stored_creds().unwrap();
-        assert_eq!(stored.access_token, "refreshed_access");
+        let stored = rig.repo.stored().unwrap();
+        assert_eq!(
+            (
+                token.as_str(),
+                stored.access_token.as_str(),
+                stored.refresh_token.as_str(),
+                stored.user_id,
+                stored.expires_at > OffsetDateTime::now_utc() + Duration::hours(23)
+            ),
+            (
+                REFRESHED_ACCESS,
+                REFRESHED_ACCESS,
+                ROTATED_REFRESH,
+                42,
+                true
+            )
+        );
     }
 
     #[tokio::test]
     async fn get_valid_access_token_returns_reauth_required_when_no_creds() {
-        let server = MockServer::start().await;
-        let mgr = manager_with_server(InMemRepo::empty(), &server);
+        let manager = offline_manager(Arc::new(InMemRepo::default()));
 
-        let err = mgr.get_valid_access_token().await.unwrap_err();
+        let err = manager.get_valid_access_token().await.unwrap_err();
+
         assert!(
-            matches!(
-                err,
-                forge_platform_core::PlatformError::ReauthRequired { .. }
-            ),
-            "expected ReauthRequired, got: {err}",
+            matches!(err, PlatformError::ReauthRequired { .. }),
+            "{err:?}"
         );
     }
 
     #[tokio::test]
-    async fn refresh_sends_form_with_client_id_and_client_secret() {
-        let server = MockServer::start().await;
-        let creds = stub_creds(OffsetDateTime::now_utc() + Duration::hours(1));
+    async fn refresh_keeps_the_stored_refresh_token_when_kick_omits_it() {
+        let rig = rig(&fresh()).await;
+        rig.answer_always(
+            ResponseTemplate::new(reqwest::StatusCode::OK.as_u16())
+                .set_body_json(json!({ "access_token": "kick_access_only", "expires_in": 86400 })),
+        )
+        .await;
 
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .and(body_string_contains("grant_type=refresh_token"))
-            .and(body_string_contains("client_id=test_cid"))
-            .and(body_string_contains("client_secret=test_secret"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "access_token": "new_access",
-                "refresh_token": "new_refresh",
-                "expires_in": 86400
-            })))
-            .mount(&server)
-            .await;
+        rig.manager.refresh(EXISTING_ACCESS).await.unwrap();
 
-        let repo = InMemRepo::with_creds(&creds);
-        let mgr = manager_with_server(repo.clone(), &server);
-        mgr.refresh("kick_access_existing").await.unwrap();
-
-        let reqs = server.received_requests().await.unwrap();
-        assert_eq!(reqs.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn refresh_handles_missing_refresh_token_in_response() {
-        let server = MockServer::start().await;
-        let creds = stub_creds(OffsetDateTime::now_utc() + Duration::hours(1));
-
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "access_token": "new_access_only",
-                "expires_in": 86400
-            })))
-            .mount(&server)
-            .await;
-
-        let repo = InMemRepo::with_creds(&creds);
-        let mgr = manager_with_server(repo.clone(), &server);
-        mgr.refresh("kick_access_existing").await.unwrap();
-
-        let stored = repo.get_stored_creds().unwrap();
+        let stored = rig.repo.stored().unwrap();
         assert_eq!(
-            stored.refresh_token, "kick_refresh_existing",
-            "old refresh token must be preserved when response omits it",
-        );
-        assert_eq!(stored.access_token, "new_access_only");
-    }
-
-    #[tokio::test]
-    async fn refresh_returns_reauth_required_on_400() {
-        let server = MockServer::start().await;
-        let creds = stub_creds(OffsetDateTime::now_utc() + Duration::hours(1));
-
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .respond_with(
-                ResponseTemplate::new(400).set_body_json(json!({"error": "invalid_grant"})),
-            )
-            .mount(&server)
-            .await;
-
-        let mgr = manager_with_server(InMemRepo::with_creds(&creds), &server);
-        let err = mgr.refresh("kick_access_existing").await.unwrap_err();
-        assert!(
-            matches!(
-                err,
-                forge_platform_core::PlatformError::ReauthRequired { .. }
-            ),
-            "expected ReauthRequired on 400, got: {err}",
+            (stored.access_token.as_str(), stored.refresh_token.as_str()),
+            ("kick_access_only", EXISTING_REFRESH)
         );
     }
 
     #[tokio::test]
-    async fn refresh_returns_reauth_required_on_401() {
-        let server = MockServer::start().await;
-        let creds = stub_creds(OffsetDateTime::now_utc() + Duration::hours(1));
+    async fn refresh_of_an_already_replaced_token_returns_the_stored_one_without_a_request() {
+        let rig = rig(&fresh()).await;
 
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .respond_with(ResponseTemplate::new(401).set_body_string("unauthorized"))
-            .mount(&server)
-            .await;
+        let creds = rig.manager.refresh("kick_access_long_gone").await.unwrap();
 
-        let mgr = manager_with_server(InMemRepo::with_creds(&creds), &server);
-        let err = mgr.refresh("kick_access_existing").await.unwrap_err();
-        assert!(
-            matches!(
-                err,
-                forge_platform_core::PlatformError::ReauthRequired { .. }
+        assert_eq!(
+            (creds.access_token.as_str(), rig.token_posts().await),
+            (EXISTING_ACCESS, 0)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_or_unusable_refresh_leaves_the_stored_credentials_untouched() {
+        for (label, reply, reauth) in [
+            (
+                "400 refused grant",
+                ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST.as_u16())
+                    .set_body_json(json!({ "error": "Invalid request" })),
+                true,
             ),
-            "expected ReauthRequired on 401, got: {err}",
+            (
+                "lifetime past the calendar",
+                ResponseTemplate::new(reqwest::StatusCode::OK.as_u16()).set_body_json(json!({
+                    "access_token": REFRESHED_ACCESS,
+                    "refresh_token": ROTATED_REFRESH,
+                    "expires_in": u64::MAX
+                })),
+                false,
+            ),
+        ] {
+            let rig = rig(&near_expiry()).await;
+            rig.answer_always(reply).await;
+
+            let outcome = rig.manager.get_valid_access_token().await;
+
+            let stored = rig.repo.stored().unwrap();
+            let mapped = match outcome {
+                Err(PlatformError::ReauthRequired { .. }) => reauth,
+                Err(PlatformError::MalformedResponse { .. }) => !reauth,
+                _ => false,
+            };
+            assert_eq!(
+                (
+                    mapped,
+                    stored.access_token.as_str(),
+                    stored.refresh_token.as_str()
+                ),
+                (true, EXISTING_ACCESS, EXISTING_REFRESH),
+                "{label}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn concurrent_token_requests_and_refreshes_share_one_token_post() {
+        let gate = FirstStoreGate::armed();
+        let rig = rig_gated(&near_expiry(), Some(Arc::clone(&gate))).await;
+        rig.answer_once_then_always(
+            refreshed_grant(REFRESHED_ACCESS),
+            refreshed_grant(SECOND_ACCESS),
+        )
+        .await;
+        let mut callers = Vec::new();
+        for caller in 0..CONCURRENT_CALLERS {
+            let manager = Arc::clone(&rig.manager);
+            callers.push(tokio::spawn(async move {
+                if caller % 2 == 0 {
+                    manager.get_valid_access_token().await
+                } else {
+                    manager
+                        .refresh(EXISTING_ACCESS)
+                        .await
+                        .map(|c| c.access_token)
+                }
+            }));
+        }
+        gate.arrival().await;
+        settle().await;
+        gate.open();
+
+        let mut tokens = Vec::new();
+        for caller in callers {
+            tokens.push(caller.await.unwrap().unwrap());
+        }
+
+        assert_eq!(
+            (tokens, rig.token_posts().await),
+            (vec![REFRESHED_ACCESS.to_owned(); CONCURRENT_CALLERS], 1)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_waiter_leaves_the_refresh_running_for_the_other_waiters() {
+        let gate = FirstStoreGate::armed();
+        let rig = rig_gated(&near_expiry(), Some(Arc::clone(&gate))).await;
+        rig.answer_once_then_always(
+            refreshed_grant(REFRESHED_ACCESS),
+            refreshed_grant(SECOND_ACCESS),
+        )
+        .await;
+        let cancelled = tokio::spawn({
+            let manager = Arc::clone(&rig.manager);
+            async move { manager.get_valid_access_token().await }
+        });
+        gate.arrival().await;
+        cancelled.abort();
+        let aborted = cancelled.await.unwrap_err().is_cancelled();
+        let survivor = tokio::spawn({
+            let manager = Arc::clone(&rig.manager);
+            async move { manager.get_valid_access_token().await }
+        });
+        settle().await;
+        gate.open();
+
+        let token = survivor.await.unwrap().unwrap();
+
+        let stored = rig.repo.stored().unwrap();
+        assert_eq!(
+            (
+                aborted,
+                token.as_str(),
+                stored.access_token.as_str(),
+                stored.refresh_token.as_str(),
+                rig.token_posts().await
+            ),
+            (true, REFRESHED_ACCESS, REFRESHED_ACCESS, ROTATED_REFRESH, 1)
+        );
+    }
+
+    #[tokio::test]
+    async fn clear_during_a_refresh_waits_so_logout_is_never_undone() {
+        let gate = FirstStoreGate::armed();
+        let rig = rig_gated(&near_expiry(), Some(Arc::clone(&gate))).await;
+        rig.answer_always(refreshed_grant(REFRESHED_ACCESS)).await;
+        let refreshing = tokio::spawn({
+            let manager = Arc::clone(&rig.manager);
+            async move { manager.get_valid_access_token().await }
+        });
+        gate.arrival().await;
+        let clearing = tokio::spawn({
+            let manager = Arc::clone(&rig.manager);
+            async move { manager.clear().await }
+        });
+        settle().await;
+        let row_while_refresh_in_flight = rig.repo.stored().is_some();
+        gate.open();
+
+        refreshing.await.unwrap().unwrap();
+        clearing.await.unwrap().unwrap();
+
+        assert_eq!(
+            (row_while_refresh_in_flight, rig.repo.stored().is_none()),
+            (true, true)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_sign_in_saved_during_a_refresh_is_never_overwritten_by_it() {
+        let gate = FirstStoreGate::armed();
+        let rig = rig_gated(&near_expiry(), Some(Arc::clone(&gate))).await;
+        rig.answer_always(refreshed_grant(REFRESHED_ACCESS)).await;
+        let refreshing = tokio::spawn({
+            let manager = Arc::clone(&rig.manager);
+            async move { manager.get_valid_access_token().await }
+        });
+        gate.arrival().await;
+        let saving = tokio::spawn({
+            let manager = Arc::clone(&rig.manager);
+            async move { manager.save_from_bundle(bundle()).await }
+        });
+        settle().await;
+        gate.open();
+
+        refreshing.await.unwrap().unwrap();
+        saving.await.unwrap().unwrap();
+
+        assert_eq!(
+            rig.repo.stored().unwrap().access_token.as_str(),
+            BUNDLE_ACCESS
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refresh_task_that_dies_reports_an_auth_error() {
+        let manager = offline_manager(Arc::new(PanickingRepo));
+
+        let outcome = manager.refresh(EXISTING_ACCESS).await;
+
+        assert!(
+            matches!(outcome, Err(PlatformError::Auth { .. })),
+            "{:?}",
+            outcome.err()
         );
     }
 
     #[tokio::test]
     async fn clear_removes_credentials_row() {
-        let server = MockServer::start().await;
-        let creds = stub_creds(OffsetDateTime::now_utc() + Duration::hours(1));
-        let repo = InMemRepo::with_creds(&creds);
-        let mgr = manager_with_server(repo.clone(), &server);
+        let rig = rig(&fresh()).await;
 
-        mgr.clear().await.unwrap();
+        rig.manager.clear().await.unwrap();
 
-        assert!(repo.get_stored_creds().is_none());
+        assert!(rig.repo.stored().is_none());
     }
 }

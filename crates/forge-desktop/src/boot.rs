@@ -613,6 +613,7 @@ pub async fn build_runtime(
         twitch_bot: integrations.twitch_bot,
         twitch_sign_in: integrations.twitch_sign_in,
         youtube_sign_in: integrations.youtube_sign_in,
+        kick_sign_in: integrations.kick_sign_in,
         server,
         overlays,
         overlay_kinds,

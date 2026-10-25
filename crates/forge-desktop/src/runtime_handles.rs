@@ -55,6 +55,7 @@ pub struct RuntimeHandles {
     pub twitch_bot: Option<Arc<forge_platform_twitch::TwitchBotAccount>>,
     pub twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
     pub youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
+    pub kick_sign_in: Option<forge_platform_kick::KickSignIn>,
     pub midi_sink: Arc<forge_midi::SwitchableMidiSink>,
     pub server: Option<forge_server::ServerHandle>,
     pub server_unavailable: Option<String>,

@@ -9,8 +9,8 @@ use forge_obs::ObsClient;
 use forge_platform_core::{
     BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinOptionSource,
     BuiltinStatus, CapabilityFlags, CollectionId, ConnectionState, ControlFailure, DetailSection,
-    HeaderAction, HealthDelta, HealthMetric, HealthValue, HeroBadge, HeroBadgeTone,
-    PlatformEndpoints, QuickAction, QuickActions, RevisionWait, SectionIcon,
+    HeaderAction, HealthDelta, HealthMetric, HealthValue, HeroBadge, HeroBadgeTone, QuickAction,
+    QuickActions, RevisionWait, SectionIcon,
 };
 use forge_registry::TriggerRegistry;
 use forge_runtime::{ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
@@ -84,7 +84,6 @@ pub struct IntegrationDetail {
     trigger_registry: Arc<TriggerRegistry>,
     bus: Arc<dyn EventPublisher>,
     twitch_slot: Option<IntegrationSlot<BuiltinObject>>,
-    endpoints: PlatformEndpoints,
     kick_slot: Option<IntegrationSlot<BuiltinObject>>,
     youtube_slot: Option<IntegrationSlot<BuiltinObject>>,
     obs_install_seed: ObsInstallSeed,
@@ -94,6 +93,7 @@ pub struct IntegrationDetail {
     twitch_bot: Option<Entity<TwitchBotSection>>,
     twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
     youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
+    kick_sign_in: Option<forge_platform_kick::KickSignIn>,
     _twitch_bot_subs: Vec<Subscription>,
     is_twitch: bool,
     is_obs: bool,
@@ -160,7 +160,6 @@ impl IntegrationDetail {
         twitch_slot: Option<IntegrationSlot<BuiltinObject>>,
         kick_slot: Option<IntegrationSlot<BuiltinObject>>,
         youtube_slot: Option<IntegrationSlot<BuiltinObject>>,
-        endpoints: PlatformEndpoints,
         obs_install_seed: ObsInstallSeed,
         vtube_install_seed: VTubeInstallSeed,
         connectivity: Entity<PlatformConnectivity>,
@@ -246,7 +245,6 @@ impl IntegrationDetail {
             twitch_slot,
             kick_slot,
             youtube_slot,
-            endpoints,
             obs_install_seed,
             vtube_install_seed,
             connect: None,
@@ -254,6 +252,7 @@ impl IntegrationDetail {
             twitch_bot: None,
             twitch_sign_in: None,
             youtube_sign_in: None,
+            kick_sign_in: None,
             _twitch_bot_subs: Vec::new(),
             is_twitch,
             is_obs,
@@ -347,6 +346,10 @@ impl IntegrationDetail {
         self.youtube_sign_in = Some(sign_in);
     }
 
+    pub fn attach_kick_sign_in(&mut self, sign_in: forge_platform_kick::KickSignIn) {
+        self.kick_sign_in = Some(sign_in);
+    }
+
     fn open_connect_flow(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
         let launch = ConnectFlowLaunch {
             platform,
@@ -356,9 +359,9 @@ impl IntegrationDetail {
             twitch_slot: self.twitch_slot.clone(),
             kick_slot: self.kick_slot.clone(),
             youtube_slot: self.youtube_slot.clone(),
-            endpoints: self.endpoints.clone(),
             twitch_sign_in: self.twitch_sign_in.clone(),
             youtube_sign_in: self.youtube_sign_in.clone(),
+            kick_sign_in: self.kick_sign_in.clone(),
         };
         let view = cx.new(|cx| ConnectFlow::new(launch, cx));
         let subs = vec![
@@ -2020,9 +2023,7 @@ mod tests {
         use std::sync::Mutex;
 
         use forge_components::{Density, ThemeId};
-        use forge_platform_core::{
-            CollectionRevisionSignal, CollectionRevisions, HealthStream, PlatformEndpoints,
-        };
+        use forge_platform_core::{CollectionRevisionSignal, CollectionRevisions, HealthStream};
         use forge_registry::SubActionRegistry;
         use forge_runtime::{
             ActionCancelRegistry, spawn_action_engine, spawn_live_viewer_aggregator,
@@ -2200,7 +2201,6 @@ mod tests {
                     None,
                     None,
                     None,
-                    PlatformEndpoints::default(),
                     ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
                     VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
                     connectivity,

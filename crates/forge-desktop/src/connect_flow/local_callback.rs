@@ -6,8 +6,6 @@ use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
     icon, mono_family, pulse_dot, radius, spacing, spinner, tr, with_alpha,
 };
-use forge_platform_core::PlatformEndpoints;
-use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, HighlightStyle, Hsla, Rgba, SharedString,
@@ -65,15 +63,13 @@ impl ConnectFlow {
                 self.spawn_start(cancel, async move { start_youtube_oauth(handle).await }, cx);
             }
             PlatformId::Kick => {
-                let Some((cid, csec)) = forge_platform_kick::client_credentials() else {
+                let Some(sign_in) = self.kick_sign_in.clone() else {
                     self.phase = LocalCallbackFlowPhase::Failed;
                     self.error = Some(tr!("auth_error_credentials_missing_kick").to_string());
                     cx.notify();
                     return;
                 };
-                let handle = Arc::new(tokio::sync::Mutex::new(Some(
-                    forge_platform_kick::KickAuthFlow::new(&self.endpoints, cid, csec),
-                )));
+                let handle = Arc::new(tokio::sync::Mutex::new(Some(sign_in.flow())));
                 self.kick_flow = Some(Arc::clone(&handle));
                 self.spawn_start(cancel, async move { start_kick_oauth(handle).await }, cx);
             }
@@ -124,7 +120,6 @@ impl ConnectFlow {
         self.phase = LocalCallbackFlowPhase::Waiting;
         self.open_url(auth_url, cx);
 
-        let credentials = Arc::clone(&self.credentials);
         match self.platform {
             PlatformId::YouTube => {
                 let (Some(flow), Some(sign_in)) =
@@ -143,19 +138,18 @@ impl ConnectFlow {
                 );
             }
             PlatformId::Kick => {
-                let Some(flow) = self.kick_flow.clone() else {
+                let (Some(flow), Some(sign_in)) =
+                    (self.kick_flow.clone(), self.kick_sign_in.clone())
+                else {
                     self.phase = LocalCallbackFlowPhase::Failed;
                     self.error = Some("no active Kick flow handle".to_owned());
                     cx.notify();
                     return;
                 };
                 let wait_cancel = cancel.clone();
-                let endpoints = self.endpoints.clone();
                 self.spawn_wait(
                     cancel,
-                    async move {
-                        wait_for_kick_authorization(flow, credentials, endpoints, wait_cancel).await
-                    },
+                    async move { wait_for_kick_authorization(flow, sign_in, wait_cancel).await },
                     cx,
                 );
             }
@@ -1013,8 +1007,7 @@ async fn wait_for_youtube_authorization(
 
 async fn wait_for_kick_authorization(
     flow_handle: KickFlowHandle,
-    credentials_repo: Arc<dyn CredentialsRepo>,
-    endpoints: PlatformEndpoints,
+    sign_in: forge_platform_kick::KickSignIn,
     cancel: CancellationToken,
 ) -> Result<(), String> {
     let mut flow = {
@@ -1030,13 +1023,5 @@ async fn wait_for_kick_authorization(
             outcome.map_err(|e| e.to_string())?
         }
     };
-    let Some((cid, csec)) = forge_platform_kick::client_credentials() else {
-        return Err("Kick OAuth client credentials are not configured".to_owned());
-    };
-    let manager =
-        forge_platform_kick::KickCredentialsManager::new(&endpoints, credentials_repo, cid, csec);
-    manager
-        .save_from_bundle(bundle)
-        .await
-        .map_err(|e| e.to_string())
+    sign_in.save(bundle).await.map_err(|e| e.to_string())
 }

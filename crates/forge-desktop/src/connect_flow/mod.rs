@@ -5,7 +5,6 @@ mod local_callback;
 use std::sync::Arc;
 
 use forge_components::{Density, ForgePalette, Spacing, platform_hero, spacing, tr};
-use forge_platform_core::PlatformEndpoints;
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 use gpui::{AnyElement, Context, EventEmitter, Rgba, Window, div, prelude::*, px};
@@ -32,9 +31,9 @@ pub struct ConnectFlowLaunch {
     pub twitch_slot: Option<IntegrationSlot<BuiltinObject>>,
     pub kick_slot: Option<IntegrationSlot<BuiltinObject>>,
     pub youtube_slot: Option<IntegrationSlot<BuiltinObject>>,
-    pub endpoints: PlatformEndpoints,
     pub twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
     pub youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
+    pub kick_sign_in: Option<forge_platform_kick::KickSignIn>,
 }
 
 pub struct ConnectFlow {
@@ -45,9 +44,9 @@ pub struct ConnectFlow {
     twitch_slot: Option<IntegrationSlot<BuiltinObject>>,
     kick_slot: Option<IntegrationSlot<BuiltinObject>>,
     youtube_slot: Option<IntegrationSlot<BuiltinObject>>,
-    endpoints: PlatformEndpoints,
     twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
     youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
+    kick_sign_in: Option<forge_platform_kick::KickSignIn>,
     phase: LocalCallbackFlowPhase,
     auth_url: Option<String>,
     error: Option<String>,
@@ -79,9 +78,9 @@ impl ConnectFlow {
             twitch_slot,
             kick_slot,
             youtube_slot,
-            endpoints,
             twitch_sign_in,
             youtube_sign_in,
+            kick_sign_in,
         } = launch;
 
         if platform == PlatformId::Twitch {
@@ -99,9 +98,9 @@ impl ConnectFlow {
             twitch_slot,
             kick_slot,
             youtube_slot,
-            endpoints,
             twitch_sign_in,
             youtube_sign_in,
+            kick_sign_in,
             phase: LocalCallbackFlowPhase::Idle,
             auth_url: None,
             error: None,

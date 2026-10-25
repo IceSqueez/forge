@@ -100,6 +100,7 @@ pub struct Integrations {
     pub twitch_bot: Option<Arc<forge_platform_twitch::TwitchBotAccount>>,
     pub twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
     pub youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
+    pub kick_sign_in: Option<forge_platform_kick::KickSignIn>,
 }
 
 #[derive(Clone)]
@@ -323,7 +324,9 @@ pub async fn build_integrations(
         youtube_sign_in = Some(youtube.sign_in());
         factories.push(Arc::new(youtube));
     }
+    let mut kick_sign_in = None;
     if let Some(kick) = wire_kick(sub_actions, backend, bus, endpoints) {
+        kick_sign_in = Some(kick.sign_in());
         factories.push(Arc::new(kick));
     }
     let mut donation_services = DonationServices::default();
@@ -351,6 +354,7 @@ pub async fn build_integrations(
         twitch_bot,
         twitch_sign_in,
         youtube_sign_in,
+        kick_sign_in,
     }
 }
 
@@ -1761,7 +1765,6 @@ pub(crate) mod tests {
                     None,
                     None,
                     None,
-                    forge_platform_core::PlatformEndpoints::default(),
                     ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
                     VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
                     connectivity,

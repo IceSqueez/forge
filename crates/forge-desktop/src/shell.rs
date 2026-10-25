@@ -747,7 +747,6 @@ impl AppShell {
                 twitch_slot,
                 kick_slot,
                 youtube_slot,
-                handles.endpoints.clone(),
                 obs_install_seed,
                 vtube_install_seed,
                 connectivity,
@@ -764,6 +763,9 @@ impl AppShell {
         }
         if let Some(sign_in) = handles.youtube_sign_in.clone() {
             detail.update(cx, |detail, _| detail.attach_youtube_sign_in(sign_in));
+        }
+        if let Some(sign_in) = handles.kick_sign_in.clone() {
+            detail.update(cx, |detail, _| detail.attach_kick_sign_in(sign_in));
         }
         if let Some(bot) = handles.twitch_bot.clone() {
             let presence = topics.twitch_bot.clone();

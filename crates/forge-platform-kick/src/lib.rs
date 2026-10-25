@@ -24,6 +24,7 @@ pub mod integration;
 mod log_capture;
 pub mod moderation;
 mod normalize;
+pub mod oauth_client;
 mod payload_fields;
 pub mod poller;
 pub mod rewards;
@@ -37,7 +38,9 @@ pub use api_gateway::{
     KICK_CHANNEL_INFO_BUDGET_WINDOW, KICK_GATEWAY_PROFILE, kick_api_gateway,
     kick_channel_info_gateway,
 };
-pub use auth::{KickAuthBundle, KickAuthFlow, LoopbackCode, client_credentials, kick_auth_flow};
+pub use auth::{
+    KickAuthBundle, KickAuthFlow, KickSignIn, LoopbackCode, client_credentials, kick_auth_flow,
+};
 pub use builtin::{KickIntegrationBundle, register_kick_triggers};
 pub use capabilities::kick_capabilities;
 pub use categories::{CategoryMatch, KickCategories};
@@ -49,6 +52,10 @@ pub use credentials::{CREDENTIAL_KEY, KickCredentials};
 pub use credentials_manager::KickCredentialsManager;
 pub use integration::KICK_INTEGRATION;
 pub use moderation::KickModeration;
+pub use oauth_client::{
+    KICK_OAUTH_BUDGET_CAPACITY, KICK_OAUTH_BUDGET_WINDOW, KICK_OAUTH_GATEWAY_PROFILE,
+    KickOAuthClient, kick_oauth_gateway,
+};
 pub use poller::{KickPollerHandle, KickViewerSource, PollerAuth, spawn_kick_poller};
 pub use rewards::{CreateRewardParams, KickRewards, RedemptionRecord, UpdateRewardParams};
 pub use send::KickSendChat;

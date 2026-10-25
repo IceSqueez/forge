@@ -128,11 +128,17 @@ pub(crate) fn platform_error(failure: GatewayFailure, reasons: RefusalReasons) -
         (GatewayFailure::Forbidden { .. }, Some(forbidden)) => PlatformError::Auth {
             reason: forbidden.to_owned(),
         },
-        (GatewayFailure::RateLimited { retry_after, .. }, _) => PlatformError::RateLimited {
+        (other, _) => gateway_error(other),
+    }
+}
+
+pub(crate) fn gateway_error(failure: GatewayFailure) -> PlatformError {
+    match failure {
+        GatewayFailure::RateLimited { retry_after, .. } => PlatformError::RateLimited {
             retry_after_secs: u32::try_from(retry_after.as_secs()).unwrap_or(u32::MAX),
         },
-        (GatewayFailure::BudgetExhausted, _) => PlatformError::RateLimitExhausted,
-        (other, _) => match (other.status(), other.excerpt()) {
+        GatewayFailure::BudgetExhausted => PlatformError::RateLimitExhausted,
+        other => match (other.status(), other.excerpt()) {
             (Some(status), Some(excerpt)) => PlatformError::Http {
                 status,
                 body: excerpt.as_str().to_owned(),

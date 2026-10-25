@@ -1,19 +1,25 @@
+use std::sync::Arc;
 use std::time::Duration;
 
-use forge_platform_core::auth::{CALLBACK_PATH, PkceClientConfig, PkceFlow};
-use forge_platform_core::{AuthFlow, EndpointSurface, PlatformEndpoints, PlatformError};
-use reqwest::StatusCode;
+use forge_net::{Gateway, GatewayRequest};
+use forge_platform_core::auth::{CALLBACK_PATH, PkceAuthorizeConfig, PkceLoopback};
+use forge_platform_core::{AuthFlow, PlatformError};
 use serde::Deserialize;
 use time::OffsetDateTime;
+
+use crate::api_gateway::{authorized, gateway_error, malformed};
+use crate::credentials_manager::KickCredentialsManager;
+use crate::oauth_client::KickOAuthClient;
 
 pub const KICK_AUTHORIZE_ENDPOINT: &str = "https://id.kick.com/oauth/authorize";
 pub const KICK_TOKEN_ENDPOINT: &str = "https://id.kick.com/oauth/token";
 
 pub const KICK_OAUTH_CALLBACK_PORT: u16 = 53127;
 
-const KICK_AUTHORIZE_PATH: &str = "/authorize";
-const KICK_TOKEN_PATH: &str = "/token";
 const KICK_USERS_PATH: &str = "/users";
+const EMPTY_USERS: &str = "users endpoint returned empty data array";
+const NO_REFRESH_TOKEN: &str = "Kick token exchange did not return a refresh_token";
+const LIFETIME_OUT_OF_RANGE: &str = "token lifetime out of range";
 
 const KICK_SCOPES: &[&str] = &[
     "user:read",
@@ -35,13 +41,6 @@ pub fn kick_auth_flow() -> AuthFlow {
     }
 }
 
-pub(crate) fn kick_token_endpoint(endpoints: &PlatformEndpoints) -> String {
-    format!(
-        "{}{KICK_TOKEN_PATH}",
-        endpoints.base_url(EndpointSurface::KickOAuth)
-    )
-}
-
 #[derive(Debug, Clone)]
 pub struct LoopbackCode {
     pub auth_url: String,
@@ -57,55 +56,53 @@ pub struct KickAuthBundle {
     pub expires_at: OffsetDateTime,
 }
 
-pub struct KickAuthFlow {
-    client_id: String,
-    http: reqwest::Client,
-    users_endpoint: String,
-    pkce: PkceFlow,
+#[derive(Clone)]
+pub struct KickSignIn {
+    manager: Arc<KickCredentialsManager>,
 }
 
-impl KickAuthFlow {
-    pub fn new(endpoints: &PlatformEndpoints, client_id: String, client_secret: String) -> Self {
-        let oauth_base = endpoints.base_url(EndpointSurface::KickOAuth);
-        Self::with_endpoints(
-            client_id,
-            client_secret,
-            format!("{oauth_base}{KICK_AUTHORIZE_PATH}"),
-            kick_token_endpoint(endpoints),
-            format!(
-                "{}{KICK_USERS_PATH}",
-                endpoints.base_url(EndpointSurface::KickPublicApi)
-            ),
+impl KickSignIn {
+    pub fn new(manager: Arc<KickCredentialsManager>) -> Self {
+        Self { manager }
+    }
+
+    pub fn flow(&self) -> KickAuthFlow {
+        KickAuthFlow::new(
+            self.manager.oauth_client().clone(),
+            self.manager.api().clone(),
         )
     }
 
-    pub(crate) fn with_endpoints(
-        client_id: String,
-        client_secret: String,
-        authorize_endpoint: String,
-        token_endpoint: String,
-        users_endpoint: String,
-    ) -> Self {
-        let pkce = PkceFlow::new(PkceClientConfig {
-            client_id: client_id.clone(),
-            client_secret: Some(client_secret),
-            authorize_endpoint,
-            token_endpoint,
+    pub async fn save(&self, bundle: KickAuthBundle) -> Result<(), PlatformError> {
+        self.manager.save_from_bundle(bundle).await
+    }
+}
+
+pub struct KickAuthFlow {
+    oauth: KickOAuthClient,
+    api: Gateway,
+    loopback: PkceLoopback,
+}
+
+impl KickAuthFlow {
+    pub fn new(oauth: KickOAuthClient, api: Gateway) -> Self {
+        let loopback = PkceLoopback::new(PkceAuthorizeConfig {
+            client_id: oauth.client_id().to_owned(),
+            authorize_endpoint: oauth.authorize_endpoint().to_owned(),
             scopes: KICK_SCOPES.iter().map(|s| (*s).to_owned()).collect(),
             authorize_pre_redirect_params: vec![("redirect".to_owned(), "127.0.0.1".to_owned())],
             authorize_trailing_params: Vec::new(),
             preferred_port: Some(KICK_OAUTH_CALLBACK_PORT),
         });
         Self {
-            client_id,
-            http: reqwest::Client::new(),
-            users_endpoint,
-            pkce,
+            oauth,
+            api,
+            loopback,
         }
     }
 
     pub async fn start(&mut self) -> Result<LoopbackCode, PlatformError> {
-        let url = self.pkce.start(&[]).await?;
+        let url = self.loopback.start(&[]).await?;
         Ok(LoopbackCode {
             auth_url: url.auth_url,
         })
@@ -115,25 +112,31 @@ impl KickAuthFlow {
         &mut self,
         timeout: Duration,
     ) -> Result<KickAuthBundle, PlatformError> {
-        let token = self.pkce.exchange(timeout).await?;
-        let refresh_token = token.refresh_token.ok_or_else(|| PlatformError::Auth {
-            reason: "Kick token exchange did not return a refresh_token".into(),
+        let authorization = self.loopback.await_authorization(timeout).await?;
+        let grant = self.oauth.exchange_code(&authorization).await?;
+        let refresh_token = grant.refresh_token.ok_or_else(|| PlatformError::Auth {
+            reason: NO_REFRESH_TOKEN.to_owned(),
         })?;
-        let expires_in = token.expires_in.unwrap_or(0);
+        let expires_at = expiry_after(grant.expires_in)?;
 
-        let user = fetch_user_info(&self.http, &self.users_endpoint, &token.access_token).await?;
-
-        let expires_at = OffsetDateTime::now_utc() + time::Duration::seconds(expires_in as i64);
+        let user = fetch_user_info(&self.api, &grant.access_token).await?;
 
         Ok(KickAuthBundle {
-            access_token: token.access_token,
+            access_token: grant.access_token,
             refresh_token,
             user_id: user.user_id,
             username: user.name,
-            client_id: self.client_id.clone(),
+            client_id: self.oauth.client_id().to_owned(),
             expires_at,
         })
     }
+}
+
+pub(crate) fn expiry_after(expires_in: Option<u64>) -> Result<OffsetDateTime, PlatformError> {
+    let lifetime = i64::try_from(expires_in.unwrap_or(0)).unwrap_or(i64::MAX);
+    OffsetDateTime::now_utc()
+        .checked_add(time::Duration::seconds(lifetime))
+        .ok_or_else(|| malformed(LIFETIME_OUT_OF_RANGE))
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,46 +150,21 @@ struct UsersResponse {
     data: Vec<UserRecord>,
 }
 
-async fn fetch_user_info(
-    http: &reqwest::Client,
-    users_endpoint: &str,
-    access_token: &str,
-) -> Result<UserRecord, PlatformError> {
-    let resp = http
-        .get(users_endpoint)
-        .header(
-            reqwest::header::AUTHORIZATION,
-            format!("Bearer {access_token}"),
-        )
-        .send()
-        .await
-        .map_err(|e| PlatformError::Network {
-            reason: e.without_url().to_string(),
-        })?;
-
-    let status = resp.status();
-    if status != StatusCode::OK {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(PlatformError::Http {
-            status: status.as_u16(),
-            body,
-        });
-    }
-
-    let parsed = resp
-        .json::<UsersResponse>()
-        .await
-        .map_err(|e| PlatformError::Network {
-            reason: format!("users response parse failed: {e}"),
-        })?;
-
+async fn fetch_user_info(api: &Gateway, access_token: &str) -> Result<UserRecord, PlatformError> {
+    let request = authorized(
+        GatewayRequest::get(KICK_USERS_PATH),
+        access_token,
+        KICK_USERS_PATH,
+    );
+    let response = api.send(request).await.map_err(gateway_error)?;
+    let parsed: UsersResponse = response.json().map_err(malformed)?;
     parsed
         .data
         .into_iter()
         .next()
         .ok_or_else(|| PlatformError::Http {
-            status: StatusCode::OK.as_u16(),
-            body: "users endpoint returned empty data array".to_owned(),
+            status: response.status(),
+            body: EMPTY_USERS.to_owned(),
         })
 }
 
@@ -213,47 +191,45 @@ fn resolve_credential(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
-    use super::*;
+    use std::sync::Arc;
+
+    use forge_platform_core::{EndpointSurface, PlatformEndpoints};
+    use reqwest::StatusCode;
     use serde_json::json;
-    use std::ffi::OsString;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    use super::*;
+    use crate::endpoints_test_support::{
+        ExhaustedLimiter, GrantingLimiter, OAUTH_CLIENT_SECRET, RecordingPublisher, api_at,
+        api_limited_by, api_with, endpoints_at, oauth_client_at, oauth_client_over,
+        unreachable_api, unreachable_oauth_client,
+    };
+
+    const ACCESS_TOKEN: &str = "kick-access-token-secret-5d";
+    const REQUEST_FAIL_KIND: &str = "request.fail";
+
     static CALLBACK_PORT_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-    fn overrides(pairs: &[(EndpointSurface, String)]) -> PlatformEndpoints {
-        PlatformEndpoints::resolve(|variable| {
-            pairs
-                .iter()
-                .find(|(surface, _)| surface.env_var() == variable)
-                .map(|(_, base)| OsString::from(base))
-        })
-        .unwrap()
+    fn query_param(auth_url: &str, key: &str) -> String {
+        reqwest::Url::parse(auth_url)
+            .unwrap()
+            .query_pairs()
+            .find(|(k, _)| k == key)
+            .unwrap()
+            .1
+            .into_owned()
     }
 
-    async fn trigger_callback(auth_url: &str, code: &str) {
-        let query_value = |key: &str| {
-            auth_url
-                .split(&format!("{key}="))
-                .nth(1)
-                .unwrap()
-                .split('&')
-                .next()
-                .unwrap()
-                .replace("%3A", ":")
-                .replace("%2F", "/")
-        };
+    fn deliver_callback(auth_url: &str, code: &str) {
         let url = format!(
             "{}?code={code}&state={}",
-            query_value("redirect_uri"),
-            query_value("state")
+            query_param(auth_url, "redirect_uri"),
+            query_param(auth_url, "state")
         );
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-            let _ = reqwest::Client::new().get(&url).send().await;
-        });
+        tokio::spawn(async move { reqwest::Client::new().get(&url).send().await });
     }
 
     async fn routes_of(server: &MockServer) -> Vec<(String, String)> {
@@ -266,80 +242,155 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn default_endpoints_keep_the_production_urls() {
-        let flow = KickAuthFlow::new(
-            &PlatformEndpoints::default(),
-            "cid".to_owned(),
-            "csec".to_owned(),
-        );
-        assert_eq!(flow.users_endpoint, "https://api.kick.com/public/v1/users");
-        assert_eq!(
-            kick_token_endpoint(&PlatformEndpoints::default()),
-            KICK_TOKEN_ENDPOINT
-        );
+    async fn mount(server: &MockServer, verb: &str, route: &str, reply: ResponseTemplate) {
+        Mock::given(method(verb))
+            .and(path(route))
+            .respond_with(reply)
+            .mount(server)
+            .await;
     }
 
-    #[tokio::test]
-    async fn oauth_override_moves_the_authorize_url_to_the_override_host() {
-        let _port = CALLBACK_PORT_LOCK.lock().await;
-        let endpoints = overrides(&[(
-            EndpointSurface::KickOAuth,
-            "http://127.0.0.1:9/oauth".to_owned(),
-        )]);
-        let mut flow = KickAuthFlow::new(&endpoints, "cid".to_owned(), "csec".to_owned());
-        let url = flow.start().await.unwrap().auth_url;
+    fn token_grant(body: serde_json::Value) -> ResponseTemplate {
+        ResponseTemplate::new(StatusCode::OK.as_u16()).set_body_json(body)
+    }
+
+    fn one_user() -> ResponseTemplate {
+        ResponseTemplate::new(StatusCode::OK.as_u16())
+            .set_body_json(json!({ "data": [{ "user_id": 7, "name": "streamer" }] }))
+    }
+
+    async fn sign_in_against(
+        oauth: &MockServer,
+        api: &MockServer,
+    ) -> Result<KickAuthBundle, PlatformError> {
+        let endpoints = endpoints_at(&[
+            (EndpointSurface::KickOAuth, &oauth.uri()),
+            (EndpointSurface::KickPublicApi, &api.uri()),
+        ]);
+        let mut flow = KickAuthFlow::new(
+            oauth_client_over(&endpoints, Arc::new(GrantingLimiter)),
+            api_at(&api.uri()),
+        );
+        let auth_url = flow.start().await.unwrap().auth_url;
         assert!(
-            url.starts_with("http://127.0.0.1:9/oauth/authorize?"),
-            "{url}"
+            auth_url.starts_with(&format!("{}/authorize?", oauth.uri())),
+            "{auth_url}"
         );
+        deliver_callback(&auth_url, "code123");
+        flow.wait_for_authorization(Duration::from_secs(30)).await
     }
 
     #[tokio::test]
-    async fn overrides_route_token_exchange_and_user_lookup_to_their_own_hosts() {
+    async fn sign_in_sends_the_authorize_page_and_token_post_to_the_oauth_host_and_users_to_the_api_host()
+     {
         let _port = CALLBACK_PORT_LOCK.lock().await;
         let oauth = MockServer::start().await;
         let api = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "access_token": "acc",
-                "refresh_token": "ref",
-                "expires_in": 3600,
-                "token_type": "Bearer",
-            })))
-            .mount(&oauth)
-            .await;
+        mount(
+            &oauth,
+            "POST",
+            "/token",
+            token_grant(
+                json!({ "access_token": "acc", "refresh_token": "ref", "expires_in": 3600 }),
+            ),
+        )
+        .await;
         Mock::given(method("GET"))
             .and(path("/users"))
             .and(header("authorization", "Bearer acc"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "data": [{"user_id": 7, "name": "streamer"}]
-            })))
+            .respond_with(one_user())
             .mount(&api)
             .await;
-        let endpoints = overrides(&[
-            (EndpointSurface::KickOAuth, oauth.uri()),
-            (EndpointSurface::KickPublicApi, api.uri()),
-        ]);
 
-        let mut flow = KickAuthFlow::new(&endpoints, "cid".to_owned(), "csec".to_owned());
-        let auth_url = flow.start().await.unwrap().auth_url;
-        trigger_callback(&auth_url, "code123").await;
-        let bundle = flow
-            .wait_for_authorization(Duration::from_secs(30))
-            .await
-            .unwrap();
+        let bundle = sign_in_against(&oauth, &api).await.unwrap();
 
-        assert_eq!(bundle.user_id, 7);
         assert_eq!(
-            routes_of(&oauth).await,
-            vec![("POST".to_owned(), "/token".to_owned())]
+            (
+                bundle.user_id,
+                bundle.username.as_str(),
+                bundle.refresh_token.as_str(),
+                routes_of(&oauth).await,
+                routes_of(&api).await
+            ),
+            (
+                7,
+                "streamer",
+                "ref",
+                vec![("POST".to_owned(), "/token".to_owned())],
+                vec![("GET".to_owned(), "/users".to_owned())]
+            )
         );
-        assert_eq!(
-            routes_of(&api).await,
-            vec![("GET".to_owned(), "/users".to_owned())]
+    }
+
+    #[tokio::test]
+    async fn a_grant_without_a_refresh_token_fails_the_sign_in_before_the_user_lookup() {
+        let _port = CALLBACK_PORT_LOCK.lock().await;
+        let oauth = MockServer::start().await;
+        let api = MockServer::start().await;
+        mount(
+            &oauth,
+            "POST",
+            "/token",
+            token_grant(json!({ "access_token": "acc", "expires_in": 3600 })),
+        )
+        .await;
+        mount(&api, "GET", "/users", one_user()).await;
+
+        let outcome = sign_in_against(&oauth, &api).await;
+
+        assert!(
+            matches!(outcome, Err(PlatformError::Auth { .. })) && routes_of(&api).await.is_empty(),
+            "{:?}",
+            outcome.err()
         );
+    }
+
+    #[tokio::test]
+    async fn a_grant_lifetime_past_the_calendar_fails_the_sign_in_as_malformed() {
+        let _port = CALLBACK_PORT_LOCK.lock().await;
+        let oauth = MockServer::start().await;
+        let api = MockServer::start().await;
+        mount(
+            &oauth,
+            "POST",
+            "/token",
+            token_grant(
+                json!({ "access_token": "acc", "refresh_token": "ref", "expires_in": u64::MAX }),
+            ),
+        )
+        .await;
+        mount(&api, "GET", "/users", one_user()).await;
+
+        let outcome = sign_in_against(&oauth, &api).await;
+
+        assert!(
+            matches!(outcome, Err(PlatformError::MalformedResponse { .. })),
+            "{:?}",
+            outcome.err()
+        );
+    }
+
+    #[test]
+    fn expiry_after_accepts_representable_lifetimes_and_rejects_overflow() {
+        let before = OffsetDateTime::now_utc();
+        let in_an_hour = expiry_after(Some(3600)).unwrap();
+        let missing = expiry_after(None).unwrap();
+        let after = OffsetDateTime::now_utc();
+        assert!(
+            in_an_hour >= before + time::Duration::hours(1)
+                && in_an_hour <= after + time::Duration::hours(1)
+                && missing >= before
+                && missing <= after
+        );
+        for overflowing in [u64::MAX, i64::MAX as u64, i64::MAX as u64 + 1] {
+            assert!(
+                matches!(
+                    expiry_after(Some(overflowing)),
+                    Err(PlatformError::MalformedResponse { .. })
+                ),
+                "{overflowing}"
+            );
+        }
     }
 
     #[test]
@@ -373,114 +424,201 @@ mod tests {
     }
 
     #[test]
-    fn client_credentials_prefers_runtime_over_compile_time() {
-        assert_eq!(
-            resolve_credential(Some("runtime_id"), Some("compile_id")),
-            Some("runtime_id".to_owned()),
-        );
-    }
-
-    #[test]
-    fn client_credentials_falls_back_to_compile_time_when_runtime_absent() {
-        assert_eq!(
-            resolve_credential(None, Some("compile_id")),
-            Some("compile_id".to_owned()),
-        );
-    }
-
-    #[test]
-    fn client_credentials_returns_none_when_both_absent() {
-        assert_eq!(resolve_credential(None, None), None);
-    }
-
-    #[test]
-    fn client_credentials_treats_empty_runtime_as_absent() {
-        assert_eq!(
-            resolve_credential(Some(""), Some("compile_id")),
-            Some("compile_id".to_owned()),
-        );
-    }
-
-    #[test]
-    fn client_credentials_treats_empty_compile_time_as_absent() {
-        assert_eq!(resolve_credential(None, Some("")), None);
+    fn client_credentials_prefer_a_non_empty_runtime_value_then_a_non_empty_compile_value() {
+        for (runtime, compile, expected) in [
+            (Some("runtime_id"), Some("compile_id"), Some("runtime_id")),
+            (None, Some("compile_id"), Some("compile_id")),
+            (Some(""), Some("compile_id"), Some("compile_id")),
+            (None, Some(""), None),
+            (Some(""), None, None),
+            (None, None, None),
+        ] {
+            assert_eq!(
+                resolve_credential(runtime, compile).as_deref(),
+                expected,
+                "{runtime:?} / {compile:?}"
+            );
+        }
     }
 
     #[tokio::test]
     async fn start_builds_authorize_url_with_kick_endpoint_and_redirect_quirk() {
         let _port = CALLBACK_PORT_LOCK.lock().await;
+        let defaults = PlatformEndpoints::default();
         let mut flow = KickAuthFlow::new(
-            &PlatformEndpoints::default(),
-            "test_client".to_owned(),
-            "test_secret".to_owned(),
+            oauth_client_over(&defaults, Arc::new(GrantingLimiter)),
+            unreachable_api(),
         );
         let url = flow.start().await.unwrap().auth_url;
-        assert!(url.starts_with(KICK_AUTHORIZE_ENDPOINT));
-        assert!(url.contains("client_id=test_client"));
-        assert!(!url.to_lowercase().contains("client_secret"));
         let redirect_pos = url.find("redirect=127.0.0.1").unwrap();
         let redirect_uri_pos = url.find("redirect_uri=").unwrap();
         assert!(
-            redirect_pos < redirect_uri_pos,
-            "redirect=127.0.0.1 must precede redirect_uri in the URL"
+            url.starts_with(KICK_AUTHORIZE_ENDPOINT)
+                && !url.contains(OAUTH_CLIENT_SECRET)
+                && redirect_pos < redirect_uri_pos
+                && reqwest::Url::parse(&query_param(&url, "redirect_uri"))
+                    .unwrap()
+                    .port()
+                    == Some(KICK_OAUTH_CALLBACK_PORT),
+            "{url}"
         );
     }
 
     #[tokio::test]
-    async fn fetch_user_info_resolves_user_id_and_name() {
+    async fn sign_in_reuses_the_shared_oauth_client_and_api_gateway() {
+        let oauth = MockServer::start().await;
+        let api = MockServer::start().await;
+        mount(&api, "GET", "/users", one_user()).await;
+        let manager = Arc::new(KickCredentialsManager::new(
+            Arc::new(forge_storage::credentials::MockCredentialsRepo::new()),
+            oauth_client_at(&oauth.uri()),
+            api_at(&api.uri()),
+        ));
+        let flow = KickSignIn::new(manager).flow();
+
+        let user = fetch_user_info(&flow.api, ACCESS_TOKEN).await.unwrap();
+
+        assert_eq!(
+            (user.user_id, flow.oauth.authorize_endpoint().to_owned()),
+            (7, format!("{}/authorize", oauth.uri()))
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_user_info_sends_the_bearer_and_resolves_the_first_user() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/users"))
-            .and(header("authorization", "Bearer test_token"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "data": [{"user_id": 99, "name": "kick_streamer"}]
-            })))
+            .and(header("authorization", format!("Bearer {ACCESS_TOKEN}")))
+            .respond_with(
+                ResponseTemplate::new(StatusCode::OK.as_u16()).set_body_json(json!({
+                    "data": [{ "user_id": 99, "name": "kick_streamer" }, { "user_id": 1, "name": "other" }]
+                })),
+            )
             .mount(&server)
             .await;
 
-        let http = reqwest::Client::new();
-        let user = fetch_user_info(&http, &format!("{}/users", server.uri()), "test_token")
+        let user = fetch_user_info(&api_at(&server.uri()), ACCESS_TOKEN)
             .await
             .unwrap();
-        assert_eq!(user.user_id, 99);
-        assert_eq!(user.name, "kick_streamer");
+
+        assert_eq!((user.user_id, user.name.as_str()), (99, "kick_streamer"));
+    }
+
+    enum Lookup {
+        Http(u16),
+        RateLimited,
+        Malformed,
     }
 
     #[tokio::test]
-    async fn fetch_user_info_returns_error_on_empty_data() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/users"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"data": []})))
-            .mount(&server)
-            .await;
+    async fn fetch_user_info_maps_each_users_answer_to_its_platform_error() {
+        for (label, reply, expected) in [
+            (
+                "401 stays Http 401",
+                ResponseTemplate::new(StatusCode::UNAUTHORIZED.as_u16()),
+                Lookup::Http(StatusCode::UNAUTHORIZED.as_u16()),
+            ),
+            (
+                "429",
+                ResponseTemplate::new(StatusCode::TOO_MANY_REQUESTS.as_u16()),
+                Lookup::RateLimited,
+            ),
+            (
+                "empty data on 200",
+                ResponseTemplate::new(StatusCode::OK.as_u16()).set_body_json(json!({ "data": [] })),
+                Lookup::Http(StatusCode::OK.as_u16()),
+            ),
+            (
+                "empty data on 203 carries 203",
+                ResponseTemplate::new(StatusCode::NON_AUTHORITATIVE_INFORMATION.as_u16())
+                    .set_body_json(json!({ "data": [] })),
+                Lookup::Http(StatusCode::NON_AUTHORITATIVE_INFORMATION.as_u16()),
+            ),
+            (
+                "undecodable 200",
+                ResponseTemplate::new(StatusCode::OK.as_u16()).set_body_string("<html/>"),
+                Lookup::Malformed,
+            ),
+        ] {
+            let server = MockServer::start().await;
+            mount(&server, "GET", "/users", reply).await;
 
-        let http = reqwest::Client::new();
-        let err = fetch_user_info(&http, &format!("{}/users", server.uri()), "tok")
-            .await
-            .unwrap_err();
+            let error = fetch_user_info(&api_at(&server.uri()), ACCESS_TOKEN)
+                .await
+                .unwrap_err();
+
+            let mapped = match (&error, &expected) {
+                (PlatformError::Http { status, .. }, Lookup::Http(expected)) => status == expected,
+                (PlatformError::RateLimited { .. }, Lookup::RateLimited) => true,
+                (PlatformError::MalformedResponse { .. }, Lookup::Malformed) => true,
+                _ => false,
+            };
+            assert!(mapped, "{label}: {error:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_exhausted_api_budget_refuses_the_users_lookup_without_a_request() {
+        let server = MockServer::start().await;
+        mount(&server, "GET", "/users", one_user()).await;
+
+        let outcome = fetch_user_info(
+            &api_limited_by(&server.uri(), Arc::new(ExhaustedLimiter)),
+            ACCESS_TOKEN,
+        )
+        .await;
+
         assert!(
-            matches!(err, PlatformError::Http { status: 200, .. }),
-            "empty data array must yield an Http error"
+            matches!(outcome, Err(PlatformError::RateLimitExhausted))
+                && routes_of(&server).await.is_empty(),
+            "{:?}",
+            outcome.err()
         );
     }
 
     #[tokio::test]
-    async fn fetch_user_info_propagates_4xx_error() {
+    async fn a_refused_users_lookup_publishes_request_fail_labelled_users_without_the_token() {
         let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/users"))
-            .respond_with(ResponseTemplate::new(401).set_body_string("unauthorized"))
-            .mount(&server)
-            .await;
+        mount(
+            &server,
+            "GET",
+            "/users",
+            ResponseTemplate::new(StatusCode::UNAUTHORIZED.as_u16())
+                .set_body_string(format!("bad token {ACCESS_TOKEN}")),
+        )
+        .await;
+        let bus = Arc::new(RecordingPublisher::default());
+        let api = api_with(&server.uri(), Arc::new(GrantingLimiter), bus.clone());
 
-        let http = reqwest::Client::new();
-        let err = fetch_user_info(&http, &format!("{}/users", server.uri()), "bad_tok")
-            .await
-            .unwrap_err();
+        let error = fetch_user_info(&api, ACCESS_TOKEN).await.unwrap_err();
+
+        let failures = bus.events_of_kind(REQUEST_FAIL_KIND);
+        assert_eq!(failures.len(), 1);
+        assert_eq!(
+            (
+                failures[0].payload["endpoint"].as_str(),
+                failures[0].payload["status_code"].as_u64(),
+                failures[0].payload.to_string().contains(ACCESS_TOKEN),
+                format!("{error} {error:?}").contains(ACCESS_TOKEN)
+            ),
+            (Some("/users"), Some(401), false, false)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_sign_in_over_an_unreachable_oauth_host_maps_to_network() {
+        let _port = CALLBACK_PORT_LOCK.lock().await;
+        let mut flow = KickAuthFlow::new(unreachable_oauth_client(), unreachable_api());
+        let auth_url = flow.start().await.unwrap().auth_url;
+        deliver_callback(&auth_url, "code123");
+
+        let outcome = flow.wait_for_authorization(Duration::from_secs(30)).await;
+
         assert!(
-            matches!(err, PlatformError::Http { status: 401, .. }),
-            "401 from users endpoint must yield Http error"
+            matches!(outcome, Err(PlatformError::Network { .. })),
+            "{:?}",
+            outcome.err()
         );
     }
 }

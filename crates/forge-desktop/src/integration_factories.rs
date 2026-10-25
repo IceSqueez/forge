@@ -403,6 +403,7 @@ pub(crate) struct KickFactory {
     platform: Arc<forge_platform_kick::KickPlatform>,
     channel: Arc<forge_platform_kick::KickChannel>,
     rewards: Arc<forge_platform_kick::KickRewards>,
+    sign_in: forge_platform_kick::KickSignIn,
 }
 
 pub(crate) fn wire_kick(
@@ -412,13 +413,12 @@ pub(crate) fn wire_kick(
     endpoints: &PlatformEndpoints,
 ) -> Option<KickFactory> {
     let (client_id, client_secret) = forge_platform_kick::client_credentials()?;
-    let creds = creds_of(backend);
-    let manager = Arc::new(forge_platform_kick::KickCredentialsManager::new(
+    let oauth = forge_platform_kick::KickOAuthClient::new(
         endpoints,
-        Arc::clone(&creds),
+        kick_oauth_gateway(endpoints)?,
         client_id,
         client_secret,
-    ));
+    );
     let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
         forge_platform_kick::KICK_API_BUDGET_CAPACITY,
         forge_platform_kick::KICK_API_BUDGET_WINDOW,
@@ -427,6 +427,13 @@ pub(crate) fn wire_kick(
         forge_platform_kick::kick_api_gateway(endpoints, Arc::clone(&rate_limiter), publisher(bus))
             .inspect_err(|e| eprintln!("forge-desktop: kick api gateway build failed: {e}"))
             .ok()?;
+    let creds = creds_of(backend);
+    let manager = Arc::new(forge_platform_kick::KickCredentialsManager::new(
+        Arc::clone(&creds),
+        oauth,
+        api.clone(),
+    ));
+    let sign_in = forge_platform_kick::KickSignIn::new(Arc::clone(&manager));
     let channel_info = Arc::new(forge_platform_kick::ChannelInfoFetcher::new(
         kick_channel_info_gateway(endpoints, bus)?,
     ));
@@ -477,7 +484,24 @@ pub(crate) fn wire_kick(
         platform,
         channel,
         rewards,
+        sign_in,
     })
+}
+
+fn kick_oauth_gateway(endpoints: &PlatformEndpoints) -> Option<Gateway> {
+    let limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
+        forge_platform_kick::KICK_OAUTH_BUDGET_CAPACITY,
+        forge_platform_kick::KICK_OAUTH_BUDGET_WINDOW,
+    ));
+    forge_platform_kick::kick_oauth_gateway(endpoints, limiter)
+        .inspect_err(|e| eprintln!("forge-desktop: kick oauth gateway build failed: {e}"))
+        .ok()
+}
+
+impl KickFactory {
+    pub(crate) fn sign_in(&self) -> forge_platform_kick::KickSignIn {
+        self.sign_in.clone()
+    }
 }
 
 fn kick_channel_info_gateway(

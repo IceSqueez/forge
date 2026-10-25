@@ -1,91 +1,135 @@
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use forge_net::{RateLimiter, TokenBucketRateLimiter, acquire_or_wait};
+use forge_net::{
+    BodyProgress, BodySink, CallClass, DEFAULT_RETRY_AFTER_SECS, Gateway, GatewayFailure,
+    GatewayProfile, GatewayRequest, GatewayResponse, Method, RateLimiter, StreamFailure,
+    ThrottleHintFamily, TokenBucketRateLimiter,
+};
+use tokio_util::sync::CancellationToken;
 
 use crate::UpdateError;
 
-const USER_AGENT_VALUE: &str = concat!("forge/", env!("CARGO_PKG_VERSION"));
+const GITHUB_API_REQUEST_BUDGET: u32 = 60;
+const GITHUB_API_WINDOW: Duration = Duration::from_secs(60 * 60);
+const RELEASE_DOWNLOAD_REQUEST_BUDGET: u32 = 120;
+const RELEASE_DOWNLOAD_WINDOW: Duration = Duration::from_secs(60 * 60);
+const NO_HINT_WAIT: Duration = Duration::from_secs(DEFAULT_RETRY_AFTER_SECS as u64);
 
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-const READ_TIMEOUT: Duration = Duration::from_secs(30);
-const SMALL_FILE_TIMEOUT: Duration = Duration::from_secs(10);
-
-const GITHUB_ANON_REQUEST_BUDGET: u32 = 60;
-const GITHUB_ANON_WINDOW: Duration = Duration::from_secs(60 * 60);
-const REQUEST_WEIGHT: u32 = 1;
+const RELEASE_API_PROFILE: GatewayProfile = GatewayProfile::absolute_https(
+    CallClass::Catalog,
+    ThrottleHintFamily::ResetEpochSeconds,
+    NO_HINT_WAIT,
+);
+const RELEASE_DOWNLOAD_PROFILE: GatewayProfile = GatewayProfile::absolute_https(
+    CallClass::Media,
+    ThrottleHintFamily::RetryAfter,
+    NO_HINT_WAIT,
+);
 
 #[derive(Clone)]
 pub struct UpdateClient {
-    http: reqwest::Client,
-    limiter: Arc<dyn RateLimiter>,
+    release_api: Gateway,
+    release_downloads: Gateway,
+}
+
+pub(crate) enum StreamError {
+    TooLarge,
+    Update(UpdateError),
 }
 
 impl UpdateClient {
     pub fn new(limiter: Arc<dyn RateLimiter>) -> Result<Self, UpdateError> {
-        let http = reqwest::Client::builder()
-            .user_agent(USER_AGENT_VALUE)
-            .connect_timeout(CONNECT_TIMEOUT)
-            .read_timeout(READ_TIMEOUT)
-            .build()
-            .map_err(|error| UpdateError::Client(error.without_url().to_string()))?;
-        Ok(Self { http, limiter })
+        Self::with_limiters(Arc::clone(&limiter), limiter)
     }
 
     pub fn for_github() -> Result<Self, UpdateError> {
-        Self::new(github_limiter())
-    }
-
-    pub(crate) async fn fetch_small(&self, url: &str, limit: u64) -> Result<Vec<u8>, UpdateError> {
-        let mut response = self.send(url, Some(SMALL_FILE_TIMEOUT)).await?;
-        if response
-            .content_length()
-            .is_some_and(|length| length > limit)
-        {
-            return Err(UpdateError::ResponseTooLarge { limit });
+        static CLIENT: OnceLock<UpdateClient> = OnceLock::new();
+        if let Some(client) = CLIENT.get() {
+            return Ok(client.clone());
         }
-        let mut body = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(UpdateError::network)? {
-            body.extend_from_slice(&chunk);
-            if body.len() as u64 > limit {
-                return Err(UpdateError::ResponseTooLarge { limit });
-            }
-        }
-        Ok(body)
+        let client = Self::with_limiters(
+            Arc::new(TokenBucketRateLimiter::new(
+                GITHUB_API_REQUEST_BUDGET,
+                GITHUB_API_WINDOW,
+            )),
+            Arc::new(TokenBucketRateLimiter::new(
+                RELEASE_DOWNLOAD_REQUEST_BUDGET,
+                RELEASE_DOWNLOAD_WINDOW,
+            )),
+        )?;
+        Ok(CLIENT.get_or_init(|| client).clone())
     }
 
-    pub(crate) async fn open_stream(&self, url: &str) -> Result<reqwest::Response, UpdateError> {
-        self.send(url, None).await
+    fn with_limiters(
+        api_limiter: Arc<dyn RateLimiter>,
+        download_limiter: Arc<dyn RateLimiter>,
+    ) -> Result<Self, UpdateError> {
+        let build = |limiter, profile| {
+            Gateway::without_base(limiter, profile, None)
+                .map_err(|error| UpdateError::Client(error.to_string()))
+        };
+        Ok(Self {
+            release_api: build(api_limiter, RELEASE_API_PROFILE)?,
+            release_downloads: build(download_limiter, RELEASE_DOWNLOAD_PROFILE)?,
+        })
     }
 
-    async fn send(
+    pub(crate) async fn fetch_release_metadata(
         &self,
         url: &str,
-        timeout: Option<Duration>,
-    ) -> Result<reqwest::Response, UpdateError> {
-        acquire_or_wait(self.limiter.as_ref(), REQUEST_WEIGHT)
+        limit: u64,
+    ) -> Result<Vec<u8>, UpdateError> {
+        fetch_small(&self.release_api, url, limit).await
+    }
+
+    pub(crate) async fn fetch_release_file(
+        &self,
+        url: &str,
+        limit: u64,
+    ) -> Result<Vec<u8>, UpdateError> {
+        fetch_small(&self.release_downloads, url, limit).await
+    }
+
+    pub(crate) async fn stream_release_file<S, P>(
+        &self,
+        url: &str,
+        cap: u64,
+        sink: &mut S,
+        on_progress: P,
+        cancel: &CancellationToken,
+    ) -> Result<u64, StreamError>
+    where
+        S: BodySink<Error = std::io::Error>,
+        P: FnMut(BodyProgress) + Send,
+    {
+        let request = GatewayRequest::absolute(Method::Get, url).class(CallClass::Media);
+        self.release_downloads
+            .send_streaming(request, cap, sink, on_progress, cancel)
             .await
-            .map_err(|_| UpdateError::RateLimited)?;
-        let mut request = self.http.get(url);
-        if let Some(timeout) = timeout {
-            request = request.timeout(timeout);
-        }
-        let response = request.send().await.map_err(UpdateError::network)?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(UpdateError::Status(status.as_u16()));
-        }
-        Ok(response)
+            .map(|response| response.received())
+            .map_err(|failure| match failure {
+                StreamFailure::Gateway(GatewayFailure::ResponseTooLarge { .. }) => {
+                    StreamError::TooLarge
+                }
+                StreamFailure::Gateway(failure) => {
+                    StreamError::Update(UpdateError::from_gateway(failure))
+                }
+                StreamFailure::Sink(error) => StreamError::Update(UpdateError::Io(error)),
+            })
     }
 }
 
-fn github_limiter() -> Arc<dyn RateLimiter> {
-    static LIMITER: OnceLock<Arc<TokenBucketRateLimiter>> = OnceLock::new();
-    let limiter = LIMITER.get_or_init(|| {
-        Arc::new(TokenBucketRateLimiter::new(
-            GITHUB_ANON_REQUEST_BUDGET,
-            GITHUB_ANON_WINDOW,
-        ))
-    });
-    Arc::clone(limiter) as Arc<dyn RateLimiter>
+async fn fetch_small(gateway: &Gateway, url: &str, limit: u64) -> Result<Vec<u8>, UpdateError> {
+    let request = GatewayRequest::absolute(Method::Get, url)
+        .class(CallClass::Catalog)
+        .body_cap(limit);
+    gateway
+        .send(request)
+        .await
+        .map(GatewayResponse::into_body)
+        .map_err(|failure| match failure {
+            GatewayFailure::ResponseTooLarge { .. } => UpdateError::ResponseTooLarge { limit },
+            failure => UpdateError::from_gateway(failure),
+        })
 }

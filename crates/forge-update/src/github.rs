@@ -93,7 +93,7 @@ pub async fn fetch_latest_release(
     repo: &GithubRepo,
 ) -> Result<Option<PublishedRelease>, UpdateError> {
     let body = client
-        .fetch_small(&repo.latest_release_api_url(), RELEASE_METADATA_SIZE_LIMIT)
+        .fetch_release_metadata(&repo.latest_release_api_url(), RELEASE_METADATA_SIZE_LIMIT)
         .await?;
     parse_latest_release(&body)
 }

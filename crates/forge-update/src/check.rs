@@ -14,10 +14,10 @@ pub async fn fetch_offer(
     keys: &TrustedKeys,
 ) -> Result<UpdateOffer, UpdateError> {
     let body = client
-        .fetch_small(source.manifest_url(), MANIFEST_SIZE_LIMIT)
+        .fetch_release_file(source.manifest_url(), MANIFEST_SIZE_LIMIT)
         .await?;
     let signature = client
-        .fetch_small(source.signature_url(), SIGNATURE_SIZE_LIMIT)
+        .fetch_release_file(source.signature_url(), SIGNATURE_SIZE_LIMIT)
         .await?;
     let signature = String::from_utf8(signature).map_err(|_| UpdateError::MalformedSignature)?;
     verify_manifest(&body, &signature, keys)

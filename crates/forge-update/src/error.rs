@@ -1,3 +1,4 @@
+use forge_net::GatewayFailure;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -67,7 +68,14 @@ pub enum UpdateError {
 }
 
 impl UpdateError {
-    pub(crate) fn network(error: reqwest::Error) -> Self {
-        Self::Network(error.without_url().to_string())
+    pub(crate) fn from_gateway(failure: GatewayFailure) -> Self {
+        match failure {
+            GatewayFailure::Cancelled => Self::Cancelled,
+            GatewayFailure::BudgetExhausted { .. } => Self::RateLimited,
+            failure => match failure.status() {
+                Some(status) => Self::Status(status),
+                None => Self::Network(failure.to_string()),
+            },
+        }
     }
 }

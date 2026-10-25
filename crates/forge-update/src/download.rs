@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use forge_net::{BodyProgress, BodySink};
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::watch;
@@ -7,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::UpdateError;
 use crate::digest::StreamingSha256;
-use crate::http::UpdateClient;
+use crate::http::{StreamError, UpdateClient};
 use crate::manifest::{Artifact, is_plain_file_name};
 
 pub const STAGING_PREFIX: &str = ".forge-update-";
@@ -89,50 +90,31 @@ pub async fn download_artifact(
         staging_dir.join(format!("{STAGING_PREFIX}{}{PARTIAL_SUFFIX}", artifact.name));
     let partial = PartialFile::new(partial_path);
 
-    let mut response = tokio::select! {
-        biased;
-        () = cancel.0.cancelled() => return Err(UpdateError::Cancelled),
-        response = client.open_stream(&artifact.url) => response?,
+    let mut sink = StagingSink {
+        file: File::create(partial.path()).await?,
+        hasher: StreamingSha256::default(),
     };
-    if response
-        .content_length()
-        .is_some_and(|length| length > artifact.size)
-    {
-        return Err(UpdateError::ArtifactOversized {
-            expected: artifact.size,
-        });
-    }
-
-    let mut file = File::create(partial.path()).await?;
-    let mut hasher = StreamingSha256::default();
-    let mut received: u64 = 0;
-    progress.publish(DownloadProgress {
-        received,
-        total: artifact.size,
-    });
-
-    loop {
-        let chunk = tokio::select! {
-            biased;
-            () = cancel.0.cancelled() => return Err(UpdateError::Cancelled),
-            chunk = response.chunk() => chunk.map_err(UpdateError::network)?,
-        };
-        let Some(chunk) = chunk else {
-            break;
-        };
-        received = received.saturating_add(chunk.len() as u64);
-        if received > artifact.size {
-            return Err(UpdateError::ArtifactOversized {
+    let received = client
+        .stream_release_file(
+            &artifact.url,
+            artifact.size,
+            &mut sink,
+            |step: BodyProgress| {
+                progress.publish(DownloadProgress {
+                    received: step.received,
+                    total: artifact.size,
+                });
+            },
+            &cancel.0,
+        )
+        .await
+        .map_err(|error| match error {
+            StreamError::TooLarge => UpdateError::ArtifactOversized {
                 expected: artifact.size,
-            });
-        }
-        hasher.update(&chunk);
-        file.write_all(&chunk).await?;
-        progress.publish(DownloadProgress {
-            received,
-            total: artifact.size,
-        });
-    }
+            },
+            StreamError::Update(error) => error,
+        })?;
+    let StagingSink { mut file, hasher } = sink;
 
     if received != artifact.size {
         return Err(UpdateError::ArtifactSizeMismatch {
@@ -154,6 +136,20 @@ pub async fn download_artifact(
         path: final_path,
         size: received,
     })
+}
+
+struct StagingSink {
+    file: File,
+    hasher: StreamingSha256,
+}
+
+impl BodySink for StagingSink {
+    type Error = std::io::Error;
+
+    async fn accept(&mut self, chunk: &[u8]) -> Result<(), std::io::Error> {
+        self.hasher.update(chunk);
+        self.file.write_all(chunk).await
+    }
 }
 
 struct PartialFile {

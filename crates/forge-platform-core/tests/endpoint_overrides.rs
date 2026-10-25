@@ -79,6 +79,7 @@ fn unconfigured_endpoints_reach_the_production_services_over_tls() {
         ),
         (EndpointSurface::DonatelloApi, "https://donatello.to/api/v1"),
         (EndpointSurface::MonobankApi, "https://api.monobank.ua"),
+        (EndpointSurface::DiscordApi, "https://discord.com/api"),
     ];
     let pinned: BTreeSet<EndpointSurface> = production.iter().map(|(s, _)| *s).collect();
     assert_eq!(
@@ -174,9 +175,12 @@ fn override_is_refused_with_the_reason_it_fails() {
     use EndpointRefusal::{
         EmbeddedCredentials, Malformed, NotLoopback, QueryOrFragment, SchemeMismatch,
     };
-    use EndpointSurface::{KickChatSocket, TwitchApi, TwitchEventSubSocket};
+    use EndpointSurface::{DiscordApi, KickChatSocket, TwitchApi, TwitchEventSubSocket};
     let cases = [
         (TwitchApi, "http://10.0.0.1", NotLoopback),
+        (DiscordApi, "http://203.0.113.5/api", NotLoopback),
+        (DiscordApi, "https://discord.com/api", NotLoopback),
+        (DiscordApi, "wss://127.0.0.1/api", SchemeMismatch),
         (TwitchApi, "http://192.168.1.5:8080", NotLoopback),
         (TwitchApi, "http://126.255.255.255", NotLoopback),
         (TwitchApi, "http://128.0.0.0", NotLoopback),

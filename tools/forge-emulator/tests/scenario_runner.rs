@@ -833,7 +833,10 @@ fn discord_scenario(steps: Value) -> Scenario {
 async fn harness_with_discord() -> (Harness, String) {
     let mut harness = Harness::start(COOPERATIVE, false).await;
     let discord = FakeDiscord::start(&[GO_LIVE.to_owned()]).await.unwrap();
-    let url = discord.webhook_url(GO_LIVE).unwrap();
+    let saved = discord.webhook_url(GO_LIVE).unwrap();
+    let (_, webhook_route) = saved.split_once("/api/").unwrap();
+    let (_, api_base) = discord.endpoint_override();
+    let url = format!("{api_base}/{webhook_route}");
     harness.discord = Some(discord);
     (harness, url)
 }

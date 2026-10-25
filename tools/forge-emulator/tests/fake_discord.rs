@@ -2,10 +2,9 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_discord::{DiscordClient, DiscordConfig, MentionPolicy};
+use forge_discord::{DiscordClient, MentionPolicy};
 use forge_emulator::EmulatorError;
 use forge_emulator::discord::{FakeDiscord, UNKNOWN_WEBHOOK_CODE};
 use forge_emulator::fixture::{DiscordWebhook, Fixture};
@@ -18,8 +17,15 @@ const ALERTS: &str = "alerts";
 
 async fn fake() -> (FakeDiscord, String) {
     let fake = FakeDiscord::start(&[ALERTS.to_owned()]).await.unwrap();
-    let url = fake.webhook_url(ALERTS).unwrap();
+    let url = loopback_webhook_url(&fake);
     (fake, url)
+}
+
+fn loopback_webhook_url(fake: &FakeDiscord) -> String {
+    let saved = fake.webhook_url(ALERTS).unwrap();
+    let (_, webhook_route) = saved.split_once("/api/").unwrap();
+    let (_, api_base) = fake.endpoint_override();
+    format!("{api_base}/{webhook_route}")
 }
 
 fn http() -> reqwest::Client {
@@ -177,8 +183,8 @@ async fn start_refuses_a_blank_or_repeated_webhook_name() {
 }
 
 #[tokio::test]
-async fn addressed_fixture_points_each_declared_webhook_at_the_fake() {
-    let (fake, url) = fake().await;
+async fn addressed_fixture_seeds_each_declared_webhook_with_a_url_forge_accepts() {
+    let (fake, _) = fake().await;
     let fixture = Fixture {
         discord_webhooks: vec![DiscordWebhook {
             name: ALERTS.to_owned(),
@@ -189,7 +195,28 @@ async fn addressed_fixture_points_each_declared_webhook_at_the_fake() {
 
     let addressed = fake.addressed(&fixture);
 
-    assert_eq!(addressed.discord_webhooks[0].url, url);
+    let seeded = &addressed.discord_webhooks[0].url;
+    assert_eq!(Some(seeded), fake.webhook_url(ALERTS).as_ref());
+    assert!(
+        forge_discord::validate_webhook_url(seeded).is_ok(),
+        "{seeded}"
+    );
+}
+
+#[tokio::test]
+async fn the_endpoint_override_names_the_discord_api_variable_and_a_loopback_api_base() {
+    let (fake, _) = fake().await;
+
+    let (variable, api_base) = fake.endpoint_override();
+    let endpoints = forge_platform_core::PlatformEndpoints::resolve(|name| {
+        (name == variable).then(|| api_base.clone().into())
+    })
+    .unwrap();
+
+    assert_eq!(
+        endpoints.base_url(forge_platform_core::EndpointSurface::DiscordApi),
+        api_base
+    );
 }
 
 struct MemoryCreds {
@@ -239,26 +266,34 @@ impl EventPublisher for SilentPublisher {
     fn publish(&self, _: Event) {}
 }
 
-fn forge_client(url: &str) -> Arc<DiscordClient> {
+fn forge_client(fake: &FakeDiscord, saved: &str) -> Arc<DiscordClient> {
     let creds = MemoryCreds {
         store: Mutex::new(HashMap::from([(
             format!("discord:{ALERTS}"),
-            json!({ "url": url }).to_string(),
+            json!({ "url": saved }).to_string(),
         )])),
     };
+    let (variable, api_base) = fake.endpoint_override();
+    let endpoints = forge_platform_core::PlatformEndpoints::resolve(|name| {
+        (name == variable).then(|| api_base.clone().into())
+    })
+    .unwrap();
     DiscordClient::new(
-        DiscordConfig {
-            request_timeout: Duration::from_secs(30),
-        },
+        endpoints.base_url(forge_platform_core::EndpointSurface::DiscordApi),
         Arc::new(SilentPublisher),
         Arc::new(creds),
     )
+    .unwrap()
+}
+
+fn saved_url(fake: &FakeDiscord) -> String {
+    fake.webhook_url(ALERTS).unwrap()
 }
 
 #[tokio::test]
 async fn forge_role_ping_post_reaches_the_fake_with_its_message_id_and_mentions() {
-    let (fake, url) = fake().await;
-    let client = forge_client(&url);
+    let (fake, _) = fake().await;
+    let client = forge_client(&fake, &saved_url(&fake));
 
     let message_id = client
         .post_text_with_mentions(
@@ -282,8 +317,8 @@ async fn forge_role_ping_post_reaches_the_fake_with_its_message_id_and_mentions(
 
 #[tokio::test]
 async fn forge_file_upload_reaches_the_fake_with_its_caption_and_file_name() {
-    let (fake, url) = fake().await;
-    let client = forge_client(&url);
+    let (fake, _) = fake().await;
+    let client = forge_client(&fake, &saved_url(&fake));
 
     client
         .send_file(
@@ -305,9 +340,9 @@ async fn forge_file_upload_reaches_the_fake_with_its_caption_and_file_name() {
 
 #[tokio::test]
 async fn forge_retries_once_after_the_fake_rate_limits_its_post() {
-    let (fake, url) = fake().await;
+    let (fake, _) = fake().await;
     fake.rate_limit_next(0.01);
-    let client = forge_client(&url);
+    let client = forge_client(&fake, &saved_url(&fake));
 
     client
         .post_text_with_mentions(ALERTS, "hi", MentionPolicy::default())
@@ -320,9 +355,9 @@ async fn forge_retries_once_after_the_fake_rate_limits_its_post() {
 
 #[tokio::test]
 async fn forge_post_to_a_revoked_webhook_surfaces_the_404_without_the_token() {
-    let (_fake, url) = fake().await;
-    let revoked = format!("{url}-revoked");
-    let client = forge_client(&revoked);
+    let (fake, _) = fake().await;
+    let revoked = format!("{}-revoked", saved_url(&fake));
+    let client = forge_client(&fake, &revoked);
 
     let err = client
         .post_text_with_mentions(ALERTS, "hi", MentionPolicy::default())

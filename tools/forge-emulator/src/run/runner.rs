@@ -339,6 +339,7 @@ impl RunFakes {
                 .map(FakeDonatello::endpoint_override),
         );
         overrides.extend(self.monobank.as_ref().map(FakeMonobank::endpoint_override));
+        overrides.extend(self.discord.as_ref().map(FakeDiscord::endpoint_override));
         overrides.extend(self.kick.iter().flat_map(|kick| kick.endpoint_overrides()));
         overrides.extend(
             self.youtube

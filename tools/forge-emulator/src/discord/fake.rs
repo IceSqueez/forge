@@ -8,6 +8,7 @@ use axum::body::Bytes;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, Method, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Json, Response};
+use forge_platform_core::{EndpointSurface, PlatformEndpoints};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
@@ -20,6 +21,7 @@ use crate::fixture::Fixture;
 
 pub const UNKNOWN_WEBHOOK_CODE: u64 = 10015;
 
+const API_PATH: &str = "/api";
 const WEBHOOK_PATH_PREFIX: &str = "/api/webhooks/";
 const MESSAGES_SEGMENT: &str = "messages";
 const WAIT_PARAMETER: &str = "wait";
@@ -158,11 +160,20 @@ impl FakeDiscord {
                 .find(|webhook| webhook.name == name)
                 .map(|webhook| {
                     format!(
-                        "{}{WEBHOOK_PATH_PREFIX}{}/{}",
-                        self.base_url, webhook.id, webhook.token
+                        "{}/webhooks/{}/{}",
+                        PlatformEndpoints::default().base_url(EndpointSurface::DiscordApi),
+                        webhook.id,
+                        webhook.token
                     )
                 })
         })
+    }
+
+    pub fn endpoint_override(&self) -> (&'static str, String) {
+        (
+            EndpointSurface::DiscordApi.env_var(),
+            format!("{}{API_PATH}", self.base_url),
+        )
     }
 
     pub fn addressed(&self, fixture: &Fixture) -> Fixture {

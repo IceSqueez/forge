@@ -385,3 +385,52 @@ impl Render for DiscordWebhookModal {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use gpui::TestAppContext;
+
+    use super::*;
+    use crate::test_support::install_presentation;
+
+    fn saveable(url: &str, cx: &mut TestAppContext) -> bool {
+        let launch = WebhookModalLaunch {
+            original_name: None,
+            name: "alerts".to_owned(),
+            url: url.to_owned(),
+        };
+        let modal = cx.update(|cx| cx.new(|cx| DiscordWebhookModal::new(launch, cx)));
+        modal.update(cx, |modal, cx| modal.can_save(cx))
+    }
+
+    #[gpui::test]
+    fn the_modal_saves_only_a_webhook_url_a_send_would_accept(cx: &mut TestAppContext) {
+        install_presentation(cx);
+        for (url, accepted) in [
+            (
+                "https://discord.com/api/webhooks/1234567890/token-value",
+                true,
+            ),
+            (
+                "https://canary.discordapp.com/api/webhooks/1234567890/token-value",
+                true,
+            ),
+            (
+                "https://evildiscord.com/api/webhooks/1234567890/token-value",
+                false,
+            ),
+            (
+                "https://attacker.io/api/webhooks/1234567890/token-value",
+                false,
+            ),
+            ("https://discord.com/api/webhooks/12a/token-value", false),
+            ("https://discord.com/api/webhooks/1234567890/to..ken", false),
+            (
+                "https://discord.com/api/webhooks/1234567890/tok%2Fen",
+                false,
+            ),
+        ] {
+            assert_eq!(saveable(url, cx), accepted, "{url}");
+        }
+    }
+}

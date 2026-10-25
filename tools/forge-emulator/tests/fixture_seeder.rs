@@ -619,15 +619,17 @@ fn go_live_webhook(url: &str) -> Fixture {
 }
 
 #[tokio::test]
-async fn a_seeded_discord_webhook_is_the_endpoint_forge_discord_posts_to() {
-    let url = "http://127.0.0.1:9/api/webhooks/1300000000000000001/fake-discord-token-0";
+async fn a_seeded_discord_webhook_is_the_one_forge_discord_lists_and_loads() {
+    let url = "https://discord.com/api/webhooks/1300000000000000001/fake-discord-token-0";
     let (dir, _) = seed_fresh(&go_live_webhook(url)).await;
     let backend = Arc::new(reopen(dir.path()).await);
     let client = forge_discord::DiscordClient::new(
-        forge_discord::DiscordConfig::default(),
+        forge_platform_core::PlatformEndpoints::default()
+            .base_url(forge_platform_core::EndpointSurface::DiscordApi),
         Arc::new(SilentPublisher),
         Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
-    );
+    )
+    .unwrap();
 
     let names = client.list_webhooks().await.unwrap();
     let stored = client.webhook_url("go-live").await.unwrap();

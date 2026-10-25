@@ -127,3 +127,21 @@ fn saved_query(query: &str) -> Vec<(String, String)> {
         .map(|(name, value)| (name.to_owned(), value.to_owned()))
         .collect()
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    const LARGEST_SNOWFLAKE: &str = "18446744073709551615";
+
+    #[test]
+    fn the_largest_u64_is_still_a_snowflake_for_the_webhook_and_the_message() {
+        let route = WebhookRoute::parse(&format!(
+            "https://discord.com/api/webhooks/{LARGEST_SNOWFLAKE}/tok"
+        ))
+        .unwrap();
+
+        assert!(route.message(Method::Delete, LARGEST_SNOWFLAKE).is_ok());
+    }
+}

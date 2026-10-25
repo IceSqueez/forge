@@ -1,6 +1,6 @@
 {
   "name": "going live posts a role ping to the Discord webhook",
-  "purpose": "One stream.online notification runs the action bound to the go-live trigger, whose single step posts a Discord webhook message mentioning a role and @everyone. The step keeps the default mention toggles: role pings on, @everyone and @here off. The fake Discord records the request body, so the post must carry allowed_mentions.parse of exactly users and roles; a post without allowed_mentions, or one that also parses everyone, fails here. The webhook address forge posts to is seeded straight into its credential store, so no forge-side endpoint override is involved.",
+  "purpose": "One stream.online notification runs the action bound to the go-live trigger, whose single step posts a Discord webhook message mentioning a role and @everyone. The step keeps the default mention toggles: role pings on, @everyone and @here off. The fake Discord records the request body, so the post must carry allowed_mentions.parse of exactly users and roles; a post without allowed_mentions, or one that also parses everyone, fails here. The webhook is seeded into forge's credential store in its discord.com shape; FORGE_DISCORD_API_BASE_URL points forge's Discord API base at the fake, so the post reaches the fake under the same webhook route.",
   "fixture": {
     "twitch": {},
     "discord_webhooks": [{ "name": "go-live" }],

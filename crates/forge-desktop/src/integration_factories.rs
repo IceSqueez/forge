@@ -29,8 +29,6 @@ use forge_hotkey::clip_bindings_of;
 use forge_hotkey::persisted_hotkey_combos;
 
 const CONNECT_GUARD: Duration = Duration::from_secs(5);
-const KICK_API_BUDGET_CAPACITY: u32 = 60;
-const KICK_API_BUDGET_WINDOW: Duration = Duration::from_secs(60);
 const KICK_POLLER_QUEUE_CAPACITY: usize = 256;
 
 fn idle_with_tasks(tasks: TaskGroup) -> RunningIntegration<BuiltinObject> {
@@ -422,37 +420,32 @@ pub(crate) fn wire_kick(
         client_secret,
     ));
     let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
-        KICK_API_BUDGET_CAPACITY,
-        KICK_API_BUDGET_WINDOW,
+        forge_platform_kick::KICK_API_BUDGET_CAPACITY,
+        forge_platform_kick::KICK_API_BUDGET_WINDOW,
+    ));
+    let api =
+        forge_platform_kick::kick_api_gateway(endpoints, Arc::clone(&rate_limiter), publisher(bus))
+            .inspect_err(|e| eprintln!("forge-desktop: kick api gateway build failed: {e}"))
+            .ok()?;
+    let channel_info = Arc::new(forge_platform_kick::ChannelInfoFetcher::new(
+        kick_channel_info_gateway(endpoints, bus)?,
     ));
     let ban_ledger = backend.ban_ledger_repo();
+    let sender = Arc::new(forge_platform_kick::KickSendChat::new(api.clone()));
     let platform = Arc::new(forge_platform_kick::KickPlatform::new(
         endpoints,
         Arc::clone(&manager),
-        Arc::clone(&rate_limiter),
+        Arc::clone(&sender),
+        channel_info,
         Arc::clone(&ban_ledger),
     ));
-    let sender = Arc::new(forge_platform_kick::KickSendChat::new(
-        endpoints,
-        Arc::clone(&rate_limiter),
-    ));
     let moderation = Arc::new(forge_platform_kick::KickModeration::new(
-        endpoints,
-        Arc::clone(&rate_limiter),
+        api.clone(),
         ban_ledger,
     ));
-    let channel = Arc::new(forge_platform_kick::KickChannel::new(
-        endpoints,
-        Arc::clone(&rate_limiter),
-    ));
-    let rewards = Arc::new(forge_platform_kick::KickRewards::new(
-        endpoints,
-        Arc::clone(&rate_limiter),
-    ));
-    let categories = Arc::new(forge_platform_kick::KickCategories::new(
-        endpoints,
-        Arc::clone(&rate_limiter),
-    ));
+    let channel = Arc::new(forge_platform_kick::KickChannel::new(api.clone()));
+    let rewards = Arc::new(forge_platform_kick::KickRewards::new(api.clone()));
+    let categories = Arc::new(forge_platform_kick::KickCategories::new(api));
 
     let manager_for_sub_actions = Arc::clone(&manager);
     let manager_for_broadcaster = Arc::clone(&manager);
@@ -485,6 +478,19 @@ pub(crate) fn wire_kick(
         channel,
         rewards,
     })
+}
+
+fn kick_channel_info_gateway(
+    endpoints: &PlatformEndpoints,
+    bus: &Arc<EventBus>,
+) -> Option<Gateway> {
+    let limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
+        forge_platform_kick::KICK_CHANNEL_INFO_BUDGET_CAPACITY,
+        forge_platform_kick::KICK_CHANNEL_INFO_BUDGET_WINDOW,
+    ));
+    forge_platform_kick::kick_channel_info_gateway(endpoints, limiter, publisher(bus))
+        .inspect_err(|e| eprintln!("forge-desktop: kick channel info gateway build failed: {e}"))
+        .ok()
 }
 
 #[async_trait]

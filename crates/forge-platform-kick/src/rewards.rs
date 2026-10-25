@@ -1,17 +1,26 @@
-use std::sync::Arc;
-
-use forge_net::{DEFAULT_RETRY_AFTER_SECS, RateLimiter, acquire_or_wait};
-use forge_platform_core::{EndpointSurface, NON_HTTP_STATUS, PlatformEndpoints, PlatformError};
-use reqwest::StatusCode;
+use forge_net::{Gateway, GatewayRequest, GatewayResponse};
+use forge_platform_core::{NON_HTTP_STATUS, PlatformError};
 use serde::{Deserialize, Serialize};
 
+use crate::api_gateway::{RefusalReasons, authorized, json_body, malformed, platform_error};
+
 const REWARDS_PATH: &str = "/channels/rewards";
+const REWARD_LABEL: &str = "/channels/rewards/{id}";
+const REDEMPTIONS_PATH: &str = "/channels/rewards/redemptions";
+const ACCEPT_REDEMPTIONS_PATH: &str = "/channels/rewards/redemptions/accept";
+const REJECT_REDEMPTIONS_PATH: &str = "/channels/rewards/redemptions/reject";
+const PENDING_STATUS: &str = "pending";
 const MAX_REDEMPTION_BATCH: usize = 25;
 
+const REWARDS_REFUSALS: RefusalReasons = RefusalReasons {
+    unauthorized: "rewards token rejected (401)",
+    forbidden: Some(
+        "rewards forbidden (403); check channel:rewards:write scope or reward ownership",
+    ),
+};
+
 pub struct KickRewards {
-    client: reqwest::Client,
-    limiter: Arc<dyn RateLimiter>,
-    rewards_endpoint: String,
+    api: Gateway,
 }
 
 pub struct CreateRewardParams {
@@ -131,21 +140,8 @@ struct RedeemerRef {
 }
 
 impl KickRewards {
-    pub fn new(endpoints: &PlatformEndpoints, limiter: Arc<dyn RateLimiter>) -> Self {
-        Self {
-            client: reqwest::Client::new(),
-            limiter,
-            rewards_endpoint: format!(
-                "{}{REWARDS_PATH}",
-                endpoints.base_url(EndpointSurface::KickPublicApi)
-            ),
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_api_base(mut self, base: String) -> Self {
-        self.rewards_endpoint = format!("{base}{REWARDS_PATH}");
-        self
+    pub fn new(api: Gateway) -> Self {
+        Self { api }
     }
 
     pub async fn create(
@@ -153,8 +149,6 @@ impl KickRewards {
         params: CreateRewardParams,
         token: &str,
     ) -> Result<Option<String>, PlatformError> {
-        self.acquire_slot().await?;
-
         let body = CreateBody {
             title: params.title,
             cost: params.cost,
@@ -164,29 +158,13 @@ impl KickRewards {
             is_user_input_required: params.is_user_input_required,
             should_redemptions_skip_request_queue: params.should_redemptions_skip_request_queue,
         };
-
-        let response = self
-            .client
-            .post(&self.rewards_endpoint)
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = response.status();
-        if status.is_success() {
-            let created_id = response
-                .json::<CreateResponse>()
-                .await
-                .ok()
-                .and_then(|r| r.id.or_else(|| r.data.and_then(|d| d.id)));
-            return Ok(created_id);
-        }
-
-        map_rewards_error(status, response).await
+        let request = authorized(GatewayRequest::post(REWARDS_PATH), token, REWARDS_PATH)
+            .body(json_body(&body)?);
+        let response = self.send(request).await?;
+        Ok(response
+            .json::<CreateResponse>()
+            .ok()
+            .and_then(|r| r.id.or_else(|| r.data.and_then(|d| d.id))))
     }
 
     pub async fn update(
@@ -195,8 +173,6 @@ impl KickRewards {
         params: UpdateRewardParams,
         token: &str,
     ) -> Result<(), PlatformError> {
-        self.acquire_slot().await?;
-
         let body = UpdateBody {
             title: params.title,
             cost: params.cost,
@@ -207,47 +183,22 @@ impl KickRewards {
             is_user_input_required: params.is_user_input_required,
             should_redemptions_skip_request_queue: params.should_redemptions_skip_request_queue,
         };
-
-        let url = format!("{}/{}", self.rewards_endpoint, reward_id);
-        let response = self
-            .client
-            .patch(&url)
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = response.status();
-        if status.is_success() {
-            return Ok(());
-        }
-
-        map_rewards_error(status, response).await
+        let request = authorized(
+            GatewayRequest::patch(reward_path(reward_id)),
+            token,
+            REWARD_LABEL,
+        )
+        .body(json_body(&body)?);
+        self.send(request).await.map(drop)
     }
 
     pub async fn delete(&self, reward_id: &str, token: &str) -> Result<(), PlatformError> {
-        self.acquire_slot().await?;
-
-        let url = format!("{}/{}", self.rewards_endpoint, reward_id);
-        let response = self
-            .client
-            .delete(&url)
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-            .send()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = response.status();
-        if status.is_success() {
-            return Ok(());
-        }
-
-        map_rewards_error(status, response).await
+        let request = authorized(
+            GatewayRequest::delete(reward_path(reward_id)),
+            token,
+            REWARD_LABEL,
+        );
+        self.send(request).await.map(drop)
     }
 
     pub async fn accept_redemptions(
@@ -255,43 +206,9 @@ impl KickRewards {
         ids: &[String],
         token: &str,
     ) -> Result<(), PlatformError> {
-        if ids.is_empty() {
-            return Err(PlatformError::Http {
-                status: NON_HTTP_STATUS,
-                body: "accept_redemptions: ids list is empty".to_owned(),
-            });
-        }
-        if ids.len() > MAX_REDEMPTION_BATCH {
-            return Err(PlatformError::Http {
-                status: NON_HTTP_STATUS,
-                body: format!(
-                    "accept_redemptions: {} ids exceeds the maximum of {MAX_REDEMPTION_BATCH}",
-                    ids.len()
-                ),
-            });
-        }
-
-        self.acquire_slot().await?;
-
-        let url = format!("{}/redemptions/accept", self.rewards_endpoint);
-        let body = RedemptionBatchBody { ids };
-        let response = self
-            .client
-            .post(&url)
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-            .json(&body)
-            .send()
+        check_redemption_batch("accept_redemptions", ids)?;
+        self.post_redemption_batch(ACCEPT_REDEMPTIONS_PATH, ids, token)
             .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = response.status();
-        if status.is_success() {
-            return Ok(());
-        }
-
-        map_rewards_error(status, response).await
     }
 
     pub async fn reject_redemptions(
@@ -299,71 +216,23 @@ impl KickRewards {
         ids: &[String],
         token: &str,
     ) -> Result<(), PlatformError> {
-        if ids.is_empty() {
-            return Err(PlatformError::Http {
-                status: NON_HTTP_STATUS,
-                body: "reject_redemptions: ids list is empty".to_owned(),
-            });
-        }
-        if ids.len() > MAX_REDEMPTION_BATCH {
-            return Err(PlatformError::Http {
-                status: NON_HTTP_STATUS,
-                body: format!(
-                    "reject_redemptions: {} ids exceeds the maximum of {MAX_REDEMPTION_BATCH}",
-                    ids.len()
-                ),
-            });
-        }
-
-        self.acquire_slot().await?;
-
-        let url = format!("{}/redemptions/reject", self.rewards_endpoint);
-        let body = RedemptionBatchBody { ids };
-        let response = self
-            .client
-            .post(&url)
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-            .json(&body)
-            .send()
+        check_redemption_batch("reject_redemptions", ids)?;
+        self.post_redemption_batch(REJECT_REDEMPTIONS_PATH, ids, token)
             .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = response.status();
-        if status.is_success() {
-            return Ok(());
-        }
-
-        map_rewards_error(status, response).await
     }
 
     pub async fn list_pending_redemptions(
         &self,
         token: &str,
     ) -> Result<Vec<RedemptionRecord>, PlatformError> {
-        self.acquire_slot().await?;
-
-        let url = format!("{}/redemptions?status=pending", self.rewards_endpoint);
-        let response = self
-            .client
-            .get(&url)
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-            .send()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = response.status();
-        if !status.is_success() {
-            return map_rewards_error(status, response).await;
-        }
-
-        let envelope: RedemptionsEnvelope =
-            response.json().await.map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
+        let request = authorized(
+            GatewayRequest::get(REDEMPTIONS_PATH),
+            token,
+            REDEMPTIONS_PATH,
+        )
+        .query("status", PENDING_STATUS);
+        let response = self.send(request).await?;
+        let envelope: RedemptionsEnvelope = response.json().map_err(malformed)?;
 
         Ok(envelope
             .data
@@ -379,80 +248,57 @@ impl KickRewards {
             .collect())
     }
 
-    async fn acquire_slot(&self) -> Result<(), PlatformError> {
-        acquire_or_wait(self.limiter.as_ref(), 1)
+    async fn post_redemption_batch(
+        &self,
+        path: &'static str,
+        ids: &[String],
+        token: &str,
+    ) -> Result<(), PlatformError> {
+        let request = authorized(GatewayRequest::post(path), token, path)
+            .body(json_body(&RedemptionBatchBody { ids })?);
+        self.send(request).await.map(drop)
+    }
+
+    async fn send(&self, request: GatewayRequest) -> Result<GatewayResponse, PlatformError> {
+        self.api
+            .send(request)
             .await
-            .map_err(PlatformError::from)
+            .map_err(|failure| platform_error(failure, REWARDS_REFUSALS))
     }
 }
 
-async fn map_rewards_error<T>(
-    status: StatusCode,
-    response: reqwest::Response,
-) -> Result<T, PlatformError> {
-    let retry_after_secs = response
-        .headers()
-        .get("retry-after")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
+fn reward_path(reward_id: &str) -> String {
+    format!("{REWARDS_PATH}/{reward_id}")
+}
 
-    let body = response.text().await.unwrap_or_default();
-
-    match status {
-        StatusCode::UNAUTHORIZED => Err(PlatformError::Auth {
-            reason: "rewards token rejected (401)".to_owned(),
-        }),
-        StatusCode::FORBIDDEN => Err(PlatformError::Auth {
-            reason:
-                "rewards forbidden (403); check channel:rewards:write scope or reward ownership"
-                    .to_owned(),
-        }),
-        StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY => Err(PlatformError::Http {
-            status: status.as_u16(),
-            body,
-        }),
-        StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
-        _ => Err(PlatformError::Http {
-            status: status.as_u16(),
-            body,
-        }),
+fn check_redemption_batch(operation: &str, ids: &[String]) -> Result<(), PlatformError> {
+    if ids.is_empty() {
+        return Err(PlatformError::Http {
+            status: NON_HTTP_STATUS,
+            body: format!("{operation}: ids list is empty"),
+        });
     }
+    if ids.len() > MAX_REDEMPTION_BATCH {
+        return Err(PlatformError::Http {
+            status: NON_HTTP_STATUS,
+            body: format!(
+                "{operation}: {} ids exceeds the maximum of {MAX_REDEMPTION_BATCH}",
+                ids.len()
+            ),
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use forge_net::{RateLimitError, RateLimitOutcome};
-    use std::time::Duration;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    struct GrantLimiter;
-    #[async_trait::async_trait]
-    impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Granted)
-        }
-        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
-    }
-
-    struct ExhaustedLimiter;
-    #[async_trait::async_trait]
-    impl RateLimiter for ExhaustedLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Exhausted)
-        }
-        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
-    }
-
     fn rewards_on(server: &MockServer) -> KickRewards {
-        KickRewards::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(GrantLimiter),
-        )
-        .with_api_base(server.uri())
+        KickRewards::new(crate::endpoints_test_support::api_at(&server.uri()))
     }
 
     async fn last_body(server: &MockServer) -> serde_json::Value {
@@ -594,83 +440,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[tokio::test]
-    async fn auth_statuses_map_to_auth_error() {
-        for status in [401_u16, 403] {
-            let server = MockServer::start().await;
-            Mock::given(method("POST"))
-                .respond_with(ResponseTemplate::new(status))
-                .mount(&server)
-                .await;
-
-            let err = rewards_on(&server)
-                .create(minimal_create(), "tok")
-                .await
-                .unwrap_err();
-            assert!(
-                matches!(err, PlatformError::Auth { .. }),
-                "status {status} must map to Auth, got {err:?}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn unprocessable_entity_maps_to_http_error_with_status() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(422))
-            .mount(&server)
-            .await;
-
-        let err = rewards_on(&server)
-            .create(minimal_create(), "tok")
-            .await
-            .unwrap_err();
-        assert!(matches!(err, PlatformError::Http { status: 422, .. }));
-    }
-
-    #[tokio::test]
-    async fn rate_limited_status_maps_to_rate_limited_with_parsed_retry_after() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "57"))
-            .mount(&server)
-            .await;
-
-        let err = rewards_on(&server)
-            .create(minimal_create(), "tok")
-            .await
-            .unwrap_err();
-        assert!(matches!(
-            err,
-            PlatformError::RateLimited {
-                retry_after_secs: 57
-            }
-        ));
-    }
-
-    #[tokio::test]
-    async fn limiter_exhaustion_returns_rate_limit_exhausted_without_reaching_server() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&server)
-            .await;
-
-        let client = KickRewards::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(ExhaustedLimiter),
-        )
-        .with_api_base(server.uri());
-        let err = client.create(minimal_create(), "tok").await.unwrap_err();
-
-        assert!(matches!(err, PlatformError::RateLimitExhausted));
-        assert!(
-            server.received_requests().await.unwrap().is_empty(),
-            "an exhausted limiter must short-circuit before any HTTP call"
-        );
-    }
-
     fn ids(n: usize) -> Vec<String> {
         (0..n).map(|i| format!("rd_{i}")).collect()
     }
@@ -768,54 +537,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn accept_redemptions_maps_auth_and_rate_limited_statuses() {
-        for (status, expect_auth) in [(401_u16, true), (429, false)] {
-            let server = MockServer::start().await;
-            Mock::given(method("POST"))
-                .respond_with(ResponseTemplate::new(status))
-                .mount(&server)
-                .await;
-
-            let err = rewards_on(&server)
-                .accept_redemptions(&ids(1), "tok")
-                .await
-                .unwrap_err();
-
-            if expect_auth {
-                assert!(matches!(err, PlatformError::Auth { .. }), "status {status}");
-            } else {
-                assert!(
-                    matches!(err, PlatformError::RateLimited { .. }),
-                    "status {status}"
-                );
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn accept_redemptions_limiter_exhaustion_short_circuits_after_guards() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&server)
-            .await;
-
-        let client = KickRewards::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(ExhaustedLimiter),
-        )
-        .with_api_base(server.uri());
-        let err = client.accept_redemptions(&ids(1), "tok").await.unwrap_err();
-
-        assert!(matches!(err, PlatformError::RateLimitExhausted));
-        assert!(
-            server.received_requests().await.unwrap().is_empty(),
-            "an exhausted limiter must short-circuit before any HTTP call"
-        );
-    }
-
-    #[tokio::test]
-    async fn list_pending_redemptions_queries_redemptions_endpoint_with_pending_status() {
+    async fn list_pending_redemptions_queries_pending_status_and_accepts_empty_data() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels/rewards/redemptions"))
@@ -827,8 +549,11 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = rewards_on(&server).list_pending_redemptions("tok").await;
-        assert!(result.is_ok());
+        let records = rewards_on(&server)
+            .list_pending_redemptions("tok")
+            .await
+            .unwrap();
+        assert!(records.is_empty());
     }
 
     #[tokio::test]
@@ -877,24 +602,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_pending_redemptions_empty_data_returns_empty_vec() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/channels/rewards/redemptions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": []
-            })))
-            .mount(&server)
-            .await;
-
-        let records = rewards_on(&server)
-            .list_pending_redemptions("tok")
-            .await
-            .unwrap();
-        assert!(records.is_empty());
-    }
-
-    #[tokio::test]
     async fn list_pending_redemptions_missing_redeemer_defaults_while_reward_stays_populated() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
@@ -918,5 +625,37 @@ mod tests {
         assert_eq!(records[0].redeemer_username, "");
         assert_eq!(records[0].reward_id, "rw_1");
         assert_eq!(records[0].reward_title, "Hydrate");
+    }
+
+    #[tokio::test]
+    async fn create_keeps_a_success_with_an_undecodable_body_as_created_without_id() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/channels/rewards"))
+            .respond_with(ResponseTemplate::new(201).set_body_string("created"))
+            .mount(&server)
+            .await;
+
+        let id = rewards_on(&server).create(minimal_create(), "tok").await;
+
+        assert_eq!(id.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn list_pending_redemptions_reports_an_undecodable_success_body_as_malformed() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels/rewards/redemptions"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("[oops"))
+            .mount(&server)
+            .await;
+
+        let result = rewards_on(&server).list_pending_redemptions("tok").await;
+
+        assert!(
+            matches!(result, Err(PlatformError::MalformedResponse { .. })),
+            "{:?}",
+            result.map(|records| records.len())
+        );
     }
 }

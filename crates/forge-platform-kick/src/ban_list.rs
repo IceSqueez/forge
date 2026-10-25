@@ -158,7 +158,10 @@ mod tests {
         let platform = Arc::new(KickPlatform::new(
             &endpoints,
             Arc::clone(&manager),
-            Arc::new(GrantLimiter),
+            Arc::new(crate::send::KickSendChat::new(
+                crate::endpoints_test_support::unreachable_api(),
+            )),
+            crate::endpoints_test_support::unreachable_channel_info(),
             ledger,
         ));
         let (_viewer_tx, viewer_rx) = watch::channel(ViewerReport::Absent);

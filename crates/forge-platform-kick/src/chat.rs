@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
@@ -30,6 +31,8 @@ const PUSHER_RECONNECT_IMMEDIATELY_CODES: std::ops::RangeInclusive<u16> = 4200..
 
 const SESSION_STOP_GRACE: Duration = Duration::from_secs(5);
 
+const PUSHER_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
 type PusherSocket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -60,7 +63,8 @@ fn is_server_requested_reconnect(frame: Option<&CloseFrame>) -> bool {
 }
 
 pub struct KickChat {
-    fetcher: ChannelInfoFetcher,
+    fetcher: Arc<ChannelInfoFetcher>,
+    slug: String,
     ws_url: String,
 }
 
@@ -115,9 +119,14 @@ async fn join_all(tasks: &mut JoinSet<()>) {
 }
 
 impl KickChat {
-    pub fn new(endpoints: &PlatformEndpoints, slug: String, http: reqwest::Client) -> Self {
+    pub fn new(
+        endpoints: &PlatformEndpoints,
+        slug: String,
+        channel_info: Arc<ChannelInfoFetcher>,
+    ) -> Self {
         Self {
-            fetcher: ChannelInfoFetcher::new(endpoints, slug, http),
+            fetcher: channel_info,
+            slug,
             ws_url: pusher_ws_url(endpoints.base_url(EndpointSurface::KickChatSocket)),
         }
     }
@@ -131,9 +140,13 @@ impl KickChat {
         event_tx: mpsc::Sender<Event>,
         cancel: CancellationToken,
     ) -> Result<KickChatHandle, KickError> {
-        let Self { fetcher, ws_url } = self;
+        let Self {
+            fetcher,
+            slug,
+            ws_url,
+        } = self;
         let channel_info = cancel
-            .run_until_cancelled(fetcher.fetch())
+            .run_until_cancelled(fetcher.fetch(&slug))
             .await
             .ok_or(KickError::ConnectCancelled)??;
         let ws_stream = cancel
@@ -153,6 +166,7 @@ impl KickChat {
                 cancel: cancel.clone(),
                 ws_url,
                 fetcher,
+                slug,
                 state_tx,
             },
         ));
@@ -170,12 +184,20 @@ fn pusher_ws_url(ws_base: &str) -> String {
 }
 
 async fn connect_ws(url: &str) -> Result<PusherSocket, KickError> {
-    let (ws_stream, _) =
-        tokio_tungstenite::connect_async(url)
-            .await
-            .map_err(|e| KickError::WebSocket {
-                reason: e.to_string(),
-            })?;
+    let (ws_stream, _) = tokio::time::timeout(
+        PUSHER_CONNECT_TIMEOUT,
+        tokio_tungstenite::connect_async(url),
+    )
+    .await
+    .map_err(|_| KickError::WebSocket {
+        reason: format!(
+            "connect timed out after {}s",
+            PUSHER_CONNECT_TIMEOUT.as_secs()
+        ),
+    })?
+    .map_err(|e| KickError::WebSocket {
+        reason: e.to_string(),
+    })?;
     Ok(ws_stream)
 }
 
@@ -212,7 +234,8 @@ struct RunLoopContext {
     event_tx: mpsc::Sender<Event>,
     cancel: CancellationToken,
     ws_url: String,
-    fetcher: ChannelInfoFetcher,
+    fetcher: Arc<ChannelInfoFetcher>,
+    slug: String,
     state_tx: watch::Sender<ChatLinkStatus>,
 }
 
@@ -346,7 +369,11 @@ async fn reconnect(ctx: &RunLoopContext, backoff: &mut Backoff) -> Option<(Pushe
             .run_until_cancelled(tokio::time::sleep(backoff.next_delay()))
             .await?;
 
-        let chatroom_id = match ctx.cancel.run_until_cancelled(ctx.fetcher.fetch()).await? {
+        let chatroom_id = match ctx
+            .cancel
+            .run_until_cancelled(ctx.fetcher.fetch(&ctx.slug))
+            .await?
+        {
             Ok(info) => info.chatroom_id,
             Err(e) => {
                 warn!(

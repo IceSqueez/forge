@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventStream};
-use forge_net::RateLimiter;
 use forge_platform_core::{
     ChatPlatform, ConnectionState, PlatformCapabilities, PlatformEndpoints, PlatformError,
 };
@@ -12,6 +11,7 @@ use tokio::sync::{mpsc, watch};
 use crate::ban_ledger::{USER_BANNED_EVENT_KIND, observed_ban};
 
 use crate::capabilities::kick_capabilities;
+use crate::channel_info::ChannelInfoFetcher;
 use crate::chat::{ChatLinkStatus, KickChat};
 use crate::chat_session::{ChatSessions, PLATFORM_ID, SessionPublisher};
 use crate::credentials_manager::KickCredentialsManager;
@@ -26,8 +26,8 @@ pub struct KickPlatform {
     events: Arc<PlatformEventChannel>,
     credentials_manager: Arc<KickCredentialsManager>,
     endpoints: PlatformEndpoints,
-    http: reqwest::Client,
-    sender: KickSendChat,
+    channel_info: Arc<ChannelInfoFetcher>,
+    sender: Arc<KickSendChat>,
     ban_ledger: Arc<dyn BanLedgerRepo>,
     sessions: ChatSessions,
 }
@@ -36,7 +36,8 @@ impl KickPlatform {
     pub fn new(
         endpoints: &PlatformEndpoints,
         credentials_manager: Arc<KickCredentialsManager>,
-        rate_limiter: Arc<dyn RateLimiter>,
+        sender: Arc<KickSendChat>,
+        channel_info: Arc<ChannelInfoFetcher>,
         ban_ledger: Arc<dyn BanLedgerRepo>,
     ) -> Self {
         let events = Arc::new(PlatformEventChannel::new());
@@ -46,8 +47,8 @@ impl KickPlatform {
             events,
             credentials_manager,
             endpoints: endpoints.clone(),
-            http: reqwest::Client::new(),
-            sender: KickSendChat::new(endpoints, rate_limiter),
+            channel_info,
+            sender,
             ban_ledger,
         }
     }
@@ -135,9 +136,13 @@ impl ChatPlatform for KickPlatform {
 
         let ticket = self.sessions.begin().await;
         let (chat_tx, chat_rx) = mpsc::channel::<Event>(CHAT_FORWARD_CAPACITY);
-        let connected = KickChat::new(&self.endpoints, creds.username, self.http.clone())
-            .connect_until(chat_tx, ticket.cancellation())
-            .await;
+        let connected = KickChat::new(
+            &self.endpoints,
+            creds.username,
+            Arc::clone(&self.channel_info),
+        )
+        .connect_until(chat_tx, ticket.cancellation())
+        .await;
         let mut handle = match connected {
             Ok(handle) => handle,
             Err(KickError::ConnectCancelled) => return Ok(()),
@@ -213,11 +218,11 @@ pub(crate) mod tests {
     use std::sync::Mutex as StdMutex;
     use std::time::Duration as StdDuration;
 
-    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
     use forge_storage::{CredentialId, CredentialsRepo, StorageError};
     use time::{Duration, OffsetDateTime};
 
     use super::*;
+    use crate::channel_info::ChannelInfoFetcher;
     use crate::credentials::{CREDENTIAL_KEY, KickCredentials};
 
     struct InMemRepo(StdMutex<HashMap<String, String>>);
@@ -274,25 +279,7 @@ pub(crate) mod tests {
         }
     }
 
-    struct GrantLimiter;
-    #[async_trait]
-    impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Granted)
-        }
-        async fn observe_remote_throttle(&self, _retry_after: StdDuration) {}
-    }
-
-    struct ExhaustedLimiter;
-    #[async_trait]
-    impl RateLimiter for ExhaustedLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Exhausted)
-        }
-        async fn observe_remote_throttle(&self, _retry_after: StdDuration) {}
-    }
-
-    fn platform(repo: Arc<InMemRepo>, limiter: Arc<dyn RateLimiter>) -> KickPlatform {
+    fn platform(repo: Arc<InMemRepo>, api: forge_net::Gateway) -> KickPlatform {
         let manager = Arc::new(KickCredentialsManager::new(
             &crate::endpoints_test_support::unreachable_endpoints(),
             repo,
@@ -302,20 +289,27 @@ pub(crate) mod tests {
         KickPlatform::new(
             &crate::endpoints_test_support::unreachable_endpoints(),
             manager,
-            limiter,
+            Arc::new(KickSendChat::new(api)),
+            crate::endpoints_test_support::unreachable_channel_info(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
     }
 
     #[test]
     fn connection_state_is_disconnected_before_connect() {
-        let p = platform(InMemRepo::empty(), Arc::new(GrantLimiter));
+        let p = platform(
+            InMemRepo::empty(),
+            crate::endpoints_test_support::unreachable_api(),
+        );
         assert_eq!(p.connection_state(), ConnectionState::Disconnected);
     }
 
     #[tokio::test]
     async fn connect_without_credentials_requires_reauth_and_stays_disconnected() {
-        let p = platform(InMemRepo::empty(), Arc::new(GrantLimiter));
+        let p = platform(
+            InMemRepo::empty(),
+            crate::endpoints_test_support::unreachable_api(),
+        );
         let err = p.connect().await.unwrap_err();
         assert!(
             matches!(&err, PlatformError::ReauthRequired { platform } if platform == "kick"),
@@ -326,7 +320,10 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn send_message_without_credentials_requires_reauth() {
-        let p = platform(InMemRepo::empty(), Arc::new(GrantLimiter));
+        let p = platform(
+            InMemRepo::empty(),
+            crate::endpoints_test_support::unreachable_api(),
+        );
         let err = p.send_message("chan", "hello").await.unwrap_err();
         assert!(
             matches!(&err, PlatformError::ReauthRequired { platform } if platform == "kick"),
@@ -336,7 +333,13 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn send_message_with_valid_credentials_delegates_to_rate_limited_sender() {
-        let p = platform(InMemRepo::with_valid_creds(), Arc::new(ExhaustedLimiter));
+        let p = platform(
+            InMemRepo::with_valid_creds(),
+            crate::endpoints_test_support::api_limited_by(
+                "http://127.0.0.1:0",
+                Arc::new(crate::endpoints_test_support::ExhaustedLimiter),
+            ),
+        );
         let err = p.send_message("chan", "hello").await.unwrap_err();
         assert!(matches!(err, PlatformError::RateLimitExhausted));
     }
@@ -351,12 +354,10 @@ pub(crate) mod tests {
             .respond_with(ResponseTemplate::new(200))
             .mount(&server)
             .await;
-        let mut p = platform(InMemRepo::with_valid_creds(), Arc::new(GrantLimiter));
-        p.sender = KickSendChat::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(GrantLimiter),
-        )
-        .with_send_endpoint(server.uri());
+        let p = platform(
+            InMemRepo::with_valid_creds(),
+            crate::endpoints_test_support::api_at(&server.uri()),
+        );
 
         p.send_reply("chan", "parent-7", "hello").await.unwrap();
 
@@ -476,31 +477,59 @@ pub(crate) mod tests {
         (platform, server)
     }
 
-    fn platform_on(
-        socket_base: String,
-        channel_api_base: String,
-        ledger: Arc<dyn BanLedgerRepo>,
-    ) -> KickPlatform {
+    fn endpoints_on(socket_base: String, channel_api_base: String) -> PlatformEndpoints {
         use forge_platform_core::EndpointSurface;
 
         let overrides = [
             (EndpointSurface::KickChannelApi.env_var(), channel_api_base),
             (EndpointSurface::KickChatSocket.env_var(), socket_base),
         ];
-        let endpoints = PlatformEndpoints::resolve(|variable| {
+        PlatformEndpoints::resolve(|variable| {
             overrides
                 .iter()
                 .find(|(name, _)| *name == variable)
                 .map(|(_, base)| std::ffi::OsString::from(base))
         })
-        .unwrap();
+        .unwrap()
+    }
+
+    fn platform_on(
+        socket_base: String,
+        channel_api_base: String,
+        ledger: Arc<dyn BanLedgerRepo>,
+    ) -> KickPlatform {
+        let endpoints = endpoints_on(socket_base, channel_api_base);
+        let channel_info = ChannelInfoFetcher::new(
+            crate::api_gateway::kick_channel_info_gateway(
+                &endpoints,
+                Arc::new(crate::endpoints_test_support::GrantingLimiter),
+                Arc::new(crate::endpoints_test_support::RecordingPublisher::default()),
+            )
+            .unwrap(),
+        );
+        platform_sharing(&endpoints, Arc::new(channel_info), ledger)
+    }
+
+    fn platform_sharing(
+        endpoints: &PlatformEndpoints,
+        channel_info: Arc<ChannelInfoFetcher>,
+        ledger: Arc<dyn BanLedgerRepo>,
+    ) -> KickPlatform {
         let manager = Arc::new(KickCredentialsManager::new(
-            &endpoints,
+            endpoints,
             InMemRepo::with_valid_creds(),
             "test_cid".to_owned(),
             "test_secret".to_owned(),
         ));
-        KickPlatform::new(&endpoints, manager, Arc::new(GrantLimiter), ledger)
+        KickPlatform::new(
+            endpoints,
+            manager,
+            Arc::new(KickSendChat::new(
+                crate::endpoints_test_support::unreachable_api(),
+            )),
+            channel_info,
+            ledger,
+        )
     }
 
     async fn next_banned_event(stream: &mut EventStream) -> Event {
@@ -903,5 +932,124 @@ pub(crate) mod tests {
             );
             platform.disconnect().await.unwrap();
         }
+    }
+
+    async fn primed_channel_info() -> (Arc<ChannelInfoFetcher>, wiremock::MockServer) {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels/streamer"))
+            .respond_with(channel_found())
+            .mount(&server)
+            .await;
+        let fetcher = Arc::new(crate::endpoints_test_support::channel_info_at(
+            &server.uri(),
+        ));
+        fetcher.fetch("streamer").await.unwrap();
+        (fetcher, server)
+    }
+
+    async fn pusher_peer_answering_only_the_first_link()
+    -> (String, tokio::sync::mpsc::UnboundedReceiver<usize>) {
+        use futures_util::StreamExt;
+        use tokio_tungstenite::tungstenite::Message;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let socket_addr = listener.local_addr().unwrap();
+        let (accepted_tx, accepted_rx) = tokio::sync::mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            let mut accepted = 0_usize;
+            while let Ok((stream, _)) = listener.accept().await {
+                accepted += 1;
+                let _ = accepted_tx.send(accepted);
+                if accepted > 1 {
+                    held.push(stream);
+                    continue;
+                }
+                tokio::spawn(async move {
+                    let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
+                        return;
+                    };
+                    while let Some(Ok(message)) = ws.next().await {
+                        if matches!(message, Message::Text(_)) {
+                            break;
+                        }
+                    }
+                });
+            }
+        });
+        (format!("ws://{socket_addr}/app"), accepted_rx)
+    }
+
+    async fn silent_pusher_socket() -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let socket_addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((stream, _)) = listener.accept().await {
+                held.push(stream);
+            }
+        });
+        format!("ws://{socket_addr}/app")
+    }
+
+    const PUSHER_CONNECT_BOUND: StdDuration = StdDuration::from_secs(10);
+
+    #[tokio::test]
+    async fn a_first_connect_to_a_silent_pusher_socket_fails_as_network_after_the_connect_bound() {
+        let (channel_info, server) = primed_channel_info().await;
+        let endpoints = endpoints_on(silent_pusher_socket().await, server.uri());
+        let platform = platform_sharing(
+            &endpoints,
+            channel_info,
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+        );
+        tokio::time::pause();
+        let started = tokio::time::Instant::now();
+
+        let result = platform.connect().await;
+        let waited = started.elapsed();
+
+        assert!(
+            matches!(&result, Err(PlatformError::Network { reason }) if reason.contains("timed out after 10s")),
+            "{result:?}"
+        );
+        assert!(
+            waited >= PUSHER_CONNECT_BOUND
+                && waited < PUSHER_CONNECT_BOUND + StdDuration::from_secs(1),
+            "waited {waited:?}"
+        );
+        assert_eq!(platform.connection_state(), ConnectionState::Disconnected);
+    }
+
+    #[tokio::test]
+    async fn a_reconnect_that_times_out_goes_back_to_backoff_and_dials_again() {
+        let (channel_info, server) = primed_channel_info().await;
+        let (socket_base, mut accepted) = pusher_peer_answering_only_the_first_link().await;
+        let endpoints = endpoints_on(socket_base, server.uri());
+        let platform = platform_sharing(
+            &endpoints,
+            channel_info,
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+        );
+        platform.connect().await.unwrap();
+        let first_redial = tokio::time::timeout(BANNED_STEP_DEADLINE, async {
+            while accepted.recv().await.unwrap() < 2 {}
+        })
+        .await;
+        tokio::time::pause();
+
+        let second_redial = tokio::time::timeout(BEYOND_ANY_BACKOFF, accepted.recv()).await;
+        let state = platform.connection_state();
+        platform.disconnect().await.unwrap();
+
+        assert!(first_redial.is_ok(), "the lost link was never redialled");
+        assert_eq!(
+            (second_redial.ok().flatten(), state),
+            (Some(3), ConnectionState::Reconnecting)
+        );
     }
 }

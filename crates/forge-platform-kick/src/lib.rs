@@ -1,3 +1,4 @@
+pub mod api_gateway;
 pub mod auth;
 mod ban_ledger;
 #[cfg(test)]
@@ -31,6 +32,11 @@ pub mod sub_actions;
 mod timestamp;
 pub mod triggers;
 
+pub use api_gateway::{
+    KICK_API_BUDGET_CAPACITY, KICK_API_BUDGET_WINDOW, KICK_CHANNEL_INFO_BUDGET_CAPACITY,
+    KICK_CHANNEL_INFO_BUDGET_WINDOW, KICK_GATEWAY_PROFILE, kick_api_gateway,
+    kick_channel_info_gateway,
+};
 pub use auth::{KickAuthBundle, KickAuthFlow, LoopbackCode, client_credentials, kick_auth_flow};
 pub use builtin::{KickIntegrationBundle, register_kick_triggers};
 pub use capabilities::kick_capabilities;

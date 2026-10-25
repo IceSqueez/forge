@@ -1,42 +1,31 @@
-use std::sync::Arc;
+use forge_net::{Gateway, GatewayRequest};
+use forge_platform_core::PlatformError;
 
-use forge_net::{DEFAULT_RETRY_AFTER_SECS, RateLimiter, acquire_or_wait};
-use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
-use reqwest::StatusCode;
+use crate::api_gateway::{RefusalReasons, authorized, json_body, platform_error};
 
 const CHAT_PATH: &str = "/chat";
+const SEND_LABEL: &str = "/chat";
+const DELETE_LABEL: &str = "/chat/{message_id}";
+
+const SEND_REFUSALS: RefusalReasons = RefusalReasons {
+    unauthorized: "send-chat token rejected (401)",
+    forbidden: None,
+};
+
+const DELETE_REFUSALS: RefusalReasons = RefusalReasons {
+    unauthorized: "delete-chat-message token rejected (401)",
+    forbidden: Some(
+        "delete-chat-message forbidden (403); check moderation:chat_message:manage scope",
+    ),
+};
 
 pub struct KickSendChat {
-    client: reqwest::Client,
-    limiter: Arc<dyn RateLimiter>,
-    send_endpoint: String,
-    delete_base: String,
+    api: Gateway,
 }
 
 impl KickSendChat {
-    pub fn new(endpoints: &PlatformEndpoints, limiter: Arc<dyn RateLimiter>) -> Self {
-        let chat_endpoint = format!(
-            "{}{CHAT_PATH}",
-            endpoints.base_url(EndpointSurface::KickPublicApi)
-        );
-        Self {
-            client: reqwest::Client::new(),
-            limiter,
-            send_endpoint: chat_endpoint.clone(),
-            delete_base: chat_endpoint,
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_send_endpoint(mut self, url: String) -> Self {
-        self.send_endpoint = url;
-        self
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_delete_base(mut self, base: String) -> Self {
-        self.delete_base = base;
-        self
+    pub fn new(api: Gateway) -> Self {
+        Self { api }
     }
 
     pub async fn send(
@@ -75,8 +64,6 @@ impl KickSendChat {
         as_bot: bool,
         reply_to_message_id: Option<&str>,
     ) -> Result<(), PlatformError> {
-        acquire_or_wait(self.limiter.as_ref(), 1).await?;
-
         let mut body = serde_json::json!({
             "content": content,
             "type": if as_bot { "bot" } else { "user" },
@@ -88,84 +75,26 @@ impl KickSendChat {
             body["reply_to_message_id"] = serde_json::json!(parent);
         }
 
-        let response = self
-            .client
-            .post(&self.send_endpoint)
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-            .json(&body)
-            .send()
+        let request =
+            authorized(GatewayRequest::post(CHAT_PATH), token, SEND_LABEL).body(json_body(&body)?);
+        self.api
+            .send(request)
             .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = response.status();
-        if status == StatusCode::OK || status == StatusCode::CREATED {
-            return Ok(());
-        }
-
-        let retry_after_secs = response
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
-
-        let body = response.text().await.unwrap_or_default();
-
-        match status {
-            StatusCode::UNAUTHORIZED => Err(PlatformError::Auth {
-                reason: "send-chat token rejected (401)".to_owned(),
-            }),
-            StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
-            _ => Err(PlatformError::Http {
-                status: status.as_u16(),
-                body,
-            }),
-        }
+            .map(drop)
+            .map_err(|failure| platform_error(failure, SEND_REFUSALS))
     }
 
     pub async fn delete(&self, message_id: &str, token: &str) -> Result<(), PlatformError> {
-        acquire_or_wait(self.limiter.as_ref(), 1).await?;
-
-        let url = format!("{}/{}", self.delete_base, message_id);
-        let response = self
-            .client
-            .delete(&url)
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-            .send()
+        let request = authorized(
+            GatewayRequest::delete(format!("{CHAT_PATH}/{message_id}")),
+            token,
+            DELETE_LABEL,
+        );
+        self.api
+            .send(request)
             .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = response.status();
-        if status == StatusCode::NO_CONTENT {
-            return Ok(());
-        }
-
-        let retry_after_secs = response
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
-
-        let body = response.text().await.unwrap_or_default();
-
-        match status {
-            StatusCode::UNAUTHORIZED => Err(PlatformError::Auth {
-                reason: "delete-chat-message token rejected (401)".to_owned(),
-            }),
-            StatusCode::FORBIDDEN => Err(PlatformError::Auth {
-                reason: "delete-chat-message forbidden (403); check moderation:chat_message:manage scope".to_owned(),
-            }),
-            StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
-            _ => Err(PlatformError::Http {
-                status: status.as_u16(),
-                body,
-            }),
-        }
+            .map(drop)
+            .map_err(|failure| platform_error(failure, DELETE_REFUSALS))
     }
 }
 
@@ -173,43 +102,31 @@ impl KickSendChat {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
-    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
-    use forge_platform_core::PlatformError;
-
-    use std::sync::Arc;
-    use std::time::Duration;
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    struct GrantLimiter;
-
-    #[async_trait]
-    impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Granted)
-        }
-
-        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    fn sender_on(server: &MockServer) -> KickSendChat {
+        KickSendChat::new(crate::endpoints_test_support::api_at(&server.uri()))
     }
 
-    struct ExhaustedLimiter;
-
-    #[async_trait]
-    impl RateLimiter for ExhaustedLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Exhausted)
-        }
-
-        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    async fn chat_server() -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        server
     }
 
-    fn grant_sender(server: &MockServer) -> KickSendChat {
-        KickSendChat::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(GrantLimiter),
-        )
-        .with_send_endpoint(format!("{}/chat", server.uri()))
+    async fn bodies(server: &MockServer) -> Vec<serde_json::Value> {
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .map(|request| serde_json::from_slice(&request.body).unwrap())
+            .collect()
     }
 
     #[tokio::test]
@@ -217,38 +134,29 @@ mod tests {
         for (as_bot, expected_type, expects_broadcaster_id) in
             [(false, "user", true), (true, "bot", false)]
         {
-            let server = MockServer::start().await;
-            Mock::given(method("POST"))
-                .and(path("/chat"))
-                .respond_with(ResponseTemplate::new(200))
-                .mount(&server)
-                .await;
+            let server = chat_server().await;
 
-            grant_sender(&server)
+            sender_on(&server)
                 .send("hi", "tok", 42, as_bot)
                 .await
                 .unwrap();
 
-            let reqs = server.received_requests().await.unwrap();
-            let body: serde_json::Value = serde_json::from_slice(&reqs[0].body).unwrap();
-            assert_eq!(body["type"], expected_type, "as_bot={as_bot}");
+            let body = &bodies(&server).await[0];
             assert_eq!(
-                body.get("broadcaster_user_id").is_some(),
-                expects_broadcaster_id,
-                "as_bot={as_bot}: broadcaster_user_id presence",
+                (
+                    body["type"].as_str(),
+                    body.get("broadcaster_user_id").is_some()
+                ),
+                (Some(expected_type), expects_broadcaster_id),
+                "as_bot={as_bot}"
             );
         }
     }
 
     #[tokio::test]
     async fn reply_to_message_id_is_sent_only_on_replies() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat"))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&server)
-            .await;
-        let sender = grant_sender(&server);
+        let server = chat_server().await;
+        let sender = sender_on(&server);
 
         sender.send("plain", "tok", 42, false).await.unwrap();
         sender
@@ -256,117 +164,40 @@ mod tests {
             .await
             .unwrap();
 
-        let reqs = server.received_requests().await.unwrap();
-        let plain: serde_json::Value = serde_json::from_slice(&reqs[0].body).unwrap();
-        let reply: serde_json::Value = serde_json::from_slice(&reqs[1].body).unwrap();
-        assert!(plain.get("reply_to_message_id").is_none(), "got {plain}");
-        assert_eq!(reply["reply_to_message_id"], "parent-7");
-        assert_eq!(reply["content"], "reply");
-        assert_eq!(reply["broadcaster_user_id"], 42);
-    }
-
-    #[tokio::test]
-    async fn send_returns_auth_error_on_401() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat"))
-            .respond_with(ResponseTemplate::new(401).set_body_string("unauthorized"))
-            .mount(&server)
-            .await;
-
-        let err = grant_sender(&server)
-            .send("hi", "bad", 42, false)
-            .await
-            .unwrap_err();
-        assert!(matches!(err, PlatformError::Auth { .. }));
-    }
-
-    #[tokio::test]
-    async fn send_returns_rate_limited_on_429() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat"))
-            .respond_with(
-                ResponseTemplate::new(429)
-                    .append_header("retry-after", "30")
-                    .set_body_string("too many requests"),
+        let sent = bodies(&server).await;
+        assert!(sent[0].get("reply_to_message_id").is_none(), "{}", sent[0]);
+        assert_eq!(
+            (
+                &sent[1]["reply_to_message_id"],
+                &sent[1]["content"],
+                &sent[1]["broadcaster_user_id"]
+            ),
+            (
+                &serde_json::json!("parent-7"),
+                &serde_json::json!("reply"),
+                &serde_json::json!(42)
             )
-            .mount(&server)
-            .await;
-
-        let err = grant_sender(&server)
-            .send("hi", "tok", 42, false)
-            .await
-            .unwrap_err();
-        assert!(matches!(
-            err,
-            PlatformError::RateLimited {
-                retry_after_secs: 30
-            }
-        ));
+        );
     }
 
     #[tokio::test]
-    async fn send_uses_default_retry_after_when_header_absent() {
+    async fn send_carries_the_token_as_a_bearer_credential() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/chat"))
-            .respond_with(ResponseTemplate::new(429).set_body_string("too many"))
+            .and(header("authorization", "Bearer tok-123"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
             .mount(&server)
             .await;
 
-        let err = grant_sender(&server)
-            .send("hi", "tok", 42, false)
-            .await
-            .unwrap_err();
-        assert!(matches!(
-            err,
-            PlatformError::RateLimited {
-                retry_after_secs: 30
-            }
-        ));
+        let result = sender_on(&server).send("hi", "tok-123", 42, false).await;
+
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[tokio::test]
-    async fn send_returns_rate_limit_exhausted_when_limiter_exhausted() {
-        let server = MockServer::start().await;
-        let sender = KickSendChat::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(ExhaustedLimiter),
-        )
-        .with_send_endpoint(format!("{}/chat", server.uri()));
-
-        let err = sender.send("hi", "tok", 42, false).await.unwrap_err();
-        assert!(matches!(err, PlatformError::RateLimitExhausted));
-        assert!(server.received_requests().await.unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn send_maps_500_to_http_error() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat"))
-            .respond_with(ResponseTemplate::new(500).set_body_string("server error"))
-            .mount(&server)
-            .await;
-
-        let err = grant_sender(&server)
-            .send("hi", "tok", 42, false)
-            .await
-            .unwrap_err();
-        assert!(matches!(err, PlatformError::Http { status: 500, .. }));
-    }
-
-    fn grant_deleter(server: &MockServer) -> KickSendChat {
-        KickSendChat::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(GrantLimiter),
-        )
-        .with_delete_base(format!("{}/chat", server.uri()))
-    }
-
-    #[tokio::test]
-    async fn delete_targets_message_id_path_and_succeeds_on_204() {
+    async fn delete_targets_the_message_id_path() {
         let server = MockServer::start().await;
         Mock::given(method("DELETE"))
             .and(path("/chat/msg-77"))
@@ -375,80 +206,8 @@ mod tests {
             .mount(&server)
             .await;
 
-        grant_deleter(&server)
-            .delete("msg-77", "tok")
-            .await
-            .unwrap();
-    }
+        let result = sender_on(&server).delete("msg-77", "tok").await;
 
-    #[tokio::test]
-    async fn delete_returns_auth_error_on_401() {
-        let server = MockServer::start().await;
-        Mock::given(method("DELETE"))
-            .and(path("/chat/msg-1"))
-            .respond_with(ResponseTemplate::new(401).set_body_string("unauthorized"))
-            .mount(&server)
-            .await;
-
-        let err = grant_deleter(&server)
-            .delete("msg-1", "bad")
-            .await
-            .unwrap_err();
-        assert!(matches!(err, PlatformError::Auth { .. }));
-    }
-
-    #[tokio::test]
-    async fn delete_returns_auth_error_on_403() {
-        let server = MockServer::start().await;
-        Mock::given(method("DELETE"))
-            .and(path("/chat/msg-1"))
-            .respond_with(ResponseTemplate::new(403).set_body_string("forbidden"))
-            .mount(&server)
-            .await;
-
-        let err = grant_deleter(&server)
-            .delete("msg-1", "tok")
-            .await
-            .unwrap_err();
-        assert!(matches!(err, PlatformError::Auth { .. }));
-    }
-
-    #[tokio::test]
-    async fn delete_returns_rate_limited_on_429() {
-        let server = MockServer::start().await;
-        Mock::given(method("DELETE"))
-            .and(path("/chat/msg-1"))
-            .respond_with(
-                ResponseTemplate::new(429)
-                    .append_header("retry-after", "12")
-                    .set_body_string("slow down"),
-            )
-            .mount(&server)
-            .await;
-
-        let err = grant_deleter(&server)
-            .delete("msg-1", "tok")
-            .await
-            .unwrap_err();
-        assert!(matches!(
-            err,
-            PlatformError::RateLimited {
-                retry_after_secs: 12
-            }
-        ));
-    }
-
-    #[tokio::test]
-    async fn delete_returns_rate_limit_exhausted_without_reaching_server() {
-        let server = MockServer::start().await;
-        let sender = KickSendChat::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(ExhaustedLimiter),
-        )
-        .with_delete_base(format!("{}/chat", server.uri()));
-
-        let err = sender.delete("msg-1", "tok").await.unwrap_err();
-        assert!(matches!(err, PlatformError::RateLimitExhausted));
-        assert!(server.received_requests().await.unwrap().is_empty());
+        assert!(result.is_ok(), "{result:?}");
     }
 }

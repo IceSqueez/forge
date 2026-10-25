@@ -810,7 +810,10 @@ mod tests {
             let platform = Arc::new(KickPlatform::new(
                 &crate::endpoints_test_support::unreachable_endpoints(),
                 manager.clone(),
-                Arc::new(GrantLimiter),
+                Arc::new(crate::send::KickSendChat::new(
+                    crate::endpoints_test_support::unreachable_api(),
+                )),
+                crate::endpoints_test_support::unreachable_channel_info(),
                 crate::ban_ledger_test_support::MemoryBanLedger::shared(),
             ));
             bundle_on(platform, manager)
@@ -1043,8 +1046,10 @@ mod tests {
                 &mut registry,
                 KickSubActionDeps {
                     client: Arc::new(KickSendChat::new(
-                        &crate::endpoints_test_support::unreachable_endpoints(),
-                        Arc::clone(&limiter),
+                        crate::endpoints_test_support::api_limited_by(
+                            "http://127.0.0.1:0",
+                            Arc::clone(&limiter),
+                        ),
                     )),
                     token_source: Arc::new(|| {
                         Box::pin(async { Ok("tok".to_owned()) })
@@ -1055,21 +1060,29 @@ mod tests {
                             as BoxFuture<'static, Result<u64, PlatformError>>
                     }),
                     moderation: Arc::new(KickModeration::new(
-                        &crate::endpoints_test_support::unreachable_endpoints(),
-                        Arc::clone(&limiter),
+                        crate::endpoints_test_support::api_limited_by(
+                            "http://127.0.0.1:0",
+                            Arc::clone(&limiter),
+                        ),
                         crate::ban_ledger_test_support::MemoryBanLedger::shared(),
                     )),
                     channel: Arc::new(KickChannel::new(
-                        &crate::endpoints_test_support::unreachable_endpoints(),
-                        Arc::clone(&limiter),
+                        crate::endpoints_test_support::api_limited_by(
+                            "http://127.0.0.1:0",
+                            Arc::clone(&limiter),
+                        ),
                     )),
                     rewards: Arc::new(KickRewards::new(
-                        &crate::endpoints_test_support::unreachable_endpoints(),
-                        Arc::clone(&limiter),
+                        crate::endpoints_test_support::api_limited_by(
+                            "http://127.0.0.1:0",
+                            Arc::clone(&limiter),
+                        ),
                     )),
                     categories: Arc::new(KickCategories::new(
-                        &crate::endpoints_test_support::unreachable_endpoints(),
-                        limiter,
+                        crate::endpoints_test_support::api_limited_by(
+                            "http://127.0.0.1:0",
+                            limiter,
+                        ),
                     )),
                 },
             )

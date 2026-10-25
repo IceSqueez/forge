@@ -427,19 +427,9 @@ async fn run_loop(
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
     use std::time::Duration as StdDuration;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
-
-    struct GrantLimiter;
-    #[async_trait::async_trait]
-    impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Granted)
-        }
-        async fn observe_remote_throttle(&self, _retry_after: StdDuration) {}
-    }
 
     const TOKEN_SENTINEL: &str = "kick_token_sentinel";
 
@@ -565,19 +555,11 @@ mod tests {
     }
 
     fn channel_on(server: &MockServer) -> KickChannel {
-        KickChannel::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(GrantLimiter),
-        )
-        .with_api_base(server.uri())
+        KickChannel::new(crate::endpoints_test_support::api_at(&server.uri()))
     }
 
     fn rewards_on(server: &MockServer) -> KickRewards {
-        KickRewards::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(GrantLimiter),
-        )
-        .with_api_base(server.uri())
+        KickRewards::new(crate::endpoints_test_support::api_at(&server.uri()))
     }
 
     fn channel_body(
@@ -1431,12 +1413,10 @@ mod tests {
         let (event_tx, mut event_rx) = mpsc::channel(8);
         let (source, poller) = spawn_kick_poller(
             Arc::new(KickChannel::new(
-                &crate::endpoints_test_support::unreachable_endpoints(),
-                Arc::new(GrantLimiter),
+                crate::endpoints_test_support::unreachable_api(),
             )),
             Arc::new(KickRewards::new(
-                &crate::endpoints_test_support::unreachable_endpoints(),
-                Arc::new(GrantLimiter),
+                crate::endpoints_test_support::unreachable_api(),
             )),
             err_token(),
             event_tx,

@@ -1,17 +1,19 @@
-use std::sync::Arc;
-
-use forge_net::{DEFAULT_RETRY_AFTER_SECS, RateLimiter, acquire_or_wait};
-use forge_platform_core::{EndpointSurface, NON_HTTP_STATUS, PlatformEndpoints, PlatformError};
-use reqwest::StatusCode;
+use forge_net::{Gateway, GatewayRequest};
+use forge_platform_core::{NON_HTTP_STATUS, PlatformError};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
+use crate::api_gateway::{RefusalReasons, authorized, json_body, malformed, platform_error};
+
 const CHANNELS_PATH: &str = "/channels";
 
+const CHANNEL_REFUSALS: RefusalReasons = RefusalReasons {
+    unauthorized: "channel token rejected (401)",
+    forbidden: Some("channel forbidden (403); check channel scope"),
+};
+
 pub struct KickChannel {
-    client: reqwest::Client,
-    limiter: Arc<dyn RateLimiter>,
-    channels_endpoint: String,
+    api: Gateway,
 }
 
 pub struct ChannelSnapshot {
@@ -74,21 +76,8 @@ struct StreamData {
 }
 
 impl KickChannel {
-    pub fn new(endpoints: &PlatformEndpoints, limiter: Arc<dyn RateLimiter>) -> Self {
-        Self {
-            client: reqwest::Client::new(),
-            limiter,
-            channels_endpoint: format!(
-                "{}{CHANNELS_PATH}",
-                endpoints.base_url(EndpointSurface::KickPublicApi)
-            ),
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_api_base(mut self, base: String) -> Self {
-        self.channels_endpoint = format!("{base}{CHANNELS_PATH}");
-        self
+    pub fn new(api: Gateway) -> Self {
+        Self { api }
     }
 
     pub async fn update_info(
@@ -98,26 +87,18 @@ impl KickChannel {
         category_id: Option<u64>,
         tags: Option<Vec<String>>,
     ) -> Result<(), PlatformError> {
-        self.acquire_slot().await?;
-
         let body = UpdateBody {
             stream_title: title,
             category_id,
             custom_tags: tags,
         };
-
-        let response = self
-            .client
-            .patch(&self.channels_endpoint)
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-            .json(&body)
-            .send()
+        let request = authorized(GatewayRequest::patch(CHANNELS_PATH), token, CHANNELS_PATH)
+            .body(json_body(&body)?);
+        self.api
+            .send(request)
             .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        map_channel_response(response).await
+            .map(drop)
+            .map_err(|failure| platform_error(failure, CHANNEL_REFUSALS))
     }
 
     pub async fn get_channel(&self, token: &str) -> Result<ChannelSnapshot, PlatformError> {
@@ -137,29 +118,16 @@ impl KickChannel {
         token: &str,
         slug: Option<&str>,
     ) -> Result<ChannelSnapshot, PlatformError> {
-        self.acquire_slot().await?;
-
-        let mut request = self
-            .client
-            .get(&self.channels_endpoint)
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"));
+        let mut request = authorized(GatewayRequest::get(CHANNELS_PATH), token, CHANNELS_PATH);
         if let Some(slug) = slug {
-            request = request.query(&[("slug", slug)]);
+            request = request.query("slug", slug);
         }
-
-        let response = request.send().await.map_err(|e| PlatformError::Network {
-            reason: e.without_url().to_string(),
-        })?;
-
-        let status = response.status();
-        if !status.is_success() {
-            return map_channel_error(status, response).await;
-        }
-
-        let envelope: ChannelsEnvelope =
-            response.json().await.map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
+        let response = self
+            .api
+            .send(request)
+            .await
+            .map_err(|failure| platform_error(failure, CHANNEL_REFUSALS))?;
+        let envelope: ChannelsEnvelope = response.json().map_err(malformed)?;
 
         let channel = envelope
             .data
@@ -185,88 +153,17 @@ impl KickChannel {
                 .and_then(crate::timestamp::parse_logged),
         })
     }
-
-    async fn acquire_slot(&self) -> Result<(), PlatformError> {
-        acquire_or_wait(self.limiter.as_ref(), 1)
-            .await
-            .map_err(PlatformError::from)
-    }
-}
-
-async fn map_channel_response(response: reqwest::Response) -> Result<(), PlatformError> {
-    let status = response.status();
-    if status.is_success() {
-        return Ok(());
-    }
-
-    map_channel_error(status, response).await
-}
-
-async fn map_channel_error<T>(
-    status: StatusCode,
-    response: reqwest::Response,
-) -> Result<T, PlatformError> {
-    let retry_after_secs = response
-        .headers()
-        .get("retry-after")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
-
-    let body = response.text().await.unwrap_or_default();
-
-    match status {
-        StatusCode::UNAUTHORIZED => Err(PlatformError::Auth {
-            reason: "channel token rejected (401)".to_owned(),
-        }),
-        StatusCode::FORBIDDEN => Err(PlatformError::Auth {
-            reason: "channel forbidden (403); check channel scope".to_owned(),
-        }),
-        StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY => Err(PlatformError::Http {
-            status: status.as_u16(),
-            body,
-        }),
-        StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
-        _ => Err(PlatformError::Http {
-            status: status.as_u16(),
-            body,
-        }),
-    }
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use forge_net::{RateLimitError, RateLimitOutcome};
-    use std::time::Duration;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    struct GrantLimiter;
-    #[async_trait::async_trait]
-    impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Granted)
-        }
-        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
-    }
-
-    struct ExhaustedLimiter;
-    #[async_trait::async_trait]
-    impl RateLimiter for ExhaustedLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Exhausted)
-        }
-        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
-    }
-
     fn channel_on(server: &MockServer) -> KickChannel {
-        KickChannel::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(GrantLimiter),
-        )
-        .with_api_base(server.uri())
+        KickChannel::new(crate::endpoints_test_support::api_at(&server.uri()))
     }
 
     async fn last_body(server: &MockServer) -> serde_json::Value {
@@ -326,86 +223,6 @@ mod tests {
         assert_eq!(body["stream_title"], "Title");
         assert_eq!(body["category_id"], 42);
         assert_eq!(body["custom_tags"], serde_json::json!(["speedrun", "rust"]));
-    }
-
-    #[tokio::test]
-    async fn auth_status_maps_to_auth_error() {
-        for status in [401_u16, 403] {
-            let server = MockServer::start().await;
-            Mock::given(method("PATCH"))
-                .respond_with(ResponseTemplate::new(status))
-                .mount(&server)
-                .await;
-
-            let err = channel_on(&server)
-                .update_info("tok", Some("t".to_owned()), None, None)
-                .await
-                .unwrap_err();
-            assert!(
-                matches!(err, PlatformError::Auth { .. }),
-                "status {status} must map to Auth, got {err:?}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn unprocessable_entity_maps_to_http_error_with_status() {
-        let server = MockServer::start().await;
-        Mock::given(method("PATCH"))
-            .respond_with(ResponseTemplate::new(422))
-            .mount(&server)
-            .await;
-
-        let err = channel_on(&server)
-            .update_info("tok", Some("t".to_owned()), None, None)
-            .await
-            .unwrap_err();
-        assert!(matches!(err, PlatformError::Http { status: 422, .. }));
-    }
-
-    #[tokio::test]
-    async fn rate_limited_status_maps_to_rate_limited_with_parsed_retry_after() {
-        let server = MockServer::start().await;
-        Mock::given(method("PATCH"))
-            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "57"))
-            .mount(&server)
-            .await;
-
-        let err = channel_on(&server)
-            .update_info("tok", Some("t".to_owned()), None, None)
-            .await
-            .unwrap_err();
-        assert!(matches!(
-            err,
-            PlatformError::RateLimited {
-                retry_after_secs: 57
-            }
-        ));
-    }
-
-    #[tokio::test]
-    async fn limiter_exhaustion_returns_rate_limit_exhausted_without_reaching_server() {
-        let server = MockServer::start().await;
-        Mock::given(method("PATCH"))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&server)
-            .await;
-
-        let client = KickChannel::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(ExhaustedLimiter),
-        )
-        .with_api_base(server.uri());
-        let err = client
-            .update_info("tok", Some("t".to_owned()), None, None)
-            .await
-            .unwrap_err();
-
-        assert!(matches!(err, PlatformError::RateLimitExhausted));
-        assert!(
-            server.received_requests().await.unwrap().is_empty(),
-            "an exhausted limiter must short-circuit before any HTTP call"
-        );
     }
 
     #[tokio::test]
@@ -554,5 +371,22 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(snapshot.slug, "other-streamer");
+    }
+
+    #[tokio::test]
+    async fn get_channel_reports_an_undecodable_success_body_as_malformed() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+            .mount(&server)
+            .await;
+
+        let result = channel_on(&server).get_channel("tok").await;
+
+        assert!(matches!(
+            result,
+            Err(PlatformError::MalformedResponse { .. })
+        ));
     }
 }

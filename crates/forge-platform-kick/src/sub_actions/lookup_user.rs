@@ -177,16 +177,12 @@ impl SubActionRunner for LookupUserRunner {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use crate::sub_actions::test_support::{GrantLimiter, make_ctx, token_source};
+    use crate::sub_actions::test_support::{make_ctx, token_source};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn runner_on(server: &MockServer) -> LookupUserRunner {
-        let channel = KickChannel::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(GrantLimiter),
-        )
-        .with_api_base(server.uri());
+        let channel = KickChannel::new(crate::endpoints_test_support::api_at(&server.uri()));
         LookupUserRunner::new(Arc::new(channel), token_source())
     }
 
@@ -253,8 +249,7 @@ mod tests {
     fn validate_config_requires_a_non_empty_slug() {
         let runner = LookupUserRunner::new(
             Arc::new(KickChannel::new(
-                &crate::endpoints_test_support::unreachable_endpoints(),
-                Arc::new(GrantLimiter),
+                crate::endpoints_test_support::unreachable_api(),
             )),
             token_source(),
         );

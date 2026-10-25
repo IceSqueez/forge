@@ -1,17 +1,19 @@
-use std::sync::Arc;
-
-use forge_net::{DEFAULT_RETRY_AFTER_SECS, RateLimiter, acquire_or_wait};
-use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
-use reqwest::StatusCode;
+use forge_net::{Gateway, GatewayRequest};
+use forge_platform_core::PlatformError;
 use serde::Deserialize;
+
+use crate::api_gateway::{RefusalReasons, authorized, malformed, platform_error};
 
 const CATEGORIES_PATH: &str = "/categories";
 const MAX_MATCHES: usize = 10;
 
+const CATEGORIES_REFUSALS: RefusalReasons = RefusalReasons {
+    unauthorized: "categories token rejected (401)",
+    forbidden: None,
+};
+
 pub struct KickCategories {
-    client: reqwest::Client,
-    limiter: Arc<dyn RateLimiter>,
-    categories_endpoint: String,
+    api: Gateway,
 }
 
 pub struct CategoryMatch {
@@ -34,22 +36,8 @@ struct CategoryData {
 }
 
 impl KickCategories {
-    pub fn new(endpoints: &PlatformEndpoints, limiter: Arc<dyn RateLimiter>) -> Self {
-        Self {
-            client: reqwest::Client::new(),
-            limiter,
-            categories_endpoint: format!(
-                "{}{CATEGORIES_PATH}",
-                endpoints.base_url(EndpointSurface::KickPublicApi)
-            ),
-        }
-    }
-
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn with_api_base(mut self, base: String) -> Self {
-        self.categories_endpoint = format!("{base}{CATEGORIES_PATH}");
-        self
+    pub fn new(api: Gateway) -> Self {
+        Self { api }
     }
 
     pub async fn search(
@@ -57,28 +45,14 @@ impl KickCategories {
         token: &str,
         query: &str,
     ) -> Result<Vec<CategoryMatch>, PlatformError> {
-        self.acquire_slot().await?;
-
+        let request = authorized(GatewayRequest::get(CATEGORIES_PATH), token, CATEGORIES_PATH)
+            .query("q", query);
         let response = self
-            .client
-            .get(&self.categories_endpoint)
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-            .query(&[("q", query)])
-            .send()
+            .api
+            .send(request)
             .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = response.status();
-        if !status.is_success() {
-            return map_categories_error(status, response).await;
-        }
-
-        let envelope: CategoriesEnvelope =
-            response.json().await.map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
+            .map_err(|failure| platform_error(failure, CATEGORIES_REFUSALS))?;
+        let envelope: CategoriesEnvelope = response.json().map_err(malformed)?;
 
         Ok(envelope
             .data
@@ -90,86 +64,23 @@ impl KickCategories {
             })
             .collect())
     }
-
-    async fn acquire_slot(&self) -> Result<(), PlatformError> {
-        acquire_or_wait(self.limiter.as_ref(), 1)
-            .await
-            .map_err(PlatformError::from)
-    }
-}
-
-async fn map_categories_error<T>(
-    status: StatusCode,
-    response: reqwest::Response,
-) -> Result<T, PlatformError> {
-    let retry_after_secs = response
-        .headers()
-        .get("retry-after")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
-
-    let body = response.text().await.unwrap_or_default();
-
-    match status {
-        StatusCode::UNAUTHORIZED => Err(PlatformError::Auth {
-            reason: "categories token rejected (401)".to_owned(),
-        }),
-        StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
-        _ => Err(PlatformError::Http {
-            status: status.as_u16(),
-            body,
-        }),
-    }
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
-    use forge_net::{RateLimitError, RateLimitOutcome};
-    use std::time::Duration;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    struct GrantLimiter;
-    #[async_trait]
-    impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Granted)
-        }
-        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
-    }
-
-    struct ExhaustedLimiter;
-    #[async_trait]
-    impl RateLimiter for ExhaustedLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Exhausted)
-        }
-        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
-    }
-
     fn categories_on(server: &MockServer) -> KickCategories {
-        KickCategories::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(GrantLimiter),
-        )
-        .with_api_base(server.uri())
+        KickCategories::new(crate::endpoints_test_support::api_at(&server.uri()))
     }
 
-    fn expect_err(result: Result<Vec<CategoryMatch>, PlatformError>) -> PlatformError {
-        match result {
-            Ok(matches) => panic!("expected an error, got {} matches", matches.len()),
-            Err(e) => e,
-        }
-    }
-
-    async fn mount_categories(server: &MockServer, body: serde_json::Value) {
+    async fn mount_categories(server: &MockServer, template: ResponseTemplate) {
         Mock::given(method("GET"))
             .and(path("/categories"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .respond_with(template)
             .mount(server)
             .await;
     }
@@ -192,9 +103,13 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].id, 15);
-        assert_eq!(matches[0].name, "Just Chatting");
+        assert_eq!(
+            matches
+                .iter()
+                .map(|m| (m.id, m.name.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(15, "Just Chatting")]
+        );
     }
 
     #[tokio::test]
@@ -203,7 +118,11 @@ mod tests {
         let data: Vec<serde_json::Value> = (0..MAX_MATCHES + 5)
             .map(|i| serde_json::json!({"id": i, "name": format!("cat {i}")}))
             .collect();
-        mount_categories(&server, serde_json::json!({ "data": data })).await;
+        mount_categories(
+            &server,
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "data": data })),
+        )
+        .await;
 
         let matches = categories_on(&server).search("tok", "cat").await.unwrap();
 
@@ -214,7 +133,11 @@ mod tests {
     #[tokio::test]
     async fn search_with_no_results_returns_an_empty_list_not_an_error() {
         let server = MockServer::start().await;
-        mount_categories(&server, serde_json::json!({ "data": [] })).await;
+        mount_categories(
+            &server,
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "data": [] })),
+        )
+        .await;
 
         let matches = categories_on(&server)
             .search("tok", "nothing")
@@ -225,70 +148,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn search_maps_error_statuses_to_typed_errors() {
-        type Check = fn(&PlatformError) -> bool;
-        let cases: [(u16, Option<&str>, Check, &str); 3] = [
-            (
-                401,
-                None,
-                |e| matches!(e, PlatformError::Auth { .. }),
-                "Auth",
-            ),
-            (
-                429,
-                Some("42"),
-                |e| {
-                    matches!(
-                        e,
-                        PlatformError::RateLimited {
-                            retry_after_secs: 42
-                        }
-                    )
-                },
-                "RateLimited(42)",
-            ),
-            (
-                500,
-                None,
-                |e| matches!(e, PlatformError::Http { status: 500, .. }),
-                "Http(500)",
-            ),
-        ];
-
-        for (status, retry_after, check, expected) in cases {
-            let server = MockServer::start().await;
-            let mut template = ResponseTemplate::new(status).set_body_string("nope");
-            if let Some(retry_after) = retry_after {
-                template = template.insert_header("retry-after", retry_after);
-            }
-            Mock::given(method("GET"))
-                .and(path("/categories"))
-                .respond_with(template)
-                .mount(&server)
-                .await;
-
-            let err = expect_err(categories_on(&server).search("tok", "q").await);
-
-            assert!(
-                check(&err),
-                "status {status} must map to {expected}: {err:?}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn exhausted_limiter_short_circuits_before_any_request() {
+    async fn search_reports_an_undecodable_success_body_as_malformed() {
         let server = MockServer::start().await;
-        mount_categories(&server, serde_json::json!({ "data": [] })).await;
-
-        let client = KickCategories::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(ExhaustedLimiter),
+        mount_categories(
+            &server,
+            ResponseTemplate::new(200).set_body_string("<html>"),
         )
-        .with_api_base(server.uri());
-        let err = expect_err(client.search("tok", "q").await);
+        .await;
 
-        assert!(matches!(err, PlatformError::RateLimitExhausted));
-        assert!(server.received_requests().await.unwrap().is_empty());
+        let result = categories_on(&server).search("tok", "q").await;
+
+        assert!(
+            matches!(result, Err(PlatformError::MalformedResponse { .. })),
+            "{:?}",
+            result.map(|m| m.len())
+        );
     }
 }

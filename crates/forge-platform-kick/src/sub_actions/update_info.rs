@@ -250,24 +250,13 @@ impl SubActionRunner for UpdateInfoRunner {
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
-    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
     use forge_types::EventId;
-    use std::time::Duration;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {
         fn publish(&self, _: Event) {}
-    }
-
-    struct GrantLimiter;
-    #[async_trait]
-    impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Granted)
-        }
-        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
     }
 
     fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
@@ -280,19 +269,12 @@ mod tests {
     }
 
     fn runner_on(server: &MockServer) -> UpdateInfoRunner {
-        let client = KickChannel::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(GrantLimiter),
-        )
-        .with_api_base(server.uri());
+        let client = KickChannel::new(crate::endpoints_test_support::api_at(&server.uri()));
         UpdateInfoRunner::new(Arc::new(client), token_source())
     }
 
     fn runner_offline() -> UpdateInfoRunner {
-        let client = KickChannel::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(GrantLimiter),
-        );
+        let client = KickChannel::new(crate::endpoints_test_support::unreachable_api());
         UpdateInfoRunner::new(Arc::new(client), token_source())
     }
 

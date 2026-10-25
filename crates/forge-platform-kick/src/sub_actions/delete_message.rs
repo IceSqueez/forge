@@ -130,24 +130,13 @@ impl SubActionRunner for DeleteMessageRunner {
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
-    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
     use forge_types::EventId;
-    use std::time::Duration;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {
         fn publish(&self, _: Event) {}
-    }
-
-    struct GrantLimiter;
-    #[async_trait]
-    impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Granted)
-        }
-        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
     }
 
     fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
@@ -160,11 +149,7 @@ mod tests {
     }
 
     fn runner_on(server: &MockServer) -> DeleteMessageRunner {
-        let client = KickSendChat::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(GrantLimiter),
-        )
-        .with_delete_base(format!("{}/chat", server.uri()));
+        let client = KickSendChat::new(crate::endpoints_test_support::api_at(&server.uri()));
         DeleteMessageRunner::new(Arc::new(client), token_source())
     }
 
@@ -212,8 +197,7 @@ mod tests {
     fn default_config_message_id_matches_chat_trigger_arg_stack_key() {
         let runner = DeleteMessageRunner::new(
             Arc::new(KickSendChat::new(
-                &crate::endpoints_test_support::unreachable_endpoints(),
-                Arc::new(GrantLimiter),
+                crate::endpoints_test_support::unreachable_api(),
             )),
             token_source(),
         );
@@ -227,8 +211,7 @@ mod tests {
     fn validate_config_accepts_non_empty_and_rejects_empty_missing_non_string() {
         let runner = DeleteMessageRunner::new(
             Arc::new(KickSendChat::new(
-                &crate::endpoints_test_support::unreachable_endpoints(),
-                Arc::new(GrantLimiter),
+                crate::endpoints_test_support::unreachable_api(),
             )),
             token_source(),
         );

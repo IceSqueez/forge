@@ -168,16 +168,12 @@ impl SubActionRunner for LookupCategoryRunner {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use crate::sub_actions::test_support::{GrantLimiter, make_ctx, token_source};
+    use crate::sub_actions::test_support::{make_ctx, token_source};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn runner_on(server: &MockServer) -> LookupCategoryRunner {
-        let categories = KickCategories::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(GrantLimiter),
-        )
-        .with_api_base(server.uri());
+        let categories = KickCategories::new(crate::endpoints_test_support::api_at(&server.uri()));
         LookupCategoryRunner::new(Arc::new(categories), token_source())
     }
 

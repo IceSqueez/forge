@@ -1,43 +1,28 @@
 use std::sync::Arc;
 
-use forge_net::{DEFAULT_RETRY_AFTER_SECS, RateLimiter, acquire_or_wait};
-use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
+use forge_net::{Gateway, GatewayRequest};
+use forge_platform_core::PlatformError;
 use forge_storage::{BanLedgerKey, BanLedgerRepo};
-use reqwest::StatusCode;
 use time::{Duration, OffsetDateTime};
 
+use crate::api_gateway::{RefusalReasons, authorized, json_body, platform_error};
 use crate::ban_ledger::{ban_ledger_key, issued_ban, timeout_term_minutes};
 
 const BANS_PATH: &str = "/moderation/bans";
 
+const MODERATION_REFUSALS: RefusalReasons = RefusalReasons {
+    unauthorized: "moderation token rejected (401)",
+    forbidden: Some("moderation forbidden (403); check moderation:ban scope"),
+};
+
 pub struct KickModeration {
-    client: reqwest::Client,
-    limiter: Arc<dyn RateLimiter>,
+    api: Gateway,
     ban_ledger: Arc<dyn BanLedgerRepo>,
-    bans_endpoint: String,
 }
 
 impl KickModeration {
-    pub fn new(
-        endpoints: &PlatformEndpoints,
-        limiter: Arc<dyn RateLimiter>,
-        ban_ledger: Arc<dyn BanLedgerRepo>,
-    ) -> Self {
-        Self {
-            client: reqwest::Client::new(),
-            limiter,
-            ban_ledger,
-            bans_endpoint: format!(
-                "{}{BANS_PATH}",
-                endpoints.base_url(EndpointSurface::KickPublicApi)
-            ),
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_api_base(mut self, base: String) -> Self {
-        self.bans_endpoint = format!("{base}{BANS_PATH}");
-        self
+    pub fn new(api: Gateway, ban_ledger: Arc<dyn BanLedgerRepo>) -> Self {
+        Self { api, ban_ledger }
     }
 
     pub async fn ban(
@@ -95,23 +80,12 @@ impl KickModeration {
         broadcaster_user_id: u64,
         token: &str,
     ) -> Result<(), PlatformError> {
-        self.acquire_slot().await?;
-
-        let response = self
-            .client
-            .delete(&self.bans_endpoint)
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-            .json(&serde_json::json!({
-                "broadcaster_user_id": broadcaster_user_id,
-                "user_id": target_user_id,
-            }))
-            .send()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        map_moderation_response(response).await?;
+        let body = serde_json::json!({
+            "broadcaster_user_id": broadcaster_user_id,
+            "user_id": target_user_id,
+        });
+        self.send_bans(GatewayRequest::delete(BANS_PATH), token, &body)
+            .await?;
         self.forget_ban(&ban_ledger_key(
             broadcaster_user_id,
             &target_user_id.to_string(),
@@ -128,8 +102,6 @@ impl KickModeration {
         reason: Option<&str>,
         token: &str,
     ) -> Result<(), PlatformError> {
-        self.acquire_slot().await?;
-
         let mut body = serde_json::json!({
             "broadcaster_user_id": broadcaster_user_id,
             "user_id": target_user_id,
@@ -141,18 +113,22 @@ impl KickModeration {
             body["reason"] = serde_json::Value::from(reason);
         }
 
-        let response = self
-            .client
-            .post(&self.bans_endpoint)
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-            .json(&body)
-            .send()
+        self.send_bans(GatewayRequest::post(BANS_PATH), token, &body)
             .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
+    }
 
-        map_moderation_response(response).await
+    async fn send_bans(
+        &self,
+        request: GatewayRequest,
+        token: &str,
+        body: &serde_json::Value,
+    ) -> Result<(), PlatformError> {
+        let request = authorized(request, token, BANS_PATH).body(json_body(body)?);
+        self.api
+            .send(request)
+            .await
+            .map(drop)
+            .map_err(|failure| platform_error(failure, MODERATION_REFUSALS))
     }
 
     async fn record_issued_ban(
@@ -193,43 +169,6 @@ impl KickModeration {
             tracing::warn!(%error, "lifted kick ban not removed from the ban ledger");
         }
     }
-
-    async fn acquire_slot(&self) -> Result<(), PlatformError> {
-        acquire_or_wait(self.limiter.as_ref(), 1)
-            .await
-            .map_err(PlatformError::from)
-    }
-}
-
-async fn map_moderation_response(response: reqwest::Response) -> Result<(), PlatformError> {
-    let status = response.status();
-    if status == StatusCode::OK || status == StatusCode::CREATED || status == StatusCode::NO_CONTENT
-    {
-        return Ok(());
-    }
-
-    let retry_after_secs = response
-        .headers()
-        .get("retry-after")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
-
-    let body = response.text().await.unwrap_or_default();
-
-    match status {
-        StatusCode::UNAUTHORIZED => Err(PlatformError::Auth {
-            reason: "moderation token rejected (401)".to_owned(),
-        }),
-        StatusCode::FORBIDDEN => Err(PlatformError::Auth {
-            reason: "moderation forbidden (403); check moderation:ban scope".to_owned(),
-        }),
-        StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
-        _ => Err(PlatformError::Http {
-            status: status.as_u16(),
-            body,
-        }),
-    }
 }
 
 #[cfg(test)]
@@ -237,38 +176,16 @@ async fn map_moderation_response(response: reqwest::Response) -> Result<(), Plat
 mod tests {
     use super::*;
     use crate::ban_ledger_test_support::{LedgerOp, MemoryBanLedger};
-    use forge_net::{RateLimitError, RateLimitOutcome};
     use forge_storage::{BanLedgerEntry, BanOrigin};
     use forge_types::PlatformId;
-    use std::time::Duration;
     use wiremock::matchers::{body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    struct GrantLimiter;
-    #[async_trait::async_trait]
-    impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Granted)
-        }
-        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
-    }
-
-    struct ExhaustedLimiter;
-    #[async_trait::async_trait]
-    impl RateLimiter for ExhaustedLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Exhausted)
-        }
-        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
-    }
-
     fn moderation_on(server: &MockServer) -> KickModeration {
         KickModeration::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(GrantLimiter),
+            crate::endpoints_test_support::api_at(&server.uri()),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
-        .with_api_base(server.uri())
     }
 
     async fn last_body(server: &MockServer) -> serde_json::Value {
@@ -337,79 +254,14 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[tokio::test]
-    async fn auth_status_maps_to_auth_error() {
-        for status in [401_u16, 403] {
-            let server = MockServer::start().await;
-            Mock::given(method("POST"))
-                .respond_with(ResponseTemplate::new(status))
-                .mount(&server)
-                .await;
-
-            let err = moderation_on(&server)
-                .ban(99, 42, None, None, "tok")
-                .await
-                .unwrap_err();
-            assert!(
-                matches!(err, PlatformError::Auth { .. }),
-                "status {status} must map to Auth, got {err:?}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn rate_limited_status_maps_to_rate_limited_with_parsed_retry_after() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "57"))
-            .mount(&server)
-            .await;
-
-        let err = moderation_on(&server)
-            .ban(99, 42, None, None, "tok")
-            .await
-            .unwrap_err();
-        assert!(matches!(
-            err,
-            PlatformError::RateLimited {
-                retry_after_secs: 57
-            }
-        ));
-    }
-
-    #[tokio::test]
-    async fn limiter_exhaustion_returns_rate_limit_exhausted_without_reaching_server() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&server)
-            .await;
-
-        let client = KickModeration::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(ExhaustedLimiter),
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
-        )
-        .with_api_base(server.uri());
-        let err = client.ban(99, 42, None, None, "tok").await.unwrap_err();
-
-        assert!(matches!(err, PlatformError::RateLimitExhausted));
-        assert!(
-            server.received_requests().await.unwrap().is_empty(),
-            "an exhausted limiter must short-circuit before any HTTP call"
-        );
-    }
-
     const TARGET: u64 = 99;
     const BROADCASTER: u64 = 42;
 
     fn moderation_over(server: &MockServer, ledger: &Arc<MemoryBanLedger>) -> KickModeration {
         KickModeration::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(GrantLimiter),
+            crate::endpoints_test_support::api_at(&server.uri()),
             Arc::clone(ledger) as Arc<dyn BanLedgerRepo>,
         )
-        .with_api_base(server.uri())
     }
 
     async fn server_answering(http_method: &str, status: u16) -> MockServer {

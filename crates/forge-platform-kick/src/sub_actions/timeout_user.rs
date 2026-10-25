@@ -197,24 +197,13 @@ mod tests {
     use super::*;
     use crate::ban_ledger_test_support::MemoryBanLedger;
     use forge_events::{Event, EventPublisher};
-    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
     use forge_types::EventId;
-    use std::time::Duration;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {
         fn publish(&self, _: Event) {}
-    }
-
-    struct GrantLimiter;
-    #[async_trait]
-    impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Granted)
-        }
-        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
     }
 
     fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
@@ -234,11 +223,9 @@ mod tests {
 
     fn runner_on(server: &MockServer) -> TimeoutUserRunner {
         let client = KickModeration::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(GrantLimiter),
+            crate::endpoints_test_support::api_at(&server.uri()),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
-        )
-        .with_api_base(server.uri());
+        );
         TimeoutUserRunner::new(Arc::new(client), token_source(), broadcaster_id_source(42))
     }
 
@@ -295,8 +282,7 @@ mod tests {
     fn validate_config_enforces_user_id_and_duration_bounds() {
         let runner = TimeoutUserRunner::new(
             Arc::new(KickModeration::new(
-                &crate::endpoints_test_support::unreachable_endpoints(),
-                Arc::new(GrantLimiter),
+                crate::endpoints_test_support::unreachable_api(),
                 crate::ban_ledger_test_support::MemoryBanLedger::shared(),
             )),
             token_source(),
@@ -392,11 +378,9 @@ mod tests {
             .await;
         let ledger = Arc::new(MemoryBanLedger::default());
         let client = KickModeration::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            Arc::new(GrantLimiter),
+            crate::endpoints_test_support::api_at(&server.uri()),
             Arc::clone(&ledger) as Arc<dyn forge_storage::BanLedgerRepo>,
-        )
-        .with_api_base(server.uri());
+        );
         let runner =
             TimeoutUserRunner::new(Arc::new(client), token_source(), broadcaster_id_source(42));
         let stack = ArgStack::new()

@@ -6,7 +6,6 @@ use forge_platform_core::{
     CollectionItemAccess, CollectionItemId, CollectionMetadata, CollectionOutcome,
     CollectionRevisions, CollectionToggle, QuickActionFieldValue, SectionIcon,
 };
-use reqwest::StatusCode;
 
 use crate::builtin::{TwitchIntegrationBundle, int_field, text_field, toggle_field};
 use crate::custom_rewards::{
@@ -18,6 +17,7 @@ use crate::custom_rewards::{
 };
 use crate::helix::{HelixError, HelixRequest};
 use crate::sub_actions::identity::BroadcasterTier;
+use forge_net::status::NOT_FOUND;
 
 pub(crate) const REWARDS_COLLECTION: &str = "rewards";
 pub(crate) const REWARD_OPTIONS_KEY: &str = "collections.twitch.rewards";
@@ -35,7 +35,6 @@ const GLOBAL_COOLDOWN_SETTING_KEY: &str = "global_cooldown_setting";
 const SETTING_ENABLED_KEY: &str = "is_enabled";
 const ERROR_MESSAGE_KEY: &str = "message";
 
-const NOT_FOUND: u16 = StatusCode::NOT_FOUND.as_u16();
 const NOT_OWNED_REASON: &str = "Created outside forge - edit it in the Twitch dashboard";
 
 const CAPACITY_NEEDLES: &[&str] = &["too many", "maximum number", "max number", "reward limit"];
@@ -462,10 +461,10 @@ impl TwitchIntegrationBundle {
             HelixError::Transport(_) | HelixError::UndecodableResponse(_) => {
                 CollectionFailure::Transport
             }
-            HelixError::Http { status, body } => match StatusCode::from_u16(status) {
-                Ok(StatusCode::BAD_REQUEST) => bad_request_failure(&body),
-                Ok(StatusCode::FORBIDDEN) => forbidden_failure(&body, call, self.tier()),
-                Ok(StatusCode::NOT_FOUND) if call == RewardCall::Modify => {
+            HelixError::Http { status, body } => match status {
+                forge_net::status::BAD_REQUEST => bad_request_failure(&body),
+                forge_net::status::FORBIDDEN => forbidden_failure(&body, call, self.tier()),
+                NOT_FOUND if call == RewardCall::Modify => {
                     self.lifecycle().rewards_changed();
                     reward_gone()
                 }

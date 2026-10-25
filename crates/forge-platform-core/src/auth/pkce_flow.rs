@@ -89,12 +89,11 @@ fn build_authorize_url(
     }
     params.extend_from_slice(extra_trailing_params);
 
-    let url =
-        reqwest::Url::parse_with_params(&config.authorize_endpoint, &params).map_err(|e| {
-            PlatformError::Auth {
-                reason: format!("invalid authorize endpoint URL: {e}"),
-            }
-        })?;
+    let url = url::Url::parse_with_params(&config.authorize_endpoint, &params).map_err(|e| {
+        PlatformError::Auth {
+            reason: format!("invalid authorize endpoint URL: {e}"),
+        }
+    })?;
     Ok(url.into())
 }
 

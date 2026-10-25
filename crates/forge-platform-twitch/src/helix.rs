@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+pub(crate) use forge_net::status::CONFLICT;
+use forge_net::status::TOO_MANY_REQUESTS;
 use forge_net::{
     ExpectedRefusal, Gateway, GatewayFailure, GatewayRequest, Method, RequestBody, Secret,
 };
@@ -9,8 +11,6 @@ use thiserror::Error;
 use tracing::{debug, warn};
 
 pub(crate) const CLIENT_ID_HEADER: &str = "Client-Id";
-const TOO_MANY_REQUESTS: u16 = reqwest::StatusCode::TOO_MANY_REQUESTS.as_u16();
-pub(crate) const CONFLICT: u16 = reqwest::StatusCode::CONFLICT.as_u16();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HelixMethod {

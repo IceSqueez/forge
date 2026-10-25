@@ -1,7 +1,7 @@
 use std::ffi::OsStr;
 use std::fmt;
 
-use reqwest::Url;
+use url::Url;
 
 use super::surface::EndpointProtocol;
 use forge_net::is_loopback_host;

@@ -5,8 +5,7 @@ use tracing::debug;
 
 use crate::auth::TWITCH_BOT_SCOPES;
 use crate::oauth_client::{TwitchOAuthClient, ValidatedToken};
-
-const UNAUTHORIZED: u16 = reqwest::StatusCode::UNAUTHORIZED.as_u16();
+use forge_net::status::UNAUTHORIZED;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum TokenVerdict {

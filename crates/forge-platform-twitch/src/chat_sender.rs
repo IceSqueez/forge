@@ -8,7 +8,6 @@ use forge_platform_core::{
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{ConfigReason, RegistryError};
 use forge_types::SubActionOutcome;
-use reqwest::StatusCode;
 use thiserror::Error;
 use tracing::warn;
 
@@ -334,7 +333,7 @@ fn moderation_failure(error: HelixError) -> SendFailure {
         HelixError::RateLimited => SendFailure::Refused(
             "Twitch rate limit or cooldown reached; try again later".to_owned(),
         ),
-        HelixError::Http { status, body } if status == StatusCode::FORBIDDEN.as_u16() => {
+        HelixError::Http { status, body } if status == forge_net::status::FORBIDDEN => {
             SendFailure::PermissionDenied(format!("HTTP {status}: {}", refusal_text(&body)))
         }
         HelixError::Http { status, body } => {

@@ -11,6 +11,7 @@ use time::OffsetDateTime;
 use super::identity::SelfIdentity;
 use super::user_target::{TargetKeys, UserTarget};
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use forge_net::status::BAD_REQUEST;
 
 const TARGET_KEYS: TargetKeys = TargetKeys {
     id: "target_user_id",
@@ -18,7 +19,6 @@ const TARGET_KEYS: TargetKeys = TargetKeys {
 };
 const KIND_ID: &str = "twitch.moderation.unban_user";
 const NOT_BANNED_MARKER: &str = "not banned";
-const BAD_REQUEST: u16 = reqwest::StatusCode::BAD_REQUEST.as_u16();
 
 fn already_unbanned(error: &HelixError) -> bool {
     match error {

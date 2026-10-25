@@ -2,6 +2,7 @@ use crate::event_kinds;
 use crate::helix::{CONFLICT, HelixError, HelixMethod, HelixRequest, HelixTransport};
 use crate::subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
 use forge_events::{Event, EventPublisher, EventSource};
+use forge_net::status::FORBIDDEN;
 use futures_util::stream::{self, StreamExt};
 use serde::Deserialize;
 use std::sync::Arc;
@@ -11,7 +12,6 @@ use tracing::{debug, warn};
 const EVENTSUB_PATH: &str = "/helix/eventsub/subscriptions";
 const SUBSCRIBE_CONCURRENCY: usize = 10;
 const UNREADABLE_RESPONSE: &str = "unreadable response";
-const FORBIDDEN: u16 = reqwest::StatusCode::FORBIDDEN.as_u16();
 
 #[derive(Debug, Error)]
 pub(crate) enum SubscribeError {

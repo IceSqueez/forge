@@ -8,7 +8,6 @@ use forge_platform_core::{
     PlatformError, SenderPreference,
 };
 use forge_storage::CredentialsRepo;
-use reqwest::StatusCode;
 use tokio::sync::{Mutex, OnceCell, watch};
 
 use crate::bot_account::TwitchBotAccount;
@@ -338,7 +337,7 @@ fn map_send_error(err: ChatSendError) -> PlatformError {
             body: format!("{code}: {message}"),
         },
         ChatSendError::Forbidden(reason) => PlatformError::Http {
-            status: StatusCode::FORBIDDEN.as_u16(),
+            status: forge_net::status::FORBIDDEN,
             body: reason,
         },
     }

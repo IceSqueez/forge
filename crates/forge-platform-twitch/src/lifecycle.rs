@@ -4,8 +4,7 @@ use std::time::{Duration, Instant};
 use forge_platform_core::{CollectionRevisionSignal, CollectionRevisions, QuickActionLiveness};
 
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
-
-const FORBIDDEN: u16 = reqwest::StatusCode::FORBIDDEN.as_u16();
+use forge_net::status::FORBIDDEN;
 
 const RAID_COUNTDOWN: Duration = Duration::from_secs(90);
 

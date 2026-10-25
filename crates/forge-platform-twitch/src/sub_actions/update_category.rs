@@ -41,7 +41,7 @@ impl UpdateCategoryRunner {
             .and_then(|game| game["id"].as_str())
             .map(str::to_owned)
             .ok_or_else(|| HelixError::Http {
-                status: reqwest::StatusCode::NOT_FOUND.as_u16(),
+                status: forge_net::status::NOT_FOUND,
                 body: format!("category not found: {category_name}"),
             })
     }

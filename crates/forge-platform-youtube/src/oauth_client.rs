@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_net::status::BAD_REQUEST;
 use forge_net::{
     CallClass, DEFAULT_RETRY_AFTER_SECS, FormBody, Gateway, GatewayBuildError, GatewayFailure,
     GatewayProfile, GatewayRequest, GatewayResponse, RateLimiter, Secret, ThrottleHintFamily,
@@ -16,7 +17,6 @@ const AUTHORIZATION_CODE_GRANT_TYPE: &str = "authorization_code";
 const REFRESH_GRANT_TYPE: &str = "refresh_token";
 const INVALID_GRANT: &str = "invalid_grant";
 
-const BAD_REQUEST: u16 = reqwest::StatusCode::BAD_REQUEST.as_u16();
 const NO_RETRY_AFTER_WAIT: Duration = Duration::from_secs(DEFAULT_RETRY_AFTER_SECS as u64);
 
 pub const GOOGLE_OAUTH_BUDGET_CAPACITY: u32 = 10;

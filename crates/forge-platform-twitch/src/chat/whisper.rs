@@ -1,14 +1,13 @@
-use reqwest::StatusCode;
 use thiserror::Error;
 
 use super::send::refusal_text;
 
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
 use crate::sub_actions::user_target::UserTarget;
+use forge_net::status::BAD_REQUEST;
 
 const WHISPERS_PATH: &str = "/helix/whispers";
 const MAX_WHISPER_CHARS: usize = 500;
-const BAD_REQUEST: u16 = StatusCode::BAD_REQUEST.as_u16();
 const WHISPER_BLOCK_MARKERS: [&str; 3] = ["stranger", "block", "doesn't allow"];
 
 #[derive(Debug, Error)]

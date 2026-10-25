@@ -17,7 +17,7 @@ const PART_PARAM: &str = "part";
 const SNIPPET_PART: &str = "snippet";
 const CHANNEL_ID_PARAM: &str = "channelId";
 const FOR_CHANNEL_ID_PARAM: &str = "forChannelId";
-const SUBSCRIPTION_FORBIDDEN_STATUS: u16 = reqwest::StatusCode::FORBIDDEN.as_u16();
+const SUBSCRIPTION_FORBIDDEN_STATUS: u16 = forge_net::status::FORBIDDEN;
 const SUBSCRIPTION_FORBIDDEN_MARKER: &str = "\"subscriptionForbidden\"";
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;

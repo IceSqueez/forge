@@ -24,12 +24,12 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 async-trait = { workspace = true }
-reqwest = { workspace = true }
 tracing = { workspace = true }
 time = { workspace = true }
 jiff = { workspace = true }
 
 [dev-dependencies]
+reqwest = { workspace = true }
 wiremock = { workspace = true }
 forge-storage = { path = "../forge-storage", features = ["test-mocks"] }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }

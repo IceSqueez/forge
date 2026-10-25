@@ -1,4 +1,3 @@
-use reqwest::StatusCode;
 use thiserror::Error;
 use tracing::debug;
 
@@ -6,10 +5,10 @@ use super::TwitchBotAccount;
 use crate::chat::refusal_text;
 use crate::credentials::load;
 use crate::helix::{HelixError, HelixMethod, HelixRequest};
+use forge_net::status::BAD_REQUEST;
 
 const MODERATORS_PATH: &str = "/helix/moderation/moderators";
 const ALREADY_MODERATOR_MARKER: &str = "already";
-const BAD_REQUEST: u16 = StatusCode::BAD_REQUEST.as_u16();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BotModerator {
@@ -103,7 +102,7 @@ impl TwitchBotAccount {
     fn classify_rejection(&self, status: u16, body: &str) -> Result<(), BotModeratorError> {
         let reason = refusal_text(body);
         let lowered = reason.to_lowercase();
-        if status == StatusCode::UNPROCESSABLE_ENTITY.as_u16() {
+        if status == forge_net::status::UNPROCESSABLE_ENTITY {
             return Err(BotModeratorError::BotIsVip);
         }
         if status == BAD_REQUEST {

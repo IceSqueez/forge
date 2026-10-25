@@ -9,6 +9,7 @@ pub mod gateway;
 pub mod header_lookup;
 pub mod header_value;
 pub mod rate_limit;
+pub mod status;
 pub mod status_reason;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;

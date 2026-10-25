@@ -10,6 +10,7 @@ rust-version.workspace = true
 workspace = true
 
 [dev-dependencies]
+reqwest = { workspace = true }
 forge-net = { path = "../forge-net", features = ["test-support"] }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
 tokio = { workspace = true, features = ["test-util"] }
@@ -33,6 +34,5 @@ thiserror = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
 time = { workspace = true }
-reqwest = { workspace = true }
 futures-util = { workspace = true }
 regex = { workspace = true }

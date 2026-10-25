@@ -12,6 +12,7 @@ use serde::de::DeserializeOwned;
 use tokio_util::sync::CancellationToken;
 
 use crate::auth::{DEVICE_CANCELLED_REASON, DEVICE_CODE_USED_REASON, DEVICE_DENIED_REASON};
+use forge_net::status::BAD_REQUEST;
 
 const PLATFORM: &str = "twitch";
 const DEVICE_PATH: &str = "/device";
@@ -29,7 +30,6 @@ const POLL_EXPIRED_TOKEN: &str = "expired_token";
 const POLL_INVALID_DEVICE_CODE: &str = "invalid device code";
 const POLL_ACCESS_DENIED: &str = "access_denied";
 
-const BAD_REQUEST: u16 = reqwest::StatusCode::BAD_REQUEST.as_u16();
 const NO_RETRY_AFTER_WAIT: Duration = Duration::from_secs(5);
 
 pub const TWITCH_OAUTH_BUDGET_CAPACITY: u32 = 120;

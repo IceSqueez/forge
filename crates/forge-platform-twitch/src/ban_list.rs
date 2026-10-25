@@ -3,7 +3,6 @@ use forge_platform_core::{
     BanDuration, BanEntry, BanListOutcome, BanListSource, BanListUnavailable, BanPage,
     BanPageToken, UnbanAbility,
 };
-use reqwest::StatusCode;
 use serde::Deserialize;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -115,7 +114,7 @@ fn unavailability_of(error: &HelixError) -> BanListUnavailable {
     match error {
         HelixError::Credentials(_) => BanListUnavailable::NotConnected,
         HelixError::ReauthRequired => BanListUnavailable::MissingScope,
-        HelixError::Http { status, .. } if *status == StatusCode::FORBIDDEN.as_u16() => {
+        HelixError::Http { status, .. } if *status == forge_net::status::FORBIDDEN => {
             BanListUnavailable::MissingScope
         }
         HelixError::Http { .. }

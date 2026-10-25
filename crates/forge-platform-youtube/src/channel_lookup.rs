@@ -5,7 +5,6 @@ use forge_net::{GatewayRequest, Secret};
 use forge_platform_core::PlatformError;
 use forge_types::Variant;
 use futures::future::BoxFuture;
-use reqwest::StatusCode;
 
 use crate::data_api::{YoutubeDataApi, malformed};
 
@@ -52,7 +51,7 @@ impl YoutubeChannelLookup {
             .and_then(|v| v.as_array())
             .and_then(|arr| arr.first())
             .ok_or_else(|| PlatformError::Http {
-                status: StatusCode::NOT_FOUND.as_u16(),
+                status: forge_net::status::NOT_FOUND,
                 body: format!("channel not found: {identifier}"),
             })?;
 

@@ -10,6 +10,7 @@ use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError, rea
 use serde::Deserialize;
 
 use crate::api_gateway::{gateway_error, malformed};
+use forge_net::status::BAD_REQUEST;
 
 const PLATFORM: &str = "kick";
 const AUTHORIZE_PATH: &str = "/authorize";
@@ -18,7 +19,6 @@ const TOKEN_PATH: &str = "/token";
 const AUTHORIZATION_CODE_GRANT_TYPE: &str = "authorization_code";
 const REFRESH_GRANT_TYPE: &str = "refresh_token";
 
-const BAD_REQUEST: u16 = reqwest::StatusCode::BAD_REQUEST.as_u16();
 const NO_RETRY_AFTER_WAIT: Duration = Duration::from_secs(DEFAULT_RETRY_AFTER_SECS as u64);
 
 pub const KICK_OAUTH_BUDGET_CAPACITY: u32 = 10;

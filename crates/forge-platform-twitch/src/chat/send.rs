@@ -1,5 +1,4 @@
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
-use reqwest::StatusCode;
 use serde::Deserialize;
 use thiserror::Error;
 use tracing::debug;
@@ -33,7 +32,7 @@ impl From<HelixError> for ChatSendError {
         match err {
             HelixError::RateLimited => Self::RateLimited,
             HelixError::ReauthRequired => Self::ReauthRequired,
-            HelixError::Http { status, body } if status == StatusCode::FORBIDDEN.as_u16() => {
+            HelixError::Http { status, body } if status == forge_net::status::FORBIDDEN => {
                 Self::Forbidden(refusal_text(&body))
             }
             HelixError::Http { status, body } => Self::Http(format!("HTTP {status}: {body}")),

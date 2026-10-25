@@ -29,9 +29,9 @@ thiserror = { workspace = true }
 time = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
-reqwest = { workspace = true }
 
 [dev-dependencies]
+reqwest = { workspace = true }
 wiremock = { workspace = true }
 forge-storage = { path = "../forge-storage", features = ["test-mocks"] }
 tokio = { workspace = true, features = ["test-util"] }

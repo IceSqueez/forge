@@ -155,10 +155,15 @@ async fn trusted_absolute_redirects_follow_the_same_scheme_rule_as_the_first_hop
 }
 
 #[tokio::test]
-async fn trusted_absolute_refuses_any_credential_before_the_limiter_on_both_send_paths() {
+async fn non_platform_profiles_refuse_any_credential_before_the_limiter_on_both_send_paths() {
     let server = ok_server().await;
     let target = format!("{}/asset", server.uri());
-    for streaming in [false, true] {
+    for (profile, streaming) in [
+        (trusted(), false),
+        (trusted(), true),
+        (GatewayProfile::user_directed(true), false),
+        (GatewayProfile::user_directed(true), true),
+    ] {
         for request in [
             GatewayRequest::absolute(Method::Get, target.clone()).bearer(Secret::new("t")),
             GatewayRequest::absolute(Method::Get, target.clone())
@@ -166,18 +171,19 @@ async fn trusted_absolute_refuses_any_credential_before_the_limiter_on_both_send
             GatewayRequest::absolute(Method::Get, target.clone())
                 .authorization("token", Secret::new("t")),
         ] {
-            let trusted = base_less(trusted());
+            let gateway = base_less(profile);
             let failure = if streaming {
-                stream(&trusted.gateway, request, UNLIMITED).await.failure()
+                stream(&gateway.gateway, request, UNLIMITED).await.failure()
             } else {
-                trusted.gateway.send(request).await.unwrap_err()
+                gateway.gateway.send(request).await.unwrap_err()
             };
             assert_eq!(
                 failure,
-                GatewayFailure::InvalidRequest(InvalidRequest::CredentialNotAllowed)
+                GatewayFailure::InvalidRequest(InvalidRequest::CredentialNotAllowed),
+                "{profile:?} streaming={streaming}"
             );
-            assert_eq!(trusted.limiter.acquire_count(), 0);
-            assert_eq!(trusted.observer.seen().len(), 1);
+            assert_eq!(gateway.limiter.acquire_count(), 0);
+            assert_eq!(gateway.observer.seen().len(), 1);
         }
     }
     assert!(received(&server).await.is_empty());
@@ -270,47 +276,4 @@ async fn user_directed_still_sends_plain_http_to_a_non_loopback_host() {
         "{failure:?}"
     );
     assert_eq!(directed.limiter.acquire_count(), 1);
-}
-
-#[tokio::test]
-async fn user_directed_and_platform_gateways_still_attach_credentials() {
-    let server = ok_server().await;
-    let platform_gateway = Gateway::new(
-        &server.uri(),
-        Arc::new(RecordingRateLimiter::granting()),
-        platform(),
-        None,
-    )
-    .unwrap();
-    let directed = base_less(GatewayProfile::user_directed(true));
-    platform_gateway
-        .send(GatewayRequest::get("platform").bearer(Secret::new("platform-token")))
-        .await
-        .unwrap();
-    directed
-        .gateway
-        .send(
-            GatewayRequest::absolute(Method::Get, format!("{}/directed", server.uri()))
-                .bearer(Secret::new("directed-token")),
-        )
-        .await
-        .unwrap();
-    let authorizations: Vec<Option<String>> = received(&server)
-        .await
-        .iter()
-        .map(|request| {
-            request
-                .headers
-                .get("authorization")
-                .and_then(|value| value.to_str().ok())
-                .map(str::to_owned)
-        })
-        .collect();
-    assert_eq!(
-        authorizations,
-        vec![
-            Some("Bearer platform-token".to_owned()),
-            Some("Bearer directed-token".to_owned())
-        ]
-    );
 }

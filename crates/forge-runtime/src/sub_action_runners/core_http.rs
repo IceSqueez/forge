@@ -461,6 +461,82 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn error_status_still_succeeds_and_writes_status_parsed_body_and_headers() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(404)
+                    .insert_header("x-trace", "missing-1")
+                    .set_body_string(r#"{"error":"not found"}"#),
+            )
+            .mount(&server)
+            .await;
+        let dp = local_backend().await;
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("url".to_owned(), Variant::String(server.uri()));
+
+        let (tel, stack) = run(&runner(HttpMethod::Get, &dp), &cfg).await;
+
+        assert_eq!(tel.outcome, SubActionOutcome::Success);
+        let stack = stack.unwrap();
+        assert_eq!(
+            stack.get(HTTP_STATUS_CODE_VAR).and_then(|v| v.as_int()),
+            Some(404)
+        );
+        match stack.get(HTTP_BODY_VAR) {
+            Some(Variant::Object(body)) => {
+                assert_eq!(
+                    body.get("error").and_then(|v| v.as_str()),
+                    Some("not found")
+                );
+            }
+            other => panic!("expected a parsed json body, got {other:?}"),
+        }
+        match stack.get(HTTP_HEADERS_VAR) {
+            Some(Variant::Object(headers)) => {
+                assert_eq!(
+                    headers.get("x-trace").and_then(|v| v.as_str()),
+                    Some("missing-1")
+                );
+            }
+            other => panic!("expected http.headers object, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_content_type_is_sent_only_by_methods_that_carry_a_body() {
+        for (http_method, expected) in [
+            (HttpMethod::Get, None),
+            (HttpMethod::Delete, Some("application/xml")),
+            (HttpMethod::Post, Some("application/xml")),
+            (HttpMethod::Put, Some("application/xml")),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(wiremock::matchers::any())
+                .respond_with(ResponseTemplate::new(200))
+                .mount(&server)
+                .await;
+            let dp = local_backend().await;
+            let mut cfg = url_cfg(server.uri());
+            cfg.insert(
+                "content_type".to_owned(),
+                Variant::String("application/xml".to_owned()),
+            );
+            cfg.insert("body".to_owned(), Variant::String("<a/>".to_owned()));
+
+            let (tel, _) = run(&runner(http_method, &dp), &cfg).await;
+
+            assert_eq!(tel.outcome, SubActionOutcome::Success, "{http_method:?}");
+            let seen = server.received_requests().await.unwrap();
+            let sent = seen[0]
+                .headers
+                .get("content-type")
+                .map(|value| value.to_str().unwrap().to_owned());
+            assert_eq!(sent.as_deref(), expected, "{http_method:?}");
+        }
+    }
+
+    #[tokio::test]
     async fn ssrf_rejected_request_fails_with_no_output_vars() {
         let dp = backend().await;
         let mut cfg = SubActionConfig::new();

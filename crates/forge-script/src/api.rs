@@ -1056,13 +1056,16 @@ mod tests {
 
         let server = MockServer::start().await;
         Mock::given(any())
-            .respond_with(ResponseTemplate::new(200).set_body_string("pong"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("x-trace", "t-9")
+                    .set_body_string("pong"),
+            )
             .mount(&server)
             .await;
 
         let server_url = server.uri();
-        let parsed = reqwest::Url::parse(&server_url).unwrap();
-        let host = parsed.host_str().unwrap().to_string();
+        let host = server.address().ip().to_string();
         let dp = open_dp().await;
         let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
         let config = Arc::new(ScriptHttpConfig {
@@ -1081,45 +1084,17 @@ mod tests {
         .unwrap();
 
         let map = result.try_cast::<rhai::Map>().unwrap();
-        assert!(map.contains_key("status"), "must have status");
-        assert!(map.contains_key("body"), "must have body");
-        assert!(map.contains_key("headers"), "must have headers");
-        assert!(map.contains_key("truncated"), "must have truncated");
-        assert!(map.contains_key("duration_ms"), "must have duration_ms");
-        assert_eq!(map["status"].clone().as_int().unwrap(), 200);
-    }
-
-    #[test]
-    fn http_error_display_does_not_contain_url() {
-        let no_url = HttpError::Network("connection refused".into());
-        let msg = no_url.to_string();
-        assert!(
-            !msg.contains("http://"),
-            "URL scheme must not appear in: {msg}"
-        );
-        assert!(
-            !msg.contains("https://"),
-            "URL scheme must not appear in: {msg}"
-        );
-        assert!(
-            !msg.contains("token="),
-            "query params must not appear in: {msg}"
-        );
-
+        let headers = map["headers"].clone().try_cast::<rhai::Map>().unwrap();
         assert_eq!(
-            HttpError::DomainNotAllowed.to_string(),
-            "http: domain not allowed"
+            (
+                map["status"].clone().as_int().unwrap(),
+                map["body"].clone().into_string().unwrap(),
+                map["truncated"].clone().as_bool().unwrap(),
+                map["duration_ms"].clone().as_int().is_ok(),
+                headers["x-trace"].clone().into_string().unwrap(),
+            ),
+            (200, "pong".to_owned(), false, true, "t-9".to_owned())
         );
-        assert_eq!(HttpError::HttpsRequired.to_string(), "http: HTTPS required");
-        assert_eq!(
-            HttpError::PrivateAddress.to_string(),
-            "http: local addresses blocked"
-        );
-        assert_eq!(
-            HttpError::RateLimitExceeded.to_string(),
-            "http: rate limit exceeded"
-        );
-        assert_eq!(HttpError::Timeout.to_string(), "http: timeout");
     }
 
     #[tokio::test]
@@ -1234,11 +1209,7 @@ mod tests {
             .mount(&server)
             .await;
         let server_url = server.uri();
-        let host = reqwest::Url::parse(&server_url)
-            .unwrap()
-            .host_str()
-            .unwrap()
-            .to_string();
+        let host = server.address().ip().to_string();
 
         for (script, expected_method) in [
             (format!(r#"forge::http::get("{server_url}/p")"#), "get"),
@@ -1275,6 +1246,61 @@ mod tests {
                 "http_call must tag method for {expected_method}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn http_call_event_reports_the_outcome_without_the_query_and_only_for_sent_calls() {
+        use wiremock::matchers::any;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(404).set_body_string("missing"))
+            .mount(&server)
+            .await;
+        let server_url = server.uri();
+        let host = server.address().ip().to_string();
+        let dp = open_dp().await;
+        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let config = Arc::new(ScriptHttpConfig {
+            allowed_domains: vec![host.clone()],
+            allow_local: true,
+            ..ScriptHttpConfig::default()
+        });
+        let script = format!(
+            r#"forge::http::get("{server_url}/p?token=QUERY-SECRET"); forge::http::get("https://not-allowed.example/");"#
+        );
+        let cap = Arc::clone(&captured);
+
+        tokio::task::spawn_blocking(move || {
+            let engine = build_engine_with_http_in_blocking(dp.clone(), cap, config);
+            let _ = engine.eval_script(&script);
+        })
+        .await
+        .unwrap();
+
+        let events = captured.lock().unwrap();
+        let calls: Vec<&Event> = events
+            .iter()
+            .filter(|e| e.kind == "script.http_call")
+            .collect();
+        assert_eq!(calls.len(), 1, "only the sent call emits script.http_call");
+        let payload = &calls[0].payload;
+        assert_eq!(
+            (
+                payload["status"].as_i64(),
+                payload["truncated"].as_bool(),
+                payload["url_normalized"].as_str(),
+                calls[0].caused_by.is_some(),
+            ),
+            (
+                Some(404),
+                Some(false),
+                Some(format!("http://{host}/p").as_str()),
+                true
+            )
+        );
+        assert!(!payload.to_string().contains("QUERY-SECRET"), "{payload}");
     }
 
     #[tokio::test]

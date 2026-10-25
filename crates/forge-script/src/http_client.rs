@@ -183,9 +183,10 @@ fn domain_allowed(host: &str, allowed: &[String]) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use forge_net::InvalidRequest;
     use wiremock::matchers::any;
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -205,12 +206,32 @@ mod tests {
         })
     }
 
+    fn fresh_counter() -> Arc<AtomicU32> {
+        Arc::new(AtomicU32::new(0))
+    }
+
+    fn validate_url(client: &ScriptHttpClient, url: &str) -> Result<(), HttpError> {
+        client.validate(url, &fresh_counter()).map(|_| ())
+    }
+
+    async fn answering(template: ResponseTemplate) -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(template)
+            .mount(&server)
+            .await;
+        server
+    }
+
+    async fn in_blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+        tokio::task::spawn_blocking(work).await.unwrap()
+    }
+
     #[test]
     fn get_http_url_returns_https_required() {
         let client = ScriptHttpClient::new(allowlisted(&["example.com"])).unwrap();
-        let counter = Arc::new(AtomicU32::new(0));
         assert!(matches!(
-            client.get("http://example.com/path", &counter),
+            client.get("http://example.com/path", &fresh_counter()),
             Err(HttpError::HttpsRequired)
         ));
     }
@@ -218,9 +239,8 @@ mod tests {
     #[test]
     fn get_unallowed_domain_returns_domain_not_allowed() {
         let client = ScriptHttpClient::new(allowlisted(&["example.com"])).unwrap();
-        let counter = Arc::new(AtomicU32::new(0));
         assert!(matches!(
-            client.get("https://other.com/", &counter),
+            client.get("https://other.com/", &fresh_counter()),
             Err(HttpError::DomainNotAllowed)
         ));
     }
@@ -228,26 +248,90 @@ mod tests {
     #[test]
     fn empty_allowlist_denies_all_domains() {
         let client = ScriptHttpClient::new(allowlisted(&[])).unwrap();
-        let counter = Arc::new(AtomicU32::new(0));
         assert!(matches!(
-            client.get("https://example.com/", &counter),
+            client.get("https://example.com/", &fresh_counter()),
             Err(HttpError::DomainNotAllowed)
         ));
     }
 
     #[test]
-    fn rate_limit_exceeded_after_max_calls() {
+    fn wildcard_entry_allows_the_apex_and_subdomains_but_not_lookalikes() {
+        let client = ScriptHttpClient::new(allowlisted(&["*.Example.com"])).unwrap();
+        for (url, allowed) in [
+            ("https://example.com/", true),
+            ("https://api.EXAMPLE.com/", true),
+            ("https://a.b.example.com/", true),
+            ("https://badexample.com/", false),
+            ("https://example.com.evil.net/", false),
+        ] {
+            let outcome = validate_url(&client, url);
+            assert_eq!(
+                !matches!(outcome, Err(HttpError::DomainNotAllowed)),
+                allowed,
+                "{url}: {outcome:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_call_limit_refuses_at_the_maximum_and_admits_one_below_it() {
         let config = Arc::new(ScriptHttpConfig {
             max_calls_per_script: 3,
             allowed_domains: vec!["example.com".into()],
             ..ScriptHttpConfig::default()
         });
         let client = ScriptHttpClient::new(config).unwrap();
-        let counter = Arc::new(AtomicU32::new(3));
-        assert!(matches!(
-            client.get("https://example.com/", &counter),
-            Err(HttpError::RateLimitExceeded)
-        ));
+        for (used, refused) in [(2, false), (3, true), (4, true)] {
+            let counter = Arc::new(AtomicU32::new(used));
+            let outcome = client.validate("https://example.com/", &counter);
+            assert_eq!(
+                matches!(outcome, Err(HttpError::RateLimitExceeded)),
+                refused,
+                "{used} used"
+            );
+        }
+    }
+
+    #[test]
+    fn a_refused_call_does_not_consume_a_call_slot() {
+        let config = Arc::new(ScriptHttpConfig {
+            max_calls_per_script: 1,
+            allowed_domains: vec!["example.com".into(), "10.0.0.1".into()],
+            ..ScriptHttpConfig::default()
+        });
+        let client = ScriptHttpClient::new(config).unwrap();
+        let counter = fresh_counter();
+        for url in [
+            "http://example.com/",
+            "https://other.com/",
+            "https://10.0.0.1/",
+            "https://user:pw@example.com/",
+            "not a url",
+        ] {
+            assert!(client.get(url, &counter).is_err(), "{url}");
+            assert_eq!(counter.load(Ordering::SeqCst), 0, "{url}");
+        }
+    }
+
+    #[test]
+    fn malformed_or_userinfo_urls_fail_with_a_text_that_omits_the_url() {
+        let client = ScriptHttpClient::new(allowlisted(&["example.com"])).unwrap();
+        for (url, reason) in [
+            ("not a url", InvalidRequest::MalformedUrl),
+            ("", InvalidRequest::MalformedUrl),
+            (
+                "https://user:hunter2@example.com/",
+                InvalidRequest::EmbeddedCredentials,
+            ),
+        ] {
+            match client.get(url, &fresh_counter()).err() {
+                Some(HttpError::Network(message)) => {
+                    assert_eq!(message, reason.to_string(), "{url}");
+                    assert!(!message.contains("hunter2"), "{message}");
+                }
+                other => panic!("{url}: expected a network error, got {other:?}"),
+            }
+        }
     }
 
     #[test]
@@ -258,16 +342,13 @@ mod tests {
             ..ScriptHttpConfig::default()
         });
         let client = ScriptHttpClient::new(config).unwrap();
-        let counter = Arc::new(AtomicU32::new(0));
         assert!(matches!(
-            client.get("https://169.254.169.254/latest/meta-data/", &counter),
+            client.get(
+                "https://169.254.169.254/latest/meta-data/",
+                &fresh_counter()
+            ),
             Err(HttpError::PrivateAddress)
         ));
-    }
-
-    fn validate_url(client: &ScriptHttpClient, url: &str) -> Result<(), HttpError> {
-        let counter = Arc::new(AtomicU32::new(0));
-        client.validate(&reqwest::Url::parse(url).unwrap(), &counter)
     }
 
     #[test]
@@ -305,106 +386,246 @@ mod tests {
     }
 
     #[test]
-    fn https_localhost_is_blocked_at_resolution_when_allow_local_false() {
-        let client = ScriptHttpClient::new(allowlisted(&["localhost"])).unwrap();
-        let counter = Arc::new(AtomicU32::new(0));
-        assert!(matches!(
-            client.get("https://localhost:9/", &counter),
-            Err(HttpError::PrivateAddress)
-        ));
+    fn mapped_and_nat64_loopback_literals_are_blocked_when_allow_local_false() {
+        for host in ["[::ffff:7f00:1]", "[64:ff9b::7f00:1]"] {
+            let client = ScriptHttpClient::new(allowlisted(&[host])).unwrap();
+            assert!(
+                matches!(
+                    validate_url(&client, &format!("https://{host}/")),
+                    Err(HttpError::PrivateAddress)
+                ),
+                "{host}"
+            );
+        }
     }
 
     #[test]
-    fn ipv4_mapped_loopback_literal_is_blocked_when_allow_local_false() {
-        let client = ScriptHttpClient::new(allowlisted(&["[::ffff:7f00:1]"])).unwrap();
-        assert!(matches!(
-            validate_url(&client, "https://[::ffff:7f00:1]/"),
-            Err(HttpError::PrivateAddress)
-        ));
+    fn a_call_outside_any_async_runtime_is_a_network_error_that_keeps_the_slot() {
+        let client = ScriptHttpClient::new(allowlisted(&["example.com"])).unwrap();
+        let counter = fresh_counter();
+
+        let outcome = client.get("https://example.com/", &counter).err();
+
+        assert!(
+            matches!(&outcome, Some(HttpError::Network(message)) if message == NO_RUNTIME),
+            "{outcome:?}"
+        );
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn https_localhost_is_blocked_at_resolution_when_allow_local_false() {
+        let outcome = in_blocking(|| {
+            let client = ScriptHttpClient::new(allowlisted(&["localhost"])).unwrap();
+            client.get("https://localhost:9/", &fresh_counter()).err()
+        })
+        .await;
+
+        assert!(
+            matches!(outcome, Some(HttpError::PrivateAddress)),
+            "{outcome:?}"
+        );
     }
 
     #[tokio::test]
     async fn get_localhost_name_over_plain_http_returns_200_with_allow_local() {
-        let server = MockServer::start().await;
-        Mock::given(any())
-            .respond_with(ResponseTemplate::new(200).set_body_string("hello"))
-            .mount(&server)
-            .await;
+        let server = answering(ResponseTemplate::new(200).set_body_string("hello")).await;
         let url = format!("http://localhost:{}/test", server.address().port());
-        let config = allowlisted_local(&["localhost"]);
 
-        let result = tokio::task::spawn_blocking(move || {
-            let client = ScriptHttpClient::new(config).unwrap();
-            let counter = Arc::new(AtomicU32::new(0));
-            client.get(&url, &counter)
+        let result = in_blocking(move || {
+            let client = ScriptHttpClient::new(allowlisted_local(&["localhost"])).unwrap();
+            client.get(&url, &fresh_counter())
         })
-        .await
-        .unwrap();
+        .await;
 
         assert_eq!(result.unwrap().status, 200);
     }
 
     #[tokio::test]
-    async fn get_allowlisted_local_server_returns_200() {
-        let server = MockServer::start().await;
-        Mock::given(any())
-            .respond_with(ResponseTemplate::new(200).set_body_string("hello"))
-            .mount(&server)
-            .await;
-
-        let server_url = server.uri();
-        let parsed = reqwest::Url::parse(&server_url).unwrap();
-        let host = parsed.host_str().unwrap().to_string();
-
+    async fn get_returns_status_body_headers_and_a_query_free_normalized_url() {
+        let server = answering(
+            ResponseTemplate::new(200)
+                .insert_header("x-trace", "t-1")
+                .set_body_string("hello"),
+        )
+        .await;
+        let host = server.address().ip().to_string();
+        let url = format!("{}/test?token=QUERY-SECRET", server.uri());
         let config = allowlisted_local(&[host.as_str()]);
-        let url = format!("{server_url}/test");
 
-        let result = tokio::task::spawn_blocking(move || {
+        let response = in_blocking(move || {
             let client = ScriptHttpClient::new(config).unwrap();
-            let counter = Arc::new(AtomicU32::new(0));
-            client.get(&url, &counter)
+            client.get(&url, &fresh_counter())
         })
         .await
         .unwrap();
 
-        let response = result.unwrap();
-        assert_eq!(response.status, 200);
-        assert_eq!(response.body, "hello");
-        assert!(!response.truncated);
+        assert_eq!(
+            (
+                response.status,
+                response.body.as_str(),
+                response.truncated,
+                response.headers.get("x-trace").map(String::as_str),
+                response.url_normalized,
+            ),
+            (
+                200,
+                "hello",
+                false,
+                Some("t-1"),
+                format!("http://{host}/test")
+            )
+        );
     }
 
     #[tokio::test]
-    async fn response_truncated_when_over_cap() {
-        let server = MockServer::start().await;
-        let big_body: String = "x".repeat(2048);
-        Mock::given(any())
-            .respond_with(ResponseTemplate::new(200).set_body_string(big_body))
-            .mount(&server)
-            .await;
+    async fn error_statuses_come_back_as_responses_and_redirects_are_not_followed() {
+        for (template, status, body) in [
+            (
+                ResponseTemplate::new(404).set_body_string("missing"),
+                404,
+                "missing",
+            ),
+            (
+                ResponseTemplate::new(503).set_body_string("down"),
+                503,
+                "down",
+            ),
+            (
+                ResponseTemplate::new(302)
+                    .insert_header("location", "/elsewhere")
+                    .set_body_string("moved"),
+                302,
+                "moved",
+            ),
+        ] {
+            let server = answering(template).await;
+            let host = server.address().ip().to_string();
+            let url = format!("{}/x", server.uri());
+            let config = allowlisted_local(&[host.as_str()]);
 
-        let server_url = server.uri();
-        let parsed = reqwest::Url::parse(&server_url).unwrap();
-        let host = parsed.host_str().unwrap().to_string();
+            let response = in_blocking(move || {
+                let client = ScriptHttpClient::new(config).unwrap();
+                client.get(&url, &fresh_counter())
+            })
+            .await
+            .unwrap();
 
-        let config = Arc::new(ScriptHttpConfig {
-            allowed_domains: vec![host],
-            allow_local: true,
-            max_response_bytes: 1024,
-            timeout_ms: 30_000,
-            ..ScriptHttpConfig::default()
-        });
-        let url = format!("{server_url}/big");
+            assert_eq!((response.status, response.body.as_str()), (status, body));
+            assert_eq!(server.received_requests().await.unwrap().len(), 1);
+        }
+    }
 
-        let result = tokio::task::spawn_blocking(move || {
+    #[tokio::test]
+    async fn post_sends_the_body_without_a_content_type() {
+        let server = answering(ResponseTemplate::new(201)).await;
+        let host = server.address().ip().to_string();
+        let url = format!("{}/p", server.uri());
+        let config = allowlisted_local(&[host.as_str()]);
+
+        let response = in_blocking(move || {
             let client = ScriptHttpClient::new(config).unwrap();
-            let counter = Arc::new(AtomicU32::new(0));
-            client.get(&url, &counter)
+            client.post(&url, "payload-7", &fresh_counter())
         })
         .await
         .unwrap();
 
-        let response = result.unwrap();
-        assert!(response.truncated);
-        assert_eq!(response.body.len(), 1024);
+        let seen = server.received_requests().await.unwrap();
+        assert_eq!(
+            (
+                response.status,
+                seen[0].body.as_slice(),
+                seen[0].headers.get("content-type").is_some()
+            ),
+            (201, &b"payload-7"[..], false)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_sent_call_consumes_a_slot_even_when_the_transport_fails() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let config = Arc::new(ScriptHttpConfig {
+            allowed_domains: vec!["127.0.0.1".into()],
+            allow_local: true,
+            max_calls_per_script: 1,
+            ..ScriptHttpConfig::default()
+        });
+
+        let (first, second) = in_blocking(move || {
+            let client = ScriptHttpClient::new(config).unwrap();
+            let counter = fresh_counter();
+            let url = format!("http://127.0.0.1:{port}/");
+            (
+                client.get(&url, &counter).err(),
+                client.get(&url, &counter).err(),
+            )
+        })
+        .await;
+
+        assert!(matches!(first, Some(HttpError::Network(_))), "{first:?}");
+        assert!(
+            matches!(second, Some(HttpError::RateLimitExceeded)),
+            "{second:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_response_that_outlasts_the_timeout_is_a_timeout() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((stream, _)) = listener.accept().await {
+                held.push(stream);
+            }
+        });
+        let config = Arc::new(ScriptHttpConfig {
+            allowed_domains: vec!["127.0.0.1".into()],
+            allow_local: true,
+            timeout_ms: 200,
+            ..ScriptHttpConfig::default()
+        });
+
+        let outcome = in_blocking(move || {
+            let client = ScriptHttpClient::new(config).unwrap();
+            client
+                .get(&format!("http://127.0.0.1:{port}/"), &fresh_counter())
+                .err()
+        })
+        .await;
+
+        assert!(matches!(outcome, Some(HttpError::Timeout)), "{outcome:?}");
+    }
+
+    #[tokio::test]
+    async fn response_is_truncated_only_past_the_configured_cap() {
+        for (length, truncated) in [(1024, false), (1025, true), (2048, true)] {
+            let server =
+                answering(ResponseTemplate::new(200).set_body_string("x".repeat(length))).await;
+            let host = server.address().ip().to_string();
+            let config = Arc::new(ScriptHttpConfig {
+                allowed_domains: vec![host],
+                allow_local: true,
+                max_response_bytes: 1024,
+                timeout_ms: 30_000,
+                ..ScriptHttpConfig::default()
+            });
+            let url = format!("{}/big", server.uri());
+
+            let response = in_blocking(move || {
+                let client = ScriptHttpClient::new(config).unwrap();
+                client.get(&url, &fresh_counter())
+            })
+            .await
+            .unwrap();
+
+            assert_eq!(
+                (response.truncated, response.body.len()),
+                (truncated, 1024),
+                "{length}"
+            );
+        }
     }
 }

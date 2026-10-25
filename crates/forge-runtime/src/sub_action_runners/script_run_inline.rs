@@ -233,7 +233,13 @@ mod tests {
     }
 
     async fn run_inline(body: &str) -> (SubActionOutcome, Option<Event>, Option<Event>) {
-        let backend = make_backend().await;
+        run_inline_on(make_backend().await, body).await
+    }
+
+    async fn run_inline_on(
+        backend: Sandboxed<Arc<SqliteBackend>>,
+        body: &str,
+    ) -> (SubActionOutcome, Option<Event>, Option<Event>) {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
         let runner = ScriptRunInlineRunner::new(
@@ -281,6 +287,38 @@ mod tests {
             msg.contains("domain not allowed"),
             "expected domain-not-allowed error from wired http module, got: {msg}"
         );
+    }
+
+    #[tokio::test]
+    async fn inline_script_http_call_runs_inside_the_runtime_and_reaches_an_allowlisted_server() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::any())
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_string("pong"))
+            .mount(&server)
+            .await;
+        let backend = make_backend().await;
+        backend
+            .set_string(
+                forge_storage::reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS,
+                &format!(r#"["{}"]"#, server.address().ip()),
+            )
+            .await
+            .unwrap();
+        backend
+            .set_string(
+                forge_storage::reserved_keys::SCRIPT_HTTP_ALLOW_LOCAL,
+                "true",
+            )
+            .await
+            .unwrap();
+        let body = format!(
+            r#"let r = forge::http::get("{}/ping"); if r.body != "pong" {{ throw "bad body"; }}"#,
+            server.uri()
+        );
+
+        let (outcome, _, error) = run_inline_on(backend, &body).await;
+
+        assert_eq!(outcome, SubActionOutcome::Success, "{error:?}");
     }
 
     #[tokio::test]

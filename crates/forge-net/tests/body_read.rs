@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use forge_net::{
-    BodyProgress, BodySink, BodySource, CappedReadError, StreamReadError, read_capped,
-    read_streaming,
+    BodyProgress, BodySink, BodySource, CappedReadError, StreamReadError, TruncatedBody,
+    read_capped, read_streaming, read_truncated,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -218,6 +218,80 @@ async fn capped_read_does_not_trust_a_huge_declared_length_for_allocation() {
         "capacity {:?}",
         body.map(|body| body.capacity())
     );
+}
+
+fn kept(bytes: &[u8], truncated: bool) -> Result<TruncatedBody, SourceFault> {
+    Ok(TruncatedBody {
+        bytes: bytes.to_vec(),
+        truncated,
+    })
+}
+
+#[tokio::test]
+async fn truncated_read_keeps_the_first_cap_bytes_and_flags_only_real_overflow() {
+    for (declared, chunks, expected) in [
+        (
+            None,
+            vec![&b"12345"[..], b"6789"],
+            kept(b"123456789", false),
+        ),
+        (
+            Some(10),
+            vec![&b"1234567890"[..]],
+            kept(b"1234567890", false),
+        ),
+        (None, vec![&b""[..], b"ab", b""], kept(b"ab", false)),
+        (
+            None,
+            vec![&b"12345"[..], b"67890", b"X"],
+            kept(b"1234567890", true),
+        ),
+        (
+            None,
+            vec![&b"1234567"[..], b"890AB"],
+            kept(b"1234567890", true),
+        ),
+        (
+            Some(4),
+            vec![&b"12345678901"[..]],
+            kept(b"1234567890", true),
+        ),
+        (Some(SIXTY_FOUR_MIB), vec![&b"abc"[..]], kept(b"abc", false)),
+    ] {
+        let source = ScriptedSource::chunks(declared, &chunks);
+        assert_eq!(
+            read_truncated(source, 10).await,
+            expected,
+            "declared {declared:?} chunks {chunks:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn truncated_read_with_zero_cap_flags_any_byte_as_overflow() {
+    assert_eq!(
+        read_truncated(ScriptedSource::chunks(Some(0), &[b""]), 0).await,
+        kept(b"", false)
+    );
+    assert_eq!(
+        read_truncated(ScriptedSource::chunks(None, &[b"x"]), 0).await,
+        kept(b"", true)
+    );
+}
+
+#[tokio::test]
+async fn truncated_read_stops_pulling_once_the_cap_is_passed() {
+    let source = ScriptedSource::new(None, vec![Step::Chunk(b"12345678901".to_vec()), Step::Hang]);
+    let pulls = source.pull_counter();
+
+    assert_eq!(read_truncated(source, 10).await, kept(b"1234567890", true));
+    assert_eq!(pulls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn truncated_read_surfaces_a_source_failure() {
+    let source = ScriptedSource::new(None, vec![Step::Chunk(b"ab".to_vec()), Step::Fail]);
+    assert_eq!(read_truncated(source, 10).await, Err(SourceFault));
 }
 
 #[tokio::test]

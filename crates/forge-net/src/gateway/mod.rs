@@ -614,3 +614,80 @@ fn multipart_form(multipart: &MultipartBody) -> Result<Form, GatewayFailure> {
     }
     Ok(form)
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::test_support::RecordingRateLimiter;
+    use wiremock::matchers::any;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    async fn redirect_answer(location: &str) -> (MockServer, reqwest::Response) {
+        let server = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(
+                ResponseTemplate::new(StatusCode::FOUND.as_u16())
+                    .insert_header("location", location),
+            )
+            .mount(&server)
+            .await;
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let response = client.get(server.uri()).send().await.unwrap();
+        (server, response)
+    }
+
+    fn public_hop() -> Hop {
+        Hop {
+            url: Url::parse("https://public.example/start").unwrap(),
+            method: Method::Get,
+            keep_body: true,
+            forward_request_headers: true,
+            apply_query: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn every_redirect_hop_is_screened_by_the_literal_guard_only_when_local_is_refused() {
+        for (allow_local, location, refused) in [
+            (false, "http://10.0.0.1/x", true),
+            (false, "http://127.0.0.1/x", true),
+            (false, "http://[::ffff:127.0.0.1]/x", true),
+            (false, "https://[64:ff9b::a00:1]/x", true),
+            (false, "https://203.0.113.9/x", false),
+            (false, "http://localhost/x", false),
+            (true, "http://10.0.0.1/x", false),
+            (true, "http://[::ffff:127.0.0.1]/x", false),
+            (true, "https://[64:ff9b::a00:1]/x", false),
+        ] {
+            let gateway = Gateway::without_base(
+                Arc::new(RecordingRateLimiter::granting()),
+                GatewayProfile::user_directed(allow_local),
+                None,
+            )
+            .unwrap();
+            let (_server, response) = redirect_answer(location).await;
+
+            let next = gateway.redirect_hop(&public_hop(), &response);
+
+            match next {
+                Err(failure) => {
+                    assert!(refused, "{allow_local} {location}: {failure:?}");
+                    assert_eq!(
+                        failure,
+                        GatewayFailure::AddressRefused(crate::HostRejection::PrivateOrSpecial),
+                        "{location}"
+                    );
+                }
+                Ok(hop) => {
+                    assert!(!refused, "{allow_local} {location} was followed");
+                    let hop = hop.unwrap();
+                    assert!(!hop.forward_request_headers, "{location}");
+                }
+            }
+        }
+    }
+}

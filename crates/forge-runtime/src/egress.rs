@@ -1,16 +1,16 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
 use std::time::Duration;
 
 use forge_net::{
-    HostRejection, PublicAddressResolver, ensure_public_ip_literal, host_rejection_cause,
+    Gateway, GatewayFailure, GatewayRequest, GatewayResponse, HostRejection, InvalidRequest,
+    Method, RedirectRefusal, RequestBody, ResolvedTarget, TransportKind,
 };
-use reqwest::StatusCode;
 use tokio::sync::Semaphore;
 
-const MAX_RESPONSE_BYTES: usize = 1_048_576;
-const MAX_REDIRECT_HOPS: u32 = 10;
+const MAX_RESPONSE_BYTES: u64 = 1_048_576;
 const MAX_CONCURRENT_REQUESTS: usize = 16;
+const ALLOWED_SCHEMES: [&str; 2] = ["http", "https"];
+const CONTENT_TYPE_HEADER: &str = "content-type";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HttpMethod {
@@ -59,31 +59,20 @@ pub enum EgressError {
 }
 
 pub struct EgressClient {
-    public_only: reqwest::Client,
-    local_allowed: reqwest::Client,
+    public_only: Gateway,
+    local_allowed: Gateway,
     concurrency: Semaphore,
-}
-
-struct Hop {
-    url: reqwest::Url,
-    method: HttpMethod,
-    body: Option<String>,
-    forward_user_headers: bool,
 }
 
 impl EgressClient {
     pub fn new() -> Result<Self, EgressError> {
-        let public_only = base_builder()
-            .dns_resolver(Arc::new(PublicAddressResolver))
-            .no_proxy()
-            .build()
-            .map_err(|e| EgressError::Network(e.without_url().to_string()))?;
-        let local_allowed = base_builder()
-            .build()
-            .map_err(|e| EgressError::Network(e.without_url().to_string()))?;
+        let build = |allow_local| {
+            Gateway::user_directed(allow_local)
+                .map_err(|error| EgressError::Network(error.to_string()))
+        };
         Ok(Self {
-            public_only,
-            local_allowed,
+            public_only: build(false)?,
+            local_allowed: build(true)?,
             concurrency: Semaphore::new(MAX_CONCURRENT_REQUESTS),
         })
     }
@@ -95,165 +84,116 @@ impl EgressClient {
             .await
             .map_err(|_| EgressError::Network("egress pool closed".to_owned()))?;
 
-        let mut url = reqwest::Url::parse(&req.url).map_err(|_| EgressError::InvalidUrl)?;
-        if !req.query_params.is_empty() {
-            let mut pairs = url.query_pairs_mut();
-            for (k, v) in &req.query_params {
-                pairs.append_pair(k, v);
-            }
+        let target = ResolvedTarget::absolute(&req.url).map_err(invalid_request_error)?;
+        if !ALLOWED_SCHEMES.contains(&target.scheme()) {
+            return Err(EgressError::SchemeNotAllowed);
         }
-
-        let mut hop = Hop {
-            url,
-            method: req.method,
-            body: req.body.clone(),
-            forward_user_headers: true,
-        };
-        let mut hops = 0u32;
-
-        loop {
-            validate_url(&hop.url, req.allow_local)?;
-            let response = self.dispatch(&hop, &req).await?;
-            let status = response.status();
-
-            if req.follow_redirects && status.is_redirection() {
-                if hops >= MAX_REDIRECT_HOPS {
-                    return Err(EgressError::TooManyRedirects);
-                }
-                let location = response
-                    .headers()
-                    .get(reqwest::header::LOCATION)
-                    .and_then(|v| v.to_str().ok());
-                let Some(location) = location else {
-                    return read_response(response).await;
-                };
-                let next = hop
-                    .url
-                    .join(location)
-                    .map_err(|_| EgressError::InvalidUrl)?;
-                if matches!(
-                    status,
-                    StatusCode::MOVED_PERMANENTLY | StatusCode::FOUND | StatusCode::SEE_OTHER
-                ) {
-                    hop.method = HttpMethod::Get;
-                    hop.body = None;
-                }
-                if next.origin() != hop.url.origin() {
-                    hop.forward_user_headers = false;
-                }
-                hop.url = next;
-                hops += 1;
-                continue;
-            }
-
-            return read_response(response).await;
-        }
-    }
-
-    async fn dispatch(
-        &self,
-        hop: &Hop,
-        req: &EgressRequest,
-    ) -> Result<reqwest::Response, EgressError> {
-        let client = if req.allow_local {
+        let gateway = if req.allow_local {
             &self.local_allowed
         } else {
             &self.public_only
         };
-        let mut builder = client
-            .request(to_reqwest_method(hop.method), hop.url.clone())
-            .timeout(req.timeout);
-        if hop.forward_user_headers {
-            for (k, v) in &req.headers {
-                builder = builder.header(k, v);
-            }
-        }
-        if let Some(content_type) = &req.content_type {
-            builder = builder.header(reqwest::header::CONTENT_TYPE, content_type);
-        }
-        if let Some(body) = &hop.body {
-            builder = builder.body(body.clone());
-        }
-        builder.send().await.map_err(map_send_error)
+        let response = gateway
+            .send(gateway_request(req))
+            .await
+            .map_err(failure_error)?;
+        Ok(egress_response(response))
     }
 }
 
-fn base_builder() -> reqwest::ClientBuilder {
-    reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .user_agent(concat!("forge/", env!("CARGO_PKG_VERSION")))
+fn gateway_request(req: EgressRequest) -> GatewayRequest {
+    let EgressRequest {
+        method,
+        url,
+        mut headers,
+        query_params,
+        body,
+        content_type,
+        timeout,
+        follow_redirects,
+        allow_local: _,
+    } = req;
+    let mut request = GatewayRequest::absolute(gateway_method(method), url)
+        .any_status_as_data()
+        .truncate_body_at_cap()
+        .body_cap(MAX_RESPONSE_BYTES)
+        .total_budget(timeout)
+        .follow_redirects(follow_redirects);
+    if let Some(body) = body {
+        let content_type = content_type.or_else(|| take_content_type(&mut headers));
+        request = request.body(match content_type {
+            Some(content_type) => RequestBody::raw(content_type, body),
+            None => RequestBody::untyped(body),
+        });
+    } else if let Some(content_type) = content_type {
+        headers.insert(CONTENT_TYPE_HEADER.to_owned(), content_type);
+    }
+    for (name, value) in headers {
+        request = request.user_header(name, value);
+    }
+    for (name, value) in query_params {
+        request = request.query(name, value);
+    }
+    request
 }
 
-fn validate_url(url: &reqwest::Url, allow_local: bool) -> Result<(), EgressError> {
-    match url.scheme() {
-        "http" | "https" => {}
-        _ => return Err(EgressError::SchemeNotAllowed),
-    }
-    let host = url.host_str().ok_or(EgressError::InvalidUrl)?;
-    if allow_local {
-        return Ok(());
-    }
-    ensure_public_ip_literal(host).map_err(rejection_error)
+fn take_content_type(headers: &mut BTreeMap<String, String>) -> Option<String> {
+    let name = headers
+        .keys()
+        .find(|name| name.eq_ignore_ascii_case(CONTENT_TYPE_HEADER))
+        .cloned()?;
+    headers.remove(&name)
 }
 
-fn rejection_error(rejection: HostRejection) -> EgressError {
-    match rejection {
-        HostRejection::PrivateOrSpecial => EgressError::BlockedAddress,
-        HostRejection::Unresolvable => EgressError::UnresolvableHost,
-    }
-}
-
-async fn read_response(response: reqwest::Response) -> Result<EgressResponse, EgressError> {
-    let status = response.status().as_u16();
-    let headers = response
-        .headers()
-        .iter()
-        .filter_map(|(name, value)| {
-            value
-                .to_str()
-                .ok()
-                .map(|v| (name.as_str().to_owned(), v.to_owned()))
-        })
-        .collect();
-
-    let mut response = response;
-    let mut buf: Vec<u8> = Vec::new();
-    let mut truncated = false;
-    while let Some(chunk) = response.chunk().await.map_err(map_send_error)? {
-        if buf.len() + chunk.len() > MAX_RESPONSE_BYTES {
-            let remaining = MAX_RESPONSE_BYTES - buf.len();
-            buf.extend_from_slice(&chunk[..remaining]);
-            truncated = true;
-            break;
-        }
-        buf.extend_from_slice(&chunk);
-    }
-
-    Ok(EgressResponse {
-        status,
-        body: String::from_utf8_lossy(&buf).into_owned(),
+fn egress_response(response: GatewayResponse) -> EgressResponse {
+    let headers = response.headers().iter().cloned().collect();
+    EgressResponse {
+        status: response.status(),
+        truncated: response.truncated(),
         headers,
-        truncated,
-    })
-}
-
-fn map_send_error(e: reqwest::Error) -> EgressError {
-    if let Some(rejection) = host_rejection_cause(&e) {
-        rejection_error(rejection)
-    } else if e.is_timeout() {
-        EgressError::Timeout
-    } else {
-        EgressError::Network(e.without_url().to_string())
+        body: String::from_utf8_lossy(response.body()).into_owned(),
     }
 }
 
-fn to_reqwest_method(method: HttpMethod) -> reqwest::Method {
+fn failure_error(failure: GatewayFailure) -> EgressError {
+    match failure {
+        GatewayFailure::InvalidRequest(reason) => invalid_request_error(reason),
+        GatewayFailure::AddressRefused(HostRejection::PrivateOrSpecial) => {
+            EgressError::BlockedAddress
+        }
+        GatewayFailure::AddressRefused(HostRejection::Unresolvable) => {
+            EgressError::UnresolvableHost
+        }
+        GatewayFailure::Transport(transport) => match transport.redirect_refusal() {
+            Some(RedirectRefusal::TooManyHops) => EgressError::TooManyRedirects,
+            Some(RedirectRefusal::UnsupportedScheme) => EgressError::SchemeNotAllowed,
+            Some(RedirectRefusal::MalformedTarget | RedirectRefusal::EmbeddedCredentials) => {
+                EgressError::InvalidUrl
+            }
+            None if transport.kind() == TransportKind::Timeout => EgressError::Timeout,
+            None => EgressError::Network(transport.cause().to_owned()),
+        },
+        other => EgressError::Network(other.to_string()),
+    }
+}
+
+fn invalid_request_error(reason: InvalidRequest) -> EgressError {
+    match reason {
+        InvalidRequest::MalformedUrl | InvalidRequest::EmbeddedCredentials => {
+            EgressError::InvalidUrl
+        }
+        InvalidRequest::UnsupportedScheme => EgressError::SchemeNotAllowed,
+        other => EgressError::Network(other.to_string()),
+    }
+}
+
+fn gateway_method(method: HttpMethod) -> Method {
     match method {
-        HttpMethod::Get => reqwest::Method::GET,
-        HttpMethod::Post => reqwest::Method::POST,
-        HttpMethod::Put => reqwest::Method::PUT,
-        HttpMethod::Patch => reqwest::Method::PATCH,
-        HttpMethod::Delete => reqwest::Method::DELETE,
+        HttpMethod::Get => Method::Get,
+        HttpMethod::Post => Method::Post,
+        HttpMethod::Put => Method::Put,
+        HttpMethod::Patch => Method::Patch,
+        HttpMethod::Delete => Method::Delete,
     }
 }
 

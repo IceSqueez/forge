@@ -20,8 +20,8 @@ pub use address_guard::{
 };
 pub use backoff::Backoff;
 pub use body_read::{
-    BodyProgress, BodySink, BodySource, CappedReadError, StreamReadError, read_capped,
-    read_streaming,
+    BodyProgress, BodySink, BodySource, CappedReadError, StreamReadError, TruncatedBody,
+    read_capped, read_streaming, read_truncated,
 };
 pub use cooldown::{Cooldown, MAX_REMOTE_COOLDOWN};
 pub use dedup::DedupSet;
@@ -29,9 +29,9 @@ pub use gateway::{
     BodyExcerpt, CallClass, Credential, DecodeCategory, EgressKind, ExpectedRefusal,
     FailureContext, FailureObserver, FormBody, Gateway, GatewayBuildError, GatewayFailure,
     GatewayProfile, GatewayRequest, GatewayResponse, InvalidRequest, Method, MultipartBody,
-    RequestBody, RequestEncodeError, ResolvedTarget, ResponseDecodeError, STREAMING_CONNECT_BUDGET,
-    STREAMING_READ_IDLE_BUDGET, Secret, StreamFailure, StreamedResponse, TransportFailure,
-    TransportKind,
+    RedirectRefusal, RequestBody, RequestEncodeError, ResolvedTarget, ResponseDecodeError,
+    STREAMING_CONNECT_BUDGET, STREAMING_READ_IDLE_BUDGET, Secret, StreamFailure, StreamedResponse,
+    TransportFailure, TransportKind,
 };
 pub use header_lookup::HeaderLookup;
 pub use header_value::is_valid_header_value;

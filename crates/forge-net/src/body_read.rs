@@ -66,6 +66,44 @@ pub async fn read_capped<B: BodySource>(
     Ok(body)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TruncatedBody {
+    pub bytes: Vec<u8>,
+    pub truncated: bool,
+}
+
+pub async fn read_truncated<B: BodySource>(
+    mut source: B,
+    cap: u64,
+) -> Result<TruncatedBody, B::Error> {
+    let mut bytes = Vec::with_capacity(preallocation(source.declared_length(), cap));
+    let mut received: u64 = 0;
+    while let Some(chunk) = source.next_chunk().await? {
+        let chunk = chunk.as_ref();
+        if chunk.is_empty() {
+            continue;
+        }
+        match advance(received, chunk, cap) {
+            Some(total) => {
+                received = total;
+                bytes.extend_from_slice(chunk);
+            }
+            None => {
+                let room = usize::try_from(cap.saturating_sub(received)).unwrap_or(chunk.len());
+                bytes.extend_from_slice(chunk.get(..room).unwrap_or(chunk));
+                return Ok(TruncatedBody {
+                    bytes,
+                    truncated: true,
+                });
+            }
+        }
+    }
+    Ok(TruncatedBody {
+        bytes,
+        truncated: false,
+    })
+}
+
 pub async fn read_streaming<B, S, P>(
     mut source: B,
     cap: u64,

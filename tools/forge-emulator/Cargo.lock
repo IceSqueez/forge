@@ -1574,7 +1574,6 @@ dependencies = [
  "open",
  "rand 0.10.2",
  "regex",
- "reqwest",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -1596,7 +1595,6 @@ dependencies = [
  "forge-platform-core",
  "forge-storage",
  "forge-types",
- "reqwest",
  "rhai",
  "serde_json",
  "thiserror 2.0.20",
@@ -3559,7 +3557,6 @@ checksum = "219c5811de6525e5416c7d5d53bb656d3afdbc6c5af816e0802bcfa42dbdc1c3"
 dependencies = [
  "base64 0.22.1",
  "bytes",
- "futures-channel",
  "futures-core",
  "futures-util",
  "http",

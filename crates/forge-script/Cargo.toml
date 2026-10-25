@@ -17,7 +17,6 @@ forge-net = { path = "../forge-net" }
 forge-platform-core = { path = "../forge-platform-core" }
 async-trait = { workspace = true }
 rhai = { workspace = true }
-reqwest = { workspace = true, features = ["blocking"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }

@@ -117,7 +117,7 @@ impl Gateway {
         let status = response.status();
         let headers = collect_headers(&response);
         let body = IdleBoundedBody::new(response, STREAMING_READ_IDLE_BUDGET);
-        if !status.is_success() {
+        if !status.is_success() && !request.any_status_as_data {
             return Err(self.refusal(request, status, &headers, body).await.into());
         }
         let received = read_streaming(body, cap, sink, on_progress, cancel)

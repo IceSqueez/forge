@@ -1,4 +1,5 @@
 use std::fmt;
+use std::time::Duration;
 
 use bytes::Bytes;
 use serde::Serialize;
@@ -10,6 +11,7 @@ use super::expected_refusal::ExpectedRefusal;
 use super::secret::Secret;
 
 const DEFAULT_WEIGHT: u32 = 1;
+const CREDENTIAL_HEADER_NAMES: [&str; 3] = ["authorization", "proxy-authorization", "cookie"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Method {
@@ -146,7 +148,7 @@ pub(crate) enum BodyRepr {
     Json(Bytes),
     Form(FormBody),
     Raw {
-        content_type: String,
+        content_type: Option<String>,
         bytes: Bytes,
     },
     Multipart(MultipartBody),
@@ -168,7 +170,14 @@ impl RequestBody {
 
     pub fn raw(content_type: impl Into<String>, bytes: impl Into<Vec<u8>>) -> Self {
         Self(BodyRepr::Raw {
-            content_type: content_type.into(),
+            content_type: Some(content_type.into()),
+            bytes: Bytes::from(bytes.into()),
+        })
+    }
+
+    pub fn untyped(bytes: impl Into<Vec<u8>>) -> Self {
+        Self(BodyRepr::Raw {
+            content_type: None,
             bytes: Bytes::from(bytes.into()),
         })
     }
@@ -214,6 +223,7 @@ pub struct GatewayRequest {
     pub(crate) target: Target,
     pub(crate) query: Vec<(String, FieldValue)>,
     pub(crate) headers: Vec<(String, String)>,
+    pub(crate) user_headers: Vec<(String, FieldValue)>,
     pub(crate) body: RequestBody,
     pub(crate) weight: u32,
     pub(crate) class: Option<CallClass>,
@@ -225,6 +235,9 @@ pub struct GatewayRequest {
     pub(crate) follow_redirects: bool,
     pub(crate) wait_for_limiter: bool,
     pub(crate) body_cap: Option<u64>,
+    pub(crate) truncate_oversized_body: bool,
+    pub(crate) any_status_as_data: bool,
+    pub(crate) total_budget: Option<Duration>,
 }
 
 impl GatewayRequest {
@@ -262,6 +275,7 @@ impl GatewayRequest {
             target,
             query: Vec::new(),
             headers: Vec::new(),
+            user_headers: Vec::new(),
             body: RequestBody::empty(),
             weight: DEFAULT_WEIGHT,
             class: None,
@@ -273,6 +287,9 @@ impl GatewayRequest {
             follow_redirects: true,
             wait_for_limiter: true,
             body_cap: None,
+            truncate_oversized_body: false,
+            any_status_as_data: false,
+            total_budget: None,
         }
     }
 
@@ -289,6 +306,18 @@ impl GatewayRequest {
 
     pub fn header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.push((name.into(), value.into()));
+        self
+    }
+
+    pub fn user_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        let name = name.into();
+        let value = value.into();
+        let value = if is_credential_header_name(&name) {
+            FieldValue::Secret(Secret::new(value))
+        } else {
+            FieldValue::Plain(value)
+        };
+        self.user_headers.push((name, value));
         self
     }
 
@@ -355,6 +384,21 @@ impl GatewayRequest {
         self
     }
 
+    pub fn truncate_body_at_cap(mut self) -> Self {
+        self.truncate_oversized_body = true;
+        self
+    }
+
+    pub fn any_status_as_data(mut self) -> Self {
+        self.any_status_as_data = true;
+        self
+    }
+
+    pub fn total_budget(mut self, budget: Duration) -> Self {
+        self.total_budget = Some(budget);
+        self
+    }
+
     pub fn follow_redirects(mut self, follow: bool) -> Self {
         self.follow_redirects = follow;
         self
@@ -377,11 +421,17 @@ impl GatewayRequest {
                 Vec::new()
             }
         };
+        let user_headers = self
+            .user_headers
+            .iter()
+            .filter_map(|(_, value)| value.secret())
+            .flat_map(|value| [value, credential_part(value)]);
         self.credential
             .iter()
             .map(Credential::secret)
             .chain(query)
             .chain(form)
+            .chain(user_headers)
             .chain(self.masked.iter().map(Secret::expose))
             .filter(|secret| !secret.is_empty())
             .collect()
@@ -395,10 +445,24 @@ impl fmt::Debug for GatewayRequest {
             .field("label", &self.label)
             .field("query_pairs", &self.query.len())
             .field("headers", &self.headers.len())
+            .field("user_headers", &self.user_headers.len())
             .field("body", &self.body)
             .field("weight", &self.weight)
             .field("class", &self.class)
             .field("credential", &self.credential)
             .finish_non_exhaustive()
     }
+}
+
+fn is_credential_header_name(name: &str) -> bool {
+    CREDENTIAL_HEADER_NAMES
+        .iter()
+        .any(|credential| name.eq_ignore_ascii_case(credential))
+}
+
+fn credential_part(value: &str) -> &str {
+    value
+        .trim()
+        .split_once(char::is_whitespace)
+        .map_or("", |(_, rest)| rest.trim())
 }

@@ -65,7 +65,11 @@ impl GatewayProfile {
     }
 
     pub(crate) const fn attaches_credentials(&self) -> bool {
-        !matches!(self.egress, EgressKind::TrustedAbsolute)
+        matches!(self.egress, EgressKind::PlatformApi)
+    }
+
+    pub(crate) const fn accepts_user_headers(&self) -> bool {
+        matches!(self.egress, EgressKind::UserDirected { .. })
     }
 
     pub(crate) const fn allows_plain_http_to_any_host(&self) -> bool {

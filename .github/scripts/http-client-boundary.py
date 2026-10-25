@@ -20,15 +20,11 @@ import tomllib
 
 LEAF_CRATE = "crates/forge-net"
 
-PHASE_7 = "Phase 7 user-directed egress"
 LOCAL_SERVER = "test dials the forge server bound on loopback"
 LOOPBACK_CALLBACK = "test triggers the OAuth loopback callback listener"
 
-# Production code that may still own a reqwest client. Must stay empty after Phase 7.
-PRODUCTION_EXCEPTIONS = {
-    "crates/forge-runtime/src/egress.rs": PHASE_7,
-    "crates/forge-script/src/http_client.rs": PHASE_7,
-}
+# Production code that may own a reqwest client. Must stay empty.
+PRODUCTION_EXCEPTIONS = {}
 
 # Files whose test code may dial a local server directly. Hits before the
 # file's `#[cfg(test)] mod` block (production code) are still violations.

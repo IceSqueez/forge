@@ -4,11 +4,18 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use forge_net::{
-    HostRejection, PublicAddressResolver, ensure_public_ip_literal, host_rejection_cause,
-    is_loopback_host,
+    CallClass, Gateway, GatewayFailure, GatewayRequest, GatewayResponse, HostRejection, Method,
+    RequestBody, ResolvedTarget, TransportKind, ensure_public_ip_literal, is_loopback_host,
 };
+use tokio::runtime::Handle;
 
 use crate::http_config::ScriptHttpConfig;
+
+const HTTPS_SCHEME: &str = "https";
+const HTTP_SCHEME: &str = "http";
+const WILDCARD_PREFIX: &str = "*.";
+const SCRIPT_CALL_CLASS: CallClass = CallClass::Media;
+const NO_RUNTIME: &str = "no async runtime is available to run the request";
 
 #[derive(Debug, thiserror::Error)]
 pub enum HttpError {
@@ -37,37 +44,22 @@ pub struct HttpResponse {
 
 pub struct ScriptHttpClient {
     config: Arc<ScriptHttpConfig>,
-    client: reqwest::blocking::Client,
+    gateway: Gateway,
 }
 
 impl ScriptHttpClient {
     pub fn new(config: Arc<ScriptHttpConfig>) -> Result<Self, HttpError> {
-        let builder = reqwest::blocking::Client::builder()
-            .https_only(!config.allow_local)
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(Duration::from_millis(config.timeout_ms as u64))
-            .user_agent(concat!("forge/", env!("CARGO_PKG_VERSION")));
-        let builder = if config.allow_local {
-            builder
-        } else {
-            builder
-                .dns_resolver(Arc::new(PublicAddressResolver))
-                .no_proxy()
-        };
-        let client = builder
-            .build()
-            .map_err(|e| HttpError::Network(e.without_url().to_string()))?;
-        Ok(Self { config, client })
+        let gateway = Gateway::user_directed(config.allow_local)
+            .map_err(|error| HttpError::Network(error.to_string()))?;
+        Ok(Self { config, gateway })
     }
 
     pub fn get(&self, url_str: &str, counter: &Arc<AtomicU32>) -> Result<HttpResponse, HttpError> {
-        let url = reqwest::Url::parse(url_str).map_err(|e| HttpError::Network(e.to_string()))?;
-        self.validate(&url, counter)?;
-        counter.fetch_add(1, Ordering::SeqCst);
-        let url_normalized = normalize_url(&url);
-        let start = Instant::now();
-        let response = self.client.get(url).send().map_err(map_send_error)?;
-        self.build_response(response, start, url_normalized)
+        self.call(
+            GatewayRequest::absolute(Method::Get, url_str),
+            url_str,
+            counter,
+        )
     }
 
     pub fn post(
@@ -76,107 +68,103 @@ impl ScriptHttpClient {
         body: &str,
         counter: &Arc<AtomicU32>,
     ) -> Result<HttpResponse, HttpError> {
-        let url = reqwest::Url::parse(url_str).map_err(|e| HttpError::Network(e.to_string()))?;
-        self.validate(&url, counter)?;
-        counter.fetch_add(1, Ordering::SeqCst);
-        let url_normalized = normalize_url(&url);
-        let start = Instant::now();
-        let response = self
-            .client
-            .post(url)
-            .body(body.to_string())
-            .send()
-            .map_err(map_send_error)?;
-        self.build_response(response, start, url_normalized)
+        let request = GatewayRequest::absolute(Method::Post, url_str)
+            .body(RequestBody::untyped(body.as_bytes().to_vec()));
+        self.call(request, url_str, counter)
     }
 
-    fn validate(&self, url: &reqwest::Url, counter: &Arc<AtomicU32>) -> Result<(), HttpError> {
+    fn call(
+        &self,
+        request: GatewayRequest,
+        url_str: &str,
+        counter: &Arc<AtomicU32>,
+    ) -> Result<HttpResponse, HttpError> {
+        let target = self.validate(url_str, counter)?;
+        let runtime =
+            Handle::try_current().map_err(|_| HttpError::Network(NO_RUNTIME.to_owned()))?;
+        counter.fetch_add(1, Ordering::SeqCst);
+        let request = request
+            .class(SCRIPT_CALL_CLASS)
+            .any_status_as_data()
+            .truncate_body_at_cap()
+            .body_cap(u64::from(self.config.max_response_bytes))
+            .total_budget(Duration::from_millis(u64::from(self.config.timeout_ms)))
+            .follow_redirects(false);
+        let start = Instant::now();
+        let response = runtime
+            .block_on(self.gateway.send(request))
+            .map_err(failure_error)?;
+        Ok(script_response(response, start, normalize_url(&target)))
+    }
+
+    fn validate(
+        &self,
+        url_str: &str,
+        counter: &Arc<AtomicU32>,
+    ) -> Result<ResolvedTarget, HttpError> {
         if counter.load(Ordering::SeqCst) >= self.config.max_calls_per_script {
             return Err(HttpError::RateLimitExceeded);
         }
 
-        let host_str = url.host_str().unwrap_or_default();
-        let scheme_permitted = match url.scheme() {
-            "https" => true,
-            "http" => self.config.allow_local && is_loopback_host(host_str),
+        let target = ResolvedTarget::absolute(url_str)
+            .map_err(|reason| HttpError::Network(reason.to_string()))?;
+        let host = target.host();
+        let scheme_permitted = match target.scheme() {
+            HTTPS_SCHEME => true,
+            HTTP_SCHEME => self.config.allow_local && is_loopback_host(host),
             _ => false,
         };
         if !scheme_permitted {
             return Err(HttpError::HttpsRequired);
         }
 
-        if !domain_allowed(host_str, &self.config.allowed_domains) {
+        if !domain_allowed(host, &self.config.allowed_domains) {
             return Err(HttpError::DomainNotAllowed);
         }
 
         if !self.config.allow_local {
-            ensure_public_ip_literal(host_str).map_err(rejection_error)?;
+            ensure_public_ip_literal(host).map_err(rejection_error)?;
         }
 
-        Ok(())
-    }
-
-    fn build_response(
-        &self,
-        response: reqwest::blocking::Response,
-        start: Instant,
-        url_normalized: String,
-    ) -> Result<HttpResponse, HttpError> {
-        let status = response.status().as_u16();
-        let headers: BTreeMap<String, String> = response
-            .headers()
-            .iter()
-            .filter_map(|(name, value)| {
-                value
-                    .to_str()
-                    .ok()
-                    .map(|v| (name.as_str().to_string(), v.to_string()))
-            })
-            .collect();
-
-        use std::io::Read;
-        let max = self.config.max_response_bytes as usize;
-        let cap = (max as u64).saturating_add(1);
-        let mut buf = Vec::new();
-        response
-            .take(cap)
-            .read_to_end(&mut buf)
-            .map_err(|e| HttpError::Network(e.to_string()))?;
-
-        let truncated = buf.len() > max;
-        if truncated {
-            buf.truncate(max);
-        }
-        let body = String::from_utf8_lossy(&buf).into_owned();
-
-        Ok(HttpResponse {
-            status,
-            body,
-            truncated,
-            headers,
-            duration_ms: start.elapsed().as_millis() as u64,
-            url_normalized,
-        })
+        Ok(target)
     }
 }
 
-fn map_send_error(e: reqwest::Error) -> HttpError {
-    if let Some(rejection) = host_rejection_cause(&e) {
-        rejection_error(rejection)
-    } else if e.is_timeout() {
-        HttpError::Timeout
-    } else {
-        HttpError::Network(e.without_url().to_string())
+fn script_response(
+    response: GatewayResponse,
+    start: Instant,
+    url_normalized: String,
+) -> HttpResponse {
+    HttpResponse {
+        status: response.status(),
+        truncated: response.truncated(),
+        headers: response.headers().iter().cloned().collect(),
+        body: String::from_utf8_lossy(response.body()).into_owned(),
+        duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+        url_normalized,
     }
 }
 
-fn normalize_url(url: &reqwest::Url) -> String {
-    format!(
-        "{}://{}{}",
-        url.scheme(),
-        url.host_str().unwrap_or("?"),
-        url.path()
-    )
+fn rejection_error(rejection: HostRejection) -> HttpError {
+    match rejection {
+        HostRejection::PrivateOrSpecial => HttpError::PrivateAddress,
+        HostRejection::Unresolvable => HttpError::Network(rejection.to_string()),
+    }
+}
+
+fn failure_error(failure: GatewayFailure) -> HttpError {
+    match failure {
+        GatewayFailure::AddressRefused(rejection) => rejection_error(rejection),
+        GatewayFailure::Transport(transport) if transport.kind() == TransportKind::Timeout => {
+            HttpError::Timeout
+        }
+        GatewayFailure::Transport(transport) => HttpError::Network(transport.cause().to_owned()),
+        other => HttpError::Network(other.to_string()),
+    }
+}
+
+fn normalize_url(target: &ResolvedTarget) -> String {
+    format!("{}://{}{}", target.scheme(), target.host(), target.path())
 }
 
 fn domain_allowed(host: &str, allowed: &[String]) -> bool {
@@ -186,19 +174,12 @@ fn domain_allowed(host: &str, allowed: &[String]) -> bool {
     let host_lower = host.to_lowercase();
     allowed.iter().any(|d| {
         let d_lower = d.to_lowercase();
-        if let Some(suffix) = d_lower.strip_prefix("*.") {
+        if let Some(suffix) = d_lower.strip_prefix(WILDCARD_PREFIX) {
             host_lower == suffix || host_lower.ends_with(&format!(".{suffix}"))
         } else {
             d_lower == host_lower
         }
     })
-}
-
-fn rejection_error(rejection: HostRejection) -> HttpError {
-    match rejection {
-        HostRejection::PrivateOrSpecial => HttpError::PrivateAddress,
-        HostRejection::Unresolvable => HttpError::Network(rejection.to_string()),
-    }
 }
 
 #[cfg(test)]

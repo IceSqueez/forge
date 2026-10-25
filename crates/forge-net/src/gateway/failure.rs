@@ -43,11 +43,30 @@ impl fmt::Display for TransportKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RedirectRefusal {
+    TooManyHops,
+    MalformedTarget,
+    UnsupportedScheme,
+    EmbeddedCredentials,
+}
+
+impl RedirectRefusal {
+    const fn cause(self) -> &'static str {
+        match self {
+            Self::TooManyHops => "too many redirects",
+            Self::MalformedTarget => "redirect target is not a valid URL",
+            Self::UnsupportedScheme | Self::EmbeddedCredentials => "redirect target is not allowed",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("network request failed ({kind}): {cause}")]
 pub struct TransportFailure {
     kind: TransportKind,
     cause: String,
+    redirect_refusal: Option<RedirectRefusal>,
 }
 
 impl TransportFailure {
@@ -55,6 +74,15 @@ impl TransportFailure {
         Self {
             kind,
             cause: cause.into(),
+            redirect_refusal: None,
+        }
+    }
+
+    pub(crate) fn redirect_refused(refusal: RedirectRefusal) -> Self {
+        Self {
+            kind: TransportKind::Redirect,
+            cause: refusal.cause().to_owned(),
+            redirect_refusal: Some(refusal),
         }
     }
 
@@ -77,6 +105,10 @@ impl TransportFailure {
 
     pub fn cause(&self) -> &str {
         &self.cause
+    }
+
+    pub fn redirect_refusal(&self) -> Option<RedirectRefusal> {
+        self.redirect_refusal
     }
 }
 
@@ -115,6 +147,8 @@ pub enum InvalidRequest {
     QueryInPath,
     #[error("credential headers must be attached as a credential")]
     SensitiveHeader,
+    #[error("user-supplied headers are not accepted by this gateway profile")]
+    UserHeaderNotAllowed,
     #[error("request header name or value is invalid")]
     InvalidHeader,
     #[error("request content type is invalid")]

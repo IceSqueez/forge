@@ -41,14 +41,21 @@ pub struct GatewayResponse {
     status: u16,
     headers: Vec<(String, String)>,
     body: Vec<u8>,
+    truncated: bool,
 }
 
 impl GatewayResponse {
-    pub(crate) fn new(status: u16, headers: Vec<(String, String)>, body: Vec<u8>) -> Self {
+    pub(crate) fn new(
+        status: u16,
+        headers: Vec<(String, String)>,
+        body: Vec<u8>,
+        truncated: bool,
+    ) -> Self {
         Self {
             status,
             headers,
             body,
+            truncated,
         }
     }
 
@@ -62,6 +69,14 @@ impl GatewayResponse {
 
     pub fn into_body(self) -> Vec<u8> {
         self.body
+    }
+
+    pub fn truncated(&self) -> bool {
+        self.truncated
+    }
+
+    pub fn headers(&self) -> &[(String, String)] {
+        &self.headers
     }
 
     pub fn json<T: DeserializeOwned>(&self) -> Result<T, ResponseDecodeError> {
@@ -81,6 +96,7 @@ impl fmt::Debug for GatewayResponse {
             .field("status", &self.status)
             .field("headers", &self.headers.len())
             .field("body_bytes", &self.body.len())
+            .field("truncated", &self.truncated)
             .finish()
     }
 }

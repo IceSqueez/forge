@@ -11,6 +11,7 @@ mod response_body;
 mod secret;
 mod streaming;
 mod target;
+mod user_directed;
 
 use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -25,7 +26,9 @@ use reqwest::{StatusCode, Url};
 
 pub use call_class::CallClass;
 pub use expected_refusal::ExpectedRefusal;
-pub use failure::{BodyExcerpt, GatewayFailure, InvalidRequest, TransportFailure, TransportKind};
+pub use failure::{
+    BodyExcerpt, GatewayFailure, InvalidRequest, RedirectRefusal, TransportFailure, TransportKind,
+};
 pub use observer::{FailureContext, FailureObserver};
 pub use profile::{EgressKind, GatewayProfile};
 pub use request::{
@@ -40,10 +43,10 @@ pub use streaming::{
 pub use target::GatewayBuildError;
 
 use crate::address_guard::{PublicAddressResolver, host_rejection_cause};
-use crate::body_read::{BodySource, CappedReadError, read_capped};
+use crate::body_read::{BodySource, CappedReadError, TruncatedBody, read_capped, read_truncated};
 use crate::rate_limit::{RateLimitUsage, RateLimiter, acquire_or_wait, acquire_without_wait};
 use classify::{ERROR_BODY_READ_CAP, excerpt_of, status_failure, throttle_for};
-use request::{BodyRepr, PartContent, Target};
+use request::{BodyRepr, FieldValue, PartContent, Target};
 use response_body::ResponseBody;
 
 const USER_AGENT: &str = concat!("forge/", env!("CARGO_PKG_VERSION"));
@@ -51,9 +54,8 @@ const JSON_CONTENT_TYPE: &str = "application/json";
 const BEARER_PREFIX: &str = "Bearer ";
 const MAX_REDIRECT_HOPS: usize = 10;
 const TOTAL_BUDGET_ELAPSED: &str = "total time budget elapsed";
-const TOO_MANY_REDIRECTS: &str = "too many redirects";
-const REDIRECT_TARGET_MALFORMED: &str = "redirect target is not a valid URL";
-const REDIRECT_TARGET_DISALLOWED: &str = "redirect target is not allowed";
+const HTTP_SCHEME: &str = "http";
+const HTTPS_SCHEME: &str = "https";
 const HEADERS_IDLE_ELAPSED: &str = "no response within the read-idle time budget";
 
 #[derive(Clone)]
@@ -184,7 +186,8 @@ impl Gateway {
         let first = self.first_hop(request)?;
         let first_builder = self.build_hop(client, request, &first)?;
         self.acquire_budget(request).await?;
-        tokio::time::timeout(class.total_budget(), async {
+        let budget = request.total_budget.unwrap_or(class.total_budget());
+        tokio::time::timeout(budget, async {
             let response = self
                 .follow(client, request, first, first_builder, None)
                 .await?;
@@ -247,7 +250,7 @@ impl Gateway {
             };
             followed += 1;
             if followed > MAX_REDIRECT_HOPS {
-                return Err(redirect_refused(TOO_MANY_REDIRECTS));
+                return Err(redirect_refused(RedirectRefusal::TooManyHops));
             }
             builder = self.build_hop(client, request, &next)?;
             hop = next;
@@ -262,17 +265,36 @@ impl Gateway {
     ) -> Result<GatewayResponse, GatewayFailure> {
         let status = response.status();
         let headers = collect_headers(&response);
-        if status.is_success() {
+        if status.is_success() || request.any_status_as_data {
             let effective_cap = request
                 .body_cap
                 .map_or(class.body_cap(), |cap| cap.min(class.body_cap()));
-            let body = read_capped(ResponseBody::new(response), effective_cap)
-                .await
-                .map_err(|error| match error {
-                    CappedReadError::TooLarge { cap } => GatewayFailure::ResponseTooLarge { cap },
-                    CappedReadError::Source(error) => send_failure(error),
-                })?;
-            return Ok(GatewayResponse::new(status.as_u16(), headers, body));
+            let body = ResponseBody::new(response);
+            let TruncatedBody { bytes, truncated } = if request.truncate_oversized_body {
+                read_truncated(body, effective_cap)
+                    .await
+                    .map_err(send_failure)?
+            } else {
+                let bytes =
+                    read_capped(body, effective_cap)
+                        .await
+                        .map_err(|error| match error {
+                            CappedReadError::TooLarge { cap } => {
+                                GatewayFailure::ResponseTooLarge { cap }
+                            }
+                            CappedReadError::Source(error) => send_failure(error),
+                        })?;
+                TruncatedBody {
+                    bytes,
+                    truncated: false,
+                }
+            };
+            return Ok(GatewayResponse::new(
+                status.as_u16(),
+                headers,
+                bytes,
+                truncated,
+            ));
         }
         Err(self
             .refusal(request, status, &headers, ResponseBody::new(response))
@@ -357,13 +379,19 @@ impl Gateway {
         let url = hop
             .url
             .join(location)
-            .map_err(|_| redirect_refused(REDIRECT_TARGET_MALFORMED))?;
+            .map_err(|_| redirect_refused(RedirectRefusal::MalformedTarget))?;
+        if !matches!(url.scheme(), HTTP_SCHEME | HTTPS_SCHEME) {
+            return Err(redirect_refused(RedirectRefusal::UnsupportedScheme));
+        }
         if !url.username().is_empty() || url.password().is_some() {
-            return Err(redirect_refused(REDIRECT_TARGET_DISALLOWED));
+            return Err(redirect_refused(RedirectRefusal::EmbeddedCredentials));
         }
         target::check_hop(&url, &self.inner.profile).map_err(|failure| match failure {
             GatewayFailure::AddressRefused(rejection) => GatewayFailure::AddressRefused(rejection),
-            _ => redirect_refused(REDIRECT_TARGET_DISALLOWED),
+            GatewayFailure::InvalidRequest(InvalidRequest::MalformedUrl) => {
+                redirect_refused(RedirectRefusal::MalformedTarget)
+            }
+            _ => redirect_refused(RedirectRefusal::UnsupportedScheme),
         })?;
         let same_origin = url.origin() == hop.url.origin();
         Ok(Some(Hop {
@@ -388,6 +416,9 @@ impl Gateway {
         if request.credential.is_some() && !self.inner.profile.attaches_credentials() {
             return Err(invalid(InvalidRequest::CredentialNotAllowed));
         }
+        if !request.user_headers.is_empty() && !self.inner.profile.accepts_user_headers() {
+            return Err(invalid(InvalidRequest::UserHeaderNotAllowed));
+        }
         let mut builder = client.request(reqwest_method(hop.method), hop.url.clone());
         if hop.apply_query && !request.query.is_empty() {
             let pairs: Vec<(&str, &str)> = request
@@ -404,6 +435,10 @@ impl Gateway {
             let mut headers = HeaderMap::new();
             for (name, value) in &request.headers {
                 let (name, value) = plain_header(name, value)?;
+                headers.append(name, value);
+            }
+            for (name, value) in &request.user_headers {
+                let (name, value) = user_header(name, value)?;
                 headers.append(name, value);
             }
             if let Some(credential) = &request.credential {
@@ -447,8 +482,8 @@ fn send_failure(error: reqwest::Error) -> GatewayFailure {
     }
 }
 
-fn redirect_refused(cause: &str) -> GatewayFailure {
-    GatewayFailure::Transport(TransportFailure::new(TransportKind::Redirect, cause))
+fn redirect_refused(refusal: RedirectRefusal) -> GatewayFailure {
+    GatewayFailure::Transport(TransportFailure::redirect_refused(refusal))
 }
 
 fn collect_headers(response: &reqwest::Response) -> Vec<(String, String)> {
@@ -486,6 +521,18 @@ fn plain_header(name: &str, value: &str) -> Result<(HeaderName, HeaderValue), Ga
     }
     let value = HeaderValue::from_str(value).map_err(|_| invalid(InvalidRequest::InvalidHeader))?;
     Ok((name, value))
+}
+
+fn user_header(
+    name: &str,
+    value: &FieldValue,
+) -> Result<(HeaderName, HeaderValue), GatewayFailure> {
+    let name = HeaderName::from_bytes(name.as_bytes())
+        .map_err(|_| invalid(InvalidRequest::InvalidHeader))?;
+    let mut header = HeaderValue::from_str(value.as_str())
+        .map_err(|_| invalid(InvalidRequest::InvalidHeader))?;
+    header.set_sensitive(value.secret().is_some());
+    Ok((name, header))
 }
 
 fn credential_header(credential: &Credential) -> Result<(HeaderName, HeaderValue), GatewayFailure> {
@@ -530,7 +577,7 @@ fn attach_body(
             builder.form(&pairs)
         }
         BodyRepr::Raw {
-            content_type,
+            content_type: Some(content_type),
             bytes,
         } => builder
             .header(
@@ -539,6 +586,10 @@ fn attach_body(
                     .map_err(|_| invalid(InvalidRequest::InvalidContentType))?,
             )
             .body(bytes.clone()),
+        BodyRepr::Raw {
+            content_type: None,
+            bytes,
+        } => builder.body(bytes.clone()),
         BodyRepr::Multipart(multipart) => builder.multipart(multipart_form(multipart)?),
     })
 }

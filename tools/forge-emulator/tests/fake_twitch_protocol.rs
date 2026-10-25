@@ -557,6 +557,60 @@ async fn seeded_goals_are_served_only_to_their_broadcaster() {
 }
 
 #[tokio::test]
+async fn shield_mode_status_reads_inactive_for_the_broadcaster_only() {
+    let fake = start().await;
+    let client = reqwest::Client::new();
+    let owner = TwitchAccount::default().user_id;
+    let never_activated = json!({ "data": [{
+        "is_active": false,
+        "moderator_id": "",
+        "moderator_name": "",
+        "moderator_login": "",
+        "last_activated_at": "",
+    }] });
+    let cases = [
+        (
+            format!("?broadcaster_id={owner}&moderator_id={owner}"),
+            reqwest::StatusCode::OK,
+        ),
+        (
+            format!("?moderator_id={owner}"),
+            reqwest::StatusCode::BAD_REQUEST,
+        ),
+        (
+            format!("?broadcaster_id={owner}&moderator_id=999"),
+            reqwest::StatusCode::UNAUTHORIZED,
+        ),
+        (
+            format!("?broadcaster_id={owner}"),
+            reqwest::StatusCode::UNAUTHORIZED,
+        ),
+        (
+            format!("?broadcaster_id=999&moderator_id={owner}"),
+            reqwest::StatusCode::FORBIDDEN,
+        ),
+    ];
+
+    for (query, expected_status) in &cases {
+        let url = format!(
+            "{}/helix/moderation/shield_mode{query}",
+            fake.api_base_url()
+        );
+        let response = authorized(&client, reqwest::Method::GET, url)
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        let body: Value = response.json().await.unwrap();
+        assert_eq!(status, *expected_status, "query {query:?}");
+        if status == reqwest::StatusCode::OK {
+            assert_eq!(body, never_activated, "query {query:?}");
+        }
+    }
+    assert_eq!(fake.ledger().unexpected_requests().count(), 0);
+}
+
+#[tokio::test]
 async fn a_tapped_fake_streams_helix_requests_to_the_tap_and_keeps_none() {
     let fake = start().await;
     let mut tap = fake.tap_requests();

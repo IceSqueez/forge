@@ -20,6 +20,11 @@ const GOAL_CREATED_AT: &str = "2026-10-01T12:00:00Z";
 const MISSING_BROADCASTER_ID: &str = "Missing required parameter broadcaster_id";
 const FOREIGN_BROADCASTER_ID: &str =
     "The ID in broadcaster_id must match the user ID found in the request's OAuth token.";
+const SHIELD_MISSING_BROADCASTER_ID: &str = "The broadcaster_id query parameter is required.";
+const SHIELD_FOREIGN_MODERATOR_ID: &str =
+    "The ID in moderator_id must match the user ID in the user access token.";
+const SHIELD_NOT_A_MODERATOR: &str =
+    "The user in moderator_id is not one of the broadcaster's moderators.";
 
 #[derive(Debug, Clone, Copy)]
 enum Route {
@@ -38,6 +43,7 @@ enum Route {
     DeleteReward,
     BannedUsers,
     Unban,
+    ShieldModeStatus,
 }
 
 impl Route {
@@ -58,6 +64,7 @@ impl Route {
             ("DELETE", CUSTOM_REWARDS) => Self::DeleteReward,
             ("GET", "/helix/moderation/banned") => Self::BannedUsers,
             ("DELETE", "/helix/moderation/bans") => Self::Unban,
+            ("GET", "/helix/moderation/shield_mode") => Self::ShieldModeStatus,
             _ => return None,
         };
         Some(route)
@@ -209,6 +216,7 @@ fn serve_plain(
         Route::ChannelFollowers => channel_followers(inner, config, query),
         Route::SendChatMessage => send_chat_message(body),
         Route::SendWhisper => send_whisper(config, query, body),
+        Route::ShieldModeStatus => shield_mode_status(config, query),
         Route::ListRewards
         | Route::CreateReward
         | Route::UpdateReward
@@ -424,4 +432,34 @@ fn send_whisper(
         );
     }
     (StatusCode::NO_CONTENT, Value::Null)
+}
+
+fn shield_mode_status(
+    config: &FakeTwitchConfig,
+    query: &[(String, String)],
+) -> (StatusCode, Value) {
+    let param = |key: &str| {
+        query
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.as_str())
+            .filter(|value| !value.is_empty())
+    };
+    let Some(broadcaster_id) = param("broadcaster_id") else {
+        return error_body(StatusCode::BAD_REQUEST, SHIELD_MISSING_BROADCASTER_ID);
+    };
+    if param("moderator_id") != Some(config.broadcaster_user_id.as_str()) {
+        return error_body(StatusCode::UNAUTHORIZED, SHIELD_FOREIGN_MODERATOR_ID);
+    }
+    if broadcaster_id != config.broadcaster_user_id {
+        return error_body(StatusCode::FORBIDDEN, SHIELD_NOT_A_MODERATOR);
+    }
+    let status = json!({
+        "is_active": false,
+        "moderator_id": "",
+        "moderator_name": "",
+        "moderator_login": "",
+        "last_activated_at": "",
+    });
+    (StatusCode::OK, json!({ "data": [status] }))
 }

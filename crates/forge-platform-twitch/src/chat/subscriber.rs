@@ -9,6 +9,11 @@ use std::sync::Arc;
 use thiserror::Error;
 use tracing::{debug, warn};
 
+mod retry;
+
+use retry::RetryingSettle;
+pub(crate) use retry::{TopicRetries, TopicRetryRun};
+
 const EVENTSUB_PATH: &str = "/helix/eventsub/subscriptions";
 const SUBSCRIBE_CONCURRENCY: usize = 10;
 const UNREADABLE_RESPONSE: &str = "unreadable response";
@@ -25,20 +30,23 @@ enum TopicOutcome {
     Active,
     AlreadyExists,
     Failed,
+    Retryable,
     ScopeRejected,
     Unauthorized,
 }
 
-#[derive(Default)]
 pub(crate) struct SubscribePass {
     active: usize,
-    already_exists: usize,
-    failed: usize,
+    retries: TopicRetries,
 }
 
 impl SubscribePass {
     pub(crate) fn any_live(&self) -> bool {
         self.active > 0
+    }
+
+    pub(crate) fn into_retries(self) -> TopicRetries {
+        self.retries
     }
 }
 
@@ -79,12 +87,15 @@ fn condition_moderator(broadcaster_id: &str, user_id: &str) -> serde_json::Value
     })
 }
 
+const RAID_TARGET_FIELD: &str = "to_broadcaster_user_id";
+const RAID_SOURCE_FIELD: &str = "from_broadcaster_user_id";
+
 fn condition_raid(broadcaster_id: &str, _user_id: &str) -> serde_json::Value {
-    serde_json::json!({ "to_broadcaster_user_id": broadcaster_id })
+    serde_json::json!({ RAID_TARGET_FIELD: broadcaster_id })
 }
 
 fn condition_raid_sent(broadcaster_id: &str, _user_id: &str) -> serde_json::Value {
-    serde_json::json!({ "from_broadcaster_user_id": broadcaster_id })
+    serde_json::json!({ RAID_SOURCE_FIELD: broadcaster_id })
 }
 
 fn condition_user(_broadcaster_id: &str, user_id: &str) -> serde_json::Value {
@@ -92,18 +103,16 @@ fn condition_user(_broadcaster_id: &str, user_id: &str) -> serde_json::Value {
 }
 
 fn display_kind(topic: &TopicSpec) -> String {
-    if std::ptr::fn_addr_eq(
-        topic.condition_fn,
-        condition_raid as fn(&str, &str) -> serde_json::Value,
-    ) {
-        format!("{} (incoming)", topic.kind)
-    } else if std::ptr::fn_addr_eq(
-        topic.condition_fn,
-        condition_raid_sent as fn(&str, &str) -> serde_json::Value,
-    ) {
-        format!("{} (outgoing)", topic.kind)
+    subscription_display_kind(topic.kind, &(topic.condition_fn)("", ""))
+}
+
+pub(crate) fn subscription_display_kind(kind: &str, condition: &serde_json::Value) -> String {
+    if condition.get(RAID_TARGET_FIELD).is_some() {
+        format!("{kind} (incoming)")
+    } else if condition.get(RAID_SOURCE_FIELD).is_some() {
+        format!("{kind} (outgoing)")
     } else {
-        topic.kind.to_owned()
+        kind.to_owned()
     }
 }
 
@@ -449,6 +458,35 @@ struct SubscribeCtx {
     bus: Arc<dyn EventPublisher>,
 }
 
+impl SubscribeCtx {
+    fn on_session(&self, session_id: String) -> Self {
+        Self {
+            session_id,
+            ..self.clone()
+        }
+    }
+
+    fn condition(&self, topic: &TopicSpec) -> serde_json::Value {
+        (topic.condition_fn)(&self.broadcaster_id, &self.user_id)
+    }
+
+    async fn create(&self, topic: &TopicSpec) -> Result<serde_json::Value, HelixError> {
+        let body = serde_json::json!({
+            "type": topic.kind,
+            "version": topic.version,
+            "condition": self.condition(topic),
+            "transport": {
+                "method": "websocket",
+                "session_id": self.session_id,
+            }
+        });
+        let request = HelixRequest::new(HelixMethod::Post, EVENTSUB_PATH)
+            .body(body)
+            .expect_status(CONFLICT);
+        self.helix.execute(request).await
+    }
+}
+
 pub(crate) async fn subscribe_all(
     helix: &Arc<dyn HelixTransport>,
     session_id: &str,
@@ -478,13 +516,15 @@ pub(crate) async fn subscribe_all(
         bus: Arc::clone(bus),
     };
 
+    let settle = RetryingSettle::new(Arc::clone(tracker));
     let pending: Vec<_> = TOPICS
         .iter()
         .enumerate()
         .map(|(index, topic)| {
             let ctx = ctx.clone();
             let tracker = Arc::clone(tracker);
-            async move { subscribe_one(ctx, tracker, index, topic).await }
+            let settle = &settle;
+            async move { subscribe_one(ctx, tracker, settle, index, topic).await }
         })
         .collect();
 
@@ -496,14 +536,18 @@ pub(crate) async fn subscribe_all(
 
     let mut outcomes = stream::iter(pending).buffer_unordered(SUBSCRIBE_CONCURRENCY);
 
-    let mut pass = SubscribePass::default();
+    let mut active = 0usize;
+    let mut already_exists = 0usize;
+    let mut failed = 0usize;
     let mut scope_rejected = 0usize;
     let mut unauthorized = 0usize;
+    let mut retryable = 0usize;
     while let Some(outcome) = outcomes.next().await {
         match outcome {
-            TopicOutcome::Active => pass.active += 1,
-            TopicOutcome::AlreadyExists => pass.already_exists += 1,
-            TopicOutcome::Failed => pass.failed += 1,
+            TopicOutcome::Active => active += 1,
+            TopicOutcome::AlreadyExists => already_exists += 1,
+            TopicOutcome::Failed => failed += 1,
+            TopicOutcome::Retryable => retryable += 1,
             TopicOutcome::ScopeRejected => scope_rejected += 1,
             TopicOutcome::Unauthorized => unauthorized += 1,
         }
@@ -511,13 +555,17 @@ pub(crate) async fn subscribe_all(
 
     debug!(
         topics = TOPICS.len(),
-        active = pass.active,
-        already_exists = pass.already_exists,
-        failed = pass.failed,
+        active,
+        already_exists,
+        failed,
+        retryable,
         scope_rejected,
         unauthorized,
         "eventsub subscription pass complete"
     );
+
+    drop(outcomes);
+    let retries = TopicRetries::new(ctx, settle);
 
     if scope_rejected > 0 {
         return Err(SubscribeError::ScopeMissing);
@@ -526,40 +574,41 @@ pub(crate) async fn subscribe_all(
         return Err(SubscribeError::Unauthorized);
     }
 
-    Ok(pass)
+    Ok(SubscribePass { active, retries })
 }
 
 async fn subscribe_one(
     ctx: SubscribeCtx,
     tracker: SubscriptionTracker,
+    settle: &RetryingSettle,
     index: usize,
     topic: &TopicSpec,
 ) -> TopicOutcome {
-    let condition = (topic.condition_fn)(&ctx.broadcaster_id, &ctx.user_id);
-    let body = serde_json::json!({
-        "type": topic.kind,
-        "version": topic.version,
-        "condition": condition,
-        "transport": {
-            "method": "websocket",
-            "session_id": ctx.session_id,
-        }
-    });
-
-    let request = HelixRequest::new(HelixMethod::Post, EVENTSUB_PATH)
-        .body(body)
-        .expect_status(CONFLICT);
-    match ctx.helix.execute(request).await {
-        Ok(response) => record_created(&ctx, &tracker, index, response),
+    let outcome = match ctx.create(topic).await {
+        Ok(response) => record_created(&ctx, &tracker, index, topic, response),
         Err(error) => {
             let (reason, outcome) = classify_failure(&error);
-            if matches!(outcome, TopicOutcome::Failed | TopicOutcome::AlreadyExists) {
-                warn!(kind = topic.kind, error = %error, "eventsub subscription failed; continuing");
-            }
-            set_tracker_status(&tracker, index, SubStatus::Failed(reason));
+            let status = match outcome {
+                TopicOutcome::Retryable => {
+                    debug!(kind = topic.kind, error = %error, "eventsub subscription failed; will retry");
+                    SubStatus::Retrying(reason)
+                }
+                TopicOutcome::Failed | TopicOutcome::AlreadyExists => {
+                    warn!(kind = topic.kind, error = %error, "eventsub subscription failed; continuing");
+                    SubStatus::Failed(reason)
+                }
+                TopicOutcome::Active | TopicOutcome::ScopeRejected | TopicOutcome::Unauthorized => {
+                    SubStatus::Failed(reason)
+                }
+            };
+            set_tracker_status(&tracker, index, status);
             outcome
         }
+    };
+    if matches!(outcome, TopicOutcome::Retryable) {
+        settle.register(index);
     }
+    outcome
 }
 
 fn classify_failure(error: &HelixError) -> (String, TopicOutcome) {
@@ -572,13 +621,17 @@ fn classify_failure(error: &HelixError) -> (String, TopicOutcome) {
             "already exists on another session".to_owned(),
             TopicOutcome::AlreadyExists,
         ),
+        HelixError::Http { status, .. } if error.is_server_error() => {
+            (format!("HTTP {status}"), TopicOutcome::Retryable)
+        }
         HelixError::Http { status, .. } => (format!("HTTP {status}"), TopicOutcome::Failed),
         HelixError::UndecodableResponse(_) => {
-            (UNREADABLE_RESPONSE.to_owned(), TopicOutcome::Failed)
+            (UNREADABLE_RESPONSE.to_owned(), TopicOutcome::Retryable)
         }
-        HelixError::RateLimited | HelixError::Credentials(_) | HelixError::Transport(_) => {
-            (error.to_string(), TopicOutcome::Failed)
+        HelixError::RateLimited | HelixError::Transport(_) => {
+            (error.to_string(), TopicOutcome::Retryable)
         }
+        HelixError::Credentials(_) => (error.to_string(), TopicOutcome::Failed),
     }
 }
 
@@ -586,32 +639,55 @@ fn record_created(
     ctx: &SubscribeCtx,
     tracker: &SubscriptionTracker,
     index: usize,
+    topic: &TopicSpec,
     response: serde_json::Value,
 ) -> TopicOutcome {
     let created = serde_json::from_value::<SubscribeResponse>(response)
         .ok()
         .and_then(|parsed| parsed.data.into_iter().next());
     let Some(sub) = created else {
+        debug!(
+            kind = topic.kind,
+            "eventsub subscription response unreadable; will retry"
+        );
         set_tracker_status(
             tracker,
             index,
-            SubStatus::Failed(UNREADABLE_RESPONSE.to_owned()),
+            SubStatus::Retrying(UNREADABLE_RESPONSE.to_owned()),
         );
-        return TopicOutcome::Failed;
+        return TopicOutcome::Retryable;
     };
+    mark_active(
+        ctx,
+        tracker,
+        index,
+        &sub.subscription_type,
+        Some(sub.id),
+        sub.condition,
+    )
+}
+
+fn mark_active(
+    ctx: &SubscribeCtx,
+    tracker: &SubscriptionTracker,
+    index: usize,
+    subscription_type: &str,
+    subscription_id: Option<String>,
+    condition: serde_json::Value,
+) -> TopicOutcome {
     ctx.bus.publish(Event::new(
         EventSource::Twitch,
         event_kinds::EVENTSUB_SUBSCRIPTION_CREATED,
         serde_json::json!({
-            "type": sub.subscription_type,
-            "subscription_id": sub.id,
-            "condition": sub.condition,
+            "type": subscription_type,
+            "subscription_id": subscription_id,
+            "condition": condition,
         }),
     ));
     let mut records = tracker.write().unwrap_or_else(|p| p.into_inner());
     if let Some(rec) = records.get_mut(index) {
         rec.status = SubStatus::Active;
-        rec.subscription_id = Some(sub.id);
+        rec.subscription_id = subscription_id;
     }
     TopicOutcome::Active
 }

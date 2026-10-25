@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock};
 pub enum SubStatus {
     Pending,
     Active,
+    Retrying(String),
     Failed(String),
 }
 

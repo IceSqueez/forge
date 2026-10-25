@@ -11,6 +11,7 @@ use thiserror::Error;
 use tracing::{debug, warn};
 
 pub(crate) const CLIENT_ID_HEADER: &str = "Client-Id";
+const SERVER_ERROR_STATUSES: std::ops::RangeInclusive<u16> = 500..=599;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HelixMethod {
@@ -94,6 +95,10 @@ pub enum HelixError {
 impl HelixError {
     pub(crate) fn is_already_exists(&self) -> bool {
         matches!(self, Self::Http { status, .. } if *status == CONFLICT)
+    }
+
+    pub(crate) fn is_server_error(&self) -> bool {
+        matches!(self, Self::Http { status, .. } if SERVER_ERROR_STATUSES.contains(status))
     }
 }
 

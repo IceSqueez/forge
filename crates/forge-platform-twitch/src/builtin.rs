@@ -646,7 +646,7 @@ impl BuiltinContent for TwitchIntegrationBundle {
         let records = self.tracker.read().unwrap_or_else(|p| p.into_inner());
         let dropped_kind = records
             .iter()
-            .find(|r| matches!(r.status, SubStatus::Failed(_)))
+            .find(|r| matches!(r.status, SubStatus::Failed(_) | SubStatus::Retrying(_)))
             .map(|r| r.kind.clone());
 
         let sub_items: Vec<SubscriptionRow> = records
@@ -655,9 +655,10 @@ impl BuiltinContent for TwitchIntegrationBundle {
                 let (status, error_label) = match &r.status {
                     SubStatus::Active => (SubscriptionStatus::Active, None),
                     SubStatus::Pending => (SubscriptionStatus::Degraded, None),
-                    SubStatus::Failed(_) => {
+                    SubStatus::Retrying(_) => {
                         (SubscriptionStatus::Error, Some("retry pending".to_owned()))
                     }
+                    SubStatus::Failed(reason) => (SubscriptionStatus::Error, Some(reason.clone())),
                 };
                 SubscriptionRow {
                     name: r.kind.clone(),

@@ -1,6 +1,9 @@
 use crate::bot_account::TwitchBotAccount;
 use crate::builtin::ChatSessionConfig;
-use crate::chat::subscriber::{SubscribeError, SubscribePass, mark_revoked, subscribe_all};
+use crate::chat::subscriber::{
+    SubscribeError, SubscribePass, TopicRetries, TopicRetryRun, mark_revoked, subscribe_all,
+    subscription_display_kind,
+};
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::event_kinds;
 use crate::helix::{FixedTokenSource, HelixHttpTransport, HelixTransport};
@@ -114,6 +117,7 @@ pub(crate) struct ChatSession {
     transition: ConnectionTransition,
     seen_messages: MessageIdWindow,
     backoff: Backoff,
+    retries_rx: Option<oneshot::Receiver<TopicRetries>>,
 }
 
 impl ChatSession {
@@ -169,6 +173,7 @@ impl ChatSession {
             transition: ConnectionTransition::Unexpected,
             seen_messages: MessageIdWindow::default(),
             backoff: Backoff::default(),
+            retries_rx: None,
         };
         (session, shutdown_tx)
     }
@@ -251,6 +256,7 @@ impl ChatSession {
         let mut session_id: Option<String> = None;
         let mut successor: Option<SuccessorDial> = None;
         let mut subscription_pass: Option<SubscriptionPassRun> = None;
+        let mut topic_retries: Option<TopicRetryRun> = None;
         let mut held_frames: Vec<String> = Vec::new();
         let mut keepalive_deadline = Instant::now() + KEEPALIVE_TIMEOUT;
 
@@ -268,6 +274,11 @@ impl ChatSession {
                     subscription_pass = None;
                     match verdict {
                         PassVerdict::Live => {
+                            topic_retries = self
+                                .retries_rx
+                                .take()
+                                .and_then(|mut handoff| handoff.try_recv().ok())
+                                .and_then(TopicRetries::into_run);
                             self.backoff.reset();
                             self.set_state(ChatConnectionState::Connected);
                             self.publish_connection_event();
@@ -295,6 +306,10 @@ impl ChatSession {
                             return SessionOutcome::ReauthRequired;
                         }
                     }
+                }
+
+                () = await_topic_retries(&mut topic_retries) => {
+                    topic_retries = None;
                 }
 
                 _ = sleep_until(keepalive_deadline), if live.is_some() => {
@@ -332,6 +347,9 @@ impl ChatSession {
                                     | None => {}
                                 }
                             }
+                            if let Some(retries) = &topic_retries {
+                                retries.move_to_session(&new_session_id);
+                            }
                             let previous = session_id.replace(new_session_id);
                             debug!(
                                 from_session = previous.as_deref().unwrap_or_default(),
@@ -367,6 +385,7 @@ impl ChatSession {
                                     arm_successor(&mut successor, new_url);
                                 }
                                 FrameAction::Subscribe(pass) => {
+                                    topic_retries = None;
                                     subscription_pass = Some(pass);
                                 }
                                 FrameAction::Disconnect => return SessionOutcome::Disconnected,
@@ -466,6 +485,8 @@ impl ChatSession {
                     }
                 };
 
+                let (retries_tx, retries_rx) = oneshot::channel();
+                self.retries_rx = Some(retries_rx);
                 let pass = SubscriptionPassContext {
                     manager: Arc::clone(&self.config.manager),
                     helix: self.config.helix.clone(),
@@ -475,6 +496,7 @@ impl ChatSession {
                     user_id: self.config.user_id.clone(),
                     bus: Arc::clone(&self.config.bus),
                     tracker: Arc::clone(&self.config.tracker),
+                    retries_tx,
                 };
                 return FrameAction::Subscribe(Box::pin(pass.run(token)));
             }
@@ -539,7 +561,7 @@ impl ChatSession {
                 mark_revoked(
                     &self.config.tracker,
                     &revoked.id,
-                    &revoked.kind,
+                    &subscription_display_kind(&revoked.kind, &revoked.condition),
                     &revoked.status,
                 );
                 if revoked.status == AUTHORIZATION_REVOKED_STATUS {
@@ -4024,6 +4046,13 @@ async fn await_subscription_pass(pass: &mut Option<SubscriptionPassRun>) -> Pass
     }
 }
 
+async fn await_topic_retries(retries: &mut Option<TopicRetryRun>) {
+    match retries {
+        Some(retries) => retries.finished().await,
+        None => std::future::pending().await,
+    }
+}
+
 async fn close_socket(mut socket: EventSubSocket) {
     let _ = tokio::time::timeout(CLOSE_TIMEOUT, socket.close(None)).await;
 }
@@ -4059,6 +4088,7 @@ struct SubscriptionPassContext {
     user_id: String,
     bus: Arc<dyn EventPublisher>,
     tracker: SubscriptionTracker,
+    retries_tx: oneshot::Sender<TopicRetries>,
 }
 
 impl SubscriptionPassContext {
@@ -4081,7 +4111,10 @@ impl SubscriptionPassContext {
             first => first,
         };
         match result {
-            Ok(pass) if pass.any_live() => PassVerdict::Live,
+            Ok(pass) if pass.any_live() => {
+                let _ = self.retries_tx.send(pass.into_retries());
+                PassVerdict::Live
+            }
             Ok(_) => PassVerdict::NothingLive,
             Err(SubscribeError::ScopeMissing) => {
                 warn!("chat subscription rejected: scope missing (reauth required)");
@@ -4177,6 +4210,8 @@ struct RevokedSubscription {
     status: String,
     #[serde(default, rename = "type")]
     kind: String,
+    #[serde(default)]
+    condition: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize)]

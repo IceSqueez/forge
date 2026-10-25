@@ -122,7 +122,7 @@ fn is_invalid_grant(failure: &GatewayFailure) -> bool {
 
 fn oauth_error(failure: GatewayFailure) -> PlatformError {
     match failure {
-        GatewayFailure::BudgetExhausted => PlatformError::RateLimitExhausted,
+        GatewayFailure::BudgetExhausted { .. } => PlatformError::RateLimitExhausted,
         GatewayFailure::RateLimited { retry_after, .. } => PlatformError::RateLimited {
             retry_after_secs: u32::try_from(retry_after.as_secs()).unwrap_or(u32::MAX),
         },

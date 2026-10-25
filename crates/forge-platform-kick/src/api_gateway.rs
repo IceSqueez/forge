@@ -137,7 +137,7 @@ pub(crate) fn gateway_error(failure: GatewayFailure) -> PlatformError {
         GatewayFailure::RateLimited { retry_after, .. } => PlatformError::RateLimited {
             retry_after_secs: u32::try_from(retry_after.as_secs()).unwrap_or(u32::MAX),
         },
-        GatewayFailure::BudgetExhausted => PlatformError::RateLimitExhausted,
+        GatewayFailure::BudgetExhausted { .. } => PlatformError::RateLimitExhausted,
         other => match (other.status(), other.excerpt()) {
             (Some(status), Some(excerpt)) => PlatformError::Http {
                 status,

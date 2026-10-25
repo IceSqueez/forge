@@ -37,7 +37,7 @@ pub use target::GatewayBuildError;
 
 use crate::address_guard::{PublicAddressResolver, host_rejection_cause};
 use crate::body_read::{CappedReadError, read_capped};
-use crate::rate_limit::{RateLimitUsage, RateLimiter, acquire_or_wait};
+use crate::rate_limit::{RateLimitUsage, RateLimiter, acquire_or_wait, acquire_without_wait};
 use classify::{ERROR_BODY_READ_CAP, excerpt_of, status_failure, throttle_for};
 use request::{BodyRepr, PartContent, Target};
 use response_body::ResponseBody;
@@ -142,9 +142,7 @@ impl Gateway {
     ) -> Result<GatewayResponse, GatewayFailure> {
         let first = self.first_hop(request)?;
         let first_builder = self.build_hop(request, &first)?;
-        acquire_or_wait(self.inner.limiter.as_ref(), request.weight)
-            .await
-            .map_err(|_| GatewayFailure::BudgetExhausted)?;
+        self.acquire_budget(request).await?;
         tokio::time::timeout(
             class.total_budget(),
             self.exchange(request, class, first, first_builder),
@@ -156,6 +154,18 @@ impl Gateway {
                 TOTAL_BUDGET_ELAPSED,
             )))
         })
+    }
+
+    async fn acquire_budget(&self, request: &GatewayRequest) -> Result<(), GatewayFailure> {
+        let limiter = self.inner.limiter.as_ref();
+        let refused = if request.wait_for_limiter {
+            acquire_or_wait(limiter, request.weight)
+                .await
+                .map_err(|_| None)
+        } else {
+            acquire_without_wait(limiter, request.weight).await
+        };
+        refused.map_err(|retry_after| GatewayFailure::BudgetExhausted { retry_after })
     }
 
     async fn exchange(
@@ -170,7 +180,12 @@ impl Gateway {
         let mut followed = 0_usize;
         loop {
             let response = builder.send().await.map_err(send_failure)?;
-            let Some(next) = self.redirect_hop(&hop, &response)? else {
+            let next = if request.follow_redirects {
+                self.redirect_hop(&hop, &response)?
+            } else {
+                None
+            };
+            let Some(next) = next else {
                 return self.finish(request, class, response).await;
             };
             followed += 1;

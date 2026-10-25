@@ -112,7 +112,9 @@ impl ProviderLink {
     pub fn throttle_secs(&self, failure: &GatewayFailure) -> Option<u64> {
         match failure {
             GatewayFailure::RateLimited { retry_after, .. } => Some(ceil_secs(*retry_after)),
-            GatewayFailure::BudgetExhausted => Some(ceil_secs(self.limiter.cooldown_remaining())),
+            GatewayFailure::BudgetExhausted { .. } => {
+                Some(ceil_secs(self.limiter.cooldown_remaining()))
+            }
             _ => None,
         }
     }

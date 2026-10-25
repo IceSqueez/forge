@@ -397,7 +397,7 @@ impl DiscordClient {
         start: Instant,
         record: SendRecord,
     ) -> DiscordError {
-        if matches!(failure, GatewayFailure::BudgetExhausted) {
+        if matches!(failure, GatewayFailure::BudgetExhausted { .. }) {
             let global_wait = self
                 .rate_limiter
                 .lock()

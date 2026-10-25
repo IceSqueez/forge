@@ -139,7 +139,7 @@ pub enum GatewayFailure {
     #[error("unexpected response status {status}")]
     UnexpectedStatus { status: u16, excerpt: BodyExcerpt },
     #[error("local rate-limit budget exhausted")]
-    BudgetExhausted,
+    BudgetExhausted { retry_after: Option<Duration> },
     #[error("response body exceeds the {cap}-byte cap")]
     ResponseTooLarge { cap: u64 },
     #[error(transparent)]
@@ -162,7 +162,7 @@ impl GatewayFailure {
             | Self::ClientRejected { status, .. }
             | Self::ServerError { status, .. }
             | Self::UnexpectedStatus { status, .. } => Some(*status),
-            Self::BudgetExhausted
+            Self::BudgetExhausted { .. }
             | Self::ResponseTooLarge { .. }
             | Self::Transport(_)
             | Self::Cancelled
@@ -180,7 +180,7 @@ impl GatewayFailure {
             | Self::ClientRejected { excerpt, .. }
             | Self::ServerError { excerpt, .. }
             | Self::UnexpectedStatus { excerpt, .. } => Some(excerpt),
-            Self::BudgetExhausted
+            Self::BudgetExhausted { .. }
             | Self::ResponseTooLarge { .. }
             | Self::Transport(_)
             | Self::Cancelled

@@ -59,6 +59,17 @@ pub async fn acquire_or_wait(limiter: &dyn RateLimiter, weight: u32) -> Result<(
     }
 }
 
+pub(crate) async fn acquire_without_wait(
+    limiter: &dyn RateLimiter,
+    weight: u32,
+) -> Result<(), Option<Duration>> {
+    match limiter.acquire(weight).await {
+        Ok(RateLimitOutcome::Granted) => Ok(()),
+        Ok(RateLimitOutcome::Throttled { wait_for }) => Err(Some(wait_for)),
+        Ok(RateLimitOutcome::Exhausted) | Err(RateLimitError::Exhausted) => Err(None),
+    }
+}
+
 pub struct TokenBucketRateLimiter {
     capacity: u32,
     refill_per: Duration,

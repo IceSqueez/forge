@@ -222,6 +222,8 @@ pub struct GatewayRequest {
     pub(crate) cancel: Option<CancellationToken>,
     pub(crate) expected_refusals: Vec<ExpectedRefusal>,
     pub(crate) masked: Vec<Secret>,
+    pub(crate) follow_redirects: bool,
+    pub(crate) wait_for_limiter: bool,
 }
 
 impl GatewayRequest {
@@ -267,6 +269,8 @@ impl GatewayRequest {
             cancel: None,
             expected_refusals: Vec::new(),
             masked: Vec::new(),
+            follow_redirects: true,
+            wait_for_limiter: true,
         }
     }
 
@@ -341,6 +345,16 @@ impl GatewayRequest {
 
     pub fn mask(mut self, secret: Secret) -> Self {
         self.masked.push(secret);
+        self
+    }
+
+    pub fn follow_redirects(mut self, follow: bool) -> Self {
+        self.follow_redirects = follow;
+        self
+    }
+
+    pub fn without_limiter_wait(mut self) -> Self {
+        self.wait_for_limiter = false;
         self
     }
 

@@ -138,7 +138,7 @@ impl TwitchOAuthClient {
             Err(GatewayFailure::RateLimited { retry_after, .. }) => {
                 return Ok(DevicePoll::Throttled { wait: retry_after });
             }
-            Err(GatewayFailure::BudgetExhausted) => {
+            Err(GatewayFailure::BudgetExhausted { .. }) => {
                 return Ok(DevicePoll::Throttled {
                     wait: Duration::ZERO,
                 });
@@ -212,7 +212,7 @@ pub(crate) fn oauth_error(failure: GatewayFailure) -> PlatformError {
         GatewayFailure::Cancelled => PlatformError::Auth {
             reason: DEVICE_CANCELLED_REASON.into(),
         },
-        GatewayFailure::BudgetExhausted => PlatformError::RateLimitExhausted,
+        GatewayFailure::BudgetExhausted { .. } => PlatformError::RateLimitExhausted,
         GatewayFailure::RateLimited { retry_after, .. } => PlatformError::RateLimited {
             retry_after_secs: u32::try_from(retry_after.as_secs()).unwrap_or(u32::MAX),
         },

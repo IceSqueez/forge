@@ -7,7 +7,9 @@ pub mod cooldown;
 pub mod dedup;
 pub mod gateway;
 pub mod header_lookup;
+pub mod header_value;
 pub mod rate_limit;
+pub mod status_reason;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 pub mod throttle_hint;
@@ -30,10 +32,12 @@ pub use gateway::{
     TransportKind,
 };
 pub use header_lookup::HeaderLookup;
+pub use header_value::is_valid_header_value;
 pub use rate_limit::{
     DEFAULT_RETRY_AFTER_SECS, MAX_ACQUIRE_ATTEMPTS, MAX_THROTTLE_WAIT, RateLimitError,
     RateLimitOutcome, RateLimitUsage, RateLimiter, TokenBucketRateLimiter, acquire_or_wait,
 };
+pub use status_reason::canonical_status_reason;
 pub use throttle_hint::{
     ThrottleHint, ThrottleHintFamily, ThrottleScope, parse_retry_after, parse_throttle_hint,
 };

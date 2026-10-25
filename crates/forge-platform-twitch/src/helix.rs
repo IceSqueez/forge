@@ -101,7 +101,7 @@ impl From<GatewayFailure> for HelixError {
     fn from(failure: GatewayFailure) -> Self {
         match failure {
             GatewayFailure::Unauthorized { .. } => Self::ReauthRequired,
-            GatewayFailure::BudgetExhausted => Self::RateLimited,
+            GatewayFailure::BudgetExhausted { .. } => Self::RateLimited,
             GatewayFailure::RateLimited { status, .. } if status == TOO_MANY_REQUESTS => {
                 Self::RateLimited
             }

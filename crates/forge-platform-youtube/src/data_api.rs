@@ -151,7 +151,7 @@ impl FailureObserver for RequestFailPublisher {
 fn never_reached_upstream(failure: &GatewayFailure) -> bool {
     matches!(
         failure,
-        GatewayFailure::BudgetExhausted
+        GatewayFailure::BudgetExhausted { .. }
             | GatewayFailure::Cancelled
             | GatewayFailure::InvalidRequest(_)
     )
@@ -186,7 +186,7 @@ impl DataApiError {
             GatewayFailure::RateLimited { retry_after, .. } => PlatformError::RateLimited {
                 retry_after_secs: u32::try_from(retry_after.as_secs()).unwrap_or(u32::MAX),
             },
-            GatewayFailure::BudgetExhausted => PlatformError::RateLimitExhausted,
+            GatewayFailure::BudgetExhausted { .. } => PlatformError::RateLimitExhausted,
             GatewayFailure::Forbidden { excerpt }
                 if excerpt.as_str().contains(QUOTA_EXCEEDED_REASON) =>
             {

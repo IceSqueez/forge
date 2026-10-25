@@ -6,14 +6,26 @@ use std::sync::{Arc, Mutex};
 use forge_events::{Event, EventPublisher};
 use forge_platform_core::{EndpointSurface, PlatformEndpoints};
 
+use forge_net::{RateLimiter, TokenBucketRateLimiter};
+
 use crate::data_api::YoutubeDataApi;
+use crate::oauth_client::{
+    GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW, GoogleOAuthClient,
+    google_oauth_gateway,
+};
 use crate::quota_state::{SharedQuota, today_pacific};
 
 const UNREACHABLE_HTTP: &str = "http://127.0.0.1:0";
 const UNREACHABLE_WS: &str = "ws://127.0.0.1:0";
 const WS_SURFACE_MARKER: &str = "_WS_";
+pub(crate) const OAUTH_CLIENT_ID: &str = "test-client-id";
+pub(crate) const OAUTH_CLIENT_SECRET: &str = "test-client-secret-value";
 
 fn endpoints_with(data_api_base: Option<&str>) -> PlatformEndpoints {
+    endpoints_at(data_api_base, None)
+}
+
+fn endpoints_at(data_api_base: Option<&str>, oauth_base: Option<&str>) -> PlatformEndpoints {
     tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
         PlatformEndpoints::resolve(|variable| {
             EndpointSurface::ALL
@@ -24,6 +36,7 @@ fn endpoints_with(data_api_base: Option<&str>) -> PlatformEndpoints {
                         EndpointSurface::YouTubeDataApi | EndpointSurface::YouTubeUploadApi => {
                             data_api_base.unwrap_or(UNREACHABLE_HTTP)
                         }
+                        EndpointSurface::YouTubeOAuth => oauth_base.unwrap_or(UNREACHABLE_HTTP),
                         _ => UNREACHABLE_HTTP,
                     };
                     let base = if variable.contains(WS_SURFACE_MARKER) {
@@ -36,10 +49,6 @@ fn endpoints_with(data_api_base: Option<&str>) -> PlatformEndpoints {
         })
         .unwrap()
     })
-}
-
-pub(crate) fn unreachable_endpoints() -> PlatformEndpoints {
-    endpoints_with(None)
 }
 
 pub(crate) fn data_api_endpoints(base: &str) -> PlatformEndpoints {
@@ -64,6 +73,32 @@ pub(crate) fn data_api_at(base: &str) -> YoutubeDataApi {
 
 pub(crate) fn unreachable_data_api() -> YoutubeDataApi {
     data_api_at(UNREACHABLE_HTTP)
+}
+
+pub(crate) fn oauth_client_limited_by(
+    base: &str,
+    limiter: Arc<dyn RateLimiter>,
+) -> GoogleOAuthClient {
+    let gateway = google_oauth_gateway(&endpoints_at(None, Some(base)), limiter).unwrap();
+    GoogleOAuthClient::new(
+        gateway,
+        OAUTH_CLIENT_ID.to_owned(),
+        OAUTH_CLIENT_SECRET.to_owned(),
+    )
+}
+
+pub(crate) fn oauth_client_at(base: &str) -> GoogleOAuthClient {
+    oauth_client_limited_by(
+        base,
+        Arc::new(TokenBucketRateLimiter::new(
+            GOOGLE_OAUTH_BUDGET_CAPACITY,
+            GOOGLE_OAUTH_BUDGET_WINDOW,
+        )),
+    )
+}
+
+pub(crate) fn unreachable_oauth_client() -> GoogleOAuthClient {
+    oauth_client_at(UNREACHABLE_HTTP)
 }
 
 pub(crate) async fn used_today(quota: &SharedQuota) -> u32 {
@@ -110,6 +145,23 @@ pub(crate) struct StubReply {
     body: String,
     headers: Vec<(String, String)>,
     held: bool,
+    gate: Option<Arc<ReplyGate>>,
+}
+
+#[derive(Default)]
+pub(crate) struct ReplyGate {
+    arrived: tokio::sync::Notify,
+    release: tokio::sync::Notify,
+}
+
+impl ReplyGate {
+    pub(crate) async fn arrival(&self) {
+        self.arrived.notified().await;
+    }
+
+    pub(crate) fn open(&self) {
+        self.release.notify_one();
+    }
 }
 
 impl StubReply {
@@ -119,6 +171,7 @@ impl StubReply {
             body: body.to_string(),
             headers: Vec::new(),
             held: false,
+            gate: None,
         }
     }
 
@@ -136,6 +189,11 @@ impl StubReply {
         }
     }
 
+    pub(crate) fn gated_by(mut self, gate: &Arc<ReplyGate>) -> Self {
+        self.gate = Some(Arc::clone(gate));
+        self
+    }
+
     pub(crate) fn header(mut self, name: &str, value: &str) -> Self {
         self.headers.push((name.to_owned(), value.to_owned()));
         self
@@ -151,6 +209,7 @@ impl StubReply {
             body: String::new(),
             headers: Vec::new(),
             held: false,
+            gate: None,
         }
     }
 }
@@ -239,12 +298,37 @@ async fn answer(mut stream: tokio::net::TcpStream, routes: Arc<Mutex<StubRoutes>
             Ok(read) => head.extend_from_slice(&chunk[..read]),
         }
     }
-    let request_line = String::from_utf8_lossy(&head);
+    let head_text = String::from_utf8_lossy(&head).into_owned();
+    let header_len = head
+        .windows(HEADER_END.len())
+        .position(|window| window == HEADER_END)
+        .unwrap_or_default()
+        + HEADER_END.len();
+    let body_len = head_text
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())
+                .flatten()
+        })
+        .unwrap_or_default();
+    while head.len() < header_len + body_len {
+        match stream.read(&mut chunk).await {
+            Ok(0) | Err(_) => return,
+            Ok(read) => head.extend_from_slice(&chunk[..read]),
+        }
+    }
+    let request_line = head_text;
     let target = request_line.split_whitespace().nth(1).unwrap_or_default();
     let path = target.split('?').next().unwrap_or_default().to_owned();
     let reply = routes.lock().unwrap().reply_for(&path);
     if reply.held {
         std::future::pending::<()>().await;
+    }
+    if let Some(gate) = &reply.gate {
+        gate.arrived.notify_one();
+        gate.release.notified().await;
     }
     let extra_headers: String = reply
         .headers

@@ -7,14 +7,16 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher};
+use forge_net::TokenBucketRateLimiter;
 use forge_platform_core::{
     ChatPlatform, EndpointSurface, PlatformEndpoints, PlatformError, ViewerReport,
 };
 use forge_platform_youtube::{
-    ActiveBroadcastIdHandle, GoogleAuthFlow, LiveChatIdHandle, SharedQuota, YoutubeAdBreak,
-    YoutubeAuthBundle, YoutubeBroadcaster, YoutubeChannelLookup, YoutubeCredentialsManager,
-    YoutubeDataApi, YoutubeModeration, YoutubePlatform, YoutubeSendChat, YoutubeStreamMetadata,
-    YoutubeStreamStats, YoutubeThumbnail, YoutubeViewerPoll,
+    ActiveBroadcastIdHandle, GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW,
+    GoogleOAuthClient, LiveChatIdHandle, SharedQuota, YoutubeAdBreak, YoutubeAuthBundle,
+    YoutubeBroadcaster, YoutubeChannelLookup, YoutubeCredentialsManager, YoutubeDataApi,
+    YoutubeModeration, YoutubePlatform, YoutubeSendChat, YoutubeStreamMetadata, YoutubeStreamStats,
+    YoutubeThumbnail, YoutubeViewerPoll, google_oauth_gateway,
 };
 use forge_storage::ban_ledger::MockBanLedgerRepo;
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
@@ -142,10 +144,20 @@ async fn manager_holding(
     endpoints: &PlatformEndpoints,
     saved: YoutubeAuthBundle,
 ) -> YoutubeCredentialsManager {
-    let manager = YoutubeCredentialsManager::new(
-        Arc::new(MemoryRepo::default()),
-        GoogleAuthFlow::new(endpoints, "client".to_owned(), "secret".to_owned()),
+    let oauth = GoogleOAuthClient::new(
+        google_oauth_gateway(
+            endpoints,
+            Arc::new(TokenBucketRateLimiter::new(
+                GOOGLE_OAUTH_BUDGET_CAPACITY,
+                GOOGLE_OAUTH_BUDGET_WINDOW,
+            )),
+        )
+        .unwrap(),
+        "client".to_owned(),
+        "secret".to_owned(),
     );
+    let manager =
+        YoutubeCredentialsManager::new(Arc::new(MemoryRepo::default()), oauth, api(endpoints));
     manager.save_from_bundle(saved).await.unwrap();
     manager
 }

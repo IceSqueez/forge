@@ -833,13 +833,28 @@ async fn a_seeded_youtube_account_is_served_by_forges_manager_refreshing_only_wh
         )
         .await
         .unwrap();
+        let oauth = forge_platform_youtube::GoogleOAuthClient::new(
+            forge_platform_youtube::google_oauth_gateway(
+                &endpoints,
+                Arc::new(forge_net::TokenBucketRateLimiter::new(
+                    forge_platform_youtube::GOOGLE_OAUTH_BUDGET_CAPACITY,
+                    forge_platform_youtube::GOOGLE_OAUTH_BUDGET_WINDOW,
+                )),
+            )
+            .unwrap(),
+            "emulator-youtube-client".to_owned(),
+            "emulator-youtube-secret".to_owned(),
+        );
+        let api = forge_platform_youtube::YoutubeDataApi::new(
+            &endpoints,
+            forge_platform_youtube::SharedQuota::default(),
+            Arc::new(SilentPublisher),
+        )
+        .unwrap();
         let manager = forge_platform_youtube::YoutubeCredentialsManager::new(
             Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
-            forge_platform_youtube::GoogleAuthFlow::new(
-                &endpoints,
-                "emulator-youtube-client".to_owned(),
-                "emulator-youtube-secret".to_owned(),
-            ),
+            oauth,
+            api,
         );
         let served = manager.get_valid_access_token().await.unwrap();
         let stored = manager.load().await.unwrap().unwrap();

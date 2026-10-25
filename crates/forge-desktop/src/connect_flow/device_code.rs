@@ -1032,6 +1032,7 @@ mod tests {
             youtube_slot: None,
             endpoints: forge_platform_core::PlatformEndpoints::default(),
             twitch_sign_in: None,
+            youtube_sign_in: None,
         };
         let flow = cx.new(|cx| ConnectFlow::new(launch, cx));
         let outcome = TwitchAuthOutcome {

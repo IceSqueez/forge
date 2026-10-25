@@ -16,9 +16,10 @@ use forge_emulator::youtube::{
 use forge_events::Event;
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError, ViewerReport};
 use forge_platform_youtube::{
-    ActiveBroadcastIdHandle, GoogleAuthFlow, LiveChatIdHandle, SharedQuota, YoutubeAuthBundle,
-    YoutubeChatPoller, YoutubeCredentialsManager, YoutubeDataApi, YoutubeSendChat,
-    YoutubeViewerPoll,
+    ActiveBroadcastIdHandle, GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW,
+    GoogleOAuthClient, LiveChatIdHandle, SharedQuota, YoutubeAuthBundle, YoutubeChatPoller,
+    YoutubeCredentialsManager, YoutubeDataApi, YoutubeSendChat, YoutubeViewerPoll,
+    google_oauth_gateway,
 };
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::OAuthToken;
@@ -127,6 +128,18 @@ impl forge_events::EventPublisher for SilentBus {
 
 fn youtube_data_api(endpoints: &PlatformEndpoints) -> YoutubeDataApi {
     YoutubeDataApi::new(endpoints, SharedQuota::default(), Arc::new(SilentBus)).unwrap()
+}
+
+fn google_oauth(endpoints: &PlatformEndpoints) -> GoogleOAuthClient {
+    let limiter = Arc::new(forge_net::TokenBucketRateLimiter::new(
+        GOOGLE_OAUTH_BUDGET_CAPACITY,
+        GOOGLE_OAUTH_BUDGET_WINDOW,
+    ));
+    GoogleOAuthClient::new(
+        google_oauth_gateway(endpoints, limiter).unwrap(),
+        CLIENT_ID.to_owned(),
+        CLIENT_SECRET.to_owned(),
+    )
 }
 
 fn alice() -> YouTubeChatter {
@@ -241,13 +254,11 @@ async fn manager(
     expires_at: SystemTime,
     handle: Option<&str>,
 ) -> YoutubeCredentialsManager {
+    let endpoints = endpoints(fake);
     let manager = YoutubeCredentialsManager::new(
         Arc::new(MemoryCredentials::default()),
-        GoogleAuthFlow::new(
-            &endpoints(fake),
-            CLIENT_ID.to_owned(),
-            CLIENT_SECRET.to_owned(),
-        ),
+        google_oauth(&endpoints),
+        youtube_data_api(&endpoints),
     );
     let account = YouTubeAccount::default();
     manager

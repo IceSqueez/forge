@@ -793,12 +793,9 @@ mod tests {
         }
 
         fn empty_manager() -> Arc<KickCredentialsManager> {
-            Arc::new(KickCredentialsManager::new(
-                &crate::endpoints_test_support::unreachable_endpoints(),
-                Arc::new(EmptyRepo),
-                "test_cid".to_owned(),
-                "test_secret".to_owned(),
-            ))
+            Arc::new(crate::endpoints_test_support::offline_manager(Arc::new(
+                EmptyRepo,
+            )))
         }
 
         pub(super) fn bundle_with_feeds() -> (

@@ -12,8 +12,8 @@ use forge_platform_core::{ChatPlatform, EndpointSurface, PlatformEndpoints};
 use forge_platform_kick::chat::PUSHER_APP_KEY;
 use forge_platform_kick::{
     ChannelInfoFetcher, KickAuthBundle, KickCategories, KickChannel, KickChat,
-    KickCredentialsManager, KickModeration, KickPlatform, KickRewards, KickSendChat,
-    kick_api_gateway, kick_channel_info_gateway,
+    KickCredentialsManager, KickModeration, KickOAuthClient, KickPlatform, KickRewards,
+    KickSendChat, kick_api_gateway, kick_channel_info_gateway, kick_oauth_gateway,
 };
 use forge_storage::ban_ledger::MockBanLedgerRepo;
 use forge_storage::{BanLedgerRepo, CredentialId, CredentialsRepo, StorageError};
@@ -108,6 +108,16 @@ fn channel_info(endpoints: &PlatformEndpoints) -> Arc<ChannelInfoFetcher> {
     Arc::new(ChannelInfoFetcher::new(
         kick_channel_info_gateway(endpoints, limiter(), Arc::new(DiscardingPublisher)).unwrap(),
     ))
+}
+
+fn manager(endpoints: &PlatformEndpoints) -> KickCredentialsManager {
+    let oauth = KickOAuthClient::new(
+        endpoints,
+        kick_oauth_gateway(endpoints, limiter()).unwrap(),
+        "client".to_owned(),
+        "secret".to_owned(),
+    );
+    KickCredentialsManager::new(Arc::new(MemoryRepo::default()), oauth, api(endpoints))
 }
 
 fn ban_ledger() -> Arc<dyn BanLedgerRepo> {
@@ -212,12 +222,7 @@ async fn oauth_override_carries_the_token_refresh_to_the_override_host() {
         EndpointSurface::KickOAuth,
         format!("{}/oauth", server.uri()),
     )]);
-    let manager = KickCredentialsManager::new(
-        &endpoints,
-        Arc::new(MemoryRepo::default()),
-        "client".to_owned(),
-        "secret".to_owned(),
-    );
+    let manager = manager(&endpoints);
     manager
         .save_from_bundle(KickAuthBundle {
             access_token: "stale-access".to_owned(),
@@ -336,12 +341,7 @@ async fn platform_carries_its_overrides_into_the_chat_session_and_the_sender() {
         ),
         (EndpointSurface::KickChatSocket, socket_base),
     ]);
-    let manager = KickCredentialsManager::new(
-        &endpoints,
-        Arc::new(MemoryRepo::default()),
-        "client".to_owned(),
-        "secret".to_owned(),
-    );
+    let manager = manager(&endpoints);
     manager
         .save_from_bundle(KickAuthBundle {
             access_token: "live-access".to_owned(),

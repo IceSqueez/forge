@@ -75,7 +75,6 @@ mod tests {
     use crate::ban_ledger_test_support::{LedgerOp, MemoryBanLedger};
     use crate::chat_platform::KickPlatform;
     use crate::credentials::KickCredentials;
-    use crate::credentials_manager::KickCredentialsManager;
     use crate::poller::PollerAuth;
 
     enum StoredCredentials {
@@ -149,12 +148,7 @@ mod tests {
         ledger: Arc<dyn BanLedgerRepo>,
     ) -> Arc<KickIntegrationBundle> {
         let endpoints = crate::endpoints_test_support::unreachable_endpoints();
-        let manager = Arc::new(KickCredentialsManager::new(
-            &endpoints,
-            credentials,
-            "cid".to_owned(),
-            "secret".to_owned(),
-        ));
+        let manager = Arc::new(crate::endpoints_test_support::offline_manager(credentials));
         let platform = Arc::new(KickPlatform::new(
             &endpoints,
             Arc::clone(&manager),

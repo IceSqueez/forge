@@ -19,7 +19,8 @@ use forge_platform_kick::chat::PUSHER_APP_KEY;
 use forge_platform_kick::error::KickError;
 use forge_platform_kick::{
     ChannelInfoFetcher, KickAuthBundle, KickChannel, KickChat, KickChatHandle,
-    KickCredentialsManager, KickRewards, KickSendChat, kick_api_gateway, kick_channel_info_gateway,
+    KickCredentialsManager, KickOAuthClient, KickRewards, KickSendChat, kick_api_gateway,
+    kick_channel_info_gateway, kick_oauth_gateway,
 };
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use futures_util::{SinkExt, StreamExt};
@@ -145,12 +146,14 @@ async fn join_chat(fake: &FakeKick) -> (KickChatHandle, mpsc::Receiver<Event>) {
 
 async fn manager(fake: &FakeKick, client_secret: &str) -> KickCredentialsManager {
     let account = KickAccount::default();
-    let manager = KickCredentialsManager::new(
+    let oauth = KickOAuthClient::new(
         &endpoints(fake),
-        Arc::new(MemoryCredentials::default()),
+        kick_oauth_gateway(&endpoints(fake), limiter()).unwrap(),
         account.client_id.clone(),
         client_secret.to_owned(),
     );
+    let manager =
+        KickCredentialsManager::new(Arc::new(MemoryCredentials::default()), oauth, api(fake));
     manager
         .save_from_bundle(KickAuthBundle {
             access_token: account.access_token,

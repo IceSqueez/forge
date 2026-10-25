@@ -1030,9 +1030,9 @@ mod tests {
             twitch_slot: None,
             kick_slot: None,
             youtube_slot: None,
-            endpoints: forge_platform_core::PlatformEndpoints::default(),
             twitch_sign_in: None,
             youtube_sign_in: None,
+            kick_sign_in: None,
         };
         let flow = cx.new(|cx| ConnectFlow::new(launch, cx));
         let outcome = TwitchAuthOutcome {

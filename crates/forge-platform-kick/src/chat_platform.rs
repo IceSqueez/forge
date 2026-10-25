@@ -280,12 +280,7 @@ pub(crate) mod tests {
     }
 
     fn platform(repo: Arc<InMemRepo>, api: forge_net::Gateway) -> KickPlatform {
-        let manager = Arc::new(KickCredentialsManager::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            repo,
-            "test_cid".to_owned(),
-            "test_secret".to_owned(),
-        ));
+        let manager = Arc::new(crate::endpoints_test_support::offline_manager(repo));
         KickPlatform::new(
             &crate::endpoints_test_support::unreachable_endpoints(),
             manager,
@@ -516,10 +511,12 @@ pub(crate) mod tests {
         ledger: Arc<dyn BanLedgerRepo>,
     ) -> KickPlatform {
         let manager = Arc::new(KickCredentialsManager::new(
-            endpoints,
             InMemRepo::with_valid_creds(),
-            "test_cid".to_owned(),
-            "test_secret".to_owned(),
+            crate::endpoints_test_support::oauth_client_over(
+                endpoints,
+                Arc::new(crate::endpoints_test_support::GrantingLimiter),
+            ),
+            crate::endpoints_test_support::unreachable_api(),
         ));
         KickPlatform::new(
             endpoints,

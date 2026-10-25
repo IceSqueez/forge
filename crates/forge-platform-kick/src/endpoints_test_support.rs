@@ -7,13 +7,18 @@ use async_trait::async_trait;
 use forge_events::{Event, EventPublisher};
 use forge_net::{Gateway, RateLimitError, RateLimitOutcome, RateLimiter};
 use forge_platform_core::{EndpointSurface, PlatformEndpoints};
+use forge_storage::CredentialsRepo;
 
 use crate::api_gateway::{kick_api_gateway, kick_channel_info_gateway};
 use crate::channel_info::ChannelInfoFetcher;
+use crate::credentials_manager::KickCredentialsManager;
+use crate::oauth_client::{KickOAuthClient, kick_oauth_gateway};
 
 const UNREACHABLE_HTTP: &str = "http://127.0.0.1:0";
 const UNREACHABLE_WS: &str = "ws://127.0.0.1:0";
 const WS_SURFACE_MARKER: &str = "_WS_";
+pub(crate) const OAUTH_CLIENT_ID: &str = "kick-test-client-id";
+pub(crate) const OAUTH_CLIENT_SECRET: &str = "kick-test-client-secret-7c1e";
 
 pub(crate) fn unreachable_endpoints() -> PlatformEndpoints {
     endpoints_at(&[])
@@ -92,6 +97,40 @@ pub(crate) fn channel_info_at(base: &str) -> ChannelInfoFetcher {
 
 pub(crate) fn unreachable_channel_info() -> Arc<ChannelInfoFetcher> {
     Arc::new(channel_info_at(UNREACHABLE_HTTP))
+}
+
+pub(crate) fn oauth_client_over(
+    endpoints: &PlatformEndpoints,
+    limiter: Arc<dyn RateLimiter>,
+) -> KickOAuthClient {
+    KickOAuthClient::new(
+        endpoints,
+        kick_oauth_gateway(endpoints, limiter).unwrap(),
+        OAUTH_CLIENT_ID.to_owned(),
+        OAUTH_CLIENT_SECRET.to_owned(),
+    )
+}
+
+pub(crate) fn oauth_client_limited_by(
+    base: &str,
+    limiter: Arc<dyn RateLimiter>,
+) -> KickOAuthClient {
+    oauth_client_over(
+        &endpoints_at(&[(EndpointSurface::KickOAuth, base)]),
+        limiter,
+    )
+}
+
+pub(crate) fn oauth_client_at(base: &str) -> KickOAuthClient {
+    oauth_client_limited_by(base, Arc::new(GrantingLimiter))
+}
+
+pub(crate) fn unreachable_oauth_client() -> KickOAuthClient {
+    oauth_client_at(UNREACHABLE_HTTP)
+}
+
+pub(crate) fn offline_manager(repo: Arc<dyn CredentialsRepo>) -> KickCredentialsManager {
+    KickCredentialsManager::new(repo, unreachable_oauth_client(), unreachable_api())
 }
 
 pub(crate) struct GrantingLimiter;

@@ -775,11 +775,32 @@ async fn a_seeded_kick_account_is_served_by_forges_manager_refreshing_only_when_
         )
         .await
         .unwrap();
-        let manager = forge_platform_kick::KickCredentialsManager::new(
+        let oauth = forge_platform_kick::KickOAuthClient::new(
             &endpoints,
-            Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+            forge_platform_kick::kick_oauth_gateway(
+                &endpoints,
+                Arc::new(forge_net::TokenBucketRateLimiter::new(
+                    forge_platform_kick::KICK_OAUTH_BUDGET_CAPACITY,
+                    forge_platform_kick::KICK_OAUTH_BUDGET_WINDOW,
+                )),
+            )
+            .unwrap(),
             account.client_id.clone(),
             account.client_secret.clone(),
+        );
+        let api = forge_platform_kick::kick_api_gateway(
+            &endpoints,
+            Arc::new(forge_net::TokenBucketRateLimiter::new(
+                forge_platform_kick::KICK_API_BUDGET_CAPACITY,
+                forge_platform_kick::KICK_API_BUDGET_WINDOW,
+            )),
+            Arc::new(SilentPublisher),
+        )
+        .unwrap();
+        let manager = forge_platform_kick::KickCredentialsManager::new(
+            Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+            oauth,
+            api,
         );
         let served = manager.get_valid_access_token().await.unwrap();
         let user_id = manager.user_id().await.unwrap();

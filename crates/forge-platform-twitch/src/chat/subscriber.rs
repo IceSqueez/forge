@@ -1065,6 +1065,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn only_a_conflicting_topic_create_is_kept_out_of_request_fail() {
+        let cases = [
+            (
+                ResponseTemplate::new(StatusCode::CONFLICT.as_u16()).set_body_json(
+                    serde_json::json!({
+                        "error": "Conflict",
+                        "status": StatusCode::CONFLICT.as_u16(),
+                        "message": "subscription already exists",
+                    }),
+                ),
+                failed("already exists on another session"),
+                0,
+            ),
+            (
+                ResponseTemplate::new(StatusCode::BAD_REQUEST.as_u16())
+                    .set_body_string("subscription already exists"),
+                failed("HTTP 400"),
+                1,
+            ),
+        ];
+
+        for (reply, expected, request_fails) in cases {
+            let run = pass_with_probed_topic_replying(reply).await;
+
+            assert_eq!(
+                (run.status_of(PROBED_TOPIC), run.request_fails().len()),
+                (expected, request_fails)
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn an_exhausted_local_budget_fails_every_topic_as_rate_limited_without_request_fail() {
         let server = MockServer::start().await;
         mount_catch_all_success(&server).await;

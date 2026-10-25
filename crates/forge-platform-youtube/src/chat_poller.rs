@@ -1028,8 +1028,11 @@ mod tests {
 
     use super::*;
     use crate::endpoints_test_support::{
-        StubReply, StubServer, drive_until, settle, spin_until, used_today,
+        RecordingPublisher, StubReply, StubServer, data_api_with, drive_until, settle, spin_until,
+        used_today,
     };
+
+    const REQUEST_FAIL_KIND: &str = "request.fail";
     use crate::live_chat_id::LiveChatIdHandle;
     use crate::quota_state::QuotaState;
     use crate::quota_state::SharedQuota;
@@ -3082,5 +3085,72 @@ mod tests {
             (server.request_count(BROADCASTS), used_today(&quota).await),
             (0, charged_by_send)
         );
+    }
+
+    fn google_refusal(status: reqwest::StatusCode, reason: &str) -> ResponseTemplate {
+        ResponseTemplate::new(status.as_u16()).set_body_json(json!({
+            "error": {
+                "code": status.as_u16(),
+                "message": "refused",
+                "errors": [{ "domain": "youtube.liveChat", "reason": reason, "message": "refused" }]
+            }
+        }))
+    }
+
+    #[tokio::test]
+    async fn only_a_403_naming_live_chat_ended_is_kept_out_of_request_fail() {
+        let cases = [
+            (
+                google_refusal(reqwest::StatusCode::FORBIDDEN, LIVE_CHAT_ENDED_REASON),
+                true,
+                0,
+            ),
+            (
+                google_refusal(reqwest::StatusCode::FORBIDDEN, "liveChatDisabled"),
+                false,
+                1,
+            ),
+            (
+                google_refusal(reqwest::StatusCode::NOT_FOUND, LIVE_CHAT_ENDED_REASON),
+                false,
+                1,
+            ),
+        ];
+
+        for (reply, ended, request_fails) in cases {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path(MESSAGES_PATH))
+                .respond_with(reply)
+                .mount(&server)
+                .await;
+            let bus = Arc::new(RecordingPublisher::default());
+            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let poller = YoutubeChatPoller::new(
+                data_api_with(
+                    &server.uri(),
+                    SharedQuota::default(),
+                    Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
+                ),
+                token_source(),
+                tx,
+                "UCtest".to_owned(),
+                LiveChatIdHandle::new(),
+                ActiveBroadcastIdHandle::new(),
+                crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            );
+
+            let outcome = poller
+                .fetch_chat_messages("tok", "lc-1", None, &CancellationToken::new())
+                .await;
+
+            assert_eq!(
+                (
+                    matches!(outcome, Err(FetchFailure::ChatEnded)),
+                    bus.events_of_kind(REQUEST_FAIL_KIND).len()
+                ),
+                (ended, request_fails)
+            );
+        }
     }
 }

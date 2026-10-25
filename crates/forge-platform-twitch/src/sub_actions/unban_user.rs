@@ -141,8 +141,11 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, make_ctx, users_fixture,
+        MockCreds, MockTransport, REQUEST_FAIL_KIND, SELF_USER_ID, make_ctx, observed_helix_at,
+        users_fixture,
     };
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn runner_with(
         responses: Vec<Result<serde_json::Value, HelixError>>,
@@ -274,6 +277,78 @@ mod tests {
             assert!(
                 matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
                 "{label}: {:?}",
+                telemetry.outcome
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn only_a_400_saying_not_banned_is_kept_out_of_request_fail() {
+        let refusal = |status: reqwest::StatusCode, message: &str| {
+            ResponseTemplate::new(status.as_u16()).set_body_json(
+                serde_json::json!({"error": "x", "status": status.as_u16(), "message": message}),
+            )
+        };
+        let cases = [
+            (
+                refusal(
+                    reqwest::StatusCode::BAD_REQUEST,
+                    "The user is not banned or in a timeout.",
+                ),
+                true,
+                0,
+            ),
+            (
+                refusal(reqwest::StatusCode::BAD_REQUEST, "USER IS NOT BANNED"),
+                true,
+                0,
+            ),
+            (
+                refusal(
+                    reqwest::StatusCode::BAD_REQUEST,
+                    "Missing required parameter user_id",
+                ),
+                false,
+                1,
+            ),
+            (
+                refusal(reqwest::StatusCode::NOT_FOUND, "user is not banned"),
+                false,
+                1,
+            ),
+        ];
+
+        for (reply, succeeds, request_fails) in cases {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/helix/users"))
+                .respond_with(
+                    ResponseTemplate::new(reqwest::StatusCode::OK.as_u16())
+                        .set_body_json(users_fixture("555").unwrap()),
+                )
+                .mount(&server)
+                .await;
+            Mock::given(method("DELETE"))
+                .and(path("/helix/moderation/bans"))
+                .respond_with(reply)
+                .mount(&server)
+                .await;
+            let (transport, bus) = observed_helix_at(&server.uri());
+            let runner = UnbanUserRunner::new(
+                transport,
+                Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            );
+            let stack = ArgStack::new();
+
+            let (telemetry, _) = runner.execute(&config("target"), &make_ctx(&stack)).await;
+
+            assert_eq!(
+                (
+                    telemetry.outcome == SubActionOutcome::Success,
+                    bus.of_kind(REQUEST_FAIL_KIND).len()
+                ),
+                (succeeds, request_fails),
+                "{:?}",
                 telemetry.outcome
             );
         }

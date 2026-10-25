@@ -129,7 +129,9 @@ mod tests {
     use super::*;
     use crate::bot_account::test_support::{BOT_LOGIN, BOT_USER_ID, BotHarness};
     use crate::bot_account::{BOT_STATUS_CHANGED_KIND, BotStatus};
-    use crate::sub_actions::test_support::{MockTransport, SELF_USER_ID};
+    use crate::sub_actions::test_support::{
+        MockTransport, REQUEST_FAIL_KIND, SELF_USER_ID, observed_helix_at,
+    };
 
     fn listed() -> Result<serde_json::Value, HelixError> {
         Ok(serde_json::json!({"data": [{"user_id": BOT_USER_ID, "user_login": BOT_LOGIN}]}))
@@ -368,5 +370,56 @@ mod tests {
             Err(BotModeratorError::BotNotConnected)
         ));
         assert_eq!(broadcaster.call_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn only_a_400_saying_already_a_moderator_is_kept_out_of_request_fail() {
+        type Expectation = fn(&Result<(), BotModeratorError>) -> bool;
+        let refusal = |status: StatusCode, message: &str| {
+            ResponseTemplate::new(status.as_u16()).set_body_json(
+                serde_json::json!({"error": "x", "status": status.as_u16(), "message": message}),
+            )
+        };
+        let cases: [(ResponseTemplate, Expectation, usize); 4] = [
+            (
+                refusal(StatusCode::BAD_REQUEST, "user is already a mod"),
+                |r| r.is_ok(),
+                0,
+            ),
+            (
+                refusal(StatusCode::BAD_REQUEST, "The user is ALREADY a moderator"),
+                |r| r.is_ok(),
+                0,
+            ),
+            (
+                refusal(
+                    StatusCode::BAD_REQUEST,
+                    "The user is banned from this channel",
+                ),
+                |r| matches!(r, Err(BotModeratorError::BotBanned)),
+                1,
+            ),
+            (
+                refusal(StatusCode::UNPROCESSABLE_ENTITY, "user is already a vip"),
+                |r| matches!(r, Err(BotModeratorError::BotIsVip)),
+                1,
+            ),
+        ];
+
+        for (reply, expected, request_fails) in cases {
+            let harness = BotHarness::connected().await;
+            harness.mount("POST", MODERATORS_PATH, reply).await;
+            let (transport, bus) = observed_helix_at(&harness.server.uri());
+            harness.bot.attach_broadcaster_transport(transport);
+
+            let result = harness.bot.make_moderator().await;
+
+            assert!(expected(&result), "{result:?}");
+            assert_eq!(
+                bus.of_kind(REQUEST_FAIL_KIND).len(),
+                request_fails,
+                "{result:?}"
+            );
+        }
     }
 }

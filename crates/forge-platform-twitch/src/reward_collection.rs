@@ -588,16 +588,23 @@ mod tests {
     use tokio::sync::watch;
 
     use super::*;
+    use crate::bot_account::test_support::RecordingBus;
     use crate::chat::ChatConnectionState;
     use crate::helix::{HelixMethod, HelixTransport};
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use crate::sub_actions::test_support::{REQUEST_FAIL_KIND, observed_helix_at};
     use crate::sub_actions::{
         DeleteRewardRunner, DisableRewardRunner, EnableRewardRunner, PauseRewardRunner,
-        ResumeRewardRunner, SelfIdentity,
+        ResumeRewardRunner, SelfIdentity, UpdateRewardRunner,
     };
     use crate::subscriptions::SubscriptionTracker;
+    use forge_types::SubActionOutcome;
+    use wiremock::matchers::path;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    const CUSTOM_REWARDS_ROUTE: &str = "/helix/channel_points/custom_rewards";
 
     const LEAKY_URL: &str = "https://api.twitch.tv/helix/channel_points/custom_rewards";
 
@@ -1376,6 +1383,131 @@ mod tests {
                 shape(runner_transport.request(0)),
                 "{name}"
             );
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum ManagerWrite {
+        Update,
+        Toggle,
+        Delete,
+    }
+
+    const MANAGER_WRITES: [ManagerWrite; 3] = [
+        ManagerWrite::Update,
+        ManagerWrite::Toggle,
+        ManagerWrite::Delete,
+    ];
+
+    async fn observed_bundle(
+        reply: ResponseTemplate,
+    ) -> (MockServer, Arc<RecordingBus>, Arc<TwitchIntegrationBundle>) {
+        let server = MockServer::start().await;
+        Mock::given(path(CUSTOM_REWARDS_ROUTE))
+            .respond_with(reply)
+            .mount(&server)
+            .await;
+        let (transport, bus) = observed_helix_at(&server.uri());
+        let (_tx, rx) = watch::channel(ChatConnectionState::Connected);
+        let bundle = TwitchIntegrationBundle::for_test_with_transport(
+            Some("streamer".to_owned()),
+            rx,
+            SubscriptionTracker::default(),
+            Arc::new(MockCreds::with_identity()),
+            BroadcasterTier::Affiliate,
+            transport,
+            SELF_USER_ID,
+        );
+        (server, bus, bundle)
+    }
+
+    async fn manager_write(
+        bundle: &TwitchIntegrationBundle,
+        write: ManagerWrite,
+    ) -> CollectionOutcome<()> {
+        let item = CollectionItemId::new("rw1");
+        match write {
+            ManagerWrite::Update => bundle.update(&rewards(), &item, &draft()).await.map(|_| ()),
+            ManagerWrite::Toggle => bundle
+                .set_toggle(&rewards(), &item, PAUSED_TOGGLE, true)
+                .await
+                .map(|_| ()),
+            ManagerWrite::Delete => bundle.delete(&rewards(), &item).await,
+        }
+    }
+
+    fn twitch_refusal(status: StatusCode, message: &str) -> ResponseTemplate {
+        ResponseTemplate::new(status.as_u16())
+            .set_body_json(json!({ "error": "x", "status": status.as_u16(), "message": message }))
+    }
+
+    #[tokio::test]
+    async fn a_reward_already_gone_reports_reward_gone_without_request_fail() {
+        for write in MANAGER_WRITES {
+            let (_server, bus, bundle) =
+                observed_bundle(twitch_refusal(StatusCode::NOT_FOUND, "Not Found")).await;
+
+            let outcome = manager_write(&bundle, write).await;
+
+            assert_eq!(
+                (outcome, bus.of_kind(REQUEST_FAIL_KIND).len()),
+                (Err(reward_gone()), 0),
+                "{write:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn any_other_reward_write_refusal_still_publishes_request_fail() {
+        for write in MANAGER_WRITES {
+            let (_server, bus, bundle) =
+                observed_bundle(twitch_refusal(StatusCode::FORBIDDEN, "not owned")).await;
+
+            let outcome = manager_write(&bundle, write).await;
+
+            assert_eq!(
+                (outcome, bus.of_kind(REQUEST_FAIL_KIND).len()),
+                (Err(CollectionFailure::NotOwned), 1),
+                "{write:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_reward_sub_action_hitting_a_missing_reward_fails_and_publishes_request_fail() {
+        type RunnerFactory =
+            fn(Arc<dyn HelixTransport>, Arc<SelfIdentity>) -> Box<dyn SubActionRunner>;
+        let cases: [(&str, RunnerFactory); 3] = [
+            ("update", |t, i| Box::new(UpdateRewardRunner::new(t, i))),
+            ("enable", |t, i| Box::new(EnableRewardRunner::new(t, i))),
+            ("delete", |t, i| Box::new(DeleteRewardRunner::new(t, i))),
+        ];
+        let config = BTreeMap::from([
+            ("reward_id".to_owned(), Variant::String("rw1".to_owned())),
+            ("title".to_owned(), Variant::String("Hi".to_owned())),
+        ]);
+        let stack = ArgStack::new();
+
+        for (name, runner) in cases {
+            let server = MockServer::start().await;
+            Mock::given(path(CUSTOM_REWARDS_ROUTE))
+                .respond_with(twitch_refusal(StatusCode::NOT_FOUND, "Not Found"))
+                .mount(&server)
+                .await;
+            let (transport, bus) = observed_helix_at(&server.uri());
+            let runner = runner(
+                transport,
+                Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            );
+
+            let (telemetry, _) = runner.execute(&config, &make_ctx(&stack)).await;
+
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
+                "{name}: {:?}",
+                telemetry.outcome
+            );
+            assert_eq!(bus.of_kind(REQUEST_FAIL_KIND).len(), 1, "{name}");
         }
     }
 }

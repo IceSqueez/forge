@@ -85,7 +85,11 @@ pub(crate) async fn send_whisper_to(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::sub_actions::test_support::{MockTransport, users_fixture};
+    use crate::sub_actions::test_support::{
+        MockTransport, REQUEST_FAIL_KIND, observed_helix_at, users_fixture,
+    };
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
     async fn whisper_resolves_the_login_then_posts_to_the_resolved_user_id() {
@@ -228,6 +232,76 @@ mod tests {
                 matches!(err, WhisperError::RecipientRejectsWhispers),
                 rejects,
                 "{label} -> {err:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn only_a_400_naming_a_whisper_block_rule_is_kept_out_of_request_fail() {
+        let refusal = |status: StatusCode, message: &str| {
+            ResponseTemplate::new(status.as_u16()).set_body_json(
+                serde_json::json!({"error": "x", "status": status.as_u16(), "message": message}),
+            )
+        };
+        let cases = [
+            (
+                refusal(
+                    StatusCode::BAD_REQUEST,
+                    "Strangers are not allowed to whisper",
+                ),
+                true,
+                0,
+            ),
+            (
+                refusal(StatusCode::BAD_REQUEST, "Recipient has BLOCKED you"),
+                true,
+                0,
+            ),
+            (
+                refusal(StatusCode::BAD_REQUEST, "This user DOESN'T ALLOW whispers"),
+                true,
+                0,
+            ),
+            (
+                refusal(
+                    StatusCode::BAD_REQUEST,
+                    "The message field may not be empty",
+                ),
+                false,
+                1,
+            ),
+            (
+                refusal(StatusCode::FORBIDDEN, "Blocked by policy"),
+                false,
+                1,
+            ),
+        ];
+
+        for (reply, rejects, request_fails) in cases {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path(WHISPERS_PATH))
+                .respond_with(reply)
+                .mount(&server)
+                .await;
+            let (transport, bus) = observed_helix_at(&server.uri());
+
+            let err = send_whisper_to(
+                transport.as_ref(),
+                "100",
+                Some(UserTarget::Id("1001")),
+                "psst",
+            )
+            .await
+            .unwrap_err();
+
+            assert_eq!(
+                (
+                    matches!(err, WhisperError::RecipientRejectsWhispers),
+                    bus.of_kind(REQUEST_FAIL_KIND).len()
+                ),
+                (rejects, request_fails),
+                "{err:?}"
             );
         }
     }

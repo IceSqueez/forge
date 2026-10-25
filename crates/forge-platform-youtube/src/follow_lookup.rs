@@ -133,7 +133,9 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::endpoints_test_support::data_api_charging;
+    use crate::endpoints_test_support::{RecordingPublisher, data_api_charging, data_api_with};
+
+    const REQUEST_FAIL_KIND: &str = "request.fail";
     use crate::quota_state::{QuotaState, SharedQuota, today_pacific};
 
     const BROADCASTER: &str = "UCbroadcasterchannel0001";
@@ -521,5 +523,47 @@ mod tests {
             ),
             (FollowStatus::Unavailable, 0, DAILY_LIMIT)
         );
+    }
+
+    #[tokio::test]
+    async fn only_a_403_naming_subscription_forbidden_is_kept_out_of_request_fail() {
+        let cases = [
+            (
+                google_error(StatusCode::FORBIDDEN, &["subscriptionForbidden"]),
+                FollowStatus::Hidden,
+                0,
+            ),
+            (
+                google_error(StatusCode::FORBIDDEN, &["subscriptionForbiddenByOwner"]),
+                FollowStatus::Unavailable,
+                1,
+            ),
+            (
+                google_error(StatusCode::NOT_FOUND, &["subscriptionForbidden"]),
+                FollowStatus::Unavailable,
+                1,
+            ),
+        ];
+
+        for (response, expected, request_fails) in cases {
+            let server = server_answering(response).await;
+            let bus = Arc::new(RecordingPublisher::default());
+            let lookup = YoutubeFollowLookup::new(
+                data_api_with(
+                    &server.uri(),
+                    fresh_quota(),
+                    Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
+                ),
+                token_source(),
+                BROADCASTER.to_owned(),
+            );
+
+            let status = lookup.status_of(VIEWER).await;
+
+            assert_eq!(
+                (status, bus.events_of_kind(REQUEST_FAIL_KIND).len()),
+                (expected, request_fails)
+            );
+        }
     }
 }

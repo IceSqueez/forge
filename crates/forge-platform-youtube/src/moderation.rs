@@ -983,4 +983,35 @@ mod tests {
         );
         assert!(ledger.stored(&target_key()).is_some());
     }
+
+    #[tokio::test]
+    async fn only_an_unban_of_an_already_gone_ban_is_kept_out_of_request_fail() {
+        for (status, lifted, request_fails) in [
+            (reqwest::StatusCode::NOT_FOUND, true, 0),
+            (reqwest::StatusCode::FORBIDDEN, false, 1),
+        ] {
+            let server = MockServer::start().await;
+            mount_delete_status(&server, status.as_u16()).await;
+            let bus = Arc::new(crate::endpoints_test_support::RecordingPublisher::default());
+            let moderation = YoutubeModeration::new(
+                crate::endpoints_test_support::data_api_with(
+                    &server.uri(),
+                    SharedQuota::default(),
+                    Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
+                ),
+                token_source(),
+                broadcaster_source(),
+                LiveChatIdHandle::new(),
+                seeded_ledger(stored_ban(Some(BAN_RESOURCE_ID), BanOrigin::IssuedByForge)),
+            );
+
+            let outcome = moderation.unban(TARGET_CHANNEL).await;
+
+            assert_eq!(
+                (outcome.is_ok(), bus.events_of_kind("request.fail").len()),
+                (lifted, request_fails),
+                "status {status}"
+            );
+        }
+    }
 }

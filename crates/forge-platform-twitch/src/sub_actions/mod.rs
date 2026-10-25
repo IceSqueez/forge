@@ -494,6 +494,34 @@ pub(crate) mod test_support {
         .unwrap()
     }
 
+    pub(crate) const REQUEST_FAIL_KIND: &str = "request.fail";
+
+    pub(crate) fn observed_helix_at(
+        base_url: &str,
+    ) -> (
+        std::sync::Arc<crate::helix::HelixHttpTransport>,
+        std::sync::Arc<crate::bot_account::test_support::RecordingBus>,
+    ) {
+        let bus = std::sync::Arc::new(crate::bot_account::test_support::RecordingBus::default());
+        let gateway = crate::helix_gateway::helix_gateway(
+            &endpoints_with(&[(EndpointSurface::TwitchApi, base_url)]),
+            std::sync::Arc::new(TokenBucketRateLimiter::new(
+                HELIX_BUDGET_CAPACITY,
+                HELIX_BUDGET_WINDOW,
+            )),
+            std::sync::Arc::clone(&bus) as std::sync::Arc<dyn EventPublisher>,
+        )
+        .unwrap();
+        let transport = crate::helix::HelixHttpTransport::new(
+            gateway,
+            "test-client".to_owned(),
+            std::sync::Arc::new(crate::helix::FixedTokenSource::new(
+                forge_types::OAuthToken::new(TOKEN_SENTINEL),
+            )),
+        );
+        (std::sync::Arc::new(transport), bus)
+    }
+
     pub(crate) fn unreachable_helix_gateway() -> Gateway {
         helix_gateway_at("http://127.0.0.1:0")
     }

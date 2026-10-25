@@ -1,81 +1,51 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use forge_net::DEFAULT_RETRY_AFTER_SECS;
-use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
+use forge_net::{GatewayRequest, Secret};
+use forge_platform_core::PlatformError;
 use forge_types::Variant;
 use futures::future::BoxFuture;
 use reqwest::StatusCode;
 
-use crate::quota_state::{SharedQuota, today_pacific};
+use crate::data_api::{YoutubeDataApi, malformed};
 
 const LOOKUP_COST: u32 = 1;
 const CHANNEL_ID_LEN: usize = 24;
+const CHANNELS_PATH: &str = "/channels";
+const MISSING_SCOPE: &str = "channel lookup scope missing";
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
 pub struct YoutubeChannelLookup {
-    client: reqwest::Client,
+    api: YoutubeDataApi,
     access_token_source: TokenSource,
-    quota: SharedQuota,
-    api_base: String,
 }
 
 impl YoutubeChannelLookup {
-    pub fn new(
-        endpoints: &PlatformEndpoints,
-        access_token_source: TokenSource,
-        quota: SharedQuota,
-    ) -> Self {
+    pub fn new(api: YoutubeDataApi, access_token_source: TokenSource) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            api,
             access_token_source,
-            quota,
-            api_base: endpoints
-                .base_url(EndpointSurface::YouTubeDataApi)
-                .to_owned(),
         }
-    }
-
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn with_api_base(mut self, api_base: String) -> Self {
-        self.api_base = api_base;
-        self
     }
 
     pub async fn lookup(&self, identifier: &str) -> Result<Variant, PlatformError> {
         let is_channel_id = identifier.starts_with("UC") && identifier.len() == CHANNEL_ID_LEN;
         let filter_key = if is_channel_id { "id" } else { "forHandle" };
 
-        {
-            let today = today_pacific();
-            let mut qt = self.quota.lock().await;
-            qt.charge(LOOKUP_COST, today)?;
-        }
-
         let token = (self.access_token_source)().await?;
-        let url = format!("{}/channels", self.api_base);
-
-        let resp = self
-            .client
-            .get(&url)
-            .bearer_auth(&token)
-            .query(&[("part", "snippet,statistics"), (filter_key, identifier)])
-            .send()
+        let request = GatewayRequest::get(CHANNELS_PATH)
+            .label(CHANNELS_PATH)
+            .bearer(Secret::new(token))
+            .query("part", "snippet,statistics")
+            .query(filter_key, identifier);
+        let body: serde_json::Value = self
+            .api
+            .send(LOOKUP_COST, request)
             .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = resp.status();
-        if status != StatusCode::OK {
-            return Err(self.map_failure(resp).await);
-        }
-
-        let body: serde_json::Value = resp.json().await.map_err(|e| PlatformError::Network {
-            reason: e.without_url().to_string(),
-        })?;
+            .map_err(|e| e.into_platform_error(MISSING_SCOPE))?
+            .json()
+            .map_err(malformed)?;
 
         let item = body
             .get("items")
@@ -115,36 +85,6 @@ impl YoutubeChannelLookup {
             ("view_count".to_owned(), Variant::Int(view_count)),
         ])))
     }
-
-    async fn map_failure(&self, resp: reqwest::Response) -> PlatformError {
-        let status = resp.status();
-        let retry_after_secs = resp
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
-        let body_text = resp.text().await.unwrap_or_default();
-
-        match status {
-            StatusCode::TOO_MANY_REQUESTS => PlatformError::RateLimited { retry_after_secs },
-            StatusCode::FORBIDDEN if body_text.contains("quotaExceeded") => {
-                PlatformError::QuotaExhausted
-            }
-            StatusCode::FORBIDDEN
-                if body_text.contains("insufficientPermissions")
-                    || body_text.contains("operationNotSupported") =>
-            {
-                PlatformError::Auth {
-                    reason: "channel lookup scope missing".to_owned(),
-                }
-            }
-            _ => PlatformError::Http {
-                status: status.as_u16(),
-                body: body_text,
-            },
-        }
-    }
 }
 
 #[cfg(test)]
@@ -157,22 +97,14 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::quota_state::SharedQuota;
-
-    const TOKEN_SENTINEL: &str = "yt-lookup-secret-token";
+    use crate::endpoints_test_support::data_api_at;
 
     fn token_source() -> TokenSource {
-        Arc::new(|| Box::pin(async { Ok(TOKEN_SENTINEL.to_owned()) }))
+        Arc::new(|| Box::pin(async { Ok("yt-lookup-token".to_owned()) }))
     }
 
     fn lookup_on(server: &MockServer) -> YoutubeChannelLookup {
-        let quota = SharedQuota::default();
-        YoutubeChannelLookup::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            token_source(),
-            quota,
-        )
-        .with_api_base(server.uri())
+        YoutubeChannelLookup::new(data_api_at(&server.uri()), token_source())
     }
 
     fn one_channel() -> serde_json::Value {
@@ -260,43 +192,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn lookup_maps_403_operation_not_supported_to_auth() {
+    async fn lookup_maps_an_undecodable_success_body_to_malformed_response() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
             .respond_with(
-                ResponseTemplate::new(403).set_body_string(
-                    r#"{"error":{"errors":[{"reason":"operationNotSupported"}]}}"#,
-                ),
+                ResponseTemplate::new(reqwest::StatusCode::OK.as_u16()).set_body_string("not json"),
             )
             .mount(&server)
             .await;
 
         let err = lookup_on(&server).lookup("@creator").await.unwrap_err();
-        assert!(
-            matches!(err, PlatformError::Auth { .. }),
-            "403 operationNotSupported must map to Auth, got: {err}"
-        );
-    }
 
-    #[tokio::test]
-    async fn lookup_error_does_not_leak_token_or_url() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(500).set_body_string("boom"))
-            .mount(&server)
-            .await;
-
-        let err = lookup_on(&server).lookup("@creator").await.unwrap_err();
-        let msg = err.to_string();
         assert!(
-            !msg.contains(TOKEN_SENTINEL),
-            "error must not leak the bearer token: {msg}"
-        );
-        assert!(
-            !msg.contains(&server.uri()),
-            "error must not leak the request URL: {msg}"
+            matches!(err, PlatformError::MalformedResponse { .. }),
+            "{err}"
         );
     }
 }

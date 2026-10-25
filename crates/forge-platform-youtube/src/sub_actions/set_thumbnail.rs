@@ -119,7 +119,6 @@ mod tests {
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-    use crate::quota_state::SharedQuota;
 
     const TOKEN_SENTINEL: &str = "yt-thumb-runner-token";
 
@@ -161,14 +160,11 @@ mod tests {
     fn runner_on(server: &MockServer, broadcast: Option<&str>) -> SetThumbnailRunner {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(broadcast.map(|s| s.to_owned()));
-        let quota = SharedQuota::default();
         let thumb = YoutubeThumbnail::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             handle,
-            quota,
-        )
-        .with_api_base(server.uri());
+        );
         SetThumbnailRunner::new(Arc::new(thumb))
     }
 
@@ -183,14 +179,11 @@ mod tests {
     fn validate_config_requires_non_empty_string_image_path() {
         let server_uri = "http://127.0.0.1:0".to_owned();
         let handle = ActiveBroadcastIdHandle::new();
-        let quota = SharedQuota::default();
         let thumb = YoutubeThumbnail::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(&server_uri),
             token_source(),
             handle,
-            quota,
-        )
-        .with_api_base(server_uri);
+        );
         let runner = SetThumbnailRunner::new(Arc::new(thumb));
 
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![

@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventStream};
 use forge_platform_core::{
-    ChatPlatform, ConnectionState, ConnectionTransition, PlatformCapabilities, PlatformEndpoints,
-    PlatformError, connection_state_changed_event,
+    ChatPlatform, ConnectionState, ConnectionTransition, PlatformCapabilities, PlatformError,
+    connection_state_changed_event,
 };
 use forge_storage::BanLedgerRepo;
 use futures::future::BoxFuture;
@@ -14,10 +14,10 @@ use tokio_util::sync::CancellationToken;
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::chat_poller::YoutubeChatPoller;
 use crate::credentials_manager::YoutubeCredentialsManager;
+use crate::data_api::YoutubeDataApi;
 use crate::event_channel::PlatformEventChannel;
 use crate::live_chat_id::LiveChatIdHandle;
 use crate::poll_health::{PollHealthReporter, PollLinkHealth};
-use crate::quota_state::SharedQuota;
 use crate::send_chat::YoutubeSendChat;
 
 const PLATFORM_ID: &str = "youtube";
@@ -25,7 +25,7 @@ const PLATFORM_ID: &str = "youtube";
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
 pub struct YoutubePlatform {
-    endpoints: PlatformEndpoints,
+    api: YoutubeDataApi,
     capabilities: PlatformCapabilities,
     channel_id: String,
     events: Arc<PlatformEventChannel>,
@@ -33,7 +33,6 @@ pub struct YoutubePlatform {
     sender: YoutubeSendChat,
     live_chat_id: LiveChatIdHandle,
     active_broadcast_id: ActiveBroadcastIdHandle,
-    quota: SharedQuota,
     ban_ledger: Arc<dyn BanLedgerRepo>,
     state: Arc<Mutex<ConnectionState>>,
     state_tx: watch::Sender<ConnectionState>,
@@ -42,23 +41,21 @@ pub struct YoutubePlatform {
 
 impl YoutubePlatform {
     pub fn new(
-        endpoints: &PlatformEndpoints,
+        api: YoutubeDataApi,
         channel_id: String,
         credentials_manager: Arc<YoutubeCredentialsManager>,
         live_chat_id: LiveChatIdHandle,
         active_broadcast_id: ActiveBroadcastIdHandle,
-        quota: SharedQuota,
         ban_ledger: Arc<dyn BanLedgerRepo>,
     ) -> Self {
         let sender = YoutubeSendChat::new(
-            endpoints,
+            api.clone(),
             token_source(Arc::clone(&credentials_manager)),
             live_chat_id.clone(),
-            quota.clone(),
         );
         let (state_tx, _) = watch::channel(ConnectionState::Disconnected);
         Self {
-            endpoints: endpoints.clone(),
+            api,
             capabilities: youtube_capabilities(),
             channel_id,
             events: Arc::new(PlatformEventChannel::new()),
@@ -66,7 +63,6 @@ impl YoutubePlatform {
             sender,
             live_chat_id,
             active_broadcast_id,
-            quota,
             ban_ledger,
             state: Arc::new(Mutex::new(ConnectionState::Disconnected)),
             state_tx,
@@ -86,8 +82,8 @@ impl YoutubePlatform {
         &self.ban_ledger
     }
 
-    pub(crate) fn endpoints(&self) -> &PlatformEndpoints {
-        &self.endpoints
+    pub(crate) fn api(&self) -> &YoutubeDataApi {
+        &self.api
     }
 
     pub(crate) fn state_receiver(&self) -> watch::Receiver<ConnectionState> {
@@ -126,13 +122,12 @@ impl ChatPlatform for YoutubePlatform {
 
         let cancel = CancellationToken::new();
         let poller = YoutubeChatPoller::new(
-            &self.endpoints,
+            self.api.clone(),
             token_source(Arc::clone(&self.credentials_manager)),
             tx,
             self.channel_id.clone(),
             self.live_chat_id.clone(),
             self.active_broadcast_id.clone(),
-            self.quota.clone(),
             Arc::clone(&self.ban_ledger),
         )
         .with_health_reporter(health_reporter(
@@ -336,12 +331,11 @@ mod tests {
             GoogleAuthFlow::new(&endpoints, "test_cid".to_owned(), "test_secret".to_owned()),
         ));
         YoutubePlatform::new(
-            &endpoints,
+            crate::endpoints_test_support::unreachable_data_api(),
             "UCtest".to_owned(),
             manager,
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
-            SharedQuota::default(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
     }

@@ -78,7 +78,6 @@ impl YoutubeIntegrationBundle {
         channel_id: String,
         platform: Arc<YoutubePlatform>,
         credentials_manager: Arc<YoutubeCredentialsManager>,
-        quota: SharedQuota,
     ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
         let (health_tx, _) = broadcast::channel(16);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
@@ -93,18 +92,17 @@ impl YoutubeIntegrationBundle {
                     as futures::future::BoxFuture<'static, _>
             })
         };
+        let quota = platform.api().quota().clone();
         let follow_lookup = YoutubeFollowLookup::new(
-            platform.endpoints(),
+            platform.api().clone(),
             token_source.clone(),
-            quota.clone(),
             channel_id.clone(),
         );
         let retired = CancellationToken::new();
         let viewer_poll = YoutubeViewerPoll::new(
-            platform.endpoints(),
+            platform.api().clone(),
             token_source,
             platform.active_broadcast_id(),
-            quota.clone(),
             viewer_report_tx.clone(),
         );
         let poll_retired = retired.clone();
@@ -774,67 +772,55 @@ mod tests {
             ),
         ));
         let platform = Arc::new(YoutubePlatform::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_charging("http://127.0.0.1:0", quota),
             "UCabc123".to_owned(),
             Arc::clone(&manager),
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
-            SharedQuota::default(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         ));
-        let (bundle, _health_tx) = YoutubeIntegrationBundle::new(
-            "UCabc123".to_owned(),
-            Arc::clone(&platform),
-            manager,
-            quota,
-        );
+        let (bundle, _health_tx) =
+            YoutubeIntegrationBundle::new("UCabc123".to_owned(), Arc::clone(&platform), manager);
         (bundle, platform)
     }
 
     fn sub_action_registry() -> SubActionRegistry {
-        let quota = SharedQuota::default();
+        let api = crate::endpoints_test_support::unreachable_data_api();
         let sender = Arc::new(YoutubeSendChat::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            api.clone(),
             token_source(),
             LiveChatIdHandle::new(),
-            quota.clone(),
         ));
         let moderation = Arc::new(YoutubeModeration::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            api.clone(),
             token_source(),
             crate::ban_ledger_test_support::broadcaster_source(),
             LiveChatIdHandle::new(),
-            quota.clone(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         ));
         let metadata = Arc::new(YoutubeStreamMetadata::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            api.clone(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
-            quota.clone(),
         ));
         let stream_stats = Arc::new(crate::stream_stats::YoutubeStreamStats::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            api.clone(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
-            quota.clone(),
         ));
         let ad_break = Arc::new(crate::ad_break::YoutubeAdBreak::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            api.clone(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
-            quota.clone(),
         ));
         let thumbnail = Arc::new(crate::thumbnail::YoutubeThumbnail::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            api.clone(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
-            quota.clone(),
         ));
         let channel_lookup = Arc::new(crate::channel_lookup::YoutubeChannelLookup::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            api,
             token_source(),
-            quota,
         ));
         let mut reg = SubActionRegistry::new();
         register_youtube_sub_actions(

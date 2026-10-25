@@ -1,48 +1,35 @@
 use std::sync::Arc;
 
-use forge_net::DEFAULT_RETRY_AFTER_SECS;
-use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
+use forge_net::{GatewayRequest, Secret};
+use forge_platform_core::PlatformError;
 use futures::future::BoxFuture;
-use reqwest::StatusCode;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-use crate::quota_state::{SharedQuota, today_pacific};
+use crate::data_api::{YoutubeDataApi, json_body};
 
 const CUEPOINT_COST: u32 = 50;
+const CUEPOINT_PATH: &str = "/liveBroadcasts/cuepoint";
+const MISSING_SCOPE: &str = "ad break scope missing";
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
 pub struct YoutubeAdBreak {
-    client: reqwest::Client,
+    api: YoutubeDataApi,
     access_token_source: TokenSource,
     active_broadcast_id: ActiveBroadcastIdHandle,
-    quota: SharedQuota,
-    api_base: String,
 }
 
 impl YoutubeAdBreak {
     pub fn new(
-        endpoints: &PlatformEndpoints,
+        api: YoutubeDataApi,
         access_token_source: TokenSource,
         active_broadcast_id: ActiveBroadcastIdHandle,
-        quota: SharedQuota,
     ) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            api,
             access_token_source,
             active_broadcast_id,
-            quota,
-            api_base: endpoints
-                .base_url(EndpointSurface::YouTubeDataApi)
-                .to_owned(),
         }
-    }
-
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn with_api_base(mut self, api_base: String) -> Self {
-        self.api_base = api_base;
-        self
     }
 
     pub async fn insert_cuepoint(&self, duration_secs: u32) -> Result<(), PlatformError> {
@@ -53,66 +40,23 @@ impl YoutubeAdBreak {
                     feature: "ad break - no active YouTube broadcast".to_owned(),
                 })?;
 
-        {
-            let today = today_pacific();
-            let mut qt = self.quota.lock().await;
-            qt.charge(CUEPOINT_COST, today)?;
-        }
-
-        let token = (self.access_token_source)().await?;
-        let url = format!("{}/liveBroadcasts/cuepoint", self.api_base);
         let payload = serde_json::json!({
             "cueType": "cueTypeAd",
             "durationSecs": duration_secs,
         });
+        let body = json_body(&payload)?;
+        let token = (self.access_token_source)().await?;
+        let request = GatewayRequest::post(CUEPOINT_PATH)
+            .label(CUEPOINT_PATH)
+            .bearer(Secret::new(token))
+            .query("id", broadcast_id)
+            .body(body);
 
-        let resp = self
-            .client
-            .post(&url)
-            .bearer_auth(&token)
-            .query(&[("id", broadcast_id.as_str())])
-            .json(&payload)
-            .send()
+        self.api
+            .send(CUEPOINT_COST, request)
             .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = resp.status();
-        if status == StatusCode::OK || status == StatusCode::CREATED {
-            return Ok(());
-        }
-        Err(self.map_failure(resp).await)
-    }
-
-    async fn map_failure(&self, resp: reqwest::Response) -> PlatformError {
-        let status = resp.status();
-        let retry_after_secs = resp
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
-        let body_text = resp.text().await.unwrap_or_default();
-
-        match status {
-            StatusCode::TOO_MANY_REQUESTS => PlatformError::RateLimited { retry_after_secs },
-            StatusCode::FORBIDDEN if body_text.contains("quotaExceeded") => {
-                PlatformError::QuotaExhausted
-            }
-            StatusCode::FORBIDDEN
-                if body_text.contains("insufficientPermissions")
-                    || body_text.contains("operationNotSupported") =>
-            {
-                PlatformError::Auth {
-                    reason: "ad break scope missing".to_owned(),
-                }
-            }
-            _ => PlatformError::Http {
-                status: status.as_u16(),
-                body: body_text,
-            },
-        }
+            .map(drop)
+            .map_err(|e| e.into_platform_error(MISSING_SCOPE))
     }
 }
 
@@ -126,40 +70,26 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+    use crate::endpoints_test_support::{data_api_charging, unreachable_data_api, used_today};
     use crate::quota_state::SharedQuota;
 
-    const TOKEN_SENTINEL: &str = "yt-adbreak-secret-token";
-
     fn token_source() -> TokenSource {
-        Arc::new(|| Box::pin(async { Ok(TOKEN_SENTINEL.to_owned()) }))
+        Arc::new(|| Box::pin(async { Ok("yt-adbreak-token".to_owned()) }))
     }
 
-    fn ad_break_on(server: &MockServer, broadcast: Option<&str>) -> (YoutubeAdBreak, SharedQuota) {
+    fn broadcast(id: Option<&str>) -> ActiveBroadcastIdHandle {
         let handle = ActiveBroadcastIdHandle::new();
-        handle.set(broadcast.map(|s| s.to_owned()));
-        let quota = SharedQuota::default();
-        let ad_break = YoutubeAdBreak::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            token_source(),
-            handle,
-            quota.clone(),
-        )
-        .with_api_base(server.uri());
-        (ad_break, quota)
+        handle.set(id.map(ToOwned::to_owned));
+        handle
     }
 
     #[tokio::test]
     async fn insert_returns_unsupported_when_no_active_broadcast() {
-        let server = MockServer::start().await;
-        let (ad_break, _quota) = ad_break_on(&server, None);
+        let ad_break = YoutubeAdBreak::new(unreachable_data_api(), token_source(), broadcast(None));
 
         let err = ad_break.insert_cuepoint(30).await.unwrap_err();
-        assert!(
-            matches!(err, PlatformError::Unsupported { .. }),
-            "expected Unsupported without a broadcast, got: {err}"
-        );
-        assert!(server.received_requests().await.unwrap().is_empty());
+
+        assert!(matches!(err, PlatformError::Unsupported { .. }), "{err}");
     }
 
     #[tokio::test]
@@ -175,65 +105,15 @@ mod tests {
             .expect(1)
             .mount(&server)
             .await;
-
-        let (ad_break, quota) = ad_break_on(&server, Some("bc-777"));
+        let quota = SharedQuota::default();
+        let ad_break = YoutubeAdBreak::new(
+            data_api_charging(&server.uri(), quota.clone()),
+            token_source(),
+            broadcast(Some("bc-777")),
+        );
 
         ad_break.insert_cuepoint(45).await.unwrap();
 
-        assert_eq!(
-            quota.lock().await.used_today,
-            CUEPOINT_COST,
-            "successful cuepoint must charge {CUEPOINT_COST} units"
-        );
-    }
-
-    #[tokio::test]
-    async fn insert_maps_429_to_rate_limited_with_retry_after() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/liveBroadcasts/cuepoint"))
-            .respond_with(
-                ResponseTemplate::new(429)
-                    .append_header("retry-after", "45")
-                    .set_body_string("slow down"),
-            )
-            .mount(&server)
-            .await;
-
-        let (ad_break, _quota) = ad_break_on(&server, Some("bc"));
-
-        let err = ad_break.insert_cuepoint(30).await.unwrap_err();
-        assert!(
-            matches!(
-                err,
-                PlatformError::RateLimited {
-                    retry_after_secs: 45
-                }
-            ),
-            "expected RateLimited retry_after=45, got: {err}"
-        );
-    }
-
-    #[tokio::test]
-    async fn insert_error_does_not_leak_token_or_url() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/liveBroadcasts/cuepoint"))
-            .respond_with(ResponseTemplate::new(400).set_body_string("bad request"))
-            .mount(&server)
-            .await;
-
-        let (ad_break, _quota) = ad_break_on(&server, Some("bc"));
-
-        let err = ad_break.insert_cuepoint(30).await.unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            !msg.contains(TOKEN_SENTINEL),
-            "error must not leak the bearer token: {msg}"
-        );
-        assert!(
-            !msg.contains(&server.uri()),
-            "error must not leak the request URL: {msg}"
-        );
+        assert_eq!(used_today(&quota).await, CUEPOINT_COST);
     }
 }

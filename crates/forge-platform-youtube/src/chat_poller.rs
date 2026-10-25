@@ -2,20 +2,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
-use forge_net::DedupSet;
-use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
+use forge_net::{DedupSet, ExpectedRefusal, GatewayRequest, Secret};
+use forge_platform_core::PlatformError;
 use forge_storage::BanLedgerRepo;
 use forge_types::{
     ChatEventDetail, ChatPayload, ChatSegment, ChatViewer, ModerationMarks, UserBadge,
 };
 use futures::future::BoxFuture;
-use reqwest::StatusCode;
 use time::OffsetDateTime;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::ban_ledger::{USER_BANNED_EVENT_TYPE, observed_ban};
+use crate::data_api::{DataApiError, YoutubeDataApi, malformed};
 use crate::live_chat_id::LiveChatIdHandle;
 use crate::payload_fields::{
     ban as ban_fields, chat as chat_fields, chat_mod as chat_mod_fields, entity,
@@ -23,7 +23,7 @@ use crate::payload_fields::{
     support as support_fields,
 };
 use crate::poll_health::{PollHealthReporter, PollHealthTracker};
-use crate::quota_state::{BROADCAST_COST, CHAT_POLL_COST, SharedQuota, today_pacific};
+use crate::quota_state::{BROADCAST_COST, CHAT_POLL_COST, today_pacific};
 
 const POLL_FLOOR_MS: u64 = 3_000;
 const LONG_INTERVAL_MS: u64 = 60_000;
@@ -31,7 +31,31 @@ const BROADCAST_CADENCE_SECS: u64 = 60;
 const DEDUP_WINDOW_SIZE: usize = 500;
 const CHAT_ENDED_EVENT_TYPE: &str = "chatEndedEvent";
 const LIVE_CHAT_ENDED_REASON: &str = "liveChatEnded";
+const LIVE_CHAT_ENDED_STATUS: u16 = reqwest::StatusCode::FORBIDDEN.as_u16();
 const CHAT_MESSAGES_PAGE_SIZE: &str = "200";
+const DEFAULT_POLLING_INTERVAL_MS: u64 = 5_000;
+const BROADCASTS_PATH: &str = "/liveBroadcasts";
+const MESSAGES_PATH: &str = "/liveChat/messages";
+const MISSING_SCOPE: &str = "chat read scope missing";
+
+enum FetchFailure {
+    Cancelled,
+    QuotaExhausted,
+    ChatEnded,
+    Failed(PlatformError),
+}
+
+impl From<DataApiError> for FetchFailure {
+    fn from(error: DataApiError) -> Self {
+        if error.is_cancelled() {
+            return Self::Cancelled;
+        }
+        match error {
+            DataApiError::QuotaExhausted => Self::QuotaExhausted,
+            other => Self::Failed(other.into_platform_error(MISSING_SCOPE)),
+        }
+    }
+}
 
 struct ChatMessagesResponse {
     items: Vec<serde_json::Value>,
@@ -40,13 +64,11 @@ struct ChatMessagesResponse {
 }
 
 pub struct YoutubeChatPoller {
-    client: reqwest::Client,
+    api: YoutubeDataApi,
     access_token_source:
         Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
     bus_sender: UnboundedSender<Event>,
     channel_id: String,
-    api_base: String,
-    quota_tracker: SharedQuota,
     live_chat_id: LiveChatIdHandle,
     active_broadcast_id: ActiveBroadcastIdHandle,
     ban_ledger: Arc<dyn BanLedgerRepo>,
@@ -56,7 +78,7 @@ pub struct YoutubeChatPoller {
 impl YoutubeChatPoller {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        endpoints: &PlatformEndpoints,
+        api: YoutubeDataApi,
         access_token_source: Arc<
             dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,
         >,
@@ -64,18 +86,13 @@ impl YoutubeChatPoller {
         channel_id: String,
         live_chat_id: LiveChatIdHandle,
         active_broadcast_id: ActiveBroadcastIdHandle,
-        quota_tracker: SharedQuota,
         ban_ledger: Arc<dyn BanLedgerRepo>,
     ) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            api,
             access_token_source,
             bus_sender,
             channel_id,
-            api_base: endpoints
-                .base_url(EndpointSurface::YouTubeDataApi)
-                .to_owned(),
-            quota_tracker,
             live_chat_id,
             active_broadcast_id,
             ban_ledger,
@@ -85,12 +102,6 @@ impl YoutubeChatPoller {
 
     pub(crate) fn with_health_reporter(mut self, reporter: PollHealthReporter) -> Self {
         self.health_reporter = Some(reporter);
-        self
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_api_base(mut self, api_base: String) -> Self {
-        self.api_base = api_base;
         self
     }
 
@@ -104,20 +115,6 @@ impl YoutubeChatPoller {
         'outer: loop {
             if cancel.is_cancelled() {
                 return Ok(());
-            }
-
-            {
-                let today = today_pacific();
-                let mut qt = self.quota_tracker.lock().await;
-                if let Err(e) = qt.charge(BROADCAST_COST, today) {
-                    tracing::warn!("quota exhausted before broadcast resolution: {e}");
-                    drop(qt);
-                    tokio::select! {
-                        () = tokio::time::sleep(Duration::from_secs(BROADCAST_CADENCE_SECS)) => {}
-                        () = cancel.cancelled() => return Ok(()),
-                    }
-                    continue 'outer;
-                }
             }
 
             let token = match (self.access_token_source)().await {
@@ -136,15 +133,16 @@ impl YoutubeChatPoller {
                 }
             };
 
-            let resolution = self.fetch_live_chat_id(&token).await;
-            if resolution.is_ok() {
-                health.succeeded();
-            } else {
-                health.failed();
-            }
-            let (live_chat_id, broadcast_id, current_title) = match resolution {
-                Ok(Some(ids)) => ids,
-                Ok(None) => {
+            let (live_chat_id, broadcast_id, current_title) = match self
+                .fetch_live_chat_id(&token, &cancel)
+                .await
+            {
+                Ok(Some(ids)) => {
+                    health.succeeded();
+                    ids
+                }
+                Ok(None) | Err(FetchFailure::ChatEnded) => {
+                    health.succeeded();
                     self.live_chat_id.set(None);
                     self.active_broadcast_id.set(None);
                     last_seen_title = None;
@@ -167,7 +165,20 @@ impl YoutubeChatPoller {
                     }
                     continue 'outer;
                 }
-                Err(e) => {
+                Err(FetchFailure::Cancelled) => return Ok(()),
+                Err(FetchFailure::QuotaExhausted) => {
+                    tracing::warn!(
+                        "quota exhausted before broadcast resolution: {}",
+                        PlatformError::QuotaExhausted
+                    );
+                    tokio::select! {
+                        () = tokio::time::sleep(Duration::from_secs(BROADCAST_CADENCE_SECS)) => {}
+                        () = cancel.cancelled() => return Ok(()),
+                    }
+                    continue 'outer;
+                }
+                Err(FetchFailure::Failed(e)) => {
+                    health.failed();
                     self.live_chat_id.set(None);
                     self.active_broadcast_id.set(None);
                     last_seen_title = None;
@@ -231,25 +242,6 @@ impl YoutubeChatPoller {
                     break 'inner;
                 }
 
-                let floor = {
-                    let today = today_pacific();
-                    let mut qt = self.quota_tracker.lock().await;
-                    if let Err(e) = qt.charge(CHAT_POLL_COST, today) {
-                        tracing::warn!("quota exhausted before chat poll: {e}");
-                        drop(qt);
-                        tokio::select! {
-                            () = tokio::time::sleep(Duration::from_secs(BROADCAST_CADENCE_SECS)) => {}
-                            () = cancel.cancelled() => return Ok(()),
-                        }
-                        break 'inner;
-                    }
-                    if qt.long_interval_mode(today) {
-                        Duration::from_millis(LONG_INTERVAL_MS)
-                    } else {
-                        Duration::from_millis(POLL_FLOOR_MS)
-                    }
-                };
-
                 let token = match (self.access_token_source)().await {
                     Ok(t) => t,
                     Err(e) => {
@@ -259,29 +251,39 @@ impl YoutubeChatPoller {
                             crate::error_shape::redact_platform_error(&e)
                         );
                         tokio::select! {
-                            () = tokio::time::sleep(floor) => {}
+                            () = tokio::time::sleep(self.poll_floor().await) => {}
                             () = cancel.cancelled() => return Ok(()),
                         }
                         continue 'inner;
                     }
                 };
 
-                let response = match self
-                    .fetch_chat_messages(&token, &live_chat_id, next_page_token.as_deref())
-                    .await
-                {
+                let fetched = self
+                    .fetch_chat_messages(&token, &live_chat_id, next_page_token.as_deref(), &cancel)
+                    .await;
+                let floor = self.poll_floor().await;
+                let response = match fetched {
                     Ok(r) => {
                         health.succeeded();
                         r
                     }
-                    Err(PlatformError::Http { status, body })
-                        if status == StatusCode::FORBIDDEN.as_u16()
-                            && body.contains(LIVE_CHAT_ENDED_REASON) =>
-                    {
+                    Err(FetchFailure::Cancelled) => return Ok(()),
+                    Err(FetchFailure::ChatEnded) => {
                         health.succeeded();
                         break 'inner;
                     }
-                    Err(e) => {
+                    Err(FetchFailure::QuotaExhausted) => {
+                        tracing::warn!(
+                            "quota exhausted before chat poll: {}",
+                            PlatformError::QuotaExhausted
+                        );
+                        tokio::select! {
+                            () = tokio::time::sleep(Duration::from_secs(BROADCAST_CADENCE_SECS)) => {}
+                            () = cancel.cancelled() => return Ok(()),
+                        }
+                        break 'inner;
+                    }
+                    Err(FetchFailure::Failed(e)) => {
                         health.failed();
                         tracing::warn!("chat messages fetch failed: {e}");
                         tokio::select! {
@@ -372,38 +374,38 @@ impl YoutubeChatPoller {
         ))
     }
 
+    async fn poll_floor(&self) -> Duration {
+        if self
+            .api
+            .quota()
+            .lock()
+            .await
+            .long_interval_mode(today_pacific())
+        {
+            Duration::from_millis(LONG_INTERVAL_MS)
+        } else {
+            Duration::from_millis(POLL_FLOOR_MS)
+        }
+    }
+
     async fn fetch_live_chat_id(
         &self,
         token: &str,
-    ) -> Result<Option<(String, String, String)>, PlatformError> {
-        let url = format!("{}/liveBroadcasts", self.api_base);
-        let resp = self
-            .client
-            .get(&url)
-            .bearer_auth(token)
-            .query(&[
-                ("part", "snippet,contentDetails"),
-                ("broadcastStatus", "active"),
-                ("broadcastType", "all"),
-            ])
-            .send()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = resp.status();
-        if status != StatusCode::OK {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(PlatformError::Http {
-                status: status.as_u16(),
-                body,
-            });
-        }
-
-        let body: serde_json::Value = resp.json().await.map_err(|e| PlatformError::Network {
-            reason: e.without_url().to_string(),
-        })?;
+        cancel: &CancellationToken,
+    ) -> Result<Option<(String, String, String)>, FetchFailure> {
+        let request = GatewayRequest::get(BROADCASTS_PATH)
+            .label(BROADCASTS_PATH)
+            .bearer(Secret::new(token))
+            .query("part", "snippet,contentDetails")
+            .query("broadcastStatus", "active")
+            .query("broadcastType", "all")
+            .cancel_on(cancel.clone());
+        let body: serde_json::Value = self
+            .api
+            .send(BROADCAST_COST, request)
+            .await?
+            .json()
+            .map_err(|e| FetchFailure::Failed(malformed(e)))?;
 
         let item = body
             .get("items")
@@ -434,41 +436,32 @@ impl YoutubeChatPoller {
         token: &str,
         live_chat_id: &str,
         page_token: Option<&str>,
-    ) -> Result<ChatMessagesResponse, PlatformError> {
-        let url = format!("{}/liveChat/messages", self.api_base);
-
-        let mut query: Vec<(&str, String)> = vec![
-            ("liveChatId", live_chat_id.to_owned()),
-            ("part", "snippet,authorDetails".to_owned()),
-            ("maxResults", CHAT_MESSAGES_PAGE_SIZE.to_owned()),
-        ];
+        cancel: &CancellationToken,
+    ) -> Result<ChatMessagesResponse, FetchFailure> {
+        let mut request = GatewayRequest::get(MESSAGES_PATH)
+            .label(MESSAGES_PATH)
+            .bearer(Secret::new(token))
+            .query("liveChatId", live_chat_id)
+            .query("part", "snippet,authorDetails")
+            .query("maxResults", CHAT_MESSAGES_PAGE_SIZE)
+            .expect_refusal(ExpectedRefusal::status_with_excerpt(
+                LIVE_CHAT_ENDED_STATUS,
+                LIVE_CHAT_ENDED_REASON,
+            ))
+            .cancel_on(cancel.clone());
         if let Some(pt) = page_token {
-            query.push(("pageToken", pt.to_owned()));
+            request = request.query("pageToken", pt);
         }
 
-        let resp = self
-            .client
-            .get(&url)
-            .bearer_auth(token)
-            .query(&query)
-            .send()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = resp.status();
-        if status != StatusCode::OK {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(PlatformError::Http {
-                status: status.as_u16(),
-                body,
-            });
-        }
-
-        let body: serde_json::Value = resp.json().await.map_err(|e| PlatformError::Network {
-            reason: e.without_url().to_string(),
-        })?;
+        let body: serde_json::Value = match self.api.send(CHAT_POLL_COST, request).await {
+            Ok(response) => response
+                .json()
+                .map_err(|e| FetchFailure::Failed(malformed(e)))?,
+            Err(error) if error.forbidden_with_reason(LIVE_CHAT_ENDED_REASON) => {
+                return Err(FetchFailure::ChatEnded);
+            }
+            Err(error) => return Err(error.into()),
+        };
 
         let items = body
             .get("items")
@@ -487,7 +480,7 @@ impl YoutubeChatPoller {
                 v.as_u64()
                     .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
             })
-            .unwrap_or(5_000);
+            .unwrap_or(DEFAULT_POLLING_INTERVAL_MS);
 
         Ok(ChatMessagesResponse {
             items,
@@ -1034,6 +1027,9 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use crate::endpoints_test_support::{
+        StubReply, StubServer, drive_until, settle, spin_until, used_today,
+    };
     use crate::live_chat_id::LiveChatIdHandle;
     use crate::quota_state::QuotaState;
     use crate::quota_state::SharedQuota;
@@ -1121,16 +1117,14 @@ mod tests {
     fn make_poller(server: &MockServer) -> (YoutubeChatPoller, UnboundedSender<Event>) {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let poller = YoutubeChatPoller::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             tx.clone(),
             "UCtest".to_owned(),
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
-            make_quota(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
-        )
-        .with_api_base(server.uri());
+        );
         (poller, tx)
     }
 
@@ -1155,16 +1149,14 @@ mod tests {
     ) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let poller = YoutubeChatPoller::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             tx,
             "UCtest".to_owned(),
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
-            make_quota(),
             ban_ledger,
-        )
-        .with_api_base(server.uri());
+        );
         (poller, rx)
     }
 
@@ -1176,49 +1168,53 @@ mod tests {
         assert_eq!(online.kind, "youtube.stream.online");
     }
 
-    async fn broadcast_poll_count(server: &MockServer) -> usize {
-        server
-            .received_requests()
-            .await
-            .map(|reqs| {
-                reqs.iter()
-                    .filter(|r| r.url.path() == "/liveBroadcasts")
-                    .count()
-            })
-            .unwrap_or(0)
-    }
+    const DRIVE_BUDGET: Duration = Duration::from_secs(10 * BROADCAST_CADENCE_SECS);
+    const BROADCASTS: &str = "/liveBroadcasts";
+    const CHAT_MESSAGES: &str = "/liveChat/messages";
 
-    const POLLER_WALL_BUDGET: Duration = Duration::from_secs(10);
-    const POLLER_CHECK_STEP: Duration = Duration::from_millis(50);
+    fn stub_poller_with_quota(
+        server: &StubServer,
+        quota: SharedQuota,
+    ) -> (
+        YoutubeChatPoller,
+        LiveChatIdHandle,
+        tokio::sync::mpsc::UnboundedReceiver<Event>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let live = LiveChatIdHandle::new();
+        let poller = YoutubeChatPoller::new(
+            crate::endpoints_test_support::data_api_charging(&server.uri(), quota),
+            token_source(),
+            tx,
+            "UCtest".to_owned(),
+            live.clone(),
+            ActiveBroadcastIdHandle::new(),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+        );
+        (poller, live, rx)
+    }
 
     async fn drain_events_over_broadcast_cycles(
         poller: YoutubeChatPoller,
         mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
-        server: &MockServer,
+        server: &StubServer,
         min_broadcast_polls: usize,
     ) -> Vec<Event> {
         let cancel = CancellationToken::new();
-        let cancel_clone = cancel.clone();
-        let join = tokio::spawn(async move { poller.run(cancel_clone).await });
+        let join = tokio::spawn(poller.run(cancel.clone()));
 
-        let started = std::time::Instant::now();
-        let reached = loop {
-            if broadcast_poll_count(server).await >= min_broadcast_polls {
-                break true;
-            }
-            if started.elapsed() >= POLLER_WALL_BUDGET {
-                break false;
-            }
-            tokio::time::sleep(POLLER_CHECK_STEP).await;
-        };
+        let reached = drive_until(
+            || server.request_count(BROADCASTS) >= min_broadcast_polls,
+            DRIVE_BUDGET,
+        )
+        .await;
 
         cancel.cancel();
         join.await.unwrap().unwrap();
         assert!(
             reached,
-            "poller made {} of the {min_broadcast_polls} broadcast polls the assertions below \
-             assume; any event-count mismatch after this point is a starved poller, not a bug",
-            broadcast_poll_count(server).await,
+            "poller made {} of the {min_broadcast_polls} broadcast polls",
+            server.request_count(BROADCASTS),
         );
 
         let mut events = Vec::new();
@@ -1519,16 +1515,14 @@ mod tests {
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let poller = YoutubeChatPoller::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             tx,
             "UCtest".to_owned(),
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
-            make_quota(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
-        )
-        .with_api_base(server.uri());
+        );
 
         let cancel = CancellationToken::new();
         let cancel_clone = cancel.clone();
@@ -1612,16 +1606,14 @@ mod tests {
         let live = LiveChatIdHandle::new();
         let broadcast = ActiveBroadcastIdHandle::new();
         let poller = YoutubeChatPoller::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             tx,
             "UCtest".to_owned(),
             live.clone(),
             broadcast.clone(),
-            make_quota(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
-        )
-        .with_api_base(server.uri());
+        );
         (poller, live, broadcast, rx)
     }
 
@@ -1666,16 +1658,14 @@ mod tests {
         broadcast.set(Some("stale-bc".to_owned()));
 
         let poller = YoutubeChatPoller::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             tx,
             "UCtest".to_owned(),
             live.clone(),
             broadcast.clone(),
-            make_quota(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
-        )
-        .with_api_base(server.uri());
+        );
 
         let cancel = CancellationToken::new();
         let cancel_clone = cancel.clone();
@@ -1983,53 +1973,14 @@ mod tests {
 
     const QUOTA_DAILY_LIMIT_FOR_TEST: u32 = 10_000;
 
-    #[allow(clippy::type_complexity)]
-    fn poller_with_quota(
-        server: &MockServer,
-        quota: SharedQuota,
-    ) -> (
-        YoutubeChatPoller,
-        LiveChatIdHandle,
-        tokio::sync::mpsc::UnboundedReceiver<Event>,
+    fn reply_sequenced_broadcasts(
+        server: &StubServer,
+        first: &serde_json::Value,
+        second: &serde_json::Value,
     ) {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let live = LiveChatIdHandle::new();
-        let poller = YoutubeChatPoller::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            token_source(),
-            tx,
-            "UCtest".to_owned(),
-            live.clone(),
-            ActiveBroadcastIdHandle::new(),
-            quota,
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
-        )
-        .with_api_base(server.uri());
-        (poller, live, rx)
-    }
-
-    async fn mount_sequenced_broadcasts(
-        server: &MockServer,
-        first: serde_json::Value,
-        second: serde_json::Value,
-    ) {
-        Mock::given(method("GET"))
-            .and(path("/liveBroadcasts"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(first))
-            .up_to_n_times(1)
-            .mount(server)
-            .await;
-        Mock::given(method("GET"))
-            .and(path("/liveBroadcasts"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(second.clone()))
-            .up_to_n_times(1)
-            .mount(server)
-            .await;
-        Mock::given(method("GET"))
-            .and(path("/liveBroadcasts"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(second))
-            .mount(server)
-            .await;
+        server.reply_times(BROADCASTS, StubReply::ok(first), 1);
+        server.reply_times(BROADCASTS, StubReply::ok(second), 1);
+        server.reply_always(BROADCASTS, StubReply::ok(second));
     }
 
     async fn run_until_resolution_and_drain_titles(
@@ -2039,19 +1990,13 @@ mod tests {
         until_live_chat_id: &str,
     ) -> Vec<Event> {
         let cancel = CancellationToken::new();
-        let cancel_clone = cancel.clone();
-        let join = tokio::spawn(async move { poller.run(cancel_clone).await });
+        let join = tokio::spawn(poller.run(cancel.clone()));
 
-        let started = std::time::Instant::now();
-        let reached = loop {
-            if live.get().as_deref() == Some(until_live_chat_id) {
-                break true;
-            }
-            if started.elapsed() >= POLLER_WALL_BUDGET {
-                break false;
-            }
-            tokio::time::sleep(POLLER_CHECK_STEP).await;
-        };
+        let reached = drive_until(
+            || live.get().as_deref() == Some(until_live_chat_id),
+            DRIVE_BUDGET,
+        )
+        .await;
 
         cancel.cancel();
         join.await.unwrap().unwrap();
@@ -2071,15 +2016,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn first_broadcast_resolution_records_title_without_emitting_event() {
-        let server = MockServer::start().await;
-        mount_sequenced_broadcasts(
+        let server = StubServer::start().await;
+        reply_sequenced_broadcasts(
             &server,
-            broadcast_response_titled("lc-1", "Steady Title"),
-            broadcast_response_titled("lc-2", "Steady Title"),
-        )
-        .await;
+            &broadcast_response_titled("lc-1", "Steady Title"),
+            &broadcast_response_titled("lc-2", "Steady Title"),
+        );
 
-        let (poller, live, rx) = poller_with_quota(&server, quota_for_two_resolutions());
+        let (poller, live, rx) = stub_poller_with_quota(&server, quota_for_two_resolutions());
         let events = run_until_resolution_and_drain_titles(poller, live, rx, "lc-2").await;
 
         assert!(
@@ -2091,15 +2035,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn changed_title_on_second_resolution_emits_one_title_changed_event() {
-        let server = MockServer::start().await;
-        mount_sequenced_broadcasts(
+        let server = StubServer::start().await;
+        reply_sequenced_broadcasts(
             &server,
-            broadcast_response_titled("lc-1", "Old Title"),
-            broadcast_response_titled("lc-2", "New Title"),
-        )
-        .await;
+            &broadcast_response_titled("lc-1", "Old Title"),
+            &broadcast_response_titled("lc-2", "New Title"),
+        );
 
-        let (poller, live, rx) = poller_with_quota(&server, quota_for_two_resolutions());
+        let (poller, live, rx) = stub_poller_with_quota(&server, quota_for_two_resolutions());
         let events = run_until_resolution_and_drain_titles(poller, live, rx, "lc-2").await;
 
         assert_eq!(
@@ -2115,15 +2058,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn unchanged_title_across_two_resolutions_emits_no_event() {
-        let server = MockServer::start().await;
-        mount_sequenced_broadcasts(
+        let server = StubServer::start().await;
+        reply_sequenced_broadcasts(
             &server,
-            broadcast_response_titled("lc-1", "Same Title"),
-            broadcast_response_titled("lc-2", "Same Title"),
-        )
-        .await;
+            &broadcast_response_titled("lc-1", "Same Title"),
+            &broadcast_response_titled("lc-2", "Same Title"),
+        );
 
-        let (poller, live, rx) = poller_with_quota(&server, quota_for_two_resolutions());
+        let (poller, live, rx) = stub_poller_with_quota(&server, quota_for_two_resolutions());
         let events = run_until_resolution_and_drain_titles(poller, live, rx, "lc-2").await;
 
         assert!(
@@ -2135,37 +2077,24 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn title_diff_across_intervening_offline_clear_does_not_fire() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/liveBroadcasts"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(broadcast_response_titled("lc-1", "Title A")),
-            )
-            .up_to_n_times(1)
-            .mount(&server)
-            .await;
-        Mock::given(method("GET"))
-            .and(path("/liveBroadcasts"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(empty_broadcast_response()))
-            .up_to_n_times(1)
-            .mount(&server)
-            .await;
-        Mock::given(method("GET"))
-            .and(path("/liveBroadcasts"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(broadcast_response_titled("lc-2", "Title B")),
-            )
-            .mount(&server)
-            .await;
+        let server = StubServer::start().await;
+        server.reply_times(
+            BROADCASTS,
+            StubReply::ok(&broadcast_response_titled("lc-1", "Title A")),
+            1,
+        );
+        server.reply_times(BROADCASTS, StubReply::ok(&empty_broadcast_response()), 1);
+        server.reply_always(
+            BROADCASTS,
+            StubReply::ok(&broadcast_response_titled("lc-2", "Title B")),
+        );
 
         let quota = SharedQuota::new(QuotaState {
             used_today: QUOTA_DAILY_LIMIT_FOR_TEST - 3 * BROADCAST_COST,
             last_reset_date: today_pacific(),
         });
 
-        let (poller, live, rx) = poller_with_quota(&server, quota);
+        let (poller, live, rx) = stub_poller_with_quota(&server, quota);
         let events = run_until_resolution_and_drain_titles(poller, live, rx, "lc-2").await;
 
         assert!(
@@ -2185,10 +2114,10 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn repeated_offline_resolutions_emit_no_events() {
-        let server = MockServer::start().await;
-        mount_broadcast_mock(&server, empty_broadcast_response()).await;
+        let server = StubServer::start().await;
+        server.reply_always(BROADCASTS, StubReply::ok(&empty_broadcast_response()));
 
-        let (poller, _live, rx) = poller_with_quota(&server, make_quota());
+        let (poller, _live, rx) = stub_poller_with_quota(&server, make_quota());
         let events = drain_events_over_broadcast_cycles(poller, rx, &server, 3).await;
 
         assert!(
@@ -2197,13 +2126,16 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn going_live_emits_single_online_with_title_and_broadcast_id() {
-        let server = MockServer::start().await;
-        mount_broadcast_mock(&server, broadcast_response("lc-live")).await;
-        mount_chat_mock(&server, chat_response(json!([]), 3000)).await;
+        let server = StubServer::start().await;
+        server.reply_always(BROADCASTS, StubReply::ok(&broadcast_response("lc-live")));
+        server.reply_always(
+            CHAT_MESSAGES,
+            StubReply::ok(&chat_response(json!([]), 3000)),
+        );
 
-        let (poller, rx) = make_poller_with_receiver(&server);
+        let (poller, _live, rx) = stub_poller_with_quota(&server, make_quota());
         let events = drain_events_over_broadcast_cycles(poller, rx, &server, 1).await;
 
         let online: Vec<&Event> = events
@@ -2224,15 +2156,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn going_offline_emits_single_offline_with_last_broadcast_id() {
-        let server = MockServer::start().await;
-        mount_sequenced_broadcasts(
+        let server = StubServer::start().await;
+        reply_sequenced_broadcasts(
             &server,
-            broadcast_response("lc-live"),
-            empty_broadcast_response(),
-        )
-        .await;
+            &broadcast_response("lc-live"),
+            &empty_broadcast_response(),
+        );
 
-        let (poller, _live, rx) = poller_with_quota(&server, quota_for_two_resolutions());
+        let (poller, _live, rx) = stub_poller_with_quota(&server, quota_for_two_resolutions());
         let events = drain_events_over_broadcast_cycles(poller, rx, &server, 2).await;
 
         let offline: Vec<&Event> = events
@@ -2250,20 +2181,18 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn chat_ended_then_absent_broadcast_emits_single_offline_total() {
-        let server = MockServer::start().await;
-        mount_sequenced_broadcasts(
+        let server = StubServer::start().await;
+        reply_sequenced_broadcasts(
             &server,
-            broadcast_response("lc-live"),
-            empty_broadcast_response(),
-        )
-        .await;
-        mount_chat_mock(
-            &server,
-            chat_response(json!([chat_ended_item("ended-1")]), 0),
-        )
-        .await;
+            &broadcast_response("lc-live"),
+            &empty_broadcast_response(),
+        );
+        server.reply_always(
+            CHAT_MESSAGES,
+            StubReply::ok(&chat_response(json!([chat_ended_item("ended-1")]), 0)),
+        );
 
-        let (poller, rx) = make_poller_with_receiver(&server);
+        let (poller, _live, rx) = stub_poller_with_quota(&server, make_quota());
         let events = drain_events_over_broadcast_cycles(poller, rx, &server, 2).await;
 
         let offline = events
@@ -2278,15 +2207,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn chat_ended_offline_carries_the_attached_broadcast_id_not_the_message_id() {
-        let server = MockServer::start().await;
-        mount_broadcast_mock(&server, broadcast_response("lc-live")).await;
-        mount_chat_mock(
-            &server,
-            chat_response(json!([chat_ended_item("ended-msg-id")]), 0),
-        )
-        .await;
+        let server = StubServer::start().await;
+        server.reply_always(BROADCASTS, StubReply::ok(&broadcast_response("lc-live")));
+        server.reply_always(
+            CHAT_MESSAGES,
+            StubReply::ok(&chat_response(json!([chat_ended_item("ended-msg-id")]), 0)),
+        );
 
-        let (poller, rx) = make_poller_with_receiver(&server);
+        let (poller, _live, rx) = stub_poller_with_quota(&server, make_quota());
         let events = drain_events_over_broadcast_cycles(poller, rx, &server, 2).await;
 
         let offline: Vec<&Event> = events
@@ -2304,18 +2232,17 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn duplicate_chat_ended_message_yields_exactly_one_offline() {
-        let server = MockServer::start().await;
-        mount_broadcast_mock(&server, broadcast_response("lc-live")).await;
-        mount_chat_mock(
-            &server,
-            chat_response(
+        let server = StubServer::start().await;
+        server.reply_always(BROADCASTS, StubReply::ok(&broadcast_response("lc-live")));
+        server.reply_always(
+            CHAT_MESSAGES,
+            StubReply::ok(&chat_response(
                 json!([chat_ended_item("ended-1"), chat_ended_item("ended-1")]),
                 0,
-            ),
-        )
-        .await;
+            )),
+        );
 
-        let (poller, rx) = make_poller_with_receiver(&server);
+        let (poller, _live, rx) = stub_poller_with_quota(&server, make_quota());
         let events = drain_events_over_broadcast_cycles(poller, rx, &server, 2).await;
 
         let offline = events
@@ -2323,14 +2250,6 @@ mod tests {
             .filter(|e| e.kind == "youtube.stream.offline")
             .count();
         assert_eq!(offline, 1, "dedup must collapse repeats, got {events:?}");
-    }
-
-    async fn request_count(server: &MockServer, request_path: &str) -> usize {
-        server
-            .received_requests()
-            .await
-            .map(|reqs| reqs.iter().filter(|r| r.url.path() == request_path).count())
-            .unwrap_or(0)
     }
 
     type TokenSource =
@@ -2346,77 +2265,51 @@ mod tests {
         (source, calls)
     }
 
-    async fn yield_until(mut reached: impl FnMut() -> bool, what: &str) {
-        let started = std::time::Instant::now();
-        while !reached() {
-            assert!(started.elapsed() < POLLER_WALL_BUDGET, "{what}");
-            tokio::task::yield_now().await;
-        }
-    }
-
-    async fn yield_repeatedly() {
-        for _ in 0..256 {
-            tokio::task::yield_now().await;
-        }
-    }
-
     #[tokio::test(start_paused = true)]
     async fn ended_chat_is_not_repolled_and_next_discovery_waits_for_the_cadence() {
         let ended_responses = [
             (
                 "chatEndedEvent",
-                ResponseTemplate::new(200)
-                    .set_body_json(chat_response(json!([chat_ended_item("ended-1")]), 0)),
+                StubReply::ok(&chat_response(json!([chat_ended_item("ended-1")]), 0)),
             ),
-            (
-                "403 liveChatEnded",
-                ResponseTemplate::new(403).set_body_json(json!({
-                    "error": { "errors": [{ "reason": "liveChatEnded" }] }
-                })),
-            ),
+            ("403 liveChatEnded", live_chat_ended()),
         ];
 
         for (label, response) in ended_responses {
-            let server = MockServer::start().await;
-            mount_broadcast_mock(&server, broadcast_response("lc-live")).await;
-            Mock::given(method("GET"))
-                .and(path("/liveChat/messages"))
-                .respond_with(response)
-                .mount(&server)
-                .await;
+            let server = StubServer::start().await;
+            server.reply_always(BROADCASTS, StubReply::ok(&broadcast_response("lc-live")));
+            server.reply_always(CHAT_MESSAGES, response);
 
             let (token_source, token_calls) = counting_token_source();
             let live_chat_id = LiveChatIdHandle::new();
             let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
             let poller = YoutubeChatPoller::new(
-                &crate::endpoints_test_support::unreachable_endpoints(),
+                crate::endpoints_test_support::data_api_at(&server.uri()),
                 token_source,
                 tx,
                 "UCtest".to_owned(),
                 live_chat_id.clone(),
                 ActiveBroadcastIdHandle::new(),
-                make_quota(),
                 crate::ban_ledger_test_support::MemoryBanLedger::shared(),
-            )
-            .with_api_base(server.uri());
+            );
             let cancel = CancellationToken::new();
             let cancel_clone = cancel.clone();
             let join = tokio::spawn(async move { poller.run(cancel_clone).await });
             let calls = || token_calls.load(std::sync::atomic::Ordering::SeqCst);
 
-            yield_until(
+            spin_until(
                 || (calls() >= 2 && live_chat_id.get().is_none()) || calls() >= 3,
                 "poller never finished the ended chat poll",
             )
             .await;
             tokio::time::advance(Duration::from_secs(BROADCAST_CADENCE_SECS - 1)).await;
-            yield_repeatedly().await;
+            settle().await;
             let token_calls_before_cadence = calls();
-            let chat_polls_before_cadence = request_count(&server, "/liveChat/messages").await;
-            let discoveries_before_cadence = request_count(&server, "/liveBroadcasts").await;
+            let chat_polls_before_cadence = server.request_count(CHAT_MESSAGES);
+            let discoveries_before_cadence = server.request_count(BROADCASTS);
 
             tokio::time::advance(Duration::from_secs(1)).await;
-            yield_until(
+            spin_until(
                 || calls() >= 3,
                 "discovery did not resume after the cadence",
             )
@@ -2439,15 +2332,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn same_live_session_resolved_twice_emits_single_online() {
-        let server = MockServer::start().await;
-        mount_sequenced_broadcasts(
+        let server = StubServer::start().await;
+        reply_sequenced_broadcasts(
             &server,
-            broadcast_response("lc-1"),
-            broadcast_response("lc-2"),
-        )
-        .await;
+            &broadcast_response("lc-1"),
+            &broadcast_response("lc-2"),
+        );
 
-        let (poller, _live, rx) = poller_with_quota(&server, quota_for_two_resolutions());
+        let (poller, _live, rx) = stub_poller_with_quota(&server, quota_for_two_resolutions());
         let events = drain_events_over_broadcast_cycles(poller, rx, &server, 2).await;
 
         let online = events
@@ -2465,30 +2357,35 @@ mod tests {
     fn poller_at(api_base: String) -> YoutubeChatPoller {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         YoutubeChatPoller::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(&api_base),
             token_source(),
             tx,
             "UCtest".to_owned(),
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
-            make_quota(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
-        .with_api_base(api_base)
     }
 
-    fn network_reason<T>(result: Result<T, PlatformError>) -> String {
+    fn failed_with<T>(result: Result<T, FetchFailure>) -> PlatformError {
         match result {
-            Err(PlatformError::Network { reason }) => reason,
-            Err(other) => panic!("expected PlatformError::Network, got {other:?}"),
+            Err(FetchFailure::Failed(error)) => error,
+            Err(FetchFailure::Cancelled) => panic!("expected a failure, got Cancelled"),
+            Err(FetchFailure::QuotaExhausted) => panic!("expected a failure, got QuotaExhausted"),
+            Err(FetchFailure::ChatEnded) => panic!("expected a failure, got ChatEnded"),
             Ok(_) => panic!("expected the fetch to fail"),
         }
     }
 
-    async fn network_reasons_from_both_fetches(poller: &YoutubeChatPoller) -> [String; 2] {
+    async fn failures_from_both_fetches(poller: &YoutubeChatPoller) -> [PlatformError; 2] {
+        let cancel = CancellationToken::new();
         [
-            network_reason(poller.fetch_live_chat_id("tok").await),
-            network_reason(poller.fetch_chat_messages("tok", "lc-1", None).await),
+            failed_with(poller.fetch_live_chat_id("tok", &cancel).await),
+            failed_with(
+                poller
+                    .fetch_chat_messages("tok", "lc-1", None, &cancel)
+                    .await,
+            ),
         ]
     }
 
@@ -2497,24 +2394,19 @@ mod tests {
         let host = "127.0.0.1:1";
         let poller = poller_at(format!("http://{host}/{URL_SENTINEL}"));
 
-        for reason in network_reasons_from_both_fetches(&poller).await {
+        for failure in failures_from_both_fetches(&poller).await {
+            let PlatformError::Network { reason } = failure else {
+                panic!("expected Network, got {failure:?}");
+            };
             assert!(
-                !reason.contains(URL_SENTINEL),
-                "request path leaked into the error: {reason:?}"
-            );
-            assert!(
-                !reason.contains(host),
-                "request host leaked into the error: {reason:?}"
-            );
-            assert!(
-                !reason.is_empty(),
-                "the transport failure must still be described: {reason:?}"
+                !reason.contains(URL_SENTINEL) && !reason.contains(host) && !reason.is_empty(),
+                "the transport failure must be described without the request URL: {reason:?}"
             );
         }
     }
 
     #[tokio::test]
-    async fn undecodable_body_reports_a_network_reason_stripped_of_the_request_url() {
+    async fn undecodable_body_reports_a_malformed_response_stripped_of_the_request_url() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(200).set_body_string("<html>not json</html>"))
@@ -2523,13 +2415,12 @@ mod tests {
 
         let poller = poller_at(format!("{}/{URL_SENTINEL}", server.uri()));
 
-        for reason in network_reasons_from_both_fetches(&poller).await {
+        for failure in failures_from_both_fetches(&poller).await {
+            let PlatformError::MalformedResponse { reason } = failure else {
+                panic!("expected MalformedResponse, got {failure:?}");
+            };
             assert!(
-                !reason.contains(URL_SENTINEL),
-                "request path leaked into the decode error: {reason:?}"
-            );
-            assert!(
-                !reason.contains(&server.uri()),
+                !reason.contains(URL_SENTINEL) && !reason.contains(&server.uri()),
                 "request url leaked into the decode error: {reason:?}"
             );
         }
@@ -2544,13 +2435,12 @@ mod tests {
         edit(&mut raw);
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let poller = YoutubeChatPoller::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::unreachable_data_api(),
             token_source(),
             tx,
             "UCtest".to_owned(),
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
-            make_quota(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         );
         poller
@@ -2584,13 +2474,12 @@ mod tests {
         .unwrap();
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let poller = YoutubeChatPoller::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::unreachable_data_api(),
             token_source(),
             tx,
             "UCtest".to_owned(),
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
-            make_quota(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         );
 
@@ -2838,7 +2727,7 @@ mod tests {
         Refused,
     }
 
-    fn probed_poller(server: &MockServer, token: TokenOutcome, quota: SharedQuota) -> ProbedPoller {
+    fn probed_poller(server: &StubServer, token: TokenOutcome, quota: SharedQuota) -> ProbedPoller {
         let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let counter = Arc::clone(&calls);
         let issues = matches!(token, TokenOutcome::Issued);
@@ -2860,16 +2749,14 @@ mod tests {
         });
         let (tx, events) = tokio::sync::mpsc::unbounded_channel();
         let poller = YoutubeChatPoller::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_charging(&server.uri(), quota),
             source,
             tx,
             "UCtest".to_owned(),
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
-            quota,
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
-        .with_api_base(server.uri())
         .with_health_reporter(reporter);
         ProbedPoller {
             poller,
@@ -2887,9 +2774,17 @@ mod tests {
         let cancel = CancellationToken::new();
         let join = tokio::spawn(poller.run(cancel.clone()));
         let mut seen = Vec::new();
-        for _ in 0..count {
-            seen.push(reports.recv().await.unwrap());
-        }
+        let reached = drive_until(
+            || {
+                while let Ok(report) = reports.try_recv() {
+                    seen.push(report);
+                }
+                seen.len() >= count
+            },
+            DRIVE_BUDGET,
+        )
+        .await;
+        assert!(reached, "only {} health report(s): {seen:?}", seen.len());
         cancel.cancel();
         join.await.unwrap().unwrap();
         seen
@@ -2902,59 +2797,34 @@ mod tests {
         })
     }
 
-    fn unpooled(status: StatusCode) -> ResponseTemplate {
-        ResponseTemplate::new(status.as_u16())
-            .insert_header(reqwest::header::CONNECTION.as_str(), CLOSE_CONNECTION)
+    fn server_error() -> StubReply {
+        StubReply::status(reqwest::StatusCode::INTERNAL_SERVER_ERROR.as_u16())
     }
 
-    const CLOSE_CONNECTION: &str = "close";
-
-    fn server_error() -> ResponseTemplate {
-        unpooled(StatusCode::INTERNAL_SERVER_ERROR)
+    fn live_chat_ended() -> StubReply {
+        StubReply::json(
+            reqwest::StatusCode::FORBIDDEN.as_u16(),
+            &json!({ "error": { "errors": [{ "reason": LIVE_CHAT_ENDED_REASON }] } }),
+        )
     }
 
-    fn live_chat_ended() -> ResponseTemplate {
-        unpooled(StatusCode::FORBIDDEN).set_body_json(json!({
-            "error": { "errors": [{ "reason": LIVE_CHAT_ENDED_REASON }] }
-        }))
-    }
-
-    async fn mount_responses(
-        server: &MockServer,
-        request_path: &str,
-        first: ResponseTemplate,
-        times: u64,
-        then: ResponseTemplate,
+    fn reply_then(
+        server: &StubServer,
+        path: &str,
+        first: StubReply,
+        times: usize,
+        then: StubReply,
     ) {
-        Mock::given(method("GET"))
-            .and(path(request_path))
-            .respond_with(first)
-            .up_to_n_times(times)
-            .mount(server)
-            .await;
-        Mock::given(method("GET"))
-            .and(path(request_path))
-            .respond_with(then)
-            .mount(server)
-            .await;
-    }
-
-    async fn mount_always(server: &MockServer, request_path: &str, response: ResponseTemplate) {
-        Mock::given(method("GET"))
-            .and(path(request_path))
-            .respond_with(response)
-            .mount(server)
-            .await;
+        server.reply_times(path, first, times);
+        server.reply_always(path, then);
     }
 
     const LIVE_LOOKUP_CALLS: usize = 1;
     const NEXT_CALL: usize = 1;
-    const BROADCASTS: &str = "/liveBroadcasts";
-    const CHAT_MESSAGES: &str = "/liveChat/messages";
     const LOSS_THRESHOLD: usize = crate::poll_health::CONSECUTIVE_POLL_FAILURES_FOR_LOSS as usize;
 
-    fn live_broadcast() -> ResponseTemplate {
-        unpooled(StatusCode::OK).set_body_json(broadcast_response("lc-live"))
+    fn live_broadcast() -> StubReply {
+        StubReply::ok(&broadcast_response("lc-live"))
     }
 
     #[tokio::test(start_paused = true)]
@@ -2982,9 +2852,9 @@ mod tests {
                 LIVE_LOOKUP_CALLS + LOSS_THRESHOLD,
             ),
         ] {
-            let server = MockServer::start().await;
-            mount_always(&server, BROADCASTS, broadcasts).await;
-            mount_always(&server, CHAT_MESSAGES, chat).await;
+            let server = StubServer::start().await;
+            server.reply_always(BROADCASTS, broadcasts);
+            server.reply_always(CHAT_MESSAGES, chat);
             let reports = first_reports(probed_poller(&server, token, make_quota()), 1).await;
             assert_eq!(reports, [(PollLinkHealth::Lost, lost_at_call)], "{label}");
         }
@@ -2992,15 +2862,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn absent_broadcast_after_a_loss_reports_recovery() {
-        let server = MockServer::start().await;
-        mount_responses(
+        let server = StubServer::start().await;
+        reply_then(
             &server,
             BROADCASTS,
             server_error(),
-            LOSS_THRESHOLD as u64,
-            unpooled(StatusCode::OK).set_body_json(empty_broadcast_response()),
-        )
-        .await;
+            LOSS_THRESHOLD,
+            StubReply::ok(&empty_broadcast_response()),
+        );
         let reports = first_reports(
             probed_poller(&server, TokenOutcome::Issued, make_quota()),
             2,
@@ -3017,24 +2886,22 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn live_chat_ended_counts_as_a_successful_poll() {
-        let server = MockServer::start().await;
-        mount_responses(
+        let server = StubServer::start().await;
+        reply_then(
             &server,
             BROADCASTS,
             live_broadcast(),
-            LIVE_LOOKUP_CALLS as u64,
+            LIVE_LOOKUP_CALLS,
             server_error(),
-        )
-        .await;
+        );
         let failed_chat_polls = LOSS_THRESHOLD - 1;
-        mount_responses(
+        reply_then(
             &server,
             CHAT_MESSAGES,
             server_error(),
-            failed_chat_polls as u64,
+            failed_chat_polls,
             live_chat_ended(),
-        )
-        .await;
+        );
         let ended_at_call = LIVE_LOOKUP_CALLS + failed_chat_polls + NEXT_CALL;
         let reports = first_reports(
             probed_poller(&server, TokenOutcome::Issued, make_quota()),
@@ -3048,41 +2915,40 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn local_quota_exhaustion_neither_breaks_nor_resets_the_failure_streak() {
-        let server = MockServer::start().await;
-        mount_responses(
-            &server,
-            BROADCASTS,
-            live_broadcast(),
-            LIVE_LOOKUP_CALLS as u64,
-            server_error(),
-        )
-        .await;
-        mount_always(&server, CHAT_MESSAGES, server_error()).await;
-        let failed_chat_polls = LOSS_THRESHOLD as u32 - 1;
-        let spare_broadcast_lookups = LOSS_THRESHOLD as u32;
-        let room = BROADCAST_COST
-            + failed_chat_polls * CHAT_POLL_COST
-            + spare_broadcast_lookups * BROADCAST_COST;
-        assert!(spare_broadcast_lookups * BROADCAST_COST < CHAT_POLL_COST);
-        let reports = first_reports(
-            probed_poller(&server, TokenOutcome::Issued, quota_with_room_for(room)),
-            1,
-        )
-        .await;
-        let streak_resumes_at_call = LIVE_LOOKUP_CALLS + failed_chat_polls as usize + NEXT_CALL;
-        assert_eq!(reports, [(PollLinkHealth::Lost, streak_resumes_at_call)]);
+    async fn a_local_quota_refusal_is_not_counted_as_a_failed_poll() {
+        let server = StubServer::start().await;
+        server.reply_always(BROADCASTS, server_error());
+        let failed_lookups = LOSS_THRESHOLD - 1;
+        let room = u32::try_from(failed_lookups).unwrap() * BROADCAST_COST;
+        let ProbedPoller {
+            poller,
+            mut reports,
+            _events,
+        } = probed_poller(&server, TokenOutcome::Issued, quota_with_room_for(room));
+        let cancel = CancellationToken::new();
+        let join = tokio::spawn(poller.run(cancel.clone()));
+
+        drive_until(|| false, DRIVE_BUDGET).await;
+        cancel.cancel();
+        join.await.unwrap().unwrap();
+
+        assert_eq!(
+            (reports.try_recv().ok(), server.request_count(BROADCASTS)),
+            (None, failed_lookups)
+        );
     }
 
     #[tokio::test(start_paused = true)]
     async fn first_chat_poll_after_a_pacific_rollover_waits_only_the_short_floor() {
-        let server = MockServer::start().await;
-        mount_broadcast_mock(&server, broadcast_response("lc-live")).await;
-        mount_chat_mock(
-            &server,
-            chat_response(json!([text_item("m-1", "hello", "Viewer")]), 0),
-        )
-        .await;
+        let server = StubServer::start().await;
+        server.reply_always(BROADCASTS, StubReply::ok(&broadcast_response("lc-live")));
+        server.reply_always(
+            CHAT_MESSAGES,
+            StubReply::ok(&chat_response(
+                json!([text_item("m-1", "hello", "Viewer")]),
+                0,
+            )),
+        );
         let previous_day = time::Date::from_calendar_date(2020, time::Month::January, 1).unwrap();
         let quota = SharedQuota::new(QuotaState {
             used_today: QUOTA_DAILY_LIMIT_FOR_TEST - 500,
@@ -3091,23 +2957,21 @@ mod tests {
         let (token_source, token_calls) = counting_token_source();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let poller = YoutubeChatPoller::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_charging(&server.uri(), quota),
             token_source,
             tx,
             "UCtest".to_owned(),
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
-            quota,
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
-        )
-        .with_api_base(server.uri());
+        );
         let cancel = CancellationToken::new();
         let cancel_clone = cancel.clone();
         let join = tokio::spawn(async move { poller.run(cancel_clone).await });
         let calls = || token_calls.load(std::sync::atomic::Ordering::SeqCst);
 
         let mut chat_message_seen = false;
-        yield_until(
+        spin_until(
             || {
                 while let Ok(event) = rx.try_recv() {
                     chat_message_seen |= event.kind == "youtube.chat.message";
@@ -3118,7 +2982,7 @@ mod tests {
         )
         .await;
         tokio::time::advance(Duration::from_millis(POLL_FLOOR_MS)).await;
-        yield_repeatedly().await;
+        settle().await;
         let token_calls_after_short_floor = calls();
 
         cancel.cancel();
@@ -3127,6 +2991,96 @@ mod tests {
         assert_eq!(
             token_calls_after_short_floor, 3,
             "discovery + first chat poll + second chat poll one short floor later"
+        );
+    }
+
+    #[test]
+    fn cancelling_a_poll_mid_fetch_returns_quietly_without_charging_or_reporting_health() {
+        for (label, held_path, charged) in [
+            ("broadcast lookup", BROADCASTS, 0),
+            ("chat poll", CHAT_MESSAGES, BROADCAST_COST),
+        ] {
+            let quota = SharedQuota::default();
+            let observed = quota.clone();
+            let (outcome, lines) =
+                crate::log_capture::capture_blocking(tracing::Level::WARN, async move {
+                    let server = StubServer::start().await;
+                    server.reply_always(BROADCASTS, live_broadcast());
+                    server.reply_always(held_path, StubReply::held());
+                    let ProbedPoller {
+                        poller,
+                        mut reports,
+                        _events,
+                    } = probed_poller(&server, TokenOutcome::Issued, quota);
+                    let cancel = CancellationToken::new();
+                    let join = tokio::spawn(poller.run(cancel.clone()));
+                    spin_until(
+                        || server.request_count(held_path) == 1,
+                        "the held request never reached the server",
+                    )
+                    .await;
+
+                    cancel.cancel();
+                    let finished = join.await.unwrap();
+
+                    (
+                        finished.is_ok(),
+                        reports.try_recv().ok().map(|(health, _)| health),
+                        used_today(&observed).await,
+                    )
+                });
+
+            assert_eq!(
+                (outcome, crate::log_capture::forge_lines(&lines).len()),
+                ((true, None, charged), 0),
+                "{label}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_throttle_seen_by_another_client_pauses_the_broadcast_lookup() {
+        let server = StubServer::start().await;
+        server.reply_always(
+            CHAT_MESSAGES,
+            StubReply::status(reqwest::StatusCode::TOO_MANY_REQUESTS.as_u16())
+                .header("retry-after", "3600"),
+        );
+        server.reply_always(BROADCASTS, live_broadcast());
+        let quota = SharedQuota::default();
+        let api = crate::endpoints_test_support::data_api_charging(&server.uri(), quota.clone());
+        let live = LiveChatIdHandle::new();
+        live.set(Some("lc-live".to_owned()));
+        let sender = crate::send_chat::YoutubeSendChat::new(api.clone(), token_source(), live);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let poller = YoutubeChatPoller::new(
+            api,
+            token_source(),
+            tx,
+            "UCtest".to_owned(),
+            LiveChatIdHandle::new(),
+            ActiveBroadcastIdHandle::new(),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+        );
+        let throttled = sender.send("hi").await;
+        let charged_by_send = used_today(&quota).await;
+        tokio::time::pause();
+
+        let lookup = poller
+            .fetch_live_chat_id("tok", &CancellationToken::new())
+            .await;
+
+        assert!(
+            matches!(throttled, Err(PlatformError::RateLimited { .. })),
+            "{throttled:?}"
+        );
+        assert!(
+            matches!(failed_with(lookup), PlatformError::RateLimitExhausted),
+            "the lookup must be refused locally"
+        );
+        assert_eq!(
+            (server.request_count(BROADCASTS), used_today(&quota).await),
+            (0, charged_by_send)
         );
     }
 }

@@ -119,7 +119,6 @@ mod tests {
 
     use super::*;
     use crate::live_chat_id::LiveChatIdHandle;
-    use crate::quota_state::SharedQuota;
 
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {
@@ -140,14 +139,11 @@ mod tests {
 
     fn runner_on(server: &MockServer) -> DeleteMessageRunner {
         let handle = LiveChatIdHandle::new();
-        let quota = SharedQuota::default();
         let sender = YoutubeSendChat::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             handle,
-            quota,
-        )
-        .with_api_base(server.uri());
+        );
         DeleteMessageRunner::new(Arc::new(sender))
     }
 
@@ -194,15 +190,11 @@ mod tests {
 
     #[test]
     fn validate_config_rejects_empty_or_non_string_id_and_accepts_valid() {
-        let runner = DeleteMessageRunner::new(Arc::new(
-            YoutubeSendChat::new(
-                &crate::endpoints_test_support::unreachable_endpoints(),
-                token_source(),
-                LiveChatIdHandle::new(),
-                SharedQuota::default(),
-            )
-            .with_api_base("http://127.0.0.1:0".to_owned()),
-        ));
+        let runner = DeleteMessageRunner::new(Arc::new(YoutubeSendChat::new(
+            crate::endpoints_test_support::unreachable_data_api(),
+            token_source(),
+            LiveChatIdHandle::new(),
+        )));
 
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![
             ("non-empty id", config("msg-1"), true),

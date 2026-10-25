@@ -1,51 +1,38 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use forge_net::DEFAULT_RETRY_AFTER_SECS;
-use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
+use forge_net::{GatewayRequest, Secret};
+use forge_platform_core::PlatformError;
 use forge_types::Variant;
 use futures::future::BoxFuture;
-use reqwest::StatusCode;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-use crate::quota_state::{SharedQuota, today_pacific};
+use crate::data_api::{YoutubeDataApi, malformed};
 use crate::timestamp;
 
 const FETCH_COST: u32 = 1;
+const VIDEOS_PATH: &str = "/videos";
+const MISSING_SCOPE: &str = "stream stats scope missing";
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
 pub struct YoutubeStreamStats {
-    client: reqwest::Client,
+    api: YoutubeDataApi,
     access_token_source: TokenSource,
     active_broadcast_id: ActiveBroadcastIdHandle,
-    quota: SharedQuota,
-    api_base: String,
 }
 
 impl YoutubeStreamStats {
     pub fn new(
-        endpoints: &PlatformEndpoints,
+        api: YoutubeDataApi,
         access_token_source: TokenSource,
         active_broadcast_id: ActiveBroadcastIdHandle,
-        quota: SharedQuota,
     ) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            api,
             access_token_source,
             active_broadcast_id,
-            quota,
-            api_base: endpoints
-                .base_url(EndpointSurface::YouTubeDataApi)
-                .to_owned(),
         }
-    }
-
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn with_api_base(mut self, api_base: String) -> Self {
-        self.api_base = api_base;
-        self
     }
 
     pub async fn fetch(&self) -> Result<Variant, PlatformError> {
@@ -56,37 +43,19 @@ impl YoutubeStreamStats {
                     feature: "stream stats - no active YouTube broadcast".to_owned(),
                 })?;
 
-        {
-            let today = today_pacific();
-            let mut qt = self.quota.lock().await;
-            qt.charge(FETCH_COST, today)?;
-        }
-
         let token = (self.access_token_source)().await?;
-        let url = format!("{}/videos", self.api_base);
-
-        let resp = self
-            .client
-            .get(&url)
-            .bearer_auth(&token)
-            .query(&[
-                ("part", "liveStreamingDetails"),
-                ("id", broadcast_id.as_str()),
-            ])
-            .send()
+        let request = GatewayRequest::get(VIDEOS_PATH)
+            .label(VIDEOS_PATH)
+            .bearer(Secret::new(token))
+            .query("part", "liveStreamingDetails")
+            .query("id", broadcast_id);
+        let body: serde_json::Value = self
+            .api
+            .send(FETCH_COST, request)
             .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = resp.status();
-        if status != StatusCode::OK {
-            return Err(self.map_failure(resp).await);
-        }
-
-        let body: serde_json::Value = resp.json().await.map_err(|e| PlatformError::Network {
-            reason: e.without_url().to_string(),
-        })?;
+            .map_err(|e| e.into_platform_error(MISSING_SCOPE))?
+            .json()
+            .map_err(malformed)?;
 
         let details = body
             .get("items")
@@ -133,36 +102,6 @@ impl YoutubeStreamStats {
         }
         Ok(Variant::Object(fields))
     }
-
-    async fn map_failure(&self, resp: reqwest::Response) -> PlatformError {
-        let status = resp.status();
-        let retry_after_secs = resp
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
-        let body_text = resp.text().await.unwrap_or_default();
-
-        match status {
-            StatusCode::TOO_MANY_REQUESTS => PlatformError::RateLimited { retry_after_secs },
-            StatusCode::FORBIDDEN if body_text.contains("quotaExceeded") => {
-                PlatformError::QuotaExhausted
-            }
-            StatusCode::FORBIDDEN
-                if body_text.contains("insufficientPermissions")
-                    || body_text.contains("operationNotSupported") =>
-            {
-                PlatformError::Auth {
-                    reason: "stream stats scope missing".to_owned(),
-                }
-            }
-            _ => PlatformError::Http {
-                status: status.as_u16(),
-                body: body_text,
-            },
-        }
-    }
 }
 
 #[cfg(test)]
@@ -176,26 +115,17 @@ mod tests {
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-    use crate::quota_state::SharedQuota;
+    use crate::endpoints_test_support::data_api_at;
     use crate::timestamp::tests::instant;
 
-    const TOKEN_SENTINEL: &str = "yt-stats-secret-token";
-
     fn token_source() -> TokenSource {
-        Arc::new(|| Box::pin(async { Ok(TOKEN_SENTINEL.to_owned()) }))
+        Arc::new(|| Box::pin(async { Ok("yt-stats-token".to_owned()) }))
     }
 
     fn stats_on(server: &MockServer, broadcast: Option<&str>) -> YoutubeStreamStats {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(broadcast.map(|s| s.to_owned()));
-        let quota = SharedQuota::default();
-        YoutubeStreamStats::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            token_source(),
-            handle,
-            quota,
-        )
-        .with_api_base(server.uri())
+        YoutubeStreamStats::new(data_api_at(&server.uri()), token_source(), handle)
     }
 
     fn details_body(extra: serde_json::Value) -> serde_json::Value {
@@ -348,43 +278,6 @@ mod tests {
         assert!(
             matches!(err, PlatformError::Unsupported { .. }),
             "missing liveStreamingDetails must map to Unsupported, got: {err}"
-        );
-    }
-
-    #[tokio::test]
-    async fn fetch_maps_500_to_http() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/videos"))
-            .respond_with(ResponseTemplate::new(500).set_body_string("upstream failure"))
-            .mount(&server)
-            .await;
-
-        let err = stats_on(&server, Some("bc")).fetch().await.unwrap_err();
-        assert!(
-            matches!(err, PlatformError::Http { status: 500, .. }),
-            "500 must map to Http 500, got: {err}"
-        );
-    }
-
-    #[tokio::test]
-    async fn fetch_error_does_not_leak_token_or_url() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/videos"))
-            .respond_with(ResponseTemplate::new(403).set_body_string("forbidden"))
-            .mount(&server)
-            .await;
-
-        let err = stats_on(&server, Some("bc")).fetch().await.unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            !msg.contains(TOKEN_SENTINEL),
-            "error must not leak the bearer token: {msg}"
-        );
-        assert!(
-            !msg.contains(&server.uri()),
-            "error must not leak the request URL: {msg}"
         );
     }
 }

@@ -1,30 +1,24 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_net::{RateLimitOutcome, RateLimiter, TokenBucketRateLimiter};
-use forge_platform_core::{
-    EndpointSurface, FollowLookup, FollowStatus, PlatformEndpoints, PlatformError,
-};
+use forge_net::{ExpectedRefusal, GatewayFailure, GatewayRequest, Secret};
+use forge_platform_core::{FollowLookup, FollowStatus, PlatformError};
 use futures::future::BoxFuture;
-use reqwest::StatusCode;
 use serde::Deserialize;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use crate::builtin::YoutubeIntegrationBundle;
-use crate::quota_state::{SharedQuota, today_pacific};
+use crate::data_api::{DataApiError, YoutubeDataApi};
 
 const SUBSCRIPTION_LIST_COST: u32 = 1;
-const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
-const READ_BUDGET_CAPACITY: u32 = 60;
-const READ_BUDGET_WINDOW: Duration = Duration::from_secs(60);
 const SUBSCRIPTIONS_PATH: &str = "/subscriptions";
 const PART_PARAM: &str = "part";
 const SNIPPET_PART: &str = "snippet";
 const CHANNEL_ID_PARAM: &str = "channelId";
 const FOR_CHANNEL_ID_PARAM: &str = "forChannelId";
-const SUBSCRIPTION_FORBIDDEN_REASON: &str = "subscriptionForbidden";
+const SUBSCRIPTION_FORBIDDEN_STATUS: u16 = reqwest::StatusCode::FORBIDDEN.as_u16();
+const SUBSCRIPTION_FORBIDDEN_MARKER: &str = "\"subscriptionForbidden\"";
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
@@ -45,49 +39,21 @@ struct SubscriptionSnippet {
     published_at: Option<String>,
 }
 
-#[derive(Deserialize)]
-struct ErrorEnvelope {
-    error: ErrorBody,
-}
-
-#[derive(Deserialize)]
-struct ErrorBody {
-    #[serde(default)]
-    errors: Vec<ErrorDetail>,
-}
-
-#[derive(Deserialize)]
-struct ErrorDetail {
-    reason: Option<String>,
-}
-
 pub(crate) struct YoutubeFollowLookup {
-    client: reqwest::Client,
+    api: YoutubeDataApi,
     access_token_source: TokenSource,
-    quota: SharedQuota,
-    rate_limiter: Arc<dyn RateLimiter>,
-    api_base: String,
     broadcaster_channel_id: String,
 }
 
 impl YoutubeFollowLookup {
     pub(crate) fn new(
-        endpoints: &PlatformEndpoints,
+        api: YoutubeDataApi,
         access_token_source: TokenSource,
-        quota: SharedQuota,
         broadcaster_channel_id: String,
     ) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            api,
             access_token_source,
-            quota,
-            rate_limiter: Arc::new(TokenBucketRateLimiter::new(
-                READ_BUDGET_CAPACITY,
-                READ_BUDGET_WINDOW,
-            )),
-            api_base: endpoints
-                .base_url(EndpointSurface::YouTubeDataApi)
-                .to_owned(),
             broadcaster_channel_id,
         }
     }
@@ -100,74 +66,43 @@ impl YoutubeFollowLookup {
         if viewer_channel_id == broadcaster_channel_id {
             return FollowStatus::NotFollowing;
         }
-        if !matches!(
-            self.rate_limiter.acquire(SUBSCRIPTION_LIST_COST).await,
-            Ok(RateLimitOutcome::Granted)
-        ) {
-            return FollowStatus::Unavailable;
-        }
-        if self.charge_quota().await.is_err() {
-            return FollowStatus::Unavailable;
-        }
         let Ok(token) = (self.access_token_source)().await else {
             return FollowStatus::Unavailable;
         };
 
-        let exchange = self.list_subscription(&token, viewer_channel_id, broadcaster_channel_id);
-        match tokio::time::timeout(HTTP_TIMEOUT, exchange).await {
-            Ok(Ok((status, body))) => status_from_reply(status, &body),
-            Ok(Err(e)) => {
-                tracing::warn!(error = %e.without_url(), "youtube follow lookup request failed");
-                FollowStatus::Unavailable
-            }
-            Err(_) => {
-                tracing::warn!("youtube follow lookup timed out");
-                FollowStatus::Unavailable
-            }
+        let request = GatewayRequest::get(SUBSCRIPTIONS_PATH)
+            .label(SUBSCRIPTIONS_PATH)
+            .bearer(Secret::new(token))
+            .query(PART_PARAM, SNIPPET_PART)
+            .query(CHANNEL_ID_PARAM, viewer_channel_id)
+            .query(FOR_CHANNEL_ID_PARAM, broadcaster_channel_id)
+            .expect_refusal(ExpectedRefusal::status_with_excerpt(
+                SUBSCRIPTION_FORBIDDEN_STATUS,
+                SUBSCRIPTION_FORBIDDEN_MARKER,
+            ));
+        match self.api.send(SUBSCRIPTION_LIST_COST, request).await {
+            Ok(response) => response
+                .json::<SubscriptionPage>()
+                .map_or(FollowStatus::Unavailable, status_from_page),
+            Err(failure) => status_from_failure(&failure),
         }
-    }
-
-    async fn charge_quota(&self) -> Result<(), PlatformError> {
-        let today = today_pacific();
-        let mut quota = self.quota.lock().await;
-        quota.charge(SUBSCRIPTION_LIST_COST, today)
-    }
-
-    async fn list_subscription(
-        &self,
-        token: &str,
-        viewer_channel_id: &str,
-        broadcaster_channel_id: &str,
-    ) -> Result<(StatusCode, String), reqwest::Error> {
-        let response = self
-            .client
-            .get(format!("{}{SUBSCRIPTIONS_PATH}", self.api_base))
-            .bearer_auth(token)
-            .query(&[
-                (PART_PARAM, SNIPPET_PART),
-                (CHANNEL_ID_PARAM, viewer_channel_id),
-                (FOR_CHANNEL_ID_PARAM, broadcaster_channel_id),
-            ])
-            .send()
-            .await?;
-        let status = response.status();
-        let body = response.text().await?;
-        Ok((status, body))
     }
 }
 
-fn status_from_reply(status: StatusCode, body: &str) -> FollowStatus {
-    match status {
-        StatusCode::OK => serde_json::from_str::<SubscriptionPage>(body)
-            .map_or(FollowStatus::Unavailable, status_from_page),
-        StatusCode::FORBIDDEN if carries_error_reason(body, SUBSCRIPTION_FORBIDDEN_REASON) => {
-            FollowStatus::Hidden
-        }
-        _ => {
-            tracing::debug!(status = status.as_u16(), "youtube follow lookup refused");
-            FollowStatus::Unavailable
-        }
+fn status_from_failure(failure: &DataApiError) -> FollowStatus {
+    if failure.forbidden_with_reason(SUBSCRIPTION_FORBIDDEN_MARKER) {
+        return FollowStatus::Hidden;
     }
+    match failure {
+        DataApiError::Gateway(GatewayFailure::Transport(cause)) => {
+            tracing::warn!(error = %cause, "youtube follow lookup request failed");
+        }
+        DataApiError::Gateway(refusal) => {
+            tracing::debug!(status = refusal.status(), "youtube follow lookup refused");
+        }
+        DataApiError::QuotaExhausted => {}
+    }
+    FollowStatus::Unavailable
 }
 
 fn status_from_page(page: SubscriptionPage) -> FollowStatus {
@@ -180,16 +115,6 @@ fn status_from_page(page: SubscriptionPage) -> FollowStatus {
         .map_or(FollowStatus::Unavailable, FollowStatus::FollowedSince)
 }
 
-fn carries_error_reason(body: &str, wanted: &str) -> bool {
-    serde_json::from_str::<ErrorEnvelope>(body).is_ok_and(|envelope| {
-        envelope
-            .error
-            .errors
-            .iter()
-            .any(|detail| detail.reason.as_deref() == Some(wanted))
-    })
-}
-
 #[async_trait]
 impl FollowLookup for YoutubeIntegrationBundle {
     async fn follow_status(&self, viewer_id: &str) -> FollowStatus {
@@ -200,14 +125,16 @@ impl FollowLookup for YoutubeIntegrationBundle {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use std::ffi::OsString;
+    use std::time::Duration;
 
+    use reqwest::StatusCode;
     use serde_json::{Value, json};
     use wiremock::matchers::{header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::quota_state::QuotaState;
+    use crate::endpoints_test_support::data_api_charging;
+    use crate::quota_state::{QuotaState, SharedQuota, today_pacific};
 
     const BROADCASTER: &str = "UCbroadcasterchannel0001";
     const VIEWER: &str = "UCviewerchannelid0000042";
@@ -215,18 +142,10 @@ mod tests {
     const SUBSCRIBED_AT: &str = "2023-04-05T06:07:08Z";
     const SUBSCRIBED_AT_UNIX: i64 = 1_680_674_828;
     const DAILY_LIMIT: u32 = 10_000;
-    const LOCAL_READ_BUDGET: usize = 60;
     const UNREACHABLE_BASE: &str = "http://127.0.0.1:0";
 
     fn token_source() -> TokenSource {
         Arc::new(|| Box::pin(async { Ok(ACCESS_TOKEN.to_owned()) }))
-    }
-
-    fn data_api_at(base: &str) -> PlatformEndpoints {
-        PlatformEndpoints::resolve(|variable| {
-            (variable == EndpointSurface::YouTubeDataApi.env_var()).then(|| OsString::from(base))
-        })
-        .unwrap()
     }
 
     fn fresh_quota() -> SharedQuota {
@@ -242,9 +161,8 @@ mod tests {
 
     fn lookup_at(base: &str, quota: &SharedQuota, broadcaster: &str) -> YoutubeFollowLookup {
         YoutubeFollowLookup::new(
-            &data_api_at(base),
+            data_api_charging(base, quota.clone()),
             token_source(),
-            quota.clone(),
             broadcaster.to_owned(),
         )
     }
@@ -448,6 +366,11 @@ mod tests {
                 FollowStatus::Unavailable,
             ),
             (
+                "403 reason that only starts with subscriptionForbidden",
+                google_error(StatusCode::FORBIDDEN, &["subscriptionForbiddenByOwner"]),
+                FollowStatus::Unavailable,
+            ),
+            (
                 "403 without errors",
                 google_error(StatusCode::FORBIDDEN, &[]),
                 FollowStatus::Unavailable,
@@ -529,9 +452,8 @@ mod tests {
             })
         });
         let lookup = YoutubeFollowLookup::new(
-            &data_api_at(&server.uri()),
+            data_api_charging(&server.uri(), fresh_quota()),
             failing,
-            fresh_quota(),
             BROADCASTER.to_owned(),
         );
 
@@ -598,32 +520,6 @@ mod tests {
                 used_units(&quota).await
             ),
             (FollowStatus::Unavailable, 0, DAILY_LIMIT)
-        );
-    }
-
-    #[tokio::test]
-    async fn a_spent_local_read_budget_is_unavailable_without_a_request_or_charge() {
-        let server =
-            unshared_server_answering(ok_json(subscription_page(json!(SUBSCRIBED_AT)))).await;
-        let quota = fresh_quota();
-        let lookup = lookup_at(&server.uri(), &quota, BROADCASTER);
-        for _ in 0..LOCAL_READ_BUDGET {
-            lookup.status_of(VIEWER).await;
-        }
-
-        let status = lookup.status_of(VIEWER).await;
-
-        assert_eq!(
-            (
-                status,
-                request_count(&server).await,
-                used_units(&quota).await
-            ),
-            (
-                FollowStatus::Unavailable,
-                LOCAL_READ_BUDGET,
-                u32::try_from(LOCAL_READ_BUDGET).unwrap()
-            )
         );
     }
 }

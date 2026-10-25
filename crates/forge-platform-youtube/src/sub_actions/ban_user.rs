@@ -128,7 +128,6 @@ mod tests {
         MemoryBanLedger, TEST_BROADCASTER_CHANNEL_ID, broadcaster_source,
     };
     use crate::live_chat_id::LiveChatIdHandle;
-    use crate::quota_state::SharedQuota;
 
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {
@@ -142,11 +141,10 @@ mod tests {
                 + Sync,
         > = Arc::new(|| Box::pin(async { Ok(String::new()) }));
         let moderation = YoutubeModeration::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::unreachable_data_api(),
             source,
             crate::ban_ledger_test_support::broadcaster_source(),
             LiveChatIdHandle::new(),
-            SharedQuota::default(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         );
         BanUserRunner::new(Arc::new(moderation))
@@ -223,14 +221,12 @@ mod tests {
                 + Sync,
         > = Arc::new(|| Box::pin(async { Ok("tok".to_owned()) }));
         let moderation = YoutubeModeration::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(&server.uri()),
             token,
             broadcaster_source(),
             live_chat,
-            SharedQuota::default(),
             Arc::clone(&ledger) as Arc<dyn forge_storage::BanLedgerRepo>,
-        )
-        .with_api_base(server.uri());
+        );
         let stack = ArgStack::new()
             .set("uid".to_owned(), Variant::String("UC-target".to_owned()))
             .set("user_name".to_owned(), Variant::String("Alice".to_owned()));

@@ -194,7 +194,6 @@ mod tests {
 
     use super::*;
     use crate::live_chat_id::LiveChatIdHandle;
-    use crate::quota_state::SharedQuota;
 
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {
@@ -218,14 +217,11 @@ mod tests {
         if live {
             handle.set(Some("lc".to_owned()));
         }
-        let quota = SharedQuota::default();
         let sender = YoutubeSendChat::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             handle,
-            quota,
-        )
-        .with_api_base(server.uri());
+        );
         CreatePollRunner::new(Arc::new(sender))
     }
 
@@ -256,14 +252,11 @@ mod tests {
     fn validate_config_requires_question_and_valid_option_count() {
         let runner = {
             let handle = LiveChatIdHandle::new();
-            let quota = SharedQuota::default();
             let sender = YoutubeSendChat::new(
-                &crate::endpoints_test_support::unreachable_endpoints(),
+                crate::endpoints_test_support::data_api_at("http://127.0.0.1:0"),
                 token_source(),
                 handle,
-                quota,
-            )
-            .with_api_base("http://127.0.0.1:0".to_owned());
+            );
             CreatePollRunner::new(Arc::new(sender))
         };
 

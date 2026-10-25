@@ -12,6 +12,7 @@ pub mod chat_poller;
 pub(crate) mod control;
 pub mod credentials;
 pub mod credentials_manager;
+pub mod data_api;
 #[cfg(test)]
 mod endpoints_test_support;
 pub(crate) mod error_shape;
@@ -46,6 +47,7 @@ pub use chat_platform::YoutubePlatform;
 pub use chat_poller::YoutubeChatPoller;
 pub use credentials::{CREDENTIAL_KEY, YoutubeBroadcaster, YoutubeCredentials};
 pub use credentials_manager::YoutubeCredentialsManager;
+pub use data_api::YoutubeDataApi;
 pub use integration::YOUTUBE_INTEGRATION;
 pub use live_chat_id::LiveChatIdHandle;
 pub use moderation::YoutubeModeration;

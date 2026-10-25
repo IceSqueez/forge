@@ -1,26 +1,18 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_net::{RateLimitOutcome, RateLimiter, TokenBucketRateLimiter};
-use forge_platform_core::{
-    EndpointSurface, LiveViewerSource, PlatformEndpoints, PlatformError, ViewerReport,
-    ViewerReportStream,
-};
+use forge_net::{GatewayFailure, GatewayRequest, Secret};
+use forge_platform_core::{LiveViewerSource, PlatformError, ViewerReport, ViewerReportStream};
 use futures::future::BoxFuture;
-use reqwest::StatusCode;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-use crate::quota_state::{SharedQuota, today_pacific};
+use crate::data_api::{DataApiError, YoutubeDataApi};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(60);
-const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
-
 const VIEWER_LIST_COST: u32 = 1;
-
-const READ_BUDGET_CAPACITY: u32 = 60;
-const READ_BUDGET_WINDOW: Duration = Duration::from_secs(60);
+const VIDEOS_PATH: &str = "/videos";
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
@@ -41,44 +33,25 @@ impl LiveViewerSource for YoutubeViewerSource {
 }
 
 pub struct YoutubeViewerPoll {
-    client: reqwest::Client,
+    api: YoutubeDataApi,
     access_token_source: TokenSource,
     active_broadcast_id: ActiveBroadcastIdHandle,
-    quota: SharedQuota,
-    rate_limiter: Arc<dyn RateLimiter>,
     reports_tx: watch::Sender<ViewerReport>,
-    api_base: String,
 }
 
 impl YoutubeViewerPoll {
     pub fn new(
-        endpoints: &PlatformEndpoints,
+        api: YoutubeDataApi,
         access_token_source: TokenSource,
         active_broadcast_id: ActiveBroadcastIdHandle,
-        quota: SharedQuota,
         reports_tx: watch::Sender<ViewerReport>,
     ) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            api,
             access_token_source,
             active_broadcast_id,
-            quota,
-            rate_limiter: Arc::new(TokenBucketRateLimiter::new(
-                READ_BUDGET_CAPACITY,
-                READ_BUDGET_WINDOW,
-            )),
             reports_tx,
-            api_base: endpoints
-                .base_url(EndpointSurface::YouTubeDataApi)
-                .to_owned(),
         }
-    }
-
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn with_api_base(mut self, api_base: String) -> Self {
-        self.api_base = api_base;
-        self
     }
 
     pub async fn run(self) {
@@ -98,45 +71,23 @@ impl YoutubeViewerPoll {
             None => return Some(ViewerReport::Absent),
         };
 
-        match self.rate_limiter.acquire(VIEWER_LIST_COST).await {
-            Ok(RateLimitOutcome::Granted) => {}
-            _ => return None,
-        }
-
-        {
-            let today = today_pacific();
-            let mut qt = self.quota.lock().await;
-            if qt.charge(VIEWER_LIST_COST, today).is_err() {
-                return None;
-            }
-        }
-
         let token = (self.access_token_source)().await.ok()?;
-        let url = format!("{}/videos", self.api_base);
-        let request = self
-            .client
-            .get(&url)
-            .bearer_auth(&token)
-            .query(&[("part", "liveStreamingDetails"), ("id", video_id.as_str())])
-            .send();
+        let request = GatewayRequest::get(VIDEOS_PATH)
+            .label(VIDEOS_PATH)
+            .bearer(Secret::new(token))
+            .query("part", "liveStreamingDetails")
+            .query("id", video_id);
 
-        let resp = match tokio::time::timeout(HTTP_TIMEOUT, request).await {
-            Ok(Ok(resp)) => resp,
-            Ok(Err(e)) => {
-                tracing::warn!("youtube viewer poll request failed: {}", e.without_url());
+        let response = match self.api.send(VIEWER_LIST_COST, request).await {
+            Ok(response) => response,
+            Err(DataApiError::Gateway(GatewayFailure::Transport(failure))) => {
+                tracing::warn!("youtube viewer poll request failed: {failure}");
                 return None;
             }
-            Err(_) => {
-                tracing::warn!("youtube viewer poll timed out");
-                return None;
-            }
+            Err(_) => return None,
         };
 
-        if resp.status() != StatusCode::OK {
-            return None;
-        }
-
-        let body: serde_json::Value = resp.json().await.ok()?;
+        let body: serde_json::Value = response.json().ok()?;
         Some(match extract_concurrent_viewers(&body) {
             Some(count) => ViewerReport::Live { count },
             None => ViewerReport::Absent,
@@ -163,23 +114,17 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    fn make_poll(api_base: String, video_id: Option<String>) -> YoutubeViewerPoll {
+    use crate::endpoints_test_support::{data_api_at, unreachable_data_api};
+
+    fn make_poll(api: YoutubeDataApi, video_id: Option<String>) -> YoutubeViewerPoll {
         let broadcast = ActiveBroadcastIdHandle::new();
         broadcast.set(video_id);
-        let quota = SharedQuota::default();
         let (tx, _rx) = watch::channel(ViewerReport::Absent);
         let source: TokenSource = Arc::new(|| {
             Box::pin(async { Ok("test-token".to_owned()) })
                 as BoxFuture<'static, Result<String, PlatformError>>
         });
-        YoutubeViewerPoll::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            source,
-            broadcast,
-            quota,
-            tx,
-        )
-        .with_api_base(api_base)
+        YoutubeViewerPoll::new(api, source, broadcast, tx)
     }
 
     #[test]
@@ -219,7 +164,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let poll = make_poll(server.uri(), Some("vid123".to_owned()));
+        let poll = make_poll(data_api_at(&server.uri()), Some("vid123".to_owned()));
         assert_eq!(
             poll.poll_once().await,
             Some(ViewerReport::Live { count: 1234 })
@@ -237,7 +182,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let poll = make_poll(server.uri(), Some("vid123".to_owned()));
+        let poll = make_poll(data_api_at(&server.uri()), Some("vid123".to_owned()));
         assert_eq!(poll.poll_once().await, Some(ViewerReport::Absent));
     }
 
@@ -250,13 +195,13 @@ mod tests {
             .mount(&server)
             .await;
 
-        let poll = make_poll(server.uri(), Some("vid123".to_owned()));
+        let poll = make_poll(data_api_at(&server.uri()), Some("vid123".to_owned()));
         assert_eq!(poll.poll_once().await, None);
     }
 
     #[tokio::test]
     async fn poll_once_reports_absent_without_active_broadcast() {
-        let poll = make_poll("http://255.255.255.255".to_owned(), None);
+        let poll = make_poll(unreachable_data_api(), None);
         assert_eq!(poll.poll_once().await, Some(ViewerReport::Absent));
     }
 }

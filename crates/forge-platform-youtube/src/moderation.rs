@@ -1,21 +1,24 @@
 use std::sync::Arc;
 
-use forge_net::DEFAULT_RETRY_AFTER_SECS;
-use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
+use forge_net::{ExpectedRefusal, GatewayFailure, GatewayRequest, Secret};
+use forge_platform_core::PlatformError;
 use forge_storage::{BanLedgerEntry, BanLedgerKey, BanLedgerRepo, BanOrigin, StorageError};
 use futures::future::BoxFuture;
-use reqwest::StatusCode;
 use time::OffsetDateTime;
 
 use crate::ban_ledger::{ban_ledger_key, expiry_after};
 use crate::credentials::YoutubeBroadcaster;
+use crate::data_api::{DataApiError, YoutubeDataApi, json_body, malformed};
 use crate::live_chat_id::LiveChatIdHandle;
-use crate::quota_state::{SharedQuota, today_pacific};
 
 const BAN_COST: u32 = 50;
 const MODERATOR_COST: u32 = 50;
 const MODERATOR_LIST_COST: u32 = 1;
 const MODERATOR_LIST_PAGE_SIZE: &str = "50";
+const BANS_PATH: &str = "/liveChat/bans";
+const BAN_ALREADY_LIFTED_STATUS: u16 = reqwest::StatusCode::NOT_FOUND.as_u16();
+const MODERATORS_PATH: &str = "/liveChat/moderators";
+const MISSING_SCOPE: &str = "moderation scope missing";
 const BANNED_OUTSIDE_FORGE: &str =
     "unban - this ban was issued outside forge, lift it in YouTube Studio";
 
@@ -24,42 +27,28 @@ type BroadcasterSource =
     Arc<dyn Fn() -> BoxFuture<'static, Result<YoutubeBroadcaster, PlatformError>> + Send + Sync>;
 
 pub struct YoutubeModeration {
-    client: reqwest::Client,
+    api: YoutubeDataApi,
     access_token_source: TokenSource,
     broadcaster_source: BroadcasterSource,
     live_chat_id: LiveChatIdHandle,
-    quota: SharedQuota,
     ban_ledger: Arc<dyn BanLedgerRepo>,
-    api_base: String,
 }
 
 impl YoutubeModeration {
     pub fn new(
-        endpoints: &PlatformEndpoints,
+        api: YoutubeDataApi,
         access_token_source: TokenSource,
         broadcaster_source: BroadcasterSource,
         live_chat_id: LiveChatIdHandle,
-        quota: SharedQuota,
         ban_ledger: Arc<dyn BanLedgerRepo>,
     ) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            api,
             access_token_source,
             broadcaster_source,
             live_chat_id,
-            quota,
             ban_ledger,
-            api_base: endpoints
-                .base_url(EndpointSurface::YouTubeDataApi)
-                .to_owned(),
         }
-    }
-
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn with_api_base(mut self, api_base: String) -> Self {
-        self.api_base = api_base;
-        self
     }
 
     pub async fn ban(
@@ -98,35 +87,20 @@ impl YoutubeModeration {
                 feature: BANNED_OUTSIDE_FORGE.to_owned(),
             })?;
 
-        {
-            let today = today_pacific();
-            let mut qt = self.quota.lock().await;
-            qt.charge(BAN_COST, today)?;
-        }
-
         let token = (self.access_token_source)().await?;
-        let url = format!("{}/liveChat/bans", self.api_base);
+        let request = GatewayRequest::delete(BANS_PATH)
+            .label(BANS_PATH)
+            .bearer(Secret::new(token))
+            .query("id", ban_id)
+            .expect_refusal(ExpectedRefusal::status(BAN_ALREADY_LIFTED_STATUS));
 
-        let resp = self
-            .client
-            .delete(&url)
-            .bearer_auth(&token)
-            .query(&[("id", ban_id.as_str())])
-            .send()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = resp.status();
-        if status == StatusCode::OK
-            || status == StatusCode::NO_CONTENT
-            || status == StatusCode::NOT_FOUND
-        {
-            self.forget_ban(&key).await;
-            return Ok(());
+        match self.api.send(BAN_COST, request).await {
+            Ok(_) | Err(DataApiError::Gateway(GatewayFailure::NotFound { .. })) => {
+                self.forget_ban(&key).await;
+                Ok(())
+            }
+            Err(e) => Err(e.into_platform_error(MISSING_SCOPE)),
         }
-        Err(self.map_failure(resp).await)
     }
 
     async fn record_issued_ban(
@@ -188,68 +162,41 @@ impl YoutubeModeration {
                 feature: "moderation - no active YouTube broadcast".to_owned(),
             })?;
 
-        {
-            let today = today_pacific();
-            let mut qt = self.quota.lock().await;
-            qt.charge(MODERATOR_COST, today)?;
-        }
-
-        let token = (self.access_token_source)().await?;
-        let url = format!("{}/liveChat/moderators", self.api_base);
         let payload = serde_json::json!({
             "snippet": {
                 "liveChatId": live_chat_id,
                 "moderatorDetails": { "channelId": channel_id },
             }
         });
+        let body = json_body(&payload)?;
+        let token = (self.access_token_source)().await?;
+        let request = GatewayRequest::post(MODERATORS_PATH)
+            .label(MODERATORS_PATH)
+            .bearer(Secret::new(token))
+            .query("part", "snippet")
+            .body(body);
 
-        let resp = self
-            .client
-            .post(&url)
-            .bearer_auth(&token)
-            .query(&[("part", "snippet")])
-            .json(&payload)
-            .send()
+        self.api
+            .send(MODERATOR_COST, request)
             .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = resp.status();
-        if status == StatusCode::OK || status == StatusCode::CREATED {
-            return Ok(());
-        }
-        Err(self.map_failure(resp).await)
+            .map(drop)
+            .map_err(|e| e.into_platform_error(MISSING_SCOPE))
     }
 
     pub async fn remove_moderator(&self, channel_id: &str) -> Result<(), PlatformError> {
         let moderator_id = self.resolve_moderator_id(channel_id).await?;
 
-        {
-            let today = today_pacific();
-            let mut qt = self.quota.lock().await;
-            qt.charge(MODERATOR_COST, today)?;
-        }
-
         let token = (self.access_token_source)().await?;
-        let url = format!("{}/liveChat/moderators", self.api_base);
+        let request = GatewayRequest::delete(MODERATORS_PATH)
+            .label(MODERATORS_PATH)
+            .bearer(Secret::new(token))
+            .query("id", moderator_id);
 
-        let resp = self
-            .client
-            .delete(&url)
-            .bearer_auth(&token)
-            .query(&[("id", moderator_id.as_str())])
-            .send()
+        self.api
+            .send(MODERATOR_COST, request)
             .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = resp.status();
-        if status == StatusCode::OK || status == StatusCode::NO_CONTENT {
-            return Ok(());
-        }
-        Err(self.map_failure(resp).await)
+            .map(drop)
+            .map_err(|e| e.into_platform_error(MISSING_SCOPE))
     }
 
     async fn resolve_moderator_id(&self, channel_id: &str) -> Result<String, PlatformError> {
@@ -260,46 +207,27 @@ impl YoutubeModeration {
                 feature: "moderation - no active YouTube broadcast".to_owned(),
             })?;
 
-        let url = format!("{}/liveChat/moderators", self.api_base);
         let mut page_token: Option<String> = None;
 
         loop {
-            {
-                let today = today_pacific();
-                let mut qt = self.quota.lock().await;
-                qt.charge(MODERATOR_LIST_COST, today)?;
-            }
-
             let token = (self.access_token_source)().await?;
-            let mut query: Vec<(&str, String)> = vec![
-                ("part", "snippet".to_owned()),
-                ("liveChatId", live_chat_id.clone()),
-                ("maxResults", MODERATOR_LIST_PAGE_SIZE.to_owned()),
-            ];
+            let mut request = GatewayRequest::get(MODERATORS_PATH)
+                .label(MODERATORS_PATH)
+                .bearer(Secret::new(token))
+                .query("part", "snippet")
+                .query("liveChatId", live_chat_id.as_str())
+                .query("maxResults", MODERATOR_LIST_PAGE_SIZE);
             if let Some(ref pt) = page_token {
-                query.push(("pageToken", pt.clone()));
+                request = request.query("pageToken", pt.as_str());
             }
 
-            let resp = self
-                .client
-                .get(&url)
-                .bearer_auth(&token)
-                .query(&query)
-                .send()
+            let body: serde_json::Value = self
+                .api
+                .send(MODERATOR_LIST_COST, request)
                 .await
-                .map_err(|e| PlatformError::Network {
-                    reason: e.without_url().to_string(),
-                })?;
-
-            let status = resp.status();
-            if status != StatusCode::OK {
-                return Err(self.map_failure(resp).await);
-            }
-
-            let body: serde_json::Value =
-                resp.json().await.map_err(|e| PlatformError::Network {
-                    reason: e.without_url().to_string(),
-                })?;
+                .map_err(|e| e.into_platform_error(MISSING_SCOPE))?
+                .json()
+                .map_err(malformed)?;
 
             if let Some(items) = body.get("items").and_then(|v| v.as_array()) {
                 for item in items {
@@ -343,15 +271,6 @@ impl YoutubeModeration {
                 feature: "moderation - no active YouTube broadcast".to_owned(),
             })?;
 
-        {
-            let today = today_pacific();
-            let mut qt = self.quota.lock().await;
-            qt.charge(BAN_COST, today)?;
-        }
-
-        let token = (self.access_token_source)().await?;
-        let url = format!("{}/liveChat/bans", self.api_base);
-
         let mut ban_details = serde_json::json!({
             "liveChatId": live_chat_id,
             "type": if duration_seconds.is_some() { "temporary" } else { "permanent" },
@@ -361,62 +280,26 @@ impl YoutubeModeration {
             ban_details["banDurationSeconds"] = serde_json::json!(secs.to_string());
         }
         let payload = serde_json::json!({ "snippet": ban_details });
+        let body = json_body(&payload)?;
+        let token = (self.access_token_source)().await?;
+        let request = GatewayRequest::post(BANS_PATH)
+            .label(BANS_PATH)
+            .bearer(Secret::new(token))
+            .query("part", "snippet")
+            .body(body);
 
-        let resp = self
-            .client
-            .post(&url)
-            .bearer_auth(&token)
-            .query(&[("part", "snippet")])
-            .json(&payload)
-            .send()
+        let created: serde_json::Value = self
+            .api
+            .send(BAN_COST, request)
             .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = resp.status();
-        if status == StatusCode::OK || status == StatusCode::CREATED {
-            let body: serde_json::Value =
-                resp.json().await.map_err(|e| PlatformError::Network {
-                    reason: e.without_url().to_string(),
-                })?;
-            return Ok(body
-                .get("id")
-                .and_then(|v| v.as_str())
-                .filter(|id| !id.is_empty())
-                .map(str::to_owned));
-        }
-        Err(self.map_failure(resp).await)
-    }
-
-    async fn map_failure(&self, resp: reqwest::Response) -> PlatformError {
-        let status = resp.status();
-        let retry_after_secs = resp
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
-        let body_text = resp.text().await.unwrap_or_default();
-
-        match status {
-            StatusCode::TOO_MANY_REQUESTS => PlatformError::RateLimited { retry_after_secs },
-            StatusCode::FORBIDDEN if body_text.contains("quotaExceeded") => {
-                PlatformError::QuotaExhausted
-            }
-            StatusCode::FORBIDDEN
-                if body_text.contains("insufficientPermissions")
-                    || body_text.contains("operationNotSupported") =>
-            {
-                PlatformError::Auth {
-                    reason: "moderation scope missing".to_owned(),
-                }
-            }
-            _ => PlatformError::Http {
-                status: status.as_u16(),
-                body: body_text,
-            },
-        }
+            .map_err(|e| e.into_platform_error(MISSING_SCOPE))?
+            .json()
+            .map_err(malformed)?;
+        Ok(created
+            .get("id")
+            .and_then(|v| v.as_str())
+            .filter(|id| !id.is_empty())
+            .map(str::to_owned))
     }
 }
 
@@ -437,8 +320,7 @@ mod tests {
         TEST_BROADCASTER_TITLE, broadcaster_source, signed_out_broadcaster_source,
         switchable_broadcaster_source, test_broadcaster,
     };
-    use crate::quota_state::QuotaState;
-    use crate::quota_state::today_pacific;
+    use crate::quota_state::{QuotaState, SharedQuota, today_pacific};
 
     const TOKEN_SENTINEL: &str = "yt-secret-token";
     const BAN_RESOURCE_ID: &str = "ban-resource-7";
@@ -469,14 +351,12 @@ mod tests {
             ..QuotaState::default()
         });
         let moderation = YoutubeModeration::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_charging(&server.uri(), quota.clone()),
             token_source(),
             broadcaster,
             handle,
-            quota.clone(),
             ledger,
-        )
-        .with_api_base(server.uri());
+        );
         (moderation, quota)
     }
 
@@ -599,33 +479,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn forbidden_response_maps_to_error_without_leaking_token_or_url() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/liveChat/bans"))
-            .respond_with(ResponseTemplate::new(403).set_body_string("forbidden by policy"))
-            .mount(&server)
-            .await;
-        let (moderation, _quota) = moderation_on(&server);
-
-        let err = moderation.ban(TARGET_CHANNEL, None).await.unwrap_err();
-        let msg = err.to_string();
-
-        assert!(
-            !msg.contains(TOKEN_SENTINEL),
-            "error must not leak the bearer token: {msg}"
-        );
-        assert!(
-            !msg.contains(&server.uri()),
-            "error must not leak the request URL: {msg}"
-        );
-        assert!(
-            !msg.to_lowercase().contains("googleapis"),
-            "error must not leak the API host: {msg}"
-        );
-    }
-
-    #[tokio::test]
     async fn successful_ban_charges_fifty_quota_units() {
         let server = MockServer::start().await;
         mount_insert_ok(&server).await;
@@ -679,27 +532,6 @@ mod tests {
         moderation.add_moderator(TARGET_CHANNEL).await.unwrap();
 
         assert_eq!(quota.lock().await.used_today, MODERATOR_COST);
-    }
-
-    #[tokio::test]
-    async fn add_moderator_forbidden_response_fails_without_leaking_token_or_url() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/liveChat/moderators"))
-            .respond_with(ResponseTemplate::new(403).set_body_string("forbidden by policy"))
-            .mount(&server)
-            .await;
-        let (moderation, _quota) = moderation_on(&server);
-
-        let err = moderation.add_moderator(TARGET_CHANNEL).await.unwrap_err();
-        let msg = err.to_string();
-
-        assert!(!msg.contains(TOKEN_SENTINEL), "leaked bearer token: {msg}");
-        assert!(!msg.contains(&server.uri()), "leaked request URL: {msg}");
-        assert!(
-            !msg.to_lowercase().contains("googleapis"),
-            "leaked API host: {msg}"
-        );
     }
 
     async fn mount_list_single_page(server: &MockServer, channel_id: &str, resource_id: &str) {
@@ -868,30 +700,6 @@ mod tests {
         assert_eq!(
             quota.lock().await.used_today,
             MODERATOR_LIST_COST + MODERATOR_COST,
-        );
-    }
-
-    #[tokio::test]
-    async fn remove_moderator_list_forbidden_fails_without_leaking_token_or_url() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/liveChat/moderators"))
-            .respond_with(ResponseTemplate::new(403).set_body_string("forbidden by policy"))
-            .mount(&server)
-            .await;
-        let (moderation, _quota) = moderation_on(&server);
-
-        let err = moderation
-            .remove_moderator(TARGET_CHANNEL)
-            .await
-            .unwrap_err();
-        let msg = err.to_string();
-
-        assert!(!msg.contains(TOKEN_SENTINEL), "leaked bearer token: {msg}");
-        assert!(!msg.contains(&server.uri()), "leaked request URL: {msg}");
-        assert!(
-            !msg.to_lowercase().contains("googleapis"),
-            "leaked API host: {msg}"
         );
     }
 

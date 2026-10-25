@@ -112,7 +112,6 @@ mod tests {
 
     use super::*;
     use crate::live_chat_id::LiveChatIdHandle;
-    use crate::quota_state::SharedQuota;
 
     fn runner() -> UnbanUserRunner {
         let source: Arc<
@@ -121,11 +120,10 @@ mod tests {
                 + Sync,
         > = Arc::new(|| Box::pin(async { Ok(String::new()) }));
         let moderation = YoutubeModeration::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::unreachable_data_api(),
             source,
             crate::ban_ledger_test_support::broadcaster_source(),
             LiveChatIdHandle::new(),
-            SharedQuota::default(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         );
         UnbanUserRunner::new(Arc::new(moderation))

@@ -144,7 +144,6 @@ mod tests {
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-    use crate::quota_state::SharedQuota;
     use crate::timestamp::tests::instant;
 
     const TOKEN_SENTINEL: &str = "yt-stats-runner-token";
@@ -170,14 +169,11 @@ mod tests {
     fn runner_on(server: &MockServer, broadcast: Option<&str>) -> LookupStreamStatsRunner {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(broadcast.map(|s| s.to_owned()));
-        let quota = SharedQuota::default();
         let stats = YoutubeStreamStats::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             handle,
-            quota,
-        )
-        .with_api_base(server.uri());
+        );
         LookupStreamStatsRunner::new(Arc::new(stats))
     }
 

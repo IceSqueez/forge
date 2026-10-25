@@ -1,105 +1,47 @@
 use std::sync::Arc;
 
-use forge_net::DEFAULT_RETRY_AFTER_SECS;
-use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
+use forge_net::{GatewayRequest, Secret};
+use forge_platform_core::PlatformError;
 use futures::future::BoxFuture;
-use reqwest::StatusCode;
 
+use crate::data_api::{YoutubeDataApi, json_body};
 use crate::live_chat_id::LiveChatIdHandle;
-use crate::quota_state::{SharedQuota, today_pacific};
 
 const SEND_COST: u32 = 50;
 const DELETE_COST: u32 = 50;
 const POLL_COST: u32 = 50;
+const MESSAGES_PATH: &str = "/liveChat/messages";
+const MISSING_SCOPE: &str = "chat write scope missing";
 
 pub struct YoutubeSendChat {
-    client: reqwest::Client,
+    api: YoutubeDataApi,
     access_token_source:
         Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
     live_chat_id: LiveChatIdHandle,
-    quota: SharedQuota,
-    api_base: String,
 }
 
 impl YoutubeSendChat {
     pub fn new(
-        endpoints: &PlatformEndpoints,
+        api: YoutubeDataApi,
         access_token_source: Arc<
             dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,
         >,
         live_chat_id: LiveChatIdHandle,
-        quota: SharedQuota,
     ) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            api,
             access_token_source,
             live_chat_id,
-            quota,
-            api_base: endpoints
-                .base_url(EndpointSurface::YouTubeDataApi)
-                .to_owned(),
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_api_base(mut self, api_base: String) -> Self {
-        self.api_base = api_base;
-        self
     }
 
     pub async fn delete(&self, message_id: &str) -> Result<(), PlatformError> {
-        {
-            let today = today_pacific();
-            let mut qt = self.quota.lock().await;
-            qt.charge(DELETE_COST, today)?;
-        }
-
         let token = (self.access_token_source)().await?;
-
-        let url = format!("{}/liveChat/messages", self.api_base);
-        let resp = self
-            .client
-            .delete(&url)
-            .bearer_auth(&token)
-            .query(&[("id", message_id)])
-            .send()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = resp.status();
-        if status == StatusCode::OK || status == StatusCode::NO_CONTENT {
-            return Ok(());
-        }
-
-        let retry_after_secs = resp
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
-
-        let body_text = resp.text().await.unwrap_or_default();
-
-        match status {
-            StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
-            StatusCode::FORBIDDEN if body_text.contains("quotaExceeded") => {
-                Err(PlatformError::QuotaExhausted)
-            }
-            StatusCode::FORBIDDEN
-                if body_text.contains("insufficientPermissions")
-                    || body_text.contains("operationNotSupported") =>
-            {
-                Err(PlatformError::Auth {
-                    reason: "chat write scope missing".to_owned(),
-                })
-            }
-            _ => Err(PlatformError::Http {
-                status: status.as_u16(),
-                body: body_text,
-            }),
-        }
+        let request = GatewayRequest::delete(MESSAGES_PATH)
+            .label(MESSAGES_PATH)
+            .bearer(Secret::new(token))
+            .query("id", message_id);
+        self.dispatch(DELETE_COST, request).await
     }
 
     pub async fn send(&self, body: &str) -> Result<(), PlatformError> {
@@ -110,15 +52,6 @@ impl YoutubeSendChat {
                 feature: "send chat - no active YouTube broadcast".to_owned(),
             })?;
 
-        {
-            let today = today_pacific();
-            let mut qt = self.quota.lock().await;
-            qt.charge(SEND_COST, today)?;
-        }
-
-        let token = (self.access_token_source)().await?;
-
-        let url = format!("{}/liveChat/messages", self.api_base);
         let payload = serde_json::json!({
             "snippet": {
                 "liveChatId": live_chat_id,
@@ -126,45 +59,7 @@ impl YoutubeSendChat {
                 "textMessageDetails": { "messageText": body }
             }
         });
-
-        let resp = self
-            .client
-            .post(&url)
-            .bearer_auth(&token)
-            .query(&[("part", "snippet")])
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = resp.status();
-        if status == StatusCode::OK || status == StatusCode::CREATED {
-            return Ok(());
-        }
-
-        let retry_after_secs = resp
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
-
-        let body_text = resp.text().await.unwrap_or_default();
-
-        match status {
-            StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
-            StatusCode::FORBIDDEN if body_text.contains("operationNotSupported") => {
-                Err(PlatformError::Auth {
-                    reason: "chat write scope missing".to_owned(),
-                })
-            }
-            _ => Err(PlatformError::Http {
-                status: status.as_u16(),
-                body: body_text,
-            }),
-        }
+        self.insert(SEND_COST, &payload).await
     }
 
     pub async fn create_poll(
@@ -179,15 +74,6 @@ impl YoutubeSendChat {
                 feature: "create poll - no active YouTube broadcast".to_owned(),
             })?;
 
-        {
-            let today = today_pacific();
-            let mut qt = self.quota.lock().await;
-            qt.charge(POLL_COST, today)?;
-        }
-
-        let token = (self.access_token_source)().await?;
-
-        let url = format!("{}/liveChat/messages", self.api_base);
         let option_objects: Vec<serde_json::Value> = options
             .iter()
             .map(|o| serde_json::json!({ "optionText": o }))
@@ -204,51 +90,26 @@ impl YoutubeSendChat {
                 }
             }
         });
+        self.insert(POLL_COST, &payload).await
+    }
 
-        let resp = self
-            .client
-            .post(&url)
-            .bearer_auth(&token)
-            .query(&[("part", "snippet")])
-            .json(&payload)
-            .send()
+    async fn insert(&self, cost: u32, payload: &serde_json::Value) -> Result<(), PlatformError> {
+        let body = json_body(payload)?;
+        let token = (self.access_token_source)().await?;
+        let request = GatewayRequest::post(MESSAGES_PATH)
+            .label(MESSAGES_PATH)
+            .bearer(Secret::new(token))
+            .query("part", "snippet")
+            .body(body);
+        self.dispatch(cost, request).await
+    }
+
+    async fn dispatch(&self, cost: u32, request: GatewayRequest) -> Result<(), PlatformError> {
+        self.api
+            .send(cost, request)
             .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = resp.status();
-        if status == StatusCode::OK || status == StatusCode::CREATED {
-            return Ok(());
-        }
-
-        let retry_after_secs = resp
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
-
-        let body_text = resp.text().await.unwrap_or_default();
-
-        match status {
-            StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
-            StatusCode::FORBIDDEN if body_text.contains("quotaExceeded") => {
-                Err(PlatformError::QuotaExhausted)
-            }
-            StatusCode::FORBIDDEN
-                if body_text.contains("operationNotSupported")
-                    || body_text.contains("insufficientPermissions") =>
-            {
-                Err(PlatformError::Auth {
-                    reason: "chat write scope missing".to_owned(),
-                })
-            }
-            _ => Err(PlatformError::Http {
-                status: status.as_u16(),
-                body: body_text,
-            }),
-        }
+            .map(drop)
+            .map_err(|e| e.into_platform_error(MISSING_SCOPE))
     }
 }
 
@@ -258,10 +119,13 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+    use crate::endpoints_test_support::{data_api_charging, unreachable_data_api, used_today};
+    use crate::quota_state::SharedQuota;
     use forge_platform_core::PlatformError;
     use futures::future::BoxFuture;
+    use reqwest::StatusCode;
     use serde_json::json;
-    use wiremock::matchers::{body_json, method, path};
+    use wiremock::matchers::{body_json, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn token_source()
@@ -269,398 +133,176 @@ mod tests {
         Arc::new(|| Box::pin(async { Ok("test-token".to_owned()) }))
     }
 
-    fn make_sender(server: &MockServer) -> (YoutubeSendChat, LiveChatIdHandle) {
+    fn live_chat(id: Option<&str>) -> LiveChatIdHandle {
         let handle = LiveChatIdHandle::new();
-        let quota = SharedQuota::default();
-        let sender = YoutubeSendChat::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+        handle.set(id.map(ToOwned::to_owned));
+        handle
+    }
+
+    fn sender_on(server: &MockServer, quota: &SharedQuota) -> YoutubeSendChat {
+        YoutubeSendChat::new(
+            data_api_charging(&server.uri(), quota.clone()),
             token_source(),
-            handle.clone(),
-            quota,
+            live_chat(Some("lc-test")),
         )
-        .with_api_base(server.uri());
-        (sender, handle)
     }
 
-    fn make_sender_with_quota(
-        server: &MockServer,
-        quota: SharedQuota,
-    ) -> (YoutubeSendChat, LiveChatIdHandle) {
-        let handle = LiveChatIdHandle::new();
-        let sender = YoutubeSendChat::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            token_source(),
-            handle.clone(),
-            quota,
-        )
-        .with_api_base(server.uri());
-        (sender, handle)
+    fn google_refusal(reason: &str) -> ResponseTemplate {
+        let forbidden = StatusCode::FORBIDDEN.as_u16();
+        ResponseTemplate::new(forbidden).set_body_json(json!({
+            "error": { "code": forbidden, "errors": [{ "reason": reason }] }
+        }))
     }
 
     #[tokio::test]
-    async fn send_returns_unsupported_when_no_live_chat_id() {
-        let server = MockServer::start().await;
-        let (sender, _handle) = make_sender(&server);
+    async fn send_and_create_poll_are_unsupported_without_a_live_chat() {
+        let sender = YoutubeSendChat::new(unreachable_data_api(), token_source(), live_chat(None));
 
-        let err = sender.send("hello").await.unwrap_err();
-        assert!(
-            matches!(err, PlatformError::Unsupported { .. }),
-            "expected Unsupported when no active broadcast, got: {err}"
-        );
-    }
+        let send = sender.send("hello").await.unwrap_err();
+        let poll = sender
+            .create_poll("Q?", &["A".to_owned(), "B".to_owned()])
+            .await
+            .unwrap_err();
 
-    #[tokio::test]
-    async fn send_posts_correct_body_when_active() {
-        let server = MockServer::start().await;
-
-        let expected_body = json!({
-            "snippet": {
-                "liveChatId": "lc-test-abc",
-                "type": "textMessageEvent",
-                "textMessageDetails": { "messageText": "hello chat" }
-            }
-        });
-
-        Mock::given(method("POST"))
-            .and(path("/liveChat/messages"))
-            .and(body_json(expected_body))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(json!({"kind": "youtube#liveChatMessage"})),
-            )
-            .mount(&server)
-            .await;
-
-        let quota = SharedQuota::default();
-        let (sender, handle) = make_sender_with_quota(&server, quota.clone());
-        handle.set(Some("lc-test-abc".to_owned()));
-
-        sender.send("hello chat").await.unwrap();
-
-        let qt = quota.lock().await;
-        assert_eq!(
-            qt.used_today, SEND_COST,
-            "quota must be charged {SEND_COST} units"
-        );
-    }
-
-    #[tokio::test]
-    async fn send_returns_quota_exhausted_at_limit() {
-        let server = MockServer::start().await;
-        let handle = LiveChatIdHandle::new();
-        handle.set(Some("lc-test".to_owned()));
-
-        let qt_arc = SharedQuota::default();
-        let today = today_pacific();
-        {
-            let mut qt = qt_arc.lock().await;
-            qt.used_today = 9999;
-            qt.last_reset_date = today;
-        }
-        let sender_at_limit = YoutubeSendChat::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
-            token_source(),
-            handle.clone(),
-            qt_arc,
-        )
-        .with_api_base(server.uri());
-        let err = sender_at_limit.send("hi").await.unwrap_err();
-        assert!(
-            matches!(err, PlatformError::QuotaExhausted),
-            "expected QuotaExhausted at limit, got: {err}"
-        );
-    }
-
-    #[tokio::test]
-    async fn send_maps_403_forbidden_to_http_403() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/liveChat/messages"))
-            .respond_with(ResponseTemplate::new(403).set_body_json(json!({
-                "error": {
-                    "code": 403,
-                    "errors": [{ "reason": "forbidden" }]
-                }
-            })))
-            .mount(&server)
-            .await;
-
-        let (sender, handle) = make_sender(&server);
-        handle.set(Some("lc-forbidden".to_owned()));
-
-        let err = sender.send("blocked").await.unwrap_err();
-        assert!(
-            matches!(err, PlatformError::Http { status: 403, .. }),
-            "expected Http 403 for forbidden, got: {err}"
-        );
-    }
-
-    #[tokio::test]
-    async fn send_maps_403_operation_not_supported_to_auth_error() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/liveChat/messages"))
-            .respond_with(ResponseTemplate::new(403).set_body_json(json!({
-                "error": {
-                    "code": 403,
-                    "errors": [{ "reason": "operationNotSupported" }]
-                }
-            })))
-            .mount(&server)
-            .await;
-
-        let (sender, handle) = make_sender(&server);
-        handle.set(Some("lc-nosupport".to_owned()));
-
-        let err = sender.send("blocked").await.unwrap_err();
-        assert!(
-            matches!(err, PlatformError::Auth { .. }),
-            "expected Auth for operationNotSupported, got: {err}"
-        );
-    }
-
-    #[tokio::test]
-    async fn send_maps_429_to_rate_limited() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/liveChat/messages"))
-            .respond_with(
-                ResponseTemplate::new(429)
-                    .append_header("retry-after", "60")
-                    .set_body_string("too many requests"),
-            )
-            .mount(&server)
-            .await;
-
-        let (sender, handle) = make_sender(&server);
-        handle.set(Some("lc-ratelimit".to_owned()));
-
-        let err = sender.send("hi").await.unwrap_err();
         assert!(
             matches!(
-                err,
-                PlatformError::RateLimited {
-                    retry_after_secs: 60
-                }
+                (&send, &poll),
+                (
+                    PlatformError::Unsupported { .. },
+                    PlatformError::Unsupported { .. }
+                )
             ),
-            "expected RateLimited with retry_after_secs=60, got: {err}"
+            "{send} / {poll}"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_posts_a_text_message_to_the_live_chat_and_charges_the_insert_cost() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/liveChat/messages"))
+            .and(query_param("part", "snippet"))
+            .and(body_json(json!({
+                "snippet": {
+                    "liveChatId": "lc-test",
+                    "type": "textMessageEvent",
+                    "textMessageDetails": { "messageText": "hello chat" }
+                }
+            })))
+            .respond_with(
+                ResponseTemplate::new(StatusCode::OK.as_u16()).set_body_json(json!({"kind": "x"})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let quota = SharedQuota::default();
+
+        sender_on(&server, &quota).send("hello chat").await.unwrap();
+
+        assert_eq!(used_today(&quota).await, SEND_COST);
+    }
+
+    #[tokio::test]
+    async fn send_accepts_any_success_status() {
+        for status in [StatusCode::OK, StatusCode::CREATED, StatusCode::NO_CONTENT] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/liveChat/messages"))
+                .respond_with(ResponseTemplate::new(status.as_u16()))
+                .mount(&server)
+                .await;
+
+            let result = sender_on(&server, &SharedQuota::default()).send("hi").await;
+
+            assert!(result.is_ok(), "{status}: {result:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn send_maps_a_google_quota_refusal_to_quota_exhausted() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/liveChat/messages"))
+            .respond_with(google_refusal("quotaExceeded"))
+            .mount(&server)
+            .await;
+
+        let err = sender_on(&server, &SharedQuota::default())
+            .send("hi")
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, PlatformError::QuotaExhausted), "{err}");
+    }
+
+    #[tokio::test]
+    async fn send_maps_a_missing_permission_refusal_to_auth_naming_the_chat_write_scope() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/liveChat/messages"))
+            .respond_with(google_refusal("insufficientPermissions"))
+            .mount(&server)
+            .await;
+
+        let err = sender_on(&server, &SharedQuota::default())
+            .send("hi")
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(&err, PlatformError::Auth { reason } if reason == MISSING_SCOPE),
+            "{err}"
         );
     }
 
     #[tokio::test]
     async fn delete_issues_delete_with_id_query_and_charges_delete_cost() {
         let server = MockServer::start().await;
-
         Mock::given(method("DELETE"))
             .and(path("/liveChat/messages"))
-            .and(wiremock::matchers::query_param("id", "msg-xyz"))
+            .and(query_param("id", "msg-xyz"))
             .respond_with(ResponseTemplate::new(204))
             .expect(1)
             .mount(&server)
             .await;
-
         let quota = SharedQuota::default();
-        let (sender, _handle) = make_sender_with_quota(&server, quota.clone());
 
-        sender.delete("msg-xyz").await.unwrap();
+        sender_on(&server, &quota).delete("msg-xyz").await.unwrap();
 
-        let qt = quota.lock().await;
-        assert_eq!(
-            qt.used_today, DELETE_COST,
-            "delete must charge exactly {DELETE_COST} quota units"
-        );
-    }
-
-    #[tokio::test]
-    async fn delete_returns_quota_exhausted_without_issuing_http_call() {
-        let server = MockServer::builder().start().await;
-
-        Mock::given(method("DELETE"))
-            .and(path("/liveChat/messages"))
-            .respond_with(ResponseTemplate::new(204))
-            .expect(0)
-            .mount(&server)
-            .await;
-
-        let qt_arc = SharedQuota::default();
-        let today = today_pacific();
-        {
-            let mut qt = qt_arc.lock().await;
-            qt.used_today = 9999;
-            qt.last_reset_date = today;
-        }
-        let (sender, _handle) = make_sender_with_quota(&server, qt_arc);
-
-        let err = sender.delete("msg-blocked").await.unwrap_err();
-        assert!(
-            matches!(err, PlatformError::QuotaExhausted),
-            "expected QuotaExhausted at limit, got: {err}"
-        );
-        assert!(
-            server.received_requests().await.unwrap().is_empty(),
-            "quota exhaustion must short-circuit before any HTTP call"
-        );
-    }
-
-    #[tokio::test]
-    async fn delete_error_does_not_leak_bearer_token_or_url() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("DELETE"))
-            .and(path("/liveChat/messages"))
-            .respond_with(ResponseTemplate::new(404).set_body_string("liveChatMessage not found"))
-            .mount(&server)
-            .await;
-
-        let (sender, _handle) = make_sender(&server);
-
-        let err = sender.delete("missing-id").await.unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            !msg.contains("test-token"),
-            "error must not leak the bearer token: {msg}"
-        );
-        assert!(
-            !msg.contains(&server.uri()),
-            "error must not leak the full request URL: {msg}"
-        );
-    }
-
-    #[tokio::test]
-    async fn send_uses_default_retry_after_when_header_absent() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/liveChat/messages"))
-            .respond_with(ResponseTemplate::new(429).set_body_string("too many requests"))
-            .mount(&server)
-            .await;
-
-        let (sender, handle) = make_sender(&server);
-        handle.set(Some("lc-ratelimit-no-header".to_owned()));
-
-        let err = sender.send("hi").await.unwrap_err();
-        assert!(
-            matches!(
-                err,
-                PlatformError::RateLimited {
-                    retry_after_secs: 30
-                }
-            ),
-            "expected RateLimited with default retry_after_secs=30, got: {err}"
-        );
-    }
-
-    #[tokio::test]
-    async fn send_error_does_not_leak_bearer_token_or_url() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/liveChat/messages"))
-            .respond_with(ResponseTemplate::new(500).set_body_string("internal error"))
-            .mount(&server)
-            .await;
-
-        let (sender, handle) = make_sender(&server);
-        handle.set(Some("lc-leak".to_owned()));
-
-        let err = sender.send("hi").await.unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            !msg.contains("test-token"),
-            "send error must not leak the bearer token: {msg}"
-        );
-        assert!(
-            !msg.contains(&server.uri()),
-            "send error must not leak the full request URL: {msg}"
-        );
-    }
-
-    #[tokio::test]
-    async fn create_poll_returns_unsupported_when_no_live_chat_id() {
-        let server = MockServer::start().await;
-        let (sender, _handle) = make_sender(&server);
-
-        let err = sender
-            .create_poll("Q?", &["A".to_owned(), "B".to_owned()])
-            .await
-            .unwrap_err();
-        assert!(
-            matches!(err, PlatformError::Unsupported { .. }),
-            "expected Unsupported without an active broadcast, got: {err}"
-        );
-        assert!(server.received_requests().await.unwrap().is_empty());
+        assert_eq!(used_today(&quota).await, DELETE_COST);
     }
 
     #[tokio::test]
     async fn create_poll_posts_poll_event_body_and_charges_quota() {
         let server = MockServer::start().await;
-        let expected_body = json!({
-            "snippet": {
-                "liveChatId": "lc-poll",
-                "type": "pollEvent",
-                "pollDetails": {
-                    "metadata": {
-                        "questionText": "Best pick?",
-                        "options": [
-                            { "optionText": "Red" },
-                            { "optionText": "Blue" }
-                        ]
-                    }
-                }
-            }
-        });
-
         Mock::given(method("POST"))
             .and(path("/liveChat/messages"))
-            .and(body_json(expected_body))
+            .and(body_json(json!({
+                "snippet": {
+                    "liveChatId": "lc-test",
+                    "type": "pollEvent",
+                    "pollDetails": {
+                        "metadata": {
+                            "questionText": "Best pick?",
+                            "options": [
+                                { "optionText": "Red" },
+                                { "optionText": "Blue" }
+                            ]
+                        }
+                    }
+                }
+            })))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({"kind": "x"})))
             .expect(1)
             .mount(&server)
             .await;
-
         let quota = SharedQuota::default();
-        let (sender, handle) = make_sender_with_quota(&server, quota.clone());
-        handle.set(Some("lc-poll".to_owned()));
 
-        sender
+        sender_on(&server, &quota)
             .create_poll("Best pick?", &["Red".to_owned(), "Blue".to_owned()])
             .await
             .unwrap();
 
-        assert_eq!(
-            quota.lock().await.used_today,
-            POLL_COST,
-            "poll must charge {POLL_COST} units"
-        );
-    }
-
-    #[tokio::test]
-    async fn create_poll_error_does_not_leak_bearer_token_or_url() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/liveChat/messages"))
-            .respond_with(ResponseTemplate::new(500).set_body_string("internal error"))
-            .mount(&server)
-            .await;
-
-        let (sender, handle) = make_sender(&server);
-        handle.set(Some("lc-poll-leak".to_owned()));
-
-        let err = sender
-            .create_poll("Q?", &["A".to_owned(), "B".to_owned()])
-            .await
-            .unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            !msg.contains("test-token"),
-            "poll error must not leak the bearer token: {msg}"
-        );
-        assert!(
-            !msg.contains(&server.uri()),
-            "poll error must not leak the full request URL: {msg}"
-        );
+        assert_eq!(used_today(&quota).await, POLL_COST);
     }
 }

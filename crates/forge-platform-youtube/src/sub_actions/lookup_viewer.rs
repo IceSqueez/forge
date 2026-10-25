@@ -173,7 +173,6 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::quota_state::SharedQuota;
 
     const TOKEN_SENTINEL: &str = "yt-viewer-runner-token";
     const BODY_SENTINEL: &str = "yt-viewer-response-body-sentinel";
@@ -196,13 +195,10 @@ mod tests {
     }
 
     fn runner_on(server: &MockServer) -> LookupViewerRunner {
-        let quota = SharedQuota::default();
         let lookup = YoutubeChannelLookup::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
-            quota,
-        )
-        .with_api_base(server.uri());
+        );
         LookupViewerRunner::new(Arc::new(lookup))
     }
 
@@ -232,13 +228,10 @@ mod tests {
     }
 
     fn runner_on_uri(uri: &str) -> LookupViewerRunner {
-        let quota = SharedQuota::default();
         let lookup = YoutubeChannelLookup::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(uri),
             token_source(),
-            quota,
-        )
-        .with_api_base(uri.to_owned());
+        );
         LookupViewerRunner::new(Arc::new(lookup))
     }
 

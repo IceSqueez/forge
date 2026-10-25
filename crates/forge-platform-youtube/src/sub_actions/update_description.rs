@@ -118,7 +118,6 @@ mod tests {
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-    use crate::quota_state::SharedQuota;
 
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {
@@ -140,14 +139,11 @@ mod tests {
     fn runner_on(server: &MockServer) -> UpdateDescriptionRunner {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(Some("vid-1".to_owned()));
-        let quota = SharedQuota::default();
         let meta = YoutubeStreamMetadata::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             handle,
-            quota,
-        )
-        .with_api_base(server.uri());
+        );
         UpdateDescriptionRunner::new(Arc::new(meta))
     }
 
@@ -204,14 +200,11 @@ mod tests {
     fn validate_config_accepts_valid_rejects_empty_missing_and_non_string() {
         let server_uri = "http://127.0.0.1:0".to_owned();
         let handle = ActiveBroadcastIdHandle::new();
-        let quota = SharedQuota::default();
         let meta = YoutubeStreamMetadata::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(&server_uri),
             token_source(),
             handle,
-            quota,
-        )
-        .with_api_base(server_uri);
+        );
         let runner = UpdateDescriptionRunner::new(Arc::new(meta));
 
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![

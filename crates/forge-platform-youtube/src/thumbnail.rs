@@ -1,49 +1,36 @@
 use std::sync::Arc;
 
-use forge_net::DEFAULT_RETRY_AFTER_SECS;
-use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
+use forge_net::{GatewayRequest, RequestBody, Secret};
+use forge_platform_core::PlatformError;
 use futures::future::BoxFuture;
-use reqwest::StatusCode;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-use crate::quota_state::{SharedQuota, today_pacific};
+use crate::data_api::YoutubeDataApi;
 
 const THUMBNAIL_SET_COST: u32 = 50;
 const MAX_THUMBNAIL_BYTES: u64 = 2 * 1024 * 1024;
+const THUMBNAIL_SET_PATH: &str = "/thumbnails/set";
+const MISSING_SCOPE: &str = "thumbnail upload scope missing";
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
 pub struct YoutubeThumbnail {
-    client: reqwest::Client,
+    api: YoutubeDataApi,
     access_token_source: TokenSource,
     active_broadcast_id: ActiveBroadcastIdHandle,
-    quota: SharedQuota,
-    api_base: String,
 }
 
 impl YoutubeThumbnail {
     pub fn new(
-        endpoints: &PlatformEndpoints,
+        api: YoutubeDataApi,
         access_token_source: TokenSource,
         active_broadcast_id: ActiveBroadcastIdHandle,
-        quota: SharedQuota,
     ) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            api,
             access_token_source,
             active_broadcast_id,
-            quota,
-            api_base: endpoints
-                .base_url(EndpointSurface::YouTubeUploadApi)
-                .to_owned(),
         }
-    }
-
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn with_api_base(mut self, api_base: String) -> Self {
-        self.api_base = api_base;
-        self
     }
 
     pub async fn set(&self, image_path: &str) -> Result<(), PlatformError> {
@@ -62,63 +49,19 @@ impl YoutubeThumbnail {
         }
         let content_type = content_type_for(image_path);
 
-        {
-            let today = today_pacific();
-            let mut qt = self.quota.lock().await;
-            qt.charge(THUMBNAIL_SET_COST, today)?;
-        }
-
         let token = (self.access_token_source)().await?;
-        let url = format!("{}/thumbnails/set", self.api_base);
+        let request = GatewayRequest::post(THUMBNAIL_SET_PATH)
+            .label(THUMBNAIL_SET_PATH)
+            .bearer(Secret::new(token))
+            .query("videoId", video_id)
+            .query("uploadType", "media")
+            .body(RequestBody::raw(content_type, bytes));
 
-        let resp = self
-            .client
-            .post(&url)
-            .bearer_auth(&token)
-            .query(&[("videoId", video_id.as_str()), ("uploadType", "media")])
-            .header("Content-Type", content_type)
-            .body(bytes)
-            .send()
+        self.api
+            .upload(THUMBNAIL_SET_COST, request)
             .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = resp.status();
-        if status == StatusCode::OK || status == StatusCode::CREATED {
-            return Ok(());
-        }
-        Err(self.map_failure(resp).await)
-    }
-
-    async fn map_failure(&self, resp: reqwest::Response) -> PlatformError {
-        let status = resp.status();
-        let retry_after_secs = resp
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
-        let body_text = resp.text().await.unwrap_or_default();
-
-        match status {
-            StatusCode::TOO_MANY_REQUESTS => PlatformError::RateLimited { retry_after_secs },
-            StatusCode::FORBIDDEN if body_text.contains("quotaExceeded") => {
-                PlatformError::QuotaExhausted
-            }
-            StatusCode::FORBIDDEN
-                if body_text.contains("insufficientPermissions")
-                    || body_text.contains("operationNotSupported") =>
-            {
-                PlatformError::Auth {
-                    reason: "thumbnail upload scope missing".to_owned(),
-                }
-            }
-            _ => PlatformError::Http {
-                status: status.as_u16(),
-                body: body_text,
-            },
-        }
+            .map(drop)
+            .map_err(|e| e.into_platform_error(MISSING_SCOPE))
     }
 }
 
@@ -145,9 +88,8 @@ mod tests {
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+    use crate::endpoints_test_support::{data_api_charging, used_today};
     use crate::quota_state::SharedQuota;
-
-    const TOKEN_SENTINEL: &str = "yt-thumb-secret-token";
 
     struct TempImage(std::path::PathBuf);
 
@@ -176,7 +118,7 @@ mod tests {
     }
 
     fn token_source() -> TokenSource {
-        Arc::new(|| Box::pin(async { Ok(TOKEN_SENTINEL.to_owned()) }))
+        Arc::new(|| Box::pin(async { Ok("yt-thumb-token".to_owned()) }))
     }
 
     fn thumbnail_on(
@@ -187,12 +129,10 @@ mod tests {
         handle.set(broadcast.map(|s| s.to_owned()));
         let quota = SharedQuota::default();
         let thumb = YoutubeThumbnail::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            data_api_charging(&server.uri(), quota.clone()),
             token_source(),
             handle,
-            quota.clone(),
-        )
-        .with_api_base(server.uri());
+        );
         (thumb, quota)
     }
 
@@ -249,11 +189,7 @@ mod tests {
 
         thumb.set(img.as_str()).await.unwrap();
 
-        assert_eq!(
-            quota.lock().await.used_today,
-            THUMBNAIL_SET_COST,
-            "successful upload must charge {THUMBNAIL_SET_COST} units"
-        );
+        assert_eq!(used_today(&quota).await, THUMBNAIL_SET_COST);
     }
 
     #[tokio::test]
@@ -307,52 +243,6 @@ mod tests {
         assert!(
             server.received_requests().await.unwrap().is_empty(),
             "unreadable file must short-circuit before upload"
-        );
-    }
-
-    #[tokio::test]
-    async fn set_maps_403_quota_exceeded_to_quota_exhausted() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/thumbnails/set"))
-            .respond_with(
-                ResponseTemplate::new(403)
-                    .set_body_string(r#"{"error":{"errors":[{"reason":"quotaExceeded"}]}}"#),
-            )
-            .mount(&server)
-            .await;
-
-        let (thumb, _quota) = thumbnail_on(&server, Some("vid"));
-        let img = TempImage::new("q.png", b"x");
-
-        let err = thumb.set(img.as_str()).await.unwrap_err();
-        assert!(
-            matches!(err, PlatformError::QuotaExhausted),
-            "403 quotaExceeded must map to QuotaExhausted, got: {err}"
-        );
-    }
-
-    #[tokio::test]
-    async fn set_error_does_not_leak_token_or_url() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/thumbnails/set"))
-            .respond_with(ResponseTemplate::new(500).set_body_string("internal error"))
-            .mount(&server)
-            .await;
-
-        let (thumb, _quota) = thumbnail_on(&server, Some("vid"));
-        let img = TempImage::new("e.png", b"x");
-
-        let err = thumb.set(img.as_str()).await.unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            !msg.contains(TOKEN_SENTINEL),
-            "error must not leak the bearer token: {msg}"
-        );
-        assert!(
-            !msg.contains(&server.uri()),
-            "error must not leak the request URL: {msg}"
         );
     }
 }

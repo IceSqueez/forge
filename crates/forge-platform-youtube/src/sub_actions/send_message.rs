@@ -128,7 +128,6 @@ mod tests {
 
     use super::*;
     use crate::live_chat_id::LiveChatIdHandle;
-    use crate::quota_state::SharedQuota;
 
     const TOKEN_SENTINEL: &str = "yt-secret-token";
 
@@ -171,14 +170,11 @@ mod tests {
     fn runner_on(server: &MockServer) -> SendMessageRunner {
         let handle = LiveChatIdHandle::new();
         handle.set(Some("lc-test".to_owned()));
-        let quota = SharedQuota::default();
         let sender = YoutubeSendChat::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             handle,
-            quota,
-        )
-        .with_api_base(server.uri());
+        );
         SendMessageRunner::new(Arc::new(sender))
     }
 
@@ -266,14 +262,11 @@ mod tests {
     fn validate_config_rejects_empty_or_non_string_message_and_accepts_valid() {
         let server_uri = "http://127.0.0.1:0".to_owned();
         let handle = LiveChatIdHandle::new();
-        let quota = SharedQuota::default();
         let sender = YoutubeSendChat::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            crate::endpoints_test_support::data_api_at(&server_uri),
             token_source(),
             handle,
-            quota,
-        )
-        .with_api_base(server_uri);
+        );
         let runner = SendMessageRunner::new(Arc::new(sender));
 
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![

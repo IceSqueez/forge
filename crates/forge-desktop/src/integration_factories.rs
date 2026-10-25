@@ -207,13 +207,12 @@ impl IntegrationFactory<BuiltinObject> for TwitchFactory {
 }
 
 pub(crate) struct YoutubeFactory {
-    endpoints: PlatformEndpoints,
+    api: forge_platform_youtube::YoutubeDataApi,
     bus: Arc<EventBus>,
     creds: Arc<dyn CredentialsRepo>,
     manager: Arc<forge_platform_youtube::YoutubeCredentialsManager>,
     live_chat_id: forge_platform_youtube::LiveChatIdHandle,
     active_broadcast: forge_platform_youtube::ActiveBroadcastIdHandle,
-    quota: forge_platform_youtube::SharedQuota,
     ban_ledger: Arc<dyn BanLedgerRepo>,
 }
 
@@ -232,7 +231,13 @@ pub(crate) fn wire_youtube(
     ));
     let live_chat_id = forge_platform_youtube::LiveChatIdHandle::new();
     let active_broadcast = forge_platform_youtube::ActiveBroadcastIdHandle::new();
-    let quota = forge_platform_youtube::SharedQuota::default();
+    let api = forge_platform_youtube::YoutubeDataApi::new(
+        endpoints,
+        forge_platform_youtube::SharedQuota::default(),
+        publisher(bus),
+    )
+    .inspect_err(|e| eprintln!("forge-desktop: youtube data api gateway build failed: {e}"))
+    .ok()?;
     let ban_ledger = backend.ban_ledger_repo();
 
     let token_source = || {
@@ -243,10 +248,9 @@ pub(crate) fn wire_youtube(
         })
     };
     let send = Arc::new(forge_platform_youtube::YoutubeSendChat::new(
-        endpoints,
+        api.clone(),
         token_source(),
         live_chat_id.clone(),
-        quota.clone(),
     ));
     let broadcaster_source = {
         let manager = Arc::clone(&manager);
@@ -256,41 +260,35 @@ pub(crate) fn wire_youtube(
         })
     };
     let moderation = Arc::new(forge_platform_youtube::YoutubeModeration::new(
-        endpoints,
+        api.clone(),
         token_source(),
         broadcaster_source,
         live_chat_id.clone(),
-        quota.clone(),
         Arc::clone(&ban_ledger),
     ));
     let metadata = Arc::new(forge_platform_youtube::YoutubeStreamMetadata::new(
-        endpoints,
+        api.clone(),
         token_source(),
         active_broadcast.clone(),
-        quota.clone(),
     ));
     let stream_stats = Arc::new(forge_platform_youtube::YoutubeStreamStats::new(
-        endpoints,
+        api.clone(),
         token_source(),
         active_broadcast.clone(),
-        quota.clone(),
     ));
     let ad_break = Arc::new(forge_platform_youtube::YoutubeAdBreak::new(
-        endpoints,
+        api.clone(),
         token_source(),
         active_broadcast.clone(),
-        quota.clone(),
     ));
     let thumbnail = Arc::new(forge_platform_youtube::YoutubeThumbnail::new(
-        endpoints,
+        api.clone(),
         token_source(),
         active_broadcast.clone(),
-        quota.clone(),
     ));
     let channel_lookup = Arc::new(forge_platform_youtube::YoutubeChannelLookup::new(
-        endpoints,
+        api.clone(),
         token_source(),
-        quota.clone(),
     ));
     if let Err(e) = forge_platform_youtube::register_youtube_sub_actions(
         sub_actions,
@@ -305,13 +303,12 @@ pub(crate) fn wire_youtube(
         eprintln!("forge-desktop: youtube sub-action registration failed: {e}");
     }
     Some(YoutubeFactory {
-        endpoints: endpoints.clone(),
+        api,
         bus: Arc::clone(bus),
         creds,
         manager,
         live_chat_id,
         active_broadcast,
-        quota,
         ban_ledger,
     })
 }
@@ -335,12 +332,11 @@ impl IntegrationFactory<BuiltinObject> for YoutubeFactory {
             return Ok(RunningIntegration::idle());
         };
         let platform = Arc::new(forge_platform_youtube::YoutubePlatform::new(
-            &self.endpoints,
+            self.api.clone(),
             stored.channel_id.clone(),
             Arc::clone(&self.manager),
             self.live_chat_id.clone(),
             self.active_broadcast.clone(),
-            self.quota.clone(),
             Arc::clone(&self.ban_ledger),
         ));
         let chat_platform: Arc<dyn ChatPlatform> = Arc::clone(&platform) as _;
@@ -348,7 +344,6 @@ impl IntegrationFactory<BuiltinObject> for YoutubeFactory {
             stored.channel_id,
             platform,
             Arc::clone(&self.manager),
-            self.quota.clone(),
         );
 
         let mut tasks = TaskGroup::default();

@@ -38,6 +38,12 @@ impl QuotaState {
         Ok(())
     }
 
+    pub fn refund(&mut self, cost: u32, charged_on: time::Date) {
+        if self.last_reset_date == charged_on {
+            self.used_today = self.used_today.saturating_sub(cost);
+        }
+    }
+
     pub fn used_on(&self, today: time::Date) -> u32 {
         if self.last_reset_date == today {
             self.used_today
@@ -222,6 +228,38 @@ mod tests {
                 qt.used_on(DAY)
             );
         }
+    }
+
+    #[test]
+    fn a_same_day_refund_gives_the_charge_back() {
+        let mut qt = used_on_day(QUOTA_HIGH_WATER - 1);
+        qt.charge(CHAT_POLL_COST, DAY).unwrap();
+
+        qt.refund(CHAT_POLL_COST, DAY);
+
+        assert_eq!(
+            (qt.used_on(DAY), qt.long_interval_mode(DAY)),
+            (QUOTA_HIGH_WATER - 1, false)
+        );
+    }
+
+    #[test]
+    fn a_refund_for_a_day_already_rolled_over_leaves_the_new_day_untouched() {
+        let mut qt = used_on_day(QUOTA_HIGH_WATER);
+        qt.charge(CHAT_POLL_COST, NEXT_DAY).unwrap();
+
+        qt.refund(CHAT_POLL_COST, DAY);
+
+        assert_eq!(qt.used_on(NEXT_DAY), CHAT_POLL_COST);
+    }
+
+    #[test]
+    fn a_refund_larger_than_the_usage_floors_at_zero() {
+        let mut qt = used_on_day(BROADCAST_COST);
+
+        qt.refund(CHAT_POLL_COST, DAY);
+
+        assert_eq!(qt.used_on(DAY), 0);
     }
 
     #[test]

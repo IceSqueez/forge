@@ -73,7 +73,6 @@ mod tests {
     use crate::chat_platform::YoutubePlatform;
     use crate::credentials_manager::YoutubeCredentialsManager;
     use crate::live_chat_id::LiveChatIdHandle;
-    use crate::quota_state::SharedQuota;
 
     const BROADCASTER: &str = "UCbroadcaster";
 
@@ -86,22 +85,16 @@ mod tests {
             Arc::new(MockCredentialsRepo::new()),
             GoogleAuthFlow::new(&endpoints, "client".to_owned(), "secret".to_owned()),
         ));
-        let quota = SharedQuota::default();
         let platform = Arc::new(YoutubePlatform::new(
-            &endpoints,
+            crate::endpoints_test_support::unreachable_data_api(),
             broadcaster_channel_id.to_owned(),
             Arc::clone(&manager),
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
-            quota.clone(),
             ledger,
         ));
-        let (bundle, _health_tx) = YoutubeIntegrationBundle::new(
-            broadcaster_channel_id.to_owned(),
-            platform,
-            manager,
-            quota,
-        );
+        let (bundle, _health_tx) =
+            YoutubeIntegrationBundle::new(broadcaster_channel_id.to_owned(), platform, manager);
         bundle
     }
 

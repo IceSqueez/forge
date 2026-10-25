@@ -1,8 +1,9 @@
-use forge_net::RateLimitError;
+use forge_net::{GatewayFailure, InvalidRequest, ResponseDecodeError, canonical_status_reason};
 use forge_platform_core::PlatformError;
-use reqwest::StatusCode;
 use thiserror::Error;
 
+use crate::api::whole_seconds;
+use crate::config::STATEMENT_CALL_INTERVAL;
 use crate::integration::MONOBANK_INTEGRATION;
 
 #[derive(Debug, Error)]
@@ -66,27 +67,34 @@ impl MonobankError {
         )
     }
 
-    pub(crate) fn from_transport(error: reqwest::Error) -> Self {
-        Self::Network {
-            reason: error.without_url().to_string(),
-        }
-    }
-
-    pub(crate) fn from_decode(error: &serde_json::Error) -> Self {
+    pub(crate) fn from_decode(error: ResponseDecodeError) -> Self {
         Self::MalformedResponse {
             reason: format!(
                 "{:?} error at line {} column {}",
-                error.classify(),
-                error.line(),
-                error.column()
+                error.category, error.line, error.column
             ),
         }
     }
+}
 
-    pub(crate) fn from_limiter(error: RateLimitError) -> Self {
-        match error {
-            RateLimitError::Exhausted => Self::CoolingDown {
-                retry_after_secs: crate::api::whole_seconds(crate::config::STATEMENT_CALL_INTERVAL),
+impl From<GatewayFailure> for MonobankError {
+    fn from(failure: GatewayFailure) -> Self {
+        match failure {
+            GatewayFailure::Unauthorized { .. } | GatewayFailure::Forbidden { .. } => {
+                Self::Unauthorized
+            }
+            GatewayFailure::RateLimited { retry_after, .. } => Self::RateLimited {
+                retry_after_secs: whole_seconds(retry_after.max(STATEMENT_CALL_INTERVAL)),
+            },
+            GatewayFailure::BudgetExhausted { retry_after } => Self::CoolingDown {
+                retry_after_secs: whole_seconds(retry_after.unwrap_or(STATEMENT_CALL_INTERVAL)),
+            },
+            GatewayFailure::InvalidRequest(InvalidRequest::InvalidHeader) => Self::MalformedToken,
+            other => match other.status() {
+                Some(status) => Self::Http { status },
+                None => Self::Network {
+                    reason: other.to_string(),
+                },
             },
         }
     }
@@ -111,9 +119,7 @@ impl From<MonobankError> for PlatformError {
             }
             MonobankError::Http { status } => PlatformError::Http {
                 status,
-                body: StatusCode::from_u16(status)
-                    .ok()
-                    .and_then(|code| code.canonical_reason())
+                body: canonical_status_reason(status)
                     .unwrap_or_default()
                     .to_owned(),
             },

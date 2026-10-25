@@ -17,12 +17,9 @@ pub const DEFAULT_HISTORY_LOOKBACK: Duration =
 pub const DEFAULT_WINDOW_OVERLAP: Duration =
     Duration::from_secs(WINDOW_OVERLAP_MINUTES * SECONDS_PER_MINUTE);
 
-const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MonobankConfig {
     pub base_url: String,
-    pub request_timeout: Duration,
     pub history_lookback: Duration,
     pub window_overlap: Duration,
 }
@@ -34,7 +31,6 @@ impl MonobankConfig {
                 .base_url(EndpointSurface::MonobankApi)
                 .trim_end_matches('/')
                 .to_owned(),
-            request_timeout: DEFAULT_REQUEST_TIMEOUT,
             history_lookback: DEFAULT_HISTORY_LOOKBACK,
             window_overlap: DEFAULT_WINDOW_OVERLAP,
         }

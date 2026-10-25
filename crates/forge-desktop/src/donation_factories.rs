@@ -95,22 +95,19 @@ pub(crate) fn wire_donatello(
     bus: &Arc<EventBus>,
 ) -> Option<DonationFactory<forge_donatello::DonatelloProvider>> {
     let creds = creds_of(backend);
-    let provider = forge_donatello::DonatelloProvider::new(
-        forge_donatello::DonatelloConfig::new(endpoints),
-        Arc::clone(&creds),
-        forge_donatello::default_rate_limiter(),
-    );
-    match provider {
-        Ok(provider) => Some(DonationFactory {
-            provider: Arc::new(provider.with_event_publisher(publisher(bus))),
-            creds,
-            ingest: Arc::clone(ingest),
-        }),
-        Err(error) => {
-            tracing::warn!(error = %error, "donatello integration unavailable");
-            None
-        }
-    }
+    let config = forge_donatello::DonatelloConfig::new(endpoints);
+    let gateway =
+        forge_donatello::donatello_gateway(&config, forge_donatello::default_rate_limiter())
+            .inspect_err(
+                |error| tracing::warn!(error = %error, "donatello integration unavailable"),
+            )
+            .ok()?;
+    let provider = forge_donatello::DonatelloProvider::new(config, Arc::clone(&creds), gateway);
+    Some(DonationFactory {
+        provider: Arc::new(provider.with_event_publisher(publisher(bus))),
+        creds,
+        ingest: Arc::clone(ingest),
+    })
 }
 
 pub(crate) fn wire_monobank(
@@ -120,22 +117,17 @@ pub(crate) fn wire_monobank(
     bus: &Arc<EventBus>,
 ) -> Option<DonationFactory<forge_monobank::MonobankProvider>> {
     let creds = creds_of(backend);
-    let provider = forge_monobank::MonobankProvider::new(
-        forge_monobank::MonobankConfig::new(endpoints),
-        Arc::clone(&creds),
-        forge_monobank::MonobankRateLimits::official(),
-    );
-    match provider {
-        Ok(provider) => Some(DonationFactory {
-            provider: Arc::new(provider.with_event_publisher(publisher(bus))),
-            creds,
-            ingest: Arc::clone(ingest),
-        }),
-        Err(error) => {
-            tracing::warn!(error = %error, "monobank integration unavailable");
-            None
-        }
-    }
+    let config = forge_monobank::MonobankConfig::new(endpoints);
+    let gateways =
+        forge_monobank::monobank_gateways(&config, forge_monobank::MonobankRateLimits::official())
+            .inspect_err(|error| tracing::warn!(error = %error, "monobank integration unavailable"))
+            .ok()?;
+    let provider = forge_monobank::MonobankProvider::new(config, Arc::clone(&creds), gateways);
+    Some(DonationFactory {
+        provider: Arc::new(provider.with_event_publisher(publisher(bus))),
+        creds,
+        ingest: Arc::clone(ingest),
+    })
 }
 
 #[cfg(test)]

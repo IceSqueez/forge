@@ -1,6 +1,6 @@
 use std::fmt;
 
-use reqwest::header::HeaderValue;
+use forge_net::{Secret, is_valid_header_value};
 
 use crate::error::DonatelloError;
 
@@ -14,15 +14,14 @@ impl DonatelloToken {
             return Err(DonatelloError::MissingToken);
         }
         let token = Self(trimmed.to_owned());
-        token.header_value()?;
+        if !is_valid_header_value(&token.0) {
+            return Err(DonatelloError::MalformedToken);
+        }
         Ok(token)
     }
 
-    pub(crate) fn header_value(&self) -> Result<HeaderValue, DonatelloError> {
-        let mut value =
-            HeaderValue::from_str(&self.0).map_err(|_| DonatelloError::MalformedToken)?;
-        value.set_sensitive(true);
-        Ok(value)
+    pub(crate) fn secret(&self) -> Secret {
+        Secret::new(self.0.clone())
     }
 
     pub(crate) fn expose(&self) -> &str {

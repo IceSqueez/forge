@@ -1,9 +1,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_net::{RateLimitOutcome, RateLimiter, TokenBucketRateLimiter};
-use reqwest::StatusCode;
-use reqwest::header::RETRY_AFTER;
+use forge_net::{
+    CallClass, Gateway, GatewayProfile, GatewayRequest, RateLimiter, ThrottleHintFamily,
+    TokenBucketRateLimiter,
+};
 use serde::de::DeserializeOwned;
 
 use crate::config::{MonobankConfig, STATEMENT_CALL_INTERVAL};
@@ -15,8 +16,13 @@ use crate::wire::ClientInfoWire;
 const TOKEN_HEADER: &str = "X-Token";
 const CLIENT_INFO_PATH: &str = "/personal/client-info";
 const STATEMENT_PATH: &str = "/personal/statement";
-const REQUEST_WEIGHT: u32 = 1;
 const CALLS_PER_INTERVAL: u32 = 1;
+
+pub const MONOBANK_GATEWAY_PROFILE: GatewayProfile = GatewayProfile::platform_api(
+    CallClass::Interactive,
+    ThrottleHintFamily::RetryAfter,
+    STATEMENT_CALL_INTERVAL,
+);
 
 #[derive(Clone)]
 pub struct MonobankRateLimits {
@@ -39,29 +45,36 @@ impl MonobankRateLimits {
     }
 }
 
-pub(crate) struct MonobankApi {
-    http: reqwest::Client,
-    base_url: String,
+#[derive(Clone)]
+pub struct MonobankGateways {
+    client_info: Gateway,
+    statement: Gateway,
+}
+
+pub fn monobank_gateways(
+    config: &MonobankConfig,
     limits: MonobankRateLimits,
+) -> Result<MonobankGateways, MonobankError> {
+    let build = |limiter: Arc<dyn RateLimiter>| {
+        Gateway::new(&config.base_url, limiter, MONOBANK_GATEWAY_PROFILE, None).map_err(|error| {
+            MonobankError::ClientInit {
+                reason: error.to_string(),
+            }
+        })
+    };
+    Ok(MonobankGateways {
+        client_info: build(limits.client_info)?,
+        statement: build(limits.statement)?,
+    })
+}
+
+pub(crate) struct MonobankApi {
+    gateways: MonobankGateways,
 }
 
 impl MonobankApi {
-    pub(crate) fn new(
-        config: &MonobankConfig,
-        limits: MonobankRateLimits,
-    ) -> Result<Self, MonobankError> {
-        let http = reqwest::Client::builder()
-            .timeout(config.request_timeout)
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|error| MonobankError::ClientInit {
-                reason: error.without_url().to_string(),
-            })?;
-        Ok(Self {
-            http,
-            base_url: config.base_url.clone(),
-            limits,
-        })
+    pub(crate) fn new(gateways: MonobankGateways) -> Self {
+        Self { gateways }
     }
 
     pub(crate) async fn jars(
@@ -70,8 +83,8 @@ impl MonobankApi {
     ) -> Result<Vec<MonobankJar>, MonobankError> {
         let info: ClientInfoWire = self
             .get(
+                &self.gateways.client_info,
                 token,
-                self.limits.client_info.as_ref(),
                 CLIENT_INFO_PATH.to_owned(),
             )
             .await?;
@@ -90,8 +103,8 @@ impl MonobankApi {
         to_unix: i64,
     ) -> Result<Vec<serde_json::Value>, MonobankError> {
         self.get(
+            &self.gateways.statement,
             token,
-            self.limits.statement.as_ref(),
             format!("{STATEMENT_PATH}/{}/{from_unix}/{to_unix}", jar.as_str()),
         )
         .await
@@ -99,62 +112,16 @@ impl MonobankApi {
 
     async fn get<T: DeserializeOwned>(
         &self,
+        gateway: &Gateway,
         token: &MonobankToken,
-        limiter: &dyn RateLimiter,
         path: String,
     ) -> Result<T, MonobankError> {
-        reserve_call(limiter).await?;
-        let response = self
-            .http
-            .get(format!("{}{path}", self.base_url))
-            .header(TOKEN_HEADER, token.header_value()?)
-            .send()
-            .await
-            .map_err(MonobankError::from_transport)?;
-        let status = response.status();
-        if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-            return Err(MonobankError::Unauthorized);
-        }
-        if status == StatusCode::TOO_MANY_REQUESTS {
-            let retry_after = response
-                .headers()
-                .get(RETRY_AFTER)
-                .and_then(|value| value.to_str().ok())
-                .and_then(|value| value.trim().parse::<u64>().ok())
-                .map(Duration::from_secs)
-                .unwrap_or(STATEMENT_CALL_INTERVAL)
-                .max(STATEMENT_CALL_INTERVAL);
-            limiter.observe_remote_throttle(retry_after).await;
-            return Err(MonobankError::RateLimited {
-                retry_after_secs: whole_seconds(retry_after),
-            });
-        }
-        if !status.is_success() {
-            return Err(MonobankError::Http {
-                status: status.as_u16(),
-            });
-        }
-        let body = response
-            .bytes()
-            .await
-            .map_err(MonobankError::from_transport)?;
-        serde_json::from_slice(&body).map_err(|error| MonobankError::from_decode(&error))
-    }
-}
-
-async fn reserve_call(limiter: &dyn RateLimiter) -> Result<(), MonobankError> {
-    match limiter
-        .acquire(REQUEST_WEIGHT)
-        .await
-        .map_err(MonobankError::from_limiter)?
-    {
-        RateLimitOutcome::Granted => Ok(()),
-        RateLimitOutcome::Throttled { wait_for } => Err(MonobankError::CoolingDown {
-            retry_after_secs: whole_seconds(wait_for),
-        }),
-        RateLimitOutcome::Exhausted => Err(MonobankError::CoolingDown {
-            retry_after_secs: whole_seconds(STATEMENT_CALL_INTERVAL),
-        }),
+        let request = GatewayRequest::get(path)
+            .api_key(TOKEN_HEADER, token.secret())
+            .follow_redirects(false)
+            .without_limiter_wait();
+        let response = gateway.send(request).await?;
+        response.json().map_err(MonobankError::from_decode)
     }
 }
 

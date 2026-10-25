@@ -8,7 +8,7 @@ use tokio::runtime::Handle;
 use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::api::{MonobankApi, MonobankRateLimits};
+use crate::api::{MonobankApi, MonobankGateways};
 use crate::config::MonobankConfig;
 use crate::credentials::{self, MonobankCredential};
 use crate::error::MonobankError;
@@ -35,14 +35,14 @@ impl MonobankProvider {
     pub fn new(
         config: MonobankConfig,
         creds: Arc<dyn CredentialsRepo>,
-        limits: MonobankRateLimits,
-    ) -> Result<Self, MonobankError> {
-        let api = Arc::new(MonobankApi::new(&config, limits)?);
+        gateways: MonobankGateways,
+    ) -> Self {
+        let api = Arc::new(MonobankApi::new(gateways));
         let (control, _) = watch::channel(PollControl {
             enabled: true,
             generation: 0,
         });
-        Ok(Self {
+        Self {
             id: MONOBANK_INTEGRATION.id,
             config,
             api,
@@ -50,7 +50,7 @@ impl MonobankProvider {
             creds,
             control,
             status: Arc::new(StatusBoard::new()),
-        })
+        }
     }
 
     pub fn with_event_publisher(self, publisher: Arc<dyn EventPublisher>) -> Self {

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::EventPublisher;
-use forge_net::RateLimiter;
+use forge_net::Gateway;
 use forge_platform_core::{DonationProvider, DonationStream};
 use forge_storage::CredentialsRepo;
 use forge_types::IntegrationId;
@@ -31,26 +31,22 @@ pub struct DonatelloProvider {
 }
 
 impl DonatelloProvider {
-    pub fn new(
-        config: DonatelloConfig,
-        creds: Arc<dyn CredentialsRepo>,
-        limiter: Arc<dyn RateLimiter>,
-    ) -> Result<Self, DonatelloError> {
+    pub fn new(config: DonatelloConfig, creds: Arc<dyn CredentialsRepo>, gateway: Gateway) -> Self {
         let interval = bounded_poll_interval(config.poll_interval);
-        let api = Arc::new(DonatelloApi::new(&config, limiter)?);
+        let api = Arc::new(DonatelloApi::new(gateway));
         let (control, _) = watch::channel(PollControl {
             enabled: true,
             generation: 0,
             interval,
         });
-        Ok(Self {
+        Self {
             id: DONATELLO_INTEGRATION.id,
             config,
             api,
             creds,
             control,
             status: Arc::new(StatusBoard::new(interval)),
-        })
+        }
     }
 
     pub fn with_event_publisher(self, publisher: Arc<dyn EventPublisher>) -> Self {

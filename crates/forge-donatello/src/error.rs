@@ -1,6 +1,5 @@
-use forge_net::RateLimitError;
+use forge_net::{GatewayFailure, InvalidRequest, ResponseDecodeError, canonical_status_reason};
 use forge_platform_core::PlatformError;
-use reqwest::StatusCode;
 use thiserror::Error;
 
 use crate::integration::DONATELLO_INTEGRATION;
@@ -58,26 +57,36 @@ impl DonatelloError {
         )
     }
 
-    pub(crate) fn from_transport(error: reqwest::Error) -> Self {
-        Self::Network {
-            reason: error.without_url().to_string(),
-        }
-    }
-
-    pub(crate) fn from_decode(error: &serde_json::Error) -> Self {
+    pub(crate) fn from_decode(error: ResponseDecodeError) -> Self {
         Self::MalformedResponse {
             reason: format!(
                 "{:?} error at line {} column {}",
-                error.classify(),
-                error.line(),
-                error.column()
+                error.category, error.line, error.column
             ),
         }
     }
+}
 
-    pub(crate) fn from_limiter(error: RateLimitError) -> Self {
-        match error {
-            RateLimitError::Exhausted => Self::RateLimitExhausted,
+impl From<GatewayFailure> for DonatelloError {
+    fn from(failure: GatewayFailure) -> Self {
+        match failure {
+            GatewayFailure::Unauthorized { .. } => Self::Unauthorized,
+            GatewayFailure::RateLimited { retry_after, .. } => Self::RateLimited {
+                retry_after_secs: u32::try_from(
+                    retry_after
+                        .as_secs()
+                        .saturating_add(u64::from(retry_after.subsec_nanos() > 0)),
+                )
+                .unwrap_or(u32::MAX),
+            },
+            GatewayFailure::BudgetExhausted { .. } => Self::RateLimitExhausted,
+            GatewayFailure::InvalidRequest(InvalidRequest::InvalidHeader) => Self::MalformedToken,
+            other => match other.status() {
+                Some(status) => Self::Http { status },
+                None => Self::Network {
+                    reason: other.to_string(),
+                },
+            },
         }
     }
 }
@@ -99,9 +108,7 @@ impl From<DonatelloError> for PlatformError {
             DonatelloError::RateLimitExhausted => PlatformError::RateLimitExhausted,
             DonatelloError::Http { status } => PlatformError::Http {
                 status,
-                body: StatusCode::from_u16(status)
-                    .ok()
-                    .and_then(|code| code.canonical_reason())
+                body: canonical_status_reason(status)
                     .unwrap_or_default()
                     .to_owned(),
             },

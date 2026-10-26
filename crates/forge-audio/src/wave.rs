@@ -59,7 +59,10 @@ fn declared_len(bytes: usize) -> u32 {
 }
 
 #[cfg(test)]
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test fixture values are small and bounded"
+)]
 pub(crate) mod tests {
     use super::*;
 

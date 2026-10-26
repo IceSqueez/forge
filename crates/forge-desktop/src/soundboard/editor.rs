@@ -163,7 +163,9 @@ impl SoundboardView {
                     }
                     None => None,
                 };
-                let _ = player.ensure_clip_duration(target_id).await;
+                if let Err(error) = player.ensure_clip_duration(target_id).await {
+                    tracing::warn!(%error, "clip duration could not be measured");
+                }
                 Ok::<_, SoundboardError>(ClipSaved {
                     unregistered: unregistered_combo(hotkey.as_deref(), reconciler.as_deref()),
                     shared,

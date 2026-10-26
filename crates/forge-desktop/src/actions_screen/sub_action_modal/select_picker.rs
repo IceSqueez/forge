@@ -121,7 +121,10 @@ impl EditSubActionForm {
         cx.notify();
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "render helper takes each displayed value and handler separately"
+    )]
     pub(super) fn render_select_field(
         &self,
         key: &str,

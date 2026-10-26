@@ -21,6 +21,10 @@ fn hash_body(body: &str) -> String {
     let digest = hasher.finalize();
     let mut out = String::with_capacity(digest.len() * 2);
     for b in digest.iter() {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "writing to a String cannot fail"
+        )]
         let _ = write!(out, "{b:02x}");
     }
     out

@@ -88,8 +88,12 @@ impl QuitTeardown {
         let Some(runtime) = self.0 else {
             return;
         };
-        let _ =
-            std::thread::spawn(move || runtime.shutdown_timeout(RUNTIME_SHUTDOWN_BUDGET)).join();
+        if std::thread::spawn(move || runtime.shutdown_timeout(RUNTIME_SHUTDOWN_BUDGET))
+            .join()
+            .is_err()
+        {
+            tracing::warn!("runtime shutdown thread panicked");
+        }
         silence_logging();
     }
 }
@@ -124,7 +128,12 @@ impl ShutdownHandles {
     }
 
     pub async fn run_graceful(self) {
-        let _ = tokio::time::timeout(GRACEFUL_BUDGET, self.sequence()).await;
+        if tokio::time::timeout(GRACEFUL_BUDGET, self.sequence())
+            .await
+            .is_err()
+        {
+            tracing::warn!(budget = ?GRACEFUL_BUDGET, "graceful shutdown ran out of time");
+        }
     }
 
     async fn sequence(self) {
@@ -133,13 +142,33 @@ impl ShutdownHandles {
         }
 
         tracing::info!("graceful shutdown: stopping intake");
-        let _ = tokio::time::timeout(TIMER_STOP_BUDGET, self.timer_scheduler.stop()).await;
-        let _ = tokio::time::timeout(SCHEDULED_RUNS_STOP_BUDGET, self.scheduled_runs.stop()).await;
-        let _ = tokio::time::timeout(TRIGGER_EVALUATOR_STOP_BUDGET, self.trigger_evaluator.stop())
-            .await;
+        if tokio::time::timeout(TIMER_STOP_BUDGET, self.timer_scheduler.stop())
+            .await
+            .is_err()
+        {
+            tracing::warn!(budget = ?TIMER_STOP_BUDGET, "timer scheduler did not stop in time");
+        }
+        if tokio::time::timeout(SCHEDULED_RUNS_STOP_BUDGET, self.scheduled_runs.stop())
+            .await
+            .is_err()
+        {
+            tracing::warn!(budget = ?SCHEDULED_RUNS_STOP_BUDGET, "scheduled runs did not stop in time");
+        }
+        if tokio::time::timeout(TRIGGER_EVALUATOR_STOP_BUDGET, self.trigger_evaluator.stop())
+            .await
+            .is_err()
+        {
+            tracing::warn!(budget = ?TRIGGER_EVALUATOR_STOP_BUDGET, "trigger evaluator did not stop in time");
+        }
 
         if let Some(server) = self.server {
-            let _ = tokio::time::timeout(SERVER_STOP_BUDGET, server.stop()).await;
+            match tokio::time::timeout(SERVER_STOP_BUDGET, server.stop()).await {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => tracing::warn!(%error, "server stop failed"),
+                Err(_) => {
+                    tracing::warn!(budget = ?SERVER_STOP_BUDGET, "server did not stop in time")
+                }
+            }
         }
 
         tokio::time::sleep(SETTLE).await;
@@ -148,7 +177,13 @@ impl ShutdownHandles {
         self.action_engine.shutdown();
 
         if let Some(speak) = self.speak {
-            let _ = tokio::time::timeout(SPEAK_STOP_BUDGET, speak.send(SpeakCommand::Clear)).await;
+            match tokio::time::timeout(SPEAK_STOP_BUDGET, speak.send(SpeakCommand::Clear)).await {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => tracing::warn!(%error, "speak queue could not be cleared"),
+                Err(_) => {
+                    tracing::warn!(budget = ?SPEAK_STOP_BUDGET, "speak queue did not clear in time")
+                }
+            }
         }
 
         self.bus.shutdown();
@@ -169,7 +204,12 @@ impl ShutdownHandles {
             }
         }
 
-        let _ = tokio::time::timeout(STORAGE_CLOSE_BUDGET, self.storage.shutdown()).await;
+        if tokio::time::timeout(STORAGE_CLOSE_BUDGET, self.storage.shutdown())
+            .await
+            .is_err()
+        {
+            tracing::warn!(budget = ?STORAGE_CLOSE_BUDGET, "storage did not close in time");
+        }
         tracing::info!("graceful shutdown: storage closed");
     }
 }

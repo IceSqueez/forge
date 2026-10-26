@@ -194,6 +194,10 @@ impl DevicePool {
             .await;
             tracing::info!(device = %path.display(), reason = %end, "input device reader stopped");
             release_all_held(&held_keys, &fired_tx).await;
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the device watcher may already have stopped"
+            )]
             let _ = closed_tx.send(path);
         });
     }
@@ -281,14 +285,18 @@ async fn release_all_held(held_keys: &HeldKeys, fired_tx: &mpsc::Sender<HotkeyFi
         .map(|(_, binding)| binding)
         .collect();
     for (id, combo) in held {
-        let _ = fired_tx
+        if fired_tx
             .send(HotkeyFiredEvent {
                 id,
                 combo,
                 timestamp_us: current_timestamp_us(),
                 edge: HotkeyEdge::Release,
             })
-            .await;
+            .await
+            .is_err()
+        {
+            tracing::debug!("hotkey supervisor stopped; release edge dropped");
+        }
     }
 }
 
@@ -359,14 +367,18 @@ async fn press_key(
         guard.insert(code, (id, combo.clone()));
     }
 
-    let _ = fired_tx
+    if fired_tx
         .send(HotkeyFiredEvent {
             id,
             combo,
             timestamp_us: current_timestamp_us(),
             edge: HotkeyEdge::Press,
         })
-        .await;
+        .await
+        .is_err()
+    {
+        tracing::debug!("hotkey supervisor stopped; press edge dropped");
+    }
 }
 
 async fn release_key(code: u16, held_keys: &HeldKeys, fired_tx: &mpsc::Sender<HotkeyFiredEvent>) {
@@ -378,14 +390,18 @@ async fn release_key(code: u16, held_keys: &HeldKeys, fired_tx: &mpsc::Sender<Ho
         return;
     };
 
-    let _ = fired_tx
+    if fired_tx
         .send(HotkeyFiredEvent {
             id,
             combo,
             timestamp_us: current_timestamp_us(),
             edge: HotkeyEdge::Release,
         })
-        .await;
+        .await
+        .is_err()
+    {
+        tracing::debug!("hotkey supervisor stopped; release edge dropped");
+    }
 }
 
 fn build_combo_string(held_modifier_codes: &HashSet<u16>, key: &str) -> String {

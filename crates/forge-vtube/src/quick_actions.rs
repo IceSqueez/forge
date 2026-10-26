@@ -64,7 +64,10 @@ fn choice_field(key: &str, label: &str, list: &str) -> QuickActionField {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is one field of the quick-action template"
+)]
 fn quick_action(
     label: &str,
     icon: &str,

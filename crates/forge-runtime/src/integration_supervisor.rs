@@ -228,6 +228,10 @@ async fn run_slot<O>(
         }
         host.publish(&id, current.clone());
         for waiter in waiters {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the requester may stop waiting for the reply"
+            )]
             let _ = waiter.send(current.clone());
         }
     }

@@ -764,6 +764,10 @@ impl OverlaysView {
         overlay(card, palette)
             .position(OverlayPosition::Center)
             .on_dismiss("overlays-code-revert-dismiss", move |_window, cx| {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the view may close before the result arrives"
+                )]
                 let _ = weak.update(cx, |this, cx| this.cancel_revert(cx));
             })
             .into_any_element()
@@ -792,6 +796,10 @@ impl OverlaysView {
         overlay(card, palette)
             .position(OverlayPosition::Center)
             .on_dismiss("overlays-code-discard-dismiss", move |_window, cx| {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the view may close before the result arrives"
+                )]
                 let _ = weak.update(cx, |this, cx| this.cancel_leave(cx));
             })
             .into_any_element()

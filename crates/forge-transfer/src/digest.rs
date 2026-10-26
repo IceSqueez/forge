@@ -62,6 +62,10 @@ pub(crate) fn digest_reader(mut reader: impl Read) -> io::Result<(u64, String)> 
 
 pub(crate) fn to_hex(bytes: &[u8]) -> String {
     bytes.iter().fold(String::new(), |mut hex, byte| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "writing to a String cannot fail"
+        )]
         let _ = write!(hex, "{byte:02x}");
         hex
     })

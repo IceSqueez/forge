@@ -30,7 +30,10 @@ pub struct ServerConfig {
 }
 
 impl ServerConfig {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "constructor receives each shared handle it wires"
+    )]
     pub fn new(
         settings: Arc<dyn SettingsRepo>,
         credentials: Arc<dyn CredentialsRepo>,

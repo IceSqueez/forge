@@ -240,6 +240,10 @@ impl Supervisor<'_> {
 
     fn confirm(&mut self) -> Result<SupervisorOutcome, UpdateError> {
         let previous = self.journal.previous_build.clone();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a leftover previous build does not undo a confirmed update"
+        )]
         let _ = self.retry().run(|| remove_path(&previous));
         self.clear_records()?;
         Ok(SupervisorOutcome::Updated)
@@ -307,6 +311,10 @@ impl Supervisor<'_> {
         relaunch: bool,
     ) -> Result<SupervisorOutcome, UpdateError> {
         let staged = self.state.staged_artifact.clone();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a leftover staged artifact does not change the outcome"
+        )]
         let _ = self.retry().run(|| remove_path(&staged));
         record_outcome(
             self.context.data_dir,

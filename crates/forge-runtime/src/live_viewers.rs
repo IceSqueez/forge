@@ -76,6 +76,10 @@ impl LiveViewerAggregatorHandle {
                     return;
                 }
             }
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a stopped aggregator has nothing left to detach"
+            )]
             let _ = commands
                 .send(AggregatorCommand::Detach {
                     generation,
@@ -98,6 +102,10 @@ impl LiveViewerAggregatorHandle {
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
         let commands = self.commands.clone();
         self.runtime.spawn(async move {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a stopped aggregator has nothing left to detach"
+            )]
             let _ = commands
                 .send(AggregatorCommand::Detach {
                     generation,

@@ -3,7 +3,6 @@ use serde_json::json;
 
 use crate::error::DiscordError;
 
-#[allow(dead_code)]
 pub(crate) fn publish_posted(
     publisher: &dyn EventPublisher,
     webhook_name: &str,
@@ -21,7 +20,6 @@ pub(crate) fn publish_posted(
     ));
 }
 
-#[allow(dead_code)]
 pub(crate) fn publish_failed(
     publisher: &dyn EventPublisher,
     webhook_name: &str,
@@ -39,7 +37,6 @@ pub(crate) fn publish_failed(
     ));
 }
 
-#[allow(dead_code)]
 pub(crate) fn publish_rate_limited(
     publisher: &dyn EventPublisher,
     webhook_name: &str,

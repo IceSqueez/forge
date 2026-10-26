@@ -346,6 +346,10 @@ impl MediaBlobId {
         id.push_str(MEDIA_CONTENT_HASH);
         id.push(MEDIA_BLOB_ID_SEPARATOR);
         for byte in digest {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "writing to a String cannot fail"
+            )]
             let _ = write!(id, "{byte:02x}");
         }
         Self(id)

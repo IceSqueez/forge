@@ -52,7 +52,12 @@ impl StayAwake {
 
     pub async fn set_enabled(&self, enabled: bool) {
         self.preference.store(enabled).await;
-        let _ = self.commands.send(Command::SetEnabled(enabled));
+        if self.commands.send(Command::SetEnabled(enabled)).is_err() {
+            tracing::debug!(
+                enabled,
+                "stay-awake worker stopped; preference change dropped"
+            );
+        }
     }
 
     pub fn status(&self) -> AwakeStatus {
@@ -64,6 +69,10 @@ impl StayAwake {
     }
 
     pub fn release(&self) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the worker may already have exited"
+        )]
         let _ = self.commands.send(Command::Release);
     }
 }

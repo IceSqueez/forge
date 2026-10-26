@@ -111,6 +111,10 @@ fn watch_stdin_until_closed() -> Result<Receiver<()>, UpdateError> {
             let mut stdin = std::io::stdin().lock();
             let mut chunk = [0_u8; STDIN_DRAIN_CHUNK];
             while matches!(stdin.read(&mut chunk), Ok(read) if read > 0) {}
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the waiter may already have stopped listening"
+            )]
             let _ = closed_tx.send(());
         })?;
     Ok(closed_rx)

@@ -31,7 +31,10 @@ pub struct Topics {
 }
 
 impl Topics {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "constructor receives each shared handle it wires"
+    )]
     pub fn new(
         chat_feed: Entity<ChatFeed>,
         home_stats: Entity<HomeStats>,

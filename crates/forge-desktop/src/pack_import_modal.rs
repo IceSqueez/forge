@@ -85,6 +85,10 @@ pub(crate) fn carry_choices(previous: &PackImportPlan, fresh: &mut PackImportPla
         .filter_map(|item| item.resolution.map(|choice| (item.key.clone(), choice)))
         .collect();
     for (key, choice) in chosen {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "choices for items absent from the refreshed plan no longer apply"
+        )]
         let _ = fresh.set_resolution(&key, choice);
     }
 }

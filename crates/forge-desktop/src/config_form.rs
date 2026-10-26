@@ -1124,7 +1124,10 @@ pub(crate) fn render_config_control<V: 'static>(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "render helper takes each displayed value and handler separately"
+)]
 fn render_slide<V: 'static>(
     key: &str,
     min: i64,

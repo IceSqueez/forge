@@ -78,7 +78,9 @@ impl SoundboardView {
                     builtin_id: Some(builtin_id),
                 };
                 library.save_clip(&clip).await?;
-                let _ = player.ensure_clip_duration(clip_id).await;
+                if let Err(error) = player.ensure_clip_duration(clip_id).await {
+                    tracing::warn!(%error, "clip duration could not be measured");
+                }
                 Ok(())
             },
             |this, result, cx| match result {

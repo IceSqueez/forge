@@ -167,6 +167,10 @@ impl DonationProvider for MonobankProvider {
                 }));
             }
             Err(_) => {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the fresh channel has room for this single error"
+                )]
                 let _ = sink.try_send(Err(MonobankError::NoRuntime.into()));
             }
         }

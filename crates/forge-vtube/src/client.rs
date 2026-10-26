@@ -228,8 +228,10 @@ impl VTubeClient {
         let notify = self.shutdown.lock().await.clone();
         notify.notify_one();
         let handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
-        if let Some(h) = handle {
-            let _ = h.await;
+        if let Some(h) = handle
+            && let Err(error) = h.await
+        {
+            tracing::warn!(%error, "vtube supervisor task ended abnormally");
         }
     }
 

@@ -229,12 +229,12 @@ impl TtsDashboardView {
 
     fn dispatch(&self, cmd: SpeakCommand) {
         let Some(handle) = self.speak.clone() else {
-            eprintln!("forge-desktop: TTS command dropped - speak queue unavailable");
+            tracing::warn!("TTS command dropped - speak queue unavailable");
             return;
         };
         self.rt_handle.spawn(async move {
             if let Err(err) = handle.send(cmd).await {
-                eprintln!("forge-desktop: TTS command dispatch failed: {err}");
+                tracing::error!(error = %err, "TTS command dispatch failed");
             }
         });
     }
@@ -497,7 +497,10 @@ impl TtsDashboardView {
             .into_any_element()
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "render helper takes each displayed value and handler separately"
+    )]
     fn ghost_strip_button(
         &self,
         id: &'static str,

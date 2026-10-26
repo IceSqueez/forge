@@ -639,6 +639,10 @@ impl SettingsView {
         let flow = self.update_flow.clone();
         cx.spawn(async move |this, cx| {
             let result = run_update_check(cx, backend, &rt_handle, None, &flow).await;
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |view, cx| view.finish_update_check(result, cx));
         })
         .detach();

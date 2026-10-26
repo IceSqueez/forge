@@ -25,7 +25,9 @@ pub(super) async fn resolve_sandboxed(rel: &str) -> Result<PathBuf, String> {
     }
 
     let root = forge_storage::paths::assets_dir();
-    let _ = tokio::fs::create_dir_all(&root).await;
+    if let Err(error) = tokio::fs::create_dir_all(&root).await {
+        tracing::debug!(%error, path = %root.display(), "assets directory could not be created");
+    }
     let Ok(canon_root) = tokio::fs::canonicalize(&root).await else {
         return Ok(root.join(candidate));
     };

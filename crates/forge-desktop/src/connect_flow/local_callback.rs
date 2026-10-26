@@ -470,7 +470,10 @@ impl ConnectFlow {
             .into_any_element()
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "render helper takes each displayed value and handler separately"
+    )]
     fn oauth_step_row(
         &self,
         n: &'static str,

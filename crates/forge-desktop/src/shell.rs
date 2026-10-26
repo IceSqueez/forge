@@ -128,6 +128,10 @@ impl Global for ShellRoute {}
 pub fn open_screen(screen: Screen, cx: &mut App) {
     let shell = cx.try_global::<ShellRoute>().map(|route| route.0.clone());
     if let Some(shell) = shell {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the view may close before the result arrives"
+        )]
         let _ = shell.update(cx, |shell, cx| shell.navigate(screen, cx));
     }
 }
@@ -1237,6 +1241,10 @@ impl AppShell {
                 save: cx.listener(|this, _: &ClickEvent, _, cx| this.save_and_leave(cx)),
                 discard: cx.listener(|this, _: &ClickEvent, _, cx| this.discard_and_leave(cx)),
                 dismiss: move |_window: &mut Window, cx: &mut App| {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the view may close before the result arrives"
+                    )]
                     let _ = weak.update(cx, |this, cx| this.cancel_leave(cx));
                 },
             },
@@ -1257,6 +1265,10 @@ pub(crate) async fn refresh_dashboard_stats(
     let triggers = backend.trigger_instance_repo();
     let (tx, rx) = tokio::sync::oneshot::channel();
     rt_handle.spawn(async move {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the view may close before the result arrives"
+        )]
         let _ = tx.send(
             compute_stats(
                 &*actions,
@@ -1277,7 +1289,7 @@ pub(crate) async fn refresh_dashboard_stats(
             });
         }
         Ok(Err(err)) => {
-            eprintln!("forge-desktop: home dashboard stats load failed: {err}");
+            tracing::warn!(error = %err, "home dashboard stats load failed");
         }
         Err(_) => {}
     }

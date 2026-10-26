@@ -84,6 +84,10 @@ impl ScreenActionsView {
         let service = Arc::clone(&self.actions_service);
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = tx.send(
                 service
                     .list_linkable_triggers(action_id)
@@ -93,11 +97,19 @@ impl ScreenActionsView {
         });
         cx.spawn_in(window, async move |this, cx| match rx.await {
             Ok(Ok(instances)) => {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the view may close before the result arrives"
+                )]
                 let _ = this.update_in(cx, |this, window, cx| {
                     this.open_trigger_picker_with(action_id, instances, window, cx)
                 });
             }
             Ok(Err(message)) => {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the view may close before the result arrives"
+                )]
                 let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
             }
             Err(_) => {}

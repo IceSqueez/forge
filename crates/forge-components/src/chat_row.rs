@@ -464,7 +464,10 @@ fn command_row(
         .children(second)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "render helper takes each displayed value and handler separately"
+)]
 fn event_row(
     timestamp: SharedString,
     stripe: Rgba,

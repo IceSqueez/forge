@@ -2745,6 +2745,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-stream",
+ "tracing",
  "wiremock",
 ]
 

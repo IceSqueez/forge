@@ -3799,7 +3799,7 @@ impl ChatSession {
     }
 
     fn set_state(&self, state: ChatConnectionState) {
-        let _ = self.state_tx.send(state);
+        self.state_tx.send_replace(state);
     }
 
     fn publish_connection_event(&self) {
@@ -4054,7 +4054,12 @@ async fn await_topic_retries(retries: &mut Option<TopicRetryRun>) {
 }
 
 async fn close_socket(mut socket: EventSubSocket) {
-    let _ = tokio::time::timeout(CLOSE_TIMEOUT, socket.close(None)).await;
+    if tokio::time::timeout(CLOSE_TIMEOUT, socket.close(None))
+        .await
+        .is_err()
+    {
+        tracing::debug!(timeout = ?CLOSE_TIMEOUT, "eventsub socket close timed out");
+    }
 }
 
 fn close_in_background(socket: EventSubSocket) {
@@ -4112,6 +4117,10 @@ impl SubscriptionPassContext {
         };
         match result {
             Ok(pass) if pass.any_live() => {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the session may stop waiting for the retry pass"
+                )]
                 let _ = self.retries_tx.send(pass.into_retries());
                 PassVerdict::Live
             }
@@ -4172,7 +4181,8 @@ impl Drop for ChatSession {
             Ok(()) => ConnectionTransition::Expected,
             Err(_) => self.transition,
         };
-        let _ = self.state_tx.send(ChatConnectionState::Disconnected);
+        self.state_tx
+            .send_replace(ChatConnectionState::Disconnected);
         self.config.bus.publish(connection_state_changed_event(
             "twitch",
             ConnectionState::Disconnected,

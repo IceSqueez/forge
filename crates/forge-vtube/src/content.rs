@@ -66,6 +66,10 @@ impl ContentNotifier {
     }
 
     pub(crate) fn notify_model_changed(&self) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the model watcher may already have stopped"
+        )]
         let _ = self.model_changed_tx.send(());
     }
 }
@@ -154,6 +158,10 @@ async fn report_expressions(
     refresh_expressions(snap, req_tx).await;
     let after = snap.read().map(|s| s.expressions.len()).unwrap_or(before);
     if after != before {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "having no subscribers is a normal state"
+        )]
         let _ = health_tx.send(HealthDelta {
             index: 1,
             new_value: HealthValue::Text {
@@ -173,6 +181,10 @@ async fn report_items(
     refresh_items(snap, req_tx).await;
     let after = snap.read().map(|s| s.item_count).unwrap_or(before);
     if after != before {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "having no subscribers is a normal state"
+        )]
         let _ = health_tx.send(HealthDelta {
             index: 2,
             new_value: HealthValue::Text {
@@ -207,6 +219,10 @@ fn report_model_secondary(
     let primary = health.model_name.clone();
     drop(health);
 
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "having no subscribers is a normal state"
+    )]
     let _ = health_tx.send(HealthDelta {
         index: 0,
         new_value: HealthValue::Text {
@@ -357,6 +373,10 @@ pub(crate) fn spawn_version_fetch(
             if let Ok(data) = send_internal(&tx, "APIStateRequest", serde_json::json!({})).await
                 && let Some(version) = data["vTubeStudioVersion"].as_str()
             {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the version reported on the first connect is kept"
+                )]
                 let _ = vtube_version.set(version.to_owned());
             }
         }

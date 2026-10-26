@@ -147,6 +147,10 @@ impl OverlaysView {
         overlay(card, palette)
             .position(OverlayPosition::Center)
             .on_dismiss("overlays-delete-dismiss", move |_window, cx| {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the view may close before the result arrives"
+                )]
                 let _ = weak.update(cx, |this, cx| this.cancel_delete(cx));
             })
             .into_any_element()

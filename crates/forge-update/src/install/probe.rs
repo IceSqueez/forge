@@ -8,6 +8,10 @@ pub(super) fn dir_is_writable(dir: &Path) -> bool {
     match OpenOptions::new().write(true).create_new(true).open(&probe) {
         Ok(file) => {
             drop(file);
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the probe only tests whether the directory is writable"
+            )]
             let _ = std::fs::remove_file(&probe);
             true
         }

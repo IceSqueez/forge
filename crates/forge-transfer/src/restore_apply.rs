@@ -22,7 +22,9 @@ pub fn apply_pending_restore(data_dir: &Path) -> Result<RestoreOutcome, Transfer
     let marker = match RestoreMarker::read(data_dir) {
         Ok(Some(marker)) => marker,
         Ok(None) => {
-            let _ = remove_dir_all_if_present(&restore_staging_root(data_dir));
+            if let Err(error) = remove_dir_all_if_present(&restore_staging_root(data_dir)) {
+                tracing::warn!(%error, "restore staging could not be removed");
+            }
             return Ok(RestoreOutcome::NonePending);
         }
         Err(TransferError::MalformedRecord { .. }) => {
@@ -141,7 +143,9 @@ fn commit(data_dir: &Path, mut journal: RestoreJournal) -> Result<RestoreOutcome
     }
     RestoreMarker::clear(data_dir)?;
     RestoreJournal::clear(data_dir)?;
-    let _ = remove_dir_all_if_present(&journal.staging_dir);
+    if let Err(error) = remove_dir_all_if_present(&journal.staging_dir) {
+        tracing::warn!(%error, path = %journal.staging_dir.display(), "restore staging could not be removed");
+    }
     Ok(RestoreOutcome::Applied {
         pre_restore_snapshot: journal.snapshot_dir,
     })
@@ -187,11 +191,15 @@ fn roll_back(
     }
     sync_dir(data_dir)?;
     remove_file_if_present(&kept_key)?;
-    let _ = std::fs::remove_dir(&journal.snapshot_dir);
+    if let Err(error) = std::fs::remove_dir(&journal.snapshot_dir) {
+        tracing::warn!(%error, path = %journal.snapshot_dir.display(), "empty pre-restore snapshot could not be removed");
+    }
     sync_parent(&journal.snapshot_dir)?;
     RestoreMarker::clear(data_dir)?;
     RestoreJournal::clear(data_dir)?;
-    let _ = remove_dir_all_if_present(&journal.staging_dir);
+    if let Err(error) = remove_dir_all_if_present(&journal.staging_dir) {
+        tracing::warn!(%error, path = %journal.staging_dir.display(), "restore staging could not be removed");
+    }
     Ok(RestoreOutcome::RolledBack { reason })
 }
 
@@ -209,7 +217,9 @@ fn return_placed_entries(data_dir: &Path, journal: &RestoreJournal) -> Result<()
 
 fn abandon(data_dir: &Path, reason: RestoreRollback) -> Result<RestoreOutcome, TransferError> {
     RestoreMarker::clear(data_dir)?;
-    let _ = remove_dir_all_if_present(&restore_staging_root(data_dir));
+    if let Err(error) = remove_dir_all_if_present(&restore_staging_root(data_dir)) {
+        tracing::warn!(%error, "restore staging could not be removed");
+    }
     Ok(RestoreOutcome::RolledBack { reason })
 }
 

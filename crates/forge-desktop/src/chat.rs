@@ -215,7 +215,10 @@ fn platform_display_name(platform: PlatformId) -> &'static str {
 }
 
 impl ChatView {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "constructor receives each shared handle it wires"
+    )]
     pub fn new(
         feed: Entity<ChatFeed>,
         home_stats: Entity<HomeStats>,
@@ -348,17 +351,21 @@ impl ChatView {
                     } else {
                         chat_history.author_tallies(&queries).await
                     };
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the view may close before the result arrives"
+                    )]
                     let _ = tx.send((viewers, tallies));
                 });
                 if let Ok((viewers, tallies)) = rx.await {
                     let viewers = viewers
                         .inspect_err(|err| {
-                            eprintln!("forge-desktop: viewer snapshot load failed: {err}");
+                            tracing::warn!(error = %err, "viewer snapshot load failed");
                         })
                         .ok();
                     let tallies = tallies
                         .inspect_err(|err| {
-                            eprintln!("forge-desktop: viewer message tally load failed: {err}");
+                            tracing::warn!(error = %err, "viewer message tally load failed");
                         })
                         .ok();
                     let applied = this.update(cx, |this, cx| {
@@ -659,12 +666,20 @@ impl ChatView {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
             let outcome = async_bridge::run_quick_step(engine, step, builtin_id, label).await;
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = tx.send(outcome);
         });
         cx.spawn(async move |this, cx| {
             let outcome = rx
                 .await
                 .unwrap_or_else(|_| Err(tr!("chat_dispatch_cancelled")));
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |this, cx| {
                 let succeeded = outcome.is_ok();
                 let (kind, message) = toast(outcome);

@@ -98,7 +98,10 @@ pub(super) async fn probe_connection(
 }
 
 #[cfg(test)]
-#[allow(clippy::cast_possible_truncation)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "test fixture values are small and bounded"
+)]
 mod tests {
     use super::*;
     use crate::network::test_support::{

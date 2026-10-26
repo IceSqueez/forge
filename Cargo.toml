@@ -198,6 +198,10 @@ unsafe_code = "deny"
 unwrap_used = "warn"
 expect_used = "warn"
 panic = "warn"
+allow_attributes = "warn"
+print_stderr = "warn"
+print_stdout = "warn"
+let_underscore_must_use = "warn"
 
 [profile.dev]
 opt-level = 0

@@ -96,19 +96,19 @@ async fn try_register_azure(
         Ok(Some(j)) => j,
         Ok(None) => return,
         Err(e) => {
-            eprintln!("forge-desktop: failed to load Azure TTS credentials: {e}");
+            tracing::warn!(error = %e, "failed to load Azure TTS credentials");
             return;
         }
     };
     let azure_creds: AzureCredentials = match serde_json::from_str(&json) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("forge-desktop: malformed Azure TTS credentials: {e}");
+            tracing::warn!(error = %e, "malformed Azure TTS credentials");
             return;
         }
     };
     register_azure(registry, azure_creds, gateways);
-    eprintln!("forge-desktop: registered Azure TTS engine");
+    tracing::info!(engine = "Azure", "registered cloud TTS engine");
 }
 
 async fn try_register_elevenlabs(
@@ -123,19 +123,19 @@ async fn try_register_elevenlabs(
         Ok(Some(j)) => j,
         Ok(None) => return,
         Err(e) => {
-            eprintln!("forge-desktop: failed to load ElevenLabs TTS credentials: {e}");
+            tracing::warn!(error = %e, "failed to load ElevenLabs TTS credentials");
             return;
         }
     };
     let el_creds: ElevenLabsCredentials = match serde_json::from_str(&json) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("forge-desktop: malformed ElevenLabs TTS credentials: {e}");
+            tracing::warn!(error = %e, "malformed ElevenLabs TTS credentials");
             return;
         }
     };
     register_elevenlabs(registry, el_creds, gateways);
-    eprintln!("forge-desktop: registered ElevenLabs TTS engine");
+    tracing::info!(engine = "ElevenLabs", "registered cloud TTS engine");
 }
 
 async fn try_register_openai(
@@ -147,19 +147,19 @@ async fn try_register_openai(
         Ok(Some(j)) => j,
         Ok(None) => return,
         Err(e) => {
-            eprintln!("forge-desktop: failed to load OpenAI TTS credentials: {e}");
+            tracing::warn!(error = %e, "failed to load OpenAI TTS credentials");
             return;
         }
     };
     let oa_creds: OpenAiCredentials = match serde_json::from_str(&json) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("forge-desktop: malformed OpenAI TTS credentials: {e}");
+            tracing::warn!(error = %e, "malformed OpenAI TTS credentials");
             return;
         }
     };
     register_openai(registry, oa_creds, gateways);
-    eprintln!("forge-desktop: registered OpenAI TTS engine");
+    tracing::info!(engine = "OpenAI", "registered cloud TTS engine");
 }
 
 async fn try_register_polly(
@@ -171,17 +171,17 @@ async fn try_register_polly(
         Ok(Some(j)) => j,
         Ok(None) => return,
         Err(e) => {
-            eprintln!("forge-desktop: failed to load Polly TTS credentials: {e}");
+            tracing::warn!(error = %e, "failed to load Polly TTS credentials");
             return;
         }
     };
     let polly_creds: PollyCredentials = match serde_json::from_str(&json) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("forge-desktop: malformed Polly TTS credentials: {e}");
+            tracing::warn!(error = %e, "malformed Polly TTS credentials");
             return;
         }
     };
     register_polly(registry, polly_creds, gateways);
-    eprintln!("forge-desktop: registered Polly TTS engine");
+    tracing::info!(engine = "Polly", "registered cloud TTS engine");
 }

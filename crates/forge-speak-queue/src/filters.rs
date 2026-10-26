@@ -37,7 +37,7 @@ impl From<FilterMappingError> for PipelineError {
     }
 }
 
-#[allow(clippy::expect_used)]
+#[expect(clippy::expect_used, reason = "literal pattern is a valid regex")]
 static MIGRATED_URL_REGEX: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"https?://\S+").expect("static regex"));
 

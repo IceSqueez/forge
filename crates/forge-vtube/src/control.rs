@@ -22,8 +22,10 @@ impl BuiltinControl for VTubeClient {
         }
 
         let old_handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
-        if let Some(h) = old_handle {
-            let _ = h.await;
+        if let Some(h) = old_handle
+            && let Err(error) = h.await
+        {
+            tracing::warn!(%error, "vtube supervisor task ended abnormally");
         }
 
         crate::supervisor::set_connection_state(
@@ -76,8 +78,10 @@ impl BuiltinControl for VTubeClient {
         notify.notify_one();
 
         let handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
-        if let Some(h) = handle {
-            let _ = h.await;
+        if let Some(h) = handle
+            && let Err(error) = h.await
+        {
+            tracing::warn!(%error, "vtube supervisor task ended abnormally");
         }
         crate::supervisor::record_failure(&self.last_failure, None);
         crate::supervisor::set_connection_state(

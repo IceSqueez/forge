@@ -63,8 +63,10 @@ pub(crate) async fn prune(
             Ok(()) => report.removed += 1,
             Err(_) => report.failed += 1,
         }
-        if let Some(sibling) = sibling {
-            let _ = tokio::fs::remove_file(sibling).await;
+        if let Some(sibling) = sibling
+            && let Err(error) = tokio::fs::remove_file(sibling).await
+        {
+            tracing::debug!(%error, "backup sibling file could not be removed");
         }
     }
     report

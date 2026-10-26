@@ -84,6 +84,10 @@ fn origin_rejected_response() -> Response {
         .into_response()
 }
 
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "the peer may already be gone; the session ends either way"
+)]
 async fn handle_socket(
     mut socket: WebSocket,
     state: AppState,
@@ -276,6 +280,10 @@ async fn handle_socket(
 }
 
 async fn shutdown_signalled(shutdown: &mut watch::Receiver<bool>) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "a dropped shutdown sender also means stopping"
+    )]
     let _ = shutdown.wait_for(|stopping| *stopping).await;
 }
 

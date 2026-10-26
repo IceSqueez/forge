@@ -42,6 +42,10 @@ fn load_once(server: Option<&ServerHandle>, rt_handle: &tokio::runtime::Handle, 
     cx.set_global(OverlayLinkToken(None));
     let (tx, rx) = tokio::sync::oneshot::channel();
     rt_handle.spawn(async move {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the view may close before the result arrives"
+        )]
         let _ = tx.send(handle.auth_state().await.overlay_token().current());
     });
     cx.spawn(async move |cx| {

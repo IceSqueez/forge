@@ -252,6 +252,10 @@ impl ActionEngine {
             engine.run_execution(request, origin, &cancel).await;
             drop(cancel_guard);
             if let Some(done) = on_complete {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the caller may stop waiting for completion"
+                )]
                 let _ = done.send(());
             }
         });
@@ -588,6 +592,10 @@ async fn run_quick_action(
         outcome: run_outcome,
     };
     history.record(ctx, None);
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the requester may stop waiting for the reply"
+    )]
     let _ = req.outcome.send(reported);
 }
 

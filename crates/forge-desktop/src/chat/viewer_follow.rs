@@ -139,11 +139,19 @@ impl ChatView {
                 Some(lookup) => lookup.follow_status(&request.viewer_id).await,
                 None => FollowStatus::Unavailable,
             };
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = tx.send(status);
         });
         let pending = key.clone();
         let task = cx.spawn(async move |this, cx| {
             let status = rx.await.unwrap_or(FollowStatus::Unavailable);
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |this, cx| {
                 if this.follows.settle(pending, status) {
                     cx.notify();

@@ -93,6 +93,10 @@ fn handle_session_event(client: &Arc<HotkeyClient>, event: BackendSessionEvent) 
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .backend_session_lost = lost_detail;
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "having no subscribers is a normal state"
+    )]
     let _ = client.health_tx.send(HealthDelta {
         index: BACKEND_METRIC_INDEX,
         new_value,
@@ -135,6 +139,10 @@ fn handle_press(client: &Arc<HotkeyClient>, event: HotkeyFiredEvent) {
         snap.record_trigger(combo_str);
         build_trigger_delta(&snap)
     };
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "having no subscribers is a normal state"
+    )]
     let _ = client.health_tx.send(delta);
 }
 
@@ -142,21 +150,35 @@ async fn handle_supervisor_command(client: &Arc<HotkeyClient>, cmd: SupervisorCo
     match cmd {
         SupervisorCommand::Disable(reply) => {
             if !client.enabled.load(Ordering::Relaxed) {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the requester may stop waiting for the reply"
+                )]
                 let _ = reply.send(());
                 return;
             }
             hold::close_all_synthesized(client);
             if !client.backend.delivery_gate_only() {
                 for (id, _combo) in known_combos(client) {
-                    let _ = client.backend.unregister(id).await;
+                    if let Err(error) = client.backend.unregister(id).await {
+                        tracing::warn!(%error, hotkey = ?id, "hotkey could not be unregistered");
+                    }
                 }
             }
             client.enabled.store(false, Ordering::Relaxed);
             emit_engine_state_change(client, false);
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the requester may stop waiting for the reply"
+            )]
             let _ = reply.send(());
         }
         SupervisorCommand::Enable(reply) => {
             if client.enabled.load(Ordering::Relaxed) {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the requester may stop waiting for the reply"
+                )]
                 let _ = reply.send(Vec::new());
                 return;
             }
@@ -174,6 +196,10 @@ async fn handle_supervisor_command(client: &Arc<HotkeyClient>, cmd: SupervisorCo
                 record_enable_failures(client, &failures);
                 emit_enable_failed(client, &failures);
             }
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the requester may stop waiting for the reply"
+            )]
             let _ = reply.send(failures);
         }
     }
@@ -236,6 +262,10 @@ fn emit_engine_state_change(client: &Arc<HotkeyClient>, enabled: bool) {
             new_value: registered_count_health_value(enabled, snap.registered_count),
         }
     };
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "having no subscribers is a normal state"
+    )]
     let _ = client.health_tx.send(delta);
 }
 
@@ -260,6 +290,10 @@ pub(crate) fn emit_registered(client: &HotkeyClient, combo_str: &str, id_u32: u3
             ),
         }
     };
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "having no subscribers is a normal state"
+    )]
     let _ = client.health_tx.send(delta);
 }
 
@@ -284,6 +318,10 @@ pub(crate) fn emit_unregistered(client: &HotkeyClient, combo_str: &str, id_u32: 
             ),
         }
     };
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "having no subscribers is a normal state"
+    )]
     let _ = client.health_tx.send(delta);
 }
 

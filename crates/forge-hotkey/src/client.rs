@@ -327,7 +327,13 @@ async fn select_and_start(
         return HotkeyClient::start(config, publisher, backend, None);
     }
 
-    #[allow(unreachable_code)]
+    #[cfg_attr(
+        not(any(target_os = "windows", target_os = "macos")),
+        expect(
+            unreachable_code,
+            reason = "every backend branch above returns on this target"
+        )
+    )]
     {
         let backend = Arc::new(NullBackend::new());
         HotkeyClient::start(config, publisher, backend, None)

@@ -184,6 +184,10 @@ pub(crate) async fn run_batched<I, S>(
         }
         abandoned_rows.fetch_add(sink.abandon(rows), Ordering::Relaxed);
     }
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the caller may stop waiting for the flush"
+    )]
     let _ = done.send(());
 }
 

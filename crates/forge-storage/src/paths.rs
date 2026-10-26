@@ -21,7 +21,10 @@ pub const CRASHES_DIR_NAME: &str = "crashes";
 
 pub const PROBLEM_REPORTS_DIR_NAME: &str = "reports";
 
-#[allow(clippy::expect_used)]
+#[expect(
+    clippy::expect_used,
+    reason = "running without a home directory is unsupported"
+)]
 fn base_dirs() -> BaseDirs {
     BaseDirs::new().expect("home directory must be discoverable on supported platforms")
 }

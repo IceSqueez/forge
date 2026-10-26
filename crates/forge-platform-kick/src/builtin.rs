@@ -64,7 +64,6 @@ pub struct KickIntegrationBundle {
 }
 
 impl KickIntegrationBundle {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         slug: String,
         user_id: u64,
@@ -147,12 +146,20 @@ impl KickIntegrationBundle {
                     index: 0,
                     new_value: bundle.ws_health_value(),
                 };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "having no subscribers is a normal state"
+                )]
                 let _ = bundle.health_tx.send(ws_delta);
 
                 let api_calls_delta = HealthDelta {
                     index: 3,
                     new_value: bundle.api_calls_health_value(),
                 };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "having no subscribers is a normal state"
+                )]
                 let _ = bundle.health_tx.send(api_calls_delta);
 
                 if current.is_connected() && !previous.is_connected() {
@@ -180,12 +187,20 @@ impl KickIntegrationBundle {
                     index: 2,
                     new_value: viewers_health_value(*reports_rx.borrow()),
                 };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "having no subscribers is a normal state"
+                )]
                 let _ = bundle.health_tx.send(viewers_delta);
 
                 let api_calls_delta = HealthDelta {
                     index: 3,
                     new_value: bundle.api_calls_health_value(),
                 };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "having no subscribers is a normal state"
+                )]
                 let _ = bundle.health_tx.send(api_calls_delta);
             }
         });
@@ -208,6 +223,10 @@ impl KickIntegrationBundle {
                     index: 1,
                     new_value: events_health_value(*auth_rx.borrow()),
                 };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "having no subscribers is a normal state"
+                )]
                 let _ = bundle.health_tx.send(events_delta);
             }
         });
@@ -234,7 +253,9 @@ impl KickIntegrationBundle {
 
     pub async fn shutdown(&self) {
         self.retired.cancel();
-        let _ = self.platform.disconnect().await;
+        if let Err(error) = self.platform.disconnect().await {
+            tracing::warn!(%error, "kick chat disconnect failed at shutdown");
+        }
     }
 
     pub(crate) fn credentials_manager(&self) -> &Arc<KickCredentialsManager> {
@@ -427,7 +448,10 @@ fn toggle_field(key: &str, label: &str, default: bool) -> QuickActionField {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is one field of the quick-action template"
+)]
 fn quick_action(
     label: &str,
     icon: &str,

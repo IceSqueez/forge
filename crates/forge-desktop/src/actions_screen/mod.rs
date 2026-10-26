@@ -249,7 +249,10 @@ pub struct ScreenActionsView {
 }
 
 impl ScreenActionsView {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "constructor receives each shared handle it wires"
+    )]
     pub fn new(
         action_repo: Arc<dyn ActionRepo>,
         queue_repo: Arc<dyn QueueRepo>,
@@ -486,7 +489,7 @@ impl ScreenActionsView {
     }
 
     fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
-        eprintln!("forge-desktop: actions operation failed: {message}");
+        tracing::error!(error = %message, "actions operation failed");
         self.loading = false;
         cx.push_toast(
             ToastKind::Error,

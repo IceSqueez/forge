@@ -565,6 +565,10 @@ fn watch_main_leg(main: ControlledPlayback) -> oneshot::Receiver<AudioError> {
     let (failure_tx, failure_rx) = oneshot::channel();
     tokio::spawn(async move {
         if let Err(e) = main.await {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the player may stop watching once playback ends"
+            )]
             let _ = failure_tx.send(e);
         }
     });
@@ -755,11 +759,9 @@ fn device_label(device: &OutputDevice) -> String {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::panic,
+#[expect(
     clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
+    reason = "test fixture values are bounded"
 )]
 mod tests {
     use std::io::Write as _;
@@ -1284,7 +1286,7 @@ mod tests {
             SoundboardSettingsHandle::default(),
         );
 
-        let _ = player.play(clip_id, None).await;
+        assert!(player.play(clip_id, None).await.is_err());
 
         let recorded = events.lock().unwrap();
         let [AudioEvent::PlaybackFailed { error, .. }] = recorded.as_slice() else {
@@ -1667,6 +1669,10 @@ mod tests {
             clip_id: &forge_audio::RemoteClipId,
             command: forge_audio::RemoteCommand,
         ) -> Result<(), AudioError> {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = self.commands.send((clip_id.expose().to_owned(), command));
             Ok(())
         }

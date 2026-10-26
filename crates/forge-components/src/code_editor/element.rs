@@ -484,10 +484,13 @@ impl Element for CodeEditorElement {
             window.paint_quad(fill(*row, with_alpha(palette.brand, SELECTION_ALPHA)));
         }
         for line in &frame.lines {
-            let _ =
+            if let Err(error) =
                 line.shape
                     .line
-                    .paint(line.origin, line_height, TextAlign::Left, None, window, cx);
+                    .paint(line.origin, line_height, TextAlign::Left, None, window, cx)
+            {
+                tracing::debug!(%error, "code editor line could not be painted");
+            }
         }
         for underline in &frame.underlines {
             window.paint_quad(fill(*underline, palette.text_primary));
@@ -496,9 +499,13 @@ impl Element for CodeEditorElement {
             window.paint_quad(fill(*mark, palette.warning));
         }
         for label in frame.labels.iter().chain(frame.placeholder.as_ref()) {
-            let _ = label
-                .label
-                .paint(label.origin, line_height, TextAlign::Left, None, window, cx);
+            if let Err(error) =
+                label
+                    .label
+                    .paint(label.origin, line_height, TextAlign::Left, None, window, cx)
+            {
+                tracing::debug!(%error, "code editor label could not be painted");
+            }
         }
         if focus_handle.is_focused(window)
             && caret_lit

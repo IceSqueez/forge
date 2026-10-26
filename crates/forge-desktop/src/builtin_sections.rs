@@ -303,7 +303,6 @@ fn render_warning_banner(
         .into_any_element()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn render_subscription_list(
     title: &str,
     icon: &SectionIcon,

@@ -91,6 +91,10 @@ pub(crate) fn restore_previous_build(
         }
         return Err(error.into());
     }
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "a leftover failed build does not undo a completed swap"
+    )]
     let _ = retry.run(|| remove_path(&failed));
     Ok(())
 }

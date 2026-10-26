@@ -153,7 +153,6 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 pub(crate) mod test_support {
     use std::sync::Arc;
     use std::sync::mpsc;

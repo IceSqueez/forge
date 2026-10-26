@@ -388,6 +388,14 @@ fn resolve_with_overrides(
     resolver.resolve(&req.viewer_id, &req.viewer_name, candidates)
 }
 
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "having no subscribers is a normal state"
+)]
+fn publish_speak_event(event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>, event: SpeakEvent) {
+    let _ = event_tx.send(event);
+}
+
 fn queue_changed_event(
     high_queue: &VecDeque<SpeakRequest>,
     normal_queue: &VecDeque<SpeakRequest>,
@@ -422,7 +430,10 @@ fn publish(
     bus.publish(event);
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "actor state is passed as separate borrows"
+)]
 pub(crate) async fn run_actor(
     mut config: QueueConfig,
     deps: QueueDeps,
@@ -519,15 +530,18 @@ pub(crate) async fn run_actor(
             && let Some(req) = pop_next(&mut high_queue, &mut normal_queue, &mut per_user_counts)
         {
             let queue_len = high_queue.len() + normal_queue.len();
-            let _ = event_tx.send(queue_changed_event(&high_queue, &normal_queue));
-            let _ = event_tx.send(SpeakEvent::Started {
-                request_id: req.request_id.clone(),
-                voice_id: VoiceId(String::new()),
-                engine_id: EngineId(String::new()),
-                viewer_name: req.viewer_name.clone(),
-                text: req.text.clone(),
-                duration_secs: 0,
-            });
+            publish_speak_event(&event_tx, queue_changed_event(&high_queue, &normal_queue));
+            publish_speak_event(
+                &event_tx,
+                SpeakEvent::Started {
+                    request_id: req.request_id.clone(),
+                    voice_id: VoiceId(String::new()),
+                    engine_id: EngineId(String::new()),
+                    viewer_name: req.viewer_name.clone(),
+                    text: req.text.clone(),
+                    duration_secs: 0,
+                },
+            );
             publish(
                 deps.event_bus.as_ref(),
                 "speak.started",
@@ -562,7 +576,9 @@ pub(crate) async fn run_actor(
             tokio::spawn(async move {
                 let result =
                     run_synthesis_bounded(req, task_deps_clone, recent_snapshot, timeout).await;
-                let _ = tx.send(result).await;
+                if tx.send(result).await.is_err() {
+                    tracing::debug!("speak queue stopped before the synthesis result arrived");
+                }
             });
         }
 
@@ -694,7 +710,7 @@ pub(crate) async fn run_actor(
             _ = tick_progress(&mut progress_ticker), if progress_ticker.is_some() => {
                 if !paused && let Some(CurrentPlayback::Playing(c)) = current_playback.as_mut() {
                     c.elapsed_secs += 1;
-                    let _ = event_tx.send(SpeakEvent::Progress {
+                    publish_speak_event(&event_tx, SpeakEvent::Progress {
                         request_id: c.request_id.clone(),
                         elapsed_secs: c.elapsed_secs,
                     });
@@ -717,7 +733,10 @@ pub(crate) async fn run_actor(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "actor state is passed as separate borrows"
+)]
 async fn handle_synth_result(
     result: SynthTaskResult,
     config: &QueueConfig,
@@ -743,10 +762,13 @@ async fn handle_synth_result(
         } => {
             *active_request_id = None;
             tracing::debug!(request_id = %result.request_id.0, reason = %token, "speak skipped");
-            let _ = event_tx.send(SpeakEvent::Skipped {
-                request_id: result.request_id.clone(),
-                reason: human,
-            });
+            publish_speak_event(
+                event_tx,
+                SpeakEvent::Skipped {
+                    request_id: result.request_id.clone(),
+                    reason: human,
+                },
+            );
             publish(
                 deps.event_bus.as_ref(),
                 "speak.skipped",
@@ -763,10 +785,13 @@ async fn handle_synth_result(
         SynthOutcome::Failed { reason, detail } => {
             *active_request_id = None;
             tracing::warn!(request_id = %result.request_id.0, error = %detail, "speak failed");
-            let _ = event_tx.send(SpeakEvent::Failed {
-                request_id: result.request_id.clone(),
-                error: detail.clone(),
-            });
+            publish_speak_event(
+                event_tx,
+                SpeakEvent::Failed {
+                    request_id: result.request_id.clone(),
+                    error: detail.clone(),
+                },
+            );
             publish(
                 deps.event_bus.as_ref(),
                 "speak.failed",
@@ -818,7 +843,10 @@ async fn handle_synth_result(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "actor state is passed as separate borrows"
+)]
 async fn start_clip(
     clip: ReadyClip,
     config: &QueueConfig,
@@ -840,14 +868,17 @@ async fn start_clip(
         language,
     } = clip;
     let duration_secs = (pcm.duration_ms() / 1000) as u32;
-    let _ = event_tx.send(SpeakEvent::Started {
-        request_id: request_id.clone(),
-        voice_id: voice_id.clone(),
-        engine_id: engine_id.clone(),
-        viewer_name: request.viewer_name.clone(),
-        text: request.text.clone(),
-        duration_secs,
-    });
+    publish_speak_event(
+        event_tx,
+        SpeakEvent::Started {
+            request_id: request_id.clone(),
+            voice_id: voice_id.clone(),
+            engine_id: engine_id.clone(),
+            viewer_name: request.viewer_name.clone(),
+            text: request.text.clone(),
+            duration_secs,
+        },
+    );
     publish(
         deps.event_bus.as_ref(),
         "speak.started",
@@ -884,10 +915,13 @@ async fn start_clip(
         Err(e) => {
             *active_request_id = None;
             tracing::warn!(request_id = %request_id.0, error = %e, "audio playback failed to start");
-            let _ = event_tx.send(SpeakEvent::Failed {
-                request_id: request_id.clone(),
-                error: e.to_string(),
-            });
+            publish_speak_event(
+                event_tx,
+                SpeakEvent::Failed {
+                    request_id: request_id.clone(),
+                    error: e.to_string(),
+                },
+            );
             publish(
                 deps.event_bus.as_ref(),
                 "speak.failed",
@@ -932,9 +966,12 @@ async fn finish_playback(
 
     match play_result {
         Ok(()) => {
-            let _ = event_tx.send(SpeakEvent::Finished {
-                request_id: current.request_id.clone(),
-            });
+            publish_speak_event(
+                event_tx,
+                SpeakEvent::Finished {
+                    request_id: current.request_id.clone(),
+                },
+            );
             publish(
                 deps.event_bus.as_ref(),
                 "speak.finished",
@@ -949,10 +986,13 @@ async fn finish_playback(
         }
         Err(e) => {
             tracing::warn!(request_id = %current.request_id.0, error = %e, "audio playback failed");
-            let _ = event_tx.send(SpeakEvent::Failed {
-                request_id: current.request_id.clone(),
-                error: e.to_string(),
-            });
+            publish_speak_event(
+                event_tx,
+                SpeakEvent::Failed {
+                    request_id: current.request_id.clone(),
+                    error: e.to_string(),
+                },
+            );
             publish(
                 deps.event_bus.as_ref(),
                 "speak.failed",
@@ -998,10 +1038,13 @@ fn stop_active(
         None => (None, None, None),
     };
     *progress_ticker = None;
-    let _ = event_tx.send(SpeakEvent::Skipped {
-        request_id: request_id.clone(),
-        reason: human_reason.to_owned(),
-    });
+    publish_speak_event(
+        event_tx,
+        SpeakEvent::Skipped {
+            request_id: request_id.clone(),
+            reason: human_reason.to_owned(),
+        },
+    );
     publish(
         deps.event_bus.as_ref(),
         "speak.skipped",
@@ -1058,7 +1101,10 @@ fn enqueue_preview(req: &SpeakRequest, deps: &QueueDeps, catalog: &[TtsVoice]) -
     (preview, estimated_secs)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "actor state is passed as separate borrows"
+)]
 fn admit_request(
     req: SpeakRequest,
     config: &QueueConfig,
@@ -1072,10 +1118,13 @@ fn admit_request(
     let total = high_queue.len() + normal_queue.len();
     if total >= config.max_queue_len {
         tracing::debug!(request_id = %req.request_id.0, "queue full, rejecting");
-        let _ = event_tx.send(SpeakEvent::Rejected {
-            request_id: req.request_id.clone(),
-            reason: format!("queue full (max {})", config.max_queue_len),
-        });
+        publish_speak_event(
+            event_tx,
+            SpeakEvent::Rejected {
+                request_id: req.request_id.clone(),
+                reason: format!("queue full (max {})", config.max_queue_len),
+            },
+        );
         publish(
             deps.event_bus.as_ref(),
             "speak.rejected",
@@ -1094,10 +1143,13 @@ fn admit_request(
     let user_count = per_user_counts.get(&req.viewer_id).copied().unwrap_or(0);
     if user_count >= config.per_user_limit {
         tracing::debug!(viewer_id = %req.viewer_id, "per-user limit reached");
-        let _ = event_tx.send(SpeakEvent::Rejected {
-            request_id: req.request_id.clone(),
-            reason: format!("per-user limit (max {})", config.per_user_limit),
-        });
+        publish_speak_event(
+            event_tx,
+            SpeakEvent::Rejected {
+                request_id: req.request_id.clone(),
+                reason: format!("per-user limit (max {})", config.per_user_limit),
+            },
+        );
         publish(
             deps.event_bus.as_ref(),
             "speak.rejected",
@@ -1120,15 +1172,18 @@ fn admit_request(
         Priority::High => high_queue.push_back(req.clone()),
         Priority::Normal => normal_queue.push_back(req.clone()),
     }
-    let _ = event_tx.send(SpeakEvent::Enqueued {
-        request_id: req.request_id.clone(),
-        queue_len: total_after,
-        viewer_name: req.viewer_name.clone(),
-        text: req.text.clone(),
-        is_high_priority: matches!(req.priority, Priority::High),
-        voice_preview,
-        estimated_secs,
-    });
+    publish_speak_event(
+        event_tx,
+        SpeakEvent::Enqueued {
+            request_id: req.request_id.clone(),
+            queue_len: total_after,
+            viewer_name: req.viewer_name.clone(),
+            text: req.text.clone(),
+            is_high_priority: matches!(req.priority, Priority::High),
+            voice_preview,
+            estimated_secs,
+        },
+    );
     publish(
         deps.event_bus.as_ref(),
         "speak.enqueued",
@@ -1140,10 +1195,13 @@ fn admit_request(
         }),
         req.source_event_id,
     );
-    let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
+    publish_speak_event(event_tx, queue_changed_event(high_queue, normal_queue));
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "actor state is passed as separate borrows"
+)]
 fn handle_command(
     cmd: SpeakCommand,
     config: &mut QueueConfig,
@@ -1196,7 +1254,7 @@ fn handle_command(
                     current_playback,
                     progress_ticker,
                 );
-                let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
+                publish_speak_event(event_tx, queue_changed_event(high_queue, normal_queue));
             }
         }
         SpeakCommand::RemoveQueued(request_id) => {
@@ -1268,7 +1326,7 @@ fn handle_command(
                     queue.insert(pos, req);
                 }
             }
-            let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
+            publish_speak_event(event_tx, queue_changed_event(high_queue, normal_queue));
             publish(
                 deps.event_bus.as_ref(),
                 "speak.reordered",
@@ -1292,14 +1350,14 @@ fn handle_command(
                 progress_ticker,
             );
             drop_pending(event_tx, high_queue, normal_queue, per_user_counts);
-            let _ = event_tx.send(SpeakEvent::Cleared);
+            publish_speak_event(event_tx, SpeakEvent::Cleared);
             publish(
                 deps.event_bus.as_ref(),
                 "speak.cleared",
                 serde_json::json!({ "keep_current": false }),
                 None,
             );
-            let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
+            publish_speak_event(event_tx, queue_changed_event(high_queue, normal_queue));
         }
         SpeakCommand::ClearPending => {
             drop_pending(event_tx, high_queue, normal_queue, per_user_counts);
@@ -1309,7 +1367,7 @@ fn handle_command(
                 serde_json::json!({ "keep_current": true }),
                 None,
             );
-            let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
+            publish_speak_event(event_tx, queue_changed_event(high_queue, normal_queue));
         }
         SpeakCommand::SetAlias(alias) => {
             let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
@@ -1372,9 +1430,12 @@ fn handle_command(
             if let Some(CurrentPlayback::Playing(c)) = current_playback.as_ref() {
                 c.playback.pause();
             }
-            let _ = event_tx.send(SpeakEvent::Paused {
-                reason: "user paused".into(),
-            });
+            publish_speak_event(
+                event_tx,
+                SpeakEvent::Paused {
+                    reason: "user paused".into(),
+                },
+            );
             publish(
                 deps.event_bus.as_ref(),
                 "speak.paused",
@@ -1387,7 +1448,7 @@ fn handle_command(
             if let Some(CurrentPlayback::Playing(c)) = current_playback.as_ref() {
                 c.playback.resume();
             }
-            let _ = event_tx.send(SpeakEvent::Resumed);
+            publish_speak_event(event_tx, SpeakEvent::Resumed);
             publish(
                 deps.event_bus.as_ref(),
                 "speak.resumed",
@@ -1414,7 +1475,7 @@ fn handle_command(
         }
         SpeakCommand::VoiceGateActivated => {
             *voicegate_active = true;
-            let _ = event_tx.send(SpeakEvent::VoiceGateHeld);
+            publish_speak_event(event_tx, SpeakEvent::VoiceGateHeld);
             publish(
                 deps.event_bus.as_ref(),
                 "speak.paused",
@@ -1424,7 +1485,7 @@ fn handle_command(
         }
         SpeakCommand::VoiceGateDeactivated => {
             *voicegate_active = false;
-            let _ = event_tx.send(SpeakEvent::VoiceGateReleased);
+            publish_speak_event(event_tx, SpeakEvent::VoiceGateReleased);
             publish(
                 deps.event_bus.as_ref(),
                 "speak.resumed",
@@ -1452,9 +1513,12 @@ fn remove_queued(
             per_user_counts.remove(&req.viewer_id);
         }
     }
-    let _ = event_tx.send(SpeakEvent::Removed {
-        request_id: request_id.clone(),
-    });
+    publish_speak_event(
+        event_tx,
+        SpeakEvent::Removed {
+            request_id: request_id.clone(),
+        },
+    );
     publish(
         deps.event_bus.as_ref(),
         "speak.removed",
@@ -1465,7 +1529,7 @@ fn remove_queued(
         }),
         req.source_event_id,
     );
-    let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
+    publish_speak_event(event_tx, queue_changed_event(high_queue, normal_queue));
 }
 
 fn drop_pending(
@@ -1475,9 +1539,12 @@ fn drop_pending(
     per_user_counts: &mut HashMap<String, usize>,
 ) {
     for req in high_queue.drain(..).chain(normal_queue.drain(..)) {
-        let _ = event_tx.send(SpeakEvent::Removed {
-            request_id: req.request_id,
-        });
+        publish_speak_event(
+            event_tx,
+            SpeakEvent::Removed {
+                request_id: req.request_id,
+            },
+        );
     }
     per_user_counts.clear();
 }
@@ -1518,7 +1585,9 @@ fn spawn_detector_rebuild(
                 None
             }
         };
-        let _ = tx.send(detector).await;
+        if tx.send(detector).await.is_err() {
+            tracing::debug!("speak queue stopped before the language detector was rebuilt");
+        }
     });
 }
 

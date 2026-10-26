@@ -1003,6 +1003,10 @@ impl ScriptEditorView {
             let compile_error = cx
                 .background_spawn(async move { compile_problem(&content) })
                 .await;
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |this, cx| {
                 this.compile_error = compile_error.map(SharedString::from);
                 this.rebuild_problems();
@@ -1240,7 +1244,6 @@ impl ScriptEditorView {
         cx.notify();
     }
 
-    #[allow(clippy::type_complexity)]
     fn apply_saved(
         &mut self,
         result: Result<(ScriptRecord, Result<(), String>), String>,
@@ -1338,9 +1341,12 @@ impl ScriptEditorView {
                     } else {
                         ExecutionStatus::Error
                     };
-                    let _ = scripts
+                    if let Err(error) = scripts
                         .record_execution(script_id, started_at, r.duration_ms as u64, status)
-                        .await;
+                        .await
+                    {
+                        tracing::warn!(%error, "script execution could not be recorded");
+                    }
                 }
                 result
             },

@@ -359,6 +359,10 @@ impl OverlayPropertyPanel {
         let epoch = self.settle_epoch;
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(SLIDE_SETTLE).await;
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |this, cx| this.settle(epoch, cx));
         })
         .detach();

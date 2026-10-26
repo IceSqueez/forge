@@ -1,4 +1,4 @@
-#![allow(unsafe_code)]
+#![expect(unsafe_code, reason = "calls the Win32 power request API")]
 
 use std::ffi::c_void;
 
@@ -65,10 +65,14 @@ impl Drop for PowerRequest {
     fn drop(&mut self) {
         for kind in self.kinds {
             // SAFETY: `self.handle` is a live power request owned by `self`.
-            let _ = unsafe { PowerClearRequest(self.handle, *kind) };
+            if let Err(error) = unsafe { PowerClearRequest(self.handle, *kind) } {
+                tracing::debug!(%error, "power request could not be cleared");
+            }
         }
         // SAFETY: `self.handle` is owned by `self` and closed exactly once, here, before the reason buffers it may reference are dropped with the fields.
-        let _ = unsafe { CloseHandle(self.handle) };
+        if let Err(error) = unsafe { CloseHandle(self.handle) } {
+            tracing::debug!(%error, "power request handle could not be closed");
+        }
     }
 }
 
@@ -117,7 +121,11 @@ impl ResumeWatch {
 impl Drop for ResumeWatch {
     fn drop(&mut self) {
         // SAFETY: `self.registration` came from a successful registration and is unregistered exactly once.
-        let _ = unsafe { PowerUnregisterSuspendResumeNotification(self.registration) };
+        if let Err(error) =
+            unsafe { PowerUnregisterSuspendResumeNotification(self.registration) }.ok()
+        {
+            tracing::debug!(%error, "resume notification could not be unregistered");
+        }
     }
 }
 
@@ -130,6 +138,10 @@ unsafe extern "system" fn on_power_event(
         // SAFETY: `context` points at the sender owned by the live `ResumeWatch` that registered this callback.
         let sink = unsafe { &*context.cast::<DisruptionSender>() };
         for aspect in Aspect::ALL {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the resume watcher may already have stopped"
+            )]
             let _ = sink.send(aspect);
         }
     }

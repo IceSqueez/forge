@@ -1,4 +1,7 @@
-#![allow(unsafe_code)]
+#![cfg_attr(
+    target_os = "macos",
+    expect(unsafe_code, reason = "drives the AppKit speech synthesizer")
+)]
 
 #[cfg(target_os = "macos")]
 use std::sync::mpsc;
@@ -38,6 +41,10 @@ fn worker_loop(
         match req {
             NsSpeechRequest::Synthesize { voice_id, req, tx } => {
                 let result = run_synthesis(&synth, voice_id, req);
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the requester may stop waiting for the reply"
+                )]
                 let _ = tx.send(result);
             }
         }
@@ -158,7 +165,10 @@ fn run_synthesis(
     ))
 }
 
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "macos", test)),
+    expect(dead_code, reason = "used only by the macos synthesis backend")
+)]
 pub(crate) fn rate_apple_from_multiplier(multiplier: f32) -> f32 {
     const RATE_DEFAULT: f32 = 0.5;
     const RATE_MAX: f32 = 1.0;
@@ -166,7 +176,10 @@ pub(crate) fn rate_apple_from_multiplier(multiplier: f32) -> f32 {
     (RATE_DEFAULT + (multiplier - 1.0) * (RATE_MAX - RATE_DEFAULT)).clamp(RATE_MIN, RATE_MAX)
 }
 
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "macos", test)),
+    expect(dead_code, reason = "used only by the macos synthesis backend")
+)]
 pub(crate) fn pitch_mult_from_semitones(semitones: f32) -> f32 {
     2.0_f32.powf(semitones / 12.0).clamp(0.5, 2.0)
 }

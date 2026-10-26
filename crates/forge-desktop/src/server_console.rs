@@ -433,6 +433,10 @@ impl ServerConsoleView {
                     } else {
                         None
                     };
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the view may close before the result arrives"
+                    )]
                     let _ = tx.send(ServerPoll {
                         snapshot,
                         bind_address,

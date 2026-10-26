@@ -126,6 +126,10 @@ pub fn start_twitch_bot_seed(
 ) {
     let (tx, rx) = tokio::sync::oneshot::channel();
     rt_handle.spawn(async move {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the view may close before the result arrives"
+        )]
         let _ = tx.send((bot.status(), bot.moderator_status()));
     });
     cx.spawn(async move |cx| {

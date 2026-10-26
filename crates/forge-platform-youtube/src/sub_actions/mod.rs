@@ -45,7 +45,10 @@ use crate::stream_metadata::YoutubeStreamMetadata;
 use crate::stream_stats::YoutubeStreamStats;
 use crate::thumbnail::YoutubeThumbnail;
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is a shared service a runner needs"
+)]
 pub fn register_youtube_sub_actions(
     reg: &mut SubActionRegistry,
     sender: Arc<YoutubeSendChat>,

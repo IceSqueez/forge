@@ -59,6 +59,10 @@ pub fn default_filter() -> EnvFilter {
 pub fn reloadable(filter: EnvFilter, env_overridden: bool) -> reload::Layer<EnvFilter, Registry> {
     ENV_OVERRIDDEN.store(env_overridden, Ordering::Relaxed);
     let (layer, handle) = reload::Layer::new(filter);
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the log filter is installed once per process"
+    )]
     let _ = HANDLE.set(handle);
     layer
 }

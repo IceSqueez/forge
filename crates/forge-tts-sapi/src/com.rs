@@ -1,4 +1,4 @@
-#![allow(unsafe_code)]
+#![expect(unsafe_code, reason = "drives the COM speech API")]
 
 use std::marker::PhantomData;
 use std::sync::mpsc;
@@ -80,6 +80,10 @@ fn sta_worker_main(
     let _apartment = match ComApartment::enter() {
         Ok(apartment) => apartment,
         Err(error) => {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the requester may stop waiting for the reply"
+            )]
             let _ = init_tx.send(Err(error));
             return;
         }
@@ -89,6 +93,10 @@ fn sta_worker_main(
     let voice: ISpVoice = match unsafe { CoCreateInstance(&SpVoice, None, CLSCTX_INPROC_SERVER) } {
         Ok(voice) => voice,
         Err(error) => {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the requester may stop waiting for the reply"
+            )]
             let _ = init_tx.send(Err(SapiError::catalog_call("CoCreateInstance(SpVoice)")(
                 error,
             )));
@@ -99,17 +107,29 @@ fn sta_worker_main(
     let tokens = match enumerate_voice_tokens(&engine_id) {
         Ok(tokens) => tokens,
         Err(error) => {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the requester may stop waiting for the reply"
+            )]
             let _ = init_tx.send(Err(error));
             return;
         }
     };
 
     let catalog: Vec<TtsVoice> = tokens.iter().map(|entry| entry.voice.clone()).collect();
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the requester may stop waiting for the reply"
+    )]
     let _ = init_tx.send(Ok(catalog));
 
     while let Ok(request) = rx.recv() {
         match request {
             StaRequest::Synthesize { req, tx } => {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the requester may stop waiting for the reply"
+                )]
                 let _ = tx.send(synthesize_on_sta(&voice, &tokens, &req));
             }
         }

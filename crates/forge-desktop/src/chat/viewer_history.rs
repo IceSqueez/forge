@@ -182,6 +182,10 @@ impl ViewerHistory {
         let repo = Arc::clone(&self.repo);
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = tx.send(
                 repo.author_page(&query, older_than, HISTORY_PAGE_SIZE)
                     .await,
@@ -191,7 +195,7 @@ impl ViewerHistory {
             let page = match rx.await {
                 Ok(Ok(page)) => Some(page),
                 Ok(Err(err)) => {
-                    eprintln!("forge-desktop: viewer history load failed: {err}");
+                    tracing::warn!(error = %err, "viewer history load failed");
                     None
                 }
                 Err(_) => None,

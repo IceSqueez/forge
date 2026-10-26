@@ -475,7 +475,7 @@ impl CloudCredentialsView {
         if let Some(queue) = self.speak.clone() {
             self.rt_handle.spawn(async move {
                 if let Err(e) = queue.send(SpeakCommand::RefreshVoiceCatalog).await {
-                    eprintln!("forge-desktop: cloud engine voice-catalog refresh failed: {e}");
+                    tracing::warn!(error = %e, "cloud engine voice-catalog refresh failed");
                 }
             });
         }
@@ -732,7 +732,10 @@ impl CloudCredentialsView {
             .into_any_element()
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "render helper takes each displayed value and handler separately"
+    )]
     fn action_row(
         &self,
         kind: CloudEngineKind,

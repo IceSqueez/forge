@@ -60,7 +60,7 @@ impl YoutubeViewerPoll {
         loop {
             ticker.tick().await;
             if let Some(report) = self.poll_once().await {
-                let _ = self.reports_tx.send(report);
+                self.reports_tx.send_replace(report);
             }
         }
     }

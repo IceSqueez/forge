@@ -263,8 +263,10 @@ impl WindowPlacementRecorder {
         self.pending_save = None;
         let write = self.persist_latest();
         async move {
-            if let Some(write) = write {
-                let _ = write.await;
+            if let Some(write) = write
+                && let Err(error) = write.await
+            {
+                tracing::warn!(%error, "window placement save task failed");
             }
         }
     }

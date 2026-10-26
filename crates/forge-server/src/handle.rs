@@ -17,6 +17,8 @@ use crate::run_state::{Generation, RunState};
 use crate::server::AppState;
 use crate::{SecretToken, ServerError, server};
 
+const CONNECTION_DRAIN_BUDGET: Duration = Duration::from_secs(5);
+
 struct HandleInner {
     join: Option<tokio::task::JoinHandle<Result<(), ServerError>>>,
     shutdown_tx: Option<watch::Sender<bool>>,
@@ -98,7 +100,7 @@ impl ServerHandle {
         };
 
         if let Some(tx) = shutdown_tx {
-            let _ = tx.send(true);
+            tx.send_replace(true);
         }
 
         self.run_state.stop();
@@ -106,12 +108,22 @@ impl ServerHandle {
         bus_adapter.broadcast_close().await;
 
         let drain = async {
-            if let Some(join) = join {
-                let _ = join.await;
+            let Some(join) = join else {
+                return;
+            };
+            match join.await {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => tracing::warn!(%error, "server stopped with an error"),
+                Err(error) => tracing::warn!(%error, "server task ended abnormally"),
             }
         };
 
-        let _ = tokio::time::timeout(Duration::from_secs(5), drain).await;
+        if tokio::time::timeout(CONNECTION_DRAIN_BUDGET, drain)
+            .await
+            .is_err()
+        {
+            tracing::warn!(budget = ?CONNECTION_DRAIN_BUDGET, "server connections did not drain in time");
+        }
 
         Ok(())
     }

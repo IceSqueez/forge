@@ -318,6 +318,10 @@ impl ConnectFlow {
         cx.notify();
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(COPY_FLIP).await;
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |this, cx| {
                 if let Some(dev) = &mut this.twitch_device {
                     dev.copied = false;

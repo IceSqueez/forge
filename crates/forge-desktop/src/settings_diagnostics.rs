@@ -514,6 +514,10 @@ impl SettingsDiagnosticsView {
             overlay(card, palette)
                 .position(OverlayPosition::Center)
                 .on_dismiss("settings-diagnostics-export-dismiss", move |_window, cx| {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the view may close before the result arrives"
+                    )]
                     let _ = weak.update(cx, |this, cx| this.cancel_export(cx));
                 })
                 .into_any_element(),
@@ -547,6 +551,10 @@ impl SettingsDiagnosticsView {
             overlay(modal, palette)
                 .position(OverlayPosition::Center)
                 .on_dismiss("settings-diagnostics-clear-dismiss", move |_window, cx| {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the view may close before the result arrives"
+                    )]
                     let _ = weak.update(cx, |this, cx| this.cancel_clear(cx));
                 })
                 .into_any_element(),

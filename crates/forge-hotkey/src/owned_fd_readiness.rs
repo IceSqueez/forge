@@ -1,5 +1,5 @@
 #![cfg(target_os = "linux")]
-#![allow(unsafe_code)]
+#![expect(unsafe_code, reason = "registers raw device descriptors for readiness")]
 
 use std::fs::File;
 use std::io;

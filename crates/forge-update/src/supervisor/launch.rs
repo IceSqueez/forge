@@ -93,6 +93,10 @@ fn sweep_previous_copies(temp: &Path, current: &Path) {
         let owned_dir = std::fs::symlink_metadata(&path)
             .is_ok_and(|metadata| metadata.is_dir() && same_owner(&metadata, &owner));
         if owned_dir {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "best-effort cleanup of an owned leftover directory"
+            )]
             let _ = std::fs::remove_dir_all(&path);
         }
     }

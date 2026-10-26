@@ -5,7 +5,10 @@ use crate::synth::SAMPLE_RATE_HZ;
 const UNDETERMINED_LOCALE: &str = "und";
 const LANGUAGE_LIST_SEPARATOR: char = ';';
 
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "windows", test)),
+    expect(dead_code, reason = "used only by the windows synthesis backend")
+)]
 pub(crate) fn lcid_to_bcp47(lcid: u32) -> &'static str {
     match lcid {
         0x0401 => "ar-SA",
@@ -56,7 +59,10 @@ pub(crate) fn lcid_to_bcp47(lcid: u32) -> &'static str {
     }
 }
 
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "windows", test)),
+    expect(dead_code, reason = "used only by the windows synthesis backend")
+)]
 pub(crate) fn primary_language_tag(language_attribute: &str) -> Option<&'static str> {
     language_attribute
         .split(LANGUAGE_LIST_SEPARATOR)
@@ -67,7 +73,10 @@ pub(crate) fn primary_language_tag(language_attribute: &str) -> Option<&'static 
         .find(|tag| *tag != UNDETERMINED_LOCALE)
 }
 
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "windows", test)),
+    expect(dead_code, reason = "used only by the windows synthesis backend")
+)]
 pub(crate) fn parse_sapi_hex_locale(language_attribute: &str) -> String {
     if let Some(tag) = primary_language_tag(language_attribute) {
         return tag.to_owned();
@@ -80,7 +89,10 @@ pub(crate) fn parse_sapi_hex_locale(language_attribute: &str) -> String {
     }
 }
 
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "windows", test)),
+    expect(dead_code, reason = "used only by the windows synthesis backend")
+)]
 pub(crate) fn parse_gender(s: &str) -> VoiceGender {
     match s {
         "Male" => VoiceGender::Male,
@@ -89,7 +101,10 @@ pub(crate) fn parse_gender(s: &str) -> VoiceGender {
     }
 }
 
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[cfg_attr(
+    not(target_os = "windows"),
+    expect(dead_code, reason = "used only by the windows synthesis backend")
+)]
 pub(crate) fn build_tts_voice(
     id_str: String,
     name: String,

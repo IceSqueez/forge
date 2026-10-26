@@ -131,6 +131,10 @@ impl TwitchBotAccount {
     }
 
     pub fn attach_broadcaster_transport(&self, transport: Arc<dyn HelixTransport>) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the first attached transport wins"
+        )]
         let _ = self.broadcaster_transport.set(transport);
     }
 

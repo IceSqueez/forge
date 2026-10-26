@@ -282,7 +282,7 @@ fn apply_transition(
         return;
     }
     *current = new;
-    let _ = state_tx.send(new);
+    state_tx.send_replace(new);
     events.publish(connection_state_changed_event(PLATFORM_ID, new, transition));
 }
 

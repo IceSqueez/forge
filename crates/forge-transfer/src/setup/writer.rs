@@ -46,8 +46,10 @@ pub async fn write_setup(request: SetupExportRequest) -> Result<PathBuf, Transfe
         schema_version,
     };
     let written = run_blocking(assembly, move |assembly| assembly.write(&output)).await;
-    if written.is_err() {
-        let _ = tokio::fs::remove_file(partial_path(&destination)).await;
+    if written.is_err()
+        && let Err(error) = tokio::fs::remove_file(partial_path(&destination)).await
+    {
+        tracing::debug!(%error, "partial setup export could not be removed");
     }
     written.map(|()| destination)
 }

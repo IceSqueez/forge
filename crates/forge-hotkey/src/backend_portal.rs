@@ -237,6 +237,10 @@ impl PortalSession {
                     match cmd {
                         Some(PortalCmd::Register(id, combo, reply)) => {
                             let outcome = self.register(id, combo).await;
+                            #[expect(
+                                clippy::let_underscore_must_use,
+                                reason = "the requester may stop waiting for the reply"
+                            )]
                             let _ = reply.send(outcome);
                         }
                         Some(PortalCmd::Unregister(id)) => self.unregister(id).await,
@@ -281,7 +285,9 @@ impl PortalSession {
 
     async fn recover_from_restart(&mut self) {
         tracing::info!("portal daemon restarted - recreating the shortcuts session");
-        let _ = self.outputs.restart_notice_tx.send(()).await;
+        if self.outputs.restart_notice_tx.send(()).await.is_err() {
+            tracing::debug!("hotkey supervisor stopped; portal restart notice dropped");
+        }
         self.listen();
         let outcome = self.recreate().await;
         self.note_session_outcome(outcome).await;
@@ -337,7 +343,9 @@ impl PortalSession {
             }
         };
         self.session_lost = matches!(event, BackendSessionEvent::Lost(_));
-        let _ = self.outputs.session_tx.send(event).await;
+        if self.outputs.session_tx.send(event).await.is_err() {
+            tracing::debug!("hotkey supervisor stopped; session event dropped");
+        }
     }
 
     async fn forward_edge(&self, shortcut: ShortcutEdge) {
@@ -350,7 +358,7 @@ impl PortalSession {
         let Some(combo) = self.registered.get(&id) else {
             return;
         };
-        let _ = self
+        if self
             .outputs
             .fired_tx
             .send(HotkeyFiredEvent {
@@ -359,7 +367,11 @@ impl PortalSession {
                 timestamp_us: wall_clock_us(),
                 edge: shortcut.edge,
             })
-            .await;
+            .await
+            .is_err()
+        {
+            tracing::debug!("hotkey supervisor stopped; portal edge dropped");
+        }
     }
 
     async fn create_session(&mut self) -> Result<String, String> {
@@ -692,14 +704,18 @@ async fn signal_listener_task(
         tokio::select! {
             maybe_msg = activated_stream.next() => {
                 let Some(msg) = maybe_msg else { break };
-                if let Some(shortcut) = parse_shortcut_signal(&msg, HotkeyEdge::Press) {
-                    let _ = edge_tx.send(shortcut).await;
+                if let Some(shortcut) = parse_shortcut_signal(&msg, HotkeyEdge::Press)
+                    && edge_tx.send(shortcut).await.is_err()
+                {
+                    tracing::debug!("portal backend stopped; press edge dropped");
                 }
             }
             maybe_msg = deactivated_stream.next() => {
                 let Some(msg) = maybe_msg else { break };
-                if let Some(shortcut) = parse_shortcut_signal(&msg, HotkeyEdge::Release) {
-                    let _ = edge_tx.send(shortcut).await;
+                if let Some(shortcut) = parse_shortcut_signal(&msg, HotkeyEdge::Release)
+                    && edge_tx.send(shortcut).await.is_err()
+                {
+                    tracing::debug!("portal backend stopped; release edge dropped");
                 }
             }
             maybe_change = name_owner_stream.next() => {
@@ -708,7 +724,9 @@ async fn signal_listener_task(
                     && args.name() == PORTAL_DESTINATION
                     && !args.new_owner().as_deref().unwrap_or("").is_empty()
                 {
-                    let _ = owner_restart_tx.send(()).await;
+                    if owner_restart_tx.send(()).await.is_err() {
+                        tracing::debug!("portal backend stopped; owner restart dropped");
+                    }
                     return;
                 }
             }

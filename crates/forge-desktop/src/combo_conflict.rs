@@ -155,6 +155,10 @@ pub fn conflict_prompt<V: 'static>(
         .on_dismiss(
             SharedString::from(format!("{scope}-conflict-dismiss")),
             move |_window, cx| {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the view may close before the result arrives"
+                )]
                 let _ = weak.update(cx, on_cancel);
             },
         )

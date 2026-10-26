@@ -263,6 +263,10 @@ impl VTubeConnectForm {
         self.rt_handle.spawn(async move {
             let client = Arc::new(VTubeClient::connect(config, bus, credentials));
             client.set_auto_reconnect(false);
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = tx.send(client);
         });
 

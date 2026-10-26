@@ -1178,7 +1178,10 @@ impl TtsFiltersView {
             .into_any_element()
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "render helper takes each displayed value and handler separately"
+    )]
     fn stage_frame(
         &self,
         n: u8,
@@ -1269,7 +1272,10 @@ impl TtsFiltersView {
             .into_any_element()
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "render helper takes each displayed value and handler separately"
+    )]
     fn stage_row(
         &self,
         label: SharedString,

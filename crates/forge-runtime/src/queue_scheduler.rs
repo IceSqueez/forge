@@ -544,6 +544,10 @@ impl QueueSchedulerHandle {
     }
 
     pub fn shutdown(self) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scheduler may already have stopped"
+        )]
         let _ = self.sender.send(SchedulerCommand::Shutdown);
     }
 
@@ -722,6 +726,10 @@ impl QueueScheduler {
                 None => engine_ref.dispatch_tracked(req, cancel, done_tx).await,
             };
             if dispatched.is_ok() {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a dropped completion signal also means the run ended"
+                )]
                 let _ = done_rx.await;
             }
             inflight_ref.complete(id);
@@ -740,17 +748,29 @@ impl QueueScheduler {
         while let Some(cmd) = cmd_rx.recv().await {
             match cmd {
                 SchedulerCommand::Enqueue(req) => {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "refusals are published as skip events inside enqueue"
+                    )]
                     let _ = Self::enqueue(req, Arrival::Triggered, &mut slots, &bus);
                 }
                 SchedulerCommand::Admit(req, origin, reply) => {
                     let admitted = Self::enqueue(req, Arrival::Scheduled(origin), &mut slots, &bus)
                         .map_err(SchedulerError::Refused);
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the requester may stop waiting for the reply"
+                    )]
                     let _ = reply.send(admitted);
                 }
                 SchedulerCommand::IntakeRefusal(queue_id, bypass_pause, reply) => {
                     let refusal = slots
                         .get(&queue_id)
                         .and_then(|slot| slot.mode.intake_refusal(bypass_pause));
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the requester may stop waiting for the reply"
+                    )]
                     let _ = reply.send(refusal);
                 }
                 SchedulerCommand::SetMode(queue_id, mode, reply) => {
@@ -758,10 +778,18 @@ impl QueueScheduler {
                     if r.is_ok() {
                         intake_changed.send_replace(());
                     }
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the requester may stop waiting for the reply"
+                    )]
                     let _ = reply.send(r);
                 }
                 SchedulerCommand::Clear(queue_id, keep_current, reply) => {
                     let r = Self::clear_queue(&slots, &queue_id, keep_current, &bus);
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the requester may stop waiting for the reply"
+                    )]
                     let _ = reply.send(r);
                 }
                 SchedulerCommand::Register(queue, reply) => {
@@ -774,6 +802,10 @@ impl QueueScheduler {
                         intake_changed.send_replace(());
                         MembershipOutcome::Applied
                     };
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the requester may stop waiting for the reply"
+                    )]
                     let _ = reply.send(outcome);
                 }
                 SchedulerCommand::Deregister(queue_id, reply) => {
@@ -785,13 +817,25 @@ impl QueueScheduler {
                         }
                         None => MembershipOutcome::NotFound,
                     };
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the requester may stop waiting for the reply"
+                    )]
                     let _ = reply.send(outcome);
                 }
                 SchedulerCommand::Reconfigure(queue, reply) => {
                     let outcome = Self::reconfigure(queue, &mut slots);
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the requester may stop waiting for the reply"
+                    )]
                     let _ = reply.send(outcome);
                 }
                 SchedulerCommand::QueryStates(reply) => {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the requester may stop waiting for the reply"
+                    )]
                     let _ = reply.send(Self::queue_states(&slots));
                 }
                 SchedulerCommand::Shutdown => break,

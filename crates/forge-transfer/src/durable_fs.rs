@@ -66,7 +66,9 @@ fn replace_privately(
     let temp = sibling_with_extension(destination, WRITING_EXTENSION);
     remove_file_if_present(&temp)?;
     if let Err(e) = fill_then_rename(&temp, destination, fill) {
-        let _ = std::fs::remove_file(&temp);
+        if let Err(error) = std::fs::remove_file(&temp) {
+            tracing::debug!(%error, path = %temp.display(), "temporary file could not be removed");
+        }
         return Err(e);
     }
     sync_parent(destination)

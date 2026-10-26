@@ -71,6 +71,10 @@ pub(crate) fn identity_digest(handle: &str) -> String {
     let digest = hasher.finalize();
     let mut out = String::with_capacity(DIGEST_BYTES * 2);
     for byte in digest.iter().take(DIGEST_BYTES) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "writing to a String cannot fail"
+        )]
         let _ = write!(out, "{byte:02x}");
     }
     out

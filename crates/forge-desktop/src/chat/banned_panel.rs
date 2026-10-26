@@ -395,6 +395,10 @@ impl BannedPanel {
         }
         let task = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(BAN_RELIST_DEBOUNCE).await;
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |this, cx| this.relist(platform, cx));
         });
         if let Some(group) = self.group_mut(platform) {
@@ -450,10 +454,18 @@ impl BannedPanel {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
             let result = list_pages(source.as_ref(), after, depth).await;
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = tx.send(result);
         });
         let request = cx.spawn(async move |this, cx| {
             if let Ok(result) = rx.await {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the view may close before the result arrives"
+                )]
                 let _ = this.update(cx, |this, cx| {
                     this.apply_listed(platform, request_id, appending, result, cx);
                 });
@@ -533,12 +545,20 @@ impl BannedPanel {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
             let outcome = async_bridge::run_quick_step(engine, step, builtin_id, label).await;
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = tx.send(outcome);
         });
         cx.spawn(async move |this, cx| {
             let outcome = rx
                 .await
                 .unwrap_or_else(|_| Err(tr!("chat_dispatch_cancelled")));
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |this, cx| {
                 this.apply_unban(platform, &viewer_id, outcome, cx);
             });

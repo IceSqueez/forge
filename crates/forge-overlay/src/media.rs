@@ -153,6 +153,10 @@ fn content_identity(bytes: &[u8]) -> String {
     identity.push_str(CONTENT_DIGEST_LABEL);
     identity.push(IDENTITY_SEPARATOR);
     for byte in digest {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "writing to a String cannot fail"
+        )]
         let _ = write!(identity, "{byte:02x}");
     }
     identity

@@ -174,6 +174,10 @@ impl PartialFile {
 impl Drop for PartialFile {
     fn drop(&mut self) {
         if self.armed {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "drop has no caller to report a cleanup failure to"
+            )]
             let _ = std::fs::remove_file(&self.path);
         }
     }

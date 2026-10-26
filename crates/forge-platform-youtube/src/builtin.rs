@@ -141,7 +141,9 @@ impl YoutubeIntegrationBundle {
 
     pub async fn shutdown(&self) {
         self.retired.cancel();
-        let _ = self.platform.disconnect().await;
+        if let Err(error) = self.platform.disconnect().await {
+            tracing::warn!(%error, "youtube chat disconnect failed at shutdown");
+        }
     }
 
     fn current_state(&self) -> ConnectionState {
@@ -168,12 +170,20 @@ impl YoutubeIntegrationBundle {
                     index: 0,
                     new_value: chat_poller_health_value(current),
                 };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "having no subscribers is a normal state"
+                )]
                 let _ = bundle.health_tx.send(chat_delta);
 
                 let events_delta = HealthDelta {
                     index: 1,
                     new_value: events_health_value(current),
                 };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "having no subscribers is a normal state"
+                )]
                 let _ = bundle.health_tx.send(events_delta);
 
                 if current.is_connected() && !previous.is_connected() {
@@ -201,6 +211,10 @@ impl YoutubeIntegrationBundle {
                     index: 2,
                     new_value: viewers_health_value(*reports_rx.borrow()),
                 };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "having no subscribers is a normal state"
+                )]
                 let _ = bundle.health_tx.send(delta);
             }
         });
@@ -228,6 +242,10 @@ impl YoutubeIntegrationBundle {
                 .await
                 .unwrap_or(stored)
         };
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the first resolved display name is kept"
+        )]
         let _ = self.display_name.set(preferred_hero_name(
             &stored.channel_title,
             stored.channel_handle.as_deref(),
@@ -450,7 +468,10 @@ fn choice_field(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is one field of the quick-action template"
+)]
 fn quick_action(
     label: &str,
     icon: &str,

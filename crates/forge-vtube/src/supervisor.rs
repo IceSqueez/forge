@@ -263,7 +263,9 @@ async fn authenticate_with_token(
         _ => return Err(unexpected_reply("AuthenticationResponse", &msg)),
     };
 
-    let _ = crate::credentials::clear(creds).await;
+    if let Err(error) = crate::credentials::clear(creds).await {
+        tracing::warn!(%error, "rejected vtube token could not be cleared");
+    }
     tracing::warn!(
         endpoint,
         reason = %rejection,
@@ -655,6 +657,10 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
             ConnectionTransition::Unexpected,
         );
         emit_connection_changed(&*publisher, &endpoint, true, None, None);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the connect waiter may already have stopped listening"
+        )]
         let _ = connected_notifier.send(());
         catalog_signal.bump_options();
         tracing::info!(endpoint = %endpoint, "connected and authenticated to VTube Studio");
@@ -717,6 +723,10 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                             if is_reply(msg_type) {
                                 let req_id = val["requestID"].as_str().unwrap_or("");
                                 if let Some(in_flight) = pending.remove(req_id) {
+                                    #[expect(
+                                        clippy::let_underscore_must_use,
+                                        reason = "the requester may stop waiting for the reply"
+                                    )]
                                     let _ = in_flight.respond_to.send(val["data"].clone());
                                 } else if let Some(query) = seeds.remove(req_id) {
                                     apply_seed(

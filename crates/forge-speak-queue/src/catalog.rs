@@ -131,13 +131,17 @@ fn spawn_engine_listing(
                 None
             }
         };
-        let _ = tx
+        if tx
             .send(CatalogUpdate {
                 generation,
                 engine_id,
                 voices,
             })
-            .await;
+            .await
+            .is_err()
+        {
+            tracing::debug!("speak queue stopped before the voice catalog arrived");
+        }
     });
 }
 

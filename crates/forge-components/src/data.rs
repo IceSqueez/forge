@@ -182,7 +182,6 @@ impl DataTable {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn table_header(
     columns: Vec<Column>,
     header_bg: Rgba,

@@ -45,6 +45,10 @@ fn incoming_path(root: &Path) -> PathBuf {
 
     let mut name = String::from(INCOMING_FILE_PREFIX);
     for byte in nonce {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "writing to a String cannot fail"
+        )]
         let _ = write!(name, "{byte:02x}");
     }
     root.join(name)
@@ -67,7 +71,9 @@ fn write_blob(root: &Path, format: MediaFormat, bytes: &[u8]) -> std::io::Result
     }
 
     if let Err(error) = std::fs::rename(&staging, &final_path) {
-        let _ = std::fs::remove_file(&staging);
+        if let Err(error) = std::fs::remove_file(&staging) {
+            tracing::debug!(%error, path = %staging.display(), "staged media file could not be removed");
+        }
         if !final_path.exists() {
             return Err(error);
         }

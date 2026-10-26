@@ -179,7 +179,10 @@ pub struct PipelineConfig {
 }
 
 impl PipelineConfig {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "constructor receives each shared handle it wires"
+    )]
     pub fn new(
         emote_sources: EmoteSources,
         emote_tokens: EmoteTokenSet,
@@ -277,11 +280,11 @@ fn record_removal(removed: &str, result: &str, log: &mut impl EditLog) {
     log.record(at..at, removed, "");
 }
 
-#[allow(clippy::expect_used)]
+#[expect(clippy::expect_used, reason = "literal pattern is a valid regex")]
 static URL_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?:https?|ftp)://\S+").expect("static regex"));
 
-#[allow(clippy::expect_used)]
+#[expect(clippy::expect_used, reason = "literal pattern is a valid regex")]
 static COLON_EMOTE_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r":([A-Za-z0-9_]+):").expect("static regex"));
 

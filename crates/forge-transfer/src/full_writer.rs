@@ -182,8 +182,12 @@ async fn write_protected(job: WriteJob) -> Result<ScheduledWrite, TransferError>
     })
     .await;
     if written.is_err() {
-        let _ = tokio::fs::remove_file(ciphertext_path(&destination)).await;
-        let _ = tokio::fs::remove_file(partial_path(&destination)).await;
+        if let Err(error) = tokio::fs::remove_file(ciphertext_path(&destination)).await {
+            tracing::debug!(%error, "partial ciphertext could not be removed");
+        }
+        if let Err(error) = tokio::fs::remove_file(partial_path(&destination)).await {
+            tracing::debug!(%error, "partial export could not be removed");
+        }
     }
     written.map(|outcome| {
         if outcome.written {

@@ -420,7 +420,7 @@ impl GlobalsView {
     }
 
     fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
-        eprintln!("forge-desktop: globals operation failed: {message}");
+        tracing::error!(error = %message, "globals operation failed");
         self.loading = false;
         cx.push_toast(
             ToastKind::Error,

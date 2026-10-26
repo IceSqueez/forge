@@ -60,12 +60,20 @@ impl ChatView {
         let lookup_key = key.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = tx.send(repo.find_by_viewer(&lookup_key).await);
         });
         cx.spawn_in(window, async move |this, cx| {
             let Ok(found) = rx.await else {
                 return;
             };
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update_in(cx, |this, window, cx| match found {
                 Ok(existing) => this.show_tts_voice_form(target, key, existing, window, cx),
                 Err(e) => cx.push_toast(

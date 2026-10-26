@@ -278,6 +278,10 @@ pub(crate) fn write_atomic(directory: &Path, name: &str, body: &[u8]) -> Result<
     })?;
 
     fs::rename(&staged, &target).map_err(|source| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the rename failure is the error returned"
+        )]
         let _ = fs::remove_file(&staged);
         OverlayError::Io {
             path: display(&target),

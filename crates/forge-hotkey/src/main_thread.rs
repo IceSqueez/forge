@@ -7,7 +7,13 @@ trait MainThreadJob: Send {
     fn run(self: Box<Self>);
 }
 
-#[cfg_attr(not(any(target_os = "windows", target_os = "macos")), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "windows", target_os = "macos")),
+    expect(
+        dead_code,
+        reason = "jobs run on the main thread only on windows and macos"
+    )
+)]
 struct PendingJob<T, F> {
     reply_tx: tokio::sync::oneshot::Sender<T>,
     job: F,
@@ -24,6 +30,10 @@ where
 
     fn run(self: Box<Self>) {
         let this = *self;
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the requester may stop waiting for the reply"
+        )]
         let _ = this.reply_tx.send((this.job)());
     }
 }
@@ -34,7 +44,13 @@ pub struct MainThreadHost {
 
 #[derive(Clone)]
 pub struct MainThreadLink {
-    #[cfg_attr(not(any(target_os = "windows", target_os = "macos")), allow(dead_code))]
+    #[cfg_attr(
+        not(any(target_os = "windows", target_os = "macos")),
+        expect(
+            dead_code,
+            reason = "jobs run on the main thread only on windows and macos"
+        )
+    )]
     jobs: mpsc::Sender<Box<dyn MainThreadJob>>,
 }
 

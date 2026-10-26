@@ -151,6 +151,10 @@ pub async fn run_update_check(
 ) -> CheckResult {
     let (tx, rx) = tokio::sync::oneshot::channel();
     rt_handle.spawn(async move {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the view may close before the result arrives"
+        )]
         let _ = tx.send(probe(backend).await);
     });
     let Ok(probe) = rx.await else {

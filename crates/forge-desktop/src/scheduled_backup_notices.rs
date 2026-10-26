@@ -93,6 +93,10 @@ async fn load_preference(rt: &Handle, settings: Arc<dyn SettingsRepo>) -> bool {
             DEFAULT_NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE,
         )
         .await;
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the view may close before the result arrives"
+        )]
         let _ = tx.send(enabled);
     });
     rx.await

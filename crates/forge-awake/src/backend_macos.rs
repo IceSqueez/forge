@@ -1,4 +1,4 @@
-#![allow(unsafe_code)]
+#![expect(unsafe_code, reason = "calls the IOKit power assertion API")]
 
 use async_trait::async_trait;
 use objc2_core_foundation::CFString;

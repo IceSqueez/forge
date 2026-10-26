@@ -224,6 +224,10 @@ impl SettingsShortcutsView {
         let weak = cx.entity().downgrade();
         let sub = cx.intercept_keystrokes(move |event, _window, cx| {
             let keystroke = event.keystroke.clone();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = weak.update(cx, |this, cx| this.on_capture_keystroke(keystroke, cx));
             cx.stop_propagation();
         });
@@ -568,6 +572,10 @@ impl SettingsShortcutsView {
         overlay(card, palette)
             .position(OverlayPosition::Center)
             .on_dismiss("shortcut-conflict-dismiss", move |_window, cx| {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the view may close before the result arrives"
+                )]
                 let _ = weak.update(cx, |this, cx| this.conflict_cancel(cx));
             })
             .into_any_element()

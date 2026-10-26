@@ -91,7 +91,7 @@ pub(crate) fn wire_twitch(
         lifecycle.clone(),
         Some(Arc::clone(&bot)),
     ) {
-        eprintln!("forge-desktop: twitch sub-action registration failed: {e}");
+        tracing::error!(error = %e, "twitch sub-action registration failed");
     }
     Some(TwitchFactory {
         bus: Arc::clone(bus),
@@ -112,7 +112,7 @@ fn twitch_oauth_gateway(endpoints: &PlatformEndpoints) -> Option<Gateway> {
         forge_platform_twitch::TWITCH_OAUTH_BUDGET_WINDOW,
     ));
     forge_platform_twitch::twitch_oauth_gateway(endpoints, limiter)
-        .inspect_err(|e| eprintln!("forge-desktop: twitch oauth gateway build failed: {e}"))
+        .inspect_err(|e| tracing::error!(error = %e, "twitch oauth gateway build failed"))
         .ok()
 }
 
@@ -122,7 +122,7 @@ fn twitch_helix_gateway(endpoints: &PlatformEndpoints, bus: &Arc<EventBus>) -> O
         forge_platform_twitch::HELIX_BUDGET_WINDOW,
     ));
     forge_platform_twitch::helix_gateway(endpoints, limiter, publisher(bus))
-        .inspect_err(|e| eprintln!("forge-desktop: twitch helix gateway build failed: {e}"))
+        .inspect_err(|e| tracing::error!(error = %e, "twitch helix gateway build failed"))
         .ok()
 }
 
@@ -238,7 +238,7 @@ pub(crate) fn wire_youtube(
         forge_platform_youtube::SharedQuota::default(),
         publisher(bus),
     )
-    .inspect_err(|e| eprintln!("forge-desktop: youtube data api gateway build failed: {e}"))
+    .inspect_err(|e| tracing::error!(error = %e, "youtube data api gateway build failed"))
     .ok()?;
     let creds = creds_of(backend);
     let manager = Arc::new(forge_platform_youtube::YoutubeCredentialsManager::new(
@@ -311,7 +311,7 @@ pub(crate) fn wire_youtube(
         thumbnail,
         channel_lookup,
     ) {
-        eprintln!("forge-desktop: youtube sub-action registration failed: {e}");
+        tracing::error!(error = %e, "youtube sub-action registration failed");
     }
     Some(YoutubeFactory {
         api,
@@ -331,7 +331,7 @@ fn google_oauth_gateway(endpoints: &PlatformEndpoints) -> Option<Gateway> {
         forge_platform_youtube::GOOGLE_OAUTH_BUDGET_WINDOW,
     ));
     forge_platform_youtube::google_oauth_gateway(endpoints, limiter)
-        .inspect_err(|e| eprintln!("forge-desktop: youtube oauth gateway build failed: {e}"))
+        .inspect_err(|e| tracing::error!(error = %e, "youtube oauth gateway build failed"))
         .ok()
 }
 
@@ -437,7 +437,7 @@ pub(crate) fn wire_kick(
     ));
     let api =
         forge_platform_kick::kick_api_gateway(endpoints, Arc::clone(&rate_limiter), publisher(bus))
-            .inspect_err(|e| eprintln!("forge-desktop: kick api gateway build failed: {e}"))
+            .inspect_err(|e| tracing::error!(error = %e, "kick api gateway build failed"))
             .ok()?;
     let creds = creds_of(backend);
     let manager = Arc::new(forge_platform_kick::KickCredentialsManager::new(
@@ -486,7 +486,7 @@ pub(crate) fn wire_kick(
             categories,
         },
     ) {
-        eprintln!("forge-desktop: kick sub-action registration failed: {e}");
+        tracing::error!(error = %e, "kick sub-action registration failed");
     }
     Some(KickFactory {
         bus: Arc::clone(bus),
@@ -506,7 +506,7 @@ fn kick_oauth_gateway(endpoints: &PlatformEndpoints) -> Option<Gateway> {
         forge_platform_kick::KICK_OAUTH_BUDGET_WINDOW,
     ));
     forge_platform_kick::kick_oauth_gateway(endpoints, limiter)
-        .inspect_err(|e| eprintln!("forge-desktop: kick oauth gateway build failed: {e}"))
+        .inspect_err(|e| tracing::error!(error = %e, "kick oauth gateway build failed"))
         .ok()
 }
 
@@ -529,7 +529,7 @@ fn kick_channel_info_gateway(
         forge_platform_kick::KICK_CHANNEL_INFO_BUDGET_WINDOW,
     ));
     forge_platform_kick::kick_channel_info_gateway(endpoints, limiter, publisher(bus))
-        .inspect_err(|e| eprintln!("forge-desktop: kick channel info gateway build failed: {e}"))
+        .inspect_err(|e| tracing::error!(error = %e, "kick channel info gateway build failed"))
         .ok()
 }
 
@@ -630,7 +630,7 @@ pub(crate) fn wire_obs(
         sub_actions,
         Arc::clone(&sink) as Arc<dyn forge_obs::ObsSink>,
     ) {
-        eprintln!("forge-desktop: obs sub-action registration failed: {e}");
+        tracing::error!(error = %e, "obs sub-action registration failed");
     }
     ObsFactory {
         bus: Arc::clone(bus),
@@ -681,7 +681,7 @@ impl IntegrationFactory<BuiltinObject> for ObsFactory {
                 seed.install(client);
             }
             Ok(Err(_)) => {}
-            Err(_) => eprintln!("forge-desktop: obs connect timed out"),
+            Err(_) => tracing::warn!(timeout = ?CONNECT_GUARD, "obs connect timed out"),
         }
         Ok(running)
     }
@@ -704,7 +704,7 @@ pub(crate) fn wire_vtube(
         sub_actions,
         Arc::clone(&sink) as Arc<dyn forge_vtube::VTubeSink>,
     ) {
-        eprintln!("forge-desktop: vtube sub-action registration failed: {e}");
+        tracing::error!(error = %e, "vtube sub-action registration failed");
     }
     VTubeFactory {
         bus: Arc::clone(bus),
@@ -758,7 +758,7 @@ impl IntegrationFactory<BuiltinObject> for VTubeFactory {
                 seed.install(client);
             }
             Ok(Err(_)) => {}
-            Err(_) => eprintln!("forge-desktop: vtube connect timed out"),
+            Err(_) => tracing::warn!(timeout = ?CONNECT_GUARD, "vtube connect timed out"),
         }
         Ok(running)
     }
@@ -780,10 +780,10 @@ pub(crate) fn wire_discord(
         publisher(bus),
         creds_of(backend),
     )
-    .inspect_err(|e| eprintln!("forge-desktop: discord gateway build failed: {e}"))
+    .inspect_err(|e| tracing::error!(error = %e, "discord gateway build failed"))
     .ok()?;
     if let Err(e) = forge_discord::register_discord_sub_actions(sub_actions, Arc::clone(&client)) {
-        eprintln!("forge-desktop: discord sub-action registration failed: {e}");
+        tracing::error!(error = %e, "discord sub-action registration failed");
     }
     Some(DiscordFactory {
         creds: creds_of(backend),
@@ -848,7 +848,7 @@ pub(crate) fn wire_midi(
         sub_actions,
         Arc::clone(&sink) as Arc<dyn forge_midi::MidiSink>,
     ) {
-        eprintln!("forge-desktop: midi sub-action registration failed: {e}");
+        tracing::error!(error = %e, "midi sub-action registration failed");
     }
     MidiFactory {
         bus: Arc::clone(bus),
@@ -936,7 +936,7 @@ pub(crate) async fn wire_hotkey(
     };
     let client = forge_hotkey::HotkeyClient::new(config, publisher(bus), main_thread).await;
     if let Err(e) = client.disable().await {
-        eprintln!("forge-desktop: hotkey engine could not be held idle at boot: {e}");
+        tracing::error!(error = %e, "hotkey engine could not be held idle at boot");
     }
     let reconciler = HotkeyReconciler::new(
         Arc::clone(&client),

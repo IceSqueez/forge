@@ -266,7 +266,7 @@ async fn run_loop(ws_stream: PusherSocket, chatroom_id: u64, ctx: RunLoopContext
         else {
             break;
         };
-        let _ = ctx.state_tx.send(ChatLinkStatus {
+        ctx.state_tx.send_replace(ChatLinkStatus {
             state: ConnectionState::Reconnecting,
             transition,
         });
@@ -274,9 +274,8 @@ async fn run_loop(ws_stream: PusherSocket, chatroom_id: u64, ctx: RunLoopContext
     }
 
     info!("kick chat close requested");
-    let _ = ctx
-        .state_tx
-        .send(ChatLinkStatus::expected(ConnectionState::Disconnected));
+    ctx.state_tx
+        .send_replace(ChatLinkStatus::expected(ConnectionState::Disconnected));
 }
 
 async fn run_session(
@@ -295,9 +294,8 @@ async fn run_session(
         Some(Ok(())) => {}
     }
 
-    let _ = ctx
-        .state_tx
-        .send(ChatLinkStatus::unexpected(ConnectionState::Connected));
+    ctx.state_tx
+        .send_replace(ChatLinkStatus::unexpected(ConnectionState::Connected));
     info!(chatroom_id, "kick chat connected");
 
     let mut ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;

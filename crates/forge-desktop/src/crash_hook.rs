@@ -81,6 +81,10 @@ fn record_first_crash(
         system_info: system_info_snapshot(),
     }
     .scrubbed(scrubber);
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "a failed crash write has nowhere left to be reported"
+    )]
     let _ = write_crash(
         crash_dir,
         &crash_file_name(unix_millis, process_id),
@@ -89,7 +93,10 @@ fn record_first_crash(
 }
 
 #[cfg(debug_assertions)]
-#[allow(clippy::panic)]
+#[expect(
+    clippy::panic,
+    reason = "debug hook crashes on request to exercise crash reporting"
+)]
 pub fn panic_if_requested() {
     let Some(request) = std::env::var_os(DEBUG_PANIC_ENV).filter(|value| !value.is_empty()) else {
         return;

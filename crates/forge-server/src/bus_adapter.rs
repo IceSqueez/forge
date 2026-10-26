@@ -208,6 +208,10 @@ async fn notify_skipped(registry: &RwLock<Vec<ConnectedClient>>, missed: u64) {
     let reg = registry.read().await;
     for client in reg.iter() {
         if client.overlay.is_none() && !client.filters.subscriptions.is_empty() {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the client session may already have ended"
+            )]
             let _ = client.sender.send(frame.clone());
         }
     }
@@ -273,6 +277,10 @@ impl BusAdapter {
     }
 
     pub fn set_overlay_connect_listener(&self, listener: Arc<dyn OverlayConnectListener>) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the first attached listener wins"
+        )]
         let _ = self.overlay_connect.set(listener);
     }
 
@@ -390,6 +398,10 @@ impl BusAdapter {
             return false;
         };
         let client = reg.remove(pos);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the client session may already have ended"
+        )]
         let _ = client.sender.send(WsFrame::Close);
         true
     }
@@ -414,6 +426,10 @@ impl BusAdapter {
     pub async fn broadcast_close(&self) {
         let reg = self.registry.read().await;
         for client in reg.iter() {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the client session may already have ended"
+            )]
             let _ = client.sender.send(WsFrame::Close);
         }
     }

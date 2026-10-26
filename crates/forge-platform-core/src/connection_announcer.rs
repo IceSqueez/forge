@@ -20,6 +20,10 @@ impl ConnectionAnnouncer {
     }
 
     pub fn attach(&self, publisher: Arc<dyn EventPublisher>) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the first attached publisher wins"
+        )]
         let _ = self.publisher.set(publisher);
     }
 

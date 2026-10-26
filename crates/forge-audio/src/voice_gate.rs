@@ -78,16 +78,30 @@ impl VoiceGateMonitor {
             config.hold.as_nanos().min(u128::from(u64::MAX)) as u64,
             Ordering::Relaxed,
         );
-        let _ = self.control_tx.send(GateControl::SetDevice(config.device));
+        if self
+            .control_tx
+            .send(GateControl::SetDevice(config.device))
+            .is_err()
+        {
+            tracing::debug!("voice gate monitor stopped; device change dropped");
+        }
     }
 
     pub fn stop(&self) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the monitor thread may already have exited"
+        )]
         let _ = self.control_tx.send(GateControl::Stop);
     }
 }
 
 impl Drop for VoiceGateMonitor {
     fn drop(&mut self) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the monitor thread may already have exited"
+        )]
         let _ = self.control_tx.send(GateControl::Stop);
     }
 }
@@ -102,7 +116,7 @@ fn run(
     loop {
         match open_and_start(device.clone(), &shared, state_tx.clone()) {
             Ok(_stream) => {
-                let _ = state_tx.send(VoiceGateState::Inactive);
+                state_tx.send_replace(VoiceGateState::Inactive);
                 loop {
                     match control_rx.recv() {
                         Ok(GateControl::Stop) | Err(_) => return,
@@ -117,7 +131,7 @@ fn run(
                 }
             }
             Err(err) => {
-                let _ = state_tx.send(VoiceGateState::Unavailable(err.to_string()));
+                state_tx.send_replace(VoiceGateState::Unavailable(err.to_string()));
                 match control_rx.recv() {
                     Ok(GateControl::Stop) | Err(_) => return,
                     Ok(GateControl::SetDevice(next)) => device = next,
@@ -142,7 +156,7 @@ fn gate_tick(
     if peak >= threshold {
         last_active_nanos.store(now_nanos, Ordering::Relaxed);
         if !is_active.swap(true, Ordering::Relaxed) {
-            let _ = state_tx.send(VoiceGateState::Active);
+            state_tx.send_replace(VoiceGateState::Active);
         }
         return;
     }
@@ -151,7 +165,7 @@ fn gate_tick(
     let last_active = last_active_nanos.load(Ordering::Relaxed);
     if is_active.load(Ordering::Relaxed) && now_nanos.saturating_sub(last_active) >= hold {
         is_active.store(false, Ordering::Relaxed);
-        let _ = state_tx.send(VoiceGateState::Inactive);
+        state_tx.send_replace(VoiceGateState::Inactive);
     }
 }
 
@@ -304,5 +318,5 @@ fn find_input_device(host: &cpal::Host, id: Option<&DeviceId>) -> Option<cpal::D
 
 fn input_stream_error_fn(err: cpal::Error, state_tx: &watch::Sender<VoiceGateState>) {
     tracing::error!("cpal input stream error: {}", err);
-    let _ = state_tx.send(VoiceGateState::Unavailable(err.to_string()));
+    state_tx.send_replace(VoiceGateState::Unavailable(err.to_string()));
 }

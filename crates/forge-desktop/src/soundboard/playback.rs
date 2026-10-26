@@ -81,12 +81,20 @@ impl SoundboardView {
             let (tx, rx) = tokio::sync::oneshot::channel();
             rt.spawn(async move {
                 let result = player_play.play(id, None).await;
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the view may close before the result arrives"
+                )]
                 let _ = tx.send(result);
             });
             let Ok(result) = rx.await else {
                 return;
             };
             let settled_silently = play_settled_without_outcome(&result);
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |this, cx| {
                 if settled_silently {
                     cx.release_pad_play(id);
@@ -102,7 +110,9 @@ impl SoundboardView {
             }
             if known.is_none() {
                 rt.spawn(async move {
-                    let _ = player_dur.ensure_clip_duration(id).await;
+                    if let Err(error) = player_dur.ensure_clip_duration(id).await {
+                        tracing::warn!(%error, "clip duration could not be measured");
+                    }
                 });
             }
         })

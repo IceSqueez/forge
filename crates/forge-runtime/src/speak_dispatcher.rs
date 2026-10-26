@@ -102,6 +102,10 @@ impl SpeechStartSignal {
 
     pub(crate) async fn started(&self) {
         let mut seen = self.0.subscribe();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a dropped start signal also releases the waiter"
+        )]
         let _ = seen.wait_for(|started| *started).await;
     }
 }

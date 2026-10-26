@@ -186,6 +186,10 @@ fn keep_newest_lines(text: String, budget: usize) -> (String, u64) {
     (text[start..].to_owned(), start as u64)
 }
 
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
 fn write_header(out: &mut String, input: &BundleInput) {
     let level_source = if input.env_overridden {
         "RUST_LOG"
@@ -215,6 +219,10 @@ fn write_header(out: &mut String, input: &BundleInput) {
     );
 }
 
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
 fn write_integrations(out: &mut String, facts: &[IntegrationFacts]) {
     section(out, "integrations");
     out.push_str(
@@ -254,6 +262,10 @@ fn write_integrations(out: &mut String, facts: &[IntegrationFacts]) {
     }
 }
 
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
 fn write_config(out: &mut String, config: &BTreeMap<String, String>) {
     section(out, "configuration");
     out.push_str(
@@ -269,6 +281,10 @@ fn write_config(out: &mut String, config: &BTreeMap<String, String>) {
     }
 }
 
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
 fn write_runs(out: &mut String, runs: &[DisclosedRun]) {
     section(out, "run history");
     out.push_str(
@@ -300,6 +316,10 @@ fn write_runs(out: &mut String, runs: &[DisclosedRun]) {
     }
 }
 
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
 fn write_step(out: &mut String, step: &DisclosedStep) {
     let _ = writeln!(
         out,
@@ -371,6 +391,10 @@ fn step_outcome_shape(outcome: &DisclosedStepOutcome) -> String {
     }
 }
 
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
 fn write_script_section(out: &mut String, script: &str, total_lines: usize, elided: u64) {
     section(out, &format!("user script log ({total_lines} lines)"));
     out.push_str(
@@ -406,6 +430,10 @@ fn write_corpus_section(out: &mut String, rest: &str, corpus: &log_archive::Corp
     out.push_str(rest);
 }
 
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
 fn section(out: &mut String, title: &str) {
     let _ = write!(out, "\n{RULE}\n-- {title}\n{RULE}\n");
 }

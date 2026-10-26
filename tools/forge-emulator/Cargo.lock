@@ -1295,6 +1295,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-stream",
+ "tracing",
 ]
 
 [[package]]

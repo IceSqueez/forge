@@ -287,8 +287,10 @@ impl BuiltinControl for ObsClient {
         let old_notify = slot.clone();
         old_notify.notify_one();
         let handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
-        if let Some(h) = handle {
-            let _ = h.await;
+        if let Some(h) = handle
+            && let Err(error) = h.await
+        {
+            tracing::warn!(%error, "obs supervisor task ended abnormally");
         }
 
         let new_notify = Arc::new(Notify::new());
@@ -343,8 +345,10 @@ impl BuiltinControl for ObsClient {
         drop(slot);
         notify.notify_one();
         let handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
-        if let Some(h) = handle {
-            let _ = h.await;
+        if let Some(h) = handle
+            && let Err(error) = h.await
+        {
+            tracing::warn!(%error, "obs supervisor task ended abnormally");
         }
         record_failure(&self.last_failure, None);
         settle_connection_state(
@@ -713,7 +717,15 @@ async fn prime_session(
         .await
     {
         Ok(v) => {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the version reported on the first connect is kept"
+            )]
             let _ = obs_version.set(v.obs_studio_version.to_string());
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the version reported on the first connect is kept"
+            )]
             let _ = obs_ws_version.set(v.obs_web_socket_version.to_string());
         }
         Err(e) if e.is_connection_loss() => return Err(e),
@@ -831,6 +843,10 @@ fn handle_obs_event(
         vec![]
     };
     for delta in deltas {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "having no subscribers is a normal state"
+        )]
         let _ = health_tx.send(delta);
     }
 
@@ -1110,6 +1126,10 @@ async fn snapshot_catalog(
         && let Ok(mut snapshot) = health_state.write()
     {
         for delta in crate::events::apply_stream_status_update(&status, &mut snapshot) {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "having no subscribers is a normal state"
+            )]
             let _ = health_tx.send(delta);
         }
     }
@@ -1117,6 +1137,10 @@ async fn snapshot_catalog(
         && let Ok(mut snapshot) = health_state.write()
     {
         for delta in crate::events::apply_record_status_update(&status, &mut snapshot) {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "having no subscribers is a normal state"
+            )]
             let _ = health_tx.send(delta);
         }
     }
@@ -1353,6 +1377,10 @@ fn spawn_stats_poll(
                     ));
                 }
                 for delta in deltas {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "having no subscribers is a normal state"
+                    )]
                     let _ = health_tx.send(delta);
                 }
                 stream_output.refresh();

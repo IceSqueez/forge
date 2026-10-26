@@ -30,7 +30,10 @@ impl MidirBackend {
     }
 }
 
-struct MidirInputHandle(#[allow(dead_code)] midir::MidiInputConnection<()>);
+struct MidirInputHandle(
+    #[expect(dead_code, reason = "held to keep the input connection open")]
+    midir::MidiInputConnection<()>,
+);
 
 impl InputHandle for MidirInputHandle {}
 
@@ -87,7 +90,11 @@ impl MidiBackend for MidirBackend {
                 &port,
                 "forge-midi",
                 move |timestamp, data, _| {
-                    let _ = event_tx.try_send((timestamp, data.to_vec()));
+                    if let Err(mpsc::error::TrySendError::Full(_)) =
+                        event_tx.try_send((timestamp, data.to_vec()))
+                    {
+                        tracing::warn!("midi input queue full; event dropped");
+                    }
                 },
                 (),
             )

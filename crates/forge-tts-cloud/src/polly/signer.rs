@@ -167,6 +167,10 @@ fn uri_encode(text: &str, keep_separator: bool) -> String {
         {
             encoded.push(char::from(byte));
         } else {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "writing to a String cannot fail"
+            )]
             let _ = write!(encoded, "%{byte:02X}");
         }
         encoded
@@ -194,6 +198,10 @@ fn derive_signing_key(secret: &[u8], date: &str, region: &str) -> Result<Vec<u8>
 
 fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().fold(String::new(), |mut s, b| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "writing to a String cannot fail"
+        )]
         let _ = write!(s, "{b:02x}");
         s
     })

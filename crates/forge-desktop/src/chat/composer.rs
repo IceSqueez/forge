@@ -254,10 +254,18 @@ impl ChatComposer {
                 CHAT_SEND_RESPONSE_TIMEOUT,
             )
             .await;
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = tx.send(report);
         });
         cx.spawn(async move |this, cx| {
             let report = rx.await.unwrap_or(fallback);
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |this, cx| this.apply_report(report, cx));
         })
         .detach();

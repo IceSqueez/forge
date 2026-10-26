@@ -104,6 +104,10 @@ impl NavigationGuard {
     pub fn close_window(&self, cx: &mut App) {
         let window = self.window;
         cx.defer(move |cx| {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = window.update(cx, |_, window, _| window.remove_window());
         });
     }

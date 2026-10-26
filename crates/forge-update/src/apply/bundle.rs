@@ -23,6 +23,10 @@ pub(super) fn apply(
     let swapped = extract_archive(archive, &extract_dir)
         .and_then(|()| single_bundle(&extract_dir))
         .and_then(|bundle| swap_in(target, &bundle, previous, retry));
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "best-effort cleanup; the swap result is what gets reported"
+    )]
     let _ = remove_path(&extract_dir);
     swapped?;
     remove_path(archive)?;

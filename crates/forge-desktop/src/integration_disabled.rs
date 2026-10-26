@@ -127,12 +127,20 @@ impl IntegrationDisabledView {
                     false
                 }
             };
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = tx.send((references, has_credentials));
         });
         cx.spawn(async move |this, cx| {
             let Ok((references, has_credentials)) = rx.await else {
                 return;
             };
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |view, cx| {
                 view.apply_loaded(references, has_credentials);
                 cx.notify();

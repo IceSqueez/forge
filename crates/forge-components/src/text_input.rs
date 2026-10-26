@@ -611,14 +611,16 @@ impl Element for TextElement {
             return;
         };
         let origin = point(bounds.left() - scroll_offset, bounds.top());
-        let _ = line.paint(
+        if let Err(error) = line.paint(
             origin,
             window.line_height(),
             TextAlign::Left,
             None,
             window,
             cx,
-        );
+        ) {
+            tracing::debug!(%error, "text input line could not be painted");
+        }
 
         if focus_handle.is_focused(window)
             && self.input.read(cx).caret.is_lit()

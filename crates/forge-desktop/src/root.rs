@@ -49,11 +49,7 @@ const UPTIME_TICK: Duration = Duration::from_secs(1);
 
 enum BootState {
     Booting,
-    Ready {
-        shell: Entity<AppShell>,
-        #[allow(dead_code)]
-        handles: Arc<RuntimeHandles>,
-    },
+    Ready { shell: Entity<AppShell> },
     Failed(BootFailure),
 }
 
@@ -96,8 +92,8 @@ impl RootView {
         self.window = Some(window);
     }
 
-    fn mark_ready(&mut self, shell: Entity<AppShell>, handles: Arc<RuntimeHandles>) {
-        self.state = BootState::Ready { shell, handles };
+    fn mark_ready(&mut self, shell: Entity<AppShell>) {
+        self.state = BootState::Ready { shell };
     }
 
     fn mark_failed(&mut self, failure: BootFailure) {
@@ -154,6 +150,10 @@ pub fn run_boot(
     let (result_tx, result_rx) =
         tokio::sync::oneshot::channel::<Result<RuntimeHandles, BootFailure>>();
     rt_handle.spawn(async move {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the view may close before the result arrives"
+        )]
         let _ =
             result_tx.send(build_runtime(log_tail, endpoints, hotkey_main_thread, preopened).await);
     });
@@ -307,7 +307,7 @@ pub fn run_boot(
                         }
                     })
                     .detach();
-                    root.mark_ready(shell, handles);
+                    root.mark_ready(shell);
                     cx.notify();
                 });
                 if let (Ok(()), Some(update_flow), Some(problem_report)) =
@@ -405,6 +405,10 @@ pub fn run_boot(
                 }
             }
             Err(failure) => {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the view may close before the result arrives"
+                )]
                 let _ = window.update(cx, |root, _window, cx| {
                     root.mark_failed(failure);
                     cx.notify();
@@ -444,6 +448,10 @@ async fn seed_chat_history(
             .list_recent(limit as usize)
             .await
             .unwrap_or_default();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the view may close before the result arrives"
+        )]
         let _ = tx.send((limit, rows));
     });
     let Ok((limit, mut rows)) = rx.await else {
@@ -671,6 +679,10 @@ fn apply_persisted_shortcuts(
         let repo = backend as Arc<dyn forge_storage::SettingsRepo>;
         let (tx, rx) = tokio::sync::oneshot::channel();
         rt_handle.spawn(async move {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = tx.send(crate::shortcut_overrides::load_overrides(repo).await);
         });
         let overrides = match rx.await {
@@ -716,7 +728,7 @@ impl Render for RootView {
         let density = cx.density();
         let failure_screen = match &self.state {
             BootState::Booting => return splash(&palette, density),
-            BootState::Ready { shell, .. } => {
+            BootState::Ready { shell } => {
                 return div().size_full().child(shell.clone()).into_any_element();
             }
             BootState::Failed(BootFailure::UpgradeRequired { expected, found }) => {

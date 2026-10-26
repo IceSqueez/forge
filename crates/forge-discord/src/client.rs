@@ -104,7 +104,9 @@ impl DiscordClient {
 
         let boot_sync = Arc::clone(&client);
         tokio::spawn(async move {
-            let _ = boot_sync.list_webhooks().await;
+            if let Err(error) = boot_sync.list_webhooks().await {
+                tracing::warn!(%error, "discord webhooks could not be listed at startup");
+            }
         });
 
         Ok(client)
@@ -157,6 +159,10 @@ impl DiscordClient {
             record_missing_webhook(&mut snap)
         };
         for delta in deltas {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "having no subscribers is a normal state"
+            )]
             let _ = self.health_tx.send(delta);
         }
         {
@@ -503,6 +509,10 @@ impl DiscordClient {
             )
         };
         for delta in deltas {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "having no subscribers is a normal state"
+            )]
             let _ = self.health_tx.send(delta);
         }
 

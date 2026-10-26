@@ -537,22 +537,26 @@ impl Element for AreaElement {
                 bounds.left(),
                 bounds.top() + layout.para_tops[i] - scroll_offset,
             );
-            let _ = line.paint_background(
+            if let Err(error) = line.paint_background(
                 origin,
                 layout.line_height,
                 TextAlign::Left,
                 None,
                 window,
                 cx,
-            );
-            let _ = line.paint(
+            ) {
+                tracing::debug!(%error, "text area line background could not be painted");
+            }
+            if let Err(error) = line.paint(
                 origin,
                 layout.line_height,
                 TextAlign::Left,
                 None,
                 window,
                 cx,
-            );
+            ) {
+                tracing::debug!(%error, "text area line could not be painted");
+            }
         }
 
         if focus_handle.is_focused(window)

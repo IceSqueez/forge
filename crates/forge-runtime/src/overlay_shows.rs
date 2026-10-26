@@ -173,6 +173,10 @@ impl ShowSequencer {
         };
         let count = dropped.len();
         for pending in dropped {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the requester may stop waiting for the reply"
+            )]
             let _ = pending.done.send(end);
         }
         count
@@ -185,6 +189,10 @@ impl ShowSequencer {
             let exit_tail = next.show.exit_tail;
             self.hold(&id, next.show, ceiling).await;
             tokio::time::sleep_until((Instant::now() + exit_tail).min(ceiling)).await;
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the requester may stop waiting for the reply"
+            )]
             let _ = next.done.send(ShowEnd::Shown(delivery));
         }
     }
@@ -225,7 +233,9 @@ impl ShowSequencer {
             }
             SpeechOpening::TooLate => {
                 cancel.cancel();
-                let _ = spoken.await;
+                if let Err(error) = spoken.await {
+                    tracing::warn!(overlay = %id, %error, "show speech task ended abnormally");
+                }
                 tracing::info!(
                     overlay = %id,
                     wait_secs = SHOW_SPEECH_START_WAIT.as_secs(),
@@ -291,7 +301,9 @@ async fn hold_with_speech(
         }
         Err(_) => {
             cancel.cancel();
-            let _ = spoken.await;
+            if let Err(error) = spoken.await {
+                tracing::warn!(overlay = %id, %error, "show speech task ended abnormally");
+            }
             tracing::info!(
                 overlay = %id,
                 ceiling_secs = SHOW_CEILING.as_secs(),

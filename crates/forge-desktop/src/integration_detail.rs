@@ -147,7 +147,10 @@ impl EventEmitter<ObsSignedOut> for IntegrationDetail {}
 impl EventEmitter<VTubeSignedOut> for IntegrationDetail {}
 
 impl IntegrationDetail {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "constructor receives each shared handle it wires"
+    )]
     pub fn new(
         object: BuiltinObject,
         rt_handle: tokio::runtime::Handle,

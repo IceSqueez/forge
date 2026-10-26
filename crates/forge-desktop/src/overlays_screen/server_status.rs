@@ -97,6 +97,10 @@ impl OverlaysView {
                 rt_handle.spawn(async move {
                     let bind_address = probe.bind_addr().await.to_string();
                     let routable_host = resolve_routable_host(&bind_address);
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the view may close before the result arrives"
+                    )]
                     let _ = tx.send(ServedEndpoint {
                         bind_address,
                         routable_host,

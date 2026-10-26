@@ -10,24 +10,36 @@ const PERCENT: f32 = 100.0;
 const SSML_VERSION: &str = "1.0";
 const SSML_NAMESPACE: &str = "http://www.w3.org/2001/10/synthesis";
 
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "windows", test)),
+    expect(dead_code, reason = "used only by the windows synthesis backend")
+)]
 pub(crate) enum SpeakText {
     Plain(String),
     Ssml(String),
 }
 
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "windows", test)),
+    expect(dead_code, reason = "used only by the windows synthesis backend")
+)]
 pub(crate) fn rate_adj_from_multiplier(multiplier: f32) -> i32 {
     ((multiplier.log2() * RATE_STEPS_PER_DOUBLING).round() as i32)
         .clamp(RATE_ADJUST_MIN, RATE_ADJUST_MAX)
 }
 
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "windows", test)),
+    expect(dead_code, reason = "used only by the windows synthesis backend")
+)]
 pub(crate) fn pitch_pct_from_semitones(semitones: f32) -> i32 {
     ((2.0_f32.powf(semitones / SEMITONES_PER_OCTAVE) - 1.0) * PERCENT).round() as i32
 }
 
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "windows", test)),
+    expect(dead_code, reason = "used only by the windows synthesis backend")
+)]
 pub(crate) fn wrap_with_pitch_prosody(text: &str, pitch_pct: i32, language: &str) -> String {
     format!(
         r#"<speak version="{SSML_VERSION}" xmlns="{SSML_NAMESPACE}" xml:lang="{language}"><prosody pitch="{pitch_pct:+}%">{text}</prosody></speak>"#,
@@ -36,7 +48,10 @@ pub(crate) fn wrap_with_pitch_prosody(text: &str, pitch_pct: i32, language: &str
     )
 }
 
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "windows", test)),
+    expect(dead_code, reason = "used only by the windows synthesis backend")
+)]
 pub(crate) fn prepare_speak_text(
     text: &str,
     pitch_semitones: f32,
@@ -63,7 +78,7 @@ pub(crate) fn prepare_speak_text(
 }
 
 #[cfg(target_os = "windows")]
-#[allow(unsafe_code)]
+#[expect(unsafe_code, reason = "drives the COM voice and its audio stream")]
 pub(crate) fn capture_pcm(
     voice: &windows::Win32::Media::Speech::ISpVoice,
     speak_text: &SpeakText,

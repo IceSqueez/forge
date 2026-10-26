@@ -89,6 +89,10 @@ pub fn open_boot_storage(rt_handle: &tokio::runtime::Handle) -> BootStorage {
             }
             Err(_) => (PersistedAppearance::default(), None, None),
         };
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the boot thread stops waiting once its read budget runs out"
+        )]
         let _ = tx.send(opened);
     });
     let (appearance, window_placement, backend) =
@@ -199,7 +203,7 @@ pub async fn build_runtime(
     if let Some(detected) = persist
         && let Err(e) = settings_repo.set_language(detected).await
     {
-        eprintln!("forge-desktop: failed to persist detected locale: {e}");
+        tracing::warn!(error = %e, "failed to persist detected locale");
     }
     let startup_display_formats =
         crate::i18n::resolve_startup_display_formats(settings_repo.as_ref(), startup_language)
@@ -289,10 +293,10 @@ pub async fn build_runtime(
     ));
     match speak_requester {
         Some(requester) => script_registry_mut.set_speak_requester(requester),
-        None => eprintln!("forge-desktop: no speak dispatcher available; scripts cannot speak"),
+        None => tracing::warn!("no speak dispatcher available; scripts cannot speak"),
     }
     if let Err(e) = script_registry_mut.load_all(backend.as_ref()).await {
-        eprintln!("forge-desktop: script registry load failed at boot: {e}");
+        tracing::warn!(error = %e, "script registry load failed at boot");
     }
     let script_registry = Arc::new(script_registry_mut);
 
@@ -317,7 +321,7 @@ pub async fn build_runtime(
             config: Config::default(),
         },
     ) {
-        eprintln!("forge-desktop: core sub-action registration failed: {e}");
+        tracing::error!(error = %e, "core sub-action registration failed");
     }
 
     let donations = Arc::new(
@@ -331,21 +335,21 @@ pub async fn build_runtime(
     if let Err(e) =
         register_scheduled_run_sub_actions(&mut sub_action_reg, scheduled_runs_cell.clone())
     {
-        eprintln!("forge-desktop: scheduled run sub-action registration failed: {e}");
+        tracing::error!(error = %e, "scheduled run sub-action registration failed");
     }
     if let Err(e) = register_donation_sub_actions(&mut sub_action_reg, Arc::clone(&donations)) {
-        eprintln!("forge-desktop: donation sub-action registration failed: {e}");
+        tracing::error!(error = %e, "donation sub-action registration failed");
     }
     if let Err(e) = register_latest_sub_actions(
         &mut sub_action_reg,
         Arc::new(latest_values.clone()) as Arc<dyn LatestValueReader>,
     ) {
-        eprintln!("forge-desktop: latest value sub-action registration failed: {e}");
+        tracing::error!(error = %e, "latest value sub-action registration failed");
     }
 
     let mut trigger_reg = TriggerRegistry::new();
     if let Err(e) = register_core_triggers(&mut trigger_reg) {
-        eprintln!("forge-desktop: core trigger registration failed: {e}");
+        tracing::error!(error = %e, "core trigger registration failed");
     }
 
     let integrations = build_integrations(
@@ -389,12 +393,12 @@ pub async fn build_runtime(
                 dispatcher,
                 reward_emotes,
             ) {
-                eprintln!("forge-desktop: audio sub-action runner registration failed: {e}");
+                tracing::error!(error = %e, "audio sub-action runner registration failed");
             }
         }
-        None => eprintln!(
-            "forge-desktop: no speak dispatcher available; audio sub-action runners not registered"
-        ),
+        None => {
+            tracing::warn!("no speak dispatcher available; audio sub-action runners not registered")
+        }
     }
 
     if let Some(reconciler) = &integrations.hotkey_reconciler {
@@ -414,9 +418,10 @@ pub async fn build_runtime(
             .upsert_default(descriptor.id(), descriptor.label())
             .await
         {
-            eprintln!(
-                "forge-desktop: upsert_default failed for kind_id={}: {e}",
-                descriptor.id()
+            tracing::error!(
+                kind_id = %descriptor.id(),
+                error = %e,
+                "default trigger kind could not be stored"
             );
         }
     }
@@ -424,7 +429,7 @@ pub async fn build_runtime(
     let queues = match backend.queue_repo().list().await {
         Ok(queues) => queues,
         Err(e) => {
-            eprintln!("forge-desktop: failed to load queues on boot, starting empty: {e}");
+            tracing::warn!(error = %e, "failed to load queues on boot, starting empty");
             Vec::new()
         }
     };
@@ -501,7 +506,7 @@ pub async fn build_runtime(
 
     let mut overlay_kinds_mut = OverlayKindRegistry::new();
     if let Err(e) = register_builtin_kinds(&mut overlay_kinds_mut) {
-        eprintln!("forge-desktop: overlay type registration failed: {e}");
+        tracing::error!(error = %e, "overlay type registration failed");
     }
     let overlay_kinds = Arc::new(overlay_kinds_mut);
     let overlay_frames: Option<Arc<dyn OverlayFrameSink>> = server
@@ -596,7 +601,6 @@ pub async fn build_runtime(
         scheduled_runs,
         timer_scheduler,
         live_viewers,
-        stream_live,
         chat_history_retention,
         notification_policy,
         transfer_exclusivity,
@@ -625,14 +629,12 @@ pub async fn build_runtime(
         tts_registry,
         cloud_tts_gateways,
         speech_output,
-        speech_sink: speech_sink as Arc<dyn AudioSink>,
         server_unavailable,
         audio_router,
         soundboard_player,
         voice_gate,
         stay_awake,
         first_run,
-        endpoints,
     })
 }
 
@@ -640,7 +642,7 @@ async fn load_bot_accounts(backend: &Arc<dyn DataProvider>) -> forge_types::Shar
     match backend.tts_filters_repo().get_pipeline_settings().await {
         Ok(settings) => forge_types::Shared::new(settings.bot_accounts),
         Err(e) => {
-            eprintln!("forge-desktop: failed to load configured bot accounts on boot: {e}");
+            tracing::warn!(error = %e, "failed to load configured bot accounts on boot");
             forge_types::Shared::default()
         }
     }
@@ -658,7 +660,7 @@ async fn build_voice_gate(
         Ok(settings) if settings.enabled => owner.start(config_from_settings(&settings)),
         Ok(_) => {}
         Err(e) => {
-            eprintln!("forge-desktop: failed to load voice gate settings; leaving it off: {e}")
+            tracing::warn!(error = %e, "failed to load voice gate settings; leaving it off")
         }
     }
     owner

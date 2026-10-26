@@ -303,7 +303,7 @@ async fn poll_channel(
     } else {
         ViewerReport::Absent
     };
-    let _ = viewer_tx.send(report);
+    viewer_tx.send_replace(report);
 
     if let Some(prev) = last_snapshot.as_ref() {
         let delta = diff_channel(prev, &snapshot);

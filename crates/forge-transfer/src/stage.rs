@@ -76,8 +76,10 @@ pub async fn stage_full_restore(request: StageRequest) -> Result<StagedRestore, 
     let staging_dir = restore_staging_root(&request.data_dir).join(fresh_stem());
     let target = staging_dir.clone();
     let staged = run_blocking(request, move |request| stage(&request, &target)).await;
-    if staged.is_err() {
-        let _ = tokio::fs::remove_dir_all(&staging_dir).await;
+    if staged.is_err()
+        && let Err(error) = tokio::fs::remove_dir_all(&staging_dir).await
+    {
+        tracing::warn!(%error, path = %staging_dir.display(), "restore staging could not be removed");
     }
     staged.map(|summary| StagedRestore {
         staging_dir,

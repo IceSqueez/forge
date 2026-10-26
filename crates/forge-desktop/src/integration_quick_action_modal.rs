@@ -298,6 +298,10 @@ impl QuickActionModal {
             cx.background_executor()
                 .timer(TEXT_DEPENDENCY_DEBOUNCE)
                 .await;
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |this, cx| {
                 if !this.text_resolve.is_current(ticket) {
                     return;

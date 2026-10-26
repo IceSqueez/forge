@@ -171,6 +171,10 @@ impl<W: io::Write> io::Write for ScrubbingWriter<W> {
 }
 
 impl<W: io::Write> Drop for ScrubbingWriter<W> {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the log writer cannot report its own write failures"
+    )]
     fn drop(&mut self) {
         let _ = self.emit_complete_lines();
         let _ = self.emit_pending();

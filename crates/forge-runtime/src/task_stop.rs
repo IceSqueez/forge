@@ -11,6 +11,10 @@ pub struct TaskStop {
 impl TaskStop {
     pub async fn stop(mut self) {
         self.requested.notify_one();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a task that dropped its stop signal has already stopped"
+        )]
         let _ = self.stopped.wait_for(|stopped| *stopped).await;
     }
 }

@@ -372,6 +372,10 @@ fn finish_locked(inner: &mut StoreInner, capability: &str, outcome: ClipOutcome)
         return false;
     };
     release_bytes(inner, &entry);
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the requester may stop waiting for the reply"
+    )]
     let _ = entry.outcome.send(outcome);
     true
 }
@@ -422,6 +426,10 @@ fn sweep_locked(inner: &mut StoreInner, now: Instant) {
             fetches = entry.fetches,
             "audio clip window closed"
         );
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the requester may stop waiting for the reply"
+        )]
         let _ = entry.outcome.send(outcome);
     }
 }

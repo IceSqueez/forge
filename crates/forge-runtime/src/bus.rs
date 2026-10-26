@@ -223,6 +223,10 @@ impl EventBus {
         };
         let lane = lanes.lane_of(&event);
         self.critical.deliver(&event, lane, transient);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "having no subscribers is a normal state"
+        )]
         let _ = self.sender.send(event);
         self.total_published.fetch_add(1, Ordering::Relaxed);
     }

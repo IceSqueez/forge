@@ -281,6 +281,10 @@ async fn sync_file(path: &Path) -> io::Result<()> {
 fn to_hex(bytes: &[u8]) -> String {
     use std::fmt::Write;
     bytes.iter().fold(String::new(), |mut hex, byte| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "writing to a String cannot fail"
+        )]
         let _ = write!(hex, "{byte:02x}");
         hex
     })

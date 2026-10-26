@@ -66,8 +66,10 @@ pub async fn write_pack(request: PackExportRequest) -> Result<PathBuf, TransferE
         schema_version,
     };
     let written = run_blocking(assembly, move |assembly| assembly.write(&output)).await;
-    if written.is_err() {
-        let _ = tokio::fs::remove_file(partial_path(&destination)).await;
+    if written.is_err()
+        && let Err(error) = tokio::fs::remove_file(partial_path(&destination)).await
+    {
+        tracing::debug!(%error, "partial pack could not be removed");
     }
     written.map(|()| destination)
 }

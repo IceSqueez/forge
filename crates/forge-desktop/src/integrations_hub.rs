@@ -149,12 +149,20 @@ impl IntegrationsHubView {
                     Some((object.status.id().clone(), count))
                 })
                 .collect();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = tx.send((references, activity));
         });
         cx.spawn(async move |this, cx| {
             let Ok((references, activity)) = rx.await else {
                 return;
             };
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |view, cx| {
                 view.apply_refresh(references, activity);
                 cx.notify();

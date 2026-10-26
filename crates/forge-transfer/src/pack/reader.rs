@@ -53,8 +53,10 @@ pub async fn stage_pack(bundle: PathBuf, data_dir: PathBuf) -> Result<StagedPack
     let staging_dir = pack_staging_root(&data_dir).join(fresh_stem());
     let target = staging_dir.clone();
     let staged = run_blocking(bundle, move |bundle| stage(&bundle, &target)).await;
-    if staged.is_err() {
-        let _ = tokio::fs::remove_dir_all(&staging_dir).await;
+    if staged.is_err()
+        && let Err(error) = tokio::fs::remove_dir_all(&staging_dir).await
+    {
+        tracing::warn!(%error, path = %staging_dir.display(), "pack staging could not be removed");
     }
     staged.map(|(manifest, documents)| StagedPack {
         staging_dir,

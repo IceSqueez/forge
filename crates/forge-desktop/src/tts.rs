@@ -81,7 +81,10 @@ pub struct TtsView {
 }
 
 impl TtsView {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "constructor receives each shared handle it wires"
+    )]
     pub fn new(
         speak_state: Entity<SpeakState>,
         speak: Option<SpeakQueueHandle>,

@@ -220,6 +220,10 @@ impl OverlaysView {
     fn start_decay(&self, delay: Duration, epoch: u64, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(delay).await;
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |this, cx| this.settle_test(epoch, cx));
         })
         .detach();
@@ -491,6 +495,10 @@ impl OverlaysView {
             .child(
                 canvas(
                     move |bounds: Bounds<Pixels>, _window, cx| {
+                        #[expect(
+                            clippy::let_underscore_must_use,
+                            reason = "the view may close before the result arrives"
+                        )]
                         let _ = view.update(cx, |this, cx| this.set_stage_area(bounds.size, cx));
                     },
                     |_, _, _, _| {},

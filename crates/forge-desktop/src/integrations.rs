@@ -30,7 +30,6 @@ use forge_runtime::{IntegrationFactory, IntegrationObjects, TaskGroup};
 const CHAT_SEND_QUEUE_CAPACITY: usize = 64;
 
 #[derive(Clone)]
-#[allow(dead_code)]
 pub struct BuiltinObject {
     pub icon: SectionIcon,
     pub status: Arc<dyn BuiltinStatus>,
@@ -378,25 +377,25 @@ fn kinds_owned_by(triggers: &TriggerRegistry, owner: &IntegrationId) -> Vec<Stri
 
 fn register_platform_triggers(triggers: &mut TriggerRegistry) {
     if let Err(e) = forge_platform_twitch::register_twitch_triggers(triggers) {
-        eprintln!("forge-desktop: twitch trigger registration failed: {e}");
+        tracing::error!(error = %e, "twitch trigger registration failed");
     }
     if let Err(e) = forge_obs::register_obs_triggers(triggers) {
-        eprintln!("forge-desktop: obs trigger registration failed: {e}");
+        tracing::error!(error = %e, "obs trigger registration failed");
     }
     if let Err(e) = forge_vtube::register_vtube_triggers(triggers) {
-        eprintln!("forge-desktop: vtube trigger registration failed: {e}");
+        tracing::error!(error = %e, "vtube trigger registration failed");
     }
     if let Err(e) = forge_midi::register_midi_triggers(triggers) {
-        eprintln!("forge-desktop: midi trigger registration failed: {e}");
+        tracing::error!(error = %e, "midi trigger registration failed");
     }
     if let Err(e) = forge_hotkey::register_hotkey_triggers(triggers) {
-        eprintln!("forge-desktop: hotkey trigger registration failed: {e}");
+        tracing::error!(error = %e, "hotkey trigger registration failed");
     }
     if let Err(e) = forge_platform_youtube::register_youtube_triggers(triggers) {
-        eprintln!("forge-desktop: youtube trigger registration failed: {e}");
+        tracing::error!(error = %e, "youtube trigger registration failed");
     }
     if let Err(e) = forge_platform_kick::register_kick_triggers(triggers) {
-        eprintln!("forge-desktop: kick trigger registration failed: {e}");
+        tracing::error!(error = %e, "kick trigger registration failed");
     }
 }
 
@@ -419,7 +418,7 @@ pub(crate) fn spawn_event_bridge(
                 Ok(event) => bus.publish(event),
                 Err(EventsError::BusClosed) => break,
                 Err(EventsError::LaggingReceiver) => {
-                    eprintln!("forge-desktop: {label} event bridge lagging");
+                    tracing::warn!(bridge = label, "event bridge lagging");
                     continue;
                 }
                 Err(_) => continue,
@@ -585,8 +584,10 @@ pub(crate) fn spawn_chat_send_bridge(
                 Err(EventsError::LaggingReceiver) => {
                     lagging = true;
                     lag_count += 1;
-                    eprintln!(
-                        "forge-desktop: WARN chat send bridge for {target} lagging; {lag_count} lag event(s) observed since bridge start"
+                    tracing::warn!(
+                        channel = target,
+                        lag_count,
+                        "chat send bridge lagging"
                     );
                     bus.publish(Event::new(
                         source,
@@ -671,7 +672,7 @@ pub(crate) fn spawn_connect(
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         if let Err(e) = platform.connect().await {
-            eprintln!("forge-desktop: {label} connect failed: {e}");
+            tracing::error!(platform = label, error = %e, "chat platform connect failed");
         }
     })
 }

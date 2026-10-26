@@ -57,6 +57,10 @@ pub(crate) fn apply_tracking(
         changed = true;
     }
     if changed {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "having no subscribers is a normal state"
+        )]
         let _ = tx.send(HealthDelta {
             index: TRACKING_METRIC_INDEX,
             new_value: tracking_value(face_found),
@@ -90,6 +94,10 @@ pub(crate) fn apply_model(
         } else {
             ("\u{2014}".to_owned(), Some("not loaded".to_owned()))
         };
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "having no subscribers is a normal state"
+        )]
         let _ = tx.send(HealthDelta {
             index: MODEL_METRIC_INDEX,
             new_value: HealthValue::Text { primary, secondary },

@@ -184,6 +184,10 @@ fn run_playback(request: PlaybackRequest) -> Result<(), AudioError> {
             "requested output device did not open; playing on the system default output"
         );
     }
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the requester may stop waiting for the reply"
+    )]
     let _ = started.send(());
     event_sink.emit(AudioEvent::PlaybackStarted {
         clip_id: None,
@@ -261,6 +265,10 @@ fn try_start_stream(
 
     let (tx, rx) = crossbeam_channel::bounded::<i16>(converted.len().max(1));
     for s in converted {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver lives in this scope and the channel holds every sample"
+        )]
         let _ = tx.send(s);
     }
     drop(tx);
@@ -408,6 +416,10 @@ fn stream_error_callback(failure: StreamFailure) -> impl FnMut(cpal::Error) + Se
     move |err: cpal::Error| {
         tracing::error!("cpal stream error: {}", err);
         if ends_playback(err.kind()) {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the first stream failure is the one reported"
+            )]
             let _ = failure.set(err.to_string());
         }
     }

@@ -85,6 +85,10 @@ impl ConnectFlow {
 
         if platform == PlatformId::Twitch {
             cx.spawn(async move |this, cx| {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the view may close before the result arrives"
+                )]
                 let _ = this.update(cx, |this, cx| this.begin_twitch_device(cx));
             })
             .detach();

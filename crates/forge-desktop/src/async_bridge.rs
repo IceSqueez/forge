@@ -125,6 +125,10 @@ pub fn report_failure<V, F, E>(
     handle.spawn(async move {
         if let Err(e) = fut.await {
             tracing::warn!(error = %e, context = %context, "async operation failed");
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = tx.send(context);
         }
     });
@@ -255,10 +259,18 @@ pub fn run_async<V, Fut, T>(
 {
     let (tx, rx) = tokio::sync::oneshot::channel();
     handle.spawn(async move {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the view may close before the result arrives"
+        )]
         let _ = tx.send(fut.await);
     });
     cx.spawn(async move |this, cx| {
         if let Ok(result) = rx.await {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |this, cx| apply(this, result, cx));
         }
     })
@@ -278,6 +290,10 @@ pub fn run_async_entity<V, Fut, T>(
 {
     let (tx, rx) = tokio::sync::oneshot::channel();
     handle.spawn(async move {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the view may close before the result arrives"
+        )]
         let _ = tx.send(fut.await);
     });
     app.spawn(async move |cx| {
@@ -300,10 +316,18 @@ pub fn run_blocking<V, Work, T>(
 {
     let (tx, rx) = tokio::sync::oneshot::channel();
     handle.spawn_blocking(move || {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the view may close before the result arrives"
+        )]
         let _ = tx.send(work());
     });
     cx.spawn(async move |this, cx| {
         if let Ok(result) = rx.await {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |this, cx| apply(this, result, cx));
         }
     })
@@ -345,6 +369,10 @@ impl Debounced {
     {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.spawn_debounced(handle, context.into(), fut, move |context| {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = tx.send(context);
         });
         cx.spawn(async move |_this, cx| {
@@ -412,11 +440,19 @@ pub fn optimistic<V, S, F, E>(
 {
     let (tx, rx) = tokio::sync::oneshot::channel();
     handle.spawn(async move {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the view may close before the result arrives"
+        )]
         let _ = tx.send(fut.await.map_err(|e| e.to_string()));
     });
     cx.spawn(async move |this, cx| {
         if let Ok(Err(message)) = rx.await {
             tracing::warn!(error = %message, "optimistic persist failed");
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |this, cx| {
                 restore(this, snapshot, message, cx);
                 cx.notify();
@@ -512,7 +548,9 @@ impl SnapshotWriter {
             write: Box::pin(async move { write.await.map_err(|e| e.to_string()) }),
             settled,
         };
-        let _ = self.jobs.send(job);
+        if self.jobs.send(job).is_err() {
+            tracing::warn!("snapshot queue stopped; write dropped");
+        }
         cx.spawn(async move |this, cx| {
             let Ok(outcome) = outcome.await else {
                 return;
@@ -522,6 +560,10 @@ impl SnapshotWriter {
             } else {
                 WriteOutcome::Superseded
             };
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |this, cx| {
                 on_settled(this, outcome, cx);
                 cx.notify();
@@ -534,6 +576,10 @@ impl SnapshotWriter {
 async fn run_snapshot_queue(mut queue: tokio::sync::mpsc::UnboundedReceiver<SnapshotJob>) {
     while let Some(mut job) = queue.recv().await {
         while let Ok(newer) = queue.try_recv() {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = job.settled.send(WriteOutcome::Superseded);
             job = newer;
         }
@@ -544,6 +590,10 @@ async fn run_snapshot_queue(mut queue: tokio::sync::mpsc::UnboundedReceiver<Snap
                 WriteOutcome::Failed(message)
             }
         };
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the view may close before the result arrives"
+        )]
         let _ = job.settled.send(outcome);
     }
 }

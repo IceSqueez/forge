@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use forge_overlay::OverlayKindRegistry;
-use forge_platform_core::PlatformEndpoints;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionEngineHandle, ChatHistoryRetentionHandle, DateNamesHandle, EventBus, LatestValues,
     LiveViewerAggregatorHandle, NotificationPolicyHandle, OverlayServiceHandle,
-    QueueSchedulerHandle, ScheduledRunsHandle, ScriptRegistry, StreamLiveHandle,
-    TimerSchedulerHandle, TriggerEvaluatorHandle,
+    QueueSchedulerHandle, ScheduledRunsHandle, ScriptRegistry, TimerSchedulerHandle,
+    TriggerEvaluatorHandle,
 };
 use forge_storage::{CredentialsKeyLoss, DataProvider, Language};
 
@@ -18,7 +17,6 @@ use crate::platform_credentials::PlatformCredentialManagers;
 use crate::voice_gate::VoiceGateOwner;
 use forge_runtime::IntegrationSupervisor;
 
-#[allow(dead_code)]
 pub struct RuntimeHandles {
     pub rt_handle: tokio::runtime::Handle,
     pub log_tail: LogTail,
@@ -42,7 +40,6 @@ pub struct RuntimeHandles {
     pub scheduled_runs: ScheduledRunsHandle,
     pub timer_scheduler: TimerSchedulerHandle,
     pub live_viewers: LiveViewerAggregatorHandle,
-    pub stream_live: StreamLiveHandle,
     pub chat_history_retention: ChatHistoryRetentionHandle,
     pub notification_policy: NotificationPolicyHandle,
     pub transfer_exclusivity: forge_transfer::TransferExclusivity,
@@ -68,7 +65,6 @@ pub struct RuntimeHandles {
     pub tts_registry: Option<Arc<std::sync::RwLock<forge_tts_core::TtsRegistry>>>,
     pub cloud_tts_gateways: forge_tts_cloud::CloudGateways,
     pub speech_output: Arc<forge_audio::DeviceSink>,
-    pub speech_sink: Arc<dyn forge_audio::AudioSink>,
     pub audio_router: Arc<AudioRouter>,
     pub hotkey_client: Option<Arc<forge_hotkey::HotkeyClient>>,
     pub hotkey_reconciler: Option<Arc<forge_hotkey::HotkeyReconciler>>,
@@ -76,5 +72,4 @@ pub struct RuntimeHandles {
     pub voice_gate: Arc<VoiceGateOwner>,
     pub stay_awake: forge_awake::StayAwake,
     pub first_run: crate::first_run::FirstRun,
-    pub endpoints: PlatformEndpoints,
 }

@@ -31,7 +31,9 @@ async fn run_probe(host: &str, port: u16) -> Result<VTubeProbeResult, VTubeError
     let msg = recv_next_text(&mut ws).await?;
     let round_trip_ms = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
 
-    let _ = ws.close(None).await;
+    if let Err(error) = ws.close(None).await {
+        tracing::debug!(%error, "probe socket close failed");
+    }
 
     let msg_type = msg["messageType"].as_str().unwrap_or("");
     if msg_type != "APIStateResponse" {

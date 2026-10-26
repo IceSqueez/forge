@@ -20,6 +20,10 @@ impl PlatformEventChannel {
 
 impl EventPublisher for PlatformEventChannel {
     fn publish(&self, event: Event) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "having no subscribers is a normal state"
+        )]
         let _ = self.sender.send(event);
     }
 }

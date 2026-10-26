@@ -143,7 +143,10 @@ fn decode_stream(mss: MediaSourceStream, hint: Hint) -> Result<PcmBuffer, AudioE
 }
 
 #[cfg(test)]
-#[allow(clippy::cast_possible_truncation)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "test fixture values are small and bounded"
+)]
 mod tests {
     use std::io::Write as _;
 

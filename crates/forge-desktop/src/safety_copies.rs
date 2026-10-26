@@ -661,6 +661,10 @@ impl SafetyCopiesView {
             overlay(modal, palette)
                 .position(OverlayPosition::Center)
                 .on_dismiss("safety-copies-clean-up-dismiss", move |_window, cx| {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the view may close before the result arrives"
+                    )]
                     let _ = weak.update(cx, |this, cx| this.cancel_clean_up(cx));
                 })
                 .into_any_element(),

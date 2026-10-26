@@ -95,7 +95,9 @@ impl LocalCallbackDriver {
                 ),
             ),
         };
-        let _ = write_response(&mut socket, status, &body).await;
+        if let Err(error) = write_response(&mut socket, status, &body).await {
+            tracing::debug!(%error, "callback response could not be written to the browser");
+        }
 
         result.map(|code| CallbackCode { code })
     }

@@ -21,6 +21,10 @@ pub(crate) fn write_atomically_blocking(path: &Path, bytes: &[u8]) -> Result<(),
     let temp = temp_path(path);
     let written = write_and_sync(&temp, bytes).and_then(|()| std::fs::rename(&temp, path));
     if let Err(error) = written {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "best-effort cleanup; the write error is returned"
+        )]
         let _ = std::fs::remove_file(&temp);
         return Err(error.into());
     }

@@ -137,6 +137,10 @@ fn emit_engine_state_change(client: &Arc<MidiClient>, enabled: bool) {
         index: 0,
         new_value: input_port_health_value(enabled, input_count),
     };
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "having no subscribers is a normal state"
+    )]
     let _ = client.health_tx.send(delta);
 }
 
@@ -176,6 +180,10 @@ fn do_port_discovery(
         build_port_count_deltas(client, &mut snap, input_count, output_count)
     };
     for d in deltas {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "having no subscribers is a normal state"
+        )]
         let _ = client.health_tx.send(d);
     }
 }
@@ -258,7 +266,9 @@ fn open_input_port(
             let pname = port.name.clone();
             tokio::spawn(async move {
                 while let Some((ts, data)) = port_rx.recv().await {
-                    let _ = merged.send((ts, data, pname.clone())).await;
+                    if merged.send((ts, data, pname.clone())).await.is_err() {
+                        break;
+                    }
                 }
             });
         }
@@ -359,6 +369,10 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
         .publisher
         .publish(Event::new(EventSource::Midi, kind, payload));
 
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "having no subscribers is a normal state"
+    )]
     let _ = client
         .monitor_tx
         .send(crate::monitor::to_monitor_event(&event, port_name));
@@ -378,6 +392,10 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
         build_event_deltas(&mut snap, is_note_on)
     };
     for d in deltas {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "having no subscribers is a normal state"
+        )]
         let _ = client.health_tx.send(d);
     }
 

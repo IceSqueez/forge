@@ -39,6 +39,10 @@ impl HotkeyReconciler {
     }
 
     pub fn enable_engine_on_new_bindings(&self, enable: impl Fn() + Send + Sync + 'static) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the first registered enable hook wins"
+        )]
         let _ = self.enable_engine.set(Arc::new(enable));
     }
 

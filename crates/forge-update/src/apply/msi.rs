@@ -34,6 +34,10 @@ pub(super) fn apply(
     retry.run(|| remove_path(previous))?;
     std::fs::copy(target, previous)?;
     if let Err(error) = run_installer(package, run) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "best-effort cleanup; the installer error is returned"
+        )]
         let _ = remove_path(previous);
         return Err(error);
     }

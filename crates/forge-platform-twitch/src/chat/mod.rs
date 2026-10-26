@@ -116,6 +116,10 @@ impl TwitchChatHandle {
 
     pub async fn shutdown(mut self) {
         if let Some(tx) = self.shutdown_tx.take() {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the session may already have ended"
+            )]
             let _ = tx.send(());
         }
         let Some(mut task) = self.task.take() else {
@@ -130,6 +134,10 @@ impl TwitchChatHandle {
                 "twitch chat session did not stop within the grace period; aborting it"
             );
             task.abort();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the task was just aborted, so its result is a cancellation"
+            )]
             let _ = task.await;
         }
     }

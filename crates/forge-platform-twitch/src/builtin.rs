@@ -174,18 +174,30 @@ impl TwitchIntegrationBundle {
                     index: 0,
                     new_value: bundle.chat_health_value(),
                 };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "having no subscribers is a normal state"
+                )]
                 let _ = bundle.health_tx.send(chat_delta);
 
                 let eventsub_delta = HealthDelta {
                     index: 1,
                     new_value: bundle.eventsub_health_value(),
                 };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "having no subscribers is a normal state"
+                )]
                 let _ = bundle.health_tx.send(eventsub_delta);
 
                 let api_calls_delta = HealthDelta {
                     index: 3,
                     new_value: bundle.api_calls_health_value(),
                 };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "having no subscribers is a normal state"
+                )]
                 let _ = bundle.health_tx.send(api_calls_delta);
             }
         });
@@ -209,6 +221,10 @@ impl TwitchIntegrationBundle {
                     index: API_CALLS_METRIC_INDEX,
                     new_value: bundle.api_calls_health_value(),
                 };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "having no subscribers is a normal state"
+                )]
                 let _ = bundle.health_tx.send(delta);
             }
         });
@@ -310,6 +326,10 @@ impl TwitchIntegrationBundle {
                     index: 3,
                     new_value: bundle.api_calls_health_value(),
                 };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "having no subscribers is a normal state"
+                )]
                 let _ = bundle.health_tx.send(api_calls_delta);
 
                 let request = HelixRequest::new(HelixMethod::Get, "/helix/streams")
@@ -324,11 +344,15 @@ impl TwitchIntegrationBundle {
                 if let Ok(mut guard) = bundle.viewer_state.write() {
                     *guard = new_state;
                 }
-                let _ = bundle.viewer_report_tx.send(new_state.as_report());
+                bundle.viewer_report_tx.send_replace(new_state.as_report());
                 let delta = HealthDelta {
                     index: 2,
                     new_value: bundle.viewers_health_value(),
                 };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "having no subscribers is a normal state"
+                )]
                 let _ = bundle.health_tx.send(delta);
             }
         });
@@ -360,7 +384,9 @@ impl TwitchIntegrationBundle {
 
     pub async fn shutdown(&self) {
         self.retired.cancel();
-        let _ = self.platform.disconnect().await;
+        if let Err(error) = self.platform.disconnect().await {
+            tracing::warn!(%error, "twitch chat disconnect failed at shutdown");
+        }
     }
 
     pub fn viewer_source(&self) -> Box<dyn LiveViewerSource> {
@@ -801,7 +827,10 @@ fn choice_field_hint(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is one field of the quick-action template"
+)]
 fn quick_action(
     label: &str,
     icon: &str,

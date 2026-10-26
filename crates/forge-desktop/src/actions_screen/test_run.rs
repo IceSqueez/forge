@@ -161,6 +161,10 @@ impl TestRunModal {
 
         let (tx, rx) = tokio::sync::oneshot::channel();
         rt_handle.spawn(async move {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = tx.send(
                 super::test_trigger::dispatch_test_run(
                     &scheduler,
@@ -176,6 +180,10 @@ impl TestRunModal {
         });
         let fire = cx.spawn(async move |this, cx| {
             if let Ok(result) = rx.await {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the view may close before the result arrives"
+                )]
                 let _ = this.update(cx, |this, cx| this.on_test_fired(action_id, result, cx));
             }
         });
@@ -272,6 +280,10 @@ impl TestRunModal {
     fn start_test_timeout(&mut self, cx: &mut Context<Self>) {
         let timeout = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(TRIGGER_TIMEOUT).await;
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
             let _ = this.update(cx, |this, cx| this.on_test_timeout(cx));
         });
         self._timeout = Some(timeout);

@@ -68,8 +68,10 @@ async fn write_handoff(backend: Arc<dyn DataProvider>, input: HandoffInput) -> R
     let snapshot =
         update_snapshot_path(&input.data_dir, OffsetDateTime::now_utc(), &unique_suffix());
     let written = snapshot_and_plan(backend, input, snapshot.clone()).await;
-    if written.is_err() {
-        let _ = tokio::fs::remove_file(&snapshot).await;
+    if written.is_err()
+        && let Err(error) = tokio::fs::remove_file(&snapshot).await
+    {
+        tracing::debug!(%error, path = %snapshot.display(), "partial update snapshot could not be removed");
     }
     written
 }

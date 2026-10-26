@@ -76,7 +76,6 @@ pub struct YoutubeChatPoller {
 }
 
 impl YoutubeChatPoller {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         api: YoutubeDataApi,
         access_token_source: Arc<

@@ -62,6 +62,10 @@ pub fn start_leftover_install_notice(
     }
     let (tx, rx) = tokio::sync::oneshot::channel();
     rt_handle.spawn(async move {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the view may close before the result arrives"
+        )]
         let _ = tx.send(unnoticed_leftover(backend).await);
     });
     cx.spawn(async move |cx| {

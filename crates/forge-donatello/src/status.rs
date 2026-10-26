@@ -244,6 +244,10 @@ impl StatusBoard {
         };
         if changed {
             for delta in crate::health::deltas(&snapshot) {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "having no subscribers is a normal state"
+                )]
                 let _ = self.health_tx.send(delta);
             }
         }

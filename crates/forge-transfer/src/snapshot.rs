@@ -22,7 +22,9 @@ where
         Ok(()) => run_blocking(snapshot.clone(), work).await,
         Err(e) => Err(TransferError::Storage(e)),
     };
-    let _ = tokio::fs::remove_file(&snapshot).await;
+    if let Err(error) = tokio::fs::remove_file(&snapshot).await {
+        tracing::debug!(%error, path = %snapshot.display(), "partial snapshot could not be removed");
+    }
     result
 }
 

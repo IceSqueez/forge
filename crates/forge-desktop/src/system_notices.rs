@@ -156,6 +156,10 @@ pub(crate) async fn show_off_thread(
 ) -> Result<(), OsPortError> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     rt.spawn_blocking(move || {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the view may close before the result arrives"
+        )]
         let _ = tx.send(port.show(notice));
     });
     rx.await

@@ -283,6 +283,7 @@ fn parse_startup_request(mut args: impl Iterator<Item = String>) -> Result<Start
     Ok(StartupRequest::Open(screen))
 }
 
+#[expect(clippy::print_stdout, reason = "command-line help output")]
 fn print_usage() {
     println!(
         "Usage: forge-desktop [{FLAG_SCREEN} <name>[:<param>]] [{FLAG_SELECT} <id>] [{FLAG_HELP}]"
@@ -389,6 +390,10 @@ fn main() {
             print_usage();
             return;
         }
+        #[expect(
+            clippy::print_stderr,
+            reason = "usage errors are reported before logging starts"
+        )]
         Err(message) => {
             eprintln!("forge-desktop: {message}");
             std::process::exit(EXIT_USAGE_ERROR);
@@ -453,7 +458,7 @@ fn main() {
     let rt = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,
         Err(err) => {
-            eprintln!("forge-desktop: failed to start tokio runtime: {err}");
+            tracing::error!(error = %err, "failed to start tokio runtime");
             return;
         }
     };
@@ -481,7 +486,7 @@ fn main() {
             .text_system()
             .add_fonts(forge_components::embedded_fonts())
         {
-            eprintln!("forge-desktop: failed to register embedded fonts: {err}");
+            tracing::error!(error = %err, "failed to register embedded fonts");
         }
 
         let boot_storage = crate::boot::open_boot_storage(&rt_handle);
@@ -573,7 +578,7 @@ fn main() {
         }) {
             Ok(window) => window,
             Err(err) => {
-                eprintln!("forge-desktop: failed to open window: {err}");
+                tracing::error!(error = %err, "failed to open window");
                 return;
             }
         };

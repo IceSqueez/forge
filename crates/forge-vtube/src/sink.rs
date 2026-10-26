@@ -16,7 +16,6 @@ pub trait VTubeSink: Send + Sync {
 
     async fn reset_params(&self) -> Result<(), VTubeError>;
 
-    #[allow(clippy::too_many_arguments)]
     async fn move_model(
         &self,
         x: Option<f64>,
@@ -26,7 +25,10 @@ pub trait VTubeSink: Send + Sync {
         time_in_seconds: f64,
     ) -> Result<(), VTubeError>;
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each argument is one field of the outbound request"
+    )]
     async fn move_item(
         &self,
         item_instance_id: &str,
@@ -49,7 +51,10 @@ pub trait VTubeSink: Send + Sync {
 
     async fn get_items(&self) -> Result<Variant, VTubeError>;
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each argument is one field of the outbound request"
+    )]
     async fn pin_item(
         &self,
         item_instance_id: &str,
@@ -63,7 +68,10 @@ pub trait VTubeSink: Send + Sync {
         size: f64,
     ) -> Result<(), VTubeError>;
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each argument is one field of the outbound request"
+    )]
     async fn load_item(
         &self,
         file_name: &str,

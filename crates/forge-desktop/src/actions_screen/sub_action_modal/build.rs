@@ -83,7 +83,10 @@ pub(super) fn build_step_meta_inputs(
     (name_input, condition_input)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "render helper takes each displayed value and handler separately"
+)]
 fn build_input_field(
     key: &str,
     label: &str,
@@ -182,7 +185,10 @@ fn build_area_field(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "render helper takes each displayed value and handler separately"
+)]
 fn build_code_field(
     key: &str,
     label: &str,

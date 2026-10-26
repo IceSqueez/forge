@@ -27,8 +27,10 @@ pub(crate) async fn write_safety_snapshot(
         write_plain_archive(&work_dir, &snapshot, &output)
     })
     .await;
-    if written.is_err() {
-        let _ = tokio::fs::remove_file(partial_path(&destination)).await;
+    if written.is_err()
+        && let Err(error) = tokio::fs::remove_file(partial_path(&destination)).await
+    {
+        tracing::debug!(%error, "partial safety snapshot could not be removed");
     }
     if written.is_ok() {
         prune_after_safety_copy(provider.as_ref(), data_dir, &destination).await;

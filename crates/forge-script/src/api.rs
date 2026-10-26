@@ -19,9 +19,8 @@ use crate::http_client::{HttpError, HttpResponse, ScriptHttpClient};
 use crate::schedule::ActionScheduler;
 use crate::schedule_api::build_schedule_module;
 
-pub const ENGINE_BOUND_NAMES: [&str; 13] = [
-    "log", "warn", "error", "sleep", "chat", "globals", "audio", "http", "tts", "time", "obs",
-    "latest", "schedule",
+pub const ENGINE_BOUND_NAMES: [&str; 11] = [
+    "log", "warn", "error", "sleep", "chat", "globals", "http", "tts", "time", "latest", "schedule",
 ];
 
 pub fn is_engine_bound_name(name: &str) -> bool {
@@ -197,14 +196,12 @@ impl ForgeApi {
         let globals = build_globals_module(self.publisher, self.caused_by, self.globals);
         root.set_sub_module("globals", globals);
 
-        root.set_sub_module("audio", Module::new());
         let tts = match self.speak {
             Some(requester) => build_tts_module(requester),
             None => Module::new(),
         };
         root.set_sub_module("tts", tts);
         root.set_sub_module("time", build_time_module());
-        root.set_sub_module("obs", Module::new());
         root.set_sub_module("http", http);
         let latest = match self.latest {
             Some(reader) => build_latest_module(reader),

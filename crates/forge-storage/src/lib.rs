@@ -2,27 +2,27 @@
 
 pub mod action;
 pub mod ban_ledger;
-pub mod catalog;
+mod catalog;
 pub mod chat_history;
 pub mod credentials;
 pub mod donation;
-pub mod error;
+mod error;
 pub mod event_log;
 pub mod globals;
 pub mod history;
-pub mod integration_state;
+mod integration_state;
 pub mod latest_value;
 pub mod media;
 pub mod overlay;
 pub mod paths;
-pub mod provider;
+mod provider;
 pub mod queue;
 pub mod scheduled_run;
-pub mod schema_file;
+mod schema_file;
 pub mod script;
 pub mod settings;
 pub mod soundboard;
-pub mod transit;
+mod transit;
 pub mod trigger_instance;
 pub mod tts_filters;
 pub mod user_globals;
@@ -60,7 +60,7 @@ pub use history::{
     set_action_history_retention_days,
 };
 pub use integration_state::{
-    has_credentials_for, has_setting, integration_enabled_key, resolve_integration_enabled,
+    has_credentials_for, integration_enabled_key, resolve_integration_enabled,
     set_integration_enabled, stored_integration_enabled,
 };
 pub use latest_value::{LatestRecord, LatestValueRepo};

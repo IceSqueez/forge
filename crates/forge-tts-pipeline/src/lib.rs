@@ -55,9 +55,6 @@ pub enum StageAction {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EmoteSources {
     pub twitch: bool,
-    pub bttv: bool,
-    pub ffz: bool,
-    pub seven_tv: bool,
     pub emoji: bool,
 }
 
@@ -157,15 +154,6 @@ pub struct PipelineContext<'a> {
     pub recent_messages: &'a [String],
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum PipelineError {
-    #[error("invalid regex pattern `{pattern}`: {source}")]
-    InvalidRegex {
-        pattern: String,
-        source: regex::Error,
-    },
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct PipelineConfig {
     pub emote_sources: EmoteSources,
@@ -179,32 +167,6 @@ pub struct PipelineConfig {
 }
 
 impl PipelineConfig {
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "constructor receives each shared handle it wires"
-    )]
-    pub fn new(
-        emote_sources: EmoteSources,
-        emote_tokens: EmoteTokenSet,
-        skip_rules: SkipRulesConfig,
-        replacement_rules: Vec<ReplacementRule>,
-        word_blocklist: Vec<String>,
-        blocklist_mode: BlocklistMode,
-        output: OutputConfig,
-        strip_reward_emotes: bool,
-    ) -> Self {
-        Self {
-            emote_sources,
-            emote_tokens,
-            skip_rules,
-            replacement_rules,
-            word_blocklist,
-            blocklist_mode,
-            output,
-            strip_reward_emotes,
-        }
-    }
-
     pub fn with_message_emotes(&self, message_emotes: &EmoteTokenSet) -> PipelineConfig {
         PipelineConfig {
             emote_tokens: self.emote_tokens.merged_with(message_emotes),

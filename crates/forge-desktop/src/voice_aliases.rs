@@ -99,7 +99,6 @@ struct AliasRow {
     engine_id: String,
     engine_label: String,
     voice_id: String,
-    voice_label: String,
     pitch_semitones: Option<f32>,
     rate_multiplier: Option<f32>,
     blocked: bool,
@@ -786,7 +785,7 @@ impl VoiceAliasesView {
                         .font_family(mono_family())
                         .text_size(VOICE_FS)
                         .text_color(palette.text_primary)
-                        .child(format!("{} · {}", row.engine_label, row.voice_label)),
+                        .child(format!("{} · {}", row.engine_label, row.voice_id)),
                 )
                 .into_any_element()
         };
@@ -979,8 +978,7 @@ fn row_from_alias(a: VoiceAlias) -> AliasRow {
         platform,
         engine_id: engine,
         engine_label,
-        voice_id: voice.clone(),
-        voice_label: voice,
+        voice_id: voice,
         pitch_semitones: a.pitch_semitones,
         rate_multiplier: a.rate_multiplier,
         blocked: matches!(a.state, AliasState::Blocked),

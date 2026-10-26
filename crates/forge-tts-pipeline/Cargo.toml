@@ -13,6 +13,5 @@ workspace = true
 [dependencies]
 forge-types = { path = "../forge-types" }
 serde = { workspace = true }
-thiserror = { workspace = true }
 regex = { workspace = true }
 lingua = { workspace = true }

@@ -3182,7 +3182,6 @@ dependencies = [
  "async-trait",
  "forge-events",
  "forge-storage",
- "forge-tts-core",
  "forge-types",
  "forge-voice",
  "rand 0.10.3",
@@ -3291,7 +3290,6 @@ dependencies = [
  "lingua",
  "regex",
  "serde",
- "thiserror 2.0.21",
 ]
 
 [[package]]

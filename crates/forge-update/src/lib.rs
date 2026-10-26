@@ -27,7 +27,7 @@ pub use apply_state::{
     HandoffRequest, PREVIOUS_BUILD_PREFIX, launch_executable, previous_build_path,
 };
 pub use check::{check_for_update, fetch_offer};
-pub use database::{DatabaseUnit, SchemaProbe, UnknownSchemaVersion};
+pub use database::{DatabaseUnit, SchemaProbe};
 pub use digest::Sha256Digest;
 pub use download::{
     CancelSignal, DownloadProgress, ProgressReceiver, ProgressSender, STAGING_PREFIX,

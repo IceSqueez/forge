@@ -1,37 +1,37 @@
-pub mod api_gateway;
+mod api_gateway;
 pub mod auth;
 mod ban_ledger;
 #[cfg(test)]
 mod ban_ledger_test_support;
 mod ban_list;
-pub mod builtin;
+mod builtin;
 pub mod capabilities;
-pub mod categories;
-pub mod channel;
-pub mod channel_info;
+mod categories;
+mod channel;
+mod channel_info;
 pub mod chat;
-pub mod chat_platform;
+mod chat_platform;
 mod chat_session;
 pub(crate) mod control;
-pub mod credentials;
-pub mod credentials_manager;
+mod credentials;
+mod credentials_manager;
 #[cfg(test)]
 mod endpoints_test_support;
 pub mod error;
 mod event_channel;
-pub mod integration;
+mod integration;
 #[cfg(test)]
 mod log_capture;
-pub mod moderation;
+mod moderation;
 mod normalize;
-pub mod oauth_client;
+mod oauth_client;
 mod payload_fields;
-pub mod poller;
-pub mod rewards;
-pub mod send;
-pub mod sub_actions;
+mod poller;
+mod rewards;
+mod send;
+mod sub_actions;
 mod timestamp;
-pub mod triggers;
+mod triggers;
 
 pub use api_gateway::{
     KICK_API_BUDGET_CAPACITY, KICK_API_BUDGET_WINDOW, KICK_CHANNEL_INFO_BUDGET_CAPACITY,

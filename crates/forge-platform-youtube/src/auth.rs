@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use forge_net::{GatewayRequest, Secret};
-use forge_platform_core::auth::{CALLBACK_PATH, PkceAuthorizeConfig, PkceLoopback};
-use forge_platform_core::{AuthFlow, PlatformError};
+use forge_platform_core::PlatformError;
+use forge_platform_core::auth::{PkceAuthorizeConfig, PkceLoopback};
 use forge_types::OAuthToken;
 use serde::Deserialize;
 
@@ -12,7 +12,6 @@ use crate::data_api::{YoutubeDataApi, malformed};
 use crate::oauth_client::GoogleOAuthClient;
 
 pub const GOOGLE_AUTHORIZE_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
-pub const GOOGLE_TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
 
 const YOUTUBE_CHANNELS_PATH: &str = "/channels";
 const OWN_CHANNEL_COST: u32 = 1;
@@ -22,18 +21,6 @@ const NO_CHANNEL_STATUS: u16 = forge_net::status::OK;
 
 pub const YOUTUBE_BROADCASTER_SCOPES: &[&str] =
     &["https://www.googleapis.com/auth/youtube.force-ssl"];
-
-pub fn youtube_auth_flow() -> AuthFlow {
-    AuthFlow::LocalCallback {
-        authorize_url: GOOGLE_AUTHORIZE_ENDPOINT.to_owned(),
-        token_endpoint: GOOGLE_TOKEN_ENDPOINT.to_owned(),
-        redirect_path: CALLBACK_PATH.to_owned(),
-        scopes: YOUTUBE_BROADCASTER_SCOPES
-            .iter()
-            .map(|s| (*s).to_owned())
-            .collect(),
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct LoopbackCode {

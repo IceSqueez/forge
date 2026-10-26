@@ -141,7 +141,7 @@ pub fn run_boot(
     let speak = cx.new(|_| SpeakState::new());
     let queue_health = cx.new(|_| QueueHealth::new());
     let event_loss = cx.new(|_| EventLoss::new());
-    let awake = cx.new(|_| AwakeState::new());
+    let awake = cx.new(|_| AwakeState::default());
     let twitch_bot = cx.new(|_| TwitchBotPresence::new());
 
     let (hotkey_host, hotkey_main_thread) = forge_hotkey::main_thread_channel();

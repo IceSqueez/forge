@@ -2,24 +2,24 @@
 
 mod routes;
 
-pub mod audio_clips;
-pub mod auth;
-pub mod bandwidth;
-pub mod bus_adapter;
-pub mod config;
-pub mod error;
-pub mod handle;
+mod audio_clips;
+mod auth;
+mod bandwidth;
+mod bus_adapter;
+mod config;
+mod error;
+mod handle;
 mod listener;
 mod origin;
-pub mod overlay_token;
+mod overlay_token;
 pub mod overlay_url;
 pub mod protocol;
 mod run_state;
 mod sandbox;
-pub mod server;
-pub mod server_info;
-pub mod snapshot;
-pub mod ws_client;
+mod server;
+mod server_info;
+mod snapshot;
+mod ws_client;
 
 #[cfg(test)]
 pub mod test_helpers;

@@ -2,8 +2,8 @@ use std::sync::{Arc, LazyLock};
 
 use forge_storage::{FilterRule, FilterRuleKind, TtsPipelineSettings, UrlMode as StorageUrlMode};
 use forge_tts_pipeline::{
-    BlocklistMode, EmoteSources, EmoteTokenSet, OutputConfig, PipelineConfig, PipelineError,
-    ReplacementRule, SkipRulesConfig,
+    BlocklistMode, EmoteSources, EmoteTokenSet, OutputConfig, PipelineConfig, ReplacementRule,
+    SkipRulesConfig,
 };
 use forge_types::Shared;
 
@@ -22,19 +22,6 @@ pub enum FilterMappingError {
         pattern: String,
         source: regex::Error,
     },
-}
-
-impl From<FilterMappingError> for PipelineError {
-    fn from(e: FilterMappingError) -> Self {
-        match e {
-            FilterMappingError::InvalidRegex {
-                pattern, source, ..
-            }
-            | FilterMappingError::InvalidSkipRegex {
-                pattern, source, ..
-            } => PipelineError::InvalidRegex { pattern, source },
-        }
-    }
 }
 
 #[expect(clippy::expect_used, reason = "literal pattern is a valid regex")]
@@ -229,12 +216,12 @@ struct MappedRules {
 fn map_rules(
     rules: &[FilterRule],
     settings: &TtsPipelineSettings,
-    strict: bool,
-) -> Result<MappedRules, FilterMappingError> {
+) -> (MappedRules, Vec<FilterMappingError>) {
     let mut replacement_rules = Vec::new();
     let mut replacement_sources = Vec::new();
     let mut word_blocklist = Vec::new();
     let mut blocklist_mode = storage_blocklist_mode_to_pipeline(settings.blocklist_mode);
+    let mut invalid = Vec::new();
 
     for (index, rule) in rules.iter().enumerate() {
         if !rule.enabled {
@@ -251,34 +238,41 @@ fn map_rules(
                     replacement_sources.push(ReplacementSource::FilterRule(index));
                 }
                 Ok(None) => {}
-                Err(e) if strict => return Err(e),
-                Err(e) => {
-                    tracing::warn!(
-                        rule_index = index,
-                        rule_name = %e.name_for_log(),
-                        pattern = %e.pattern_for_log(),
-                        "invalid regex in filter rule; skipping"
-                    );
-                }
+                Err(e) => invalid.push(e),
             },
         }
     }
 
-    Ok(MappedRules {
+    let mapped = MappedRules {
         replacement_rules,
         replacement_sources,
         word_blocklist,
         blocklist_mode,
-    })
+    };
+    (mapped, invalid)
 }
 
 fn emote_sources_from_settings(settings: &TtsPipelineSettings) -> EmoteSources {
     EmoteSources {
         twitch: settings.strip_twitch_emotes,
-        bttv: false,
-        ffz: false,
-        seven_tv: false,
         emoji: false,
+    }
+}
+
+fn pipeline_config(
+    settings: &TtsPipelineSettings,
+    mapped: MappedRules,
+    skip_rules: SkipRulesConfig,
+) -> PipelineConfig {
+    PipelineConfig {
+        emote_sources: emote_sources_from_settings(settings),
+        emote_tokens: EmoteTokenSet::default(),
+        skip_rules,
+        replacement_rules: mapped.replacement_rules,
+        word_blocklist: mapped.word_blocklist,
+        blocklist_mode: mapped.blocklist_mode,
+        output: output_from_settings(settings),
+        strip_reward_emotes: settings.strip_reward_emotes,
     }
 }
 
@@ -286,20 +280,14 @@ pub fn build_config_strict(
     rules: &[FilterRule],
     settings: &TtsPipelineSettings,
 ) -> Result<PipelineConfig, FilterMappingError> {
-    let mut mapped = map_rules(rules, settings, true)?;
+    let (mut mapped, invalid) = map_rules(rules, settings);
+    if let Some(error) = invalid.into_iter().next() {
+        return Err(error);
+    }
     let mut skip_rules = skip_rules_from_settings_strict(settings)?;
     migrate_url_mode(settings.url_mode, &mut mapped, &mut skip_rules);
     migrate_max_length(settings.max_length, &mut skip_rules);
-    Ok(PipelineConfig::new(
-        emote_sources_from_settings(settings),
-        EmoteTokenSet::default(),
-        skip_rules,
-        mapped.replacement_rules,
-        mapped.word_blocklist,
-        mapped.blocklist_mode,
-        output_from_settings(settings),
-        settings.strip_reward_emotes,
-    ))
+    Ok(pipeline_config(settings, mapped, skip_rules))
 }
 
 pub fn build_config_lenient(
@@ -313,26 +301,20 @@ pub fn build_config_lenient_with_sources(
     rules: &[FilterRule],
     settings: &TtsPipelineSettings,
 ) -> (PipelineConfig, Vec<ReplacementSource>) {
-    let mut mapped = map_rules(rules, settings, false).unwrap_or_else(|_| MappedRules {
-        replacement_rules: vec![],
-        replacement_sources: vec![],
-        word_blocklist: vec![],
-        blocklist_mode: storage_blocklist_mode_to_pipeline(settings.blocklist_mode),
-    });
+    let (mut mapped, invalid) = map_rules(rules, settings);
+    for error in &invalid {
+        tracing::warn!(
+            rule_index = error.index(),
+            rule_name = %error.name_for_log(),
+            pattern = %error.pattern_for_log(),
+            "invalid regex in filter rule; skipping"
+        );
+    }
     let mut skip_rules = skip_rules_from_settings_lenient(settings);
     migrate_url_mode(settings.url_mode, &mut mapped, &mut skip_rules);
     migrate_max_length(settings.max_length, &mut skip_rules);
-    let config = PipelineConfig::new(
-        emote_sources_from_settings(settings),
-        EmoteTokenSet::default(),
-        skip_rules,
-        mapped.replacement_rules,
-        mapped.word_blocklist,
-        mapped.blocklist_mode,
-        output_from_settings(settings),
-        settings.strip_reward_emotes,
-    );
-    (config, mapped.replacement_sources)
+    let sources = std::mem::take(&mut mapped.replacement_sources);
+    (pipeline_config(settings, mapped, skip_rules), sources)
 }
 
 #[derive(Clone)]
@@ -353,6 +335,13 @@ impl PipelineConfigHandle {
 }
 
 impl FilterMappingError {
+    fn index(&self) -> usize {
+        match self {
+            FilterMappingError::InvalidRegex { index, .. }
+            | FilterMappingError::InvalidSkipRegex { index, .. } => *index,
+        }
+    }
+
     fn name_for_log(&self) -> &str {
         match self {
             FilterMappingError::InvalidRegex { name, .. } => name.as_str(),

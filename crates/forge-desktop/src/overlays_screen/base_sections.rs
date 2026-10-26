@@ -515,17 +515,17 @@ impl OverlayPropertyPanel {
                 "overlays-panel-fire-show",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.fire_show(cx)),
             );
-        let status = fire_status(
+        let (text, warn) = fire_status(
             &self.base.fire,
             self.base.queues_shows(),
             self.base.slot_bound(),
-        )
-        .map(|(text, warn)| status_line(text, warn, palette));
+        );
+        let status = status_line(text, warn, palette);
         div()
             .flex()
             .flex_col()
             .child(button)
-            .children(status)
+            .child(status)
             .into_any_element()
     }
 
@@ -598,9 +598,9 @@ fn delivery_text(delivery: OverlayDelivery) -> (String, bool) {
     }
 }
 
-fn fire_status(fire: &ShowFire, queues: bool, slot_bound: bool) -> Option<(String, bool)> {
+fn fire_status(fire: &ShowFire, queues: bool, slot_bound: bool) -> (String, bool) {
     match fire {
-        ShowFire::Idle => Some((
+        ShowFire::Idle => (
             if slot_bound {
                 tr!("overlays_show_fire_hint_latest")
             } else if queues {
@@ -609,13 +609,13 @@ fn fire_status(fire: &ShowFire, queues: bool, slot_bound: bool) -> Option<(Strin
                 tr!("overlays_show_fire_hint_arrival")
             },
             false,
-        )),
-        ShowFire::Sending => Some((tr!("overlays_show_sending"), false)),
-        ShowFire::Playing(delivery) | ShowFire::Applied(delivery) => Some(delivery_text(*delivery)),
-        ShowFire::Ended(ShowEnd::Shown(_)) => Some((tr!("overlays_show_ended"), false)),
-        ShowFire::Ended(ShowEnd::Cleared) => Some((tr!("overlays_show_cleared"), true)),
-        ShowFire::Ended(ShowEnd::Withdrawn) => Some((tr!("overlays_show_withdrawn"), true)),
-        ShowFire::Failed(message) => Some((message.clone(), true)),
+        ),
+        ShowFire::Sending => (tr!("overlays_show_sending"), false),
+        ShowFire::Playing(delivery) | ShowFire::Applied(delivery) => delivery_text(*delivery),
+        ShowFire::Ended(ShowEnd::Shown(_)) => (tr!("overlays_show_ended"), false),
+        ShowFire::Ended(ShowEnd::Cleared) => (tr!("overlays_show_cleared"), true),
+        ShowFire::Ended(ShowEnd::Withdrawn) => (tr!("overlays_show_withdrawn"), true),
+        ShowFire::Failed(message) => (message.clone(), true),
     }
 }
 

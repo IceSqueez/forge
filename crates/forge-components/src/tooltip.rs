@@ -80,12 +80,6 @@ pub fn tooltip_lines(lines: Vec<SharedString>, palette: &ForgePalette) -> Toolti
 }
 
 impl TooltipLines {
-    #[must_use]
-    pub fn density(mut self, density: Density) -> Self {
-        self.density = density;
-        self
-    }
-
     pub fn build(self, cx: &mut App) -> AnyView {
         cx.new(|_| self).into()
     }

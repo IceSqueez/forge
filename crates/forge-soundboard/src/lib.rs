@@ -1,15 +1,15 @@
 #![doc = "Soundboard: clip storage, playback, in-app hotkey wiring, PlaySound runner."]
 
 pub mod builtin_library;
-pub mod bus_event_sink;
-pub mod cpal_factory;
-pub mod duration;
-pub mod error;
-pub mod hotkey_dispatch;
-pub mod library;
-pub mod player;
-pub mod settings;
-pub mod sink_factory;
+mod bus_event_sink;
+mod cpal_factory;
+mod duration;
+mod error;
+mod hotkey_dispatch;
+mod library;
+mod player;
+mod settings;
+mod sink_factory;
 
 pub use builtin_library::{
     BUILTIN_FILE_EXTENSIONS, BUILTIN_SOUNDS, BuiltinSoundEntry, builtin_availability,

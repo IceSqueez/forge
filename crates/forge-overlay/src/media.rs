@@ -31,10 +31,6 @@ pub fn media_slot(key: &str) -> Option<MediaSlot> {
     }
 }
 
-pub fn key_holds_media(key: &str) -> bool {
-    media_slot(key).is_some()
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaValue<'a> {
     Empty,

@@ -654,7 +654,7 @@ impl TestRunModal {
                         _ => None,
                     })
                     .unwrap_or_else(|| tr!("action_editor_test_run_default_error").into());
-                Some(self.test_run_banner(
+                Some(Self::test_run_banner(
                     Icon::CircleX,
                     palette.random,
                     tr!(
@@ -666,7 +666,7 @@ impl TestRunModal {
                     palette,
                 ))
             }
-            TestRunPhase::Done { errors } if *errors > 0 => Some(self.test_run_banner(
+            TestRunPhase::Done { errors } if *errors > 0 => Some(Self::test_run_banner(
                 Icon::AlertTriangle,
                 palette.warning,
                 tr!(
@@ -677,7 +677,7 @@ impl TestRunModal {
                 None,
                 palette,
             )),
-            TestRunPhase::Done { .. } if !self.rows.is_empty() => Some(self.test_run_banner(
+            TestRunPhase::Done { .. } if !self.rows.is_empty() => Some(Self::test_run_banner(
                 Icon::CircleCheck,
                 palette.success,
                 tr!(
@@ -688,7 +688,7 @@ impl TestRunModal {
                 None,
                 palette,
             )),
-            TestRunPhase::NotStarted => Some(self.test_run_banner(
+            TestRunPhase::NotStarted => Some(Self::test_run_banner(
                 Icon::InfoCircle,
                 palette.text_muted,
                 tr!("action_editor_test_run_notstarted"),
@@ -700,7 +700,6 @@ impl TestRunModal {
     }
 
     fn test_run_banner(
-        &self,
         glyph: Icon,
         tint: Rgba,
         title: String,

@@ -4,14 +4,11 @@ use gpui::{
 };
 use std::time::Duration;
 
-use crate::palette::ForgePalette;
-use crate::tokens::{FONT_XXS, Radius, body_family, mono_family, radius};
+use crate::tokens::{Radius, body_family, mono_family, radius};
 
 const BADGE_PAD_V: Pixels = px(1.0);
 const BADGE_PAD_H: Pixels = px(6.0);
 const BADGE_RADIUS: Pixels = px(8.0);
-const BADGE_GAP: Pixels = px(4.0);
-const CONNECTION_DOT: Pixels = px(5.0);
 const PULSE_PERIOD: Duration = Duration::from_millis(1400);
 const PULSE_DEPTH: f32 = 0.6;
 const PULSE_FPS: f32 = 20.0;
@@ -37,15 +34,6 @@ pub fn pulse_dot(id: impl Into<ElementId>, color: Rgba, size: Pixels) -> impl In
                 .with_max_fps(PULSE_FPS),
             |el, delta| el.opacity(1.0 - (delta * 2.0 - 1.0).abs() * PULSE_DEPTH),
         )
-}
-
-fn badge_frame(background: Rgba, content: impl IntoElement) -> impl IntoElement {
-    div()
-        .py(BADGE_PAD_V)
-        .px(BADGE_PAD_H)
-        .rounded(BADGE_RADIUS)
-        .bg(background)
-        .child(content)
 }
 
 #[derive(IntoElement)]
@@ -133,33 +121,4 @@ impl RenderOnce for Badge {
         }
         root.child(label)
     }
-}
-
-pub fn connection_status_badge(
-    connected: bool,
-    label: impl Into<SharedString>,
-    palette: &ForgePalette,
-) -> impl IntoElement {
-    let ink = if connected {
-        palette.success
-    } else {
-        palette.text_muted
-    };
-    let dot_color = if connected {
-        palette.success
-    } else {
-        palette.text_faint
-    };
-    let row = div()
-        .flex()
-        .items_center()
-        .gap(BADGE_GAP)
-        .child(status_dot(dot_color, CONNECTION_DOT))
-        .child(
-            div()
-                .text_size(FONT_XXS)
-                .text_color(ink)
-                .child(label.into()),
-        );
-    badge_frame(palette.surface_overlay, row)
 }

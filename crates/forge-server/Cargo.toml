@@ -14,11 +14,9 @@ workspace = true
 forge-types = { path = "../forge-types" }
 forge-events = { path = "../forge-events" }
 forge-runtime = { path = "../forge-runtime" }
-forge-registry = { path = "../forge-registry" }
 forge-storage = { path = "../forge-storage" }
 forge-overlay = { path = "../forge-overlay" }
 axum = { workspace = true }
-tokio-tungstenite = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true, features = ["io"] }
 serde = { workspace = true }
@@ -32,6 +30,8 @@ time = { workspace = true }
 arc-swap = { workspace = true }
 
 [dev-dependencies]
+forge-registry = { path = "../forge-registry" }
+tokio-tungstenite = { workspace = true }
 async-trait = { workspace = true }
 forge-storage = { path = "../forge-storage", features = ["test-mocks"] }
 futures-util = { workspace = true }

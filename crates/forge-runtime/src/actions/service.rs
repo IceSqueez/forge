@@ -5,9 +5,9 @@ use forge_overlay::OverlayKindDescriptor;
 use forge_registry::{SubActionRegistry, TriggerKindDescriptor};
 use forge_storage::{
     ActionRepo, ActionTelemetry, HistoryRepo, OverlayDefinition, OverlayId, QueueRepo,
-    SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
+    StorageError, TriggerInstanceRepo,
 };
-use forge_types::{ActionId, ClipId, ExecutionContext, TriggerInstance, TriggerInstanceId};
+use forge_types::{ActionId, ExecutionContext, TriggerInstance, TriggerInstanceId};
 use time::OffsetDateTime;
 
 use super::overlay_wiring::{
@@ -22,7 +22,6 @@ pub struct ActionsService {
     queues: Arc<dyn QueueRepo>,
     history: Arc<dyn HistoryRepo>,
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
-    clips: Arc<dyn SoundboardClipsRepo>,
 }
 
 impl ActionsService {
@@ -31,14 +30,12 @@ impl ActionsService {
         queues: Arc<dyn QueueRepo>,
         history: Arc<dyn HistoryRepo>,
         trigger_instances: Arc<dyn TriggerInstanceRepo>,
-        clips: Arc<dyn SoundboardClipsRepo>,
     ) -> Self {
         Self {
             actions,
             queues,
             history,
             trigger_instances,
-            clips,
         }
     }
 
@@ -262,14 +259,6 @@ impl ActionsService {
         let queue = placement.into_queue();
         self.queues.save(&queue).await?;
         Ok(WiredQueue::Created(queue))
-    }
-
-    pub async fn list_clip_options(&self) -> Vec<(ClipId, String)> {
-        self.clips
-            .list()
-            .await
-            .map(|clips| clips.into_iter().map(|c| (c.id, c.name)).collect())
-            .unwrap_or_default()
     }
 }
 

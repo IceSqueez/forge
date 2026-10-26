@@ -7,7 +7,7 @@
 use std::sync::mpsc;
 
 #[cfg(target_os = "macos")]
-use forge_tts_core::{PcmBuffer, SynthesisRequest, VoiceId};
+use forge_tts_core::{PcmBuffer, SynthesisRequest};
 
 #[cfg(target_os = "macos")]
 use crate::error::NsSpeechError;
@@ -15,7 +15,6 @@ use crate::error::NsSpeechError;
 #[cfg(target_os = "macos")]
 pub(crate) enum NsSpeechRequest {
     Synthesize {
-        voice_id: VoiceId,
         req: SynthesisRequest,
         tx: tokio::sync::oneshot::Sender<Result<PcmBuffer, NsSpeechError>>,
     },
@@ -39,8 +38,8 @@ fn worker_loop(
 ) {
     while let Ok(req) = rx.recv() {
         match req {
-            NsSpeechRequest::Synthesize { voice_id, req, tx } => {
-                let result = run_synthesis(&synth, voice_id, req);
+            NsSpeechRequest::Synthesize { req, tx } => {
+                let result = run_synthesis(&synth, req);
                 #[expect(
                     clippy::let_underscore_must_use,
                     reason = "the requester may stop waiting for the reply"
@@ -54,7 +53,6 @@ fn worker_loop(
 #[cfg(target_os = "macos")]
 fn run_synthesis(
     synth: &objc2_avf_audio::AVSpeechSynthesizer,
-    voice_id: VoiceId,
     req: SynthesisRequest,
 ) -> Result<PcmBuffer, NsSpeechError> {
     use std::sync::{Arc, Condvar, Mutex};
@@ -126,7 +124,7 @@ fn run_synthesis(
         let ns_text = NSString::from_str(&req.text);
         let utterance = unsafe { AVSpeechUtterance::speechUtteranceWithString(&ns_text) };
 
-        let ns_voice_id = NSString::from_str(&voice_id.0);
+        let ns_voice_id = NSString::from_str(&req.voice_id.0);
         let voice_opt = unsafe { AVSpeechSynthesisVoice::voiceWithIdentifier(&ns_voice_id) };
         if let Some(voice) = voice_opt {
             // SAFETY: voice is a valid Retained value alive within this autoreleasepool.

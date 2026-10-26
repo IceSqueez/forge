@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventStream};
 use forge_platform_core::{
-    ChatPlatform, ConnectionState, ConnectionTransition, PlatformCapabilities, PlatformError,
+    ChatPlatform, ConnectionState, ConnectionTransition, PlatformError,
     connection_state_changed_event,
 };
 use forge_storage::BanLedgerRepo;
@@ -26,7 +26,6 @@ type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformErr
 
 pub struct YoutubePlatform {
     api: YoutubeDataApi,
-    capabilities: PlatformCapabilities,
     channel_id: String,
     events: Arc<PlatformEventChannel>,
     credentials_manager: Arc<YoutubeCredentialsManager>,
@@ -56,7 +55,6 @@ impl YoutubePlatform {
         let (state_tx, _) = watch::channel(ConnectionState::Disconnected);
         Self {
             api,
-            capabilities: youtube_capabilities(),
             channel_id,
             events: Arc::new(PlatformEventChannel::new()),
             credentials_manager,
@@ -189,11 +187,6 @@ impl ChatPlatform for YoutubePlatform {
     }
 
     async fn send_message(&self, _channel: &str, text: &str) -> Result<(), PlatformError> {
-        if !self.capabilities.can_send_chat {
-            return Err(PlatformError::Unsupported {
-                feature: "chat.send".to_owned(),
-            });
-        }
         self.credentials_manager
             .load()
             .await?
@@ -205,19 +198,6 @@ impl ChatPlatform for YoutubePlatform {
 
     fn events(&self) -> EventStream {
         self.events.subscribe()
-    }
-}
-
-fn youtube_capabilities() -> PlatformCapabilities {
-    PlatformCapabilities {
-        can_send_chat: true,
-        can_moderate: true,
-        can_subscribe_events: false,
-        can_polls: false,
-        can_predictions: false,
-        can_channel_points: false,
-        limited: false,
-        limited_reason: None,
     }
 }
 

@@ -42,27 +42,27 @@ impl EventWiringView {
                 empty_state(tr!("overlays_wire_checking"), palette)
                     .loading("overlays-wire-checking")
                     .into_any_element(),
-                self.render_footer(Some(FooterAction::Create { enabled: false }), palette, cx),
+                self.render_footer(FooterAction::Create { enabled: false }, palette, cx),
             ),
             ConfirmState::Refused(message) => (
                 empty_state(message.clone(), palette)
                     .glyph(Icon::AlertTriangle)
                     .into_any_element(),
-                self.render_footer(Some(FooterAction::Create { enabled: false }), palette, cx),
+                self.render_footer(FooterAction::Create { enabled: false }, palette, cx),
             ),
             ConfirmState::AlreadyWired {
                 action_id,
                 action_name,
             } => (
                 render_already_wired(action_name, palette),
-                self.render_footer(Some(FooterAction::Open(*action_id)), palette, cx),
+                self.render_footer(FooterAction::Open(*action_id), palette, cx),
             ),
             ConfirmState::Ready(draft) => (
                 render_draft(draft, palette),
                 self.render_footer(
-                    Some(FooterAction::Create {
+                    FooterAction::Create {
                         enabled: !stage.writing,
-                    }),
+                    },
                     palette,
                     cx,
                 ),
@@ -106,7 +106,7 @@ impl EventWiringView {
 
     fn render_footer(
         &self,
-        action: Option<FooterAction>,
+        action: FooterAction,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -120,22 +120,21 @@ impl EventWiringView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.close(cx)),
         );
 
-        let primary: Option<Button> = match action {
-            Some(FooterAction::Create { enabled }) => Some(
+        let primary: Button = match action {
+            FooterAction::Create { enabled } => {
                 primary_button(tr!("overlays_wire_create"), palette)
                     .disabled(!enabled)
                     .on_click(
                         "overlays-wire-create",
                         cx.listener(|this, _: &ClickEvent, _, cx| this.confirm(cx)),
-                    ),
-            ),
-            Some(FooterAction::Open(action_id)) => Some(
+                    )
+            }
+            FooterAction::Open(action_id) => {
                 primary_button(tr!("overlays_wire_open_action"), palette).on_click(
                     "overlays-wire-open",
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.open_action(action_id, cx)),
-                ),
-            ),
-            None => None,
+                )
+            }
         };
 
         div()
@@ -146,7 +145,7 @@ impl EventWiringView {
             .child(back)
             .child(div().flex_1())
             .child(cancel)
-            .children(primary)
+            .child(primary)
             .into_any_element()
     }
 }

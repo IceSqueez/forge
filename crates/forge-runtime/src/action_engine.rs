@@ -261,7 +261,7 @@ impl ActionEngine {
         });
     }
 
-    async fn refuse_too_deep(
+    fn refuse_too_deep(
         &self,
         action: &Action,
         trigger_event_id: EventId,
@@ -336,8 +336,7 @@ impl ActionEngine {
                 metadata,
                 arg_stack,
                 started_at,
-            )
-            .await;
+            );
             return;
         }
 

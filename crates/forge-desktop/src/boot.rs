@@ -530,7 +530,6 @@ pub async fn build_runtime(
             backend.queue_repo(),
             backend.history_repo(),
             backend.trigger_instance_repo(),
-            backend.soundboard_clips_repo(),
         )),
         Arc::clone(&sub_action_registry),
         Arc::clone(&trigger_registry),

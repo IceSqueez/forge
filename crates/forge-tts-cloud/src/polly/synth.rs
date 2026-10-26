@@ -25,7 +25,7 @@ fn format_signed_percent(val: i32) -> String {
     }
 }
 
-pub(super) fn build_polly_body(req: &SynthesisRequest) -> (String, bool) {
+pub(super) fn build_polly_body(req: &SynthesisRequest) -> String {
     if req.ssml {
         let body = json!({
             "Text": req.text,
@@ -35,7 +35,7 @@ pub(super) fn build_polly_body(req: &SynthesisRequest) -> (String, bool) {
             "SampleRate": SAMPLE_RATE_HZ.to_string(),
             "Engine": "neural"
         });
-        return (body.to_string(), true);
+        return body.to_string();
     }
 
     let rate_pct = ((req.rate_multiplier - 1.0) * 100.0).clamp(-80.0, 200.0);
@@ -67,7 +67,7 @@ pub(super) fn build_polly_body(req: &SynthesisRequest) -> (String, bool) {
             "SampleRate": SAMPLE_RATE_HZ.to_string(),
             "Engine": "neural"
         });
-        (body.to_string(), true)
+        body.to_string()
     } else {
         let body = json!({
             "Text": req.text,
@@ -77,7 +77,7 @@ pub(super) fn build_polly_body(req: &SynthesisRequest) -> (String, bool) {
             "SampleRate": SAMPLE_RATE_HZ.to_string(),
             "Engine": "neural"
         });
-        (body.to_string(), false)
+        body.to_string()
     }
 }
 
@@ -106,7 +106,7 @@ pub(super) async fn synthesize(
     signer: &PollySigner,
     req: SynthesisRequest,
 ) -> Result<PcmBuffer, PollyError> {
-    let (body, _is_ssml) = build_polly_body(&req);
+    let body = build_polly_body(&req);
     let request = signer.request(
         link,
         SignedCall {

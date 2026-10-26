@@ -1,6 +1,6 @@
 mod actor;
 mod catalog;
-pub mod filters;
+mod filters;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

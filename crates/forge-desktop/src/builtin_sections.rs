@@ -755,7 +755,7 @@ fn content_list_item_row(
         .child(trailing);
 
     if item.active {
-        return active_row_wrapper(content.into_any_element(), rows.pad_y, palette, density);
+        return active_row_wrapper(content.into_any_element(), rows.pad_y, palette);
     }
     match (&item.on_click, &rows.run_step) {
         (Some(step), Some(run)) => {
@@ -773,7 +773,7 @@ fn content_list_item_row(
                 .child(content)
                 .into_any_element()
         }
-        _ => plain_row_wrapper(content.into_any_element(), rows.pad_y, palette, density),
+        _ => plain_row_wrapper(content.into_any_element(), rows.pad_y, palette),
     }
 }
 
@@ -806,7 +806,7 @@ fn key_value_row_elem(item: &KeyValueRow, palette: &ForgePalette, density: Densi
         };
         row = row.child(icon(ic, FONT_SM, palette.success));
     }
-    plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
+    plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette)
 }
 
 fn active_item_row_elem(item: &ActiveRow, palette: &ForgePalette, density: Density) -> AnyElement {
@@ -840,9 +840,9 @@ fn active_item_row_elem(item: &ActiveRow, palette: &ForgePalette, density: Densi
     }
 
     if item.active {
-        active_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
+        active_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette)
     } else {
-        plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
+        plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette)
     }
 }
 
@@ -887,7 +887,7 @@ fn subscription_row_elem(
         div().into_any_element()
     };
     row = row.child(trailing);
-    plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
+    plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette)
 }
 
 fn scope_row_elem(scope: &str, palette: &ForgePalette, density: Density) -> AnyElement {
@@ -906,7 +906,7 @@ fn scope_row_elem(scope: &str, palette: &ForgePalette, density: Density) -> AnyE
                 .text_color(palette.text_primary)
                 .child(scope.to_owned()),
         );
-    plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
+    plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette)
 }
 
 fn info_field_cell(field: &InfoField, palette: &ForgePalette, density: Density) -> AnyElement {
@@ -1114,12 +1114,7 @@ fn list_footer_bar(footer: &ListFooter, palette: &ForgePalette, density: Density
     row.into_any_element()
 }
 
-fn active_row_wrapper(
-    content: AnyElement,
-    pad_y: f32,
-    palette: &ForgePalette,
-    _density: Density,
-) -> AnyElement {
+fn active_row_wrapper(content: AnyElement, pad_y: f32, palette: &ForgePalette) -> AnyElement {
     let padded = div()
         .flex_1()
         .min_w(px(0.0))
@@ -1143,12 +1138,7 @@ fn row_surface(pad_y: f32, palette: &ForgePalette) -> Div {
         .bg(palette.elevated)
 }
 
-fn plain_row_wrapper(
-    content: AnyElement,
-    pad_y: f32,
-    palette: &ForgePalette,
-    _density: Density,
-) -> AnyElement {
+fn plain_row_wrapper(content: AnyElement, pad_y: f32, palette: &ForgePalette) -> AnyElement {
     row_surface(pad_y, palette)
         .child(content)
         .into_any_element()

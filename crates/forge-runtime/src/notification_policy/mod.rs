@@ -18,10 +18,6 @@ use crate::action_engine::ACTION_DONE_KIND;
 use crate::bus::{Delivery, EventBus, EventSubscription};
 use crate::delivery::NOTIFICATION_POLICY;
 
-pub use action_failures::{
-    ACTION_FAILURE_REARM, ACTION_NOTICE_WINDOW, MAX_ACTION_NOTICES_PER_WINDOW,
-};
-pub use connection_loss::{CONNECTION_LOSS_GRACE, CONNECTION_STABLE_REARM, MIN_CUE_SPACING};
 pub use intent::{ActionFailureNotice, NotificationIntent, NotificationIntents};
 pub use preferences::NotificationPreferences;
 

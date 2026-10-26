@@ -1,6 +1,6 @@
 pub mod credentials;
-pub mod network;
-pub mod policy;
+mod network;
+mod policy;
 
 #[cfg(any(
     feature = "azure",

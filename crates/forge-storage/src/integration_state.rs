@@ -91,10 +91,6 @@ pub async fn has_credentials_for(
         .any(|stored| stored.as_str().starts_with(&credential_namespace)))
 }
 
-pub async fn has_setting(settings: &dyn SettingsRepo, key: &str) -> Result<bool, StorageError> {
-    Ok(settings.get_string(key).await?.is_some())
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;

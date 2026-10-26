@@ -4,7 +4,6 @@ use forge_storage::{
     StorageError,
 };
 use forge_types::{Action, ActionId, ExecutionMode, QueueId, SubActionStep};
-use serde_json;
 use time::OffsetDateTime;
 
 use crate::batch::insert_rows;

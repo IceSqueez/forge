@@ -52,7 +52,6 @@ impl TtsEngine for NsSpeechEngine {
         let (oneshot_tx, oneshot_rx) = tokio::sync::oneshot::channel();
         self.worker_tx
             .send(NsSpeechRequest::Synthesize {
-                voice_id: request.voice_id.clone(),
                 req: request,
                 tx: oneshot_tx,
             })

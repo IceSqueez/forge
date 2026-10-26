@@ -1,9 +1,9 @@
-pub mod bus;
-pub mod donation;
-pub mod lane;
-pub mod latest;
-pub mod publisher;
-pub mod source;
+mod bus;
+mod donation;
+mod lane;
+mod latest;
+mod publisher;
+mod source;
 
 pub use bus::{EventStream, EventsError};
 pub use donation::{DONATION_RECEIVED_KIND, DonationReceived};

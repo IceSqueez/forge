@@ -1,22 +1,22 @@
 #![doc = "ChatPlatform trait, AuthFlow taxonomy, Integration page traits."]
 
 pub mod auth;
-pub mod ban_list;
-pub mod builtin;
-pub mod capabilities;
+mod ban_list;
+mod builtin;
+mod capabilities;
 pub mod chat;
-pub mod collections;
-pub mod connection_announcer;
-pub mod credential_errors;
-pub mod donation;
+mod collections;
+mod connection_announcer;
+mod credential_errors;
+mod donation;
 pub mod donation_test;
-pub mod endpoints;
-pub mod error;
-pub mod follow_lookup;
-pub mod integration;
-pub mod live_viewers;
-pub mod option_source;
-pub mod sender;
+mod endpoints;
+mod error;
+mod follow_lookup;
+mod integration;
+mod live_viewers;
+mod option_source;
+mod sender;
 pub use auth::AuthFlow;
 pub use ban_list::{
     BanDuration, BanEntry, BanListOutcome, BanListSource, BanListUnavailable, BanPage,

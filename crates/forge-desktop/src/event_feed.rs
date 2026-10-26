@@ -897,14 +897,20 @@ impl EventFeedView {
             .overflow_hidden()
             .gap(spacing(Spacing::Sm, Density::Cozy))
             .child(summary_card)
-            .child(self.section_label(tr!("widget_event_payload_header"), palette))
+            .child(Self::section_label(
+                tr!("widget_event_payload_header"),
+                palette,
+            ))
             .child(payload)
-            .child(self.section_label(tr!("widget_event_caused_header"), palette))
+            .child(Self::section_label(
+                tr!("widget_event_caused_header"),
+                palette,
+            ))
             .child(caused)
             .child(replay)
     }
 
-    fn section_label(&self, text: String, palette: &ForgePalette) -> impl IntoElement + use<> {
+    fn section_label(text: String, palette: &ForgePalette) -> impl IntoElement + use<> {
         div()
             .font_family(mono_family())
             .text_size(FONT_XXS)
@@ -1130,13 +1136,6 @@ fn json_span(text: String, color: Rgba) -> gpui::AnyElement {
     div().text_color(color).child(text).into_any_element()
 }
 
-fn json_scalar_text(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::String(_) => value.to_string(),
-        other => other.to_string(),
-    }
-}
-
 fn json_scalar_color(value: &serde_json::Value, palette: &ForgePalette) -> Rgba {
     match value {
         serde_json::Value::String(_) => palette.success,
@@ -1204,7 +1203,7 @@ fn push_json_lines(
                 spans.push(json_span(": ".to_owned(), brace));
             }
             spans.push(json_span(
-                json_scalar_text(scalar),
+                scalar.to_string(),
                 json_scalar_color(scalar, palette),
             ));
             if trailing_comma {

@@ -1,26 +1,26 @@
 #![doc = "Audio output abstraction: AudioSink trait, cpal device discovery, multi-sink fan-out, format conversion."]
 
 pub mod alert_cue;
-pub mod audio_route;
+mod audio_route;
 pub mod convert;
-pub mod cpal_sink;
-pub mod decode;
-pub mod default_output;
-pub mod device;
-pub mod device_sink;
-pub mod error;
-pub mod events;
-pub mod fan_out;
-pub mod handle;
-pub mod pcm;
-pub mod remote;
-pub mod remote_sink;
-pub mod route;
-pub mod sink;
-pub mod sink_factory;
-pub mod targeted;
-pub mod voice_gate;
-pub mod wave;
+mod cpal_sink;
+mod decode;
+mod default_output;
+mod device;
+mod device_sink;
+mod error;
+mod events;
+mod fan_out;
+mod handle;
+mod pcm;
+mod remote;
+mod remote_sink;
+mod route;
+mod sink;
+mod sink_factory;
+mod targeted;
+mod voice_gate;
+mod wave;
 
 pub use alert_cue::alert_cue;
 pub use audio_route::AudioRoute;

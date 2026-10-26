@@ -16,15 +16,6 @@ pub enum ScriptError {
 
     #[error("condition '{expr}' did not evaluate to a boolean (got {got})")]
     ConditionNotBoolean { expr: String, got: String },
-
-    #[error("call to '{fn_name}' denied: {reason}")]
-    HostCallDenied { fn_name: String, reason: String },
-
-    #[error("script not found: '{name}'")]
-    NotFound { name: String },
-
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
 }
 
 impl ScriptError {

@@ -475,7 +475,6 @@ impl AppShell {
                         handles.backend.queue_repo(),
                         handles.backend.history_repo(),
                         handles.backend.trigger_instance_repo(),
-                        handles.backend.soundboard_clips_repo(),
                     )),
                     triggers: handles.trigger_registry.clone(),
                     sub_actions: handles.sub_action_registry.clone(),
@@ -510,7 +509,6 @@ impl AppShell {
                     handles.backend.queue_repo(),
                     handles.backend.history_repo(),
                     handles.backend.trigger_instance_repo(),
-                    handles.backend.soundboard_clips_repo(),
                 ));
                 let trigger_instance_repo = HotkeySyncedTriggerRepo::wrap(
                     handles.backend.trigger_instance_repo(),

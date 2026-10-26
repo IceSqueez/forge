@@ -19,7 +19,7 @@ use gpui::{
 use std::sync::Arc;
 use std::time::Duration;
 
-fn tree_notice(label: SharedString, color: Rgba, _palette: &ForgePalette) -> impl IntoElement {
+fn tree_notice(label: SharedString, color: Rgba) -> impl IntoElement {
     div()
         .w_full()
         .px(TREE_GUTTER)
@@ -572,11 +572,7 @@ impl ScreenActionsView {
             } else {
                 tr!("actions_empty")
             };
-            col = col.child(tree_notice(
-                SharedString::from(caption),
-                palette.text_faint,
-                palette,
-            ));
+            col = col.child(tree_notice(SharedString::from(caption), palette.text_faint));
         } else {
             for (index, group) in self.groups.iter().enumerate() {
                 let surviving: Vec<&ActionSummary> = group
@@ -942,7 +938,7 @@ impl ScreenActionsView {
             .text_color(palette.text_faint)
             .child(SharedString::from(tr!("actions_modal_section_behavior")));
 
-        let enabled = self.modal_toggle_row(
+        let enabled = Self::modal_toggle_row(
             tr!("actions_modal_enabled_label"),
             tr!("actions_modal_enabled_desc"),
             form.enabled,
@@ -951,7 +947,7 @@ impl ScreenActionsView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_modal_enabled(cx)),
             palette,
         );
-        let concurrent = self.modal_toggle_row(
+        let concurrent = Self::modal_toggle_row(
             tr!("actions_modal_concurrent_label"),
             tr!("actions_modal_concurrent_desc"),
             form.concurrent,
@@ -960,7 +956,7 @@ impl ScreenActionsView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_modal_concurrent(cx)),
             palette,
         );
-        let bypass = self.modal_toggle_row(
+        let bypass = Self::modal_toggle_row(
             tr!("actions_modal_bypass_label"),
             tr!("actions_modal_bypass_desc"),
             form.bypass_pause,
@@ -969,7 +965,7 @@ impl ScreenActionsView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_modal_bypass(cx)),
             palette,
         );
-        let random = self.modal_toggle_row(
+        let random = Self::modal_toggle_row(
             tr!("actions_modal_random_pick_label"),
             tr!("actions_modal_random_pick_desc"),
             form.random_pick,
@@ -1039,12 +1035,7 @@ impl ScreenActionsView {
             .into_any_element()
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "render helper takes each displayed value and handler separately"
-    )]
     fn modal_toggle_row(
-        &self,
         label: impl Into<SharedString>,
         description: impl Into<SharedString>,
         on: bool,

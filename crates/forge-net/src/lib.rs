@@ -1,19 +1,19 @@
 #![doc = "Outbound network building blocks: the HTTP gateway, rate limiting, throttle hints, capped body reads, backoff, dedup and the public-address guard."]
 
-pub mod address_guard;
-pub mod backoff;
-pub mod body_read;
-pub mod cooldown;
-pub mod dedup;
-pub mod gateway;
-pub mod header_lookup;
-pub mod header_value;
-pub mod rate_limit;
+mod address_guard;
+mod backoff;
+mod body_read;
+mod cooldown;
+mod dedup;
+mod gateway;
+mod header_lookup;
+mod header_value;
+mod rate_limit;
 pub mod status;
-pub mod status_reason;
+mod status_reason;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
-pub mod throttle_hint;
+mod throttle_hint;
 pub use address_guard::{
     HostRejection, PublicAddressResolver, ensure_public_ip_literal, host_rejection_cause,
     is_loopback_host, is_private_or_special,

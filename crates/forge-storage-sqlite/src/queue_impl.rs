@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use forge_storage::{QueueRepo, StorageError};
 use forge_types::{DEFAULT_QUEUE_ID, Queue, QueueId};
-use serde_json;
 
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;

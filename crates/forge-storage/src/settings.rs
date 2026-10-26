@@ -285,47 +285,6 @@ impl FromStr for Language {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum Density {
-    Compact,
-    #[default]
-    Cozy,
-    Spacious,
-}
-
-impl fmt::Display for Density {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Density::Compact => f.write_str("compact"),
-            Density::Cozy => f.write_str("cozy"),
-            Density::Spacious => f.write_str("spacious"),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct UnknownDensity(pub String);
-
-impl fmt::Display for UnknownDensity {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "unknown density: {}", self.0)
-    }
-}
-
-impl FromStr for Density {
-    type Err = UnknownDensity;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "compact" => Ok(Density::Compact),
-            "cozy" => Ok(Density::Cozy),
-            "spacious" => Ok(Density::Spacious),
-            other => Err(UnknownDensity(other.to_owned())),
-        }
-    }
-}
-
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait SettingsRepo: Send + Sync {

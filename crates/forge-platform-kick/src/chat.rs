@@ -7,7 +7,7 @@ use forge_net::Backoff;
 use forge_platform_core::chat::ConnectionState;
 use forge_platform_core::{ConnectionTransition, EndpointSurface, PlatformEndpoints};
 use forge_types::ChatPayload;
-use futures_util::StreamExt;
+use futures::StreamExt;
 use serde::Deserialize;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
@@ -202,7 +202,7 @@ async fn connect_ws(url: &str) -> Result<PusherSocket, KickError> {
 }
 
 async fn send_subscribe(ws: &mut PusherSocket, chatroom_id: u64) -> Result<(), KickError> {
-    use futures_util::SinkExt;
+    use futures::SinkExt;
     let frame = serde_json::json!({
         "event": "pusher:subscribe",
         "data": { "channel": format!("chatrooms.{chatroom_id}.v2") }
@@ -218,7 +218,7 @@ async fn send_subscribe(ws: &mut PusherSocket, chatroom_id: u64) -> Result<(), K
 }
 
 async fn send_ping(ws: &mut PusherSocket) -> Result<(), KickError> {
-    use futures_util::SinkExt;
+    use futures::SinkExt;
     let frame = serde_json::json!({"event": "pusher:ping", "data": {}});
     let text = serde_json::to_string(&frame).map_err(|e| KickError::WebSocket {
         reason: format!("serialize ping: {e}"),

@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use forge_storage::{ActionStats, HistoryRepo, StorageError};
 use forge_types::{ActionId, ExecutionContext, ExecutionMetadata};
-use serde_json;
 use time::OffsetDateTime;
 
 use crate::batch::insert_rows;

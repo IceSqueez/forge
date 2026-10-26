@@ -523,7 +523,7 @@ fn form_to_alias(form: &AliasForm, cx: &App) -> VoiceAlias {
             .clone()
             .unwrap_or_else(|| alias_key(form.platform, &viewer)),
         viewer_name: viewer,
-        engine_id: EngineId(engine.trim().to_owned()),
+        engine_id: EngineId(engine),
         voice_id: VoiceId(voice),
         pitch_semitones: pitch,
         rate_multiplier: rate,

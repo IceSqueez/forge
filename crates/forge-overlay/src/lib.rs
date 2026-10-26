@@ -1,29 +1,29 @@
-pub mod assets;
-pub mod audio_transport;
-pub mod base;
-pub mod browser_preview;
+mod assets;
+mod audio_transport;
+mod base;
+mod browser_preview;
 pub mod config;
-pub mod content;
+mod content;
 pub mod descriptor;
-pub mod document;
-pub mod error;
-pub mod icons;
-pub mod instance;
+mod document;
+mod error;
+mod icons;
+mod instance;
 pub mod kinds;
-pub mod latest;
-pub mod materialize;
-pub mod media;
+mod latest;
+mod materialize;
+mod media;
 pub mod metrics;
 pub mod motion;
-pub mod motion_scan;
+mod motion_scan;
 pub mod page_contract;
 pub mod preview;
-pub mod registry;
-pub mod sample;
-pub mod source;
-pub mod source_box;
-pub mod upgrade;
-pub mod wiring;
+mod registry;
+mod sample;
+mod source;
+mod source_box;
+mod upgrade;
+mod wiring;
 
 pub use assets::{
     BEHAVIOR_FILE, CONFIG_FILE, MARKUP_FILE, MOTION_ASSET, MOTION_SOURCE, OVERRIDABLE_FILES,
@@ -64,8 +64,8 @@ pub use media::{
     CLIP_REFERENCE_PREFIX, ClipReference, EmittedIcon, GENERATED_MEDIA_DIRECTORY,
     IMAGE_REFERENCE_PREFIX, IconValue, ImageReference, MEDIA_KEYS, MediaIssue, MediaSlot,
     MediaValue, OverlayMedia, ResolvedMedia, clip_reference, clip_references, emitted_icon,
-    emitted_media_value, glyph_media, image_reference, image_references, key_holds_media,
-    media_slot, read_icon_value, read_media_value,
+    emitted_media_value, glyph_media, image_reference, image_references, media_slot,
+    read_icon_value, read_media_value,
 };
 pub use metrics::{AxisBound, ElementSizing, StyleGuard, element_sizing, style_guards};
 pub use motion::{MotionAxes, MotionProfile};

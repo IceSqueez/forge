@@ -36,15 +36,6 @@ pub trait SchemaProbe {
     fn current_schema_version(&self, data_dir: &Path) -> Option<u32>;
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct UnknownSchemaVersion;
-
-impl SchemaProbe for UnknownSchemaVersion {
-    fn current_schema_version(&self, _data_dir: &Path) -> Option<u32> {
-        None
-    }
-}
-
 pub(crate) fn restore_database(
     data_dir: &Path,
     unit: &DatabaseUnit,

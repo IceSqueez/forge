@@ -3,8 +3,7 @@ use forge_storage::settings::reserved_keys;
 use forge_storage::{
     AliasId, AssignmentStrategy, IgnoreProfile, StorageError, VoiceAlias, VoiceAliasRepo,
 };
-use forge_tts_core::{EngineId, VoiceId};
-use forge_voice::AliasState;
+use forge_voice::{AliasState, EngineId, VoiceId};
 
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;

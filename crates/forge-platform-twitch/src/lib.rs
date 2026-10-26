@@ -1,36 +1,34 @@
-#![doc = "Twitch platform integration: auth (alpha-2), chat ingestion (alpha-3+)."]
-
-pub mod auth;
+mod auth;
 mod ban_list;
 mod bot_account;
-pub mod builtin;
+mod builtin;
 mod cadence;
 pub mod chat;
-pub mod chat_platform;
+mod chat_platform;
 mod chat_sender;
 mod control;
 mod creator_goals;
 pub mod credentials;
-pub mod credentials_manager;
+mod credentials_manager;
 mod custom_rewards;
 #[cfg(test)]
 mod endpoints_test_support;
 mod event_channel;
 pub mod event_kinds;
 mod follow_lookup;
-pub mod helix;
+mod helix;
 mod helix_gateway;
-pub mod integration;
+mod integration;
 mod lifecycle;
 #[cfg(test)]
 mod log_capture;
 mod oauth_client;
 mod payload_fields;
 mod reward_collection;
-pub mod sub_actions;
-pub mod subscriptions;
+mod sub_actions;
+mod subscriptions;
 mod timestamp;
-pub mod triggers;
+mod triggers;
 
 pub use auth::{
     DeviceCodeInfo, TWITCH_BOT_SCOPES, TWITCH_BROADCASTER_SCOPES, TwitchAuthBundle, TwitchAuthFlow,
@@ -48,7 +46,7 @@ pub use chat::{
 };
 pub use chat_platform::TwitchPlatform;
 pub use chat_sender::SENDER_FALLBACK_KIND;
-pub use credentials::{CredentialsTokenSource, TWITCH_BOT_CREDENTIAL_ID, TWITCH_CREDENTIAL_ID};
+pub use credentials::{TWITCH_BOT_CREDENTIAL_ID, TWITCH_CREDENTIAL_ID};
 pub use credentials_manager::TwitchCredentialsManager;
 pub use helix::{
     HelixError, HelixHttpTransport, HelixMethod, HelixRequest, HelixTokenRefresher,

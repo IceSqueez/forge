@@ -21,8 +21,6 @@ const USER_AGENT: &str = concat!(
 #[derive(Debug, Clone)]
 pub struct KickChannelInfo {
     pub chatroom_id: u64,
-    pub viewer_count: u64,
-    pub is_live: bool,
 }
 
 struct CachedChannelInfo {
@@ -91,16 +89,9 @@ impl ChannelInfoFetcher {
             }
         })?;
 
-        let viewer_count = body.livestream.as_ref().map_or(0, |l| l.viewer_count);
-        let is_live = body.livestream.is_some();
+        debug!(chatroom_id, "channel info fetched");
 
-        debug!(chatroom_id, viewer_count, is_live, "channel info fetched");
-
-        Ok(KickChannelInfo {
-            chatroom_id,
-            viewer_count,
-            is_live,
-        })
+        Ok(KickChannelInfo { chatroom_id })
     }
 }
 
@@ -127,17 +118,11 @@ fn bounded_body(body: &str) -> String {
 #[derive(Deserialize)]
 struct ChannelResponse {
     chatroom: Option<ChatroomField>,
-    livestream: Option<LivestreamField>,
 }
 
 #[derive(Deserialize)]
 struct ChatroomField {
     id: Option<u64>,
-}
-
-#[derive(Deserialize)]
-struct LivestreamField {
-    viewer_count: u64,
 }
 
 #[cfg(test)]

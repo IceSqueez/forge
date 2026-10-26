@@ -19,10 +19,6 @@ pub struct AwakeState {
 }
 
 impl AwakeState {
-    pub fn new() -> Self {
-        Self { status: None }
-    }
-
     pub fn apply(&mut self, status: AwakeStatus) -> bool {
         if self.status.as_ref() == Some(&status) {
             return false;

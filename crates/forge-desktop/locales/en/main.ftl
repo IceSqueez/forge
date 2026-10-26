@@ -1417,6 +1417,8 @@ tts_filters_output_strip_twitch_emotes = Strip Twitch emotes
 tts_filters_output_strip_twitch_emotes_meta = remove Twitch emote names before speaking
 tts_filters_output_strip_reward_emotes = Strip reward emotes
 tts_filters_output_strip_reward_emotes_meta = remove emote names from channel point redemptions
+tts_filters_output_strip_emoji = Strip emoji
+tts_filters_output_strip_emoji_meta = remove emoji characters before speaking
 tts_filters_output_max_duration_meta = after { $secs }s
 tts_filters_output_lang_meta = pick voice per message language
 

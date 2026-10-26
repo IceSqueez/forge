@@ -1462,6 +1462,8 @@ tts_filters_output_strip_twitch_emotes = Прибирати емоції Twitch
 tts_filters_output_strip_twitch_emotes_meta = видаляти назви емоцій Twitch перед озвученням
 tts_filters_output_strip_reward_emotes = Прибирати емоції нагород
 tts_filters_output_strip_reward_emotes_meta = видаляти назви емоцій із нагород за бали каналу
+tts_filters_output_strip_emoji = Прибирати емодзі
+tts_filters_output_strip_emoji_meta = видаляти символи емодзі перед озвученням
 tts_filters_output_max_duration_meta = після { $secs }с
 tts_filters_output_lang_meta = обирати голос за мовою повідомлення
 

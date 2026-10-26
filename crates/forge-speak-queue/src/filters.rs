@@ -255,7 +255,7 @@ fn map_rules(
 fn emote_sources_from_settings(settings: &TtsPipelineSettings) -> EmoteSources {
     EmoteSources {
         twitch: settings.strip_twitch_emotes,
-        emoji: false,
+        emoji: settings.strip_emoji,
     }
 }
 

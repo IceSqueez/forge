@@ -68,6 +68,7 @@ enum OutputOpt {
     Sanitize,
     StripTwitchEmotes,
     StripRewardEmotes,
+    StripEmoji,
 }
 
 impl OutputOpt {
@@ -78,6 +79,7 @@ impl OutputOpt {
             OutputOpt::Sanitize => "sanitize",
             OutputOpt::StripTwitchEmotes => "strip-twitch-emotes",
             OutputOpt::StripRewardEmotes => "strip-reward-emotes",
+            OutputOpt::StripEmoji => "strip-emoji",
         }
     }
 }
@@ -808,6 +810,7 @@ impl TtsFiltersView {
             OutputOpt::Sanitize => settings.output_sanitize_punctuation,
             OutputOpt::StripTwitchEmotes => settings.strip_twitch_emotes,
             OutputOpt::StripRewardEmotes => settings.strip_reward_emotes,
+            OutputOpt::StripEmoji => settings.strip_emoji,
         }
     }
 
@@ -823,6 +826,7 @@ impl TtsFiltersView {
                 OutputOpt::Sanitize => settings.output_sanitize_punctuation = value,
                 OutputOpt::StripTwitchEmotes => settings.strip_twitch_emotes = value,
                 OutputOpt::StripRewardEmotes => settings.strip_reward_emotes = value,
+                OutputOpt::StripEmoji => settings.strip_emoji = value,
             }
         });
     }
@@ -1696,7 +1700,7 @@ impl TtsFiltersView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let settings = &self.shown().settings;
-        let rows: [(OutputOpt, SharedString, SharedString, bool); 5] = [
+        let rows: [(OutputOpt, SharedString, SharedString, bool); 6] = [
             (
                 OutputOpt::ReadName,
                 tr!("tts_filters_output_read_name").into(),
@@ -1726,6 +1730,12 @@ impl TtsFiltersView {
                 tr!("tts_filters_output_strip_reward_emotes").into(),
                 tr!("tts_filters_output_strip_reward_emotes_meta").into(),
                 settings.strip_reward_emotes,
+            ),
+            (
+                OutputOpt::StripEmoji,
+                tr!("tts_filters_output_strip_emoji").into(),
+                tr!("tts_filters_output_strip_emoji_meta").into(),
+                settings.strip_emoji,
             ),
         ];
 

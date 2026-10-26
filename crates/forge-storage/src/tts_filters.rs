@@ -56,6 +56,8 @@ pub struct TtsPipelineSettings {
     pub strip_twitch_emotes: bool,
     pub strip_reward_emotes: bool,
     #[serde(default)]
+    pub strip_emoji: bool,
+    #[serde(default)]
     pub skip_contains_url: bool,
     #[serde(default)]
     pub skip_starts_with_bang: bool,
@@ -107,6 +109,7 @@ impl Default for TtsPipelineSettings {
             blocklist_mode: BlocklistMode::Censor,
             strip_twitch_emotes: true,
             strip_reward_emotes: true,
+            strip_emoji: false,
             skip_contains_url: false,
             skip_starts_with_bang: false,
             skip_prefix: None,

@@ -450,7 +450,7 @@ mod tests {
             ),
             (
                 ButtonVariant::Destructive,
-                Some((P.random, 1.0)),
+                Some((P.danger, 1.0)),
                 Some((P.shell, 1.0)),
                 None,
             ),
@@ -492,7 +492,7 @@ mod tests {
             ),
             (
                 ButtonVariant::Destructive,
-                Some((P.random, 0.92)),
+                Some((P.danger, 0.92)),
                 Some((P.shell, 1.0)),
                 None,
             ),
@@ -534,7 +534,7 @@ mod tests {
             ),
             (
                 ButtonVariant::Destructive,
-                Some((P.random, 0.4)),
+                Some((P.danger, 0.4)),
                 Some((P.shell, 0.5)),
                 None,
             ),
@@ -577,7 +577,7 @@ mod tests {
     fn keyed_palette_fields_are_distinct_hues() {
         let fields = [
             ("brand", P.brand),
-            ("random", P.random),
+            ("danger", P.danger),
             ("shell", P.shell),
             ("text_primary", P.text_primary),
             ("text_secondary", P.text_secondary),

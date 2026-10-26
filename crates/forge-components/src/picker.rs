@@ -380,7 +380,7 @@ impl Render for Picker {
 
 #[cfg(test)]
 mod tests {
-    use gpui::{AppContext, Modifiers, VisualTestContext, point};
+    use gpui::{AppContext, Modifiers, VisualTestContext, point, px};
 
     use super::*;
     use crate::palette::FORGE_DEFAULT;

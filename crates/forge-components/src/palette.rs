@@ -328,8 +328,8 @@ mod tests {
     fn named_accent(theme: ThemeId, accent: AccentColor) -> Rgba {
         let p = theme.palette();
         match (accent, theme) {
-            (AccentColor::Red, _) => p.random,
-            (AccentColor::Peach, _) => p.bits,
+            (AccentColor::Red, _) => p.danger,
+            (AccentColor::Peach, _) => p.accent_peach,
             (AccentColor::Yellow, _) => p.warning,
             (AccentColor::Green, _) => p.success,
             (AccentColor::Sky, _) => p.info,

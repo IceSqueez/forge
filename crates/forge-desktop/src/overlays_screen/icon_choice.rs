@@ -862,7 +862,7 @@ mod tests {
         let palette = forge_components::FORGE_DEFAULT;
         let groups = icon_groups(&library(), palette.brand, &palette);
 
-        let mut expected: Vec<String> = vec![NONE_SCOPE.to_owned()];
+        let mut expected: Vec<String> = vec![LEADING_SCOPE.to_owned()];
         expected.extend(IconCategory::ALL.iter().map(|c| c.as_str().to_owned()));
         expected.push(IMPORTED_SCOPE.to_owned());
         assert_eq!(

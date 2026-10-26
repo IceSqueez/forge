@@ -73,7 +73,7 @@ mod tests {
                 for (class, expected) in [
                     (TokenClass::Variable, base.info),
                     (TokenClass::String, base.success),
-                    (TokenClass::Number, base.bits),
+                    (TokenClass::Number, base.accent_peach),
                     (TokenClass::Keyword, base.theme_brand),
                     (TokenClass::Plain, base.text_primary),
                     (TokenClass::Punctuation, base.text_secondary),

@@ -265,7 +265,7 @@ mod tests {
     fn tone_resolves_to_its_severity_palette_field() {
         let p = &FORGE_DEFAULT;
         for (tone, want) in [
-            (ConfirmTone::Destructive, p.random),
+            (ConfirmTone::Destructive, p.danger),
             (ConfirmTone::Warning, p.warning),
         ] {
             assert_same_hue(tone.accent(p), want);

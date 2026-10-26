@@ -4,6 +4,7 @@ description = "eSpeak-NG TTS engine for forge (subprocess invocation, not FFI)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 

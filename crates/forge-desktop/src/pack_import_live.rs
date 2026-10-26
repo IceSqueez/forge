@@ -462,7 +462,6 @@ mod tests {
                 name: "imported_greet".to_owned(),
                 body: "let greeting = 1;".to_owned(),
                 contract: ScriptContract::default(),
-                body_hash: String::new(),
                 enabled: true,
                 created_at: now,
                 last_modified: now,

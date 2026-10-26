@@ -371,7 +371,6 @@ pub(super) async fn seed(store: &Store) -> Fixture {
             name: SCRIPT_NAME.to_owned(),
             body: SCRIPT_BODY.to_owned(),
             contract: ScriptContract::default(),
-            body_hash: String::new(),
             enabled: true,
             created_at: now,
             last_modified: now,

@@ -111,7 +111,6 @@ fn record(name: &str) -> ScriptRecord {
         name: name.to_owned(),
         body: "let x = 1;".to_owned(),
         contract: ScriptContract::default(),
-        body_hash: String::new(),
         enabled: true,
         created_at: now,
         last_modified: now,

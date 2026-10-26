@@ -84,7 +84,6 @@ mod tests {
             name: name.to_owned(),
             body: r#"print("hello");"#.to_owned(),
             contract: ScriptContract::default(),
-            body_hash: "abc123".to_owned(),
             enabled: true,
             created_at: ts,
             last_modified: ts,
@@ -101,7 +100,6 @@ mod tests {
         assert_eq!(decoded.name, record.name);
         assert_eq!(decoded.body, record.body);
         assert_eq!(decoded.contract, record.contract);
-        assert_eq!(decoded.body_hash, record.body_hash);
         assert_eq!(decoded.enabled, record.enabled);
         assert_eq!(decoded.created_at, record.created_at);
         assert_eq!(decoded.last_modified, record.last_modified);
@@ -121,7 +119,6 @@ mod tests {
                 }],
                 returns: Some(VariantKind::String),
             },
-            body_hash: "deadbeef".to_owned(),
             enabled: false,
             created_at: ts,
             last_modified: ts,

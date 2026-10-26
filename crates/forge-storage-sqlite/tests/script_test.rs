@@ -17,7 +17,6 @@ fn make_record(name: &str, enabled: bool) -> forge_storage::ScriptRecord {
         name: name.to_owned(),
         body: r#"print("hello");"#.to_owned(),
         contract: ScriptContract::default(),
-        body_hash: String::new(),
         enabled,
         created_at: time::OffsetDateTime::now_utc(),
         last_modified: time::OffsetDateTime::now_utc(),
@@ -38,60 +37,6 @@ async fn save_get_roundtrip() {
     assert_eq!(got.body, r#"print("hello");"#);
     assert!(got.enabled);
     assert_eq!(got.contract, ScriptContract::default());
-}
-
-#[tokio::test]
-async fn body_hash_computed_on_save() {
-    use sha2::{Digest, Sha256};
-
-    let backend = setup().await;
-    let body = r#"print("hello");"#;
-    let record = make_record("hash_test", true);
-    let id = record.id;
-
-    backend.save(record).await.expect("save");
-    let got = backend.get(id).await.expect("get").unwrap();
-
-    let expected = {
-        use std::fmt::Write as _;
-        let mut hasher = Sha256::new();
-        hasher.update(body.as_bytes());
-        let digest = hasher.finalize();
-        let mut s = String::with_capacity(digest.len() * 2);
-        for b in digest.iter() {
-            write!(s, "{b:02x}").unwrap();
-        }
-        s
-    };
-    assert_eq!(got.body_hash, expected);
-}
-
-#[tokio::test]
-async fn save_ignores_caller_provided_hash_and_recomputes() {
-    use sha2::{Digest, Sha256};
-
-    let backend = setup().await;
-    let body = r#"let x = 1;"#;
-    let mut record = make_record("recompute_hash", true);
-    record.body = body.to_owned();
-    record.body_hash = "wrong_hash_from_caller".to_owned();
-    let id = record.id;
-
-    backend.save(record).await.expect("save");
-    let got = backend.get(id).await.expect("get").unwrap();
-
-    let expected = {
-        use std::fmt::Write as _;
-        let mut hasher = Sha256::new();
-        hasher.update(body.as_bytes());
-        let digest = hasher.finalize();
-        let mut s = String::with_capacity(digest.len() * 2);
-        for b in digest.iter() {
-            write!(s, "{b:02x}").unwrap();
-        }
-        s
-    };
-    assert_eq!(got.body_hash, expected, "impl must always recompute hash");
 }
 
 #[tokio::test]

@@ -317,7 +317,6 @@ mod tests {
             name: "greet".to_owned(),
             body: body.to_owned(),
             contract: ScriptContract::default(),
-            body_hash: "h".to_owned(),
             enabled: true,
             created_at: ts,
             last_modified: ts,

@@ -147,7 +147,6 @@ objc2-avf-audio = { version = "0.3", features = [
 block2 = { version = "0.6" }
 
 axum = { version = "0.8", features = ["ws"] }
-tower-http = { version = "0.7", features = ["cors", "fs"] }
 
 gpui = { git = "https://github.com/zed-industries/zed", tag = "v1.24.3", features = [
   "stacker",
@@ -157,7 +156,6 @@ gpui_platform = { git = "https://github.com/zed-industries/zed", tag = "v1.24.3"
   "wayland",
   "x11",
 ] }
-fontdb = "0.24"
 
 rfd = { version = "0.17", default-features = false, features = [
   "xdg-portal",
@@ -172,7 +170,6 @@ notify-rust = { version = "4.18" }
 cpal = { version = "0.18" }
 rubato = { version = "5.0" }
 regex = { version = "1.13" }
-once_cell = { version = "1.21" }
 symphonia = { version = "0.6", features = ["all-codecs", "all-formats"] }
 crossbeam-channel = { version = "0.5" }
 futures = { version = "0.3" }

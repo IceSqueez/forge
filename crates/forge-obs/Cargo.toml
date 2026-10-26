@@ -24,10 +24,8 @@ tokio-stream = { workspace = true }
 time = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
-futures-core = { workspace = true }
 futures-util = { workspace = true }
 
 [dev-dependencies]

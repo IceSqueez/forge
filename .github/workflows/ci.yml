@@ -46,6 +46,19 @@ jobs:
         shell: bash
         run: python3 .github/scripts/http-client-boundary.py
 
+      - name: Install dependency linters
+        uses: taiki-e/install-action@v2.87.29
+        with:
+          tool: cargo-machete@0.9.2,cargo-deny@0.20.2
+
+      - name: Unused dependencies
+        shell: bash
+        run: cargo machete
+
+      - name: Dependency policy
+        shell: bash
+        run: cargo deny --locked check bans licenses sources
+
       - name: Check formatting
         shell: bash
         run: cargo fmt --all -- --check

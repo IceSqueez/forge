@@ -113,7 +113,7 @@ impl GlobalEditor {
 
         let area_seed = prefill.and_then(|g| json_seed(&g.value));
         let value_area = cx.new(|cx| {
-            let mut ta = CodeEditor::new(Language::Json, "[1, 2, 3]", cx)
+            let mut ta = CodeEditor::new(Language::Json, json_placeholder(kind), cx)
                 .with_palette(palette)
                 .with_field_rows(VALUE_AREA_ROWS);
             if let Some(seed) = area_seed {
@@ -183,10 +183,20 @@ impl GlobalEditor {
                 InputEvent::Blurred(_) => {}
             },
         );
+        let value_area = cx.new(|cx| {
+            CodeEditor::new(Language::Json, json_placeholder(kind), cx)
+                .with_palette(palette)
+                .with_field_rows(VALUE_AREA_ROWS)
+        });
+        let area_sub = cx.subscribe(&value_area, |_this, _f, _event: &InputEvent, cx| {
+            cx.notify()
+        });
         self.kind = kind;
         self.error = None;
         self.value_input = value_input;
         self._value_sub = value_sub;
+        self.value_area = value_area;
+        self._area_sub = area_sub;
         cx.notify();
     }
 
@@ -1742,6 +1752,13 @@ fn single_line_placeholder(kind: VariantKind) -> &'static str {
         VariantKind::Float => "0.0",
         VariantKind::Datetime => "2026-05-18T14:23:00Z",
         _ => "",
+    }
+}
+
+fn json_placeholder(kind: VariantKind) -> &'static str {
+    match kind {
+        VariantKind::Object => r#"{"key": "value"}"#,
+        _ => "[1, 2, 3]",
     }
 }
 

@@ -23,7 +23,6 @@ use forge_runtime::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlayServiceCell
 use forge_storage::action::MockActionRepo;
 use forge_storage::history::MockHistoryRepo;
 use forge_storage::queue::MockQueueRepo;
-use forge_storage::soundboard::MockSoundboardClipsRepo;
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{OverlayCredential, OverlayDefinition, OverlayId, StorageError};
 use forge_types::{
@@ -726,7 +725,6 @@ impl Wiring {
                 Arc::new(queues),
                 Arc::new(MockHistoryRepo::new()),
                 Arc::new(triggers),
-                Arc::new(MockSoundboardClipsRepo::new()),
             ),
             written,
             fed_action,

@@ -844,13 +844,12 @@ mod tests {
 
     use super::disclosure::{self, SettingDisclosure};
     use super::{
-        CredentialsKeyLoss, DEFAULT_DIAGNOSTIC_LOG_LEVEL, Density, EngineParams, Language,
-        SettingsRepo, StorageError, StoredDisplayFormats, chat_history_per_viewer_limit,
-        diagnostic_log_level, disabled_tts_engines, engine_params, get_bool_setting,
-        get_json_setting, record_credentials_key_loss, reserved_keys,
-        set_chat_history_per_viewer_limit, set_diagnostic_log_level, set_json_setting,
-        stored_bool_setting, stored_display_formats, stored_json_setting,
-        take_credentials_key_loss,
+        CredentialsKeyLoss, DEFAULT_DIAGNOSTIC_LOG_LEVEL, EngineParams, Language, SettingsRepo,
+        StorageError, StoredDisplayFormats, chat_history_per_viewer_limit, diagnostic_log_level,
+        disabled_tts_engines, engine_params, get_bool_setting, get_json_setting,
+        record_credentials_key_loss, reserved_keys, set_chat_history_per_viewer_limit,
+        set_diagnostic_log_level, set_json_setting, stored_bool_setting, stored_display_formats,
+        stored_json_setting, take_credentials_key_loss,
     };
 
     #[derive(Default)]
@@ -1114,23 +1113,6 @@ mod tests {
     fn language_from_str_rejects_non_canonical_codes_preserving_input() {
         for bad in ["EN", "En", "fr", "", " en", "en "] {
             let err = bad.parse::<Language>().unwrap_err();
-            assert_eq!(err.0, bad);
-        }
-    }
-
-    #[test]
-    fn density_round_trips_through_display_and_from_str() {
-        assert_eq!(Density::default(), Density::Cozy);
-        for density in [Density::Compact, Density::Cozy, Density::Spacious] {
-            let s = density.to_string();
-            assert_eq!(s.parse::<Density>().unwrap(), density);
-        }
-    }
-
-    #[test]
-    fn density_from_str_rejects_non_canonical_values_preserving_input() {
-        for bad in ["Cozy", "COMPACT", "dense", "", " cozy"] {
-            let err = bad.parse::<Density>().unwrap_err();
             assert_eq!(err.0, bad);
         }
     }

@@ -211,6 +211,8 @@ mod tests {
     use forge_platform_core::{ConnectionTransition, connection_state_changed_event};
     use serde_json::json;
 
+    use super::action_failures::ACTION_NOTICE_WINDOW;
+    use super::connection_loss::{CONNECTION_LOSS_GRACE, MIN_CUE_SPACING};
     use super::*;
     use crate::NullEventLogRepo;
 

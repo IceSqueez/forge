@@ -184,8 +184,7 @@ mod tests {
     #[test]
     fn synthesize_uses_text_type_when_plain_default() {
         let req = plain_req("hello");
-        let (body, is_ssml) = build_polly_body(&req);
-        assert!(!is_ssml);
+        let body = build_polly_body(&req);
         let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(parsed["TextType"], "text");
         assert_eq!(parsed["Text"], "hello");
@@ -201,8 +200,7 @@ mod tests {
             rate_multiplier: 1.0,
             ssml: true,
         };
-        let (body, is_ssml) = build_polly_body(&req);
-        assert!(is_ssml);
+        let body = build_polly_body(&req);
         let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(parsed["TextType"], "ssml");
         assert_eq!(parsed["Text"], input);
@@ -217,8 +215,7 @@ mod tests {
             rate_multiplier: 1.5,
             ssml: false,
         };
-        let (body, is_ssml) = build_polly_body(&req);
-        assert!(is_ssml);
+        let body = build_polly_body(&req);
         let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(parsed["TextType"], "ssml");
         let text = parsed["Text"].as_str().unwrap();
@@ -232,7 +229,7 @@ mod tests {
             rate_multiplier: 1.5,
             ..plain_req(r#"</prosody><break time="10s"/> & 'q'"#)
         };
-        let (body, _) = build_polly_body(&req);
+        let body = build_polly_body(&req);
         let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(
             parsed["Text"],
@@ -249,8 +246,7 @@ mod tests {
             rate_multiplier: 1.0,
             ssml: false,
         };
-        let (body, is_ssml) = build_polly_body(&req);
-        assert!(is_ssml);
+        let body = build_polly_body(&req);
         let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(parsed["TextType"], "ssml");
     }
@@ -262,7 +258,7 @@ mod tests {
         Mock::given(method("POST"))
             .and(path(SPEECH_PATH))
             .and(header("content-type", "application/json"))
-            .and(body_string(build_polly_body(&request).0))
+            .and(body_string(build_polly_body(&request)))
             .respond_with(
                 ResponseTemplate::new(200).set_body_bytes(raw_pcm_bytes(&[100, -100, 200, -200])),
             )

@@ -1233,7 +1233,6 @@ mod tests {
                 Arc::clone(&queue_repo),
                 Arc::new(StubHistory),
                 Arc::clone(&trigger_repo),
-                Arc::clone(&clips),
             ));
             let (backend, _writes) = test_backend();
             let (bus, scheduler) = rt.block_on(async {

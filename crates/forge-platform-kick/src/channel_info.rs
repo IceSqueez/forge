@@ -163,24 +163,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fetch_maps_chatroom_viewers_and_live_flag_from_the_channel_body() {
-        let offline = ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "chatroom": { "id": 99 },
-            "livestream": null
-        }));
-        for (template, expected) in [
-            (live_channel(), (12345, 500, true)),
-            (offline, (99, 0, false)),
-        ] {
-            let server = server_replying(template).await;
+    async fn fetch_maps_chatroom_id_from_the_channel_body() {
+        let server = server_replying(live_channel()).await;
 
-            let info = channel_info_at(&server.uri()).fetch(SLUG).await.unwrap();
+        let info = channel_info_at(&server.uri()).fetch(SLUG).await.unwrap();
 
-            assert_eq!(
-                (info.chatroom_id, info.viewer_count, info.is_live),
-                expected
-            );
-        }
+        assert_eq!(info.chatroom_id, 12345);
     }
 
     #[tokio::test]

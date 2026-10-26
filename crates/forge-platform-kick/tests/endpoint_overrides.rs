@@ -202,7 +202,7 @@ async fn channel_api_override_carries_the_channel_info_fetch_to_the_override_hos
 
     let info = channel_info(&endpoints).fetch("streamer").await.unwrap();
 
-    assert_eq!((info.chatroom_id, info.viewer_count), (CHATROOM_ID, 31));
+    assert_eq!(info.chatroom_id, CHATROOM_ID);
 }
 
 #[tokio::test]

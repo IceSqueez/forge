@@ -199,7 +199,6 @@ pub(super) mod tests {
             Arc::clone(&queue_repo),
             Arc::new(StubHistory),
             Arc::clone(&trigger_repo),
-            Arc::clone(&clip_repo),
         ));
         let (backend, _writes) = test_backend_with_media(Arc::new(media));
         let (bus, scheduler) = rt.block_on(async {

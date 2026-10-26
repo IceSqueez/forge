@@ -15,8 +15,8 @@ use forge_platform_core::{
 };
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{
-    ChatSessionConfig, CredentialsTokenSource, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW,
-    HelixHttpTransport, SubscriptionTracker, TWITCH_OAUTH_BUDGET_CAPACITY,
+    ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW, HelixError, HelixHttpTransport,
+    HelixTokenSource, SubscriptionTracker, TWITCH_OAUTH_BUDGET_CAPACITY,
     TWITCH_OAUTH_BUDGET_WINDOW, TwitchChat, TwitchChatHandle, TwitchCredentialsManager,
     TwitchIntegrationBundle, TwitchLifecycle, TwitchOAuthClient, TwitchPlatform, helix_gateway,
     send_chat, twitch_oauth_gateway,
@@ -33,6 +33,15 @@ const CHAT_SUBSCRIPTION: &str = "channel.chat.message";
 const FOLLOW_SUBSCRIPTION: &str = "channel.follow";
 const FOLLOW_KIND: &str = "twitch.channel.follow";
 const STATE_POLL: Duration = Duration::from_millis(10);
+
+struct FixedTokenSource(OAuthToken);
+
+#[async_trait]
+impl HelixTokenSource for FixedTokenSource {
+    async fn access_token(&self) -> Result<OAuthToken, HelixError> {
+        Ok(self.0.clone())
+    }
+}
 
 #[derive(Default)]
 struct MemoryCredentials(Mutex<HashMap<String, String>>);
@@ -371,7 +380,9 @@ async fn forge_chat_send_returns_the_message_id_the_fake_issued() {
     let transport = HelixHttpTransport::new(
         forge.helix(),
         account.client_id.clone(),
-        Arc::new(CredentialsTokenSource::new(Arc::clone(&forge.creds))),
+        Arc::new(FixedTokenSource(OAuthToken::new(
+            account.access_token.clone(),
+        ))),
     );
 
     let sent = send_chat(&transport, &account.user_id, &account.user_id, "pong")

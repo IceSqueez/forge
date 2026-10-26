@@ -304,7 +304,6 @@ mod tests {
     use forge_storage::action::MockActionRepo;
     use forge_storage::history::MockHistoryRepo;
     use forge_storage::queue::MockQueueRepo;
-    use forge_storage::soundboard::MockSoundboardClipsRepo;
     use forge_storage::trigger_instance::MockTriggerInstanceRepo;
     use forge_types::{Action, DEFAULT_QUEUE_ID, ExecutionMode, Queue, QueueId};
 
@@ -357,7 +356,6 @@ mod tests {
             Arc::new(queues),
             Arc::new(history),
             Arc::new(triggers),
-            Arc::new(MockSoundboardClipsRepo::new()),
         );
 
         let summaries = service.list_summaries().await.unwrap();

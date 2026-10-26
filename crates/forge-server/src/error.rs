@@ -91,12 +91,4 @@ mod tests {
             assert!(!debug.contains(LIVE_TOKEN), "token leaked: {debug}");
         }
     }
-
-    #[test]
-    fn auth_invalid_display_carries_reason() {
-        let e = ServerError::AuthInvalid {
-            reason: "bad token".into(),
-        };
-        assert!(e.to_string().contains("bad token"));
-    }
 }

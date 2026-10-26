@@ -562,7 +562,6 @@ mod tests {
     use forge_storage::action::MockActionRepo;
     use forge_storage::history::MockHistoryRepo;
     use forge_storage::queue::MockQueueRepo;
-    use forge_storage::soundboard::MockSoundboardClipsRepo;
     use forge_storage::trigger_instance::MockTriggerInstanceRepo;
     use forge_types::{QueueId, TriggerInstanceId};
     use gpui::TestAppContext;
@@ -621,7 +620,6 @@ mod tests {
                 Arc::new(MockQueueRepo::new()),
                 Arc::new(MockHistoryRepo::new()),
                 Arc::new(MockTriggerInstanceRepo::new()),
-                Arc::new(MockSoundboardClipsRepo::new()),
             )),
             triggers: Arc::new(trigger_registry(vec![
                 StubTrigger::new(

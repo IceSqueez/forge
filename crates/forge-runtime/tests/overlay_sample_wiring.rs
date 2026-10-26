@@ -19,7 +19,6 @@ use forge_storage::action::MockActionRepo;
 use forge_storage::history::MockHistoryRepo;
 use forge_storage::queue::MockQueueRepo;
 use forge_storage::settings::MockSettingsRepo;
-use forge_storage::soundboard::MockSoundboardClipsRepo;
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
@@ -216,7 +215,6 @@ fn actions_service() -> Arc<ActionsService> {
         Arc::new(MockQueueRepo::new()),
         Arc::new(MockHistoryRepo::new()),
         Arc::new(trigger_repo),
-        Arc::new(MockSoundboardClipsRepo::new()),
     ))
 }
 

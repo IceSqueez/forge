@@ -17,7 +17,6 @@ use forge_storage::OverlayId;
 use forge_storage::action::MockActionRepo;
 use forge_storage::history::MockHistoryRepo;
 use forge_storage::queue::MockQueueRepo;
-use forge_storage::soundboard::MockSoundboardClipsRepo;
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_types::{
     Action, ActionId, ExecutionMode, PermissionRung, PlatformScope, QueueId, SubActionConfig,
@@ -421,7 +420,6 @@ fn service_over(seed: Vec<(Action, Vec<TriggerInstance>)>) -> ActionsService {
         Arc::new(MockQueueRepo::new()),
         Arc::new(MockHistoryRepo::new()),
         Arc::new(trigger_repo),
-        Arc::new(MockSoundboardClipsRepo::new()),
     )
 }
 

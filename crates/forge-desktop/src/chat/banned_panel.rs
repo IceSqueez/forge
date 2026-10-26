@@ -645,7 +645,11 @@ impl BannedPanel {
         palette: &ForgePalette,
         density: Density,
     ) -> Option<AnyElement> {
-        let disclaimer = disclaimer_line(&platform_integration(platform).builtin_id(), palette);
+        let disclaimer = disclaimer_line(
+            &platform_integration(platform).builtin_id(),
+            palette,
+            density,
+        );
         let seen_note = lists_only_what_forge_saw(platform).then(|| {
             div()
                 .font_family(body_family())

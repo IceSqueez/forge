@@ -573,9 +573,9 @@ fn render_chip_grid(
             .w_full()
             .grid()
             .grid_cols(CHIP_GRID_COLUMNS)
-            .gap(px(6.0));
+            .gap(spacing(Spacing::Xs, density));
         for item in items {
-            grid = grid.child(chip_elem(chip_icon, item, palette));
+            grid = grid.child(chip_elem(chip_icon, item, palette, density));
         }
         div()
             .id(SharedString::from(format!("chip-grid-{title}")))
@@ -601,17 +601,22 @@ fn render_chip_grid(
         .into_any_element()
 }
 
-fn chip_elem(chip_icon: &SectionIcon, name: &str, palette: &ForgePalette) -> AnyElement {
+fn chip_elem(
+    chip_icon: &SectionIcon,
+    name: &str,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
     div()
         .flex()
         .items_center()
-        .gap(px(6.0))
+        .gap(spacing(Spacing::Xs, density))
         .bg(palette.shell)
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
         .rounded(radius(Radius::Sm))
         .py(px(7.0))
-        .px(px(10.0))
+        .px(spacing(Spacing::Sm, density))
         .child(icon(
             Icon::from_name(chip_icon.as_str()),
             CHIP_ICON_GLYPH,
@@ -1300,7 +1305,7 @@ fn health_metric_card(
         .w_full()
         .flex()
         .flex_col()
-        .gap(px(4.0))
+        .gap(spacing(Spacing::Xxs, density))
         .py(spacing(Spacing::Sm, density))
         .px(px(12.0))
         .rounded(radius(Radius::Md))

@@ -1,3 +1,6 @@
+use forge_components::Density;
+use forge_components::Spacing;
+use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition,
     Radius, TextInput, body_family, ghost_button_with_icon, icon, modal, modal_width, mono_family,
@@ -12,10 +15,8 @@ use gpui::{
 use crate::toasts::copy_to_clipboard;
 use forge_components::ActivePresentation;
 
-const BODY_PAD_V: Pixels = px(16.0);
 const BODY_PAD_H: Pixels = px(18.0);
 
-const FIELD_GAP: Pixels = px(6.0);
 const FIELD_MB: Pixels = px(14.0);
 const BOX_PAD_V: Pixels = px(7.0);
 const BOX_PAD_H: Pixels = px(11.0);
@@ -178,7 +179,7 @@ impl DiscordWebhookModal {
         cx.emit(DiscordWebhookModalEvent::Cancel);
     }
 
-    fn render_name(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_name(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let value: AnyElement = match &self.original_name {
             Some(name) => div()
                 .w_full()
@@ -194,7 +195,7 @@ impl DiscordWebhookModal {
             .w_full()
             .flex()
             .flex_col()
-            .gap(FIELD_GAP)
+            .gap(spacing(Spacing::Xs, density))
             .mb(FIELD_MB)
             .child(field_caption(&tr!("discord_modal_name_label"), palette))
             .child(value_box(palette).child(div().flex_1().min_w(px(0.0)).child(value)));
@@ -207,6 +208,7 @@ impl DiscordWebhookModal {
     }
 
     fn render_url(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let reveal_glyph = if self.url_revealed {
             Icon::EyeOff
         } else {
@@ -250,7 +252,7 @@ impl DiscordWebhookModal {
             .w_full()
             .flex()
             .flex_col()
-            .gap(FIELD_GAP)
+            .gap(spacing(Spacing::Xs, density))
             .mb(FIELD_MB)
             .child(field_caption(&tr!("discord_modal_url_label"), palette))
             .child(box_row)
@@ -339,6 +341,7 @@ fn field_hint(text: &str, palette: &ForgePalette) -> gpui::Div {
 
 impl Render for DiscordWebhookModal {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
         if self.focus_pending {
             self.focus_pending = false;
@@ -351,11 +354,11 @@ impl Render for DiscordWebhookModal {
 
         let body = div()
             .w_full()
-            .py(BODY_PAD_V)
+            .py(spacing(Spacing::Md, density))
             .px(BODY_PAD_H)
             .flex()
             .flex_col()
-            .child(self.render_name(&palette))
+            .child(self.render_name(&palette, density))
             .child(self.render_url(&palette, cx));
 
         let title = if self.original_name.is_some() {

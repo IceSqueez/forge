@@ -1,3 +1,4 @@
+use crate::presentation::ActivePresentation;
 use std::ops::Range;
 
 use gpui::{
@@ -13,7 +14,7 @@ use crate::text_buffer::{EditKind, TextBuffer};
 use crate::text_editing::*;
 use crate::text_input::InputEvent;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_XS, Radius, Spacing, body_family, mono_family, radius, spacing,
+    BORDER_THIN, FONT_XS, Radius, Spacing, body_family, mono_family, radius, spacing,
 };
 
 const KEY_CONTEXT: &str = "ForgeTextArea";
@@ -68,7 +69,6 @@ pub struct TextArea {
     scroll_offset: Pixels,
     motion: CaretMotion,
     palette: ForgePalette,
-    density: Density,
     font_size: Pixels,
     font_family: SharedString,
     height: Pixels,
@@ -97,7 +97,6 @@ impl TextArea {
             scroll_offset: px(0.0),
             motion: CaretMotion::default(),
             palette: FORGE_DEFAULT,
-            density: Density::Cozy,
             font_size: FONT_XS,
             font_family: body_family(),
             height: DEFAULT_AREA_HEIGHT,
@@ -582,6 +581,7 @@ impl Focusable for TextArea {
 
 impl Render for TextArea {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let focus = self.focus_handle.clone();
         self.caret.watch(&focus, window, cx);
         let focused = focus.is_focused(window);
@@ -617,8 +617,8 @@ impl Render for TextArea {
             .text_color(self.palette.text_primary)
             .line_height(self.font_size * LINE_HEIGHT_RATIO)
             .h(self.height)
-            .px(spacing(Spacing::Sm, self.density))
-            .py(spacing(Spacing::Xs, self.density))
+            .px(spacing(Spacing::Sm, density))
+            .py(spacing(Spacing::Xs, density))
             .bg(surface)
             .border(BORDER_THIN)
             .border_color(border_color)

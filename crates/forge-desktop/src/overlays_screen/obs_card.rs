@@ -1,3 +1,7 @@
+use forge_components::ActivePresentation;
+use forge_components::Density;
+use forge_components::Spacing;
+use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, body_family, icon, mono_family,
     section_label, tr,
@@ -11,17 +15,14 @@ use gpui::{AnyElement, ClickEvent, Context, Pixels, SharedString, div, prelude::
 use super::OverlaysView;
 use crate::toasts::copy_to_clipboard;
 
-const CARD_TOP: Pixels = px(10.0);
 const CARD_PAD: Pixels = px(12.0);
 const CARD_RADIUS: Pixels = px(10.0);
 const CARD_GAP: Pixels = px(8.0);
-const HEAD_GAP: Pixels = px(6.0);
 const HEAD_GLYPH: Pixels = px(12.0);
 const ROW_GAP: Pixels = px(8.0);
 const KEY_W: Pixels = px(52.0);
 const COPY_GAP: Pixels = px(3.0);
 const COPY_GLYPH: Pixels = px(12.0);
-const TIP_GAP: Pixels = px(4.0);
 const HALF: f32 = 0.5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,6 +62,7 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let page = self
             .handles
             .kinds
@@ -114,32 +116,36 @@ impl OverlaysView {
             .w_full()
             .flex()
             .flex_wrap()
-            .gap_y(TIP_GAP)
+            .gap_y(spacing(Spacing::Xxs, density))
             .child(tip(
                 tr!("overlays_obs_shutdown"),
                 switch_text(advice.shutdown_when_hidden),
                 palette,
+                density,
             ))
             .child(tip(
                 tr!("overlays_obs_refresh"),
                 switch_text(advice.refresh_on_activate),
                 palette,
+                density,
             ))
             .child(tip(
                 tr!("overlays_obs_custom_css"),
                 tr!("overlays_obs_custom_css_value"),
                 palette,
+                density,
             ))
             .child(tip(
                 tr!("overlays_obs_audio"),
                 switch_text(advice.control_audio),
                 palette,
+                density,
             ));
 
         div()
             .flex_none()
             .w_full()
-            .mt(CARD_TOP)
+            .mt(spacing(Spacing::Sm, density))
             .flex()
             .flex_col()
             .gap(CARD_GAP)
@@ -152,7 +158,7 @@ impl OverlaysView {
                 div()
                     .flex()
                     .items_center()
-                    .gap(HEAD_GAP)
+                    .gap(spacing(Spacing::Xs, density))
                     .child(icon(Icon::Browser, HEAD_GLYPH, palette.text_faint))
                     .child(section_label(
                         tr!("overlays_obs_title").to_uppercase(),
@@ -237,12 +243,12 @@ fn value_row(
         .into_any_element()
 }
 
-fn tip(label: String, value: String, palette: &ForgePalette) -> AnyElement {
+fn tip(label: String, value: String, palette: &ForgePalette, density: Density) -> AnyElement {
     div()
         .w(relative(HALF))
         .flex()
         .items_center()
-        .gap(HEAD_GAP)
+        .gap(spacing(Spacing::Xs, density))
         .pr(ROW_GAP)
         .font_family(body_family())
         .text_size(FONT_XXS)

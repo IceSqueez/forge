@@ -59,7 +59,6 @@ use viewer_history::{ViewerHistory, ViewerHistoryDismissed};
 use viewer_tts::TtsVoiceHost;
 
 const LIST_OVERDRAW: Pixels = px(240.0);
-const PILL_BOTTOM_LIFT: Pixels = px(16.0);
 const VIEWER_DOT: Pixels = px(6.0);
 const CHIP_DIVIDER_H: Pixels = px(14.0);
 const ICON_BTN_PAD: Pixels = px(5.0);
@@ -140,12 +139,13 @@ impl ChatViewerCount {
 
 impl Render for ChatViewerCount {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
         let viewer_count = self.home_stats.read(cx).viewers_display();
         div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .child(status_dot(palette.success, VIEWER_DOT))
             .child(
                 div()
@@ -1343,7 +1343,7 @@ impl ChatView {
                 .flex()
                 .justify_center()
                 .items_end()
-                .pb(PILL_BOTTOM_LIFT)
+                .pb(spacing(Spacing::Md, density))
                 .child(pill);
             area = area.child(overlay);
         }

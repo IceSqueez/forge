@@ -334,7 +334,7 @@ impl ScheduledRunsView {
                 .child(row.title()),
         );
         if let Some(key) = spec.key.as_deref() {
-            title = title.child(running_pill(key.to_owned(), palette));
+            title = title.child(running_pill(key.to_owned(), palette, density));
         }
 
         let origin = self.render_origin(index, row, palette, cx);
@@ -477,8 +477,8 @@ impl ScheduledRunsView {
 
         let badge = div()
             .flex_none()
-            .py(spacing(Spacing::Xxs, Density::Cozy))
-            .px(spacing(Spacing::Xs, Density::Cozy))
+            .py(spacing(Spacing::Xxs, density))
+            .px(spacing(Spacing::Xs, density))
             .rounded(BADGE_RADIUS)
             .bg(with_alpha(ink, TINT_STRONG_FILL_ALPHA))
             .border(BORDER_THIN)
@@ -506,7 +506,7 @@ impl ScheduledRunsView {
                 run.spec
                     .key
                     .as_deref()
-                    .map(|key| running_pill(key.to_owned(), palette)),
+                    .map(|key| running_pill(key.to_owned(), palette, density)),
             )
             .child(badge)
             .child(
@@ -592,6 +592,7 @@ impl Render for ScheduledRunsView {
             tr!("queues_scheduled_blurb"),
             Some(count),
             &palette,
+            density,
         );
 
         let mut list = div().w_full().flex().flex_col();

@@ -32,6 +32,7 @@ impl SoundboardView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let id = clip.id;
         let progress = self.playing.get(&id);
         let playing = progress.is_some();
@@ -45,7 +46,7 @@ impl SoundboardView {
         let hotkey_badge = clip
             .hotkey
             .as_deref()
-            .map(|hk| self.render_hotkey_badge(index, id, hk, palette));
+            .map(|hk| self.render_hotkey_badge(index, id, hk, palette, density));
 
         let edit_btn = self.pad_action_button(
             ("sb-pad-edit", index),

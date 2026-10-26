@@ -1,4 +1,6 @@
 use forge_components::FONT_XS;
+use forge_components::Spacing;
+use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, FONT_SECTION_LABEL, ForgePalette, Icon, OverlayPosition, body_family,
     ghost_button_with_icon, icon, modal, mono_family, overlay, primary_button, secondary_button,
@@ -14,11 +16,9 @@ use crate::hotkey_action_modal::keycaps;
 use forge_components::ActivePresentation;
 
 const MODAL_W: Pixels = px(440.0);
-const BODY_PAD_V: Pixels = px(16.0);
 const BODY_PAD_H: Pixels = px(18.0);
 
 const SECTION_LABEL_MB: Pixels = px(8.0);
-const SIGNAL_GAP: Pixels = px(10.0);
 const RECAPTURE_HEIGHT: Pixels = px(32.0);
 
 const DISPLAY_PAD_V: Pixels = px(7.0);
@@ -85,6 +85,7 @@ impl AppShortcutModal {
     }
 
     fn render_chord(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let border = if self.capturing {
             palette.success
         } else {
@@ -112,7 +113,7 @@ impl AppShortcutModal {
                         .text_color(palette.success)
                         .child(tr!("hotkeys_capture_prompt")),
                 ),
-            (false, Some(chord)) => display.child(keycaps(&chord_caps(chord), palette)),
+            (false, Some(chord)) => display.child(keycaps(&chord_caps(chord), palette, density)),
             (false, None) => display.child(
                 div()
                     .font_family(mono_family())
@@ -150,7 +151,7 @@ impl AppShortcutModal {
                     .w_full()
                     .flex()
                     .items_center()
-                    .gap(SIGNAL_GAP)
+                    .gap(spacing(Spacing::Sm, density))
                     .child(display)
                     .child(div().flex_none().child(recapture)),
             )
@@ -182,11 +183,12 @@ impl AppShortcutModal {
 
 impl Render for AppShortcutModal {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
 
         let body = div()
             .w_full()
-            .py(BODY_PAD_V)
+            .py(spacing(Spacing::Md, density))
             .px(BODY_PAD_H)
             .child(self.render_chord(&palette, cx));
 

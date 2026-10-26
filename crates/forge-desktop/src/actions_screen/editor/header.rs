@@ -1,6 +1,6 @@
 use super::*;
 use forge_components::{
-    Density, FONT_LG, FONT_XS, FONT_XXS, ForgePalette, Icon, MenuPlacement, Spacing, body_family,
+    FONT_LG, FONT_XS, FONT_XXS, ForgePalette, Icon, MenuPlacement, Spacing, body_family,
     ghost_button_with_icon, menu_button, menu_divider, menu_item, spacing, status_dot, tr,
 };
 use gpui::{AnyElement, ClickEvent, Context, FontWeight, SharedString, Window, div, px};
@@ -12,6 +12,7 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let action = &detail.action;
         let (pill_color, pill_label) = if action.enabled {
             (palette.success, tr!("action_editor_enabled"))
@@ -24,9 +25,9 @@ impl ScreenActionsView {
             .id("actions-editor-status-pill")
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .py(px(1.0))
-            .px(px(6.0))
+            .px(spacing(Spacing::Xs, density))
             .rounded(PILL_RADIUS)
             .bg(palette.surface_overlay)
             .cursor_pointer()
@@ -47,7 +48,7 @@ impl ScreenActionsView {
         let title_row = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
                     .font_family(body_family())
@@ -71,7 +72,7 @@ impl ScreenActionsView {
         let header_left = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .child(title_row)
             .child(desc_line);
 
@@ -126,7 +127,7 @@ impl ScreenActionsView {
         let btn_row = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(
                 ghost_button_with_icon(Icon::PlayerPlay, tr!("action_editor_test_run"), palette)
                     .height(HEADER_ACTION_H)
@@ -157,7 +158,7 @@ impl ScreenActionsView {
         let mut col = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Md, Density::Cozy))
+            .gap(spacing(Spacing::Md, density))
             .child(header_row);
         if let Some(telemetry) = &self.telemetry {
             col = col.child(self.render_stats_row(telemetry, palette, cx));

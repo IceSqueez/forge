@@ -1157,6 +1157,7 @@ impl TtsFiltersView {
                 tr!("tts_filters_load_failed", reason = reason),
                 palette,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.retry_load(cx)),
+                density,
             ));
         }
 

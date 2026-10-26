@@ -63,7 +63,7 @@ impl IntegrationDetail {
             .flex()
             .flex_col()
             .gap(px(12.0))
-            .pt(px(4.0))
+            .pt(spacing(Spacing::Xxs, density))
             .pb(px(12.0))
             .px(px(14.0));
 
@@ -157,7 +157,7 @@ impl IntegrationDetail {
                 .min_w(px(0.0))
                 .flex()
                 .items_center()
-                .gap(px(6.0));
+                .gap(spacing(Spacing::Xs, density));
             if let Some((group_icon, group_accent)) = group_badge {
                 label_row = label_row.child(icon(
                     Icon::from_name(group_icon.as_str()),

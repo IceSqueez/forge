@@ -13,16 +13,15 @@ use crate::tokens::{
 use crate::tr;
 
 const GLYPH: Pixels = px(13.0);
-const PAD_V: Pixels = px(6.0);
 
-fn error_frame(message: SharedString, palette: &ForgePalette) -> Div {
+fn error_frame(message: SharedString, palette: &ForgePalette, density: Density) -> Div {
     div()
         .w_full()
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Xs, Density::Cozy))
-        .px(spacing(Spacing::Sm, Density::Cozy))
-        .py(PAD_V)
+        .gap(spacing(Spacing::Xs, density))
+        .px(spacing(Spacing::Sm, density))
+        .py(spacing(Spacing::Xs, density))
         .rounded(radius(Radius::Sm))
         .bg(with_alpha(palette.danger, TINT_FILL_ALPHA))
         .border(BORDER_THIN)
@@ -39,8 +38,12 @@ fn error_frame(message: SharedString, palette: &ForgePalette) -> Div {
         )
 }
 
-pub fn error_row(message: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
-    error_frame(message.into(), palette)
+pub fn error_row(
+    message: impl Into<SharedString>,
+    palette: &ForgePalette,
+    density: Density,
+) -> impl IntoElement {
+    error_frame(message.into(), palette, density)
 }
 
 pub fn compact_error_with_retry(
@@ -48,6 +51,7 @@ pub fn compact_error_with_retry(
     message: impl Into<SharedString>,
     palette: &ForgePalette,
     on_retry: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    density: Density,
 ) -> impl IntoElement {
     let message: SharedString = message.into();
     div()
@@ -55,9 +59,9 @@ pub fn compact_error_with_retry(
         .flex()
         .flex_col()
         .items_start()
-        .gap(spacing(Spacing::Xs, Density::Cozy))
-        .px(spacing(Spacing::Xs, Density::Cozy))
-        .py(PAD_V)
+        .gap(spacing(Spacing::Xs, density))
+        .px(spacing(Spacing::Xs, density))
+        .py(spacing(Spacing::Xs, density))
         .rounded(radius(Radius::Sm))
         .bg(with_alpha(palette.danger, TINT_FILL_ALPHA))
         .border(BORDER_THIN)
@@ -67,7 +71,7 @@ pub fn compact_error_with_retry(
                 .w_full()
                 .flex()
                 .items_start()
-                .gap(spacing(Spacing::Xs, Density::Cozy))
+                .gap(spacing(Spacing::Xs, density))
                 .child(icon(Icon::AlertTriangle, GLYPH, palette.danger))
                 .child(
                     div()
@@ -87,7 +91,8 @@ pub fn error_row_with_retry(
     message: impl Into<SharedString>,
     palette: &ForgePalette,
     on_retry: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    density: Density,
 ) -> impl IntoElement {
-    error_frame(message.into(), palette)
+    error_frame(message.into(), palette, density)
         .child(ghost_button(tr!("widget_field_retry"), palette).on_click(id, on_retry))
 }

@@ -49,19 +49,15 @@ const EQ_MIN_SCALE: f32 = 0.35;
 const EQ_BAR_FPS: f32 = 30.0;
 const VOLUME_GLYPH: Pixels = px(14.0);
 const STRIP_DIVIDER_H: Pixels = px(16.0);
-const STRIP_DIVIDER_MX: Pixels = px(4.0);
 
 const BODY_PAD_Y: Pixels = px(18.0);
 const BODY_PAD_X: Pixels = px(22.0);
 const SECTION_GAP: Pixels = px(18.0);
-const SECTION_LABEL_MB: Pixels = px(10.0);
 const NOW_LABEL_GAP: Pixels = px(7.0);
 const NOW_CARD_PAD: Pixels = px(14.0);
-const NOW_ROW_GAP: Pixels = px(10.0);
 const NOW_TILE: Pixels = px(32.0);
 const NOW_TILE_RADIUS: Pixels = px(8.0);
 const NOW_TILE_GLYPH: Pixels = px(16.0);
-const NOW_NAME_GAP: Pixels = px(6.0);
 const NOW_NAME_MB: Pixels = px(2.0);
 const NOW_NAME_FONT: Pixels = FONT_ROW;
 const NOW_PILL_FONT: Pixels = FONT_SECTION_LABEL;
@@ -73,14 +69,11 @@ const PROGRESS_FONT: Pixels = FONT_MICRO;
 const PROGRESS_BAR_H: Pixels = px(3.0);
 const PROGRESS_BAR_RADIUS: Pixels = px(2.0);
 
-const QUEUE_LABEL_GAP: Pixels = px(6.0);
 const QUEUE_ROW_PAD_V: Pixels = px(9.0);
 const QUEUE_ROW_PAD_H: Pixels = px(14.0);
 const QUEUE_BITS_FONT: Pixels = FONT_BADGE;
-const QUEUE_ROW_GAP: Pixels = px(10.0);
 const QUEUE_INDEX_FONT: Pixels = FONT_META;
 const QUEUE_GRIP_GLYPH: Pixels = px(13.0);
-const QUEUE_NAME_GAP: Pixels = px(6.0);
 const QUEUE_NAME_FONT: Pixels = FONT_XS;
 const QUEUE_PREVIEW_FONT: Pixels = FONT_MICRO;
 const QUEUE_MSG_FONT: Pixels = FONT_META;
@@ -98,9 +91,6 @@ const STRIP_GAP: Pixels = px(8.0);
 const VOL_GAP: Pixels = px(7.0);
 const VOL_PCT_FONT: Pixels = FONT_META;
 const VOL_PCT_W: Pixels = px(32.0);
-const TEST_PAD_V: Pixels = px(4.0);
-const TEST_PAD_H: Pixels = px(10.0);
-const TEST_GAP: Pixels = px(6.0);
 const TEST_ICON: Pixels = px(12.0);
 const TEST_FONT: Pixels = FONT_LABEL;
 const BTN_FONT: Pixels = FONT_XS;
@@ -109,7 +99,6 @@ const RAIL_PAD_Y: Pixels = px(18.0);
 const RAIL_PAD_X: Pixels = px(14.0);
 const STAT_CARD_PAD_V: Pixels = px(2.0);
 const STAT_CARD_PAD_H: Pixels = px(11.0);
-const STAT_PAD_V: Pixels = px(6.0);
 const STAT_LABEL_FONT: Pixels = FONT_LABEL;
 const STAT_VALUE_FONT: Pixels = FONT_FIELD;
 const ENGINE_PAD_V: Pixels = px(9.0);
@@ -117,7 +106,6 @@ const ENGINE_PAD_H: Pixels = px(11.0);
 const ENGINE_NAME_FONT: Pixels = FONT_LABEL;
 const ENGINE_META_FONT: Pixels = FONT_MICRO;
 const ENGINE_NAME_MB: Pixels = px(3.0);
-const ENGINE_CARD_MB: Pixels = px(6.0);
 
 struct TtsRailResizeDrag;
 
@@ -136,14 +124,15 @@ struct QueueRowGhost {
 }
 
 impl Render for QueueRowGhost {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         div()
             .flex()
             .items_center()
-            .gap(QUEUE_NAME_GAP)
+            .gap(spacing(Spacing::Xs, density))
             .max_w(QUEUE_GHOST_MAX_W)
             .py(QUEUE_ROW_PAD_V)
-            .px(QUEUE_ROW_GAP)
+            .px(spacing(Spacing::Sm, density))
             .bg(self.surface)
             .border(BORDER_THIN)
             .border_color(self.border)
@@ -354,6 +343,7 @@ impl TtsDashboardView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let (pause_label, pause_glyph, btn_bg) = if manual_paused {
             (
                 tr!("tts_dash_resume_btn"),
@@ -430,7 +420,7 @@ impl TtsDashboardView {
                 .flex()
                 .items_center()
                 .gap(STRIP_GAP)
-                .child(strip_divider(palette))
+                .child(strip_divider(palette, density))
                 .child(chip(
                     tr!("tts_dash_voice_gate_held"),
                     ChipGlyph::Icon(Icon::Microphone2, palette.warning),
@@ -447,16 +437,16 @@ impl TtsDashboardView {
             .child(pause_btn)
             .child(skip_btn)
             .child(stop_btn)
-            .child(strip_divider(palette))
+            .child(strip_divider(palette, density))
             .child(volume_row)
             .children(gate_indicator);
 
         let test_field = div()
             .flex()
             .items_center()
-            .gap(TEST_GAP)
-            .py(TEST_PAD_V)
-            .px(TEST_PAD_H)
+            .gap(spacing(Spacing::Xs, density))
+            .py(spacing(Spacing::Xxs, density))
+            .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.shell)
             .border(BORDER_THIN)
@@ -496,7 +486,7 @@ impl TtsDashboardView {
             .items_center()
             .justify_between()
             .py(TOOLBAR_PAD_V)
-            .px(spacing(Spacing::Md, Density::Cozy))
+            .px(spacing(Spacing::Md, density))
             .bg(palette.elevated)
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -550,6 +540,7 @@ impl TtsDashboardView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let latency = stats
             .avg_latency_ms
             .map(|ms| format!("{ms}ms"))
@@ -564,6 +555,7 @@ impl TtsDashboardView {
                 palette.brand,
                 palette,
                 true,
+                density,
             ))
             .child(stat_row(
                 tr!("tts_dash_stat_skipped"),
@@ -571,6 +563,7 @@ impl TtsDashboardView {
                 palette.warning,
                 palette,
                 true,
+                density,
             ))
             .child(stat_row(
                 tr!("tts_dash_stat_filtered"),
@@ -578,6 +571,7 @@ impl TtsDashboardView {
                 palette.danger,
                 palette,
                 true,
+                density,
             ))
             .child(stat_row(
                 tr!("tts_dash_stat_avg_latency"),
@@ -585,6 +579,7 @@ impl TtsDashboardView {
                 palette.success,
                 palette,
                 false,
+                density,
             ));
 
         let mut content = div()
@@ -593,6 +588,7 @@ impl TtsDashboardView {
             .child(section_heading(
                 section_label(tr!("tts_dash_session_header"), palette),
                 None,
+                density,
             ))
             .child(
                 div().mb(SECTION_GAP).child(
@@ -604,6 +600,7 @@ impl TtsDashboardView {
             .child(section_heading(
                 section_label(tr!("tts_dash_engines_header"), palette),
                 None,
+                density,
             ));
 
         if self.engines.is_empty() {
@@ -633,7 +630,7 @@ impl TtsDashboardView {
             } else {
                 eng.meta.clone()
             };
-            content = content.child(engine_card(eng.name.clone(), meta, color, palette));
+            content = content.child(engine_card(eng.name.clone(), meta, color, palette, density));
         }
 
         let panel = div()
@@ -720,7 +717,7 @@ impl TtsDashboardView {
         let title = div()
             .flex()
             .items_center()
-            .gap(QUEUE_LABEL_GAP)
+            .gap(spacing(Spacing::Xs, density))
             .child(section_label(tr!("tts_dash_queue_header"), palette))
             .child(count_badge);
         let total = (!queue.is_empty()).then(|| {
@@ -750,7 +747,7 @@ impl TtsDashboardView {
             .w_full()
             .flex()
             .flex_col()
-            .child(section_heading(title, total))
+            .child(section_heading(title, total, density))
             .child(
                 div()
                     .id("tts-queue-drop")
@@ -771,6 +768,7 @@ impl TtsDashboardView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let pos = div()
             .w(QUEUE_POS_W)
             .flex_shrink_0()
@@ -786,14 +784,18 @@ impl TtsDashboardView {
             palette.text_extreme_faint,
         );
 
-        let mut name_row = div().flex().items_center().gap(QUEUE_NAME_GAP).child(
-            div()
-                .font_family(body_family())
-                .font_weight(FontWeight::MEDIUM)
-                .text_size(QUEUE_NAME_FONT)
-                .text_color(hash_accent(&item.viewer_name, palette))
-                .child(item.viewer_name.clone()),
-        );
+        let mut name_row = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
+            .child(
+                div()
+                    .font_family(body_family())
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(QUEUE_NAME_FONT)
+                    .text_color(hash_accent(&item.viewer_name, palette))
+                    .child(item.viewer_name.clone()),
+            );
         if item.is_high_priority {
             let label = item
                 .bits_amount
@@ -880,7 +882,7 @@ impl TtsDashboardView {
             .w_full()
             .flex()
             .items_center()
-            .gap(QUEUE_ROW_GAP)
+            .gap(spacing(Spacing::Sm, density))
             .py(QUEUE_ROW_PAD_V)
             .px(QUEUE_ROW_PAD_H)
             .cursor(CursorStyle::OpenHand)
@@ -1006,11 +1008,11 @@ impl Render for TtsDashboardView {
     }
 }
 
-fn strip_divider(palette: &ForgePalette) -> impl IntoElement {
+fn strip_divider(palette: &ForgePalette, density: Density) -> impl IntoElement {
     div()
         .w(BORDER_THIN)
         .h(STRIP_DIVIDER_H)
-        .mx(STRIP_DIVIDER_MX)
+        .mx(spacing(Spacing::Xxs, density))
         .bg(palette.border_regular)
 }
 
@@ -1086,7 +1088,7 @@ fn now_speaking_panel(
             let mut name_row = div()
                 .flex()
                 .items_center()
-                .gap(NOW_NAME_GAP)
+                .gap(spacing(Spacing::Xs, density))
                 .mb(NOW_NAME_MB)
                 .child(
                     div()
@@ -1164,7 +1166,7 @@ fn now_speaking_panel(
             div()
                 .flex()
                 .items_start()
-                .gap(NOW_ROW_GAP)
+                .gap(spacing(Spacing::Sm, density))
                 .child(tile)
                 .child(info)
         }
@@ -1197,7 +1199,7 @@ fn now_speaking_panel(
         .w_full()
         .flex()
         .flex_col()
-        .child(section_heading(label, None))
+        .child(section_heading(label, None, density))
         .child(
             div()
                 .mb(SECTION_GAP)
@@ -1206,13 +1208,17 @@ fn now_speaking_panel(
         .into_any_element()
 }
 
-fn section_heading(label: impl IntoElement, right: Option<AnyElement>) -> impl IntoElement {
+fn section_heading(
+    label: impl IntoElement,
+    right: Option<AnyElement>,
+    density: Density,
+) -> impl IntoElement {
     div()
         .w_full()
         .flex()
         .items_center()
         .justify_between()
-        .mb(SECTION_LABEL_MB)
+        .mb(spacing(Spacing::Sm, density))
         .child(label)
         .children(right)
 }
@@ -1223,13 +1229,14 @@ fn stat_row(
     value_color: Rgba,
     palette: &ForgePalette,
     border_bottom: bool,
+    density: Density,
 ) -> impl IntoElement {
     let mut row = div()
         .w_full()
         .flex()
         .items_center()
         .justify_between()
-        .py(STAT_PAD_V)
+        .py(spacing(Spacing::Xs, density))
         .child(
             div()
                 .flex_1()
@@ -1259,6 +1266,7 @@ fn engine_card(
     meta: impl Into<SharedString>,
     status_color: Rgba,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     let name = name.into();
     let meta = meta.into();
@@ -1288,7 +1296,7 @@ fn engine_card(
                 .text_color(palette.text_faint)
                 .child(meta),
         );
-    div().mb(ENGINE_CARD_MB).child(
+    div().mb(spacing(Spacing::Xs, density)).child(
         card(body, palette)
             .padding_xy(ENGINE_PAD_V, ENGINE_PAD_H)
             .full_width(),

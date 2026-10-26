@@ -45,7 +45,6 @@ const PANEL_GLYPH: Pixels = px(12.0);
 const CARDS_PER_ROW: usize = 2;
 const STATS_FS: Pixels = FONT_LABEL;
 const CARD_PAD: Pixels = px(14.0);
-const SECTION_GAP: Pixels = px(10.0);
 const HEADER_GAP: Pixels = px(12.0);
 const BAR_GAP: Pixels = px(8.0);
 const STAT_VALUE_FS: Pixels = FONT_FIELD;
@@ -325,7 +324,7 @@ impl Render for EditQueueModal {
         let name_field = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
                     .font_family(mono_family())
@@ -340,12 +339,12 @@ impl Render for EditQueueModal {
         let desc_field = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(4.0))
+                    .gap(spacing(Spacing::Xxs, density))
                     .child(
                         div()
                             .font_family(mono_family())
@@ -369,8 +368,8 @@ impl Render for EditQueueModal {
             .w_full()
             .flex()
             .flex_col()
-            .gap(px(4.0))
-            .py(px(10.0))
+            .gap(spacing(Spacing::Xxs, density))
+            .py(spacing(Spacing::Sm, density))
             .px(px(12.0))
             .rounded(CONCURRENCY_BOX_RADIUS)
             .border(BORDER_THIN)
@@ -981,7 +980,7 @@ impl QueuesView {
             .flex()
             .flex_col()
             .child(self.card_header(index, q, not_live, palette, cx))
-            .child(self.card_metrics(q, palette))
+            .child(self.card_metrics(q, palette, density))
             .child(status_panel(q, palette, density))
             .child(self.card_buttons(index, q, palette, density, cx));
 
@@ -1001,6 +1000,7 @@ impl QueuesView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let spin_id = SharedString::from(format!("q-badge-spin-{}", q.id));
         let name = div()
             .font_family(mono_family())
@@ -1013,13 +1013,14 @@ impl QueuesView {
             .items_center()
             .gap(BAR_GAP)
             .child(name)
-            .child(status_badge(spin_id, q.mode, palette));
+            .child(status_badge(spin_id, q.mode, palette, density));
         if not_live {
             let id = q.id;
             name_row = name_row.child(not_live_badge(
                 ("q-not-live", index),
                 palette,
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.apply_live(id, cx)),
+                density,
             ));
         }
 
@@ -1131,7 +1132,7 @@ impl QueuesView {
             .into_any_element()
     }
 
-    fn card_metrics(&self, q: &QueueRow, palette: &ForgePalette) -> AnyElement {
+    fn card_metrics(&self, q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
         let running = q.mode == QueueMode::RUNNING;
         let pending_value_color = if running {
             palette.text_primary
@@ -1181,8 +1182,8 @@ impl QueuesView {
 
         div()
             .w_full()
-            .pt(SECTION_GAP)
-            .mb(SECTION_GAP)
+            .pt(spacing(Spacing::Sm, density))
+            .mb(spacing(Spacing::Sm, density))
             .border_t(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(row)
@@ -1342,7 +1343,11 @@ impl QueuesView {
 }
 
 impl QueuesView {
-    fn render_stats<'a>(&self, palette: &'a ForgePalette) -> impl IntoElement + use<'a> {
+    fn render_stats<'a>(
+        &self,
+        palette: &'a ForgePalette,
+        density: Density,
+    ) -> impl IntoElement + use<'a> {
         let running_count = self
             .queues
             .iter()
@@ -1369,6 +1374,7 @@ impl QueuesView {
                 ),
             ],
             palette,
+            density,
         )
     }
 
@@ -1447,7 +1453,7 @@ impl Render for QueuesView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let stats = self.render_stats(&palette);
+        let stats = self.render_stats(&palette, density);
         let subheader_left = self.render_subheader_left(&palette, density, cx);
         let subheader_right = self.render_subheader_right(&palette, density, cx);
 
@@ -1528,7 +1534,12 @@ impl Render for QueuesView {
     }
 }
 
-fn status_badge(spin_id: SharedString, mode: QueueMode, palette: &ForgePalette) -> AnyElement {
+fn status_badge(
+    spin_id: SharedString,
+    mode: QueueMode,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
     let ink = mode_ink(mode, palette);
     let mark: AnyElement = if mode == QueueMode::RUNNING {
         spinner(spin_id, Icon::Loader2, BADGE_GLYPH, ink).into_any_element()
@@ -1539,9 +1550,9 @@ fn status_badge(spin_id: SharedString, mode: QueueMode, palette: &ForgePalette) 
     div()
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
-        .py(spacing(Spacing::Xxs, Density::Cozy))
-        .px(spacing(Spacing::Xs, Density::Cozy))
+        .gap(spacing(Spacing::Xxs, density))
+        .py(spacing(Spacing::Xxs, density))
+        .px(spacing(Spacing::Xs, density))
         .rounded(BADGE_RADIUS)
         .bg(palette.border_regular)
         .child(mark)
@@ -1668,7 +1679,7 @@ fn status_strip(
         .gap(BAR_GAP)
         .py(spacing(Spacing::Xs, density))
         .px(spacing(Spacing::Sm, density))
-        .mb(SECTION_GAP)
+        .mb(spacing(Spacing::Sm, density))
         .rounded(radius(Radius::Sm))
         .child(mark)
         .child(
@@ -1681,7 +1692,7 @@ fn status_strip(
                 .child(caption),
         );
     if q.overflowed > 0 {
-        strip = strip.child(overflow_badge(q.overflowed, palette));
+        strip = strip.child(overflow_badge(q.overflowed, palette, density));
     }
     strip = strip.child(counts);
 
@@ -1695,13 +1706,13 @@ fn status_strip(
     .into_any_element()
 }
 
-fn overflow_badge(overflowed: u64, palette: &ForgePalette) -> AnyElement {
+fn overflow_badge(overflowed: u64, palette: &ForgePalette, density: Density) -> AnyElement {
     div()
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
-        .py(spacing(Spacing::Xxs, Density::Cozy))
-        .px(spacing(Spacing::Xs, Density::Cozy))
+        .gap(spacing(Spacing::Xxs, density))
+        .py(spacing(Spacing::Xxs, density))
+        .px(spacing(Spacing::Xs, density))
         .rounded(BADGE_RADIUS)
         .bg(with_alpha(palette.danger, TINT_STRONG_FILL_ALPHA))
         .border(BORDER_THIN)
@@ -1731,7 +1742,7 @@ fn serial_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyEl
         .gap(BAR_GAP)
         .py(spacing(Spacing::Xs, density))
         .px(spacing(Spacing::Sm, density))
-        .mb(SECTION_GAP)
+        .mb(spacing(Spacing::Sm, density))
         .rounded(radius(Radius::Sm))
         .bg(palette.shell)
         .child(spinner(spin_id, Icon::Loader2, PANEL_GLYPH, palette.brand))
@@ -1759,12 +1770,13 @@ fn concurrent_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> A
 
     let mut pills = div().flex().flex_wrap().gap(spacing(Spacing::Xxs, density));
     for name in &q.running[..shown] {
-        pills = pills.child(running_pill(name.clone(), palette));
+        pills = pills.child(running_pill(name.clone(), palette, density));
     }
     if overflow > 0 {
         pills = pills.child(running_pill(
             tr!("queues_overflow_more", count = overflow as i64),
             palette,
+            density,
         ));
     }
 
@@ -1775,7 +1787,7 @@ fn concurrent_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> A
         .gap(spacing(Spacing::Xxs, density))
         .py(spacing(Spacing::Xs, density))
         .px(spacing(Spacing::Sm, density))
-        .mb(SECTION_GAP)
+        .mb(spacing(Spacing::Sm, density))
         .rounded(radius(Radius::Sm))
         .bg(palette.shell)
         .child(
@@ -1792,6 +1804,7 @@ fn concurrent_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> A
 pub(crate) fn running_pill(
     label: impl Into<SharedString>,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     badge(
         palette.border_regular,
@@ -1802,8 +1815,8 @@ pub(crate) fn running_pill(
     )
     .weight(FontWeight::NORMAL)
     .padding_xy(
-        spacing(Spacing::Xxs, Density::Cozy),
-        spacing(Spacing::Xs, Density::Cozy),
+        spacing(Spacing::Xxs, density),
+        spacing(Spacing::Xs, density),
     )
     .radius(PILL_RADIUS)
 }
@@ -1948,6 +1961,7 @@ fn not_live_badge(
     id: impl Into<gpui::ElementId>,
     palette: &ForgePalette,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    density: Density,
 ) -> AnyElement {
     div()
         .id(id.into())
@@ -1956,9 +1970,9 @@ fn not_live_badge(
         .tooltip(tooltip_builder(tr!("queues_not_live_tooltip"), palette))
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
-        .py(spacing(Spacing::Xxs, Density::Cozy))
-        .px(spacing(Spacing::Xs, Density::Cozy))
+        .gap(spacing(Spacing::Xxs, density))
+        .py(spacing(Spacing::Xxs, density))
+        .px(spacing(Spacing::Xs, density))
         .rounded(BADGE_RADIUS)
         .bg(with_alpha(palette.warning, TINT_STRONG_FILL_ALPHA))
         .border(BORDER_THIN)

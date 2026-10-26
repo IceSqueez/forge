@@ -1,3 +1,6 @@
+use forge_components::Density;
+use forge_components::Spacing;
+use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Picker, PickerEvent, PickerItem,
     PickerLabels, body_family, field_label, ghost_button_with_icon, icon, section_label, toggle,
@@ -25,7 +28,6 @@ use forge_components::ActivePresentation;
 
 const LOOK_FIELD_KEY: &str = "look";
 const ROW_GAP: Pixels = px(8.0);
-const HINT_TOP: Pixels = px(4.0);
 const FLAG_GLYPH: Pixels = px(12.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -402,6 +404,7 @@ impl OverlayPropertyPanel {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let field = ConfigField::Choice {
             key: LOOK_FIELD_KEY.to_owned(),
             gate: None,
@@ -429,7 +432,8 @@ impl OverlayPropertyPanel {
             }),
         };
         let view = cx.entity();
-        let control = render_config_control(&field, palette, "overlays-panel", &view, &handlers);
+        let control =
+            render_config_control(&field, palette, "overlays-panel", &view, &handlers, density);
 
         div()
             .flex()
@@ -438,11 +442,12 @@ impl OverlayPropertyPanel {
                 tr!("overlays_panel_section_look").to_uppercase(),
                 palette,
             )))
-            .child(
-                div()
-                    .pb(FIELD_GAP)
-                    .child(hinted(control, tr!("overlays_look_hint"), palette)),
-            )
+            .child(div().pb(FIELD_GAP).child(hinted(
+                control,
+                tr!("overlays_look_hint"),
+                palette,
+                density,
+            )))
             .into_any_element()
     }
 
@@ -507,6 +512,7 @@ impl OverlayPropertyPanel {
     }
 
     fn render_fire_row(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let button = ghost_button_with_icon(Icon::PlayerPlay, tr!("overlays_show_fire"), palette)
             .ink(palette.brand)
             .full_width()
@@ -520,7 +526,7 @@ impl OverlayPropertyPanel {
             self.base.queues_shows(),
             self.base.slot_bound(),
         );
-        let status = status_line(text, warn, palette);
+        let status = status_line(text, warn, palette, density);
         div()
             .flex()
             .flex_col()
@@ -534,6 +540,7 @@ impl OverlayPropertyPanel {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let view = cx.entity();
         let row = div()
             .w_full()
@@ -569,7 +576,11 @@ impl OverlayPropertyPanel {
                 tr!("overlays_panel_section_receiver").to_uppercase(),
                 palette,
             )))
-            .child(div().pb(FIELD_GAP).child(hinted(row, hint, palette)))
+            .child(
+                div()
+                    .pb(FIELD_GAP)
+                    .child(hinted(row, hint, palette, density)),
+            )
             .into_any_element()
     }
 }
@@ -619,9 +630,9 @@ fn fire_status(fire: &ShowFire, queues: bool, slot_bound: bool) -> (String, bool
     }
 }
 
-fn hint_text(text: String, palette: &ForgePalette) -> gpui::Div {
+fn hint_text(text: String, palette: &ForgePalette, density: Density) -> gpui::Div {
     div()
-        .pt(HINT_TOP)
+        .pt(spacing(Spacing::Xxs, density))
         .font_family(body_family())
         .text_size(FONT_XXS)
         .line_height(NOTICE_LINE_H)
@@ -633,22 +644,25 @@ pub(super) fn hinted(
     control: impl IntoElement,
     hint: String,
     palette: &ForgePalette,
+    density: Density,
 ) -> AnyElement {
     div()
         .flex()
         .flex_col()
         .child(control)
-        .child(hint_text(hint, palette))
+        .child(hint_text(hint, palette, density))
         .into_any_element()
 }
 
-fn status_line(text: String, warn: bool, palette: &ForgePalette) -> AnyElement {
+fn status_line(text: String, warn: bool, palette: &ForgePalette, density: Density) -> AnyElement {
     let tone = if warn {
         palette.warning
     } else {
         palette.text_faint
     };
-    hint_text(text, palette).text_color(tone).into_any_element()
+    hint_text(text, palette, density)
+        .text_color(tone)
+        .into_any_element()
 }
 
 fn note_line(text: String, palette: &ForgePalette) -> AnyElement {

@@ -1263,6 +1263,7 @@ impl Render for BackupScheduleView {
                     tr!("backup_schedule_load_failed", reason = reason),
                     &palette,
                     cx.listener(|this, _: &ClickEvent, _, cx| this.load(cx)),
+                    density,
                 ))
                 .into_any_element()
         });

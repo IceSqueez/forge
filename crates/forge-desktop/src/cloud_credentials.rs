@@ -28,7 +28,6 @@ use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 const VALUE_BOX_GAP: Pixels = px(8.0);
-const FIELD_STACK_GAP: Pixels = px(6.0);
 const NOTE_GAP: Pixels = px(5.0);
 const RESULT_DOT: Pixels = px(6.0);
 const BOX_RADIUS: Pixels = px(7.0);
@@ -684,6 +683,7 @@ impl CloudCredentialsView {
         palette: &ForgePalette,
         cx: &Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let label: SharedString = label.into();
         let label = label.to_uppercase();
 
@@ -723,7 +723,7 @@ impl CloudCredentialsView {
             .w_full()
             .flex()
             .flex_col()
-            .gap(FIELD_STACK_GAP)
+            .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
                     .font_family(mono_family())

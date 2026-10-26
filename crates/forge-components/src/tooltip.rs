@@ -4,6 +4,7 @@ use gpui::{
 };
 
 use crate::palette::ForgePalette;
+use crate::presentation::ActivePresentation;
 use crate::tokens::{BORDER_THIN, Density, FONT_XS, Radius, Spacing, body_family, radius, spacing};
 
 pub fn tooltip_surface(
@@ -30,32 +31,24 @@ fn tooltip_frame(palette: &ForgePalette, density: Density) -> Div {
 pub struct Tooltip {
     label: SharedString,
     palette: ForgePalette,
-    density: Density,
 }
 
 pub fn tooltip(label: impl Into<SharedString>, palette: &ForgePalette) -> Tooltip {
     Tooltip {
         label: label.into(),
         palette: *palette,
-        density: Density::Cozy,
     }
 }
 
 impl Tooltip {
-    #[must_use]
-    pub fn density(mut self, density: Density) -> Self {
-        self.density = density;
-        self
-    }
-
     pub fn build(self, cx: &mut App) -> AnyView {
         cx.new(|_| self).into()
     }
 }
 
 impl Render for Tooltip {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        tooltip_surface(self.label.clone(), &self.palette, self.density)
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        tooltip_surface(self.label.clone(), &self.palette, cx.density())
     }
 }
 
@@ -71,14 +64,12 @@ pub fn tooltip_builder(
 pub struct TooltipLines {
     lines: Vec<SharedString>,
     palette: ForgePalette,
-    density: Density,
 }
 
 pub fn tooltip_lines(lines: Vec<SharedString>, palette: &ForgePalette) -> TooltipLines {
     TooltipLines {
         lines,
         palette: *palette,
-        density: Density::Cozy,
     }
 }
 
@@ -89,11 +80,12 @@ impl TooltipLines {
 }
 
 impl Render for TooltipLines {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        let mut col = tooltip_frame(&self.palette, self.density)
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
+        let mut col = tooltip_frame(&self.palette, density)
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, self.density));
+            .gap(spacing(Spacing::Xxs, density));
         for line in &self.lines {
             col = col.child(div().child(line.clone()));
         }

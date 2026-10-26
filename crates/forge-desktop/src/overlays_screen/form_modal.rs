@@ -1,3 +1,6 @@
+use forge_components::Density;
+use forge_components::Spacing;
+use forge_components::spacing;
 use forge_components::{
     FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, TextInput, body_family,
     icon, modal, mono_family, overlay, pad_tile, primary_button, secondary_button, tr,
@@ -12,11 +15,8 @@ use forge_components::ActivePresentation;
 use forge_components::grow_cell;
 
 const MODAL_W: Pixels = px(520.0);
-const BODY_PAD_V: Pixels = px(16.0);
 const BODY_PAD_H: Pixels = px(18.0);
 
-const FIELD_GAP: Pixels = px(6.0);
-const FIELD_MB: Pixels = px(16.0);
 const TILE_GAP: Pixels = px(8.0);
 const TILES_PER_ROW: usize = 3;
 const LOCKED_GAP: Pixels = px(8.0);
@@ -132,19 +132,20 @@ impl OverlayFormModal {
         cx.emit(OverlayFormEvent::Cancel);
     }
 
-    fn render_name(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_name(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         div()
             .w_full()
             .flex()
             .flex_col()
-            .gap(FIELD_GAP)
-            .mb(FIELD_MB)
+            .gap(spacing(Spacing::Xs, density))
+            .mb(spacing(Spacing::Md, density))
             .child(caption(tr!("overlays_form_name_label"), palette))
             .child(div().w_full().child(self.name.clone()))
             .into_any_element()
     }
 
     fn render_type_picker(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let mut grid = div().w_full().flex().flex_col().gap(TILE_GAP);
         for chunk in self.types.chunks(TILES_PER_ROW) {
             let mut row = div().w_full().flex().items_stretch().gap(TILE_GAP);
@@ -183,13 +184,13 @@ impl OverlayFormModal {
             .w_full()
             .flex()
             .flex_col()
-            .gap(FIELD_GAP)
+            .gap(spacing(Spacing::Xs, density))
             .child(caption(tr!("overlays_form_type_label"), palette))
             .child(grid)
             .into_any_element()
     }
 
-    fn render_locked_type(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_locked_type(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let chosen = self
             .types
             .iter()
@@ -203,7 +204,7 @@ impl OverlayFormModal {
             .w_full()
             .flex()
             .flex_col()
-            .gap(FIELD_GAP)
+            .gap(spacing(Spacing::Xs, density))
             .child(caption(tr!("overlays_form_type_label"), palette))
             .child(
                 div()
@@ -268,6 +269,7 @@ fn caption(label: String, palette: &ForgePalette) -> impl IntoElement {
 
 impl Render for OverlayFormModal {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
         if self.focus_pending {
             self.focus_pending = false;
@@ -275,18 +277,18 @@ impl Render for OverlayFormModal {
         }
 
         let type_section = if self.is_rename() {
-            self.render_locked_type(&palette)
+            self.render_locked_type(&palette, density)
         } else {
             self.render_type_picker(&palette, cx)
         };
 
         let body = div()
             .w_full()
-            .py(BODY_PAD_V)
+            .py(spacing(Spacing::Md, density))
             .px(BODY_PAD_H)
             .flex()
             .flex_col()
-            .child(self.render_name(&palette))
+            .child(self.render_name(&palette, density))
             .child(type_section);
 
         let (title, subtitle) = if self.is_rename() {

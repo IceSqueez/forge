@@ -1,5 +1,9 @@
+use forge_components::ActivePresentation;
+use forge_components::Density;
 use forge_components::FONT_FIELD;
 use forge_components::FONT_META;
+use forge_components::Spacing;
+use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, body_family, empty_state, icon,
     mono_family, segment, segmented, tr,
@@ -16,22 +20,17 @@ use super::editor_state::EditorMode;
 use super::property_panel::override_notice;
 
 const HEAD_PAD_V: Pixels = px(9.0);
-const HEAD_PAD_H: Pixels = px(16.0);
-const HEAD_GAP: Pixels = px(10.0);
 const HEAD_GLYPH: Pixels = px(15.0);
 const HEAD_TITLE_FS: Pixels = FONT_FIELD;
 
 const URL_BOX_GAP: Pixels = px(8.0);
 const URL_BOX_PAD_V: Pixels = px(5.0);
-const URL_BOX_PAD_H: Pixels = px(10.0);
 const URL_BOX_RADIUS: Pixels = px(7.0);
 const URL_FS: Pixels = FONT_META;
 const URL_GLYPH: Pixels = px(12.0);
 const COPY_GAP: Pixels = px(3.0);
 
-const NOTICE_GAP: Pixels = px(6.0);
 const NOTICE_PAD_V: Pixels = px(8.0);
-const NOTICE_PAD_H: Pixels = px(16.0);
 const NOTICE_GLYPH: Pixels = px(12.0);
 
 const STAGE_PAD: Pixels = px(20.0);
@@ -59,6 +58,7 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let pane = div()
             .flex_1()
             .min_w(px(0.0))
@@ -74,11 +74,11 @@ impl OverlaysView {
         };
 
         let unavailable_notice = (!self.visuals(definition, palette).is_available())
-            .then(|| self.render_unavailable_notice(definition, palette));
+            .then(|| self.render_unavailable_notice(definition, palette, density));
 
         pane.child(self.render_selection_header(definition, palette, cx))
             .children(unavailable_notice)
-            .children(self.render_schema_notice(definition, palette))
+            .children(self.render_schema_notice(definition, palette, density))
             .child(self.render_stage(Some(definition), palette, cx))
             .into_any_element()
     }
@@ -89,6 +89,7 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let visuals = self.visuals(definition, palette);
 
         div()
@@ -96,8 +97,8 @@ impl OverlaysView {
             .w_full()
             .flex()
             .items_center()
-            .gap(HEAD_GAP)
-            .px(HEAD_PAD_H)
+            .gap(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Md, density))
             .py(HEAD_PAD_V)
             .bg(palette.elevated)
             .border_b(BORDER_THIN)
@@ -167,7 +168,11 @@ impl OverlaysView {
             .into_any_element()
     }
 
-    pub(super) fn render_property_pane(&self, palette: &ForgePalette) -> Option<AnyElement> {
+    pub(super) fn render_property_pane(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> Option<AnyElement> {
         let definition = self.selected_definition()?;
 
         let body = match (self.mode(), self.panel_view()) {
@@ -199,7 +204,7 @@ impl OverlaysView {
                         .flex()
                         .flex_col()
                         .children(override_notice(&definition.source_overrides, palette))
-                        .children(bindings_reference(look.as_ref(), palette)),
+                        .children(bindings_reference(look.as_ref(), palette, density)),
                 )
             }
         };
@@ -213,12 +218,13 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let box_frame = div()
             .flex_none()
             .flex()
             .items_center()
             .gap(URL_BOX_GAP)
-            .px(URL_BOX_PAD_H)
+            .px(spacing(Spacing::Sm, density))
             .py(URL_BOX_PAD_V)
             .rounded(URL_BOX_RADIUS)
             .border(BORDER_THIN)
@@ -264,14 +270,15 @@ impl OverlaysView {
         &self,
         definition: &OverlayDefinition,
         palette: &ForgePalette,
+        density: Density,
     ) -> AnyElement {
         div()
             .flex_none()
             .w_full()
             .flex()
             .items_center()
-            .gap(NOTICE_GAP)
-            .px(NOTICE_PAD_H)
+            .gap(spacing(Spacing::Xs, density))
+            .px(spacing(Spacing::Md, density))
             .py(NOTICE_PAD_V)
             .bg(palette.shell)
             .border_b(BORDER_THIN)

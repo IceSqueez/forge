@@ -464,6 +464,7 @@ impl PackExportModal {
                 field_frame(palette)
                     .child(self.name.clone())
                     .into_any_element(),
+                density,
             ))
             .child(field_column(
                 palette,
@@ -473,6 +474,7 @@ impl PackExportModal {
                 field_frame(palette)
                     .child(self.author.clone())
                     .into_any_element(),
+                density,
             ))
             .child(field_column(
                 palette,
@@ -482,6 +484,7 @@ impl PackExportModal {
                 field_frame(palette)
                     .child(self.description.clone())
                     .into_any_element(),
+                density,
             ))
             .child(self.render_summary(palette, density))
             .into_any_element()
@@ -492,6 +495,7 @@ impl PackExportModal {
             (_, Some(message)) => failure_note(
                 &tr!("pack_export_summary_failed", error = message.as_str()),
                 palette,
+                density,
             ),
             (Some(selection), None) => self.render_closure(selection, palette, density),
             (None, None) if self.resolving => summary_line(

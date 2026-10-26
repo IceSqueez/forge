@@ -12,6 +12,7 @@ pub(super) fn add_row_button(
     accent: Rgba,
     palette: &ForgePalette,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    density: Density,
 ) -> AnyElement {
     let label = label.into();
     let hover = palette.surface_overlay;
@@ -21,7 +22,7 @@ pub(super) fn add_row_button(
         .flex()
         .items_center()
         .justify_center()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
+        .gap(spacing(Spacing::Xxs, density))
         .py(CARD_PAD_V)
         .px(CARD_PAD_H)
         .rounded(radius(Radius::Md))
@@ -47,6 +48,7 @@ pub(super) fn empty_placeholder_card(
     glyph_color: Rgba,
     label: impl Into<SharedString>,
     palette: &ForgePalette,
+    density: Density,
 ) -> AnyElement {
     let label = label.into();
     div()
@@ -54,7 +56,7 @@ pub(super) fn empty_placeholder_card(
         .flex()
         .flex_col()
         .items_center()
-        .gap(spacing(Spacing::Xs, Density::Cozy))
+        .gap(spacing(Spacing::Xs, density))
         .py(EMPTY_CARD_PAD_V)
         .px(EMPTY_CARD_PAD_H)
         .rounded(radius(Radius::Md))
@@ -75,6 +77,7 @@ pub(super) fn inline_warning_card(
     title: impl Into<SharedString>,
     hint: impl Into<SharedString>,
     palette: &ForgePalette,
+    density: Density,
 ) -> AnyElement {
     let title = title.into();
     let hint = hint.into();
@@ -82,7 +85,7 @@ pub(super) fn inline_warning_card(
         .w_full()
         .flex()
         .items_start()
-        .gap(spacing(Spacing::Xs, Density::Cozy))
+        .gap(spacing(Spacing::Xs, density))
         .py(CARD_PAD_V)
         .px(CARD_PAD_H)
         .rounded(radius(Radius::Md))
@@ -94,7 +97,7 @@ pub(super) fn inline_warning_card(
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(spacing(Spacing::Xxs, Density::Cozy))
+                .gap(spacing(Spacing::Xxs, density))
                 .child(
                     div()
                         .font_family(body_family())

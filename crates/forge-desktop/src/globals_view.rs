@@ -768,6 +768,7 @@ impl GlobalsView {
         palette: &'a ForgePalette,
         cx: &Context<Self>,
     ) -> impl IntoElement + use<'a> {
+        let density = cx.density();
         let globals = self.globals.read(cx);
 
         header_stats(
@@ -789,6 +790,7 @@ impl GlobalsView {
                 ),
             ],
             palette,
+            density,
         )
     }
 
@@ -1185,18 +1187,23 @@ impl GlobalsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
+        let density = cx.density();
         let complex = matches!(g.kind(), VariantKind::Array | VariantKind::Object);
         let text = match &g.value {
             Variant::String(s) => format!("\"{s}\""),
             other => other.to_string(),
         };
-        let mut cell = div().flex().items_center().gap(px(4.0)).child(
-            div()
-                .font_family(mono_family())
-                .text_size(FONT_XS)
-                .text_color(palette.text_primary)
-                .child(text),
-        );
+        let mut cell = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, density))
+            .child(
+                div()
+                    .font_family(mono_family())
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_primary)
+                    .child(text),
+            );
         if complex {
             let group: SharedString = format!("globals-inspect-{}", g.name).into();
             let hover_bg = palette.surface_overlay;
@@ -1265,6 +1272,7 @@ impl GlobalsView {
 
 impl Render for GlobalEditor {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
         let palette = &palette;
         let ed = &*self;
@@ -1284,7 +1292,7 @@ impl Render for GlobalEditor {
         let name_row = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(div().flex_1().child(ed.name_input.clone()))
             .child(
                 div()
@@ -1293,12 +1301,14 @@ impl Render for GlobalEditor {
                     .text_color(palette.text_faint)
                     .child(format!("{name_len}/{NAME_FIELD_LIMIT}")),
             );
-        let name_section = section(palette, tr!("globals_editor_section_name"), name_row);
+        let name_section = section(
+            palette,
+            tr!("globals_editor_section_name"),
+            name_row,
+            density,
+        );
 
-        let mut chips = div()
-            .flex()
-            .flex_wrap()
-            .gap(spacing(Spacing::Xxs, Density::Cozy));
+        let mut chips = div().flex().flex_wrap().gap(spacing(Spacing::Xxs, density));
         for (i, &kind) in EDITOR_KINDS.iter().enumerate() {
             let active = ed.kind == kind;
             let mut c = chip(
@@ -1318,7 +1328,7 @@ impl Render for GlobalEditor {
         let mut type_children = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .child(chips);
         if locked {
             type_children = type_children.child(
@@ -1329,7 +1339,12 @@ impl Render for GlobalEditor {
                     .child(tr!("globals_editor_type_locked_hint")),
             );
         }
-        let type_section = section(palette, tr!("globals_editor_section_type"), type_children);
+        let type_section = section(
+            palette,
+            tr!("globals_editor_section_type"),
+            type_children,
+            density,
+        );
 
         let persist_row = div()
             .flex()
@@ -1362,15 +1377,21 @@ impl Render for GlobalEditor {
             palette,
             tr!("globals_editor_section_persistence"),
             persist_row,
+            density,
         );
 
         let value_control = self.editor_value_control(palette, cx);
-        let value_section = section(palette, tr!("globals_editor_section_value"), value_control);
+        let value_section = section(
+            palette,
+            tr!("globals_editor_section_value"),
+            value_control,
+            density,
+        );
 
         let mut body = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .child(name_section)
             .child(type_section)
             .child(persist_section)
@@ -1381,8 +1402,8 @@ impl Render for GlobalEditor {
                     .w_full()
                     .flex()
                     .items_center()
-                    .gap(spacing(Spacing::Xs, Density::Cozy))
-                    .p(spacing(Spacing::Xs, Density::Cozy))
+                    .gap(spacing(Spacing::Xs, density))
+                    .p(spacing(Spacing::Xs, density))
                     .rounded(radius(Radius::Sm))
                     .bg(with_alpha(palette.danger, TINT_FILL_ALPHA))
                     .border(BORDER_THIN)
@@ -1520,6 +1541,7 @@ impl GlobalsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
+        let density = cx.density();
         let kind = g.kind();
         let (count_key, count) = inspect_count(&g.value);
         let subtitle = tr!(count_key, kind = kind_word(kind), count = count as i64);
@@ -1569,7 +1591,7 @@ impl GlobalsView {
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .rounded(radius(Radius::Md))
-            .py(px(10.0))
+            .py(spacing(Spacing::Sm, density))
             .px(px(12.0))
             .child(listing);
         let body = div()
@@ -1607,7 +1629,7 @@ impl GlobalsView {
                 div()
                     .flex()
                     .items_center()
-                    .gap(spacing(Spacing::Xs, Density::Cozy))
+                    .gap(spacing(Spacing::Xs, density))
                     .child(close)
                     .child(edit),
             );
@@ -1683,11 +1705,12 @@ fn section(
     palette: &ForgePalette,
     label: impl Into<SharedString>,
     control: impl IntoElement,
+    density: Density,
 ) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
+        .gap(spacing(Spacing::Xxs, density))
         .child(
             div()
                 .font_family(mono_family())

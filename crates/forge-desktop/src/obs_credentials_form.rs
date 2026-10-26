@@ -305,6 +305,7 @@ impl ObsCredentialsForm {
 
 impl Render for ObsCredentialsForm {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
 
         let password_focused = self.password.focus_handle(cx).is_focused(window);
@@ -318,6 +319,7 @@ impl Render for ObsCredentialsForm {
                 port_focused: self.port.focus_handle(cx).is_focused(window),
             },
             &palette,
+            density,
         );
 
         let eye_glyph = if self.password_visible {
@@ -341,6 +343,7 @@ impl Render for ObsCredentialsForm {
                 tr!("obs_connect_field_password"),
                 Some(tr!("obs_connect_password_note")),
                 &palette,
+                density,
             ))
             .child(
                 input_box(password_focused, &palette)

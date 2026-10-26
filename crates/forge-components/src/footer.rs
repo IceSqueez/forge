@@ -13,7 +13,6 @@ pub const FOOTER_HEIGHT: Pixels = px(24.0);
 
 const LEFT_GAP: Pixels = px(8.0);
 const VERSION_GAP: Pixels = px(5.0);
-const CONN_GAP: Pixels = px(6.0);
 const UPTIME_GAP: Pixels = px(5.0);
 const RIGHT_GAP: Pixels = px(12.0);
 
@@ -38,6 +37,10 @@ fn mono_cell(text: impl Into<SharedString>, color: Rgba, size: Pixels) -> impl I
         .child(text.into())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is one footer slot plus the active presentation"
+)]
 pub fn app_footer(
     app_label: impl Into<SharedString>,
     version: &str,
@@ -46,6 +49,7 @@ pub fn app_footer(
     uptime_label: impl Into<SharedString>,
     trailing: Vec<AnyElement>,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     let shell = palette.shell;
     let border_color = palette.border_regular;
@@ -85,7 +89,7 @@ pub fn app_footer(
     let conn_row = div()
         .flex()
         .items_center()
-        .gap(CONN_GAP)
+        .gap(spacing(Spacing::Xs, density))
         .child(status_dot(dot_color, STATUS_DOT_SIZE))
         .child(mono_cell(connected_label, text_secondary, FONT_XS));
 
@@ -113,7 +117,7 @@ pub fn app_footer(
         .flex()
         .items_center()
         .justify_between()
-        .px(spacing(Spacing::Md, Density::Cozy))
+        .px(spacing(Spacing::Md, density))
         .border(BORDER_THIN)
         .border_color(border_color)
         .bg(shell)

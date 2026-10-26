@@ -6,9 +6,6 @@ use forge_components::{
 };
 use gpui::Rgba;
 
-const OPTION_PAD_V: Pixels = px(6.0);
-const OPTION_PAD_H: Pixels = px(10.0);
-
 pub(super) struct SelectPickerForm {
     pub(super) key: String,
     pub(super) picker: Entity<Picker>,
@@ -138,10 +135,11 @@ impl EditSubActionForm {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
                     .font_family(mono_family())
@@ -162,6 +160,7 @@ impl EditSubActionForm {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let selected_label = options
             .iter()
             .find(|(value, _)| value == selected)
@@ -185,9 +184,9 @@ impl EditSubActionForm {
             .flex()
             .items_center()
             .justify_between()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .py(OPTION_PAD_V)
-            .px(OPTION_PAD_H)
+            .gap(spacing(Spacing::Xs, density))
+            .py(spacing(Spacing::Xs, density))
+            .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Sm))
             .border(BORDER_THIN)
             .border_color(border_color)

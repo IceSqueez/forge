@@ -45,18 +45,12 @@ pub const PANE_MIN_WIDTH: Pixels = px(360.0);
 
 const NAV_PAD_V: Pixels = px(12.0);
 const NAV_PAD_H: Pixels = px(8.0);
-const NAV_GROUP_GAP: Pixels = px(10.0);
 const NAV_GROUP_LABEL_FONT: Pixels = FONT_MICRO;
-const NAV_GROUP_LABEL_PAD_V: Pixels = px(6.0);
-const NAV_GROUP_LABEL_MB: Pixels = px(4.0);
 const NAV_ROW_PAD_V: Pixels = px(7.0);
-const NAV_ROW_PAD_H: Pixels = px(10.0);
-const NAV_ROW_GAP: Pixels = px(10.0);
 const NAV_ROW_MB: Pixels = px(2.0);
 const NAV_ROW_FONT: Pixels = FONT_ROW;
 const NAV_ROW_ICON: Pixels = px(14.0);
 const PANE_PAD_V: Pixels = px(20.0);
-const PANE_PAD_H: Pixels = px(24.0);
 const CHOICE_LABEL_GAP: Pixels = px(2.0);
 const CHOICE_PAD_V: Pixels = px(8.0);
 const CHOICE_ACTIVE_FILL: f32 = 0.12;
@@ -64,7 +58,6 @@ const CHOICE_ACTIVE_EDGE: f32 = 0.5;
 const ACCENT_SWATCH: Pixels = px(20.0);
 const ACCENT_SWATCH_SELECTED: Pixels = px(24.0);
 const ACCENT_SWATCH_RING: Pixels = px(2.0);
-const ACCENT_SWATCH_GAP: Pixels = px(6.0);
 
 const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
     (
@@ -488,6 +481,7 @@ impl SettingsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let density = cx.density();
         let element_id = match target {
             FontTarget::Body => "font-field-body",
             FontTarget::Mono => "font-field-mono",
@@ -499,7 +493,7 @@ impl SettingsView {
             .flex()
             .items_center()
             .justify_between()
-            .px(spacing(Spacing::Sm, Density::Cozy))
+            .px(spacing(Spacing::Sm, density))
             .py(px(7.0))
             .rounded(radius(Radius::Sm))
             .bg(palette.base)
@@ -656,13 +650,14 @@ impl SettingsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let mut list = div().flex().flex_col().gap(NAV_GROUP_GAP);
+        let density = cx.density();
+        let mut list = div().flex().flex_col().gap(spacing(Spacing::Sm, density));
         for (group, sections) in NAV_GROUPS {
             let mut block = div().flex().flex_col().child(
                 div()
-                    .px(NAV_ROW_PAD_H)
-                    .py(NAV_GROUP_LABEL_PAD_V)
-                    .mb(NAV_GROUP_LABEL_MB)
+                    .px(spacing(Spacing::Sm, density))
+                    .py(spacing(Spacing::Xs, density))
+                    .mb(spacing(Spacing::Xxs, density))
                     .font_family(mono_family())
                     .text_size(NAV_GROUP_LABEL_FONT)
                     .text_color(palette.text_faint)
@@ -696,6 +691,7 @@ impl SettingsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let density = cx.density();
         let active = self.section == section;
         let (text_color, icon_color) = if active {
             (palette.text_primary, palette.brand)
@@ -710,8 +706,8 @@ impl SettingsView {
             )))
             .flex()
             .items_center()
-            .gap(NAV_ROW_GAP)
-            .px(NAV_ROW_PAD_H)
+            .gap(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Sm, density))
             .py(NAV_ROW_PAD_V)
             .mb(NAV_ROW_MB)
             .rounded(radius(Radius::Sm))
@@ -759,7 +755,7 @@ impl SettingsView {
             .overflow_y_scroll()
             .bg(palette.base)
             .py(PANE_PAD_V)
-            .px(PANE_PAD_H)
+            .px(spacing(Spacing::Lg, density))
             .child(content)
     }
 
@@ -851,13 +847,14 @@ impl SettingsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let density = cx.density();
         let theme = cx.theme();
         let selected = cx.accent();
         let mut row = div()
             .flex()
             .flex_row()
             .items_center()
-            .gap(ACCENT_SWATCH_GAP);
+            .gap(spacing(Spacing::Xs, density));
         for accent in AccentColor::ALL {
             let active = accent == selected;
             let size = if active {
@@ -895,6 +892,7 @@ impl SettingsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let density = cx.density();
         let pal = theme.accented_palette(cx.accent());
         let (title, subtitle) = theme_meta(theme);
         let border_color = if active {
@@ -1010,7 +1008,7 @@ impl SettingsView {
             .min_w(px(0.0))
             .flex()
             .flex_col()
-            .gap(px(6.0))
+            .gap(spacing(Spacing::Xs, density))
             .p(px(12.0))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
@@ -1031,20 +1029,21 @@ impl SettingsView {
 
     fn density_row(
         &self,
-        density: Density,
+        option: Density,
         active: bool,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let (label, hint) = density_meta(density);
+        let (label, hint) = density_meta(option);
         choice_row(
-            SharedString::from(format!("settings-density-{}", density.storage_key())),
+            SharedString::from(format!("settings-density-{}", option.storage_key())),
             label.into(),
             field_hint(hint, palette).into_any_element(),
             active,
             palette,
+            cx.density(),
         )
-        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select_density(density, cx)))
+        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select_density(option, cx)))
     }
 
     fn language_pane(
@@ -1082,12 +1081,14 @@ impl SettingsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let density = cx.density();
         choice_row(
             SharedString::from(format!("settings-language-{lang}")),
             native_label.into(),
             field_hint(bcp47, palette).into_any_element(),
             self.language == lang,
             palette,
+            density,
         )
         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select_language(lang, cx)))
     }
@@ -1144,7 +1145,7 @@ impl SettingsView {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(4.0))
+                    .gap(spacing(Spacing::Xxs, density))
                     .child(name_line)
                     .child(
                         div()
@@ -1253,6 +1254,7 @@ fn choice_row(
     detail: AnyElement,
     active: bool,
     palette: &ForgePalette,
+    density: Density,
 ) -> gpui::Stateful<gpui::Div> {
     let labels = div()
         .flex()
@@ -1272,7 +1274,7 @@ fn choice_row(
         .flex()
         .items_center()
         .justify_between()
-        .px(spacing(Spacing::Sm, Density::Cozy))
+        .px(spacing(Spacing::Sm, density))
         .py(CHOICE_PAD_V)
         .rounded(radius(Radius::Sm))
         .border(BORDER_THIN)

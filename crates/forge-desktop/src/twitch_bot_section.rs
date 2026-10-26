@@ -347,7 +347,7 @@ impl TwitchBotSection {
                 ))
                 .child(self.waiting_row(palette, density, cx)),
             (BotLogin::Failed(message), _) => column
-                .child(error_row(message.clone(), palette))
+                .child(error_row(message.clone(), palette, density))
                 .child(self.retry_row(palette, density, cx)),
             (BotLogin::Idle, BotStatus::NotConnected) => column
                 .child(muted_text(tr!("twitch_bot_intro"), palette))
@@ -379,7 +379,7 @@ impl TwitchBotSection {
         };
         column.children(self.problem.as_ref().map(|problem| match problem {
             BotProblem::Disconnect(message) | BotProblem::Moderator(message) => {
-                error_row(message.clone(), palette).into_any_element()
+                error_row(message.clone(), palette, density).into_any_element()
             }
             BotProblem::StreamerSignIn(message) => {
                 self.streamer_sign_in_row(message.clone(), palette, density, cx)

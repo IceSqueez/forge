@@ -1,6 +1,9 @@
+use forge_components::Density;
 use forge_components::FONT_MD;
 use forge_components::FONT_META;
 use forge_components::FONT_ROW;
+use forge_components::Spacing;
+use forge_components::spacing;
 use std::sync::Arc;
 
 use forge_components::{
@@ -29,14 +32,11 @@ use forge_runtime::{IntegrationSlot, LifecycleState};
 
 const BODY_PAD_V: Pixels = px(18.0);
 const BODY_PAD_H: Pixels = px(22.0);
-const HERO_PAD_V: Pixels = px(16.0);
 const HERO_PAD_H: Pixels = px(18.0);
 const HERO_MB: Pixels = px(14.0);
-const HERO_GAP: Pixels = px(16.0);
 const HERO_TILE: Pixels = px(48.0);
 const HERO_TITLE: Pixels = FONT_MD;
 const HERO_TITLE_MB: Pixels = px(2.0);
-const DISCLAIMER_GAP: Pixels = px(6.0);
 const DISCLAIMER_ICON: Pixels = px(11.0);
 const DISCLAIMER_ICON_MT: Pixels = px(2.0);
 const DISCLAIMER_LINE_HEIGHT: f32 = 1.45;
@@ -44,20 +44,16 @@ const DISCLAIMER_MB: Pixels = px(14.0);
 const PANEL_GAP: Pixels = px(12.0);
 const AFFECTED_WEIGHT: f32 = 1.4;
 const KEPT_WEIGHT: f32 = 1.0;
-const PANEL_HEAD_PAD_V: Pixels = px(10.0);
 const PANEL_HEAD_PAD_H: Pixels = px(14.0);
 const PANEL_TITLE: Pixels = FONT_ROW;
 const PANEL_TITLE_GAP: Pixels = px(7.0);
 const PANEL_TITLE_ICON: Pixels = px(14.0);
 const EMPTY_PAD_V: Pixels = px(18.0);
-const ROWS_PAD_V: Pixels = px(6.0);
 const ROW_PAD_V: Pixels = px(7.0);
-const ROW_GAP: Pixels = px(10.0);
 const ROW_HINT: Pixels = FONT_META;
 const ROW_CHEVRON: Pixels = px(13.0);
 const KEPT_PAD_TOP: Pixels = px(8.0);
 const KEPT_PAD_BOTTOM: Pixels = px(12.0);
-const KEPT_GAP: Pixels = px(6.0);
 const KEPT_ROW_GAP: Pixels = px(8.0);
 const KEPT_ICON: Pixels = px(12.0);
 
@@ -200,6 +196,7 @@ impl IntegrationDisabledView {
     }
 
     fn hero(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let name = self.name();
         let starting = matches!(
             self.state(cx),
@@ -233,11 +230,12 @@ impl IntegrationDisabledView {
                 .into_any_element(),
             vec![all.into_any_element(), enable.into_any_element()],
             palette,
+            density,
         )
     }
 
-    fn disclaimer(&self, palette: &ForgePalette) -> Option<AnyElement> {
-        disclaimer_block(&self.id, palette)
+    fn disclaimer(&self, palette: &ForgePalette, density: Density) -> Option<AnyElement> {
+        disclaimer_block(&self.id, palette, density)
     }
 }
 
@@ -247,14 +245,15 @@ pub fn hero_card(
     lead: AnyElement,
     actions: Vec<AnyElement>,
     palette: &ForgePalette,
+    density: Density,
 ) -> AnyElement {
     let look = look_of(id, palette);
     div()
         .mb(HERO_MB)
         .flex()
         .items_center()
-        .gap(HERO_GAP)
-        .py(HERO_PAD_V)
+        .gap(spacing(Spacing::Md, density))
+        .py(spacing(Spacing::Md, density))
         .px(HERO_PAD_H)
         .bg(palette.shell)
         .border(BORDER_THIN)
@@ -286,17 +285,26 @@ pub fn hero_card(
         .into_any_element()
 }
 
-pub fn disclaimer_block(id: &IntegrationId, palette: &ForgePalette) -> Option<AnyElement> {
-    disclaimer_line(id, palette).map(|line| div().mb(DISCLAIMER_MB).child(line).into_any_element())
+pub fn disclaimer_block(
+    id: &IntegrationId,
+    palette: &ForgePalette,
+    density: Density,
+) -> Option<AnyElement> {
+    disclaimer_line(id, palette, density)
+        .map(|line| div().mb(DISCLAIMER_MB).child(line).into_any_element())
 }
 
-pub fn disclaimer_line(id: &IntegrationId, palette: &ForgePalette) -> Option<AnyElement> {
+pub fn disclaimer_line(
+    id: &IntegrationId,
+    palette: &ForgePalette,
+    density: Density,
+) -> Option<AnyElement> {
     let disclaimer = disclaimer_of(id)?;
     Some(
         div()
             .flex()
             .items_start()
-            .gap(DISCLAIMER_GAP)
+            .gap(spacing(Spacing::Xs, density))
             .font_family(body_family())
             .text_size(FONT_XXS)
             .line_height(relative(DISCLAIMER_LINE_HEIGHT))
@@ -313,9 +321,10 @@ pub fn disclaimer_line(id: &IntegrationId, palette: &ForgePalette) -> Option<Any
 
 impl IntegrationDisabledView {
     fn affected(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let name = self.name();
         let total = self.references.total();
-        let head = panel_head(palette)
+        let head = panel_head(palette, density)
             .justify_between()
             .child(panel_title(
                 Icon::AlertTriangle,
@@ -338,12 +347,13 @@ impl IntegrationDisabledView {
             .py(EMPTY_PAD_V)
             .into_any_element()
         } else {
-            let mut rows = div().py(ROWS_PAD_V).flex().flex_col();
+            let mut rows = div().py(spacing(Spacing::Xs, density)).flex().flex_col();
             for (index, action) in self.references.actions.iter().enumerate() {
                 rows = rows.child(
                     affected_row(
                         ElementId::NamedInteger("integration-disabled-action".into(), index as u64),
                         palette,
+                        density,
                     )
                     .child(health_tile(Icon::PlugOff, palette.warning))
                     .child(
@@ -378,10 +388,11 @@ impl IntegrationDisabledView {
             }
             if self.references.triggers > 0 {
                 rows = rows.child(
-                    affected_row("integration-disabled-triggers".into(), palette)
+                    affected_row("integration-disabled-triggers".into(), palette, density)
                         .child(integration_inactive_badge(
                             tr!("integration_inactive_short"),
                             palette,
+                            density,
                         ))
                         .child(
                             div()
@@ -407,8 +418,8 @@ impl IntegrationDisabledView {
         panel(palette).child(head).child(body).into_any_element()
     }
 
-    fn kept_panel(&self, palette: &ForgePalette) -> AnyElement {
-        let head = panel_head(palette).child(panel_title(
+    fn kept_panel(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+        let head = panel_head(palette, density).child(panel_title(
             Icon::Lock,
             palette.success,
             tr!("integration_disabled_kept"),
@@ -420,7 +431,7 @@ impl IntegrationDisabledView {
             .px(PANEL_HEAD_PAD_H)
             .flex()
             .flex_col()
-            .gap(KEPT_GAP);
+            .gap(spacing(Spacing::Xs, density));
         if self.kept.is_empty() {
             body = body.child(empty_line(
                 tr!("integration_disabled_nothing_kept"),
@@ -463,11 +474,11 @@ fn panel(palette: &ForgePalette) -> gpui::Div {
         .overflow_hidden()
 }
 
-fn panel_head(palette: &ForgePalette) -> gpui::Div {
+fn panel_head(palette: &ForgePalette, density: Density) -> gpui::Div {
     div()
         .flex()
         .items_center()
-        .py(PANEL_HEAD_PAD_V)
+        .py(spacing(Spacing::Sm, density))
         .px(PANEL_HEAD_PAD_H)
         .border_b(BORDER_THIN)
         .border_color(palette.border_regular)
@@ -501,13 +512,17 @@ fn empty_line(text: String, palette: &ForgePalette) -> gpui::Div {
         .child(text)
 }
 
-fn affected_row(id: ElementId, palette: &ForgePalette) -> gpui::Stateful<gpui::Div> {
+fn affected_row(
+    id: ElementId,
+    palette: &ForgePalette,
+    density: Density,
+) -> gpui::Stateful<gpui::Div> {
     let hover = palette.surface_overlay;
     div()
         .id(id)
         .flex()
         .items_center()
-        .gap(ROW_GAP)
+        .gap(spacing(Spacing::Sm, density))
         .py(ROW_PAD_V)
         .px(PANEL_HEAD_PAD_H)
         .cursor_pointer()
@@ -516,17 +531,18 @@ fn affected_row(id: ElementId, palette: &ForgePalette) -> gpui::Stateful<gpui::D
 
 impl Render for IntegrationDisabledView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
         let status =
             CardStatus::resolve(&self.state(cx), ConnectionAffordance::Connectionless, false);
-        let badge = card_status_badge(&self.id, &status, &palette);
+        let badge = card_status_badge(&self.id, &status, &palette, density);
 
         let panels = div()
             .w_full()
             .flex()
             .gap(PANEL_GAP)
             .child(grow_cell(self.affected(&palette, cx), AFFECTED_WEIGHT))
-            .child(grow_cell(self.kept_panel(&palette), KEPT_WEIGHT));
+            .child(grow_cell(self.kept_panel(&palette, density), KEPT_WEIGHT));
 
         let body = div()
             .id("integration-disabled-scroll")
@@ -539,7 +555,7 @@ impl Render for IntegrationDisabledView {
                     .py(BODY_PAD_V)
                     .px(BODY_PAD_H)
                     .child(self.hero(&palette, cx))
-                    .children(self.disclaimer(&palette))
+                    .children(self.disclaimer(&palette, density))
                     .child(panels),
             );
 

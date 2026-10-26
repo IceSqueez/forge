@@ -216,7 +216,7 @@ impl ConfirmCard<'_> {
             .child(facts)
             .child(statements);
         if let Some(problem) = self.problem {
-            body = body.child(failure_note(&problem.message(), palette));
+            body = body.child(failure_note(&problem.message(), palette, density));
         }
 
         let confirm_label = if self.recording {

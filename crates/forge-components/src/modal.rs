@@ -1,3 +1,4 @@
+use crate::presentation::ActivePresentation;
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, FocusHandle, InteractiveElement, IntoElement,
     ParentElement, Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled,
@@ -15,7 +16,6 @@ use crate::tokens::{
 const HEADER_TILE: Pixels = px(28.0);
 const HEADER_TILE_ICON: Pixels = px(15.0);
 const TITLE_GAP: Pixels = px(2.0);
-const FOOTER_GAP: Pixels = px(6.0);
 const MAX_TAB_STOPS: usize = 512;
 
 fn cycle_focus_within(scope: &FocusHandle, forward: bool, window: &mut Window, cx: &mut App) {
@@ -29,10 +29,6 @@ fn cycle_focus_within(scope: &FocusHandle, forward: bool, window: &mut Window, c
             return;
         }
     }
-}
-
-fn pad(s: Spacing) -> Pixels {
-    spacing(s, Density::Cozy)
 }
 
 type CloseHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
@@ -150,13 +146,13 @@ impl Modal {
         self
     }
 
-    fn render_header(&mut self) -> AnyElement {
+    fn render_header(&mut self, density: Density) -> AnyElement {
         let mut row = div()
             .flex()
             .items_center()
-            .gap(pad(Spacing::Sm))
-            .py(pad(Spacing::Sm))
-            .px(pad(Spacing::Md))
+            .gap(spacing(Spacing::Sm, density))
+            .py(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Md, density))
             .border(BORDER_THIN)
             .border_color(self.border);
 
@@ -212,8 +208,8 @@ impl Modal {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .py(pad(Spacing::Xxs))
-                    .px(pad(Spacing::Xs))
+                    .py(spacing(Spacing::Xxs, density))
+                    .px(spacing(Spacing::Xs, density))
                     .rounded(radius(Radius::Sm))
                     .cursor_pointer()
                     .hover(move |s| s.bg(hover))
@@ -225,16 +221,16 @@ impl Modal {
         row.into_any_element()
     }
 
-    fn render_footer(&mut self) -> Option<AnyElement> {
+    fn render_footer(&mut self, density: Density) -> Option<AnyElement> {
         let footer = self.footer.take()?;
 
         let band = div()
             .w_full()
             .flex()
             .flex_col()
-            .gap(FOOTER_GAP)
-            .py(pad(Spacing::Sm))
-            .px(pad(Spacing::Md))
+            .gap(spacing(Spacing::Xs, density))
+            .py(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Md, density))
             .bg(self.footer_bg)
             .border(BORDER_THIN)
             .border_color(self.border)
@@ -246,6 +242,7 @@ impl Modal {
 
 impl RenderOnce for Modal {
     fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
         let scope_key = ElementId::Name(format!("modal-focus-scope-{}", self.title).into());
         let scope = window
             .use_keyed_state(scope_key, cx, |_, cx| cx.focus_handle())
@@ -253,12 +250,12 @@ impl RenderOnce for Modal {
             .clone();
         let forward_scope = scope.clone();
         let backward_scope = scope.clone();
-        let header = self.render_header();
-        let footer = self.render_footer();
+        let header = self.render_header(density);
+        let footer = self.render_footer(density);
 
         let mut body = div().w_full().flex().flex_col();
         if self.pad_body {
-            body = body.p(pad(Spacing::Md));
+            body = body.p(spacing(Spacing::Md, density));
         }
         let body = body.child(std::mem::replace(&mut self.body, div().into_any_element()));
 
@@ -295,12 +292,13 @@ pub fn busy_modal(
     title: impl Into<SharedString>,
     detail: impl Into<SharedString>,
     palette: &ForgePalette,
+    density: Density,
 ) -> Modal {
     let body = div()
         .w_full()
         .flex()
         .items_center()
-        .gap(pad(Spacing::Sm))
+        .gap(spacing(Spacing::Sm, density))
         .child(spinner(id, Icon::Loader2, BUSY_GLYPH, palette.brand))
         .child(
             div()

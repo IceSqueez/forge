@@ -11,7 +11,7 @@ use super::CodeEditor;
 use super::layout::{LineShape, TextMetrics, line_end_point, row_segments};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::text_editing::{CARET_WIDTH, COMPOSITION_UNDERLINE, SELECTION_ALPHA};
-use crate::tokens::{BORDER_THIN, Density, Spacing, spacing};
+use crate::tokens::{BORDER_THIN, Spacing, spacing};
 
 pub(super) const PAD_Y: Pixels = px(10.0);
 const TEXT_PAD_X: Pixels = px(14.0);
@@ -86,7 +86,7 @@ impl CodeEditor {
             .ch_advance(font_id, font_size)
             .unwrap_or(font_size * FALLBACK_ADVANCE_RATIO);
         let (gutter_width, text_pad_x) = if self.compact {
-            (px(0.0), spacing(Spacing::Sm, Density::Cozy))
+            (px(0.0), spacing(Spacing::Sm, self.density))
         } else {
             let digits = self.lines.len().to_string().len().max(MIN_GUTTER_DIGITS);
             (GUTTER_PAD_L + advance * digits + GUTTER_PAD_R, TEXT_PAD_X)

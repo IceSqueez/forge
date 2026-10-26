@@ -1,6 +1,10 @@
+use forge_components::ActivePresentation;
+use forge_components::Density;
 use forge_components::FONT_FIELD;
 use forge_components::FONT_ROW;
 use forge_components::FONT_SECTION_LABEL;
+use forge_components::Spacing;
+use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, FONT_XXS, ForgePalette, Icon, MenuPlacement, body_family, icon, menu_button,
     menu_divider, menu_item, mono_family, pad_tile, toggle, tooltip_builder, tr,
@@ -22,9 +26,7 @@ const LIST_PAD_H: Pixels = px(8.0);
 const LIST_PAD_TOP: Pixels = px(8.0);
 const LIST_PAD_BOTTOM: Pixels = px(12.0);
 
-const ROW_GAP: Pixels = px(10.0);
 const ROW_PAD_V: Pixels = px(9.0);
-const ROW_PAD_H: Pixels = px(10.0);
 const ROW_RADIUS: Pixels = px(8.0);
 const ROW_MB: Pixels = px(2.0);
 const ROW_STRIPE_W: Pixels = px(2.0);
@@ -36,9 +38,7 @@ const ROW_KIND_FS: Pixels = FONT_SECTION_LABEL;
 const ROW_BADGE_GLYPH: Pixels = px(12.0);
 
 const EMPTY_PAD_V: Pixels = px(14.0);
-const EMPTY_PAD_H: Pixels = px(10.0);
 
-const FOOTER_PAD_V: Pixels = px(10.0);
 const FOOTER_PAD_H: Pixels = px(12.0);
 const ADD_GLYPH: Pixels = px(13.0);
 
@@ -95,6 +95,7 @@ impl OverlaysView {
     }
 
     fn render_list(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let mut list = div()
             .id("overlays-registry-scroll")
             .flex_1()
@@ -110,7 +111,9 @@ impl OverlaysView {
             } else {
                 tr!("overlays_pane_empty")
             };
-            return list.child(empty_note(message, palette)).into_any_element();
+            return list
+                .child(empty_note(message, palette, density))
+                .into_any_element();
         }
 
         for (index, definition) in self.registry.overlays.iter().enumerate() {
@@ -126,6 +129,7 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let id = definition.id.clone();
         let selected = self.registry.selected.as_ref() == Some(&id);
         let visuals = self.visuals(definition, palette);
@@ -206,8 +210,8 @@ impl OverlaysView {
             .id(("overlay-row", index))
             .flex()
             .items_center()
-            .gap(ROW_GAP)
-            .px(ROW_PAD_H)
+            .gap(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Sm, density))
             .py(ROW_PAD_V)
             .mb(ROW_MB)
             .rounded(ROW_RADIUS)
@@ -303,10 +307,11 @@ impl OverlaysView {
     }
 
     fn render_add_bar(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         div()
             .flex_none()
             .px(FOOTER_PAD_H)
-            .py(FOOTER_PAD_V)
+            .py(spacing(Spacing::Sm, density))
             .border_t(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(
@@ -328,10 +333,10 @@ impl OverlaysView {
     }
 }
 
-fn empty_note(message: String, palette: &ForgePalette) -> impl IntoElement {
+fn empty_note(message: String, palette: &ForgePalette, density: Density) -> impl IntoElement {
     div()
         .w_full()
-        .px(EMPTY_PAD_H)
+        .px(spacing(Spacing::Sm, density))
         .py(EMPTY_PAD_V)
         .font_family(body_family())
         .text_size(FONT_XXS)

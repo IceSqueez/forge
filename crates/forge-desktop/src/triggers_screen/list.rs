@@ -411,7 +411,7 @@ impl TriggersRegistryView {
         );
     }
 
-    pub(super) fn render_stats(&self, palette: &ForgePalette) -> AnyElement {
+    pub(super) fn render_stats(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         header_stats(
             vec![
                 header_stat(
@@ -431,6 +431,7 @@ impl TriggersRegistryView {
                 ),
             ],
             palette,
+            density,
         )
         .into_any_element()
     }
@@ -448,10 +449,11 @@ impl TriggersRegistryView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let mut platform_chips = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy));
+            .gap(spacing(Spacing::Xxs, density));
         for (platform, count) in self.platform_counts() {
             let active = self.platforms.contains(&platform);
             let label = format!("{} {}", platform.display(), count);
@@ -475,7 +477,7 @@ impl TriggersRegistryView {
                 div()
                     .id("triggers-platform-clear")
                     .cursor_pointer()
-                    .px(spacing(Spacing::Xs, Density::Cozy))
+                    .px(spacing(Spacing::Xs, density))
                     .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
@@ -487,7 +489,7 @@ impl TriggersRegistryView {
         let usage_chips = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .child(
                 chip(
                     tr!("triggers_usage_used"),
@@ -520,7 +522,7 @@ impl TriggersRegistryView {
         div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .child(
                 div()
                     .w(SEARCH_FIELD_WIDTH)
@@ -675,6 +677,7 @@ impl TriggersRegistryView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let id = instance.id;
         let selected = self.selected == Some(id);
         let cursor = self.list_cursor == Some(id);
@@ -707,7 +710,7 @@ impl TriggersRegistryView {
         let mut kind = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .min_w(px(0.0))
             .child(icon(kind_glyph, KIND_GLYPH, dot_color))
             .child(
@@ -735,11 +738,11 @@ impl TriggersRegistryView {
         }
         let switched_off_owner = self.switched_off_owner(&instance.kind_id);
         if let Some(owner) = &switched_off_owner {
-            kind = kind.child(inactive_badge(owner, palette));
+            kind = kind.child(inactive_badge(owner, palette, density));
         }
         let uncovered_category = self.uncovered_category(&instance.kind_id);
         if let Some(category) = uncovered_category {
-            kind = kind.child(category_inactive_badge(category, palette));
+            kind = kind.child(category_inactive_badge(category, palette, density));
         }
         let gate = if cooldown_applies(descriptor) {
             cooldown_suffix(instance.cooldown_secs, instance.cooldown_global)
@@ -773,7 +776,7 @@ impl TriggersRegistryView {
             div()
                 .flex()
                 .items_center()
-                .gap(spacing(Spacing::Xxs, Density::Cozy))
+                .gap(spacing(Spacing::Xxs, density))
                 .font_family(body_family())
                 .text_size(USED_FS)
                 .text_color(palette.text_primary)
@@ -945,6 +948,7 @@ impl TriggersRegistryView {
     }
 
     fn render_empty(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let has_filter = self.has_active_filter();
         let (glyph, glyph_color) = if has_filter {
             (Icon::MoodSmile, palette.text_faint)
@@ -993,7 +997,7 @@ impl TriggersRegistryView {
             .flex()
             .flex_col()
             .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .py(EMPTY_PAD_V)
             .px(EMPTY_PAD_H)
             .child(tile)

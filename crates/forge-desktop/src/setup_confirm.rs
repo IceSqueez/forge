@@ -160,7 +160,7 @@ impl SetupConfirmCard<'_> {
             .child(counts)
             .child(statements);
         if let Some(failure) = self.failure {
-            body = body.child(failure_note(failure, palette));
+            body = body.child(failure_note(failure, palette, density));
         }
 
         let confirm_label = if self.applying {

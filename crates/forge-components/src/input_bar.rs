@@ -7,10 +7,10 @@ use gpui::{
 use crate::chat_row::PlatformMark;
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
+use crate::presentation::ActivePresentation;
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_SM, FONT_XXS, Radius, Spacing, body_family, mono_family, radius,
-    spacing,
+    BORDER_THIN, FONT_SM, FONT_XXS, Radius, Spacing, body_family, mono_family, radius, spacing,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -140,7 +140,6 @@ pub struct InputBar {
     max_chars: Option<usize>,
     emoji_open: bool,
     palette: ForgePalette,
-    density: Density,
     emoji_scroll: ScrollHandle,
     _field_sub: Subscription,
 }
@@ -168,7 +167,6 @@ impl InputBar {
             max_chars: None,
             emoji_open: false,
             palette,
-            density: Density::default(),
             emoji_scroll: ScrollHandle::new(),
             _field_sub: field_sub,
         }
@@ -468,7 +466,7 @@ impl InputBar {
 
     fn render_emoji_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette;
-        let d = self.density;
+        let d = cx.density();
 
         let mut grid = div().flex().flex_wrap().gap(EMOJI_GAP);
         for (idx, &emoji) in EMOJIS.iter().enumerate() {
@@ -514,7 +512,7 @@ impl InputBar {
 impl Render for InputBar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette;
-        let d = self.density;
+        let d = cx.density();
 
         let top_border = div().w_full().h(BORDER_THIN).bg(p.border_regular);
 

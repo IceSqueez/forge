@@ -4,8 +4,8 @@ use forge_components::FONT_META;
 use forge_components::FONT_SM;
 use forge_components::FONT_XS;
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, Confirm, Density, ForgePalette, InlineEdit, SearchState,
-    TextInput, ToastKind, page_frame, tr,
+    BORDER_THIN, BreadcrumbCrumb, Confirm, ForgePalette, InlineEdit, SearchState, TextInput,
+    ToastKind, page_frame, tr,
 };
 use forge_registry::TriggerRegistry;
 use forge_runtime::EventBus;
@@ -440,6 +440,7 @@ impl EventEmitter<NavRequested> for TriggersRegistryView {}
 
 impl Render for TriggersRegistryView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
 
         if !self.focused_once {
@@ -447,7 +448,7 @@ impl Render for TriggersRegistryView {
             window.focus(&self.list_focus, cx);
         }
 
-        let stats = self.render_stats(&palette);
+        let stats = self.render_stats(&palette, density);
         let filter_left = self.render_filter_left(&palette, cx);
         let filter_right = self.render_filter_right(&palette, cx);
         let list = div()
@@ -499,7 +500,7 @@ impl Render for TriggersRegistryView {
         .header_right(stats)
         .subheader_left(filter_left)
         .subheader_right(filter_right)
-        .density(Density::Cozy)
+        .density(density)
         .body(body);
 
         div()

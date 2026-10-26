@@ -1,8 +1,11 @@
+use forge_components::Density;
 use forge_components::FONT_LABEL;
 use forge_components::FONT_ROW;
 use forge_components::Radius;
+use forge_components::Spacing;
 use forge_components::highlight::Language;
 use forge_components::radius;
+use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, CodeEditor, Confirm, ConfirmTone, FONT_XS, FONT_XXS, ForgePalette, Icon,
     InputEvent, OverlayPosition, SaveCode, body_family, confirm_modal, empty_state,
@@ -23,29 +26,23 @@ use forge_components::ActivePresentation;
 use super::OverlaysView;
 use super::editor_state::EditorMode;
 
-const TABS_PAD_V: Pixels = px(6.0);
 const TABS_PAD_H: Pixels = px(12.0);
 const TABS_GAP: Pixels = px(2.0);
-const TAB_PAD_V: Pixels = px(4.0);
 const TAB_PAD_H: Pixels = px(12.0);
 const TAB_RADIUS: Pixels = radius(Radius::Sm);
 const TAB_FS: Pixels = FONT_LABEL;
-const TAB_GAP: Pixels = px(6.0);
 const TAB_DOT: Pixels = px(6.0);
 const TAB_MARK: Pixels = px(11.0);
 
 const ACTIONS_GAP: Pixels = px(8.0);
 const ACTION_H: Pixels = px(24.0);
 
-const HINT_GAP: Pixels = px(6.0);
 const HINT_PAD_V: Pixels = px(8.0);
-const HINT_PAD_H: Pixels = px(16.0);
 const HINT_GLYPH: Pixels = px(12.0);
 
 const EDITOR_FS: Pixels = FONT_ROW;
 const EDITOR_LINE_HEIGHT: Pixels = px(20.0);
 
-const FOOT_GAP: Pixels = px(10.0);
 const FOOT_PAD_V: Pixels = px(7.0);
 const FOOT_PAD_H: Pixels = px(14.0);
 const FOOT_FS: Pixels = FONT_XXS;
@@ -425,6 +422,7 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         div()
             .flex_1()
             .min_h(px(0.0))
@@ -435,7 +433,7 @@ impl OverlaysView {
             .child(self.render_file_tabs(definition, palette, cx))
             .child(self.render_escape_hint(palette, cx))
             .child(self.render_editor(palette, cx))
-            .child(self.render_code_footer(definition, palette))
+            .child(self.render_code_footer(definition, palette, density))
             .into_any_element()
     }
 
@@ -445,6 +443,7 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let accent = self.visuals(definition, palette).accent;
         let mut strip = div()
             .flex_none()
@@ -453,7 +452,7 @@ impl OverlaysView {
             .items_center()
             .gap(TABS_GAP)
             .px(TABS_PAD_H)
-            .py(TABS_PAD_V)
+            .py(spacing(Spacing::Xs, density))
             .bg(palette.elevated)
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular);
@@ -474,9 +473,9 @@ impl OverlaysView {
                     .id(element_id("overlays-code-tab", file))
                     .flex()
                     .items_center()
-                    .gap(TAB_GAP)
+                    .gap(spacing(Spacing::Xs, density))
                     .px(TAB_PAD_H)
-                    .py(TAB_PAD_V)
+                    .py(spacing(Spacing::Xxs, density))
                     .rounded(TAB_RADIUS)
                     .cursor_pointer()
                     .when(active, |tab| tab.bg(palette.surface_overlay))
@@ -565,6 +564,7 @@ impl OverlaysView {
     }
 
     fn render_escape_hint(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let file = self.editor.code.file;
         let (glyph, tint, message) = if self.is_missing(file) {
             (
@@ -597,8 +597,8 @@ impl OverlaysView {
             .w_full()
             .flex()
             .items_center()
-            .gap(HINT_GAP)
-            .px(HINT_PAD_H)
+            .gap(spacing(Spacing::Xs, density))
+            .px(spacing(Spacing::Md, density))
             .py(HINT_PAD_V)
             .bg(palette.shell)
             .border_b(BORDER_THIN)
@@ -657,13 +657,14 @@ impl OverlaysView {
         &self,
         definition: &OverlayDefinition,
         palette: &ForgePalette,
+        density: Density,
     ) -> AnyElement {
         div()
             .flex_none()
             .w_full()
             .flex()
             .items_center()
-            .gap(FOOT_GAP)
+            .gap(spacing(Spacing::Sm, density))
             .px(FOOT_PAD_H)
             .py(FOOT_PAD_V)
             .bg(palette.shell)
@@ -691,6 +692,7 @@ impl OverlaysView {
         &self,
         definition: &OverlayDefinition,
         palette: &ForgePalette,
+        density: Density,
     ) -> Option<AnyElement> {
         if definition.source_overrides.is_empty() {
             return None;
@@ -707,8 +709,8 @@ impl OverlaysView {
                 .w_full()
                 .flex()
                 .items_center()
-                .gap(HINT_GAP)
-                .px(HINT_PAD_H)
+                .gap(spacing(Spacing::Xs, density))
+                .px(spacing(Spacing::Md, density))
                 .py(HINT_PAD_V)
                 .bg(palette.shell)
                 .border_b(BORDER_THIN)

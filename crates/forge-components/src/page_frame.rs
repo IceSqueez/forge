@@ -7,6 +7,7 @@ use gpui::{
 use crate::breadcrumb::{BreadcrumbCrumb, breadcrumb};
 use crate::cards::toolbar_row;
 use crate::palette::ForgePalette;
+use crate::presentation::ActivePresentation;
 use crate::status::status_dot;
 use crate::tokens::{Density, FONT_XS, Spacing, body_family, spacing};
 
@@ -34,7 +35,11 @@ pub fn header_stat(
     }
 }
 
-pub fn header_stats(stats: Vec<HeaderStat>, palette: &ForgePalette) -> impl IntoElement {
+pub fn header_stats(
+    stats: Vec<HeaderStat>,
+    palette: &ForgePalette,
+    density: Density,
+) -> impl IntoElement {
     let muted = palette.text_muted;
     let faint = palette.text_faint;
     let last = stats.len().saturating_sub(1);
@@ -42,13 +47,13 @@ pub fn header_stats(stats: Vec<HeaderStat>, palette: &ForgePalette) -> impl Into
     let mut row = div()
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Sm, Density::Cozy));
+        .gap(spacing(Spacing::Sm, density));
 
     for (i, stat) in stats.into_iter().enumerate() {
         let pill = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
                     .font_family(body_family())
@@ -100,7 +105,7 @@ pub struct PageFrame {
     subheader_left: Option<AnyElement>,
     subheader_right: Option<AnyElement>,
     body: Option<AnyElement>,
-    density: Density,
+    density: Option<Density>,
     palette: ForgePalette,
 }
 
@@ -112,7 +117,7 @@ pub fn page_frame(crumbs: Vec<BreadcrumbCrumb>, palette: &ForgePalette) -> PageF
         subheader_left: None,
         subheader_right: None,
         body: None,
-        density: Density::default(),
+        density: None,
         palette: *palette,
     }
 }
@@ -150,15 +155,15 @@ impl PageFrame {
 
     #[must_use]
     pub fn density(mut self, density: Density) -> Self {
-        self.density = density;
+        self.density = Some(density);
         self
     }
 }
 
 impl RenderOnce for PageFrame {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let palette = self.palette;
-        let density = self.density;
+        let density = self.density.unwrap_or_else(|| cx.density());
 
         let mut band = breadcrumb(self.crumbs, &palette).density(density);
         if let Some(right) = self.header_right {

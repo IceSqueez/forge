@@ -10,8 +10,8 @@ use crate::trigger_form_shape::{trigger_form_defaults, trigger_form_specs};
 use crate::triggers_screen::platform_dot_color;
 use forge_components::ActivePresentation;
 use forge_components::{
-    BORDER_THIN, Density, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition,
-    Picker, PickerEvent, Radius, Spacing, TextInput, body_family, ghost_button_with_icon, modal,
+    BORDER_THIN, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition, Picker,
+    PickerEvent, Radius, Spacing, TextInput, body_family, ghost_button_with_icon, modal,
     mono_family, overlay, primary_button, radius, secondary_button, spacing, tr,
 };
 use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
@@ -250,6 +250,7 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let dot_color = platform_dot_color(&form.kind_id, palette);
         let glyph = self
             .trigger_registry
@@ -260,14 +261,14 @@ impl ScreenActionsView {
         let name_section = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(self.fill_section_label(tr!("triggers_create_section_name"), palette))
             .child(div().child(form.name_field.clone()));
 
         let config_card: AnyElement = if form.fields.is_empty() {
             div()
-                .py(spacing(Spacing::Sm, Density::Cozy))
-                .px(spacing(Spacing::Sm, Density::Cozy))
+                .py(spacing(Spacing::Sm, density))
+                .px(spacing(Spacing::Sm, density))
                 .italic()
                 .font_family(body_family())
                 .text_size(FILL_VAL_FS)
@@ -288,6 +289,7 @@ impl ScreenActionsView {
                     "actions-trigger-field",
                     &view,
                     &handlers,
+                    density,
                 ));
             }
             div()
@@ -303,18 +305,19 @@ impl ScreenActionsView {
         let config_section = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(self.fill_section_label(tr!("triggers_create_section_config"), palette))
             .child(config_card)
             .children(crate::triggers_screen::timer_field_hints(
                 &form.kind_id,
                 palette,
+                density,
             ));
 
         let body = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Md, Density::Cozy))
+            .gap(spacing(Spacing::Md, density))
             .child(name_section)
             .child(config_section);
 
@@ -341,7 +344,7 @@ impl ScreenActionsView {
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(back)
             .child(div().flex_1())
             .child(cancel)

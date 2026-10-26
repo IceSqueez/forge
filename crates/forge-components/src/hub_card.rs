@@ -1,6 +1,10 @@
 use crate::FONT_LABEL;
 use crate::FONT_META;
 use crate::FONT_SM;
+use crate::presentation::ActivePresentation;
+use crate::tokens::Density;
+use crate::tokens::Spacing;
+use crate::tokens::spacing;
 use std::sync::Arc;
 
 use gpui::{
@@ -19,7 +23,6 @@ use crate::tooltip::tooltip_builder;
 
 pub const HUB_CARD_HEIGHT: Pixels = px(158.0);
 const CARD_PAD_TOP: Pixels = px(14.0);
-const CARD_PAD_H: Pixels = px(16.0);
 const CARD_PAD_BOTTOM: Pixels = px(12.0);
 
 const HEADER_GAP: Pixels = px(12.0);
@@ -36,7 +39,6 @@ const TILE_GLYPH_DIVISOR: f32 = 2.0;
 
 const NOTE_HEIGHT: Pixels = px(20.0);
 const NOTE_MT: Pixels = px(8.0);
-const NOTE_GAP: Pixels = px(6.0);
 const NOTE_ICON: Pixels = px(11.0);
 const NOTE_SIZE: Pixels = FONT_META;
 
@@ -46,9 +48,7 @@ const FOOTER_GAP: Pixels = px(8.0);
 
 const BADGE_SIZE: Pixels = FONT_SECTION_LABEL;
 const BADGE_PAD_V: Pixels = px(1.0);
-const BADGE_PAD_H: Pixels = px(6.0);
 const BADGE_RADIUS: Pixels = px(8.0);
-const BADGE_GAP: Pixels = px(4.0);
 const BADGE_GLYPH: Pixels = px(10.0);
 const BADGE_DOT: Pixels = px(5.0);
 
@@ -62,8 +62,6 @@ const PRIMARY_PAD_H: Pixels = px(10.0);
 const ICON_ONLY_PAD_V: Pixels = px(4.0);
 const ICON_ONLY_PAD_H: Pixels = px(6.0);
 
-const SECTION_GAP: Pixels = px(10.0);
-const SECTION_MB: Pixels = px(10.0);
 const SECTION_BLURB_SIZE: Pixels = FONT_META;
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
@@ -124,14 +122,15 @@ pub fn lifecycle_badge(
     label: impl Into<SharedString>,
     color: Rgba,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     let mut row = div()
         .flex_none()
         .flex()
         .items_center()
-        .gap(BADGE_GAP)
+        .gap(spacing(Spacing::Xxs, density))
         .py(BADGE_PAD_V)
-        .px(BADGE_PAD_H)
+        .px(spacing(Spacing::Xs, density))
         .rounded(BADGE_RADIUS)
         .bg(palette.surface_overlay)
         .font_family(body_family())
@@ -320,7 +319,7 @@ impl HubCard {
             .into_any_element()
     }
 
-    fn render_note(&mut self) -> AnyElement {
+    fn render_note(&mut self, density: Density) -> AnyElement {
         let mut row = div()
             .id(ElementId::NamedChild(
                 Arc::new(self.id.clone()),
@@ -331,7 +330,7 @@ impl HubCard {
             .flex_none()
             .flex()
             .items_center()
-            .gap(NOTE_GAP)
+            .gap(spacing(Spacing::Xs, density))
             .min_w_0();
         if let Some(note) = self.note.take() {
             let ink = if note.emphasized {
@@ -384,9 +383,10 @@ impl HubCard {
 }
 
 impl RenderOnce for HubCard {
-    fn render(mut self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(mut self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
         let header = self.render_header();
-        let note = self.render_note();
+        let note = self.render_note(density);
         let footer = self.render_footer();
         let bg = if self.muted {
             self.palette.shell
@@ -402,7 +402,7 @@ impl RenderOnce for HubCard {
             .flex()
             .flex_col()
             .pt(CARD_PAD_TOP)
-            .px(CARD_PAD_H)
+            .px(spacing(Spacing::Md, density))
             .pb(CARD_PAD_BOTTOM)
             .bg(bg)
             .border(BORDER_THIN)
@@ -544,13 +544,14 @@ pub fn hub_section_header(
     blurb: impl Into<SharedString>,
     count: Option<SharedString>,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     let label: SharedString = label.into();
     div()
         .flex()
         .items_center()
-        .gap(SECTION_GAP)
-        .mb(SECTION_MB)
+        .gap(spacing(Spacing::Sm, density))
+        .mb(spacing(Spacing::Sm, density))
         .child(
             div()
                 .flex_none()

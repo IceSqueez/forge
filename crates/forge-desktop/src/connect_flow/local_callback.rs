@@ -1,3 +1,4 @@
+use forge_components::ActivePresentation;
 use forge_components::CTA_HOVER_ALPHA;
 use forge_components::FONT_FIELD;
 use forge_components::FONT_LABEL;
@@ -301,9 +302,9 @@ impl ConnectFlow {
             self.phase,
             LocalCallbackFlowPhase::Starting | LocalCallbackFlowPhase::Waiting
         )
-        .then(|| self.oauth_progress_card(accent, palette));
+        .then(|| self.oauth_progress_card(accent, palette, density));
         let done = matches!(self.phase, LocalCallbackFlowPhase::Authorized)
-            .then(|| self.oauth_done_card(palette));
+            .then(|| self.oauth_done_card(palette, density));
         let error = matches!(self.phase, LocalCallbackFlowPhase::Failed)
             .then(|| self.oauth_error_card(palette, density, cx));
 
@@ -314,7 +315,7 @@ impl ConnectFlow {
             .flex_col()
             .child(self.oauth_explainer(palette))
             .children(disclaimer)
-            .child(self.oauth_steps_card(accent, palette))
+            .child(self.oauth_steps_card(accent, palette, density))
             .children(progress)
             .children(done)
             .children(error)
@@ -347,7 +348,12 @@ impl ConnectFlow {
             .into_any_element()
     }
 
-    fn oauth_steps_card(&self, accent: Rgba, palette: &ForgePalette) -> AnyElement {
+    fn oauth_steps_card(
+        &self,
+        accent: Rgba,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> AnyElement {
         let phase = self.phase;
         let platform_name = self.display_name.clone();
 
@@ -377,6 +383,7 @@ impl ConnectFlow {
             false,
             accent,
             palette,
+            density,
         );
 
         let s2_active = matches!(step_state(phase, 1), StepState::Active);
@@ -403,7 +410,7 @@ impl ConnectFlow {
                     .flex()
                     .items_center()
                     .gap(px(7.0))
-                    .mt(px(6.0))
+                    .mt(spacing(Spacing::Xs, density))
                     .child(icon(
                         Icon::Server2,
                         px(12.0),
@@ -429,6 +436,7 @@ impl ConnectFlow {
             false,
             accent,
             palette,
+            density,
         );
 
         let s3 = self.oauth_step_row(
@@ -446,6 +454,7 @@ impl ConnectFlow {
             false,
             accent,
             palette,
+            density,
         );
 
         let s4 = self.oauth_step_row(
@@ -456,6 +465,7 @@ impl ConnectFlow {
             true,
             accent,
             palette,
+            density,
         );
 
         div()
@@ -466,8 +476,8 @@ impl ConnectFlow {
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.elevated)
-            .py(px(4.0))
-            .px(px(16.0))
+            .py(spacing(Spacing::Xxs, density))
+            .px(spacing(Spacing::Md, density))
             .mb(px(14.0))
             .child(s1)
             .child(s2)
@@ -489,6 +499,7 @@ impl ConnectFlow {
         is_last: bool,
         accent: Rgba,
         palette: &ForgePalette,
+        density: Density,
     ) -> AnyElement {
         let circle_bg = match state {
             StepState::Active => accent,
@@ -538,7 +549,7 @@ impl ConnectFlow {
                 .child(title),
         );
         if let Some(children) = children {
-            content = content.gap(px(6.0)).child(children);
+            content = content.gap(spacing(Spacing::Xs, density)).child(children);
         }
 
         let mut row = div()
@@ -560,7 +571,12 @@ impl ConnectFlow {
         row.into_any_element()
     }
 
-    fn oauth_progress_card(&self, accent: Rgba, palette: &ForgePalette) -> AnyElement {
+    fn oauth_progress_card(
+        &self,
+        accent: Rgba,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> AnyElement {
         let name = self.display_name.clone();
         let line: String = match self.phase {
             LocalCallbackFlowPhase::Starting => tr!("oauth_progress_launching"),
@@ -588,7 +604,7 @@ impl ConnectFlow {
             .w_full()
             .flex()
             .items_center()
-            .gap(px(10.0))
+            .gap(spacing(Spacing::Sm, density))
             .py(px(11.0))
             .px(px(14.0))
             .rounded(radius(Radius::Md))
@@ -623,12 +639,12 @@ impl ConnectFlow {
             .into_any_element()
     }
 
-    fn oauth_done_card(&self, palette: &ForgePalette) -> AnyElement {
+    fn oauth_done_card(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         div()
             .w_full()
             .flex()
             .items_center()
-            .gap(px(10.0))
+            .gap(spacing(Spacing::Sm, density))
             .py(px(11.0))
             .px(px(14.0))
             .rounded(radius(Radius::Md))
@@ -739,6 +755,7 @@ impl ConnectFlow {
     }
 
     fn oauth_footer(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let back = div()
             .id("oauth-choose-different")
             .flex()
@@ -812,7 +829,7 @@ impl ConnectFlow {
             .flex()
             .items_center()
             .justify_between()
-            .pt(px(4.0))
+            .pt(spacing(Spacing::Xxs, density))
             .child(back)
             .children(right)
             .into_any_element()

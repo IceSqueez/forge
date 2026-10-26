@@ -1895,20 +1895,20 @@ impl ScriptEditorView {
         }
     }
 
-    fn render_header_right(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_header_right(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let total = self.scripts.len();
         let ok = self.scripts.iter().filter(|e| e.status_ok).count();
 
         let mut right = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy));
+            .gap(spacing(Spacing::Sm, density));
 
         if total > 0 {
             let health = div()
                 .flex()
                 .items_center()
-                .gap(spacing(Spacing::Xxs, Density::Cozy))
+                .gap(spacing(Spacing::Xxs, density))
                 .child(icon(Icon::CircleCheck, GLYPH_STATUS, palette.success))
                 .child(
                     div()
@@ -1978,9 +1978,9 @@ impl ScriptEditorView {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(4.0))
+                    .gap(spacing(Spacing::Xxs, density))
                     .py(px(1.0))
-                    .px(px(6.0))
+                    .px(spacing(Spacing::Xs, density))
                     .rounded(px(8.0))
                     .bg(palette.surface_overlay)
                     .child(icon(Icon::ExternalLink, px(10.0), palette.brand))
@@ -2142,7 +2142,7 @@ impl ScriptEditorView {
         let sandbox = div()
             .flex()
             .items_center()
-            .gap(px(4.0))
+            .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
                     .font_family(mono_family())
@@ -2286,8 +2286,8 @@ impl ScriptEditorView {
         if self.scripts.is_empty() {
             scripts = scripts.child(
                 div()
-                    .py(spacing(Spacing::Xxs, Density::Cozy))
-                    .px(spacing(Spacing::Xs, Density::Cozy))
+                    .py(spacing(Spacing::Xxs, density))
+                    .px(spacing(Spacing::Xs, density))
                     .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
@@ -2321,6 +2321,7 @@ impl ScriptEditorView {
                         tr!("script_editor_group_action"),
                         action.len(),
                         palette,
+                        density,
                     ));
                 for entry in &action {
                     group = group.child(self.file_row(entry, palette.brand, palette, cx));
@@ -2339,6 +2340,7 @@ impl ScriptEditorView {
                         tr!("script_editor_group_standalone"),
                         standalone.len(),
                         palette,
+                        density,
                     ));
                 for entry in &standalone {
                     group = group.child(self.file_row(entry, palette.accent_peach, palette, cx));
@@ -2436,14 +2438,15 @@ impl ScriptEditorView {
         label: impl Into<SharedString>,
         count: usize,
         palette: &ForgePalette,
+        density: Density,
     ) -> AnyElement {
         div()
             .flex()
             .items_center()
-            .gap(px(6.0))
+            .gap(spacing(Spacing::Xs, density))
             .pt(px(2.0))
-            .px(px(6.0))
-            .pb(px(6.0))
+            .px(spacing(Spacing::Xs, density))
+            .pb(spacing(Spacing::Xs, density))
             .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
@@ -2465,6 +2468,7 @@ impl ScriptEditorView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let id = entry.id;
         let selected = self.selected == Some(id);
         let renaming = self.rename.as_ref().is_some_and(|r| r.target == id);
@@ -2538,7 +2542,7 @@ impl ScriptEditorView {
             .flex_none()
             .flex()
             .items_center()
-            .gap(px(4.0))
+            .gap(spacing(Spacing::Xxs, density))
             .child(status_dot(status_color, px(6.0)));
 
         let mut row = div()
@@ -2675,7 +2679,7 @@ impl ScriptEditorView {
                 .id("console-tab-problems")
                 .flex()
                 .items_center()
-                .gap(spacing(Spacing::Xs, Density::Cozy))
+                .gap(spacing(Spacing::Xs, density))
                 .cursor_pointer()
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     this.set_console_tab(ConsoleTab::Problems, cx)
@@ -2779,22 +2783,20 @@ impl ScriptEditorView {
                                 let Some(line) = this.console.get(ix) else {
                                     continue;
                                 };
-                                rows.push(console_row(line, &pal).into_any_element());
+                                rows.push(console_row(line, &pal, density).into_any_element());
                             }
                             rows
                         }),
                     )
                     .track_scroll(&self.console_scroll)
-                    .gap(spacing(Spacing::Xxs, Density::Cozy))
+                    .gap(spacing(Spacing::Xxs, density))
                     .flex_1()
                     .min_h(px(0.0));
                     base.child(rows)
                 }
             }
             ConsoleTab::Problems => {
-                let base = base
-                    .overflow_y_scroll()
-                    .gap(spacing(Spacing::Xxs, Density::Cozy));
+                let base = base.overflow_y_scroll().gap(spacing(Spacing::Xxs, density));
                 if self.problems.is_empty() {
                     base.child(muted_line(tr!("script_editor_no_problems"), palette))
                 } else {
@@ -2808,7 +2810,7 @@ impl ScriptEditorView {
                             div()
                                 .flex()
                                 .items_center()
-                                .gap(spacing(Spacing::Xs, Density::Cozy))
+                                .gap(spacing(Spacing::Xs, density))
                                 .child(icon(glyph, GLYPH_ACTION, tint))
                                 .child(
                                     div()
@@ -2950,6 +2952,7 @@ impl ScriptEditorView {
     }
 
     fn signature_section(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let Some(contract) = self.contract() else {
             return div().into_any_element();
         };
@@ -2958,12 +2961,13 @@ impl ScriptEditorView {
             tr!("script_editor_signature_heading"),
             true,
             palette,
+            density,
         ));
 
         if contract.inputs.is_empty() {
             section = section.child(
                 div()
-                    .py(spacing(Spacing::Xxs, Density::Cozy))
+                    .py(spacing(Spacing::Xxs, density))
                     .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
@@ -2985,7 +2989,7 @@ impl ScriptEditorView {
         if let Some(error) = self.contract_error.as_ref() {
             section = section.child(
                 div()
-                    .pt(spacing(Spacing::Xxs, Density::Cozy))
+                    .pt(spacing(Spacing::Xxs, density))
                     .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.danger)
@@ -3000,8 +3004,8 @@ impl ScriptEditorView {
                     .id("script-contract-add")
                     .flex()
                     .items_center()
-                    .gap(spacing(Spacing::Xs, Density::Cozy))
-                    .mt(spacing(Spacing::Xxs, Density::Cozy))
+                    .gap(spacing(Spacing::Xs, density))
+                    .mt(spacing(Spacing::Xxs, density))
                     .py(spacing(Spacing::Xxs, Density::Compact))
                     .rounded(radius(Radius::Sm))
                     .cursor_pointer()
@@ -3030,6 +3034,7 @@ impl ScriptEditorView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let hover_bg = palette.surface_overlay;
         let renaming = self
             .input_rename
@@ -3108,8 +3113,8 @@ impl ScriptEditorView {
         div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .py(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
+            .py(spacing(Spacing::Xxs, density))
             .font_family(mono_family())
             .text_size(FONT_XS)
             .child(name_cell)
@@ -3134,6 +3139,7 @@ impl ScriptEditorView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let hover_bg = palette.surface_overlay;
         let (value, value_color): (SharedString, Rgba) = match returns {
             Some(kind) => (
@@ -3149,9 +3155,9 @@ impl ScriptEditorView {
         div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .mt(spacing(Spacing::Xxs, Density::Cozy))
-            .pt(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
+            .mt(spacing(Spacing::Xxs, density))
+            .pt(spacing(Spacing::Xs, density))
             .border_t(BORDER_THIN)
             .border_color(palette.surface_overlay)
             .font_family(mono_family())
@@ -3233,13 +3239,13 @@ impl ScriptEditorView {
         )
     }
 
-    fn right_pane(&self, palette: &ForgePalette) -> AnyElement {
+    fn right_pane(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let header = div()
             .w_full()
             .flex()
             .items_center()
             .justify_between()
-            .pb(spacing(Spacing::Xs, Density::Cozy))
+            .pb(spacing(Spacing::Xs, density))
             .child(
                 div()
                     .font_family(body_family())
@@ -3251,7 +3257,7 @@ impl ScriptEditorView {
             .child(icon(Icon::Pin, GLYPH_PIN, palette.text_faint));
 
         let search = div()
-            .pb(spacing(Spacing::Sm, Density::Cozy))
+            .pb(spacing(Spacing::Sm, density))
             .child(self.api_search.field().clone());
 
         let mut pane = div()
@@ -3263,7 +3269,7 @@ impl ScriptEditorView {
             .bg(palette.shell)
             .border_l(BORDER_THIN)
             .border_color(palette.surface_overlay)
-            .p(spacing(Spacing::Sm, Density::Cozy))
+            .p(spacing(Spacing::Sm, density))
             .child(header)
             .child(search);
 
@@ -3283,21 +3289,21 @@ impl ScriptEditorView {
                 current_ns = Some(entry.namespace);
                 pane = pane.child(
                     div()
-                        .pt(spacing(Spacing::Sm, Density::Cozy))
-                        .pb(spacing(Spacing::Xxs, Density::Cozy))
+                        .pt(spacing(Spacing::Sm, density))
+                        .pb(spacing(Spacing::Xxs, density))
                         .font_family(mono_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.text_muted)
                         .child(entry.namespace.unwrap_or("core").to_uppercase()),
                 );
             }
-            pane = pane.child(api_fn_row(entry, palette));
+            pane = pane.child(api_fn_row(entry, palette, density));
         }
 
         if matches.is_empty() {
             pane = pane.child(
                 div()
-                    .pt(spacing(Spacing::Sm, Density::Cozy))
+                    .pt(spacing(Spacing::Sm, density))
                     .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
@@ -3309,6 +3315,7 @@ impl ScriptEditorView {
     }
 
     fn details_pane(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let Some(open) = self.open.as_ref() else {
             return div().into_any_element();
         };
@@ -3335,11 +3342,13 @@ impl ScriptEditorView {
                 tr!("script_editor_details_heading"),
                 false,
                 palette,
+                density,
             ))
             .child(detail_row(
                 tr!("script_editor_details_type"),
                 div().text_color(type_color).child(type_label),
                 palette,
+                density,
             ));
 
         if let Some(linked) = linked {
@@ -3350,6 +3359,7 @@ impl ScriptEditorView {
                     .text_color(palette.text_primary)
                     .child(SharedString::from(linked.name.clone())),
                 palette,
+                density,
             ));
         }
 
@@ -3360,11 +3370,13 @@ impl ScriptEditorView {
                     .font_family(mono_family())
                     .child(line_count.to_string()),
                 palette,
+                density,
             ))
             .child(detail_row(
                 tr!("script_editor_details_edited"),
                 SharedString::from(edited),
                 palette,
+                density,
             ));
 
         inner = inner.child(self.signature_section(palette, cx));
@@ -3384,6 +3396,7 @@ impl ScriptEditorView {
                 tr!("script_editor_run_stats_heading"),
                 true,
                 palette,
+                density,
             ))
             .child(
                 div()
@@ -3432,20 +3445,18 @@ impl ScriptEditorView {
 
 impl Render for RunModal {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
         let palette = &palette;
         let modal_state = &*self;
 
-        let mut body = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, Density::Cozy));
+        let mut body = div().flex().flex_col().gap(spacing(Spacing::Sm, density));
         for field in &modal_state.inputs {
             body = body.child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap(spacing(Spacing::Xxs, Density::Cozy))
+                    .gap(spacing(Spacing::Xxs, density))
                     .child(
                         div()
                             .font_family(body_family())
@@ -3470,8 +3481,8 @@ impl Render for RunModal {
             div()
                 .flex()
                 .items_center()
-                .py(spacing(Spacing::Xs, Density::Cozy))
-                .px(spacing(Spacing::Md, Density::Cozy))
+                .py(spacing(Spacing::Xs, density))
+                .px(spacing(Spacing::Md, density))
                 .rounded(radius(Radius::Sm))
                 .bg(with_alpha(palette.success, 0.5))
                 .child(
@@ -3566,7 +3577,7 @@ impl Render for ScriptEditorView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let header_right = self.render_header_right(&palette);
+        let header_right = self.render_header_right(&palette, density);
         let file_bar = self.file_bar(&palette, density, cx);
         let toolbar = self.toolbar(&palette, density, cx);
         let left = self.left_pane(&palette, density, cx);
@@ -3586,7 +3597,7 @@ impl Render for ScriptEditorView {
             .child(console);
 
         let right = if self.api_docs_open {
-            Some(self.right_pane(&palette))
+            Some(self.right_pane(&palette, density))
         } else if self.open.is_some() {
             Some(self.details_pane(&palette, cx))
         } else {
@@ -3656,6 +3667,7 @@ fn details_heading(
     label: impl Into<SharedString>,
     signature: bool,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     let heading = div()
         .font_family(mono_family())
@@ -3664,10 +3676,10 @@ fn details_heading(
         .child(label.into());
     if signature {
         heading
-            .pt(spacing(Spacing::Md, Density::Cozy))
-            .pb(spacing(Spacing::Xs, Density::Cozy))
+            .pt(spacing(Spacing::Md, density))
+            .pb(spacing(Spacing::Xs, density))
     } else {
-        heading.pb(spacing(Spacing::Sm, Density::Cozy))
+        heading.pb(spacing(Spacing::Sm, density))
     }
 }
 
@@ -3709,12 +3721,13 @@ fn detail_row(
     label: impl Into<SharedString>,
     value: impl IntoElement,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     div()
         .flex()
         .items_center()
         .justify_between()
-        .py(spacing(Spacing::Xxs, Density::Cozy))
+        .py(spacing(Spacing::Xxs, density))
         .child(
             div()
                 .font_family(body_family())
@@ -3767,11 +3780,11 @@ fn signature_action_disabled(glyph: Icon, palette: &ForgePalette) -> impl IntoEl
         ))
 }
 
-fn console_row(line: &ConsoleLine, palette: &ForgePalette) -> impl IntoElement {
+fn console_row(line: &ConsoleLine, palette: &ForgePalette, density: Density) -> impl IntoElement {
     div()
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Xs, Density::Cozy))
+        .gap(spacing(Spacing::Xs, density))
         .text_color(palette.text_muted)
         .child(
             div()
@@ -3790,7 +3803,11 @@ fn muted_line(text: impl Into<SharedString>, palette: &ForgePalette) -> impl Int
     div().text_color(palette.text_faint).child(text.into())
 }
 
-fn api_fn_row(entry: &MethodDescriptor, palette: &ForgePalette) -> impl IntoElement {
+fn api_fn_row(
+    entry: &MethodDescriptor,
+    palette: &ForgePalette,
+    density: Density,
+) -> impl IntoElement {
     let params = entry
         .params
         .iter()
@@ -3802,13 +3819,13 @@ fn api_fn_row(entry: &MethodDescriptor, palette: &ForgePalette) -> impl IntoElem
     let mut row = div()
         .flex()
         .flex_col()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
-        .py(spacing(Spacing::Xxs, Density::Cozy))
+        .gap(spacing(Spacing::Xxs, density))
+        .py(spacing(Spacing::Xxs, density))
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap(spacing(Spacing::Xs, Density::Cozy))
+                .gap(spacing(Spacing::Xs, density))
                 .child(badge(palette.brand, palette.shell, "fn", true, FONT_XXS))
                 .child(
                     div()
@@ -3822,7 +3839,7 @@ fn api_fn_row(entry: &MethodDescriptor, palette: &ForgePalette) -> impl IntoElem
     if let Some(doc) = entry.doc {
         row = row.child(
             div()
-                .pl(spacing(Spacing::Lg, Density::Cozy))
+                .pl(spacing(Spacing::Lg, density))
                 .font_family(body_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)

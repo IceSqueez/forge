@@ -1,4 +1,5 @@
 use crate::HOVER_FILL_ALPHA;
+use crate::presentation::ActivePresentation;
 use gpui::{
     App, AppContext, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight,
     InteractiveElement, IntoElement, ParentElement, Pixels, Render, Rgba, SharedString,
@@ -71,10 +72,6 @@ fn match_border(matched: bool, palette: &ForgePalette) -> Rgba {
     } else {
         palette.border_input
     }
-}
-
-fn sp(s: Spacing) -> Pixels {
-    spacing(s, Density::Cozy)
 }
 
 pub struct TypeToConfirm {
@@ -208,6 +205,7 @@ fn confirm_button(
     palette: &ForgePalette,
     enabled: bool,
     handler: ActionHandler,
+    density: Density,
 ) -> impl IntoElement {
     let accent = palette.warning;
     let ink = palette.shell;
@@ -217,8 +215,8 @@ fn confirm_button(
     let base = div()
         .flex()
         .items_center()
-        .py(sp(Spacing::Xxs))
-        .px(sp(Spacing::Sm))
+        .py(spacing(Spacing::Xxs, density))
+        .px(spacing(Spacing::Sm, density))
         .rounded(radius(Radius::Md))
         .font_family(body_family())
         .text_size(FONT_SM);
@@ -243,6 +241,7 @@ fn confirm_button(
 
 impl Render for TypeToConfirm {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let p = self.palette;
         let entity = cx.entity();
 
@@ -275,8 +274,8 @@ impl Render for TypeToConfirm {
             .flex()
             .flex_col()
             .gap(SECTION_STACK_GAP)
-            .py(sp(Spacing::Md))
-            .px(sp(Spacing::Lg))
+            .py(spacing(Spacing::Md, density))
+            .px(spacing(Spacing::Lg, density))
             .child(title_row)
             .child(
                 div()
@@ -290,8 +289,8 @@ impl Render for TypeToConfirm {
             .w_full()
             .flex()
             .flex_col()
-            .py(sp(Spacing::Md))
-            .px(sp(Spacing::Lg))
+            .py(spacing(Spacing::Md, density))
+            .px(spacing(Spacing::Lg, density))
             .bg(p.shell)
             .border_t(BORDER_THIN)
             .border_color(p.border_regular);
@@ -311,8 +310,8 @@ impl Render for TypeToConfirm {
                 div()
                     .flex()
                     .items_start()
-                    .gap(sp(Spacing::Sm))
-                    .py(sp(Spacing::Xxs))
+                    .gap(spacing(Spacing::Sm, density))
+                    .py(spacing(Spacing::Xxs, density))
                     .child(icon(glyph, BULLET_GLYPH, hue))
                     .child(
                         div()
@@ -328,7 +327,7 @@ impl Render for TypeToConfirm {
         let phrase_chip = div()
             .flex_none()
             .py(CHIP_PAD_Y)
-            .px(sp(Spacing::Xs))
+            .px(spacing(Spacing::Xs, density))
             .rounded(radius(Radius::Sm))
             .bg(p.surface_overlay)
             .font_family(mono_family())
@@ -360,8 +359,8 @@ impl Render for TypeToConfirm {
             .flex()
             .flex_col()
             .gap(SECTION_STACK_GAP)
-            .py(sp(Spacing::Md))
-            .px(sp(Spacing::Lg))
+            .py(spacing(Spacing::Md, density))
+            .px(spacing(Spacing::Lg, density))
             .border_t(BORDER_THIN)
             .border_color(p.border_regular)
             .child(instruction)
@@ -385,6 +384,7 @@ impl Render for TypeToConfirm {
             &p,
             self.matched,
             confirm_handler,
+            density,
         );
 
         let footer = div()
@@ -392,8 +392,8 @@ impl Render for TypeToConfirm {
             .flex()
             .items_center()
             .justify_end()
-            .py(sp(Spacing::Sm))
-            .px(sp(Spacing::Lg))
+            .py(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Lg, density))
             .bg(p.shell)
             .border_t(BORDER_THIN)
             .border_color(p.border_regular)

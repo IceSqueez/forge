@@ -2,7 +2,9 @@ use forge_components::FONT_META;
 use forge_components::FONT_MICRO;
 use forge_components::FONT_ROW;
 use forge_components::FONT_XS;
+use forge_components::Spacing;
 use forge_components::radius;
+use forge_components::spacing;
 use std::sync::Arc;
 
 use forge_components::{
@@ -24,7 +26,6 @@ use forge_components::ActivePresentation;
 use forge_midi::event_kinds::SIGNAL_KINDS;
 
 const MODAL_W: Pixels = px(520.0);
-const BODY_PAD_V: Pixels = px(16.0);
 const BODY_PAD_H: Pixels = px(18.0);
 const BODY_MAX_H: Pixels = px(460.0);
 
@@ -32,8 +33,6 @@ const SECTION_LABEL_MB: Pixels = px(8.0);
 const FIELD_LABEL_FS: Pixels = FONT_MICRO;
 
 const GRID_GAP: Pixels = px(8.0);
-const SIGNAL_MB: Pixels = px(16.0);
-const DEVICE_ROW_MT: Pixels = px(10.0);
 const INPUT_FLEX: f32 = 1.3;
 const TYPE_FLEX: f32 = 1.0;
 const CHANNEL_FLEX: f32 = 0.7;
@@ -52,7 +51,6 @@ const LIST_RADIUS: Pixels = radius(Radius::Md);
 const LIST_PAD: Pixels = px(8.0);
 const LIST_MAX_H: Pixels = px(230.0);
 const ROW_GAP: Pixels = px(8.0);
-const ROW_PAD_V: Pixels = px(6.0);
 const ROW_PAD_H: Pixels = px(9.0);
 const ROW_RADIUS: Pixels = radius(Radius::Sm);
 const ROW_MB: Pixels = px(1.0);
@@ -532,6 +530,7 @@ impl MidiMappingModal {
     }
 
     fn render_signal(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let relearn = ghost_button_with_icon(Icon::Antenna, tr!("midi_modal_relearn"), palette)
             .height(CONTROL_HEIGHT)
             .disabled(!self.input_enabled)
@@ -570,21 +569,21 @@ impl MidiMappingModal {
             .child(
                 div()
                     .w_full()
-                    .mt(DEVICE_ROW_MT)
+                    .mt(spacing(Spacing::Sm, density))
                     .child(self.render_device_select(palette, cx)),
             );
         if !self.input_enabled {
             column = column.child(
                 div()
                     .w_full()
-                    .mt(DEVICE_ROW_MT)
+                    .mt(spacing(Spacing::Sm, density))
                     .font_family(body_family())
                     .text_size(FOOTER_HINT_FS)
                     .text_color(palette.warning)
                     .child(tr!("midi_modal_input_disabled")),
             );
         }
-        column.mb(SIGNAL_MB).into_any_element()
+        column.mb(spacing(Spacing::Md, density)).into_any_element()
     }
 
     fn render_actions(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
@@ -678,6 +677,7 @@ impl MidiMappingModal {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let selected = self.selected_action == Some(choice.id);
         let (background, border, ink) = if selected {
             (palette.surface_overlay, palette.brand, palette.text_primary)
@@ -697,7 +697,7 @@ impl MidiMappingModal {
             .items_center()
             .gap(ROW_GAP)
             .mb(ROW_MB)
-            .py(ROW_PAD_V)
+            .py(spacing(Spacing::Xs, density))
             .px(ROW_PAD_H)
             .rounded(ROW_RADIUS)
             .border(BORDER_THIN)
@@ -800,6 +800,7 @@ fn section_caption(label: &str, palette: &ForgePalette) -> impl IntoElement {
 
 impl Render for MidiMappingModal {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
         if self.focus_pending {
             self.focus_pending = false;
@@ -813,7 +814,7 @@ impl Render for MidiMappingModal {
             .w_full()
             .max_h(BODY_MAX_H)
             .overflow_y_scroll()
-            .py(BODY_PAD_V)
+            .py(spacing(Spacing::Md, density))
             .px(BODY_PAD_H)
             .flex()
             .flex_col()

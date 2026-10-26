@@ -16,7 +16,6 @@ use super::{LABEL_FS, SMALL_GLYPH, SoundboardView};
 use crate::async_bridge::{self, ErrorSink};
 
 pub(super) const ROUTING_PAD: Pixels = px(14.0);
-const ROUTING_GAP: Pixels = px(16.0);
 const SELECT_RADIUS: Pixels = px(7.0);
 const SELECT_PAD_Y: Pixels = px(8.0);
 const SELECT_PAD_X: Pixels = px(11.0);
@@ -159,7 +158,7 @@ impl SoundboardView {
                     .mt(spacing(Spacing::Xs, density))
                     .flex()
                     .items_center()
-                    .gap(px(6.0))
+                    .gap(spacing(Spacing::Xs, density))
                     .child(
                         toggle(self.settings.also_headphones, palette)
                             .on_color(palette.accent_peach)
@@ -196,7 +195,7 @@ impl SoundboardView {
                     .flex()
                     .flex_row()
                     .items_start()
-                    .gap(ROUTING_GAP)
+                    .gap(spacing(Spacing::Md, density))
                     .child(device_col)
                     .child(volume_col),
             )

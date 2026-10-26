@@ -368,9 +368,9 @@ impl Render for HotkeysScreenView {
                     .flex()
                     .flex_col()
                     .child(self.render_hero(&palette, cx))
-                    .child(self.render_stats(&palette))
+                    .child(self.render_stats(&palette, density))
                     .child(self.render_bindings(&palette, cx))
-                    .child(self.render_footer(&palette)),
+                    .child(self.render_footer(&palette, density)),
             );
 
         let frame = page_frame(

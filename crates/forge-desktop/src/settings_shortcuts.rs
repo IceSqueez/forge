@@ -349,6 +349,7 @@ impl SettingsShortcutsView {
     }
 
     fn error_banner(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let density = cx.density();
         if let Some(reason) = self.overrides.failure() {
             return Some(
                 error_row_with_retry(
@@ -356,12 +357,13 @@ impl SettingsShortcutsView {
                     tr!("settings_shortcuts_load_failed", reason = reason),
                     palette,
                     cx.listener(|this, _: &ClickEvent, _, cx| this.retry_load(cx)),
+                    density,
                 )
                 .into_any_element(),
             );
         }
         let message = self.rebind_error.as_ref().or(self.save_error.as_ref())?;
-        Some(error_row(message.clone(), palette).into_any_element())
+        Some(error_row(message.clone(), palette, density).into_any_element())
     }
 
     fn chord_chip(&self, label: impl Into<SharedString>, palette: &ForgePalette) -> AnyElement {

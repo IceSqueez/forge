@@ -98,6 +98,7 @@ impl Footer {
 
 impl Render for Footer {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
         let uptime = self.status.read(cx).uptime_human();
 
@@ -128,6 +129,7 @@ impl Render for Footer {
             uptime_label,
             trailing,
             &palette,
+            density,
         ))
     }
 }

@@ -48,7 +48,6 @@ const RECENT_CLIENT_WINDOW_MINUTES: i64 = RECENT_CLIENT_WINDOW_SECONDS / 60;
 const CLIENT_DOT: Pixels = px(6.0);
 const FOOTER_PAD_V: Pixels = px(7.0);
 const FOOTER_PAD_H: Pixels = px(14.0);
-const FOOTER_EXTRA_MARGIN: Pixels = px(4.0);
 const FOOTER_DOT: Pixels = px(6.0);
 const DOT_CELL_W: Pixels = px(12.0);
 const EVS_CELL_W: Pixels = px(60.0);
@@ -871,6 +870,7 @@ impl ServerConsoleView {
                     )),
                     recent_color,
                     palette,
+                    density,
                 )
                 .into_any_element(),
             ))
@@ -884,6 +884,7 @@ impl ServerConsoleView {
                     )),
                     None,
                     palette,
+                    density,
                 )
                 .into_any_element(),
             ))
@@ -894,6 +895,7 @@ impl ServerConsoleView {
                     Some(tr!("server_stat_http_sub")),
                     None,
                     palette,
+                    density,
                 )
                 .into_any_element(),
             ))
@@ -907,6 +909,7 @@ impl ServerConsoleView {
                     Some(tr!("server_stat_bandwidth_sub")),
                     None,
                     palette,
+                    density,
                 )
                 .into_any_element(),
             ))
@@ -1415,7 +1418,7 @@ impl ServerConsoleView {
             .flex()
             .items_center()
             .justify_between()
-            .mt(FOOTER_EXTRA_MARGIN)
+            .mt(spacing(Spacing::Xxs, density))
             .py(FOOTER_PAD_V)
             .px(FOOTER_PAD_H)
             .border_t(BORDER_THIN)

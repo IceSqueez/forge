@@ -48,7 +48,11 @@ pub(crate) fn condition_display(
     }
 }
 
-pub(crate) fn timer_field_hints(kind_id: &str, palette: &ForgePalette) -> Option<AnyElement> {
+pub(crate) fn timer_field_hints(
+    kind_id: &str,
+    palette: &ForgePalette,
+    density: Density,
+) -> Option<AnyElement> {
     if !is_timer_kind(kind_id) {
         return None;
     }
@@ -61,8 +65,8 @@ pub(crate) fn timer_field_hints(kind_id: &str, palette: &ForgePalette) -> Option
         div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .px(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
+            .px(spacing(Spacing::Xxs, density))
             .font_family(body_family())
             .text_size(FILL_VAL_FS)
             .text_color(palette.text_faint)

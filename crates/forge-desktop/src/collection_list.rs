@@ -318,6 +318,7 @@ fn id_line(index: usize, item: &CollectionItem, palette: &ForgePalette) -> AnyEl
 
 impl Render for CollectionList {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
         let mut column = div().w_full().flex().flex_col().gap(LIST_GAP);
         match &self.load {
@@ -346,10 +347,11 @@ impl Render for CollectionList {
                     reason,
                     &palette,
                     cx.listener(|_, _: &ClickEvent, _, cx| cx.emit(CollectionListEvent::Retry)),
+                    density,
                 ));
             }
             ListLoad::Unavailable(reason) => {
-                column = column.child(failure_note(reason, &palette));
+                column = column.child(failure_note(reason, &palette, density));
             }
             ListLoad::Ready if self.items.is_empty() => {
                 column = column.child(

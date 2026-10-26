@@ -1,6 +1,8 @@
 use forge_components::FONT_FIELD;
 use forge_components::FONT_LABEL;
 use forge_components::FONT_META;
+use forge_components::Spacing;
+use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_MD, FONT_XS, ForgePalette, Icon, Radius,
     body_family, grow_cell, icon, mono_family, page_frame, radius, status_dot, tr,
@@ -18,9 +20,7 @@ const BODY_PAD_H: Pixels = px(22.0);
 const SECTION_GAP: Pixels = px(14.0);
 const COLUMN_GAP: Pixels = px(12.0);
 
-const HERO_PAD_V: Pixels = px(16.0);
 const HERO_PAD_H: Pixels = px(18.0);
-const HERO_GAP: Pixels = px(16.0);
 const HERO_TEXT_GAP: Pixels = px(2.0);
 const HERO_TILE: Pixels = px(48.0);
 const HERO_TILE_RADIUS: Pixels = px(11.0);
@@ -34,11 +34,9 @@ const CARD_TITLE_GAP: Pixels = px(7.0);
 const CARD_GLYPH: Pixels = px(14.0);
 
 const STEP_PAD_V: Pixels = px(7.0);
-const STEP_GAP: Pixels = px(10.0);
 const STEP_NUMBER_SIZE: Pixels = FONT_META;
 const STEP_TEXT_SIZE: Pixels = FONT_LABEL;
 const STEP_LINE_HEIGHT: Pixels = px(17.25);
-const WORD_GAP: Pixels = px(4.0);
 const INTRO_LINE_HEIGHT: Pixels = px(17.8);
 
 const HEADER_STATUS_GAP: Pixels = px(5.0);
@@ -86,6 +84,7 @@ impl ConnectPage {
                     self.steps,
                     self.step_number_tint,
                     palette,
+                    density,
                 ),
                 LEFT_COLUMN_GROW,
             ))
@@ -104,6 +103,7 @@ impl ConnectPage {
                 title.clone(),
                 tr!(self.subtitle_key),
                 palette,
+                density,
             )))
             .child(columns);
 
@@ -147,6 +147,7 @@ fn hero(
     title: String,
     subtitle: String,
     palette: &ForgePalette,
+    density: Density,
 ) -> AnyElement {
     let tile = div()
         .flex_none()
@@ -183,8 +184,8 @@ fn hero(
     card_shell(palette)
         .flex()
         .items_center()
-        .gap(HERO_GAP)
-        .py(HERO_PAD_V)
+        .gap(spacing(Spacing::Md, density))
+        .py(spacing(Spacing::Md, density))
         .px(HERO_PAD_H)
         .child(tile)
         .child(text)
@@ -197,6 +198,7 @@ fn guide_card(
     steps: Vec<GuideStep>,
     number_tint: Rgba,
     palette: &ForgePalette,
+    density: Density,
 ) -> AnyElement {
     let count = steps.len();
     let rows = steps.into_iter().enumerate().map(|(index, parts)| {
@@ -207,6 +209,7 @@ fn guide_card(
             number == count,
             number_tint,
             palette,
+            density,
         )
     });
 
@@ -317,6 +320,7 @@ fn step_row(
     last: bool,
     number_tint: Rgba,
     palette: &ForgePalette,
+    density: Density,
 ) -> AnyElement {
     let text = div()
         .flex_1()
@@ -324,14 +328,14 @@ fn step_row(
         .flex()
         .flex_row()
         .flex_wrap()
-        .gap_x(WORD_GAP)
+        .gap_x(spacing(Spacing::Xxs, density))
         .children(parts.into_iter().flatten());
 
     let mut row = div()
         .w_full()
         .flex()
         .items_start()
-        .gap(STEP_GAP)
+        .gap(spacing(Spacing::Sm, density))
         .py(STEP_PAD_V)
         .child(
             div()

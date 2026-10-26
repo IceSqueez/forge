@@ -53,7 +53,6 @@ const VOICE_FS: Pixels = FONT_LABEL;
 const META_FS: Pixels = FONT_META;
 const PAGE_PAD_H: Pixels = px(18.0);
 const PAGE_GAP_V: Pixels = px(12.0);
-const PAGE_PAD_BOTTOM: Pixels = px(16.0);
 const BANNER_PAD_V: Pixels = px(12.0);
 const BANNER_PAD_H: Pixels = px(14.0);
 const BANNER_GAP: Pixels = px(14.0);
@@ -61,7 +60,6 @@ const BANNER_TITLE_FS: Pixels = FONT_ROW;
 const BANNER_TITLE_MB: Pixels = px(1.0);
 const PLATFORM_DOT: Pixels = px(6.0);
 const PLATFORM_BADGE_PAD_V: Pixels = px(1.0);
-const PLATFORM_BADGE_PAD_H: Pixels = px(6.0);
 
 const VIEWER_GROW: f32 = 1.4;
 const VOICE_GROW: f32 = 1.6;
@@ -481,6 +479,7 @@ impl VoiceAliasesView {
     }
 
     fn strategy_banner(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let current = self.strategy.loaded().copied();
         let segments = StrategyChoice::ALL
             .into_iter()
@@ -532,6 +531,7 @@ impl VoiceAliasesView {
                     tr!("tts_aliases_strategy_load_failed", reason = reason),
                     palette,
                     cx.listener(|this, _: &ClickEvent, _, cx| this.retry_strategy(cx)),
+                    density,
                 )
                 .into_any_element(),
             )
@@ -540,6 +540,7 @@ impl VoiceAliasesView {
                 error_row(
                     tr!("tts_aliases_strategy_save_failed", reason = reason.as_str()),
                     palette,
+                    density,
                 )
                 .into_any_element()
             })
@@ -700,7 +701,7 @@ impl VoiceAliasesView {
             .flex()
             .flex_col()
             .px(PAGE_PAD_H)
-            .pb(PAGE_PAD_BOTTOM)
+            .pb(spacing(Spacing::Md, density))
             .child(frame)
             .child(footer)
             .into_any_element()
@@ -962,7 +963,7 @@ fn platform_badge(
         .items_center()
         .gap(spacing(Spacing::Xxs, density))
         .py(PLATFORM_BADGE_PAD_V)
-        .px(PLATFORM_BADGE_PAD_H)
+        .px(spacing(Spacing::Xs, density))
         .rounded(radius(Radius::Pill))
         .bg(palette.surface_overlay)
         .child(status_dot(dot, PLATFORM_DOT))

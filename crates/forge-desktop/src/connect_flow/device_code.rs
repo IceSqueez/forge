@@ -1,3 +1,4 @@
+use forge_components::ActivePresentation;
 use forge_components::CTA_HOVER_ALPHA;
 use forge_components::FONT_LABEL;
 use forge_components::FONT_MICRO;
@@ -419,9 +420,13 @@ impl ConnectFlow {
             .as_ref()
             .map_or(TwitchDevicePhase::Starting, |d| d.phase);
         let status_card = match phase {
-            TwitchDevicePhase::Starting => self.twitch_progress_card(true, accent, palette),
-            TwitchDevicePhase::Waiting => self.twitch_progress_card(false, accent, palette),
-            TwitchDevicePhase::Authorized => self.twitch_done_card(palette),
+            TwitchDevicePhase::Starting => {
+                self.twitch_progress_card(true, accent, palette, density)
+            }
+            TwitchDevicePhase::Waiting => {
+                self.twitch_progress_card(false, accent, palette, density)
+            }
+            TwitchDevicePhase::Authorized => self.twitch_done_card(palette, density),
             TwitchDevicePhase::Expired => self.twitch_expired_card(palette, density),
             TwitchDevicePhase::Denied => self.twitch_error_card(
                 tr!("twitch_device_denied_title"),
@@ -488,6 +493,7 @@ impl ConnectFlow {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let url: SharedString = self
             .twitch_device
             .as_ref()
@@ -531,34 +537,40 @@ impl ConnectFlow {
                     .text_color(accent)
                     .child(tr!("twitch_device_open_btn")),
             );
-        step_card(1, palette.surface_overlay, palette.text_primary, palette)
-            .border_color(palette.border_regular)
-            .mb(px(10.0))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_size(FONT_XS)
-                            .text_color(palette.text_primary)
-                            .mb(px(8.0))
-                            .child(tr!("twitch_device_open_title")),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(8.0))
-                            .child(url_box)
-                            .child(open_btn),
-                    ),
-            )
-            .into_any_element()
+        step_card(
+            1,
+            palette.surface_overlay,
+            palette.text_primary,
+            palette,
+            density,
+        )
+        .border_color(palette.border_regular)
+        .mb(spacing(Spacing::Sm, density))
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .font_family(body_family())
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_size(FONT_XS)
+                        .text_color(palette.text_primary)
+                        .mb(px(8.0))
+                        .child(tr!("twitch_device_open_title")),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.0))
+                        .child(url_box)
+                        .child(open_btn),
+                ),
+        )
+        .into_any_element()
     }
 
     fn twitch_code_card(
@@ -567,6 +579,7 @@ impl ConnectFlow {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let code = self.twitch_device.as_ref().and_then(|d| d.code.as_ref());
         let copied = self.twitch_device.as_ref().is_some_and(|d| d.copied);
 
@@ -642,7 +655,7 @@ impl ConnectFlow {
             .flex()
             .items_center()
             .gap(px(14.0))
-            .mt(px(10.0))
+            .mt(spacing(Spacing::Sm, density))
             .child(
                 div()
                     .flex()
@@ -675,7 +688,7 @@ impl ConnectFlow {
                     .id("twitch-device-new-code")
                     .flex()
                     .items_center()
-                    .gap(px(4.0))
+                    .gap(spacing(Spacing::Xxs, density))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| this.begin_twitch_device(cx)))
                     .child(icon(Icon::Refresh, px(12.0), accent))
@@ -688,7 +701,7 @@ impl ConnectFlow {
                     ),
             );
 
-        step_card(2, accent, palette.shell, palette)
+        step_card(2, accent, palette.shell, palette, density)
             .border_color(accent)
             .mb(px(14.0))
             .child(
@@ -703,14 +716,14 @@ impl ConnectFlow {
                             .font_weight(FontWeight::MEDIUM)
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
-                            .mb(px(10.0))
+                            .mb(spacing(Spacing::Sm, density))
                             .child(tr!("twitch_device_enter_title")),
                     )
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(10.0))
+                            .gap(spacing(Spacing::Sm, density))
                             .child(code_box)
                             .child(copy_btn),
                     )
@@ -724,6 +737,7 @@ impl ConnectFlow {
         requesting: bool,
         accent: Rgba,
         palette: &ForgePalette,
+        density: Density,
     ) -> AnyElement {
         let name = self.display_name.clone();
         let scopes = scopes_preview();
@@ -742,7 +756,7 @@ impl ConnectFlow {
             .w_full()
             .flex()
             .items_center()
-            .gap(px(10.0))
+            .gap(spacing(Spacing::Sm, density))
             .py(px(11.0))
             .px(px(14.0))
             .rounded(radius(Radius::Md))
@@ -777,12 +791,12 @@ impl ConnectFlow {
             .into_any_element()
     }
 
-    fn twitch_done_card(&self, palette: &ForgePalette) -> AnyElement {
+    fn twitch_done_card(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         div()
             .w_full()
             .flex()
             .items_center()
-            .gap(px(10.0))
+            .gap(spacing(Spacing::Sm, density))
             .py(px(11.0))
             .px(px(14.0))
             .rounded(radius(Radius::Md))
@@ -947,14 +961,20 @@ impl ConnectFlow {
             .flex()
             .items_center()
             .justify_between()
-            .pt(px(4.0))
+            .pt(spacing(Spacing::Xxs, density))
             .child(back)
             .child(later)
             .into_any_element()
     }
 }
 
-fn step_card(n: u8, circle_bg: Rgba, circle_fg: Rgba, palette: &ForgePalette) -> gpui::Div {
+fn step_card(
+    n: u8,
+    circle_bg: Rgba,
+    circle_fg: Rgba,
+    palette: &ForgePalette,
+    density: Density,
+) -> gpui::Div {
     let circle = div()
         .flex_none()
         .size(px(24.0))
@@ -976,7 +996,7 @@ fn step_card(n: u8, circle_bg: Rgba, circle_fg: Rgba, palette: &ForgePalette) ->
         .flex()
         .items_start()
         .gap(px(14.0))
-        .p(px(16.0))
+        .p(spacing(Spacing::Md, density))
         .rounded(radius(Radius::Md))
         .border(BORDER_THIN)
         .bg(palette.elevated)

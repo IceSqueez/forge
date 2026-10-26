@@ -1,3 +1,4 @@
+use forge_components::Density;
 use forge_components::Radius;
 use forge_components::radius;
 use std::collections::HashMap;
@@ -593,6 +594,7 @@ impl OverlayPropertyPanel {
         field: &ConfigField,
         palette: &ForgePalette,
         view: &Entity<Self>,
+        density: Density,
     ) -> Option<AnyElement> {
         let ConfigField::Choice { key, selected, .. } = field else {
             return None;
@@ -609,6 +611,7 @@ impl OverlayPropertyPanel {
                 &self.icon_images,
                 self.accent_tint(palette),
                 palette,
+                density,
             )
             .id(SharedString::from(format!("overlays-panel-{key}")))
             .cursor_pointer()
@@ -628,6 +631,7 @@ impl OverlayPropertyPanel {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
+        let density = cx.density();
         let members: Vec<&ConfigField> = self
             .fields
             .iter()
@@ -646,11 +650,18 @@ impl OverlayPropertyPanel {
         let view = cx.entity();
         let handlers = self.handlers();
         for field in members {
-            let control = match self.icon_control(field, palette, &view) {
+            let control = match self.icon_control(field, palette, &view, density) {
                 Some(icon_control) => icon_control,
-                None => render_config_control(field, palette, "overlays-panel", &view, &handlers),
+                None => render_config_control(
+                    field,
+                    palette,
+                    "overlays-panel",
+                    &view,
+                    &handlers,
+                    density,
+                ),
             };
-            let body = match notes_block(self.notes_for(field.key()), palette) {
+            let body = match notes_block(self.notes_for(field.key()), palette, density) {
                 Some(notes) => div()
                     .flex()
                     .flex_col()
@@ -660,7 +671,7 @@ impl OverlayPropertyPanel {
                 None => control,
             };
             let body = match base_hint(field.key()).or_else(|| motion_hint(field.key())) {
-                Some(hint) => hinted(body, hint, palette),
+                Some(hint) => hinted(body, hint, palette, density),
                 None => body,
             };
             column = column.child(

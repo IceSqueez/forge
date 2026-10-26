@@ -1,3 +1,4 @@
+use crate::presentation::ActivePresentation;
 use std::time::Duration;
 
 use gpui::{
@@ -8,7 +9,7 @@ use crate::footer::FOOTER_HEIGHT;
 use crate::icons::Icon;
 use crate::palette::ForgePalette;
 use crate::toast::{ToastAction, ToastData, ToastKind, toast_card};
-use crate::tokens::{Density, Spacing, spacing};
+use crate::tokens::{Spacing, spacing};
 
 const DEFAULT_TOAST_MS: u64 = 4000;
 const TOAST_PRIORITY: usize = 2;
@@ -182,6 +183,7 @@ fn push_toast_parts(
 }
 
 pub fn toast_layer(palette: &ForgePalette, cx: &App) -> Option<AnyElement> {
+    let density = cx.density();
     let toasts = cx.global::<Toasts>();
     if toasts.items().is_empty() {
         return None;
@@ -190,7 +192,7 @@ pub fn toast_layer(palette: &ForgePalette, cx: &App) -> Option<AnyElement> {
         .flex()
         .flex_col()
         .items_end()
-        .gap(spacing(Spacing::Sm, Density::Cozy));
+        .gap(spacing(Spacing::Sm, density));
 
     for data in toasts.items() {
         let id = data.id;
@@ -242,8 +244,8 @@ pub fn toast_layer(palette: &ForgePalette, cx: &App) -> Option<AnyElement> {
         deferred(
             div()
                 .absolute()
-                .right(spacing(Spacing::Md, Density::Cozy))
-                .bottom(FOOTER_HEIGHT + spacing(Spacing::Sm, Density::Cozy))
+                .right(spacing(Spacing::Md, density))
+                .bottom(FOOTER_HEIGHT + spacing(Spacing::Sm, density))
                 .child(column),
         )
         .with_priority(TOAST_PRIORITY)

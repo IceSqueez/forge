@@ -1,3 +1,4 @@
+use forge_components::ActivePresentation;
 use forge_components::FONT_LABEL;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
@@ -30,6 +31,7 @@ impl HotkeysScreenView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         if self.capture == Capture::App(entry.id) {
             return self.render_capture_row(palette, cx);
         }
@@ -43,7 +45,7 @@ impl HotkeysScreenView {
             palette.text_faint
         };
         let combo: AnyElement = match (shortcuts, chord) {
-            (_, Some(chord)) => keycaps(&chord_caps(chord), palette).into_any_element(),
+            (_, Some(chord)) => keycaps(&chord_caps(chord), palette, density).into_any_element(),
             (Some(_), None) => unbound_chip(tr!("settings_shortcuts_unbound"), palette),
             (None, None) => unbound_chip(UNKNOWN_CHORD.to_owned(), palette),
         };

@@ -1,8 +1,10 @@
+use forge_components::ActivePresentation;
+use forge_components::Density;
 use forge_components::FONT_HERO;
 use forge_components::{
-    BORDER_THIN, Button, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize,
-    OverlayPosition, Radius, Spacing, body_family, empty_state, ghost_button_with_icon, modal,
-    mono_family, overlay, primary_button, radius, secondary_button, section_label, spacing, tr,
+    BORDER_THIN, Button, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition, Radius,
+    Spacing, body_family, empty_state, ghost_button_with_icon, modal, mono_family, overlay,
+    primary_button, radius, secondary_button, section_label, spacing, tr,
 };
 use forge_types::ActionId;
 use gpui::{AnyElement, ClickEvent, Context, FontWeight, Pixels, div, prelude::*, px};
@@ -11,12 +13,9 @@ use super::plan::WiringDraft;
 use super::{ConfirmStage, ConfirmState, EventWiringView};
 
 const CARD_PAD_V: Pixels = px(14.0);
-const CARD_PAD_H: Pixels = px(16.0);
 const CARD_GAP: Pixels = px(14.0);
-const ROW_GAP: Pixels = px(6.0);
 const ROW_LABEL_GAP: Pixels = px(8.0);
 const WORDING_PAD: Pixels = px(12.0);
-const WORDING_GAP: Pixels = px(4.0);
 const WORDING_LEAD_FS: Pixels = FONT_HERO;
 
 #[derive(Clone, Copy)]
@@ -32,6 +31,7 @@ impl EventWiringView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let overlay_name = self
             .overlay
             .as_ref()
@@ -55,11 +55,11 @@ impl EventWiringView {
                 action_id,
                 action_name,
             } => (
-                render_already_wired(action_name, palette),
+                render_already_wired(action_name, palette, density),
                 self.render_footer(FooterAction::Open(*action_id), palette, cx),
             ),
             ConfirmState::Ready(draft) => (
-                render_draft(draft, palette),
+                render_draft(draft, palette, density),
                 self.render_footer(
                     FooterAction::Create {
                         enabled: !stage.writing,
@@ -77,7 +77,7 @@ impl EventWiringView {
             ),
             div()
                 .w_full()
-                .px(CARD_PAD_H)
+                .px(spacing(Spacing::Md, density))
                 .py(CARD_PAD_V)
                 .flex()
                 .flex_col()
@@ -111,6 +111,7 @@ impl EventWiringView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let back = ghost_button_with_icon(Icon::ArrowBackUp, tr!("overlays_wire_back"), palette)
             .on_click(
                 "overlays-wire-back",
@@ -142,7 +143,7 @@ impl EventWiringView {
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(back)
             .child(div().flex_1())
             .child(cancel)
@@ -151,11 +152,11 @@ impl EventWiringView {
     }
 }
 
-fn render_draft(draft: &WiringDraft, palette: &ForgePalette) -> AnyElement {
+fn render_draft(draft: &WiringDraft, palette: &ForgePalette, density: Density) -> AnyElement {
     let records = div()
         .flex()
         .flex_col()
-        .gap(ROW_GAP)
+        .gap(spacing(Spacing::Xs, density))
         .child(section_label(
             tr!("overlays_wire_section_creates").to_uppercase(),
             palette,
@@ -185,23 +186,23 @@ fn render_draft(draft: &WiringDraft, palette: &ForgePalette) -> AnyElement {
             div()
                 .flex()
                 .flex_col()
-                .gap(ROW_GAP)
+                .gap(spacing(Spacing::Xs, density))
                 .child(section_label(
                     tr!("overlays_wire_section_wording").to_uppercase(),
                     palette,
                 ))
-                .child(render_wording(&draft.wording, palette)),
+                .child(render_wording(&draft.wording, palette, density)),
         )
         .into_any_element()
 }
 
-fn render_wording(lines: &[String], palette: &ForgePalette) -> AnyElement {
+fn render_wording(lines: &[String], palette: &ForgePalette, density: Density) -> AnyElement {
     let frame = div()
         .w_full()
         .p(WORDING_PAD)
         .flex()
         .flex_col()
-        .gap(WORDING_GAP)
+        .gap(spacing(Spacing::Xxs, density))
         .rounded(radius(Radius::Md))
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
@@ -237,11 +238,11 @@ fn render_wording(lines: &[String], palette: &ForgePalette) -> AnyElement {
     column.into_any_element()
 }
 
-fn render_already_wired(action_name: &str, palette: &ForgePalette) -> AnyElement {
+fn render_already_wired(action_name: &str, palette: &ForgePalette, density: Density) -> AnyElement {
     div()
         .flex()
         .flex_col()
-        .gap(ROW_GAP)
+        .gap(spacing(Spacing::Xs, density))
         .child(
             div()
                 .font_family(body_family())

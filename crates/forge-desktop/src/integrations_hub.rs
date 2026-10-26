@@ -1,6 +1,9 @@
+use forge_components::Density;
 use forge_components::FONT_MD;
 use forge_components::FONT_META;
 use forge_components::FONT_ROW;
+use forge_components::Spacing;
+use forge_components::spacing;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -61,11 +64,9 @@ const BODY_PAD_V: Pixels = px(22.0);
 const BODY_PAD_H: Pixels = px(28.0);
 const INTRO_MB: Pixels = px(20.0);
 const INTRO_TITLE: Pixels = FONT_MD;
-const INTRO_TITLE_MB: Pixels = px(4.0);
 const INTRO_TEXT: Pixels = FONT_ROW;
 const HEADER_COUNT: Pixels = FONT_META;
 const SECTION_MB: Pixels = px(22.0);
-const GRID_GAP: Pixels = px(10.0);
 const GRID_COLUMNS: usize = 3;
 const FOOTER_TEXT: Pixels = FONT_META;
 const FOOTER_ICON: Pixels = px(11.0);
@@ -381,6 +382,7 @@ impl IntegrationsHubView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let id = declaration.id.clone();
         let state = self.lifecycle.read(cx).state_of(&id);
         let connected = self.is_connected(&id, cx);
@@ -455,7 +457,7 @@ impl IntegrationsHubView {
             HUB_TILE_SIZE,
             palette,
         ))
-        .badge(card_status_badge(&id, &status, palette))
+        .badge(card_status_badge(&id, &status, palette, density))
         .trailing(switch)
         .note(note);
         if !self.welcome {
@@ -534,6 +536,7 @@ impl IntegrationsHubView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let target = feature.screen.clone();
         let open = div()
             .flex_none()
@@ -563,6 +566,7 @@ impl IntegrationsHubView {
             tr!("integration_status_built_in"),
             palette.text_muted,
             palette,
+            density,
         ))
         .footer_left(
             div()
@@ -583,6 +587,7 @@ impl IntegrationsHubView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
+        let density = cx.density();
         let members: Vec<&IntegrationDeclaration> = hub
             .iter()
             .filter(|declaration| declaration.category == category)
@@ -622,8 +627,9 @@ impl IntegrationsHubView {
                     tr!(category.blurb_key()),
                     count,
                     palette,
+                    density,
                 ))
-                .child(card_grid(cards))
+                .child(card_grid(cards, density))
                 .into_any_element(),
         )
     }
@@ -701,6 +707,7 @@ pub(crate) fn card_status_badge(
     id: &IntegrationId,
     status: &CardStatus,
     palette: &ForgePalette,
+    density: Density,
 ) -> AnyElement {
     let spinner_id = ElementId::Name(format!("hub-badge-spin-{id}").into());
     let (marker, label, color) = match status {
@@ -740,7 +747,7 @@ pub(crate) fn card_status_badge(
             palette.warning,
         ),
     };
-    lifecycle_badge(marker, label, color, palette).into_any_element()
+    lifecycle_badge(marker, label, color, palette, density).into_any_element()
 }
 
 async fn wired_triggers(
@@ -792,11 +799,19 @@ fn reference_summary(references: &IntegrationReferences) -> String {
     tr!("integration_refs_used_by", parts = parts.join(" · "))
 }
 
-fn card_grid(cards: Vec<AnyElement>) -> impl IntoElement {
-    let mut grid = div().w_full().flex().flex_col().gap(GRID_GAP);
+fn card_grid(cards: Vec<AnyElement>, density: Density) -> impl IntoElement {
+    let mut grid = div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .gap(spacing(Spacing::Sm, density));
     let mut cards = cards.into_iter().peekable();
     while cards.peek().is_some() {
-        let mut row = div().w_full().flex().flex_row().gap(GRID_GAP);
+        let mut row = div()
+            .w_full()
+            .flex()
+            .flex_row()
+            .gap(spacing(Spacing::Sm, density));
         for _ in 0..GRID_COLUMNS {
             let cell = div().flex_1().min_w_0();
             row = row.child(match cards.next() {
@@ -811,6 +826,7 @@ fn card_grid(cards: Vec<AnyElement>) -> impl IntoElement {
 
 impl Render for IntegrationsHubView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
         let hub = self.hub_declarations(cx);
         if self.welcome {
@@ -821,7 +837,7 @@ impl Render for IntegrationsHubView {
             .mb(INTRO_MB)
             .child(
                 div()
-                    .mb(INTRO_TITLE_MB)
+                    .mb(spacing(Spacing::Xxs, density))
                     .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(INTRO_TITLE)

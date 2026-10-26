@@ -1,4 +1,5 @@
 use crate::HOVER_FILL_ALPHA;
+use crate::presentation::ActivePresentation;
 use gpui::{
     App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement, ParentElement, Pixels,
     RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
@@ -117,13 +118,14 @@ fn accent_confirm_button(
     accent: Rgba,
     ink: Rgba,
     handler: ActionHandler,
+    density: Density,
 ) -> impl IntoElement {
     div()
         .id(id)
         .flex()
         .items_center()
-        .py(spacing(Spacing::Xxs, Density::Cozy))
-        .px(spacing(Spacing::Sm, Density::Cozy))
+        .py(spacing(Spacing::Xxs, density))
+        .px(spacing(Spacing::Sm, density))
         .rounded(radius(Radius::Sm))
         .bg(accent)
         .font_family(body_family())
@@ -136,7 +138,8 @@ fn accent_confirm_button(
 }
 
 impl RenderOnce for ConfirmModal {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
         let ConfirmModal {
             title,
             message,
@@ -163,7 +166,7 @@ impl RenderOnce for ConfirmModal {
         let mut titles = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
                     .font_family(body_family())
@@ -197,10 +200,10 @@ impl RenderOnce for ConfirmModal {
 
         let body = div()
             .w_full()
-            .p(spacing(Spacing::Lg, Density::Cozy))
+            .p(spacing(Spacing::Lg, density))
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .child(header)
             .child(hint);
 
@@ -216,6 +219,7 @@ impl RenderOnce for ConfirmModal {
                 accent,
                 palette.shell,
                 handler,
+                density,
             ));
         }
 
@@ -237,8 +241,8 @@ impl RenderOnce for ConfirmModal {
                     .flex()
                     .items_center()
                     .justify_end()
-                    .py(spacing(Spacing::Sm, Density::Cozy))
-                    .px(spacing(Spacing::Lg, Density::Cozy))
+                    .py(spacing(Spacing::Sm, density))
+                    .px(spacing(Spacing::Lg, density))
                     .border_t(BORDER_THIN)
                     .border_color(palette.border_regular)
                     .child(actions),

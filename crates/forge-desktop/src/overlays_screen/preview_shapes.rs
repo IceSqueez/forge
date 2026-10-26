@@ -100,6 +100,7 @@ pub(super) fn render_composition(
     scale: Scale,
     glyphs: &StageGlyphs,
     palette: &ForgePalette,
+    density: Density,
 ) -> AnyElement {
     let accent = accent_color(composition.accent, palette);
     let family = match composition.font {
@@ -108,7 +109,7 @@ pub(super) fn render_composition(
     };
 
     match composition.shape {
-        PreviewShape::Blank => blank_note(glyphs.badge, family, palette),
+        PreviewShape::Blank => blank_note(glyphs.badge, family, palette, density),
         PreviewShape::BadgeBanner => badge_banner(
             composition,
             plan,
@@ -130,14 +131,19 @@ pub(super) fn render_composition(
     }
 }
 
-fn blank_note(badge: Icon, family: SharedString, palette: &ForgePalette) -> AnyElement {
+fn blank_note(
+    badge: Icon,
+    family: SharedString,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
     div()
         .flex_none()
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Sm, Density::Cozy))
-        .py(spacing(Spacing::Sm, Density::Cozy))
-        .px(spacing(Spacing::Md, Density::Cozy))
+        .gap(spacing(Spacing::Sm, density))
+        .py(spacing(Spacing::Sm, density))
+        .px(spacing(Spacing::Md, density))
         .rounded(radius(Radius::Md))
         .border(BORDER_THIN)
         .border_color(palette.border_regular)

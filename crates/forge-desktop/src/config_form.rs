@@ -38,10 +38,8 @@ pub(crate) const FILL_VAL_FS: Pixels = FONT_LABEL;
 const FILL_ROW_PAD_V: Pixels = px(8.0);
 const FILL_ROW_PAD_H: Pixels = px(12.0);
 
-const SLIDER_GAP: Pixels = px(10.0);
 const SLIDER_READOUT_W: Pixels = px(34.0);
 
-const SWATCH_GAP: Pixels = px(6.0);
 const SWATCH_SIZE: Pixels = px(22.0);
 const SWATCH_RADIUS: Pixels = radius(Radius::Sm);
 const SWATCH_RING: Pixels = px(2.0);
@@ -1055,6 +1053,7 @@ pub(crate) fn render_config_control<V: 'static>(
     id_prefix: &str,
     view: &Entity<V>,
     handlers: &ConfigFieldHandlers<V>,
+    density: Density,
 ) -> AnyElement {
     match field {
         ConfigField::Input { input, .. } => div().child(input.clone()).into_any_element(),
@@ -1080,20 +1079,24 @@ pub(crate) fn render_config_control<V: 'static>(
             value,
             ..
         } => render_slide(
-            key, *min, *max, unit, *value, palette, id_prefix, view, handlers,
+            key, *min, *max, unit, *value, palette, id_prefix, view, handlers, density,
         ),
         ConfigField::Swatch {
             key,
             options,
             selected,
             ..
-        } => render_swatch(key, options, selected, palette, id_prefix, view, handlers),
+        } => render_swatch(
+            key, options, selected, palette, id_prefix, view, handlers, density,
+        ),
         ConfigField::Choice {
             key,
             options,
             selected,
             ..
-        } => render_choice(key, options, selected, palette, id_prefix, view, handlers),
+        } => render_choice(
+            key, options, selected, palette, id_prefix, view, handlers, density,
+        ),
         ConfigField::UnitAmount {
             unit_picker_key,
             units,
@@ -1104,7 +1107,7 @@ pub(crate) fn render_config_control<V: 'static>(
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(div().flex_1().min_w(px(0.0)).child(input.clone()))
             .child(div().flex_1().min_w(px(0.0)).child(render_choice(
                 unit_picker_key,
@@ -1114,6 +1117,7 @@ pub(crate) fn render_config_control<V: 'static>(
                 id_prefix,
                 view,
                 handlers,
+                density,
             )))
             .into_any_element(),
         ConfigField::Hint { .. } => div()
@@ -1140,6 +1144,7 @@ fn render_slide<V: 'static>(
     id_prefix: &str,
     view: &Entity<V>,
     handlers: &ConfigFieldHandlers<V>,
+    density: Density,
 ) -> AnyElement {
     let slide_key = key.to_owned();
     let view = view.clone();
@@ -1149,7 +1154,7 @@ fn render_slide<V: 'static>(
         .w_full()
         .flex()
         .items_center()
-        .gap(SLIDER_GAP)
+        .gap(spacing(Spacing::Sm, density))
         .child(
             div().flex_1().min_w(px(0.0)).child(
                 slider(value as f32, min as f32, max as f32, palette)
@@ -1178,6 +1183,10 @@ fn render_slide<V: 'static>(
         .into_any_element()
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is one input of the rendered control plus the active density"
+)]
 fn render_swatch<V: 'static>(
     key: &str,
     options: &[(String, gpui::Rgba)],
@@ -1186,8 +1195,13 @@ fn render_swatch<V: 'static>(
     id_prefix: &str,
     view: &Entity<V>,
     handlers: &ConfigFieldHandlers<V>,
+    density: Density,
 ) -> AnyElement {
-    let mut row = div().flex().flex_row().flex_wrap().gap(SWATCH_GAP);
+    let mut row = div()
+        .flex()
+        .flex_row()
+        .flex_wrap()
+        .gap(spacing(Spacing::Xs, density));
 
     for (name, tint) in options {
         let ring = if name == selected {
@@ -1220,6 +1234,10 @@ fn render_swatch<V: 'static>(
     row.into_any_element()
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is one input of the rendered control plus the active density"
+)]
 fn render_choice<V: 'static>(
     key: &str,
     options: &[(String, String)],
@@ -1228,6 +1246,7 @@ fn render_choice<V: 'static>(
     id_prefix: &str,
     view: &Entity<V>,
     handlers: &ConfigFieldHandlers<V>,
+    density: Density,
 ) -> AnyElement {
     let (display, tone) = match options.iter().find(|(value, _)| value == selected) {
         Some((_, label)) => (label.clone(), palette.text_primary),
@@ -1241,7 +1260,7 @@ fn render_choice<V: 'static>(
         .flex()
         .items_center()
         .justify_between()
-        .gap(spacing(Spacing::Xs, Density::Cozy))
+        .gap(spacing(Spacing::Xs, density))
         .py(CHOICE_PAD_V)
         .px(CHOICE_PAD_H)
         .rounded(radius(Radius::Sm))
@@ -1296,6 +1315,10 @@ fn render_choice<V: 'static>(
         .into_any_element()
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is one input of the rendered control plus the active density"
+)]
 pub(crate) fn render_config_row<V: 'static>(
     field: &ConfigField,
     label: SharedString,
@@ -1304,6 +1327,7 @@ pub(crate) fn render_config_row<V: 'static>(
     id_prefix: &str,
     view: &Entity<V>,
     handlers: &ConfigFieldHandlers<V>,
+    density: Density,
 ) -> AnyElement {
     let label = config_label_cell(label, FILL_KEY_W, FILL_KEY_FS, palette.text_muted);
 
@@ -1311,7 +1335,7 @@ pub(crate) fn render_config_row<V: 'static>(
         .w_full()
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Sm, Density::Cozy))
+        .gap(spacing(Spacing::Sm, density))
         .py(FILL_ROW_PAD_V)
         .px(FILL_ROW_PAD_H)
         .when(!last, |row| {
@@ -1320,7 +1344,7 @@ pub(crate) fn render_config_row<V: 'static>(
         })
         .child(label)
         .child(div().flex_1().min_w(px(0.0)).child(render_config_control(
-            field, palette, id_prefix, view, handlers,
+            field, palette, id_prefix, view, handlers, density,
         )))
         .into_any_element()
 }

@@ -1,4 +1,7 @@
+use forge_components::Density;
 use forge_components::FONT_XXS;
+use forge_components::Spacing;
+use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, ForgePalette, fmt_display_relative, mono_family, status_dot, tr,
 };
@@ -8,14 +11,13 @@ use super::HotkeysScreenView;
 
 const FOOTER_FS: Pixels = FONT_XXS;
 const FOOTER_DOT: Pixels = px(6.0);
-const FOOTER_GAP: Pixels = px(6.0);
 const FOOTER_PAD_V: Pixels = px(7.0);
 const FOOTER_PAD_H: Pixels = px(14.0);
 const FOOTER_MT: Pixels = px(14.0);
 const FOOTER_SEPARATOR: &str = "·";
 
 impl HotkeysScreenView {
-    pub(super) fn render_footer(&self, palette: &ForgePalette) -> AnyElement {
+    pub(super) fn render_footer(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let listener = if self.enabled {
             tr!("hotkeys_footer_listening")
         } else {
@@ -33,7 +35,7 @@ impl HotkeysScreenView {
             div()
                 .flex()
                 .items_center()
-                .gap(FOOTER_GAP)
+                .gap(spacing(Spacing::Xs, density))
                 .child(footer_text(FOOTER_SEPARATOR.to_owned(), palette))
                 .child(status_dot(palette.warning, FOOTER_DOT))
                 .child(
@@ -63,7 +65,7 @@ impl HotkeysScreenView {
                 div()
                     .flex()
                     .items_center()
-                    .gap(FOOTER_GAP)
+                    .gap(spacing(Spacing::Xs, density))
                     .child(footer_text(
                         tr!("hotkeys_footer_bindings", count = self.total_count() as i64),
                         palette,
@@ -76,7 +78,7 @@ impl HotkeysScreenView {
                 div()
                     .flex()
                     .items_center()
-                    .gap(FOOTER_GAP)
+                    .gap(spacing(Spacing::Xs, density))
                     .child(status_dot(dot, FOOTER_DOT))
                     .child(footer_text(right, palette)),
             )

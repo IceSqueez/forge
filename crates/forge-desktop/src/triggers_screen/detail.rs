@@ -43,15 +43,11 @@ const REVERT_W: Pixels = px(22.0);
 struct TriggerDetailResizeDrag;
 
 const HEADER_PAD_V: Pixels = px(12.0);
-const HEADER_PAD_H: Pixels = px(16.0);
 const BODY_PAD_V: Pixels = px(14.0);
-const BODY_PAD_H: Pixels = px(16.0);
 const CFG_ROW_PAD_V: Pixels = px(8.0);
 const CFG_ROW_PAD_H: Pixels = px(12.0);
 const USED_ROW_PAD_V: Pixels = px(7.0);
 const USED_ROW_PAD_H: Pixels = px(10.0);
-const FOOTER_PAD_V: Pixels = px(10.0);
-const FOOTER_PAD_H: Pixels = px(16.0);
 const PLACEHOLDER_PAD_V: Pixels = px(14.0);
 const PLACEHOLDER_PAD_H: Pixels = px(12.0);
 
@@ -456,6 +452,7 @@ impl TriggersRegistryView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let instance = &detail.instance;
         let id = instance.id;
         let dot_color = platform_dot_color(&instance.kind_id, palette);
@@ -490,7 +487,7 @@ impl TriggersRegistryView {
             .flex()
             .flex_wrap()
             .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .child(status_dot(dot_color, KIND_DOT))
             .child(
                 div()
@@ -500,11 +497,11 @@ impl TriggersRegistryView {
                     .child(instance.kind_id.clone()),
             )
             .when_some(self.switched_off_owner(&instance.kind_id), |line, owner| {
-                line.child(inactive_badge(&owner, palette))
+                line.child(inactive_badge(&owner, palette, density))
             })
             .when_some(
                 self.uncovered_category(&instance.kind_id),
-                |line, category| line.child(category_inactive_badge(category, palette)),
+                |line, category| line.child(category_inactive_badge(category, palette, density)),
             );
         let title = div()
             .flex_1()
@@ -524,7 +521,7 @@ impl TriggersRegistryView {
             .id("triggers-detail-close")
             .flex_none()
             .cursor_pointer()
-            .p(spacing(Spacing::Xxs, Density::Cozy))
+            .p(spacing(Spacing::Xxs, density))
             .child(icon(Icon::X, px(15.0), palette.text_faint))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.close_detail(cx)));
 
@@ -532,9 +529,9 @@ impl TriggersRegistryView {
             .flex_none()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .py(HEADER_PAD_V)
-            .px(HEADER_PAD_H)
+            .px(spacing(Spacing::Md, density))
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(tile)
@@ -550,13 +547,14 @@ impl TriggersRegistryView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         div()
             .id("triggers-detail-body")
             .flex_1()
             .min_h(px(0.0))
             .overflow_y_scroll()
             .py(BODY_PAD_V)
-            .px(BODY_PAD_H)
+            .px(spacing(Spacing::Md, density))
             .flex()
             .flex_col()
             .child(self.render_config_section(detail, palette, cx))
@@ -574,13 +572,14 @@ impl TriggersRegistryView {
         label: impl Into<SharedString>,
         right: Option<AnyElement>,
         palette: &ForgePalette,
+        density: Density,
     ) -> AnyElement {
         let label = label.into();
         div()
             .w_full()
             .flex()
             .items_center()
-            .py(spacing(Spacing::Xs, Density::Cozy))
+            .py(spacing(Spacing::Xs, density))
             .child(
                 div()
                     .flex_1()
@@ -599,6 +598,7 @@ impl TriggersRegistryView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let override_count = detail.instance.overrides.len();
         let right = if override_count > 0 {
             div()
@@ -663,16 +663,17 @@ impl TriggersRegistryView {
         div()
             .flex()
             .flex_col()
-            .pb(spacing(Spacing::Md, Density::Cozy))
+            .pb(spacing(Spacing::Md, density))
             .child(self.section_label(
                 tr!("triggers_sheet_section_configuration"),
                 Some(right),
                 palette,
+                density,
             ))
             .child(framed)
             .children(
-                timer_field_hints(&detail.instance.kind_id, palette)
-                    .map(|hints| div().pt(spacing(Spacing::Xs, Density::Cozy)).child(hints)),
+                timer_field_hints(&detail.instance.kind_id, palette, density)
+                    .map(|hints| div().pt(spacing(Spacing::Xs, density)).child(hints)),
             )
             .into_any_element()
     }
@@ -686,6 +687,7 @@ impl TriggersRegistryView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let key = field.key().to_owned();
         let is_overridden = overridden.contains_key(key.as_str());
         let key_color = if is_overridden {
@@ -702,6 +704,7 @@ impl TriggersRegistryView {
             "triggers-cfg",
             &cx.entity(),
             &self.detail_config_handlers(),
+            density,
         );
 
         let revert: AnyElement = if is_overridden && !matches!(field, ConfigField::Hint { .. }) {
@@ -730,7 +733,7 @@ impl TriggersRegistryView {
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .py(CFG_ROW_PAD_V)
             .px(CFG_ROW_PAD_H)
             .when(!last, |row| {
@@ -749,6 +752,7 @@ impl TriggersRegistryView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let caption = div()
             .font_family(mono_family())
             .text_size(FONT_XXS)
@@ -771,7 +775,7 @@ impl TriggersRegistryView {
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .py(CFG_ROW_PAD_V)
             .px(CFG_ROW_PAD_H)
             .border_b(BORDER_THIN)
@@ -792,7 +796,7 @@ impl TriggersRegistryView {
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .py(CFG_ROW_PAD_V)
             .px(CFG_ROW_PAD_H)
             .child(label_cell(tr!("triggers_sheet_cooldown_scope").into()))
@@ -811,11 +815,12 @@ impl TriggersRegistryView {
         div()
             .flex()
             .flex_col()
-            .pb(spacing(Spacing::Md, Density::Cozy))
+            .pb(spacing(Spacing::Md, density))
             .child(self.section_label(
                 tr!("triggers_sheet_section_cooldown"),
                 Some(caption),
                 palette,
+                density,
             ))
             .child(framed)
             .into_any_element()
@@ -827,6 +832,7 @@ impl TriggersRegistryView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
+        let density = cx.density();
         let descriptor = self.registry.get(&detail.instance.kind_id)?;
         descriptor.chat_trigger_family()?;
         let platforms = gated_platforms(
@@ -848,13 +854,13 @@ impl TriggersRegistryView {
                 )
             })
             .collect();
-        let ladder = segmented(segments, palette).wrap(spacing(Spacing::Xxs, Density::Cozy));
+        let ladder = segmented(segments, palette).wrap(spacing(Spacing::Xxs, density));
 
         let rung_row = div()
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .py(CFG_ROW_PAD_V)
             .px(CFG_ROW_PAD_H)
             .border_b(BORDER_THIN)
@@ -875,7 +881,7 @@ impl TriggersRegistryView {
             .w_full()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .py(CFG_ROW_PAD_V)
             .px(CFG_ROW_PAD_H)
             .font_family(body_family())
@@ -896,8 +902,13 @@ impl TriggersRegistryView {
             div()
                 .flex()
                 .flex_col()
-                .pb(spacing(Spacing::Md, Density::Cozy))
-                .child(self.section_label(tr!("triggers_sheet_section_permission"), None, palette))
+                .pb(spacing(Spacing::Md, density))
+                .child(self.section_label(
+                    tr!("triggers_sheet_section_permission"),
+                    None,
+                    palette,
+                    density,
+                ))
                 .child(framed)
                 .into_any_element(),
         )
@@ -909,6 +920,7 @@ impl TriggersRegistryView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let count = detail.used_in.len();
         let label = if count > 0 {
             tr!("triggers_sheet_section_used_in_count", count = count as i64)
@@ -967,7 +979,7 @@ impl TriggersRegistryView {
         div()
             .flex()
             .flex_col()
-            .child(self.section_label(label, None, palette))
+            .child(self.section_label(label, None, palette, density))
             .child(inner)
             .into_any_element()
     }
@@ -978,6 +990,7 @@ impl TriggersRegistryView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let id = detail.instance.id;
         let used_count = self.find(id).map(|r| r.used_in_count).unwrap_or(0);
         let can_delete = used_count == 0;
@@ -996,9 +1009,9 @@ impl TriggersRegistryView {
         let delete_base = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .py(spacing(Spacing::Xs, Density::Cozy))
-            .px(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
+            .py(spacing(Spacing::Xs, density))
+            .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Sm))
             .border(BORDER_THIN)
             .border_color(palette.border_input)
@@ -1032,9 +1045,9 @@ impl TriggersRegistryView {
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .py(FOOTER_PAD_V)
-            .px(FOOTER_PAD_H)
+            .gap(spacing(Spacing::Xs, density))
+            .py(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Md, density))
             .bg(palette.shell)
             .border_t(BORDER_THIN)
             .border_color(palette.border_regular)

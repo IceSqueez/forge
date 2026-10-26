@@ -23,12 +23,10 @@ use std::sync::Arc;
 
 const RAIL_ROW_GAP: Pixels = px(2.0);
 const CHIP_PAD_V: Pixels = px(1.0);
-const CHIP_PAD_H: Pixels = px(6.0);
 const MODAL_W: Pixels = px(880.0);
 const BODY_H: Pixels = px(560.0);
 const RAIL_W: Pixels = px(220.0);
 const RAIL_ENTRY_GAP: Pixels = px(8.0);
-const RAIL_ENTRY_PAD_V: Pixels = px(6.0);
 const RAIL_ENTRY_PAD_H: Pixels = px(8.0);
 const ROW_DOT: Pixels = px(7.0);
 const STEP_DOT: Pixels = px(5.0);
@@ -54,6 +52,7 @@ fn disabled_reason_link(
     palette: &ForgePalette,
     cx: &mut Context<RunHistoryModal>,
 ) -> AnyElement {
+    let density = cx.density();
     let target = integration.clone();
     div()
         .id(element_id)
@@ -65,6 +64,7 @@ fn disabled_reason_link(
                 name = integration_name(integration).to_string()
             ),
             palette,
+            density,
         ))
         .tooltip(tooltip_builder(
             tr!(
@@ -154,13 +154,13 @@ impl RunHistoryModal {
         cx.emit(RunHistoryOpenIntegration(integration));
     }
 
-    fn render_loading(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_loading(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         div()
             .w_full()
             .flex()
             .items_center()
             .justify_center()
-            .py(spacing(Spacing::Lg, Density::Cozy))
+            .py(spacing(Spacing::Lg, density))
             .font_family(body_family())
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
@@ -168,22 +168,27 @@ impl RunHistoryModal {
             .into_any_element()
     }
 
-    fn render_failed(&self, message: &SharedString, palette: &ForgePalette) -> AnyElement {
+    fn render_failed(
+        &self,
+        message: &SharedString,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> AnyElement {
         div()
             .w_full()
-            .p(spacing(Spacing::Md, Density::Cozy))
-            .child(error_row(message.clone(), palette))
+            .p(spacing(Spacing::Md, density))
+            .child(error_row(message.clone(), palette, density))
             .into_any_element()
     }
 
-    fn render_empty(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_empty(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         div()
             .w_full()
             .flex()
             .flex_col()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .py(spacing(Spacing::Lg, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
+            .py(spacing(Spacing::Lg, density))
             .child(icon(Icon::History, EMPTY_GLYPH, palette.text_faint))
             .child(
                 div()
@@ -209,6 +214,7 @@ impl RunHistoryModal {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let selected = selected.min(runs.len().saturating_sub(1));
 
         let mut rail = div()
@@ -219,7 +225,7 @@ impl RunHistoryModal {
             .flex()
             .flex_col()
             .gap(RAIL_ROW_GAP)
-            .pr(spacing(Spacing::Sm, Density::Cozy))
+            .pr(spacing(Spacing::Sm, density))
             .overflow_y_scroll()
             .border_r(BORDER_THIN)
             .border_color(palette.border_regular);
@@ -233,7 +239,7 @@ impl RunHistoryModal {
             .min_w(px(0.0))
             .h_full()
             .overflow_y_scroll()
-            .pl(spacing(Spacing::Md, Density::Cozy))
+            .pl(spacing(Spacing::Md, density))
             .child(self.render_detail(&runs[selected], palette, cx));
 
         div()
@@ -253,6 +259,7 @@ impl RunHistoryModal {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let dot_color = match &ctx.outcome {
             ExecutionOutcome::Success => palette.success,
             ExecutionOutcome::Failed(_) => palette.danger,
@@ -279,7 +286,7 @@ impl RunHistoryModal {
             .items_center()
             .gap(RAIL_ENTRY_GAP)
             .w_full()
-            .py(RAIL_ENTRY_PAD_V)
+            .py(spacing(Spacing::Xs, density))
             .px(RAIL_ENTRY_PAD_H)
             .rounded(radius(Radius::Sm))
             .bg(bg)
@@ -318,6 +325,7 @@ impl RunHistoryModal {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let when = fmt_display_relative(Some(ctx.started_at));
         let duration = match ctx.completed_at {
             Some(done) => {
@@ -354,7 +362,7 @@ impl RunHistoryModal {
             None => div()
                 .flex_shrink_0()
                 .py(CHIP_PAD_V)
-                .px(CHIP_PAD_H)
+                .px(spacing(Spacing::Xs, density))
                 .rounded(CHIP_RADIUS)
                 .bg(palette.surface_overlay)
                 .font_family(mono_family())
@@ -367,7 +375,7 @@ impl RunHistoryModal {
         let top = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(status_dot(badge_color, ROW_DOT))
             .child(
                 div()
@@ -393,15 +401,15 @@ impl RunHistoryModal {
             .w_full()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(top)
-            .child(self.render_run_trigger(ctx, palette));
+            .child(self.render_run_trigger(ctx, palette, density));
         if let Some(message) = error_message
             && !step_failed
         {
             col = col.child(
                 div()
-                    .pl(ROW_DOT + spacing(Spacing::Xs, Density::Cozy))
+                    .pl(ROW_DOT + spacing(Spacing::Xs, density))
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.danger)
@@ -412,10 +420,10 @@ impl RunHistoryModal {
             let mut steps = div()
                 .flex()
                 .flex_col()
-                .gap(spacing(Spacing::Xxs, Density::Cozy))
-                .pt(spacing(Spacing::Xs, Density::Cozy))
-                .mt(spacing(Spacing::Xs, Density::Cozy))
-                .pl(ROW_DOT + spacing(Spacing::Xs, Density::Cozy))
+                .gap(spacing(Spacing::Xxs, density))
+                .pt(spacing(Spacing::Xs, density))
+                .mt(spacing(Spacing::Xs, density))
+                .pl(ROW_DOT + spacing(Spacing::Xs, density))
                 .border_t(BORDER_THIN)
                 .border_color(palette.border_regular);
             for (index, step) in ctx.telemetry.iter().enumerate() {
@@ -426,7 +434,12 @@ impl RunHistoryModal {
         col.into_any_element()
     }
 
-    fn render_run_trigger(&self, ctx: &ExecutionContext, palette: &ForgePalette) -> AnyElement {
+    fn render_run_trigger(
+        &self,
+        ctx: &ExecutionContext,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> AnyElement {
         let (glyph, label): (Icon, SharedString) = match &ctx.metadata {
             ExecutionMetadata::Trigger { trigger_kind, .. } => {
                 let descriptor = trigger_kind
@@ -455,7 +468,7 @@ impl RunHistoryModal {
         let header = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(icon(glyph, FONT_XS, palette.text_muted))
             .child(
                 div()
@@ -468,8 +481,8 @@ impl RunHistoryModal {
         let mut section = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .pl(ROW_DOT + spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
+            .pl(ROW_DOT + spacing(Spacing::Xs, density))
             .child(header);
 
         if !ctx.arg_stack_snapshot.is_empty() {
@@ -483,7 +496,7 @@ impl RunHistoryModal {
                 div()
                     .min_w(px(0.))
                     .overflow_hidden()
-                    .pl(spacing(Spacing::Xs, Density::Cozy))
+                    .pl(spacing(Spacing::Xs, density))
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
@@ -501,6 +514,7 @@ impl RunHistoryModal {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let nested = step.is_nested();
         let (status_color, status_label, message) = match &step.outcome {
             SubActionOutcome::Success => (
@@ -534,11 +548,11 @@ impl RunHistoryModal {
         let line = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
                     .flex_shrink_0()
-                    .w(spacing(Spacing::Lg, Density::Cozy))
+                    .w(spacing(Spacing::Lg, density))
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
@@ -580,10 +594,7 @@ impl RunHistoryModal {
                     .into_any_element(),
             });
 
-        let mut row = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy));
+        let mut row = div().flex().flex_col().gap(spacing(Spacing::Xxs, density));
         if nested {
             row = row.pl(STEP_NEST_INDENT);
         }
@@ -596,6 +607,7 @@ impl RunHistoryModal {
                 value,
                 palette.text_muted,
                 palette,
+                density,
             ));
         }
 
@@ -606,13 +618,14 @@ impl RunHistoryModal {
                 value,
                 palette.warning,
                 palette,
+                density,
             ));
         }
 
         if let Some(text) = message {
             row = row.child(
                 div()
-                    .pl(spacing(Spacing::Lg, Density::Cozy) + spacing(Spacing::Xs, Density::Cozy))
+                    .pl(spacing(Spacing::Lg, density) + spacing(Spacing::Xs, density))
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(status_color)
@@ -629,8 +642,9 @@ impl RunHistoryModal {
         value: &str,
         name_color: Rgba,
         palette: &ForgePalette,
+        density: Density,
     ) -> AnyElement {
-        let io_indent = spacing(Spacing::Lg, Density::Cozy) + spacing(Spacing::Xs, Density::Cozy);
+        let io_indent = spacing(Spacing::Lg, density) + spacing(Spacing::Xs, density);
         let value = if value.is_empty() { "\"\"" } else { value };
         let multiline = value.contains('\n')
             || matches!(
@@ -641,7 +655,7 @@ impl RunHistoryModal {
         let mut head = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
                     .flex_shrink_0()
@@ -694,7 +708,7 @@ impl RunHistoryModal {
         div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .pl(io_indent)
             .min_w(px(0.))
             .overflow_hidden()
@@ -703,7 +717,7 @@ impl RunHistoryModal {
                 div()
                     .min_w(px(0.))
                     .overflow_hidden()
-                    .pl(spacing(Spacing::Xs, Density::Cozy))
+                    .pl(spacing(Spacing::Xs, density))
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_secondary)
@@ -715,14 +729,15 @@ impl RunHistoryModal {
 
 impl Render for RunHistoryModal {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
         let palette = &palette;
 
         let has_runs = matches!(&self.load, Load::Ready(runs) if !runs.is_empty());
         let body = match &self.load {
-            Load::Pending => self.render_loading(palette),
-            Load::Failed(message) => self.render_failed(message, palette),
-            Load::Ready(runs) if runs.is_empty() => self.render_empty(palette),
+            Load::Pending => self.render_loading(palette, density),
+            Load::Failed(message) => self.render_failed(message, palette, density),
+            Load::Ready(runs) if runs.is_empty() => self.render_empty(palette, density),
             Load::Ready(runs) => self.render_master_detail(runs, self.selected, palette, cx),
         };
 

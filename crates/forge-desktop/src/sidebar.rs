@@ -1,4 +1,7 @@
+use forge_components::Density;
 use forge_components::FONT_MICRO;
+use forge_components::Spacing;
+use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, ResizeEdge, ResizeRange,
     body_family, icon, install_resize, mono_family, pulse_dot, radius, status_dot, tr,
@@ -23,8 +26,6 @@ const SIDEBAR_PAD_TOP: Pixels = px(12.0);
 const SIDEBAR_PAD_BOTTOM: Pixels = px(12.0);
 const DIVIDER_PAD_TOP: Pixels = px(8.0);
 
-const ITEM_PAD_H: Pixels = px(10.0);
-const ITEM_GAP: Pixels = px(10.0);
 const SECTION_ITEM_PAD_V: Pixels = px(7.0);
 const FLAT_ITEM_PAD_V: Pixels = px(6.0);
 const SECTION_ITEM_MB: Pixels = px(2.0);
@@ -37,7 +38,6 @@ const BRAND_DOT_RADIUS: Pixels = px(2.0);
 const STATUS_DOT: Pixels = px(5.0);
 
 const SECTION_LABEL_PAD_TOP: Pixels = px(14.0);
-const SECTION_LABEL_PAD_BOTTOM: Pixels = px(6.0);
 const MINI_LABEL_PAD_TOP: Pixels = px(8.0);
 const MINI_LABEL_PAD_BOTTOM: Pixels = px(3.0);
 const INTEGRATIONS_GAP: Pixels = px(8.0);
@@ -258,19 +258,19 @@ impl SidebarNav {
             .into_any_element()
     }
 
-    fn section_label(text: NavText, palette: &ForgePalette) -> AnyElement {
+    fn section_label(text: NavText, palette: &ForgePalette, density: Density) -> AnyElement {
         div()
             .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .pt(SECTION_LABEL_PAD_TOP)
-            .pb(SECTION_LABEL_PAD_BOTTOM)
-            .px(ITEM_PAD_H)
+            .pb(spacing(Spacing::Xs, density))
+            .px(spacing(Spacing::Sm, density))
             .child(SharedString::from(text.resolve().to_uppercase()))
             .into_any_element()
     }
 
-    fn mini_label(text: NavText, palette: &ForgePalette) -> AnyElement {
+    fn mini_label(text: NavText, palette: &ForgePalette, density: Density) -> AnyElement {
         div()
             .font_family(mono_family())
             .font_weight(FontWeight::MEDIUM)
@@ -278,7 +278,7 @@ impl SidebarNav {
             .text_color(palette.text_faint)
             .pt(MINI_LABEL_PAD_TOP)
             .pb(MINI_LABEL_PAD_BOTTOM)
-            .px(ITEM_PAD_H)
+            .px(spacing(Spacing::Sm, density))
             .child(SharedString::from(text.resolve().to_uppercase()))
             .into_any_element()
     }
@@ -298,13 +298,14 @@ impl SidebarNav {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let elevated = palette.elevated;
         let mut row = div()
             .id(id)
             .flex()
             .items_center()
-            .gap(ITEM_GAP)
-            .px(ITEM_PAD_H)
+            .gap(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Sm, density))
             .py(pad_v)
             .mb(mb)
             .rounded(radius(Radius::Sm))
@@ -387,9 +388,10 @@ impl SidebarNav {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         match entry {
-            NavEntry::SectionLabel(text) => Self::section_label(text, palette),
-            NavEntry::MiniLabel(text) => Self::mini_label(text, palette),
+            NavEntry::SectionLabel(text) => Self::section_label(text, palette, density),
+            NavEntry::MiniLabel(text) => Self::mini_label(text, palette, density),
             NavEntry::Gap(height) => div().flex_none().h(height).into_any_element(),
             NavEntry::SectionLeaf {
                 icon: ic,

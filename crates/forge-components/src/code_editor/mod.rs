@@ -13,6 +13,7 @@ use gpui::{
 use crate::caret_blink::{CaretBlink, CaretHost, set_caret_blinking};
 use crate::highlight::Language;
 use crate::palette::{FORGE_DEFAULT, ForgePalette};
+use crate::presentation::ActivePresentation;
 use crate::text_buffer::TextBuffer;
 use crate::text_editing::*;
 use crate::text_input::{FocusNextField, FocusPreviousField, InputEvent};
@@ -56,6 +57,7 @@ pub struct CodeEditor {
     gutter_marks: Vec<usize>,
     field_rows: Option<RangeInclusive<usize>>,
     compact: bool,
+    density: Density,
     rendered_rows: usize,
     last_bounds: Option<Bounds<Pixels>>,
     text_left: Pixels,
@@ -93,6 +95,7 @@ impl CodeEditor {
             gutter_marks: Vec::new(),
             field_rows: None,
             compact: false,
+            density: Density::default(),
             rendered_rows: 0,
             last_bounds: None,
             text_left: px(0.0),
@@ -200,7 +203,7 @@ impl CodeEditor {
 
     fn pad_y(&self) -> Pixels {
         if self.compact {
-            spacing(Spacing::Xs, Density::Cozy)
+            spacing(Spacing::Xs, self.density)
         } else {
             PAD_Y
         }
@@ -403,6 +406,7 @@ impl Render for CodeEditor {
             let handle = self.focus_handle.clone();
             self.blur_sub = Some(cx.on_blur(&handle, window, Self::on_blur));
         }
+        self.density = cx.density();
         let focus = self.focus_handle.clone();
         self.caret.watch(&focus, window, cx);
         let focused = focus.is_focused(window);

@@ -5,6 +5,9 @@ use crate::cards::field_label;
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::toggle::toggle;
+use crate::tokens::Density;
+use crate::tokens::Spacing;
+use crate::tokens::spacing;
 use crate::tokens::{BORDER_THIN, FONT_XS, FONT_XXS, Radius, body_family, mono_family, radius};
 use crate::tr;
 use gpui::{
@@ -14,10 +17,8 @@ use gpui::{
 pub const NAME_FIELD_LIMIT: usize = 64;
 const ROW_PAD_X: Pixels = px(12.0);
 const ROW_PAD_Y: Pixels = px(8.0);
-const FIELD_GAP: Pixels = px(4.0);
 const HINT_FONT: Pixels = FONT_META;
 const NOTE_FONT: Pixels = FONT_LABEL;
-const NOTE_GAP: Pixels = px(6.0);
 const RETRY_GAP: Pixels = px(5.0);
 const CHOICE_GAP: Pixels = px(8.0);
 
@@ -27,15 +28,16 @@ pub fn field_column(
     hint: Option<&str>,
     error: Option<&str>,
     control: AnyElement,
+    density: Density,
 ) -> AnyElement {
     let mut column = div()
         .w_full()
         .flex()
         .flex_col()
-        .gap(FIELD_GAP)
+        .gap(spacing(Spacing::Xxs, density))
         .child(field_label(palette, label.to_uppercase(), control));
     if let Some(error) = error {
-        column = column.child(failure_note(error, palette));
+        column = column.child(failure_note(error, palette, density));
     } else if let Some(hint) = hint {
         column = column.child(
             div()
@@ -109,11 +111,11 @@ pub fn choice_trigger(
         .into_any_element()
 }
 
-pub fn failure_note(reason: &str, palette: &ForgePalette) -> AnyElement {
+pub fn failure_note(reason: &str, palette: &ForgePalette, density: Density) -> AnyElement {
     div()
         .flex()
         .items_center()
-        .gap(NOTE_GAP)
+        .gap(spacing(Spacing::Xs, density))
         .child(icon(Icon::AlertCircle, FONT_XS, palette.danger))
         .child(
             div()
@@ -132,13 +134,14 @@ pub fn failure_with_retry(
     reason: &str,
     palette: &ForgePalette,
     on_retry: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    density: Density,
 ) -> AnyElement {
     div()
         .w_full()
         .flex()
         .flex_col()
-        .gap(NOTE_GAP)
-        .child(failure_note(reason, palette))
+        .gap(spacing(Spacing::Xs, density))
+        .child(failure_note(reason, palette, density))
         .child(
             div()
                 .id(id)

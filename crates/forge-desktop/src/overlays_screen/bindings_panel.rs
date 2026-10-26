@@ -1,6 +1,9 @@
+use forge_components::Density;
 use forge_components::FONT_LABEL;
 use forge_components::FONT_META;
 use forge_components::FONT_MICRO;
+use forge_components::Spacing;
+use forge_components::spacing;
 use std::ops::Range;
 
 use forge_components::{
@@ -18,7 +21,6 @@ use gpui::{AnyElement, Div, HighlightStyle, Hsla, Pixels, Rgba, StyledText, div,
 
 use super::base_sections::base_label;
 
-const HEADING_GAP: Pixels = px(10.0);
 const GROUP_TOP_GAP: Pixels = px(14.0);
 const GROUP_HEADING_GAP: Pixels = px(8.0);
 
@@ -32,7 +34,6 @@ const ENTRY_GAP: Pixels = px(8.0);
 const CHIP_FS: Pixels = FONT_MICRO;
 const CHIP_RADIUS: Pixels = px(4.0);
 const CHIP_PAD_V: Pixels = px(2.0);
-const CHIP_PAD_H: Pixels = px(6.0);
 const CHIP_GAP: Pixels = px(5.0);
 
 const EXAMPLE_NAME: &str = "name";
@@ -44,11 +45,12 @@ const FORMAT_ISOLATION_MARKS: [char; 2] = ['\u{2068}', '\u{2069}'];
 pub(super) fn bindings_reference(
     look: Option<&LookContract>,
     palette: &ForgePalette,
+    density: Density,
 ) -> Vec<AnyElement> {
     let contract = &PAGE_CONTRACT;
     let mut sections = vec![
         div()
-            .pb(HEADING_GAP)
+            .pb(spacing(Spacing::Sm, density))
             .child(section_label(
                 tr!("overlays_bindings_heading").to_uppercase(),
                 palette,
@@ -70,7 +72,7 @@ pub(super) fn bindings_reference(
     match look {
         Some(look) => sections.extend([
             group(tr!("overlays_bindings_content_heading"), palette)
-                .child(content_fields(look, palette))
+                .child(content_fields(look, palette, density))
                 .into_any_element(),
             runtime,
             group(tr!("overlays_bindings_config_heading"), palette)
@@ -167,7 +169,7 @@ fn runtime_entries(contract: &PageContract, palette: &ForgePalette) -> Vec<AnyEl
         .collect()
 }
 
-fn content_fields(look: &LookContract, palette: &ForgePalette) -> AnyElement {
+fn content_fields(look: &LookContract, palette: &ForgePalette, density: Density) -> AnyElement {
     if look.content_keys.is_empty() {
         return summary(tr!("overlays_bindings_content_empty"), palette);
     }
@@ -181,7 +183,7 @@ fn content_fields(look: &LookContract, palette: &ForgePalette) -> AnyElement {
                 .flex_wrap()
                 .items_center()
                 .gap(CHIP_GAP)
-                .child(key_chip(key, palette))
+                .child(key_chip(key, palette, density))
                 .children(binding_label(key).map(|label| summary(label, palette)))
         }))
         .into_any_element()
@@ -208,10 +210,10 @@ fn config_keys(look: &LookContract, palette: &ForgePalette) -> AnyElement {
         .into_any_element()
 }
 
-fn key_chip(key: &str, palette: &ForgePalette) -> AnyElement {
+fn key_chip(key: &str, palette: &ForgePalette, density: Density) -> AnyElement {
     div()
         .flex_none()
-        .px(CHIP_PAD_H)
+        .px(spacing(Spacing::Xs, density))
         .py(CHIP_PAD_V)
         .rounded(CHIP_RADIUS)
         .border(BORDER_THIN)

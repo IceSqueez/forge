@@ -305,6 +305,7 @@ impl Drop for RestoreFlow {
 
 impl Render for RestoreFlow {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let root = div().absolute().top_0().left_0().size_full();
         match &self.step {
             RestoreStep::Passphrase(step) => root.child(step.modal.clone()).into_any_element(),
@@ -337,6 +338,7 @@ impl Render for RestoreFlow {
                 tr!("import_busy_restore_title"),
                 tr!("import_busy_restore_detail"),
                 &cx.palette(),
+                density,
             ),
             RestoreStep::Idle | RestoreStep::Picking => div().into_any_element(),
         }

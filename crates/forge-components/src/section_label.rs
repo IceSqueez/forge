@@ -1,12 +1,12 @@
+use crate::presentation::ActivePresentation;
 use gpui::{
     AnyElement, App, IntoElement, ParentElement, Pixels, RenderOnce, Rgba, SharedString, Styled,
     Window, div, px,
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{Density, FONT_SECTION_LABEL, FONT_XXS, Spacing, mono_family, spacing};
+use crate::tokens::{FONT_SECTION_LABEL, FONT_XXS, Spacing, mono_family, spacing};
 
-const ROW_MARGIN_TOP: Pixels = px(4.0);
 const ROW_MARGIN_BOTTOM: Pixels = px(8.0);
 
 pub fn section_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
@@ -54,7 +54,8 @@ impl SectionLabel {
 }
 
 impl RenderOnce for SectionLabel {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
         let text = if self.row {
             SharedString::from(self.label.to_uppercase())
         } else {
@@ -73,13 +74,13 @@ impl RenderOnce for SectionLabel {
         let mut container = div();
         if self.padded {
             container = container
-                .py(spacing(Spacing::Xs, Density::Cozy))
-                .px(spacing(Spacing::Md, Density::Cozy));
+                .py(spacing(Spacing::Xs, density))
+                .px(spacing(Spacing::Md, density));
         }
         if self.row {
             container = container
                 .w_full()
-                .mt(ROW_MARGIN_TOP)
+                .mt(spacing(Spacing::Xxs, density))
                 .mb(ROW_MARGIN_BOTTOM)
                 .flex()
                 .items_center()

@@ -1,8 +1,11 @@
+use forge_components::Density;
 use forge_components::FONT_BADGE;
 use forge_components::FONT_HERO;
 use forge_components::FONT_LABEL;
 use forge_components::FONT_MICRO;
 use forge_components::FONT_XXS;
+use forge_components::Spacing;
+use forge_components::spacing;
 use std::sync::Arc;
 
 use forge_components::{
@@ -52,18 +55,15 @@ const COUNT_TILE: Pixels = px(26.0);
 const COUNT_TILE_RADIUS: Pixels = px(7.0);
 const COUNT_GLYPH: Pixels = px(13.0);
 const COUNT_GAP: Pixels = px(8.0);
-const COUNT_MR: Pixels = px(4.0);
 const COUNT_VALUE_FS: Pixels = FONT_XS;
 const COUNT_SUB_FS: Pixels = FONT_MICRO;
 
-const STAT_GAP: Pixels = px(10.0);
 const STAT_MARGIN_B: Pixels = px(14.0);
 
 const COLUMN_GAP: Pixels = px(12.0);
 const COLUMN_FLEX: f32 = 1.0;
 
 const SECTION_HINT_FS: Pixels = FONT_MICRO;
-const LIST_GAP: Pixels = px(6.0);
 
 const ROW_PAD_V: Pixels = px(9.0);
 const ROW_PAD_H: Pixels = px(12.0);
@@ -81,7 +81,6 @@ const ADD_BAR_GLYPH: Pixels = px(13.0);
 
 const FOOTER_FS: Pixels = FONT_XXS;
 const FOOTER_DOT: Pixels = px(6.0);
-const FOOTER_GAP: Pixels = px(6.0);
 const FOOTER_PAD_V: Pixels = px(7.0);
 const FOOTER_PAD_H: Pixels = px(14.0);
 const FOOTER_MT: Pixels = px(14.0);
@@ -443,14 +442,14 @@ impl DiscordScreenView {
         cx.notify();
     }
 
-    fn render_hero(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_hero(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let count = self.webhooks.len();
         let badge_slot = div()
             .flex()
             .flex_none()
             .items_center()
             .gap(COUNT_GAP)
-            .mr(COUNT_MR)
+            .mr(spacing(Spacing::Xxs, density))
             .child(
                 div()
                     .flex_none()
@@ -534,7 +533,7 @@ impl DiscordScreenView {
             .into_any_element()
     }
 
-    fn render_stats(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_stats(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let health = self.health;
 
         let (latency_value, latency_hint) = match health.latency_p50_ms {
@@ -592,7 +591,7 @@ impl DiscordScreenView {
             .w_full()
             .flex()
             .items_stretch()
-            .gap(STAT_GAP)
+            .gap(spacing(Spacing::Sm, density))
             .mb(STAT_MARGIN_B)
             .child(stat_card(
                 tr!("discord_stat_latency"),
@@ -601,6 +600,7 @@ impl DiscordScreenView {
                 latency_hint,
                 palette.text_faint,
                 palette,
+                density,
             ))
             .child(stat_card(
                 tr!("discord_stat_budget"),
@@ -609,6 +609,7 @@ impl DiscordScreenView {
                 budget_hint,
                 palette.text_faint,
                 palette,
+                density,
             ))
             .child(stat_card(
                 tr!("discord_stat_send"),
@@ -617,6 +618,7 @@ impl DiscordScreenView {
                 send_hint,
                 palette.text_faint,
                 palette,
+                density,
             ))
             .child(stat_card(
                 tr!("discord_stat_errors"),
@@ -625,11 +627,13 @@ impl DiscordScreenView {
                 tr!("discord_stat_errors_hint"),
                 palette.text_faint,
                 palette,
+                density,
             ))
             .into_any_element()
     }
 
     fn render_bindings(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let hint = div()
             .font_family(mono_family())
             .text_size(SECTION_HINT_FS)
@@ -640,7 +644,11 @@ impl DiscordScreenView {
             ))
             .into_any_element();
 
-        let mut list = div().w_full().flex().flex_col().gap(LIST_GAP);
+        let mut list = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density));
         if self.webhooks.is_empty() {
             list = list.child(empty_row(tr!("discord_bindings_empty"), palette));
         }
@@ -790,7 +798,7 @@ impl DiscordScreenView {
         .into_any_element()
     }
 
-    fn render_posts(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_posts(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let last = match self.last_send_at() {
             Some(at) => fmt_display_relative(Some(at)),
             None => tr!("discord_posts_never"),
@@ -802,7 +810,11 @@ impl DiscordScreenView {
             .child(last)
             .into_any_element();
 
-        let mut list = div().w_full().flex().flex_col().gap(LIST_GAP);
+        let mut list = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density));
         if self.posts.is_empty() {
             list = list.child(empty_row(tr!("discord_posts_empty"), palette));
         }
@@ -823,7 +835,7 @@ impl DiscordScreenView {
             .into_any_element()
     }
 
-    fn render_footer(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_footer(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let (dot, right) = match self.health.last_send_ok {
             Some(true) => (palette.success, tr!("discord_footer_healthy")),
             Some(false) => (palette.danger, tr!("discord_footer_failing")),
@@ -845,7 +857,7 @@ impl DiscordScreenView {
                 div()
                     .flex()
                     .items_center()
-                    .gap(FOOTER_GAP)
+                    .gap(spacing(Spacing::Xs, density))
                     .child(footer_text(
                         tr!(
                             "discord_footer_webhooks",
@@ -863,7 +875,7 @@ impl DiscordScreenView {
                 div()
                     .flex()
                     .items_center()
-                    .gap(FOOTER_GAP)
+                    .gap(spacing(Spacing::Xs, density))
                     .child(status_dot(dot, FOOTER_DOT))
                     .child(footer_text(right, palette)),
             )
@@ -1034,7 +1046,7 @@ impl Render for DiscordScreenView {
             .items_start()
             .gap(COLUMN_GAP)
             .child(grow_cell(self.render_bindings(&palette, cx), COLUMN_FLEX))
-            .child(grow_cell(self.render_posts(&palette), COLUMN_FLEX));
+            .child(grow_cell(self.render_posts(&palette, density), COLUMN_FLEX));
 
         let body = div()
             .id("discord-scroll")
@@ -1049,10 +1061,10 @@ impl Render for DiscordScreenView {
                     .px(SCROLL_PAD_X)
                     .flex()
                     .flex_col()
-                    .child(self.render_hero(&palette))
-                    .child(self.render_stats(&palette))
+                    .child(self.render_hero(&palette, density))
+                    .child(self.render_stats(&palette, density))
                     .child(columns)
-                    .child(self.render_footer(&palette)),
+                    .child(self.render_footer(&palette, density)),
             );
 
         let frame = page_frame(

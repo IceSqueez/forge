@@ -1,5 +1,9 @@
+use forge_components::ActivePresentation;
+use forge_components::Density;
 use forge_components::FONT_BADGE;
 use forge_components::FONT_XXS;
+use forge_components::Spacing;
+use forge_components::spacing;
 use std::time::Duration;
 
 use forge_components::{
@@ -28,7 +32,6 @@ use super::preview_shapes::{
 };
 
 const REGION_PAD: Pixels = px(20.0);
-const HEAD_GAP: Pixels = px(10.0);
 
 const STAGE_MIN_H: Pixels = px(300.0);
 const STAGE_RADIUS: Pixels = px(10.0);
@@ -381,6 +384,7 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let descriptor = self.handles.kinds.get(&definition.kind_id);
         let page = descriptor.is_some_and(|d| d.has_visual_page());
         let test_fire_ok = descriptor.is_some();
@@ -420,8 +424,8 @@ impl OverlaysView {
             .w_full()
             .flex()
             .items_center()
-            .gap(HEAD_GAP)
-            .pb(HEAD_GAP)
+            .gap(spacing(Spacing::Sm, density))
+            .pb(spacing(Spacing::Sm, density))
             .children(size_label)
             .children(scale_switch)
             .child(div().flex_1().min_w(px(0.0)))
@@ -485,6 +489,7 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let view = cx.entity().downgrade();
         let arena = div()
             .flex_1()
@@ -525,6 +530,7 @@ impl OverlaysView {
                 self.stage.scale,
                 &glyphs,
                 palette,
+                density,
             ))
             .into_any_element()
     }
@@ -612,6 +618,7 @@ fn render_canvas(
     mode: PreviewScale,
     glyphs: &StageGlyphs,
     palette: &ForgePalette,
+    density: Density,
 ) -> AnyElement {
     let scale = Scale::new(
         match mode {
@@ -698,6 +705,7 @@ fn render_canvas(
             scale,
             glyphs,
             palette,
+            density,
         )))
         .into_any_element()
 }

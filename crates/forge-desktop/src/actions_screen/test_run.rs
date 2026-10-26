@@ -392,6 +392,7 @@ impl TestRunModal {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let label: SharedString = self
             .selected_trigger
             .and_then(|i| self.triggers.get(i))
@@ -403,9 +404,9 @@ impl TestRunModal {
             .id("actions-test-trigger-select")
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .py(SELECT_PAD_V)
-            .px(spacing(Spacing::Sm, Density::Cozy))
+            .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Md))
             .bg(palette.shell)
             .border(BORDER_THIN)
@@ -461,6 +462,7 @@ impl TestRunModal {
     }
 
     fn render_test_run_body(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let progress_color = match self.phase {
             TestRunPhase::Halted { .. } => palette.danger,
             TestRunPhase::Done { errors } if errors > 0 => palette.warning,
@@ -494,20 +496,14 @@ impl TestRunModal {
                 .child(tr!("action_editor_test_run_empty"))
                 .into_any_element()
         } else {
-            let mut col = div()
-                .flex()
-                .flex_col()
-                .gap(spacing(Spacing::Xs, Density::Cozy));
+            let mut col = div().flex().flex_col().gap(spacing(Spacing::Xs, density));
             for row in &self.rows {
-                col = col.child(self.render_test_run_row(row, palette));
+                col = col.child(self.render_test_run_row(row, palette, density));
             }
             col.into_any_element()
         };
 
-        let mut body = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, Density::Cozy));
+        let mut body = div().flex().flex_col().gap(spacing(Spacing::Sm, density));
         if self.triggers.len() > 1 {
             body = body.child(self.render_trigger_selector(palette, cx));
         }
@@ -526,13 +522,18 @@ impl TestRunModal {
                     .child(text),
             );
         }
-        if let Some(banner) = self.render_test_run_banner(palette) {
+        if let Some(banner) = self.render_test_run_banner(palette, density) {
             body = body.child(banner);
         }
         body.into_any_element()
     }
 
-    fn render_test_run_row(&self, row: &TestRunRow, palette: &ForgePalette) -> AnyElement {
+    fn render_test_run_row(
+        &self,
+        row: &TestRunRow,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> AnyElement {
         let number = (row.index + 1).to_string();
         let (mark_glyph, mark_bg, mark_fg, label, label_color, border, row_bg, opacity) =
             match &row.status {
@@ -611,7 +612,7 @@ impl TestRunModal {
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .py(ROW_PAD_V)
             .px(ROW_PAD_H)
             .rounded(radius(Radius::Md))
@@ -642,7 +643,11 @@ impl TestRunModal {
             .into_any_element()
     }
 
-    fn render_test_run_banner(&self, palette: &ForgePalette) -> Option<AnyElement> {
+    fn render_test_run_banner(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> Option<AnyElement> {
         match &self.phase {
             TestRunPhase::Halted { step } => {
                 let row = self.rows.get(*step);
@@ -665,6 +670,7 @@ impl TestRunModal {
                     ),
                     Some(message),
                     palette,
+                    density,
                 ))
             }
             TestRunPhase::Done { errors } if *errors > 0 => Some(Self::test_run_banner(
@@ -677,6 +683,7 @@ impl TestRunModal {
                 ),
                 None,
                 palette,
+                density,
             )),
             TestRunPhase::Done { .. } if !self.rows.is_empty() => Some(Self::test_run_banner(
                 Icon::CircleCheck,
@@ -688,6 +695,7 @@ impl TestRunModal {
                 ),
                 None,
                 palette,
+                density,
             )),
             TestRunPhase::NotStarted => Some(Self::test_run_banner(
                 Icon::InfoCircle,
@@ -695,6 +703,7 @@ impl TestRunModal {
                 tr!("action_editor_test_run_notstarted"),
                 None,
                 palette,
+                density,
             )),
             _ => None,
         }
@@ -706,11 +715,12 @@ impl TestRunModal {
         title: String,
         message: Option<SharedString>,
         palette: &ForgePalette,
+        density: Density,
     ) -> AnyElement {
         let heading = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(icon(glyph, BANNER_ICON, tint))
             .child(
                 div()
@@ -724,9 +734,9 @@ impl TestRunModal {
             .w_full()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .py(spacing(Spacing::Sm, Density::Cozy))
-            .px(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
+            .py(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Md))
             .bg(Rgba {
                 a: FAIL_TINT_ALPHA,
@@ -748,6 +758,7 @@ impl TestRunModal {
     }
 
     fn render_test_run_footer(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let status = match self.phase {
             TestRunPhase::Halted { .. } => tr!("action_editor_test_run_foot_halted"),
             TestRunPhase::Done { .. } => tr!("action_editor_test_run_foot_finished"),
@@ -759,7 +770,7 @@ impl TestRunModal {
             .flex_none()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy));
+            .gap(spacing(Spacing::Xs, density));
         if self.phase.is_terminal() {
             actions = actions.child(
                 ghost_button_with_icon(Icon::Refresh, tr!("action_editor_test_run_again"), palette)

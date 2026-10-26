@@ -3,6 +3,7 @@ use crate::FONT_FIELD;
 use crate::FONT_META;
 use crate::FONT_ROW;
 use crate::FONT_SECTION_LABEL;
+use crate::presentation::ActivePresentation;
 use std::collections::HashSet;
 
 use gpui::{
@@ -26,7 +27,6 @@ use crate::tr;
 
 const GRID_W: Pixels = px(880.0);
 const GRID_H: Pixels = px(640.0);
-const GRID_BAND_PAD_H: Pixels = px(16.0);
 const GRID_TILE: Pixels = px(30.0);
 const GRID_TILE_RADIUS: Pixels = px(7.0);
 const GRID_TILE_ICON: Pixels = px(15.0);
@@ -38,11 +38,8 @@ const GRID_SEARCH_PAD_B: Pixels = px(9.0);
 const GRID_SEARCH_ICON: Pixels = px(14.0);
 const GRID_SEARCH_FS: Pixels = FONT_FIELD;
 const RAIL_W: Pixels = px(184.0);
-const RAIL_PAD_V: Pixels = px(10.0);
-const RAIL_PAD_H: Pixels = px(10.0);
 const RAIL_GAP: Pixels = px(2.0);
 const RAIL_ENTRY_GAP: Pixels = px(8.0);
-const RAIL_ENTRY_PAD_V: Pixels = px(6.0);
 const RAIL_ENTRY_PAD_H: Pixels = px(8.0);
 const RAIL_LEAD_SLOT: Pixels = px(14.0);
 const RAIL_DOT: Pixels = px(6.0);
@@ -65,9 +62,6 @@ const GRID_EMPTY_GLYPH: Pixels = px(22.0);
 const GRID_BADGE_FS: Pixels = FONT_BADGE;
 const GRID_CARD_DESC_H: Pixels = px(18.0);
 const GRID_LIST_OVERDRAW: Pixels = px(320.0);
-const SUBTITLE_GAP: Pixels = px(4.0);
-const GRID_CLOSE_PAD: Pixels = px(4.0);
-const GRID_HEADER_ROW_PAD_B: Pixels = px(6.0);
 const GRID_STAR_PAD: Pixels = px(2.0);
 
 const GRID_HEADER_ROW_H: Pixels = px(30.0);
@@ -470,6 +464,7 @@ impl GridPicker {
     }
 
     fn render_header(&self, accent: Rgba, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let p = self.palette;
 
         let tile = div()
@@ -493,7 +488,7 @@ impl GridPicker {
             GridPickerSubtitle::Context { lead, name, note } => div()
                 .flex()
                 .items_center()
-                .gap(SUBTITLE_GAP)
+                .gap(spacing(Spacing::Xxs, density))
                 .overflow_hidden()
                 .font_family(body_family())
                 .text_size(GRID_META_FS)
@@ -521,7 +516,7 @@ impl GridPicker {
         let close = div()
             .id("forge-grid-close")
             .flex_none()
-            .p(GRID_CLOSE_PAD)
+            .p(spacing(Spacing::Xxs, density))
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
             .hover(move |s| s.bg(p.surface_overlay))
@@ -534,7 +529,7 @@ impl GridPicker {
             .items_center()
             .gap(GRID_HEADER_GAP)
             .py(GRID_HEADER_PAD_V)
-            .px(GRID_BAND_PAD_H)
+            .px(spacing(Spacing::Md, density))
             .border_b(BORDER_THIN)
             .border_color(p.surface_overlay)
             .child(tile)
@@ -544,11 +539,12 @@ impl GridPicker {
     }
 
     fn render_search(&self, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let p = self.palette;
         let mut row = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .child(div().flex_1().min_w(px(0.0)).child(self.search.clone()));
         if !self.query.is_empty() {
             row = row.child(
@@ -565,7 +561,7 @@ impl GridPicker {
             .flex_none()
             .pt(GRID_SEARCH_PAD_T)
             .pb(GRID_SEARCH_PAD_B)
-            .px(GRID_BAND_PAD_H)
+            .px(spacing(Spacing::Md, density))
             .border_b(BORDER_THIN)
             .border_color(p.surface_overlay)
             .child(row)
@@ -573,6 +569,7 @@ impl GridPicker {
     }
 
     fn render_rail(&self, accent: Rgba, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let p = self.palette;
         let star: AnyElement = icon(Icon::Star, RAIL_STAR, accent).into_any_element();
         let mut col = div()
@@ -582,8 +579,8 @@ impl GridPicker {
             .flex()
             .flex_col()
             .gap(RAIL_GAP)
-            .py(RAIL_PAD_V)
-            .px(RAIL_PAD_H)
+            .py(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Sm, density))
             .overflow_y_scroll()
             .border_r(BORDER_THIN)
             .border_color(p.surface_overlay)
@@ -601,6 +598,7 @@ impl GridPicker {
                 matches!(self.rail, RailSel::All),
                 &p,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.set_rail(RailSel::All, cx)),
+                density,
             ))
             .child(grid_rail_entry(
                 "forge-grid-rail-fav",
@@ -609,6 +607,7 @@ impl GridPicker {
                 matches!(self.rail, RailSel::Favorites),
                 &p,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.set_rail(RailSel::Favorites, cx)),
+                density,
             ));
         if let FavoritesStatus::Failed(message) = &self.favorites_status {
             col = col.child(compact_error_with_retry(
@@ -616,6 +615,7 @@ impl GridPicker {
                 message.clone(),
                 &p,
                 cx.listener(|_, _: &ClickEvent, _, cx| cx.emit(GridPickerEvent::FavoritesRetry)),
+                density,
             ));
         }
 
@@ -637,6 +637,7 @@ impl GridPicker {
                 cx.listener(move |this, _: &ClickEvent, _, cx| {
                     this.set_rail(RailSel::Group(sid.clone()), cx)
                 }),
+                density,
             ));
         }
 
@@ -658,6 +659,7 @@ impl GridPicker {
                 cx.listener(move |this, _: &ClickEvent, _, cx| {
                     this.set_rail(RailSel::Group(sid.clone()), cx)
                 }),
+                density,
             ));
         }
 
@@ -665,6 +667,7 @@ impl GridPicker {
     }
 
     fn render_cards(&self, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let p = self.palette;
         let query = self.query.trim().to_owned();
         let searching = !query.is_empty();
@@ -678,13 +681,13 @@ impl GridPicker {
             .flex()
             .flex_col()
             .py(GRID_BODY_PAD_V)
-            .px(GRID_BAND_PAD_H);
+            .px(spacing(Spacing::Md, density));
 
         if searching {
             col = col.child(
                 div()
                     .flex_none()
-                    .pb(spacing(Spacing::Sm, Density::Cozy))
+                    .pb(spacing(Spacing::Sm, density))
                     .font_family(body_family())
                     .text_size(GRID_META_FS)
                     .text_color(p.text_faint)
@@ -717,7 +720,7 @@ impl GridPicker {
                         .flex()
                         .flex_col()
                         .items_center()
-                        .gap(spacing(Spacing::Sm, Density::Cozy))
+                        .gap(spacing(Spacing::Sm, density))
                         .py(GRID_EMPTY_PAD_V)
                         .child(icon(glyph, GRID_EMPTY_GLYPH, p.text_faint))
                         .child(
@@ -742,11 +745,14 @@ impl GridPicker {
     }
 
     fn render_list_row(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let p = self.palette;
         let accent = self.config.accent;
         let art = self.config.art;
         match &self.rows[ix] {
-            PickerRow::Header { label, dot, count } => render_header_row(label, *dot, *count, &p),
+            PickerRow::Header { label, dot, count } => {
+                render_header_row(label, *dot, *count, &p, density)
+            }
             PickerRow::Cards(cards) => render_card_row(cards, accent, art, &p, cx),
         }
     }
@@ -765,7 +771,7 @@ impl GridPicker {
         }
     }
 
-    fn render_footer(&self) -> AnyElement {
+    fn render_footer(&self, density: Density) -> AnyElement {
         let p = self.palette;
         div()
             .flex_none()
@@ -773,7 +779,7 @@ impl GridPicker {
             .items_center()
             .justify_between()
             .py(GRID_FOOTER_PAD_V)
-            .px(GRID_BAND_PAD_H)
+            .px(spacing(Spacing::Md, density))
             .bg(p.shell)
             .border_t(BORDER_THIN)
             .border_color(p.surface_overlay)
@@ -790,6 +796,7 @@ impl GridPicker {
 
 impl Render for GridPicker {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let p = self.palette;
         let accent = self.config.accent;
 
@@ -817,7 +824,7 @@ impl Render for GridPicker {
             .child(self.render_header(accent, cx))
             .child(self.render_search(cx))
             .child(body)
-            .child(self.render_footer())
+            .child(self.render_footer(density))
     }
 }
 
@@ -826,11 +833,12 @@ fn render_header_row(
     dot: Rgba,
     count: usize,
     p: &ForgePalette,
+    density: Density,
 ) -> AnyElement {
     let inner = div()
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Xs, Density::Cozy))
+        .gap(spacing(Spacing::Xs, density))
         .child(
             div()
                 .flex_none()
@@ -860,7 +868,7 @@ fn render_header_row(
         .w_full()
         .flex()
         .items_end()
-        .pb(GRID_HEADER_ROW_PAD_B)
+        .pb(spacing(Spacing::Xs, density))
         .child(inner)
         .into_any_element()
 }
@@ -900,6 +908,7 @@ fn render_card_el(
     p: &ForgePalette,
     cx: &mut Context<GridPicker>,
 ) -> AnyElement {
+    let density = cx.density();
     let dim = !matches!(card.state, GridPickerItemState::Normal);
 
     let tile = div()
@@ -973,7 +982,7 @@ fn render_card_el(
     let top = div()
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Xs, Density::Cozy))
+        .gap(spacing(Spacing::Xs, density))
         .pb(GRID_CARD_ROW_MB)
         .child(tile)
         .child(name)
@@ -1052,6 +1061,7 @@ fn grid_rail_entry(
     active: bool,
     palette: &ForgePalette,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    density: Density,
 ) -> AnyElement {
     let (bg, text_color): (Rgba, Rgba) = if active {
         (palette.surface_overlay, palette.text_primary)
@@ -1073,7 +1083,7 @@ fn grid_rail_entry(
         .items_center()
         .gap(RAIL_ENTRY_GAP)
         .w_full()
-        .py(RAIL_ENTRY_PAD_V)
+        .py(spacing(Spacing::Xs, density))
         .px(RAIL_ENTRY_PAD_H)
         .rounded(radius(Radius::Sm))
         .bg(bg)

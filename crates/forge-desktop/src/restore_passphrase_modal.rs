@@ -150,6 +150,7 @@ impl Render for RestorePassphraseModal {
             field_frame(&palette)
                 .child(self.passphrase.clone())
                 .into_any_element(),
+            density,
         ));
 
         let card = modal(tr!("restore_passphrase_title"), body, &palette)

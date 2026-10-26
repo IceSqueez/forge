@@ -5,12 +5,12 @@ use forge_components::{
 };
 use gpui::{AnyElement, App, ClickEvent, Window, div, prelude::*};
 
-pub(super) fn files_root_note(palette: &ForgePalette) -> AnyElement {
+pub(super) fn files_root_note(palette: &ForgePalette, density: Density) -> AnyElement {
     let root = forge_storage::paths::assets_dir();
     let caption = div()
         .flex()
         .flex_col()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
+        .gap(spacing(Spacing::Xxs, density))
         .child(
             div()
                 .font_family(mono_family())
@@ -37,7 +37,7 @@ pub(super) fn files_root_note(palette: &ForgePalette) -> AnyElement {
         .flex()
         .items_center()
         .justify_between()
-        .gap(spacing(Spacing::Sm, Density::Cozy))
+        .gap(spacing(Spacing::Sm, density))
         .child(div().flex_1().overflow_hidden().child(caption))
         .child(
             ghost_button_with_icon(

@@ -1,3 +1,4 @@
+use crate::presentation::ActivePresentation;
 use std::ops::Range;
 
 use gpui::{
@@ -14,8 +15,7 @@ use crate::text_buffer::TextBuffer;
 use crate::text_edit::{content_offset_for_mask, mask_graphemes, mask_offset};
 use crate::text_editing::*;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, Radius, Spacing, body_family, mono_family, radius,
-    spacing,
+    BORDER_THIN, FONT_SM, FONT_XS, Radius, Spacing, body_family, mono_family, radius, spacing,
 };
 
 const KEY_CONTEXT: &str = "ForgeTextInput";
@@ -69,7 +69,6 @@ pub struct TextInput {
     scroll_offset: Pixels,
     motion: CaretMotion,
     palette: ForgePalette,
-    density: Density,
     font_size: Pixels,
     read_only: bool,
     secure: bool,
@@ -107,7 +106,6 @@ impl TextInput {
             scroll_offset: px(0.0),
             motion: CaretMotion::default(),
             palette: FORGE_DEFAULT,
-            density: Density::Cozy,
             font_size: FONT_XS,
             read_only: false,
             secure: false,
@@ -647,6 +645,7 @@ impl Focusable for TextInput {
 
 impl Render for TextInput {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         if self.blur_sub.is_none() {
             let handle = self.focus_handle.clone();
             self.blur_sub = Some(cx.on_blur(&handle, window, Self::on_blur));
@@ -704,11 +703,11 @@ impl Render for TextInput {
             let py = if self.compact {
                 px(4.0)
             } else {
-                spacing(Spacing::Xs, self.density)
+                spacing(Spacing::Xs, density)
             };
             field = match self.fixed_box {
                 Some((height, pad_x)) => field.h(height).px(pad_x),
-                None => field.px(spacing(Spacing::Sm, self.density)).py(py),
+                None => field.px(spacing(Spacing::Sm, density)).py(py),
             };
             field = field
                 .bg(surface)
@@ -741,7 +740,7 @@ impl Render for TextInput {
         if self.leading_icon.is_none() && self.prefix.is_none() {
             return field.child(content);
         }
-        field = field.gap(spacing(Spacing::Xs, self.density));
+        field = field.gap(spacing(Spacing::Xs, density));
         if let Some((glyph, tint)) = self.leading_icon {
             field = field.child(icon(glyph, FONT_SM, tint));
         }

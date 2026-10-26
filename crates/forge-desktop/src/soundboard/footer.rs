@@ -1,4 +1,6 @@
 use forge_components::FONT_XXS;
+use forge_components::Spacing;
+use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, Density, ForgePalette, fmt_bytes, mono_family, status_dot, tr,
 };
@@ -52,7 +54,7 @@ impl SoundboardView {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.0))
+                    .gap(spacing(Spacing::Xs, density))
                     .child(status_dot(dot, FOOTER_DOT))
                     .child(
                         div()

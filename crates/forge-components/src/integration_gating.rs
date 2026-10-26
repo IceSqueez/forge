@@ -2,6 +2,10 @@ use crate::FONT_LABEL;
 use crate::FONT_META;
 use crate::FONT_MICRO;
 use crate::FONT_SECTION_LABEL;
+use crate::presentation::ActivePresentation;
+use crate::tokens::Density;
+use crate::tokens::Spacing;
+use crate::tokens::spacing;
 use gpui::{
     AnyElement, App, ClickEvent, Div, ElementId, FontWeight, InteractiveElement, IntoElement,
     ParentElement, Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled,
@@ -22,21 +26,16 @@ const WARN_BORDER_ALPHA: f32 = 0.2;
 
 const INACTIVE_SIZE: Pixels = FONT_SECTION_LABEL;
 const INACTIVE_GLYPH: Pixels = px(10.0);
-const INACTIVE_GAP: Pixels = px(4.0);
 const INACTIVE_PAD_V: Pixels = px(1.0);
-const INACTIVE_PAD_H: Pixels = px(6.0);
 
 const REASON_SIZE: Pixels = FONT_MICRO;
 const REASON_GLYPH: Pixels = px(10.0);
-const REASON_GAP: Pixels = px(4.0);
 const REASON_PAD_V: Pixels = px(1.0);
 const REASON_PAD_H: Pixels = px(7.0);
 const REASON_FILL_ALPHA: f32 = 0.12;
 
 const NOTICE_GAP: Pixels = px(8.0);
 const NOTICE_PAD_V: Pixels = px(5.0);
-const NOTICE_PAD_LEFT: Pixels = px(10.0);
-const NOTICE_PAD_RIGHT: Pixels = px(6.0);
 const NOTICE_GLYPH: Pixels = px(12.0);
 const NOTICE_TEXT: Pixels = FONT_LABEL;
 const ENABLE_SIZE: Pixels = FONT_META;
@@ -62,14 +61,15 @@ pub fn health_tile(glyph: Icon, tint: Rgba) -> Div {
 pub fn integration_inactive_badge(
     label: impl Into<SharedString>,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     div()
         .flex_none()
         .flex()
         .items_center()
-        .gap(INACTIVE_GAP)
+        .gap(spacing(Spacing::Xxs, density))
         .py(INACTIVE_PAD_V)
-        .px(INACTIVE_PAD_H)
+        .px(spacing(Spacing::Xs, density))
         .whitespace_nowrap()
         .rounded(radius(Radius::Sm))
         .bg(with_alpha(palette.warning, WARN_FILL_ALPHA))
@@ -86,12 +86,13 @@ pub fn integration_inactive_badge(
 pub fn integration_disabled_reason(
     label: impl Into<SharedString>,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     div()
         .flex_none()
         .flex()
         .items_center()
-        .gap(REASON_GAP)
+        .gap(spacing(Spacing::Xxs, density))
         .py(REASON_PAD_V)
         .px(REASON_PAD_H)
         .whitespace_nowrap()
@@ -140,7 +141,8 @@ impl IntegrationDisabledNotice {
 }
 
 impl RenderOnce for IntegrationDisabledNotice {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
         let palette = self.palette;
         let hover_border = palette.border_input;
         let mut enable = div()
@@ -175,8 +177,8 @@ impl RenderOnce for IntegrationDisabledNotice {
             .items_center()
             .gap(NOTICE_GAP)
             .py(NOTICE_PAD_V)
-            .pl(NOTICE_PAD_LEFT)
-            .pr(NOTICE_PAD_RIGHT)
+            .pl(spacing(Spacing::Sm, density))
+            .pr(spacing(Spacing::Xs, density))
             .rounded(radius(Radius::Sm))
             .bg(with_alpha(palette.warning, WARN_FILL_ALPHA))
             .border(BORDER_THIN)

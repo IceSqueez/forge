@@ -576,7 +576,7 @@ impl PackImportModal {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .child(failure_note(message, palette)),
+                    .child(failure_note(message, palette, density)),
             ),
             None => row.child(div().flex_1()),
         };

@@ -362,6 +362,7 @@ impl VTubeConnectForm {
 
 impl Render for VTubeConnectForm {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
 
         let endpoint = endpoint_row(
@@ -374,6 +375,7 @@ impl Render for VTubeConnectForm {
                 port_focused: self.port.focus_handle(cx).is_focused(window),
             },
             &palette,
+            density,
         );
 
         let plugin_field = div()
@@ -385,6 +387,7 @@ impl Render for VTubeConnectForm {
                 tr!("vtube_connect_field_plugin"),
                 None,
                 &palette,
+                density,
             ))
             .child(
                 box_frame(&palette)

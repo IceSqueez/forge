@@ -284,7 +284,7 @@ impl SettingsAudioView {
             .items_center()
             .justify_between()
             .w_full()
-            .px(spacing(Spacing::Sm, Density::Cozy))
+            .px(spacing(Spacing::Sm, density))
             .py(px(7.0))
             .rounded(radius(Radius::Sm))
             .bg(palette.base)

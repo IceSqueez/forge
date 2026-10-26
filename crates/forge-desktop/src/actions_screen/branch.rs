@@ -28,6 +28,7 @@ fn drill_in_chip(
     disabled: bool,
     palette: &ForgePalette,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    density: Density,
 ) -> AnyElement {
     let color = if disabled {
         palette.disabled
@@ -37,9 +38,9 @@ fn drill_in_chip(
     let base = div()
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
-        .py(spacing(Spacing::Xxs, Density::Cozy))
-        .px(spacing(Spacing::Xs, Density::Cozy))
+        .gap(spacing(Spacing::Xxs, density))
+        .py(spacing(Spacing::Xxs, density))
+        .px(spacing(Spacing::Xs, density))
         .rounded(CHIP_RADIUS)
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
@@ -193,6 +194,7 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let mut segments: Vec<(String, Option<usize>)> =
             vec![(tr!("action_editor_breadcrumb_steps"), Some(0))];
         for (depth, frame) in self.nav_path.iter().enumerate() {
@@ -229,7 +231,7 @@ impl ScreenActionsView {
             .flex()
             .flex_wrap()
             .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy));
+            .gap(spacing(Spacing::Xxs, density));
         for (idx, (label, target)) in segments.into_iter().enumerate() {
             if idx > 0 {
                 row = row.child(
@@ -250,7 +252,7 @@ impl ScreenActionsView {
                             .id(SharedString::from(format!("actions-breadcrumb-{depth}")))
                             .flex()
                             .items_center()
-                            .gap(spacing(Spacing::Xxs, Density::Cozy))
+                            .gap(spacing(Spacing::Xxs, density))
                             .children(leading)
                             .font_family(mono_family())
                             .text_size(FONT_XS)
@@ -291,6 +293,7 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
+        let density = cx.density();
         let fields = self.sub_action_registry.get(&step.kind_id)?.config_fields();
         let at_cap = depth >= nav::UI_MAX_NESTING_DEPTH;
         let mut rows: Vec<AnyElement> = Vec::new();
@@ -313,6 +316,7 @@ impl ScreenActionsView {
                         cx.listener(move |this, _: &ClickEvent, _, cx| {
                             this.enter_branch(step_index, key_owned.clone(), None, cx)
                         }),
+                        density,
                     ));
                 }
                 FormField::CaseList { key, .. } => {
@@ -361,7 +365,7 @@ impl ScreenActionsView {
                 .w_full()
                 .flex()
                 .flex_col()
-                .gap(spacing(Spacing::Xxs, Density::Cozy))
+                .gap(spacing(Spacing::Xxs, density))
                 .children(rows)
                 .into_any_element(),
         )
@@ -382,6 +386,7 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let count = nav::branch_step_count(step, key, Some(ci));
         let disabled = at_cap && count == 0;
 
@@ -414,6 +419,7 @@ impl ScreenActionsView {
             cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.enter_branch(step_index, key_owned.clone(), Some(ci), cx)
             }),
+            density,
         );
         let move_up = step_icon_btn(
             SharedString::from(format!("actions-case-up-{step_index}-{ci}")),
@@ -446,7 +452,7 @@ impl ScreenActionsView {
         div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .child(match_el)
             .child(drill)
             .child(move_up)
@@ -461,11 +467,12 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         div()
             .id(SharedString::from(format!("actions-add-case-{step_index}")))
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .cursor_pointer()
             .on_click(
                 cx.listener(move |this, _: &ClickEvent, _, cx| {

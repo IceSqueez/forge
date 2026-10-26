@@ -1,5 +1,6 @@
 use crate::FONT_MICRO;
 use crate::FONT_SECTION_LABEL;
+use crate::presentation::ActivePresentation;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -18,7 +19,6 @@ use crate::tokens::{
 };
 
 const PANEL_MIN_WIDTH: Pixels = px(180.0);
-const PANEL_PADDING: Pixels = px(4.0);
 const PANEL_RADIUS: Pixels = px(8.0);
 const PANEL_GAP: Pixels = px(4.0);
 
@@ -28,17 +28,12 @@ const HEADER_BOTTOM_PAD_RATIO: f32 = 0.5;
 const ITEM_ICON_SIZE: Pixels = px(13.0);
 const SHORTCUT_FONT_SIZE: Pixels = FONT_MICRO;
 const HEADER_FONT_SIZE: Pixels = FONT_SECTION_LABEL;
-const DIVIDER_MARGIN: Pixels = px(4.0);
 
 const TRIGGER_SIZE: Pixels = px(20.0);
 const TRIGGER_ICON_SIZE: Pixels = px(14.0);
 const TRIGGER_RADIUS: Pixels = px(5.0);
 
 const MENU_PRIORITY: usize = 1;
-
-fn pad(s: Spacing) -> Pixels {
-    spacing(s, Density::Cozy)
-}
 
 type ItemClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -162,7 +157,12 @@ impl MenuInk {
         }
     }
 
-    fn render_item(&self, entry: MenuEntry, dismiss: &Option<DismissHandler>) -> AnyElement {
+    fn render_item(
+        &self,
+        entry: MenuEntry,
+        dismiss: &Option<DismissHandler>,
+        density: Density,
+    ) -> AnyElement {
         let text_ink = if entry.disabled {
             self.faint_ink
         } else {
@@ -178,8 +178,8 @@ impl MenuInk {
             .flex()
             .items_center()
             .gap(ITEM_GAP)
-            .py(pad(Spacing::Xs))
-            .px(pad(Spacing::Sm))
+            .py(spacing(Spacing::Xs, density))
+            .px(spacing(Spacing::Sm, density))
             .rounded(ITEM_RADIUS)
             .font_family(body_family());
 
@@ -226,18 +226,18 @@ impl MenuInk {
             .into_any_element()
     }
 
-    fn render_divider(&self) -> AnyElement {
+    fn render_divider(&self, density: Density) -> AnyElement {
         div()
-            .py(DIVIDER_MARGIN)
+            .py(spacing(Spacing::Xxs, density))
             .child(div().w_full().h(BORDER_THIN).bg(self.divider_ink))
             .into_any_element()
     }
 
-    fn render_header(&self, label: SharedString) -> AnyElement {
+    fn render_header(&self, label: SharedString, density: Density) -> AnyElement {
         div()
-            .pt(pad(Spacing::Xs))
-            .pb(pad(Spacing::Xs) * HEADER_BOTTOM_PAD_RATIO)
-            .px(pad(Spacing::Sm))
+            .pt(spacing(Spacing::Xs, density))
+            .pb(spacing(Spacing::Xs, density) * HEADER_BOTTOM_PAD_RATIO)
+            .px(spacing(Spacing::Sm, density))
             .font_family(mono_family())
             .whitespace_nowrap()
             .text_size(HEADER_FONT_SIZE)
@@ -251,12 +251,13 @@ impl MenuInk {
         items: Vec<MenuItem>,
         escape_focus: Option<&FocusHandle>,
         dismiss: Option<DismissHandler>,
+        density: Density,
     ) -> Div {
         let mut panel = div()
             .flex()
             .flex_col()
             .min_w(PANEL_MIN_WIDTH)
-            .p(PANEL_PADDING)
+            .p(spacing(Spacing::Xxs, density))
             .bg(self.panel_bg)
             .rounded(PANEL_RADIUS)
             .border(BORDER_THIN)
@@ -265,9 +266,9 @@ impl MenuInk {
 
         for item in items {
             panel = match item {
-                MenuItem::Item(entry) => panel.child(self.render_item(entry, &dismiss)),
-                MenuItem::Divider => panel.child(self.render_divider()),
-                MenuItem::Header(label) => panel.child(self.render_header(label)),
+                MenuItem::Item(entry) => panel.child(self.render_item(entry, &dismiss, density)),
+                MenuItem::Divider => panel.child(self.render_divider(density)),
+                MenuItem::Header(label) => panel.child(self.render_header(label, density)),
             };
         }
 
@@ -389,7 +390,8 @@ impl MenuButton {
 }
 
 impl RenderOnce for MenuButton {
-    fn render(mut self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
         let trigger = self.render_trigger();
 
         let mut root = div().relative().child(trigger);
@@ -409,6 +411,7 @@ impl RenderOnce for MenuButton {
                 std::mem::take(&mut self.items),
                 self.escape_focus.as_ref(),
                 self.on_dismiss.clone(),
+                density,
             )
             .with_animation(panel_anim_id, enter_animation(), |el, delta| {
                 el.opacity(delta)
@@ -482,10 +485,11 @@ impl ContextMenu {
 }
 
 impl RenderOnce for ContextMenu {
-    fn render(self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
         let panel = self
             .ink
-            .render_panel(self.items, None, self.on_dismiss.clone())
+            .render_panel(self.items, None, self.on_dismiss.clone(), density)
             .with_animation(
                 ElementId::Name(SharedString::new_static("forge-context-menu-panel")),
                 enter_animation(),

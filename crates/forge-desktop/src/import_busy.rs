@@ -1,3 +1,4 @@
+use forge_components::Density;
 use forge_components::{
     ForgePalette, OverlayPosition, PushToast, ToastKind, busy_modal, overlay, tr,
 };
@@ -8,6 +9,7 @@ pub(crate) fn busy_overlay(
     title: String,
     detail: String,
     palette: &ForgePalette,
+    density: Density,
 ) -> AnyElement {
     div()
         .absolute()
@@ -15,7 +17,7 @@ pub(crate) fn busy_overlay(
         .left_0()
         .size_full()
         .child(
-            overlay(busy_modal(id, title, detail, palette), palette)
+            overlay(busy_modal(id, title, detail, palette, density), palette)
                 .position(OverlayPosition::Center),
         )
         .into_any_element()

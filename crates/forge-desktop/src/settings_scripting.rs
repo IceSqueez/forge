@@ -427,6 +427,7 @@ impl SettingsScriptingView {
                 tr!("settings_scripting_domains_load_failed", reason = reason),
                 palette,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.load_domains(cx)),
+                density,
             )
         });
 
@@ -467,13 +468,14 @@ impl SettingsScriptingView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let density = cx.density();
         div()
             .flex()
             .flex_row()
             .items_center()
-            .gap(px(4.0))
-            .px(spacing(Spacing::Sm, Density::Cozy))
-            .py(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
+            .px(spacing(Spacing::Sm, density))
+            .py(spacing(Spacing::Xxs, density))
             .rounded(radius(Radius::Pill))
             .bg(palette.surface_overlay)
             .child(

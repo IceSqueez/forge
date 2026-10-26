@@ -260,7 +260,7 @@ impl Render for OverlaysView {
             .flex_row()
             .child(self.render_registry_pane(&palette, cx))
             .child(self.render_editor_pane(&palette, cx))
-            .children(self.render_property_pane(&palette));
+            .children(self.render_property_pane(&palette, density));
 
         let frame = page_frame(
             vec![

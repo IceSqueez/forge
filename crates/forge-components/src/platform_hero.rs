@@ -6,6 +6,7 @@ use gpui::{
 
 use crate::avatar::{AvatarTile, avatar_tile};
 use crate::palette::ForgePalette;
+use crate::presentation::ActivePresentation;
 use crate::tokens::{
     BORDER_THIN, Density, FONT_MD, FONT_XS, Radius, Spacing, body_family, radius, spacing,
 };
@@ -24,7 +25,7 @@ pub struct PlatformHero {
     name_badges: Vec<AnyElement>,
     description: SharedString,
     right: Option<AnyElement>,
-    density: Density,
+    density: Option<Density>,
     name_color: Rgba,
     description_color: Rgba,
     border: Rgba,
@@ -47,7 +48,7 @@ pub fn platform_hero(
         name_badges: Vec::new(),
         description: description.into(),
         right: None,
-        density: Density::Cozy,
+        density: None,
         name_color: palette.text_primary,
         description_color: palette.text_muted,
         border: palette.border_regular,
@@ -70,14 +71,14 @@ impl PlatformHero {
 
     #[must_use]
     pub fn density(mut self, density: Density) -> Self {
-        self.density = density;
+        self.density = Some(density);
         self
     }
 }
 
 impl RenderOnce for PlatformHero {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let d = self.density;
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let d = self.density.unwrap_or_else(|| cx.density());
 
         let name_el = div()
             .font_family(body_family())

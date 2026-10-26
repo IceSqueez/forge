@@ -333,6 +333,7 @@ impl Render for BackupPassphraseModal {
                 field_frame(&palette)
                     .child(current.clone())
                     .into_any_element(),
+                density,
             )
         });
         let body = div()
@@ -350,6 +351,7 @@ impl Render for BackupPassphraseModal {
                 field_frame(&palette)
                     .child(self.passphrase.clone())
                     .into_any_element(),
+                density,
             ))
             .child(field_column(
                 &palette,
@@ -359,6 +361,7 @@ impl Render for BackupPassphraseModal {
                 field_frame(&palette)
                     .child(self.confirmation.clone())
                     .into_any_element(),
+                density,
             ));
 
         let card = modal(self.purpose.title(), body, &palette)

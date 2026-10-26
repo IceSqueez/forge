@@ -1,7 +1,7 @@
 use super::*;
 use forge_components::{
-    BORDER_THIN, DRAG_SOURCE_OPACITY, Density, ESCAPE_KEY, FONT_XS, ForgePalette, Icon, Radius,
-    Spacing, body_family, icon, radius, spacing,
+    BORDER_THIN, DRAG_SOURCE_OPACITY, ESCAPE_KEY, FONT_XS, ForgePalette, Icon, Radius, Spacing,
+    body_family, icon, radius, spacing,
 };
 use gpui::{
     AnyElement, Bounds, ClickEvent, Context, CursorStyle, DragMoveEvent, FocusHandle, FontWeight,
@@ -31,11 +31,12 @@ struct StepDragGhost {
 }
 
 impl Render for StepDragGhost {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .py(STEP_CARD_PAD_V)
             .px(STEP_CARD_PAD_H)
             .bg(self.surface)
@@ -245,10 +246,11 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> gpui::Div {
+        let density = cx.density();
         let indicator = self.step_drop_indicator_slot().and_then(|slot| {
             let line = div()
                 .absolute()
-                .left(STEP_COL_W + spacing(Spacing::Xs, Density::Cozy))
+                .left(STEP_COL_W + spacing(Spacing::Xs, density))
                 .right_0()
                 .h(BORDER_THIN)
                 .bg(palette.brand);

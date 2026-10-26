@@ -620,6 +620,7 @@ impl QuickActionModal {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let Some(field) = self.fields.get(index) else {
             return div().into_any_element();
         };
@@ -630,7 +631,14 @@ impl QuickActionModal {
             FieldControl::Toggle(value) => self.render_toggle(index, *value, palette, cx),
             FieldControl::Choice(choice) => self.render_choice(index, choice, palette, cx),
         };
-        field_column(palette, &field.label, field.hint.as_deref(), None, control)
+        field_column(
+            palette,
+            &field.label,
+            field.hint.as_deref(),
+            None,
+            control,
+            density,
+        )
     }
 
     fn render_toggle(
@@ -655,6 +663,7 @@ impl QuickActionModal {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         match &choice.state {
             ChoiceState::Loading => field_frame(palette)
                 .gap(px(8.0))
@@ -677,6 +686,7 @@ impl QuickActionModal {
                 reason,
                 palette,
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.retry_option_list(index, cx)),
+                density,
             ),
             ChoiceState::Ready(items) => {
                 let selected = selected_label(items, &choice.selected);

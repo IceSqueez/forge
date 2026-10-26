@@ -1,3 +1,6 @@
+use forge_components::Density;
+use forge_components::Spacing;
+use forge_components::spacing;
 use forge_components::{BORDER_THIN, ForgePalette, Icon, icon, mono_family, tooltip_builder, tr};
 use forge_types::ClipId;
 use gpui::{AnyElement, Context, Pixels, div, prelude::*, px};
@@ -8,7 +11,6 @@ use crate::clip_key_state::{PadKey, canonical_combo};
 use forge_hotkey::HotkeyReconciler;
 
 const HOTKEY_RADIUS: Pixels = px(4.0);
-const HOTKEY_PAD_X: Pixels = px(6.0);
 const HOTKEY_PAD_Y: Pixels = px(1.0);
 const HOTKEY_WARN_GAP: Pixels = px(3.0);
 const HOTKEY_WARN_GLYPH: Pixels = px(10.0);
@@ -44,6 +46,7 @@ impl SoundboardView {
         id: ClipId,
         hotkey: &str,
         palette: &ForgePalette,
+        density: Density,
     ) -> AnyElement {
         let combo = canonical_combo(hotkey);
         let state = self.keys.pad_key(id, &combo);
@@ -64,7 +67,7 @@ impl SoundboardView {
             .border(BORDER_THIN)
             .border_color(border)
             .rounded(HOTKEY_RADIUS)
-            .px(HOTKEY_PAD_X)
+            .px(spacing(Spacing::Xs, density))
             .py(HOTKEY_PAD_Y);
         let reason = match &state {
             PadKey::Live => return badge.child(combo).into_any_element(),

@@ -44,7 +44,6 @@ const HERO_BRAND_BOX: Pixels = px(54.0);
 const HERO_BRAND_FONT: Pixels = px(26.0);
 const HERO_TITLE_FONT: Pixels = FONT_XL;
 
-const JUMP_PAD_V: Pixels = px(16.0);
 const JUMP_PAD_H: Pixels = px(18.0);
 const JUMP_ICON_BOX: Pixels = px(34.0);
 const JUMP_ICON_RADIUS: Pixels = px(8.0);
@@ -67,7 +66,6 @@ const HEALTH_ICON: Pixels = px(14.0);
 const HEALTH_LIVE_DOT: Pixels = px(6.0);
 
 const EVENT_ROW_PAD_V: Pixels = px(7.0);
-const EVENT_ROW_PAD_H: Pixels = px(4.0);
 const EVENT_TIME_W: Pixels = px(60.0);
 const EVENT_TIME_W_TWELVE_HOUR: Pixels = px(84.0);
 const EVENT_DOT: Pixels = px(6.0);
@@ -431,7 +429,7 @@ impl HomeView {
             .flex_1()
             .flex_col()
             .gap(spacing(Spacing::Sm, density))
-            .py(JUMP_PAD_V)
+            .py(spacing(Spacing::Md, density))
             .px(JUMP_PAD_H)
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
@@ -466,14 +464,19 @@ impl HomeView {
         unit: Option<&'static str>,
         value_color: Rgba,
         palette: &ForgePalette,
+        density: Density,
     ) -> AnyElement {
-        let mut value_row = div().flex().items_end().gap(px(4.0)).child(
-            div()
-                .font_family(mono_family())
-                .text_size(FONT_MD)
-                .text_color(value_color)
-                .child(value),
-        );
+        let mut value_row = div()
+            .flex()
+            .items_end()
+            .gap(spacing(Spacing::Xxs, density))
+            .child(
+                div()
+                    .font_family(mono_family())
+                    .text_size(FONT_MD)
+                    .text_color(value_color)
+                    .child(value),
+            );
         if let Some(unit) = unit {
             value_row = value_row.child(
                 div()
@@ -576,7 +579,7 @@ impl HomeView {
             .flex_1()
             .flex()
             .flex_col()
-            .gap(px(4.0))
+            .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
                     .font_family(mono_family())
@@ -629,6 +632,7 @@ impl HomeView {
                 unit("kbps"),
                 palette.text_primary,
                 palette,
+                density,
             ))
             .child(Self::health_stat(
                 tr!("home_health_dropped_label"),
@@ -636,6 +640,7 @@ impl HomeView {
                 None,
                 dropped_color,
                 palette,
+                density,
             ))
             .child(Self::health_stat(
                 tr!("home_health_fps_label"),
@@ -643,6 +648,7 @@ impl HomeView {
                 None,
                 palette.text_primary,
                 palette,
+                density,
             ))
             .child(Self::health_stat(
                 tr!("home_health_cpu_label"),
@@ -650,6 +656,7 @@ impl HomeView {
                 unit("%"),
                 palette.text_primary,
                 palette,
+                density,
             ));
 
         let content = div()
@@ -797,6 +804,7 @@ impl HomeView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let hue = ev.hue.color(palette);
 
         let spans = div()
@@ -845,9 +853,9 @@ impl HomeView {
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .py(EVENT_ROW_PAD_V)
-            .px(EVENT_ROW_PAD_H)
+            .px(spacing(Spacing::Xxs, density))
             .child(status_dot(hue, EVENT_DOT))
             .child(
                 div()

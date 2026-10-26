@@ -1,8 +1,11 @@
+use forge_components::Density;
 use forge_components::FONT_LABEL;
 use forge_components::FONT_META;
 use forge_components::FONT_XS;
 use forge_components::Radius;
+use forge_components::Spacing;
 use forge_components::radius;
+use forge_components::spacing;
 use std::sync::Arc;
 
 use forge_components::{
@@ -22,16 +25,12 @@ use forge_components::ActivePresentation;
 use forge_hotkey::{HotkeyEdge, combo_keys};
 
 const MODAL_W: Pixels = px(520.0);
-const BODY_PAD_V: Pixels = px(16.0);
 const BODY_PAD_H: Pixels = px(18.0);
 const BODY_MAX_H: Pixels = px(460.0);
 
 const SECTION_LABEL_MB: Pixels = px(8.0);
-const SIGNAL_MB: Pixels = px(16.0);
-const SIGNAL_GAP: Pixels = px(10.0);
 const RECAPTURE_HEIGHT: Pixels = px(32.0);
 
-const KEYCAP_GAP: Pixels = px(4.0);
 const KEYCAP_FS: Pixels = FONT_LABEL;
 const KEYCAP_RADIUS: Pixels = px(5.0);
 const KEYCAP_PAD_V: Pixels = px(3.0);
@@ -51,7 +50,6 @@ const LIST_RADIUS: Pixels = radius(Radius::Md);
 const LIST_PAD: Pixels = px(8.0);
 const LIST_MAX_H: Pixels = px(230.0);
 const ROW_GAP: Pixels = px(8.0);
-const ROW_PAD_V: Pixels = px(6.0);
 const ROW_PAD_H: Pixels = px(9.0);
 const ROW_RADIUS: Pixels = radius(Radius::Sm);
 const ROW_MB: Pixels = px(1.0);
@@ -62,7 +60,6 @@ const EMPTY_PAD_V: Pixels = px(20.0);
 
 const FOOTER_GAP: Pixels = px(8.0);
 const FOOTER_HINT_FS: Pixels = FONT_META;
-const EDGE_HINT_MT: Pixels = px(6.0);
 
 pub struct ActionModalLaunch {
     pub instance_id: Option<TriggerInstanceId>,
@@ -252,6 +249,7 @@ impl HotkeyActionModal {
     }
 
     fn render_combo(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let border = if self.capturing {
             palette.success
         } else {
@@ -280,7 +278,7 @@ impl HotkeyActionModal {
                         .child(tr!("hotkeys_capture_prompt")),
                 );
         } else {
-            display = display.child(keycaps(&self.combo, palette));
+            display = display.child(keycaps(&self.combo, palette, density));
         }
 
         let recapture =
@@ -295,7 +293,7 @@ impl HotkeyActionModal {
             .w_full()
             .flex()
             .flex_col()
-            .mb(SIGNAL_MB)
+            .mb(spacing(Spacing::Md, density))
             .child(section_caption(
                 &tr!("hotkeys_modal_section_combo"),
                 palette,
@@ -305,7 +303,7 @@ impl HotkeyActionModal {
                     .w_full()
                     .flex()
                     .items_center()
-                    .gap(SIGNAL_GAP)
+                    .gap(spacing(Spacing::Sm, density))
                     .child(display)
                     .child(div().flex_none().child(recapture)),
             )
@@ -326,6 +324,7 @@ impl HotkeyActionModal {
     }
 
     fn render_edge(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let selector = segmented(
             vec![
                 segment(
@@ -352,7 +351,7 @@ impl HotkeyActionModal {
 
         let hints = self.edge_hints().into_iter().map(|hint| {
             div()
-                .mt(EDGE_HINT_MT)
+                .mt(spacing(Spacing::Xs, density))
                 .font_family(body_family())
                 .text_size(FOOTER_HINT_FS)
                 .text_color(palette.text_faint)
@@ -363,7 +362,7 @@ impl HotkeyActionModal {
             .w_full()
             .flex()
             .flex_col()
-            .mb(SIGNAL_MB)
+            .mb(spacing(Spacing::Md, density))
             .child(section_caption(&tr!("hotkeys_modal_section_edge"), palette))
             .child(div().flex().items_center().child(selector))
             .children(hints)
@@ -449,6 +448,7 @@ impl HotkeyActionModal {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let selected = self.selected_action == Some(choice.id);
         let (background, border, ink) = if selected {
             (palette.surface_overlay, palette.brand, palette.text_primary)
@@ -468,7 +468,7 @@ impl HotkeyActionModal {
             .items_center()
             .gap(ROW_GAP)
             .mb(ROW_MB)
-            .py(ROW_PAD_V)
+            .py(spacing(Spacing::Xs, density))
             .px(ROW_PAD_H)
             .rounded(ROW_RADIUS)
             .border(BORDER_THIN)
@@ -548,8 +548,11 @@ impl HotkeyActionModal {
     }
 }
 
-pub fn keycaps(combo: &str, palette: &ForgePalette) -> impl IntoElement {
-    let mut row = div().flex().items_center().gap(KEYCAP_GAP);
+pub fn keycaps(combo: &str, palette: &ForgePalette, density: Density) -> impl IntoElement {
+    let mut row = div()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Xxs, density));
     for key in combo_keys(combo) {
         row = row.child(
             div()
@@ -596,6 +599,7 @@ fn section_caption(label: &str, palette: &ForgePalette) -> impl IntoElement {
 
 impl Render for HotkeyActionModal {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
         if self.focus_pending {
             self.focus_pending = false;
@@ -609,7 +613,7 @@ impl Render for HotkeyActionModal {
             .w_full()
             .max_h(BODY_MAX_H)
             .overflow_y_scroll()
-            .py(BODY_PAD_V)
+            .py(spacing(Spacing::Md, density))
             .px(BODY_PAD_H)
             .flex()
             .flex_col()

@@ -258,6 +258,7 @@ pub(super) fn icon_field_row(
     images: &[IconImage],
     accent: Rgba,
     palette: &ForgePalette,
+    density: Density,
 ) -> Div {
     let choice = icon_choice(selected, images);
     let art = icon_art(&choice);
@@ -281,7 +282,7 @@ pub(super) fn icon_field_row(
         .w_full()
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Xs, Density::Cozy))
+        .gap(spacing(Spacing::Xs, density))
         .py(CHOICE_PAD_V)
         .px(CHOICE_PAD_H)
         .rounded(radius(Radius::Sm))

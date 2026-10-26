@@ -1,7 +1,6 @@
 use super::*;
 use forge_components::{
-    Density, ForgePalette, Icon, MenuPlacement, Spacing, menu_button, menu_divider, menu_item,
-    spacing, tr,
+    ForgePalette, Icon, MenuPlacement, Spacing, menu_button, menu_divider, menu_item, spacing, tr,
 };
 use gpui::{AnyElement, ClickEvent, Context, SharedString, div};
 
@@ -126,6 +125,7 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let menu_open = self.step_menu_open == Some(i);
         let menu_pos = if menu_open { self.menu_click_pos } else { None };
         let view = cx.entity();
@@ -219,7 +219,7 @@ impl ScreenActionsView {
             .id(SharedString::from(format!("actions-step-controls-{i}")))
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .on_click(|_, _, cx| cx.stop_propagation())
             .child(move_up)
             .child(move_down)

@@ -2,7 +2,11 @@ use crate::FONT_LABEL;
 use crate::FONT_MICRO;
 use crate::FONT_ROLE_BADGE;
 use crate::Radius;
+use crate::presentation::ActivePresentation;
 use crate::radius;
+use crate::tokens::Density;
+use crate::tokens::Spacing;
+use crate::tokens::spacing;
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement,
     ParentElement, Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled,
@@ -14,16 +18,12 @@ use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{BORDER_THIN, FONT_XS, FONT_XXS, body_family, mono_family};
 
 const ROW_GAP: Pixels = px(8.0);
-const LINE1_GAP: Pixels = px(6.0);
 
 const ROW_PAD_T: Pixels = px(3.0);
-const ROW_PAD_R: Pixels = px(10.0);
 const ROW_PAD_B: Pixels = px(3.0);
 const ROW_PAD_L: Pixels = px(8.0);
 const ROW_RADIUS: Pixels = px(5.0);
 
-const EVENT_PAD_V: Pixels = px(6.0);
-const EVENT_PAD_H: Pixels = px(10.0);
 const EVENT_RADIUS: Pixels = radius(Radius::Sm);
 const EVENT_MARGIN_V: Pixels = px(2.0);
 const STRIPE_W: Pixels = px(2.0);
@@ -38,16 +38,12 @@ const ROLE_BADGE_FONT: Pixels = FONT_ROLE_BADGE;
 const ROLE_BADGE_PAD_H: Pixels = px(5.0);
 const ROLE_BADGE_PAD_V: Pixels = px(1.0);
 const ROLE_BADGE_RADIUS: Pixels = px(4.0);
-const ROLE_BADGE_GAP: Pixels = px(4.0);
-const ROLE_BADGE_ML: Pixels = px(4.0);
 const ROLE_TINT_ALPHA: f32 = 0.07;
 const ROLE_BORDER_ALPHA: f32 = 0.45;
 
 const PILL_FONT: Pixels = FONT_MICRO;
-const PILL_PAD_H: Pixels = px(6.0);
 const PILL_PAD_V: Pixels = px(1.0);
 const PILL_RADIUS: Pixels = px(8.0);
-const PILL_GAP: Pixels = px(4.0);
 const PILL_ICON: Pixels = px(9.0);
 
 const CMD_PILL_FONT: Pixels = FONT_LABEL;
@@ -64,7 +60,6 @@ const BODY_LINE_GAP: Pixels = px(2.0);
 const LINE_BODY: Pixels = px(18.0);
 const LINE_TIME: Pixels = px(15.75);
 
-const REPLY_GAP: Pixels = px(4.0);
 const REPLY_ICON: Pixels = px(11.0);
 const REPLY_SNIPPET_MAX: usize = 80;
 
@@ -261,17 +256,17 @@ fn role_badge(badge: &RoleBadge) -> impl IntoElement {
         .child(badge.label.clone())
 }
 
-fn role_badges(badges: &[RoleBadge]) -> Option<impl IntoElement> {
+fn role_badges(badges: &[RoleBadge], density: Density) -> Option<impl IntoElement> {
     if badges.is_empty() {
         return None;
     }
     Some(
         div()
             .flex_none()
-            .ml(ROLE_BADGE_ML)
+            .ml(spacing(Spacing::Xxs, density))
             .flex()
             .items_center()
-            .gap(ROLE_BADGE_GAP)
+            .gap(spacing(Spacing::Xxs, density))
             .children(badges.iter().map(role_badge)),
     )
 }
@@ -282,15 +277,16 @@ fn pill_badge(
     mono: bool,
     leading: Option<(Icon, Rgba)>,
     label: SharedString,
+    density: Density,
 ) -> impl IntoElement {
     let family = if mono { mono_family() } else { body_family() };
     div()
         .flex_none()
         .flex()
         .items_center()
-        .gap(PILL_GAP)
+        .gap(spacing(Spacing::Xxs, density))
         .py(PILL_PAD_V)
-        .px(PILL_PAD_H)
+        .px(spacing(Spacing::Xs, density))
         .rounded(PILL_RADIUS)
         .bg(bg)
         .children(leading.map(|(glyph, glyph_color)| icon(glyph, PILL_ICON, glyph_color)))
@@ -325,13 +321,14 @@ fn event_message_el(text: SharedString, color: Rgba, struck: bool) -> impl IntoE
     }
 }
 
-fn triggered_row(text: SharedString, palette: &ForgePalette) -> impl IntoElement {
+fn triggered_row(text: SharedString, palette: &ForgePalette, density: Density) -> impl IntoElement {
     div().mt(TRIGGERED_TOP).flex().child(pill_badge(
         palette.surface_overlay,
         palette.success,
         false,
         Some((Icon::Bolt, palette.success)),
         text,
+        density,
     ))
 }
 
@@ -348,11 +345,12 @@ fn reply_line(
     author: SharedString,
     text: SharedString,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     div()
         .flex()
         .items_center()
-        .gap(REPLY_GAP)
+        .gap(spacing(Spacing::Xxs, density))
         .child(icon(Icon::ArrowBackUp, REPLY_ICON, palette.text_faint))
         .child(
             div()
@@ -381,6 +379,7 @@ fn standard_row(
     data: &ChatRow,
     click: Option<(ElementId, UsernameClick)>,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     let text = match &data.body {
         ChatBody::Message(t) => t.clone(),
@@ -394,7 +393,7 @@ fn standard_row(
     let reply = data
         .reply
         .clone()
-        .map(|(author, parent)| reply_line(author, parent, palette));
+        .map(|(author, parent)| reply_line(author, parent, palette, density));
     let main = div()
         .flex()
         .items_center()
@@ -407,14 +406,14 @@ fn standard_row(
             click,
         ))
         .child(message_el(text, color, data.moderated))
-        .children(role_badges(&data.badges));
+        .children(role_badges(&data.badges, density));
     div()
         .id(data.id.clone())
         .flex()
         .flex_col()
         .gap(BODY_LINE_GAP)
         .pt(ROW_PAD_T)
-        .pr(ROW_PAD_R)
+        .pr(spacing(Spacing::Sm, density))
         .pb(ROW_PAD_B)
         .pl(ROW_PAD_L)
         .rounded(ROW_RADIUS)
@@ -427,6 +426,7 @@ fn command_row(
     data: &ChatRow,
     click: Option<(ElementId, UsernameClick)>,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     let (command, triggered) = match &data.body {
         ChatBody::Command { command, triggered } => (command.clone(), triggered.clone()),
@@ -444,7 +444,7 @@ fn command_row(
             click,
         ))
         .child(command_pill(command, palette))
-        .children(role_badges(&data.badges));
+        .children(role_badges(&data.badges, density));
     let second = triggered.map(|t| {
         div().pl(CMD_SECOND_INSET).flex().child(pill_badge(
             palette.elevated,
@@ -452,6 +452,7 @@ fn command_row(
             false,
             Some((Icon::ArrowRight, palette.success)),
             t,
+            density,
         ))
     });
     div()
@@ -460,7 +461,7 @@ fn command_row(
         .flex_col()
         .gap(BODY_LINE_GAP)
         .pt(ROW_PAD_T)
-        .pr(ROW_PAD_R)
+        .pr(spacing(Spacing::Sm, density))
         .pb(ROW_PAD_B)
         .pl(ROW_PAD_L)
         .rounded(ROW_RADIUS)
@@ -483,11 +484,12 @@ fn event_row(
     message: Option<(SharedString, Rgba, bool)>,
     triggered: Option<SharedString>,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     let line1 = div()
         .flex()
         .items_center()
-        .gap(LINE1_GAP)
+        .gap(spacing(Spacing::Xs, density))
         .child(username)
         .child(descriptor_el(descriptor, palette))
         .children(count);
@@ -497,14 +499,14 @@ fn event_row(
         .flex_col()
         .child(line1)
         .children(message.map(|(text, color, struck)| event_message_el(text, color, struck)))
-        .children(triggered.map(|t| triggered_row(t, palette)));
+        .children(triggered.map(|t| triggered_row(t, palette, density)));
     div()
         .flex()
         .items_start()
         .gap(ROW_GAP)
         .my(EVENT_MARGIN_V)
-        .py(EVENT_PAD_V)
-        .px(EVENT_PAD_H)
+        .py(spacing(Spacing::Xs, density))
+        .px(spacing(Spacing::Sm, density))
         .bg(palette.elevated)
         .border_l(STRIPE_W)
         .border_color(stripe)
@@ -520,7 +522,8 @@ fn event_row(
 }
 
 impl RenderOnce for ChatRowView {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
         let ChatRowView {
             palette: p,
             data,
@@ -528,8 +531,8 @@ impl RenderOnce for ChatRowView {
         } = self;
 
         match &data.body {
-            ChatBody::Message(_) => standard_row(&data, click, &p).into_any_element(),
-            ChatBody::Command { .. } => command_row(&data, click, &p).into_any_element(),
+            ChatBody::Message(_) => standard_row(&data, click, &p, density).into_any_element(),
+            ChatBody::Command { .. } => command_row(&data, click, &p, density).into_any_element(),
             ChatBody::Subscription {
                 descriptor,
                 months,
@@ -544,6 +547,7 @@ impl RenderOnce for ChatRowView {
                         true,
                         None,
                         SharedString::from(format!("{m} mo")),
+                        density,
                     )
                     .into_any_element()
                 });
@@ -560,6 +564,7 @@ impl RenderOnce for ChatRowView {
                     msg,
                     triggered.clone(),
                     &p,
+                    density,
                 )
                 .into_any_element()
             }
@@ -575,6 +580,7 @@ impl RenderOnce for ChatRowView {
                     false,
                     None,
                     SharedString::from(format!("{bits} bits")),
+                    density,
                 )
                 .into_any_element();
                 let color = if data.moderated {
@@ -592,6 +598,7 @@ impl RenderOnce for ChatRowView {
                     Some((text.clone(), color, data.moderated)),
                     None,
                     &p,
+                    density,
                 )
                 .into_any_element()
             }
@@ -601,8 +608,8 @@ impl RenderOnce for ChatRowView {
                 triggered,
             } => {
                 let username = username_el(data.username.clone(), p.danger, click);
-                let count =
-                    pill_badge(p.danger, p.shell, false, None, viewers.clone()).into_any_element();
+                let count = pill_badge(p.danger, p.shell, false, None, viewers.clone(), density)
+                    .into_any_element();
                 event_row(
                     data.timestamp.clone(),
                     p.danger,
@@ -613,6 +620,7 @@ impl RenderOnce for ChatRowView {
                     None,
                     triggered.clone(),
                     &p,
+                    density,
                 )
                 .into_any_element()
             }

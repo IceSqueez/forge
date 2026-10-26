@@ -14,6 +14,7 @@ impl EditSubActionForm {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> (Div, bool) {
+        let density = cx.density();
         let bool_vals: HashMap<&str, bool> = self
             .fields
             .iter()
@@ -64,6 +65,7 @@ impl EditSubActionForm {
                         Some(button),
                         area.clone().into_any_element(),
                         palette,
+                        density,
                     );
                     grid_items.push((false, self.with_variable_popover(key, block, cx)));
                 }
@@ -91,6 +93,7 @@ impl EditSubActionForm {
                         button,
                         editor.clone().into_any_element(),
                         palette,
+                        density,
                     );
                     grid_items.push((false, self.with_variable_popover(key, block, cx)));
                 }
@@ -128,7 +131,7 @@ impl EditSubActionForm {
                         cx,
                     );
                     let select = match sender_field_helper(&self.kind_id, key) {
-                        Some(helper) => with_field_helper(select, helper, palette),
+                        Some(helper) => with_field_helper(select, helper, palette, density),
                         None => select,
                     };
                     grid_items.push((true, select));
@@ -150,7 +153,7 @@ impl EditSubActionForm {
                     grid_items.push((false, field_wrap(label, control, palette)));
                 }
                 SubFormField::Hint { label } => {
-                    grid_items.push((false, hint_block(label, palette)));
+                    grid_items.push((false, hint_block(label, palette, density)));
                 }
             }
             let names_rejected_key =
@@ -161,22 +164,26 @@ impl EditSubActionForm {
                 && let Some((half, element)) = grid_items.pop()
             {
                 rejection_shown_inline = true;
-                grid_items.push((half, with_rejection_note(element, message, palette)));
+                grid_items.push((
+                    half,
+                    with_rejection_note(element, message, palette, density),
+                ));
             }
         }
 
         (
-            field_grid_layout(grid_items, palette),
+            field_grid_layout(grid_items, palette, density),
             rejection_shown_inline,
         )
     }
 }
 
-fn field_grid_layout(grid_items: Vec<(bool, AnyElement)>, palette: &ForgePalette) -> Div {
-    let mut grid = div()
-        .flex()
-        .flex_col()
-        .gap(spacing(Spacing::Sm, Density::Cozy));
+fn field_grid_layout(
+    grid_items: Vec<(bool, AnyElement)>,
+    palette: &ForgePalette,
+    density: Density,
+) -> Div {
+    let mut grid = div().flex().flex_col().gap(spacing(Spacing::Sm, density));
     if grid_items.is_empty() {
         grid = grid.child(
             div()
@@ -227,11 +234,16 @@ fn sub_field_is_half(field: &SubFormField) -> bool {
     }
 }
 
-fn with_field_helper(element: AnyElement, helper: String, palette: &ForgePalette) -> AnyElement {
+fn with_field_helper(
+    element: AnyElement,
+    helper: String,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
     div()
         .flex()
         .flex_col()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
+        .gap(spacing(Spacing::Xxs, density))
         .child(element)
         .child(
             div()

@@ -41,6 +41,7 @@ impl EditSubActionForm {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let SubFormField::Input {
             key,
             browse,
@@ -56,7 +57,7 @@ impl EditSubActionForm {
             div()
                 .flex()
                 .items_center()
-                .gap(spacing(Spacing::Xs, Density::Cozy))
+                .gap(spacing(Spacing::Xs, density))
                 .child(div().flex_1().child(input.clone()))
                 .child(
                     ghost_button_with_icon(Icon::Folder, tr!("actions_sub_file_browse"), palette)
@@ -73,7 +74,7 @@ impl EditSubActionForm {
             let control = div()
                 .flex()
                 .items_center()
-                .gap(spacing(Spacing::Xs, Density::Cozy))
+                .gap(spacing(Spacing::Xs, density))
                 .child(div().flex_1().child(input.clone()))
                 .child(
                     ghost_button_with_icon(
@@ -95,7 +96,7 @@ impl EditSubActionForm {
             let control = div()
                 .flex()
                 .items_center()
-                .gap(spacing(Spacing::Xs, Density::Cozy))
+                .gap(spacing(Spacing::Xs, density))
                 .child(div().flex_1().child(input.clone()))
                 .child(self.variable_button(key, InsertTarget::Input(input.clone()), palette, cx))
                 .into_any_element();
@@ -113,13 +114,14 @@ pub(super) fn bool_row(
     palette: &ForgePalette,
     cx: &mut Context<EditSubActionForm>,
 ) -> AnyElement {
+    let density = cx.density();
     let toggle_key = key.to_owned();
     div()
         .w_full()
         .flex()
         .items_center()
         .justify_between()
-        .gap(spacing(Spacing::Sm, Density::Cozy))
+        .gap(spacing(Spacing::Sm, density))
         .child(
             div()
                 .font_family(body_family())
@@ -136,11 +138,11 @@ pub(super) fn bool_row(
         .into_any_element()
 }
 
-pub(super) fn hint_block(label: &str, palette: &ForgePalette) -> AnyElement {
+pub(super) fn hint_block(label: &str, palette: &ForgePalette, density: Density) -> AnyElement {
     div()
         .flex()
         .flex_col()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
+        .gap(spacing(Spacing::Xxs, density))
         .child(
             div()
                 .font_family(mono_family())
@@ -170,6 +172,7 @@ pub(super) fn multiline_field(
     trailing: Option<AnyElement>,
     control: AnyElement,
     palette: &ForgePalette,
+    density: Density,
 ) -> AnyElement {
     let caption = |text: SharedString| {
         div()
@@ -181,20 +184,20 @@ pub(super) fn multiline_field(
     let captions = div()
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Xs, Density::Cozy))
+        .gap(spacing(Spacing::Xs, density))
         .child(caption(label.to_owned().into()))
         .children(tag.map(|tag| caption(tag.into())));
     let header = div()
         .flex()
         .items_center()
         .justify_between()
-        .gap(spacing(Spacing::Xs, Density::Cozy))
+        .gap(spacing(Spacing::Xs, density))
         .child(captions)
         .children(trailing);
     div()
         .flex()
         .flex_col()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
+        .gap(spacing(Spacing::Xxs, density))
         .child(header)
         .child(control)
         .into_any_element()

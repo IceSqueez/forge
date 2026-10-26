@@ -391,7 +391,7 @@ impl SettingsVoiceGateView {
             .items_center()
             .justify_between()
             .w_full()
-            .px(spacing(Spacing::Sm, Density::Cozy))
+            .px(spacing(Spacing::Sm, density))
             .py(px(7.0))
             .rounded(radius(Radius::Sm))
             .bg(palette.base)
@@ -539,6 +539,7 @@ impl SettingsVoiceGateView {
     }
 
     fn state_line(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let (text, color) = match &self.gate_state {
             None => (tr!("settings_voice_gate_state_off"), palette.text_muted),
             Some(VoiceGateState::Inactive) => (
@@ -557,7 +558,7 @@ impl SettingsVoiceGateView {
         let mut line = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .font_family(body_family())
             .text_size(FONT_XS)
             .text_color(color)

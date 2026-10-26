@@ -5,8 +5,8 @@ use crate::actions_screen::config_problem_text::config_problem_text;
 use crate::integration_switch::integration_name;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
-    health_tile, icon, mono_family, radius, row_card, spacing, tooltip_lines_builder, tr,
+    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family, health_tile,
+    icon, mono_family, radius, row_card, spacing, tooltip_lines_builder, tr,
 };
 use forge_registry::{Finding, FormField, HealthSeverity, StepHealth};
 use forge_types::SubActionStep;
@@ -83,6 +83,7 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let current = nav::resolve_chain(&detail.action.sub_actions, &self.nav_path);
         let total = current.len();
         let at_root = self.nav_path.is_empty();
@@ -123,6 +124,7 @@ impl ScreenActionsView {
                 palette.brand,
                 empty_label,
                 palette,
+                density,
             ));
         }
         for (i, step) in current.iter().enumerate() {
@@ -130,8 +132,8 @@ impl ScreenActionsView {
         }
         steps_col = steps_col.child(
             div()
-                .pl(STEP_COL_W + spacing(Spacing::Xs, Density::Cozy))
-                .pt(spacing(Spacing::Xs, Density::Cozy))
+                .pl(STEP_COL_W + spacing(Spacing::Xs, density))
+                .pt(spacing(Spacing::Xs, density))
                 .child(add_row_button(
                     "actions-add-step",
                     Icon::Plus,
@@ -141,13 +143,14 @@ impl ScreenActionsView {
                     cx.listener(|this, _: &ClickEvent, window, cx| {
                         this.open_grid_picker(window, cx)
                     }),
+                    density,
                 )),
         );
 
         div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(header)
             .child(self.wire_step_list_drop(steps_col, cx))
             .into_any_element()
@@ -211,6 +214,7 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let is_last = i + 1 == total;
         let (fallback_icon, fallback_title, detail_opt) =
             sub_action_summary(step, &self.select_options);
@@ -281,7 +285,7 @@ impl ScreenActionsView {
         let title_el = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(title_text)
             .children(health_dot);
 
@@ -310,7 +314,7 @@ impl ScreenActionsView {
                 div()
                     .flex()
                     .items_center()
-                    .gap(spacing(Spacing::Xxs, Density::Cozy))
+                    .gap(spacing(Spacing::Xxs, density))
                     .child(grip)
                     .child(icon(glyph, CARD_GLYPH, glyph_color)),
             )
@@ -333,7 +337,7 @@ impl ScreenActionsView {
         let step_row = div()
             .flex()
             .items_start()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(left_col)
             .child(
                 div()
@@ -346,8 +350,8 @@ impl ScreenActionsView {
         let block: AnyElement = match self.render_branch_affordances(step, i, depth, palette, cx) {
             Some(branches) => {
                 let indented = div()
-                    .pl(STEP_COL_W + spacing(Spacing::Xs, Density::Cozy))
-                    .pt(spacing(Spacing::Xxs, Density::Cozy))
+                    .pl(STEP_COL_W + spacing(Spacing::Xs, density))
+                    .pt(spacing(Spacing::Xxs, density))
                     .child(branches);
                 div()
                     .flex()

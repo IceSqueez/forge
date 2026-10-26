@@ -1,4 +1,7 @@
+use forge_components::ActivePresentation;
 use forge_components::FONT_MICRO;
+use forge_components::Spacing;
+use forge_components::spacing;
 use forge_components::{
     ForgePalette, Icon, SectionLabel, error_row_with_retry, icon, mono_family, pad_tile, tr,
 };
@@ -10,14 +13,11 @@ use super::capture::Capture;
 use crate::actions::SHORTCUTS;
 
 const SECTION_HINT_FS: Pixels = FONT_MICRO;
-const LIST_GAP: Pixels = px(6.0);
 
 const ADD_BAR_GLYPH: Pixels = px(13.0);
 
 const KBD_FS: Pixels = FONT_MICRO;
-const KBD_ML: Pixels = px(6.0);
 const KBD_PAD_V: Pixels = px(1.0);
-const KBD_PAD_H: Pixels = px(6.0);
 const KBD_RADIUS: Pixels = px(4.0);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -52,6 +52,7 @@ impl HotkeysScreenView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let hint = div()
             .font_family(mono_family())
             .text_size(SECTION_HINT_FS)
@@ -59,7 +60,11 @@ impl HotkeysScreenView {
             .child(tr!("hotkeys_section_hint"))
             .into_any_element();
 
-        let mut list = div().w_full().flex().flex_col().gap(LIST_GAP);
+        let mut list = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density));
         for (index, row) in self.bindings.iter().enumerate() {
             list = list.child(self.render_binding(index, row, palette, cx));
         }
@@ -69,6 +74,7 @@ impl HotkeysScreenView {
                 tr!("settings_shortcuts_load_failed", reason = reason),
                 palette,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.load_shortcuts(cx)),
+                density,
             ));
         }
         for (index, entry) in SHORTCUTS.iter().enumerate() {
@@ -90,6 +96,7 @@ impl HotkeysScreenView {
     }
 
     fn render_add_bar(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         if self.capture == Capture::Add {
             return self.render_capture_row(palette, cx);
         }
@@ -99,9 +106,9 @@ impl HotkeysScreenView {
             .child(tr!("hotkeys_add_binding"))
             .child(
                 div()
-                    .ml(KBD_ML)
+                    .ml(spacing(Spacing::Xs, density))
                     .py(KBD_PAD_V)
-                    .px(KBD_PAD_H)
+                    .px(spacing(Spacing::Xs, density))
                     .rounded(KBD_RADIUS)
                     .bg(palette.surface_overlay)
                     .font_family(mono_family())

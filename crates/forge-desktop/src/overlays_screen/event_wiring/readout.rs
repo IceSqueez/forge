@@ -1,3 +1,6 @@
+use forge_components::ActivePresentation;
+use forge_components::Spacing;
+use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, Button, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, body_family,
     empty_state, ghost_button_with_icon, icon, mono_family, radius, tr,
@@ -7,11 +10,8 @@ use gpui::{AnyElement, App, ClickEvent, Entity, Pixels, SharedString, div, prelu
 use super::EventWiringView;
 use super::plan::{FeedRow, feed_summary};
 
-const ROW_GAP: Pixels = px(6.0);
-const BLOCK_TOP: Pixels = px(10.0);
 const GLYPH: Pixels = px(12.0);
 const CHIP_PAD_V: Pixels = px(8.0);
-const CHIP_PAD_H: Pixels = px(10.0);
 const CHIP_GAP: Pixels = px(8.0);
 
 pub(crate) fn entry_button(
@@ -33,6 +33,7 @@ pub(crate) fn render_readout(
     palette: &ForgePalette,
     cx: &mut App,
 ) -> Option<AnyElement> {
+    let density = cx.density();
     let wiring = view.read(cx);
     if !wiring.eligible() {
         return None;
@@ -43,7 +44,7 @@ pub(crate) fn render_readout(
             div()
                 .flex_none()
                 .w_full()
-                .pt(BLOCK_TOP)
+                .pt(spacing(Spacing::Sm, density))
                 .child(
                     empty_state(tr!("overlays_wire_empty"), palette)
                         .glyph(Icon::Bolt)
@@ -59,17 +60,18 @@ pub(crate) fn render_readout(
         .w_full()
         .flex()
         .flex_col()
-        .gap(ROW_GAP)
-        .pt(BLOCK_TOP)
+        .gap(spacing(Spacing::Xs, density))
+        .pt(spacing(Spacing::Sm, density))
         .child(note_row(
             Icon::Bolt,
             palette.brand,
             feed_summary(&wiring.feeds),
             palette.text_secondary,
+            density,
         ));
 
     for row in &wiring.feeds {
-        rows = rows.child(feed_chip(view, row, palette));
+        rows = rows.child(feed_chip(view, row, palette, density));
     }
 
     let overlay_off = wiring
@@ -82,6 +84,7 @@ pub(crate) fn render_readout(
             palette.warning,
             tr!("overlays_wire_overlay_off"),
             palette.warning,
+            density,
         ));
     }
 
@@ -93,12 +96,13 @@ fn note_row(
     tint: gpui::Rgba,
     message: String,
     text_color: gpui::Rgba,
+    density: Density,
 ) -> impl IntoElement {
     div()
         .w_full()
         .flex()
         .items_center()
-        .gap(ROW_GAP)
+        .gap(spacing(Spacing::Xs, density))
         .child(icon(glyph, GLYPH, tint))
         .child(
             div()
@@ -115,6 +119,7 @@ fn feed_chip(
     view: &Entity<EventWiringView>,
     row: &FeedRow,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     let target = view.clone();
     let action_id = row.action_id;
@@ -135,7 +140,7 @@ fn feed_chip(
         .flex()
         .items_center()
         .gap(CHIP_GAP)
-        .px(CHIP_PAD_H)
+        .px(spacing(Spacing::Sm, density))
         .py(CHIP_PAD_V)
         .rounded(radius(Radius::Sm))
         .border(BORDER_THIN)

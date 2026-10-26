@@ -1,3 +1,5 @@
+use forge_components::Spacing;
+use forge_components::spacing;
 use forge_components::{
     BreadcrumbCrumb, FONT_XS, ForgePalette, Icon, ToastKind, body_family, ghost_button_with_icon,
     icon, mono_family, page_frame, primary_button_with_icon, tr,
@@ -24,8 +26,6 @@ use forge_runtime::{IntegrationSlot, LifecycleState};
 
 const BODY_PAD_V: Pixels = px(18.0);
 const BODY_PAD_H: Pixels = px(22.0);
-const REASON_MT: Pixels = px(6.0);
-const REASON_GAP: Pixels = px(6.0);
 const REASON_ICON: Pixels = px(12.0);
 const REASON_ICON_MT: Pixels = px(2.0);
 const REASON_LINE_HEIGHT: f32 = 1.45;
@@ -130,6 +130,7 @@ impl IntegrationFailedView {
     }
 
     fn lead(&self, palette: &ForgePalette, cx: &Context<Self>) -> AnyElement {
+        let density = cx.density();
         let reason = self
             .reason(cx)
             .unwrap_or_else(|| tr!("integration_failed_retrying"));
@@ -144,10 +145,10 @@ impl IntegrationFailedView {
             )
             .child(
                 div()
-                    .mt(REASON_MT)
+                    .mt(spacing(Spacing::Xs, density))
                     .flex()
                     .items_start()
-                    .gap(REASON_GAP)
+                    .gap(spacing(Spacing::Xs, density))
                     .child(div().mt(REASON_ICON_MT).child(icon(
                         Icon::AlertCircle,
                         REASON_ICON,
@@ -168,6 +169,7 @@ impl IntegrationFailedView {
     }
 
     fn hero(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let busy = matches!(
             self.state(cx),
             LifecycleState::Starting | LifecycleState::Stopping
@@ -204,16 +206,18 @@ impl IntegrationFailedView {
             self.lead(palette, cx),
             actions,
             palette,
+            density,
         )
     }
 }
 
 impl Render for IntegrationFailedView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
         let status =
             CardStatus::resolve(&self.state(cx), ConnectionAffordance::Connectionless, false);
-        let badge = card_status_badge(&self.id, &status, &palette);
+        let badge = card_status_badge(&self.id, &status, &palette, density);
 
         let body = div()
             .id("integration-failed-scroll")
@@ -227,7 +231,7 @@ impl Render for IntegrationFailedView {
                     .px(BODY_PAD_H)
                     .font_family(body_family())
                     .child(self.hero(&palette, cx))
-                    .children(disclaimer_block(&self.id, &palette)),
+                    .children(disclaimer_block(&self.id, &palette, density)),
             );
 
         let crumbs = self.crumbs(cx);

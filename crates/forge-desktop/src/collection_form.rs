@@ -363,6 +363,7 @@ impl CollectionForm {
     }
 
     fn render_field(&self, index: usize, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let palette = cx.palette();
         let Some(field) = self.fields.get(index) else {
             return div().into_any_element();
@@ -416,7 +417,7 @@ impl CollectionForm {
                     .into_any_element()
             }
             FormControl::Unsupported => {
-                failure_note(&tr!("collection_field_unsupported"), &palette)
+                failure_note(&tr!("collection_field_unsupported"), &palette, density)
             }
         };
         field_column(
@@ -425,6 +426,7 @@ impl CollectionForm {
             field.hint.as_deref(),
             field.error.as_deref(),
             control,
+            density,
         )
     }
 }

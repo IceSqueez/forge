@@ -49,11 +49,12 @@ pub(super) fn with_rejection_note(
     element: AnyElement,
     message: String,
     palette: &ForgePalette,
+    density: Density,
 ) -> AnyElement {
     div()
         .flex()
         .flex_col()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
+        .gap(spacing(Spacing::Xxs, density))
         .child(element)
         .child(rejection_note(message, palette))
         .into_any_element()

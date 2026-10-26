@@ -1,7 +1,11 @@
+use forge_components::ActivePresentation;
 use forge_components::CTA_HOVER_ALPHA;
+use forge_components::Density;
 use forge_components::FONT_LABEL;
 use forge_components::FONT_META;
 use forge_components::FONT_ROW;
+use forge_components::Spacing;
+use forge_components::spacing;
 use std::sync::Arc;
 
 use forge_components::{
@@ -22,13 +26,10 @@ pub(crate) const BOX_PAD_H: Pixels = px(11.0);
 const BOX_RADIUS: Pixels = px(7.0);
 
 const FIELD_LABEL_SIZE: Pixels = FONT_META;
-const FIELD_LABEL_GAP: Pixels = px(6.0);
-const FIELD_GAP: Pixels = px(10.0);
 pub(crate) const FIELD_BLOCK_GAP: Pixels = px(12.0);
 
 const TOGGLE_GLYPH: Pixels = px(14.0);
 const TOGGLE_ROW_PAD_V: Pixels = px(8.0);
-const TOGGLE_ROW_GAP: Pixels = px(10.0);
 const TOGGLE_LABEL_SIZE: Pixels = FONT_ROW;
 const TOGGLE_HINT_SIZE: Pixels = FONT_META;
 
@@ -39,7 +40,6 @@ const STRIP_TITLE_SIZE: Pixels = FONT_LABEL;
 const BUTTON_ROW_GAP: Pixels = px(8.0);
 const BUTTON_PAD_V: Pixels = px(8.0);
 const GHOST_PAD_H: Pixels = px(14.0);
-const PRIMARY_PAD_H: Pixels = px(16.0);
 const BUTTON_GAP: Pixels = px(5.0);
 const BUTTON_GLYPH: Pixels = px(13.0);
 const BUSY_OPACITY: f32 = 0.6;
@@ -182,23 +182,27 @@ pub(crate) struct EndpointFields<'a> {
     pub port_focused: bool,
 }
 
-pub(crate) fn endpoint_row(fields: EndpointFields<'_>, palette: &ForgePalette) -> AnyElement {
+pub(crate) fn endpoint_row(
+    fields: EndpointFields<'_>,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
     let host_field = div()
         .flex()
         .flex_col()
-        .child(field_label(fields.host_label, None, palette))
+        .child(field_label(fields.host_label, None, palette, density))
         .child(input_box(fields.host_focused, palette).child(fields.host.clone()));
     let port_field = div()
         .flex()
         .flex_col()
-        .child(field_label(fields.port_label, None, palette))
+        .child(field_label(fields.port_label, None, palette, density))
         .child(input_box(fields.port_focused, palette).child(fields.port.clone()));
 
     div()
         .w_full()
         .flex()
         .items_start()
-        .gap(FIELD_GAP)
+        .gap(spacing(Spacing::Sm, density))
         .mb(FIELD_BLOCK_GAP)
         .child(grow_cell(host_field, HOST_CELL_GROW))
         .child(grow_cell(port_field, PORT_CELL_GROW))
@@ -209,13 +213,14 @@ pub(crate) fn field_label(
     label: String,
     note: Option<String>,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     let mut row = div()
         .w_full()
         .flex()
         .items_center()
         .justify_between()
-        .mb(FIELD_LABEL_GAP)
+        .mb(spacing(Spacing::Xs, density))
         .child(
             div()
                 .font_family(mono_family())
@@ -322,6 +327,7 @@ fn flag_row<V: 'static>(
     on_toggle: fn(&mut V, ConnectFlag, &mut Context<V>),
     cx: &mut Context<V>,
 ) -> AnyElement {
+    let density = cx.density();
     let flag = row.flag;
     let control = toggle(flags.get(flag), palette).on_click(
         spec.element_id(flag),
@@ -356,7 +362,7 @@ fn flag_row<V: 'static>(
             div()
                 .flex()
                 .items_center()
-                .gap(TOGGLE_ROW_GAP)
+                .gap(spacing(Spacing::Sm, density))
                 .child(icon(row.glyph, TOGGLE_GLYPH, row.tint))
                 .child(labels),
         )
@@ -490,6 +496,7 @@ pub(crate) fn form_buttons<V: 'static>(
     on_submit: fn(&mut V, &mut Context<V>),
     cx: &mut Context<V>,
 ) -> AnyElement {
+    let density = cx.density();
     let disabled = buttons.disabled;
 
     let test = div()
@@ -531,7 +538,7 @@ pub(crate) fn form_buttons<V: 'static>(
         .justify_center()
         .gap(BUTTON_GAP)
         .py(BUTTON_PAD_V)
-        .px(PRIMARY_PAD_H)
+        .px(spacing(Spacing::Md, density))
         .rounded(radius(Radius::Sm))
         .bg(palette.brand)
         .when(!disabled, |el| {

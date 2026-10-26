@@ -8,8 +8,6 @@ use gpui::{
 use crate::settings::SettingsSection;
 
 const ICON_SIZE: Pixels = px(20.0);
-const ICON_TITLE_GAP: Pixels = px(10.0);
-const TITLE_SUBTITLE_GAP: Pixels = px(6.0);
 const SUBTITLE_FONT: Pixels = FONT_ROW;
 const CONTENT_GAP_AFTER_SUBTITLE: Pixels = px(22.0);
 const CONTENT_GAP_AFTER_TITLE: Pixels = px(18.0);
@@ -50,7 +48,7 @@ impl RenderOnce for SettingsPaneHeader {
             .w_full()
             .flex()
             .items_center()
-            .gap(ICON_TITLE_GAP)
+            .gap(spacing(Spacing::Sm, density))
             .child(icon(self.section.icon(), ICON_SIZE, palette.brand))
             .child(
                 div()
@@ -75,7 +73,7 @@ impl RenderOnce for SettingsPaneHeader {
         let header = div().w_full().flex().flex_col().child(title_row);
         match self.subtitle {
             Some(subtitle) => header
-                .gap(TITLE_SUBTITLE_GAP)
+                .gap(spacing(Spacing::Xs, density))
                 .mb(CONTENT_GAP_AFTER_SUBTITLE)
                 .child(
                     div()

@@ -24,7 +24,7 @@ impl SaveState {
     }
 }
 
-pub fn save_indicator(state: &SaveState, palette: &ForgePalette) -> AnyElement {
+pub fn save_indicator(state: &SaveState, palette: &ForgePalette, density: Density) -> AnyElement {
     match state {
         SaveState::Error(message) => div()
             .font_family(body_family())
@@ -41,7 +41,7 @@ pub fn save_indicator(state: &SaveState, palette: &ForgePalette) -> AnyElement {
         SaveState::Saved => div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(icon(Icon::CircleCheck, SAVED_ICON, palette.success))
             .child(
                 div()

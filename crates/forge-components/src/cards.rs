@@ -7,6 +7,7 @@ use gpui::{
 
 use crate::icons::{Icon, icon, spinner};
 use crate::palette::ForgePalette;
+use crate::presentation::ActivePresentation;
 use crate::tokens::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, body_family, mono_family,
     radius, spacing,
@@ -18,7 +19,7 @@ pub struct FieldLabel {
     control: AnyElement,
     tone: Rgba,
     size: Pixels,
-    gap: Pixels,
+    density: Option<Density>,
 }
 
 pub fn field_label(
@@ -31,7 +32,7 @@ pub fn field_label(
         control: control.into_any_element(),
         tone: palette.text_faint,
         size: FONT_XXS,
-        gap: spacing(Spacing::Xxs, Density::Cozy),
+        density: None,
     }
 }
 
@@ -50,17 +51,18 @@ impl FieldLabel {
 
     #[must_use]
     pub fn density(mut self, density: Density) -> Self {
-        self.gap = spacing(Spacing::Xxs, density);
+        self.density = Some(density);
         self
     }
 }
 
 impl RenderOnce for FieldLabel {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = self.density.unwrap_or_else(|| cx.density());
         div()
             .flex()
             .flex_col()
-            .gap(self.gap)
+            .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
                     .font_family(mono_family())
@@ -89,13 +91,11 @@ pub fn field_hint(text: impl Into<SharedString>, palette: &ForgePalette) -> impl
         .child(text.into())
 }
 
-const METRIC_LINE_GAP: Pixels = px(4.0);
-
 #[derive(IntoElement)]
 pub struct Card {
     child: AnyElement,
-    pad_v: Pixels,
-    pad_h: Pixels,
+    pad_v: Option<Pixels>,
+    pad_h: Option<Pixels>,
     top_radius: Pixels,
     bottom_radius: Pixels,
     full_width: bool,
@@ -106,12 +106,11 @@ pub struct Card {
 }
 
 pub fn card(child: impl IntoElement, palette: &ForgePalette) -> Card {
-    let pad = spacing(Spacing::Md, Density::Cozy);
     let r = radius(Radius::Md);
     Card {
         child: child.into_any_element(),
-        pad_v: pad,
-        pad_h: pad,
+        pad_v: None,
+        pad_h: None,
         top_radius: r,
         bottom_radius: r,
         full_width: false,
@@ -125,15 +124,15 @@ pub fn card(child: impl IntoElement, palette: &ForgePalette) -> Card {
 impl Card {
     #[must_use]
     pub fn padding(mut self, padding: Pixels) -> Self {
-        self.pad_v = padding;
-        self.pad_h = padding;
+        self.pad_v = Some(padding);
+        self.pad_h = Some(padding);
         self
     }
 
     #[must_use]
     pub fn padding_xy(mut self, vertical: Pixels, horizontal: Pixels) -> Self {
-        self.pad_v = vertical;
-        self.pad_h = horizontal;
+        self.pad_v = Some(vertical);
+        self.pad_h = Some(horizontal);
         self
     }
 
@@ -178,10 +177,11 @@ impl Card {
 }
 
 impl RenderOnce for Card {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let pad = spacing(Spacing::Md, cx.density());
         let mut root = div()
-            .py(self.pad_v)
-            .px(self.pad_h)
+            .py(self.pad_v.unwrap_or(pad))
+            .px(self.pad_h.unwrap_or(pad))
             .rounded_t(self.top_radius)
             .rounded_b(self.bottom_radius)
             .border(BORDER_THIN)
@@ -207,13 +207,14 @@ pub fn metric_card(
     sublabel: Option<impl Into<SharedString>>,
     sublabel_color: Option<Rgba>,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     let label_upper = SharedString::from(label.into().to_uppercase());
 
     let mut col = div()
         .flex()
         .flex_col()
-        .gap(METRIC_LINE_GAP)
+        .gap(spacing(Spacing::Xxs, density))
         .child(
             div()
                 .font_family(mono_family())
@@ -241,7 +242,7 @@ pub fn metric_card(
     }
 
     div()
-        .p(spacing(Spacing::Sm, Density::Cozy))
+        .p(spacing(Spacing::Sm, density))
         .rounded(radius(Radius::Md))
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
@@ -283,7 +284,7 @@ pub struct EmptyState {
     glyph: Option<Icon>,
     loading: Option<ElementId>,
     cta: Option<AnyElement>,
-    density: Density,
+    density: Option<Density>,
     message_color: Rgba,
     glyph_color: Rgba,
     spinner_color: Rgba,
@@ -295,7 +296,7 @@ pub fn empty_state(message: impl Into<SharedString>, palette: &ForgePalette) -> 
         glyph: None,
         loading: None,
         cta: None,
-        density: Density::Cozy,
+        density: None,
         message_color: palette.text_muted,
         glyph_color: palette.text_faint,
         spinner_color: palette.text_muted,
@@ -323,14 +324,14 @@ impl EmptyState {
 
     #[must_use]
     pub fn density(mut self, density: Density) -> Self {
-        self.density = density;
+        self.density = Some(density);
         self
     }
 }
 
 impl RenderOnce for EmptyState {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let d = self.density;
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let d = self.density.unwrap_or_else(|| cx.density());
 
         let leading: Option<AnyElement> = match self.loading {
             Some(id) => Some(
@@ -418,7 +419,7 @@ pub struct RowCard {
     pub(crate) colors: RowCardColors,
     border_width: Pixels,
     corner_radius: Pixels,
-    density: Density,
+    density: Option<Density>,
     align_top: bool,
     pad_v: Option<Pixels>,
     pad_h: Option<Pixels>,
@@ -445,7 +446,7 @@ pub fn row_card(title: impl IntoElement, palette: &ForgePalette) -> RowCard {
         },
         border_width: ROW_BORDER,
         corner_radius: px(0.0),
-        density: Density::default(),
+        density: None,
         align_top: false,
         pad_v: None,
         pad_h: None,
@@ -488,7 +489,7 @@ impl RowCard {
 
     #[must_use]
     pub fn density(mut self, density: Density) -> Self {
-        self.density = density;
+        self.density = Some(density);
         self
     }
 
@@ -531,8 +532,8 @@ impl RowCard {
 }
 
 impl RenderOnce for RowCard {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let d = self.density;
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let d = self.density.unwrap_or_else(|| cx.density());
         let colors = self.colors;
         let selected = self.selected;
 
@@ -890,7 +891,7 @@ pub struct ToolbarRow {
     left: AnyElement,
     right: AnyElement,
     attached: Option<(Rgba, Rgba)>,
-    density: Density,
+    density: Option<Density>,
     pad_top: Option<Pixels>,
     pad_bottom: Option<Pixels>,
     pad_x: Option<Pixels>,
@@ -903,7 +904,7 @@ pub fn toolbar_row(left: impl IntoElement, right: impl IntoElement) -> ToolbarRo
         left: left.into_any_element(),
         right: right.into_any_element(),
         attached: None,
-        density: Density::default(),
+        density: None,
         pad_top: None,
         pad_bottom: None,
         pad_x: None,
@@ -921,7 +922,7 @@ impl ToolbarRow {
 
     #[must_use]
     pub fn density(mut self, density: Density) -> Self {
-        self.density = density;
+        self.density = Some(density);
         self
     }
 
@@ -958,8 +959,8 @@ impl ToolbarRow {
 }
 
 impl RenderOnce for ToolbarRow {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let d = self.density;
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let d = self.density.unwrap_or_else(|| cx.density());
         let attached = self.attached.is_some();
         let default_v = if attached {
             spacing(Spacing::Xs, d)
@@ -1017,7 +1018,6 @@ pub fn card_shell(palette: &ForgePalette) -> Div {
 
 const STAT_CARD_PAD_V: Pixels = px(10.0);
 const STAT_CARD_PAD_H: Pixels = px(12.0);
-const STAT_CARD_LABEL_MB: Pixels = px(4.0);
 const STAT_CARD_HINT_MT: Pixels = px(2.0);
 const STAT_CARD_GROW: f32 = 1.0;
 
@@ -1028,6 +1028,7 @@ pub fn stat_card(
     hint: impl Into<SharedString>,
     hint_color: Rgba,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     let body = div()
         .w_full()
@@ -1035,7 +1036,7 @@ pub fn stat_card(
         .flex_col()
         .child(
             div()
-                .mb(STAT_CARD_LABEL_MB)
+                .mb(spacing(Spacing::Xxs, density))
                 .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)

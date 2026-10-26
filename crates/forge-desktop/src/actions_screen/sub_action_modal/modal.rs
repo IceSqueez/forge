@@ -23,6 +23,7 @@ impl EditSubActionForm {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let (header_glyph, header_color) = step_glyph(
             &self.kind_id,
             &self.icon_name,
@@ -40,18 +41,18 @@ impl EditSubActionForm {
             .flex()
             .items_center()
             .justify_between()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(spacing(Spacing::Xs, Density::Cozy))
+                    .gap(spacing(Spacing::Xs, density))
                     .child(icon(Icon::AlertTriangle, CARD_GLYPH, palette.warning))
                     .child(
                         div()
                             .flex()
                             .flex_col()
-                            .gap(spacing(Spacing::Xxs, Density::Cozy))
+                            .gap(spacing(Spacing::Xxs, density))
                             .child(
                                 div()
                                     .font_family(body_family())
@@ -76,7 +77,7 @@ impl EditSubActionForm {
         let condition_field = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
                     .font_family(mono_family())
@@ -95,13 +96,13 @@ impl EditSubActionForm {
 
         let advanced = div()
             .w_full()
-            .mt(spacing(Spacing::Xs, Density::Cozy))
-            .pt(spacing(Spacing::Sm, Density::Cozy))
+            .mt(spacing(Spacing::Xs, density))
+            .pt(spacing(Spacing::Sm, density))
             .border_t(BORDER_THIN)
             .border_color(palette.border_regular)
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .child(
                 div()
                     .font_family(mono_family())
@@ -116,13 +117,13 @@ impl EditSubActionForm {
             .id("actions-sub-scroll")
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
-            .px(spacing(Spacing::Md, Density::Cozy))
-            .py(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Md, density))
+            .py(spacing(Spacing::Sm, density))
             .max_h(SUB_MODAL_MAX_H)
             .overflow_y_scroll()
             .when(self.category == Some(SubActionCategory::Files), |body| {
-                body.child(files_root_note(palette))
+                body.child(files_root_note(palette, density))
             })
             .child(grid)
             .child(advanced);
@@ -167,7 +168,7 @@ impl EditSubActionForm {
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(div().flex_1().min_w_0().children(footer_rejection))
             .child(cancel)
             .child(save);

@@ -1,3 +1,4 @@
+use forge_components::ActivePresentation;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
     FONT_XXS, ForgePalette, Icon, MenuPlacement, badge, body_family, card, icon, menu_button,
@@ -25,6 +26,7 @@ impl HotkeysScreenView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let key = row.key;
         if self.capture == Capture::Rebind(key) {
             return self.render_capture_row(palette, cx);
@@ -88,7 +90,7 @@ impl HotkeysScreenView {
                             this.start_capture(Capture::Rebind(key), cx);
                         }
                     }))
-                    .child(keycaps(&row.combo, palette)),
+                    .child(keycaps(&row.combo, palette, density)),
             )
             .child(
                 badge(

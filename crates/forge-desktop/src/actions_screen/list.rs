@@ -22,14 +22,13 @@ use gpui::{
 use std::sync::Arc;
 
 const DESCRIPTION_HEIGHT: Pixels = px(72.0);
-const GROUP_ROW_PAD_V: Pixels = px(6.0);
 const ROW_PAD_R: Pixels = px(8.0);
 
-fn tree_notice(label: SharedString, color: Rgba) -> impl IntoElement {
+fn tree_notice(label: SharedString, color: Rgba, density: Density) -> impl IntoElement {
     div()
         .w_full()
         .px(TREE_GUTTER)
-        .py(spacing(Spacing::Sm, Density::Cozy))
+        .py(spacing(Spacing::Sm, density))
         .font_family(body_family())
         .text_size(FONT_XS)
         .text_color(color)
@@ -40,11 +39,12 @@ fn modal_section(
     palette: &ForgePalette,
     label: impl Into<SharedString>,
     control: impl IntoElement,
+    density: Density,
 ) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
+        .gap(spacing(Spacing::Xxs, density))
         .child(
             div()
                 .font_family(mono_family())
@@ -455,7 +455,7 @@ impl ScreenActionsView {
         }
     }
 
-    pub(super) fn render_stats(&self, palette: &ForgePalette) -> AnyElement {
+    pub(super) fn render_stats(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let total = self.total_actions();
         let enabled = self.enabled_count();
         header_stats(
@@ -477,6 +477,7 @@ impl ScreenActionsView {
                 ),
             ],
             palette,
+            density,
         )
         .into_any_element()
     }
@@ -486,10 +487,11 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let chips = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .child(
                 chip(
                     tr!("actions_filter_all"),
@@ -547,7 +549,7 @@ impl ScreenActionsView {
         div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .child(
                 div()
                     .w(SEARCH_FIELD_WIDTH)
@@ -574,6 +576,7 @@ impl ScreenActionsView {
     }
 
     pub(super) fn render_tree(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let mut col = div().flex().flex_col();
 
         if self.total_actions() == 0 {
@@ -582,7 +585,11 @@ impl ScreenActionsView {
             } else {
                 tr!("actions_empty")
             };
-            col = col.child(tree_notice(SharedString::from(caption), palette.text_faint));
+            col = col.child(tree_notice(
+                SharedString::from(caption),
+                palette.text_faint,
+                density,
+            ));
         } else {
             for (index, group) in self.groups.iter().enumerate() {
                 let surviving: Vec<&ActionSummary> = group
@@ -607,7 +614,7 @@ impl ScreenActionsView {
             .id("actions-tree")
             .flex_1()
             .min_h(px(0.0))
-            .py(spacing(Spacing::Xs, Density::Cozy))
+            .py(spacing(Spacing::Xs, density))
             .overflow_y_scroll()
             .child(col)
             .children(self.render_row_context_menu(palette, cx));
@@ -646,6 +653,7 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let chevron = if group.collapsed {
             Icon::ChevronRight
         } else {
@@ -657,9 +665,9 @@ impl ScreenActionsView {
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .px(TREE_GUTTER)
-            .py(GROUP_ROW_PAD_V)
+            .py(spacing(Spacing::Xs, density))
             .cursor_pointer()
             .hover(move |s| s.bg(hover_bg))
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_group(index, cx)))
@@ -688,6 +696,7 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let id = action.id;
         let selected = self.selected == Some(id);
         let hovered = self.hovered == Some(id);
@@ -748,7 +757,7 @@ impl ScreenActionsView {
             .h_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .pl(ROW_INDENT)
             .pr(ROW_PAD_R)
             .child(icon(state_icon, TREE_GLYPH, state_color))
@@ -874,6 +883,7 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let name_len = form
             .name
             .read(cx)
@@ -886,7 +896,7 @@ impl ScreenActionsView {
         let name_row = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(div().flex_1().child(form.name.clone()))
             .child(
                 div()
@@ -895,15 +905,25 @@ impl ScreenActionsView {
                     .text_color(palette.text_faint)
                     .child(format!("{name_len}/{NAME_FIELD_LIMIT}")),
             );
-        let name_section = modal_section(palette, tr!("actions_modal_section_name"), name_row);
+        let name_section = modal_section(
+            palette,
+            tr!("actions_modal_section_name"),
+            name_row,
+            density,
+        );
 
         let group_field = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(status_dot(palette.brand, GROUP_DOT))
             .child(div().flex_1().child(form.group.clone()));
-        let group_section = modal_section(palette, tr!("actions_modal_section_group"), group_field);
+        let group_section = modal_section(
+            palette,
+            tr!("actions_modal_section_group"),
+            group_field,
+            density,
+        );
 
         let queue_control: AnyElement = if form.queues.is_empty() {
             div()
@@ -913,10 +933,7 @@ impl ScreenActionsView {
                 .child(SharedString::from(tr!("actions_loading_queues")))
                 .into_any_element()
         } else {
-            let mut queue_chips = div()
-                .flex()
-                .flex_wrap()
-                .gap(spacing(Spacing::Xxs, Density::Cozy));
+            let mut queue_chips = div().flex().flex_wrap().gap(spacing(Spacing::Xxs, density));
             for (i, (_, name)) in form.queues.iter().enumerate() {
                 queue_chips = queue_chips.child(
                     chip(
@@ -933,12 +950,16 @@ impl ScreenActionsView {
             }
             queue_chips.into_any_element()
         };
-        let queue_section =
-            modal_section(palette, tr!("actions_modal_section_queue"), queue_control);
+        let queue_section = modal_section(
+            palette,
+            tr!("actions_modal_section_queue"),
+            queue_control,
+            density,
+        );
 
         let two_col = div()
             .flex()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .child(div().flex_1().child(group_section))
             .child(div().flex_1().child(queue_section));
 
@@ -946,6 +967,7 @@ impl ScreenActionsView {
             palette,
             tr!("actions_modal_section_description"),
             div().child(form.description.clone()),
+            density,
         );
 
         let behavior_header = div()
@@ -962,6 +984,7 @@ impl ScreenActionsView {
             "actions-modal-enabled",
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_modal_enabled(cx)),
             palette,
+            density,
         );
         let concurrent = Self::modal_toggle_row(
             tr!("actions_modal_concurrent_label"),
@@ -971,6 +994,7 @@ impl ScreenActionsView {
             "actions-modal-concurrent",
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_modal_concurrent(cx)),
             palette,
+            density,
         );
         let bypass = Self::modal_toggle_row(
             tr!("actions_modal_bypass_label"),
@@ -980,6 +1004,7 @@ impl ScreenActionsView {
             "actions-modal-bypass",
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_modal_bypass(cx)),
             palette,
+            density,
         );
         let random = Self::modal_toggle_row(
             tr!("actions_modal_random_pick_label"),
@@ -989,12 +1014,13 @@ impl ScreenActionsView {
             "actions-modal-random",
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_modal_random(cx)),
             palette,
+            density,
         );
 
         let body = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .child(name_section)
             .child(two_col)
             .child(desc_section)
@@ -1025,7 +1051,7 @@ impl ScreenActionsView {
             .flex()
             .items_center()
             .justify_end()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(cancel)
             .child(create);
 
@@ -1051,6 +1077,10 @@ impl ScreenActionsView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each argument is one input of the toggle row plus the active density"
+    )]
     fn modal_toggle_row(
         label: impl Into<SharedString>,
         description: impl Into<SharedString>,
@@ -1059,13 +1089,14 @@ impl ScreenActionsView {
         id: &'static str,
         handler: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
         palette: &ForgePalette,
+        density: Density,
     ) -> AnyElement {
         div()
             .w_full()
             .flex()
             .items_center()
             .justify_between()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .child(
                 div()
                     .flex()

@@ -5,6 +5,7 @@ use gpui::{
 
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
+use crate::presentation::ActivePresentation;
 use crate::tokens::{BORDER_THIN, Density, FONT_XS, Spacing, body_family, spacing};
 
 type CrumbClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
@@ -49,7 +50,7 @@ impl BreadcrumbCrumb {
 pub struct Breadcrumb {
     crumbs: Vec<BreadcrumbCrumb>,
     right: Option<AnyElement>,
-    density: Density,
+    density: Option<Density>,
     shell: Rgba,
     border: Rgba,
     faint: Rgba,
@@ -61,7 +62,7 @@ pub fn breadcrumb(crumbs: Vec<BreadcrumbCrumb>, palette: &ForgePalette) -> Bread
     Breadcrumb {
         crumbs,
         right: None,
-        density: Density::default(),
+        density: None,
         shell: palette.shell,
         border: palette.border_regular,
         faint: palette.text_faint,
@@ -79,14 +80,14 @@ impl Breadcrumb {
 
     #[must_use]
     pub fn density(mut self, density: Density) -> Self {
-        self.density = density;
+        self.density = Some(density);
         self
     }
 }
 
 impl RenderOnce for Breadcrumb {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let d = self.density;
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let d = self.density.unwrap_or_else(|| cx.density());
         let shell = self.shell;
         let border = self.border;
         let faint = self.faint;

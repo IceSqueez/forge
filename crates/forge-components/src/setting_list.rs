@@ -1,3 +1,4 @@
+use crate::presentation::ActivePresentation;
 use gpui::{
     AnyElement, App, Div, IntoElement, ParentElement, Pixels, RenderOnce, Rgba, SharedString,
     Styled, Window, div, px,
@@ -13,7 +14,6 @@ use crate::tokens::{
 const LABEL_GAP: Pixels = px(2.0);
 const ROW_PAD_V: Pixels = px(8.0);
 const LEADING_ICON: Pixels = px(14.0);
-const LEADING_GAP: Pixels = px(10.0);
 const CARD_PAD: Pixels = px(14.0);
 const HEADING_GAP: Pixels = px(12.0);
 const SECTION_GAP: Pixels = px(18.0);
@@ -95,7 +95,8 @@ impl SettingRow {
 }
 
 impl RenderOnce for SettingRow {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
         let mut labels = div()
             .flex()
             .flex_col()
@@ -124,7 +125,7 @@ impl RenderOnce for SettingRow {
             .flex_1()
             .min_w(px(0.0))
             .items_center()
-            .gap(LEADING_GAP);
+            .gap(spacing(Spacing::Sm, density));
         if let Some((glyph, color)) = self.leading {
             heading = heading.child(icon(glyph, LEADING_ICON, color));
         }

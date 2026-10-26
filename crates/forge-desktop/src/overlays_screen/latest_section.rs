@@ -1,3 +1,6 @@
+use forge_components::ActivePresentation;
+use forge_components::Spacing;
+use forge_components::spacing;
 use std::sync::Arc;
 
 use forge_components::{
@@ -23,7 +26,6 @@ use crate::config_form::ConfigField;
 use crate::latest_labels::slot_label;
 
 const VALUE_GAP: Pixels = px(2.0);
-const STATUS_TOP: Pixels = px(4.0);
 const NOTHING_SHOWN: &str = "-";
 
 #[derive(Clone)]
@@ -279,6 +281,7 @@ impl OverlayPropertyPanel {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
+        let density = cx.density();
         if !self.latest.is_bound() {
             return None;
         }
@@ -312,7 +315,7 @@ impl OverlayPropertyPanel {
                 .child(
                     div().pb(FIELD_GAP).child(reset).child(
                         div()
-                            .pt(STATUS_TOP)
+                            .pt(spacing(Spacing::Xxs, density))
                             .font_family(body_family())
                             .text_size(FONT_XXS)
                             .line_height(NOTICE_LINE_H)

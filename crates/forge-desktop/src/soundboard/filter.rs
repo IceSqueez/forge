@@ -1,3 +1,5 @@
+use forge_components::Spacing;
+use forge_components::spacing;
 use forge_components::{ChipGlyph, Density, ForgePalette, InputEvent, TextInput, chip, tr};
 use gpui::{AnyElement, ClickEvent, Context, Entity, Pixels, div, prelude::*, px};
 
@@ -44,19 +46,23 @@ impl SoundboardView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let mut chips = div().flex().items_center().gap(px(4.0)).child(
-            chip(
-                tr!("soundboard_category_all", count = self.clips.len() as i64),
-                ChipGlyph::None,
-                self.category_filter.is_none(),
-                palette,
-            )
-            .density(density)
-            .on_click(
-                "sb-cat-all",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.set_category_filter(None, cx)),
-            ),
-        );
+        let mut chips = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, density))
+            .child(
+                chip(
+                    tr!("soundboard_category_all", count = self.clips.len() as i64),
+                    ChipGlyph::None,
+                    self.category_filter.is_none(),
+                    palette,
+                )
+                .density(density)
+                .on_click(
+                    "sb-cat-all",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.set_category_filter(None, cx)),
+                ),
+            );
         for (idx, cat) in self.categories_present().into_iter().enumerate() {
             let active = self.category_filter.as_deref() == Some(cat.as_str());
             let color = category_color(&cat, palette);

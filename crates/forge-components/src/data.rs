@@ -5,6 +5,7 @@ use gpui::{
 };
 
 use crate::palette::ForgePalette;
+use crate::presentation::ActivePresentation;
 use crate::tokens::{BORDER_THIN, Density, FONT_XXS, Spacing, mono_family, spacing};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -102,7 +103,7 @@ pub struct DataTable {
     columns: Vec<Column>,
     rows: Vec<DataRow>,
     colors: DataTableColors,
-    density: Density,
+    density: Option<Density>,
     header_pad: Option<(Pixels, Pixels)>,
     row_pad: Option<(Pixels, Pixels)>,
     cell_gap: Pixels,
@@ -121,7 +122,7 @@ pub fn data_table(palette: &ForgePalette, columns: Vec<Column>, rows: Vec<DataRo
             header_rule: None,
             hover: palette.base,
         },
-        density: Density::default(),
+        density: None,
         header_pad: None,
         row_pad: None,
         cell_gap: px(0.0),
@@ -132,7 +133,7 @@ pub fn data_table(palette: &ForgePalette, columns: Vec<Column>, rows: Vec<DataRo
 
 impl DataTable {
     pub fn density(mut self, density: Density) -> Self {
-        self.density = density;
+        self.density = Some(density);
         self
     }
 
@@ -231,8 +232,8 @@ fn column_cell(width: ColumnWidth, child: impl IntoElement) -> Div {
 }
 
 impl RenderOnce for DataTable {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let d = self.density;
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let d = self.density.unwrap_or_else(|| cx.density());
         let colors = self.colors;
         let gap = self.cell_gap;
         let (h_py, h_px) = self

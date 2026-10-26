@@ -1,8 +1,12 @@
+use forge_components::ActivePresentation;
+use forge_components::Density;
 use forge_components::FONT_META;
 use forge_components::FONT_ROW;
 use forge_components::FONT_SECTION_LABEL;
 use forge_components::FONT_XS;
 use forge_components::FONT_XXS;
+use forge_components::Spacing;
+use forge_components::spacing;
 use std::ops::Range;
 
 use forge_components::{
@@ -28,13 +32,10 @@ const LINE_SIZE: Pixels = FONT_XS;
 const LINE_ICON: Pixels = px(13.0);
 const LINE_ICON_NUDGE: Pixels = px(2.0);
 const USED_BY_SIZE: Pixels = FONT_SECTION_LABEL;
-const USED_BY_MB: Pixels = px(6.0);
-const CHIP_GAP: Pixels = px(4.0);
 const CHIP_SIZE: Pixels = FONT_XXS;
 const CHIP_ICON: Pixels = px(10.0);
 const CHIP_PAD_V: Pixels = px(2.0);
 const CHIP_PAD_H: Pixels = px(7.0);
-const MORE_PAD_H: Pixels = px(4.0);
 const SHOWN_CHIPS: usize = 4;
 const FOOTER_HINT: Pixels = FONT_META;
 const FOOTER_GAP: Pixels = px(8.0);
@@ -163,18 +164,18 @@ fn consequences(prompt: &DisablePrompt, palette: &ForgePalette) -> AnyElement {
         .into_any_element()
 }
 
-fn used_by(prompt: &DisablePrompt, palette: &ForgePalette) -> Option<AnyElement> {
+fn used_by(prompt: &DisablePrompt, palette: &ForgePalette, density: Density) -> Option<AnyElement> {
     let actions = &prompt.references.actions;
     if actions.is_empty() {
         return None;
     }
-    let mut chips = div().flex().flex_wrap().gap(CHIP_GAP);
+    let mut chips = div().flex().flex_wrap().gap(spacing(Spacing::Xxs, density));
     for action in actions.iter().take(SHOWN_CHIPS) {
         chips = chips.child(
             div()
                 .flex()
                 .items_center()
-                .gap(CHIP_GAP)
+                .gap(spacing(Spacing::Xxs, density))
                 .py(CHIP_PAD_V)
                 .px(CHIP_PAD_H)
                 .rounded(radius(Radius::Sm))
@@ -191,7 +192,7 @@ fn used_by(prompt: &DisablePrompt, palette: &ForgePalette) -> Option<AnyElement>
         chips = chips.child(
             div()
                 .py(CHIP_PAD_V)
-                .px(MORE_PAD_H)
+                .px(spacing(Spacing::Xxs, density))
                 .font_family(mono_family())
                 .text_size(CHIP_SIZE)
                 .text_color(palette.text_faint)
@@ -202,7 +203,7 @@ fn used_by(prompt: &DisablePrompt, palette: &ForgePalette) -> Option<AnyElement>
         div()
             .child(
                 div()
-                    .mb(USED_BY_MB)
+                    .mb(spacing(Spacing::Xs, density))
                     .font_family(mono_family())
                     .text_size(USED_BY_SIZE)
                     .text_color(palette.text_faint)
@@ -218,6 +219,7 @@ pub fn render_disable_modal(
     palette: &ForgePalette,
     cx: &mut Context<IntegrationsHubView>,
 ) -> AnyElement {
+    let density = cx.density();
     let body = div()
         .py(BODY_PAD_V)
         .px(BODY_PAD_H)
@@ -226,7 +228,7 @@ pub fn render_disable_modal(
         .gap(BODY_GAP)
         .child(lead(prompt, palette))
         .child(consequences(prompt, palette))
-        .children(used_by(prompt, palette));
+        .children(used_by(prompt, palette, density));
 
     let confirm = div()
         .id("integration-disable-confirm")

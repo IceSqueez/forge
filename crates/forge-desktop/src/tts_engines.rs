@@ -549,6 +549,7 @@ impl TtsEnginesView {
                     tr!("tts_engines_disabled_load_failed", reason = reason),
                     palette,
                     cx.listener(|this, _: &ClickEvent, _, cx| this.load_disabled(cx)),
+                    density,
                 ))
         });
         let column = div()
@@ -1086,6 +1087,7 @@ impl TtsEnginesView {
                     tr!("tts_engines_params_load_failed", reason = reason),
                     palette,
                     cx.listener(|this, _: &ClickEvent, _, cx| this.retry_params(cx)),
+                    density,
                 ))
         });
         let rows = div()

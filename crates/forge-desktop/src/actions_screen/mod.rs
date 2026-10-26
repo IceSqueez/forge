@@ -635,10 +635,11 @@ impl EventEmitter<NavRequested> for ScreenActionsView {}
 
 impl Render for ScreenActionsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         self.release_step_drag(window, cx);
         let palette = cx.palette();
 
-        let stats = self.render_stats(&palette);
+        let stats = self.render_stats(&palette, density);
         let filter_left = self.render_filter_left(&palette, cx);
         let filter_right = self.render_filter_right(&palette, cx);
         let tree = self.render_tree(&palette, cx);
@@ -687,7 +688,7 @@ impl Render for ScreenActionsView {
         .header_right(stats)
         .subheader_left(filter_left)
         .subheader_right(filter_right)
-        .density(Density::Cozy)
+        .density(density)
         .body(body);
 
         div()

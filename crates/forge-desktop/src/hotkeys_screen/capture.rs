@@ -1,6 +1,9 @@
+use forge_components::ActivePresentation;
 use forge_components::FONT_XS;
 use forge_components::Radius;
+use forge_components::Spacing;
 use forge_components::radius;
+use forge_components::spacing;
 use forge_components::{BORDER_THIN, ForgePalette, Icon, ToastKind, body_family, icon, tr};
 use forge_types::TriggerInstanceId;
 use gpui::{AnyElement, ClickEvent, Context, Keystroke, Pixels, div, prelude::*, px};
@@ -22,7 +25,6 @@ const ADD_BAR_FS: Pixels = FONT_XS;
 const CAPTURE_PAD_V: Pixels = px(11.0);
 const CAPTURE_GAP: Pixels = px(8.0);
 const CAPTURE_GLYPH: Pixels = px(14.0);
-const CAPTURE_CANCEL_ML: Pixels = px(6.0);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Capture {
@@ -201,6 +203,7 @@ impl HotkeysScreenView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let cancel_hover = palette.text_secondary;
         div()
             .id("hotkeys-capture-row")
@@ -228,7 +231,7 @@ impl HotkeysScreenView {
             .child(
                 div()
                     .id("hotkeys-capture-cancel")
-                    .ml(CAPTURE_CANCEL_ML)
+                    .ml(spacing(Spacing::Xs, density))
                     .flex()
                     .items_center()
                     .font_family(body_family())

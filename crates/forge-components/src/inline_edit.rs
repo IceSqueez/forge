@@ -1,13 +1,14 @@
+use crate::presentation::ActivePresentation;
+use crate::tokens::Spacing;
+use crate::tokens::spacing;
 use gpui::{
     Context, Entity, EventEmitter, Focusable, MouseDownEvent, Pixels, Subscription, Window, div,
-    prelude::*, px,
+    prelude::*,
 };
 
 use crate::palette::ForgePalette;
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{BORDER_THIN, Radius, radius};
-
-const EDIT_PAD_H: Pixels = px(4.0);
 
 pub enum InlineEditEvent {
     Commit(String),
@@ -86,11 +87,12 @@ impl InlineEdit {
 
 impl Render for InlineEdit {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         div()
             .w_full()
             .flex()
             .items_center()
-            .px(EDIT_PAD_H)
+            .px(spacing(Spacing::Xxs, density))
             .rounded(radius(Radius::Sm))
             .bg(self.palette.shell)
             .border(BORDER_THIN)

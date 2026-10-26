@@ -30,7 +30,6 @@ use forge_components::ActivePresentation;
 const MODAL_W: Pixels = px(440.0);
 const LABEL_FS: Pixels = FONT_LABEL;
 const HINT_FS: Pixels = FONT_XXS;
-const CATEGORY_GAP: Pixels = px(4.0);
 const KEY_DISPLAY_PAD_H: Pixels = px(11.0);
 const KEY_DISPLAY_RADIUS: Pixels = px(7.0);
 const KEY_DISPLAY_GAP: Pixels = px(7.0);
@@ -385,7 +384,7 @@ impl ClipEditor {
                         .text_color(palette.success)
                         .child(tr!("hotkeys_capture_prompt")),
                 ),
-            (Some(combo), false) => display.child(keycaps(combo, &palette)),
+            (Some(combo), false) => display.child(keycaps(combo, &palette, density)),
             (None, false) => display.child(
                 div()
                     .font_family(mono_family())
@@ -501,7 +500,10 @@ impl Render for ClipEditor {
             )
             .child(browse);
 
-        let mut category_row = div().flex().items_center().gap(CATEGORY_GAP);
+        let mut category_row = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, density));
         for (idx, cat) in CATEGORY_ORDER.iter().enumerate() {
             let active = self.category == *cat;
             let color = category_color(cat, &palette);

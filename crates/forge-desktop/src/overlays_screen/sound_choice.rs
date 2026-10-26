@@ -118,15 +118,19 @@ pub(super) fn badge_note(issues: &[MediaIssue]) -> Option<String> {
     issues.first().map(issue_message)
 }
 
-pub(super) fn notes_block(notes: Vec<String>, palette: &ForgePalette) -> Option<AnyElement> {
+pub(super) fn notes_block(
+    notes: Vec<String>,
+    palette: &ForgePalette,
+    density: Density,
+) -> Option<AnyElement> {
     if notes.is_empty() {
         return None;
     }
     let mut column = div()
-        .mt(spacing(Spacing::Xxs, Density::Cozy))
+        .mt(spacing(Spacing::Xxs, density))
         .flex()
         .flex_col()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
+        .gap(spacing(Spacing::Xxs, density))
         .font_family(body_family())
         .text_size(FONT_XXS)
         .text_color(palette.warning);

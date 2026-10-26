@@ -41,21 +41,22 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         match (self.selected, self.detail.as_ref()) {
             (Some(sel), Some(detail)) if detail.action.id == sel => {
                 self.render_editor(detail, palette, cx)
             }
-            (Some(_), _) => self.render_loading(palette),
-            (None, _) => self.render_empty(palette),
+            (Some(_), _) => self.render_loading(palette, density),
+            (None, _) => self.render_empty(palette, density),
         }
     }
 
-    fn render_empty(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_empty(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let placeholder = div()
             .flex()
             .flex_col()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(icon(Icon::Bolt, EMPTY_GLYPH, palette.text_faint))
             .child(
                 div()
@@ -84,13 +85,13 @@ impl ScreenActionsView {
             .into_any_element()
     }
 
-    fn render_loading(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_loading(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         div()
             .flex_1()
             .min_w_0()
             .h_full()
-            .py(spacing(Spacing::Md, Density::Cozy))
-            .px(spacing(Spacing::Lg, Density::Cozy))
+            .py(spacing(Spacing::Md, density))
+            .px(spacing(Spacing::Lg, density))
             .font_family(body_family())
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
@@ -110,12 +111,18 @@ impl ScreenActionsView {
             )
     }
 
-    fn render_order_warning(&self, action: &Action, palette: &ForgePalette) -> Option<AnyElement> {
+    fn render_order_warning(
+        &self,
+        action: &Action,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> Option<AnyElement> {
         self.overlay_order_at_risk(action).then(|| {
             inline_warning_card(
                 tr!("action_editor_overlay_order_warning"),
                 tr!("action_editor_overlay_order_warning_hint"),
                 palette,
+                density,
             )
         })
     }
@@ -126,12 +133,13 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let body = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Md, Density::Cozy))
+            .gap(spacing(Spacing::Md, density))
             .child(self.render_editor_header(detail, palette, cx))
-            .children(self.render_order_warning(&detail.action, palette))
+            .children(self.render_order_warning(&detail.action, palette, density))
             .child(self.render_triggers_section(detail, palette, cx))
             .child(self.render_sub_actions_section(detail, palette, cx));
 

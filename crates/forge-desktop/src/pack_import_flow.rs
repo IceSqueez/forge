@@ -406,6 +406,7 @@ async fn discard_quietly(staged: StagedPack) {
 
 impl Render for PackImportFlow {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         match &self.step {
             PackImportStep::Previewing(preview) => div()
                 .absolute()
@@ -419,6 +420,7 @@ impl Render for PackImportFlow {
                 tr!("import_busy_pack_title"),
                 tr!("import_busy_pack_detail"),
                 &cx.palette(),
+                density,
             ),
             PackImportStep::Idle => div().into_any_element(),
         }

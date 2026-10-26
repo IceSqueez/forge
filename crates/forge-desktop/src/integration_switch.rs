@@ -1,3 +1,4 @@
+use forge_components::Density;
 use std::collections::HashSet;
 
 use forge_components::{ForgePalette, integration_inactive_badge, tr};
@@ -131,13 +132,18 @@ pub fn integration_name(id: &IntegrationId) -> SharedString {
     }
 }
 
-pub fn inactive_badge(owner: &IntegrationId, palette: &ForgePalette) -> impl IntoElement {
+pub fn inactive_badge(
+    owner: &IntegrationId,
+    palette: &ForgePalette,
+    density: Density,
+) -> impl IntoElement {
     integration_inactive_badge(
         tr!(
             "integration_inactive_badge",
             name = integration_name(owner).to_string()
         ),
         palette,
+        density,
     )
 }
 
@@ -159,6 +165,7 @@ pub fn category_members(kind_id: &str) -> Vec<IntegrationId> {
 pub fn category_inactive_badge(
     category: IntegrationCategory,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     integration_inactive_badge(
         tr!(
@@ -166,6 +173,7 @@ pub fn category_inactive_badge(
             category = tr!(category.label_key())
         ),
         palette,
+        density,
     )
 }
 

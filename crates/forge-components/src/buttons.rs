@@ -8,6 +8,7 @@ use gpui::{
 
 use crate::icons::{Icon, icon, spinner};
 use crate::palette::{ForgePalette, with_alpha};
+use crate::presentation::ActivePresentation;
 use crate::tokens::{
     BORDER_THIN, Density, FONT_MD, FONT_XS, Radius, Spacing, body_family, radius, spacing,
 };
@@ -111,7 +112,7 @@ pub struct Button {
     trailing: Option<Icon>,
     weight: FontWeight,
     colors: ButtonColors,
-    density: Density,
+    density: Option<Density>,
     disabled: bool,
     busy: bool,
     full_width: bool,
@@ -136,7 +137,7 @@ impl Button {
             trailing,
             weight,
             colors: variant.colors(palette),
-            density: Density::default(),
+            density: None,
             disabled: false,
             busy: false,
             full_width: false,
@@ -152,7 +153,7 @@ impl Button {
     }
 
     pub fn density(mut self, density: Density) -> Self {
-        self.density = density;
+        self.density = Some(density);
         self
     }
 
@@ -189,9 +190,9 @@ impl Button {
 }
 
 impl RenderOnce for Button {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let c = self.colors;
-        let d = self.density;
+        let d = self.density.unwrap_or_else(|| cx.density());
         let icon_only = self.variant == ButtonVariant::Icon;
         let disabled = self.disabled || self.busy;
 

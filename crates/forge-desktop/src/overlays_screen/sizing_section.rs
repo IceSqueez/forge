@@ -1,3 +1,6 @@
+use forge_components::ActivePresentation;
+use forge_components::Spacing;
+use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, body_family, field_label,
     ghost_button_with_icon, icon, section_label, tr,
@@ -21,7 +24,6 @@ use crate::config_form::{ConfigField, render_config_control};
 const PAIR_GAP: Pixels = px(8.0);
 const NOTICE_GAP: Pixels = px(8.0);
 const NOTICE_GLYPH: Pixels = px(12.0);
-const NOTICE_ACTION_TOP: Pixels = px(6.0);
 
 pub(super) fn is_source_box_key(key: &str) -> bool {
     key == DESIGN_WIDTH || key == DESIGN_HEIGHT || MARGIN_SIDES.contains(&key)
@@ -106,6 +108,7 @@ impl OverlayPropertyPanel {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
+        let density = cx.density();
         if !sizing_notice_pending(&self.stored) {
             return None;
         }
@@ -148,7 +151,7 @@ impl OverlayPropertyPanel {
                         )
                         .child(
                             div()
-                                .pt(NOTICE_ACTION_TOP)
+                                .pt(spacing(Spacing::Xs, density))
                                 .text_size(FONT_XXS)
                                 .text_color(palette.text_secondary)
                                 .child(tr!(
@@ -158,7 +161,7 @@ impl OverlayPropertyPanel {
                                 )),
                         )
                         .child(
-                            div().pt(NOTICE_ACTION_TOP).child(
+                            div().pt(spacing(Spacing::Xs, density)).child(
                                 ghost_button_with_icon(
                                     Icon::Check,
                                     tr!("overlays_sizing_notice_ack"),
@@ -182,6 +185,7 @@ impl OverlayPropertyPanel {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
+        let density = cx.density();
         let view = cx.entity();
         let handlers = self.handlers();
         let labelled = |key: &str| {
@@ -192,7 +196,14 @@ impl OverlayPropertyPanel {
                     field_label(
                         palette,
                         self.label_of(key).to_uppercase(),
-                        render_config_control(field, palette, "overlays-panel", &view, &handlers),
+                        render_config_control(
+                            field,
+                            palette,
+                            "overlays-panel",
+                            &view,
+                            &handlers,
+                            density,
+                        ),
                     )
                     .tone(palette.text_faint)
                 })
@@ -215,15 +226,18 @@ impl OverlayPropertyPanel {
                 .gap(PAIR_GAP)
                 .children(width.map(|field| div().flex_1().min_w(px(0.0)).child(field)))
                 .children(height.map(|field| div().flex_1().min_w(px(0.0)).child(field)));
-            div()
-                .pb(FIELD_GAP)
-                .child(hinted(pair, tr!("overlays_source_size_hint"), palette))
+            div().pb(FIELD_GAP).child(hinted(
+                pair,
+                tr!("overlays_source_size_hint"),
+                palette,
+                density,
+            ))
         });
 
         let last = margins.len().saturating_sub(1);
         let margin_rows = margins.into_iter().enumerate().map(|(index, field)| {
             let row = if index == last {
-                hinted(field, tr!("overlays_source_margin_hint"), palette)
+                hinted(field, tr!("overlays_source_margin_hint"), palette, density)
             } else {
                 field.into_any_element()
             };

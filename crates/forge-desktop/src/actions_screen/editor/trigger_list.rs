@@ -16,6 +16,7 @@ fn trigger_unlink_btn(
     id: impl Into<ElementId>,
     palette: &ForgePalette,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    density: Density,
 ) -> AnyElement {
     let solid = palette.danger;
     div()
@@ -23,7 +24,7 @@ fn trigger_unlink_btn(
         .flex()
         .items_center()
         .justify_center()
-        .p(spacing(Spacing::Xxs, Density::Cozy))
+        .p(spacing(Spacing::Xxs, density))
         .rounded(radius(Radius::Sm))
         .cursor_pointer()
         .hover(move |s| s.bg(solid))
@@ -61,6 +62,7 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let label = div()
             .font_family(mono_family())
             .text_size(FONT_XXS)
@@ -70,16 +72,14 @@ impl ScreenActionsView {
                 count = detail.trigger_instances.len() as i64
             ));
 
-        let mut col = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, Density::Cozy));
+        let mut col = div().flex().flex_col().gap(spacing(Spacing::Xs, density));
         if detail.trigger_instances.is_empty() {
             col = col.child(empty_placeholder_card(
                 Icon::Bolt,
                 palette.warning,
                 tr!("action_editor_no_triggers"),
                 palette,
+                density,
             ));
         } else {
             for instance in &detail.trigger_instances {
@@ -93,12 +93,13 @@ impl ScreenActionsView {
             palette.warning,
             palette,
             cx.listener(|this, _: &ClickEvent, window, cx| this.open_trigger_picker(window, cx)),
+            density,
         ));
 
         div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(label)
             .child(col)
             .into_any_element()
@@ -110,6 +111,7 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let descriptor = self.trigger_registry.get(&instance.kind_id);
         let switched_off_owner = self.switched_off_trigger_owner(&instance.kind_id);
         let uncovered_category = self.uncovered_trigger_category(&instance.kind_id);
@@ -152,7 +154,7 @@ impl ScreenActionsView {
         let leading = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .child(status_dot(accent, TRIGGER_DOT))
             .child(icon(glyph, TRIGGER_GLYPH, accent));
 
@@ -160,7 +162,7 @@ impl ScreenActionsView {
             .min_w_0()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
                     .font_family(body_family())
@@ -193,10 +195,11 @@ impl ScreenActionsView {
             .children(
                 switched_off_owner
                     .as_ref()
-                    .map(|owner| inactive_badge(owner, palette)),
+                    .map(|owner| inactive_badge(owner, palette, density)),
             )
             .children(
-                uncovered_category.map(|category| category_inactive_badge(category, palette)),
+                uncovered_category
+                    .map(|category| category_inactive_badge(category, palette, density)),
             );
         let dimmed =
             !instance.enabled || switched_off_owner.is_some() || uncovered_category.is_some();
@@ -209,6 +212,7 @@ impl ScreenActionsView {
                 cx.stop_propagation();
                 this.unlink_trigger(instance_id, cx)
             }),
+            density,
         );
 
         let card = row_card(title, palette)

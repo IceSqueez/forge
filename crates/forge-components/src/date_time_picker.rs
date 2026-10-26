@@ -1,3 +1,4 @@
+use crate::presentation::ActivePresentation;
 use forge_types::{datetime_from_text, datetime_to_text};
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, EventEmitter, Pixels, SharedString, Window,
@@ -385,18 +386,20 @@ impl DateTimePicker {
     }
 
     fn render_time(&self, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let p = self.palette;
         div()
             .w_full()
             .flex()
             .items_center()
             .justify_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .child(self.render_stepper(
                 "hour",
                 self.displayed_hour(),
                 cx.listener(|this, _: &ClickEvent, _, cx| this.step_hour(1, cx)),
                 cx.listener(|this, _: &ClickEvent, _, cx| this.step_hour(-1, cx)),
+                density,
             ))
             .child(
                 div()
@@ -410,6 +413,7 @@ impl DateTimePicker {
                 self.minute,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.step_minute(1, cx)),
                 cx.listener(|this, _: &ClickEvent, _, cx| this.step_minute(-1, cx)),
+                density,
             ))
             .when(self.clock == ClockStyle::TwelveHour, |row| {
                 row.child(self.render_day_period(cx))
@@ -418,11 +422,12 @@ impl DateTimePicker {
     }
 
     fn render_day_period(&self, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let after_noon = self.is_after_noon();
         div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .child(self.render_day_period_option(false, !after_noon, cx))
             .child(self.render_day_period_option(true, after_noon, cx))
             .into_any_element()
@@ -434,6 +439,7 @@ impl DateTimePicker {
         selected: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let id = if after_noon {
             "forge-dtp-after-noon"
         } else {
@@ -444,6 +450,7 @@ impl DateTimePicker {
             fmt_day_period(day_period_sample(after_noon)),
             selected,
             &self.palette,
+            density,
         )
         .w(STEPPER_W)
         .on_click(
@@ -457,16 +464,18 @@ impl DateTimePicker {
         repeated: RepeatedWallTime,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         div()
             .w_full()
             .flex()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(
                 choice_chip(
                     "forge-dtp-repeat-earlier",
                     self.repeat_choice_label(repeated.earlier),
                     !self.later_in_repeat,
                     &self.palette,
+                    density,
                 )
                 .flex_1()
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.choose_repeat(false, cx))),
@@ -477,6 +486,7 @@ impl DateTimePicker {
                     self.repeat_choice_label(repeated.later),
                     self.later_in_repeat,
                     &self.palette,
+                    density,
                 )
                 .flex_1()
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.choose_repeat(true, cx))),
@@ -490,13 +500,14 @@ impl DateTimePicker {
         value: u8,
         on_up: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
         on_down: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+        density: Density,
     ) -> AnyElement {
         let p = self.palette;
         div()
             .flex()
             .flex_col()
             .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .child(nav_btn(
                 ElementId::Name(SharedString::from(format!("forge-dtp-{id}-up"))),
                 Icon::ChevronUp,
@@ -523,13 +534,14 @@ impl DateTimePicker {
     }
 
     fn render_footer(&self, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let p = self.palette;
         div()
             .w_full()
             .flex()
             .items_center()
             .justify_between()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
             .child(
                 ghost_button_with_icon(Icon::Clock, self.labels.now.clone(), &p).on_click(
                     "forge-dtp-now",
@@ -540,7 +552,7 @@ impl DateTimePicker {
                 div()
                     .flex()
                     .items_center()
-                    .gap(spacing(Spacing::Xs, Density::Cozy))
+                    .gap(spacing(Spacing::Xs, density))
                     .child(secondary_button(self.labels.cancel.clone(), &p).on_click(
                         "forge-dtp-cancel",
                         cx.listener(|this, _: &ClickEvent, _, cx| this.dismiss(cx)),
@@ -556,14 +568,15 @@ impl DateTimePicker {
 
 impl Render for DateTimePicker {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let p = self.palette;
         div()
             .occlude()
             .w(PANEL_W)
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
-            .p(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
+            .p(spacing(Spacing::Sm, density))
             .bg(p.elevated)
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
@@ -612,6 +625,7 @@ fn choice_chip(
     label: String,
     selected: bool,
     palette: &ForgePalette,
+    density: Density,
 ) -> gpui::Stateful<gpui::Div> {
     let p = *palette;
     let hover_bg = p.surface_overlay;
@@ -619,7 +633,7 @@ fn choice_chip(
         .id(id)
         .flex()
         .justify_center()
-        .py(spacing(Spacing::Xxs, Density::Cozy))
+        .py(spacing(Spacing::Xxs, density))
         .rounded(radius(Radius::Sm))
         .font_family(mono_family())
         .text_size(FONT_XS)

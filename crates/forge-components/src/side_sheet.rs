@@ -1,3 +1,7 @@
+use crate::presentation::ActivePresentation;
+use crate::tokens::Density;
+use crate::tokens::Spacing;
+use crate::tokens::spacing;
 use gpui::{
     AnyElement, App, AppContext, ClickEvent, Context, CursorStyle, DragMoveEvent, ElementId,
     InteractiveElement, IntoElement, ParentElement, Pixels, Render, RenderOnce, Rgba, SharedString,
@@ -9,10 +13,8 @@ use crate::palette::ForgePalette;
 use crate::tokens::{BORDER_THIN, FONT_MD, FONT_SM, Radius, body_family, radius};
 
 const HEADER_H: Pixels = px(56.0);
-const PAD_H: Pixels = px(16.0);
 const PAD_V: Pixels = px(12.0);
 const HEADER_TILE: Pixels = px(28.0);
-const HEADER_TILE_GAP: Pixels = px(10.0);
 const HEADER_TILE_ICON: Pixels = px(15.0);
 const CLOSE_HIT: Pixels = px(32.0);
 const DIVIDER_H: Pixels = BORDER_THIN;
@@ -165,13 +167,13 @@ impl SideSheet {
         self
     }
 
-    fn render_header(&mut self) -> AnyElement {
+    fn render_header(&mut self, density: Density) -> AnyElement {
         let mut row = div()
             .flex()
             .items_center()
-            .gap(HEADER_TILE_GAP)
+            .gap(spacing(Spacing::Sm, density))
             .h(HEADER_H)
-            .px(PAD_H)
+            .px(spacing(Spacing::Md, density))
             .border_b(DIVIDER_H)
             .border_color(self.border);
 
@@ -255,19 +257,19 @@ impl SideSheet {
 }
 
 impl RenderOnce for SideSheet {
-    fn render(mut self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let header = self.title.is_some().then(|| self.render_header());
+    fn render(mut self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
+        let header = self.title.is_some().then(|| self.render_header(density));
 
-        let content =
-            div()
-                .flex_1()
-                .px(PAD_H)
-                .py(PAD_V)
-                .overflow_hidden()
-                .child(std::mem::replace(
-                    &mut self.content,
-                    div().into_any_element(),
-                ));
+        let content = div()
+            .flex_1()
+            .px(spacing(Spacing::Md, density))
+            .py(PAD_V)
+            .overflow_hidden()
+            .child(std::mem::replace(
+                &mut self.content,
+                div().into_any_element(),
+            ));
 
         let resize = self.resize.take();
         let position = self.position;

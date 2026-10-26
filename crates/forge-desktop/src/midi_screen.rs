@@ -1,3 +1,4 @@
+use forge_components::Density;
 use forge_components::FONT_BADGE;
 use forge_components::FONT_HERO;
 use forge_components::FONT_LABEL;
@@ -5,6 +6,8 @@ use forge_components::FONT_MICRO;
 use forge_components::FONT_ROW;
 use forge_components::FONT_SECTION_LABEL;
 use forge_components::FONT_XXS;
+use forge_components::Spacing;
+use forge_components::spacing;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -66,11 +69,7 @@ const COLUMNS_GAP: Pixels = px(12.0);
 const LEFT_COLUMN_FLEX: f32 = 1.0;
 const RIGHT_COLUMN_FLEX: f32 = 1.7;
 
-const LIST_GAP: Pixels = px(6.0);
-
-const DEVICE_PAD_V: Pixels = px(10.0);
 const DEVICE_PAD_H: Pixels = px(12.0);
-const DEVICE_GAP: Pixels = px(10.0);
 const DEVICE_GLYPH: Pixels = px(14.0);
 const DEVICE_NAME_FS: Pixels = FONT_ROW;
 const DEVICE_BADGE_FS: Pixels = FONT_SECTION_LABEL;
@@ -88,7 +87,6 @@ const MONITOR_ROWS: usize = 4;
 const BINDINGS_FS: Pixels = FONT_MICRO;
 const MAP_PAD_V: Pixels = px(9.0);
 const MAP_PAD_H: Pixels = px(12.0);
-const MAP_GAP: Pixels = px(10.0);
 const SIG_FS: Pixels = FONT_LABEL;
 const SIG_RADIUS: Pixels = px(5.0);
 const SIG_PAD_V: Pixels = px(3.0);
@@ -105,14 +103,11 @@ const ADD_BAR_RADIUS: Pixels = radius(Radius::Md);
 const ADD_BAR_GLYPH: Pixels = px(13.0);
 const ADD_BAR_FS: Pixels = FONT_XS;
 const KBD_FS: Pixels = FONT_MICRO;
-const KBD_ML: Pixels = px(6.0);
 const KBD_PAD_V: Pixels = px(1.0);
-const KBD_PAD_H: Pixels = px(6.0);
 const KBD_RADIUS: Pixels = px(4.0);
 
 const FOOTER_FS: Pixels = FONT_XXS;
 const FOOTER_DOT: Pixels = px(6.0);
-const FOOTER_STATUS_GAP: Pixels = px(6.0);
 const FOOTER_PAD_V: Pixels = px(7.0);
 const FOOTER_PAD_H: Pixels = px(14.0);
 const FOOTER_MT: Pixels = px(14.0);
@@ -120,7 +115,6 @@ const FOOTER_MT: Pixels = px(14.0);
 const LEARN_PAD_V: Pixels = px(11.0);
 const LEARN_GAP: Pixels = px(8.0);
 const LEARN_GLYPH: Pixels = px(14.0);
-const LEARN_CANCEL_ML: Pixels = px(6.0);
 
 const UNDO_TOAST_MS: u64 = 6000;
 
@@ -991,6 +985,7 @@ impl MidiScreenView {
     }
 
     fn render_devices(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let known = self.known();
         let mut cards: Vec<AnyElement> = Vec::with_capacity(known.len());
         for (index, name) in known.iter().enumerate() {
@@ -998,13 +993,18 @@ impl MidiScreenView {
             cards.push(self.render_device(index, name, live_index, palette, cx));
         }
 
-        let mut list = div().w_full().flex().flex_col().gap(LIST_GAP);
+        let mut list = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density));
         if let Some(reason) = self.known_devices.failure() {
             list = list.child(error_row_with_retry(
                 "midi-devices-retry",
                 tr!("midi_devices_load_failed", reason = reason),
                 palette,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.load_known_devices(cx)),
+                density,
             ));
         } else if cards.is_empty() {
             let note = if self.known_devices.is_loaded() {
@@ -1055,6 +1055,7 @@ impl MidiScreenView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let online = live_index.is_some();
         let selected = self.selected_device.as_deref() == Some(name);
         let glyph_color = if online {
@@ -1075,7 +1076,7 @@ impl MidiScreenView {
             .w_full()
             .flex()
             .items_center()
-            .gap(DEVICE_GAP)
+            .gap(spacing(Spacing::Sm, density))
             .child(icon(Icon::Plug, DEVICE_GLYPH, glyph_color))
             .child(
                 div()
@@ -1125,7 +1126,7 @@ impl MidiScreenView {
         let mut wrapper = div()
             .id(("midi-device", index))
             .w_full()
-            .py(DEVICE_PAD_V)
+            .py(spacing(Spacing::Sm, density))
             .px(DEVICE_PAD_H)
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
@@ -1210,6 +1211,7 @@ impl MidiScreenView {
     }
 
     fn render_mappings(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let visible = self.visible_mappings();
         let count = div()
             .font_family(mono_family())
@@ -1218,7 +1220,11 @@ impl MidiScreenView {
             .child(tr!("midi_bindings_count", count = visible.len() as i64))
             .into_any_element();
 
-        let mut list = div().w_full().flex().flex_col().gap(LIST_GAP);
+        let mut list = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density));
         if visible.is_empty() {
             let empty = if self.mappings.is_empty() {
                 tr!("midi_mappings_empty")
@@ -1258,6 +1264,7 @@ impl MidiScreenView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let (target_text, target_ink) = match row.action.as_ref() {
             Some((_, name)) => (name.clone(), palette.text_primary),
             None => (tr!("midi_unassigned"), palette.text_faint),
@@ -1269,7 +1276,7 @@ impl MidiScreenView {
             .min_w_0()
             .flex()
             .items_center()
-            .gap(MAP_GAP)
+            .gap(spacing(Spacing::Sm, density))
             .cursor_pointer()
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.edit_mapping(id, cx)))
             .child(
@@ -1337,7 +1344,7 @@ impl MidiScreenView {
             .w_full()
             .flex()
             .items_center()
-            .gap(MAP_GAP)
+            .gap(spacing(Spacing::Sm, density))
             .child(content)
             .child(self.render_row_menu(index, row.id, palette, cx));
 
@@ -1401,6 +1408,7 @@ impl MidiScreenView {
     }
 
     fn render_add_bar(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         if self.capture == Capture::Learn {
             return self.render_learn_row(palette, cx);
         }
@@ -1410,9 +1418,9 @@ impl MidiScreenView {
             .child(tr!("midi_add_learn"))
             .child(
                 div()
-                    .ml(KBD_ML)
+                    .ml(spacing(Spacing::Xs, density))
                     .py(KBD_PAD_V)
-                    .px(KBD_PAD_H)
+                    .px(spacing(Spacing::Xs, density))
                     .rounded(KBD_RADIUS)
                     .bg(palette.surface_overlay)
                     .font_family(mono_family())
@@ -1436,6 +1444,7 @@ impl MidiScreenView {
     }
 
     fn render_learn_row(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let (accent, prompt) = if self.enabled {
             (palette.info, tr!("midi_learn_prompt"))
         } else {
@@ -1468,7 +1477,7 @@ impl MidiScreenView {
             .child(
                 div()
                     .id("midi-learn-cancel")
-                    .ml(LEARN_CANCEL_ML)
+                    .ml(spacing(Spacing::Xs, density))
                     .flex()
                     .items_center()
                     .font_family(body_family())
@@ -1485,7 +1494,7 @@ impl MidiScreenView {
             .into_any_element()
     }
 
-    fn render_footer(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_footer(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let (dot, status_text) = if self.enabled {
             (palette.success, tr!("midi_engine_running"))
         } else {
@@ -1517,7 +1526,7 @@ impl MidiScreenView {
                 div()
                     .flex()
                     .items_center()
-                    .gap(FOOTER_STATUS_GAP)
+                    .gap(spacing(Spacing::Xs, density))
                     .child(status_dot(dot, FOOTER_DOT))
                     .child(
                         div()
@@ -1594,7 +1603,7 @@ impl Render for MidiScreenView {
                             .child(left)
                             .child(right),
                     )
-                    .child(self.render_footer(&palette)),
+                    .child(self.render_footer(&palette, density)),
             );
 
         let frame = page_frame(

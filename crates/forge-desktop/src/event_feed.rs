@@ -46,7 +46,6 @@ const BADGE_FS: Pixels = FONT_BADGE;
 const SUFFIX_FS: Pixels = FONT_MICRO;
 const STATUS_DOT: Pixels = px(6.0);
 const ROW_RAIL_W: Pixels = px(2.0);
-const ROW_GAP: Pixels = px(10.0);
 const ROW_PAD_V: Pixels = px(5.0);
 const ROW_PAD_H: Pixels = px(14.0);
 const ACTION_ICON: Pixels = px(14.0);
@@ -409,6 +408,7 @@ impl EventFeedView {
     }
 
     fn render_header_right(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let paused = self.log.read(cx).is_paused();
         let (live_color, live_label) = if paused {
             (palette.warning, tr!("event_feed_status_paused"))
@@ -419,7 +419,7 @@ impl EventFeedView {
         let count_readout = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
                     .font_family(mono_family())
@@ -438,7 +438,7 @@ impl EventFeedView {
         div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .child(header_status(live_color, live_label))
             .child(count_readout)
             .into_any_element()
@@ -567,6 +567,7 @@ impl EventFeedView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let density = cx.density();
         let warning = !item.is_error && is_warning_level(&item.payload);
         let row_bg = if selected {
             Some(palette.elevated)
@@ -625,7 +626,7 @@ impl EventFeedView {
             .flex_1()
             .flex()
             .items_center()
-            .gap(ROW_GAP)
+            .gap(spacing(Spacing::Sm, density))
             .py(ROW_PAD_V)
             .px(ROW_PAD_H)
             .overflow_hidden()
@@ -774,6 +775,7 @@ impl EventFeedView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let density = cx.density();
         let id_str = item.id.as_ref();
         let last6 = &id_str[id_str.len().saturating_sub(6)..];
 
@@ -782,8 +784,8 @@ impl EventFeedView {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .p(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
+            .p(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Md))
             .bg(palette.elevated)
             .border(BORDER_THIN)
@@ -794,7 +796,7 @@ impl EventFeedView {
                     .flex()
                     .items_center()
                     .overflow_hidden()
-                    .gap(spacing(Spacing::Xs, Density::Cozy))
+                    .gap(spacing(Spacing::Xs, density))
                     .child(badge(
                         palette.surface_overlay,
                         source_color(item.source, palette),
@@ -825,7 +827,7 @@ impl EventFeedView {
                     )),
             );
 
-        let payload = self.payload_block(item, palette);
+        let payload = self.payload_block(item, palette, density);
 
         let caused_text: gpui::SharedString = item
             .caused_by
@@ -847,8 +849,8 @@ impl EventFeedView {
             .flex()
             .items_center()
             .overflow_hidden()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .p(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
+            .p(spacing(Spacing::Xs, density))
             .rounded(radius(Radius::Md))
             .bg(palette.elevated)
             .border(BORDER_THIN)
@@ -877,8 +879,8 @@ impl EventFeedView {
             .flex()
             .items_center()
             .justify_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .py(spacing(Spacing::Xs, Density::Cozy))
+            .gap(spacing(Spacing::Xs, density))
+            .py(spacing(Spacing::Xs, density))
             .rounded(radius(Radius::Sm))
             .border(BORDER_THIN)
             .border_color(if replaying {
@@ -908,7 +910,7 @@ impl EventFeedView {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .gap(spacing(Spacing::Sm, density))
             .child(summary_card)
             .child(Self::section_label(
                 tr!("widget_event_payload_header"),
@@ -931,7 +933,12 @@ impl EventFeedView {
             .child(text)
     }
 
-    fn payload_block(&self, item: &EventItem, palette: &ForgePalette) -> impl IntoElement + use<> {
+    fn payload_block(
+        &self,
+        item: &EventItem,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> impl IntoElement + use<> {
         let brace = palette.text_muted;
         let mut lines: Vec<gpui::AnyElement> = Vec::new();
         lines.push(json_line(0, vec![json_span("{".to_owned(), brace)]));
@@ -986,7 +993,7 @@ impl EventFeedView {
             .overflow_hidden()
             .font_family(mono_family())
             .text_size(FONT_XXS)
-            .p(spacing(Spacing::Sm, Density::Cozy))
+            .p(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Md))
             .bg(palette.base)
             .border(BORDER_THIN)

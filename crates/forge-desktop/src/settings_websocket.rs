@@ -930,6 +930,7 @@ impl SettingsWebSocketView {
     }
 
     fn header(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> SettingsPaneHeader {
+        let density = cx.density();
         SettingsPaneHeader::new(SettingsSection::WebSocket)
             .subtitle(tr!("settings_ws_subtitle"))
             .trailing(self.restart_button(palette, cx))
@@ -938,7 +939,7 @@ impl SettingsWebSocketView {
                     .flex()
                     .min_w(px(0.0))
                     .overflow_hidden()
-                    .child(save_indicator(&self.save_state, palette)),
+                    .child(save_indicator(&self.save_state, palette, density)),
             )
     }
 
@@ -996,7 +997,7 @@ impl SettingsWebSocketView {
             .items_center()
             .gap(px(3.0))
             .py(px(1.0))
-            .px(spacing(Spacing::Xs, Density::Cozy))
+            .px(spacing(Spacing::Xs, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.surface_overlay)
             .child(icon(badge_glyph, BADGE_GLYPH, badge_color))
@@ -1079,7 +1080,7 @@ impl SettingsWebSocketView {
             return setting_block(
                 tr!("settings_ws_origins_section_title"),
                 Some(tr!("settings_ws_origins_subtitle").into()),
-                error_row(tr!("settings_ws_origins_unreadable"), palette),
+                error_row(tr!("settings_ws_origins_unreadable"), palette, density),
                 palette,
             );
         }
@@ -1205,7 +1206,7 @@ impl SettingsWebSocketView {
             .justify_between()
             .gap(spacing(Spacing::Xs, density))
             .py(FIELD_PAD_V)
-            .px(spacing(Spacing::Sm, Density::Cozy))
+            .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -1343,7 +1344,7 @@ impl SettingsWebSocketView {
             .justify_between()
             .gap(spacing(Spacing::Xs, density))
             .py(FIELD_PAD_V)
-            .px(spacing(Spacing::Sm, Density::Cozy))
+            .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -1470,7 +1471,7 @@ impl SettingsWebSocketView {
             .overflow_hidden()
             .text_ellipsis()
             .py(FIELD_PAD_V)
-            .px(spacing(Spacing::Sm, Density::Cozy))
+            .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -1563,6 +1564,7 @@ impl Render for SettingsWebSocketView {
                     tr!("settings_ws_load_failed", reason = reason.as_ref()),
                     &palette,
                     cx.listener(|this, _: &ClickEvent, _, cx| this.load(cx)),
+                    density,
                 )
             }))
             .child(

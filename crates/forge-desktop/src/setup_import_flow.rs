@@ -338,6 +338,7 @@ async fn discard_quietly(staged: StagedSetup) {
 
 impl Render for SetupImportFlow {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
         let confirming = match &self.step {
             SetupImportStep::Confirming(confirming) => confirming,
@@ -347,6 +348,7 @@ impl Render for SetupImportFlow {
                     tr!("import_busy_setup_title"),
                     tr!("import_busy_setup_detail"),
                     &palette,
+                    density,
                 );
             }
             SetupImportStep::Idle => return div().into_any_element(),

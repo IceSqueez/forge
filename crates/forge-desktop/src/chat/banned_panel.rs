@@ -2015,8 +2015,11 @@ pub(super) mod tests {
             (PlatformId::Kick, true, true),
         ] {
             let notes = BannedPanel::render_group_notes(platform, &palette, Density::Cozy);
-            let kick_disclaimer =
-                disclaimer_line(&platform_integration(platform).builtin_id(), &palette);
+            let kick_disclaimer = disclaimer_line(
+                &platform_integration(platform).builtin_id(),
+                &palette,
+                Density::Cozy,
+            );
 
             assert_eq!(
                 (

@@ -33,7 +33,6 @@ pub struct ScriptRecord {
     pub name: String,
     pub body: String,
     pub contract: ScriptContract,
-    pub body_hash: String,
     pub enabled: bool,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,

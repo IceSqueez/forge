@@ -1,5 +1,3 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use forge_events::EventPublisher;
@@ -18,12 +16,6 @@ pub struct RunResult {
     pub duration_ms: f64,
     pub error_count: usize,
     pub output_display: String,
-}
-
-pub fn content_hash(body: &str) -> String {
-    let mut h = DefaultHasher::new();
-    body.hash(&mut h);
-    format!("{:016x}", h.finish())
 }
 
 pub struct ScriptHost {

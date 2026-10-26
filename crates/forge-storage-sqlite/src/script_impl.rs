@@ -6,29 +6,12 @@ use forge_storage::{
     ScriptRepo, ScriptTelemetry, StorageError,
 };
 use forge_types::{ActionId, ScriptContract, ScriptId, SubActionStep};
-use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
 use crate::epoch::{epoch_ms_now, from_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 use crate::script_name_steps::{ScriptNameEdit, ScriptNameUses, apply_script_name_edit};
-
-fn hash_body(body: &str) -> String {
-    use std::fmt::Write as _;
-    let mut hasher = Sha256::new();
-    hasher.update(body.as_bytes());
-    let digest = hasher.finalize();
-    let mut out = String::with_capacity(digest.len() * 2);
-    for b in digest.iter() {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "writing to a String cannot fail"
-        )]
-        let _ = write!(out, "{b:02x}");
-    }
-    out
-}
 
 fn parse_script_id(s: &str) -> Result<ScriptId, SqliteStorageError> {
     serde_json::from_str(&format!("\"{s}\""))
@@ -46,7 +29,6 @@ struct ScriptRow {
     name: String,
     body: String,
     contract_json: String,
-    body_hash: String,
     enabled: i64,
     created_at: i64,
     last_modified: i64,
@@ -58,14 +40,13 @@ fn decode_row(row: ScriptRow) -> Result<ScriptRecord, SqliteStorageError> {
         name: row.name,
         body: row.body,
         contract: decode_contract(&row.contract_json)?,
-        body_hash: row.body_hash,
         enabled: row.enabled != 0,
         created_at: from_epoch_ms(row.created_at)?,
         last_modified: from_epoch_ms(row.last_modified)?,
     })
 }
 
-const SELECT_COLS: &str = "SELECT id, name, body, contract_json, body_hash, enabled, created_at, last_modified \
+const SELECT_COLS: &str = "SELECT id, name, body, contract_json, enabled, created_at, last_modified \
      FROM scripts";
 
 #[derive(sqlx::FromRow)]
@@ -162,7 +143,6 @@ impl ScriptRepo for SqliteScriptRepo {
         let id_str = record.id.to_string();
         let now_ms = epoch_ms_now();
         let enabled_int: i64 = i64::from(record.enabled);
-        let computed_hash = hash_body(&record.body);
         let contract_json =
             serde_json::to_string(&record.contract).map_err(|e| StorageError::Connection {
                 reason: e.to_string(),
@@ -170,13 +150,12 @@ impl ScriptRepo for SqliteScriptRepo {
 
         sqlx::query(
             "INSERT INTO scripts \
-             (id, name, body, contract_json, body_hash, enabled, created_at, last_modified) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
+             (id, name, body, contract_json, enabled, created_at, last_modified) \
+             VALUES (?, ?, ?, ?, ?, ?, ?) \
              ON CONFLICT(id) DO UPDATE SET \
                  name          = excluded.name, \
                  body          = excluded.body, \
                  contract_json = excluded.contract_json, \
-                 body_hash     = excluded.body_hash, \
                  enabled       = excluded.enabled, \
                  last_modified = ?",
         )
@@ -184,7 +163,6 @@ impl ScriptRepo for SqliteScriptRepo {
         .bind(&record.name)
         .bind(&record.body)
         .bind(&contract_json)
-        .bind(&computed_hash)
         .bind(enabled_int)
         .bind(now_ms)
         .bind(now_ms)

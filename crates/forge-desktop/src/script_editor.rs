@@ -15,9 +15,8 @@ use forge_components::{DateShape, fmt_display};
 use forge_events::{Event, EventPublisher};
 use forge_runtime::{EventBus, SchedulingContext, ScriptRegistry};
 use forge_script::{
-    MethodDescriptor, RunResult, ScriptError, ScriptHost, content_hash, format_script,
-    inert_annotation_lines, is_engine_bound_name, load_script_engine_config, run_inline,
-    validate_syntax,
+    MethodDescriptor, RunResult, ScriptError, ScriptHost, format_script, inert_annotation_lines,
+    is_engine_bound_name, load_script_engine_config, run_inline, validate_syntax,
 };
 use forge_storage::{
     DataProvider, ExecutionStatus, GlobalsRepo, SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND,
@@ -1214,7 +1213,6 @@ impl ScriptEditorView {
 
         let mut record = record;
         record.body = body.clone();
-        record.body_hash = content_hash(&body);
         record.last_modified = OffsetDateTime::now_utc();
 
         let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
@@ -1443,7 +1441,6 @@ impl ScriptEditorView {
                 let record = ScriptRecord {
                     id: ScriptId::new(),
                     name,
-                    body_hash: content_hash(&body),
                     body,
                     contract,
                     enabled: true,

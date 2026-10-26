@@ -99,7 +99,6 @@ impl SetupImport<'_, '_> {
                 name: document.name.clone(),
                 body: document.body.clone(),
                 contract: document.contract.clone(),
-                body_hash: String::new(),
                 enabled: document.enabled,
                 created_at: previous.as_ref().map_or(now, |script| script.created_at),
                 last_modified: now,

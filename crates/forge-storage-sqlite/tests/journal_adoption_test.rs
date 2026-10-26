@@ -3,14 +3,15 @@ mod legacy_fixture;
 
 use std::path::PathBuf;
 
-use forge_storage::StorageError;
+use forge_storage::{StorageError, TtsFiltersRepo};
 use forge_storage_sqlite::migrations::classify;
 use forge_storage_sqlite::{
     BASELINE_VERSION, JournalState, MIGRATIONS, SqliteBackend, SqliteStorageError,
+    SqliteTtsFiltersRepo,
 };
 use legacy_fixture::{
-    LEGACY_HEAD, data_fingerprint, db_url, journal, legacy_db, legacy_migrator,
-    rewrite_journal_to_crlf,
+    LEGACY_HEAD, column_names, data_fingerprint, db_url, journal, legacy_db, legacy_migrator,
+    rewrite_journal_to_crlf, user_tables,
 };
 use sqlx::SqlitePool;
 use tempfile::TempDir;
@@ -364,22 +365,77 @@ async fn adopting_a_crlf_legacy_database_succeeds() {
     );
 }
 
+async fn legacy_columns(pool: &SqlitePool) -> Vec<(String, Vec<String>)> {
+    let mut columns = Vec::new();
+    for table in user_tables(pool).await {
+        let names = column_names(pool, &table).await;
+        columns.push((table, names));
+    }
+    columns
+}
+
+async fn rows_of_columns(
+    pool: &SqlitePool,
+    columns: &[(String, Vec<String>)],
+) -> Vec<(String, Vec<String>)> {
+    let mut rows = Vec::new();
+    for (table, names) in columns {
+        let projection = names
+            .iter()
+            .map(|name| format!("quote(\"{name}\")"))
+            .collect::<Vec<_>>()
+            .join(" || '|' || ");
+        let table_rows: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT {projection} FROM \"{table}\" ORDER BY 1"
+        )))
+        .fetch_all(pool)
+        .await
+        .expect("read table rows");
+        rows.push((table.clone(), table_rows));
+    }
+    rows
+}
+
 #[tokio::test]
 async fn adoption_leaves_the_existing_data_untouched() {
     let workspace = legacy_workspace(LEGACY_HEAD).await;
     let pool = workspace.reconnect().await;
-    let before = data_fingerprint(&pool).await;
+    let legacy_shape = legacy_columns(&pool).await;
+    let before = rows_of_columns(&pool, &legacy_shape).await;
     pool.close().await;
 
     drop(workspace.open().await.expect("adoption"));
 
     let pool = workspace.reconnect().await;
-    let after: Vec<_> = data_fingerprint(&pool)
+    assert_eq!(rows_of_columns(&pool, &legacy_shape).await, before);
+}
+
+#[tokio::test]
+async fn adoption_keeps_saved_filter_settings_and_leaves_strip_emoji_off() {
+    let workspace = legacy_workspace(LEGACY_HEAD).await;
+    let pool = workspace.reconnect().await;
+    execute(
+        &pool,
+        "UPDATE tts_pipeline_settings SET strip_twitch_emotes = 0, max_length = 42 WHERE id = 1",
+    )
+    .await;
+    pool.close().await;
+
+    drop(workspace.open().await.expect("adoption"));
+
+    let pool = workspace.reconnect().await;
+    let settings = SqliteTtsFiltersRepo::new(pool)
+        .get_pipeline_settings()
         .await
-        .into_iter()
-        .filter(|(table, _)| before.iter().any(|(kept, _)| kept == table))
-        .collect();
-    assert_eq!(after, before);
+        .expect("settings after adoption");
+    assert_eq!(
+        (
+            settings.strip_emoji,
+            settings.strip_twitch_emotes,
+            settings.max_length
+        ),
+        (false, false, Some(42))
+    );
 }
 
 #[tokio::test]

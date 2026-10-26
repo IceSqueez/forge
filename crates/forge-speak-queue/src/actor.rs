@@ -2149,6 +2149,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn strip_emoji_setting_removes_emoji_from_chat_and_reward_messages_only_when_on() {
+        for (strip_emoji, is_reward, text, expected) in [
+            (true, false, "nice\u{1F389}", "nice"),
+            (true, true, "LUL nice\u{1F389}", "nice"),
+            (false, false, "nice\u{1F389}", "nice\u{1F389}"),
+            (false, true, "nice\u{1F389}", "nice\u{1F389}"),
+        ] {
+            let settings = forge_storage::TtsPipelineSettings {
+                strip_emoji,
+                ..Default::default()
+            };
+            let mut cfg = crate::build_config_lenient(&[], &settings);
+            cfg.emote_tokens.tokens.insert("LUL".into());
+
+            let spoken = spoken_by_capturing_engine(cfg, text, is_reward, &[]).await;
+
+            assert_eq!(
+                spoken.as_deref(),
+                Some(expected),
+                "strip_emoji={strip_emoji} is_reward={is_reward}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn a_requests_own_emote_codes_are_stripped_like_configured_ones() {
         let strip_twitch = || {
             let mut cfg = forge_tts_pipeline::PipelineConfig::default();

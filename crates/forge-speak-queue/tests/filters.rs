@@ -371,6 +371,51 @@ mod filters {
     }
 
     #[test]
+    fn strip_emoji_setting_maps_to_the_emoji_source_in_both_builders() {
+        for strip_emoji in [false, true] {
+            let settings = TtsPipelineSettings {
+                strip_emoji,
+                ..default_settings()
+            };
+
+            let strict = build_config_strict(&[], &settings).unwrap();
+            let lenient = build_config_lenient(&[], &settings);
+
+            assert_eq!(
+                (strict.emote_sources.emoji, lenient.emote_sources.emoji),
+                (strip_emoji, strip_emoji)
+            );
+        }
+    }
+
+    #[test]
+    fn hot_reload_of_strip_emoji_changes_what_the_live_config_speaks() {
+        let off = TtsPipelineSettings {
+            strip_emoji: false,
+            ..default_settings()
+        };
+        let on = TtsPipelineSettings {
+            strip_emoji: true,
+            ..default_settings()
+        };
+        let handle = PipelineConfigHandle::new(build_config_lenient(&[], &off));
+        let spoken =
+            |handle: &PipelineConfigHandle| process("nice\u{1F389}", &handle.load(), &ctx());
+
+        let before = spoken(&handle);
+        handle.swap(build_config_lenient(&[], &on));
+        let after = spoken(&handle);
+
+        assert_eq!(
+            (before, after),
+            (
+                PipelineResult::Speak("nice\u{1F389}".into()),
+                PipelineResult::Speak("nice".into())
+            )
+        );
+    }
+
+    #[test]
     fn handle_load_returns_seeded_config() {
         let mut settings = default_settings();
         settings.max_length = Some(7);

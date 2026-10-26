@@ -74,6 +74,7 @@ async fn fresh_db_settings_row_has_documented_defaults() {
     );
     assert!(s.strip_twitch_emotes, "strip_twitch_emotes default");
     assert!(s.strip_reward_emotes, "strip_reward_emotes default");
+    assert!(!s.strip_emoji, "strip_emoji is opt-in");
     assert!(s.max_length.is_none(), "max_length default is unlimited");
     assert!(
         s.output_max_duration_secs.is_none(),
@@ -225,22 +226,24 @@ async fn pipeline_settings_language_aware_voice_round_trips_through_all_three_st
 async fn pipeline_settings_strip_flags_all_combinations_round_trip() {
     let r = repo().await;
 
-    for (strip_twitch, strip_reward) in [(false, false), (true, false), (false, true), (true, true)]
-    {
+    for bits in 0..8_u8 {
+        let flags = (bits & 1 != 0, bits & 2 != 0, bits & 4 != 0);
         let s = TtsPipelineSettings {
-            strip_twitch_emotes: strip_twitch,
-            strip_reward_emotes: strip_reward,
+            strip_twitch_emotes: flags.0,
+            strip_reward_emotes: flags.1,
+            strip_emoji: flags.2,
             ..TtsPipelineSettings::default()
         };
         r.set_pipeline_settings(&s).await.expect("set");
         let got = r.get_pipeline_settings().await.expect("get");
         assert_eq!(
-            got.strip_twitch_emotes, strip_twitch,
-            "strip_twitch ({strip_twitch}) failed"
-        );
-        assert_eq!(
-            got.strip_reward_emotes, strip_reward,
-            "strip_reward ({strip_reward}) failed"
+            (
+                got.strip_twitch_emotes,
+                got.strip_reward_emotes,
+                got.strip_emoji
+            ),
+            flags,
+            "strip flags {flags:?} did not survive the round-trip"
         );
     }
 }

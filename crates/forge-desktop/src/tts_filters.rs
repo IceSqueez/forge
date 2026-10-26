@@ -3179,6 +3179,54 @@ mod tests {
     }
 
     #[gpui::test]
+    fn strip_emoji_toggle_starts_off_persists_and_reaches_the_live_pipeline_config(
+        cx: &mut TestAppContext,
+    ) {
+        install_presentation(cx);
+        let rt = runtime();
+        let repo = RecordingFilters::storing(Vec::new());
+        let handle = initial_config();
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                TtsFiltersView::new(
+                    repo.clone(),
+                    Some(handle.clone()),
+                    Shared::new(Vec::new()),
+                    None,
+                    rt.handle().clone(),
+                    cx,
+                )
+            })
+        });
+        pump(&rt);
+        cx.run_until_parked();
+        let initial = (
+            view.read_with(cx, |v, _| v.output_flag(OutputOpt::StripEmoji)),
+            handle.load().emote_sources.emoji,
+        );
+
+        view.update(cx, |v, cx| v.toggle_output(OutputOpt::StripEmoji, cx));
+        pump(&rt);
+        cx.run_until_parked();
+        let after_on = (
+            view.read_with(cx, |v, _| v.output_flag(OutputOpt::StripEmoji)),
+            repo.saved.lock().unwrap().last().map(|s| s.strip_emoji),
+            handle.load().emote_sources.emoji,
+        );
+        view.update(cx, |v, cx| v.toggle_output(OutputOpt::StripEmoji, cx));
+        pump(&rt);
+        cx.run_until_parked();
+        let after_off = (
+            repo.saved.lock().unwrap().last().map(|s| s.strip_emoji),
+            handle.load().emote_sources.emoji,
+        );
+
+        assert_eq!(initial, (false, false));
+        assert_eq!(after_on, (true, Some(true), true));
+        assert_eq!(after_off, (Some(false), false));
+    }
+
+    #[gpui::test]
     fn added_text_replacement_keeps_the_modal_inside_words_choice(cx: &mut TestAppContext) {
         for (toggles, expected) in [(0, Some(false)), (1, Some(true)), (2, Some(false))] {
             let view = filters_view(cx);

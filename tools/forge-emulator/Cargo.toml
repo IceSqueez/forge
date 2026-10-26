@@ -5,7 +5,7 @@ resolver = "3"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/IceSqueez/forge"
-rust-version = "1.97"
+rust-version = "1.99"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
@@ -44,7 +44,7 @@ forge-storage-sqlite = { path = "../../crates/forge-storage-sqlite" }
 forge-types = { path = "../../crates/forge-types" }
 forge-vtube = { path = "../../crates/forge-vtube" }
 axum = { version = "0.8" }
-base64 = { version = "0.22" }
+base64 = { version = "0.23" }
 clap = { version = "4.6", features = ["derive"] }
 directories = { version = "6.0" }
 futures-util = { version = "0.3" }
@@ -54,10 +54,10 @@ reqwest = { version = "0.13", default-features = false, features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
 serde_urlencoded = { version = "0.7" }
-sha2 = { version = "0.10" }
+sha2 = { version = "0.11" }
 thiserror = { version = "2.0" }
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
-tokio = { version = "1.53", features = ["io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1.54", features = ["io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-tungstenite = { version = "0.30" }
 
 [target.'cfg(unix)'.dependencies]
@@ -71,5 +71,5 @@ forge-registry = { path = "../../crates/forge-registry" }
 forge-storage = { path = "../../crates/forge-storage", features = ["test-mocks"] }
 tempfile = { version = "3.27" }
 time = { version = "0.3", features = ["macros"] }
-tokio = { version = "1.53", features = ["test-util"] }
+tokio = { version = "1.54", features = ["test-util"] }
 tokio-util = { version = "0.7" }

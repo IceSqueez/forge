@@ -1,4 +1,8 @@
+use forge_components::FONT_LABEL;
+use forge_components::FONT_ROW;
+use forge_components::Radius;
 use forge_components::highlight::Language;
+use forge_components::radius;
 use forge_components::{
     BORDER_THIN, CodeEditor, Confirm, ConfirmTone, FONT_XS, FONT_XXS, ForgePalette, Icon,
     InputEvent, OverlayPosition, SaveCode, body_family, confirm_modal, empty_state,
@@ -24,8 +28,8 @@ const TABS_PAD_H: Pixels = px(12.0);
 const TABS_GAP: Pixels = px(2.0);
 const TAB_PAD_V: Pixels = px(4.0);
 const TAB_PAD_H: Pixels = px(12.0);
-const TAB_RADIUS: Pixels = px(6.0);
-const TAB_FS: Pixels = px(11.5);
+const TAB_RADIUS: Pixels = radius(Radius::Sm);
+const TAB_FS: Pixels = FONT_LABEL;
 const TAB_GAP: Pixels = px(6.0);
 const TAB_DOT: Pixels = px(6.0);
 const TAB_MARK: Pixels = px(11.0);
@@ -38,13 +42,13 @@ const HINT_PAD_V: Pixels = px(8.0);
 const HINT_PAD_H: Pixels = px(16.0);
 const HINT_GLYPH: Pixels = px(12.0);
 
-const EDITOR_FS: Pixels = px(12.5);
+const EDITOR_FS: Pixels = FONT_ROW;
 const EDITOR_LINE_HEIGHT: Pixels = px(20.0);
 
 const FOOT_GAP: Pixels = px(10.0);
 const FOOT_PAD_V: Pixels = px(7.0);
 const FOOT_PAD_H: Pixels = px(14.0);
-const FOOT_FS: Pixels = px(10.5);
+const FOOT_FS: Pixels = FONT_XXS;
 const FOOT_GLYPH: Pixels = px(12.0);
 
 pub(super) enum LeaveIntent {
@@ -458,7 +462,7 @@ impl OverlaysView {
             let file = *file;
             let active = self.editor.code.file == file;
             let marker = if self.is_missing(file) {
-                Some((Icon::AlertTriangle, palette.random))
+                Some((Icon::AlertTriangle, palette.danger))
             } else if self.is_overridden(file) {
                 Some((Icon::Pencil, palette.warning))
             } else {
@@ -565,7 +569,7 @@ impl OverlaysView {
         let (glyph, tint, message) = if self.is_missing(file) {
             (
                 Icon::AlertTriangle,
-                palette.random,
+                palette.danger,
                 tr!("overlays_code_hint_missing", file = file),
             )
         } else if self.is_overridden(file) && self.predates_box() {

@@ -2,6 +2,7 @@ use super::permission_help::{gated_platforms, rung_meanings};
 use super::*;
 use crate::async_bridge;
 use crate::config_field_label::{config_field_labels, row_label};
+use crate::config_form::INTEGER_PLACEHOLDER;
 use crate::config_form::{
     ChoiceDropdown, ChoiceSupport, CollectionChoices, ConfigFieldHandlers, FoldContext,
     collect_field_values, config_label_cell, fold_config_field, render_config_control,
@@ -10,6 +11,11 @@ use crate::config_form::{
 use crate::integration_switch::{category_inactive_badge, inactive_badge};
 use crate::trigger_form_shape::{trigger_form_defaults, trigger_form_specs};
 use forge_components::ActivePresentation;
+use forge_components::FONT_LABEL;
+use forge_components::FONT_META;
+use forge_components::FONT_SM;
+use forge_components::FONT_XS;
+use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
     Density, FONT_XXS, Icon, InputEvent, Picker, PickerEvent, Radius, ResizeEdge, ResizeRange,
     Spacing, TextInput, body_family, ghost_button_with_icon, icon, install_resize, mono_family,
@@ -22,17 +28,16 @@ use std::collections::HashMap;
 pub(super) const DETAIL_SHEET_W: Pixels = px(420.0);
 const DETAIL_SHEET_MIN: Pixels = px(320.0);
 const DETAIL_SHEET_MAX: Pixels = px(640.0);
-const HALF_BORDER: Pixels = px(0.5);
 const TILE: Pixels = px(30.0);
 const TILE_RADIUS: Pixels = px(8.0);
 const TILE_GLYPH: Pixels = px(16.0);
 const KIND_DOT: Pixels = px(5.0);
 const ROW_GLYPH: Pixels = px(12.0);
-const NAME_FS: Pixels = px(14.0);
-const KIND_FS: Pixels = px(10.5);
-const CFG_KEY_FS: Pixels = px(11.0);
-const CFG_VAL_FS: Pixels = px(11.5);
-const USED_FS: Pixels = px(12.0);
+const NAME_FS: Pixels = FONT_SM;
+const KIND_FS: Pixels = FONT_XXS;
+const CFG_KEY_FS: Pixels = FONT_META;
+const CFG_VAL_FS: Pixels = FONT_LABEL;
+const USED_FS: Pixels = FONT_XS;
 const CFG_KEY_W: Pixels = px(110.0);
 const REVERT_W: Pixels = px(22.0);
 struct TriggerDetailResizeDrag;
@@ -158,7 +163,7 @@ impl TriggersRegistryView {
         cx: &mut Context<Self>,
     ) -> Entity<TextInput> {
         cx.new(|cx| {
-            let mut input = TextInput::new("0", cx).with_palette(palette);
+            let mut input = TextInput::new(INTEGER_PLACEHOLDER, cx).with_palette(palette);
             if seed > 0 {
                 input.set_content(seed.to_string(), cx);
             }
@@ -399,7 +404,7 @@ impl TriggersRegistryView {
             .flex_col()
             .min_h(px(0.0))
             .bg(palette.base)
-            .border_l(HALF_BORDER)
+            .border_l(BORDER_THIN)
             .border_color(palette.border_regular);
 
         install_resize(
@@ -530,7 +535,7 @@ impl TriggersRegistryView {
             .gap(spacing(Spacing::Sm, Density::Cozy))
             .py(HEADER_PAD_V)
             .px(HEADER_PAD_H)
-            .border_b(HALF_BORDER)
+            .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(tile)
             .child(title)
@@ -599,7 +604,7 @@ impl TriggersRegistryView {
             div()
                 .font_family(mono_family())
                 .text_size(FONT_XXS)
-                .text_color(palette.bits)
+                .text_color(palette.accent_peach)
                 .child(tr!(
                     "triggers_sheet_config_overridden",
                     count = override_count as i64
@@ -650,7 +655,7 @@ impl TriggersRegistryView {
         let framed = div()
             .w_full()
             .rounded(radius(Radius::Md))
-            .border(HALF_BORDER)
+            .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.shell)
             .child(card);
@@ -684,7 +689,7 @@ impl TriggersRegistryView {
         let key = field.key().to_owned();
         let is_overridden = overridden.contains_key(key.as_str());
         let key_color = if is_overridden {
-            palette.bits
+            palette.accent_peach
         } else {
             palette.text_muted
         };
@@ -729,7 +734,7 @@ impl TriggersRegistryView {
             .py(CFG_ROW_PAD_V)
             .px(CFG_ROW_PAD_H)
             .when(!last, |row| {
-                row.border_b(HALF_BORDER)
+                row.border_b(BORDER_THIN)
                     .border_color(palette.border_regular)
             })
             .child(label)
@@ -769,7 +774,7 @@ impl TriggersRegistryView {
             .gap(spacing(Spacing::Sm, Density::Cozy))
             .py(CFG_ROW_PAD_V)
             .px(CFG_ROW_PAD_H)
-            .border_b(HALF_BORDER)
+            .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(label_cell(tr!("triggers_sheet_cooldown_value").into()))
             .child(
@@ -798,7 +803,7 @@ impl TriggersRegistryView {
         let framed = div()
             .w_full()
             .rounded(radius(Radius::Md))
-            .border(HALF_BORDER)
+            .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.shell)
             .child(card);
@@ -852,7 +857,7 @@ impl TriggersRegistryView {
             .gap(spacing(Spacing::Sm, Density::Cozy))
             .py(CFG_ROW_PAD_V)
             .px(CFG_ROW_PAD_H)
-            .border_b(HALF_BORDER)
+            .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(
                 div()
@@ -882,7 +887,7 @@ impl TriggersRegistryView {
         let framed = div()
             .w_full()
             .rounded(radius(Radius::Md))
-            .border(HALF_BORDER)
+            .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.shell)
             .child(div().flex().flex_col().child(rung_row).child(helper_row));
@@ -921,7 +926,7 @@ impl TriggersRegistryView {
                 .py(PLACEHOLDER_PAD_V)
                 .px(PLACEHOLDER_PAD_H)
                 .rounded(radius(Radius::Md))
-                .border(HALF_BORDER)
+                .border(BORDER_THIN)
                 .border_color(palette.border_input)
                 .text_center()
                 .font_family(body_family())
@@ -945,7 +950,7 @@ impl TriggersRegistryView {
                     row_card(title, palette)
                         .leading(icon(Icon::Bolt, ROW_GLYPH, palette.brand))
                         .idle_background(palette.shell)
-                        .bordered(palette.border_regular, HALF_BORDER, radius(Radius::Sm))
+                        .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Sm))
                         .padding_xy(USED_ROW_PAD_V, USED_ROW_PAD_H)
                         .on_click(
                             SharedString::from(format!("triggers-used-in-{action_id}")),
@@ -984,7 +989,7 @@ impl TriggersRegistryView {
             );
 
         let delete_color = if can_delete {
-            palette.random
+            palette.danger
         } else {
             palette.disabled
         };
@@ -995,7 +1000,7 @@ impl TriggersRegistryView {
             .py(spacing(Spacing::Xs, Density::Cozy))
             .px(spacing(Spacing::Sm, Density::Cozy))
             .rounded(radius(Radius::Sm))
-            .border(HALF_BORDER)
+            .border(BORDER_THIN)
             .border_color(palette.border_input)
             .child(icon(Icon::Eraser, px(11.0), delete_color))
             .child(
@@ -1014,9 +1019,7 @@ impl TriggersRegistryView {
                 )
                 .into_any_element()
         } else {
-            delete_base
-                .opacity(super::DISABLED_OPACITY)
-                .into_any_element()
+            delete_base.opacity(ROW_OFF_OPACITY).into_any_element()
         };
 
         let save = primary_button(tr!("triggers_sheet_save_btn"), palette).on_click(
@@ -1033,7 +1036,7 @@ impl TriggersRegistryView {
             .py(FOOTER_PAD_V)
             .px(FOOTER_PAD_H)
             .bg(palette.shell)
-            .border_t(HALF_BORDER)
+            .border_t(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(template)
             .child(div().flex_1())

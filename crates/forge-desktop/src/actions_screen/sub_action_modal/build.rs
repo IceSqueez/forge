@@ -3,6 +3,7 @@ use super::unit_amount::build_unit_amount_field;
 use super::*;
 use crate::amount_scale::AmountScale;
 use crate::config_field_label::{field_label, field_placeholder};
+use crate::config_form::INTEGER_PLACEHOLDER;
 use crate::config_form::{
     code_field_editor, dependent_options, optional_gate_seed, optional_inner_seed,
     optional_shares_key,
@@ -15,7 +16,6 @@ use forge_types::{SubActionConfig, Variant, normalize_var_name};
 use std::ops::RangeInclusive;
 
 const VAR_PLACEHOLDER: &str = "%result%";
-const INTEGER_PLACEHOLDER: &str = "0";
 
 impl EditSubActionForm {
     fn on_var_input_event(

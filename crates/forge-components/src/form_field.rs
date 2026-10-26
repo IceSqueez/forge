@@ -1,3 +1,6 @@
+use crate::FONT_FIELD;
+use crate::FONT_LABEL;
+use crate::FONT_META;
 use crate::cards::field_label;
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
@@ -8,12 +11,12 @@ use gpui::{
     AnyElement, App, ClickEvent, ElementId, Pixels, SharedString, Window, div, prelude::*, px,
 };
 
-pub const FIELD_FONT: Pixels = px(13.0);
+pub const NAME_FIELD_LIMIT: usize = 64;
 const ROW_PAD_X: Pixels = px(12.0);
 const ROW_PAD_Y: Pixels = px(8.0);
 const FIELD_GAP: Pixels = px(4.0);
-const HINT_FONT: Pixels = px(11.0);
-const NOTE_FONT: Pixels = px(11.5);
+const HINT_FONT: Pixels = FONT_META;
+const NOTE_FONT: Pixels = FONT_LABEL;
 const NOTE_GAP: Pixels = px(6.0);
 const RETRY_GAP: Pixels = px(5.0);
 const CHOICE_GAP: Pixels = px(8.0);
@@ -54,14 +57,14 @@ pub fn toggle_row(
     let (state_label, state_color) = if value {
         (tr!("widget_toggle_on"), palette.success)
     } else {
-        (tr!("widget_toggle_off"), palette.random)
+        (tr!("widget_toggle_off"), palette.danger)
     };
     field_frame(palette)
         .justify_between()
         .child(
             div()
                 .font_family(mono_family())
-                .text_size(FIELD_FONT)
+                .text_size(FONT_FIELD)
                 .text_color(state_color)
                 .child(state_label),
         )
@@ -98,11 +101,11 @@ pub fn choice_trigger(
                 .flex_1()
                 .min_w(px(0.0))
                 .font_family(body_family())
-                .text_size(FIELD_FONT)
+                .text_size(FONT_FIELD)
                 .text_color(text_color)
                 .child(selected),
         )
-        .child(icon(Icon::ChevronDown, FIELD_FONT, palette.text_faint))
+        .child(icon(Icon::ChevronDown, FONT_FIELD, palette.text_faint))
         .into_any_element()
 }
 
@@ -111,14 +114,14 @@ pub fn failure_note(reason: &str, palette: &ForgePalette) -> AnyElement {
         .flex()
         .items_center()
         .gap(NOTE_GAP)
-        .child(icon(Icon::AlertCircle, FONT_XS, palette.random))
+        .child(icon(Icon::AlertCircle, FONT_XS, palette.danger))
         .child(
             div()
                 .flex_1()
                 .min_w(px(0.0))
                 .font_family(body_family())
                 .text_size(NOTE_FONT)
-                .text_color(palette.random)
+                .text_color(palette.danger)
                 .child(reason.to_owned()),
         )
         .into_any_element()

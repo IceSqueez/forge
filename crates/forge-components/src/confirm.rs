@@ -1,3 +1,4 @@
+use crate::HOVER_FILL_ALPHA;
 use gpui::{
     App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement, ParentElement, Pixels,
     RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
@@ -16,7 +17,6 @@ const ICON_TILE: Pixels = px(36.0);
 const ICON_TILE_GLYPH: Pixels = px(18.0);
 const ICON_TILE_ALPHA: f32 = 0.12;
 const ACTIONS_GAP: Pixels = px(8.0);
-const ACCENT_HOVER_ALPHA: f32 = 0.92;
 
 type ActionHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -29,7 +29,7 @@ pub enum ConfirmTone {
 impl ConfirmTone {
     pub(crate) fn accent(self, palette: &ForgePalette) -> Rgba {
         match self {
-            ConfirmTone::Destructive => palette.random,
+            ConfirmTone::Destructive => palette.danger,
             ConfirmTone::Warning => palette.warning,
         }
     }
@@ -130,7 +130,7 @@ fn accent_confirm_button(
         .text_size(FONT_SM)
         .text_color(ink)
         .cursor_pointer()
-        .hover(move |style| style.bg(with_alpha(accent, ACCENT_HOVER_ALPHA)))
+        .hover(move |style| style.bg(with_alpha(accent, HOVER_FILL_ALPHA)))
         .on_click(handler)
         .child(label)
 }

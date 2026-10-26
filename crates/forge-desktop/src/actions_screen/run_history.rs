@@ -2,6 +2,8 @@ use super::*;
 use crate::async_bridge;
 use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal, RunHistoryOpenIntegration};
 
+const RUN_HISTORY_PAGE: u32 = 50;
+
 impl ScreenActionsView {
     pub(super) fn open_history_modal(&mut self, cx: &mut Context<Self>) {
         let Some(id) = self.selected else {
@@ -29,7 +31,12 @@ impl ScreenActionsView {
         let service = Arc::clone(&self.actions_service);
         async_bridge::run_async(
             &self.rt_handle,
-            async move { service.recent_runs(id, 50).await.map_err(|e| e.to_string()) },
+            async move {
+                service
+                    .recent_runs(id, RUN_HISTORY_PAGE)
+                    .await
+                    .map_err(|e| e.to_string())
+            },
             move |this, result, cx| match result {
                 Ok(runs) => view.update(cx, |modal, cx| modal.set_runs(runs, cx)),
                 Err(message) => {

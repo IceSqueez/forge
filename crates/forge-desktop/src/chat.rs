@@ -1,6 +1,8 @@
 use crate::platform_visuals::{
     BadgeKind, badge_color, badge_label, platform_color, platform_mark, role_badge,
 };
+use forge_components::DISABLED_OPACITY;
+use forge_components::SEARCH_FIELD_WIDTH;
 use std::collections::{BTreeMap, VecDeque};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -58,9 +60,7 @@ use viewer_tts::TtsVoiceHost;
 
 const LIST_OVERDRAW: Pixels = px(240.0);
 const PILL_BOTTOM_LIFT: Pixels = px(16.0);
-const SEARCH_W: Pixels = px(240.0);
 const VIEWER_DOT: Pixels = px(6.0);
-const CHIP_DIVIDER_W: Pixels = px(0.5);
 const CHIP_DIVIDER_H: Pixels = px(14.0);
 const ICON_BTN_PAD: Pixels = px(5.0);
 const ICON_BTN_RADIUS: Pixels = px(5.0);
@@ -73,11 +73,13 @@ const AVATAR_DETAIL: Pixels = px(38.0);
 const AVATAR_ROW: Pixels = px(22.0);
 const ROW_STRIPE: Pixels = px(2.0);
 const DRAWER_ICON: Pixels = px(11.0);
+const EXPORT_ICON: Pixels = px(14.0);
+const VIEWERS_ICON: Pixels = px(13.0);
+const SEARCH_MISS_OPACITY: f32 = 0.3;
 const BADGE_DETAIL: Pixels = px(9.0);
 const BADGE_ROW: Pixels = px(8.5);
 const VIEWER_REFRESH: Duration = Duration::from_secs(15);
 const INFINITY_GLYPH: &str = "\u{221e}";
-const DISABLED_OPACITY: f32 = 0.5;
 const DRAWER_TIMEOUT_SECONDS: i64 = 600;
 const CTX_TIMEOUT_10M: i64 = 600;
 const CTX_TIMEOUT_1H: i64 = 3600;
@@ -937,7 +939,7 @@ impl ChatView {
                     cx.listener(|this, _: &ClickEvent, _, cx| this.ctx_ban_viewer(cx)),
                 )
                 .icon(Icon::BellOff)
-                .color(palette.random)
+                .color(palette.danger)
                 .into(),
             );
         }
@@ -1105,7 +1107,7 @@ impl ChatView {
                 "chat-chip-youtube",
                 "YouTube".to_owned(),
                 PlatformFilter::Single(PlatformId::YouTube),
-                palette.random,
+                palette.danger,
             ),
             (
                 "chat-chip-kick",
@@ -1135,7 +1137,7 @@ impl ChatView {
         }
         chips = chips.child(
             div()
-                .w(CHIP_DIVIDER_W)
+                .w(BORDER_THIN)
                 .h(CHIP_DIVIDER_H)
                 .bg(palette.border_regular),
         );
@@ -1170,7 +1172,11 @@ impl ChatView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .child(div().w(SEARCH_W).child(self.search.field().clone()))
+            .child(
+                div()
+                    .w(SEARCH_FIELD_WIDTH)
+                    .child(self.search.field().clone()),
+            )
             .child(chips)
             .into_any_element()
     }
@@ -1189,7 +1195,7 @@ impl ChatView {
             .cursor_pointer()
             .hover(move |s| s.bg(surf))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export_chat_log(cx)))
-            .child(icon(Icon::Download, px(14.0), green))
+            .child(icon(Icon::Download, EXPORT_ICON, green))
             .into_any_element()
     }
 
@@ -1274,7 +1280,7 @@ impl ChatView {
                 );
             }
             if search_active && !msg.matches_query(&query) {
-                framed.opacity(0.3).into_any_element()
+                framed.opacity(SEARCH_MISS_OPACITY).into_any_element()
             } else {
                 framed.into_any_element()
             }
@@ -1411,7 +1417,7 @@ impl ChatView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .child(icon(Icon::Users, px(13.0), palette.brand))
+            .child(icon(Icon::Users, VIEWERS_ICON, palette.brand))
             .child(
                 div()
                     .font_family(body_family())
@@ -1862,7 +1868,7 @@ impl ChatView {
                     this.ban_viewer(ban_target.clone(), cx)
                 }),
             )
-            .color(palette.random)
+            .color(palette.danger)
             .disabled(!target.supports(&ViewerAction::Ban))
             .into(),
         ];

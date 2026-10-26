@@ -430,7 +430,7 @@ impl InputBar {
             return None;
         }
         let color = if count > limit {
-            self.palette.random
+            self.palette.danger
         } else {
             self.palette.text_faint
         };

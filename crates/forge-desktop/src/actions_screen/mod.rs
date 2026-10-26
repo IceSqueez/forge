@@ -11,6 +11,8 @@ use crate::sidebar::NavRequested;
 use crate::vtube_catalog_options::VTubeCatalogField;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_components::Radius;
+use forge_components::radius;
 use forge_components::{
     BreadcrumbCrumb, Confirm, Density, ForgePalette, GridPicker, Icon, InlineEdit, OverlayPosition,
     SearchState, TextArea, TextInput, ToastKind, fmt_display_relative, fmt_number, icon, overlay,
@@ -68,12 +70,9 @@ const ROW_GUTTER: Pixels = px(14.0);
 const STRIPE_W: Pixels = px(2.0);
 const TREE_GUTTER: Pixels = px(14.0);
 const TREE_GLYPH: Pixels = px(11.0);
-const SEARCH_W: Pixels = px(240.0);
-const HEADER_DIV_W: Pixels = px(0.5);
 const HEADER_DIV_H: Pixels = px(16.0);
 const GROUP_DOT: Pixels = px(8.0);
 const EMPTY_GLYPH: Pixels = px(28.0);
-const NAME_LIMIT: usize = 64;
 
 const PILL_RADIUS: Pixels = px(8.0);
 const PILL_DOT: Pixels = px(5.0);
@@ -95,14 +94,12 @@ const CARD_PAD_H: Pixels = px(12.0);
 const EMPTY_CARD_PAD_V: Pixels = px(18.0);
 const EMPTY_CARD_PAD_H: Pixels = px(12.0);
 const EMPTY_CARD_GLYPH: Pixels = px(16.0);
-const HALF_BORDER: Pixels = px(0.5);
 const STAT_GAP: Pixels = px(8.0);
 const STAT_PAD_V: Pixels = px(10.0);
 const STAT_VALUE_GAP: Pixels = px(3.0);
 const PANE_PAD_V: Pixels = px(18.0);
 const PANE_PAD_H: Pixels = px(22.0);
 const STEP_GAP: Pixels = px(6.0);
-const STEP_DISABLED_OPACITY: f32 = 0.55;
 const STEP_NOTICE_MT: Pixels = px(8.0);
 const TRIGGER_DIMMED_OPACITY: f32 = 0.7;
 const STEP_CARD_PAD_V: Pixels = px(10.0);
@@ -115,7 +112,7 @@ const STEP_TILE: Pixels = px(32.0);
 const STEP_TILE_GLYPH: Pixels = px(16.0);
 const GRID_COL_GAP: Pixels = px(12.0);
 
-const CHIP_RADIUS: Pixels = px(6.0);
+const CHIP_RADIUS: Pixels = radius(Radius::Sm);
 const BRANCH_GLYPH: Pixels = px(11.0);
 const CASE_MATCH_W: Pixels = px(160.0);
 

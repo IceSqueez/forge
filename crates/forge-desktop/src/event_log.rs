@@ -20,7 +20,7 @@ pub enum EventFilter {
     Errors,
 }
 
-fn is_chat_message_kind(kind: &str) -> bool {
+pub(crate) fn is_chat_message_kind(kind: &str) -> bool {
     matches!(
         kind,
         "twitch.channel.chat.message"

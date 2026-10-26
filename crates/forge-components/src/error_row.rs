@@ -1,3 +1,4 @@
+use crate::TINT_FILL_ALPHA;
 use gpui::{
     App, ClickEvent, Div, ElementId, IntoElement, ParentElement, Pixels, SharedString, Styled,
     Window, div, px,
@@ -13,7 +14,6 @@ use crate::tr;
 
 const GLYPH: Pixels = px(13.0);
 const PAD_V: Pixels = px(6.0);
-const WASH: f32 = 0.1;
 
 fn error_frame(message: SharedString, palette: &ForgePalette) -> Div {
     div()
@@ -24,17 +24,17 @@ fn error_frame(message: SharedString, palette: &ForgePalette) -> Div {
         .px(spacing(Spacing::Sm, Density::Cozy))
         .py(PAD_V)
         .rounded(radius(Radius::Sm))
-        .bg(with_alpha(palette.random, WASH))
+        .bg(with_alpha(palette.danger, TINT_FILL_ALPHA))
         .border(BORDER_THIN)
-        .border_color(palette.random)
-        .child(icon(Icon::AlertTriangle, GLYPH, palette.random))
+        .border_color(palette.danger)
+        .child(icon(Icon::AlertTriangle, GLYPH, palette.danger))
         .child(
             div()
                 .flex_1()
                 .min_w(px(0.0))
                 .font_family(body_family())
                 .text_size(FONT_SM)
-                .text_color(palette.random)
+                .text_color(palette.danger)
                 .child(message),
         )
 }
@@ -59,23 +59,23 @@ pub fn compact_error_with_retry(
         .px(spacing(Spacing::Xs, Density::Cozy))
         .py(PAD_V)
         .rounded(radius(Radius::Sm))
-        .bg(with_alpha(palette.random, WASH))
+        .bg(with_alpha(palette.danger, TINT_FILL_ALPHA))
         .border(BORDER_THIN)
-        .border_color(palette.random)
+        .border_color(palette.danger)
         .child(
             div()
                 .w_full()
                 .flex()
                 .items_start()
                 .gap(spacing(Spacing::Xs, Density::Cozy))
-                .child(icon(Icon::AlertTriangle, GLYPH, palette.random))
+                .child(icon(Icon::AlertTriangle, GLYPH, palette.danger))
                 .child(
                     div()
                         .flex_1()
                         .min_w(px(0.0))
                         .font_family(body_family())
                         .text_size(FONT_XS)
-                        .text_color(palette.random)
+                        .text_color(palette.danger)
                         .child(message),
                 ),
         )

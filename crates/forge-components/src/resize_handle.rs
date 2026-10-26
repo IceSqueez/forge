@@ -1,3 +1,4 @@
+use crate::BORDER_THIN;
 use gpui::{
     App, AppContext, Context, CursorStyle, Div, DragMoveEvent, InteractiveElement, IntoElement,
     ParentElement, Pixels, Render, StatefulInteractiveElement, Styled, Window, div, px,
@@ -5,7 +6,7 @@ use gpui::{
 
 use crate::palette::ForgePalette;
 
-const RESIZE_VISUAL_W: Pixels = px(1.0);
+const RESIZE_VISUAL_W: Pixels = BORDER_THIN;
 const RESIZE_HIT_W: Pixels = px(8.0);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

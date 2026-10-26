@@ -1,3 +1,8 @@
+use crate::FONT_LABEL;
+use crate::FONT_MICRO;
+use crate::FONT_ROLE_BADGE;
+use crate::Radius;
+use crate::radius;
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement,
     ParentElement, Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled,
@@ -19,7 +24,7 @@ const ROW_RADIUS: Pixels = px(5.0);
 
 const EVENT_PAD_V: Pixels = px(6.0);
 const EVENT_PAD_H: Pixels = px(10.0);
-const EVENT_RADIUS: Pixels = px(6.0);
+const EVENT_RADIUS: Pixels = radius(Radius::Sm);
 const EVENT_MARGIN_V: Pixels = px(2.0);
 const STRIPE_W: Pixels = px(2.0);
 const EVENT_ICON: Pixels = px(14.0);
@@ -29,7 +34,7 @@ const PLATFORM_TILE: Pixels = px(14.0);
 const PLATFORM_CORNER: Pixels = px(3.0);
 const PLATFORM_GLYPH: Pixels = px(8.0);
 
-const ROLE_BADGE_FONT: Pixels = px(8.5);
+const ROLE_BADGE_FONT: Pixels = FONT_ROLE_BADGE;
 const ROLE_BADGE_PAD_H: Pixels = px(5.0);
 const ROLE_BADGE_PAD_V: Pixels = px(1.0);
 const ROLE_BADGE_RADIUS: Pixels = px(4.0);
@@ -38,20 +43,20 @@ const ROLE_BADGE_ML: Pixels = px(4.0);
 const ROLE_TINT_ALPHA: f32 = 0.07;
 const ROLE_BORDER_ALPHA: f32 = 0.45;
 
-const PILL_FONT: Pixels = px(10.0);
+const PILL_FONT: Pixels = FONT_MICRO;
 const PILL_PAD_H: Pixels = px(6.0);
 const PILL_PAD_V: Pixels = px(1.0);
 const PILL_RADIUS: Pixels = px(8.0);
 const PILL_GAP: Pixels = px(4.0);
 const PILL_ICON: Pixels = px(9.0);
 
-const CMD_PILL_FONT: Pixels = px(11.5);
+const CMD_PILL_FONT: Pixels = FONT_LABEL;
 const CMD_PILL_PAD_H: Pixels = px(5.0);
 const CMD_PILL_PAD_V: Pixels = px(1.0);
 const CMD_PILL_RADIUS: Pixels = px(3.0);
 const CMD_SECOND_INSET: Pixels = px(50.0);
 
-const EVENT_MSG_FONT: Pixels = px(11.5);
+const EVENT_MSG_FONT: Pixels = FONT_LABEL;
 const EVENT_MSG_TOP: Pixels = px(1.0);
 const TRIGGERED_TOP: Pixels = px(5.0);
 const BODY_LINE_GAP: Pixels = px(2.0);
@@ -595,12 +600,12 @@ impl RenderOnce for ChatRowView {
                 viewers,
                 triggered,
             } => {
-                let username = username_el(data.username.clone(), p.random, click);
+                let username = username_el(data.username.clone(), p.danger, click);
                 let count =
-                    pill_badge(p.random, p.shell, false, None, viewers.clone()).into_any_element();
+                    pill_badge(p.danger, p.shell, false, None, viewers.clone()).into_any_element();
                 event_row(
                     data.timestamp.clone(),
-                    p.random,
+                    p.danger,
                     Icon::Flag,
                     username,
                     descriptor.clone(),

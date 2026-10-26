@@ -1,3 +1,6 @@
+use forge_components::FONT_XS;
+use forge_components::Radius;
+use forge_components::radius;
 use forge_components::{BORDER_THIN, ForgePalette, Icon, ToastKind, body_family, icon, tr};
 use forge_types::TriggerInstanceId;
 use gpui::{AnyElement, ClickEvent, Context, Keystroke, Pixels, div, prelude::*, px};
@@ -12,9 +15,9 @@ use forge_components::PushToast;
 
 const ADD_BAR_PAD_H: Pixels = px(12.0);
 
-const ADD_BAR_RADIUS: Pixels = px(9.0);
+const ADD_BAR_RADIUS: Pixels = radius(Radius::Md);
 
-const ADD_BAR_FS: Pixels = px(12.0);
+const ADD_BAR_FS: Pixels = FONT_XS;
 
 const CAPTURE_PAD_V: Pixels = px(11.0);
 const CAPTURE_GAP: Pixels = px(8.0);

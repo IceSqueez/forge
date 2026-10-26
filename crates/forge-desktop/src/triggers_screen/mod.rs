@@ -1,4 +1,8 @@
 use crate::platform_visuals::platform_color;
+use forge_components::FONT_BADGE;
+use forge_components::FONT_META;
+use forge_components::FONT_SM;
+use forge_components::FONT_XS;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Confirm, Density, ForgePalette, InlineEdit, SearchState,
     TextInput, ToastKind, page_frame, tr,
@@ -53,22 +57,20 @@ const COL_ON: Pixels = px(36.0);
 const COL_MENU: Pixels = px(32.0);
 const ROW_DOT: Pixels = px(7.0);
 const KIND_GLYPH: Pixels = px(11.0);
-const NAME_FS: Pixels = px(11.0);
-const KIND_FS: Pixels = px(11.0);
-const USED_FS: Pixels = px(11.0);
-const BADGE_FS: Pixels = px(9.0);
+const NAME_FS: Pixels = FONT_META;
+const KIND_FS: Pixels = FONT_META;
+const USED_FS: Pixels = FONT_META;
+const BADGE_FS: Pixels = FONT_BADGE;
 const FILTER_DIV_W: Pixels = BORDER_THIN;
 const FILTER_DIV_H: Pixels = px(16.0);
-const SEARCH_W: Pixels = px(240.0);
 const USED_CELL_GAP: Pixels = px(10.0);
-const DISABLED_OPACITY: f32 = 0.55;
 const EMPTY_PAD_V: Pixels = px(60.0);
 const EMPTY_PAD_H: Pixels = px(20.0);
 const EMPTY_TILE: Pixels = px(48.0);
 const EMPTY_TILE_RADIUS: Pixels = px(10.0);
 const EMPTY_GLYPH: Pixels = px(22.0);
-const EMPTY_TITLE_FS: Pixels = px(14.0);
-const EMPTY_BODY_FS: Pixels = px(12.0);
+const EMPTY_TITLE_FS: Pixels = FONT_SM;
+const EMPTY_BODY_FS: Pixels = FONT_XS;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Platform {
@@ -155,11 +157,11 @@ impl Platform {
             Platform::Youtube => platform_color(PlatformId::YouTube, palette),
             Platform::Kick => platform_color(PlatformId::Kick, palette),
             Platform::Obs | Platform::Vtube => palette.accent_teal,
-            Platform::Midi => palette.random,
+            Platform::Midi => palette.danger,
             Platform::Hotkey => palette.warning,
             Platform::Donation => palette.success,
             Platform::Timer => palette.warning,
-            Platform::Script => palette.bits,
+            Platform::Script => palette.accent_peach,
             Platform::Core => palette.info,
         }
     }

@@ -7,6 +7,8 @@ use crate::palette::ForgePalette;
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{BORDER_THIN, Radius, radius};
 
+const EDIT_PAD_H: Pixels = px(4.0);
+
 pub enum InlineEditEvent {
     Commit(String),
     Cancel,
@@ -88,7 +90,7 @@ impl Render for InlineEdit {
             .w_full()
             .flex()
             .items_center()
-            .px(px(4.0))
+            .px(EDIT_PAD_H)
             .rounded(radius(Radius::Sm))
             .bg(self.palette.shell)
             .border(BORDER_THIN)

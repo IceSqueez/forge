@@ -1,3 +1,5 @@
+use forge_components::TINT_BORDER_ALPHA;
+use forge_components::TINT_STRONG_FILL_ALPHA;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -38,8 +40,6 @@ const BADGE_RADIUS: Pixels = px(8.0);
 const ROW_GAP: Pixels = px(8.0);
 const LINE_GAP: Pixels = px(3.0);
 const DUE_COL_W: Pixels = px(150.0);
-const BADGE_FILL_ALPHA: f32 = 0.12;
-const BADGE_BORDER_ALPHA: f32 = 0.30;
 
 struct ScheduledRow {
     run: ScheduledRun,
@@ -393,7 +393,7 @@ impl ScheduledRunsView {
                 );
         let cancel = ghost_button_with_icon(Icon::X, tr!("queues_scheduled_cancel"), palette)
             .density(density)
-            .ink(palette.random)
+            .ink(palette.danger)
             .busy(busy)
             .on_click(
                 ("sched-cancel", index),
@@ -480,9 +480,9 @@ impl ScheduledRunsView {
             .py(spacing(Spacing::Xxs, Density::Cozy))
             .px(spacing(Spacing::Xs, Density::Cozy))
             .rounded(BADGE_RADIUS)
-            .bg(with_alpha(ink, BADGE_FILL_ALPHA))
+            .bg(with_alpha(ink, TINT_STRONG_FILL_ALPHA))
             .border(BORDER_THIN)
-            .border_color(with_alpha(ink, BADGE_BORDER_ALPHA))
+            .border_color(with_alpha(ink, TINT_BORDER_ALPHA))
             .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(ink)
@@ -678,7 +678,7 @@ fn tone_ink(tone: OutcomeTone, palette: &ForgePalette) -> Rgba {
         OutcomeTone::Ran => palette.success,
         OutcomeTone::Cancelled => palette.text_faint,
         OutcomeTone::Skipped => palette.warning,
-        OutcomeTone::Failed => palette.random,
+        OutcomeTone::Failed => palette.danger,
     }
 }
 

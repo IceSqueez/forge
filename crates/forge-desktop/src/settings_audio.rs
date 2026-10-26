@@ -259,7 +259,7 @@ impl SettingsAudioView {
             return div()
                 .font_family(body_family())
                 .text_size(FONT_SM)
-                .text_color(palette.random)
+                .text_color(palette.danger)
                 .child(message.clone())
                 .into_any_element();
         }
@@ -369,7 +369,7 @@ impl SettingsAudioView {
         div()
             .font_family(body_family())
             .text_size(FONT_SM)
-            .text_color(palette.random)
+            .text_color(palette.danger)
             .child(tr!(key, error = message))
     }
 }

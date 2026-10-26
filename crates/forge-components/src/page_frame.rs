@@ -1,3 +1,4 @@
+use crate::FONT_LABEL;
 use gpui::{
     AnyElement, App, FontWeight, IntoElement, ParentElement, Pixels, RenderOnce, Rgba,
     SharedString, Styled, Window, div, px,
@@ -9,7 +10,7 @@ use crate::palette::ForgePalette;
 use crate::status::status_dot;
 use crate::tokens::{Density, FONT_XS, Spacing, body_family, spacing};
 
-const HEADER_STAT_FS: Pixels = px(11.5);
+const HEADER_STAT_FS: Pixels = FONT_LABEL;
 
 const HEADER_STATUS_DOT: Pixels = px(7.0);
 

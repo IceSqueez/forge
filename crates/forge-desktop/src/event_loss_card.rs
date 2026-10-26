@@ -14,7 +14,7 @@ const TIER_W: Pixels = px(72.0);
 
 fn row_color(row: &ConsumerLoss, palette: &ForgePalette) -> Rgba {
     if row.loss.priority_dropped > 0 {
-        palette.random
+        palette.danger
     } else {
         palette.text_secondary
     }
@@ -106,7 +106,7 @@ pub fn event_loss_card(
     let header_color = if rows.is_empty() {
         palette.success
     } else if priority_lost {
-        palette.random
+        palette.danger
     } else {
         palette.text_secondary
     };

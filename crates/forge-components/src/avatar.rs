@@ -7,21 +7,23 @@ use crate::palette::ForgePalette;
 use crate::tokens::{FONT_XXS, Radius, body_family, mono_family, radius};
 
 pub fn hash_accent(name: &str, palette: &ForgePalette) -> Rgba {
-    let idx = name
-        .bytes()
-        .fold(0u32, |acc, b| acc.wrapping_add(u32::from(b))) as usize
-        % 8;
-    [
+    let accents = [
         palette.theme_brand,
         palette.success,
         palette.warning,
         palette.info,
-        palette.random,
-        palette.bits,
+        palette.danger,
+        palette.accent_peach,
         palette.accent_pink_light,
         palette.accent_teal,
-    ][idx]
+    ];
+    let hash = name
+        .bytes()
+        .fold(0u32, |acc, b| acc.wrapping_add(u32::from(b))) as usize;
+    accents[hash % accents.len()]
 }
+
+const DEFAULT_TILE_SIZE: Pixels = px(24.0);
 
 #[derive(IntoElement)]
 pub struct AvatarTile {
@@ -43,7 +45,7 @@ pub fn avatar_tile(
         letter: letter.into(),
         bg,
         fg: palette.shell,
-        size: px(24.0),
+        size: DEFAULT_TILE_SIZE,
         corner: radius(Radius::Sm),
         font: FONT_XXS,
         mono: false,

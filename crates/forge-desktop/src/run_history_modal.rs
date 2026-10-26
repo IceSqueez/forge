@@ -1,6 +1,7 @@
 use crate::actions_screen::parse_variable_segments;
 use crate::integration_switch::integration_name;
 use forge_components::ActivePresentation;
+use forge_components::BORDER_THIN;
 use forge_components::highlight::Language;
 use forge_components::{
     Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition, Radius,
@@ -20,6 +21,9 @@ use gpui::{
 use std::collections::HashMap;
 use std::sync::Arc;
 
+const RAIL_ROW_GAP: Pixels = px(2.0);
+const CHIP_PAD_V: Pixels = px(1.0);
+const CHIP_PAD_H: Pixels = px(6.0);
 const MODAL_W: Pixels = px(880.0);
 const BODY_H: Pixels = px(560.0);
 const RAIL_W: Pixels = px(220.0);
@@ -30,8 +34,7 @@ const ROW_DOT: Pixels = px(7.0);
 const STEP_DOT: Pixels = px(5.0);
 const STEP_NEST_INDENT: Pixels = px(14.0);
 const EMPTY_GLYPH: Pixels = px(26.0);
-const CHIP_RADIUS: Pixels = px(6.0);
-const HALF_BORDER: Pixels = px(0.5);
+const CHIP_RADIUS: Pixels = radius(Radius::Sm);
 const RAIL_DISABLED_GLYPH: Pixels = px(10.0);
 
 pub struct RunHistoryDismissed;
@@ -215,10 +218,10 @@ impl RunHistoryModal {
             .h_full()
             .flex()
             .flex_col()
-            .gap(px(2.0))
+            .gap(RAIL_ROW_GAP)
             .pr(spacing(Spacing::Sm, Density::Cozy))
             .overflow_y_scroll()
-            .border_r(HALF_BORDER)
+            .border_r(BORDER_THIN)
             .border_color(palette.border_regular);
         for (index, ctx) in runs.iter().enumerate() {
             rail = rail.child(self.render_rail_entry(index, ctx, index == selected, palette, cx));
@@ -252,7 +255,7 @@ impl RunHistoryModal {
     ) -> AnyElement {
         let dot_color = match &ctx.outcome {
             ExecutionOutcome::Success => palette.success,
-            ExecutionOutcome::Failed(_) => palette.random,
+            ExecutionOutcome::Failed(_) => palette.danger,
             ExecutionOutcome::Cancelled => palette.text_muted,
         };
         let when = fmt_display_relative(Some(ctx.started_at));
@@ -296,7 +299,7 @@ impl RunHistoryModal {
             )
             .children(
                 disabled_integration_of(ctx)
-                    .map(|_| icon(Icon::PlugOff, RAIL_DISABLED_GLYPH, palette.random)),
+                    .map(|_| icon(Icon::PlugOff, RAIL_DISABLED_GLYPH, palette.danger)),
             )
             .child(
                 div()
@@ -330,7 +333,7 @@ impl RunHistoryModal {
                 None,
             ),
             ExecutionOutcome::Failed(message) => (
-                palette.random,
+                palette.danger,
                 tr!("action_editor_run_history_outcome_failed"),
                 Some(message.clone()),
             ),
@@ -350,8 +353,8 @@ impl RunHistoryModal {
             ),
             None => div()
                 .flex_shrink_0()
-                .py(px(1.0))
-                .px(px(6.0))
+                .py(CHIP_PAD_V)
+                .px(CHIP_PAD_H)
                 .rounded(CHIP_RADIUS)
                 .bg(palette.surface_overlay)
                 .font_family(mono_family())
@@ -401,7 +404,7 @@ impl RunHistoryModal {
                     .pl(ROW_DOT + spacing(Spacing::Xs, Density::Cozy))
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
-                    .text_color(palette.random)
+                    .text_color(palette.danger)
                     .child(message),
             );
         }
@@ -413,7 +416,7 @@ impl RunHistoryModal {
                 .pt(spacing(Spacing::Xs, Density::Cozy))
                 .mt(spacing(Spacing::Xs, Density::Cozy))
                 .pl(ROW_DOT + spacing(Spacing::Xs, Density::Cozy))
-                .border_t(HALF_BORDER)
+                .border_t(BORDER_THIN)
                 .border_color(palette.border_regular);
             for (index, step) in ctx.telemetry.iter().enumerate() {
                 steps = steps.child(self.render_telemetry_row(index, step, palette, cx));
@@ -506,12 +509,12 @@ impl RunHistoryModal {
                 None,
             ),
             SubActionOutcome::Failed(_) => (
-                palette.random,
+                palette.danger,
                 tr!("action_editor_run_history_step_failed"),
                 step.outcome.failure_reason(),
             ),
             SubActionOutcome::IntegrationDisabled(_) => (
-                palette.random,
+                palette.danger,
                 tr!("action_editor_run_history_step_failed"),
                 None,
             ),

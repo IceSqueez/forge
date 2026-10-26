@@ -366,7 +366,7 @@ impl SettingsVoiceGateView {
             return div()
                 .font_family(body_family())
                 .text_size(FONT_SM)
-                .text_color(palette.random)
+                .text_color(palette.danger)
                 .child(message.clone())
                 .into_any_element();
         }
@@ -520,7 +520,7 @@ impl SettingsVoiceGateView {
             density,
         );
         if self.hold_invalid {
-            row.hint_color(palette.random)
+            row.hint_color(palette.danger)
         } else {
             row
         }
@@ -550,7 +550,7 @@ impl SettingsVoiceGateView {
             }
             Some(VoiceGateState::Unavailable(message)) => (
                 tr!("settings_voice_gate_state_unavailable", error = message),
-                palette.random,
+                palette.danger,
             ),
         };
         let unavailable = matches!(self.gate_state, Some(VoiceGateState::Unavailable(_)));
@@ -624,7 +624,7 @@ impl Render for SettingsVoiceGateView {
                 div()
                     .font_family(body_family())
                     .text_size(FONT_SM)
-                    .text_color(palette.random)
+                    .text_color(palette.danger)
                     .child(tr!("settings_voice_gate_persist_error", error = message)),
             );
         }

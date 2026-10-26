@@ -1,8 +1,10 @@
+use crate::Elevation;
+use crate::elevation_shadow;
 use gpui::{
-    AnimationExt, App, BoxShadow, ClickEvent, ElementId, InteractiveElement, IntoElement,
-    ParentElement, Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled,
-    Window, div, hsla, point, px,
+    AnimationExt, App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement,
+    Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
+use std::time::Duration;
 
 use crate::icons::{Icon, icon};
 use crate::overlay::enter_animation;
@@ -10,6 +12,7 @@ use crate::palette::ForgePalette;
 use crate::progress_bar::progress_bar;
 use crate::tokens::{BORDER_THIN, Density, FONT_SM, Radius, Spacing, body_family, radius, spacing};
 
+pub const UNDO_TOAST_DURATION: Duration = Duration::from_millis(6000);
 const STRIPE_WIDTH: Pixels = px(2.0);
 const KIND_ICON: Pixels = px(14.0);
 const DISMISS_ICON: Pixels = px(12.0);
@@ -34,7 +37,7 @@ impl ToastKind {
             ToastKind::Info => palette.info,
             ToastKind::Success => palette.success,
             ToastKind::Warn => palette.warning,
-            ToastKind::Error => palette.random,
+            ToastKind::Error => palette.danger,
             ToastKind::Undo => palette.text_muted,
         }
     }
@@ -360,13 +363,7 @@ impl RenderOnce for ToastCard {
             .border(BORDER_THIN)
             .border_color(border)
             .bg(card_bg)
-            .shadow(vec![BoxShadow {
-                color: hsla(0.0, 0.0, 0.0, 0.4),
-                offset: point(px(0.0), px(8.0)),
-                blur_radius: px(24.0),
-                spread_radius: px(0.0),
-                inset: false,
-            }])
+            .shadow(elevation_shadow(Elevation::Toast))
             .child(stripe)
             .child(content)
             .with_animation(anim_id, enter_animation(), |el, delta| el.opacity(delta))

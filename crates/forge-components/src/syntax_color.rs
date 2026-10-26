@@ -9,7 +9,7 @@ pub fn token_color(language: Language, class: TokenClass, palette: &ForgePalette
     let color = match (language, class) {
         (Language::Json, TokenClass::Variable) => palette.info,
         (Language::Json, TokenClass::String) => palette.success,
-        (Language::Json, TokenClass::Number) => palette.bits,
+        (Language::Json, TokenClass::Number) => palette.accent_peach,
         (Language::Json, TokenClass::Keyword) => palette.theme_brand,
         (_, TokenClass::Keyword) => palette.code_keyword,
         (_, TokenClass::Function) => palette.code_fn,

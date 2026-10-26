@@ -1,3 +1,7 @@
+use forge_components::CTA_HOVER_ALPHA;
+use forge_components::FONT_LABEL;
+use forge_components::FONT_META;
+use forge_components::FONT_ROW;
 use std::sync::Arc;
 
 use forge_components::{
@@ -12,12 +16,12 @@ use gpui::{
 
 use crate::async_bridge::{self, ErrorSink};
 
-const BOX_TEXT_SIZE: Pixels = px(12.0);
+const BOX_TEXT_SIZE: Pixels = FONT_XS;
 const BOX_PAD_V: Pixels = px(7.0);
 pub(crate) const BOX_PAD_H: Pixels = px(11.0);
 const BOX_RADIUS: Pixels = px(7.0);
 
-const FIELD_LABEL_SIZE: Pixels = px(11.0);
+const FIELD_LABEL_SIZE: Pixels = FONT_META;
 const FIELD_LABEL_GAP: Pixels = px(6.0);
 const FIELD_GAP: Pixels = px(10.0);
 pub(crate) const FIELD_BLOCK_GAP: Pixels = px(12.0);
@@ -25,12 +29,12 @@ pub(crate) const FIELD_BLOCK_GAP: Pixels = px(12.0);
 const TOGGLE_GLYPH: Pixels = px(14.0);
 const TOGGLE_ROW_PAD_V: Pixels = px(8.0);
 const TOGGLE_ROW_GAP: Pixels = px(10.0);
-const TOGGLE_LABEL_SIZE: Pixels = px(12.5);
-const TOGGLE_HINT_SIZE: Pixels = px(11.0);
+const TOGGLE_LABEL_SIZE: Pixels = FONT_ROW;
+const TOGGLE_HINT_SIZE: Pixels = FONT_META;
 
 const STRIP_MARGIN: Pixels = px(12.0);
 const STRIP_GLYPH: Pixels = px(13.0);
-const STRIP_TITLE_SIZE: Pixels = px(11.5);
+const STRIP_TITLE_SIZE: Pixels = FONT_LABEL;
 
 const BUTTON_ROW_GAP: Pixels = px(8.0);
 const BUTTON_PAD_V: Pixels = px(8.0);
@@ -38,7 +42,6 @@ const GHOST_PAD_H: Pixels = px(14.0);
 const PRIMARY_PAD_H: Pixels = px(16.0);
 const BUTTON_GAP: Pixels = px(5.0);
 const BUTTON_GLYPH: Pixels = px(13.0);
-const PRIMARY_HOVER_ALPHA: f32 = 0.85;
 const BUSY_OPACITY: f32 = 0.6;
 
 const HOST_CELL_GROW: f32 = 16.0;
@@ -413,8 +416,8 @@ impl AttemptStatus {
                 detail: Some((detail.clone(), palette.text_muted)),
             },
             AttemptStatus::Failure { title, detail } => StripContent {
-                accent: palette.random,
-                indicator: strip_icon(Icon::AlertTriangle, palette.random),
+                accent: palette.danger,
+                indicator: strip_icon(Icon::AlertTriangle, palette.danger),
                 title: title.clone(),
                 detail: Some((detail.clone(), palette.text_muted)),
             },
@@ -533,7 +536,7 @@ pub(crate) fn form_buttons<V: 'static>(
         .bg(palette.brand)
         .when(!disabled, |el| {
             el.cursor_pointer()
-                .hover(|s| s.bg(with_alpha(palette.brand, PRIMARY_HOVER_ALPHA)))
+                .hover(|s| s.bg(with_alpha(palette.brand, CTA_HOVER_ALPHA)))
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| on_submit(this, cx)))
         })
         .when(disabled, |el| el.opacity(BUSY_OPACITY))

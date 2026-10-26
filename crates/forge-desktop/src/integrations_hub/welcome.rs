@@ -1,3 +1,8 @@
+use forge_components::FONT_FIELD;
+use forge_components::FONT_LABEL;
+use forge_components::FONT_META;
+use forge_components::FONT_ROW;
+use forge_components::FONT_XL;
 use forge_components::{
     BORDER_THIN, FONT_XS, ForgePalette, Icon, Radius, body_family, icon, mono_family, radius, tr,
 };
@@ -21,8 +26,8 @@ const MARK_SIZE: Pixels = px(52.0);
 const MARK_CORNER: Pixels = px(13.0);
 const MARK_GLYPH: Pixels = px(26.0);
 const MARK_MB: Pixels = px(14.0);
-const TITLE_SIZE: Pixels = px(22.0);
-const LEAD_SIZE: Pixels = px(13.0);
+const TITLE_SIZE: Pixels = FONT_XL;
+const LEAD_SIZE: Pixels = FONT_FIELD;
 const LEAD_MT: Pixels = px(6.0);
 const LEAD_LINE_HEIGHT: f32 = 1.5;
 
@@ -33,12 +38,12 @@ const PROGRESS_PAD_H: Pixels = px(13.0);
 const PROGRESS_CORNER: Pixels = px(9.0);
 const PROGRESS_GAP: Pixels = px(10.0);
 const PROGRESS_ICON: Pixels = px(16.0);
-const PROGRESS_TEXT: Pixels = px(12.5);
-const PROGRESS_COUNT: Pixels = px(11.0);
+const PROGRESS_TEXT: Pixels = FONT_ROW;
+const PROGRESS_COUNT: Pixels = FONT_META;
 
 const BUILT_IN_GAP: Pixels = px(8.0);
 const BUILT_IN_ICON: Pixels = px(13.0);
-const BUILT_IN_TEXT: Pixels = px(11.5);
+const BUILT_IN_TEXT: Pixels = FONT_LABEL;
 const BUILT_IN_MT: Pixels = px(4.0);
 
 const BAR_PAD_V: Pixels = px(12.0);

@@ -1,4 +1,5 @@
 use super::*;
+use forge_components::BORDER_THIN;
 use forge_components::{FONT_SM, FONT_XXS, ForgePalette, Radius, mono_family, radius, tr};
 use forge_types::ExecutionOutcome;
 use gpui::{AnyElement, ClickEvent, Context, Rgba, SharedString, div};
@@ -18,7 +19,7 @@ impl ScreenActionsView {
         };
         let errors = telemetry.errors_7d;
         let error_color = if errors > 0 {
-            palette.random
+            palette.danger
         } else {
             palette.success
         };
@@ -26,7 +27,7 @@ impl ScreenActionsView {
         let (exec_value, exec_color): (SharedString, Rgba) = match &self.last_outcome {
             Some(ExecutionOutcome::Failed(_)) => (
                 tr!("action_editor_run_history_outcome_failed").into(),
-                palette.random,
+                palette.danger,
             ),
             Some(ExecutionOutcome::Cancelled) => ("-".into(), palette.text_muted),
             Some(ExecutionOutcome::Success) | None => ("0".into(), palette.text_primary),
@@ -39,7 +40,7 @@ impl ScreenActionsView {
             .px(CARD_PAD_H)
             .rounded(radius(Radius::Md))
             .bg(palette.base)
-            .border(HALF_BORDER)
+            .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(self.render_stat_cell(
                 tr!("action_stat_last_fired"),

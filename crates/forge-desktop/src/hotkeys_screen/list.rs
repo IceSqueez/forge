@@ -1,3 +1,4 @@
+use forge_components::FONT_MICRO;
 use forge_components::{
     ForgePalette, Icon, SectionLabel, error_row_with_retry, icon, mono_family, pad_tile, tr,
 };
@@ -8,12 +9,12 @@ use super::HotkeysScreenView;
 use super::capture::Capture;
 use crate::actions::SHORTCUTS;
 
-const SECTION_HINT_FS: Pixels = px(10.0);
+const SECTION_HINT_FS: Pixels = FONT_MICRO;
 const LIST_GAP: Pixels = px(6.0);
 
 const ADD_BAR_GLYPH: Pixels = px(13.0);
 
-const KBD_FS: Pixels = px(10.0);
+const KBD_FS: Pixels = FONT_MICRO;
 const KBD_ML: Pixels = px(6.0);
 const KBD_PAD_V: Pixels = px(1.0);
 const KBD_PAD_H: Pixels = px(6.0);

@@ -1,3 +1,4 @@
+use forge_components::TINT_FILL_ALPHA;
 use std::ops::Range;
 use std::sync::{Arc, LazyLock};
 
@@ -1141,11 +1142,11 @@ impl TtsFiltersView {
                     .px(spacing(Spacing::Sm, density))
                     .rounded(radius(Radius::Sm))
                     .border(BORDER_THIN)
-                    .border_color(palette.random)
-                    .bg(with_alpha(palette.random, 0.1))
+                    .border_color(palette.danger)
+                    .bg(with_alpha(palette.danger, TINT_FILL_ALPHA))
                     .font_family(mono_family())
                     .text_size(FONT_XS)
-                    .text_color(palette.random)
+                    .text_color(palette.danger)
                     .child(err.clone()),
             );
         }
@@ -1459,7 +1460,7 @@ impl TtsFiltersView {
         self.stage_frame(
             1,
             Icon::FilterOff,
-            palette.random,
+            palette.danger,
             tr!("tts_filters_stage_skip_title"),
             Some(add),
             body.into_any_element(),
@@ -1822,7 +1823,7 @@ impl AddFilterModal {
         match stage {
             ModalStage::Skip => (
                 Icon::FilterOff,
-                (|p: &ForgePalette| p.random) as fn(&ForgePalette) -> Rgba,
+                (|p: &ForgePalette| p.danger) as fn(&ForgePalette) -> Rgba,
                 tr!("tts_filters_modal_skip_title").into(),
                 tr!("tts_filters_modal_skip_subtitle").into(),
             ),
@@ -1853,7 +1854,7 @@ impl AddFilterModal {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let color = palette.random;
+        let color = palette.danger;
         let mut list = div().flex().flex_col().gap(px(5.0));
         for preset in SKIP_PRESETS {
             let selected = self.skip_preset == preset;
@@ -2425,14 +2426,14 @@ fn preview_stage_card(
                 div()
                     .font_family(body_family())
                     .text_size(FONT_XS)
-                    .text_color(palette.random)
+                    .text_color(palette.danger)
                     .child("\u{d7}"),
             )
             .child(
                 div()
                     .font_family(body_family())
                     .text_size(FONT_XS)
-                    .text_color(palette.random)
+                    .text_color(palette.danger)
                     .child(format!(
                         "{}: {}",
                         tr!("tts_filters_stage_skipped"),
@@ -2463,7 +2464,7 @@ fn final_output_card(
                 tr!("tts_filters_stage_skipped"),
                 skip_reason_label(reason)
             ),
-            palette.random,
+            palette.danger,
         ),
     };
 
@@ -2509,14 +2510,14 @@ fn stage_card_frame(
 
 fn mark_color(tint: MarkTint, palette: &ForgePalette) -> Rgba {
     match tint {
-        MarkTint::Blocklist => palette.random,
+        MarkTint::Blocklist => palette.danger,
         MarkTint::UrlMode => palette.info,
         MarkTint::ReplacementRow(ordinal) => {
             let rotation = [
                 palette.success,
                 palette.warning,
                 palette.brand,
-                palette.bits,
+                palette.accent_peach,
                 palette.accent_pink_light,
                 palette.accent_teal,
             ];

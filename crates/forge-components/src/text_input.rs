@@ -19,6 +19,8 @@ use crate::tokens::{
 };
 
 const KEY_CONTEXT: &str = "ForgeTextInput";
+pub const SEARCH_FIELD_WIDTH: Pixels = px(240.0);
+const COMPACT_LINE_HEIGHT_RATIO: f32 = 1.2;
 
 actions!(
     forge_text_input,
@@ -507,7 +509,7 @@ impl Element for TextElement {
                     len: marked_range.end - marked_range.start,
                     underline: Some(UnderlineStyle {
                         color: Some(run.color),
-                        thickness: px(1.0),
+                        thickness: COMPOSITION_UNDERLINE,
                         wavy: false,
                     }),
                     ..run.clone()
@@ -556,7 +558,7 @@ impl Element for TextElement {
                 Some(fill(
                     Bounds::new(
                         point(origin_x + cursor_x, bounds.top()),
-                        size(px(1.5), bounds.bottom() - bounds.top()),
+                        size(CARET_WIDTH, bounds.bottom() - bounds.top()),
                     ),
                     palette.text_primary,
                 )),
@@ -574,7 +576,7 @@ impl Element for TextElement {
                             bounds.bottom(),
                         ),
                     ),
-                    with_alpha(palette.brand, 0.25),
+                    with_alpha(palette.brand, SELECTION_ALPHA),
                 )),
                 None,
             )
@@ -667,7 +669,7 @@ impl Render for TextInput {
             }
         };
         let border_color = if self.invalid {
-            self.palette.random
+            self.palette.danger
         } else {
             border_color
         };
@@ -723,7 +725,14 @@ impl Render for TextInput {
             .font_family(font_family)
             .text_size(self.font_size)
             .text_color(text_color)
-            .line_height(self.font_size * if self.compact { 1.2 } else { 1.5 });
+            .line_height(
+                self.font_size
+                    * if self.compact {
+                        COMPACT_LINE_HEIGHT_RATIO
+                    } else {
+                        LINE_HEIGHT_RATIO
+                    },
+            );
 
         let content = div()
             .flex_1()

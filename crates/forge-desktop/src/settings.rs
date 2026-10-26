@@ -1,3 +1,6 @@
+use forge_components::FONT_MICRO;
+use forge_components::FONT_ROW;
+use forge_components::FONT_XXL;
 use std::sync::Arc;
 
 use forge_components::{
@@ -43,14 +46,14 @@ pub const PANE_MIN_WIDTH: Pixels = px(360.0);
 const NAV_PAD_V: Pixels = px(12.0);
 const NAV_PAD_H: Pixels = px(8.0);
 const NAV_GROUP_GAP: Pixels = px(10.0);
-const NAV_GROUP_LABEL_FONT: Pixels = px(10.0);
+const NAV_GROUP_LABEL_FONT: Pixels = FONT_MICRO;
 const NAV_GROUP_LABEL_PAD_V: Pixels = px(6.0);
 const NAV_GROUP_LABEL_MB: Pixels = px(4.0);
 const NAV_ROW_PAD_V: Pixels = px(7.0);
 const NAV_ROW_PAD_H: Pixels = px(10.0);
 const NAV_ROW_GAP: Pixels = px(10.0);
 const NAV_ROW_MB: Pixels = px(2.0);
-const NAV_ROW_FONT: Pixels = px(12.5);
+const NAV_ROW_FONT: Pixels = FONT_ROW;
 const NAV_ROW_ICON: Pixels = px(14.0);
 const PANE_PAD_V: Pixels = px(20.0);
 const PANE_PAD_H: Pixels = px(24.0);
@@ -190,22 +193,6 @@ fn density_meta(density: Density) -> (String, String) {
             tr!("settings_appearance_density_spacious"),
             tr!("settings_appearance_density_spacious_hint"),
         ),
-    }
-}
-
-fn density_key(density: Density) -> &'static str {
-    match density {
-        Density::Compact => "compact",
-        Density::Cozy => "cozy",
-        Density::Spacious => "spacious",
-    }
-}
-
-fn theme_key(theme: ThemeId) -> &'static str {
-    match theme {
-        ThemeId::ForgeDefault => "forge",
-        ThemeId::TokyoNight => "tokyo",
-        ThemeId::Latte => "latte",
     }
 }
 
@@ -1017,7 +1004,7 @@ impl SettingsView {
         div()
             .id(SharedString::from(format!(
                 "settings-theme-{}",
-                theme_key(theme)
+                theme.storage_key()
             )))
             .flex_1()
             .min_w(px(0.0))
@@ -1051,7 +1038,7 @@ impl SettingsView {
     ) -> impl IntoElement + use<> {
         let (label, hint) = density_meta(density);
         choice_row(
-            SharedString::from(format!("settings-density-{}", density_key(density))),
+            SharedString::from(format!("settings-density-{}", density.storage_key())),
             label.into(),
             field_hint(hint, palette).into_any_element(),
             active,
@@ -1126,7 +1113,7 @@ impl SettingsView {
                 div()
                     .font_family(body_family())
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(px(24.0))
+                    .text_size(FONT_XXL)
                     .text_color(palette.base)
                     .child("F"),
             );

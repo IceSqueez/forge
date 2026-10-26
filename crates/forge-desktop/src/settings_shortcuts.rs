@@ -1,3 +1,4 @@
+use forge_components::TINT_STRONG_FILL_ALPHA;
 use std::sync::Arc;
 
 use forge_components::{
@@ -25,6 +26,9 @@ const CEILING_MIN_SECS: u64 = 1;
 const CEILING_MAX_SECS: u64 = 3600;
 const CEILING_INPUT_W: Pixels = px(72.0);
 const UNKNOWN_CHORD: &str = "-";
+const CHIP_PAD_H: Pixels = px(8.0);
+const CHIP_PAD_V: Pixels = px(3.0);
+const CAPTURE_BORDER_ALPHA: f32 = 0.5;
 
 struct ShortcutConflict {
     target_id: &'static str,
@@ -362,8 +366,8 @@ impl SettingsShortcutsView {
 
     fn chord_chip(&self, label: impl Into<SharedString>, palette: &ForgePalette) -> AnyElement {
         div()
-            .px(px(8.0))
-            .py(px(3.0))
+            .px(CHIP_PAD_H)
+            .py(CHIP_PAD_V)
             .rounded(radius(Radius::Sm))
             .bg(palette.surface_overlay)
             .font_family(mono_family())
@@ -389,12 +393,12 @@ impl SettingsShortcutsView {
             controls = controls
                 .child(
                     div()
-                        .px(px(8.0))
-                        .py(px(3.0))
+                        .px(CHIP_PAD_H)
+                        .py(CHIP_PAD_V)
                         .rounded(radius(Radius::Sm))
-                        .bg(with_alpha(palette.brand, 0.12))
+                        .bg(with_alpha(palette.brand, TINT_STRONG_FILL_ALPHA))
                         .border(BORDER_THIN)
-                        .border_color(with_alpha(palette.brand, 0.5))
+                        .border_color(with_alpha(palette.brand, CAPTURE_BORDER_ALPHA))
                         .font_family(body_family())
                         .text_size(FONT_XS)
                         .text_color(palette.brand)
@@ -514,7 +518,7 @@ impl SettingsShortcutsView {
             density,
         );
         if self.hold_ceiling_invalid {
-            row = row.hint_color(palette.random);
+            row = row.hint_color(palette.danger);
         }
 
         setting_block(

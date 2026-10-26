@@ -1,3 +1,4 @@
+use forge_components::FONT_MICRO;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, ResizeEdge, ResizeRange,
     body_family, icon, install_resize, mono_family, pulse_dot, radius, status_dot, tr,
@@ -40,7 +41,7 @@ const SECTION_LABEL_PAD_BOTTOM: Pixels = px(6.0);
 const MINI_LABEL_PAD_TOP: Pixels = px(8.0);
 const MINI_LABEL_PAD_BOTTOM: Pixels = px(3.0);
 const INTEGRATIONS_GAP: Pixels = px(8.0);
-const SECTION_BADGE: Pixels = px(10.0);
+const SECTION_BADGE: Pixels = FONT_MICRO;
 
 pub struct NavRequested(pub Screen);
 
@@ -468,7 +469,7 @@ fn nav_status(
 ) -> NavStatus {
     let (color, pulse) = match status {
         CardStatus::Starting | CardStatus::Stopping => (palette.brand, true),
-        CardStatus::Failed(_) => (palette.random, false),
+        CardStatus::Failed(_) => (palette.danger, false),
         CardStatus::Active | CardStatus::Connected => (palette.success, false),
         CardStatus::NotConnected | CardStatus::Disabled => match connection {
             ConnectionAffordance::Connectable => (palette.text_extreme_faint, false),

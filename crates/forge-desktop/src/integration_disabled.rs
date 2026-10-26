@@ -1,3 +1,6 @@
+use forge_components::FONT_MD;
+use forge_components::FONT_META;
+use forge_components::FONT_ROW;
 use std::sync::Arc;
 
 use forge_components::{
@@ -31,7 +34,7 @@ const HERO_PAD_H: Pixels = px(18.0);
 const HERO_MB: Pixels = px(14.0);
 const HERO_GAP: Pixels = px(16.0);
 const HERO_TILE: Pixels = px(48.0);
-const HERO_TITLE: Pixels = px(16.0);
+const HERO_TITLE: Pixels = FONT_MD;
 const HERO_TITLE_MB: Pixels = px(2.0);
 const DISCLAIMER_GAP: Pixels = px(6.0);
 const DISCLAIMER_ICON: Pixels = px(11.0);
@@ -43,14 +46,14 @@ const AFFECTED_WEIGHT: f32 = 1.4;
 const KEPT_WEIGHT: f32 = 1.0;
 const PANEL_HEAD_PAD_V: Pixels = px(10.0);
 const PANEL_HEAD_PAD_H: Pixels = px(14.0);
-const PANEL_TITLE: Pixels = px(12.5);
+const PANEL_TITLE: Pixels = FONT_ROW;
 const PANEL_TITLE_GAP: Pixels = px(7.0);
 const PANEL_TITLE_ICON: Pixels = px(14.0);
 const EMPTY_PAD_V: Pixels = px(18.0);
 const ROWS_PAD_V: Pixels = px(6.0);
 const ROW_PAD_V: Pixels = px(7.0);
 const ROW_GAP: Pixels = px(10.0);
-const ROW_HINT: Pixels = px(11.0);
+const ROW_HINT: Pixels = FONT_META;
 const ROW_CHEVRON: Pixels = px(13.0);
 const KEPT_PAD_TOP: Pixels = px(8.0);
 const KEPT_PAD_BOTTOM: Pixels = px(12.0);

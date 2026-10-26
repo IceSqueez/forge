@@ -1,3 +1,5 @@
+use crate::FONT_MICRO;
+use crate::FONT_SECTION_LABEL;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -22,9 +24,10 @@ const PANEL_GAP: Pixels = px(4.0);
 
 const ITEM_GAP: Pixels = px(9.0);
 const ITEM_RADIUS: Pixels = px(5.0);
+const HEADER_BOTTOM_PAD_RATIO: f32 = 0.5;
 const ITEM_ICON_SIZE: Pixels = px(13.0);
-const SHORTCUT_FONT_SIZE: Pixels = px(10.0);
-const HEADER_FONT_SIZE: Pixels = px(9.5);
+const SHORTCUT_FONT_SIZE: Pixels = FONT_MICRO;
+const HEADER_FONT_SIZE: Pixels = FONT_SECTION_LABEL;
 const DIVIDER_MARGIN: Pixels = px(4.0);
 
 const TRIGGER_SIZE: Pixels = px(20.0);
@@ -233,7 +236,7 @@ impl MenuInk {
     fn render_header(&self, label: SharedString) -> AnyElement {
         div()
             .pt(pad(Spacing::Xs))
-            .pb(pad(Spacing::Xs) * 0.5)
+            .pb(pad(Spacing::Xs) * HEADER_BOTTOM_PAD_RATIO)
             .px(pad(Spacing::Sm))
             .font_family(mono_family())
             .whitespace_nowrap()

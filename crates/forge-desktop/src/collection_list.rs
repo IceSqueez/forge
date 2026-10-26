@@ -12,7 +12,7 @@ use gpui::{
 use crate::collection_text::localized_collection_text;
 use crate::toasts::copy_to_clipboard;
 use forge_components::ActivePresentation;
-use forge_components::{FIELD_FONT, failure_note, failure_with_retry, field_frame};
+use forge_components::{FONT_FIELD, failure_note, failure_with_retry, field_frame};
 
 const LIST_GAP: gpui::Pixels = px(6.0);
 const ROW_GAP: gpui::Pixels = px(10.0);
@@ -190,7 +190,7 @@ impl CollectionList {
                 div()
                     .truncate()
                     .font_family(body_family())
-                    .text_size(FIELD_FONT)
+                    .text_size(FONT_FIELD)
                     .text_color(palette.text_primary)
                     .child(item.title.clone()),
             )
@@ -279,7 +279,7 @@ impl CollectionList {
             ))
             .child(
                 icon_button(Icon::Trash, palette)
-                    .ink(palette.random)
+                    .ink(palette.danger)
                     .on_click(
                         ("collection-row-delete", index),
                         cx.listener(move |this, _: &ClickEvent, _, cx| {
@@ -334,7 +334,7 @@ impl Render for CollectionList {
                         .child(
                             div()
                                 .font_family(body_family())
-                                .text_size(FIELD_FONT)
+                                .text_size(FONT_FIELD)
                                 .text_color(palette.text_muted)
                                 .child(tr!("collection_loading")),
                         ),

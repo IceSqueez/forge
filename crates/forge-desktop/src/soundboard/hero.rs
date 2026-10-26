@@ -1,3 +1,4 @@
+use forge_components::FONT_HERO;
 use std::sync::Arc;
 
 use forge_components::{
@@ -14,7 +15,7 @@ use crate::async_bridge::{self, ErrorSink};
 const HERO_ICON_TILE: Pixels = px(40.0);
 const HERO_ICON_TILE_RADIUS: Pixels = px(10.0);
 const HERO_GLYPH: Pixels = px(20.0);
-const HERO_TITLE_FS: Pixels = px(15.0);
+const HERO_TITLE_FS: Pixels = FONT_HERO;
 const HERO_GAP: Pixels = px(14.0);
 const HEADER_ICON: Pixels = px(13.0);
 
@@ -89,7 +90,7 @@ impl SoundboardView {
                     .justify_center()
                     .rounded(HERO_ICON_TILE_RADIUS)
                     .bg(palette.surface_overlay)
-                    .child(icon(Icon::Music, HERO_GLYPH, palette.bits)),
+                    .child(icon(Icon::Music, HERO_GLYPH, palette.accent_peach)),
             )
             .child(
                 div()

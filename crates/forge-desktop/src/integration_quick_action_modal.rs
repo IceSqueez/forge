@@ -1,3 +1,5 @@
+use forge_components::FONT_META;
+use forge_components::FONT_ROW;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,7 +26,7 @@ use crate::integration_quick_actions::accent_color;
 use crate::option_list_text::{option_failure_message, option_hint_text};
 use forge_components::ActivePresentation;
 use forge_components::{
-    FIELD_FONT, choice_trigger, failure_with_retry, field_column, field_frame, int_entry_invalid,
+    FONT_FIELD, choice_trigger, failure_with_retry, field_column, field_frame, int_entry_invalid,
     int_range_hint, parse_int_in_range, toggle_row,
 };
 
@@ -665,7 +667,7 @@ impl QuickActionModal {
                 .child(
                     div()
                         .font_family(body_family())
-                        .text_size(FIELD_FONT)
+                        .text_size(FONT_FIELD)
                         .text_color(palette.text_muted)
                         .child(tr!("integration_qa_field_loading")),
                 )
@@ -717,7 +719,7 @@ impl Render for QuickActionModal {
             body = body.child(
                 div()
                     .font_family(body_family())
-                    .text_size(px(12.5))
+                    .text_size(FONT_ROW)
                     .text_color(palette.text_muted)
                     .child(tr!(
                         "integration_qa_modal_confirm_body",
@@ -766,7 +768,7 @@ impl Render for QuickActionModal {
             .child(
                 div()
                     .font_family(body_family())
-                    .text_size(px(11.0))
+                    .text_size(FONT_META)
                     .text_color(palette.text_faint)
                     .child(hint),
             )

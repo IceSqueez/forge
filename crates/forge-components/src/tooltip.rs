@@ -1,6 +1,6 @@
 use gpui::{
-    AnyView, App, AppContext, Context, IntoElement, ParentElement, Render, SharedString, Styled,
-    Window, div,
+    AnyView, App, AppContext, Context, Div, IntoElement, ParentElement, Render, SharedString,
+    Styled, Window, div,
 };
 
 use crate::palette::ForgePalette;
@@ -11,6 +11,10 @@ pub fn tooltip_surface(
     palette: &ForgePalette,
     density: Density,
 ) -> impl IntoElement {
+    tooltip_frame(palette, density).child(label.into())
+}
+
+fn tooltip_frame(palette: &ForgePalette, density: Density) -> Div {
     div()
         .py(spacing(Spacing::Xxs, density))
         .px(spacing(Spacing::Sm, density))
@@ -21,7 +25,6 @@ pub fn tooltip_surface(
         .font_family(body_family())
         .text_size(FONT_XS)
         .text_color(palette.text_primary)
-        .child(label.into())
 }
 
 pub struct Tooltip {
@@ -87,19 +90,10 @@ impl TooltipLines {
 
 impl Render for TooltipLines {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        let mut col = div()
+        let mut col = tooltip_frame(&self.palette, self.density)
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, self.density))
-            .py(spacing(Spacing::Xxs, self.density))
-            .px(spacing(Spacing::Sm, self.density))
-            .bg(self.palette.elevated)
-            .border(BORDER_THIN)
-            .border_color(self.palette.border_regular)
-            .rounded(radius(Radius::Sm))
-            .font_family(body_family())
-            .text_size(FONT_XS)
-            .text_color(self.palette.text_primary);
+            .gap(spacing(Spacing::Xxs, self.density));
         for line in &self.lines {
             col = col.child(div().child(line.clone()));
         }

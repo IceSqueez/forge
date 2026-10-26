@@ -1371,6 +1371,7 @@ tts_engines_header_prefix = НАЛАШТОВАНО
 tts_engines_add_engine = Додати рушій
 tts_engines_add_none_left = Усі хмарні рушії налаштовано
 tts_engines_select_hint = Оберіть рушій для налаштування
+tts_header_no_engine_ready = Немає готових рушіїв
 tts_header_engines_ready = Готово рушіїв: { $count }
 tts_engines_rail_sub = { $kind } · { $count ->
     [one] { $count } голос

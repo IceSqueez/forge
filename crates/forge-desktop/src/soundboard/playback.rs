@@ -158,12 +158,12 @@ impl SoundboardView {
             .rounded(radius(Radius::Sm))
             .hover(|s| s.bg(palette.surface_overlay))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.stop_all(cx)))
-            .child(icon(Icon::PlayerStop, STOP_ICON, palette.random))
+            .child(icon(Icon::PlayerStop, STOP_ICON, palette.danger))
             .child(
                 div()
                     .font_family(body_family())
                     .text_size(FONT_XS)
-                    .text_color(palette.random)
+                    .text_color(palette.danger)
                     .child(tr!("soundboard_stop_all")),
             )
             .into_any_element()

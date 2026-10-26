@@ -1,3 +1,8 @@
+use crate::FONT_BADGE;
+use crate::FONT_FIELD;
+use crate::FONT_META;
+use crate::FONT_ROW;
+use crate::FONT_SECTION_LABEL;
 use std::collections::HashSet;
 
 use gpui::{
@@ -14,7 +19,7 @@ use crate::picker::{PICKER_CONTEXT, SelectNext, SelectPrev};
 use crate::status::badge;
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
-    BORDER_ACCENT, DISABLED_OPACITY, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing,
+    BORDER_THIN, DISABLED_OPACITY, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing,
     body_family, mono_family, radius, spacing,
 };
 use crate::tr;
@@ -31,7 +36,7 @@ const GRID_CLOSE_ICON: Pixels = px(15.0);
 const GRID_SEARCH_PAD_T: Pixels = px(11.0);
 const GRID_SEARCH_PAD_B: Pixels = px(9.0);
 const GRID_SEARCH_ICON: Pixels = px(14.0);
-const GRID_SEARCH_FS: Pixels = px(13.0);
+const GRID_SEARCH_FS: Pixels = FONT_FIELD;
 const RAIL_W: Pixels = px(184.0);
 const RAIL_PAD_V: Pixels = px(10.0);
 const RAIL_PAD_H: Pixels = px(10.0);
@@ -43,7 +48,7 @@ const RAIL_LEAD_SLOT: Pixels = px(14.0);
 const RAIL_DOT: Pixels = px(6.0);
 const RAIL_STAR: Pixels = px(12.0);
 const GRID_BODY_PAD_V: Pixels = px(13.0);
-const GRID_GROUP_FS: Pixels = px(9.5);
+const GRID_GROUP_FS: Pixels = FONT_SECTION_LABEL;
 const GRID_GROUP_DOT: Pixels = px(5.0);
 const GRID_CARD_GAP: Pixels = px(8.0);
 const GRID_CARD_PAD_V: Pixels = px(11.0);
@@ -51,14 +56,19 @@ const GRID_CARD_PAD_H: Pixels = px(12.0);
 const GRID_CARD_TILE: Pixels = px(26.0);
 const GRID_CARD_TILE_RADIUS: Pixels = px(7.0);
 const GRID_CARD_ICON: Pixels = px(13.0);
-const GRID_CARD_NAME_FS: Pixels = px(12.5);
+const GRID_CARD_NAME_FS: Pixels = FONT_ROW;
 const GRID_CARD_ROW_MB: Pixels = px(6.0);
-const GRID_META_FS: Pixels = px(11.0);
+const GRID_META_FS: Pixels = FONT_META;
 const GRID_FOOTER_PAD_V: Pixels = px(8.0);
 const GRID_EMPTY_PAD_V: Pixels = px(50.0);
 const GRID_EMPTY_GLYPH: Pixels = px(22.0);
-const GRID_BADGE_FS: Pixels = px(9.0);
+const GRID_BADGE_FS: Pixels = FONT_BADGE;
 const GRID_CARD_DESC_H: Pixels = px(18.0);
+const GRID_LIST_OVERDRAW: Pixels = px(320.0);
+const SUBTITLE_GAP: Pixels = px(4.0);
+const GRID_CLOSE_PAD: Pixels = px(4.0);
+const GRID_HEADER_ROW_PAD_B: Pixels = px(6.0);
+const GRID_STAR_PAD: Pixels = px(2.0);
 
 const GRID_HEADER_ROW_H: Pixels = px(30.0);
 
@@ -80,6 +90,8 @@ pub struct GridPickerItem {
     pub state: GridPickerItemState,
     pub matches: Option<GridItemQuery>,
 }
+
+pub const LEADING_SCOPE: &str = "all";
 
 pub struct GridPickerGroup {
     pub label: SharedString,
@@ -236,7 +248,7 @@ impl GridPicker {
             cursor: 0,
             cursor_visible: false,
             match_total: 0,
-            list_state: ListState::new(0, ListAlignment::Top, px(320.0)),
+            list_state: ListState::new(0, ListAlignment::Top, GRID_LIST_OVERDRAW),
             _search_sub: search_sub,
         };
         picker.rebuild_rows(true);
@@ -442,7 +454,7 @@ impl GridPicker {
     fn scope_entries(&self) -> Vec<(SharedString, String, Rgba)> {
         let mut seen: Vec<(SharedString, String, Rgba)> = Vec::new();
         for g in &self.groups {
-            if g.scope.as_ref() == "all" || seen.iter().any(|(id, _, _)| id == &g.scope) {
+            if g.scope.as_ref() == LEADING_SCOPE || seen.iter().any(|(id, _, _)| id == &g.scope) {
                 continue;
             }
             seen.push((g.scope.clone(), scope_label(&g.label), g.dot_color));
@@ -453,7 +465,7 @@ impl GridPicker {
     fn leading_band_entry(&self) -> Option<(SharedString, String, Rgba)> {
         self.groups
             .iter()
-            .find(|g| g.scope.as_ref() == "all")
+            .find(|g| g.scope.as_ref() == LEADING_SCOPE)
             .map(|g| (g.scope.clone(), scope_label(&g.label), g.dot_color))
     }
 
@@ -481,7 +493,7 @@ impl GridPicker {
             GridPickerSubtitle::Context { lead, name, note } => div()
                 .flex()
                 .items_center()
-                .gap(px(4.0))
+                .gap(SUBTITLE_GAP)
                 .overflow_hidden()
                 .font_family(body_family())
                 .text_size(GRID_META_FS)
@@ -509,7 +521,7 @@ impl GridPicker {
         let close = div()
             .id("forge-grid-close")
             .flex_none()
-            .p(px(4.0))
+            .p(GRID_CLOSE_PAD)
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
             .hover(move |s| s.bg(p.surface_overlay))
@@ -523,7 +535,7 @@ impl GridPicker {
             .gap(GRID_HEADER_GAP)
             .py(GRID_HEADER_PAD_V)
             .px(GRID_BAND_PAD_H)
-            .border_b(BORDER_ACCENT)
+            .border_b(BORDER_THIN)
             .border_color(p.surface_overlay)
             .child(tile)
             .child(titles)
@@ -554,7 +566,7 @@ impl GridPicker {
             .pt(GRID_SEARCH_PAD_T)
             .pb(GRID_SEARCH_PAD_B)
             .px(GRID_BAND_PAD_H)
-            .border_b(BORDER_ACCENT)
+            .border_b(BORDER_THIN)
             .border_color(p.surface_overlay)
             .child(row)
             .into_any_element()
@@ -573,7 +585,7 @@ impl GridPicker {
             .py(RAIL_PAD_V)
             .px(RAIL_PAD_H)
             .overflow_y_scroll()
-            .border_r(BORDER_ACCENT)
+            .border_r(BORDER_THIN)
             .border_color(p.surface_overlay)
             .child(grid_rail_entry(
                 "forge-grid-rail-all",
@@ -763,7 +775,7 @@ impl GridPicker {
             .py(GRID_FOOTER_PAD_V)
             .px(GRID_BAND_PAD_H)
             .bg(p.shell)
-            .border_t(BORDER_ACCENT)
+            .border_t(BORDER_THIN)
             .border_color(p.surface_overlay)
             .child(
                 div()
@@ -800,7 +812,7 @@ impl Render for GridPicker {
             .overflow_hidden()
             .bg(p.elevated)
             .rounded(radius(Radius::Lg))
-            .border(BORDER_ACCENT)
+            .border(BORDER_THIN)
             .border_color(p.border_regular)
             .child(self.render_header(accent, cx))
             .child(self.render_search(cx))
@@ -848,7 +860,7 @@ fn render_header_row(
         .w_full()
         .flex()
         .items_end()
-        .pb(px(6.0))
+        .pb(GRID_HEADER_ROW_PAD_B)
         .child(inner)
         .into_any_element()
 }
@@ -927,7 +939,7 @@ fn render_card_el(
         .flex()
         .items_center()
         .justify_center()
-        .p(px(2.0))
+        .p(GRID_STAR_PAD)
         .on_mouse_down(MouseButton::Left, |_: &MouseDownEvent, _, cx| {
             cx.stop_propagation()
         })
@@ -991,17 +1003,21 @@ fn render_card_el(
         .py(GRID_CARD_PAD_V)
         .px(GRID_CARD_PAD_H)
         .rounded(radius(Radius::Md))
-        .border(BORDER_ACCENT)
+        .border(BORDER_THIN)
         .border_color(edge)
         .bg(p.shell)
         .child(top)
         .child(desc);
 
     if matches!(card.state, GridPickerItemState::Added) {
-        return base.opacity(0.5).into_any_element();
+        return base.opacity(DISABLED_OPACITY).into_any_element();
     }
 
-    let base = if dim { base.opacity(0.5) } else { base };
+    let base = if dim {
+        base.opacity(DISABLED_OPACITY)
+    } else {
+        base
+    };
     base.id(card.id.clone())
         .cursor_pointer()
         .hover(move |s| s.border_color(accent))

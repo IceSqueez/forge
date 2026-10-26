@@ -151,7 +151,7 @@ impl IntegrationFailedView {
                     .child(div().mt(REASON_ICON_MT).child(icon(
                         Icon::AlertCircle,
                         REASON_ICON,
-                        palette.random,
+                        palette.danger,
                     )))
                     .child(
                         div()
@@ -160,7 +160,7 @@ impl IntegrationFailedView {
                             .font_family(mono_family())
                             .text_size(FONT_XS)
                             .line_height(relative(REASON_LINE_HEIGHT))
-                            .text_color(palette.random)
+                            .text_color(palette.danger)
                             .child(reason),
                     ),
             )

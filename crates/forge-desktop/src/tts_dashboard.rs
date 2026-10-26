@@ -1,3 +1,11 @@
+use forge_components::FONT_BADGE;
+use forge_components::FONT_FIELD;
+use forge_components::FONT_LABEL;
+use forge_components::FONT_META;
+use forge_components::FONT_MICRO;
+use forge_components::FONT_ROW;
+use forge_components::FONT_SECTION_LABEL;
+use forge_components::FONT_XS;
 use forge_components::{
     BORDER_THIN, ChipGlyph, ConfirmTone, DRAG_SOURCE_OPACITY, Density, FONT_SM, FONT_XXS,
     ForgePalette, Icon, InputEvent, OverlayPosition, Radius, ResizeEdge, ResizeRange, Spacing,
@@ -55,28 +63,28 @@ const NOW_TILE_RADIUS: Pixels = px(8.0);
 const NOW_TILE_GLYPH: Pixels = px(16.0);
 const NOW_NAME_GAP: Pixels = px(6.0);
 const NOW_NAME_MB: Pixels = px(2.0);
-const NOW_NAME_FONT: Pixels = px(12.5);
-const NOW_PILL_FONT: Pixels = px(9.5);
-const NOW_MSG_FONT: Pixels = px(12.0);
+const NOW_NAME_FONT: Pixels = FONT_ROW;
+const NOW_PILL_FONT: Pixels = FONT_SECTION_LABEL;
+const NOW_MSG_FONT: Pixels = FONT_XS;
 const NOW_MSG_LINE_HEIGHT: f32 = 1.45;
 const PROGRESS_GAP: Pixels = px(8.0);
 const PROGRESS_MT: Pixels = px(7.0);
-const PROGRESS_FONT: Pixels = px(10.0);
+const PROGRESS_FONT: Pixels = FONT_MICRO;
 const PROGRESS_BAR_H: Pixels = px(3.0);
 const PROGRESS_BAR_RADIUS: Pixels = px(2.0);
 
 const QUEUE_LABEL_GAP: Pixels = px(6.0);
 const QUEUE_ROW_PAD_V: Pixels = px(9.0);
 const QUEUE_ROW_PAD_H: Pixels = px(14.0);
-const QUEUE_BITS_FONT: Pixels = px(9.0);
+const QUEUE_BITS_FONT: Pixels = FONT_BADGE;
 const QUEUE_ROW_GAP: Pixels = px(10.0);
-const QUEUE_INDEX_FONT: Pixels = px(11.0);
+const QUEUE_INDEX_FONT: Pixels = FONT_META;
 const QUEUE_GRIP_GLYPH: Pixels = px(13.0);
 const QUEUE_NAME_GAP: Pixels = px(6.0);
-const QUEUE_NAME_FONT: Pixels = px(12.0);
-const QUEUE_PREVIEW_FONT: Pixels = px(10.0);
-const QUEUE_MSG_FONT: Pixels = px(11.0);
-const QUEUE_DUR_FONT: Pixels = px(10.0);
+const QUEUE_NAME_FONT: Pixels = FONT_XS;
+const QUEUE_PREVIEW_FONT: Pixels = FONT_MICRO;
+const QUEUE_MSG_FONT: Pixels = FONT_META;
+const QUEUE_DUR_FONT: Pixels = FONT_MICRO;
 const QUEUE_ACTION_GLYPH: Pixels = px(13.0);
 const QUEUE_DROP_TINT_ALPHA: f32 = 0.06;
 const QUEUE_GHOST_MAX_W: Pixels = px(280.0);
@@ -88,26 +96,26 @@ const GHOST_BTN_PAD_H: Pixels = px(11.0);
 const BTN_GAP: Pixels = px(5.0);
 const STRIP_GAP: Pixels = px(8.0);
 const VOL_GAP: Pixels = px(7.0);
-const VOL_PCT_FONT: Pixels = px(11.0);
+const VOL_PCT_FONT: Pixels = FONT_META;
 const VOL_PCT_W: Pixels = px(32.0);
 const TEST_PAD_V: Pixels = px(4.0);
 const TEST_PAD_H: Pixels = px(10.0);
 const TEST_GAP: Pixels = px(6.0);
 const TEST_ICON: Pixels = px(12.0);
-const TEST_FONT: Pixels = px(11.5);
-const BTN_FONT: Pixels = px(12.0);
-const COUNT_BADGE_FONT: Pixels = px(10.0);
+const TEST_FONT: Pixels = FONT_LABEL;
+const BTN_FONT: Pixels = FONT_XS;
+const COUNT_BADGE_FONT: Pixels = FONT_MICRO;
 const RAIL_PAD_Y: Pixels = px(18.0);
 const RAIL_PAD_X: Pixels = px(14.0);
 const STAT_CARD_PAD_V: Pixels = px(2.0);
 const STAT_CARD_PAD_H: Pixels = px(11.0);
 const STAT_PAD_V: Pixels = px(6.0);
-const STAT_LABEL_FONT: Pixels = px(11.5);
-const STAT_VALUE_FONT: Pixels = px(13.0);
+const STAT_LABEL_FONT: Pixels = FONT_LABEL;
+const STAT_VALUE_FONT: Pixels = FONT_FIELD;
 const ENGINE_PAD_V: Pixels = px(9.0);
 const ENGINE_PAD_H: Pixels = px(11.0);
-const ENGINE_NAME_FONT: Pixels = px(11.5);
-const ENGINE_META_FONT: Pixels = px(10.0);
+const ENGINE_NAME_FONT: Pixels = FONT_LABEL;
+const ENGINE_META_FONT: Pixels = FONT_MICRO;
 const ENGINE_NAME_MB: Pixels = px(3.0);
 const ENGINE_CARD_MB: Pixels = px(6.0);
 
@@ -353,7 +361,7 @@ impl TtsDashboardView {
                 palette.success,
             )
         } else {
-            (tr!("tts_dash_pause_btn"), Icon::PlayerPause, palette.random)
+            (tr!("tts_dash_pause_btn"), Icon::PlayerPause, palette.danger)
         };
         let pause_btn = div()
             .id("tts-pause")
@@ -388,8 +396,8 @@ impl TtsDashboardView {
         let stop_btn = self.ghost_strip_button(
             "tts-stop",
             Icon::PlayerStop,
-            palette.random,
-            palette.random,
+            palette.danger,
+            palette.danger,
             tr!("tts_dash_stop_all_btn"),
             palette,
             cx.listener(|this, _: &ClickEvent, _, cx| this.arm_stop_all(cx)),
@@ -567,7 +575,7 @@ impl TtsDashboardView {
             .child(stat_row(
                 tr!("tts_dash_stat_filtered"),
                 stats.filtered.to_string(),
-                palette.random,
+                palette.danger,
                 palette,
                 true,
             ))

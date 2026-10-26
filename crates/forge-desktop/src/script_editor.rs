@@ -1,3 +1,7 @@
+use forge_components::FONT_BADGE;
+use forge_components::FONT_FIELD;
+use forge_components::FONT_SECTION_LABEL;
+use forge_components::HOVER_FILL_ALPHA;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
@@ -63,7 +67,6 @@ const DETAILS_PANE_PAD: Pixels = px(14.0);
 const GLYPH_PIN: Pixels = px(12.0);
 const GLYPH_RETURNS: Pixels = px(11.0);
 
-const DIVIDER_W: Pixels = px(0.5);
 const DIVIDER_H: Pixels = px(16.0);
 
 const FILE_BAR_DIRTY_DOT: Pixels = px(5.0);
@@ -338,7 +341,7 @@ impl LogTag {
             LogTag::Stats => palette.theme_brand,
             LogTag::Log => palette.text_secondary,
             LogTag::Warn => palette.warning,
-            LogTag::Err => palette.random,
+            LogTag::Err => palette.danger,
         }
     }
 }
@@ -1984,7 +1987,7 @@ impl ScriptEditorView {
                     .child(
                         div()
                             .font_family(mono_family())
-                            .text_size(px(9.5))
+                            .text_size(FONT_SECTION_LABEL)
                             .text_color(palette.brand)
                             .child(linked.name.clone()),
                     ),
@@ -2049,7 +2052,7 @@ impl ScriptEditorView {
             .rounded(radius(Radius::Sm))
             .bg(palette.success)
             .cursor_pointer()
-            .hover(|s| s.bg(with_alpha(palette.success, 0.92)))
+            .hover(|s| s.bg(with_alpha(palette.success, HOVER_FILL_ALPHA)))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.run(cx)))
             .child(icon(Icon::PlayerPlay, GLYPH_RUN, palette.shell))
             .child(
@@ -2120,7 +2123,7 @@ impl ScriptEditorView {
             });
 
         let divider = div()
-            .w(DIVIDER_W)
+            .w(BORDER_THIN)
             .h(DIVIDER_H)
             .mx(spacing(Spacing::Xs, density))
             .bg(palette.surface_overlay);
@@ -2254,7 +2257,7 @@ impl ScriptEditorView {
                 div()
                     .font_family(body_family())
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(px(13.0))
+                    .text_size(FONT_FIELD)
                     .text_color(palette.text_primary)
                     .child(tr!("nav_script_editor")),
             )
@@ -2332,13 +2335,13 @@ impl ScriptEditorView {
                     .mb(spacing(Spacing::Sm, density))
                     .child(self.group_header(
                         Icon::FileCode,
-                        palette.bits,
+                        palette.accent_peach,
                         tr!("script_editor_group_standalone"),
                         standalone.len(),
                         palette,
                     ));
                 for entry in &standalone {
-                    group = group.child(self.file_row(entry, palette.bits, palette, cx));
+                    group = group.child(self.file_row(entry, palette.accent_peach, palette, cx));
                 }
                 scripts = scripts.child(group);
             }
@@ -2863,7 +2866,7 @@ impl ScriptEditorView {
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
             )
             .icon(Icon::Eraser)
-            .color(palette.random)
+            .color(palette.danger)
             .into(),
         ];
 
@@ -2985,7 +2988,7 @@ impl ScriptEditorView {
                     .pt(spacing(Spacing::Xxs, Density::Cozy))
                     .font_family(body_family())
                     .text_size(FONT_XXS)
-                    .text_color(palette.random)
+                    .text_color(palette.danger)
                     .child(error.clone()),
             );
         }
@@ -3316,7 +3319,10 @@ impl ScriptEditorView {
         let linked = self.find_entry(open.id).and_then(|e| e.linked.as_ref());
         let (type_label, type_color): (SharedString, Rgba) = match linked {
             Some(_) => (tr!("script_editor_type_action").into(), palette.theme_brand),
-            None => (tr!("script_editor_type_standalone").into(), palette.bits),
+            None => (
+                tr!("script_editor_type_standalone").into(),
+                palette.accent_peach,
+            ),
         };
 
         let mut inner = div()
@@ -3455,7 +3461,7 @@ impl Render for RunModal {
                 div()
                     .font_family(body_family())
                     .text_size(FONT_XS)
-                    .text_color(palette.random)
+                    .text_color(palette.danger)
                     .child(err.clone()),
             );
         }
@@ -3684,7 +3690,7 @@ fn mini_stat(
         .child(
             div()
                 .font_family(mono_family())
-                .text_size(px(9.0))
+                .text_size(FONT_BADGE)
                 .text_color(palette.text_faint)
                 .pb(px(3.0))
                 .child(label.into()),

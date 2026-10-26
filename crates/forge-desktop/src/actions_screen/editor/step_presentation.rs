@@ -205,7 +205,7 @@ pub(in crate::actions_screen) fn sub_category_color(
         SubActionCategory::Chat | SubActionCategory::Twitch => palette.theme_brand,
         SubActionCategory::Tts | SubActionCategory::Audio => palette.success,
         SubActionCategory::Globals => palette.warning,
-        SubActionCategory::Files => palette.random,
+        SubActionCategory::Files => palette.danger,
         SubActionCategory::YouTube => platform_color(PlatformId::YouTube, palette),
         SubActionCategory::Kick => platform_color(PlatformId::Kick, palette),
         SubActionCategory::Obs => palette.text_secondary,
@@ -214,7 +214,7 @@ pub(in crate::actions_screen) fn sub_category_color(
         | SubActionCategory::Http
         | SubActionCategory::Server
         | SubActionCategory::Overlay => palette.info,
-        SubActionCategory::Midi | SubActionCategory::Moderation => palette.random,
+        SubActionCategory::Midi | SubActionCategory::Moderation => palette.danger,
         SubActionCategory::ChannelPoints => palette.accent_pink_light,
         SubActionCategory::Hotkey
         | SubActionCategory::PollsPredictions
@@ -233,7 +233,7 @@ pub(in crate::actions_screen) fn step_glyph(
 ) -> (Icon, Rgba) {
     let (name, color) = match kind_id {
         "core.file.read" => ("file-text", palette.info),
-        "core.random.int" => ("dice", palette.random),
+        "core.random.int" => ("dice", palette.danger),
         "script.run.named" => ("code", palette.success),
         "core.globals.increment" | "core.globals.set" => ("variable", palette.warning),
         "twitch.chat.send_message" => ("send", palette.theme_brand),

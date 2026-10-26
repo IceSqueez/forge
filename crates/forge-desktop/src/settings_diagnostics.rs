@@ -361,7 +361,7 @@ impl SettingsDiagnosticsView {
                     palette,
                 )
                 .density(density)
-                .ink(palette.random)
+                .ink(palette.danger)
                 .busy(self.clearing)
                 .on_click(
                     "settings-diagnostics-clear",
@@ -663,7 +663,7 @@ fn log_row(line: &LogLine, palette: &ForgePalette, density: Density) -> impl Int
 
 fn level_color(level: Level, palette: &ForgePalette) -> Rgba {
     if level == Level::ERROR {
-        palette.random
+        palette.danger
     } else if level == Level::WARN {
         palette.warning
     } else if level == Level::INFO {

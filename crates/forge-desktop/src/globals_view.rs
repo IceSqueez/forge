@@ -1,6 +1,9 @@
+use forge_components::NAME_FIELD_LIMIT;
+use forge_components::TINT_BORDER_ALPHA;
+use forge_components::TINT_FILL_ALPHA;
+use forge_components::UNDO_TOAST_DURATION;
 use std::future::Future;
 use std::sync::Arc;
-use std::time::Duration;
 
 use forge_components::chip::ChipGlyph;
 use forge_components::confirm::ConfirmTone;
@@ -41,7 +44,6 @@ const EDITOR_KINDS: [VariantKind; 7] = [
     VariantKind::Object,
 ];
 
-const NAME_LIMIT: usize = 64;
 const VALUE_AREA_ROWS: std::ops::RangeInclusive<usize> = 3..=12;
 
 const ROW_DOT: gpui::Pixels = px(6.0);
@@ -563,7 +565,7 @@ impl GlobalsView {
                     );
                 },
             )),
-            Duration::from_millis(6000),
+            UNDO_TOAST_DURATION,
         );
     }
 
@@ -1019,7 +1021,7 @@ impl GlobalsView {
                 (gpui::ElementId::from("globals-delete"), name.clone()),
                 Icon::X,
                 palette.text_secondary,
-                palette.random,
+                palette.danger,
                 cx.listener(move |this, _: &ClickEvent, _, cx| {
                     this.request_delete(delete_name.clone(), cx)
                 }),
@@ -1163,7 +1165,7 @@ impl GlobalsView {
                 },
             )
             .icon(Icon::X)
-            .color(palette.random)
+            .color(palette.danger)
             .into(),
         ];
 
@@ -1278,7 +1280,7 @@ impl Render for GlobalEditor {
             .content()
             .chars()
             .count()
-            .min(NAME_LIMIT);
+            .min(NAME_FIELD_LIMIT);
         let name_row = div()
             .flex()
             .items_center()
@@ -1289,7 +1291,7 @@ impl Render for GlobalEditor {
                     .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
-                    .child(format!("{name_len}/{NAME_LIMIT}")),
+                    .child(format!("{name_len}/{NAME_FIELD_LIMIT}")),
             );
         let name_section = section(palette, tr!("globals_editor_section_name"), name_row);
 
@@ -1382,10 +1384,10 @@ impl Render for GlobalEditor {
                     .gap(spacing(Spacing::Xs, Density::Cozy))
                     .p(spacing(Spacing::Xs, Density::Cozy))
                     .rounded(radius(Radius::Sm))
-                    .bg(with_alpha(palette.random, 0.10))
+                    .bg(with_alpha(palette.danger, TINT_FILL_ALPHA))
                     .border(BORDER_THIN)
-                    .border_color(with_alpha(palette.random, 0.30))
-                    .child(icon(Icon::AlertTriangle, FONT_XS, palette.random))
+                    .border_color(with_alpha(palette.danger, TINT_BORDER_ALPHA))
+                    .child(icon(Icon::AlertTriangle, FONT_XS, palette.danger))
                     .child(
                         div()
                             .font_family(body_family())
@@ -1451,7 +1453,7 @@ impl GlobalEditor {
                 let (label, hue) = if ed.bool_value {
                     ("true", palette.success)
                 } else {
-                    ("false", palette.random)
+                    ("false", palette.danger)
                 };
                 div()
                     .flex()

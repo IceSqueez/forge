@@ -1,3 +1,10 @@
+use forge_components::FONT_FIELD;
+use forge_components::FONT_LABEL;
+use forge_components::FONT_META;
+use forge_components::ROW_HOVER_WASH_ALPHA;
+use forge_components::SEARCH_FIELD_WIDTH;
+use forge_components::TINT_BORDER_ALPHA;
+use forge_components::TINT_STRONG_FILL_ALPHA;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -31,22 +38,23 @@ use forge_components::PushToast;
 
 const BADGE_RADIUS: Pixels = px(8.0);
 const PILL_RADIUS: Pixels = px(5.0);
+const CONCURRENCY_BOX_RADIUS: Pixels = px(7.0);
+const CONCURRENCY_VALUE_W: Pixels = px(28.0);
 const BADGE_GLYPH: Pixels = px(9.0);
 const PANEL_GLYPH: Pixels = px(12.0);
 const CARDS_PER_ROW: usize = 2;
-const STATS_FS: Pixels = px(11.5);
+const STATS_FS: Pixels = FONT_LABEL;
 const CARD_PAD: Pixels = px(14.0);
 const SECTION_GAP: Pixels = px(10.0);
 const HEADER_GAP: Pixels = px(12.0);
 const BAR_GAP: Pixels = px(8.0);
-const STAT_VALUE_FS: Pixels = px(13.0);
-const DESC_FS: Pixels = px(11.0);
+const STAT_VALUE_FS: Pixels = FONT_FIELD;
+const DESC_FS: Pixels = FONT_META;
 const MAX_PILLS: usize = 3;
 const SERIAL_CONCURRENCY: u32 = 1;
 const PARALLEL_CONCURRENCY: u32 = 8;
 const MIN_CONCURRENCY: u32 = 1;
 const MAX_CONCURRENCY: u32 = 16;
-const SEARCH_W: Pixels = px(240.0);
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 enum QueueFilter {
@@ -93,7 +101,7 @@ impl QueueFilter {
             QueueFilter::Running => palette.success,
             QueueFilter::Paused => palette.warning,
             QueueFilter::Parallel => palette.info,
-            QueueFilter::Sequential => palette.bits,
+            QueueFilter::Sequential => palette.accent_peach,
         }
     }
 }
@@ -138,7 +146,7 @@ fn mode_ink(mode: QueueMode, palette: &ForgePalette) -> Rgba {
     match (mode.processing, mode.intake) {
         (QueueProcessing::Running, QueueIntake::Accept) => palette.success,
         (QueueProcessing::Running, QueueIntake::Skip) => palette.info,
-        (QueueProcessing::Frozen, QueueIntake::Accept) => palette.bits,
+        (QueueProcessing::Frozen, QueueIntake::Accept) => palette.accent_peach,
         (QueueProcessing::Frozen, QueueIntake::Skip) => palette.warning,
     }
 }
@@ -364,7 +372,7 @@ impl Render for EditQueueModal {
             .gap(px(4.0))
             .py(px(10.0))
             .px(px(12.0))
-            .rounded(px(7.0))
+            .rounded(CONCURRENCY_BOX_RADIUS)
             .border(BORDER_THIN)
             .border_color(palette.border_input)
             .bg(palette.shell)
@@ -392,7 +400,7 @@ impl Render for EditQueueModal {
                     )
                     .child(
                         div()
-                            .w(px(28.0))
+                            .w(CONCURRENCY_VALUE_W)
                             .flex()
                             .justify_end()
                             .font_family(mono_family())
@@ -469,7 +477,7 @@ impl Render for EditQueueModal {
             .child(buttons);
 
         let card = modal(title, body, &palette)
-            .header_icon(Icon::Stack2, palette.bits)
+            .header_icon(Icon::Stack2, palette.accent_peach)
             .subtitle(tr!("queues_create_subtitle"))
             .size(ModalSize::Md)
             .footer(footer)
@@ -1107,7 +1115,7 @@ impl QueuesView {
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
                 )
                 .icon(Icon::Trash)
-                .color(palette.random)
+                .color(palette.danger)
                 .disabled(is_default)
                 .into(),
             ])
@@ -1397,7 +1405,11 @@ impl QueuesView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .child(div().w(SEARCH_W).child(self.search.field().clone()))
+            .child(
+                div()
+                    .w(SEARCH_FIELD_WIDTH)
+                    .child(self.search.field().clone()),
+            )
             .child(chips)
     }
 
@@ -1675,7 +1687,7 @@ fn status_strip(
 
     match tint {
         Some(ink) => strip
-            .bg(with_alpha(ink, 0.06))
+            .bg(with_alpha(ink, ROW_HOVER_WASH_ALPHA))
             .border(BORDER_THIN)
             .border_color(with_alpha(ink, 0.20)),
         None => strip.bg(palette.shell),
@@ -1691,15 +1703,15 @@ fn overflow_badge(overflowed: u64, palette: &ForgePalette) -> AnyElement {
         .py(spacing(Spacing::Xxs, Density::Cozy))
         .px(spacing(Spacing::Xs, Density::Cozy))
         .rounded(BADGE_RADIUS)
-        .bg(with_alpha(palette.random, 0.12))
+        .bg(with_alpha(palette.danger, TINT_STRONG_FILL_ALPHA))
         .border(BORDER_THIN)
-        .border_color(with_alpha(palette.random, 0.30))
-        .child(icon(Icon::AlertTriangle, BADGE_GLYPH, palette.random))
+        .border_color(with_alpha(palette.danger, TINT_BORDER_ALPHA))
+        .child(icon(Icon::AlertTriangle, BADGE_GLYPH, palette.danger))
         .child(
             div()
                 .font_family(mono_family())
                 .text_size(FONT_XXS)
-                .text_color(palette.random)
+                .text_color(palette.danger)
                 .child(SharedString::from(tr!(
                     "queues_overflow_badge",
                     count = overflowed as i64,
@@ -1948,9 +1960,9 @@ fn not_live_badge(
         .py(spacing(Spacing::Xxs, Density::Cozy))
         .px(spacing(Spacing::Xs, Density::Cozy))
         .rounded(BADGE_RADIUS)
-        .bg(with_alpha(palette.warning, 0.12))
+        .bg(with_alpha(palette.warning, TINT_STRONG_FILL_ALPHA))
         .border(BORDER_THIN)
-        .border_color(with_alpha(palette.warning, 0.30))
+        .border_color(with_alpha(palette.warning, TINT_BORDER_ALPHA))
         .child(icon(Icon::AlertTriangle, BADGE_GLYPH, palette.warning))
         .child(
             div()

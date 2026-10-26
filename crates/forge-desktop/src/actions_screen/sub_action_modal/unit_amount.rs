@@ -1,6 +1,7 @@
 use super::field::SubFormField;
 use super::*;
 use crate::amount_scale::{AmountScale, AmountSeed};
+use crate::config_form::INTEGER_PLACEHOLDER;
 use forge_components::InputEvent;
 use forge_components::int_entry_invalid;
 use forge_types::SubActionConfig;
@@ -81,7 +82,7 @@ pub(super) fn build_unit_amount_field(
     let range = scale.range_for(&unit);
     let invalid_seed = int_entry_invalid(&seed, *range.start(), *range.end(), false);
     let input = cx.new(|cx| {
-        let mut input = TextInput::new("0", cx).with_palette(palette);
+        let mut input = TextInput::new(INTEGER_PLACEHOLDER, cx).with_palette(palette);
         if !seed.is_empty() {
             input.set_content(seed, cx);
         }

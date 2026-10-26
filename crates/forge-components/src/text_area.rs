@@ -194,7 +194,7 @@ impl TextArea {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let line_height = self.font_size * 1.5;
+        let line_height = self.font_size * LINE_HEIGHT_RATIO;
         let delta = event.delta.pixel_delta(line_height).y;
         if delta == px(0.0) {
             return;
@@ -338,7 +338,7 @@ fn build_runs(
         apply_range(&mut runs, marked.start, marked.end, |run| {
             run.underline = Some(UnderlineStyle {
                 color: Some(run.color),
-                thickness: px(1.0),
+                thickness: COMPOSITION_UNDERLINE,
                 wavy: false,
             });
         });
@@ -428,7 +428,7 @@ impl Element for AreaElement {
             base_color,
             style.font(),
             &selection,
-            with_alpha(palette.brand, 0.25).into(),
+            with_alpha(palette.brand, SELECTION_ALPHA).into(),
             marked_range.as_ref(),
         );
 
@@ -497,7 +497,7 @@ impl Element for AreaElement {
                         bounds.left() + caret.x,
                         bounds.top() + caret.y - scroll_offset,
                     ),
-                    size(px(1.5), line_height),
+                    size(CARET_WIDTH, line_height),
                 ),
                 palette.text_primary,
             )
@@ -592,7 +592,7 @@ impl Render for TextArea {
             self.palette.border_input
         };
         let border_color = if self.invalid {
-            self.palette.random
+            self.palette.danger
         } else {
             border_color
         };
@@ -615,7 +615,7 @@ impl Render for TextArea {
             .font_family(self.font_family.clone())
             .text_size(self.font_size)
             .text_color(self.palette.text_primary)
-            .line_height(self.font_size * 1.5)
+            .line_height(self.font_size * LINE_HEIGHT_RATIO)
             .h(self.height)
             .px(spacing(Spacing::Sm, self.density))
             .py(spacing(Spacing::Xs, self.density))

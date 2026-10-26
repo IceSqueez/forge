@@ -975,7 +975,7 @@ impl BackupScheduleView {
             density,
         );
         if line.is_failure() {
-            row.hint_color(palette.random)
+            row.hint_color(palette.danger)
         } else {
             row
         }
@@ -1022,7 +1022,7 @@ impl BackupScheduleView {
             density,
         );
         Some(if field.invalid {
-            row.hint_color(palette.random)
+            row.hint_color(palette.danger)
         } else {
             row
         })

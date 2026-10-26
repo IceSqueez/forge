@@ -1,3 +1,4 @@
+use crate::FONT_ROW;
 use gpui::{
     AnyElement, App, ClickEvent, Div, ElementId, FontWeight, InteractiveElement, IntoElement,
     ParentElement, Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled,
@@ -629,11 +630,11 @@ const PAD_TILE_PAD_Y: Pixels = px(12.0);
 const PAD_TILE_PAD_X: Pixels = px(13.0);
 const PAD_TILE_ICON_SIZE: Pixels = px(30.0);
 const PAD_TILE_ICON_RADIUS: Pixels = px(8.0);
-const PAD_TILE_TITLE_FS: Pixels = px(12.5);
+const PAD_TILE_TITLE_FS: Pixels = FONT_ROW;
 const PAD_TILE_PROGRESS_H: Pixels = px(2.0);
 const PAD_TILE_PROGRESS_RADIUS: Pixels = px(2.0);
 const PAD_TILE_PROGRESS_INSET: Pixels = px(5.0);
-const PAD_BAR_RADIUS: Pixels = px(9.0);
+const PAD_BAR_RADIUS: Pixels = radius(Radius::Md);
 const PAD_BAR_PAD_Y: Pixels = px(9.0);
 const PAD_BAR_PAD_X: Pixels = px(12.0);
 const PAD_BAR_GAP: Pixels = px(6.0);

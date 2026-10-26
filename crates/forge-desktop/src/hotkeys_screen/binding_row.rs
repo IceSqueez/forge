@@ -1,3 +1,4 @@
+use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
     FONT_XXS, ForgePalette, Icon, MenuPlacement, badge, body_family, card, icon, menu_button,
     menu_divider, menu_item, mono_family, toggle, tr,
@@ -8,8 +9,8 @@ use super::HotkeysScreenView;
 use super::capture::Capture;
 use super::list::RowKey;
 use super::row_style::{
-    ACCENT_DOT, ARROW_GLYPH, KEYCAPS_MIN_W, ROW_GAP, ROW_OFF_OPACITY, ROW_PAD_H, ROW_PAD_V,
-    SCOPE_BADGE_FS, TARGET_FS,
+    ACCENT_DOT, ARROW_GLYPH, KEYCAPS_MIN_W, ROW_GAP, ROW_PAD_H, ROW_PAD_V, SCOPE_BADGE_FS,
+    TARGET_FS,
 };
 use crate::hotkey_action_modal::keycaps;
 use forge_hotkey::{BindingRow, HotkeyEdge};
@@ -226,7 +227,7 @@ impl HotkeysScreenView {
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.prompt_delete(row_key, cx)),
             )
             .icon(Icon::Trash)
-            .color(palette.random)
+            .color(palette.danger)
             .into(),
         );
 

@@ -1,3 +1,4 @@
+use forge_components::FONT_XXS;
 use forge_components::{
     BORDER_THIN, Density, ForgePalette, fmt_bytes, mono_family, status_dot, tr,
 };
@@ -5,7 +6,7 @@ use gpui::{AnyElement, Context, Pixels, div, prelude::*, px};
 
 use super::SoundboardView;
 
-pub(super) const FOOTER_FS: Pixels = px(10.5);
+pub(super) const FOOTER_FS: Pixels = FONT_XXS;
 const FOOTER_DOT: Pixels = px(6.0);
 pub(super) const FOOTER_PAD_Y: Pixels = px(7.0);
 pub(super) const FOOTER_PAD_X: Pixels = px(14.0);

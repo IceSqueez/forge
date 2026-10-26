@@ -1,3 +1,4 @@
+use forge_components::CTA_HOVER_ALPHA;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Confirm, ConfirmTone, Density, FONT_SM, FONT_XS, ForgePalette,
     Icon, InputEvent, OverlayPosition, Radius, SearchState, Spacing, TextInput, ToastKind, badge,
@@ -133,7 +134,10 @@ pub struct IntegrationDetail {
     _bridges: Vec<Task<()>>,
 }
 
-const VIEWER_DELTA_WINDOW: Duration = Duration::from_secs(15 * 60);
+const SECONDS_PER_MINUTE: u64 = 60;
+const VIEWER_DELTA_WINDOW_MINUTES: u64 = 15;
+const VIEWER_DELTA_WINDOW: Duration =
+    Duration::from_secs(VIEWER_DELTA_WINDOW_MINUTES * SECONDS_PER_MINUTE);
 const VIEWER_RING_CAP: usize = 256;
 const DETAIL_TICK: Duration = Duration::from_secs(30);
 const HISTORY_LIMIT: u32 = 50;
@@ -1151,7 +1155,7 @@ impl IntegrationDetail {
             *secondary = Some(tr!(
                 "integration_viewers_delta",
                 delta = format!("{sign}{delta}"),
-                window = "15m"
+                window = format!("{VIEWER_DELTA_WINDOW_MINUTES}m")
             ));
         }
         metrics
@@ -1328,7 +1332,7 @@ impl IntegrationDetail {
         };
         let text_color = match action {
             _ if signing_out => palette.text_muted,
-            HeaderAction::Disconnect => palette.random,
+            HeaderAction::Disconnect => palette.danger,
             _ => palette.text_secondary,
         };
         let glyph = match action {
@@ -1412,7 +1416,7 @@ impl IntegrationDetail {
             .rounded(radius(Radius::Sm))
             .bg(palette.warning)
             .cursor_pointer()
-            .hover(|s| s.bg(with_alpha(palette.warning, 0.85)))
+            .hover(|s| s.bg(with_alpha(palette.warning, CTA_HOVER_ALPHA)))
             .on_click(cx.listener(|this, _, _, cx| this.reset_to_connect(PlatformId::Twitch, cx)))
             .child(
                 div()
@@ -1679,7 +1683,7 @@ fn hero_identity(
     }
     match icon_str {
         "brand-twitch" => ("T".to_owned(), palette.theme_brand),
-        "brand-youtube" => ("Y".to_owned(), palette.random),
+        "brand-youtube" => ("Y".to_owned(), palette.danger),
         "brand-kick" => ("K".to_owned(), palette.info),
         "broadcast" => ("O".to_owned(), palette.success),
         "mood-smile" => ("V".to_owned(), palette.warning),

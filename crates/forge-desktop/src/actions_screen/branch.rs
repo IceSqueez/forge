@@ -1,6 +1,7 @@
 use super::*;
 use crate::config_field_label::{field_label, form_field_label};
 use forge_components::ActivePresentation;
+use forge_components::BORDER_THIN;
 use forge_components::{
     Density, FONT_XS, ForgePalette, Icon, InputEvent, Spacing, TextInput, body_family, icon,
     mono_family, spacing, tr,
@@ -40,7 +41,7 @@ fn drill_in_chip(
         .py(spacing(Spacing::Xxs, Density::Cozy))
         .px(spacing(Spacing::Xs, Density::Cozy))
         .rounded(CHIP_RADIUS)
-        .border(HALF_BORDER)
+        .border(BORDER_THIN)
         .border_color(palette.border_regular)
         .child(
             div()

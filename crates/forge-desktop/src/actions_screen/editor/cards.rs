@@ -58,7 +58,7 @@ pub(super) fn empty_placeholder_card(
         .py(EMPTY_CARD_PAD_V)
         .px(EMPTY_CARD_PAD_H)
         .rounded(radius(Radius::Md))
-        .border(HALF_BORDER)
+        .border(BORDER_THIN)
         .border_color(palette.border_input)
         .child(icon(glyph, EMPTY_CARD_GLYPH, glyph_color))
         .child(

@@ -2,7 +2,10 @@ use super::action_writes::{ActionSettings, ActionWrite};
 use super::*;
 use crate::async_bridge;
 use forge_components::ActivePresentation;
+use forge_components::NAME_FIELD_LIMIT;
 use forge_components::PushToast;
+use forge_components::SEARCH_FIELD_WIDTH;
+use forge_components::UNDO_TOAST_DURATION;
 use forge_components::{
     BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_XS, FONT_XXS, ForgePalette, Icon,
     InlineEditEvent, InputEvent, ModalSize, OverlayPosition, ResizeEdge, ResizeRange, Spacing,
@@ -17,7 +20,10 @@ use gpui::{
     SharedString, Window, div, px,
 };
 use std::sync::Arc;
-use std::time::Duration;
+
+const DESCRIPTION_HEIGHT: Pixels = px(72.0);
+const GROUP_ROW_PAD_V: Pixels = px(6.0);
+const ROW_PAD_R: Pixels = px(8.0);
 
 fn tree_notice(label: SharedString, color: Rgba) -> impl IntoElement {
     div()
@@ -253,7 +259,7 @@ impl ScreenActionsView {
                     });
                 },
             )),
-            Duration::from_millis(6000),
+            UNDO_TOAST_DURATION,
         );
     }
 
@@ -288,7 +294,7 @@ impl ScreenActionsView {
         let description = cx.new(|cx| {
             let mut area = TextArea::new(tr!("actions_description_placeholder"), cx)
                 .with_palette(palette)
-                .with_height(px(72.0));
+                .with_height(DESCRIPTION_HEIGHT);
             area.set_content(seed_desc, cx);
             area
         });
@@ -534,7 +540,7 @@ impl ScreenActionsView {
             );
 
         let divider = div()
-            .w(HEADER_DIV_W)
+            .w(BORDER_THIN)
             .h(HEADER_DIV_H)
             .bg(palette.border_regular);
 
@@ -542,7 +548,11 @@ impl ScreenActionsView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, Density::Cozy))
-            .child(div().w(SEARCH_W).child(self.search.field().clone()))
+            .child(
+                div()
+                    .w(SEARCH_FIELD_WIDTH)
+                    .child(self.search.field().clone()),
+            )
             .child(divider)
             .child(chips)
             .into_any_element()
@@ -649,7 +659,7 @@ impl ScreenActionsView {
             .items_center()
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .px(TREE_GUTTER)
-            .py(px(6.0))
+            .py(GROUP_ROW_PAD_V)
             .cursor_pointer()
             .hover(move |s| s.bg(hover_bg))
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_group(index, cx)))
@@ -740,7 +750,7 @@ impl ScreenActionsView {
             .items_center()
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .pl(ROW_INDENT)
-            .pr(px(8.0))
+            .pr(ROW_PAD_R)
             .child(icon(state_icon, TREE_GLYPH, state_color))
             .child(name_el);
         if renaming.is_none() {
@@ -844,7 +854,7 @@ impl ScreenActionsView {
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
             )
             .icon(Icon::Eraser)
-            .color(palette.random)
+            .color(palette.danger)
             .into(),
         ];
 
@@ -864,7 +874,13 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let name_len = form.name.read(cx).content().chars().count().min(NAME_LIMIT);
+        let name_len = form
+            .name
+            .read(cx)
+            .content()
+            .chars()
+            .count()
+            .min(NAME_FIELD_LIMIT);
         let valid = form.ready(cx);
 
         let name_row = div()
@@ -877,7 +893,7 @@ impl ScreenActionsView {
                     .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
-                    .child(format!("{name_len}/{NAME_LIMIT}")),
+                    .child(format!("{name_len}/{NAME_FIELD_LIMIT}")),
             );
         let name_section = modal_section(palette, tr!("actions_modal_section_name"), name_row);
 
@@ -969,7 +985,7 @@ impl ScreenActionsView {
             tr!("actions_modal_random_pick_label"),
             tr!("actions_modal_random_pick_desc"),
             form.random_pick,
-            palette.random,
+            palette.danger,
             "actions-modal-random",
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_modal_random(cx)),
             palette,

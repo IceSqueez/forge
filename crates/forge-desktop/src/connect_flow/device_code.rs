@@ -1,3 +1,8 @@
+use forge_components::CTA_HOVER_ALPHA;
+use forge_components::FONT_LABEL;
+use forge_components::FONT_MICRO;
+use forge_components::ROW_HOVER_WASH_ALPHA;
+use gpui::Pixels;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -22,6 +27,7 @@ pub(super) type TwitchFlowHandle = Arc<tokio::sync::Mutex<Option<TwitchAuthFlow>
 
 const TWITCH_DEVICE_POLL_SECS: &str = "5";
 const COPY_FLIP: Duration = Duration::from_millis(1400);
+const USER_CODE_FONT: Pixels = px(28.0);
 
 struct TwitchAuthOutcome {
     user_info: UserInfo,
@@ -376,9 +382,9 @@ impl ConnectFlow {
                 palette.success,
             ),
             TwitchDevicePhase::Denied | TwitchDevicePhase::Failed => (
-                status_dot(palette.random).into_any_element(),
+                status_dot(palette.danger).into_any_element(),
                 tr!("common_status_not_connected"),
-                palette.random,
+                palette.danger,
             ),
             TwitchDevicePhase::Expired => (
                 status_dot(palette.text_faint).into_any_element(),
@@ -572,7 +578,7 @@ impl ConnectFlow {
                 div()
                     .font_family(mono_family())
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(px(28.0))
+                    .text_size(USER_CODE_FONT)
                     .text_color(accent)
                     .child(ch.to_string())
                     .into_any_element()
@@ -587,7 +593,7 @@ impl ConnectFlow {
             .gap(px(8.0))
             .py(px(14.0))
             .px(px(20.0))
-            .rounded(px(9.0))
+            .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(accent)
             .bg(palette.shell)
@@ -606,7 +612,7 @@ impl ConnectFlow {
             .items_center()
             .gap(px(3.0))
             .p(px(14.0))
-            .rounded(px(9.0))
+            .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .cursor_pointer()
@@ -620,7 +626,7 @@ impl ConnectFlow {
             .child(
                 div()
                     .font_family(body_family())
-                    .text_size(px(10.0))
+                    .text_size(FONT_MICRO)
                     .text_color(copy_color)
                     .child(if copied {
                         tr!("twitch_device_copied")
@@ -646,21 +652,21 @@ impl ConnectFlow {
                     .child(
                         div()
                             .font_family(body_family())
-                            .text_size(px(11.5))
+                            .text_size(FONT_LABEL)
                             .text_color(palette.text_muted)
                             .child(tr!("twitch_device_expires_in")),
                     )
                     .child(
                         div()
                             .font_family(mono_family())
-                            .text_size(px(11.5))
+                            .text_size(FONT_LABEL)
                             .text_color(palette.text_primary)
                             .child(clock),
                     ),
             )
             .child(
                 div()
-                    .text_size(px(11.5))
+                    .text_size(FONT_LABEL)
                     .text_color(palette.text_faint)
                     .child("\u{00b7}"),
             )
@@ -676,7 +682,7 @@ impl ConnectFlow {
                     .child(
                         div()
                             .font_family(body_family())
-                            .text_size(px(11.5))
+                            .text_size(FONT_LABEL)
                             .text_color(accent)
                             .child(tr!("twitch_device_get_new_code")),
                     ),
@@ -847,7 +853,7 @@ impl ConnectFlow {
             .rounded(radius(Radius::Sm))
             .bg(accent)
             .cursor_pointer()
-            .hover(|s| s.bg(with_alpha(accent, 0.85)))
+            .hover(|s| s.bg(with_alpha(accent, CTA_HOVER_ALPHA)))
             .on_click(cx.listener(|this, _, _, cx| this.begin_twitch_device(cx)))
             .child(icon(Icon::Refresh, px(12.0), palette.shell))
             .child(
@@ -866,7 +872,7 @@ impl ConnectFlow {
             .px(spacing(Spacing::Md, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
-            .border_color(palette.random)
+            .border_color(palette.danger)
             .bg(palette.elevated)
             .mb(px(14.0))
             .child(
@@ -874,7 +880,7 @@ impl ConnectFlow {
                     .flex()
                     .items_center()
                     .gap(spacing(Spacing::Xs, density))
-                    .child(icon(Icon::AlertTriangle, px(16.0), palette.random))
+                    .child(icon(Icon::AlertTriangle, px(16.0), palette.danger))
                     .child(
                         div()
                             .flex_1()
@@ -891,7 +897,7 @@ impl ConnectFlow {
                 div()
                     .font_family(body_family())
                     .text_size(FONT_XS)
-                    .text_color(palette.random)
+                    .text_color(palette.danger)
                     .child(detail),
             )
             .into_any_element()
@@ -927,7 +933,7 @@ impl ConnectFlow {
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .cursor_pointer()
-            .hover(|s| s.bg(with_alpha(palette.border_regular, 0.06)))
+            .hover(|s| s.bg(with_alpha(palette.border_regular, ROW_HOVER_WASH_ALPHA)))
             .on_click(cx.listener(|this, _, _, cx| this.cancel_twitch_and_leave(cx)))
             .child(
                 div()
@@ -955,7 +961,7 @@ fn step_card(n: u8, circle_bg: Rgba, circle_fg: Rgba, palette: &ForgePalette) ->
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(12.0))
+        .rounded(radius(Radius::Lg))
         .bg(circle_bg)
         .child(
             div()

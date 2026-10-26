@@ -1,3 +1,4 @@
+use forge_components::FONT_ROW;
 use forge_components::{ActivePresentation, FONT_LG, Spacing, body_family, icon, spacing};
 use gpui::{
     AnyElement, App, FontWeight, IntoElement, ParentElement, Pixels, RenderOnce, SharedString,
@@ -9,7 +10,7 @@ use crate::settings::SettingsSection;
 const ICON_SIZE: Pixels = px(20.0);
 const ICON_TITLE_GAP: Pixels = px(10.0);
 const TITLE_SUBTITLE_GAP: Pixels = px(6.0);
-const SUBTITLE_FONT: Pixels = px(12.5);
+const SUBTITLE_FONT: Pixels = FONT_ROW;
 const CONTENT_GAP_AFTER_SUBTITLE: Pixels = px(22.0);
 const CONTENT_GAP_AFTER_TITLE: Pixels = px(18.0);
 

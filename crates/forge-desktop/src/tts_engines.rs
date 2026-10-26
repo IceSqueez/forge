@@ -1,3 +1,6 @@
+use forge_components::FONT_LABEL;
+use forge_components::FONT_META;
+use forge_components::FONT_MICRO;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
@@ -41,9 +44,6 @@ const GAIN_MAX: f32 = 1.0;
 const TILE_GLYPH: Pixels = px(18.0);
 const PLAY_GLYPH: Pixels = px(14.0);
 const GRID_COLS: usize = 3;
-const FS_10: Pixels = px(10.0);
-const FS_11: Pixels = px(11.0);
-const FS_11_5: Pixels = px(11.5);
 
 struct ParamsSave {
     engine_id: String,
@@ -520,7 +520,7 @@ impl TtsEnginesView {
             )
             .child(
                 div()
-                    .text_size(FS_10)
+                    .text_size(FONT_MICRO)
                     .text_color(palette.text_faint)
                     .child(self.engines.len().to_string()),
             );
@@ -620,7 +620,7 @@ impl TtsEnginesView {
             .child(
                 div()
                     .font_family(mono_family())
-                    .text_size(FS_10)
+                    .text_size(FONT_MICRO)
                     .text_color(palette.text_faint)
                     .child(tr!(
                         "tts_engines_rail_sub",
@@ -672,7 +672,7 @@ impl TtsEnginesView {
             .child(
                 div()
                     .font_family(body_family())
-                    .text_size(FS_11_5)
+                    .text_size(FONT_LABEL)
                     .text_color(palette.brand)
                     .child(tr!("tts_engines_add_engine")),
             )
@@ -732,7 +732,7 @@ impl TtsEnginesView {
                     .px(spacing(Spacing::Sm, density))
                     .py(spacing(Spacing::Xs, density))
                     .font_family(body_family())
-                    .text_size(FS_11)
+                    .text_size(FONT_META)
                     .text_color(palette.text_faint)
                     .child(tr!("tts_engines_add_none_left")),
             );
@@ -900,7 +900,7 @@ impl TtsEnginesView {
             .child(
                 div()
                     .font_family(body_family())
-                    .text_size(FS_11_5)
+                    .text_size(FONT_LABEL)
                     .text_color(palette.text_muted)
                     .child(subtitle),
             );
@@ -1017,7 +1017,7 @@ impl TtsEnginesView {
             palette,
         )
         .size(AVATAR)
-        .font(FS_11);
+        .font(FONT_META);
 
         let body = div()
             .flex_1()
@@ -1036,7 +1036,7 @@ impl TtsEnginesView {
             .child(
                 div()
                     .font_family(mono_family())
-                    .text_size(FS_10)
+                    .text_size(FONT_MICRO)
                     .text_color(palette.text_faint)
                     .child(format!("{} · {}", voice.locale, voice_descriptor(voice))),
             );
@@ -1206,7 +1206,7 @@ fn param_row(
                 .flex_shrink_0()
                 .text_right()
                 .font_family(mono_family())
-                .text_size(FS_11_5)
+                .text_size(FONT_LABEL)
                 .text_color(palette.text_primary)
                 .child(value_text.into()),
         )

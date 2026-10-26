@@ -1,3 +1,4 @@
+use forge_components::FONT_HERO;
 use forge_components::{FONT_XS, ForgePalette, Icon, body_family, card, icon, toggle, tr};
 use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
 
@@ -12,7 +13,7 @@ const HERO_MARGIN_B: Pixels = px(14.0);
 const HERO_TILE: Pixels = px(40.0);
 const HERO_TILE_RADIUS: Pixels = px(10.0);
 const HERO_GLYPH: Pixels = px(20.0);
-const HERO_TITLE_FS: Pixels = px(15.0);
+const HERO_TITLE_FS: Pixels = FONT_HERO;
 const HERO_BLURB_MT: Pixels = px(1.0);
 const HERO_TOGGLE_GAP: Pixels = px(8.0);
 

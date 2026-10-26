@@ -1,3 +1,4 @@
+use forge_components::FONT_XXS;
 use std::sync::Arc;
 
 use forge_audio::list_output_devices;
@@ -11,7 +12,7 @@ use forge_storage::{
 use gpui::{AnyElement, ClickEvent, Context, Pixels, SharedString, div, prelude::*, px};
 
 use super::labels::{field_lite_label, section_label};
-use super::{HOTKEY_FS, LABEL_FS, SoundboardView};
+use super::{LABEL_FS, SMALL_GLYPH, SoundboardView};
 use crate::async_bridge::{self, ErrorSink};
 
 pub(super) const ROUTING_PAD: Pixels = px(14.0);
@@ -19,7 +20,7 @@ const ROUTING_GAP: Pixels = px(16.0);
 const SELECT_RADIUS: Pixels = px(7.0);
 const SELECT_PAD_Y: Pixels = px(8.0);
 const SELECT_PAD_X: Pixels = px(11.0);
-const HINT_FS: Pixels = px(10.5);
+const HINT_FS: Pixels = FONT_XXS;
 
 impl SoundboardView {
     pub(super) fn reload_devices(&self, cx: &mut Context<Self>) {
@@ -147,7 +148,7 @@ impl SoundboardView {
             ))
             .child(
                 slider(self.settings.master_volume * 100.0, 0.0, 100.0, palette)
-                    .accent(palette.bits)
+                    .accent(palette.accent_peach)
                     .on_change(
                         "sb-master-volume",
                         cx.listener(|this, value: &f32, _, cx| this.set_master_volume(*value, cx)),
@@ -161,7 +162,7 @@ impl SoundboardView {
                     .gap(px(6.0))
                     .child(
                         toggle(self.settings.also_headphones, palette)
-                            .on_color(palette.bits)
+                            .on_color(palette.accent_peach)
                             .on_click(
                                 "sb-headphones",
                                 cx.listener(|this, _: &ClickEvent, _, cx| {
@@ -230,7 +231,7 @@ impl SoundboardView {
                     .text_color(palette.text_primary)
                     .child(current_label.to_owned()),
             )
-            .child(icon(Icon::ChevronDown, HOTKEY_FS, palette.text_faint));
+            .child(icon(Icon::ChevronDown, SMALL_GLYPH, palette.text_faint));
 
         let mut field = div().relative().w_full().child(trigger);
         if self.device_menu_open {

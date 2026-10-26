@@ -1,3 +1,4 @@
+use forge_components::FONT_META;
 use std::sync::Arc;
 
 use forge_components::{
@@ -32,7 +33,7 @@ pub(crate) const DEFAULT_PORT: u16 = 8001;
 const CONNECTION_CHANGED: &str = "vtube.connection.changed";
 const REASON_AWAITING_APPROVAL: &str = "awaiting_approval";
 
-const IDLE_TEXT_SIZE: Pixels = px(11.0);
+const IDLE_TEXT_SIZE: Pixels = FONT_META;
 const ACTIVE_DOT: Pixels = px(8.0);
 
 const IDLE_LOOK: StripLook = StripLook {

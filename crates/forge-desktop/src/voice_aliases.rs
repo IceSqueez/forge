@@ -1,4 +1,9 @@
 use crate::platform_visuals::platform_color;
+use forge_components::FONT_LABEL;
+use forge_components::FONT_META;
+use forge_components::FONT_ROLE_BADGE;
+use forge_components::FONT_ROW;
+use forge_components::SEARCH_FIELD_WIDTH;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -31,25 +36,28 @@ use crate::voice_alias_store::save_alias;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
-const SEARCH_W: Pixels = px(240.0);
 const ACTIONS_W: Pixels = px(90.0);
 const AVATAR: Pixels = px(22.0);
 const TABLE_RADIUS: Pixels = px(8.0);
-const ROLE_BADGE_FS: Pixels = px(8.5);
+const ROLE_BADGE_FS: Pixels = FONT_ROLE_BADGE;
 const ENGINE_GLYPH: Pixels = px(12.0);
 const ACTION_GLYPH: Pixels = px(13.0);
 const BANNER_ICON: Pixels = px(18.0);
 const ROW_PAD_V: Pixels = px(9.0);
 const ROW_PAD_H: Pixels = px(12.0);
-const VOICE_FS: Pixels = px(11.5);
-const META_FS: Pixels = px(11.0);
+const ROW_HOVER_ALPHA: f32 = 0.08;
+const HEADER_PAD_V: Pixels = px(7.0);
+const HEADER_PAD_H: Pixels = px(12.0);
+const FOOTER_PAD_TOP: Pixels = px(8.0);
+const VOICE_FS: Pixels = FONT_LABEL;
+const META_FS: Pixels = FONT_META;
 const PAGE_PAD_H: Pixels = px(18.0);
 const PAGE_GAP_V: Pixels = px(12.0);
 const PAGE_PAD_BOTTOM: Pixels = px(16.0);
 const BANNER_PAD_V: Pixels = px(12.0);
 const BANNER_PAD_H: Pixels = px(14.0);
 const BANNER_GAP: Pixels = px(14.0);
-const BANNER_TITLE_FS: Pixels = px(12.5);
+const BANNER_TITLE_FS: Pixels = FONT_ROW;
 const BANNER_TITLE_MB: Pixels = px(1.0);
 const PLATFORM_DOT: Pixels = px(6.0);
 const PLATFORM_BADGE_PAD_V: Pixels = px(1.0);
@@ -581,11 +589,16 @@ impl VoiceAliasesView {
             .child(count)
             .child(assign);
 
-        toolbar_row(div().w(SEARCH_W).child(self.search.field().clone()), right)
-            .density(density)
-            .px(PAGE_PAD_H)
-            .pb(PAGE_GAP_V)
-            .into_any_element()
+        toolbar_row(
+            div()
+                .w(SEARCH_FIELD_WIDTH)
+                .child(self.search.field().clone()),
+            right,
+        )
+        .density(density)
+        .px(PAGE_PAD_H)
+        .pb(PAGE_GAP_V)
+        .into_any_element()
     }
 
     fn table(
@@ -609,7 +622,7 @@ impl VoiceAliasesView {
             .align_end(),
         ];
 
-        let hover_bg = with_alpha(palette.border_regular, 0.08);
+        let hover_bg = with_alpha(palette.border_regular, ROW_HOVER_ALPHA);
         let mut frame = div()
             .w_full()
             .flex_1()
@@ -634,7 +647,7 @@ impl VoiceAliasesView {
             }
             let header_only = data_table(palette, columns, Vec::new())
                 .density(density)
-                .header_padding(px(7.0), px(12.0))
+                .header_padding(HEADER_PAD_V, HEADER_PAD_H)
                 .trailing_rule(false);
             frame = frame
                 .child(header_only)
@@ -649,7 +662,7 @@ impl VoiceAliasesView {
                 &self.table_scroll,
                 density,
             )
-            .header_padding(px(7.0), px(12.0))
+            .header_padding(HEADER_PAD_V, HEADER_PAD_H)
             .row_padding(ROW_PAD_V, ROW_PAD_H)
             .row_hover(hover_bg)
             .trailing_rule(false)
@@ -669,7 +682,7 @@ impl VoiceAliasesView {
         let auto = self.viewer_count.saturating_sub(self.total_count);
         let footer = div()
             .w_full()
-            .pt(px(8.0))
+            .pt(FOOTER_PAD_TOP)
             .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
@@ -752,7 +765,7 @@ impl VoiceAliasesView {
         if muted {
             viewer_inner = viewer_inner.child(role_badge(
                 tr!("tts_aliases_role_blocked"),
-                palette.random,
+                palette.danger,
                 palette,
             ));
         }
@@ -762,7 +775,7 @@ impl VoiceAliasesView {
                 .flex()
                 .items_center()
                 .gap(spacing(Spacing::Xxs, density))
-                .child(icon(Icon::VolumeOff, ENGINE_GLYPH, palette.random))
+                .child(icon(Icon::VolumeOff, ENGINE_GLYPH, palette.danger))
                 .child(
                     div()
                         .font_family(mono_family())
@@ -1000,7 +1013,7 @@ fn engine_visual(engine_id: &str, palette: &ForgePalette) -> (Icon, Rgba) {
         | forge_tts_core::ENGINE_ID_SAPI
         | forge_tts_core::ENGINE_ID_NSSPEECH => (Icon::Terminal, palette.success),
         forge_tts_core::ENGINE_ID_ELEVENLABS => (Icon::Microphone2, palette.theme_brand),
-        forge_tts_core::ENGINE_ID_POLLY => (Icon::BrandAws, palette.bits),
+        forge_tts_core::ENGINE_ID_POLLY => (Icon::BrandAws, palette.accent_peach),
         forge_tts_core::ENGINE_ID_AZURE => (Icon::Cloud, palette.info),
         forge_tts_core::ENGINE_ID_OPENAI => (Icon::Bolt, palette.accent_teal),
         _ => (Icon::Cloud, palette.text_muted),

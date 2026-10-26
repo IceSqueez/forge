@@ -40,7 +40,7 @@ pub(super) fn rejection_note(message: String, palette: &ForgePalette) -> AnyElem
     div()
         .font_family(body_family())
         .text_size(FONT_XXS)
-        .text_color(palette.random)
+        .text_color(palette.danger)
         .child(message)
         .into_any_element()
 }

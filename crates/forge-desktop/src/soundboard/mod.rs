@@ -1,3 +1,7 @@
+use forge_components::FONT_LABEL;
+use forge_components::FONT_MICRO;
+use forge_components::TINT_BORDER_ALPHA;
+use forge_components::TINT_FILL_ALPHA;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -53,8 +57,9 @@ pub(crate) use labels::field_lite_label;
 const SCROLL_PAD_X: Pixels = px(22.0);
 const SCROLL_PAD_Y: Pixels = px(18.0);
 const SECTION_GAP: Pixels = px(14.0);
-const LABEL_FS: Pixels = px(11.5);
-const HOTKEY_FS: Pixels = px(10.0);
+const LABEL_FS: Pixels = FONT_LABEL;
+const HOTKEY_FS: Pixels = FONT_MICRO;
+const SMALL_GLYPH: Pixels = px(10.0);
 
 struct SoundClip {
     id: ClipId,
@@ -246,10 +251,10 @@ impl Render for SoundboardView {
                     .gap(spacing(Spacing::Xs, density))
                     .p(spacing(Spacing::Xs, density))
                     .rounded(radius(Radius::Sm))
-                    .bg(with_alpha(palette.random, 0.10))
+                    .bg(with_alpha(palette.danger, TINT_FILL_ALPHA))
                     .border(BORDER_THIN)
-                    .border_color(with_alpha(palette.random, 0.30))
-                    .child(icon(Icon::AlertCircle, FONT_XS, palette.random))
+                    .border_color(with_alpha(palette.danger, TINT_BORDER_ALPHA))
+                    .child(icon(Icon::AlertCircle, FONT_XS, palette.danger))
                     .child(
                         div()
                             .font_family(body_family())

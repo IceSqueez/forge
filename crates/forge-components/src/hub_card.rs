@@ -1,3 +1,6 @@
+use crate::FONT_LABEL;
+use crate::FONT_META;
+use crate::FONT_SM;
 use std::sync::Arc;
 
 use gpui::{
@@ -22,8 +25,8 @@ const CARD_PAD_BOTTOM: Pixels = px(12.0);
 const HEADER_GAP: Pixels = px(12.0);
 const TITLE_GAP: Pixels = px(8.0);
 const TITLE_MB: Pixels = px(3.0);
-const TITLE_SIZE: Pixels = px(14.0);
-const DESC_SIZE: Pixels = px(11.5);
+const TITLE_SIZE: Pixels = FONT_SM;
+const DESC_SIZE: Pixels = FONT_LABEL;
 const DESC_LINE: Pixels = px(16.0);
 const DESC_LINES: usize = 2;
 
@@ -35,13 +38,13 @@ const NOTE_HEIGHT: Pixels = px(20.0);
 const NOTE_MT: Pixels = px(8.0);
 const NOTE_GAP: Pixels = px(6.0);
 const NOTE_ICON: Pixels = px(11.0);
-const NOTE_SIZE: Pixels = px(11.0);
+const NOTE_SIZE: Pixels = FONT_META;
 
 const FOOTER_HEIGHT: Pixels = px(36.0);
 const FOOTER_PAD_TOP: Pixels = px(9.0);
 const FOOTER_GAP: Pixels = px(8.0);
 
-const BADGE_SIZE: Pixels = px(9.5);
+const BADGE_SIZE: Pixels = FONT_SECTION_LABEL;
 const BADGE_PAD_V: Pixels = px(1.0);
 const BADGE_PAD_H: Pixels = px(6.0);
 const BADGE_RADIUS: Pixels = px(8.0);
@@ -49,7 +52,7 @@ const BADGE_GAP: Pixels = px(4.0);
 const BADGE_GLYPH: Pixels = px(10.0);
 const BADGE_DOT: Pixels = px(5.0);
 
-const COMPACT_SIZE: Pixels = px(11.0);
+const COMPACT_SIZE: Pixels = FONT_META;
 const COMPACT_ICON: Pixels = px(11.0);
 const COMPACT_ICON_ONLY: Pixels = px(12.0);
 const COMPACT_GAP: Pixels = px(5.0);
@@ -61,7 +64,7 @@ const ICON_ONLY_PAD_H: Pixels = px(6.0);
 
 const SECTION_GAP: Pixels = px(10.0);
 const SECTION_MB: Pixels = px(10.0);
-const SECTION_BLURB_SIZE: Pixels = px(11.0);
+const SECTION_BLURB_SIZE: Pixels = FONT_META;
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 

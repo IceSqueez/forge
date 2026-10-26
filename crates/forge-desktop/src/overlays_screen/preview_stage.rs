@@ -1,3 +1,5 @@
+use forge_components::FONT_BADGE;
+use forge_components::FONT_XXS;
 use std::time::Duration;
 
 use forge_components::{
@@ -32,13 +34,13 @@ const STAGE_MIN_H: Pixels = px(300.0);
 const STAGE_RADIUS: Pixels = px(10.0);
 const CANVAS_NOTE_TOP: Pixels = px(8.0);
 const CANVAS_NOTE_LEFT: Pixels = px(10.0);
-const CANVAS_NOTE_FS: Pixels = px(9.0);
+const CANVAS_NOTE_FS: Pixels = FONT_BADGE;
 const CANVAS_NOTE_OPACITY: f32 = 0.6;
 const CHECKER_CELL: Pixels = px(11.0);
 
 const HINT_TOP: Pixels = px(8.0);
 pub(super) const HINT_GAP: Pixels = px(6.0);
-pub(super) const HINT_FS: Pixels = px(10.5);
+pub(super) const HINT_FS: Pixels = FONT_XXS;
 pub(super) const HINT_GLYPH: Pixels = px(12.0);
 
 const ZOOM_FACTOR: f32 = 1.0;

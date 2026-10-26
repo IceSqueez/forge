@@ -1,3 +1,4 @@
+use forge_components::LEADING_SCOPE;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -32,12 +33,11 @@ use forge_components::ActivePresentation;
 pub(super) const NO_ICON_ID: &str = "forge-icon-none";
 pub(super) const IMPORT_ICON_ID: &str = "forge-icon-import";
 
-const NONE_SCOPE: &str = "all";
 const IMPORTED_SCOPE: &str = "imported";
 const WORD_SEPARATOR: &str = ", ";
 
 const FIELD_TILE: Pixels = px(22.0);
-const FIELD_TILE_RADIUS: Pixels = px(6.0);
+const FIELD_TILE_RADIUS: Pixels = radius(Radius::Sm);
 const FIELD_ART: Pixels = px(13.0);
 
 const PICK_TILE: Pixels = px(44.0);
@@ -169,12 +169,12 @@ fn category_label(category: IconCategory) -> String {
 
 fn category_dot(category: IconCategory, palette: &ForgePalette) -> Rgba {
     match category {
-        IconCategory::Support => palette.random,
+        IconCategory::Support => palette.danger,
         IconCategory::Celebration => palette.warning,
         IconCategory::Community => palette.info,
         IconCategory::Stream => palette.theme_brand,
         IconCategory::Play => palette.success,
-        IconCategory::Goals => palette.bits,
+        IconCategory::Goals => palette.accent_peach,
         IconCategory::Nature => palette.accent_teal,
     }
 }
@@ -187,7 +187,7 @@ pub(super) fn icon_groups(
     let mut groups = vec![GridPickerGroup {
         label: tr!("overlays_icon_group_none").into(),
         dot_color: palette.text_muted,
-        scope: SharedString::from(NONE_SCOPE),
+        scope: SharedString::from(LEADING_SCOPE),
         items: vec![GridPickerItem {
             id: SharedString::from(NO_ICON_ID),
             glyph: GlyphArt::Icon(Icon::Ban),

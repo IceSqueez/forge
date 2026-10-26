@@ -3,6 +3,7 @@ use super::step_presentation::variable_text;
 use super::*;
 use crate::actions_screen::config_problem_text::config_problem_text;
 use crate::integration_switch::integration_name;
+use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
     health_tile, icon, mono_family, radius, row_card, spacing, tooltip_lines_builder, tr,
@@ -164,7 +165,7 @@ impl ScreenActionsView {
         let color = match severity {
             HealthSeverity::Green => palette.success,
             HealthSeverity::Yellow => palette.warning,
-            HealthSeverity::Red => palette.random,
+            HealthSeverity::Red => palette.danger,
         };
         let gate_title = if health.disabled_integration().is_some() {
             Some(tr!("action_editor_health_disabled"))
@@ -338,7 +339,7 @@ impl ScreenActionsView {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .when(!enabled, |el| el.opacity(STEP_DISABLED_OPACITY))
+                    .when(!enabled, |el| el.opacity(ROW_OFF_OPACITY))
                     .child(card),
             );
 

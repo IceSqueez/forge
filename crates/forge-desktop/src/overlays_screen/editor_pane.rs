@@ -1,3 +1,5 @@
+use forge_components::FONT_FIELD;
+use forge_components::FONT_META;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, body_family, empty_state, icon,
     mono_family, segment, segmented, tr,
@@ -17,13 +19,13 @@ const HEAD_PAD_V: Pixels = px(9.0);
 const HEAD_PAD_H: Pixels = px(16.0);
 const HEAD_GAP: Pixels = px(10.0);
 const HEAD_GLYPH: Pixels = px(15.0);
-const HEAD_TITLE_FS: Pixels = px(13.0);
+const HEAD_TITLE_FS: Pixels = FONT_FIELD;
 
 const URL_BOX_GAP: Pixels = px(8.0);
 const URL_BOX_PAD_V: Pixels = px(5.0);
 const URL_BOX_PAD_H: Pixels = px(10.0);
 const URL_BOX_RADIUS: Pixels = px(7.0);
-const URL_FS: Pixels = px(11.0);
+const URL_FS: Pixels = FONT_META;
 const URL_GLYPH: Pixels = px(12.0);
 const COPY_GAP: Pixels = px(3.0);
 

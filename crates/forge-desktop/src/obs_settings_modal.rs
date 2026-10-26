@@ -1,3 +1,4 @@
+use forge_components::FONT_META;
 use std::sync::Arc;
 
 use forge_components::{
@@ -16,7 +17,7 @@ use forge_components::ActivePresentation;
 
 const MODAL_WIDTH: Pixels = px(460.0);
 const FOOTER_GAP: Pixels = px(12.0);
-const HINT_SIZE: Pixels = px(11.0);
+const HINT_SIZE: Pixels = FONT_META;
 
 pub enum ObsSettingsModalEvent {
     Close,

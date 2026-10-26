@@ -1,3 +1,7 @@
+use crate::FONT_LABEL;
+use crate::FONT_META;
+use crate::FONT_MICRO;
+use crate::FONT_SECTION_LABEL;
 use gpui::{
     AnyElement, App, ClickEvent, Div, ElementId, FontWeight, InteractiveElement, IntoElement,
     ParentElement, Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled,
@@ -16,13 +20,13 @@ const HEALTH_TILE_ALPHA: f32 = 0.14;
 const WARN_FILL_ALPHA: f32 = 0.06;
 const WARN_BORDER_ALPHA: f32 = 0.2;
 
-const INACTIVE_SIZE: Pixels = px(9.5);
+const INACTIVE_SIZE: Pixels = FONT_SECTION_LABEL;
 const INACTIVE_GLYPH: Pixels = px(10.0);
 const INACTIVE_GAP: Pixels = px(4.0);
 const INACTIVE_PAD_V: Pixels = px(1.0);
 const INACTIVE_PAD_H: Pixels = px(6.0);
 
-const REASON_SIZE: Pixels = px(10.0);
+const REASON_SIZE: Pixels = FONT_MICRO;
 const REASON_GLYPH: Pixels = px(10.0);
 const REASON_GAP: Pixels = px(4.0);
 const REASON_PAD_V: Pixels = px(1.0);
@@ -34,8 +38,8 @@ const NOTICE_PAD_V: Pixels = px(5.0);
 const NOTICE_PAD_LEFT: Pixels = px(10.0);
 const NOTICE_PAD_RIGHT: Pixels = px(6.0);
 const NOTICE_GLYPH: Pixels = px(12.0);
-const NOTICE_TEXT: Pixels = px(11.5);
-const ENABLE_SIZE: Pixels = px(11.0);
+const NOTICE_TEXT: Pixels = FONT_LABEL;
+const ENABLE_SIZE: Pixels = FONT_META;
 const ENABLE_GLYPH: Pixels = px(11.0);
 const ENABLE_GAP: Pixels = px(5.0);
 const ENABLE_PAD_V: Pixels = px(2.0);
@@ -92,12 +96,12 @@ pub fn integration_disabled_reason(
         .px(REASON_PAD_H)
         .whitespace_nowrap()
         .rounded(radius(Radius::Sm))
-        .bg(with_alpha(palette.random, REASON_FILL_ALPHA))
+        .bg(with_alpha(palette.danger, REASON_FILL_ALPHA))
         .font_family(mono_family())
         .font_weight(FontWeight::MEDIUM)
         .text_size(REASON_SIZE)
-        .text_color(palette.random)
-        .child(icon(Icon::PlugOff, REASON_GLYPH, palette.random))
+        .text_color(palette.danger)
+        .child(icon(Icon::PlugOff, REASON_GLYPH, palette.danger))
         .child(label.into())
 }
 

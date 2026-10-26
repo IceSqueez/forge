@@ -1,3 +1,5 @@
+use forge_components::FONT_LABEL;
+use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
     BORDER_THIN, DISABLED_OPACITY, ForgePalette, Icon, MenuPlacement, badge, body_family, card,
     icon, menu_button, menu_item, mono_family, toggle, tr,
@@ -8,13 +10,13 @@ use super::HotkeysScreenView;
 use super::capture::Capture;
 use super::list::RowKey;
 use super::row_style::{
-    ACCENT_DOT, ARROW_GLYPH, KEYCAPS_MIN_W, ROW_GAP, ROW_OFF_OPACITY, ROW_PAD_H, ROW_PAD_V,
-    SCOPE_BADGE_FS, TARGET_FS,
+    ACCENT_DOT, ARROW_GLYPH, KEYCAPS_MIN_W, ROW_GAP, ROW_PAD_H, ROW_PAD_V, SCOPE_BADGE_FS,
+    TARGET_FS,
 };
 use crate::actions::{ShortcutEntry, chord_caps};
 use crate::hotkey_action_modal::keycaps;
 
-const UNBOUND_FS: Pixels = px(11.5);
+const UNBOUND_FS: Pixels = FONT_LABEL;
 const UNKNOWN_CHORD: &str = "-";
 const UNBOUND_RADIUS: Pixels = px(5.0);
 const UNBOUND_PAD_V: Pixels = px(3.0);

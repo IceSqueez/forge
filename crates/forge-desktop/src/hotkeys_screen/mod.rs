@@ -1,3 +1,4 @@
+use forge_components::FONT_LABEL;
 use std::sync::Arc;
 
 use forge_components::{BreadcrumbCrumb, Icon, ToastKind, body_family, icon, page_frame, tr};
@@ -51,7 +52,7 @@ const COMBOS_FIELD: &str = "combos";
 const SCROLL_PAD_X: Pixels = px(22.0);
 const SCROLL_PAD_Y: Pixels = px(18.0);
 
-const LABEL_FS: Pixels = px(11.5);
+const LABEL_FS: Pixels = FONT_LABEL;
 
 const HEADER_GAP: Pixels = px(5.0);
 const HEADER_GLYPH: Pixels = px(13.0);

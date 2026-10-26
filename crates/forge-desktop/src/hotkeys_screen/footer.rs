@@ -1,3 +1,4 @@
+use forge_components::FONT_XXS;
 use forge_components::{
     BORDER_THIN, ForgePalette, fmt_display_relative, mono_family, status_dot, tr,
 };
@@ -5,7 +6,7 @@ use gpui::{AnyElement, Pixels, div, prelude::*, px};
 
 use super::HotkeysScreenView;
 
-const FOOTER_FS: Pixels = px(10.5);
+const FOOTER_FS: Pixels = FONT_XXS;
 const FOOTER_DOT: Pixels = px(6.0);
 const FOOTER_GAP: Pixels = px(6.0);
 const FOOTER_PAD_V: Pixels = px(7.0);

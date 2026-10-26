@@ -1,3 +1,5 @@
+use forge_components::FONT_LABEL;
+use forge_components::FONT_META;
 use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
@@ -31,8 +33,8 @@ use gpui::{
 };
 
 const FILL_KEY_W: Pixels = px(110.0);
-const FILL_KEY_FS: Pixels = px(11.0);
-pub(crate) const FILL_VAL_FS: Pixels = px(11.5);
+const FILL_KEY_FS: Pixels = FONT_META;
+pub(crate) const FILL_VAL_FS: Pixels = FONT_LABEL;
 const FILL_ROW_PAD_V: Pixels = px(8.0);
 const FILL_ROW_PAD_H: Pixels = px(12.0);
 
@@ -41,14 +43,14 @@ const SLIDER_READOUT_W: Pixels = px(34.0);
 
 const SWATCH_GAP: Pixels = px(6.0);
 const SWATCH_SIZE: Pixels = px(22.0);
-const SWATCH_RADIUS: Pixels = px(6.0);
+const SWATCH_RADIUS: Pixels = radius(Radius::Sm);
 const SWATCH_RING: Pixels = px(2.0);
 
 pub(crate) const CHOICE_PAD_V: Pixels = px(6.0);
 pub(crate) const CHOICE_PAD_H: Pixels = px(9.0);
 pub(crate) const CHOICE_GLYPH: Pixels = px(12.0);
 
-const INTEGER_PLACEHOLDER: &str = "0";
+pub(crate) const INTEGER_PLACEHOLDER: &str = "0";
 
 const CODE_FIELD_ROWS: RangeInclusive<usize> = 2..=12;
 

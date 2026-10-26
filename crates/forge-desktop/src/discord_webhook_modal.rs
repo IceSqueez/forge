@@ -21,7 +21,7 @@ const BOX_PAD_V: Pixels = px(7.0);
 const BOX_PAD_H: Pixels = px(11.0);
 const BOX_GAP: Pixels = px(8.0);
 const CONTROL_GLYPH: Pixels = px(12.0);
-const NAME_LOCK_FS: Pixels = px(12.0);
+const NAME_LOCK_FS: Pixels = FONT_XS;
 
 const FOOTER_GAP: Pixels = px(8.0);
 const TEST_HEIGHT: Pixels = px(32.0);
@@ -240,7 +240,7 @@ impl DiscordWebhookModal {
             div()
                 .font_family(body_family())
                 .text_size(FONT_XXS)
-                .text_color(palette.random)
+                .text_color(palette.danger)
                 .child(tr!("discord_modal_url_invalid"))
         } else {
             field_hint(&tr!("discord_modal_url_hint"), palette)

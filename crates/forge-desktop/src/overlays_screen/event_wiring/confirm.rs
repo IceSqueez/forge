@@ -1,3 +1,4 @@
+use forge_components::FONT_HERO;
 use forge_components::{
     BORDER_THIN, Button, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize,
     OverlayPosition, Radius, Spacing, body_family, empty_state, ghost_button_with_icon, modal,
@@ -16,7 +17,7 @@ const ROW_GAP: Pixels = px(6.0);
 const ROW_LABEL_GAP: Pixels = px(8.0);
 const WORDING_PAD: Pixels = px(12.0);
 const WORDING_GAP: Pixels = px(4.0);
-const WORDING_LEAD_FS: Pixels = px(15.0);
+const WORDING_LEAD_FS: Pixels = FONT_HERO;
 
 #[derive(Clone, Copy)]
 enum FooterAction {

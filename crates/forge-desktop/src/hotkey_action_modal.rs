@@ -1,3 +1,8 @@
+use forge_components::FONT_LABEL;
+use forge_components::FONT_META;
+use forge_components::FONT_XS;
+use forge_components::Radius;
+use forge_components::radius;
 use std::sync::Arc;
 
 use forge_components::{
@@ -27,7 +32,7 @@ const SIGNAL_GAP: Pixels = px(10.0);
 const RECAPTURE_HEIGHT: Pixels = px(32.0);
 
 const KEYCAP_GAP: Pixels = px(4.0);
-const KEYCAP_FS: Pixels = px(11.5);
+const KEYCAP_FS: Pixels = FONT_LABEL;
 const KEYCAP_RADIUS: Pixels = px(5.0);
 const KEYCAP_PAD_V: Pixels = px(3.0);
 const KEYCAP_PAD_H: Pixels = px(8.0);
@@ -42,21 +47,21 @@ const LISTEN_GLYPH: Pixels = px(12.0);
 const FILTER_MAX_W: Pixels = px(220.0);
 const FILTER_HEADER_GAP: Pixels = px(12.0);
 
-const LIST_RADIUS: Pixels = px(9.0);
+const LIST_RADIUS: Pixels = radius(Radius::Md);
 const LIST_PAD: Pixels = px(8.0);
 const LIST_MAX_H: Pixels = px(230.0);
 const ROW_GAP: Pixels = px(8.0);
 const ROW_PAD_V: Pixels = px(6.0);
 const ROW_PAD_H: Pixels = px(9.0);
-const ROW_RADIUS: Pixels = px(6.0);
+const ROW_RADIUS: Pixels = radius(Radius::Sm);
 const ROW_MB: Pixels = px(1.0);
 const ROW_DOT: Pixels = px(6.0);
-const ROW_FS: Pixels = px(12.0);
+const ROW_FS: Pixels = FONT_XS;
 const ROW_CHECK: Pixels = px(12.0);
 const EMPTY_PAD_V: Pixels = px(20.0);
 
 const FOOTER_GAP: Pixels = px(8.0);
-const FOOTER_HINT_FS: Pixels = px(11.0);
+const FOOTER_HINT_FS: Pixels = FONT_META;
 const EDGE_HINT_MT: Pixels = px(6.0);
 
 pub struct ActionModalLaunch {

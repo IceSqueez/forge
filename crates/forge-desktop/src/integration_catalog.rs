@@ -77,7 +77,7 @@ pub fn core_features() -> [CoreFeature; 4] {
 pub fn core_tint(key: &str, palette: &ForgePalette) -> Rgba {
     match key {
         "tts" => palette.accent_teal,
-        "soundboard" => palette.bits,
+        "soundboard" => palette.accent_peach,
         "overlays" => palette.accent_pink_light,
         _ => palette.info,
     }

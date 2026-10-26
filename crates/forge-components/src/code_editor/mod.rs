@@ -23,7 +23,6 @@ use layout::{Geometry, Lines};
 
 const KEY_CONTEXT: &str = "ForgeCodeEditor";
 const INDENT_UNIT: &str = "  ";
-const LINE_HEIGHT_RATIO: f32 = 1.5;
 #[cfg(test)]
 const SAVE_CHORD: &str = "secondary-s";
 const SAVE_CHORDS: [&str; 2] = ["ctrl-s", "cmd-s"];

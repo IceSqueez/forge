@@ -1,6 +1,7 @@
+use crate::FONT_XXL;
 use gpui::{
-    AnyElement, App, IntoElement, ParentElement, RenderOnce, Rgba, SharedString, Styled, Window,
-    div, px,
+    AnyElement, App, IntoElement, ParentElement, Pixels, RenderOnce, Rgba, SharedString, Styled,
+    Window, div, px,
 };
 
 use crate::avatar::{AvatarTile, avatar_tile};
@@ -8,6 +9,13 @@ use crate::palette::ForgePalette;
 use crate::tokens::{
     BORDER_THIN, Density, FONT_MD, FONT_XS, Radius, Spacing, body_family, radius, spacing,
 };
+
+const HERO_TILE_SIZE: Pixels = px(48.0);
+const HERO_TILE_CORNER: Pixels = px(11.0);
+const HERO_TILE_FONT: Pixels = FONT_XXL;
+const NAME_BADGE_GAP: Pixels = px(8.0);
+const INFO_GAP: Pixels = px(2.0);
+const HERO_PAD_H: Pixels = px(18.0);
 
 #[derive(IntoElement)]
 pub struct PlatformHero {
@@ -32,9 +40,9 @@ pub fn platform_hero(
 ) -> PlatformHero {
     PlatformHero {
         tile: avatar_tile(letter, brand, palette)
-            .size(px(48.0))
-            .corner(px(11.0))
-            .font(px(24.0)),
+            .size(HERO_TILE_SIZE)
+            .corner(HERO_TILE_CORNER)
+            .font(HERO_TILE_FONT),
         name: name.into(),
         name_badges: Vec::new(),
         description: description.into(),
@@ -82,7 +90,7 @@ impl RenderOnce for PlatformHero {
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.0))
+                .gap(NAME_BADGE_GAP)
                 .child(name_el)
                 .children(self.name_badges)
                 .into_any_element()
@@ -93,7 +101,7 @@ impl RenderOnce for PlatformHero {
             .min_w(px(0.0))
             .flex()
             .flex_col()
-            .gap(px(2.0))
+            .gap(INFO_GAP)
             .child(name_row)
             .child(
                 div()
@@ -109,7 +117,7 @@ impl RenderOnce for PlatformHero {
             .items_center()
             .gap(spacing(Spacing::Md, d))
             .py(spacing(Spacing::Md, d))
-            .px(px(18.0))
+            .px(HERO_PAD_H)
             .rounded(radius(Radius::Lg))
             .border(BORDER_THIN)
             .border_color(self.border)

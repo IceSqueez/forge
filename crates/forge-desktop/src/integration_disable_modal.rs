@@ -1,3 +1,8 @@
+use forge_components::FONT_META;
+use forge_components::FONT_ROW;
+use forge_components::FONT_SECTION_LABEL;
+use forge_components::FONT_XS;
+use forge_components::FONT_XXS;
 use std::ops::Range;
 
 use forge_components::{
@@ -15,28 +20,28 @@ use forge_registry::IntegrationReferences;
 const BODY_PAD_V: Pixels = px(14.0);
 const BODY_PAD_H: Pixels = px(18.0);
 const BODY_GAP: Pixels = px(12.0);
-const LEAD_SIZE: Pixels = px(12.5);
+const LEAD_SIZE: Pixels = FONT_ROW;
 const LEAD_LINE: Pixels = px(19.0);
 const LINES_GAP: Pixels = px(7.0);
 const LINE_GAP: Pixels = px(8.0);
-const LINE_SIZE: Pixels = px(12.0);
+const LINE_SIZE: Pixels = FONT_XS;
 const LINE_ICON: Pixels = px(13.0);
 const LINE_ICON_NUDGE: Pixels = px(2.0);
-const USED_BY_SIZE: Pixels = px(9.5);
+const USED_BY_SIZE: Pixels = FONT_SECTION_LABEL;
 const USED_BY_MB: Pixels = px(6.0);
 const CHIP_GAP: Pixels = px(4.0);
-const CHIP_SIZE: Pixels = px(10.5);
+const CHIP_SIZE: Pixels = FONT_XXS;
 const CHIP_ICON: Pixels = px(10.0);
 const CHIP_PAD_V: Pixels = px(2.0);
 const CHIP_PAD_H: Pixels = px(7.0);
 const MORE_PAD_H: Pixels = px(4.0);
 const SHOWN_CHIPS: usize = 4;
-const FOOTER_HINT: Pixels = px(11.0);
+const FOOTER_HINT: Pixels = FONT_META;
 const FOOTER_GAP: Pixels = px(8.0);
 const CONFIRM_PAD_V: Pixels = px(5.0);
 const CONFIRM_PAD_H: Pixels = px(12.0);
 const CONFIRM_GAP: Pixels = px(5.0);
-const CONFIRM_SIZE: Pixels = px(12.0);
+const CONFIRM_SIZE: Pixels = FONT_XS;
 const CONFIRM_ICON: Pixels = px(12.0);
 
 pub struct DisablePrompt {
@@ -129,12 +134,12 @@ fn consequences(prompt: &DisablePrompt, palette: &ForgePalette) -> AnyElement {
     fails.strong(&tr!("integration_disable_reason"));
     fails.plain(&tr!("integration_disable_fails_suffix"));
     let red = HighlightStyle {
-        color: Some(Hsla::from(palette.random)),
+        color: Some(Hsla::from(palette.danger)),
         ..HighlightStyle::default()
     };
     let mut lines = div().flex().flex_col().gap(LINES_GAP).child(consequence(
         Icon::AlertCircle,
-        palette.random,
+        palette.danger,
         fails.styled(red),
         palette,
     ));

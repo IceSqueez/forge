@@ -1,11 +1,15 @@
+use crate::Elevation;
+use crate::FONT_META;
+use crate::FONT_ROW;
+use crate::elevation_shadow;
 use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    Anchor, AnchoredPositionMode, AnimationExt, AnyElement, App, BoxShadow, ClickEvent, Div,
-    ElementId, FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, RenderOnce, Rgba, SharedString, Stateful,
-    StatefulInteractiveElement, Styled, Window, anchored, deferred, div, hsla, point, px, relative,
+    Anchor, AnchoredPositionMode, AnimationExt, AnyElement, App, ClickEvent, Div, ElementId,
+    FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
+    ParentElement, Pixels, RenderOnce, Rgba, SharedString, Stateful, StatefulInteractiveElement,
+    Styled, Window, anchored, deferred, div, point, px, relative,
 };
 
 use crate::icons::{Icon, icon};
@@ -19,15 +23,12 @@ pub(crate) const DROPDOWN_MAX_HEIGHT: Pixels = px(200.0);
 
 const TRIGGER_GAP: Pixels = px(4.0);
 const PANEL_RADIUS: Pixels = px(8.0);
-const SHADOW_OFFSET_Y: Pixels = px(10.0);
-const SHADOW_BLUR: Pixels = px(30.0);
-const SHADOW_ALPHA: f32 = 0.4;
 
 const ROW_PAD_X: Pixels = px(9.0);
 const ROW_RADIUS: Pixels = px(5.0);
 const ROW_GAP: Pixels = px(8.0);
-const ROW_FONT: Pixels = px(12.5);
-const SUFFIX_FONT: Pixels = px(11.0);
+const ROW_FONT: Pixels = FONT_ROW;
+const SUFFIX_FONT: Pixels = FONT_META;
 const CHECK_SIZE: Pixels = px(12.0);
 const ICON_SIZE: Pixels = px(13.0);
 
@@ -46,13 +47,7 @@ pub fn dropdown_surface(palette: &ForgePalette) -> Div {
         .border(BORDER_THIN)
         .border_color(palette.border_input)
         .rounded(PANEL_RADIUS)
-        .shadow(vec![BoxShadow {
-            color: hsla(0.0, 0.0, 0.0, SHADOW_ALPHA),
-            offset: point(px(0.0), SHADOW_OFFSET_Y),
-            blur_radius: SHADOW_BLUR,
-            spread_radius: px(0.0),
-            inset: false,
-        }])
+        .shadow(elevation_shadow(Elevation::Popover))
         .occlude()
 }
 

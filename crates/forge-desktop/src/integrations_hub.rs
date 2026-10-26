@@ -1,3 +1,6 @@
+use forge_components::FONT_MD;
+use forge_components::FONT_META;
+use forge_components::FONT_ROW;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -57,14 +60,14 @@ impl ConnectFollowUp {
 const BODY_PAD_V: Pixels = px(22.0);
 const BODY_PAD_H: Pixels = px(28.0);
 const INTRO_MB: Pixels = px(20.0);
-const INTRO_TITLE: Pixels = px(16.0);
+const INTRO_TITLE: Pixels = FONT_MD;
 const INTRO_TITLE_MB: Pixels = px(4.0);
-const INTRO_TEXT: Pixels = px(12.5);
-const HEADER_COUNT: Pixels = px(11.0);
+const INTRO_TEXT: Pixels = FONT_ROW;
+const HEADER_COUNT: Pixels = FONT_META;
 const SECTION_MB: Pixels = px(22.0);
 const GRID_GAP: Pixels = px(10.0);
 const GRID_COLUMNS: usize = 3;
-const FOOTER_TEXT: Pixels = px(11.0);
+const FOOTER_TEXT: Pixels = FONT_META;
 const FOOTER_ICON: Pixels = px(11.0);
 const FOOTER_GAP: Pixels = px(5.0);
 const OPEN_GAP: Pixels = px(3.0);
@@ -398,7 +401,7 @@ impl IntegrationsHubView {
         let disclaimer = disclaimer_of(&id);
         let note = match (&status, &disclaimer) {
             (CardStatus::Failed(reason), None) => Some(
-                hub_note(Icon::AlertCircle, palette.random, reason.clone())
+                hub_note(Icon::AlertCircle, palette.danger, reason.clone())
                     .emphasized()
                     .tooltip(reason.clone())
                     .action(self.retry_link(&id, palette, cx)),
@@ -719,7 +722,7 @@ pub(crate) fn card_status_badge(
         CardStatus::Failed(_) => (
             BadgeMarker::Glyph(Icon::AlertCircle),
             tr!("integration_status_failed"),
-            palette.random,
+            palette.danger,
         ),
         CardStatus::Active => (
             BadgeMarker::Dot(palette.success),

@@ -1,3 +1,10 @@
+use forge_components::FONT_BADGE;
+use forge_components::FONT_HERO;
+use forge_components::FONT_LABEL;
+use forge_components::FONT_MICRO;
+use forge_components::FONT_ROW;
+use forge_components::FONT_SECTION_LABEL;
+use forge_components::FONT_XXS;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -50,10 +57,10 @@ const HERO_MARGIN_B: Pixels = px(14.0);
 const HERO_TILE: Pixels = px(40.0);
 const HERO_TILE_RADIUS: Pixels = px(10.0);
 const HERO_GLYPH: Pixels = px(20.0);
-const HERO_TITLE_FS: Pixels = px(15.0);
+const HERO_TITLE_FS: Pixels = FONT_HERO;
 const HERO_BLURB_MT: Pixels = px(1.0);
 const HERO_TOGGLE_GAP: Pixels = px(8.0);
-const LABEL_FS: Pixels = px(11.5);
+const LABEL_FS: Pixels = FONT_LABEL;
 
 const COLUMNS_GAP: Pixels = px(12.0);
 const LEFT_COLUMN_FLEX: f32 = 1.0;
@@ -65,46 +72,47 @@ const DEVICE_PAD_V: Pixels = px(10.0);
 const DEVICE_PAD_H: Pixels = px(12.0);
 const DEVICE_GAP: Pixels = px(10.0);
 const DEVICE_GLYPH: Pixels = px(14.0);
-const DEVICE_NAME_FS: Pixels = px(12.5);
-const DEVICE_BADGE_FS: Pixels = px(9.5);
+const DEVICE_NAME_FS: Pixels = FONT_ROW;
+const DEVICE_BADGE_FS: Pixels = FONT_SECTION_LABEL;
 const OFFLINE_OPACITY: f32 = 0.6;
 const RESCAN_MT: Pixels = px(2.0);
 
 const MONITOR_MT: Pixels = px(12.0);
 const MONITOR_PAD: Pixels = px(12.0);
-const MONITOR_FS: Pixels = px(10.5);
+const MONITOR_FS: Pixels = FONT_XXS;
 const MONITOR_LINE_H: Pixels = px(18.9);
 const MONITOR_GAP: Pixels = px(8.0);
 const MONITOR_KIND_W: Pixels = px(54.0);
 const MONITOR_ROWS: usize = 4;
 
-const BINDINGS_FS: Pixels = px(10.0);
+const BINDINGS_FS: Pixels = FONT_MICRO;
 const MAP_PAD_V: Pixels = px(9.0);
 const MAP_PAD_H: Pixels = px(12.0);
 const MAP_GAP: Pixels = px(10.0);
-const SIG_FS: Pixels = px(11.5);
+const SIG_FS: Pixels = FONT_LABEL;
 const SIG_RADIUS: Pixels = px(5.0);
 const SIG_PAD_V: Pixels = px(3.0);
 const SIG_PAD_H: Pixels = px(8.0);
 const SIG_MIN_W: Pixels = px(66.0);
 const SIG_LINE_H: Pixels = px(14.0);
-const CH_BADGE_FS: Pixels = px(9.0);
+const CH_BADGE_FS: Pixels = FONT_BADGE;
 const ARROW_GLYPH: Pixels = px(13.0);
 const ACCENT_DOT: Pixels = px(6.0);
-const TARGET_FS: Pixels = px(12.0);
+const TARGET_FS: Pixels = FONT_XS;
 
 const ADD_BAR_PAD_H: Pixels = px(12.0);
-const ADD_BAR_RADIUS: Pixels = px(9.0);
+const ADD_BAR_RADIUS: Pixels = radius(Radius::Md);
 const ADD_BAR_GLYPH: Pixels = px(13.0);
-const ADD_BAR_FS: Pixels = px(12.0);
-const KBD_FS: Pixels = px(10.0);
+const ADD_BAR_FS: Pixels = FONT_XS;
+const KBD_FS: Pixels = FONT_MICRO;
 const KBD_ML: Pixels = px(6.0);
 const KBD_PAD_V: Pixels = px(1.0);
 const KBD_PAD_H: Pixels = px(6.0);
 const KBD_RADIUS: Pixels = px(4.0);
 
-const FOOTER_FS: Pixels = px(10.5);
+const FOOTER_FS: Pixels = FONT_XXS;
 const FOOTER_DOT: Pixels = px(6.0);
+const FOOTER_STATUS_GAP: Pixels = px(6.0);
 const FOOTER_PAD_V: Pixels = px(7.0);
 const FOOTER_PAD_H: Pixels = px(14.0);
 const FOOTER_MT: Pixels = px(14.0);
@@ -1377,7 +1385,7 @@ impl MidiScreenView {
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.delete(id, cx)),
                 )
                 .icon(Icon::Trash)
-                .color(palette.random)
+                .color(palette.danger)
                 .into(),
             ])
             .on_toggle(
@@ -1509,7 +1517,7 @@ impl MidiScreenView {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.0))
+                    .gap(FOOTER_STATUS_GAP)
                     .child(status_dot(dot, FOOTER_DOT))
                     .child(
                         div()

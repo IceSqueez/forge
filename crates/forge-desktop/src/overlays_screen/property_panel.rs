@@ -1,3 +1,5 @@
+use forge_components::Radius;
+use forge_components::radius;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -43,7 +45,7 @@ pub(super) const SECTION_TOP_GAP: Pixels = px(16.0);
 pub(super) const FIELD_GAP: Pixels = px(12.0);
 
 pub(super) const NOTICE_PAD: Pixels = px(9.0);
-pub(super) const NOTICE_RADIUS: Pixels = px(6.0);
+pub(super) const NOTICE_RADIUS: Pixels = radius(Radius::Sm);
 pub(super) const NOTICE_LINE_H: Pixels = px(15.0);
 
 const SLIDE_SETTLE: Duration = Duration::from_millis(400);

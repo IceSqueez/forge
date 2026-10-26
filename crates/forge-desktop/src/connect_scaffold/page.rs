@@ -1,3 +1,6 @@
+use forge_components::FONT_FIELD;
+use forge_components::FONT_LABEL;
+use forge_components::FONT_META;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_MD, FONT_XS, ForgePalette, Icon, Radius,
     body_family, grow_cell, icon, mono_family, page_frame, radius, status_dot, tr,
@@ -26,21 +29,21 @@ const HERO_GLYPH: Pixels = px(24.0);
 const CARD_HEAD_PAD_V: Pixels = px(12.0);
 const CARD_HEAD_PAD_H: Pixels = px(14.0);
 const CARD_BODY_PAD: Pixels = px(14.0);
-const CARD_TITLE_SIZE: Pixels = px(13.0);
+const CARD_TITLE_SIZE: Pixels = FONT_FIELD;
 const CARD_TITLE_GAP: Pixels = px(7.0);
 const CARD_GLYPH: Pixels = px(14.0);
 
 const STEP_PAD_V: Pixels = px(7.0);
 const STEP_GAP: Pixels = px(10.0);
-const STEP_NUMBER_SIZE: Pixels = px(11.0);
-const STEP_TEXT_SIZE: Pixels = px(11.5);
+const STEP_NUMBER_SIZE: Pixels = FONT_META;
+const STEP_TEXT_SIZE: Pixels = FONT_LABEL;
 const STEP_LINE_HEIGHT: Pixels = px(17.25);
 const WORD_GAP: Pixels = px(4.0);
 const INTRO_LINE_HEIGHT: Pixels = px(17.8);
 
 const HEADER_STATUS_GAP: Pixels = px(5.0);
 const HEADER_DOT_SIZE: Pixels = px(7.0);
-const HEADER_STATUS_SIZE: Pixels = px(11.5);
+const HEADER_STATUS_SIZE: Pixels = FONT_LABEL;
 
 const LEFT_COLUMN_GROW: f32 = 10.0;
 const RIGHT_COLUMN_GROW: f32 = 12.0;

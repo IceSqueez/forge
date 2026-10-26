@@ -740,7 +740,7 @@ impl BannedPanel {
         let note = match (&entry.unban, &row.unban) {
             (_, UnbanState::Failed(error)) => Some(Self::render_note(
                 tr!("chat_banned_unban_failed", error = error.clone()),
-                palette.random,
+                palette.danger,
             )),
             (UnbanAbility::Refused(refusal), _) => Some(Self::render_note(
                 refusal_label(*refusal),
@@ -785,7 +785,7 @@ impl BannedPanel {
                     .child(text_cell(
                         expiry_label(entry.duration),
                         match entry.duration {
-                            BanDuration::Permanent => palette.random,
+                            BanDuration::Permanent => palette.danger,
                             BanDuration::Until(_) => palette.warning,
                         },
                         Some(EXPIRY_COLUMN_W),
@@ -857,7 +857,7 @@ impl BannedPanel {
                 let more = group.next.as_ref().map(|_| {
                     let failed = group
                         .more_failed
-                        .map(|reason| Self::render_note(unavailable_label(reason), palette.random));
+                        .map(|reason| Self::render_note(unavailable_label(reason), palette.danger));
                     padded(
                         ghost_button(tr!("chat_banned_load_more"), palette)
                             .density(density)

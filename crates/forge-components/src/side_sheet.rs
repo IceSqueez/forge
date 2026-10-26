@@ -15,8 +15,8 @@ const HEADER_TILE: Pixels = px(28.0);
 const HEADER_TILE_GAP: Pixels = px(10.0);
 const HEADER_TILE_ICON: Pixels = px(15.0);
 const CLOSE_HIT: Pixels = px(32.0);
-const DIVIDER_H: Pixels = px(1.0);
-const RESIZE_VISUAL_W: Pixels = px(1.0);
+const DIVIDER_H: Pixels = BORDER_THIN;
+const RESIZE_VISUAL_W: Pixels = BORDER_THIN;
 const RESIZE_HIT_W: Pixels = px(8.0);
 
 const RESIZE_GROUP: &str = "forge-side-sheet-resize";

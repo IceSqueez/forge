@@ -394,8 +394,8 @@ impl TwitchBotSection {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        note_box(palette.random, palette, density)
-            .child(icon(Icon::AlertTriangle, INLINE_GLYPH, palette.random))
+        note_box(palette.danger, palette, density)
+            .child(icon(Icon::AlertTriangle, INLINE_GLYPH, palette.danger))
             .child(
                 div()
                     .flex_1()
@@ -512,7 +512,7 @@ impl TwitchBotSection {
             )
             .child(
                 ghost_button_with_icon(Icon::Logout, tr!("twitch_bot_disconnect_btn"), palette)
-                    .ink(palette.random)
+                    .ink(palette.danger)
                     .density(density)
                     .busy(disconnecting)
                     .on_click(

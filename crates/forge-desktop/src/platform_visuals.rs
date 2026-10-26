@@ -61,15 +61,15 @@ pub fn badge_color(kind: BadgeKind, palette: &ForgePalette) -> Rgba {
         BadgeKind::Broadcaster => palette.warning,
         BadgeKind::Moderator => palette.success,
         BadgeKind::Vip => palette.theme_brand,
-        BadgeKind::Subscriber => palette.bits,
+        BadgeKind::Subscriber => palette.accent_peach,
         BadgeKind::Bot => palette.info,
         BadgeKind::Partner => palette.accent_teal,
         BadgeKind::Premium => palette.accent_pink_light,
         BadgeKind::Founder => palette.accent_pink_light,
         BadgeKind::Turbo => palette.theme_brand,
         BadgeKind::HypeTrain => palette.warning,
-        BadgeKind::Bits => palette.bits,
-        BadgeKind::BitsLeader => palette.bits,
+        BadgeKind::Bits => palette.accent_peach,
+        BadgeKind::BitsLeader => palette.accent_peach,
     }
 }
 

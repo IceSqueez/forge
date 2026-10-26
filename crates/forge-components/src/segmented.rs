@@ -1,3 +1,4 @@
+use crate::FONT_META;
 use gpui::{
     App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement, ParentElement, Pixels,
     RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
@@ -11,7 +12,7 @@ type SegClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 const SEG_PAD_V: Pixels = px(5.0);
 const SEG_PAD_H: Pixels = px(11.0);
-const SEG_FS: Pixels = px(11.0);
+const SEG_FS: Pixels = FONT_META;
 const SEG_RADIUS: Pixels = px(5.0);
 const GROUP_RADIUS: Pixels = px(7.0);
 const GROUP_PAD: Pixels = px(2.0);

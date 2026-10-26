@@ -202,7 +202,7 @@ impl ScreenActionsView {
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.remove_step(i, cx)),
                 )
                 .icon(Icon::Eraser)
-                .color(palette.random)
+                .color(palette.danger)
                 .into(),
             ])
             .on_toggle(

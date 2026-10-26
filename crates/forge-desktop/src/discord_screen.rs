@@ -1,3 +1,8 @@
+use forge_components::FONT_BADGE;
+use forge_components::FONT_HERO;
+use forge_components::FONT_LABEL;
+use forge_components::FONT_MICRO;
+use forge_components::FONT_XXS;
 use std::sync::Arc;
 
 use forge_components::{
@@ -40,7 +45,7 @@ const HERO_MARGIN_B: Pixels = px(14.0);
 const HERO_TILE: Pixels = px(40.0);
 const HERO_TILE_RADIUS: Pixels = px(10.0);
 const HERO_GLYPH: Pixels = px(20.0);
-const HERO_TITLE_FS: Pixels = px(15.0);
+const HERO_TITLE_FS: Pixels = FONT_HERO;
 const HERO_BLURB_MT: Pixels = px(1.0);
 
 const COUNT_TILE: Pixels = px(26.0);
@@ -48,8 +53,8 @@ const COUNT_TILE_RADIUS: Pixels = px(7.0);
 const COUNT_GLYPH: Pixels = px(13.0);
 const COUNT_GAP: Pixels = px(8.0);
 const COUNT_MR: Pixels = px(4.0);
-const COUNT_VALUE_FS: Pixels = px(12.0);
-const COUNT_SUB_FS: Pixels = px(10.0);
+const COUNT_VALUE_FS: Pixels = FONT_XS;
+const COUNT_SUB_FS: Pixels = FONT_MICRO;
 
 const STAT_GAP: Pixels = px(10.0);
 const STAT_MARGIN_B: Pixels = px(14.0);
@@ -57,7 +62,7 @@ const STAT_MARGIN_B: Pixels = px(14.0);
 const COLUMN_GAP: Pixels = px(12.0);
 const COLUMN_FLEX: f32 = 1.0;
 
-const SECTION_HINT_FS: Pixels = px(10.0);
+const SECTION_HINT_FS: Pixels = FONT_MICRO;
 const LIST_GAP: Pixels = px(6.0);
 
 const ROW_PAD_V: Pixels = px(9.0);
@@ -65,16 +70,16 @@ const ROW_PAD_H: Pixels = px(12.0);
 const ROW_GAP: Pixels = px(9.0);
 const ROW_GLYPH: Pixels = px(13.0);
 const ROW_NAME_MIN_W: Pixels = px(78.0);
-const ROW_NAME_FS: Pixels = px(12.0);
-const ROW_SUMMARY_FS: Pixels = px(11.5);
+const ROW_NAME_FS: Pixels = FONT_XS;
+const ROW_SUMMARY_FS: Pixels = FONT_LABEL;
 const ROW_DOT: Pixels = px(6.0);
-const KIND_BADGE_FS: Pixels = px(9.0);
-const POST_TIME_FS: Pixels = px(10.5);
+const KIND_BADGE_FS: Pixels = FONT_BADGE;
+const POST_TIME_FS: Pixels = FONT_XXS;
 const EMPTY_PAD_V: Pixels = px(14.0);
 
 const ADD_BAR_GLYPH: Pixels = px(13.0);
 
-const FOOTER_FS: Pixels = px(10.5);
+const FOOTER_FS: Pixels = FONT_XXS;
 const FOOTER_DOT: Pixels = px(6.0);
 const FOOTER_GAP: Pixels = px(6.0);
 const FOOTER_PAD_V: Pixels = px(7.0);
@@ -84,7 +89,7 @@ const FOOTER_SEPARATOR: &str = "·";
 
 const HEADER_GAP: Pixels = px(5.0);
 const HEADER_GLYPH: Pixels = px(13.0);
-const HEADER_FS: Pixels = px(11.5);
+const HEADER_FS: Pixels = FONT_LABEL;
 
 const NO_VALUE: &str = "-";
 const SUMMARY_INLINE_LIMIT: usize = 42;
@@ -568,7 +573,7 @@ impl DiscordScreenView {
 
         let (send_value, send_ink) = match health.last_send_ok {
             Some(true) => (tr!("discord_stat_send_ok"), palette.success),
-            Some(false) => (tr!("discord_stat_send_failed"), palette.random),
+            Some(false) => (tr!("discord_stat_send_failed"), palette.danger),
             None => (NO_VALUE.to_owned(), palette.text_primary),
         };
         let send_hint = match self.last_send_at() {
@@ -580,7 +585,7 @@ impl DiscordScreenView {
         let errors_ink = if errors == 0 {
             palette.success
         } else {
-            palette.random
+            palette.danger
         };
 
         div()
@@ -753,7 +758,7 @@ impl DiscordScreenView {
                     }),
                 )
                 .icon(Icon::Trash)
-                .color(palette.random)
+                .color(palette.danger)
                 .into(),
             ])
             .on_toggle(
@@ -821,7 +826,7 @@ impl DiscordScreenView {
     fn render_footer(&self, palette: &ForgePalette) -> AnyElement {
         let (dot, right) = match self.health.last_send_ok {
             Some(true) => (palette.success, tr!("discord_footer_healthy")),
-            Some(false) => (palette.random, tr!("discord_footer_failing")),
+            Some(false) => (palette.danger, tr!("discord_footer_failing")),
             None => (palette.text_faint, tr!("discord_footer_idle")),
         };
 
@@ -915,7 +920,7 @@ fn render_post(post: &WebhookPost, palette: &ForgePalette) -> AnyElement {
     let (dot, kind_ink) = if post.ok {
         (palette.success, palette.text_muted)
     } else {
-        (palette.random, palette.random)
+        (palette.danger, palette.danger)
     };
     let kind = if post.had_embed {
         tr!("discord_post_kind_embed")
@@ -971,12 +976,12 @@ fn render_post(post: &WebhookPost, palette: &ForgePalette) -> AnyElement {
 
 fn row_accent(index: usize, palette: &ForgePalette) -> Rgba {
     let wheel = [
-        palette.random,
+        palette.danger,
         palette.brand,
         palette.warning,
         palette.success,
         palette.info,
-        palette.bits,
+        palette.accent_peach,
     ];
     wheel[index % wheel.len()]
 }

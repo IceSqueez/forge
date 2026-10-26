@@ -544,7 +544,7 @@ impl SafetyCopiesView {
             density,
         );
         if invalid.is_some() {
-            row.hint_color(palette.random)
+            row.hint_color(palette.danger)
         } else {
             row
         }

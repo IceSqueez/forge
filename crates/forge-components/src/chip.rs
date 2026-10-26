@@ -1,3 +1,4 @@
+use crate::FONT_META;
 use gpui::{
     App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce,
     Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
@@ -15,7 +16,7 @@ const CHIP_GAP: Pixels = px(5.0);
 const CHIP_PAD_Y: Pixels = px(3.0);
 const CHIP_PAD_X: Pixels = px(9.0);
 const CHIP_RADIUS: Pixels = px(11.0);
-const CHIP_FS: Pixels = px(11.0);
+const CHIP_FS: Pixels = FONT_META;
 
 #[derive(Clone, Copy)]
 pub enum ChipGlyph {

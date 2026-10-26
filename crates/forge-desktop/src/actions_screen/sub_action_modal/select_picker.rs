@@ -6,6 +6,9 @@ use forge_components::{
 };
 use gpui::Rgba;
 
+const OPTION_PAD_V: Pixels = px(6.0);
+const OPTION_PAD_H: Pixels = px(10.0);
+
 pub(super) struct SelectPickerForm {
     pub(super) key: String,
     pub(super) picker: Entity<Picker>,
@@ -183,8 +186,8 @@ impl EditSubActionForm {
             .items_center()
             .justify_between()
             .gap(spacing(Spacing::Xs, Density::Cozy))
-            .py(px(6.0))
-            .px(px(10.0))
+            .py(OPTION_PAD_V)
+            .px(OPTION_PAD_H)
             .rounded(radius(Radius::Sm))
             .border(BORDER_THIN)
             .border_color(border_color)

@@ -75,7 +75,7 @@ impl Footer {
             return None;
         }
         let color = if loss.priority_dropped() > 0 {
-            palette.random
+            palette.danger
         } else {
             palette.text_secondary
         };

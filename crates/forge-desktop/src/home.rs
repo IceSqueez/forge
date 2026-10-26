@@ -1,3 +1,5 @@
+use forge_components::FONT_XL;
+use forge_components::FONT_XXL;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, Radius, Spacing, body_family, card, dropdown, dropdown_row,
@@ -40,14 +42,14 @@ const HERO_PAD_V: Pixels = px(22.0);
 const HERO_PAD_H: Pixels = px(24.0);
 const HERO_BRAND_BOX: Pixels = px(54.0);
 const HERO_BRAND_FONT: Pixels = px(26.0);
-const HERO_TITLE_FONT: Pixels = px(22.0);
+const HERO_TITLE_FONT: Pixels = FONT_XL;
 
 const JUMP_PAD_V: Pixels = px(16.0);
 const JUMP_PAD_H: Pixels = px(18.0);
 const JUMP_ICON_BOX: Pixels = px(34.0);
 const JUMP_ICON_RADIUS: Pixels = px(8.0);
 const JUMP_ICON_GLYPH: Pixels = FONT_LG;
-const JUMP_STAT_FONT: Pixels = px(24.0);
+const JUMP_STAT_FONT: Pixels = FONT_XXL;
 const JUMP_HINT_ARROW: Pixels = px(12.0);
 const JUMP_WARN_ICON: Pixels = px(14.0);
 
@@ -73,7 +75,7 @@ const EVENT_LIVE_DOT: Pixels = px(6.0);
 const EVENT_HEADER_ICON: Pixels = px(14.0);
 
 const GLANCE_ROW_PAD_V: Pixels = px(5.0);
-const DIVIDER_H: Pixels = px(1.0);
+const DIVIDER_H: Pixels = BORDER_THIN;
 const GLANCE_HEADER_ICON: Pixels = px(14.0);
 const RECENT_GROW: f32 = 1.4;
 const GLANCE_GROW: f32 = 1.0;
@@ -513,7 +515,7 @@ impl HomeView {
         let health_icon_color = if connected {
             palette.success
         } else {
-            palette.random
+            palette.danger
         };
         let badge_label = if connected {
             tr!("home_health_live")

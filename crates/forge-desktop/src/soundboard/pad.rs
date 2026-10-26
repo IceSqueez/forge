@@ -59,7 +59,7 @@ impl SoundboardView {
             ("sb-pad-del", index),
             format!("sb-pad-del-{index}").into(),
             Icon::Trash,
-            palette.random,
+            palette.danger,
             move |this, _ev, _window, cx| this.request_delete(id, cx),
             cx,
         );

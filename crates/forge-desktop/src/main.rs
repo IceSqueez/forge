@@ -211,8 +211,8 @@ use forge_components::{
 };
 use forge_storage::paths;
 use gpui::{
-    App, AppContext, Pixels, QuitMode, SharedString, TitlebarOptions, WindowOptions, point, px,
-    size,
+    App, AppContext, Pixels, Point, QuitMode, SharedString, TitlebarOptions, WindowOptions, point,
+    px, size,
 };
 
 use crate::actions::{bind_list_keys, register_shell_key_bindings};
@@ -226,6 +226,7 @@ use crate::titlebar::TITLEBAR_HEIGHT;
 use forge_components::Presentation;
 
 const SHELL_MIN_CONTENT_HEIGHT: Pixels = px(480.0);
+const TRAFFIC_LIGHT_OFFSET: Point<Pixels> = point(px(14.0), px(10.0));
 
 const FLAG_SCREEN: &str = "--screen";
 const FLAG_SELECT: &str = "--select";
@@ -538,7 +539,7 @@ fn main() {
             titlebar: Some(TitlebarOptions {
                 title: Some(SharedString::from("forge")),
                 appears_transparent: true,
-                traffic_light_position: Some(point(px(14.0), px(10.0))),
+                traffic_light_position: Some(TRAFFIC_LIGHT_OFFSET),
             }),
             app_id: Some("forge-desktop".to_owned()),
             window_min_size: Some(size(

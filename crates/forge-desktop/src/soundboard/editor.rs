@@ -221,13 +221,13 @@ impl SoundboardView {
     ) -> AnyElement {
         pad_tile(
             "sb-add-bar",
-            icon(Icon::Plus, ADD_ICON, palette.bits),
+            icon(Icon::Plus, ADD_ICON, palette.accent_peach),
             tr!("soundboard_add_sound"),
             palette,
         )
         .bar(palette)
-        .title_color(palette.bits)
-        .hover_border(palette.bits)
+        .title_color(palette.accent_peach)
+        .hover_border(palette.accent_peach)
         .on_click(cx.listener(|this, _: &ClickEvent, window, cx| this.open_add(window, cx)))
         .into_any_element()
     }

@@ -92,7 +92,7 @@ impl ScreenActionsView {
                     .child(
                         div()
                             .font_family(mono_family())
-                            .text_color(palette.random)
+                            .text_color(palette.danger)
                             .child(tr!("integration_disable_reason")),
                     ),
                 tr!("integration_disabled_enable", name = name),

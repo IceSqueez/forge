@@ -1,3 +1,6 @@
+use forge_components::FONT_LABEL;
+use forge_components::FONT_META;
+use forge_components::FONT_MICRO;
 use std::ops::Range;
 
 use forge_components::{
@@ -19,14 +22,14 @@ const HEADING_GAP: Pixels = px(10.0);
 const GROUP_TOP_GAP: Pixels = px(14.0);
 const GROUP_HEADING_GAP: Pixels = px(8.0);
 
-const INTRO_FS: Pixels = px(11.5);
+const INTRO_FS: Pixels = FONT_LABEL;
 const INTRO_LINE_H: Pixels = px(18.4);
 const INTRO_GAP: Pixels = px(14.0);
 
-const CODE_FS: Pixels = px(11.0);
+const CODE_FS: Pixels = FONT_META;
 const ENTRY_GAP: Pixels = px(8.0);
 
-const CHIP_FS: Pixels = px(10.0);
+const CHIP_FS: Pixels = FONT_MICRO;
 const CHIP_RADIUS: Pixels = px(4.0);
 const CHIP_PAD_V: Pixels = px(2.0);
 const CHIP_PAD_H: Pixels = px(6.0);

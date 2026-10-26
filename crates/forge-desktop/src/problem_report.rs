@@ -329,7 +329,7 @@ impl ProblemReport {
         let card = modal(title, body, palette)
             .header_icon(
                 Icon::Bug,
-                if crash { palette.random } else { palette.brand },
+                if crash { palette.danger } else { palette.brand },
             )
             .size(ModalSize::Lg)
             .width(PREVIEW_WIDTH)

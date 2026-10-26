@@ -574,7 +574,7 @@ fn category_meta(
             "subs",
             palette.brand,
         ),
-        TriggerCategory::Bits => (tr!("trigger_cat_bits").into(), "bits", palette.bits),
+        TriggerCategory::Bits => (tr!("trigger_cat_bits").into(), "bits", palette.accent_peach),
         TriggerCategory::Raids => (
             tr!("trigger_cat_raids").into(),
             "raids",
@@ -583,7 +583,7 @@ fn category_meta(
         TriggerCategory::Moderation => (
             tr!("trigger_cat_moderation").into(),
             "moderation",
-            palette.random,
+            palette.danger,
         ),
         TriggerCategory::ChannelPoints => (
             tr!("trigger_cat_channel_points").into(),
@@ -614,7 +614,7 @@ fn category_meta(
         TriggerCategory::Obs => ("OBS".into(), "obs", palette.accent_teal),
         TriggerCategory::VTube => ("VTube Studio".into(), "vtube", palette.accent_teal),
         TriggerCategory::Discord => ("Discord".into(), "discord", palette.info),
-        TriggerCategory::Midi => ("MIDI".into(), "midi", palette.random),
+        TriggerCategory::Midi => ("MIDI".into(), "midi", palette.danger),
         TriggerCategory::Hotkey => (
             tr!("triggers_filter_hotkey").into(),
             "hotkey",

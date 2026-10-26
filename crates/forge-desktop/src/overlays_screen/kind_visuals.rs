@@ -20,9 +20,9 @@ pub(super) fn accent_color(accent: PreviewAccent, palette: &ForgePalette) -> Rgb
         PreviewAccent::Mauve => palette.accent_mauve,
         PreviewAccent::Sky => palette.info,
         PreviewAccent::Green => palette.success,
-        PreviewAccent::Peach => palette.bits,
+        PreviewAccent::Peach => palette.accent_peach,
         PreviewAccent::Yellow => palette.warning,
-        PreviewAccent::Red => palette.random,
+        PreviewAccent::Red => palette.danger,
     }
 }
 

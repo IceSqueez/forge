@@ -1,3 +1,4 @@
+use forge_components::FONT_XS;
 use forge_components::{
     BORDER_THIN, FONT_SECTION_LABEL, ForgePalette, Icon, OverlayPosition, body_family,
     ghost_button_with_icon, icon, modal, mono_family, overlay, primary_button, secondary_button,
@@ -25,7 +26,7 @@ const DISPLAY_PAD_H: Pixels = px(11.0);
 const DISPLAY_RADIUS: Pixels = px(7.0);
 const DISPLAY_GAP: Pixels = px(7.0);
 const LISTEN_GLYPH: Pixels = px(12.0);
-const DISPLAY_FS: Pixels = px(12.0);
+const DISPLAY_FS: Pixels = FONT_XS;
 
 const FOOTER_GAP: Pixels = px(8.0);
 

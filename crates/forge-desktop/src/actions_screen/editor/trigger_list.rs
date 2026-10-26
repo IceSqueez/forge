@@ -17,7 +17,7 @@ fn trigger_unlink_btn(
     palette: &ForgePalette,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
-    let solid = palette.random;
+    let solid = palette.danger;
     div()
         .id(id.into())
         .flex()
@@ -187,7 +187,7 @@ impl ScreenActionsView {
                     .text_size(FONT_XXS)
                     .min_w_0()
                     .truncate()
-                    .text_color(palette.bits)
+                    .text_color(palette.accent_peach)
                     .child(condition),
             )
             .children(

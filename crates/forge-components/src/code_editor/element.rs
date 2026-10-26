@@ -10,6 +10,7 @@ use gpui::{
 use super::CodeEditor;
 use super::layout::{LineShape, TextMetrics, line_end_point, row_segments};
 use crate::palette::{ForgePalette, with_alpha};
+use crate::text_editing::{CARET_WIDTH, COMPOSITION_UNDERLINE, SELECTION_ALPHA};
 use crate::tokens::{BORDER_THIN, Density, Spacing, spacing};
 
 pub(super) const PAD_Y: Pixels = px(10.0);
@@ -19,13 +20,10 @@ const GUTTER_PAD_R: Pixels = px(10.0);
 const GUTTER_ACCENT_W: Pixels = px(2.0);
 const GUTTER_MARK: &str = "\u{25cf}";
 const MIN_GUTTER_DIGITS: usize = 2;
-const CARET_W: Pixels = px(1.5);
-const UNDERLINE_H: Pixels = px(1.0);
 const OVERSCAN_LINES: usize = 4;
 const MAX_LAYOUT_PASSES: usize = 2;
 const FALLBACK_ADVANCE_RATIO: f32 = 0.6;
 const CURRENT_LINE_ALPHA: f32 = 0.06;
-const SELECTION_ALPHA: f32 = 0.25;
 
 struct PaintLine {
     origin: Point<Pixels>,
@@ -173,7 +171,7 @@ impl CodeEditor {
         let cursor_bounds = self
             .geometry
             .point_for_offset(&self.lines, cursor)
-            .map(|caret| viewport.row_bounds(caret.y, caret.x, CARET_W));
+            .map(|caret| viewport.row_bounds(caret.y, caret.x, CARET_WIDTH));
 
         Frame {
             palette: self.palette,
@@ -191,8 +189,8 @@ impl CodeEditor {
                         .into_iter()
                         .map(|row| {
                             Bounds::new(
-                                point(row.left(), row.bottom() - UNDERLINE_H),
-                                size(row.size.width, UNDERLINE_H),
+                                point(row.left(), row.bottom() - COMPOSITION_UNDERLINE),
+                                size(row.size.width, COMPOSITION_UNDERLINE),
                             )
                         })
                         .collect()

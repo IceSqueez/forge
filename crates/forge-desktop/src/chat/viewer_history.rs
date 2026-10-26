@@ -397,7 +397,7 @@ impl ViewerHistory {
             .gap(spacing(Spacing::Xs, density))
             .child(Self::render_note(
                 tr!("chat_drawer_history_older_failed"),
-                palette.random,
+                palette.danger,
             ))
             .child(
                 ghost_button(tr!("chat_drawer_history_retry"), palette).on_click(
@@ -414,7 +414,7 @@ impl ViewerHistory {
                 Self::render_note(tr!("chat_drawer_history_loading"), palette.text_faint)
             }
             HistoryState::Failed => {
-                Self::render_note(tr!("chat_drawer_history_failed"), palette.random)
+                Self::render_note(tr!("chat_drawer_history_failed"), palette.danger)
             }
             HistoryState::Loaded if self.listed.total == 0 => {
                 Self::render_note(tr!("chat_drawer_history_empty"), palette.text_faint)

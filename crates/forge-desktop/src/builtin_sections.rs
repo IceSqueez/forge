@@ -1,3 +1,8 @@
+use forge_components::FONT_LABEL;
+use forge_components::FONT_MICRO;
+use forge_components::FONT_ROW;
+use forge_components::FONT_SECTION_LABEL;
+use forge_components::TINT_FILL_ALPHA;
 use forge_components::{
     BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
     body_family, card_shell, divider, grow_cell, icon, mono_family, radius, spacing, status_dot,
@@ -22,15 +27,15 @@ fn panel_overflows(count: usize) -> bool {
     count as f32 * SCROLL_ROW_EST_H > SCROLL_PANEL_MAX_H
 }
 
-const PANEL_TITLE_FONT: Pixels = px(12.5);
-const PANEL_BADGE_FONT: Pixels = px(9.5);
+const PANEL_TITLE_FONT: Pixels = FONT_ROW;
+const PANEL_BADGE_FONT: Pixels = FONT_SECTION_LABEL;
 const PANEL_REFRESH_GLYPH: Pixels = px(13.0);
 const ROW_GLYPH: Pixels = px(13.0);
 const DEFAULT_ROW_PAD_Y: f32 = 7.0;
 const ROW_NAME_FONT: Pixels = FONT_XS;
-const ROW_MONO_NAME_FONT: Pixels = px(11.5);
+const ROW_MONO_NAME_FONT: Pixels = FONT_LABEL;
 const ROW_TRAILING_GLYPH: Pixels = px(12.0);
-const ROW_TINTED_LABEL_FONT: Pixels = px(10.0);
+const ROW_TINTED_LABEL_FONT: Pixels = FONT_MICRO;
 const ROW_PAD_X: Pixels = px(14.0);
 const LINE_HEIGHT_RATIO: f32 = std::f32::consts::GOLDEN_RATIO;
 
@@ -376,15 +381,15 @@ fn subscription_banner(message: &str, palette: &ForgePalette, density: Density) 
         .gap(spacing(Spacing::Xs, density))
         .py(spacing(Spacing::Xs, density))
         .px(spacing(Spacing::Md, density))
-        .bg(with_alpha(palette.random, 0.10))
-        .child(icon(Icon::AlertCircle, FONT_SM, palette.random))
+        .bg(with_alpha(palette.danger, TINT_FILL_ALPHA))
+        .child(icon(Icon::AlertCircle, FONT_SM, palette.danger))
         .child(
             div()
                 .flex_1()
                 .min_w(px(0.0))
                 .font_family(mono_family())
                 .text_size(FONT_XS)
-                .text_color(palette.random)
+                .text_color(palette.danger)
                 .child(message.to_owned()),
         )
         .into_any_element()
@@ -540,7 +545,7 @@ fn render_stats_grid(
 
 const CHIP_GRID_COLUMNS: u16 = 4;
 const CHIP_ICON_GLYPH: Pixels = px(11.0);
-const CHIP_NAME_FONT: Pixels = px(11.5);
+const CHIP_NAME_FONT: Pixels = FONT_LABEL;
 
 fn render_chip_grid(
     title: &str,
@@ -875,7 +880,7 @@ fn subscription_row_elem(
         row = row.child(mono(ver.clone(), FONT_XXS, palette.text_faint));
     }
     let trailing: AnyElement = if let Some(err) = &item.error_label {
-        body(err.clone(), FONT_XXS, palette.random).into_any_element()
+        body(err.clone(), FONT_XXS, palette.danger).into_any_element()
     } else if let Some(count) = item.event_count {
         body(
             tr!("widget_builtin_event_count", count = count as i64),
@@ -1229,7 +1234,7 @@ fn token_color_value(color: &TokenColor, palette: &ForgePalette) -> Rgba {
     match color {
         TokenColor::Green => palette.success,
         TokenColor::Yellow => palette.warning,
-        TokenColor::Red => palette.random,
+        TokenColor::Red => palette.danger,
         TokenColor::Muted => palette.text_faint,
         TokenColor::Accent => palette.brand,
         TokenColor::Subtle => palette.text_muted,
@@ -1240,7 +1245,7 @@ fn subscription_status_color(status: &SubscriptionStatus, palette: &ForgePalette
     match status {
         SubscriptionStatus::Active => palette.success,
         SubscriptionStatus::Degraded => palette.warning,
-        SubscriptionStatus::Error => palette.random,
+        SubscriptionStatus::Error => palette.danger,
     }
 }
 
@@ -1248,7 +1253,7 @@ fn banner_level_color(level: &BannerLevel, palette: &ForgePalette) -> Rgba {
     match level {
         BannerLevel::Warning => palette.warning,
         BannerLevel::Info => palette.info,
-        BannerLevel::Error => palette.random,
+        BannerLevel::Error => palette.danger,
     }
 }
 
@@ -1256,7 +1261,7 @@ fn health_level_color(level: &HealthLevel, palette: &ForgePalette) -> Rgba {
     match level {
         HealthLevel::Good => palette.success,
         HealthLevel::Ok => palette.warning,
-        HealthLevel::Bad => palette.random,
+        HealthLevel::Bad => palette.danger,
         HealthLevel::NoData => palette.disabled,
     }
 }

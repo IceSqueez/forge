@@ -2,12 +2,15 @@ use super::rejection::rejection_note;
 use super::*;
 use crate::actions_screen::editor::{step_glyph, sub_category_color};
 use crate::actions_screen::files_root_note::files_root_note;
+use forge_components::BORDER_THIN;
 use forge_components::{
     FONT_XS, FONT_XXS, Spacing, body_family, modal, mono_family, primary_button, secondary_button,
     spacing, toggle,
 };
 use forge_registry::SubActionCategory;
 use gpui::FontWeight;
+
+const TITLE_GAP: Pixels = px(2.0);
 
 impl EditSubActionForm {
     fn toggle_sub_continue_on_error(&mut self, cx: &mut Context<Self>) {
@@ -94,7 +97,7 @@ impl EditSubActionForm {
             .w_full()
             .mt(spacing(Spacing::Xs, Density::Cozy))
             .pt(spacing(Spacing::Sm, Density::Cozy))
-            .border_t(HALF_BORDER)
+            .border_t(BORDER_THIN)
             .border_color(palette.border_regular)
             .flex()
             .flex_col()
@@ -128,7 +131,7 @@ impl EditSubActionForm {
             .flex_1()
             .flex()
             .flex_col()
-            .gap(px(2.0))
+            .gap(TITLE_GAP)
             .overflow_hidden()
             .child(
                 div()

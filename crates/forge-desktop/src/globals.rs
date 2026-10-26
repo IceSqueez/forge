@@ -6,8 +6,8 @@ use time::OffsetDateTime;
 pub fn variant_kind_color(kind: VariantKind, palette: &ForgePalette) -> Rgba {
     match kind {
         VariantKind::Int => palette.info,
-        VariantKind::Float => palette.bits,
-        VariantKind::Bool => palette.random,
+        VariantKind::Float => palette.accent_peach,
+        VariantKind::Bool => palette.danger,
         VariantKind::String => palette.success,
         VariantKind::Datetime => palette.accent_teal,
         VariantKind::Array => palette.theme_brand,

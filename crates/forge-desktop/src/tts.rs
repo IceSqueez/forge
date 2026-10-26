@@ -1,3 +1,4 @@
+use gpui::Rgba;
 use std::sync::{Arc, RwLock};
 
 use forge_components::{
@@ -171,10 +172,8 @@ impl TtsView {
             .iter()
             .filter(|id| voices.iter().any(|v| v.engine_id == **id))
             .count();
-        header_status(
-            palette.success,
-            tr!("tts_header_engines_ready", count = engine_count as i64),
-        )
+        let (color, label) = engine_readiness(engine_count, palette);
+        header_status(color, label)
     }
 
     fn render_tab_bar(
@@ -274,5 +273,16 @@ impl Render for TtsView {
         .header_right(header_right)
         .section_switcher(tab_bar)
         .body(body)
+    }
+}
+
+fn engine_readiness(engine_count: usize, palette: &ForgePalette) -> (Rgba, String) {
+    if engine_count == 0 {
+        (palette.warning, tr!("tts_header_no_engine_ready"))
+    } else {
+        (
+            palette.success,
+            tr!("tts_header_engines_ready", count = engine_count as i64),
+        )
     }
 }

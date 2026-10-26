@@ -3,12 +3,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_ACCENT, BORDER_THIN, BulletItem, BulletKind, ConfirmTone, DISABLED_OPACITY, Density,
-    FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SaveState,
-    Spacing, TextArea, TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, confirm_modal,
-    error_row, error_row_with_retry, field_title, ghost_button_with_icon, grow_cell, icon,
-    mono_family, overlay, radio_row, radius, save_indicator, setting_block, setting_row,
-    setting_rows, setting_sections, spacing, toggle, tr, type_to_confirm,
+    BORDER_THIN, BulletItem, BulletKind, ConfirmTone, DISABLED_OPACITY, Density, FONT_SM, FONT_XS,
+    FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SaveState, Spacing,
+    TextArea, TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, confirm_modal, error_row,
+    error_row_with_retry, field_title, ghost_button_with_icon, grow_cell, icon, mono_family,
+    overlay, radio_row, radius, save_indicator, setting_block, setting_row, setting_rows,
+    setting_sections, spacing, toggle, tr, type_to_confirm,
 };
 use forge_runtime::OverlayServiceHandle;
 use forge_server::{ServerHandle, ServerSettings};
@@ -37,8 +37,10 @@ const ORIGINS_PERSIST_CONTEXT: &str = "websocket additional origins";
 const ORIGINS_AREA_HEIGHT: Pixels = px(72.0);
 const PORT_COLUMN_MIN_W: Pixels = px(140.0);
 const TOKEN_COLUMN_MIN_W: Pixels = px(230.0);
-const TOKEN_FIELD_PAD_V: Pixels = px(7.0);
+const FIELD_PAD_V: Pixels = px(7.0);
 const TOKEN_ACTION_GLYPH: Pixels = px(12.0);
+const WARNING_GLYPH: Pixels = px(12.0);
+const BADGE_GLYPH: Pixels = px(10.0);
 
 enum TokenRegenerateNote {
     Clean,
@@ -997,7 +999,7 @@ impl SettingsWebSocketView {
             .px(spacing(Spacing::Xs, Density::Cozy))
             .rounded(radius(Radius::Sm))
             .bg(palette.surface_overlay)
-            .child(icon(badge_glyph, px(10.0), badge_color))
+            .child(icon(badge_glyph, BADGE_GLYPH, badge_color))
             .child(
                 div()
                     .font_family(body_family())
@@ -1056,7 +1058,7 @@ impl SettingsWebSocketView {
             .gap(spacing(Spacing::Sm, density))
             .padding(pad, pad)
             .corner_radius(radius(Radius::Md))
-            .row_border(BORDER_ACCENT, BORDER_THIN)
+            .row_border(BORDER_THIN, BORDER_THIN)
             .row_border_color(palette.border_regular)
             .background(palette.base, palette.base)
             .on_click(
@@ -1101,13 +1103,13 @@ impl SettingsWebSocketView {
                     .min_w(px(0.0))
                     .items_center()
                     .gap(spacing(Spacing::Xxs, density))
-                    .child(icon(Icon::AlertTriangle, px(12.0), palette.random))
+                    .child(icon(Icon::AlertTriangle, WARNING_GLYPH, palette.danger))
                     .child(
                         div()
                             .flex_none()
                             .font_family(body_family())
                             .text_size(FONT_XS)
-                            .text_color(palette.random)
+                            .text_color(palette.danger)
                             .child(tr!("settings_ws_origins_invalid")),
                     )
                     .child(
@@ -1117,7 +1119,7 @@ impl SettingsWebSocketView {
                             .text_ellipsis()
                             .font_family(mono_family())
                             .text_size(FONT_XS)
-                            .text_color(palette.random)
+                            .text_color(palette.danger)
                             .child(rejected.clone()),
                     ),
             );
@@ -1202,7 +1204,7 @@ impl SettingsWebSocketView {
             .items_center()
             .justify_between()
             .gap(spacing(Spacing::Xs, density))
-            .py(px(7.0))
+            .py(FIELD_PAD_V)
             .px(spacing(Spacing::Sm, Density::Cozy))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
@@ -1232,7 +1234,7 @@ impl SettingsWebSocketView {
                             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                                 this.toggle_token_reveal(cx)
                             }))
-                            .child(icon(reveal_glyph, px(12.0), palette.text_faint)),
+                            .child(icon(reveal_glyph, TOKEN_ACTION_GLYPH, palette.text_faint)),
                     )
                     .child(
                         div()
@@ -1242,7 +1244,7 @@ impl SettingsWebSocketView {
                             .on_click(
                                 cx.listener(|this, _: &ClickEvent, _, cx| this.copy_token(cx)),
                             )
-                            .child(icon(Icon::Copy, px(12.0), palette.text_faint)),
+                            .child(icon(Icon::Copy, TOKEN_ACTION_GLYPH, palette.text_faint)),
                     ),
             );
 
@@ -1340,7 +1342,7 @@ impl SettingsWebSocketView {
             .items_center()
             .justify_between()
             .gap(spacing(Spacing::Xs, density))
-            .py(TOKEN_FIELD_PAD_V)
+            .py(FIELD_PAD_V)
             .px(spacing(Spacing::Sm, Density::Cozy))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
@@ -1467,7 +1469,7 @@ impl SettingsWebSocketView {
             .min_w(px(0.0))
             .overflow_hidden()
             .text_ellipsis()
-            .py(px(7.0))
+            .py(FIELD_PAD_V)
             .px(spacing(Spacing::Sm, Density::Cozy))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)

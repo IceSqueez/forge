@@ -10,6 +10,7 @@ use crate::tokens::{
 
 type RowClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
+const DOT_TOP_NUDGE: Pixels = px(1.0);
 const DOT_SIZE: Pixels = px(15.0);
 const DOT_INNER: Pixels = px(7.0);
 const DOT_BORDER: Pixels = px(1.5);
@@ -209,7 +210,7 @@ impl RenderOnce for RadioRow {
             );
         }
         if self.align_start {
-            dot = dot.mt(px(1.0));
+            dot = dot.mt(DOT_TOP_NUDGE);
         }
 
         let mut row = div()

@@ -1,4 +1,10 @@
+use crate::event_log::is_chat_message_kind;
 use crate::platform_visuals::platform_color;
+use forge_components::FONT_BADGE;
+use forge_components::FONT_META;
+use forge_components::FONT_MICRO;
+use forge_components::ROW_HOVER_WASH_ALPHA;
+use forge_components::SEARCH_FIELD_WIDTH;
 use std::collections::{HashMap, HashSet};
 
 use forge_components::{
@@ -30,22 +36,25 @@ const INSPECTOR_INITIAL: f32 = 300.0;
 const INSPECTOR_MIN: f32 = 220.0;
 const INSPECTOR_MAX: f32 = 540.0;
 
-const SEARCH_W: Pixels = px(240.0);
-
 const TS_COL_W: Pixels = px(88.0);
 const TS_COL_W_TWELVE_HOUR: Pixels = px(112.0);
 const KIND_COL_MIN_W: Pixels = px(104.0);
 const KIND_COL_MAX_W: Pixels = px(280.0);
 const KIND_COL_SLACK: Pixels = px(2.0);
-const ROW_FS: Pixels = px(11.0);
-const BADGE_FS: Pixels = px(9.0);
-const SUFFIX_FS: Pixels = px(10.0);
+const ROW_FS: Pixels = FONT_META;
+const BADGE_FS: Pixels = FONT_BADGE;
+const SUFFIX_FS: Pixels = FONT_MICRO;
 const STATUS_DOT: Pixels = px(6.0);
 const ROW_RAIL_W: Pixels = px(2.0);
+const ROW_GAP: Pixels = px(10.0);
+const ROW_PAD_V: Pixels = px(5.0);
+const ROW_PAD_H: Pixels = px(14.0);
+const ACTION_ICON: Pixels = px(14.0);
+const RUN_ACTION_ICON: Pixels = px(12.0);
+const ACTION_PAD: Pixels = px(5.0);
 const ERROR_ROW_ALPHA: f32 = 0.06;
 const EVENT_LEVEL_FIELD: &str = "level";
 const WARNING_LEVEL: &str = "warning";
-const ROW_HOVER_ALPHA: f32 = 0.06;
 
 const FILTER_TABS: [(&str, EventFilter); 7] = [
     ("event-tab-all", EventFilter::All),
@@ -465,7 +474,11 @@ impl EventFeedView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .child(div().w(SEARCH_W).child(self.search.field().clone()))
+            .child(
+                div()
+                    .w(SEARCH_FIELD_WIDTH)
+                    .child(self.search.field().clone()),
+            )
             .child(chips)
             .into_any_element()
     }
@@ -484,15 +497,15 @@ impl EventFeedView {
             (Icon::PlayerPause, palette.warning)
         };
         let pause = Self::action_shell("event-action-pause", palette, density)
-            .child(icon(pause_icon, px(14.0), pause_ink))
+            .child(icon(pause_icon, ACTION_ICON, pause_ink))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_pause(cx)));
 
         let clear = Self::action_shell("event-action-clear", palette, density)
-            .child(icon(Icon::Eraser, px(14.0), palette.random))
+            .child(icon(Icon::Eraser, ACTION_ICON, palette.danger))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.clear(cx)));
 
         let export = Self::action_shell("event-action-export", palette, density)
-            .child(icon(Icon::Download, px(14.0), palette.success))
+            .child(icon(Icon::Download, ACTION_ICON, palette.success))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export(cx)));
 
         let (scroll_ink, scroll_label) = if self.auto_scroll {
@@ -558,7 +571,7 @@ impl EventFeedView {
         let row_bg = if selected {
             Some(palette.elevated)
         } else if item.is_error {
-            Some(with_alpha(palette.random, ERROR_ROW_ALPHA))
+            Some(with_alpha(palette.danger, ERROR_ROW_ALPHA))
         } else if warning {
             Some(with_alpha(palette.warning, ERROR_ROW_ALPHA))
         } else {
@@ -612,9 +625,9 @@ impl EventFeedView {
             .flex_1()
             .flex()
             .items_center()
-            .gap(px(10.0))
-            .py(px(5.0))
-            .px(px(14.0))
+            .gap(ROW_GAP)
+            .py(ROW_PAD_V)
+            .px(ROW_PAD_H)
             .overflow_hidden()
             .child(
                 div()
@@ -657,7 +670,7 @@ impl EventFeedView {
             row = row.bg(bg);
         }
         if !selected {
-            let hover_bg = with_alpha(palette.text_primary, ROW_HOVER_ALPHA);
+            let hover_bg = with_alpha(palette.text_primary, ROW_HOVER_WASH_ALPHA);
             row = row.hover(move |s| s.bg(hover_bg));
         }
         row
@@ -840,7 +853,7 @@ impl EventFeedView {
             .bg(palette.elevated)
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
-            .child(icon(Icon::Bolt, px(12.0), palette.brand))
+            .child(icon(Icon::Bolt, RUN_ACTION_ICON, palette.brand))
             .child(
                 div()
                     .flex_1()
@@ -1026,7 +1039,7 @@ impl EventFeedView {
             EventFilter::Bits => ChipGlyph::DotIcon(palette.warning, Icon::Coin),
             EventFilter::Timers => ChipGlyph::DotIcon(palette.warning, Icon::Clock),
             EventFilter::Obs => ChipGlyph::DotIcon(palette.success, Icon::Broadcast),
-            EventFilter::Errors => ChipGlyph::DotIcon(palette.random, Icon::AlertTriangle),
+            EventFilter::Errors => ChipGlyph::DotIcon(palette.danger, Icon::AlertTriangle),
         }
     }
 
@@ -1037,8 +1050,8 @@ impl EventFeedView {
             .flex()
             .items_center()
             .justify_center()
-            .gap(px(5.0))
-            .p(px(5.0))
+            .gap(ACTION_PAD)
+            .p(ACTION_PAD)
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
             .hover(move |s| s.bg(hover))
@@ -1262,20 +1275,9 @@ fn source_color(source: EventSource, palette: &ForgePalette) -> Rgba {
     }
 }
 
-fn is_chat_message_kind(kind: &str) -> bool {
-    matches!(
-        kind,
-        "twitch.channel.chat.message"
-            | "youtube.chat.message"
-            | "kick.chat.message.sent"
-            | "youtube.chat.command"
-            | "kick.chat.command"
-    )
-}
-
 fn type_color(kind: &str, is_error: bool, palette: &ForgePalette) -> Rgba {
     if is_error {
-        return palette.random;
+        return palette.danger;
     }
     match kind {
         k if is_chat_message_kind(k) => palette.info,
@@ -1285,7 +1287,7 @@ fn type_color(kind: &str, is_error: bool, palette: &ForgePalette) -> Rgba {
         "action.start" | "script.exec" | "timer.tick" | "subaction.run" => palette.warning,
         k if k.starts_with("global.") => palette.warning,
         k if k.contains("cheer") || k.contains("bits") => palette.warning,
-        k if k.contains("raid") => palette.random,
+        k if k.contains("raid") => palette.danger,
         k if k.contains("sub") || k.contains("follow") => palette.theme_brand,
         _ => palette.text_secondary,
     }

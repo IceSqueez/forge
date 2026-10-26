@@ -3,6 +3,7 @@ use crate::async_bridge;
 use crate::picker_favorites::{bind_picker, follow_picker_event};
 use crate::triggers_screen::platform_dot_color;
 use forge_components::ActivePresentation;
+use forge_components::LEADING_SCOPE;
 use forge_components::{
     ForgePalette, GlyphArt, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent,
     GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon,
@@ -66,7 +67,7 @@ fn build_recent_group(
     let group = GridPickerGroup {
         label: tr!("action_editor_recent_triggers").into(),
         dot_color: palette.warning,
-        scope: SharedString::from("all"),
+        scope: SharedString::from(LEADING_SCOPE),
         items,
     };
     (Some(group), picks)

@@ -16,7 +16,7 @@ use time::OffsetDateTime;
 use super::categories::{category_color, category_glyph};
 use super::labels::section_label;
 use super::pad::PAD_GLYPH;
-use super::{HOTKEY_FS, SoundboardView};
+use super::{SMALL_GLYPH, SoundboardView};
 use crate::async_bridge;
 use crate::clip_messages::failure_message;
 
@@ -135,7 +135,7 @@ impl SoundboardView {
             entry.display_name.to_owned(),
             palette,
         )
-        .top_right(icon(Icon::Plus, HOTKEY_FS, palette.text_faint))
+        .top_right(icon(Icon::Plus, SMALL_GLYPH, palette.text_faint))
         .sublabel(
             div()
                 .mt(px(3.0))

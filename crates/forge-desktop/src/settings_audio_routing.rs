@@ -545,7 +545,7 @@ impl SettingsAudioRoutingView {
         div()
             .font_family(body_family())
             .text_size(FONT_SM)
-            .text_color(palette.random)
+            .text_color(palette.danger)
             .child(tr!(key, error = message))
     }
 }

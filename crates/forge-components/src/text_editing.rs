@@ -17,6 +17,11 @@ use crate::text_input::InputEvent;
 const ROW_CENTER: f32 = 0.5;
 const EDGE_INSET: Pixels = px(1.0);
 
+pub(crate) const CARET_WIDTH: Pixels = px(1.5);
+pub(crate) const SELECTION_ALPHA: f32 = 0.25;
+pub(crate) const COMPOSITION_UNDERLINE: Pixels = px(1.0);
+pub(crate) const LINE_HEIGHT_RATIO: f32 = 1.5;
+
 actions!(
     forge_text_editing,
     [

@@ -1,3 +1,4 @@
+use crate::HOVER_FILL_ALPHA;
 use gpui::{
     App, AppContext, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight,
     InteractiveElement, IntoElement, ParentElement, Pixels, Render, Rgba, SharedString,
@@ -21,7 +22,6 @@ const SECTION_STACK_GAP: Pixels = px(8.0);
 const BULLET_GLYPH: Pixels = px(14.0);
 const ACTIONS_GAP: Pixels = px(8.0);
 const CHIP_PAD_Y: Pixels = px(1.0);
-const ACCENT_HOVER_ALPHA: f32 = 0.92;
 const CARD_WIDTH: Pixels = px(520.0);
 
 type ActionHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
@@ -229,7 +229,7 @@ fn confirm_button(
             .font_weight(FontWeight::MEDIUM)
             .text_color(ink)
             .cursor_pointer()
-            .hover(move |style| style.bg(with_alpha(accent, ACCENT_HOVER_ALPHA)))
+            .hover(move |style| style.bg(with_alpha(accent, HOVER_FILL_ALPHA)))
             .on_click(handler)
             .child(label)
             .into_any_element()

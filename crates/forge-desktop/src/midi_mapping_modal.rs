@@ -1,3 +1,8 @@
+use forge_components::FONT_META;
+use forge_components::FONT_MICRO;
+use forge_components::FONT_ROW;
+use forge_components::FONT_XS;
+use forge_components::radius;
 use std::sync::Arc;
 
 use forge_components::{
@@ -24,7 +29,7 @@ const BODY_PAD_H: Pixels = px(18.0);
 const BODY_MAX_H: Pixels = px(460.0);
 
 const SECTION_LABEL_MB: Pixels = px(8.0);
-const FIELD_LABEL_FS: Pixels = px(10.0);
+const FIELD_LABEL_FS: Pixels = FONT_MICRO;
 
 const GRID_GAP: Pixels = px(8.0);
 const SIGNAL_MB: Pixels = px(16.0);
@@ -36,28 +41,28 @@ const CHANNEL_FLEX: f32 = 0.7;
 const CONTROL_RADIUS: Pixels = px(7.0);
 const CONTROL_PAD_H: Pixels = px(9.0);
 const DISPLAY_PAD_H: Pixels = px(11.0);
-const CONTROL_FS: Pixels = px(12.5);
+const CONTROL_FS: Pixels = FONT_ROW;
 const DISPLAY_GAP: Pixels = px(7.0);
 const LISTEN_GLYPH: Pixels = px(12.0);
 const CONTROL_HEIGHT: Pixels = px(32.0);
 const FILTER_MAX_W: Pixels = px(220.0);
 const FILTER_HEADER_GAP: Pixels = px(12.0);
 
-const LIST_RADIUS: Pixels = px(9.0);
+const LIST_RADIUS: Pixels = radius(Radius::Md);
 const LIST_PAD: Pixels = px(8.0);
 const LIST_MAX_H: Pixels = px(230.0);
 const ROW_GAP: Pixels = px(8.0);
 const ROW_PAD_V: Pixels = px(6.0);
 const ROW_PAD_H: Pixels = px(9.0);
-const ROW_RADIUS: Pixels = px(6.0);
+const ROW_RADIUS: Pixels = radius(Radius::Sm);
 const ROW_MB: Pixels = px(1.0);
 const ROW_DOT: Pixels = px(6.0);
-const ROW_FS: Pixels = px(12.0);
+const ROW_FS: Pixels = FONT_XS;
 const ROW_CHECK: Pixels = px(12.0);
 const EMPTY_PAD_V: Pixels = px(20.0);
 
 const FOOTER_GAP: Pixels = px(8.0);
-const FOOTER_HINT_FS: Pixels = px(11.0);
+const FOOTER_HINT_FS: Pixels = FONT_META;
 
 pub struct MappingModalLaunch {
     pub instance_id: Option<TriggerInstanceId>,
@@ -728,7 +733,7 @@ impl MidiMappingModal {
     fn render_footer(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let leading: AnyElement = if self.instance_id.is_some() {
             ghost_button_with_icon(Icon::Trash, tr!("common_delete"), palette)
-                .ink(palette.random)
+                .ink(palette.danger)
                 .on_click(
                     "midi-modal-delete",
                     cx.listener(|this, _: &ClickEvent, _, cx| this.delete(cx)),

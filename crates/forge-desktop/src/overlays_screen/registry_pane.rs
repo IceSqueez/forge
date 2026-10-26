@@ -1,3 +1,6 @@
+use forge_components::FONT_FIELD;
+use forge_components::FONT_ROW;
+use forge_components::FONT_SECTION_LABEL;
 use forge_components::{
     BORDER_THIN, FONT_XXS, ForgePalette, Icon, MenuPlacement, body_family, icon, menu_button,
     menu_divider, menu_item, mono_family, pad_tile, toggle, tooltip_builder, tr,
@@ -13,7 +16,7 @@ const PANE_W: Pixels = px(254.0);
 const PANE_HEAD_PAD_TOP: Pixels = px(12.0);
 const PANE_HEAD_PAD_H: Pixels = px(12.0);
 const PANE_HEAD_PAD_BOTTOM: Pixels = px(8.0);
-const PANE_TITLE_FS: Pixels = px(13.0);
+const PANE_TITLE_FS: Pixels = FONT_FIELD;
 
 const LIST_PAD_H: Pixels = px(8.0);
 const LIST_PAD_TOP: Pixels = px(8.0);
@@ -28,8 +31,8 @@ const ROW_STRIPE_W: Pixels = px(2.0);
 const ROW_TILE: Pixels = px(28.0);
 const ROW_TILE_RADIUS: Pixels = px(7.0);
 const ROW_GLYPH: Pixels = px(14.0);
-const ROW_NAME_FS: Pixels = px(12.5);
-const ROW_KIND_FS: Pixels = px(9.5);
+const ROW_NAME_FS: Pixels = FONT_ROW;
+const ROW_KIND_FS: Pixels = FONT_SECTION_LABEL;
 const ROW_BADGE_GLYPH: Pixels = px(12.0);
 
 const EMPTY_PAD_V: Pixels = px(14.0);
@@ -284,7 +287,7 @@ impl OverlaysView {
                     }),
                 )
                 .icon(Icon::Trash)
-                .color(palette.random)
+                .color(palette.danger)
                 .into(),
             ])
             .on_toggle(

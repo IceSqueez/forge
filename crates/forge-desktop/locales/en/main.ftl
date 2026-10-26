@@ -1329,6 +1329,7 @@ tts_engines_header_prefix = CONFIGURED
 tts_engines_add_engine = Add engine
 tts_engines_add_none_left = All cloud engines configured
 tts_engines_select_hint = Select an engine to configure
+tts_header_no_engine_ready = No engine ready
 tts_header_engines_ready = { $count ->
     [one] { $count } engine ready
    *[other] { $count } engines ready

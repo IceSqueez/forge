@@ -1,3 +1,4 @@
+use forge_components::FONT_LABEL;
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
     body_family, icon, mono_family, pulse_dot, radius, spacing, tooltip_builder, tr, with_alpha,
@@ -221,9 +222,9 @@ impl IntegrationDetail {
             )
         } else if destructive {
             (
-                palette.random,
-                palette.random,
-                with_alpha(palette.random, 0.4),
+                palette.danger,
+                palette.danger,
+                with_alpha(palette.danger, 0.4),
             )
         } else {
             (
@@ -248,7 +249,7 @@ impl IntegrationDetail {
                     .flex_1()
                     .min_w(px(0.0))
                     .font_family(body_family())
-                    .text_size(px(11.5))
+                    .text_size(FONT_LABEL)
                     .line_height(px(14.0))
                     .text_color(label_color)
                     .child(action.label.clone()),
@@ -259,7 +260,7 @@ impl IntegrationDetail {
         if live {
             content = content.child(pulse_dot(
                 ("quick-action-live", idx),
-                palette.random,
+                palette.danger,
                 LIVE_DOT,
             ));
         }
@@ -286,7 +287,7 @@ impl IntegrationDetail {
             btn = btn.tooltip(tooltip_builder(reason, palette));
         } else {
             let hover_border = if destructive {
-                palette.random
+                palette.danger
             } else {
                 palette.border_input
             };
@@ -321,8 +322,8 @@ pub(crate) fn accent_color(accent: QuickActionAccent, palette: &ForgePalette) ->
         QuickActionAccent::Success => palette.success,
         QuickActionAccent::Warning => palette.warning,
         QuickActionAccent::Info => palette.info,
-        QuickActionAccent::Bits => palette.bits,
+        QuickActionAccent::Bits => palette.accent_peach,
         QuickActionAccent::AccentPinkLight => palette.accent_pink_light,
-        QuickActionAccent::Danger => palette.random,
+        QuickActionAccent::Danger => palette.danger,
     }
 }

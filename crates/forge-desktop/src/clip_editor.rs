@@ -1,3 +1,7 @@
+use forge_components::FONT_LABEL;
+use forge_components::FONT_XXS;
+use forge_components::TINT_BORDER_ALPHA;
+use forge_components::TINT_FILL_ALPHA;
 use std::path::PathBuf;
 
 use forge_components::{
@@ -24,16 +28,14 @@ use crate::soundboard::{
 use forge_components::ActivePresentation;
 
 const MODAL_W: Pixels = px(440.0);
-const LABEL_FS: Pixels = px(11.5);
-const HINT_FS: Pixels = px(10.5);
+const LABEL_FS: Pixels = FONT_LABEL;
+const HINT_FS: Pixels = FONT_XXS;
 const CATEGORY_GAP: Pixels = px(4.0);
 const KEY_DISPLAY_PAD_H: Pixels = px(11.0);
 const KEY_DISPLAY_RADIUS: Pixels = px(7.0);
 const KEY_DISPLAY_GAP: Pixels = px(7.0);
 const KEY_LISTEN_GLYPH: Pixels = px(12.0);
 const KEY_BUTTON_HEIGHT: Pixels = px(32.0);
-const ERROR_TINT_BG: f32 = 0.10;
-const ERROR_TINT_BORDER: f32 = 0.30;
 
 pub struct ClipDraft {
     pub edit_id: Option<ClipId>,
@@ -591,10 +593,10 @@ impl Render for ClipEditor {
                     .gap(spacing(Spacing::Xs, density))
                     .p(spacing(Spacing::Xs, density))
                     .rounded(radius(Radius::Sm))
-                    .bg(with_alpha(palette.random, ERROR_TINT_BG))
+                    .bg(with_alpha(palette.danger, TINT_FILL_ALPHA))
                     .border(BORDER_THIN)
-                    .border_color(with_alpha(palette.random, ERROR_TINT_BORDER))
-                    .child(icon(Icon::InfoCircle, FONT_XS, palette.random))
+                    .border_color(with_alpha(palette.danger, TINT_BORDER_ALPHA))
+                    .child(icon(Icon::InfoCircle, FONT_XS, palette.danger))
                     .child(
                         div()
                             .font_family(body_family())
@@ -650,7 +652,7 @@ impl Render for ClipEditor {
             tr!("soundboard_modal_title_add")
         };
         let card = modal(title, body, &palette)
-            .header_icon(Icon::Music, palette.bits)
+            .header_icon(Icon::Music, palette.accent_peach)
             .width(MODAL_W)
             .footer(footer)
             .on_close(

@@ -1,3 +1,9 @@
+use forge_components::CTA_HOVER_ALPHA;
+use forge_components::FONT_FIELD;
+use forge_components::FONT_LABEL;
+use forge_components::FONT_META;
+use forge_components::FONT_ROW;
+use forge_components::ROW_HOVER_WASH_ALPHA;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -333,7 +339,7 @@ impl ConnectFlow {
         div()
             .w_full()
             .font_family(body_family())
-            .text_size(px(13.0))
+            .text_size(FONT_FIELD)
             .text_color(palette.text_muted)
             .line_height(px(20.0))
             .mb(px(22.0))
@@ -360,7 +366,7 @@ impl ConnectFlow {
             .border_color(palette.border_regular)
             .bg(palette.shell)
             .font_family(mono_family())
-            .text_size(px(11.0))
+            .text_size(FONT_META)
             .text_color(palette.info)
             .child(url_text);
         let s1 = self.oauth_step_row(
@@ -388,7 +394,7 @@ impl ConnectFlow {
             .child(
                 div()
                     .font_family(body_family())
-                    .text_size(px(11.5))
+                    .text_size(FONT_LABEL)
                     .text_color(palette.text_muted)
                     .child(tr!("oauth_step_approve_caption")),
             )
@@ -410,7 +416,7 @@ impl ConnectFlow {
                     .child(
                         div()
                             .font_family(mono_family())
-                            .text_size(px(10.5))
+                            .text_size(FONT_XXS)
                             .text_color(palette.text_faint)
                             .child(loopback),
                     ),
@@ -432,7 +438,7 @@ impl ConnectFlow {
             Some(
                 div()
                     .font_family(body_family())
-                    .text_size(px(11.5))
+                    .text_size(FONT_LABEL)
                     .text_color(palette.text_muted)
                     .child(tr!("oauth_step_exchange_caption"))
                     .into_any_element(),
@@ -500,7 +506,7 @@ impl ConnectFlow {
             StepState::Pending => div()
                 .font_family(body_family())
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_size(px(11.0))
+                .text_size(FONT_META)
                 .text_color(palette.text_faint)
                 .child(n)
                 .into_any_element(),
@@ -511,7 +517,7 @@ impl ConnectFlow {
             .flex()
             .items_center()
             .justify_center()
-            .rounded(px(12.0))
+            .rounded(radius(Radius::Lg))
             .bg(circle_bg);
         if matches!(state, StepState::Done) {
             circle = circle.border(px(1.5)).border_color(palette.success);
@@ -527,7 +533,7 @@ impl ConnectFlow {
             div()
                 .font_family(body_family())
                 .font_weight(FontWeight::MEDIUM)
-                .text_size(px(13.0))
+                .text_size(FONT_FIELD)
                 .text_color(title_color)
                 .child(title),
         );
@@ -602,14 +608,14 @@ impl ConnectFlow {
                         div()
                             .font_family(body_family())
                             .font_weight(FontWeight::MEDIUM)
-                            .text_size(px(12.0))
+                            .text_size(FONT_XS)
                             .text_color(palette.text_primary)
                             .child(line),
                     )
                     .child(
                         div()
                             .font_family(mono_family())
-                            .text_size(px(10.5))
+                            .text_size(FONT_XXS)
                             .text_color(palette.text_faint)
                             .child(subline),
                     ),
@@ -635,7 +641,7 @@ impl ConnectFlow {
                 div()
                     .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
-                    .text_size(px(12.5))
+                    .text_size(FONT_ROW)
                     .text_color(palette.text_primary)
                     .child(tr!("oauth_done_authorized")),
             )
@@ -660,7 +666,7 @@ impl ConnectFlow {
             .rounded(radius(Radius::Sm))
             .bg(palette.brand)
             .cursor_pointer()
-            .hover(|s| s.bg(with_alpha(palette.brand, 0.85)))
+            .hover(|s| s.bg(with_alpha(palette.brand, CTA_HOVER_ALPHA)))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reset_flow(cx)))
             .child(
                 div()
@@ -678,7 +684,7 @@ impl ConnectFlow {
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .cursor_pointer()
-            .hover(|s| s.bg(with_alpha(palette.border_regular, 0.06)))
+            .hover(|s| s.bg(with_alpha(palette.border_regular, ROW_HOVER_WASH_ALPHA)))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reset_flow(cx)))
             .child(
                 div()
@@ -696,7 +702,7 @@ impl ConnectFlow {
             .px(spacing(Spacing::Md, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
-            .border_color(palette.random)
+            .border_color(palette.danger)
             .bg(palette.elevated)
             .mb(spacing(Spacing::Md, density))
             .child(
@@ -704,7 +710,7 @@ impl ConnectFlow {
                     .flex()
                     .items_center()
                     .gap(spacing(Spacing::Xs, density))
-                    .child(icon(Icon::AlertTriangle, px(16.0), palette.random))
+                    .child(icon(Icon::AlertTriangle, px(16.0), palette.danger))
                     .child(
                         div()
                             .font_family(body_family())
@@ -718,7 +724,7 @@ impl ConnectFlow {
                 div()
                     .font_family(body_family())
                     .text_size(FONT_XS)
-                    .text_color(palette.random)
+                    .text_color(palette.danger)
                     .child(error),
             )
             .child(
@@ -744,7 +750,7 @@ impl ConnectFlow {
             .child(
                 div()
                     .font_family(body_family())
-                    .text_size(px(12.5))
+                    .text_size(FONT_ROW)
                     .text_color(palette.text_muted)
                     .child(tr!("oauth_footer_choose_different")),
             );
@@ -763,14 +769,14 @@ impl ConnectFlow {
                         .rounded(radius(Radius::Sm))
                         .bg(palette.brand)
                         .cursor_pointer()
-                        .hover(|s| s.bg(with_alpha(palette.brand, 0.85)))
+                        .hover(|s| s.bg(with_alpha(palette.brand, CTA_HOVER_ALPHA)))
                         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_connect(cx)))
                         .child(icon(Icon::ExternalLink, px(13.0), palette.shell))
                         .child(
                             div()
                                 .font_family(body_family())
                                 .font_weight(FontWeight::MEDIUM)
-                                .text_size(px(12.0))
+                                .text_size(FONT_XS)
                                 .text_color(palette.shell)
                                 .child(tr!("oauth_footer_signin", name = name.as_str())),
                         )
@@ -792,7 +798,7 @@ impl ConnectFlow {
                     .child(
                         div()
                             .font_family(body_family())
-                            .text_size(px(12.0))
+                            .text_size(FONT_XS)
                             .text_color(palette.text_secondary)
                             .child(tr!("oauth_btn_cancel")),
                     )

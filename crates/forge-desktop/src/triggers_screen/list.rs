@@ -4,6 +4,9 @@ use crate::async_bridge;
 use crate::integration_switch::{category_inactive_badge, inactive_badge};
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_components::ROW_OFF_OPACITY;
+use forge_components::SEARCH_FIELD_WIDTH;
+use forge_components::UNDO_TOAST_DURATION;
 use forge_components::{
     BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_XXS, ForgePalette, Icon, InlineEditEvent,
     InputEvent, OverlayPosition, Spacing, TextInput, ToastAction, ToastKind, badge, body_family,
@@ -16,7 +19,6 @@ use gpui::{
     Pixels, Point, Rgba, ScrollStrategy, SharedString, Window, div, px, uniform_list,
 };
 use std::sync::Arc;
-use std::time::Duration;
 
 impl TriggersRegistryView {
     pub(super) fn find(&self, id: TriggerInstanceId) -> Option<&TriggerInstanceRow> {
@@ -345,7 +347,7 @@ impl TriggersRegistryView {
                     );
                 },
             )),
-            Duration::from_millis(6000),
+            UNDO_TOAST_DURATION,
         );
     }
 
@@ -519,7 +521,11 @@ impl TriggersRegistryView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, Density::Cozy))
-            .child(div().w(SEARCH_W).child(self.search.field().clone()))
+            .child(
+                div()
+                    .w(SEARCH_FIELD_WIDTH)
+                    .child(self.search.field().clone()),
+            )
             .child(self.divider(palette))
             .child(platform_chips)
             .child(self.divider(palette))
@@ -721,7 +727,7 @@ impl TriggersRegistryView {
             );
             kind = kind.child(badge(
                 palette.surface_overlay,
-                palette.bits,
+                palette.accent_peach,
                 label,
                 true,
                 BADGE_FS,
@@ -746,7 +752,7 @@ impl TriggersRegistryView {
                 .flex_none()
                 .font_family(mono_family())
                 .text_size(KIND_FS)
-                .text_color(palette.bits)
+                .text_color(palette.accent_peach)
                 .child(gate),
         );
         if let Some(permission) = descriptor
@@ -879,7 +885,7 @@ impl TriggersRegistryView {
             .border_color(palette.border_regular)
             .when(
                 !instance.enabled || switched_off_owner.is_some() || uncovered_category.is_some(),
-                |row| row.opacity(DISABLED_OPACITY),
+                |row| row.opacity(ROW_OFF_OPACITY),
             )
             .on_hover(
                 cx.listener(move |this, hovered: &bool, _, cx| this.set_hover(id, *hovered, cx)),
@@ -923,7 +929,7 @@ impl TriggersRegistryView {
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
             )
             .icon(Icon::Eraser)
-            .color(palette.random)
+            .color(palette.danger)
             .disabled(block_delete)
             .into(),
         ];

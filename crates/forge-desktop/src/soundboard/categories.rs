@@ -24,8 +24,8 @@ impl SoundboardView {
 
 pub(crate) fn category_color(cat: &str, palette: &ForgePalette) -> Rgba {
     match cat {
-        "memes" => palette.bits,
-        "alerts" => palette.random,
+        "memes" => palette.accent_peach,
+        "alerts" => palette.danger,
         "music" => palette.theme_brand,
         "voice" => palette.info,
         _ => palette.text_muted,

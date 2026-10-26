@@ -27,6 +27,7 @@ use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 use forge_components::ActivePresentation;
 
+const REMOVE_GLYPH: Pixels = px(11.0);
 const NUMERIC_INPUT_WIDTH: Pixels = px(120.0);
 const BYTES_PER_KIB: u64 = 1024;
 
@@ -394,7 +395,7 @@ impl SettingsScriptingView {
             density,
         );
         Some(if field.invalid {
-            row.hint_color(palette.random)
+            row.hint_color(palette.danger)
         } else {
             row
         })
@@ -494,7 +495,7 @@ impl SettingsScriptingView {
                     .on_click(
                         cx.listener(move |this, _: &ClickEvent, _, cx| this.remove_domain(idx, cx)),
                     )
-                    .child(icon(Icon::X, px(11.0), palette.text_muted)),
+                    .child(icon(Icon::X, REMOVE_GLYPH, palette.text_muted)),
             )
     }
 
@@ -624,7 +625,7 @@ fn with_ssrf_warning(
             div()
                 .font_family(body_family())
                 .text_size(FONT_XS)
-                .text_color(palette.random)
+                .text_color(palette.danger)
                 .child(tr!("settings_scripting_ssrf_warning")),
         );
     }

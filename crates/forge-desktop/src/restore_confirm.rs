@@ -202,7 +202,7 @@ impl ConfirmCard<'_> {
             ))
             .child(statement(
                 Icon::AlertTriangle,
-                palette.random,
+                palette.danger,
                 tr!("restore_confirm_one_machine"),
                 palette,
                 density,

@@ -1,5 +1,6 @@
 use super::*;
 use crate::async_bridge::{BridgeFlow, drain_subscription};
+use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, MenuItem, Radius, Spacing, body_family,
     context_menu, ghost_button_with_icon, menu_header, menu_item, modal, mono_family,
@@ -461,7 +462,7 @@ impl TestRunModal {
 
     fn render_test_run_body(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let progress_color = match self.phase {
-            TestRunPhase::Halted { .. } => palette.random,
+            TestRunPhase::Halted { .. } => palette.danger,
             TestRunPhase::Done { errors } if errors > 0 => palette.warning,
             TestRunPhase::Done { .. } => palette.success,
             TestRunPhase::NotStarted => palette.text_faint,
@@ -543,7 +544,7 @@ impl TestRunModal {
                     palette.text_faint,
                     palette.border_regular,
                     palette.shell,
-                    0.55,
+                    ROW_OFF_OPACITY,
                 ),
                 RowStatus::Running => (
                     number.clone(),
@@ -567,14 +568,14 @@ impl TestRunModal {
                 ),
                 RowStatus::Failed { .. } => (
                     "\u{00d7}".to_owned(),
-                    palette.random,
+                    palette.danger,
                     palette.shell,
                     tr!("action_editor_test_run_status_failed"),
-                    palette.random,
-                    palette.random,
+                    palette.danger,
+                    palette.danger,
                     Rgba {
                         a: FAIL_TINT_ALPHA,
-                        ..palette.random
+                        ..palette.danger
                     },
                     1.0,
                 ),
@@ -586,7 +587,7 @@ impl TestRunModal {
                     palette.text_muted,
                     palette.border_regular,
                     palette.shell,
-                    0.55,
+                    ROW_OFF_OPACITY,
                 ),
             };
 
@@ -656,7 +657,7 @@ impl TestRunModal {
                     .unwrap_or_else(|| tr!("action_editor_test_run_default_error").into());
                 Some(Self::test_run_banner(
                     Icon::CircleX,
-                    palette.random,
+                    palette.danger,
                     tr!(
                         "action_editor_test_run_failed_banner",
                         step = (*step as i64) + 1,
@@ -800,7 +801,7 @@ impl Render for TestRunModal {
         let palette = &palette;
         let halted = matches!(self.phase, TestRunPhase::Halted { .. });
         let header_tint = if halted {
-            palette.random
+            palette.danger
         } else {
             palette.success
         };

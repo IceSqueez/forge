@@ -181,7 +181,7 @@ impl DonationSettingsView {
     fn outcome_row(&self, palette: &ForgePalette, density: Density) -> Option<AnyElement> {
         let (color, message): (Rgba, String) = match self.outcome.as_ref()? {
             Outcome::Success(message) => (palette.success, message.clone()),
-            Outcome::Problem(message) => (palette.random, message.clone()),
+            Outcome::Problem(message) => (palette.danger, message.clone()),
         };
         Some(
             div()
@@ -238,7 +238,7 @@ impl DonationSettingsView {
             left = left.child(
                 ghost_button_with_icon(Icon::Trash, tr!("donation_token_remove"), palette)
                     .density(density)
-                    .ink(palette.random)
+                    .ink(palette.danger)
                     .disabled(self.busy.is_some())
                     .on_click(
                         "donation-token-remove",

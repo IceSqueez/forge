@@ -1,3 +1,4 @@
+use crate::HOVER_FILL_ALPHA;
 use std::sync::Arc;
 
 use gpui::{
@@ -14,9 +15,10 @@ use crate::tokens::{
 type ButtonClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 const ICON_LABEL_GAP: Pixels = px(5.0);
+const LABEL_PAD_V: Pixels = px(4.0);
+const LABEL_PAD_H: Pixels = px(12.0);
 const ICON_BUTTON_GROUP: &str = "forge-icon-button";
 
-const FILL_HOVER_ALPHA: f32 = 0.92;
 const FILL_DISABLED_ALPHA: f32 = 0.4;
 const INK_DISABLED_ALPHA: f32 = 0.5;
 const OUTLINE_DISABLED_ALPHA: f32 = 0.4;
@@ -49,7 +51,7 @@ impl ButtonVariant {
     pub(crate) fn colors(self, p: &ForgePalette) -> ButtonColors {
         match self {
             ButtonVariant::Primary => filled(p.brand, p.shell),
-            ButtonVariant::Destructive => filled(p.random, p.shell),
+            ButtonVariant::Destructive => filled(p.danger, p.shell),
             ButtonVariant::Secondary => ButtonColors {
                 fill: None,
                 text: p.text_secondary,
@@ -92,7 +94,7 @@ fn filled(hue: Rgba, ink: Rgba) -> ButtonColors {
         fill: Some(hue),
         text: ink,
         border: None,
-        hover_fill: Some(with_alpha(hue, FILL_HOVER_ALPHA)),
+        hover_fill: Some(with_alpha(hue, HOVER_FILL_ALPHA)),
         hover_text: ink,
         hover_border: None,
         disabled_fill: Some(with_alpha(hue, FILL_DISABLED_ALPHA)),
@@ -210,7 +212,7 @@ impl RenderOnce for Button {
         let (pad_v, pad_h) = if icon_only {
             (spacing(Spacing::Xs, d), spacing(Spacing::Xs, d))
         } else {
-            (px(4.0), px(12.0))
+            (LABEL_PAD_V, LABEL_PAD_H)
         };
 
         let glyph_size = if icon_only { FONT_MD } else { FONT_XS };

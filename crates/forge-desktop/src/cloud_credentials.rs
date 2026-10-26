@@ -1,3 +1,4 @@
+use forge_components::FONT_META;
 use std::sync::{Arc, RwLock};
 
 use forge_components::{
@@ -26,12 +27,14 @@ use crate::cloud_tts_boot;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
+const VALUE_BOX_GAP: Pixels = px(8.0);
+const FIELD_STACK_GAP: Pixels = px(6.0);
+const NOTE_GAP: Pixels = px(5.0);
 const RESULT_DOT: Pixels = px(6.0);
 const BOX_RADIUS: Pixels = px(7.0);
 const BOX_PAD_X: Pixels = px(11.0);
 const BOX_PAD_Y: Pixels = px(7.0);
-const FS_12: Pixels = px(12.0);
-const NOTE_FS: Pixels = px(11.0);
+const NOTE_FS: Pixels = FONT_META;
 const EYE_GLYPH: Pixels = px(12.0);
 const LOCK_GLYPH: Pixels = px(11.0);
 const GRID_GAP: Pixels = px(12.0);
@@ -689,7 +692,7 @@ impl CloudCredentialsView {
             .flex()
             .items_center()
             .justify_between()
-            .gap(px(8.0))
+            .gap(VALUE_BOX_GAP)
             .bg(palette.shell)
             .border(BORDER_THIN)
             .border_color(palette.border_input)
@@ -720,7 +723,7 @@ impl CloudCredentialsView {
             .w_full()
             .flex()
             .flex_col()
-            .gap(px(6.0))
+            .gap(FIELD_STACK_GAP)
             .child(
                 div()
                     .font_family(mono_family())
@@ -863,7 +866,7 @@ fn encryption_note(palette: &ForgePalette) -> impl IntoElement {
     div()
         .flex()
         .items_center()
-        .gap(px(5.0))
+        .gap(NOTE_GAP)
         .child(icon(Icon::Lock, LOCK_GLYPH, palette.success))
         .child(
             div()
@@ -883,7 +886,7 @@ fn config_status_badge(
     let (label, color) = if is_registered {
         (tr!("tts_cloud_configured"), palette.success)
     } else if matches!(test_status, TestStatus::Err(_)) {
-        (tr!("tts_cloud_connection_failed"), palette.random)
+        (tr!("tts_cloud_connection_failed"), palette.danger)
     } else {
         (tr!("tts_cloud_not_configured"), palette.text_muted)
     };
@@ -912,7 +915,7 @@ fn test_result_row(
 ) -> Option<AnyElement> {
     let (color, message): (Rgba, String) = match test_status {
         TestStatus::Ok => (palette.success, tr!("tts_cloud_connection_verified")),
-        TestStatus::Err(error) => (palette.random, error.clone()),
+        TestStatus::Err(error) => (palette.danger, error.clone()),
         _ => return None,
     };
 
@@ -950,7 +953,7 @@ fn field(
             .with_palette(palette)
             .plain()
             .mono()
-            .with_font_size(FS_12)
+            .with_font_size(FONT_XS)
             .secure(secure)
     })
 }

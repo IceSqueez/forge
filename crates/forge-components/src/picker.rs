@@ -1,7 +1,8 @@
+use crate::FONT_ROW;
 use gpui::{
     AnyElement, App, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
     IntoElement, KeyBinding, KeyDownEvent, ParentElement, Pixels, Render, ScrollStrategy,
-    SharedString, Styled, Subscription, UniformListScrollHandle, Window, actions, div, px,
+    SharedString, Styled, Subscription, UniformListScrollHandle, Window, actions, div,
     uniform_list,
 };
 
@@ -15,7 +16,7 @@ use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{ESCAPE_KEY, Radius, body_family};
 
 const SEARCH_THRESHOLD: usize = 10;
-const MESSAGE_FONT: Pixels = px(12.5);
+const MESSAGE_FONT: Pixels = FONT_ROW;
 const ENTER_KEY: &str = "enter";
 
 pub const PICKER_CONTEXT: &str = "ForgePicker";

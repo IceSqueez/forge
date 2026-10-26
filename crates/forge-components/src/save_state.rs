@@ -1,9 +1,11 @@
-use gpui::{AnyElement, IntoElement, SharedString, div, prelude::*, px};
+use gpui::{AnyElement, IntoElement, Pixels, SharedString, div, prelude::*, px};
 
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{Density, FONT_SM, Spacing, body_family, spacing};
 use crate::tr;
+
+const SAVED_ICON: Pixels = px(13.0);
 
 #[derive(Default)]
 pub enum SaveState {
@@ -27,7 +29,7 @@ pub fn save_indicator(state: &SaveState, palette: &ForgePalette) -> AnyElement {
         SaveState::Error(message) => div()
             .font_family(body_family())
             .text_size(FONT_SM)
-            .text_color(palette.random)
+            .text_color(palette.danger)
             .child(tr!("widget_save_failed", error = message.as_ref()))
             .into_any_element(),
         SaveState::Saving => div()
@@ -40,7 +42,7 @@ pub fn save_indicator(state: &SaveState, palette: &ForgePalette) -> AnyElement {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, Density::Cozy))
-            .child(icon(Icon::CircleCheck, px(13.0), palette.success))
+            .child(icon(Icon::CircleCheck, SAVED_ICON, palette.success))
             .child(
                 div()
                     .font_family(body_family())

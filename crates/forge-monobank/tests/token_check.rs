@@ -226,9 +226,12 @@ async fn throttle_lands_only_on_the_endpoint_that_was_throttled() {
     let server = client_info_answering(ResponseTemplate::new(429)).await;
     let limits = Limits::open();
 
-    let _ = provider(&server.uri(), Arc::default(), limits.shared())
-        .verify_token(TOKEN)
-        .await;
+    assert!(
+        provider(&server.uri(), Arc::default(), limits.shared())
+            .verify_token(TOKEN)
+            .await
+            .is_err()
+    );
 
     assert!(limits.statement.throttles().is_empty());
 }

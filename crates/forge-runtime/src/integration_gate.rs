@@ -301,6 +301,10 @@ mod tests {
             "test.step",
             async {
                 let _guard = guard;
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "only completion matters here"
+                )]
                 let _ = never_rx.await;
                 (telemetry(&ctx, SubActionOutcome::Success), None)
             },
@@ -335,6 +339,10 @@ mod tests {
             &ctx,
             "test.step",
             async {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "only completion matters here"
+                )]
                 let _ = release_rx.await;
                 (telemetry(&ctx, SubActionOutcome::Success), None)
             },
@@ -366,6 +374,10 @@ mod tests {
                 &ctx,
                 "test.step",
                 async {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "only completion matters here"
+                    )]
                     let _ = never_rx.await;
                     (telemetry(&ctx, SubActionOutcome::Success), None)
                 },
@@ -385,10 +397,18 @@ mod tests {
         let (_tx_a, rx_a) = oneshot::channel::<()>();
         let (_tx_b, rx_b) = oneshot::channel::<()>();
         let mut first = pin!(run_gated_step(&gate, Some(&owner), &ctx, "a", async {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "only completion matters here"
+            )]
             let _ = rx_a.await;
             (telemetry(&ctx, SubActionOutcome::Success), None)
         }));
         let mut second = pin!(run_gated_step(&gate, Some(&owner), &ctx, "b", async {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "only completion matters here"
+            )]
             let _ = rx_b.await;
             (telemetry(&ctx, SubActionOutcome::Success), None)
         }));

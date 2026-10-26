@@ -6965,6 +6965,10 @@ mod tests {
         }
 
         fn close(&self) {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = self.commands.send(PeerCommand::Close);
         }
 
@@ -7057,6 +7061,7 @@ mod tests {
                         }
                     }
                     Some(PeerCommand::Close) | None => {
+                        #[expect(clippy::let_underscore_must_use, reason = "a failed close does not affect the scenario")]
                         let _ = sink.close().await;
                         return;
                     }
@@ -7064,12 +7069,14 @@ mod tests {
                 frame = source.next() => match frame {
                     Some(Ok(Message::Close(_))) | None => {
                         if let Some(closed) = closed.take() {
+                            #[expect(clippy::let_underscore_must_use, reason = "the receiver may already be gone")]
                             let _ = closed.send(());
                         }
                         return;
                     }
                     Some(Err(_)) => return,
                     Some(Ok(Message::Pong(_))) => {
+                        #[expect(clippy::let_underscore_must_use, reason = "the receiver may already be gone")]
                         let _ = pongs.send(());
                     }
                     Some(Ok(_)) => {}
@@ -7775,6 +7782,10 @@ mod tests {
         }
 
         fn release(&self) {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = self.gate.send(true);
         }
     }
@@ -7796,6 +7807,10 @@ mod tests {
         let mut buffered = Vec::new();
         while let Some(request_len) = read_one_request(&mut stream, &mut buffered).await {
             buffered.drain(..request_len);
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = requests.send(());
             if released.wait_for(|open| *open).await.is_err()
                 || stream.write_all(response.as_bytes()).await.is_err()

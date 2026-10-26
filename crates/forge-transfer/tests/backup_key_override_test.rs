@@ -13,7 +13,7 @@ const KEY_FILE_ENV: &str = "FORGE_CREDENTIAL_KEY_FILE";
 const PASSPHRASE: &str = "correct horse battery staple";
 const SQLITE_KEY: [u8; 32] = [0x42; 32];
 
-#[allow(unsafe_code)]
+#[expect(unsafe_code, reason = "env mutation is unsafe in edition 2024")]
 #[tokio::test]
 async fn full_backup_packs_the_overridden_credentials_key_instead_of_the_data_dir_one() {
     let data = tempfile::tempdir().unwrap();

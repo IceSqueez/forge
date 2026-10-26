@@ -261,7 +261,6 @@ mod tests {
     #[cfg(unix)]
     const GENEROUS_TIMEOUT: Duration = Duration::from_secs(60);
 
-    #[cfg(unix)]
     const SHORT_TIMEOUT: Duration = Duration::from_millis(50);
 
     #[cfg(unix)]
@@ -278,7 +277,6 @@ mod tests {
         path
     }
 
-    #[cfg(unix)]
     fn invocation(text: &str) -> SynthesisInvocation<'_> {
         SynthesisInvocation {
             voice_id: "en-us",

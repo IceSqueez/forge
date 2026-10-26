@@ -316,7 +316,7 @@ mod tests {
         );
         let before = std::time::Instant::now();
         tokio::task::spawn_blocking(move || {
-            let _ = engine.eval_script("forge::sleep(80)").unwrap();
+            drop(engine.eval_script("forge::sleep(80)").unwrap());
         })
         .await
         .unwrap();
@@ -488,9 +488,11 @@ mod tests {
         let dp_check = Arc::clone(&dp);
         let engine = Engine::with_api(unhurried(), make_api(dp.clone()));
         tokio::task::spawn_blocking(move || {
-            let _ = engine
-                .eval_script(r#"forge::globals::set("score", 99, true)"#)
-                .unwrap();
+            drop(
+                engine
+                    .eval_script(r#"forge::globals::set("score", 99, true)"#)
+                    .unwrap(),
+            );
         })
         .await
         .unwrap();
@@ -522,9 +524,11 @@ mod tests {
         let engine = Engine::with_api(EngineConfig::default(), api);
 
         tokio::task::spawn_blocking(move || {
-            let _ = engine
-                .eval_script(r#"forge::chat::send("hello chat")"#)
-                .unwrap();
+            drop(
+                engine
+                    .eval_script(r#"forge::chat::send("hello chat")"#)
+                    .unwrap(),
+            );
         })
         .await
         .unwrap();

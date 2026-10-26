@@ -1052,7 +1052,7 @@ mod tests {
         );
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "held only to keep the channel open")]
     fn dyn_all(
         _: &dyn BuiltinStatus,
         _: &dyn BuiltinHealth,

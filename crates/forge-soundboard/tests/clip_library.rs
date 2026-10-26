@@ -125,6 +125,10 @@ impl MediaRepo for FakeMedia {
     }
 
     async fn import_file(&self, source: &Path) -> Result<MediaBlob, StorageError> {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = self.calls.send(MediaCall::Import(source.to_path_buf()));
         if let Some(gate) = &self.gate {
             gate.notified().await;
@@ -187,11 +191,19 @@ impl MediaRepo for FakeMedia {
     }
 
     async fn delete(&self, id: &MediaBlobId) -> Result<bool, StorageError> {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = self.calls.send(MediaCall::Delete(id.clone()));
         Ok(true)
     }
 
     async fn retain(&self, referrer: &MediaReferrer, id: &MediaBlobId) -> Result<(), StorageError> {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = self
             .calls
             .send(MediaCall::Retain(referrer.clone(), id.clone()));
@@ -220,6 +232,10 @@ impl MediaRepo for FakeMedia {
         kind: MediaReferrerKind,
         referrer_id: &str,
     ) -> Result<u64, StorageError> {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = self
             .calls
             .send(MediaCall::ReleaseAll(kind, referrer_id.to_owned()));

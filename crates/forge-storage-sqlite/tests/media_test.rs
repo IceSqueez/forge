@@ -260,6 +260,10 @@ async fn import_file_stops_reading_a_source_that_understates_its_length_at_the_k
             .write(true)
             .open(&feed)
             .expect("open the fifo for writing");
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the outcome is not under test"
+        )]
         let _ = std::io::Write::write_all(&mut pipe, &bytes);
     });
 
@@ -267,6 +271,10 @@ async fn import_file_stops_reading_a_source_that_understates_its_length_at_the_k
         .await
         .expect("the import must not stall on a source that never ends")
         .unwrap_err();
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the outcome is not under test"
+    )]
     let _ = writer.join();
 
     let StorageError::MediaTooLarge {

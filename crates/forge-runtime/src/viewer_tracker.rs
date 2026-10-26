@@ -95,6 +95,10 @@ mod tests {
         let mut repo = MockViewerRepo::new();
         repo.expect_record_messages().returning(move |messages| {
             for message in messages {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the receiver may already be gone"
+                )]
                 let _ = recorded_tx.send(message.username.clone());
             }
             Ok(())

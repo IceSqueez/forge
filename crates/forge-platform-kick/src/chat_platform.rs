@@ -657,6 +657,10 @@ pub(crate) mod tests {
                         code: code.into(),
                         reason: "closed by the test peer".into(),
                     };
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the receiver may already be gone"
+                    )]
                     let _ = ws.send(Message::Close(Some(frame))).await;
                 }
                 PeerEnding::DropsTheSocket => return,
@@ -960,6 +964,10 @@ pub(crate) mod tests {
             let mut accepted = 0_usize;
             while let Ok((stream, _)) = listener.accept().await {
                 accepted += 1;
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the receiver may already be gone"
+                )]
                 let _ = accepted_tx.send(accepted);
                 if accepted > 1 {
                     held.push(stream);

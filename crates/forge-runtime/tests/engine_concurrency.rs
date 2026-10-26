@@ -90,7 +90,15 @@ struct CapturingHistoryRepo {
 impl HistoryRepo for CapturingHistoryRepo {
     async fn save(&self, ctx: &ExecutionContext) -> Result<(), StorageError> {
         let mut gate = self.gate.clone();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "only completion matters here"
+        )]
         let _ = gate.wait_for(|open| *open).await;
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = self.saved.send(ctx.clone());
         Ok(())
     }

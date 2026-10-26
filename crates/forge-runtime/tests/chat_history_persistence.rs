@@ -64,6 +64,10 @@ async fn a_failed_batch_is_counted_unwritten_and_the_next_batch_is_still_written
     let mut repo = MockChatHistoryRepo::new();
     repo.expect_append_batch().times(2).returning(move |rows| {
         let nth = calls.fetch_add(1, Ordering::SeqCst);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = tx.send(rows.iter().map(|row| row.id.clone()).collect());
         if nth == 0 {
             Err(StorageError::NotFound {
@@ -103,6 +107,10 @@ async fn retention_runs_after_a_written_batch_with_the_stored_per_viewer_limit()
     repo.expect_apply_retention()
         .times(1..)
         .returning(move |_, per_viewer| {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = prune_tx.send(per_viewer);
             Ok(0)
         });
@@ -130,6 +138,10 @@ fn retention_limits() -> (Arc<dyn ChatHistoryRepo>, mpsc::UnboundedReceiver<usiz
     repo.expect_append_batch().returning(|_| Ok(()));
     repo.expect_apply_retention()
         .returning(move |_, per_viewer| {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = tx.send(per_viewer);
             Ok(0)
         });
@@ -262,6 +274,10 @@ async fn each_moderation_action_routes_to_its_repo_method_with_its_source() {
     repo.expect_mark_message_deleted()
         .times(1)
         .returning(move |id| {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = del_tx.send(Call::Delete(id.to_string()));
             Ok(1)
         });
@@ -269,12 +285,20 @@ async fn each_moderation_action_routes_to_its_repo_method_with_its_source() {
     repo.expect_mark_user_messages_moderated()
         .times(1)
         .returning(move |source, author, timeout| {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = user_tx.send(Call::User(source, author.to_string(), timeout));
             Ok(1)
         });
     repo.expect_clear_platform()
         .times(1)
         .returning(move |source| {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = tx.send(Call::Clear(source));
             Ok(1)
         });
@@ -328,6 +352,10 @@ async fn a_replayed_chat_message_and_moderation_store_nothing_and_mark_no_later_
 
     let mut repo = MockChatHistoryRepo::new();
     repo.expect_append_batch().returning(move |rows| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = rows_tx.send(
             rows.iter()
                 .map(|row| (row.id.clone(), row.moderation.deleted))
@@ -338,10 +366,18 @@ async fn a_replayed_chat_message_and_moderation_store_nothing_and_mark_no_later_
     repo.expect_apply_retention().returning(|_, _| Ok(0));
     let delete_tx = marks_tx.clone();
     repo.expect_mark_message_deleted().returning(move |id| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = delete_tx.send(Call::Delete(id.to_string()));
         Ok(1)
     });
     repo.expect_clear_platform().returning(move |source| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = marks_tx.send(Call::Clear(source));
         Ok(1)
     });

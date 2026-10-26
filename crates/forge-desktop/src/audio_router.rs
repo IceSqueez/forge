@@ -261,6 +261,10 @@ mod tests {
             _: serde_json::Value,
             _: Option<u64>,
         ) -> OverlayReceivers {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = self.announced.send(identity.clone());
             OverlayReceivers {
                 sources: 1,

@@ -490,7 +490,15 @@ mod tests {
         let (seen_tx, seen) = mpsc::unbounded_channel();
         tokio::spawn(async move {
             while let Some(request) = requests.recv().await {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the receiver may already be gone"
+                )]
                 let _ = seen_tx.send(serde_json::from_str(&request.payload).unwrap());
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the receiver may already be gone"
+                )]
                 let _ = request.respond_to.send(reply.clone());
             }
         });

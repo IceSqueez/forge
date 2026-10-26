@@ -925,9 +925,11 @@ mod tests {
         let engine = Engine::with_api(unhurried(), api);
 
         tokio::task::spawn_blocking(move || {
-            let _ = engine
-                .eval_script(r#"forge::globals::set("score", 77, false)"#)
-                .unwrap();
+            drop(
+                engine
+                    .eval_script(r#"forge::globals::set("score", 77, false)"#)
+                    .unwrap(),
+            );
         })
         .await
         .unwrap();
@@ -956,9 +958,11 @@ mod tests {
         let engine = Engine::with_api(unhurried(), api);
 
         tokio::task::spawn_blocking(move || {
-            let _ = engine
-                .eval_script(r#"forge::globals::incr("hits", 3)"#)
-                .unwrap();
+            drop(
+                engine
+                    .eval_script(r#"forge::globals::incr("hits", 3)"#)
+                    .unwrap(),
+            );
         })
         .await
         .unwrap();
@@ -990,9 +994,11 @@ mod tests {
         let engine = Engine::with_api(unhurried(), api);
 
         tokio::task::spawn_blocking(move || {
-            let _ = engine
-                .eval_script(r#"forge::globals::del("temp")"#)
-                .unwrap();
+            drop(
+                engine
+                    .eval_script(r#"forge::globals::del("temp")"#)
+                    .unwrap(),
+            );
         })
         .await
         .unwrap();
@@ -1117,7 +1123,7 @@ mod tests {
             let engine = Engine::with_api(unhurried(), api);
 
             tokio::task::spawn_blocking(move || {
-                let _ = engine.eval_script(call).unwrap();
+                drop(engine.eval_script(call).unwrap());
             })
             .await
             .unwrap();
@@ -1160,11 +1166,11 @@ mod tests {
         let engine = Engine::with_api(unhurried(), api);
 
         tokio::task::spawn_blocking(move || {
-            let _ = engine
+            drop(engine
                 .eval_script(
                     r#"forge::log("a"); forge::warn("b"); forge::error("c"); forge::error("d");"#,
                 )
-                .unwrap();
+                .unwrap());
         })
         .await
         .unwrap();
@@ -1184,7 +1190,7 @@ mod tests {
         let engine = Engine::with_api(unhurried(), api);
 
         tokio::task::spawn_blocking(move || {
-            let _ = engine.eval_script(r#"forge::log("x")"#).unwrap();
+            drop(engine.eval_script(r#"forge::log("x")"#).unwrap());
         })
         .await
         .unwrap();
@@ -1227,7 +1233,7 @@ mod tests {
             let cap = Arc::clone(&captured);
             tokio::task::spawn_blocking(move || {
                 let engine = build_engine_with_http_in_blocking(dp.clone(), cap, config);
-                let _ = engine.eval_script(&script);
+                drop(engine.eval_script(&script).unwrap());
             })
             .await
             .unwrap();
@@ -1273,7 +1279,10 @@ mod tests {
 
         tokio::task::spawn_blocking(move || {
             let engine = build_engine_with_http_in_blocking(dp.clone(), cap, config);
-            let _ = engine.eval_script(&script);
+            assert!(
+                engine.eval_script(&script).is_err(),
+                "the disallowed second call aborts the script"
+            );
         })
         .await
         .unwrap();
@@ -1325,7 +1334,7 @@ mod tests {
             let engine = Engine::with_api(unhurried(), api);
 
             tokio::task::spawn_blocking(move || {
-                let _ = engine.eval_script(call).unwrap();
+                drop(engine.eval_script(call).unwrap());
             })
             .await
             .unwrap();
@@ -1387,7 +1396,7 @@ mod tests {
             let engine = Engine::with_api(unhurried(), api);
 
             tokio::task::spawn_blocking(move || {
-                let _ = engine.eval_script(call).unwrap();
+                drop(engine.eval_script(call).unwrap());
             })
             .await
             .unwrap();

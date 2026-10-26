@@ -615,6 +615,10 @@ mod tests {
                 (behaviour.hold_start.take(), behaviour.fail_once.take())
             };
             if let Some(hold) = hold {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "only completion matters here"
+                )]
                 let _ = hold.await;
             }
             if let Some(reason) = failure {

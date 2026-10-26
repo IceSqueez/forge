@@ -44,6 +44,10 @@ impl RemoteAudioDestination for SilentPage {
         _clip_id: &RemoteClipId,
         command: RemoteCommand,
     ) -> Result<(), AudioError> {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = self.commands.send(command);
         Ok(())
     }

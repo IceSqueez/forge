@@ -59,7 +59,7 @@ async fn body_hash_computed_on_save() {
         let digest = hasher.finalize();
         let mut s = String::with_capacity(digest.len() * 2);
         for b in digest.iter() {
-            let _ = write!(s, "{b:02x}");
+            write!(s, "{b:02x}").unwrap();
         }
         s
     };
@@ -87,7 +87,7 @@ async fn save_ignores_caller_provided_hash_and_recomputes() {
         let digest = hasher.finalize();
         let mut s = String::with_capacity(digest.len() * 2);
         for b in digest.iter() {
-            let _ = write!(s, "{b:02x}");
+            write!(s, "{b:02x}").unwrap();
         }
         s
     };

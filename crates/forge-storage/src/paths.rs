@@ -89,7 +89,7 @@ mod tests {
 
     static CREDENTIALS_KEY_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    #[allow(unsafe_code)]
+    #[expect(unsafe_code, reason = "env mutation is unsafe in edition 2024")]
     fn with_credentials_key_env<R>(value: Option<&str>, body: impl FnOnce() -> R) -> R {
         let _guard = CREDENTIALS_KEY_ENV_LOCK
             .lock()

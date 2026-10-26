@@ -47,6 +47,10 @@ impl TtsEngine for GenerationEngine {
         Ok(vec![voice(&format!("{}-1", self.id.0), &self.id.0)])
     }
     async fn synthesize(&self, _req: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = self.entered.send(self.generation);
         if let Some(gate) = &self.gate {
             let _permit = gate.acquire().await.expect("gate open");
@@ -68,6 +72,10 @@ struct CountingFactory {
 impl TtsEngineFactory for CountingFactory {
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
         let generation = self.creates.fetch_add(1, Ordering::SeqCst) + 1;
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = self.created.send(generation);
         Ok(Box::new(GenerationEngine {
             id: self.id.clone(),

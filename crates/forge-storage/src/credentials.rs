@@ -65,6 +65,5 @@ mod tests {
         assert_eq!(back, id);
     }
 
-    #[allow(dead_code)]
     fn _credentials_repo_is_dyn_safe(_: &dyn CredentialsRepo) {}
 }

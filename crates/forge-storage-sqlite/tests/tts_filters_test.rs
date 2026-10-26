@@ -316,7 +316,7 @@ async fn replace_rules_is_atomic_rollback_on_conflict() {
         .expect("seed");
 
     let dup = vec![literal_rule("dup", 0), literal_rule("dup", 1)];
-    let _ = r.replace_rules(&dup).await;
+    assert!(r.replace_rules(&dup).await.is_err());
 
     let got = r.list_rules().await.expect("list after conflict attempt");
     assert!(

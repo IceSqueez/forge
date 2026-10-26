@@ -49,6 +49,10 @@ impl AudioSink for DyingSink {
                 DEVICE_LOSS.to_owned(),
             )))),
             Some(gate) => Ok(ControlledPlayback::from_future(async move {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "only completion matters here"
+                )]
                 let _ = gate.await;
                 Err(AudioError::Host(DEVICE_LOSS.to_owned()))
             })),
@@ -157,6 +161,10 @@ async fn a_device_that_dies_while_the_queue_believes_it_is_playing_releases_the_
     )
     .await;
 
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the receiver may already be gone"
+    )]
     let _ = gate_tx.send(());
 
     assert_eq!(failure_for(&mut stream, &first_id).await, EXPECTED_FAILURE);

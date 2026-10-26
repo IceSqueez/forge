@@ -63,6 +63,10 @@ mod tests {
         let (tx, mut stream) = make_channel();
         for i in 0..20u32 {
             let event = Event::new(EventSource::Core, "flood", serde_json::json!({"i": i}));
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = tx.send(event);
         }
         let mut got_lagging = false;

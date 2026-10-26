@@ -122,6 +122,10 @@ impl Harness {
         let mut history = MockHistoryRepo::new();
         history.expect_save_batch().returning(move |contexts| {
             for context in contexts {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the receiver may already be gone"
+                )]
                 let _ = runs_tx.send(context.clone());
             }
             Ok(())

@@ -170,7 +170,7 @@ impl SubActionRunner for ModelMoveRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::type_complexity)]
+#[expect(clippy::type_complexity, reason = "test tuple of captured channels")]
 mod tests {
     use super::*;
     use crate::error::VTubeError;
@@ -267,7 +267,6 @@ mod tests {
             *self.captured_duration.lock().unwrap() = Some(time_in_seconds);
             Ok(())
         }
-        #[allow(clippy::too_many_arguments)]
         async fn move_item(
             &self,
             _: &str,
@@ -296,7 +295,6 @@ mod tests {
         async fn get_items(&self) -> Result<Variant, VTubeError> {
             Ok(Variant::Object(BTreeMap::new()))
         }
-        #[allow(clippy::too_many_arguments)]
         async fn pin_item(
             &self,
             _: &str,
@@ -311,7 +309,6 @@ mod tests {
         ) -> Result<(), VTubeError> {
             Ok(())
         }
-        #[allow(clippy::too_many_arguments)]
         async fn load_item(
             &self,
             _: &str,

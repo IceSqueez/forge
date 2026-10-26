@@ -775,6 +775,10 @@ pub(crate) mod tests {
             Ok(())
         }
         async fn send_message(&self, channel: &str, text: &str) -> Result<(), PlatformError> {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = self
                 .sends
                 .send(PlatformCall::Message(channel.to_string(), text.to_string()));
@@ -789,6 +793,10 @@ pub(crate) mod tests {
             reply_parent_message_id: &str,
             text: &str,
         ) -> Result<(), PlatformError> {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = self.sends.send(PlatformCall::Reply {
                 channel: channel.to_string(),
                 parent: reply_parent_message_id.to_string(),
@@ -801,6 +809,10 @@ pub(crate) mod tests {
             recipient_login: &str,
             text: &str,
         ) -> Result<(), PlatformError> {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = self.sends.send(PlatformCall::Whisper {
                 recipient: recipient_login.to_string(),
                 text: text.to_string(),
@@ -1394,6 +1406,10 @@ pub(crate) mod tests {
         }
 
         fn record(&self, call: SenderCall) -> Result<Option<ActingSender>, PlatformError> {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = self.calls.send(call);
             Ok(self.acting.clone())
         }

@@ -36,6 +36,10 @@ struct ChannelPublisher(mpsc::UnboundedSender<Event>);
 
 impl EventPublisher for ChannelPublisher {
     fn publish(&self, event: Event) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = self.0.send(event);
     }
 }
@@ -67,6 +71,10 @@ async fn serve_gated_close_frame(
     let Ok(mut socket) = tokio_tungstenite::accept_async(stream).await else {
         return;
     };
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the receiver may already be gone"
+    )]
     let _ = upgraded.send(());
     if gate.await.is_err() {
         return;
@@ -75,7 +83,15 @@ async fn serve_gated_close_frame(
         code: CloseCode::from(SESSION_INVALIDATED),
         reason: "closed by the test peer".into(),
     };
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the receiver may already be gone"
+    )]
     let _ = socket.send(Message::Close(Some(frame))).await;
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the receiver may already be gone"
+    )]
     let _ = settled.send(());
     while let Some(Ok(_)) = socket.next().await {}
 }
@@ -211,7 +227,15 @@ async fn a_retired_client_stays_silent_when_its_server_speaks_afterwards() {
         .unwrap();
     while rx.try_recv().is_ok() {}
 
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the receiver may already be gone"
+    )]
     let _ = gate_tx.send(());
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "elapsing the window is an expected outcome"
+    )]
     let _ = tokio::time::timeout(PEER_SPEAKS_WINDOW, settled_rx).await;
     tokio::task::yield_now().await;
     server.abort();
@@ -241,12 +265,18 @@ const IDENTIFY_OP: u64 = 1;
 const OBS_SUCCESS: u16 = 100;
 const OBS_RESOURCE_NOT_FOUND: u16 = 600;
 
-struct FrozenClock(#[allow(dead_code)] std::sync::mpsc::Sender<()>);
+struct FrozenClock(
+    #[expect(dead_code, reason = "held only to keep the channel open")] std::sync::mpsc::Sender<()>,
+);
 
 fn freeze_clock() -> FrozenClock {
     tokio::time::pause();
     let (release, held) = std::sync::mpsc::channel::<()>();
     tokio::task::spawn_blocking(move || {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "recv returns once the sender is dropped"
+        )]
         let _ = held.recv();
     });
     FrozenClock(release)
@@ -277,7 +307,9 @@ async fn advance_until(what: &str, mut done: impl FnMut() -> bool) {
     let started = Instant::now();
     while !done() {
         assert!(started.elapsed() < WALL_BUDGET, "never happened: {what}");
-        let _ = tokio::task::spawn_blocking(|| std::thread::sleep(REAL_CLOCK_POLL)).await;
+        tokio::task::spawn_blocking(|| std::thread::sleep(REAL_CLOCK_POLL))
+            .await
+            .unwrap();
         if done() {
             break;
         }
@@ -489,6 +521,10 @@ async fn close_socket(socket: &mut WebSocketStream<TcpStream>) {
         code: CloseCode::Normal,
         reason: "fake OBS closing".into(),
     };
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the receiver may already be gone"
+    )]
     let _ = socket.send(Message::Close(Some(frame))).await;
 }
 
@@ -958,6 +994,10 @@ impl EventPublisher for StallingPublisher {
             let gate = self.gate.lock().unwrap().take();
             if let Some(gate) = gate {
                 tokio::task::block_in_place(|| {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "recv returns once the sender is dropped"
+                    )]
                     let _ = gate.recv();
                 });
             }
@@ -1068,7 +1108,9 @@ impl RefusingObs {
 async fn let_every_backoff_window_pass() {
     for _ in 0..QUIET_STEPS {
         tokio::time::advance(QUIET_STEP).await;
-        let _ = tokio::task::spawn_blocking(|| std::thread::sleep(REAL_CLOCK_POLL)).await;
+        tokio::task::spawn_blocking(|| std::thread::sleep(REAL_CLOCK_POLL))
+            .await
+            .unwrap();
     }
 }
 

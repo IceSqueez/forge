@@ -77,6 +77,10 @@ mod tests {
     impl AudioSink for GatedSink {
         async fn play(&self, _: PcmBuffer) -> Result<(), AudioError> {
             self.plays.fetch_add(1, Ordering::SeqCst);
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = self.started.send(());
             self.release.notified().await;
             Ok(())

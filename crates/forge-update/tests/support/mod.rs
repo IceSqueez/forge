@@ -152,6 +152,10 @@ async fn serve(
 
 async fn write_all(stream: &mut TcpStream, header: &[u8], body: &[u8]) {
     if stream.write_all(header).await.is_ok() && stream.write_all(body).await.is_ok() {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a failed close does not affect the scenario"
+        )]
         let _ = stream.shutdown().await;
     }
 }

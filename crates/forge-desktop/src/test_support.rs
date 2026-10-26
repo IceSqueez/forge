@@ -254,6 +254,10 @@ impl SettingsRepo for TestBackend {
             .lock()
             .unwrap()
             .insert(key.to_owned(), value.to_owned());
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = self.writes.send((key.to_owned(), value.to_owned()));
         Ok(())
     }
@@ -1775,7 +1779,9 @@ impl tracing::Subscriber for TracingInterestFloor {
 pub(crate) fn install_tracing_interest_floor() {
     static INSTALLED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     INSTALLED.get_or_init(|| {
-        let _ = tracing::subscriber::set_global_default(TracingInterestFloor);
+        drop(tracing::subscriber::set_global_default(
+            TracingInterestFloor,
+        ));
         tracing::callsite::rebuild_interest_cache();
     });
 }

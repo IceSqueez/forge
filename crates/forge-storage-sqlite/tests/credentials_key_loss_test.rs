@@ -4,7 +4,7 @@ use forge_storage_sqlite::SqliteBackend;
 
 static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-#[allow(unsafe_code)]
+#[expect(unsafe_code, reason = "env mutation is unsafe in edition 2024")]
 async fn open_with_key_file(url: &str, key_file: &std::path::Path) -> SqliteBackend {
     // SAFETY: the caller holds ENV_LOCK for the duration of the open below (see ENV_LOCK's
     unsafe {

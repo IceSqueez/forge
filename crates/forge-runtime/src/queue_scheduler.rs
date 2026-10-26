@@ -1180,6 +1180,10 @@ mod tests {
         ) -> (forge_types::SubActionTelemetry, Option<ArgStack>) {
             loop {
                 if ctx.cancel.is_cancelled() {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the receiver may already be gone"
+                    )]
                     let _ = self.cancelled.send(());
                     break;
                 }

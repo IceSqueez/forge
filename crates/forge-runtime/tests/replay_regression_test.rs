@@ -140,6 +140,10 @@ async fn spawn_pipeline() -> PipelineFixture {
                     initial_args: ArgStack::new(),
                     admission: QueueAdmission::default(),
                 };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "only completion matters here"
+                )]
                 let _ = sched_clone.dispatch(req).await;
             }
         }

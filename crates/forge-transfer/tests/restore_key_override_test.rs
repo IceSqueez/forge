@@ -15,7 +15,7 @@ fn write_file(path: &Path, bytes: &[u8]) {
     std::fs::write(path, bytes).unwrap();
 }
 
-#[allow(unsafe_code)]
+#[expect(unsafe_code, reason = "env mutation is unsafe in edition 2024")]
 #[test]
 fn restore_writes_the_key_to_the_overridden_key_file_and_leaves_the_data_dir_one_alone() {
     let data = TempDir::new().unwrap();

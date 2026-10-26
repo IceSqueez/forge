@@ -21,7 +21,7 @@ const SENTINEL: &str = "qa-sentinel";
 static ASSETS_ROOT: OnceLock<PathBuf> = OnceLock::new();
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
-#[allow(unsafe_code)]
+#[expect(unsafe_code, reason = "env mutation is unsafe in edition 2024")]
 fn assets_root() -> &'static Path {
     ASSETS_ROOT.get_or_init(|| {
         let data_dir = tempfile::tempdir().unwrap().keep();

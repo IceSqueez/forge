@@ -139,6 +139,10 @@ impl Harness {
         let mut history = MockHistoryRepo::new();
         history.expect_save_batch().returning(move |contexts| {
             for context in contexts {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the receiver may already be gone"
+                )]
                 let _ = runs_tx.send(context.clone());
             }
             Ok(())
@@ -1023,6 +1027,10 @@ async fn overdue_runs_wait_for_integrations_to_settle_before_dispatch() {
     let id = harness.place(&overdue(action.id, FIVE_MINUTES)).await;
     let (release, settled) = oneshot::channel::<()>();
     let handle = harness.start(CatchUpSettle::when(async move {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "only completion matters here"
+        )]
         let _ = settled.await;
     }));
     for _ in 0..8 {
@@ -1045,6 +1053,10 @@ async fn schedule_and_run_now_are_served_while_catch_up_waits() {
     let action = harness.action(|_| {}).await;
     let (_never_settles, settled) = oneshot::channel::<()>();
     let handle = harness.start(CatchUpSettle::when(async move {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "only completion matters here"
+        )]
         let _ = settled.await;
     }));
 
@@ -1139,6 +1151,10 @@ async fn catch_up_starts_at_the_settle_limit_when_integrations_never_settle() {
     repo.expect_next_due()
         .returning(|| Ok(Some(base() - FIVE_MINUTES)));
     repo.expect_fail_unreadable_due().returning(move |_, _| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = passes_tx.send(Instant::now());
         Ok(Vec::new())
     });
@@ -1199,6 +1215,10 @@ async fn a_dispatch_pass_fails_unreadable_due_runs_at_the_wall_clock_time() {
         .returning(|| Ok(Some(base() - FIVE_MINUTES)));
     repo.expect_fail_unreadable_due()
         .returning(move |now, reason| {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = calls_tx.send((now, reason.to_owned()));
             Ok(Vec::new())
         });
@@ -1343,6 +1363,10 @@ impl ScheduledRunRepo for HookedRepo {
             && !self.fired.swap(true, Ordering::SeqCst)
         {
             if let Some(entered) = held.entered.lock().unwrap().take() {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the receiver may already be gone"
+                )]
                 let _ = entered.send(());
             }
             held.release.notified().await;
@@ -1664,6 +1688,10 @@ async fn a_run_waiting_on_a_paused_queue_is_rechecked_no_faster_than_the_wall_cl
     let counted = Arc::clone(&reads);
     repo.expect_list_due().returning(move |_| {
         if counted.fetch_add(1, Ordering::SeqCst) >= cadence_passes * 4 {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = hot_tx.send(());
         }
         Ok(vec![waiting.clone()])

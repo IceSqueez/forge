@@ -10,7 +10,7 @@ impl EventPublisher for NullPublisher {
     fn publish(&self, _event: Event) {}
 }
 
-#[allow(unsafe_code)]
+#[expect(unsafe_code, reason = "env mutation is unsafe in edition 2024")]
 #[tokio::test]
 async fn a_files_folder_that_is_itself_a_symlink_is_used_as_the_root() {
     let base = tempfile::tempdir().unwrap();

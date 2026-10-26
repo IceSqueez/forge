@@ -200,6 +200,10 @@ pub(crate) mod tests {
                     .collect()
             };
             for sender in senders {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the receiver may already be gone"
+                )]
                 let _ = sender.send((ts, data.clone())).await;
             }
         }

@@ -235,7 +235,6 @@ impl SubActionRunner for ItemMoveRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::type_complexity)]
 mod tests {
     use super::*;
     use crate::error::VTubeError;
@@ -358,7 +357,6 @@ mod tests {
         ) -> Result<(), VTubeError> {
             Ok(())
         }
-        #[allow(clippy::too_many_arguments)]
         async fn move_item(
             &self,
             item_instance_id: &str,
@@ -390,7 +388,6 @@ mod tests {
         async fn get_items(&self) -> Result<Variant, VTubeError> {
             Ok(Variant::Object(BTreeMap::new()))
         }
-        #[allow(clippy::too_many_arguments)]
         async fn pin_item(
             &self,
             _: &str,
@@ -405,7 +402,6 @@ mod tests {
         ) -> Result<(), VTubeError> {
             Ok(())
         }
-        #[allow(clippy::too_many_arguments)]
         async fn load_item(
             &self,
             _: &str,

@@ -42,6 +42,10 @@ fn tracker_recording_into(tx: mpsc::UnboundedSender<Recorded>) -> MockViewerRepo
     let mut repo = MockViewerRepo::new();
     repo.expect_record_messages().returning(move |messages| {
         for message in messages {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = tx.send((
                 message.platform,
                 message.viewer_id.clone(),

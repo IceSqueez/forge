@@ -318,7 +318,7 @@ async fn every_failure_variant_renders_without_url_header_or_credential_text() {
 async fn response_decode_error_carries_no_body_text() {
     #[derive(Debug, Deserialize)]
     struct Shape {
-        #[allow(dead_code)]
+        #[expect(dead_code, reason = "held only to keep the channel open")]
         id: u32,
     }
     for (body, category) in [

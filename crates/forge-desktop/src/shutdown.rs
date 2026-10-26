@@ -778,6 +778,10 @@ mod tests {
         let (started_tx, started_rx) = std::sync::mpsc::channel::<()>();
         runtime.spawn_blocking(move || {
             started_tx.send(()).unwrap();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "recv returns once the sender is dropped"
+            )]
             let _ = parked.recv();
         });
         started_rx.recv().unwrap();

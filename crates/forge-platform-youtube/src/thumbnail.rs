@@ -112,6 +112,7 @@ mod tests {
 
     impl Drop for TempImage {
         fn drop(&mut self) {
+            #[expect(clippy::let_underscore_must_use, reason = "cleanup is best effort")]
             let _ = std::fs::remove_file(&self.0);
         }
     }

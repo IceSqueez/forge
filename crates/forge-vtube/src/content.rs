@@ -467,6 +467,10 @@ mod tests {
     ) {
         for data in responses {
             if let Some(req) = rx.recv().await {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the receiver may already be gone"
+                )]
                 let _ = req.respond_to.send(data);
             }
         }
@@ -479,6 +483,10 @@ mod tests {
         let (done_tx, done_rx) = tokio::sync::oneshot::channel();
         tokio::spawn(async move {
             mock_sequential_handler(rx, responses).await;
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = done_tx.send(());
         });
         done_rx
@@ -613,6 +621,10 @@ mod tests {
         tokio::spawn(async move {
             let mut rx = req_rx;
             if let Some(req) = rx.recv().await {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the receiver may already be gone"
+                )]
                 let _ = req.respond_to.send(data);
             }
         });
@@ -776,11 +788,19 @@ mod tests {
             "no request may be queued before a connection announces itself"
         );
 
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = connected_tx.send(());
         let req = tokio::time::timeout(tokio::time::Duration::from_secs(30), req_rx.recv())
             .await
             .expect("a connection announcement must trigger the version fetch")
             .expect("the request channel must stay open");
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = req
             .respond_to
             .send(serde_json::json!({ "vTubeStudioVersion": "1.28.0" }));
@@ -800,6 +820,10 @@ mod tests {
         let version = Arc::new(OnceLock::<String>::new());
         let handle = spawn_version_fetch(req_tx, Arc::clone(&version), connected_rx);
 
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = connected_tx.send(());
         let unanswered = tokio::time::timeout(tokio::time::Duration::from_secs(30), req_rx.recv())
             .await
@@ -807,11 +831,19 @@ mod tests {
             .expect("the request channel must stay open");
         drop(unanswered);
 
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = connected_tx.send(());
         let retried = tokio::time::timeout(tokio::time::Duration::from_secs(30), req_rx.recv())
             .await
             .expect("a later connection must retry the unanswered version fetch")
             .expect("the request channel must stay open");
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = retried
             .respond_to
             .send(serde_json::json!({ "vTubeStudioVersion": "1.29.0" }));

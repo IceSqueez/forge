@@ -60,6 +60,10 @@ struct ChannelPublisher(mpsc::UnboundedSender<Event>);
 
 impl EventPublisher for ChannelPublisher {
     fn publish(&self, event: Event) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = self.0.send(event);
     }
 }
@@ -163,6 +167,10 @@ struct StateProbePublisher {
 impl EventPublisher for StateProbePublisher {
     fn publish(&self, event: Event) {
         let state = self.client.get().map(|c| c.connection_state());
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = self.tx.send((event.kind, state));
     }
 }
@@ -217,7 +225,15 @@ async fn the_connection_state_is_already_settled_when_the_auth_failure_is_publis
         .await
         .unwrap(),
     );
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the slot is filled at most once"
+    )]
     let _ = slot.set(Arc::clone(&client));
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the receiver may already be gone"
+    )]
     let _ = gate_tx.send(());
 
     let deadline = std::time::Instant::now() + SUPERVISOR_BUDGET;

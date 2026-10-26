@@ -72,7 +72,9 @@ impl tracing::Subscriber for Recorder {
 fn install_interest_floor() {
     static INSTALLED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     INSTALLED.get_or_init(|| {
-        let _ = tracing::subscriber::set_global_default(Recorder { sink: None });
+        drop(tracing::subscriber::set_global_default(Recorder {
+            sink: None,
+        }));
         tracing::callsite::rebuild_interest_cache();
     });
 }

@@ -26,7 +26,7 @@ async fn token_is_not_forwarded_across_a_cross_origin_redirect() {
         Arc::new(support::MemCreds::default()),
         ScriptedLimiter::open(),
     );
-    let _ = provider.verify_token(TOKEN).await;
+    assert!(provider.verify_token(TOKEN).await.is_err());
     let leaked = elsewhere
         .received_requests()
         .await

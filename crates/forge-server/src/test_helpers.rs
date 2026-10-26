@@ -562,7 +562,7 @@ pub mod log_capture {
     fn install_interest_floor() {
         static INSTALLED: OnceLock<()> = OnceLock::new();
         INSTALLED.get_or_init(|| {
-            let _ = tracing::subscriber::set_global_default(InterestFloor);
+            drop(tracing::subscriber::set_global_default(InterestFloor));
             tracing::callsite::rebuild_interest_cache();
         });
     }

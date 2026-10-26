@@ -551,11 +551,19 @@ pub(crate) mod tests {
             let request_type = request["messageType"].as_str().unwrap_or("");
             let response_type = request_type.replace("Request", "Response");
             let request_id = request["requestID"].as_str().unwrap_or("");
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = self.0.send(Self::frame(&response_type, request_id, data));
         }
 
         pub(crate) fn api_error(&self, request: &serde_json::Value, error_id: i64, message: &str) {
             let request_id = request["requestID"].as_str().unwrap_or("");
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = self.0.send(Self::frame(
                 "APIError",
                 request_id,
@@ -564,10 +572,18 @@ pub(crate) mod tests {
         }
 
         pub(crate) fn event(&self, message_type: &str, data: serde_json::Value) {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = self.0.send(Self::frame(message_type, "", data));
         }
 
         pub(crate) fn close(&self) {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = self.0.send(PeerCmd::Close);
         }
     }
@@ -736,6 +752,7 @@ pub(crate) mod tests {
             tokio::select! {
                 frame = futures_util::StreamExt::next(&mut ws) => match frame {
                     Some(Ok(Message::Text(text))) => {
+                        #[expect(clippy::let_underscore_must_use, reason = "the receiver may already be gone")]
                         let _ = frames.send(serde_json::from_str(&text).unwrap_or_default());
                         if ws.send(Message::Pong(Vec::new().into())).await.is_err() {
                             return;
@@ -751,6 +768,7 @@ pub(crate) mod tests {
                         }
                     }
                     Some(PeerCmd::Close) | None => {
+                        #[expect(clippy::let_underscore_must_use, reason = "a failed close does not affect the scenario")]
                         let _ = ws.close(None).await;
                         return;
                     }
@@ -827,6 +845,10 @@ pub(crate) mod tests {
                     break;
                 };
                 counter.fetch_add(1, AO::Release);
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the receiver may already be gone"
+                )]
                 let _ = accept_tx.send(()).await;
                 let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
                 serve_full_auth(&mut ws).await;
@@ -1032,6 +1054,10 @@ pub(crate) mod tests {
             {
                 let req: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
                 if req["messageType"] == "ExpressionStateRequest" {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the receiver may already be gone"
+                    )]
                     let _ = seen_tx.send(()).await;
                     break;
                 }
@@ -1101,6 +1127,10 @@ pub(crate) mod tests {
     impl EventPublisher for StateProbePublisher {
         fn publish(&self, event: Event) {
             let state = self.client.get().map(|c| c.connection_state());
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = self.tx.send((event, state));
         }
     }
@@ -1146,6 +1176,10 @@ pub(crate) mod tests {
         if gate.await.is_err() {
             return;
         }
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a failed close does not affect the scenario"
+        )]
         let _ = ws.close(None).await;
     }
 
@@ -1207,12 +1241,20 @@ pub(crate) mod tests {
                 }),
                 MockCreds::new().creds(),
             ));
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the slot is filled at most once"
+            )]
             let _ = slot.set(Arc::clone(&client));
             assert!(
                 state_when(&mut rx, is_connected).await.is_some(),
                 "expected the client to reach connected before the peer drops the socket"
             );
             client.set_auto_reconnect(auto_reconnect);
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = gate_tx.send(());
 
             let state = state_when(&mut rx, |e| has_reason(e, "socket_closed")).await;
@@ -1239,6 +1281,10 @@ pub(crate) mod tests {
         tokio::time::pause();
         let (release, held) = std::sync::mpsc::channel::<()>();
         tokio::task::spawn_blocking(move || {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "recv returns once the sender is dropped"
+            )]
             let _ = held.recv();
         });
         FrozenClock { _release: release }
@@ -1253,7 +1299,9 @@ pub(crate) mod tests {
             if cond() {
                 return true;
             }
-            let _ = tokio::task::spawn_blocking(|| std::thread::sleep(POLL_STEP)).await;
+            tokio::task::spawn_blocking(|| std::thread::sleep(POLL_STEP))
+                .await
+                .unwrap();
         }
         cond()
     }
@@ -1488,6 +1536,10 @@ pub(crate) mod tests {
         );
 
         client.set_auto_reconnect(true);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = gate_tx.send(());
 
         let handle = client.supervisor.lock().unwrap().take().unwrap();
@@ -1523,7 +1575,15 @@ pub(crate) mod tests {
             }),
             creds.creds(),
         ));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the slot is filled at most once"
+        )]
         let _ = slot.set(Arc::clone(&client));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = gate_tx.send(());
 
         let state = state_when(&mut rx, |e| has_reason(e, "auth_required")).await;
@@ -1616,7 +1676,15 @@ pub(crate) mod tests {
         if gate.await.is_err() {
             return;
         }
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a failed close does not affect the scenario"
+        )]
         let _ = ws.close(None).await;
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = settled.send(());
         while let Some(Ok(_)) = futures_util::StreamExt::next(&mut ws).await {}
     }
@@ -1691,6 +1759,10 @@ pub(crate) mod tests {
             "reaching a live session must also announce it on the shared feed"
         );
 
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = gate_tx.send(());
         assert!(
             wait_for(|| publisher.disconnected_with_reason("socket_closed")).await,
@@ -1767,7 +1839,15 @@ pub(crate) mod tests {
         client.disconnect().await.unwrap();
         publisher.events.lock().unwrap().clear();
 
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = gate_tx.send(());
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "elapsing the window is an expected outcome"
+        )]
         let _ = tokio::time::timeout(PEER_SPEAKS_WINDOW, settled_rx).await;
         tokio::task::yield_now().await;
         server.abort();

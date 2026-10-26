@@ -1035,6 +1035,10 @@ mod tests {
             .times(1..)
             .returning(move |contexts| {
                 for ctx in contexts {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the receiver may already be gone"
+                    )]
                     let _ = tx.send(ctx.clone());
                 }
                 Ok(())

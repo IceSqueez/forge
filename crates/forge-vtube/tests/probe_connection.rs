@@ -30,8 +30,16 @@ async fn serve_one_reply(
         return;
     };
     if let Some(tx) = seen {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver may already be gone"
+        )]
         let _ = tx.send(text.to_string());
     }
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the receiver may already be gone"
+    )]
     let _ = socket.send(Message::Text(reply.into())).await;
     while let Some(Ok(_)) = socket.next().await {}
 }
@@ -97,6 +105,10 @@ async fn the_probe_pings_with_an_api_state_request() {
         Some(seen_tx),
     ));
 
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "only completion matters here"
+    )]
     let _ = probe_connection("127.0.0.1", port).await;
 
     let sent: serde_json::Value = serde_json::from_str(&seen_rx.await.unwrap()).unwrap();

@@ -90,7 +90,6 @@ impl VTubeSink for MockSink {
     ) -> Result<(), VTubeError> {
         self.record()
     }
-    #[allow(clippy::too_many_arguments)]
     async fn move_item(
         &self,
         _: &str,
@@ -280,7 +279,10 @@ impl RecordingSink {
     }
 }
 
-#[allow(clippy::cast_precision_loss)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "test fixture values are small and bounded"
+)]
 fn widen(v: Option<i64>) -> Option<f64> {
     v.map(|i| i as f64)
 }
@@ -321,7 +323,6 @@ impl VTubeSink for RecordingSink {
         );
         Ok(())
     }
-    #[allow(clippy::too_many_arguments)]
     async fn move_item(
         &self,
         _: &str,
@@ -354,7 +355,6 @@ impl VTubeSink for RecordingSink {
     async fn get_items(&self) -> Result<Variant, VTubeError> {
         Ok(Variant::Object(BTreeMap::new()))
     }
-    #[allow(clippy::too_many_arguments)]
     async fn pin_item(
         &self,
         _: &str,
@@ -370,7 +370,6 @@ impl VTubeSink for RecordingSink {
         self.record("pin_item", vec![Some(angle), Some(size)]);
         Ok(())
     }
-    #[allow(clippy::too_many_arguments)]
     async fn load_item(
         &self,
         _: &str,

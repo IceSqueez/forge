@@ -1604,7 +1604,6 @@ mod tests {
         assert!(result.is_ok(), "run() must return Ok(()) on cancellation");
     }
 
-    #[allow(clippy::type_complexity)]
     fn make_poller_with_both_handles(
         server: &MockServer,
     ) -> (
@@ -2756,6 +2755,10 @@ mod tests {
         });
         let (report_tx, reports) = tokio::sync::mpsc::unbounded_channel();
         let reporter: PollHealthReporter = Arc::new(move |health| {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
             let _ = report_tx.send((health, calls.load(std::sync::atomic::Ordering::SeqCst)));
         });
         let (tx, events) = tokio::sync::mpsc::unbounded_channel();

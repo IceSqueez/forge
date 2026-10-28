@@ -140,8 +140,17 @@ pub enum EmulatorError {
         stdout_tail: String,
     },
 
-    #[error("forge refused its endpoint overrides and exited: {line}")]
-    EndpointOverrideRefused { line: String },
+    #[error("forge refused its endpoint override {variable} and exited: {line}")]
+    EndpointOverrideRefused { variable: String, line: String },
+
+    #[error("another forge instance already holds the fixture data directory: {line}")]
+    AlreadyRunning { line: String },
+
+    #[error("forge left its control server off: {line}")]
+    ServerNotStarted { line: String },
+
+    #[error("forge boot failed ({failure}): {line}")]
+    BootFailed { failure: String, line: String },
 
     #[error("forge could not bind its seeded server port after {attempts} attempt(s)")]
     ServerPortTaken { attempts: u32 },

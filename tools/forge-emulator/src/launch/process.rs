@@ -126,8 +126,8 @@ impl ForgeProcess {
             if let Some(status) = self.exit_status()? {
                 return Err(self.early_exit(status).await);
             }
-            if self.output.server_bind_failed() {
-                return Err(EmulatorError::ServerPortTaken { attempts: 1 });
+            if let Some((stop, line)) = self.output.boot_stop() {
+                return Err(stop.into_error(line));
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
@@ -147,7 +147,7 @@ impl ForgeProcess {
                     _ = child.wait() => break,
                     _ = tokio::time::sleep_until(wake) => break,
                     changed = changes.changed() => {
-                        if changed.is_err() || output.server_bind_failed() {
+                        if changed.is_err() || output.has_boot_stop() {
                             break;
                         }
                     }
@@ -285,9 +285,10 @@ fn is_not_listening_yet(error: &EmulatorError) -> bool {
 
 fn classify_exit(status: ExitStatus, output: &CapturedOutput) -> EmulatorError {
     if status.code() == Some(1)
-        && let Some(line) = output.override_refusal()
+        && let Some((stop, line)) = output.boot_stop()
+        && stop.is_startup_refusal()
     {
-        return EmulatorError::EndpointOverrideRefused { line };
+        return stop.into_error(line);
     }
     EmulatorError::ForgeExited {
         status: status.to_string(),
@@ -307,7 +308,9 @@ mod tests {
 
     use super::*;
 
-    const OVERRIDE_LINE: &str = "2026-09-13T10:00:00Z ERROR platform endpoint override refused; exiting error=endpoint override FORGE_TWITCH_API_BASE_URL refused: host is not 127.0.0.0/8, ::1 or localhost";
+    const OVERRIDE_LINE: &str = "2026-10-28T10:00:00.000000Z ERROR platform endpoint override refused; exiting signal=startup_refused outcome=endpoint_override_refused variable=FORGE_TWITCH_API_BASE_URL error=endpoint override FORGE_TWITCH_API_BASE_URL refused: host is not 127.0.0.0/8, ::1 or localhost";
+    const ALREADY_RUNNING_LINE: &str = "2026-10-28T10:00:00.000000Z ERROR another forge instance is already running for this data directory; exiting signal=startup_refused outcome=already_running";
+    const BOOT_FAILED_LINE: &str = "2026-10-28T10:00:00.000000Z ERROR boot failed signal=readiness outcome=failed failure=pre_baseline";
 
     fn exit_code(code: i32) -> ExitStatus {
         ExitStatus::from_raw(code << 8)
@@ -321,10 +324,20 @@ mod tests {
     }
 
     #[test]
-    fn exit_one_after_the_override_error_line_is_an_override_refusal() {
+    fn exit_one_after_an_override_refusal_names_the_refused_variable() {
         let classified = classify_exit(exit_code(1), &output_with(OVERRIDE_LINE));
         assert!(
-            matches!(&classified, EmulatorError::EndpointOverrideRefused { line } if line == OVERRIDE_LINE),
+            matches!(&classified, EmulatorError::EndpointOverrideRefused { variable, line }
+                if variable == "FORGE_TWITCH_API_BASE_URL" && line == OVERRIDE_LINE),
+            "got {classified:?}"
+        );
+    }
+
+    #[test]
+    fn exit_one_after_an_already_running_refusal_is_its_own_failure_class() {
+        let classified = classify_exit(exit_code(1), &output_with(ALREADY_RUNNING_LINE));
+        assert!(
+            matches!(&classified, EmulatorError::AlreadyRunning { line } if line == ALREADY_RUNNING_LINE),
             "got {classified:?}"
         );
     }
@@ -333,11 +346,12 @@ mod tests {
     fn other_exits_are_early_exits_carrying_code_and_tails() {
         for (status, line) in [
             (exit_code(2), OVERRIDE_LINE),
+            (ExitStatus::from_raw(9), ALREADY_RUNNING_LINE),
+            (exit_code(1), BOOT_FAILED_LINE),
             (
                 exit_code(1),
-                "ERROR another forge instance is already running for this data directory; exiting",
+                "2026-10-28T10:00:00.000000Z ERROR platform endpoint override refused; exiting error=endpoint override FORGE_TWITCH_API_BASE_URL refused: malformed",
             ),
-            (ExitStatus::from_raw(9), OVERRIDE_LINE),
         ] {
             let classified = classify_exit(status, &output_with(line));
             assert!(

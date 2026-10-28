@@ -345,6 +345,9 @@ fn exit_code(error: &EmulatorError) -> u8 {
         EmulatorError::ScenarioInvalid { .. } => 11,
         EmulatorError::StressProfileUnreadable { .. } => 10,
         EmulatorError::StressProfileInvalid { .. } => 11,
+        EmulatorError::ServerNotStarted { .. } => 12,
+        EmulatorError::BootFailed { .. } => 13,
+        EmulatorError::AlreadyRunning { .. } => 14,
         _ => 1,
     }
 }

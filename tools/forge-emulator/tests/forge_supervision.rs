@@ -22,8 +22,9 @@ use tokio_tungstenite::tungstenite::Message;
 
 const DEADLINE: Duration = Duration::from_secs(30);
 const TOKEN: &str = "fixture-bearer-token";
-const BIND_FAILURE_LINE: &str = "2026-10-24T15:22:05.467435Z ERROR server failed to start, leaving it off error=could not bind to 127.0.0.1:40000: Address already in use (os error 98)";
-const OVERRIDE_REFUSAL_LINE: &str = "2026-09-13T10:00:00.000000Z ERROR platform endpoint override refused; exiting error=endpoint override FORGE_TWITCH_EVENTSUB_WS_URL refused: host is not 127.0.0.0/8, ::1 or localhost";
+const BIND_FAILURE_LINE: &str = "2026-10-28T10:00:00.000000Z ERROR server failed to start, leaving it off signal=server_bind outcome=failed cause=address_unavailable addr=127.0.0.1:40000 port=40000 error=could not bind to 127.0.0.1:40000: Address already in use (os error 98)";
+const OVERRIDE_REFUSAL_LINE: &str = "2026-10-28T10:00:00.000000Z ERROR platform endpoint override refused; exiting signal=startup_refused outcome=endpoint_override_refused variable=FORGE_TWITCH_EVENTSUB_WS_URL error=endpoint override FORGE_TWITCH_EVENTSUB_WS_URL refused: host is not 127.0.0.0/8, ::1 or localhost";
+const BOOT_FAILED_LINE: &str = "2026-10-28T10:00:00.000000Z ERROR boot failed signal=readiness outcome=failed failure=upgrade_required";
 
 struct Stage {
     root: TempDir,
@@ -196,7 +197,8 @@ async fn endpoint_override_refusal_exit_is_its_own_failure_class() {
         .await
         .unwrap();
     assert!(
-        matches!(&failure, Err(EmulatorError::EndpointOverrideRefused { line }) if line == OVERRIDE_REFUSAL_LINE),
+        matches!(&failure, Err(EmulatorError::EndpointOverrideRefused { variable, line })
+            if variable == "FORGE_TWITCH_EVENTSUB_WS_URL" && line == OVERRIDE_REFUSAL_LINE),
         "got {:?}",
         failure.map(drop)
     );
@@ -217,6 +219,28 @@ async fn lost_server_port_race_is_reported_without_waiting_out_the_deadline() {
     .expect("bind failure short-circuits readiness");
     assert!(
         matches!(failure, Err(EmulatorError::ServerPortTaken { .. })),
+        "got {:?}",
+        failure.map(drop)
+    );
+    process.shutdown(DEADLINE).await.unwrap();
+}
+
+#[tokio::test]
+async fn boot_failure_while_forge_keeps_running_ends_readiness_without_waiting_out_the_deadline() {
+    let stage = Stage::new();
+    let mut process = stage
+        .spawn(&format!("echo '{BOOT_FAILED_LINE}'; exec sleep 600"))
+        .await;
+    let (_reserved, port) = reserved_port();
+    let failure = timeout(
+        DEADLINE,
+        process.wait_ready(port, TOKEN, Duration::from_secs(120)),
+    )
+    .await
+    .expect("a boot failure short-circuits readiness");
+    assert!(
+        matches!(&failure, Err(EmulatorError::BootFailed { failure, line })
+            if failure == "upgrade_required" && line == BOOT_FAILED_LINE),
         "got {:?}",
         failure.map(drop)
     );

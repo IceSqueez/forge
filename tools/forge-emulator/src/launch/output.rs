@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::sync::watch;
 
-use super::signals::{is_endpoint_override_refusal, is_server_bind_failure, strip_ansi};
+use super::signals::{BootStop, boot_stop, strip_ansi};
 use crate::EmulatorError;
 
 const RETAINED_LINES: usize = 20_000;
@@ -32,8 +32,7 @@ struct Captured {
     capacity: usize,
     lines: VecDeque<OutputLine>,
     dropped: u64,
-    server_bind_failed: bool,
-    override_refusal: Option<String>,
+    boot_stop: Option<(BootStop, String)>,
 }
 
 impl CapturedOutput {
@@ -48,8 +47,7 @@ impl CapturedOutput {
                 capacity,
                 lines: VecDeque::new(),
                 dropped: 0,
-                server_bind_failed: false,
-                override_refusal: None,
+                boot_stop: None,
             })),
             changes: Arc::new(changes),
         }
@@ -108,23 +106,22 @@ impl CapturedOutput {
         self.changes.subscribe()
     }
 
-    pub(crate) fn server_bind_failed(&self) -> bool {
-        self.lock().server_bind_failed
+    pub(crate) fn boot_stop(&self) -> Option<(BootStop, String)> {
+        self.lock().boot_stop.clone()
     }
 
-    pub(crate) fn override_refusal(&self) -> Option<String> {
-        self.lock().override_refusal.clone()
+    pub(crate) fn has_boot_stop(&self) -> bool {
+        self.lock().boot_stop.is_some()
     }
 
     pub(crate) fn push(&self, stream: OutputStream, raw: &str) {
         let text = strip_ansi(raw.trim_end_matches(['\n', '\r']));
         {
             let mut captured = self.lock();
-            if is_server_bind_failure(&text) {
-                captured.server_bind_failed = true;
-            }
-            if captured.override_refusal.is_none() && is_endpoint_override_refusal(&text) {
-                captured.override_refusal = Some(text.clone());
+            if captured.boot_stop.is_none()
+                && let Some(stop) = boot_stop(&text)
+            {
+                captured.boot_stop = Some((stop, text.clone()));
             }
             if captured.lines.len() == captured.capacity {
                 captured.lines.pop_front();
@@ -196,26 +193,38 @@ mod tests {
     }
 
     #[test]
-    fn coloured_console_bind_failure_on_stdout_is_flagged() {
+    fn coloured_console_bind_failure_on_stdout_is_a_taken_port() {
         let output = CapturedOutput::new();
         output.push(
             OutputStream::Stdout,
-            "\u{1b}[2m2026-10-24T15:22:05.468045Z\u{1b}[0m \u{1b}[31mERROR\u{1b}[0m server failed to start, leaving it off \u{1b}[3merror\u{1b}[0m\u{1b}[2m=\u{1b}[0mcould not bind to 127.0.0.1:40647: Address already in use (os error 98)\n",
+            "\u{1b}[2m2026-10-28T10:00:00.468045Z\u{1b}[0m \u{1b}[31mERROR\u{1b}[0m server failed to start, leaving it off \u{1b}[3msignal\u{1b}[0m\u{1b}[2m=\u{1b}[0mserver_bind \u{1b}[3moutcome\u{1b}[0m\u{1b}[2m=\u{1b}[0mfailed \u{1b}[3mcause\u{1b}[0m\u{1b}[2m=\u{1b}[0maddress_unavailable \u{1b}[3maddr\u{1b}[0m\u{1b}[2m=\u{1b}[0m127.0.0.1:40647 \u{1b}[3mport\u{1b}[0m\u{1b}[2m=\u{1b}[0m40647 \u{1b}[3merror\u{1b}[0m\u{1b}[2m=\u{1b}[0mcould not bind to 127.0.0.1:40647: Address already in use (os error 98)\n",
         );
-        assert!(output.server_bind_failed());
+        assert_eq!(
+            output.boot_stop().map(|(stop, _)| stop),
+            Some(BootStop::ServerPortTaken)
+        );
     }
 
     #[test]
-    fn override_refusal_is_remembered_after_its_line_is_evicted() {
+    fn first_boot_stop_is_remembered_after_its_line_is_evicted() {
+        let refusal = "ERROR platform endpoint override refused; exiting signal=startup_refused outcome=endpoint_override_refused variable=FORGE_TWITCH_API_BASE_URL error=endpoint override FORGE_TWITCH_API_BASE_URL refused: malformed";
         let output = CapturedOutput::with_capacity(1);
         output.push(
             OutputStream::Stdout,
-            "\u{1b}[31mERROR\u{1b}[0m error=endpoint override FORGE_TWITCH_API_BASE_URL refused: malformed\r\n",
+            &format!("\u{1b}[31m{refusal}\u{1b}[0m\r\n"),
         );
-        output.push(OutputStream::Stdout, "later");
+        output.push(
+            OutputStream::Stdout,
+            "ERROR boot failed signal=readiness outcome=failed failure=retry",
+        );
         assert_eq!(
-            output.override_refusal().as_deref(),
-            Some("ERROR error=endpoint override FORGE_TWITCH_API_BASE_URL refused: malformed")
+            output.boot_stop(),
+            Some((
+                BootStop::EndpointOverrideRefused {
+                    variable: "FORGE_TWITCH_API_BASE_URL".to_owned()
+                },
+                refusal.to_owned()
+            ))
         );
     }
 

@@ -154,4 +154,150 @@ mod tests {
             assert_eq!(field.as_deref(), expected);
         }
     }
+
+    struct IdSink {
+        fail: bool,
+    }
+
+    impl IdSink {
+        fn outcome(&self) -> Result<String, DiscordError> {
+            if self.fail {
+                Err(DiscordError::Connect("down".to_owned()))
+            } else {
+                Ok("987654321".to_owned())
+            }
+        }
+    }
+
+    #[async_trait]
+    impl DiscordSink for IdSink {
+        async fn post_text(
+            &self,
+            _: &str,
+            _: &str,
+            _: MentionPolicy,
+        ) -> Result<String, DiscordError> {
+            self.outcome()
+        }
+        async fn post_embed(&self, _: &str, _: DiscordEmbed) -> Result<String, DiscordError> {
+            self.outcome()
+        }
+        async fn edit_message(
+            &self,
+            _: &str,
+            _: &str,
+            _: Option<&str>,
+            _: Option<DiscordEmbed>,
+            _: MentionPolicy,
+        ) -> Result<(), DiscordError> {
+            Ok(())
+        }
+        async fn send_file(
+            &self,
+            _: &str,
+            _: Option<&str>,
+            _: &str,
+            _: &[u8],
+            _: MentionPolicy,
+        ) -> Result<String, DiscordError> {
+            self.outcome()
+        }
+        async fn delete_message(&self, _: &str, _: &str) -> Result<(), DiscordError> {
+            Ok(())
+        }
+    }
+
+    struct SilentPublisher;
+    impl forge_events::EventPublisher for SilentPublisher {
+        fn publish(&self, _: forge_events::Event) {}
+    }
+
+    fn text(value: &str) -> Variant {
+        Variant::String(value.to_owned())
+    }
+
+    async fn run_posting_runners(
+        fail: bool,
+        file_path: &str,
+    ) -> Vec<(&'static str, Option<ArgStack>, SubActionIo)> {
+        use forge_registry::{RunContext, SubActionRunner};
+        use forge_types::EventId;
+
+        let sink: Arc<dyn DiscordSink> = Arc::new(IdSink { fail });
+        let stack = ArgStack::new().set("user".to_owned(), text("alice"));
+        let publisher = SilentPublisher;
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &publisher);
+
+        let post_text_runner = PostTextRunner::new(Arc::clone(&sink));
+        let post_embed_runner = PostEmbedRunner::new(Arc::clone(&sink));
+        let send_file_runner = SendFileRunner::new(Arc::clone(&sink));
+
+        let mut text_config = post_text_runner.default_config();
+        text_config.insert("webhook_name".to_owned(), text("alerts"));
+        text_config.insert("content".to_owned(), text("hello"));
+        let mut embed_config = post_embed_runner.default_config();
+        embed_config.insert("webhook_name".to_owned(), text("alerts"));
+        embed_config.insert("embed_title".to_owned(), text("title"));
+        let mut file_config = send_file_runner.default_config();
+        file_config.insert("webhook_name".to_owned(), text("alerts"));
+        file_config.insert("file_path".to_owned(), text(file_path));
+
+        vec![
+            (
+                "post_text",
+                post_text_runner.execute(&text_config, &ctx).await.1,
+                post_text_runner.scope_io(),
+            ),
+            (
+                "post_embed",
+                post_embed_runner.execute(&embed_config, &ctx).await.1,
+                post_embed_runner.scope_io(),
+            ),
+            (
+                "send_file",
+                send_file_runner.execute(&file_config, &ctx).await.1,
+                send_file_runner.scope_io(),
+            ),
+        ]
+    }
+
+    #[tokio::test]
+    async fn posting_runners_keep_existing_variables_and_publish_the_message_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("clip.txt");
+        std::fs::write(&file, b"data").unwrap();
+
+        for (name, produced, _) in run_posting_runners(false, file.to_str().unwrap()).await {
+            let stack = produced.unwrap_or_else(|| panic!("{name} returned no stack"));
+            assert_eq!(
+                stack.get("user"),
+                Some(&text("alice")),
+                "{name} dropped a variable"
+            );
+            assert_eq!(
+                stack.get(MESSAGE_ID_VAR),
+                Some(&text("987654321")),
+                "{name} did not publish the id"
+            );
+            assert_eq!(stack.interpolate("%discord.message_id%"), "987654321");
+        }
+    }
+
+    #[tokio::test]
+    async fn posting_runners_return_no_stack_when_the_sink_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("clip.txt");
+        std::fs::write(&file, b"data").unwrap();
+
+        for (name, produced, _) in run_posting_runners(true, file.to_str().unwrap()).await {
+            assert!(produced.is_none(), "{name} returned a stack on failure");
+        }
+    }
+
+    #[tokio::test]
+    async fn posting_runners_declare_the_message_id_as_a_fixed_output() {
+        for (name, _, io) in run_posting_runners(true, "").await {
+            assert_eq!(io.fixed_outputs, vec![MESSAGE_ID_VAR.to_owned()], "{name}");
+        }
+    }
 }

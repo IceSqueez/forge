@@ -248,6 +248,28 @@ mod tests {
     }
 
     #[test]
+    fn progress_tracks_only_the_play_that_owns_the_entry() {
+        let entry = |play_id| PlaybackProgress {
+            play_id,
+            ..progress(None, false)
+        };
+        for (progress, play_id, expected, case) in [
+            (None, Some(1), false, "no entry"),
+            (Some(entry(Some(2))), Some(1), false, "older play finished"),
+            (Some(entry(Some(2))), Some(2), true, "same play"),
+            (Some(entry(None)), None, true, "optimistic entry"),
+            (Some(entry(None)), Some(1), false, "optimistic vs started"),
+            (Some(entry(Some(2))), None, false, "started vs optimistic"),
+        ] {
+            assert_eq!(
+                progress_tracks_play(progress.as_ref(), play_id),
+                expected,
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
     fn time_readout_floors_elapsed_and_rounds_total() {
         for (elapsed, total, expected) in [
             (0.0, 23.0, "0:00/0:23"),
@@ -354,7 +376,7 @@ mod tests {
         let audio = || SoundboardError::Audio(forge_audio::AudioError::NoDefaultDevice);
         for (result, expected) in [
             (Ok(PlayOutcome::BoardDisabled), true),
-            (Ok(PlayOutcome::StoppedBeforeStart), false),
+            (Ok(PlayOutcome::StoppedBeforeStart), true),
             (Ok(PlayOutcome::Started), false),
             (Err(SoundboardError::ClipNotFound("01J0".to_owned())), true),
             (

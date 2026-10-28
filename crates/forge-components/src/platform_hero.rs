@@ -8,7 +8,7 @@ use crate::avatar::{AvatarTile, avatar_tile};
 use crate::palette::ForgePalette;
 use crate::presentation::ActivePresentation;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_MD, FONT_XS, Radius, Spacing, body_family, radius, spacing,
+    BORDER_THIN, Density, FONT_MD, FONT_XS, Radius, Spacing, body_family, radius, scaled, spacing,
 };
 
 const HERO_TILE_SIZE: Pixels = px(48.0);
@@ -91,7 +91,7 @@ impl RenderOnce for PlatformHero {
             div()
                 .flex()
                 .items_center()
-                .gap(NAME_BADGE_GAP)
+                .gap(scaled(NAME_BADGE_GAP, d))
                 .child(name_el)
                 .children(self.name_badges)
                 .into_any_element()
@@ -102,7 +102,7 @@ impl RenderOnce for PlatformHero {
             .min_w(px(0.0))
             .flex()
             .flex_col()
-            .gap(INFO_GAP)
+            .gap(scaled(INFO_GAP, d))
             .child(name_row)
             .child(
                 div()
@@ -118,7 +118,7 @@ impl RenderOnce for PlatformHero {
             .items_center()
             .gap(spacing(Spacing::Md, d))
             .py(spacing(Spacing::Md, d))
-            .px(HERO_PAD_H)
+            .px(scaled(HERO_PAD_H, d))
             .rounded(radius(Radius::Lg))
             .border(BORDER_THIN)
             .border_color(self.border)

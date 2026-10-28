@@ -1,6 +1,8 @@
 use super::*;
 use forge_components::BORDER_THIN;
-use forge_components::{FONT_SM, FONT_XXS, ForgePalette, Radius, mono_family, radius, tr};
+use forge_components::{
+    ActivePresentation, FONT_SM, FONT_XXS, ForgePalette, Radius, mono_family, radius, scaled, tr,
+};
 use forge_types::ExecutionOutcome;
 use gpui::{AnyElement, ClickEvent, Context, Rgba, SharedString, div};
 
@@ -11,6 +13,7 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let last_fired = fmt_display_relative(telemetry.last_fired_at);
         let runs = fmt_number(telemetry.runs_today as f64, 0);
         let avg = match telemetry.avg_duration_ms {
@@ -35,9 +38,9 @@ impl ScreenActionsView {
 
         div()
             .flex()
-            .gap(STAT_GAP)
+            .gap(scaled(STAT_GAP, density))
             .py(STAT_PAD_V)
-            .px(CARD_PAD_H)
+            .px(scaled(CARD_PAD_H, density))
             .rounded(radius(Radius::Md))
             .bg(palette.base)
             .border(BORDER_THIN)
@@ -47,6 +50,7 @@ impl ScreenActionsView {
                 last_fired,
                 palette.text_primary,
                 palette,
+                density,
             ))
             .child(self.render_history_link_cell(
                 "actions-runs-history-link",
@@ -61,6 +65,7 @@ impl ScreenActionsView {
                 avg,
                 palette.success,
                 palette,
+                density,
             ))
             .child(self.render_history_link_cell(
                 "actions-execution-history-link",
@@ -87,12 +92,13 @@ impl ScreenActionsView {
         value: impl Into<SharedString>,
         value_color: Rgba,
         palette: &ForgePalette,
+        density: Density,
     ) -> AnyElement {
         div()
             .flex_1()
             .flex()
             .flex_col()
-            .gap(STAT_VALUE_GAP)
+            .gap(scaled(STAT_VALUE_GAP, density))
             .child(
                 div()
                     .font_family(mono_family())
@@ -119,12 +125,13 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         div()
             .flex_1()
             .flex()
             .flex_col()
             .items_start()
-            .gap(STAT_VALUE_GAP)
+            .gap(scaled(STAT_VALUE_GAP, density))
             .child(
                 div()
                     .font_family(mono_family())

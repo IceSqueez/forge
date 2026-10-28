@@ -3,8 +3,8 @@ use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Picker, PickerEvent, PickerItem,
-    PickerLabels, body_family, field_label, ghost_button_with_icon, icon, section_label, toggle,
-    tr,
+    PickerLabels, body_family, field_label, ghost_button_with_icon, icon, scaled, section_label,
+    toggle, tr,
 };
 use forge_overlay::config::{
     DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP,
@@ -442,7 +442,7 @@ impl OverlayPropertyPanel {
                 tr!("overlays_panel_section_look").to_uppercase(),
                 palette,
             )))
-            .child(div().pb(FIELD_GAP).child(hinted(
+            .child(div().pb(scaled(FIELD_GAP, density)).child(hinted(
                 control,
                 tr!("overlays_look_hint"),
                 palette,
@@ -462,29 +462,36 @@ impl OverlayPropertyPanel {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
+        let density = cx.density();
         let mut rows = Vec::new();
         if let Some(note) = display_note(&self.base.look) {
             rows.push(note_line(note, palette));
         }
         if self.base.hides_itself && self.base.queues_shows() {
-            rows.push(own_hide_flag(palette));
+            rows.push(own_hide_flag(palette, density));
         }
         if self.base.queues_shows() {
             rows.push(self.render_queue_row(palette, cx));
         }
         rows.push(self.render_fire_row(palette, cx));
         rows.into_iter()
-            .map(|row| div().pb(FIELD_GAP).child(row).into_any_element())
+            .map(|row| {
+                div()
+                    .pb(scaled(FIELD_GAP, density))
+                    .child(row)
+                    .into_any_element()
+            })
             .collect()
     }
 
     fn render_queue_row(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let waiting = self.base.waiting;
         let line = div()
             .w_full()
             .flex()
             .items_center()
-            .gap(ROW_GAP)
+            .gap(scaled(ROW_GAP, density))
             .child(
                 div()
                     .flex_1()
@@ -546,7 +553,7 @@ impl OverlayPropertyPanel {
             .w_full()
             .flex()
             .items_center()
-            .gap(ROW_GAP)
+            .gap(scaled(ROW_GAP, density))
             .child(
                 div()
                     .flex_1()
@@ -578,7 +585,7 @@ impl OverlayPropertyPanel {
             )))
             .child(
                 div()
-                    .pb(FIELD_GAP)
+                    .pb(scaled(FIELD_GAP, density))
                     .child(hinted(row, hint, palette, density)),
             )
             .into_any_element()
@@ -675,12 +682,12 @@ fn note_line(text: String, palette: &ForgePalette) -> AnyElement {
         .into_any_element()
 }
 
-fn own_hide_flag(palette: &ForgePalette) -> AnyElement {
+fn own_hide_flag(palette: &ForgePalette, density: Density) -> AnyElement {
     div()
         .flex()
         .items_start()
-        .gap(ROW_GAP)
-        .p(NOTICE_PAD)
+        .gap(scaled(ROW_GAP, density))
+        .p(scaled(NOTICE_PAD, density))
         .rounded(NOTICE_RADIUS)
         .border(BORDER_THIN)
         .border_color(palette.warning)

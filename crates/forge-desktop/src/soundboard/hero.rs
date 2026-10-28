@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, ForgePalette, Icon, Radius, Spacing, body_family, icon, radius,
-    spacing, toggle, tr,
+    scaled, spacing, toggle, tr,
 };
 use forge_storage::set_soundboard_enabled;
 use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
@@ -36,7 +36,11 @@ impl SoundboardView {
         cx.notify();
     }
 
-    pub(super) fn render_header_right(&self, palette: &ForgePalette) -> AnyElement {
+    pub(super) fn render_header_right(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> AnyElement {
         let device = self.device_short_label();
         let summary = tr!(
             "soundboard_header_summary",
@@ -46,7 +50,7 @@ impl SoundboardView {
         div()
             .flex()
             .items_center()
-            .gap(px(5.0))
+            .gap(scaled(px(5.0), density))
             .child(icon(Icon::Volume, HEADER_ICON, palette.success))
             .child(
                 div()
@@ -74,8 +78,8 @@ impl SoundboardView {
             .w_full()
             .flex()
             .items_center()
-            .gap(HERO_GAP)
-            .py(ROUTING_PAD)
+            .gap(scaled(HERO_GAP, density))
+            .py(scaled(ROUTING_PAD, density))
             .px(spacing(Spacing::Lg, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)

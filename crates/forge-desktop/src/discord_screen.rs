@@ -12,7 +12,7 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, FONT_XS, ForgePalette, Icon, MenuPlacement,
     OverlayPosition, SectionLabel, ToastKind, badge, body_family, card, confirm_modal,
     fmt_display_relative, icon, menu_button, menu_divider, menu_item, mono_family, overlay,
-    pad_tile, page_frame, status_dot, tr,
+    pad_tile, page_frame, scaled, status_dot, tr,
 };
 use forge_discord::{DiscordClient, DiscordSendHealth, WebhookPost};
 use forge_runtime::EventBus;
@@ -448,7 +448,7 @@ impl DiscordScreenView {
             .flex()
             .flex_none()
             .items_center()
-            .gap(COUNT_GAP)
+            .gap(scaled(COUNT_GAP, density))
             .mr(spacing(Spacing::Xxs, density))
             .child(
                 div()
@@ -485,7 +485,7 @@ impl DiscordScreenView {
             .w_full()
             .flex()
             .items_center()
-            .gap(HERO_GAP)
+            .gap(scaled(HERO_GAP, density))
             .child(
                 div()
                     .flex_shrink_0()
@@ -524,10 +524,10 @@ impl DiscordScreenView {
 
         div()
             .w_full()
-            .mb(HERO_MARGIN_B)
+            .mb(scaled(HERO_MARGIN_B, density))
             .child(
                 card(body, palette)
-                    .padding_xy(HERO_PAD_V, HERO_PAD_H)
+                    .padding_xy(scaled(HERO_PAD_V, density), scaled(HERO_PAD_H, density))
                     .full_width(),
             )
             .into_any_element()
@@ -592,7 +592,7 @@ impl DiscordScreenView {
             .flex()
             .items_stretch()
             .gap(spacing(Spacing::Sm, density))
-            .mb(STAT_MARGIN_B)
+            .mb(scaled(STAT_MARGIN_B, density))
             .child(stat_card(
                 tr!("discord_stat_latency"),
                 latency_value,
@@ -650,7 +650,7 @@ impl DiscordScreenView {
             .flex_col()
             .gap(spacing(Spacing::Xs, density));
         if self.webhooks.is_empty() {
-            list = list.child(empty_row(tr!("discord_bindings_empty"), palette));
+            list = list.child(empty_row(tr!("discord_bindings_empty"), palette, density));
         }
         for (index, row) in self.webhooks.iter().enumerate() {
             list = list.child(self.render_binding(index, row, palette, cx));
@@ -677,6 +677,7 @@ impl DiscordScreenView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let summary = Self::summary_of(row);
         let summary_ink = if row.linked_actions.is_empty() {
             palette.text_faint
@@ -688,7 +689,7 @@ impl DiscordScreenView {
             .w_full()
             .flex()
             .items_center()
-            .gap(ROW_GAP)
+            .gap(scaled(ROW_GAP, density))
             .child(icon(Icon::Variable, ROW_GLYPH, row_accent(index, palette)))
             .child(
                 div()
@@ -715,7 +716,7 @@ impl DiscordScreenView {
             .w_full()
             .child(
                 card(body, palette)
-                    .padding_xy(ROW_PAD_V, ROW_PAD_H)
+                    .padding_xy(scaled(ROW_PAD_V, density), scaled(ROW_PAD_H, density))
                     .full_width(),
             )
             .into_any_element()
@@ -816,10 +817,10 @@ impl DiscordScreenView {
             .flex_col()
             .gap(spacing(Spacing::Xs, density));
         if self.posts.is_empty() {
-            list = list.child(empty_row(tr!("discord_posts_empty"), palette));
+            list = list.child(empty_row(tr!("discord_posts_empty"), palette, density));
         }
         for post in &self.posts {
-            list = list.child(render_post(post, palette));
+            list = list.child(render_post(post, palette, density));
         }
 
         div()
@@ -848,8 +849,8 @@ impl DiscordScreenView {
             .flex()
             .items_center()
             .justify_between()
-            .py(FOOTER_PAD_V)
-            .px(FOOTER_PAD_H)
+            .py(scaled(FOOTER_PAD_V, density))
+            .px(scaled(FOOTER_PAD_H, density))
             .border_t(BORDER_THIN)
             .border_color(palette.surface_overlay)
             .bg(palette.shell)
@@ -928,7 +929,7 @@ impl DiscordScreenView {
     }
 }
 
-fn render_post(post: &WebhookPost, palette: &ForgePalette) -> AnyElement {
+fn render_post(post: &WebhookPost, palette: &ForgePalette, density: Density) -> AnyElement {
     let (dot, kind_ink) = if post.ok {
         (palette.success, palette.text_muted)
     } else {
@@ -944,7 +945,7 @@ fn render_post(post: &WebhookPost, palette: &ForgePalette) -> AnyElement {
         .w_full()
         .flex()
         .items_center()
-        .gap(ROW_GAP)
+        .gap(scaled(ROW_GAP, density))
         .child(status_dot(dot, ROW_DOT))
         .child(
             div()
@@ -980,7 +981,7 @@ fn render_post(post: &WebhookPost, palette: &ForgePalette) -> AnyElement {
         .w_full()
         .child(
             card(body, palette)
-                .padding_xy(ROW_PAD_V, ROW_PAD_H)
+                .padding_xy(scaled(ROW_PAD_V, density), scaled(ROW_PAD_H, density))
                 .full_width(),
         )
         .into_any_element()
@@ -998,10 +999,10 @@ fn row_accent(index: usize, palette: &ForgePalette) -> Rgba {
     wheel[index % wheel.len()]
 }
 
-fn empty_row(message: String, palette: &ForgePalette) -> impl IntoElement {
+fn empty_row(message: String, palette: &ForgePalette, density: Density) -> impl IntoElement {
     div()
         .w_full()
-        .py(EMPTY_PAD_V)
+        .py(scaled(EMPTY_PAD_V, density))
         .font_family(body_family())
         .text_size(FONT_XS)
         .text_color(palette.text_faint)
@@ -1026,7 +1027,7 @@ impl Render for DiscordScreenView {
         let header_right = div()
             .flex()
             .items_center()
-            .gap(HEADER_GAP)
+            .gap(scaled(HEADER_GAP, density))
             .child(icon(Icon::BrandDiscord, HEADER_GLYPH, palette.brand))
             .child(
                 div()
@@ -1044,7 +1045,7 @@ impl Render for DiscordScreenView {
             .w_full()
             .flex()
             .items_start()
-            .gap(COLUMN_GAP)
+            .gap(scaled(COLUMN_GAP, density))
             .child(grow_cell(self.render_bindings(&palette, cx), COLUMN_FLEX))
             .child(grow_cell(self.render_posts(&palette, density), COLUMN_FLEX));
 
@@ -1057,8 +1058,8 @@ impl Render for DiscordScreenView {
             .child(
                 div()
                     .w_full()
-                    .py(SCROLL_PAD_Y)
-                    .px(SCROLL_PAD_X)
+                    .py(scaled(SCROLL_PAD_Y, density))
+                    .px(scaled(SCROLL_PAD_X, density))
                     .flex()
                     .flex_col()
                     .child(self.render_hero(&palette, density))

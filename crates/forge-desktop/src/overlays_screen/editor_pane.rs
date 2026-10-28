@@ -6,7 +6,7 @@ use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, body_family, empty_state, icon,
-    mono_family, segment, segmented, tr,
+    mono_family, scaled, segment, segmented, tr,
 };
 use forge_overlay::look_contract;
 use forge_storage::OverlayDefinition;
@@ -99,7 +99,7 @@ impl OverlaysView {
             .items_center()
             .gap(spacing(Spacing::Sm, density))
             .px(spacing(Spacing::Md, density))
-            .py(HEAD_PAD_V)
+            .py(scaled(HEAD_PAD_V, density))
             .bg(palette.elevated)
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -180,7 +180,7 @@ impl OverlaysView {
             (EditorMode::Design, None) => property_pane_frame(palette)
                 .items_center()
                 .justify_center()
-                .p(PROPERTY_PANE_PAD)
+                .p(scaled(PROPERTY_PANE_PAD, density))
                 .child(
                     empty_state(tr!("overlays_panel_unavailable"), palette)
                         .glyph(Icon::AlertTriangle),
@@ -200,10 +200,14 @@ impl OverlaysView {
                         .flex_1()
                         .min_h(px(0.0))
                         .overflow_y_scroll()
-                        .p(PROPERTY_PANE_PAD)
+                        .p(scaled(PROPERTY_PANE_PAD, density))
                         .flex()
                         .flex_col()
-                        .children(override_notice(&definition.source_overrides, palette))
+                        .children(override_notice(
+                            &definition.source_overrides,
+                            palette,
+                            density,
+                        ))
                         .children(bindings_reference(look.as_ref(), palette, density)),
                 )
             }
@@ -223,9 +227,9 @@ impl OverlaysView {
             .flex_none()
             .flex()
             .items_center()
-            .gap(URL_BOX_GAP)
+            .gap(scaled(URL_BOX_GAP, density))
             .px(spacing(Spacing::Sm, density))
-            .py(URL_BOX_PAD_V)
+            .py(scaled(URL_BOX_PAD_V, density))
             .rounded(URL_BOX_RADIUS)
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -254,7 +258,7 @@ impl OverlaysView {
                     .id("overlays-copy-url")
                     .flex()
                     .items_center()
-                    .gap(COPY_GAP)
+                    .gap(scaled(COPY_GAP, density))
                     .cursor_pointer()
                     .text_color(palette.brand)
                     .on_click(
@@ -279,7 +283,7 @@ impl OverlaysView {
             .items_center()
             .gap(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Md, density))
-            .py(NOTICE_PAD_V)
+            .py(scaled(NOTICE_PAD_V, density))
             .bg(palette.shell)
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -303,6 +307,7 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let (message, glyph) = match selection {
             Some(definition) if self.mode() == EditorMode::Design => {
                 return self.render_design_stage(definition, palette, cx);
@@ -318,7 +323,7 @@ impl OverlaysView {
             .flex_1()
             .min_h(px(0.0))
             .w_full()
-            .p(STAGE_PAD)
+            .p(scaled(STAGE_PAD, density))
             .flex()
             .items_center()
             .justify_center()

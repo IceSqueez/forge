@@ -10,7 +10,7 @@ use crate::palette::ForgePalette;
 use crate::text_input::{FocusNextField, FocusPreviousField};
 use crate::tokens::{
     BORDER_THIN, Density, FONT_MD, FONT_XS, ModalSize, Radius, Spacing, body_family, modal_width,
-    radius, spacing,
+    radius, scaled, spacing,
 };
 
 const HEADER_TILE: Pixels = px(28.0);
@@ -178,7 +178,7 @@ impl Modal {
                 .flex()
                 .flex_col()
                 .flex_1()
-                .gap(TITLE_GAP)
+                .gap(scaled(TITLE_GAP, density))
                 .overflow_hidden()
                 .child(
                     div()

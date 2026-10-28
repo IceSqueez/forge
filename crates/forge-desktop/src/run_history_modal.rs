@@ -6,7 +6,7 @@ use forge_components::highlight::Language;
 use forge_components::{
     Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition, Radius,
     Spacing, body_family, error_row, fmt_display_relative, highlighted_text, icon,
-    integration_disabled_reason, modal, mono_family, overlay, radius, spacing, status_dot,
+    integration_disabled_reason, modal, mono_family, overlay, radius, scaled, spacing, status_dot,
     tooltip_builder, tr,
 };
 use forge_registry::{TriggerKindDescriptor, TriggerRegistry};
@@ -224,7 +224,7 @@ impl RunHistoryModal {
             .h_full()
             .flex()
             .flex_col()
-            .gap(RAIL_ROW_GAP)
+            .gap(scaled(RAIL_ROW_GAP, density))
             .pr(spacing(Spacing::Sm, density))
             .overflow_y_scroll()
             .border_r(BORDER_THIN)
@@ -284,10 +284,10 @@ impl RunHistoryModal {
             .id(SharedString::from(format!("actions-history-rail-{index}")))
             .flex()
             .items_center()
-            .gap(RAIL_ENTRY_GAP)
+            .gap(scaled(RAIL_ENTRY_GAP, density))
             .w_full()
             .py(spacing(Spacing::Xs, density))
-            .px(RAIL_ENTRY_PAD_H)
+            .px(scaled(RAIL_ENTRY_PAD_H, density))
             .rounded(radius(Radius::Sm))
             .bg(bg)
             .cursor_pointer()
@@ -361,7 +361,7 @@ impl RunHistoryModal {
             ),
             None => div()
                 .flex_shrink_0()
-                .py(CHIP_PAD_V)
+                .py(scaled(CHIP_PAD_V, density))
                 .px(spacing(Spacing::Xs, density))
                 .rounded(CHIP_RADIUS)
                 .bg(palette.surface_overlay)
@@ -596,7 +596,7 @@ impl RunHistoryModal {
 
         let mut row = div().flex().flex_col().gap(spacing(Spacing::Xxs, density));
         if nested {
-            row = row.pl(STEP_NEST_INDENT);
+            row = row.pl(scaled(STEP_NEST_INDENT, density));
         }
         row = row.child(line);
 

@@ -4,7 +4,7 @@ use forge_components::FONT_HERO;
 use forge_components::{
     BORDER_THIN, Button, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition, Radius,
     Spacing, body_family, empty_state, ghost_button_with_icon, modal, mono_family, overlay,
-    primary_button, radius, secondary_button, section_label, spacing, tr,
+    primary_button, radius, scaled, secondary_button, section_label, spacing, tr,
 };
 use forge_types::ActionId;
 use gpui::{AnyElement, ClickEvent, Context, FontWeight, Pixels, div, prelude::*, px};
@@ -78,10 +78,10 @@ impl EventWiringView {
             div()
                 .w_full()
                 .px(spacing(Spacing::Md, density))
-                .py(CARD_PAD_V)
+                .py(scaled(CARD_PAD_V, density))
                 .flex()
                 .flex_col()
-                .gap(CARD_GAP)
+                .gap(scaled(CARD_GAP, density))
                 .child(body),
             palette,
         )
@@ -165,22 +165,25 @@ fn render_draft(draft: &WiringDraft, palette: &ForgePalette, density: Density) -
             tr!("overlays_wire_record_action"),
             &draft.action_name,
             palette,
+            density,
         ))
         .child(record_row(
             tr!("overlays_wire_record_trigger"),
             &draft.trigger_name,
             palette,
+            density,
         ))
         .child(record_row(
             tr!("overlays_wire_record_queue"),
             &draft.queue_name,
             palette,
+            density,
         ));
 
     div()
         .flex()
         .flex_col()
-        .gap(CARD_GAP)
+        .gap(scaled(CARD_GAP, density))
         .child(records)
         .child(
             div()
@@ -199,7 +202,7 @@ fn render_draft(draft: &WiringDraft, palette: &ForgePalette, density: Density) -
 fn render_wording(lines: &[String], palette: &ForgePalette, density: Density) -> AnyElement {
     let frame = div()
         .w_full()
-        .p(WORDING_PAD)
+        .p(scaled(WORDING_PAD, density))
         .flex()
         .flex_col()
         .gap(spacing(Spacing::Xxs, density))
@@ -254,17 +257,18 @@ fn render_already_wired(action_name: &str, palette: &ForgePalette, density: Dens
             tr!("overlays_wire_record_action"),
             action_name,
             palette,
+            density,
         ))
         .into_any_element()
 }
 
-fn record_row(label: String, value: &str, palette: &ForgePalette) -> AnyElement {
+fn record_row(label: String, value: &str, palette: &ForgePalette, density: Density) -> AnyElement {
     let shown = if value.is_empty() { "-" } else { value };
     div()
         .w_full()
         .flex()
         .items_center()
-        .gap(ROW_LABEL_GAP)
+        .gap(scaled(ROW_LABEL_GAP, density))
         .child(
             div()
                 .flex_none()

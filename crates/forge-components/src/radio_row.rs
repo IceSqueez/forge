@@ -3,9 +3,11 @@ use gpui::{
     RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
 
+use crate::ActivePresentation;
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, DISABLED_OPACITY, FONT_SM, FONT_XXS, Radius, body_family, mono_family, radius,
+    BORDER_THIN, DISABLED_OPACITY, Density, FONT_SM, FONT_XXS, Radius, Spacing, body_family,
+    mono_family, radius, scaled, spacing,
 };
 
 type RowClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
@@ -14,7 +16,6 @@ const DOT_TOP_NUDGE: Pixels = px(1.0);
 const DOT_SIZE: Pixels = px(15.0);
 const DOT_INNER: Pixels = px(7.0);
 const DOT_BORDER: Pixels = px(1.5);
-const ROW_GAP: Pixels = px(10.0);
 const ROW_PAD_X: Pixels = px(11.0);
 const ROW_PAD_Y: Pixels = px(9.0);
 
@@ -29,9 +30,8 @@ pub struct RadioRow {
     dot_inner: Pixels,
     dot_border_width: Pixels,
     dot_unselected: Rgba,
-    gap: Pixels,
-    pad_x: Pixels,
-    pad_y: Pixels,
+    gap: Option<Pixels>,
+    padding: Option<(Pixels, Pixels)>,
     corner_radius: Pixels,
     row_border_selected: Pixels,
     row_border_unselected: Pixels,
@@ -60,9 +60,8 @@ pub fn radio_row(
         dot_inner: DOT_INNER,
         dot_border_width: DOT_BORDER,
         dot_unselected: palette.border_regular,
-        gap: ROW_GAP,
-        pad_x: ROW_PAD_X,
-        pad_y: ROW_PAD_Y,
+        gap: None,
+        padding: None,
         corner_radius: radius(Radius::Sm),
         row_border_selected: BORDER_THIN,
         row_border_unselected: BORDER_THIN,
@@ -80,6 +79,7 @@ pub fn radio_row_label(
     hint: Option<SharedString>,
     selected: bool,
     palette: &ForgePalette,
+    density: Density,
 ) -> AnyElement {
     let label_color = if selected {
         palette.text_primary
@@ -87,15 +87,19 @@ pub fn radio_row_label(
         palette.text_secondary
     };
 
-    let mut row = div().flex().items_center().gap(ROW_GAP).child(
-        div()
-            .flex_1()
-            .min_w(px(0.0))
-            .font_family(body_family())
-            .text_size(FONT_SM)
-            .text_color(label_color)
-            .child(label.into()),
-    );
+    let mut row = div()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Sm, density))
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .font_family(body_family())
+                .text_size(FONT_SM)
+                .text_color(label_color)
+                .child(label.into()),
+        );
 
     if let Some(hint) = hint {
         row = row.child(
@@ -133,14 +137,13 @@ impl RadioRow {
 
     #[must_use]
     pub fn gap(mut self, gap: Pixels) -> Self {
-        self.gap = gap;
+        self.gap = Some(gap);
         self
     }
 
     #[must_use]
     pub fn padding(mut self, x: Pixels, y: Pixels) -> Self {
-        self.pad_x = x;
-        self.pad_y = y;
+        self.padding = Some((x, y));
         self
     }
 
@@ -187,7 +190,12 @@ impl RadioRow {
 }
 
 impl RenderOnce for RadioRow {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
+        let gap = self.gap.unwrap_or_else(|| spacing(Spacing::Sm, density));
+        let (pad_x, pad_y) = self
+            .padding
+            .unwrap_or_else(|| (scaled(ROW_PAD_X, density), scaled(ROW_PAD_Y, density)));
         let mut dot = div()
             .flex_none()
             .flex()
@@ -216,9 +224,9 @@ impl RenderOnce for RadioRow {
         let mut row = div()
             .id(self.id)
             .flex()
-            .gap(self.gap)
-            .px(self.pad_x)
-            .py(self.pad_y)
+            .gap(gap)
+            .px(pad_x)
+            .py(pad_y)
             .rounded(self.corner_radius)
             .bg(if self.selected {
                 self.row_bg_selected

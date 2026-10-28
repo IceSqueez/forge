@@ -515,6 +515,7 @@ impl SettingsScriptingView {
             None,
             rows,
             palette,
+            density,
         )
         .into_any_element()
     }
@@ -562,6 +563,7 @@ impl SettingsScriptingView {
             None,
             with_ssrf_warning(rows, self.allow_local, palette, density),
             palette,
+            density,
         )
         .into_any_element()
     }
@@ -589,6 +591,7 @@ impl SettingsScriptingView {
             None,
             with_ssrf_warning(rows, self.core_allow_local, palette, density),
             palette,
+            density,
         )
         .into_any_element()
     }
@@ -603,11 +606,14 @@ impl Render for SettingsScriptingView {
             .flex()
             .flex_col()
             .child(SettingsPaneHeader::new(SettingsSection::Scripting))
-            .child(setting_groups([
-                self.engine_block(&palette, density),
-                self.script_http_block(&palette, density, cx),
-                self.http_action_block(&palette, density, cx),
-            ]))
+            .child(setting_groups(
+                [
+                    self.engine_block(&palette, density),
+                    self.script_http_block(&palette, density, cx),
+                    self.http_action_block(&palette, density, cx),
+                ],
+                density,
+            ))
     }
 }
 

@@ -3,7 +3,7 @@ use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, body_family, field_label,
-    ghost_button_with_icon, icon, section_label, tr,
+    ghost_button_with_icon, icon, scaled, section_label, tr,
 };
 use forge_overlay::config::{
     DESIGN_HEIGHT, DESIGN_SIZE_MAX_PX, DESIGN_SIZE_MIN_PX, DESIGN_WIDTH, MARGIN_SIDES,
@@ -121,8 +121,8 @@ impl OverlayPropertyPanel {
                 .mb(SECTION_TOP_GAP)
                 .flex()
                 .items_start()
-                .gap(NOTICE_GAP)
-                .p(NOTICE_PAD)
+                .gap(scaled(NOTICE_GAP, density))
+                .p(scaled(NOTICE_PAD, density))
                 .rounded(NOTICE_RADIUS)
                 .border(BORDER_THIN)
                 .border_color(palette.warning)
@@ -223,10 +223,10 @@ impl OverlayPropertyPanel {
             let pair = div()
                 .w_full()
                 .flex()
-                .gap(PAIR_GAP)
+                .gap(scaled(PAIR_GAP, density))
                 .children(width.map(|field| div().flex_1().min_w(px(0.0)).child(field)))
                 .children(height.map(|field| div().flex_1().min_w(px(0.0)).child(field)));
-            div().pb(FIELD_GAP).child(hinted(
+            div().pb(scaled(FIELD_GAP, density)).child(hinted(
                 pair,
                 tr!("overlays_source_size_hint"),
                 palette,
@@ -241,7 +241,7 @@ impl OverlayPropertyPanel {
             } else {
                 field.into_any_element()
             };
-            div().pb(FIELD_GAP).child(row)
+            div().pb(scaled(FIELD_GAP, density)).child(row)
         });
 
         Some(

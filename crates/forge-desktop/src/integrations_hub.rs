@@ -10,7 +10,7 @@ use std::sync::Arc;
 use forge_components::{
     BadgeMarker, BreadcrumbCrumb, CompactTone, ForgePalette, HUB_TILE_SIZE, Icon, ToastKind,
     body_family, compact_button, hub_card, hub_note, hub_section_header, hub_tile, icon,
-    lifecycle_badge, mono_family, page_frame, toggle, tr,
+    lifecycle_badge, mono_family, page_frame, scaled, toggle, tr,
 };
 use forge_platform_core::{
     ConnectionAffordance, ControlFailure, ControlOutcome, IntegrationCategory,
@@ -286,13 +286,14 @@ impl IntegrationsHubView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let retry_id = id.clone();
         div()
             .id(ElementId::Name(format!("hub-retry-{id}").into()))
             .flex_none()
             .flex()
             .items_center()
-            .gap(OPEN_GAP)
+            .gap(scaled(OPEN_GAP, density))
             .cursor_pointer()
             .font_family(body_family())
             .text_size(FOOTER_TEXT)
@@ -338,6 +339,7 @@ impl IntegrationsHubView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         if references.total() == 0 {
             return div()
                 .font_family(body_family())
@@ -357,7 +359,7 @@ impl IntegrationsHubView {
             .id(ElementId::Name(format!("hub-refs-{id}").into()))
             .flex()
             .items_center()
-            .gap(FOOTER_GAP)
+            .gap(scaled(FOOTER_GAP, density))
             .cursor_pointer()
             .font_family(body_family())
             .text_size(FOOTER_TEXT)
@@ -542,7 +544,7 @@ impl IntegrationsHubView {
             .flex_none()
             .flex()
             .items_center()
-            .gap(OPEN_GAP)
+            .gap(scaled(OPEN_GAP, density))
             .font_family(body_family())
             .text_size(FOOTER_TEXT)
             .text_color(palette.text_secondary)
@@ -866,8 +868,8 @@ impl Render for IntegrationsHubView {
             .child(
                 div()
                     .w_full()
-                    .py(BODY_PAD_V)
-                    .px(BODY_PAD_H)
+                    .py(scaled(BODY_PAD_V, density))
+                    .px(scaled(BODY_PAD_H, density))
                     .child(intro)
                     .children(sections),
             );

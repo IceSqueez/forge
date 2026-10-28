@@ -10,7 +10,7 @@ use std::time::Instant;
 use forge_audio::DeviceInfo;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Confirm, FONT_XS, Icon, Radius, SearchState, Spacing,
-    body_family, empty_state, icon, page_frame, radius, spacing, tr, with_alpha,
+    body_family, empty_state, icon, page_frame, radius, scaled, spacing, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::EventBus;
@@ -233,7 +233,7 @@ impl Render for SoundboardView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let header_right = self.render_header_right(&palette);
+        let header_right = self.render_header_right(&palette, density);
         let subheader_left = self.render_subheader_left(&palette, density, cx);
         let subheader_right = self.render_subheader_right(&palette, density, cx);
 
@@ -268,7 +268,7 @@ impl Render for SoundboardView {
                 .w_full()
                 .flex()
                 .flex_col()
-                .gap(SECTION_GAP)
+                .gap(scaled(SECTION_GAP, density))
                 .children(error_banner)
                 .child(self.render_hero(&palette, density, cx))
                 .children(self.render_hotkeys_notice(&palette, cx))
@@ -289,8 +289,8 @@ impl Render for SoundboardView {
             .child(
                 div()
                     .w_full()
-                    .py(SCROLL_PAD_Y)
-                    .px(SCROLL_PAD_X)
+                    .py(scaled(SCROLL_PAD_Y, density))
+                    .px(scaled(SCROLL_PAD_X, density))
                     .child(inner),
             );
 

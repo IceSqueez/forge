@@ -7,7 +7,7 @@ use std::time::Duration;
 use forge_components::{
     FONT_XS, ForgePalette, Icon, InputEvent, OverlayPosition, Picker, PickerEvent, PickerItem,
     PickerLabels, TextArea, TextInput, body_family, destructive_button_with_icon, dropdown, modal,
-    overlay, primary_button_with_icon, secondary_button, spinner, tr,
+    overlay, primary_button_with_icon, scaled, secondary_button, spinner, tr,
 };
 use forge_platform_core::{
     BuiltinOptionSource, CollectionOutcome, OptionEntry, OptionListId, QuickAction,
@@ -648,11 +648,13 @@ impl QuickActionModal {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         toggle_row(
             ("qa-toggle", index),
             value,
             palette,
             cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_field(index, cx)),
+            density,
         )
     }
 
@@ -665,8 +667,8 @@ impl QuickActionModal {
     ) -> AnyElement {
         let density = cx.density();
         match &choice.state {
-            ChoiceState::Loading => field_frame(palette)
-                .gap(px(8.0))
+            ChoiceState::Loading => field_frame(palette, density)
+                .gap(scaled(px(8.0), density))
                 .child(spinner(
                     ("qa-choice-spin", index),
                     Icon::Refresh,
@@ -708,6 +710,7 @@ impl QuickActionModal {
                     cx.listener(move |this, _: &ClickEvent, window, cx| {
                         this.open_choice(index, window, cx)
                     }),
+                    density,
                 );
                 div()
                     .relative()
@@ -722,9 +725,14 @@ impl QuickActionModal {
 
 impl Render for QuickActionModal {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
 
-        let mut body = div().w_full().flex().flex_col().gap(px(12.0));
+        let mut body = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(scaled(px(12.0), density));
         if self.fields.is_empty() {
             body = body.child(
                 div()
@@ -774,7 +782,7 @@ impl Render for QuickActionModal {
             .flex()
             .items_center()
             .justify_between()
-            .gap(px(12.0))
+            .gap(scaled(px(12.0), density))
             .child(
                 div()
                     .font_family(body_family())
@@ -786,7 +794,7 @@ impl Render for QuickActionModal {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.0))
+                    .gap(scaled(px(8.0), density))
                     .child(cancel_button)
                     .child(run_button),
             );

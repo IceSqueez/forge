@@ -3,7 +3,7 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Confirm, ConfirmTone, Density, FONT_SM, FONT_XS, ForgePalette,
     Icon, InputEvent, OverlayPosition, Radius, SearchState, Spacing, TextInput, ToastKind, badge,
     body_family, confirm_modal, icon, mono_family, overlay, page_frame, platform_hero, radius,
-    spacing, status_dot, tr, with_alpha,
+    scaled, spacing, status_dot, tr, with_alpha,
 };
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_obs::ObsClient;
@@ -1184,21 +1184,25 @@ impl IntegrationDetail {
         ))
     }
 
-    fn header_right_connected(&self, palette: &ForgePalette, _density: Density) -> AnyElement {
-        let mut row = div().flex().items_center().gap(px(8.0)).child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(5.0))
-                .child(status_dot(palette.success, px(7.0)))
-                .child(
-                    div()
-                        .font_family(body_family())
-                        .text_size(FONT_XS)
-                        .text_color(palette.success)
-                        .child(tr!("integration_status_authenticated")),
-                ),
-        );
+    fn header_right_connected(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+        let mut row = div()
+            .flex()
+            .items_center()
+            .gap(scaled(px(8.0), density))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(scaled(px(5.0), density))
+                    .child(status_dot(palette.success, px(7.0)))
+                    .child(
+                        div()
+                            .font_family(body_family())
+                            .text_size(FONT_XS)
+                            .text_color(palette.success)
+                            .child(tr!("integration_status_authenticated")),
+                    ),
+            );
         if let Some(suffix) = self.token_countdown() {
             row = row
                 .child(
@@ -1218,7 +1222,7 @@ impl IntegrationDetail {
         row.into_any_element()
     }
 
-    fn header_right_connection(&self, palette: &ForgePalette) -> AnyElement {
+    fn header_right_connection(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let (dot, text, label) = match self.connection {
             ConnectionState::Connected => (
                 palette.success,
@@ -1244,7 +1248,7 @@ impl IntegrationDetail {
         div()
             .flex()
             .items_center()
-            .gap(px(5.0))
+            .gap(scaled(px(5.0), density))
             .child(status_dot(dot, px(7.0)))
             .child(
                 div()
@@ -1324,6 +1328,7 @@ impl IntegrationDetail {
         _density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let signing_out = self.signing_out && matches!(action, HeaderAction::Disconnect);
         let label = if signing_out {
             tr!("integration_signing_out")
@@ -1345,9 +1350,9 @@ impl IntegrationDetail {
             .id(("header-action", idx))
             .flex()
             .items_center()
-            .gap(px(5.0))
-            .py(px(5.0))
-            .px(px(11.0))
+            .gap(scaled(px(5.0), density))
+            .py(scaled(px(5.0), density))
+            .px(scaled(px(11.0), density))
             .rounded(radius(Radius::Sm))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -1548,7 +1553,7 @@ impl Render for IntegrationDetail {
                     .w_full()
                     .flex()
                     .flex_col()
-                    .gap(px(14.0))
+                    .gap(scaled(px(14.0), density))
                     .child(connect.view.clone())
                     .children(twitch_bot)
                     .into_any_element()
@@ -1585,7 +1590,7 @@ impl Render for IntegrationDetail {
                     .w_full()
                     .flex()
                     .flex_col()
-                    .gap(px(14.0))
+                    .gap(scaled(px(14.0), density))
                     .children(reauth_banner)
                     .children(state_banner)
                     .child(header_card)
@@ -1603,7 +1608,13 @@ impl Render for IntegrationDetail {
             .flex_1()
             .overflow_y_scroll()
             .bg(palette.base)
-            .child(div().w_full().py(px(18.0)).px(px(22.0)).child(body));
+            .child(
+                div()
+                    .w_full()
+                    .py(scaled(px(18.0), density))
+                    .px(scaled(px(22.0), density))
+                    .child(body),
+            );
 
         let donation_remove_confirm = self
             .donation_settings
@@ -1626,7 +1637,7 @@ impl Render for IntegrationDetail {
                 Some(self.header_right_connected(&palette, density))
             }
             None if is_oauth_platform => None,
-            None => Some(self.header_right_connection(&palette)),
+            None => Some(self.header_right_connection(&palette, density)),
         };
         let mut frame = page_frame(
             vec![

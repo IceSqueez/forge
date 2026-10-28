@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use forge_components::{
     BORDER_THIN, FONT_XXS, ForgePalette, Picker, PickerEvent, PickerItem, PickerLabels,
-    accent_swatch, body_family, field_label, section_label, tr,
+    accent_swatch, body_family, field_label, scaled, section_label, tr,
 };
 use forge_overlay::config::{ACCENT, RETIRED_KEYS, SOUND_OPTIONS_KEY, SPEECH_VOICE};
 use forge_overlay::{ConfigSection, MediaIssue, MediaSlot, SectionedField, media_slot};
@@ -675,7 +675,7 @@ impl OverlayPropertyPanel {
                 None => body,
             };
             column = column.child(
-                div().pb(FIELD_GAP).child(
+                div().pb(scaled(FIELD_GAP, density)).child(
                     field_label(palette, self.label_of(field.key()).to_uppercase(), body)
                         .tone(palette.text_faint),
                 ),
@@ -689,14 +689,18 @@ impl OverlayPropertyPanel {
     }
 }
 
-pub(super) fn override_notice(files: &[String], palette: &ForgePalette) -> Option<AnyElement> {
+pub(super) fn override_notice(
+    files: &[String],
+    palette: &ForgePalette,
+    density: Density,
+) -> Option<AnyElement> {
     if files.is_empty() {
         return None;
     }
     let named = files.join(", ");
     Some(
         div()
-            .p(NOTICE_PAD)
+            .p(scaled(NOTICE_PAD, density))
             .mb(SECTION_TOP_GAP)
             .rounded(NOTICE_RADIUS)
             .border(BORDER_THIN)
@@ -763,6 +767,7 @@ fn index_field(spec: &FormField, section: ConfigSection, out: &mut FieldIndex) {
 
 impl Render for OverlayPropertyPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
 
         let mut body = div()
@@ -770,13 +775,13 @@ impl Render for OverlayPropertyPanel {
             .flex_1()
             .min_h(px(0.0))
             .overflow_y_scroll()
-            .p(PANE_PAD)
+            .p(scaled(PANE_PAD, density))
             .flex()
             .flex_col();
 
         body = body
             .children(self.render_sizing_notice(&palette, cx))
-            .children(override_notice(&self.overridden_files, &palette))
+            .children(override_notice(&self.overridden_files, &palette, density))
             .child(self.render_look_section(&palette, cx))
             .children(self.render_latest_section(&palette, cx));
 

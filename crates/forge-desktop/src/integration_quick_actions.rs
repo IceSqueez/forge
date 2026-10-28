@@ -1,7 +1,8 @@
 use forge_components::FONT_LABEL;
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
-    body_family, icon, mono_family, pulse_dot, radius, spacing, tooltip_builder, tr, with_alpha,
+    ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    Radius, Spacing, body_family, icon, mono_family, pulse_dot, radius, scaled, spacing,
+    tooltip_builder, tr, with_alpha,
 };
 use forge_platform_core::{QuickAction, QuickActionAccent, QuickActionLiveness};
 use gpui::{AnyElement, ClickEvent, Context, Pixels, Rgba, div, prelude::*, px};
@@ -22,15 +23,15 @@ impl IntegrationDetail {
             .w_full()
             .flex()
             .items_center()
-            .gap(px(12.0))
+            .gap(scaled(px(12.0), density))
             .py(spacing(Spacing::Sm, density))
-            .px(px(14.0))
+            .px(scaled(px(14.0), density))
             .child(
                 div()
                     .flex_none()
                     .flex()
                     .items_center()
-                    .gap(px(7.0))
+                    .gap(scaled(px(7.0), density))
                     .child(icon(Icon::Bolt, FONT_SM, palette.warning))
                     .child(
                         div()
@@ -62,10 +63,10 @@ impl IntegrationDetail {
             .w_full()
             .flex()
             .flex_col()
-            .gap(px(12.0))
+            .gap(scaled(px(12.0), density))
             .pt(spacing(Spacing::Xxs, density))
-            .pb(px(12.0))
-            .px(px(14.0));
+            .pb(scaled(px(12.0), density))
+            .px(scaled(px(14.0), density));
 
         if matches.is_empty() {
             body = body.child(
@@ -104,6 +105,7 @@ impl IntegrationDetail {
     }
 
     fn history_button(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let text_color = palette.text_secondary;
         let hover_border = palette.border_input;
         div()
@@ -111,9 +113,9 @@ impl IntegrationDetail {
             .flex_none()
             .flex()
             .items_center()
-            .gap(px(5.0))
-            .py(px(5.0))
-            .px(px(11.0))
+            .gap(scaled(px(5.0), density))
+            .py(scaled(px(5.0), density))
+            .px(scaled(px(11.0), density))
             .rounded(radius(Radius::Sm))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -145,7 +147,11 @@ impl IntegrationDetail {
             .map(|(i, a)| (*i, *a))
             .collect();
 
-        let mut section = div().w_full().flex().flex_col().gap(px(7.0));
+        let mut section = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(scaled(px(7.0), density));
         if let Some(label) = group {
             let group_badge = members.first().and_then(|(_, a)| {
                 a.group_icon
@@ -238,7 +244,7 @@ impl IntegrationDetail {
             .w_full()
             .flex()
             .items_center()
-            .gap(px(7.0))
+            .gap(scaled(px(7.0), density))
             .child(icon(
                 Icon::from_name(action.icon.as_str()),
                 FONT_XS,
@@ -268,7 +274,7 @@ impl IntegrationDetail {
         let mut btn = div()
             .id(("quick-action", idx))
             .min_w(px(0.0))
-            .py(px(7.0))
+            .py(scaled(px(7.0), density))
             .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Sm))
             .border(BORDER_THIN)

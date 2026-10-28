@@ -3,7 +3,7 @@ use forge_components::FONT_MICRO;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    ForgePalette, Icon, SectionLabel, error_row_with_retry, icon, mono_family, pad_tile, tr,
+    ForgePalette, Icon, SectionLabel, error_row_with_retry, icon, mono_family, pad_tile, scaled, tr,
 };
 use forge_types::TriggerInstanceId;
 use gpui::{AnyElement, ClickEvent, Context, Pixels, Point, div, prelude::*, px};
@@ -107,7 +107,7 @@ impl HotkeysScreenView {
             .child(
                 div()
                     .ml(spacing(Spacing::Xs, density))
-                    .py(KBD_PAD_V)
+                    .py(scaled(KBD_PAD_V, density))
                     .px(spacing(Spacing::Xs, density))
                     .rounded(KBD_RADIUS)
                     .bg(palette.surface_overlay)

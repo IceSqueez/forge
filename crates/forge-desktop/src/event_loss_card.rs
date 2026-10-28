@@ -1,6 +1,6 @@
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Spacing, body_family,
-    card, icon, mono_family, spacing, status_dot, tr,
+    card, icon, mono_family, scaled, spacing, status_dot, tr,
 };
 use forge_runtime::ConsumerLoss;
 use gpui::{AnyElement, IntoElement, Pixels, Rgba, div, prelude::*, px};
@@ -33,7 +33,7 @@ fn loss_row(
         .flex()
         .items_center()
         .gap(spacing(Spacing::Xs, density))
-        .py(ROW_PAD_V)
+        .py(scaled(ROW_PAD_V, density))
         .child(status_dot(color, ROW_DOT))
         .child(
             div()
@@ -84,7 +84,7 @@ fn quiet_row(palette: &ForgePalette, density: Density) -> AnyElement {
         .flex()
         .items_center()
         .gap(spacing(Spacing::Xs, density))
-        .py(ROW_PAD_V)
+        .py(scaled(ROW_PAD_V, density))
         .child(status_dot(palette.success, ROW_DOT))
         .child(
             div()

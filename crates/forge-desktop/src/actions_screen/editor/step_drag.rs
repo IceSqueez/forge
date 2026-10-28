@@ -1,7 +1,7 @@
 use super::*;
 use forge_components::{
     BORDER_THIN, DRAG_SOURCE_OPACITY, ESCAPE_KEY, FONT_XS, ForgePalette, Icon, Radius, Spacing,
-    body_family, icon, radius, spacing,
+    body_family, icon, radius, scaled, spacing,
 };
 use gpui::{
     AnyElement, Bounds, ClickEvent, Context, CursorStyle, DragMoveEvent, FocusHandle, FontWeight,
@@ -38,7 +38,7 @@ impl Render for StepDragGhost {
             .items_center()
             .gap(spacing(Spacing::Xs, density))
             .py(STEP_CARD_PAD_V)
-            .px(STEP_CARD_PAD_H)
+            .px(scaled(STEP_CARD_PAD_H, density))
             .bg(self.surface)
             .border(BORDER_THIN)
             .border_color(self.border)

@@ -8,7 +8,7 @@ use crate::cards::{card, field_hint, field_title};
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, Spacing, body_family, mono_family, spacing,
+    BORDER_THIN, Density, FONT_XS, FONT_XXS, Spacing, body_family, mono_family, scaled, spacing,
 };
 
 const LABEL_GAP: Pixels = px(2.0);
@@ -102,7 +102,7 @@ impl RenderOnce for SettingRow {
             .flex_col()
             .flex_1()
             .min_w(px(0.0))
-            .gap(LABEL_GAP)
+            .gap(scaled(LABEL_GAP, density))
             .child(
                 div()
                     .font_family(body_family())
@@ -201,11 +201,12 @@ impl SettingRows {
 }
 
 impl RenderOnce for SettingRows {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
         let last = self.rows.len().saturating_sub(1);
         let mut list = div().w_full().flex().flex_col();
         for (idx, row) in self.rows.into_iter().enumerate() {
-            let mut cell = div().w_full().py(ROW_PAD_V).child(row);
+            let mut cell = div().w_full().py(scaled(ROW_PAD_V, density)).child(row);
             if idx < last {
                 cell = cell.border_b(BORDER_THIN).border_color(self.divider);
             }
@@ -213,7 +214,7 @@ impl RenderOnce for SettingRows {
         }
         match self.carded {
             Some(palette) => card(list, &palette)
-                .padding(CARD_PAD)
+                .padding(scaled(CARD_PAD, density))
                 .full_width()
                 .into_any_element(),
             None => list.into_any_element(),
@@ -226,11 +227,12 @@ pub fn setting_block(
     hint: Option<SharedString>,
     content: impl IntoElement,
     palette: &ForgePalette,
+    density: Density,
 ) -> Div {
     let mut heading = div()
         .flex()
         .flex_col()
-        .gap(LABEL_GAP)
+        .gap(scaled(LABEL_GAP, density))
         .child(field_title(title, palette));
     if let Some(hint) = hint {
         heading = heading.child(field_hint(hint, palette));
@@ -239,7 +241,7 @@ pub fn setting_block(
         .w_full()
         .flex()
         .flex_col()
-        .gap(HEADING_GAP)
+        .gap(scaled(HEADING_GAP, density))
         .child(heading)
         .child(content)
 }
@@ -247,13 +249,18 @@ pub fn setting_block(
 pub fn setting_sections(
     sections: impl IntoIterator<Item = AnyElement>,
     palette: &ForgePalette,
+    density: Density,
 ) -> Div {
-    let mut column = div().w_full().flex().flex_col().gap(SECTION_GAP);
+    let mut column = div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .gap(scaled(SECTION_GAP, density));
     for (idx, section) in sections.into_iter().enumerate() {
         let mut cell = div().w_full().child(section);
         if idx > 0 {
             cell = cell
-                .pt(SECTION_GAP)
+                .pt(scaled(SECTION_GAP, density))
                 .border_t(BORDER_THIN)
                 .border_color(palette.border_regular);
         }
@@ -262,11 +269,11 @@ pub fn setting_sections(
     column
 }
 
-pub fn setting_groups(groups: impl IntoIterator<Item = AnyElement>) -> Div {
+pub fn setting_groups(groups: impl IntoIterator<Item = AnyElement>, density: Density) -> Div {
     div()
         .w_full()
         .flex()
         .flex_col()
-        .gap(GROUP_GAP)
+        .gap(scaled(GROUP_GAP, density))
         .children(groups)
 }

@@ -237,6 +237,7 @@ impl SettingsRegionView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let current = self.current_pick(row);
         let trigger = choice_trigger(
             SharedString::from(format!("settings-region-{}-trigger", row.id())),
@@ -244,6 +245,7 @@ impl SettingsRegionView {
             true,
             palette,
             cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_menu(row, cx)),
+            density,
         );
         let mut field = div()
             .relative()

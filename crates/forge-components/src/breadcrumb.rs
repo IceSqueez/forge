@@ -6,7 +6,7 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::presentation::ActivePresentation;
-use crate::tokens::{BORDER_THIN, Density, FONT_XS, Spacing, body_family, spacing};
+use crate::tokens::{BORDER_THIN, Density, FONT_XS, Spacing, body_family, scaled, spacing};
 
 type CrumbClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -98,11 +98,11 @@ impl RenderOnce for Breadcrumb {
 
         let last = crumbs.len().saturating_sub(1);
 
-        let mut trail = div().flex().items_center().gap(TRAIL_GAP).child(icon(
-            Icon::Home,
-            HOME_ICON_SIZE,
-            faint,
-        ));
+        let mut trail = div()
+            .flex()
+            .items_center()
+            .gap(scaled(TRAIL_GAP, d))
+            .child(icon(Icon::Home, HOME_ICON_SIZE, faint));
 
         for (i, crumb) in crumbs.into_iter().enumerate() {
             let ink = if i == last { current } else { ancestor };

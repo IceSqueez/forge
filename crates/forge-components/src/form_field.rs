@@ -8,7 +8,9 @@ use crate::toggle::toggle;
 use crate::tokens::Density;
 use crate::tokens::Spacing;
 use crate::tokens::spacing;
-use crate::tokens::{BORDER_THIN, FONT_XS, FONT_XXS, Radius, body_family, mono_family, radius};
+use crate::tokens::{
+    BORDER_THIN, FONT_XS, FONT_XXS, Radius, body_family, mono_family, radius, scaled,
+};
 use crate::tr;
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, Pixels, SharedString, Window, div, prelude::*, px,
@@ -55,13 +57,14 @@ pub fn toggle_row(
     value: bool,
     palette: &ForgePalette,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    density: Density,
 ) -> AnyElement {
     let (state_label, state_color) = if value {
         (tr!("widget_toggle_on"), palette.success)
     } else {
         (tr!("widget_toggle_off"), palette.danger)
     };
-    field_frame(palette)
+    field_frame(palette, density)
         .justify_between()
         .child(
             div()
@@ -84,6 +87,7 @@ pub fn choice_trigger(
     has_selection: bool,
     palette: &ForgePalette,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    density: Density,
 ) -> AnyElement {
     let text_color = if has_selection {
         palette.text_primary
@@ -91,10 +95,10 @@ pub fn choice_trigger(
         palette.text_muted
     };
     let border_active = palette.border_active;
-    field_frame(palette)
+    field_frame(palette, density)
         .id(id)
         .justify_between()
-        .gap(CHOICE_GAP)
+        .gap(scaled(CHOICE_GAP, density))
         .cursor_pointer()
         .hover(move |s| s.border_color(border_active))
         .on_click(on_click)
@@ -147,7 +151,7 @@ pub fn failure_with_retry(
                 .id(id)
                 .flex()
                 .items_center()
-                .gap(RETRY_GAP)
+                .gap(scaled(RETRY_GAP, density))
                 .cursor_pointer()
                 .on_click(on_retry)
                 .child(icon(Icon::Refresh, FONT_XXS, palette.info))
@@ -162,13 +166,13 @@ pub fn failure_with_retry(
         .into_any_element()
 }
 
-pub fn field_frame(palette: &ForgePalette) -> gpui::Div {
+pub fn field_frame(palette: &ForgePalette, density: Density) -> gpui::Div {
     div()
         .w_full()
         .flex()
         .items_center()
-        .px(ROW_PAD_X)
-        .py(ROW_PAD_Y)
+        .px(scaled(ROW_PAD_X, density))
+        .py(scaled(ROW_PAD_Y, density))
         .rounded(radius(Radius::Sm))
         .border(BORDER_THIN)
         .border_color(palette.border_input)

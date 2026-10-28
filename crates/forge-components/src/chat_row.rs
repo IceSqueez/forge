@@ -15,7 +15,7 @@ use gpui::{
 
 use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
-use crate::tokens::{BORDER_THIN, FONT_XS, FONT_XXS, body_family, mono_family};
+use crate::tokens::{BORDER_THIN, FONT_XS, FONT_XXS, body_family, mono_family, scaled};
 
 const ROW_GAP: Pixels = px(8.0);
 
@@ -225,12 +225,16 @@ fn descriptor_el(text: SharedString, palette: &ForgePalette) -> impl IntoElement
         .child(text)
 }
 
-fn command_pill(command: SharedString, palette: &ForgePalette) -> impl IntoElement {
+fn command_pill(
+    command: SharedString,
+    palette: &ForgePalette,
+    density: Density,
+) -> impl IntoElement {
     div()
         .flex_1()
         .min_w(px(0.0))
-        .py(CMD_PILL_PAD_V)
-        .px(CMD_PILL_PAD_H)
+        .py(scaled(CMD_PILL_PAD_V, density))
+        .px(scaled(CMD_PILL_PAD_H, density))
         .rounded(CMD_PILL_RADIUS)
         .bg(palette.surface_overlay)
         .font_family(mono_family())
@@ -239,12 +243,12 @@ fn command_pill(command: SharedString, palette: &ForgePalette) -> impl IntoEleme
         .child(command)
 }
 
-fn role_badge(badge: &RoleBadge) -> impl IntoElement {
+fn role_badge(badge: &RoleBadge, density: Density) -> impl IntoElement {
     let c = badge.color;
     div()
         .flex_none()
-        .py(ROLE_BADGE_PAD_V)
-        .px(ROLE_BADGE_PAD_H)
+        .py(scaled(ROLE_BADGE_PAD_V, density))
+        .px(scaled(ROLE_BADGE_PAD_H, density))
         .rounded(ROLE_BADGE_RADIUS)
         .border(BORDER_THIN)
         .border_color(with_alpha(c, ROLE_BORDER_ALPHA))
@@ -267,7 +271,7 @@ fn role_badges(badges: &[RoleBadge], density: Density) -> Option<impl IntoElemen
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
-            .children(badges.iter().map(role_badge)),
+            .children(badges.iter().map(|badge| role_badge(badge, density))),
     )
 }
 
@@ -285,7 +289,7 @@ fn pill_badge(
         .flex()
         .items_center()
         .gap(spacing(Spacing::Xxs, density))
-        .py(PILL_PAD_V)
+        .py(scaled(PILL_PAD_V, density))
         .px(spacing(Spacing::Xs, density))
         .rounded(PILL_RADIUS)
         .bg(bg)
@@ -397,7 +401,7 @@ fn standard_row(
     let main = div()
         .flex()
         .items_center()
-        .gap(ROW_GAP)
+        .gap(scaled(ROW_GAP, density))
         .child(time_el(data.timestamp.clone(), palette))
         .child(platform_tile(&data.platform, palette))
         .child(username_el(
@@ -411,11 +415,11 @@ fn standard_row(
         .id(data.id.clone())
         .flex()
         .flex_col()
-        .gap(BODY_LINE_GAP)
-        .pt(ROW_PAD_T)
+        .gap(scaled(BODY_LINE_GAP, density))
+        .pt(scaled(ROW_PAD_T, density))
         .pr(spacing(Spacing::Sm, density))
-        .pb(ROW_PAD_B)
-        .pl(ROW_PAD_L)
+        .pb(scaled(ROW_PAD_B, density))
+        .pl(scaled(ROW_PAD_L, density))
         .rounded(ROW_RADIUS)
         .hover(|s| s.bg(palette.elevated))
         .children(reply)
@@ -435,7 +439,7 @@ fn command_row(
     let main = div()
         .flex()
         .items_center()
-        .gap(ROW_GAP)
+        .gap(scaled(ROW_GAP, density))
         .child(time_el(data.timestamp.clone(), palette))
         .child(platform_tile(&data.platform, palette))
         .child(username_el(
@@ -443,7 +447,7 @@ fn command_row(
             data.username_color,
             click,
         ))
-        .child(command_pill(command, palette))
+        .child(command_pill(command, palette, density))
         .children(role_badges(&data.badges, density));
     let second = triggered.map(|t| {
         div().pl(CMD_SECOND_INSET).flex().child(pill_badge(
@@ -459,11 +463,11 @@ fn command_row(
         .id(data.id.clone())
         .flex()
         .flex_col()
-        .gap(BODY_LINE_GAP)
-        .pt(ROW_PAD_T)
+        .gap(scaled(BODY_LINE_GAP, density))
+        .pt(scaled(ROW_PAD_T, density))
         .pr(spacing(Spacing::Sm, density))
-        .pb(ROW_PAD_B)
-        .pl(ROW_PAD_L)
+        .pb(scaled(ROW_PAD_B, density))
+        .pl(scaled(ROW_PAD_L, density))
         .rounded(ROW_RADIUS)
         .hover(|s| s.bg(palette.elevated))
         .child(main)
@@ -503,8 +507,8 @@ fn event_row(
     div()
         .flex()
         .items_start()
-        .gap(ROW_GAP)
-        .my(EVENT_MARGIN_V)
+        .gap(scaled(ROW_GAP, density))
+        .my(scaled(EVENT_MARGIN_V, density))
         .py(spacing(Spacing::Xs, density))
         .px(spacing(Spacing::Sm, density))
         .bg(palette.elevated)

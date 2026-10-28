@@ -11,7 +11,7 @@ use std::ops::Range;
 
 use forge_components::{
     ForgePalette, Icon, ModalSize, OverlayPosition, Radius, body_family, ghost_button, icon, modal,
-    mono_family, overlay, radius, tr,
+    mono_family, overlay, radius, scaled, tr,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, HighlightStyle, Hsla, Pixels, Rgba, SharedString,
@@ -112,11 +112,17 @@ fn lead(prompt: &DisablePrompt, palette: &ForgePalette) -> AnyElement {
         .into_any_element()
 }
 
-fn consequence(glyph: Icon, tint: Rgba, text: StyledText, palette: &ForgePalette) -> AnyElement {
+fn consequence(
+    glyph: Icon,
+    tint: Rgba,
+    text: StyledText,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
     div()
         .flex()
         .items_start()
-        .gap(LINE_GAP)
+        .gap(scaled(LINE_GAP, density))
         .font_family(body_family())
         .text_size(LINE_SIZE)
         .text_color(palette.text_secondary)
@@ -129,7 +135,7 @@ fn consequence(glyph: Icon, tint: Rgba, text: StyledText, palette: &ForgePalette
         .into_any_element()
 }
 
-fn consequences(prompt: &DisablePrompt, palette: &ForgePalette) -> AnyElement {
+fn consequences(prompt: &DisablePrompt, palette: &ForgePalette, density: Density) -> AnyElement {
     let mut fails = Emphasis::new();
     fails.plain(&tr!("integration_disable_fails_prefix", name = prompt.name));
     fails.strong(&tr!("integration_disable_reason"));
@@ -138,12 +144,17 @@ fn consequences(prompt: &DisablePrompt, palette: &ForgePalette) -> AnyElement {
         color: Some(Hsla::from(palette.danger)),
         ..HighlightStyle::default()
     };
-    let mut lines = div().flex().flex_col().gap(LINES_GAP).child(consequence(
-        Icon::AlertCircle,
-        palette.danger,
-        fails.styled(red),
-        palette,
-    ));
+    let mut lines = div()
+        .flex()
+        .flex_col()
+        .gap(scaled(LINES_GAP, density))
+        .child(consequence(
+            Icon::AlertCircle,
+            palette.danger,
+            fails.styled(red),
+            palette,
+            density,
+        ));
     if prompt.references.triggers > 0 {
         lines = lines.child(consequence(
             Icon::TargetArrow,
@@ -152,6 +163,7 @@ fn consequences(prompt: &DisablePrompt, palette: &ForgePalette) -> AnyElement {
                 "integration_disable_triggers_inactive"
             ))),
             palette,
+            density,
         ));
     }
     lines
@@ -160,6 +172,7 @@ fn consequences(prompt: &DisablePrompt, palette: &ForgePalette) -> AnyElement {
             palette.success,
             StyledText::new(SharedString::from(tr!("integration_disable_kept"))),
             palette,
+            density,
         ))
         .into_any_element()
 }
@@ -176,8 +189,8 @@ fn used_by(prompt: &DisablePrompt, palette: &ForgePalette, density: Density) -> 
                 .flex()
                 .items_center()
                 .gap(spacing(Spacing::Xxs, density))
-                .py(CHIP_PAD_V)
-                .px(CHIP_PAD_H)
+                .py(scaled(CHIP_PAD_V, density))
+                .px(scaled(CHIP_PAD_H, density))
                 .rounded(radius(Radius::Sm))
                 .bg(palette.shell)
                 .font_family(mono_family())
@@ -191,7 +204,7 @@ fn used_by(prompt: &DisablePrompt, palette: &ForgePalette, density: Density) -> 
     if more > 0 {
         chips = chips.child(
             div()
-                .py(CHIP_PAD_V)
+                .py(scaled(CHIP_PAD_V, density))
                 .px(spacing(Spacing::Xxs, density))
                 .font_family(mono_family())
                 .text_size(CHIP_SIZE)
@@ -221,22 +234,22 @@ pub fn render_disable_modal(
 ) -> AnyElement {
     let density = cx.density();
     let body = div()
-        .py(BODY_PAD_V)
-        .px(BODY_PAD_H)
+        .py(scaled(BODY_PAD_V, density))
+        .px(scaled(BODY_PAD_H, density))
         .flex()
         .flex_col()
-        .gap(BODY_GAP)
+        .gap(scaled(BODY_GAP, density))
         .child(lead(prompt, palette))
-        .child(consequences(prompt, palette))
+        .child(consequences(prompt, palette, density))
         .children(used_by(prompt, palette, density));
 
     let confirm = div()
         .id("integration-disable-confirm")
         .flex()
         .items_center()
-        .gap(CONFIRM_GAP)
-        .py(CONFIRM_PAD_V)
-        .px(CONFIRM_PAD_H)
+        .gap(scaled(CONFIRM_GAP, density))
+        .py(scaled(CONFIRM_PAD_V, density))
+        .px(scaled(CONFIRM_PAD_H, density))
         .rounded(radius(Radius::Sm))
         .bg(palette.warning)
         .cursor_pointer()
@@ -263,7 +276,7 @@ pub fn render_disable_modal(
             div()
                 .flex()
                 .items_center()
-                .gap(FOOTER_GAP)
+                .gap(scaled(FOOTER_GAP, density))
                 .child(ghost_button(tr!("common_cancel"), palette).on_click(
                     "integration-disable-cancel",
                     cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_disable(cx)),

@@ -11,8 +11,8 @@ use forge_components::{
     InlineEditEvent, InputEvent, ModalSize, OverlayPosition, ResizeEdge, ResizeRange, Spacing,
     TextArea, TextInput, ToastAction, ToastKind, body_family, chip, confirm_modal, context_menu,
     header_stat, header_stats, icon, inline_edit, install_resize, menu_divider, menu_item, modal,
-    mono_family, overlay, primary_button, primary_button_with_icon, secondary_button, spacing,
-    status_dot, toggle, tr,
+    mono_family, overlay, primary_button, primary_button_with_icon, scaled, secondary_button,
+    spacing, status_dot, toggle, tr,
 };
 use forge_types::{Action, ActionId, DEFAULT_QUEUE_ID, ExecutionMode, Queue};
 use gpui::{
@@ -758,8 +758,8 @@ impl ScreenActionsView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .pl(ROW_INDENT)
-            .pr(ROW_PAD_R)
+            .pl(scaled(ROW_INDENT, density))
+            .pr(scaled(ROW_PAD_R, density))
             .child(icon(state_icon, TREE_GLYPH, state_color))
             .child(name_el);
         if renaming.is_none() {

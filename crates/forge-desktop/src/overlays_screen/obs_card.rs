@@ -3,7 +3,7 @@ use forge_components::Density;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, body_family, icon, mono_family,
+    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, body_family, icon, mono_family, scaled,
     section_label, tr,
 };
 use forge_overlay::config::{SOUND, SPEECH};
@@ -80,14 +80,17 @@ impl OverlaysView {
                     "overlays-obs-copy-url",
                     palette,
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.copy_url(&id, cx)),
+                    density,
                 )),
                 palette,
+                density,
             ),
             None => value_row(
                 tr!("overlays_obs_url"),
                 tr!("overlays_url_not_served"),
                 None,
                 palette,
+                density,
             ),
         };
 
@@ -97,18 +100,20 @@ impl OverlaysView {
             div()
                 .w_full()
                 .flex()
-                .gap(ROW_GAP)
+                .gap(scaled(ROW_GAP, density))
                 .child(div().w(relative(HALF)).child(copyable_row(
                     "width",
                     tr!("overlays_obs_width"),
                     width,
                     palette,
+                    density,
                 )))
                 .child(div().w(relative(HALF)).child(copyable_row(
                     "height",
                     tr!("overlays_obs_height"),
                     height,
                     palette,
+                    density,
                 )))
         });
 
@@ -148,8 +153,8 @@ impl OverlaysView {
             .mt(spacing(Spacing::Sm, density))
             .flex()
             .flex_col()
-            .gap(CARD_GAP)
-            .p(CARD_PAD)
+            .gap(scaled(CARD_GAP, density))
+            .p(scaled(CARD_PAD, density))
             .rounded(CARD_RADIUS)
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -183,13 +188,14 @@ fn copy_link(
     id: impl Into<SharedString>,
     palette: &ForgePalette,
     on_click: impl Fn(&ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
+    density: Density,
 ) -> AnyElement {
     div()
         .id(id.into())
         .flex_none()
         .flex()
         .items_center()
-        .gap(COPY_GAP)
+        .gap(scaled(COPY_GAP, density))
         .cursor_pointer()
         .font_family(mono_family())
         .text_size(FONT_XXS)
@@ -200,14 +206,21 @@ fn copy_link(
         .into_any_element()
 }
 
-fn copyable_row(name: &str, label: String, value: String, palette: &ForgePalette) -> AnyElement {
+fn copyable_row(
+    name: &str,
+    label: String,
+    value: String,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
     let copied = value.clone();
     let link = copy_link(
         SharedString::from(format!("overlays-obs-copy-{name}")),
         palette,
         move |_: &ClickEvent, _, cx| copy_to_clipboard(copied.clone(), cx),
+        density,
     );
-    value_row(label, value, Some(link), palette)
+    value_row(label, value, Some(link), palette, density)
 }
 
 fn value_row(
@@ -215,12 +228,13 @@ fn value_row(
     value: String,
     action: Option<AnyElement>,
     palette: &ForgePalette,
+    density: Density,
 ) -> AnyElement {
     div()
         .w_full()
         .flex()
         .items_center()
-        .gap(ROW_GAP)
+        .gap(scaled(ROW_GAP, density))
         .child(
             div()
                 .flex_none()
@@ -249,7 +263,7 @@ fn tip(label: String, value: String, palette: &ForgePalette, density: Density) -
         .flex()
         .items_center()
         .gap(spacing(Spacing::Xs, density))
-        .pr(ROW_GAP)
+        .pr(scaled(ROW_GAP, density))
         .font_family(body_family())
         .text_size(FONT_XXS)
         .child(

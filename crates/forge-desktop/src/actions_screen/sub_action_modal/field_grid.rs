@@ -4,7 +4,7 @@ use super::rejection::with_rejection_note;
 use super::variable_insert::InsertTarget;
 use super::*;
 use crate::sender_labels::sender_field_helper;
-use forge_components::{FONT_SM, FONT_XXS, Spacing, body_family, spacing};
+use forge_components::{FONT_SM, FONT_XXS, Spacing, body_family, scaled, spacing};
 use forge_registry::CodeLanguage;
 use gpui::Div;
 
@@ -208,7 +208,7 @@ fn field_grid_layout(
                 grid = grid.child(
                     div()
                         .flex()
-                        .gap(GRID_COL_GAP)
+                        .gap(scaled(GRID_COL_GAP, density))
                         .child(div().flex_1().child(element))
                         .child(right),
                 );

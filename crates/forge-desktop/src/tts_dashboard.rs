@@ -10,8 +10,8 @@ use forge_components::{
     BORDER_THIN, ChipGlyph, ConfirmTone, DRAG_SOURCE_OPACITY, Density, FONT_SM, FONT_XXS,
     ForgePalette, Icon, InputEvent, OverlayPosition, Radius, ResizeEdge, ResizeRange, Spacing,
     TextInput, badge, body_family, card, chip, confirm_modal, empty_state, fmt_clock, hash_accent,
-    icon, install_resize, mono_family, overlay, radius, section_label, slider, spacing, status_dot,
-    tooltip_builder, tr, with_alpha,
+    icon, install_resize, mono_family, overlay, radius, scaled, section_label, slider, spacing,
+    status_dot, tooltip_builder, tr, with_alpha,
 };
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -131,7 +131,7 @@ impl Render for QueueRowGhost {
             .items_center()
             .gap(spacing(Spacing::Xs, density))
             .max_w(QUEUE_GHOST_MAX_W)
-            .py(QUEUE_ROW_PAD_V)
+            .py(scaled(QUEUE_ROW_PAD_V, density))
             .px(spacing(Spacing::Sm, density))
             .bg(self.surface)
             .border(BORDER_THIN)
@@ -357,9 +357,9 @@ impl TtsDashboardView {
             .id("tts-pause")
             .flex()
             .items_center()
-            .gap(BTN_GAP)
-            .py(BTN_PAD_V)
-            .px(SOLID_BTN_PAD_H)
+            .gap(scaled(BTN_GAP, density))
+            .py(scaled(BTN_PAD_V, density))
+            .px(scaled(SOLID_BTN_PAD_H, density))
             .rounded(radius(Radius::Sm))
             .bg(btn_bg)
             .cursor_pointer()
@@ -382,6 +382,7 @@ impl TtsDashboardView {
             tr!("tts_dash_skip_btn"),
             palette,
             cx.listener(|this, _: &ClickEvent, _, cx| this.skip(cx)),
+            density,
         );
         let stop_btn = self.ghost_strip_button(
             "tts-stop",
@@ -391,6 +392,7 @@ impl TtsDashboardView {
             tr!("tts_dash_stop_all_btn"),
             palette,
             cx.listener(|this, _: &ClickEvent, _, cx| this.arm_stop_all(cx)),
+            density,
         );
 
         let vol_pct = (self.volume * 100.0).round() as u32;
@@ -410,7 +412,7 @@ impl TtsDashboardView {
         let volume_row = div()
             .flex()
             .items_center()
-            .gap(VOL_GAP)
+            .gap(scaled(VOL_GAP, density))
             .child(icon(Icon::Volume, VOLUME_GLYPH, palette.text_muted))
             .child(vol_slider)
             .child(vol_text);
@@ -419,7 +421,7 @@ impl TtsDashboardView {
             div()
                 .flex()
                 .items_center()
-                .gap(STRIP_GAP)
+                .gap(scaled(STRIP_GAP, density))
                 .child(strip_divider(palette, density))
                 .child(chip(
                     tr!("tts_dash_voice_gate_held"),
@@ -433,7 +435,7 @@ impl TtsDashboardView {
         let left = div()
             .flex()
             .items_center()
-            .gap(STRIP_GAP)
+            .gap(scaled(STRIP_GAP, density))
             .child(pause_btn)
             .child(skip_btn)
             .child(stop_btn)
@@ -457,9 +459,9 @@ impl TtsDashboardView {
             .id("tts-speak")
             .flex()
             .items_center()
-            .gap(BTN_GAP)
-            .py(BTN_PAD_V)
-            .px(SOLID_BTN_PAD_H)
+            .gap(scaled(BTN_GAP, density))
+            .py(scaled(BTN_PAD_V, density))
+            .px(scaled(SOLID_BTN_PAD_H, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.brand)
             .cursor_pointer()
@@ -476,7 +478,7 @@ impl TtsDashboardView {
         let right = div()
             .flex()
             .items_center()
-            .gap(STRIP_GAP)
+            .gap(scaled(STRIP_GAP, density))
             .child(test_field)
             .child(speak_btn);
 
@@ -485,7 +487,7 @@ impl TtsDashboardView {
             .flex()
             .items_center()
             .justify_between()
-            .py(TOOLBAR_PAD_V)
+            .py(scaled(TOOLBAR_PAD_V, density))
             .px(spacing(Spacing::Md, density))
             .bg(palette.elevated)
             .border_b(BORDER_THIN)
@@ -508,15 +510,16 @@ impl TtsDashboardView {
         label: impl Into<SharedString>,
         palette: &ForgePalette,
         handler: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
+        density: Density,
     ) -> AnyElement {
         let hover_border = palette.border_input;
         div()
             .id(id)
             .flex()
             .items_center()
-            .gap(BTN_GAP)
-            .py(BTN_PAD_V)
-            .px(GHOST_BTN_PAD_H)
+            .gap(scaled(BTN_GAP, density))
+            .py(scaled(BTN_PAD_V, density))
+            .px(scaled(GHOST_BTN_PAD_H, density))
             .rounded(radius(Radius::Sm))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -591,9 +594,12 @@ impl TtsDashboardView {
                 density,
             ))
             .child(
-                div().mb(SECTION_GAP).child(
+                div().mb(scaled(SECTION_GAP, density)).child(
                     card(stat_rows, palette)
-                        .padding_xy(STAT_CARD_PAD_V, STAT_CARD_PAD_H)
+                        .padding_xy(
+                            scaled(STAT_CARD_PAD_V, density),
+                            scaled(STAT_CARD_PAD_H, density),
+                        )
                         .full_width(),
                 ),
             )
@@ -648,8 +654,8 @@ impl TtsDashboardView {
                     .flex_1()
                     .min_h(px(0.0))
                     .overflow_y_scroll()
-                    .py(RAIL_PAD_Y)
-                    .px(RAIL_PAD_X)
+                    .py(scaled(RAIL_PAD_Y, density))
+                    .px(scaled(RAIL_PAD_X, density))
                     .child(content),
             );
 
@@ -883,8 +889,8 @@ impl TtsDashboardView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(QUEUE_ROW_PAD_V)
-            .px(QUEUE_ROW_PAD_H)
+            .py(scaled(QUEUE_ROW_PAD_V, density))
+            .px(scaled(QUEUE_ROW_PAD_H, density))
             .cursor(CursorStyle::OpenHand)
             .on_drag(
                 QueueRowDrag {
@@ -973,8 +979,8 @@ impl Render for TtsDashboardView {
             .h_full()
             .overflow_y_scroll()
             .bg(palette.base)
-            .py(BODY_PAD_Y)
-            .px(BODY_PAD_X)
+            .py(scaled(BODY_PAD_Y, density))
+            .px(scaled(BODY_PAD_X, density))
             .child(
                 div()
                     .w_full()
@@ -1068,7 +1074,7 @@ fn now_speaking_panel(
     let label = div()
         .flex()
         .items_center()
-        .gap(NOW_LABEL_GAP)
+        .gap(scaled(NOW_LABEL_GAP, density))
         .child(section_label(tr!("tts_dash_now_speaking_header"), palette))
         .child(eq_bars(animate, bar_color));
 
@@ -1123,7 +1129,7 @@ fn now_speaking_panel(
             let progress = div()
                 .flex()
                 .items_center()
-                .gap(PROGRESS_GAP)
+                .gap(scaled(PROGRESS_GAP, density))
                 .mt(PROGRESS_MT)
                 .child(
                     div()
@@ -1201,9 +1207,11 @@ fn now_speaking_panel(
         .flex_col()
         .child(section_heading(label, None, density))
         .child(
-            div()
-                .mb(SECTION_GAP)
-                .child(card(body, palette).padding(NOW_CARD_PAD).full_width()),
+            div().mb(scaled(SECTION_GAP, density)).child(
+                card(body, palette)
+                    .padding(scaled(NOW_CARD_PAD, density))
+                    .full_width(),
+            ),
         )
         .into_any_element()
 }
@@ -1298,7 +1306,7 @@ fn engine_card(
         );
     div().mb(spacing(Spacing::Xs, density)).child(
         card(body, palette)
-            .padding_xy(ENGINE_PAD_V, ENGINE_PAD_H)
+            .padding_xy(scaled(ENGINE_PAD_V, density), scaled(ENGINE_PAD_H, density))
             .full_width(),
     )
 }

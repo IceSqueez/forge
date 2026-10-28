@@ -7,7 +7,7 @@ use forge_components::{
     AccentColor, BORDER_THIN, BreadcrumbCrumb, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, Picker, PickerEvent, PickerItem, PickerLabels, Radius, Spacing, ThemeId,
     badge, body_family, card, dropdown, field_hint, field_label, ghost_button_with_icon, icon,
-    mono_family, page_frame, radius, set_body_family, set_mono_family, setting_block,
+    mono_family, page_frame, radius, scaled, set_body_family, set_mono_family, setting_block,
     setting_groups, setting_row, setting_rows, setting_sections, spacing, toggle, tr, with_alpha,
 };
 use forge_storage::{Language, SettingsRepo, reserved_keys};
@@ -494,7 +494,7 @@ impl SettingsView {
             .items_center()
             .justify_between()
             .px(spacing(Spacing::Sm, density))
-            .py(px(7.0))
+            .py(scaled(px(7.0), density))
             .rounded(radius(Radius::Sm))
             .bg(palette.base)
             .border(BORDER_THIN)
@@ -680,8 +680,8 @@ impl SettingsView {
             .bg(palette.shell)
             .border_r(BORDER_THIN)
             .border_color(palette.border_regular)
-            .py(NAV_PAD_V)
-            .px(NAV_PAD_H)
+            .py(scaled(NAV_PAD_V, density))
+            .px(scaled(NAV_PAD_H, density))
             .child(list)
     }
 
@@ -708,7 +708,7 @@ impl SettingsView {
             .items_center()
             .gap(spacing(Spacing::Sm, density))
             .px(spacing(Spacing::Sm, density))
-            .py(NAV_ROW_PAD_V)
+            .py(scaled(NAV_ROW_PAD_V, density))
             .mb(NAV_ROW_MB)
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
@@ -754,7 +754,7 @@ impl SettingsView {
             .h_full()
             .overflow_y_scroll()
             .bg(palette.base)
-            .py(PANE_PAD_V)
+            .py(scaled(PANE_PAD_V, density))
             .px(spacing(Spacing::Lg, density))
             .child(content)
     }
@@ -775,6 +775,7 @@ impl SettingsView {
             Some(tr!("settings_appearance_theme_hint").into()),
             theme_grid,
             palette,
+            density,
         );
 
         let accent_row = setting_row(
@@ -800,6 +801,7 @@ impl SettingsView {
             Some(tr!("settings_appearance_density_subtitle").into()),
             density_rows,
             palette,
+            density,
         );
 
         let fonts_block = setting_block(
@@ -824,6 +826,7 @@ impl SettingsView {
                     cx,
                 )),
             palette,
+            density,
         );
 
         div()
@@ -838,6 +841,7 @@ impl SettingsView {
                     fonts_block.into_any_element(),
                 ],
                 palette,
+                density,
             ))
             .into_any_element()
     }
@@ -1009,7 +1013,7 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .p(px(12.0))
+            .p(scaled(px(12.0), density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(border_color)
@@ -1066,10 +1070,13 @@ impl SettingsView {
                 SettingsPaneHeader::new(SettingsSection::Language)
                     .subtitle(tr!("settings_language_subtitle")),
             )
-            .child(setting_groups([
-                list.into_any_element(),
-                self.region.clone().into_any_element(),
-            ]))
+            .child(setting_groups(
+                [
+                    list.into_any_element(),
+                    self.region.clone().into_any_element(),
+                ],
+                density,
+            ))
             .into_any_element()
     }
 
@@ -1185,10 +1192,13 @@ impl SettingsView {
             .flex()
             .flex_col()
             .child(SettingsPaneHeader::new(SettingsSection::About))
-            .child(setting_groups([
-                card(identity, palette).into_any_element(),
-                self.about.clone().into_any_element(),
-            ]))
+            .child(setting_groups(
+                [
+                    card(identity, palette).into_any_element(),
+                    self.about.clone().into_any_element(),
+                ],
+                density,
+            ))
             .into_any_element()
     }
 
@@ -1259,7 +1269,7 @@ fn choice_row(
     let labels = div()
         .flex()
         .flex_col()
-        .gap(CHOICE_LABEL_GAP)
+        .gap(scaled(CHOICE_LABEL_GAP, density))
         .child(
             div()
                 .font_family(body_family())
@@ -1275,7 +1285,7 @@ fn choice_row(
         .items_center()
         .justify_between()
         .px(spacing(Spacing::Sm, density))
-        .py(CHOICE_PAD_V)
+        .py(scaled(CHOICE_PAD_V, density))
         .rounded(radius(Radius::Sm))
         .border(BORDER_THIN)
         .cursor_pointer()

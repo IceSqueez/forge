@@ -1126,14 +1126,10 @@ impl ChatView {
                 continue;
             }
             let active = self.platform_filter == filter;
-            chips = chips.child(
-                chip(label, ChipGlyph::Dot(dot), active, palette)
-                    .density(density)
-                    .on_click(
-                        id,
-                        cx.listener(move |this, _, _, cx| this.set_platform_filter(filter, cx)),
-                    ),
-            );
+            chips = chips.child(chip(label, ChipGlyph::Dot(dot), active, palette).on_click(
+                id,
+                cx.listener(move |this, _, _, cx| this.set_platform_filter(filter, cx)),
+            ));
         }
         chips = chips.child(
             div()
@@ -1148,7 +1144,6 @@ impl ChatView {
                 self.events_only,
                 palette,
             )
-            .density(density)
             .on_click(
                 "chat-chip-events",
                 cx.listener(|this, _, _, cx| this.toggle_events(cx)),
@@ -1161,7 +1156,6 @@ impl ChatView {
                 self.hide_bots,
                 palette,
             )
-            .density(density)
             .on_click(
                 "chat-chip-hide-bots",
                 cx.listener(|this, _, _, cx| this.toggle_hide_bots(cx)),

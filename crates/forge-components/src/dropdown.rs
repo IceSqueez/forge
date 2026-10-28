@@ -1,3 +1,4 @@
+use crate::ActivePresentation;
 use crate::Elevation;
 use crate::FONT_META;
 use crate::FONT_ROW;
@@ -15,7 +16,7 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::overlay::enter_animation;
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, ESCAPE_KEY, FONT_XXS, body_family, mono_family};
+use crate::tokens::{BORDER_THIN, Density, ESCAPE_KEY, FONT_XXS, body_family, mono_family, scaled};
 
 pub(crate) const DROPDOWN_ROW_HEIGHT: Pixels = px(27.0);
 pub(crate) const DROPDOWN_PADDING: Pixels = px(4.0);
@@ -146,14 +147,18 @@ impl DropdownRow {
     }
 }
 
-pub fn dropdown_group_header(label: impl Into<SharedString>, palette: &ForgePalette) -> Div {
+pub fn dropdown_group_header(
+    label: impl Into<SharedString>,
+    palette: &ForgePalette,
+    density: Density,
+) -> Div {
     div()
         .w_full()
         .flex_none()
         .h(DROPDOWN_ROW_HEIGHT)
         .flex()
         .items_center()
-        .px(ROW_PAD_X)
+        .px(scaled(ROW_PAD_X, density))
         .font_family(mono_family())
         .text_size(FONT_XXS)
         .text_color(palette.text_faint)
@@ -167,7 +172,8 @@ pub(crate) fn dropdown_list_height(row_count: usize) -> Pixels {
 }
 
 impl RenderOnce for DropdownRow {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
         let p = self.palette;
         let ink = if self.current {
             p.text_primary
@@ -203,8 +209,8 @@ impl RenderOnce for DropdownRow {
             .h(DROPDOWN_ROW_HEIGHT)
             .flex()
             .items_center()
-            .gap(ROW_GAP)
-            .px(ROW_PAD_X)
+            .gap(scaled(ROW_GAP, density))
+            .px(scaled(ROW_PAD_X, density))
             .rounded(ROW_RADIUS)
             .cursor_pointer()
             .child(check_slot);

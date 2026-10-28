@@ -6,7 +6,7 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::status::status_dot;
-use crate::tokens::{BORDER_THIN, Density, FONT_XS, Spacing, mono_family, spacing};
+use crate::tokens::{BORDER_THIN, Density, FONT_XS, Spacing, mono_family, scaled, spacing};
 use crate::tooltip::tooltip_lines_builder;
 
 pub const FOOTER_HEIGHT: Pixels = px(24.0);
@@ -63,7 +63,7 @@ pub fn app_footer(
     let mut version_group = div()
         .flex()
         .items_center()
-        .gap(VERSION_GAP)
+        .gap(scaled(VERSION_GAP, density))
         .child(mono_cell(
             SharedString::from(format!("v{version_base}")),
             text_muted,
@@ -80,7 +80,7 @@ pub fn app_footer(
     let left = div()
         .flex()
         .items_center()
-        .gap(LEFT_GAP)
+        .gap(scaled(LEFT_GAP, density))
         .child(mono_cell(app_label, text_muted, FONT_XS))
         .child(mono_cell("·", text_faint, FONT_XS))
         .child(version_group);
@@ -96,14 +96,14 @@ pub fn app_footer(
     let uptime_row = div()
         .flex()
         .items_center()
-        .gap(UPTIME_GAP)
+        .gap(scaled(UPTIME_GAP, density))
         .child(icon(Icon::Clock, CLOCK_ICON_SIZE, text_faint))
         .child(mono_cell(uptime_label, text_secondary, FONT_XS));
 
     let mut right = div()
         .flex()
         .items_center()
-        .gap(RIGHT_GAP)
+        .gap(scaled(RIGHT_GAP, density))
         .child(conn_row)
         .child(mono_cell("·", text_faint, FONT_XS))
         .child(uptime_row);
@@ -131,6 +131,7 @@ pub fn footer_alert(
     color: Rgba,
     details: Vec<SharedString>,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     footer_indicator(
         id,
@@ -140,9 +141,14 @@ pub fn footer_alert(
         color,
         details,
         palette,
+        density,
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "render helper takes each displayed value separately"
+)]
 pub fn footer_indicator(
     id: impl Into<ElementId>,
     glyph: Icon,
@@ -151,12 +157,13 @@ pub fn footer_indicator(
     label_color: Rgba,
     details: Vec<SharedString>,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     div()
         .id(id)
         .flex()
         .items_center()
-        .gap(ALERT_GAP)
+        .gap(scaled(ALERT_GAP, density))
         .child(icon(glyph, ALERT_ICON_SIZE, icon_color))
         .child(mono_cell(label, label_color, FONT_XS))
         .tooltip(tooltip_lines_builder(details, palette))

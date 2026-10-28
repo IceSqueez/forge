@@ -11,8 +11,8 @@ use forge_components::{
     BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_XXS, ForgePalette, Icon, InlineEditEvent,
     InputEvent, OverlayPosition, Spacing, TextInput, ToastAction, ToastKind, badge, body_family,
     chip, confirm_modal, context_menu, ghost_button_with_icon, header_stat, header_stats, icon,
-    inline_edit, menu_divider, menu_item, mono_family, overlay, primary_button_with_icon, spacing,
-    status_dot, toggle, tr,
+    inline_edit, menu_divider, menu_item, mono_family, overlay, primary_button_with_icon, scaled,
+    spacing, status_dot, toggle, tr,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, MouseButton, MouseDownEvent,
@@ -605,7 +605,7 @@ impl TriggersRegistryView {
             .into_any_element()
     }
 
-    fn render_caption(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_caption(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let cols = Self::columns(
             div().into_any_element(),
             self.caption_cell(palette, tr!("triggers_col_name")),
@@ -617,8 +617,8 @@ impl TriggersRegistryView {
         div()
             .w_full()
             .flex_none()
-            .py(CAPTION_PAD_V)
-            .px(CAPTION_PAD_H)
+            .py(scaled(CAPTION_PAD_V, density))
+            .px(scaled(CAPTION_PAD_H, density))
             .bg(palette.shell)
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -627,6 +627,7 @@ impl TriggersRegistryView {
     }
 
     pub(super) fn render_list(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         if self.visible.is_empty() {
             let empty = self.render_empty(palette, cx);
             return div()
@@ -666,7 +667,7 @@ impl TriggersRegistryView {
             .flex()
             .flex_col()
             .bg(palette.base)
-            .child(self.render_caption(palette))
+            .child(self.render_caption(palette, density))
             .child(rows)
             .into_any_element()
     }
@@ -874,7 +875,7 @@ impl TriggersRegistryView {
             .w_full()
             .flex()
             .items_center()
-            .pr(ROW_PAD_R)
+            .pr(scaled(ROW_PAD_R, density))
             .child(select_region)
             .child(on_cell)
             .child(menu_cell);
@@ -998,8 +999,8 @@ impl TriggersRegistryView {
             .flex_col()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(EMPTY_PAD_V)
-            .px(EMPTY_PAD_H)
+            .py(scaled(EMPTY_PAD_V, density))
+            .px(scaled(EMPTY_PAD_H, density))
             .child(tile)
             .child(
                 div()

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, InputEvent,
     OverlayPosition, Radius, SettingRow, Spacing, TextInput, body_family, confirm_modal, error_row,
-    error_row_with_retry, ghost_button, mono_family, overlay, radius, setting_block,
+    error_row_with_retry, ghost_button, mono_family, overlay, radius, scaled, setting_block,
     setting_groups, setting_row, setting_rows, spacing, toggle, tr, with_alpha,
 };
 use forge_hotkey::{DEFAULT_HOLD_CEILING_SECS, HotkeyClient};
@@ -366,10 +366,15 @@ impl SettingsShortcutsView {
         Some(error_row(message.clone(), palette, density).into_any_element())
     }
 
-    fn chord_chip(&self, label: impl Into<SharedString>, palette: &ForgePalette) -> AnyElement {
+    fn chord_chip(
+        &self,
+        label: impl Into<SharedString>,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> AnyElement {
         div()
-            .px(CHIP_PAD_H)
-            .py(CHIP_PAD_V)
+            .px(scaled(CHIP_PAD_H, density))
+            .py(scaled(CHIP_PAD_V, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.surface_overlay)
             .font_family(mono_family())
@@ -395,8 +400,8 @@ impl SettingsShortcutsView {
             controls = controls
                 .child(
                     div()
-                        .px(CHIP_PAD_H)
-                        .py(CHIP_PAD_V)
+                        .px(scaled(CHIP_PAD_H, density))
+                        .py(scaled(CHIP_PAD_V, density))
                         .rounded(radius(Radius::Sm))
                         .bg(with_alpha(palette.brand, TINT_STRONG_FILL_ALPHA))
                         .border(BORDER_THIN)
@@ -413,7 +418,7 @@ impl SettingsShortcutsView {
         } else if let Some(overrides) = self.overrides.loaded() {
             match overrides.chord_of(entry) {
                 Some(chord) => {
-                    controls = controls.child(self.chord_chip(chord.to_owned(), palette))
+                    controls = controls.child(self.chord_chip(chord.to_owned(), palette, density))
                 }
                 None => {
                     controls = controls.child(
@@ -442,7 +447,7 @@ impl SettingsShortcutsView {
             }
         } else {
             controls = controls
-                .child(self.chord_chip(UNKNOWN_CHORD, palette))
+                .child(self.chord_chip(UNKNOWN_CHORD, palette, density))
                 .child(ghost_button(tr!("settings_shortcuts_rebind"), palette).disabled(true));
         }
 
@@ -454,14 +459,14 @@ impl SettingsShortcutsView {
             .row(setting_row(
                 tr!("settings_shortcuts_fixed_enter"),
                 None,
-                self.chord_chip("Enter", palette),
+                self.chord_chip("Enter", palette, density),
                 palette,
                 density,
             ))
             .row(setting_row(
                 tr!("settings_shortcuts_fixed_escape"),
                 None,
-                self.chord_chip("Esc", palette),
+                self.chord_chip("Esc", palette, density),
                 palette,
                 density,
             ));
@@ -471,6 +476,7 @@ impl SettingsShortcutsView {
             Some(tr!("settings_shortcuts_fixed_note").into()),
             rows,
             palette,
+            density,
         )
     }
 
@@ -528,6 +534,7 @@ impl SettingsShortcutsView {
             None,
             setting_rows(palette).row(row),
             palette,
+            density,
         )
     }
 
@@ -615,7 +622,7 @@ impl Render for SettingsShortcutsView {
             self.hold_ceiling_section(&palette, density, cx)
                 .into_any_element(),
         );
-        let body = setting_groups(groups);
+        let body = setting_groups(groups, density);
 
         let header = SettingsPaneHeader::new(SettingsSection::Shortcuts)
             .subtitle(tr!("settings_shortcuts_subtitle"))

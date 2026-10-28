@@ -378,6 +378,7 @@ impl CollectionForm {
                 *value,
                 &palette,
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_field(index, cx)),
+                density,
             ),
             FormControl::Choice { items, selected } => {
                 let label = selected
@@ -408,6 +409,7 @@ impl CollectionForm {
                     cx.listener(move |this, _: &ClickEvent, window, cx| {
                         this.open_choice(index, window, cx)
                     }),
+                    density,
                 );
                 div()
                     .relative()

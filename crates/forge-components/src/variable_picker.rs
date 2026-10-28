@@ -4,6 +4,7 @@ use gpui::{
     Subscription, UniformListScrollHandle, Window, div, uniform_list,
 };
 
+use crate::ActivePresentation;
 use crate::dropdown::{
     DROPDOWN_PADDING, dropdown_group_header, dropdown_list_height, dropdown_row, dropdown_surface,
 };
@@ -289,6 +290,7 @@ impl VariablePicker {
     }
 
     fn render_row(&self, pos: usize, row: PickerRow, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         match row {
             PickerRow::Header(group) => dropdown_group_header(
                 self.groups
@@ -296,6 +298,7 @@ impl VariablePicker {
                     .map(|group| group.title.clone())
                     .unwrap_or_default(),
                 &self.palette,
+                density,
             )
             .into_any_element(),
             PickerRow::Entry(group, entry) => {

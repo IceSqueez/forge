@@ -7,7 +7,8 @@ use forge_audio::{
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, Radius, Spacing, body_family,
     drive_overlay_focus, dropdown, dropdown_list, dropdown_row, ghost_button_with_icon, icon,
-    icon_button, radius, setting_block, setting_groups, setting_row, setting_rows, spacing, tr,
+    icon_button, radius, scaled, setting_block, setting_groups, setting_row, setting_rows, spacing,
+    tr,
 };
 use forge_storage::{DataProvider, SettingsRepo};
 use gpui::{AnyElement, ClickEvent, Context, Entity, FocusHandle, Window, div, prelude::*, px};
@@ -285,7 +286,7 @@ impl SettingsAudioView {
             .justify_between()
             .w_full()
             .px(spacing(Spacing::Sm, density))
-            .py(px(7.0))
+            .py(scaled(px(7.0), density))
             .rounded(radius(Radius::Sm))
             .bg(palette.base)
             .border(BORDER_THIN)
@@ -417,12 +418,15 @@ impl Render for SettingsAudioView {
             .flex()
             .flex_col()
             .child(SettingsPaneHeader::new(SettingsSection::Audio))
-            .child(setting_groups([
-                setting_block(tr!("settings_audio_title"), None, output, &palette)
-                    .into_any_element(),
-                self.routing.clone().into_any_element(),
-                self.voice_gate.clone().into_any_element(),
-            ]))
+            .child(setting_groups(
+                [
+                    setting_block(tr!("settings_audio_title"), None, output, &palette, density)
+                        .into_any_element(),
+                    self.routing.clone().into_any_element(),
+                    self.voice_gate.clone().into_any_element(),
+                ],
+                density,
+            ))
     }
 }
 

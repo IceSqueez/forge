@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use forge_audio::list_output_devices;
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, ForgePalette, Icon, Radius, Spacing, body_family, dropdown,
-    dropdown_list, dropdown_row, icon, radius, slider, spacing, toggle, tr,
+    ActivePresentation, BORDER_THIN, Density, FONT_XS, ForgePalette, Icon, Radius, Spacing,
+    body_family, dropdown, dropdown_list, dropdown_row, icon, radius, scaled, slider, spacing,
+    toggle, tr,
 };
 use forge_storage::{
     set_soundboard_also_headphones, set_soundboard_master_volume, set_soundboard_output_device,
@@ -125,11 +126,15 @@ impl SoundboardView {
             .flex_1()
             .flex()
             .flex_col()
-            .child(field_lite_label(tr!("soundboard_routing_device"), palette))
+            .child(field_lite_label(
+                tr!("soundboard_routing_device"),
+                palette,
+                density,
+            ))
             .child(self.render_device_select(&device_label, palette, cx));
         device_col = device_col.child(
             div()
-                .mt(px(5.0))
+                .mt(scaled(px(5.0), density))
                 .font_family(body_family())
                 .text_size(HINT_FS)
                 .text_color(palette.text_faint)
@@ -144,6 +149,7 @@ impl SoundboardView {
             .child(field_lite_label(
                 tr!("soundboard_routing_volume", pct = pct),
                 palette,
+                density,
             ))
             .child(
                 slider(self.settings.master_volume * 100.0, 0.0, 100.0, palette)
@@ -183,7 +189,7 @@ impl SoundboardView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Sm, density))
-            .p(ROUTING_PAD)
+            .p(scaled(ROUTING_PAD, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -208,14 +214,15 @@ impl SoundboardView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let trigger = div()
             .id("sb-device-trigger")
             .w_full()
             .flex()
             .items_center()
             .justify_between()
-            .py(SELECT_PAD_Y)
-            .px(SELECT_PAD_X)
+            .py(scaled(SELECT_PAD_Y, density))
+            .px(scaled(SELECT_PAD_X, density))
             .rounded(SELECT_RADIUS)
             .border(BORDER_THIN)
             .border_color(palette.border_regular)

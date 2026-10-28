@@ -12,7 +12,7 @@ use crate::palette::{ForgePalette, with_alpha};
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
     BORDER_THIN, Density, FONT_MD, FONT_SM, FONT_XS, Radius, Spacing, body_family, mono_family,
-    radius, spacing,
+    radius, scaled, spacing,
 };
 
 const HEADER_GAP: Pixels = px(12.0);
@@ -258,7 +258,7 @@ impl Render for TypeToConfirm {
         let title_row = div()
             .flex()
             .items_center()
-            .gap(HEADER_GAP)
+            .gap(scaled(HEADER_GAP, density))
             .child(tile)
             .child(
                 div()
@@ -273,7 +273,7 @@ impl Render for TypeToConfirm {
             .w_full()
             .flex()
             .flex_col()
-            .gap(SECTION_STACK_GAP)
+            .gap(scaled(SECTION_STACK_GAP, density))
             .py(spacing(Spacing::Md, density))
             .px(spacing(Spacing::Lg, density))
             .child(title_row)
@@ -326,7 +326,7 @@ impl Render for TypeToConfirm {
 
         let phrase_chip = div()
             .flex_none()
-            .py(CHIP_PAD_Y)
+            .py(scaled(CHIP_PAD_Y, density))
             .px(spacing(Spacing::Xs, density))
             .rounded(radius(Radius::Sm))
             .bg(p.surface_overlay)
@@ -358,7 +358,7 @@ impl Render for TypeToConfirm {
             .w_full()
             .flex()
             .flex_col()
-            .gap(SECTION_STACK_GAP)
+            .gap(scaled(SECTION_STACK_GAP, density))
             .py(spacing(Spacing::Md, density))
             .px(spacing(Spacing::Lg, density))
             .border_t(BORDER_THIN)
@@ -401,7 +401,7 @@ impl Render for TypeToConfirm {
                 div()
                     .flex()
                     .items_center()
-                    .gap(ACTIONS_GAP)
+                    .gap(scaled(ACTIONS_GAP, density))
                     .child(cancel)
                     .child(confirm),
             );

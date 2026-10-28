@@ -8,7 +8,8 @@ use forge_components::FONT_XL;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, FONT_XS, ForgePalette, Icon, Radius, body_family, icon, mono_family, radius, tr,
+    BORDER_THIN, FONT_XS, ForgePalette, Icon, Radius, body_family, icon, mono_family, radius,
+    scaled, tr,
 };
 use forge_platform_core::IntegrationDeclaration;
 use gpui::{
@@ -79,8 +80,8 @@ impl IntegrationsHubView {
         let column = div()
             .w(COLUMN_WIDTH)
             .max_w(relative(COLUMN_MAX_FRACTION))
-            .pt(COLUMN_PAD_TOP)
-            .pb(COLUMN_PAD_BOTTOM)
+            .pt(scaled(COLUMN_PAD_TOP, density))
+            .pb(scaled(COLUMN_PAD_BOTTOM, density))
             .child(hero(palette, density))
             .child(progress(&enabled, hub.len(), palette, density))
             .children(sections)
@@ -111,6 +112,7 @@ impl IntegrationsHubView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let skip = div()
             .id("integrations-welcome-skip")
             .cursor_pointer()
@@ -130,9 +132,9 @@ impl IntegrationsHubView {
             .id("integrations-welcome-enter")
             .flex()
             .items_center()
-            .gap(CTA_GAP)
-            .py(CTA_PAD_V)
-            .px(CTA_PAD_H)
+            .gap(scaled(CTA_GAP, density))
+            .py(scaled(CTA_PAD_V, density))
+            .px(scaled(CTA_PAD_H, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.brand)
             .font_family(body_family())
@@ -154,8 +156,8 @@ impl IntegrationsHubView {
             .flex()
             .items_center()
             .justify_between()
-            .py(BAR_PAD_V)
-            .px(BAR_PAD_H)
+            .py(scaled(BAR_PAD_V, density))
+            .px(scaled(BAR_PAD_H, density))
             .bg(palette.shell)
             .border_t(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -243,8 +245,8 @@ fn progress(
                 .flex()
                 .items_center()
                 .gap(spacing(Spacing::Sm, density))
-                .py(PROGRESS_PAD_V)
-                .px(PROGRESS_PAD_H)
+                .py(scaled(PROGRESS_PAD_V, density))
+                .px(scaled(PROGRESS_PAD_H, density))
                 .bg(palette.shell)
                 .border(BORDER_THIN)
                 .border_color(palette.border_regular)
@@ -276,7 +278,7 @@ fn built_in_note(palette: &ForgePalette, density: Density) -> impl IntoElement {
         .mt(spacing(Spacing::Xxs, density))
         .flex()
         .items_center()
-        .gap(BUILT_IN_GAP)
+        .gap(scaled(BUILT_IN_GAP, density))
         .font_family(body_family())
         .text_size(BUILT_IN_TEXT)
         .text_color(palette.text_faint)

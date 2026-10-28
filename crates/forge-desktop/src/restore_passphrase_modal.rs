@@ -147,7 +147,7 @@ impl Render for RestorePassphraseModal {
             &tr!("restore_passphrase_label"),
             Some(tr!("restore_passphrase_hint").as_str()),
             problem.as_deref(),
-            field_frame(&palette)
+            field_frame(&palette, density)
                 .child(self.passphrase.clone())
                 .into_any_element(),
             density,

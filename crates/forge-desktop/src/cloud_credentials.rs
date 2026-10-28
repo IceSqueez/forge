@@ -3,7 +3,8 @@ use std::sync::{Arc, RwLock};
 
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, Radius, Spacing,
-    TextInput, ToastKind, body_family, card, icon, mono_family, radius, section_label, spacing, tr,
+    TextInput, ToastKind, body_family, card, icon, mono_family, radius, scaled, section_label,
+    spacing, tr,
 };
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
 use forge_storage::{CredentialId, CredentialsRepo};
@@ -556,6 +557,7 @@ impl CloudCredentialsView {
                         palette,
                         cx,
                     ),
+                    density,
                 );
                 (
                     grid,
@@ -618,6 +620,7 @@ impl CloudCredentialsView {
                         palette,
                         cx,
                     ),
+                    density,
                 );
                 let region = self.cred_field(
                     tr!("tts_cloud_field_region"),
@@ -648,15 +651,9 @@ impl CloudCredentialsView {
         if let Some(extra) = extra {
             body = body.child(extra);
         }
-        body = body.child(encryption_note(palette)).child(self.action_row(
-            kind,
-            test_status,
-            can_save,
-            can_test,
-            palette,
-            density,
-            cx,
-        ));
+        body = body
+            .child(encryption_note(palette, density))
+            .child(self.action_row(kind, test_status, can_save, can_test, palette, density, cx));
         if let Some(result) = test_result_row(test_status, palette, density) {
             body = body.child(result);
         }
@@ -671,7 +668,11 @@ impl CloudCredentialsView {
                 tr!("tts_engines_section_credentials"),
                 palette,
             ))
-            .child(card(body, palette).padding(CARD_PAD).full_width())
+            .child(
+                card(body, palette)
+                    .padding(scaled(CARD_PAD, density))
+                    .full_width(),
+            )
             .into_any_element()
     }
 
@@ -692,13 +693,13 @@ impl CloudCredentialsView {
             .flex()
             .items_center()
             .justify_between()
-            .gap(VALUE_BOX_GAP)
+            .gap(scaled(VALUE_BOX_GAP, density))
             .bg(palette.shell)
             .border(BORDER_THIN)
             .border_color(palette.border_input)
             .rounded(BOX_RADIUS)
-            .px(BOX_PAD_X)
-            .py(BOX_PAD_Y)
+            .px(scaled(BOX_PAD_X, density))
+            .py(scaled(BOX_PAD_Y, density))
             .child(div().flex_1().min_w(px(0.0)).child(input));
 
         if let Some((field, revealed)) = eye {
@@ -852,21 +853,21 @@ fn secure_field_id(field: SecureField) -> &'static str {
     }
 }
 
-fn two_col(left: AnyElement, right: AnyElement) -> AnyElement {
+fn two_col(left: AnyElement, right: AnyElement, density: Density) -> AnyElement {
     div()
         .w_full()
         .flex()
-        .gap(GRID_GAP)
+        .gap(scaled(GRID_GAP, density))
         .child(div().flex_1().min_w(px(0.0)).child(left))
         .child(div().flex_1().min_w(px(0.0)).child(right))
         .into_any_element()
 }
 
-fn encryption_note(palette: &ForgePalette) -> impl IntoElement {
+fn encryption_note(palette: &ForgePalette, density: Density) -> impl IntoElement {
     div()
         .flex()
         .items_center()
-        .gap(NOTE_GAP)
+        .gap(scaled(NOTE_GAP, density))
         .child(icon(Icon::Lock, LOCK_GLYPH, palette.success))
         .child(
             div()

@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use forge_components::{FONT_XXS, ForgePalette, Icon, icon, mono_family, tr};
+use forge_components::{
+    ActivePresentation, FONT_XXS, ForgePalette, Icon, icon, mono_family, scaled, tr,
+};
 use forge_overlay::motion::{
     DEFAULT_ENTRANCE_MS, ENTRANCE, ENTRANCE_MS, EXIT, EXIT_MS, INTENSITY, MOTION_MS_MAX,
     MOTION_MS_MIN, NO_MOTION, TEXT_EFFECT, TEXT_STAGGER_CUSTOM, TEXT_STAGGER_MS,
@@ -262,6 +264,7 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
+        let density = cx.density();
         let descriptor = self.handles.kinds.get(&definition.kind_id)?;
         let timeline = motion_timeline(descriptor, &definition.config)?;
 
@@ -271,7 +274,7 @@ impl OverlaysView {
             .flex()
             .flex_wrap()
             .items_center()
-            .gap(LINE_GAP)
+            .gap(scaled(LINE_GAP, density))
             .pt(LINE_TOP)
             .font_family(mono_family())
             .text_size(FONT_XXS)
@@ -282,7 +285,7 @@ impl OverlaysView {
                     .flex_none()
                     .flex()
                     .items_center()
-                    .gap(PART_GAP)
+                    .gap(scaled(PART_GAP, density))
                     .child(
                         div()
                             .text_color(palette.text_faint)
@@ -298,7 +301,7 @@ impl OverlaysView {
                 .flex_none()
                 .flex()
                 .items_center()
-                .gap(REPLAY_GAP)
+                .gap(scaled(REPLAY_GAP, density))
                 .cursor_pointer()
                 .text_color(palette.brand)
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.open_preview_page(cx)))

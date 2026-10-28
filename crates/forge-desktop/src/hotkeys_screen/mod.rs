@@ -1,7 +1,9 @@
 use forge_components::FONT_LABEL;
 use std::sync::Arc;
 
-use forge_components::{BreadcrumbCrumb, Icon, ToastKind, body_family, icon, page_frame, tr};
+use forge_components::{
+    BreadcrumbCrumb, Icon, ToastKind, body_family, icon, page_frame, scaled, tr,
+};
 use forge_events::Event;
 use forge_hotkey::{HotkeyClient, event_kinds};
 use forge_runtime::EventBus;
@@ -341,7 +343,7 @@ impl Render for HotkeysScreenView {
         let header_right = div()
             .flex()
             .items_center()
-            .gap(HEADER_GAP)
+            .gap(scaled(HEADER_GAP, density))
             .child(icon(Icon::Keyboard, HEADER_GLYPH, palette.success))
             .child(
                 div()
@@ -363,8 +365,8 @@ impl Render for HotkeysScreenView {
             .child(
                 div()
                     .w_full()
-                    .py(SCROLL_PAD_Y)
-                    .px(SCROLL_PAD_X)
+                    .py(scaled(SCROLL_PAD_Y, density))
+                    .px(scaled(SCROLL_PAD_X, density))
                     .flex()
                     .flex_col()
                     .child(self.render_hero(&palette, cx))

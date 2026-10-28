@@ -4,7 +4,7 @@ use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
     Radius, Spacing, body_family, card_shell, divider, error_row, ghost_button,
     ghost_button_with_icon, icon, mono_family, primary_button, primary_button_with_icon, radius,
-    secondary_button, spacing, spinner, status_dot, tr, with_alpha,
+    scaled, secondary_button, spacing, spinner, status_dot, tr, with_alpha,
 };
 use forge_platform_twitch::{
     BotLoginError, BotModerator, BotModeratorError, BotStatus, DeviceCodeInfo, TwitchBotAccount,
@@ -316,7 +316,7 @@ impl TwitchBotSection {
             .flex_col()
             .gap(spacing(Spacing::Sm, density))
             .py(spacing(Spacing::Sm, density))
-            .px(ROW_PAD_X);
+            .px(scaled(ROW_PAD_X, density));
         let column = match (&self.login, status) {
             (BotLogin::Requesting, _) => column.child(self.requesting_row(palette, density, cx)),
             (
@@ -607,7 +607,7 @@ impl TwitchBotSection {
             .items_center()
             .gap(spacing(Spacing::Sm, density))
             .py(spacing(Spacing::Xs, density))
-            .px(ROW_PAD_X)
+            .px(scaled(ROW_PAD_X, density))
             .bg(palette.shell)
             .child(
                 div()

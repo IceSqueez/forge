@@ -4,8 +4,8 @@ use forge_components::spacing;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, ConfirmTone, FONT_XS, FONT_XXS, ForgePalette, Icon, OverlayPosition, body_family,
-    confirm_modal, ghost_button_with_icon, overlay, section_label, tr,
+    BORDER_THIN, ConfirmTone, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, OverlayPosition,
+    body_family, confirm_modal, ghost_button_with_icon, overlay, scaled, section_label, tr,
 };
 use forge_events::{Event, LatestChanged};
 use forge_overlay::config::{HEADLINE, PLACEHOLDER, PLATFORM, SUBLINE};
@@ -307,13 +307,13 @@ impl OverlayPropertyPanel {
                     tr!("overlays_latest_section").to_uppercase(),
                     palette,
                 )))
+                .child(div().pb(SECTION_GAP).child(value_card(
+                    self.latest.current(),
+                    palette,
+                    density,
+                )))
                 .child(
-                    div()
-                        .pb(SECTION_GAP)
-                        .child(value_card(self.latest.current(), palette)),
-                )
-                .child(
-                    div().pb(FIELD_GAP).child(reset).child(
+                    div().pb(scaled(FIELD_GAP, density)).child(reset).child(
                         div()
                             .pt(spacing(Spacing::Xxs, density))
                             .font_family(body_family())
@@ -332,14 +332,18 @@ impl OverlayPropertyPanel {
     }
 }
 
-fn value_card(current: Option<&CurrentValue>, palette: &ForgePalette) -> AnyElement {
+fn value_card(
+    current: Option<&CurrentValue>,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
     let card = div()
         .w_full()
         .min_w(px(0.0))
         .flex()
         .flex_col()
-        .gap(VALUE_GAP)
-        .p(NOTICE_PAD)
+        .gap(scaled(VALUE_GAP, density))
+        .p(scaled(NOTICE_PAD, density))
         .rounded(NOTICE_RADIUS)
         .border(BORDER_THIN)
         .border_color(palette.border_regular)

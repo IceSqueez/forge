@@ -15,8 +15,8 @@ use forge_components::{
     SearchState, Spacing, TextInput, ToastKind, badge, body_family, card, chip, confirm_modal,
     empty_state, ghost_button_with_icon, header_stat, header_stats, icon, menu_button,
     menu_divider, menu_item, modal, mono_family, overlay, page_frame, primary_button,
-    primary_button_with_icon, radius, secondary_button, slider, spacing, spinner, tooltip_builder,
-    tr, with_alpha,
+    primary_button_with_icon, radius, scaled, secondary_button, slider, spacing, spinner,
+    tooltip_builder, tr, with_alpha,
 };
 use forge_runtime::{
     MAX_PENDING_PER_QUEUE, MembershipOutcome, QueueIntake, QueueMode, QueueProcessing,
@@ -370,7 +370,7 @@ impl Render for EditQueueModal {
             .flex_col()
             .gap(spacing(Spacing::Xxs, density))
             .py(spacing(Spacing::Sm, density))
-            .px(px(12.0))
+            .px(scaled(px(12.0), density))
             .rounded(CONCURRENCY_BOX_RADIUS)
             .border(BORDER_THIN)
             .border_color(palette.border_input)
@@ -380,7 +380,7 @@ impl Render for EditQueueModal {
                     .w_full()
                     .flex()
                     .items_center()
-                    .gap(px(14.0))
+                    .gap(scaled(px(14.0), density))
                     .child(
                         div().flex_1().child(
                             slider(
@@ -987,7 +987,7 @@ impl QueuesView {
         card(body, palette)
             .full_width()
             .full_height()
-            .padding(CARD_PAD)
+            .padding(scaled(CARD_PAD, density))
             .border_color(border_color)
             .into_any_element()
     }
@@ -1011,7 +1011,7 @@ impl QueuesView {
         let mut name_row = div()
             .flex()
             .items_center()
-            .gap(BAR_GAP)
+            .gap(scaled(BAR_GAP, density))
             .child(name)
             .child(status_badge(spin_id, q.mode, palette, density));
         if not_live {
@@ -1038,7 +1038,7 @@ impl QueuesView {
         let left = div()
             .flex()
             .flex_col()
-            .gap(px(3.0))
+            .gap(scaled(px(3.0), density))
             .child(name_row)
             .child(desc);
 
@@ -1046,7 +1046,7 @@ impl QueuesView {
             .flex()
             .items_start()
             .justify_between()
-            .mb(HEADER_GAP)
+            .mb(scaled(HEADER_GAP, density))
             .child(left)
             .child(self.card_menu(index, q, palette, cx))
             .into_any_element()
@@ -1162,6 +1162,7 @@ impl QueuesView {
                 palette.text_primary,
                 palette.text_faint,
                 palette,
+                density,
             ))
             .child(metric_col(
                 SharedString::from(tr!("queues_metric_pending")),
@@ -1170,6 +1171,7 @@ impl QueuesView {
                 pending_value_color,
                 pending_hint_color,
                 palette,
+                density,
             ))
             .child(metric_col(
                 SharedString::from(tr!("queues_metric_actions")),
@@ -1178,6 +1180,7 @@ impl QueuesView {
                 palette.text_primary,
                 palette.text_faint,
                 palette,
+                density,
             ));
 
         div()
@@ -1229,6 +1232,7 @@ impl QueuesView {
                     fill,
                     palette,
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_mode(id, mode, cx)),
+                    density,
                 )
                 .tooltip(tooltip_builder(hint, palette)),
             );
@@ -1242,6 +1246,7 @@ impl QueuesView {
             None,
             palette,
             cx.listener(move |this, _: &ClickEvent, _, cx| this.free(id, cx)),
+            density,
         )
         .tooltip(tooltip_builder(tr!("queues_free_tooltip"), palette));
 
@@ -1259,6 +1264,7 @@ impl QueuesView {
             cx.listener(move |this, _: &ClickEvent, window, cx| {
                 this.open_configure(id, window, cx)
             }),
+            density,
         );
 
         div()
@@ -1397,7 +1403,6 @@ impl QueuesView {
                     active,
                     palette,
                 )
-                .density(density)
                 .on_click(
                     id,
                     cx.listener(move |this, _: &ClickEvent, _, cx| {
@@ -1573,6 +1578,7 @@ fn metric_col(
     value_color: Rgba,
     hint_color: Rgba,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     div()
         .flex_1()
@@ -1583,7 +1589,7 @@ fn metric_col(
                 .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
-                .mb(px(3.0))
+                .mb(scaled(px(3.0), density))
                 .child(caption),
         )
         .child(
@@ -1676,7 +1682,7 @@ fn status_strip(
         .w_full()
         .flex()
         .items_center()
-        .gap(BAR_GAP)
+        .gap(scaled(BAR_GAP, density))
         .py(spacing(Spacing::Xs, density))
         .px(spacing(Spacing::Sm, density))
         .mb(spacing(Spacing::Sm, density))
@@ -1739,7 +1745,7 @@ fn serial_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyEl
         .w_full()
         .flex()
         .items_center()
-        .gap(BAR_GAP)
+        .gap(scaled(BAR_GAP, density))
         .py(spacing(Spacing::Xs, density))
         .px(spacing(Spacing::Sm, density))
         .mb(spacing(Spacing::Sm, density))
@@ -1821,6 +1827,10 @@ pub(crate) fn running_pill(
     .radius(PILL_RADIUS)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "render helper takes each displayed value and handler separately"
+)]
 fn card_button(
     id: impl Into<gpui::ElementId>,
     glyph: Icon,
@@ -1829,6 +1839,7 @@ fn card_button(
     fill: Option<Rgba>,
     palette: &ForgePalette,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    density: Density,
 ) -> Stateful<Div> {
     let mut btn = div()
         .id(id.into())
@@ -1836,9 +1847,9 @@ fn card_button(
         .flex()
         .items_center()
         .justify_center()
-        .gap(px(5.0))
-        .py(px(5.0))
-        .px(px(11.0))
+        .gap(scaled(px(5.0), density))
+        .py(scaled(px(5.0), density))
+        .px(scaled(px(11.0), density))
         .rounded(radius(Radius::Sm))
         .cursor_pointer()
         .on_click(handler)

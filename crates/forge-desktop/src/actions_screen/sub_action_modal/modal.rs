@@ -4,8 +4,8 @@ use crate::actions_screen::editor::{step_glyph, sub_category_color};
 use crate::actions_screen::files_root_note::files_root_note;
 use forge_components::BORDER_THIN;
 use forge_components::{
-    FONT_XS, FONT_XXS, Spacing, body_family, modal, mono_family, primary_button, secondary_button,
-    spacing, toggle,
+    FONT_XS, FONT_XXS, Spacing, body_family, modal, mono_family, primary_button, scaled,
+    secondary_button, spacing, toggle,
 };
 use forge_registry::SubActionCategory;
 use gpui::FontWeight;
@@ -132,7 +132,7 @@ impl EditSubActionForm {
             .flex_1()
             .flex()
             .flex_col()
-            .gap(TITLE_GAP)
+            .gap(scaled(TITLE_GAP, density))
             .overflow_hidden()
             .child(
                 div()

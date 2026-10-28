@@ -10,7 +10,7 @@ use crate::palette::ForgePalette;
 use crate::presentation::ActivePresentation;
 use crate::tokens::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, body_family, mono_family,
-    radius, spacing,
+    radius, scaled, spacing,
 };
 
 #[derive(IntoElement)]
@@ -540,7 +540,7 @@ impl RenderOnce for RowCard {
         let mut title_col = div()
             .flex()
             .flex_col()
-            .gap(TITLE_META_GAP)
+            .gap(scaled(TITLE_META_GAP, d))
             .child(self.title);
         if let Some(meta) = self.meta {
             title_col = title_col.child(meta);
@@ -765,7 +765,8 @@ impl PadTile {
 }
 
 impl RenderOnce for PadTile {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
         let (bg, border) = if self.selected {
             (self.selected_bg, self.selected_border)
         } else {
@@ -777,8 +778,8 @@ impl RenderOnce for PadTile {
             .border(BORDER_THIN)
             .border_color(border)
             .bg(bg)
-            .py(self.pad_v)
-            .px(self.pad_h);
+            .py(scaled(self.pad_v, density))
+            .px(scaled(self.pad_h, density));
 
         let root = match self.shape {
             PadTileShape::Stacked => {
@@ -1063,7 +1064,7 @@ pub fn stat_card(
 
     grow_cell(
         card(body, palette)
-            .padding_xy(STAT_CARD_PAD_V, STAT_CARD_PAD_H)
+            .padding_xy(STAT_CARD_PAD_V, scaled(STAT_CARD_PAD_H, density))
             .full_width()
             .full_height(),
         STAT_CARD_GROW,

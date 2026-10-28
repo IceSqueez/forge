@@ -4,7 +4,7 @@ use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition,
     Radius, TextInput, body_family, ghost_button_with_icon, icon, modal, modal_width, mono_family,
-    overlay, primary_button, secondary_button, tr,
+    overlay, primary_button, scaled, secondary_button, tr,
 };
 use forge_discord::validate_webhook_url;
 use gpui::{
@@ -198,7 +198,7 @@ impl DiscordWebhookModal {
             .gap(spacing(Spacing::Xs, density))
             .mb(FIELD_MB)
             .child(field_caption(&tr!("discord_modal_name_label"), palette))
-            .child(value_box(palette).child(div().flex_1().min_w(px(0.0)).child(value)));
+            .child(value_box(palette, density).child(div().flex_1().min_w(px(0.0)).child(value)));
 
         if self.original_name.is_some() {
             column = column.child(field_hint(&tr!("discord_modal_name_locked"), palette));
@@ -217,7 +217,7 @@ impl DiscordWebhookModal {
         let entered = !self.url.read(cx).content().trim().is_empty();
         let invalid = entered && !self.url_is_valid(cx);
 
-        let box_row = value_box(palette)
+        let box_row = value_box(palette, density)
             .child(div().flex_1().min_w(px(0.0)).child(self.url.clone()))
             .child(
                 div()
@@ -261,6 +261,7 @@ impl DiscordWebhookModal {
     }
 
     fn render_footer(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let test_label = if self.testing {
             tr!("discord_modal_testing")
         } else {
@@ -277,7 +278,7 @@ impl DiscordWebhookModal {
             .flex()
             .items_center()
             .justify_between()
-            .gap(FOOTER_GAP)
+            .gap(scaled(FOOTER_GAP, density))
             .child(
                 ghost_button_with_icon(Icon::Send, test_label, palette)
                     .height(TEST_HEIGHT)
@@ -290,7 +291,7 @@ impl DiscordWebhookModal {
                 div()
                     .flex()
                     .items_center()
-                    .gap(FOOTER_GAP)
+                    .gap(scaled(FOOTER_GAP, density))
                     .child(secondary_button(tr!("common_cancel"), palette).on_click(
                         "discord-modal-cancel",
                         cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
@@ -308,15 +309,15 @@ impl DiscordWebhookModal {
     }
 }
 
-fn value_box(palette: &ForgePalette) -> gpui::Div {
+fn value_box(palette: &ForgePalette, density: Density) -> gpui::Div {
     div()
         .w_full()
         .flex()
         .items_center()
         .justify_between()
-        .gap(BOX_GAP)
-        .py(BOX_PAD_V)
-        .px(BOX_PAD_H)
+        .gap(scaled(BOX_GAP, density))
+        .py(scaled(BOX_PAD_V, density))
+        .px(scaled(BOX_PAD_H, density))
         .rounded(forge_components::radius(Radius::Md))
         .border(BORDER_THIN)
         .border_color(palette.border_input)
@@ -355,7 +356,7 @@ impl Render for DiscordWebhookModal {
         let body = div()
             .w_full()
             .py(spacing(Spacing::Md, density))
-            .px(BODY_PAD_H)
+            .px(scaled(BODY_PAD_H, density))
             .flex()
             .flex_col()
             .child(self.render_name(&palette, density))

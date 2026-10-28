@@ -6,7 +6,7 @@ use crate::integration_switch::integration_name;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family, health_tile,
-    icon, mono_family, radius, row_card, spacing, tooltip_lines_builder, tr,
+    icon, mono_family, radius, row_card, scaled, spacing, tooltip_lines_builder, tr,
 };
 use forge_registry::{Finding, FormField, HealthSeverity, StepHealth};
 use forge_types::SubActionStep;
@@ -322,7 +322,7 @@ impl ScreenActionsView {
             .trailing(self.render_step_controls(i, total, enabled, palette, cx))
             .idle_background(palette.elevated)
             .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md))
-            .padding_xy(STEP_CARD_PAD_V, STEP_CARD_PAD_H)
+            .padding_xy(STEP_CARD_PAD_V, scaled(STEP_CARD_PAD_H, density))
             .on_click(
                 SharedString::from(format!("actions-step-card-{i}")),
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.open_edit_sub_action(i, cx)),

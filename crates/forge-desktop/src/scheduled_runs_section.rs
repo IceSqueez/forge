@@ -7,7 +7,7 @@ use std::time::Duration;
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
     ToastKind, body_family, card, ghost_button_with_icon, hub_section_header, icon, mono_family,
-    radius, section_label, spacing, tr, with_alpha,
+    radius, scaled, section_label, spacing, tr, with_alpha,
 };
 use forge_runtime::{HandOff, ScheduledRunsHandle, WaitingForQueueWatch, WaitingRuns};
 use forge_storage::{ActionRepo, CatalogChanges, ScheduledRun, ScheduledRunId, ScheduledRunRepo};
@@ -320,19 +320,24 @@ impl ScheduledRunsView {
         let target = spec.target_action_id;
         let busy = self.busy.contains(&id);
 
-        let mut title = div().flex().items_center().gap(ROW_GAP).child(
+        let mut title =
             div()
-                .id(("sched-target", index))
-                .cursor_pointer()
-                .font_family(mono_family())
-                .text_size(FONT_SM)
-                .text_color(palette.text_primary)
-                .hover(|s| s.underline())
-                .on_click(
-                    cx.listener(move |this, _: &ClickEvent, _, cx| this.open_action(target, cx)),
-                )
-                .child(row.title()),
-        );
+                .flex()
+                .items_center()
+                .gap(scaled(ROW_GAP, density))
+                .child(
+                    div()
+                        .id(("sched-target", index))
+                        .cursor_pointer()
+                        .font_family(mono_family())
+                        .text_size(FONT_SM)
+                        .text_color(palette.text_primary)
+                        .hover(|s| s.underline())
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            this.open_action(target, cx)
+                        }))
+                        .child(row.title()),
+                );
         if let Some(key) = spec.key.as_deref() {
             title = title.child(running_pill(key.to_owned(), palette, density));
         }
@@ -343,7 +348,7 @@ impl ScheduledRunsView {
             .min_w_0()
             .flex()
             .flex_col()
-            .gap(LINE_GAP)
+            .gap(scaled(LINE_GAP, density))
             .child(title)
             .child(origin);
 
@@ -363,7 +368,7 @@ impl ScheduledRunsView {
             .flex()
             .flex_col()
             .items_end()
-            .gap(LINE_GAP)
+            .gap(scaled(LINE_GAP, density))
             .child(
                 div()
                     .font_family(mono_family())
@@ -422,6 +427,7 @@ impl ScheduledRunsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let caption = div()
             .font_family(body_family())
             .text_size(FONT_XXS)
@@ -430,7 +436,7 @@ impl ScheduledRunsView {
             (Some(source), Some(name)) => div()
                 .flex()
                 .items_center()
-                .gap(LINE_GAP)
+                .gap(scaled(LINE_GAP, density))
                 .child(caption.child(tr!("queues_scheduled_from")))
                 .child(
                     div()
@@ -493,7 +499,7 @@ impl ScheduledRunsView {
             .min_w_0()
             .flex()
             .items_center()
-            .gap(ROW_GAP)
+            .gap(scaled(ROW_GAP, density))
             .child(
                 div()
                     .flex_none()
@@ -630,7 +636,7 @@ impl Render for ScheduledRunsView {
             .child(
                 card(list, &palette)
                     .full_width()
-                    .padding(CARD_PAD)
+                    .padding(scaled(CARD_PAD, density))
                     .border_color(palette.border_input),
             )
     }
@@ -641,7 +647,7 @@ fn row_frame(index: usize, palette: &ForgePalette, density: Density) -> gpui::Di
         .w_full()
         .flex()
         .items_center()
-        .gap(ROW_GAP)
+        .gap(scaled(ROW_GAP, density))
         .py(spacing(Spacing::Xs, density));
     if index == 0 {
         row
@@ -656,7 +662,7 @@ fn empty_strip(caption: String, palette: &ForgePalette, density: Density) -> Any
         .w_full()
         .flex()
         .items_center()
-        .gap(ROW_GAP)
+        .gap(scaled(ROW_GAP, density))
         .py(spacing(Spacing::Xs, density))
         .px(spacing(Spacing::Sm, density))
         .rounded(radius(Radius::Sm))

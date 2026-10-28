@@ -1,7 +1,7 @@
 use forge_components::Density;
 use forge_components::Spacing;
 use forge_components::spacing;
-use forge_components::{ForgePalette, fmt_display_relative, stat_card, tr};
+use forge_components::{ForgePalette, fmt_display_relative, scaled, stat_card, tr};
 use gpui::{AnyElement, Pixels, div, prelude::*, px};
 
 use super::HotkeysScreenView;
@@ -37,7 +37,7 @@ impl HotkeysScreenView {
             .flex()
             .items_stretch()
             .gap(spacing(Spacing::Sm, density))
-            .mb(STAT_MARGIN_B)
+            .mb(scaled(STAT_MARGIN_B, density))
             .child(stat_card(
                 tr!("hotkeys_stat_bindings"),
                 self.total_count().to_string(),

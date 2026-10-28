@@ -1,4 +1,6 @@
-use forge_components::{BORDER_THIN, FONT_SM, FONT_XS, ForgePalette, Radius, body_family, radius};
+use forge_components::{
+    BORDER_THIN, FONT_SM, FONT_XS, ForgePalette, Radius, body_family, radius, scaled,
+};
 use gpui::{
     ClickEvent, Context, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
     Pixels, Window, WindowControlArea, div, prelude::*, px,
@@ -51,12 +53,13 @@ pub(crate) fn brand_mark(
 
 impl Render for TitleBar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
 
         let cluster = div()
             .flex()
             .items_center()
-            .gap(CLUSTER_GAP)
+            .gap(scaled(CLUSTER_GAP, density))
             .child(brand_mark(LOGO_SIZE, radius(Radius::Sm), FONT_XS, &palette))
             .child(
                 div()
@@ -86,7 +89,7 @@ impl Render for TitleBar {
             .flex()
             .items_center()
             .justify_center()
-            .px(TITLEBAR_PAD_H)
+            .px(scaled(TITLEBAR_PAD_H, density))
             .bg(palette.shell)
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)

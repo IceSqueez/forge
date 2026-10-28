@@ -10,7 +10,7 @@ use gpui::{
 
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, FONT_MD, FONT_SM, Radius, body_family, radius};
+use crate::tokens::{BORDER_THIN, FONT_MD, FONT_SM, Radius, body_family, radius, scaled};
 
 const HEADER_H: Pixels = px(56.0);
 const PAD_V: Pixels = px(12.0);
@@ -264,7 +264,7 @@ impl RenderOnce for SideSheet {
         let content = div()
             .flex_1()
             .px(spacing(Spacing::Md, density))
-            .py(PAD_V)
+            .py(scaled(PAD_V, density))
             .overflow_hidden()
             .child(std::mem::replace(
                 &mut self.content,

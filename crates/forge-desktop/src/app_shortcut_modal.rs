@@ -3,8 +3,8 @@ use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, FONT_SECTION_LABEL, ForgePalette, Icon, OverlayPosition, body_family,
-    ghost_button_with_icon, icon, modal, mono_family, overlay, primary_button, secondary_button,
-    tr,
+    ghost_button_with_icon, icon, modal, mono_family, overlay, primary_button, scaled,
+    secondary_button, tr,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, EventEmitter, Pixels, SharedString, Window, div, prelude::*,
@@ -96,9 +96,9 @@ impl AppShortcutModal {
             .min_w_0()
             .flex()
             .items_center()
-            .gap(DISPLAY_GAP)
-            .py(DISPLAY_PAD_V)
-            .px(DISPLAY_PAD_H)
+            .gap(scaled(DISPLAY_GAP, density))
+            .py(scaled(DISPLAY_PAD_V, density))
+            .px(scaled(DISPLAY_PAD_H, density))
             .rounded(DISPLAY_RADIUS)
             .border(BORDER_THIN)
             .border_color(border)
@@ -159,12 +159,13 @@ impl AppShortcutModal {
     }
 
     fn render_footer(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         div()
             .w_full()
             .flex()
             .items_center()
             .justify_end()
-            .gap(FOOTER_GAP)
+            .gap(scaled(FOOTER_GAP, density))
             .child(secondary_button(tr!("common_cancel"), palette).on_click(
                 "app-shortcut-cancel",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
@@ -189,7 +190,7 @@ impl Render for AppShortcutModal {
         let body = div()
             .w_full()
             .py(spacing(Spacing::Md, density))
-            .px(BODY_PAD_H)
+            .px(scaled(BODY_PAD_H, density))
             .child(self.render_chord(&palette, cx));
 
         let card = modal(tr!(self.entry.label_key), body, &palette)

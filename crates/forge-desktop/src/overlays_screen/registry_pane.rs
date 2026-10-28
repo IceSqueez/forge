@@ -7,7 +7,7 @@ use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, FONT_XXS, ForgePalette, Icon, MenuPlacement, body_family, icon, menu_button,
-    menu_divider, menu_item, mono_family, pad_tile, toggle, tooltip_builder, tr,
+    menu_divider, menu_item, mono_family, pad_tile, scaled, toggle, tooltip_builder, tr,
 };
 use forge_storage::{OverlayDefinition, OverlayId};
 use gpui::{
@@ -48,6 +48,7 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         div()
             .flex_none()
             .w(PANE_W)
@@ -59,21 +60,21 @@ impl OverlaysView {
             .bg(palette.shell)
             .border_r(BORDER_THIN)
             .border_color(palette.border_regular)
-            .child(self.render_pane_header(palette))
+            .child(self.render_pane_header(palette, density))
             .child(self.render_list(palette, cx))
             .child(self.render_add_bar(palette, cx))
             .into_any_element()
     }
 
-    fn render_pane_header(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_pane_header(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         div()
             .flex_none()
             .flex()
             .items_center()
             .justify_between()
-            .px(PANE_HEAD_PAD_H)
-            .pt(PANE_HEAD_PAD_TOP)
-            .pb(PANE_HEAD_PAD_BOTTOM)
+            .px(scaled(PANE_HEAD_PAD_H, density))
+            .pt(scaled(PANE_HEAD_PAD_TOP, density))
+            .pb(scaled(PANE_HEAD_PAD_BOTTOM, density))
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(
@@ -101,9 +102,9 @@ impl OverlaysView {
             .flex_1()
             .min_h(px(0.0))
             .overflow_y_scroll()
-            .px(LIST_PAD_H)
-            .pt(LIST_PAD_TOP)
-            .pb(LIST_PAD_BOTTOM);
+            .px(scaled(LIST_PAD_H, density))
+            .pt(scaled(LIST_PAD_TOP, density))
+            .pb(scaled(LIST_PAD_BOTTOM, density));
 
         if self.registry.overlays.is_empty() {
             let message = if self.registry.loading {
@@ -212,7 +213,7 @@ impl OverlaysView {
             .items_center()
             .gap(spacing(Spacing::Sm, density))
             .px(spacing(Spacing::Sm, density))
-            .py(ROW_PAD_V)
+            .py(scaled(ROW_PAD_V, density))
             .mb(ROW_MB)
             .rounded(ROW_RADIUS)
             .border_l(ROW_STRIPE_W)
@@ -310,7 +311,7 @@ impl OverlaysView {
         let density = cx.density();
         div()
             .flex_none()
-            .px(FOOTER_PAD_H)
+            .px(scaled(FOOTER_PAD_H, density))
             .py(spacing(Spacing::Sm, density))
             .border_t(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -337,7 +338,7 @@ fn empty_note(message: String, palette: &ForgePalette, density: Density) -> impl
     div()
         .w_full()
         .px(spacing(Spacing::Sm, density))
-        .py(EMPTY_PAD_V)
+        .py(scaled(EMPTY_PAD_V, density))
         .font_family(body_family())
         .text_size(FONT_XXS)
         .text_color(palette.text_faint)

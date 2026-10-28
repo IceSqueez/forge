@@ -14,7 +14,7 @@ use gpui::{
 
 use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
-use crate::tokens::{BORDER_THIN, Radius, body_family, mono_family, radius};
+use crate::tokens::{BORDER_THIN, Radius, body_family, mono_family, radius, scaled};
 
 const HEALTH_TILE: Pixels = px(18.0);
 const HEALTH_CORNER: Pixels = px(5.0);
@@ -68,7 +68,7 @@ pub fn integration_inactive_badge(
         .flex()
         .items_center()
         .gap(spacing(Spacing::Xxs, density))
-        .py(INACTIVE_PAD_V)
+        .py(scaled(INACTIVE_PAD_V, density))
         .px(spacing(Spacing::Xs, density))
         .whitespace_nowrap()
         .rounded(radius(Radius::Sm))
@@ -93,8 +93,8 @@ pub fn integration_disabled_reason(
         .flex()
         .items_center()
         .gap(spacing(Spacing::Xxs, density))
-        .py(REASON_PAD_V)
-        .px(REASON_PAD_H)
+        .py(scaled(REASON_PAD_V, density))
+        .px(scaled(REASON_PAD_H, density))
         .whitespace_nowrap()
         .rounded(radius(Radius::Sm))
         .bg(with_alpha(palette.danger, REASON_FILL_ALPHA))
@@ -150,9 +150,9 @@ impl RenderOnce for IntegrationDisabledNotice {
             .flex_none()
             .flex()
             .items_center()
-            .gap(ENABLE_GAP)
-            .py(ENABLE_PAD_V)
-            .px(ENABLE_PAD_H)
+            .gap(scaled(ENABLE_GAP, density))
+            .py(scaled(ENABLE_PAD_V, density))
+            .px(scaled(ENABLE_PAD_H, density))
             .whitespace_nowrap()
             .rounded(radius(Radius::Sm))
             .border(BORDER_THIN)
@@ -175,8 +175,8 @@ impl RenderOnce for IntegrationDisabledNotice {
             .w_full()
             .flex()
             .items_center()
-            .gap(NOTICE_GAP)
-            .py(NOTICE_PAD_V)
+            .gap(scaled(NOTICE_GAP, density))
+            .py(scaled(NOTICE_PAD_V, density))
             .pl(spacing(Spacing::Sm, density))
             .pr(spacing(Spacing::Xs, density))
             .rounded(radius(Radius::Sm))

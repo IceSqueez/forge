@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use forge_components::{
     BORDER_THIN, ChipGlyph, FONT_XS, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput,
     body_family, chip, ghost_button_with_icon, icon, integration_disabled_notice, modal,
-    mono_family, overlay, primary_button, radius, secondary_button, spacing, toggle, tr,
+    mono_family, overlay, primary_button, radius, scaled, secondary_button, spacing, toggle, tr,
     with_alpha,
 };
 use forge_types::ClipId;
@@ -365,9 +365,9 @@ impl ClipEditor {
             .min_w_0()
             .flex()
             .items_center()
-            .gap(KEY_DISPLAY_GAP)
+            .gap(scaled(KEY_DISPLAY_GAP, density))
             .h(KEY_BUTTON_HEIGHT)
-            .px(KEY_DISPLAY_PAD_H)
+            .px(scaled(KEY_DISPLAY_PAD_H, density))
             .rounded(KEY_DISPLAY_RADIUS)
             .border(BORDER_THIN)
             .border_color(border)
@@ -509,14 +509,12 @@ impl Render for ClipEditor {
             let color = category_color(cat, &palette);
             let value = (*cat).to_owned();
             category_row = category_row.child(
-                chip(category_label(cat), ChipGlyph::Dot(color), active, &palette)
-                    .density(density)
-                    .on_click(
-                        ("sb-modal-cat", idx),
-                        cx.listener(move |this, _: &ClickEvent, _, cx| {
-                            this.set_category(value.clone(), cx)
-                        }),
-                    ),
+                chip(category_label(cat), ChipGlyph::Dot(color), active, &palette).on_click(
+                    ("sb-modal-cat", idx),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.set_category(value.clone(), cx)
+                    }),
+                ),
             );
         }
 
@@ -559,21 +557,25 @@ impl Render for ClipEditor {
             .child(field_lite_label(
                 tr!("soundboard_modal_section_name"),
                 &palette,
+                density,
             ))
             .child(div().child(self.name_input.clone()))
             .child(field_lite_label(
                 tr!("soundboard_modal_section_category"),
                 &palette,
+                density,
             ))
             .child(category_row)
             .child(field_lite_label(
                 tr!("soundboard_modal_section_file"),
                 &palette,
+                density,
             ))
             .child(file_row)
             .child(field_lite_label(
                 tr!("soundboard_modal_section_playback"),
                 &palette,
+                density,
             ))
             .child(loop_row);
 
@@ -582,6 +584,7 @@ impl Render for ClipEditor {
                 .child(field_lite_label(
                     tr!("soundboard_modal_section_key"),
                     &palette,
+                    density,
                 ))
                 .child(key_field);
         }

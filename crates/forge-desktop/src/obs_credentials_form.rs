@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_components::{ActivePresentation, Icon, TextInput, icon, tr};
+use forge_components::{ActivePresentation, Icon, TextInput, icon, scaled, tr};
 use forge_events::EventPublisher;
 use forge_storage::{CredentialsRepo, SettingsRepo, set_bool_setting};
 use gpui::{
@@ -338,7 +338,7 @@ impl Render for ObsCredentialsForm {
             .w_full()
             .flex()
             .flex_col()
-            .mb(FIELD_BLOCK_GAP)
+            .mb(scaled(FIELD_BLOCK_GAP, density))
             .child(field_label(
                 tr!("obs_connect_field_password"),
                 Some(tr!("obs_connect_password_note")),
@@ -346,8 +346,8 @@ impl Render for ObsCredentialsForm {
                 density,
             ))
             .child(
-                input_box(password_focused, &palette)
-                    .gap(BOX_PAD_H)
+                input_box(password_focused, &palette, density)
+                    .gap(scaled(BOX_PAD_H, density))
                     .child(self.password.clone())
                     .child(eye),
             );
@@ -356,7 +356,7 @@ impl Render for ObsCredentialsForm {
         let banner: Option<AnyElement> = self
             .banner
             .as_ref()
-            .map(|status| status.strip("obs-connect-banner-spin", BANNER_LOOK, &palette));
+            .map(|status| status.strip("obs-connect-banner-spin", BANNER_LOOK, &palette, density));
         let buttons = form_buttons(
             FormButtons {
                 test_id: "obs-connect-test",

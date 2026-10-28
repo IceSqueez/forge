@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, TextInput, body_family, grow_cell,
-    icon, mono_family, radius, spinner, toggle, tr, with_alpha,
+    icon, mono_family, radius, scaled, spinner, toggle, tr, with_alpha,
 };
 use forge_storage::{SettingsRepo, get_bool_setting, set_bool_setting};
 use gpui::{
@@ -191,19 +191,19 @@ pub(crate) fn endpoint_row(
         .flex()
         .flex_col()
         .child(field_label(fields.host_label, None, palette, density))
-        .child(input_box(fields.host_focused, palette).child(fields.host.clone()));
+        .child(input_box(fields.host_focused, palette, density).child(fields.host.clone()));
     let port_field = div()
         .flex()
         .flex_col()
         .child(field_label(fields.port_label, None, palette, density))
-        .child(input_box(fields.port_focused, palette).child(fields.port.clone()));
+        .child(input_box(fields.port_focused, palette, density).child(fields.port.clone()));
 
     div()
         .w_full()
         .flex()
         .items_start()
         .gap(spacing(Spacing::Sm, density))
-        .mb(FIELD_BLOCK_GAP)
+        .mb(scaled(FIELD_BLOCK_GAP, density))
         .child(grow_cell(host_field, HOST_CELL_GROW))
         .child(grow_cell(port_field, PORT_CELL_GROW))
         .into_any_element()
@@ -240,25 +240,25 @@ pub(crate) fn field_label(
     row
 }
 
-pub(crate) fn box_frame(palette: &ForgePalette) -> gpui::Div {
+pub(crate) fn box_frame(palette: &ForgePalette, density: Density) -> gpui::Div {
     div()
         .w_full()
         .flex()
         .items_center()
-        .py(BOX_PAD_V)
-        .px(BOX_PAD_H)
+        .py(scaled(BOX_PAD_V, density))
+        .px(scaled(BOX_PAD_H, density))
         .rounded(BOX_RADIUS)
         .border(BORDER_THIN)
         .bg(palette.shell)
 }
 
-pub(crate) fn input_box(focused: bool, palette: &ForgePalette) -> gpui::Div {
+pub(crate) fn input_box(focused: bool, palette: &ForgePalette, density: Density) -> gpui::Div {
     let border = if focused {
         palette.border_active
     } else {
         palette.border_input
     };
-    box_frame(palette).border_color(border)
+    box_frame(palette, density).border_color(border)
 }
 
 pub(crate) fn mono_box_text(text: impl Into<SharedString>, palette: &ForgePalette) -> gpui::Div {
@@ -357,7 +357,7 @@ fn flag_row<V: 'static>(
         .flex()
         .items_center()
         .justify_between()
-        .py(TOGGLE_ROW_PAD_V)
+        .py(scaled(TOGGLE_ROW_PAD_V, density))
         .child(
             div()
                 .flex()
@@ -401,6 +401,7 @@ impl AttemptStatus {
         spinner_id: &'static str,
         look: StripLook,
         palette: &ForgePalette,
+        density: Density,
     ) -> AnyElement {
         let content = match self {
             AttemptStatus::Busy(label) => StripContent {
@@ -428,7 +429,7 @@ impl AttemptStatus {
                 detail: Some((detail.clone(), palette.text_muted)),
             },
         };
-        outcome_strip(content, look, palette)
+        outcome_strip(content, look, palette, density)
     }
 }
 
@@ -436,7 +437,7 @@ pub(crate) fn strip_icon(glyph: Icon, tint: Rgba) -> AnyElement {
     icon(glyph, STRIP_GLYPH, tint).into_any_element()
 }
 
-pub(crate) fn strip_frame(look: StripLook, palette: &ForgePalette) -> gpui::Div {
+pub(crate) fn strip_frame(look: StripLook, palette: &ForgePalette, density: Density) -> gpui::Div {
     div()
         .w_full()
         .flex()
@@ -444,7 +445,7 @@ pub(crate) fn strip_frame(look: StripLook, palette: &ForgePalette) -> gpui::Div 
         .gap(look.gap)
         .py(look.pad_v)
         .px(look.pad_h)
-        .my(STRIP_MARGIN)
+        .my(scaled(STRIP_MARGIN, density))
         .rounded(BOX_RADIUS)
         .border(BORDER_THIN)
         .bg(palette.shell)
@@ -454,6 +455,7 @@ pub(crate) fn outcome_strip(
     content: StripContent,
     look: StripLook,
     palette: &ForgePalette,
+    density: Density,
 ) -> AnyElement {
     let mut text = div().flex_1().min_w(px(0.0)).flex().flex_col().child(
         div()
@@ -473,7 +475,7 @@ pub(crate) fn outcome_strip(
         );
     }
 
-    strip_frame(look, palette)
+    strip_frame(look, palette, density)
         .border_color(content.accent)
         .child(content.indicator)
         .child(text)
@@ -505,9 +507,9 @@ pub(crate) fn form_buttons<V: 'static>(
         .flex()
         .items_center()
         .justify_center()
-        .gap(BUTTON_GAP)
-        .py(BUTTON_PAD_V)
-        .px(GHOST_PAD_H)
+        .gap(scaled(BUTTON_GAP, density))
+        .py(scaled(BUTTON_PAD_V, density))
+        .px(scaled(GHOST_PAD_H, density))
         .rounded(radius(Radius::Sm))
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
@@ -536,8 +538,8 @@ pub(crate) fn form_buttons<V: 'static>(
         .flex()
         .items_center()
         .justify_center()
-        .gap(BUTTON_GAP)
-        .py(BUTTON_PAD_V)
+        .gap(scaled(BUTTON_GAP, density))
+        .py(scaled(BUTTON_PAD_V, density))
         .px(spacing(Spacing::Md, density))
         .rounded(radius(Radius::Sm))
         .bg(palette.brand)
@@ -561,7 +563,7 @@ pub(crate) fn form_buttons<V: 'static>(
         .w_full()
         .flex()
         .items_center()
-        .gap(BUTTON_ROW_GAP)
+        .gap(scaled(BUTTON_ROW_GAP, density))
         .child(test)
         .child(submit)
         .into_any_element()

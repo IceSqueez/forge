@@ -5,7 +5,7 @@ use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_MD, FONT_XS, ForgePalette, Icon, Radius,
-    body_family, grow_cell, icon, mono_family, page_frame, radius, status_dot, tr,
+    body_family, grow_cell, icon, mono_family, page_frame, radius, scaled, status_dot, tr,
 };
 use gpui::{
     AnyElement, AnyView, ClickEvent, Context, EventEmitter, FontWeight, Pixels, Rgba, SharedString,
@@ -75,8 +75,8 @@ impl ConnectPage {
             .w_full()
             .flex()
             .items_stretch()
-            .gap(COLUMN_GAP)
-            .mb(SECTION_GAP)
+            .gap(scaled(COLUMN_GAP, density))
+            .mb(scaled(SECTION_GAP, density))
             .child(grow_cell(
                 guide_card(
                     tr!(self.guide_title_key),
@@ -89,7 +89,7 @@ impl ConnectPage {
                 LEFT_COLUMN_GROW,
             ))
             .child(grow_cell(
-                settings_card(tr!(self.settings_title_key), self.form, palette),
+                settings_card(tr!(self.settings_title_key), self.form, palette, density),
                 RIGHT_COLUMN_GROW,
             ));
 
@@ -97,7 +97,7 @@ impl ConnectPage {
             .w_full()
             .flex()
             .flex_col()
-            .child(div().w_full().mb(SECTION_GAP).child(hero(
+            .child(div().w_full().mb(scaled(SECTION_GAP, density)).child(hero(
                 self.hero_glyph,
                 self.hero_tint,
                 title.clone(),
@@ -112,7 +112,13 @@ impl ConnectPage {
             .flex_1()
             .overflow_y_scroll()
             .bg(palette.base)
-            .child(div().w_full().py(BODY_PAD_V).px(BODY_PAD_H).child(body));
+            .child(
+                div()
+                    .w_full()
+                    .py(scaled(BODY_PAD_V, density))
+                    .px(scaled(BODY_PAD_H, density))
+                    .child(body),
+            );
 
         page_frame(
             vec![
@@ -128,7 +134,7 @@ impl ConnectPage {
             palette,
         )
         .density(density)
-        .header_right(header_status(palette))
+        .header_right(header_status(palette, density))
         .body(scroll)
     }
 }
@@ -164,7 +170,7 @@ fn hero(
         .min_w(px(0.0))
         .flex()
         .flex_col()
-        .gap(HERO_TEXT_GAP)
+        .gap(scaled(HERO_TEXT_GAP, density))
         .child(
             div()
                 .font_family(body_family())
@@ -186,7 +192,7 @@ fn hero(
         .items_center()
         .gap(spacing(Spacing::Md, density))
         .py(spacing(Spacing::Md, density))
-        .px(HERO_PAD_H)
+        .px(scaled(HERO_PAD_H, density))
         .child(tile)
         .child(text)
         .into_any_element()
@@ -218,46 +224,63 @@ fn guide_card(
         .text_size(STEP_TEXT_SIZE)
         .text_color(palette.text_muted)
         .line_height(INTRO_LINE_HEIGHT)
-        .mb(SECTION_GAP)
+        .mb(scaled(SECTION_GAP, density))
         .child(intro);
 
     let body = div()
         .w_full()
         .flex()
         .flex_col()
-        .p(CARD_BODY_PAD)
+        .p(scaled(CARD_BODY_PAD, density))
         .child(intro)
         .children(rows);
 
     card_shell(palette)
         .flex()
         .flex_col()
-        .child(card_header(Icon::InfoCircle, palette.info, title, palette))
+        .child(card_header(
+            Icon::InfoCircle,
+            palette.info,
+            title,
+            palette,
+            density,
+        ))
         .child(body)
         .into_any_element()
 }
 
-fn settings_card(title: String, form: AnyView, palette: &ForgePalette) -> AnyElement {
+fn settings_card(
+    title: String,
+    form: AnyView,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
     let body = div()
         .w_full()
         .flex()
         .flex_col()
-        .p(CARD_BODY_PAD)
+        .p(scaled(CARD_BODY_PAD, density))
         .child(form);
 
     card_shell(palette)
         .flex()
         .flex_col()
-        .child(card_header(Icon::Plug, palette.success, title, palette))
+        .child(card_header(
+            Icon::Plug,
+            palette.success,
+            title,
+            palette,
+            density,
+        ))
         .child(body)
         .into_any_element()
 }
 
-fn header_status(palette: &ForgePalette) -> AnyElement {
+fn header_status(palette: &ForgePalette, density: Density) -> AnyElement {
     div()
         .flex()
         .items_center()
-        .gap(HEADER_STATUS_GAP)
+        .gap(scaled(HEADER_STATUS_GAP, density))
         .child(status_dot(palette.text_faint, HEADER_DOT_SIZE))
         .child(
             div()
@@ -278,14 +301,20 @@ fn card_shell(palette: &ForgePalette) -> gpui::Div {
         .bg(palette.elevated)
 }
 
-fn card_header(glyph: Icon, tint: Rgba, title: String, palette: &ForgePalette) -> impl IntoElement {
+fn card_header(
+    glyph: Icon,
+    tint: Rgba,
+    title: String,
+    palette: &ForgePalette,
+    density: Density,
+) -> impl IntoElement {
     div()
         .w_full()
         .flex()
         .items_center()
-        .gap(CARD_TITLE_GAP)
-        .py(CARD_HEAD_PAD_V)
-        .px(CARD_HEAD_PAD_H)
+        .gap(scaled(CARD_TITLE_GAP, density))
+        .py(scaled(CARD_HEAD_PAD_V, density))
+        .px(scaled(CARD_HEAD_PAD_H, density))
         .border_b(BORDER_THIN)
         .border_color(palette.border_regular)
         .child(icon(glyph, CARD_GLYPH, tint))
@@ -336,7 +365,7 @@ fn step_row(
         .flex()
         .items_start()
         .gap(spacing(Spacing::Sm, density))
-        .py(STEP_PAD_V)
+        .py(scaled(STEP_PAD_V, density))
         .child(
             div()
                 .flex_none()

@@ -180,6 +180,7 @@ impl CollectionList {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let mut titles = div()
             .flex_1()
             .min_w(px(0.0))
@@ -232,7 +233,7 @@ impl CollectionList {
             .into_any_element(),
             CollectionItemAccess::Manageable => self.render_controls(index, item, palette, cx),
         };
-        field_frame(palette)
+        field_frame(palette, density)
             .gap(ROW_GAP)
             .child(titles)
             .child(controls)
@@ -324,7 +325,7 @@ impl Render for CollectionList {
         match &self.load {
             ListLoad::Loading => {
                 column = column.child(
-                    field_frame(&palette)
+                    field_frame(&palette, density)
                         .gap(CONTROL_GAP)
                         .child(spinner(
                             "collection-list-spin",

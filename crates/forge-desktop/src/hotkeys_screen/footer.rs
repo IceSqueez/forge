@@ -3,7 +3,7 @@ use forge_components::FONT_XXS;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, ForgePalette, fmt_display_relative, mono_family, status_dot, tr,
+    BORDER_THIN, ForgePalette, fmt_display_relative, mono_family, scaled, status_dot, tr,
 };
 use gpui::{AnyElement, Pixels, div, prelude::*, px};
 
@@ -56,8 +56,8 @@ impl HotkeysScreenView {
             .flex()
             .items_center()
             .justify_between()
-            .py(FOOTER_PAD_V)
-            .px(FOOTER_PAD_H)
+            .py(scaled(FOOTER_PAD_V, density))
+            .px(scaled(FOOTER_PAD_H, density))
             .border_t(BORDER_THIN)
             .border_color(palette.surface_overlay)
             .bg(palette.shell)

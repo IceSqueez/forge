@@ -32,8 +32,8 @@ mod writes;
 use std::sync::Arc;
 
 use forge_components::{
-    BreadcrumbCrumb, Confirm, FONT_XS, ForgePalette, Icon, ToastKind, body_family, icon,
-    page_frame, tr,
+    BreadcrumbCrumb, Confirm, Density, FONT_XS, ForgePalette, Icon, ToastKind, body_family, icon,
+    page_frame, scaled, tr,
 };
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
@@ -204,7 +204,7 @@ impl OverlaysView {
         cx.notify();
     }
 
-    fn render_header_right(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_header_right(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let (dot, summary) = match self
             .served
             .bind_address
@@ -233,7 +233,7 @@ impl OverlaysView {
         div()
             .flex()
             .items_center()
-            .gap(HEADER_GAP)
+            .gap(scaled(HEADER_GAP, density))
             .child(icon(Icon::Browser, HEADER_GLYPH, dot))
             .child(
                 div()
@@ -269,7 +269,7 @@ impl Render for OverlaysView {
             ],
             &palette,
         )
-        .header_right(self.render_header_right(&palette))
+        .header_right(self.render_header_right(&palette, density))
         .density(density)
         .body(body);
 

@@ -17,7 +17,7 @@ use crate::icons::{Icon, icon, spinner};
 use crate::palette::ForgePalette;
 use crate::status::status_dot;
 use crate::tokens::{
-    BORDER_THIN, FONT_SECTION_LABEL, FONT_XXS, Radius, body_family, mono_family, radius,
+    BORDER_THIN, FONT_SECTION_LABEL, FONT_XXS, Radius, body_family, mono_family, radius, scaled,
 };
 use crate::tooltip::tooltip_builder;
 
@@ -58,7 +58,6 @@ const COMPACT_ICON_ONLY: Pixels = px(12.0);
 const COMPACT_GAP: Pixels = px(5.0);
 const COMPACT_PAD_V: Pixels = px(3.0);
 const GHOST_PAD_H: Pixels = px(9.0);
-const PRIMARY_PAD_H: Pixels = px(10.0);
 const ICON_ONLY_PAD_V: Pixels = px(4.0);
 const ICON_ONLY_PAD_H: Pixels = px(6.0);
 
@@ -129,7 +128,7 @@ pub fn lifecycle_badge(
         .flex()
         .items_center()
         .gap(spacing(Spacing::Xxs, density))
-        .py(BADGE_PAD_V)
+        .py(scaled(BADGE_PAD_V, density))
         .px(spacing(Spacing::Xs, density))
         .rounded(BADGE_RADIUS)
         .bg(palette.surface_overlay)
@@ -276,7 +275,7 @@ impl HubCard {
         self
     }
 
-    fn render_header(&mut self) -> AnyElement {
+    fn render_header(&mut self, density: Density) -> AnyElement {
         let palette = &self.palette;
         let title_color = if self.muted {
             palette.text_secondary
@@ -286,7 +285,7 @@ impl HubCard {
         let title_row = div()
             .flex()
             .items_center()
-            .gap(TITLE_GAP)
+            .gap(scaled(TITLE_GAP, density))
             .mb(TITLE_MB)
             .overflow_hidden()
             .child(
@@ -312,7 +311,7 @@ impl HubCard {
         div()
             .flex()
             .items_start()
-            .gap(HEADER_GAP)
+            .gap(scaled(HEADER_GAP, density))
             .children(self.tile.take())
             .child(div().flex_1().min_w_0().child(title_row).child(description))
             .children(self.trailing.take())
@@ -358,15 +357,15 @@ impl HubCard {
         row.into_any_element()
     }
 
-    fn render_footer(&mut self) -> AnyElement {
+    fn render_footer(&mut self, density: Density) -> AnyElement {
         div()
             .mt_auto()
             .h(FOOTER_HEIGHT)
-            .pt(FOOTER_PAD_TOP)
+            .pt(scaled(FOOTER_PAD_TOP, density))
             .flex_none()
             .flex()
             .items_center()
-            .gap(FOOTER_GAP)
+            .gap(scaled(FOOTER_GAP, density))
             .border_t(BORDER_THIN)
             .border_color(self.palette.border_regular)
             .child(
@@ -385,9 +384,9 @@ impl HubCard {
 impl RenderOnce for HubCard {
     fn render(mut self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let density = cx.density();
-        let header = self.render_header();
+        let header = self.render_header(density);
         let note = self.render_note(density);
-        let footer = self.render_footer();
+        let footer = self.render_footer(density);
         let bg = if self.muted {
             self.palette.shell
         } else {
@@ -401,9 +400,9 @@ impl RenderOnce for HubCard {
             .overflow_hidden()
             .flex()
             .flex_col()
-            .pt(CARD_PAD_TOP)
+            .pt(scaled(CARD_PAD_TOP, density))
             .px(spacing(Spacing::Md, density))
-            .pb(CARD_PAD_BOTTOM)
+            .pb(scaled(CARD_PAD_BOTTOM, density))
             .bg(bg)
             .border(BORDER_THIN)
             .border_color(self.palette.border_regular)
@@ -479,17 +478,21 @@ impl CompactButton {
 }
 
 impl RenderOnce for CompactButton {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
         let palette = self.palette;
         let (ink, glyph_size, pad_v, pad_h) = match (self.tone, self.label.is_some()) {
-            (CompactTone::Primary, _) => {
-                (palette.shell, COMPACT_ICON, COMPACT_PAD_V, PRIMARY_PAD_H)
-            }
+            (CompactTone::Primary, _) => (
+                palette.shell,
+                COMPACT_ICON,
+                scaled(COMPACT_PAD_V, density),
+                spacing(Spacing::Sm, density),
+            ),
             (CompactTone::Ghost, true) => (
                 palette.text_secondary,
                 COMPACT_ICON,
-                COMPACT_PAD_V,
-                GHOST_PAD_H,
+                scaled(COMPACT_PAD_V, density),
+                scaled(GHOST_PAD_H, density),
             ),
             (CompactTone::Ghost, false) => (
                 palette.text_secondary,
@@ -503,7 +506,7 @@ impl RenderOnce for CompactButton {
             .flex_none()
             .flex()
             .items_center()
-            .gap(COMPACT_GAP)
+            .gap(scaled(COMPACT_GAP, density))
             .py(pad_v)
             .px(pad_h)
             .rounded(radius(Radius::Sm))

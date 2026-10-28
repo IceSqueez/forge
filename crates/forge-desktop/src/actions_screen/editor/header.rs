@@ -1,7 +1,7 @@
 use super::*;
 use forge_components::{
     FONT_LG, FONT_XS, FONT_XXS, ForgePalette, Icon, MenuPlacement, Spacing, body_family,
-    ghost_button_with_icon, menu_button, menu_divider, menu_item, spacing, status_dot, tr,
+    ghost_button_with_icon, menu_button, menu_divider, menu_item, scaled, spacing, status_dot, tr,
 };
 use gpui::{AnyElement, ClickEvent, Context, FontWeight, SharedString, Window, div, px};
 
@@ -26,7 +26,7 @@ impl ScreenActionsView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
-            .py(px(1.0))
+            .py(scaled(px(1.0), density))
             .px(spacing(Spacing::Xs, density))
             .rounded(PILL_RADIUS)
             .bg(palette.surface_overlay)

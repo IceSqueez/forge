@@ -3,7 +3,7 @@ use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
     FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, TextInput, body_family,
-    icon, modal, mono_family, overlay, pad_tile, primary_button, secondary_button, tr,
+    icon, modal, mono_family, overlay, pad_tile, primary_button, scaled, secondary_button, tr,
 };
 use forge_storage::OverlayId;
 use gpui::{
@@ -146,9 +146,17 @@ impl OverlayFormModal {
 
     fn render_type_picker(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let density = cx.density();
-        let mut grid = div().w_full().flex().flex_col().gap(TILE_GAP);
+        let mut grid = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(scaled(TILE_GAP, density));
         for chunk in self.types.chunks(TILES_PER_ROW) {
-            let mut row = div().w_full().flex().items_stretch().gap(TILE_GAP);
+            let mut row = div()
+                .w_full()
+                .flex()
+                .items_stretch()
+                .gap(scaled(TILE_GAP, density));
             for choice in chunk {
                 let selected = choice.kind_id == self.kind_id;
                 let pick = choice.kind_id.clone();
@@ -210,7 +218,7 @@ impl OverlayFormModal {
                 div()
                     .flex()
                     .items_center()
-                    .gap(LOCKED_GAP)
+                    .gap(scaled(LOCKED_GAP, density))
                     .child(icon(glyph, LOCKED_GLYPH, palette.text_muted))
                     .child(
                         div()
@@ -231,6 +239,7 @@ impl OverlayFormModal {
     }
 
     fn render_footer(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let confirm = if self.is_rename() {
             tr!("overlays_form_save")
         } else {
@@ -242,7 +251,7 @@ impl OverlayFormModal {
             .flex()
             .items_center()
             .justify_end()
-            .gap(FOOTER_GAP)
+            .gap(scaled(FOOTER_GAP, density))
             .child(secondary_button(tr!("common_cancel"), palette).on_click(
                 "overlay-form-cancel",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
@@ -285,7 +294,7 @@ impl Render for OverlayFormModal {
         let body = div()
             .w_full()
             .py(spacing(Spacing::Md, density))
-            .px(BODY_PAD_H)
+            .px(scaled(BODY_PAD_H, density))
             .flex()
             .flex_col()
             .child(self.render_name(&palette, density))

@@ -9,7 +9,8 @@ use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, CodeEditor, Confirm, ConfirmTone, FONT_XS, FONT_XXS, ForgePalette, Icon,
     InputEvent, OverlayPosition, SaveCode, body_family, confirm_modal, empty_state,
-    ghost_button_with_icon, icon, mono_family, overlay, primary_button_with_icon, status_dot, tr,
+    ghost_button_with_icon, icon, mono_family, overlay, primary_button_with_icon, scaled,
+    status_dot, tr,
 };
 use forge_overlay::{MediaIssue, OVERRIDABLE_FILES, sizing_notice_pending};
 use forge_storage::{OverlayDefinition, OverlayId};
@@ -450,8 +451,8 @@ impl OverlaysView {
             .w_full()
             .flex()
             .items_center()
-            .gap(TABS_GAP)
-            .px(TABS_PAD_H)
+            .gap(scaled(TABS_GAP, density))
+            .px(scaled(TABS_PAD_H, density))
             .py(spacing(Spacing::Xs, density))
             .bg(palette.elevated)
             .border_b(BORDER_THIN)
@@ -474,7 +475,7 @@ impl OverlaysView {
                     .flex()
                     .items_center()
                     .gap(spacing(Spacing::Xs, density))
-                    .px(TAB_PAD_H)
+                    .px(scaled(TAB_PAD_H, density))
                     .py(spacing(Spacing::Xxs, density))
                     .rounded(TAB_RADIUS)
                     .cursor_pointer()
@@ -533,9 +534,14 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
+        let density = cx.density();
         self.selected_definition()?;
         let file = self.editor.code.file;
-        let mut row = div().flex_none().flex().items_center().gap(ACTIONS_GAP);
+        let mut row = div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(scaled(ACTIONS_GAP, density));
 
         if self.is_overridden(file) {
             row = row.child(
@@ -599,7 +605,7 @@ impl OverlaysView {
             .items_center()
             .gap(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Md, density))
-            .py(HINT_PAD_V)
+            .py(scaled(HINT_PAD_V, density))
             .bg(palette.shell)
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -665,8 +671,8 @@ impl OverlaysView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .px(FOOT_PAD_H)
-            .py(FOOT_PAD_V)
+            .px(scaled(FOOT_PAD_H, density))
+            .py(scaled(FOOT_PAD_V, density))
             .bg(palette.shell)
             .border_t(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -711,7 +717,7 @@ impl OverlaysView {
                 .items_center()
                 .gap(spacing(Spacing::Xs, density))
                 .px(spacing(Spacing::Md, density))
-                .py(HINT_PAD_V)
+                .py(scaled(HINT_PAD_V, density))
                 .bg(palette.shell)
                 .border_b(BORDER_THIN)
                 .border_color(palette.border_regular)

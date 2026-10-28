@@ -1,3 +1,4 @@
+use crate::ActivePresentation;
 use crate::FONT_META;
 use gpui::{
     App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce,
@@ -7,7 +8,7 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::status::status_dot;
-use crate::tokens::{Density, body_family};
+use crate::tokens::{body_family, scaled};
 
 type ChipClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -32,7 +33,6 @@ pub struct Chip {
     glyph: ChipGlyph,
     background: Option<Rgba>,
     text_color: Rgba,
-    density: Density,
     id: Option<ElementId>,
     on_click: Option<ChipClick>,
 }
@@ -58,18 +58,12 @@ pub fn chip(
         glyph,
         background,
         text_color,
-        density: Density::default(),
         id: None,
         on_click: None,
     }
 }
 
 impl Chip {
-    pub fn density(mut self, density: Density) -> Self {
-        self.density = density;
-        self
-    }
-
     pub fn on_click(
         mut self,
         id: impl Into<ElementId>,
@@ -82,16 +76,16 @@ impl Chip {
 }
 
 impl RenderOnce for Chip {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
         let text_color = self.text_color;
-        let _ = self.density;
 
         let mut root = div()
             .flex()
             .items_center()
-            .gap(CHIP_GAP)
-            .py(CHIP_PAD_Y)
-            .px(CHIP_PAD_X)
+            .gap(scaled(CHIP_GAP, density))
+            .py(scaled(CHIP_PAD_Y, density))
+            .px(scaled(CHIP_PAD_X, density))
             .rounded(CHIP_RADIUS);
 
         if let Some(background) = self.background {

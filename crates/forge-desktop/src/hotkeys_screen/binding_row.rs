@@ -2,7 +2,7 @@ use forge_components::ActivePresentation;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
     FONT_XXS, ForgePalette, Icon, MenuPlacement, badge, body_family, card, icon, menu_button,
-    menu_divider, menu_item, mono_family, toggle, tr,
+    menu_divider, menu_item, mono_family, scaled, toggle, tr,
 };
 use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
 
@@ -139,7 +139,7 @@ impl HotkeysScreenView {
 
         let mut wrapper = div().w_full().child(
             card(body, palette)
-                .padding_xy(ROW_PAD_V, ROW_PAD_H)
+                .padding_xy(scaled(ROW_PAD_V, density), scaled(ROW_PAD_H, density))
                 .full_width(),
         );
         if !enabled {

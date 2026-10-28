@@ -1,5 +1,7 @@
 use forge_components::FONT_HERO;
-use forge_components::{FONT_XS, ForgePalette, Icon, body_family, card, icon, toggle, tr};
+use forge_components::{
+    ActivePresentation, FONT_XS, ForgePalette, Icon, body_family, card, icon, scaled, toggle, tr,
+};
 use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
 
 use super::{HotkeysScreenView, LABEL_FS};
@@ -43,6 +45,7 @@ impl HotkeysScreenView {
     }
 
     pub(super) fn render_hero(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let label_color = if self.enabled {
             palette.success
         } else {
@@ -52,7 +55,7 @@ impl HotkeysScreenView {
             .w_full()
             .flex()
             .items_center()
-            .gap(HERO_GAP)
+            .gap(scaled(HERO_GAP, density))
             .child(
                 div()
                     .flex_shrink_0()
@@ -91,7 +94,7 @@ impl HotkeysScreenView {
                 div()
                     .flex()
                     .items_center()
-                    .gap(HERO_TOGGLE_GAP)
+                    .gap(scaled(HERO_TOGGLE_GAP, density))
                     .child(
                         div()
                             .font_family(body_family())
@@ -111,10 +114,10 @@ impl HotkeysScreenView {
 
         div()
             .w_full()
-            .mb(HERO_MARGIN_B)
+            .mb(scaled(HERO_MARGIN_B, density))
             .child(
                 card(body, palette)
-                    .padding_xy(HERO_PAD_V, HERO_PAD_H)
+                    .padding_xy(scaled(HERO_PAD_V, density), scaled(HERO_PAD_H, density))
                     .full_width(),
             )
             .into_any_element()

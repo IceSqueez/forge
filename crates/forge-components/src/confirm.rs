@@ -10,7 +10,7 @@ use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{
     BORDER_THIN, Density, FONT_MD, FONT_SM, FONT_XS, ModalSize, Radius, Spacing, body_family,
-    modal_width, mono_family, radius, spacing,
+    modal_width, mono_family, radius, scaled, spacing,
 };
 
 const HEADER_GAP: Pixels = px(12.0);
@@ -188,7 +188,7 @@ impl RenderOnce for ConfirmModal {
         let header = div()
             .flex()
             .items_center()
-            .gap(HEADER_GAP)
+            .gap(scaled(HEADER_GAP, density))
             .child(tile)
             .child(titles);
 
@@ -208,7 +208,10 @@ impl RenderOnce for ConfirmModal {
             .child(hint);
 
         let has_actions = cancel.is_some() || alternate.is_some() || confirm.is_some();
-        let mut actions = div().flex().items_center().gap(ACTIONS_GAP);
+        let mut actions = div()
+            .flex()
+            .items_center()
+            .gap(scaled(ACTIONS_GAP, density));
         for (id, label, handler) in [cancel, alternate].into_iter().flatten() {
             actions = actions.child(secondary_button(label, &palette).on_click(id, handler));
         }

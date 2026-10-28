@@ -10,13 +10,12 @@ use crate::icons::{Icon, icon, spinner};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::presentation::ActivePresentation;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_MD, FONT_XS, Radius, Spacing, body_family, radius, spacing,
+    BORDER_THIN, Density, FONT_MD, FONT_XS, Radius, Spacing, body_family, radius, scaled, spacing,
 };
 
 type ButtonClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 const ICON_LABEL_GAP: Pixels = px(5.0);
-const LABEL_PAD_V: Pixels = px(4.0);
 const LABEL_PAD_H: Pixels = px(12.0);
 const ICON_BUTTON_GROUP: &str = "forge-icon-button";
 
@@ -203,7 +202,7 @@ impl RenderOnce for Button {
         };
 
         let gap = if self.busy || self.leading.is_some() {
-            ICON_LABEL_GAP
+            scaled(ICON_LABEL_GAP, d)
         } else if self.trailing.is_some() {
             spacing(Spacing::Xs, d)
         } else {
@@ -213,7 +212,7 @@ impl RenderOnce for Button {
         let (pad_v, pad_h) = if icon_only {
             (spacing(Spacing::Xs, d), spacing(Spacing::Xs, d))
         } else {
-            (LABEL_PAD_V, LABEL_PAD_H)
+            (spacing(Spacing::Xxs, d), scaled(LABEL_PAD_H, d))
         };
 
         let glyph_size = if icon_only { FONT_MD } else { FONT_XS };

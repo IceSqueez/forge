@@ -38,8 +38,7 @@ impl ActivePresentation for App {
     }
 
     fn density(&self) -> Density {
-        self.try_global::<Presentation>()
-            .map_or_else(Density::default, |presentation| presentation.density)
+        self.global::<Presentation>().density
     }
 
     fn theme(&self) -> ThemeId {

@@ -4,7 +4,7 @@ use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, ResizeEdge, ResizeRange,
-    body_family, icon, install_resize, mono_family, pulse_dot, radius, status_dot, tr,
+    body_family, icon, install_resize, mono_family, pulse_dot, radius, scaled, status_dot, tr,
 };
 use forge_platform_core::{ConnectionAffordance, IntegrationCategory};
 use gpui::{
@@ -263,7 +263,7 @@ impl SidebarNav {
             .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
-            .pt(SECTION_LABEL_PAD_TOP)
+            .pt(scaled(SECTION_LABEL_PAD_TOP, density))
             .pb(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Sm, density))
             .child(SharedString::from(text.resolve().to_uppercase()))
@@ -276,8 +276,8 @@ impl SidebarNav {
             .font_weight(FontWeight::MEDIUM)
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
-            .pt(MINI_LABEL_PAD_TOP)
-            .pb(MINI_LABEL_PAD_BOTTOM)
+            .pt(scaled(MINI_LABEL_PAD_TOP, density))
+            .pb(scaled(MINI_LABEL_PAD_BOTTOM, density))
             .px(spacing(Spacing::Sm, density))
             .child(SharedString::from(text.resolve().to_uppercase()))
             .into_any_element()
@@ -306,8 +306,8 @@ impl SidebarNav {
             .items_center()
             .gap(spacing(Spacing::Sm, density))
             .px(spacing(Spacing::Sm, density))
-            .py(pad_v)
-            .mb(mb)
+            .py(scaled(pad_v, density))
+            .mb(scaled(mb, density))
             .rounded(radius(Radius::Sm))
             .text_color(fg)
             .cursor_pointer()
@@ -392,7 +392,10 @@ impl SidebarNav {
         match entry {
             NavEntry::SectionLabel(text) => Self::section_label(text, palette, density),
             NavEntry::MiniLabel(text) => Self::mini_label(text, palette, density),
-            NavEntry::Gap(height) => div().flex_none().h(height).into_any_element(),
+            NavEntry::Gap(height) => div()
+                .flex_none()
+                .h(scaled(height, density))
+                .into_any_element(),
             NavEntry::SectionLeaf {
                 icon: ic,
                 label,
@@ -483,6 +486,7 @@ fn nav_status(
 
 impl Render for SidebarNav {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
 
         let mut items: Vec<AnyElement> = Vec::new();
@@ -515,16 +519,16 @@ impl Render for SidebarNav {
                     .overflow_y_scroll()
                     .flex()
                     .flex_col()
-                    .px(SIDEBAR_PAD_H)
-                    .pt(SIDEBAR_PAD_TOP)
+                    .px(scaled(SIDEBAR_PAD_H, density))
+                    .pt(scaled(SIDEBAR_PAD_TOP, density))
                     .children(items),
             )
             .child(
                 div()
                     .flex_none()
-                    .px(SIDEBAR_PAD_H)
-                    .pt(DIVIDER_PAD_TOP)
-                    .pb(SIDEBAR_PAD_BOTTOM)
+                    .px(scaled(SIDEBAR_PAD_H, density))
+                    .pt(scaled(DIVIDER_PAD_TOP, density))
+                    .pb(scaled(SIDEBAR_PAD_BOTTOM, density))
                     .border_t(BORDER_THIN)
                     .border_color(palette.border_regular)
                     .child(settings),

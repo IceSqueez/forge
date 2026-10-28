@@ -4,7 +4,7 @@ use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, MenuItem, Radius, Spacing, body_family,
     context_menu, ghost_button_with_icon, menu_header, menu_item, modal, mono_family,
-    primary_button, radius, spacing,
+    primary_button, radius, scaled, spacing,
 };
 use forge_events::Event;
 use forge_registry::{SynthesisSample, declared_variables, synthesize_args};
@@ -405,7 +405,7 @@ impl TestRunModal {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .py(SELECT_PAD_V)
+            .py(scaled(SELECT_PAD_V, density))
             .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Md))
             .bg(palette.shell)
@@ -489,7 +489,7 @@ impl TestRunModal {
                 .flex()
                 .items_center()
                 .justify_center()
-                .p(EMPTY_PAD)
+                .p(scaled(EMPTY_PAD, density))
                 .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
@@ -613,8 +613,8 @@ impl TestRunModal {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(ROW_PAD_V)
-            .px(ROW_PAD_H)
+            .py(scaled(ROW_PAD_V, density))
+            .px(scaled(ROW_PAD_H, density))
             .rounded(radius(Radius::Md))
             .bg(row_bg)
             .border(BORDER_THIN)

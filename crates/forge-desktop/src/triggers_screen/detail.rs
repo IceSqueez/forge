@@ -19,7 +19,7 @@ use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
     Density, FONT_XXS, Icon, InputEvent, Picker, PickerEvent, Radius, ResizeEdge, ResizeRange,
     Spacing, TextInput, body_family, ghost_button_with_icon, icon, install_resize, mono_family,
-    primary_button, radius, row_card, segment, segmented, spacing, status_dot, toggle, tr,
+    primary_button, radius, row_card, scaled, segment, segmented, spacing, status_dot, toggle, tr,
 };
 use forge_registry::effective_config;
 use gpui::{AnyElement, ClickEvent, FontWeight, SharedString};
@@ -508,7 +508,7 @@ impl TriggersRegistryView {
             .min_w(px(0.0))
             .flex()
             .flex_col()
-            .gap(px(2.0))
+            .gap(scaled(px(2.0), density))
             .child(name)
             .child(kind_line);
 
@@ -530,7 +530,7 @@ impl TriggersRegistryView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(HEADER_PAD_V)
+            .py(scaled(HEADER_PAD_V, density))
             .px(spacing(Spacing::Md, density))
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -553,7 +553,7 @@ impl TriggersRegistryView {
             .flex_1()
             .min_h(px(0.0))
             .overflow_y_scroll()
-            .py(BODY_PAD_V)
+            .py(scaled(BODY_PAD_V, density))
             .px(spacing(Spacing::Md, density))
             .flex()
             .flex_col()
@@ -621,8 +621,8 @@ impl TriggersRegistryView {
 
         let card: AnyElement = if detail.fields.is_empty() {
             div()
-                .py(PLACEHOLDER_PAD_V)
-                .px(PLACEHOLDER_PAD_H)
+                .py(scaled(PLACEHOLDER_PAD_V, density))
+                .px(scaled(PLACEHOLDER_PAD_H, density))
                 .italic()
                 .font_family(body_family())
                 .text_size(CFG_VAL_FS)
@@ -734,8 +734,8 @@ impl TriggersRegistryView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(CFG_ROW_PAD_V)
-            .px(CFG_ROW_PAD_H)
+            .py(scaled(CFG_ROW_PAD_V, density))
+            .px(scaled(CFG_ROW_PAD_H, density))
             .when(!last, |row| {
                 row.border_b(BORDER_THIN)
                     .border_color(palette.border_regular)
@@ -776,8 +776,8 @@ impl TriggersRegistryView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(CFG_ROW_PAD_V)
-            .px(CFG_ROW_PAD_H)
+            .py(scaled(CFG_ROW_PAD_V, density))
+            .px(scaled(CFG_ROW_PAD_H, density))
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(label_cell(tr!("triggers_sheet_cooldown_value").into()))
@@ -797,8 +797,8 @@ impl TriggersRegistryView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(CFG_ROW_PAD_V)
-            .px(CFG_ROW_PAD_H)
+            .py(scaled(CFG_ROW_PAD_V, density))
+            .px(scaled(CFG_ROW_PAD_H, density))
             .child(label_cell(tr!("triggers_sheet_cooldown_scope").into()))
             .child(div().flex_1().min_w(px(0.0)).child(scope_toggle));
 
@@ -861,8 +861,8 @@ impl TriggersRegistryView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(CFG_ROW_PAD_V)
-            .px(CFG_ROW_PAD_H)
+            .py(scaled(CFG_ROW_PAD_V, density))
+            .px(scaled(CFG_ROW_PAD_H, density))
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(
@@ -882,8 +882,8 @@ impl TriggersRegistryView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xxs, density))
-            .py(CFG_ROW_PAD_V)
-            .px(CFG_ROW_PAD_H)
+            .py(scaled(CFG_ROW_PAD_V, density))
+            .px(scaled(CFG_ROW_PAD_H, density))
             .font_family(body_family())
             .text_size(CFG_VAL_FS)
             .text_color(palette.text_faint)
@@ -934,9 +934,9 @@ impl TriggersRegistryView {
                 .flex()
                 .flex_col()
                 .items_center()
-                .gap(px(2.0))
-                .py(PLACEHOLDER_PAD_V)
-                .px(PLACEHOLDER_PAD_H)
+                .gap(scaled(px(2.0), density))
+                .py(scaled(PLACEHOLDER_PAD_V, density))
+                .px(scaled(PLACEHOLDER_PAD_H, density))
                 .rounded(radius(Radius::Md))
                 .border(BORDER_THIN)
                 .border_color(palette.border_input)
@@ -948,7 +948,7 @@ impl TriggersRegistryView {
                 .child(tr!("triggers_sheet_used_in_empty_hint"))
                 .into_any_element()
         } else {
-            let mut col = div().flex().flex_col().gap(px(3.0));
+            let mut col = div().flex().flex_col().gap(scaled(px(3.0), density));
             for (action_id, name) in &detail.used_in {
                 let action_id = *action_id;
                 let title = div()
@@ -963,7 +963,7 @@ impl TriggersRegistryView {
                         .leading(icon(Icon::Bolt, ROW_GLYPH, palette.brand))
                         .idle_background(palette.shell)
                         .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Sm))
-                        .padding_xy(USED_ROW_PAD_V, USED_ROW_PAD_H)
+                        .padding_xy(scaled(USED_ROW_PAD_V, density), USED_ROW_PAD_H)
                         .on_click(
                             SharedString::from(format!("triggers-used-in-{action_id}")),
                             cx.listener(move |_this, _: &ClickEvent, _, cx| {

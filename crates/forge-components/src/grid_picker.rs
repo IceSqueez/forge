@@ -21,7 +21,7 @@ use crate::status::badge;
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
     BORDER_THIN, DISABLED_OPACITY, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing,
-    body_family, mono_family, radius, spacing,
+    body_family, mono_family, radius, scaled, spacing,
 };
 use crate::tr;
 
@@ -527,8 +527,8 @@ impl GridPicker {
             .flex_none()
             .flex()
             .items_center()
-            .gap(GRID_HEADER_GAP)
-            .py(GRID_HEADER_PAD_V)
+            .gap(scaled(GRID_HEADER_GAP, density))
+            .py(scaled(GRID_HEADER_PAD_V, density))
             .px(spacing(Spacing::Md, density))
             .border_b(BORDER_THIN)
             .border_color(p.surface_overlay)
@@ -559,8 +559,8 @@ impl GridPicker {
 
         div()
             .flex_none()
-            .pt(GRID_SEARCH_PAD_T)
-            .pb(GRID_SEARCH_PAD_B)
+            .pt(scaled(GRID_SEARCH_PAD_T, density))
+            .pb(scaled(GRID_SEARCH_PAD_B, density))
             .px(spacing(Spacing::Md, density))
             .border_b(BORDER_THIN)
             .border_color(p.surface_overlay)
@@ -578,7 +578,7 @@ impl GridPicker {
             .w(RAIL_W)
             .flex()
             .flex_col()
-            .gap(RAIL_GAP)
+            .gap(scaled(RAIL_GAP, density))
             .py(spacing(Spacing::Sm, density))
             .px(spacing(Spacing::Sm, density))
             .overflow_y_scroll()
@@ -680,7 +680,7 @@ impl GridPicker {
             .min_h(px(0.0))
             .flex()
             .flex_col()
-            .py(GRID_BODY_PAD_V)
+            .py(scaled(GRID_BODY_PAD_V, density))
             .px(spacing(Spacing::Md, density));
 
         if searching {
@@ -721,7 +721,7 @@ impl GridPicker {
                         .flex_col()
                         .items_center()
                         .gap(spacing(Spacing::Sm, density))
-                        .py(GRID_EMPTY_PAD_V)
+                        .py(scaled(GRID_EMPTY_PAD_V, density))
                         .child(icon(glyph, GRID_EMPTY_GLYPH, p.text_faint))
                         .child(
                             div()
@@ -778,7 +778,7 @@ impl GridPicker {
             .flex()
             .items_center()
             .justify_between()
-            .py(GRID_FOOTER_PAD_V)
+            .py(scaled(GRID_FOOTER_PAD_V, density))
             .px(spacing(Spacing::Md, density))
             .bg(p.shell)
             .border_t(BORDER_THIN)
@@ -1010,7 +1010,7 @@ fn render_card_el(
         .flex()
         .flex_col()
         .py(GRID_CARD_PAD_V)
-        .px(GRID_CARD_PAD_H)
+        .px(scaled(GRID_CARD_PAD_H, density))
         .rounded(radius(Radius::Md))
         .border(BORDER_THIN)
         .border_color(edge)
@@ -1081,10 +1081,10 @@ fn grid_rail_entry(
         .id(id.into())
         .flex()
         .items_center()
-        .gap(RAIL_ENTRY_GAP)
+        .gap(scaled(RAIL_ENTRY_GAP, density))
         .w_full()
         .py(spacing(Spacing::Xs, density))
-        .px(RAIL_ENTRY_PAD_H)
+        .px(scaled(RAIL_ENTRY_PAD_H, density))
         .rounded(radius(Radius::Sm))
         .bg(bg)
         .cursor_pointer()

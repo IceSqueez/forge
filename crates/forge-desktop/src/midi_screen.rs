@@ -15,7 +15,7 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, FONT_XS, ForgePalette, Icon, MenuPlacement, Radius, SectionLabel,
     ToastAction, ToastKind, badge, body_family, card, error_row_with_retry, ghost_button_with_icon,
     header_status, icon, menu_button, menu_divider, menu_item, mono_family, pad_tile, page_frame,
-    radius, status_dot, toggle, tr,
+    radius, scaled, status_dot, toggle, tr,
 };
 use forge_midi::event_kinds::{INPUT_PREFIX, PORT_PREFIX};
 use forge_midi::{MidiClient, MidiMonitorEvent, SwitchableMidiSink};
@@ -907,6 +907,7 @@ impl MidiScreenView {
     }
 
     fn render_hero(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let label_color = if self.enabled {
             palette.success
         } else {
@@ -916,7 +917,7 @@ impl MidiScreenView {
             .w_full()
             .flex()
             .items_center()
-            .gap(HERO_GAP)
+            .gap(scaled(HERO_GAP, density))
             .child(
                 div()
                     .flex_shrink_0()
@@ -955,7 +956,7 @@ impl MidiScreenView {
                 div()
                     .flex()
                     .items_center()
-                    .gap(HERO_TOGGLE_GAP)
+                    .gap(scaled(HERO_TOGGLE_GAP, density))
                     .child(
                         div()
                             .font_family(body_family())
@@ -975,10 +976,10 @@ impl MidiScreenView {
 
         div()
             .w_full()
-            .mb(HERO_MARGIN_B)
+            .mb(scaled(HERO_MARGIN_B, density))
             .child(
                 card(body, palette)
-                    .padding_xy(HERO_PAD_V, HERO_PAD_H)
+                    .padding_xy(scaled(HERO_PAD_V, density), scaled(HERO_PAD_H, density))
                     .full_width(),
             )
             .into_any_element()
@@ -1127,7 +1128,7 @@ impl MidiScreenView {
             .id(("midi-device", index))
             .w_full()
             .py(spacing(Spacing::Sm, density))
-            .px(DEVICE_PAD_H)
+            .px(scaled(DEVICE_PAD_H, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(border)
@@ -1147,7 +1148,7 @@ impl MidiScreenView {
         wrapper.into_any_element()
     }
 
-    fn render_monitor(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_monitor(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let mut lines = div()
             .w_full()
             .font_family(mono_family())
@@ -1160,7 +1161,7 @@ impl MidiScreenView {
                 div()
                     .w_full()
                     .flex()
-                    .gap(MONITOR_GAP)
+                    .gap(scaled(MONITOR_GAP, density))
                     .child(
                         div()
                             .w(MONITOR_KIND_W)
@@ -1206,7 +1207,11 @@ impl MidiScreenView {
         div()
             .w_full()
             .mt(MONITOR_MT)
-            .child(card(body, palette).padding(MONITOR_PAD).full_width())
+            .child(
+                card(body, palette)
+                    .padding(scaled(MONITOR_PAD, density))
+                    .full_width(),
+            )
             .into_any_element()
     }
 
@@ -1283,8 +1288,8 @@ impl MidiScreenView {
                 div()
                     .flex_none()
                     .min_w(SIG_MIN_W)
-                    .py(SIG_PAD_V)
-                    .px(SIG_PAD_H)
+                    .py(scaled(SIG_PAD_V, density))
+                    .px(scaled(SIG_PAD_H, density))
                     .rounded(SIG_RADIUS)
                     .border(BORDER_THIN)
                     .border_color(palette.border_regular)
@@ -1352,7 +1357,7 @@ impl MidiScreenView {
             .w_full()
             .child(
                 card(body, palette)
-                    .padding_xy(MAP_PAD_V, MAP_PAD_H)
+                    .padding_xy(scaled(MAP_PAD_V, density), scaled(MAP_PAD_H, density))
                     .full_width(),
             )
             .into_any_element()
@@ -1419,7 +1424,7 @@ impl MidiScreenView {
             .child(
                 div()
                     .ml(spacing(Spacing::Xs, density))
-                    .py(KBD_PAD_V)
+                    .py(scaled(KBD_PAD_V, density))
                     .px(spacing(Spacing::Xs, density))
                     .rounded(KBD_RADIUS)
                     .bg(palette.surface_overlay)
@@ -1457,9 +1462,9 @@ impl MidiScreenView {
             .flex()
             .items_center()
             .justify_center()
-            .gap(LEARN_GAP)
-            .py(LEARN_PAD_V)
-            .px(ADD_BAR_PAD_H)
+            .gap(scaled(LEARN_GAP, density))
+            .py(scaled(LEARN_PAD_V, density))
+            .px(scaled(ADD_BAR_PAD_H, density))
             .rounded(ADD_BAR_RADIUS)
             .border(BORDER_THIN)
             .border_color(accent)
@@ -1506,8 +1511,8 @@ impl MidiScreenView {
             .flex()
             .items_center()
             .justify_between()
-            .py(FOOTER_PAD_V)
-            .px(FOOTER_PAD_H)
+            .py(scaled(FOOTER_PAD_V, density))
+            .px(scaled(FOOTER_PAD_H, density))
             .border_t(BORDER_THIN)
             .border_color(palette.surface_overlay)
             .bg(palette.shell)
@@ -1559,6 +1564,7 @@ impl Render for MidiScreenView {
                 devices = self.live_ports.len() as i64,
                 mappings = self.mappings.len() as i64
             ),
+            density,
         );
 
         let left = grow_cell(
@@ -1567,7 +1573,7 @@ impl Render for MidiScreenView {
                 .flex()
                 .flex_col()
                 .child(self.render_devices(&palette, cx))
-                .child(self.render_monitor(&palette)),
+                .child(self.render_monitor(&palette, density)),
             LEFT_COLUMN_FLEX,
         );
 
@@ -1589,8 +1595,8 @@ impl Render for MidiScreenView {
             .child(
                 div()
                     .w_full()
-                    .py(SCROLL_PAD_Y)
-                    .px(SCROLL_PAD_X)
+                    .py(scaled(SCROLL_PAD_Y, density))
+                    .px(scaled(SCROLL_PAD_X, density))
                     .flex()
                     .flex_col()
                     .child(self.render_hero(&palette, cx))
@@ -1599,7 +1605,7 @@ impl Render for MidiScreenView {
                             .w_full()
                             .flex()
                             .items_start()
-                            .gap(COLUMNS_GAP)
+                            .gap(scaled(COLUMNS_GAP, density))
                             .child(left)
                             .child(right),
                     )

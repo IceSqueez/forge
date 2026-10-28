@@ -1,5 +1,5 @@
 use forge_components::FONT_ROW;
-use forge_components::{ActivePresentation, FONT_LG, Spacing, body_family, icon, spacing};
+use forge_components::{ActivePresentation, FONT_LG, Spacing, body_family, icon, scaled, spacing};
 use gpui::{
     AnyElement, App, FontWeight, IntoElement, ParentElement, Pixels, RenderOnce, SharedString,
     Styled, Window, div, px,
@@ -74,7 +74,7 @@ impl RenderOnce for SettingsPaneHeader {
         match self.subtitle {
             Some(subtitle) => header
                 .gap(spacing(Spacing::Xs, density))
-                .mb(CONTENT_GAP_AFTER_SUBTITLE)
+                .mb(scaled(CONTENT_GAP_AFTER_SUBTITLE, density))
                 .child(
                     div()
                         .font_family(body_family())
@@ -82,7 +82,7 @@ impl RenderOnce for SettingsPaneHeader {
                         .text_color(palette.text_muted)
                         .child(subtitle),
                 ),
-            None => header.mb(CONTENT_GAP_AFTER_TITLE),
+            None => header.mb(scaled(CONTENT_GAP_AFTER_TITLE, density)),
         }
     }
 }

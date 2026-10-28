@@ -4,7 +4,7 @@ use forge_components::Radius;
 use forge_components::Spacing;
 use forge_components::radius;
 use forge_components::spacing;
-use forge_components::{BORDER_THIN, ForgePalette, Icon, ToastKind, body_family, icon, tr};
+use forge_components::{BORDER_THIN, ForgePalette, Icon, ToastKind, body_family, icon, scaled, tr};
 use forge_types::TriggerInstanceId;
 use gpui::{AnyElement, ClickEvent, Context, Keystroke, Pixels, div, prelude::*, px};
 
@@ -211,9 +211,9 @@ impl HotkeysScreenView {
             .flex()
             .items_center()
             .justify_center()
-            .gap(CAPTURE_GAP)
-            .py(CAPTURE_PAD_V)
-            .px(ADD_BAR_PAD_H)
+            .gap(scaled(CAPTURE_GAP, density))
+            .py(scaled(CAPTURE_PAD_V, density))
+            .px(scaled(ADD_BAR_PAD_H, density))
             .rounded(ADD_BAR_RADIUS)
             .border(BORDER_THIN)
             .border_color(palette.success)

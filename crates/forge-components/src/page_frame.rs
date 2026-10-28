@@ -9,7 +9,7 @@ use crate::cards::toolbar_row;
 use crate::palette::ForgePalette;
 use crate::presentation::ActivePresentation;
 use crate::status::status_dot;
-use crate::tokens::{Density, FONT_XS, Spacing, body_family, spacing};
+use crate::tokens::{Density, FONT_XS, Spacing, body_family, scaled, spacing};
 
 const HEADER_STAT_FS: Pixels = FONT_LABEL;
 
@@ -86,11 +86,15 @@ pub fn header_stats(
     row
 }
 
-pub fn header_status(color: Rgba, label: impl Into<SharedString>) -> impl IntoElement {
+pub fn header_status(
+    color: Rgba,
+    label: impl Into<SharedString>,
+    density: Density,
+) -> impl IntoElement {
     div()
         .flex()
         .items_center()
-        .gap(HEADER_STATUS_GAP)
+        .gap(scaled(HEADER_STATUS_GAP, density))
         .text_size(FONT_XS)
         .text_color(color)
         .child(status_dot(color, HEADER_STATUS_DOT))

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use forge_components::{
     ForgePalette, Icon, OverlayPosition, body_family, destructive_button_with_icon, modal, overlay,
-    tr,
+    scaled, tr,
 };
 use forge_events::EventPublisher;
 use forge_storage::{CredentialsRepo, SettingsRepo};
@@ -75,6 +75,7 @@ impl ObsSettingsModal {
     }
 
     fn footer(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let disconnect = destructive_button_with_icon(
             Icon::Logout,
             tr!("widget_header_action_disconnect"),
@@ -90,7 +91,7 @@ impl ObsSettingsModal {
             .flex()
             .items_center()
             .justify_between()
-            .gap(FOOTER_GAP)
+            .gap(scaled(FOOTER_GAP, density))
             .child(
                 div()
                     .flex_1()

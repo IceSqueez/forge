@@ -2,7 +2,7 @@ use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
     BreadcrumbCrumb, FONT_XS, ForgePalette, Icon, ToastKind, body_family, ghost_button_with_icon,
-    icon, mono_family, page_frame, primary_button_with_icon, tr,
+    icon, mono_family, page_frame, primary_button_with_icon, scaled, tr,
 };
 use forge_platform_core::{ConnectionAffordance, IntegrationDeclaration};
 use forge_types::IntegrationId;
@@ -227,8 +227,8 @@ impl Render for IntegrationFailedView {
             .child(
                 div()
                     .w_full()
-                    .py(BODY_PAD_V)
-                    .px(BODY_PAD_H)
+                    .py(scaled(BODY_PAD_V, density))
+                    .px(scaled(BODY_PAD_H, density))
                     .font_family(body_family())
                     .child(self.hero(&palette, cx))
                     .children(disclaimer_block(&self.id, &palette, density)),

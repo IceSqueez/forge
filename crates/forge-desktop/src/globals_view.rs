@@ -16,7 +16,7 @@ use forge_components::{
     TextInput, ToastAction, ToastKind, badge, body_family, chip, column, confirm_modal,
     context_menu, empty_state, header_stat, header_stats, hover_reveal, icon, inline_edit,
     menu_divider, menu_item, modal, mono_family, overlay, page_frame, primary_button,
-    primary_button_with_icon, radius, secondary_button, spacing, status_dot, toggle, tr,
+    primary_button_with_icon, radius, scaled, secondary_button, spacing, status_dot, toggle, tr,
     virtual_table, with_alpha,
 };
 use forge_components::{Confirm, SearchState};
@@ -826,14 +826,10 @@ impl GlobalsView {
             .gap(spacing(Spacing::Xxs, density));
         for (id, label, filter, dot) in chips {
             let active = self.filter == filter;
-            chip_row = chip_row.child(
-                chip(label, ChipGlyph::Dot(dot), active, palette)
-                    .density(density)
-                    .on_click(
-                        id,
-                        cx.listener(move |this, _: &ClickEvent, _, cx| this.set_filter(filter, cx)),
-                    ),
-            );
+            chip_row = chip_row.child(chip(label, ChipGlyph::Dot(dot), active, palette).on_click(
+                id,
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.set_filter(filter, cx)),
+            ));
         }
 
         let search = div().w(px(200.0)).child(self.search.field().clone());
@@ -931,7 +927,7 @@ impl GlobalsView {
                 columns,
                 count,
                 &self.table_scroll,
-                Density::Compact,
+                density.tighter(),
             )
             .build(
                 move |this, ix, _window, cx| {
@@ -953,6 +949,7 @@ impl GlobalsView {
     }
 
     fn build_row(&self, g: &Global, palette: &ForgePalette, cx: &mut Context<Self>) -> DataRow {
+        let density = cx.density();
         let group: SharedString = format!("globals-row-{}", g.name).into();
         let kind = g.kind();
         let name = g.name.clone();
@@ -1009,7 +1006,7 @@ impl GlobalsView {
             .flex()
             .items_center()
             .justify_end()
-            .gap(px(2.0))
+            .gap(scaled(px(2.0), density))
             .child(self.row_action(
                 (gpui::ElementId::from("globals-edit"), name.clone()),
                 Icon::Edit,
@@ -1574,7 +1571,7 @@ impl GlobalsView {
                         div()
                             .flex_none()
                             .w(px(34.0))
-                            .pr(px(12.0))
+                            .pr(scaled(px(12.0), density))
                             .flex()
                             .justify_end()
                             .font_family(mono_family())
@@ -1592,7 +1589,7 @@ impl GlobalsView {
             .border_color(palette.border_regular)
             .rounded(radius(Radius::Md))
             .py(spacing(Spacing::Sm, density))
-            .px(px(12.0))
+            .px(scaled(px(12.0), density))
             .child(listing);
         let body = div()
             .id("globals-inspect-scroll")

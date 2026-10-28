@@ -551,12 +551,14 @@ impl SafetyCopiesView {
     }
 
     fn mode_select(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let trigger = choice_trigger(
             "safety-copies-mode-trigger",
             mode_label(self.settings.mode).into(),
             true,
             palette,
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_menu(cx)),
+            density,
         );
         let mut field = div()
             .relative()

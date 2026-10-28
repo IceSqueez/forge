@@ -8,10 +8,10 @@ use forge_components::spacing;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, FONT_SECTION_LABEL, ForgePalette, Icon, InputEvent, OverlayPosition, Radius,
-    SearchState, TextInput, body_family, dropdown, dropdown_list, dropdown_row, field_label,
-    ghost_button_with_icon, grow_cell, icon, modal, mono_family, overlay, primary_button,
-    secondary_button, tr, with_alpha,
+    BORDER_THIN, Density, FONT_SECTION_LABEL, ForgePalette, Icon, InputEvent, OverlayPosition,
+    Radius, SearchState, TextInput, body_family, dropdown, dropdown_list, dropdown_row,
+    field_label, ghost_button_with_icon, grow_cell, icon, modal, mono_family, overlay,
+    primary_button, scaled, secondary_button, tr, with_alpha,
 };
 use forge_storage::ActionRepo;
 use forge_types::{ActionId, TriggerInstanceId};
@@ -126,6 +126,7 @@ impl MidiMappingModal {
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
+        let density = cx.density();
         let MappingModalLaunch {
             instance_id,
             signal,
@@ -140,7 +141,7 @@ impl MidiMappingModal {
                 .with_palette(palette)
                 .mono()
                 .compact()
-                .fixed_box(CONTROL_HEIGHT, CONTROL_PAD_H)
+                .fixed_box(CONTROL_HEIGHT, scaled(CONTROL_PAD_H, density))
                 .with_font_size(CONTROL_FS)
                 .static_chrome(palette.border_input, Radius::Sm);
             if !channel_text.is_empty() {
@@ -335,6 +336,7 @@ impl MidiMappingModal {
     }
 
     fn render_input_display(&self, palette: &ForgePalette, cx: &Context<Self>) -> AnyElement {
+        let density = cx.density();
         let border = if self.listening {
             palette.info
         } else {
@@ -344,9 +346,9 @@ impl MidiMappingModal {
             .w_full()
             .flex()
             .items_center()
-            .gap(DISPLAY_GAP)
+            .gap(scaled(DISPLAY_GAP, density))
             .h(CONTROL_HEIGHT)
-            .px(DISPLAY_PAD_H)
+            .px(scaled(DISPLAY_PAD_H, density))
             .rounded(CONTROL_RADIUS)
             .border(BORDER_THIN)
             .border_color(border)
@@ -371,6 +373,7 @@ impl MidiMappingModal {
     }
 
     fn render_type_select(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let open = matches!(self.open_panel, Some(OpenPanel::Type));
         let trigger = self.select_trigger(
             "midi-modal-type",
@@ -378,6 +381,7 @@ impl MidiMappingModal {
             open,
             palette,
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_panel(OpenPanel::Type, cx)),
+            density,
         );
 
         let panel = open.then(|| {
@@ -411,6 +415,7 @@ impl MidiMappingModal {
     }
 
     fn render_device_select(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let open = matches!(self.open_panel, Some(OpenPanel::Device));
         let label = self
             .device
@@ -422,6 +427,7 @@ impl MidiMappingModal {
             open,
             palette,
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_panel(OpenPanel::Device, cx)),
+            density,
         );
 
         let panel = open.then(|| {
@@ -464,6 +470,7 @@ impl MidiMappingModal {
         open: bool,
         palette: &ForgePalette,
         on_click: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
+        density: Density,
     ) -> AnyElement {
         let border = if open {
             palette.border_active
@@ -477,9 +484,9 @@ impl MidiMappingModal {
             .flex()
             .items_center()
             .justify_between()
-            .gap(GRID_GAP)
+            .gap(scaled(GRID_GAP, density))
             .h(CONTROL_HEIGHT)
-            .px(CONTROL_PAD_H)
+            .px(scaled(CONTROL_PAD_H, density))
             .rounded(CONTROL_RADIUS)
             .border(BORDER_THIN)
             .border_color(border)
@@ -551,7 +558,7 @@ impl MidiMappingModal {
             .w_full()
             .flex()
             .items_end()
-            .gap(GRID_GAP)
+            .gap(scaled(GRID_GAP, density))
             .child(grow_cell(
                 self.render_input_display(palette, cx),
                 INPUT_FLEX,
@@ -587,12 +594,13 @@ impl MidiMappingModal {
     }
 
     fn render_actions(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let header = div()
             .w_full()
             .flex()
             .items_center()
             .justify_between()
-            .gap(FILTER_HEADER_GAP)
+            .gap(scaled(FILTER_HEADER_GAP, density))
             .mb(SECTION_LABEL_MB)
             .child(
                 div()
@@ -611,12 +619,16 @@ impl MidiMappingModal {
             );
 
         let list = match &self.actions {
-            ActionsState::Loading => self.list_message(tr!("midi_modal_actions_loading"), palette),
-            ActionsState::Failed(message) => {
-                self.list_message(tr!("midi_toast_error", message = message.as_str()), palette)
+            ActionsState::Loading => {
+                self.list_message(tr!("midi_modal_actions_loading"), palette, density)
             }
+            ActionsState::Failed(message) => self.list_message(
+                tr!("midi_toast_error", message = message.as_str()),
+                palette,
+                density,
+            ),
             ActionsState::Ready(actions) if actions.is_empty() => {
-                self.list_message(tr!("midi_modal_actions_none"), palette)
+                self.list_message(tr!("midi_modal_actions_none"), palette, density)
             }
             ActionsState::Ready(actions) => {
                 let matched: Vec<&ActionChoice> = actions
@@ -624,7 +636,7 @@ impl MidiMappingModal {
                     .filter(|choice| self.filter.matches(&choice.name))
                     .collect();
                 if matched.is_empty() {
-                    self.list_message(tr!("midi_modal_actions_empty"), palette)
+                    self.list_message(tr!("midi_modal_actions_empty"), palette, density)
                 } else {
                     let rows: Vec<AnyElement> = matched
                         .into_iter()
@@ -647,7 +659,7 @@ impl MidiMappingModal {
                     .w_full()
                     .max_h(LIST_MAX_H)
                     .overflow_y_scroll()
-                    .p(LIST_PAD)
+                    .p(scaled(LIST_PAD, density))
                     .rounded(LIST_RADIUS)
                     .border(BORDER_THIN)
                     .border_color(palette.border_regular)
@@ -657,11 +669,11 @@ impl MidiMappingModal {
             .into_any_element()
     }
 
-    fn list_message(&self, message: String, palette: &ForgePalette) -> gpui::Div {
+    fn list_message(&self, message: String, palette: &ForgePalette, density: Density) -> gpui::Div {
         div().w_full().flex().flex_col().child(
             div()
                 .w_full()
-                .py(EMPTY_PAD_V)
+                .py(scaled(EMPTY_PAD_V, density))
                 .text_align(gpui::TextAlign::Center)
                 .font_family(body_family())
                 .text_size(ROW_FS)
@@ -695,10 +707,10 @@ impl MidiMappingModal {
             .w_full()
             .flex()
             .items_center()
-            .gap(ROW_GAP)
+            .gap(scaled(ROW_GAP, density))
             .mb(ROW_MB)
             .py(spacing(Spacing::Xs, density))
-            .px(ROW_PAD_H)
+            .px(scaled(ROW_PAD_H, density))
             .rounded(ROW_RADIUS)
             .border(BORDER_THIN)
             .border_color(border)
@@ -731,6 +743,7 @@ impl MidiMappingModal {
     }
 
     fn render_footer(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let leading: AnyElement = if self.instance_id.is_some() {
             ghost_button_with_icon(Icon::Trash, tr!("common_delete"), palette)
                 .ink(palette.danger)
@@ -764,13 +777,13 @@ impl MidiMappingModal {
             .flex()
             .items_center()
             .justify_between()
-            .gap(FILTER_HEADER_GAP)
+            .gap(scaled(FILTER_HEADER_GAP, density))
             .child(leading)
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(FOOTER_GAP)
+                    .gap(scaled(FOOTER_GAP, density))
                     .child(secondary_button(tr!("common_cancel"), palette).on_click(
                         "midi-modal-cancel",
                         cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
@@ -815,7 +828,7 @@ impl Render for MidiMappingModal {
             .max_h(BODY_MAX_H)
             .overflow_y_scroll()
             .py(spacing(Spacing::Md, density))
-            .px(BODY_PAD_H)
+            .px(scaled(BODY_PAD_H, density))
             .flex()
             .flex_col()
             .child(self.render_signal(&palette, cx))

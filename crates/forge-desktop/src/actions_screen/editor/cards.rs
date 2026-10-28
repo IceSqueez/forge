@@ -1,7 +1,7 @@
 use super::*;
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
-    icon, radius, spacing, with_alpha,
+    icon, radius, scaled, spacing, with_alpha,
 };
 use gpui::{AnyElement, App, ClickEvent, ElementId, Rgba, SharedString, Window, div};
 
@@ -23,8 +23,8 @@ pub(super) fn add_row_button(
         .items_center()
         .justify_center()
         .gap(spacing(Spacing::Xxs, density))
-        .py(CARD_PAD_V)
-        .px(CARD_PAD_H)
+        .py(scaled(CARD_PAD_V, density))
+        .px(scaled(CARD_PAD_H, density))
         .rounded(radius(Radius::Md))
         .border(BORDER_THIN)
         .border_color(palette.border_input)
@@ -57,8 +57,8 @@ pub(super) fn empty_placeholder_card(
         .flex_col()
         .items_center()
         .gap(spacing(Spacing::Xs, density))
-        .py(EMPTY_CARD_PAD_V)
-        .px(EMPTY_CARD_PAD_H)
+        .py(scaled(EMPTY_CARD_PAD_V, density))
+        .px(scaled(EMPTY_CARD_PAD_H, density))
         .rounded(radius(Radius::Md))
         .border(BORDER_THIN)
         .border_color(palette.border_input)
@@ -86,8 +86,8 @@ pub(super) fn inline_warning_card(
         .flex()
         .items_start()
         .gap(spacing(Spacing::Xs, density))
-        .py(CARD_PAD_V)
-        .px(CARD_PAD_H)
+        .py(scaled(CARD_PAD_V, density))
+        .px(scaled(CARD_PAD_H, density))
         .rounded(radius(Radius::Md))
         .bg(with_alpha(palette.warning, STEP_HEALTH_TILE_ALPHA))
         .child(icon(Icon::AlertTriangle, CARD_GLYPH, palette.warning))

@@ -2,7 +2,7 @@ use forge_components::FONT_META;
 use std::sync::Arc;
 
 use forge_components::{
-    ActivePresentation, ForgePalette, Icon, TextInput, body_family, pulse_dot, tr,
+    ActivePresentation, Density, ForgePalette, Icon, TextInput, body_family, pulse_dot, scaled, tr,
 };
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_runtime::EventBus;
@@ -340,9 +340,9 @@ impl VTubeConnectForm {
         settled
     }
 
-    fn status_strip(&self, palette: &ForgePalette) -> AnyElement {
+    fn status_strip(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         match &self.status {
-            Status::Idle => idle_strip(palette),
+            Status::Idle => idle_strip(palette, density),
             Status::AwaitingApproval => outcome_strip(
                 StripContent {
                     accent: palette.warning,
@@ -352,9 +352,10 @@ impl VTubeConnectForm {
                 },
                 ACTIVE_LOOK,
                 palette,
+                density,
             ),
             Status::Attempt(attempt) => {
-                attempt.strip("vtube-connect-status-spin", ACTIVE_LOOK, palette)
+                attempt.strip("vtube-connect-status-spin", ACTIVE_LOOK, palette, density)
             }
         }
     }
@@ -382,7 +383,7 @@ impl Render for VTubeConnectForm {
             .w_full()
             .flex()
             .flex_col()
-            .mb(FIELD_BLOCK_GAP)
+            .mb(scaled(FIELD_BLOCK_GAP, density))
             .child(field_label(
                 tr!("vtube_connect_field_plugin"),
                 None,
@@ -390,7 +391,7 @@ impl Render for VTubeConnectForm {
                 density,
             ))
             .child(
-                box_frame(&palette)
+                box_frame(&palette, density)
                     .border_color(palette.border_input)
                     .child(mono_box_text(PLUGIN_NAME, &palette)),
             );
@@ -423,13 +424,13 @@ impl Render for VTubeConnectForm {
             .child(endpoint)
             .child(plugin_field)
             .children(flag_rows)
-            .child(self.status_strip(&palette))
+            .child(self.status_strip(&palette, density))
             .child(buttons)
     }
 }
 
-fn idle_strip(palette: &ForgePalette) -> AnyElement {
-    strip_frame(IDLE_LOOK, palette)
+fn idle_strip(palette: &ForgePalette, density: Density) -> AnyElement {
+    strip_frame(IDLE_LOOK, palette, density)
         .border_color(palette.border_regular)
         .child(strip_icon(Icon::Clock, palette.text_faint))
         .child(

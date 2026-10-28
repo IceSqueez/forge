@@ -12,7 +12,8 @@ use forge_components::{
     ForgePalette, Icon, OverlayPosition, Radius, SearchState, Spacing, ToastKind, avatar_tile,
     badge, body_family, card, column, confirm_modal, data_table, empty_state, error_row,
     error_row_with_retry, hash_accent, icon, mono_family, overlay, primary_button_with_icon,
-    radius, segment, segmented, spacing, status_dot, toolbar_row, tr, virtual_table, with_alpha,
+    radius, scaled, segment, segmented, spacing, status_dot, toolbar_row, tr, virtual_table,
+    with_alpha,
 };
 use forge_speak_queue::{
     EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
@@ -520,7 +521,7 @@ impl VoiceAliasesView {
             .w_full()
             .flex()
             .items_center()
-            .gap(BANNER_GAP)
+            .gap(scaled(BANNER_GAP, density))
             .child(icon(Icon::Wand, BANNER_ICON, palette.brand))
             .child(heading)
             .child(strategy_segments);
@@ -549,17 +550,17 @@ impl VoiceAliasesView {
             .w_full()
             .flex()
             .flex_col()
-            .gap(BANNER_GAP)
+            .gap(scaled(BANNER_GAP, density))
             .child(row)
             .children(notice);
 
         div()
             .w_full()
-            .px(PAGE_PAD_H)
-            .py(PAGE_GAP_V)
+            .px(scaled(PAGE_PAD_H, density))
+            .py(scaled(PAGE_GAP_V, density))
             .child(
                 card(body, palette)
-                    .padding_xy(BANNER_PAD_V, BANNER_PAD_H)
+                    .padding_xy(scaled(BANNER_PAD_V, density), scaled(BANNER_PAD_H, density))
                     .full_width(),
             )
             .into_any_element()
@@ -597,8 +598,8 @@ impl VoiceAliasesView {
             right,
         )
         .density(density)
-        .px(PAGE_PAD_H)
-        .pb(PAGE_GAP_V)
+        .px(scaled(PAGE_PAD_H, density))
+        .pb(scaled(PAGE_GAP_V, density))
         .into_any_element()
     }
 
@@ -648,7 +649,7 @@ impl VoiceAliasesView {
             }
             let header_only = data_table(palette, columns, Vec::new())
                 .density(density)
-                .header_padding(HEADER_PAD_V, HEADER_PAD_H)
+                .header_padding(scaled(HEADER_PAD_V, density), scaled(HEADER_PAD_H, density))
                 .trailing_rule(false);
             frame = frame
                 .child(header_only)
@@ -663,8 +664,8 @@ impl VoiceAliasesView {
                 &self.table_scroll,
                 density,
             )
-            .header_padding(HEADER_PAD_V, HEADER_PAD_H)
-            .row_padding(ROW_PAD_V, ROW_PAD_H)
+            .header_padding(scaled(HEADER_PAD_V, density), scaled(HEADER_PAD_H, density))
+            .row_padding(scaled(ROW_PAD_V, density), scaled(ROW_PAD_H, density))
             .row_hover(hover_bg)
             .trailing_rule(false)
             .build(
@@ -683,7 +684,7 @@ impl VoiceAliasesView {
         let auto = self.viewer_count.saturating_sub(self.total_count);
         let footer = div()
             .w_full()
-            .pt(FOOTER_PAD_TOP)
+            .pt(scaled(FOOTER_PAD_TOP, density))
             .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
@@ -700,7 +701,7 @@ impl VoiceAliasesView {
             .min_h(px(0.0))
             .flex()
             .flex_col()
-            .px(PAGE_PAD_H)
+            .px(scaled(PAGE_PAD_H, density))
             .pb(spacing(Spacing::Md, density))
             .child(frame)
             .child(footer)
@@ -962,7 +963,7 @@ fn platform_badge(
         .flex()
         .items_center()
         .gap(spacing(Spacing::Xxs, density))
-        .py(PLATFORM_BADGE_PAD_V)
+        .py(scaled(PLATFORM_BADGE_PAD_V, density))
         .px(spacing(Spacing::Xs, density))
         .rounded(radius(Radius::Pill))
         .bg(palette.surface_overlay)

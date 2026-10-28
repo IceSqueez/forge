@@ -57,7 +57,6 @@ impl SoundboardView {
                     self.category_filter.is_none(),
                     palette,
                 )
-                .density(density)
                 .on_click(
                     "sb-cat-all",
                     cx.listener(|this, _: &ClickEvent, _, cx| this.set_category_filter(None, cx)),
@@ -68,14 +67,12 @@ impl SoundboardView {
             let color = category_color(&cat, palette);
             let for_click = cat.clone();
             chips = chips.child(
-                chip(category_label(&cat), ChipGlyph::Dot(color), active, palette)
-                    .density(density)
-                    .on_click(
-                        ("sb-cat", idx),
-                        cx.listener(move |this, _: &ClickEvent, _, cx| {
-                            this.set_category_filter(Some(for_click.clone()), cx)
-                        }),
-                    ),
+                chip(category_label(&cat), ChipGlyph::Dot(color), active, palette).on_click(
+                    ("sb-cat", idx),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.set_category_filter(Some(for_click.clone()), cx)
+                    }),
+                ),
             );
         }
 

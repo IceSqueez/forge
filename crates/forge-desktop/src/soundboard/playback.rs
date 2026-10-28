@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use forge_components::{
     Density, FONT_XS, ForgePalette, Icon, Radius, Spacing, body_family, fmt_clock, icon, radius,
-    spacing, tr,
+    scaled, spacing, tr,
 };
 use forge_soundboard::{ClipAvailability, PlayOutcome, SoundboardError};
 use forge_types::ClipId;
@@ -151,7 +151,7 @@ impl SoundboardView {
             .id("sb-stop-all")
             .flex()
             .items_center()
-            .gap(px(5.0))
+            .gap(scaled(px(5.0), density))
             .cursor_pointer()
             .py(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Xs, density))

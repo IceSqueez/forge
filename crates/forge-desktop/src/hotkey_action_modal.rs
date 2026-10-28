@@ -11,7 +11,7 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, FONT_SECTION_LABEL, ForgePalette, Icon, InputEvent, OverlayPosition, SearchState,
     TextInput, body_family, ghost_button_with_icon, icon, modal, mono_family, overlay,
-    primary_button, secondary_button, segment, segmented, tr, with_alpha,
+    primary_button, scaled, secondary_button, segment, segmented, tr, with_alpha,
 };
 use forge_storage::ActionRepo;
 use forge_types::{ActionId, TriggerInstanceId};
@@ -260,9 +260,9 @@ impl HotkeyActionModal {
             .min_w_0()
             .flex()
             .items_center()
-            .gap(DISPLAY_GAP)
-            .py(DISPLAY_PAD_V)
-            .px(DISPLAY_PAD_H)
+            .gap(scaled(DISPLAY_GAP, density))
+            .py(scaled(DISPLAY_PAD_V, density))
+            .px(scaled(DISPLAY_PAD_H, density))
             .rounded(DISPLAY_RADIUS)
             .border(BORDER_THIN)
             .border_color(border)
@@ -370,12 +370,13 @@ impl HotkeyActionModal {
     }
 
     fn render_actions(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let header = div()
             .w_full()
             .flex()
             .items_center()
             .justify_between()
-            .gap(FILTER_HEADER_GAP)
+            .gap(scaled(FILTER_HEADER_GAP, density))
             .mb(SECTION_LABEL_MB)
             .child(
                 div()
@@ -394,13 +395,16 @@ impl HotkeyActionModal {
             );
 
         let list = match &self.actions {
-            ActionsState::Loading => list_message(tr!("hotkeys_modal_actions_loading"), palette),
+            ActionsState::Loading => {
+                list_message(tr!("hotkeys_modal_actions_loading"), palette, density)
+            }
             ActionsState::Failed(message) => list_message(
                 tr!("hotkeys_toast_error", message = message.as_str()),
                 palette,
+                density,
             ),
             ActionsState::Ready(actions) if actions.is_empty() => {
-                list_message(tr!("hotkeys_modal_actions_none"), palette)
+                list_message(tr!("hotkeys_modal_actions_none"), palette, density)
             }
             ActionsState::Ready(actions) => {
                 let matched: Vec<&ActionChoice> = actions
@@ -408,7 +412,7 @@ impl HotkeyActionModal {
                     .filter(|choice| self.filter.matches(&choice.name))
                     .collect();
                 if matched.is_empty() {
-                    list_message(tr!("hotkeys_modal_actions_empty"), palette)
+                    list_message(tr!("hotkeys_modal_actions_empty"), palette, density)
                 } else {
                     let rows: Vec<AnyElement> = matched
                         .into_iter()
@@ -431,7 +435,7 @@ impl HotkeyActionModal {
                     .w_full()
                     .max_h(LIST_MAX_H)
                     .overflow_y_scroll()
-                    .p(LIST_PAD)
+                    .p(scaled(LIST_PAD, density))
                     .rounded(LIST_RADIUS)
                     .border(BORDER_THIN)
                     .border_color(palette.border_regular)
@@ -466,10 +470,10 @@ impl HotkeyActionModal {
             .w_full()
             .flex()
             .items_center()
-            .gap(ROW_GAP)
+            .gap(scaled(ROW_GAP, density))
             .mb(ROW_MB)
             .py(spacing(Spacing::Xs, density))
-            .px(ROW_PAD_H)
+            .px(scaled(ROW_PAD_H, density))
             .rounded(ROW_RADIUS)
             .border(BORDER_THIN)
             .border_color(border)
@@ -502,6 +506,7 @@ impl HotkeyActionModal {
     }
 
     fn render_footer(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
         let hint = if self.can_save() {
             tr!("hotkeys_modal_hint_ready")
         } else {
@@ -518,7 +523,7 @@ impl HotkeyActionModal {
             .flex()
             .items_center()
             .justify_between()
-            .gap(FILTER_HEADER_GAP)
+            .gap(scaled(FILTER_HEADER_GAP, density))
             .child(
                 div()
                     .font_family(body_family())
@@ -530,7 +535,7 @@ impl HotkeyActionModal {
                 div()
                     .flex()
                     .items_center()
-                    .gap(FOOTER_GAP)
+                    .gap(scaled(FOOTER_GAP, density))
                     .child(secondary_button(tr!("common_cancel"), palette).on_click(
                         "hotkeys-modal-cancel",
                         cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
@@ -558,8 +563,8 @@ pub fn keycaps(combo: &str, palette: &ForgePalette, density: Density) -> impl In
             div()
                 .flex_none()
                 .min_w(KEYCAP_MIN_W)
-                .py(KEYCAP_PAD_V)
-                .px(KEYCAP_PAD_H)
+                .py(scaled(KEYCAP_PAD_V, density))
+                .px(scaled(KEYCAP_PAD_H, density))
                 .rounded(KEYCAP_RADIUS)
                 .border(BORDER_THIN)
                 .border_color(palette.border_regular)
@@ -574,11 +579,11 @@ pub fn keycaps(combo: &str, palette: &ForgePalette, density: Density) -> impl In
     row
 }
 
-fn list_message(message: String, palette: &ForgePalette) -> gpui::Div {
+fn list_message(message: String, palette: &ForgePalette, density: Density) -> gpui::Div {
     div().w_full().flex().flex_col().child(
         div()
             .w_full()
-            .py(EMPTY_PAD_V)
+            .py(scaled(EMPTY_PAD_V, density))
             .text_align(gpui::TextAlign::Center)
             .font_family(body_family())
             .text_size(ROW_FS)
@@ -614,7 +619,7 @@ impl Render for HotkeyActionModal {
             .max_h(BODY_MAX_H)
             .overflow_y_scroll()
             .py(spacing(Spacing::Md, density))
-            .px(BODY_PAD_H)
+            .px(scaled(BODY_PAD_H, density))
             .flex()
             .flex_col()
             .child(self.render_combo(&palette, cx))

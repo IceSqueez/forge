@@ -51,6 +51,8 @@ pub mod slider;
 pub mod sparkline;
 mod status;
 mod syntax_color;
+#[cfg(test)]
+mod test_support;
 mod text_area;
 pub(crate) mod text_buffer;
 pub(crate) mod text_edit;
@@ -176,7 +178,7 @@ pub use tokens::{
     FONT_SECTION_LABEL, FONT_SM, FONT_XL, FONT_XS, FONT_XXL, FONT_XXS, HOVER_FILL_ALPHA, ModalSize,
     ROW_HOVER_WASH_ALPHA, ROW_OFF_OPACITY, Radius, Spacing, TINT_BORDER_ALPHA, TINT_FILL_ALPHA,
     TINT_STRONG_FILL_ALPHA, body_family, elevation_shadow, modal_width, mono_family, radius,
-    set_body_family, set_mono_family, spacing,
+    scaled, set_body_family, set_mono_family, spacing,
 };
 pub use tooltip::{
     Tooltip, TooltipLines, tooltip, tooltip_builder, tooltip_lines, tooltip_lines_builder,

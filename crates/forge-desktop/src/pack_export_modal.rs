@@ -461,7 +461,7 @@ impl PackExportModal {
                 &tr!("pack_export_name_label"),
                 name_missing.then_some(required.as_str()),
                 None,
-                field_frame(palette)
+                field_frame(palette, density)
                     .child(self.name.clone())
                     .into_any_element(),
                 density,
@@ -471,7 +471,7 @@ impl PackExportModal {
                 &tr!("pack_export_author_label"),
                 None,
                 None,
-                field_frame(palette)
+                field_frame(palette, density)
                     .child(self.author.clone())
                     .into_any_element(),
                 density,
@@ -481,7 +481,7 @@ impl PackExportModal {
                 &tr!("pack_export_description_label"),
                 None,
                 None,
-                field_frame(palette)
+                field_frame(palette, density)
                     .child(self.description.clone())
                     .into_any_element(),
                 density,

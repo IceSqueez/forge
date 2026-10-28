@@ -2,8 +2,8 @@ use forge_components::ActivePresentation;
 use forge_components::FONT_LABEL;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
-    BORDER_THIN, DISABLED_OPACITY, ForgePalette, Icon, MenuPlacement, badge, body_family, card,
-    icon, menu_button, menu_item, mono_family, toggle, tr,
+    BORDER_THIN, DISABLED_OPACITY, Density, ForgePalette, Icon, MenuPlacement, badge, body_family,
+    card, icon, menu_button, menu_item, mono_family, scaled, toggle, tr,
 };
 use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
 
@@ -46,8 +46,8 @@ impl HotkeysScreenView {
         };
         let combo: AnyElement = match (shortcuts, chord) {
             (_, Some(chord)) => keycaps(&chord_caps(chord), palette, density).into_any_element(),
-            (Some(_), None) => unbound_chip(tr!("settings_shortcuts_unbound"), palette),
-            (None, None) => unbound_chip(UNKNOWN_CHORD.to_owned(), palette),
+            (Some(_), None) => unbound_chip(tr!("settings_shortcuts_unbound"), palette, density),
+            (None, None) => unbound_chip(UNKNOWN_CHORD.to_owned(), palette, density),
         };
 
         let body = div()
@@ -104,7 +104,7 @@ impl HotkeysScreenView {
 
         let mut wrapper = div().w_full().child(
             card(body, palette)
-                .padding_xy(ROW_PAD_V, ROW_PAD_H)
+                .padding_xy(scaled(ROW_PAD_V, density), scaled(ROW_PAD_H, density))
                 .full_width(),
         );
         if shortcuts.is_none() {
@@ -178,11 +178,11 @@ impl HotkeysScreenView {
     }
 }
 
-fn unbound_chip(label: String, palette: &ForgePalette) -> AnyElement {
+fn unbound_chip(label: String, palette: &ForgePalette, density: Density) -> AnyElement {
     div()
         .flex_none()
-        .py(UNBOUND_PAD_V)
-        .px(UNBOUND_PAD_H)
+        .py(scaled(UNBOUND_PAD_V, density))
+        .px(scaled(UNBOUND_PAD_H, density))
         .rounded(UNBOUND_RADIUS)
         .border(BORDER_THIN)
         .border_color(palette.border_regular)

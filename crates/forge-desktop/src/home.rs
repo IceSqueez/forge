@@ -4,7 +4,7 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, Radius, Spacing, body_family, card, dropdown, dropdown_row,
     dropdown_surface, empty_state, ghost_button_with_icon, grow_cell, icon, mono_family,
-    page_frame, pulse_dot, radius, spacing, sparkline, status_dot, tr,
+    page_frame, pulse_dot, radius, scaled, spacing, sparkline, status_dot, tr,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba,
@@ -336,7 +336,7 @@ impl HomeView {
 
         card(inner, palette)
             .full_width()
-            .padding_xy(HERO_PAD_V, HERO_PAD_H)
+            .padding_xy(scaled(HERO_PAD_V, density), HERO_PAD_H)
             .radius(Radius::Lg)
     }
 
@@ -430,7 +430,7 @@ impl HomeView {
             .flex_col()
             .gap(spacing(Spacing::Sm, density))
             .py(spacing(Spacing::Md, density))
-            .px(JUMP_PAD_H)
+            .px(scaled(JUMP_PAD_H, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(border)
@@ -491,7 +491,7 @@ impl HomeView {
             .flex_1()
             .flex()
             .flex_col()
-            .gap(px(3.0))
+            .gap(scaled(px(3.0), density))
             .child(
                 div()
                     .font_family(mono_family())
@@ -724,8 +724,8 @@ impl HomeView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .py(CONN_CELL_PAD_V)
-            .px(CONN_CELL_PAD_H)
+            .py(scaled(CONN_CELL_PAD_V, density))
+            .px(scaled(CONN_CELL_PAD_H, density))
             .bg(palette.elevated)
             .cursor_pointer()
             .hover(move |s| s.bg(hover_bg))
@@ -775,7 +775,7 @@ impl HomeView {
 
         let header_bar = card(header, palette)
             .full_width()
-            .padding_xy(CONN_HEADER_PAD_V, CONN_HEADER_PAD_H)
+            .padding_xy(CONN_HEADER_PAD_V, scaled(CONN_HEADER_PAD_H, density))
             .split_radius(radius(Radius::Md), px(0.0));
 
         let mut cells = div().w_full().flex().gap(CELL_GAP);
@@ -854,7 +854,7 @@ impl HomeView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .py(EVENT_ROW_PAD_V)
+            .py(scaled(EVENT_ROW_PAD_V, density))
             .px(spacing(Spacing::Xxs, density))
             .child(status_dot(hue, EVENT_DOT))
             .child(
@@ -962,13 +962,14 @@ impl HomeView {
         value_color: Rgba,
         last: bool,
         palette: &ForgePalette,
+        density: Density,
     ) -> AnyElement {
         let row = div()
             .w_full()
             .flex()
             .items_center()
             .justify_between()
-            .py(GLANCE_ROW_PAD_V)
+            .py(scaled(GLANCE_ROW_PAD_V, density))
             .child(
                 div()
                     .font_family(body_family())
@@ -1014,6 +1015,7 @@ impl HomeView {
                 palette.brand,
                 false,
                 palette,
+                density,
             ))
             .child(Self::glance_row(
                 tr!("home_glance_commands"),
@@ -1021,6 +1023,7 @@ impl HomeView {
                 palette.info,
                 false,
                 palette,
+                density,
             ))
             .child(Self::glance_row(
                 tr!("home_glance_fired"),
@@ -1028,6 +1031,7 @@ impl HomeView {
                 palette.success,
                 false,
                 palette,
+                density,
             ))
             .child(Self::glance_row(
                 tr!("home_glance_globals"),
@@ -1035,6 +1039,7 @@ impl HomeView {
                 palette.warning,
                 true,
                 palette,
+                density,
             ));
 
         let content = div()
@@ -1157,9 +1162,9 @@ impl Render for HomeView {
             .child(
                 div()
                     .w_full()
-                    .pt(BODY_PAD_V)
-                    .pb(BODY_PAD_V)
-                    .px(BODY_PAD_H)
+                    .pt(scaled(BODY_PAD_V, density))
+                    .pb(scaled(BODY_PAD_V, density))
+                    .px(scaled(BODY_PAD_H, density))
                     .child(content),
             );
 

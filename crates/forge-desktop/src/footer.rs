@@ -44,6 +44,7 @@ impl Footer {
     }
 
     fn awake_badge(&self, palette: &ForgePalette, cx: &Context<Self>) -> Option<AnyElement> {
+        let density = cx.density();
         let indicator = self.awake.read(cx).indicator()?;
         let (icon_color, label_color) = match indicator.tone {
             AwakeTone::Normal => (palette.text_faint, palette.text_secondary),
@@ -63,12 +64,14 @@ impl Footer {
                 label_color,
                 details,
                 palette,
+                density,
             )
             .into_any_element(),
         )
     }
 
     fn loss_badge(&self, palette: &ForgePalette, cx: &Context<Self>) -> Option<AnyElement> {
+        let density = cx.density();
         let loss = self.event_loss.read(cx);
         let total = loss.total();
         if total == 0 {
@@ -92,7 +95,10 @@ impl Footer {
             "event_loss_footer_badge",
             count = i64::try_from(total).unwrap_or(i64::MAX)
         );
-        Some(footer_alert("footer-event-loss", label, color, details, palette).into_any_element())
+        Some(
+            footer_alert("footer-event-loss", label, color, details, palette, density)
+                .into_any_element(),
+        )
     }
 }
 

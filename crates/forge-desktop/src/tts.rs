@@ -2,8 +2,8 @@ use gpui::Rgba;
 use std::sync::{Arc, RwLock};
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, FONT_XS, ForgePalette, body_family, header_status, page_frame,
-    tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, Density, FONT_XS, ForgePalette, body_family, header_status,
+    page_frame, scaled, tr, with_alpha,
 };
 use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo};
@@ -157,7 +157,11 @@ impl TtsView {
         cx.notify();
     }
 
-    fn render_header_right(&self, palette: &ForgePalette) -> impl IntoElement + use<> {
+    fn render_header_right(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> impl IntoElement + use<> {
         let registered = self
             .tts_registry
             .as_ref()
@@ -173,7 +177,7 @@ impl TtsView {
             .filter(|id| voices.iter().any(|v| v.engine_id == **id))
             .count();
         let (color, label) = engine_readiness(engine_count, palette);
-        header_status(color, label)
+        header_status(color, label, density)
     }
 
     fn render_tab_bar(
@@ -181,14 +185,15 @@ impl TtsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let density = cx.density();
         let mut bar = div()
             .w_full()
             .flex_shrink_0()
             .flex()
             .flex_row()
-            .gap(TAB_GAP)
-            .pt(TAB_BAR_PAD_T)
-            .px(TAB_BAR_PAD_H)
+            .gap(scaled(TAB_GAP, density))
+            .pt(scaled(TAB_BAR_PAD_T, density))
+            .px(scaled(TAB_BAR_PAD_H, density))
             .bg(palette.elevated)
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular);
@@ -204,6 +209,7 @@ impl TtsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let density = cx.density();
         let active = self.section == section;
         let fg = if active {
             palette.text_primary
@@ -223,8 +229,8 @@ impl TtsView {
 
         div()
             .id(section.key())
-            .py(TAB_PAD_V)
-            .px(TAB_PAD_H)
+            .py(scaled(TAB_PAD_V, density))
+            .px(scaled(TAB_PAD_H, density))
             .border_b(TAB_INDICATOR_H)
             .border_color(indicator)
             .cursor_pointer()
@@ -255,9 +261,10 @@ impl EventEmitter<NavRequested> for TtsView {}
 
 impl Render for TtsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
         let palette = cx.palette();
 
-        let header_right = self.render_header_right(&palette);
+        let header_right = self.render_header_right(&palette, density);
         let tab_bar = self.render_tab_bar(&palette, cx);
         let content = self.render_content();
         let body = div().w_full().flex_1().min_h(px(0.0)).child(content);

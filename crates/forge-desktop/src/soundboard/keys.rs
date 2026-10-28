@@ -1,7 +1,9 @@
 use forge_components::Density;
 use forge_components::Spacing;
 use forge_components::spacing;
-use forge_components::{BORDER_THIN, ForgePalette, Icon, icon, mono_family, tooltip_builder, tr};
+use forge_components::{
+    BORDER_THIN, ForgePalette, Icon, icon, mono_family, scaled, tooltip_builder, tr,
+};
 use forge_types::ClipId;
 use gpui::{AnyElement, Context, Pixels, div, prelude::*, px};
 
@@ -59,7 +61,7 @@ impl SoundboardView {
             .id(("sb-pad-key", index))
             .flex()
             .items_center()
-            .gap(HOTKEY_WARN_GAP)
+            .gap(scaled(HOTKEY_WARN_GAP, density))
             .font_family(mono_family())
             .text_size(HOTKEY_FS)
             .text_color(text)
@@ -68,7 +70,7 @@ impl SoundboardView {
             .border_color(border)
             .rounded(HOTKEY_RADIUS)
             .px(spacing(Spacing::Xs, density))
-            .py(HOTKEY_PAD_Y);
+            .py(scaled(HOTKEY_PAD_Y, density));
         let reason = match &state {
             PadKey::Live => return badge.child(combo).into_any_element(),
             PadKey::NotLive => tr!("soundboard_pad_key_not_live", combo = combo.as_str()),

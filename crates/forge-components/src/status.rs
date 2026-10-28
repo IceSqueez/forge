@@ -4,10 +4,10 @@ use gpui::{
 };
 use std::time::Duration;
 
-use crate::tokens::{Radius, body_family, mono_family, radius};
+use crate::ActivePresentation;
+use crate::tokens::{Radius, Spacing, body_family, mono_family, radius, scaled, spacing};
 
 const BADGE_PAD_V: Pixels = px(1.0);
-const BADGE_PAD_H: Pixels = px(6.0);
 const BADGE_RADIUS: Pixels = px(8.0);
 const PULSE_PERIOD: Duration = Duration::from_millis(1400);
 const PULSE_DEPTH: f32 = 0.6;
@@ -44,8 +44,7 @@ pub struct Badge {
     mono: bool,
     size: Pixels,
     weight: FontWeight,
-    pad_v: Pixels,
-    pad_h: Pixels,
+    padding: Option<(Pixels, Pixels)>,
     radius: Pixels,
     flex_none: bool,
 }
@@ -64,8 +63,7 @@ pub fn badge(
         mono,
         size,
         weight: FontWeight::MEDIUM,
-        pad_v: BADGE_PAD_V,
-        pad_h: BADGE_PAD_H,
+        padding: None,
         radius: BADGE_RADIUS,
         flex_none: false,
     }
@@ -80,8 +78,7 @@ impl Badge {
 
     #[must_use]
     pub fn padding_xy(mut self, vertical: Pixels, horizontal: Pixels) -> Self {
-        self.pad_v = vertical;
-        self.pad_h = horizontal;
+        self.padding = Some((vertical, horizontal));
         self
     }
 
@@ -99,7 +96,11 @@ impl Badge {
 }
 
 impl RenderOnce for Badge {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
+        let (pad_v, pad_h) = self
+            .padding
+            .unwrap_or_else(|| (scaled(BADGE_PAD_V, density), spacing(Spacing::Xs, density)));
         let family = if self.mono {
             mono_family()
         } else {
@@ -112,8 +113,8 @@ impl RenderOnce for Badge {
             .text_color(self.text_color)
             .child(self.content);
         let mut root = div()
-            .py(self.pad_v)
-            .px(self.pad_h)
+            .py(pad_v)
+            .px(pad_h)
             .rounded(self.radius)
             .bg(self.background);
         if self.flex_none {

@@ -13,7 +13,7 @@ use forge_components::{
     OverlayPosition, Radius, ResizeEdge, ResizeRange, SaveCode, SearchState, Spacing, TextInput,
     badge, body_family, confirm_modal, context_menu, fmt_display_relative, ghost_button, icon,
     inline_edit, install_resize, menu_divider, menu_item, modal, mono_family, overlay, page_frame,
-    primary_button, radius, spacing, status_dot, tr, with_alpha,
+    primary_button, radius, scaled, spacing, status_dot, tr, with_alpha,
 };
 use forge_components::{DateShape, fmt_display};
 use forge_events::{Event, EventPublisher};
@@ -73,6 +73,7 @@ const FILE_BAR_DIRTY_DOT: Pixels = px(5.0);
 const FILE_BAR_STATUS_DOT: Pixels = px(6.0);
 
 const GLYPH_SIGNATURE_ACTION: Pixels = px(11.0);
+const SIGNATURE_ACTION_PAD: Pixels = px(3.0);
 const SIGNATURE_NAME_MIN_W: Pixels = px(56.0);
 
 const COMPILE_DEBOUNCE: Duration = Duration::from_millis(300);
@@ -1979,7 +1980,7 @@ impl ScriptEditorView {
                     .flex()
                     .items_center()
                     .gap(spacing(Spacing::Xxs, density))
-                    .py(px(1.0))
+                    .py(scaled(px(1.0), density))
                     .px(spacing(Spacing::Xs, density))
                     .rounded(px(8.0))
                     .bg(palette.surface_overlay)
@@ -2046,7 +2047,7 @@ impl ScriptEditorView {
             .id("script-run")
             .flex()
             .items_center()
-            .gap(px(5.0))
+            .gap(scaled(px(5.0), density))
             .py(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Sm))
@@ -2103,7 +2104,7 @@ impl ScriptEditorView {
                     .id("script-open-action")
                     .flex()
                     .items_center()
-                    .gap(px(5.0))
+                    .gap(scaled(px(5.0), density))
                     .py(spacing(Spacing::Xxs, density))
                     .px(spacing(Spacing::Xs, density))
                     .rounded(radius(Radius::Sm))
@@ -2199,7 +2200,7 @@ impl ScriptEditorView {
             .id(id)
             .flex()
             .items_center()
-            .gap(px(5.0))
+            .gap(scaled(px(5.0), density))
             .py(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Xs, density))
             .rounded(radius(Radius::Sm))
@@ -2227,7 +2228,7 @@ impl ScriptEditorView {
         div()
             .flex()
             .items_center()
-            .gap(px(5.0))
+            .gap(scaled(px(5.0), density))
             .py(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Xs, density))
             .rounded(radius(Radius::Sm))
@@ -2444,7 +2445,7 @@ impl ScriptEditorView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .pt(px(2.0))
+            .pt(scaled(px(2.0), density))
             .px(spacing(Spacing::Xs, density))
             .pb(spacing(Spacing::Xs, density))
             .font_family(mono_family())
@@ -2549,9 +2550,9 @@ impl ScriptEditorView {
             .id(SharedString::from(format!("script-file-{id}")))
             .flex()
             .items_center()
-            .gap(px(9.0))
-            .py(px(7.0))
-            .px(px(8.0))
+            .gap(scaled(px(9.0), density))
+            .py(scaled(px(7.0), density))
+            .px(scaled(px(8.0), density))
             .rounded(radius(Radius::Sm))
             .border_l(STRIPE_W)
             .border_color(stripe)
@@ -2642,7 +2643,7 @@ impl ScriptEditorView {
             .id("console-tab-output")
             .flex()
             .items_center()
-            .gap(px(5.0))
+            .gap(scaled(px(5.0), density))
             .cursor_pointer()
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                 this.set_console_tab(ConsoleTab::Output, cx)
@@ -3006,7 +3007,7 @@ impl ScriptEditorView {
                     .items_center()
                     .gap(spacing(Spacing::Xs, density))
                     .mt(spacing(Spacing::Xxs, density))
-                    .py(spacing(Spacing::Xxs, Density::Compact))
+                    .py(spacing(Spacing::Xxs, density.tighter()))
                     .rounded(radius(Radius::Sm))
                     .cursor_pointer()
                     .hover(move |s| s.bg(hover_bg))
@@ -3065,7 +3066,7 @@ impl ScriptEditorView {
         let kind_cell = div()
             .id(("script-contract-kind", index))
             .flex_none()
-            .px(spacing(Spacing::Xxs, Density::Compact))
+            .px(spacing(Spacing::Xxs, density.tighter()))
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
             .text_size(FONT_XXS)
@@ -3174,7 +3175,7 @@ impl ScriptEditorView {
                     .flex_1()
                     .flex()
                     .justify_end()
-                    .px(spacing(Spacing::Xxs, Density::Compact))
+                    .px(spacing(Spacing::Xxs, density.tighter()))
                     .rounded(radius(Radius::Sm))
                     .cursor_pointer()
                     .text_size(FONT_XXS)
@@ -3337,7 +3338,7 @@ impl ScriptEditorView {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .p(DETAILS_PANE_PAD)
+            .p(scaled(DETAILS_PANE_PAD, density))
             .child(details_heading(
                 tr!("script_editor_details_heading"),
                 false,
@@ -3401,18 +3402,20 @@ impl ScriptEditorView {
             .child(
                 div()
                     .flex()
-                    .gap(px(8.0))
+                    .gap(scaled(px(8.0), density))
                     .child(mini_stat(
                         tr!("script_editor_stat_runs"),
                         runs_value,
                         palette.text_primary,
                         palette,
+                        density,
                     ))
                     .child(mini_stat(
                         tr!("script_editor_stat_avg"),
                         avg_value,
                         palette.success,
                         palette,
+                        density,
                     )),
             );
 
@@ -3688,6 +3691,7 @@ fn mini_stat(
     value: impl Into<SharedString>,
     value_color: Rgba,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     div()
         .flex_1()
@@ -3697,14 +3701,14 @@ fn mini_stat(
         .border(BORDER_THIN)
         .border_color(palette.surface_overlay)
         .rounded(px(7.0))
-        .py(px(7.0))
-        .px(px(9.0))
+        .py(scaled(px(7.0), density))
+        .px(scaled(px(9.0), density))
         .child(
             div()
                 .font_family(mono_family())
                 .text_size(FONT_BADGE)
                 .text_color(palette.text_faint)
-                .pb(px(3.0))
+                .pb(scaled(px(3.0), density))
                 .child(label.into()),
         )
         .child(
@@ -3759,7 +3763,7 @@ where
         .flex()
         .flex_none()
         .items_center()
-        .p(spacing(Spacing::Xxs, Density::Compact))
+        .p(SIGNATURE_ACTION_PAD)
         .rounded(radius(Radius::Sm))
         .cursor_pointer()
         .hover(move |s| s.bg(hover_bg))
@@ -3772,7 +3776,7 @@ fn signature_action_disabled(glyph: Icon, palette: &ForgePalette) -> impl IntoEl
         .flex()
         .flex_none()
         .items_center()
-        .p(spacing(Spacing::Xxs, Density::Compact))
+        .p(SIGNATURE_ACTION_PAD)
         .child(icon(
             glyph,
             GLYPH_SIGNATURE_ACTION,

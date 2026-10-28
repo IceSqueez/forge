@@ -603,6 +603,7 @@ impl Render for SettingsStorageView {
                 ]
                 .into_iter()
                 .flatten(),
+                density,
             ))
             .children(flow_views)
             .children(schedule_prompt)

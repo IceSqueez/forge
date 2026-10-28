@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use forge_components::{
     Density, FONT_XXS, ForgePalette, Icon, Radius, empty_state, icon, mono_family, pad_tile,
-    radius, tooltip_builder, tr, with_alpha,
+    radius, scaled, tooltip_builder, tr, with_alpha,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Pixels, Rgba, SharedString, Window, div, prelude::*, px, svg,
@@ -67,7 +67,7 @@ impl SoundboardView {
         let top_right = div()
             .flex()
             .items_center()
-            .gap(PAD_ACTION_GAP)
+            .gap(scaled(PAD_ACTION_GAP, density))
             .child(edit_btn)
             .child(delete_btn)
             .children(hotkey_badge);
@@ -86,7 +86,12 @@ impl SoundboardView {
         let readout_color = if playing { color } else { palette.text_faint };
 
         let missing = self.source_is_missing(id);
-        let mut status = div().flex().flex_1().min_w_0().items_center().gap(px(5.0));
+        let mut status = div()
+            .flex()
+            .flex_1()
+            .min_w_0()
+            .items_center()
+            .gap(scaled(px(5.0), density));
         if clip.loop_playback {
             status = status.child(icon(Icon::Repeat, LOOP_ICON, palette.text_faint));
         }
@@ -143,8 +148,8 @@ impl SoundboardView {
             .flex()
             .items_center()
             .justify_between()
-            .gap(px(5.0))
-            .mt(px(3.0))
+            .gap(scaled(px(5.0), density))
+            .mt(scaled(px(3.0), density))
             .child(status)
             .child(
                 div()

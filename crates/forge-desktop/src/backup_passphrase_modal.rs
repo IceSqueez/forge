@@ -330,7 +330,7 @@ impl Render for BackupPassphraseModal {
                 &tr!("backup_schedule_change_current_label"),
                 None,
                 self.current_error.as_deref(),
-                field_frame(&palette)
+                field_frame(&palette, density)
                     .child(current.clone())
                     .into_any_element(),
                 density,
@@ -348,7 +348,7 @@ impl Render for BackupPassphraseModal {
                 &self.purpose.new_passphrase_label(),
                 Some(hint.as_str()),
                 check.shows_too_short().then_some(too_short.as_str()),
-                field_frame(&palette)
+                field_frame(&palette, density)
                     .child(self.passphrase.clone())
                     .into_any_element(),
                 density,
@@ -358,7 +358,7 @@ impl Render for BackupPassphraseModal {
                 &tr!("settings_storage_passphrase_confirm_label"),
                 None,
                 check.shows_mismatch().then_some(mismatch.as_str()),
-                field_frame(&palette)
+                field_frame(&palette, density)
                     .child(self.confirmation.clone())
                     .into_any_element(),
                 density,

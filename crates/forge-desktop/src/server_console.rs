@@ -4,8 +4,8 @@ use forge_components::{
     BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, OverlayPosition, Radius, Spacing, body_family, card, column, confirm_modal,
     data_table, empty_state, fmt_bytes, fmt_number, fmt_uptime_short, ghost_button_with_icon,
-    header_status, icon, metric_card, mono_family, overlay, page_frame, radius, spacing, sparkline,
-    status_dot, tooltip_builder, tr, virtual_table,
+    header_status, icon, metric_card, mono_family, overlay, page_frame, radius, scaled, spacing,
+    sparkline, status_dot, tooltip_builder, tr, virtual_table,
 };
 use forge_types::PlatformId;
 use std::ffi::OsStr;
@@ -1419,8 +1419,8 @@ impl ServerConsoleView {
             .items_center()
             .justify_between()
             .mt(spacing(Spacing::Xxs, density))
-            .py(FOOTER_PAD_V)
-            .px(FOOTER_PAD_H)
+            .py(scaled(FOOTER_PAD_V, density))
+            .px(scaled(FOOTER_PAD_H, density))
             .border_t(BORDER_THIN)
             .border_color(palette.surface_overlay)
             .bg(palette.shell)
@@ -1429,7 +1429,7 @@ impl ServerConsoleView {
             .into_any_element()
     }
 
-    fn breadcrumb_status(&self, palette: &ForgePalette) -> AnyElement {
+    fn breadcrumb_status(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         if self.is_running() {
             header_status(
                 palette.success,
@@ -1437,10 +1437,12 @@ impl ServerConsoleView {
                     "server_status_listening",
                     clients = self.connected_clients.len() as i64
                 ),
+                density,
             )
             .into_any_element()
         } else {
-            header_status(palette.text_faint, tr!("server_status_stopped")).into_any_element()
+            header_status(palette.text_faint, tr!("server_status_stopped"), density)
+                .into_any_element()
         }
     }
 
@@ -1550,7 +1552,7 @@ impl Render for ServerConsoleView {
                 .gap(spacing(Spacing::Xs, density))
                 .children(self.disabled_hint(&palette, density, cx))
                 .child(self.restart_control(&palette, cx))
-                .child(self.breadcrumb_status(&palette)),
+                .child(self.breadcrumb_status(&palette, density)),
         )
         .body(
             div()

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use forge_components::{
-    Density, ForgePalette, Icon, Spacing, icon, mono_family, secondary_button, spacing, tr,
+    Density, ForgePalette, Icon, Spacing, icon, mono_family, scaled, secondary_button, spacing, tr,
 };
 use forge_soundboard::{AdoptionVerdict, ClipAvailability, ClipRefusal, SoundboardError};
 use forge_storage::StoredClip;
@@ -183,8 +183,8 @@ impl SoundboardView {
             .items_center()
             .justify_between()
             .gap(spacing(Spacing::Sm, density))
-            .py(FOOTER_PAD_Y)
-            .px(FOOTER_PAD_X);
+            .py(scaled(FOOTER_PAD_Y, density))
+            .px(scaled(FOOTER_PAD_X, density));
 
         let mut left = div()
             .flex()

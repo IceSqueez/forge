@@ -7,7 +7,7 @@ use forge_components::{
     FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SaveState, Spacing,
     TextArea, TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, confirm_modal, error_row,
     error_row_with_retry, field_title, ghost_button_with_icon, grow_cell, icon, mono_family,
-    overlay, radio_row, radius, save_indicator, setting_block, setting_row, setting_rows,
+    overlay, radio_row, radius, save_indicator, scaled, setting_block, setting_row, setting_rows,
     setting_sections, spacing, toggle, tr, type_to_confirm,
 };
 use forge_runtime::OverlayServiceHandle;
@@ -959,6 +959,7 @@ impl SettingsWebSocketView {
                 .child(self.bind_card(BindChoice::Localhost, palette, density, cx))
                 .child(self.bind_card(BindChoice::Lan, palette, density, cx)),
             palette,
+            density,
         )
     }
 
@@ -995,8 +996,8 @@ impl SettingsWebSocketView {
             .flex_none()
             .flex()
             .items_center()
-            .gap(px(3.0))
-            .py(px(1.0))
+            .gap(scaled(px(3.0), density))
+            .py(scaled(px(1.0), density))
             .px(spacing(Spacing::Xs, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.surface_overlay)
@@ -1036,7 +1037,7 @@ impl SettingsWebSocketView {
             .min_w(px(0.0))
             .flex()
             .flex_col()
-            .gap(px(2.0))
+            .gap(scaled(px(2.0), density))
             .child(title_row)
             .child(
                 div()
@@ -1082,6 +1083,7 @@ impl SettingsWebSocketView {
                 Some(tr!("settings_ws_origins_subtitle").into()),
                 error_row(tr!("settings_ws_origins_unreadable"), palette, density),
                 palette,
+                density,
             );
         }
         let apply =
@@ -1136,15 +1138,17 @@ impl SettingsWebSocketView {
                 .child(self.origins_input.clone())
                 .child(footer.child(div().flex_1().min_w(px(0.0))).child(apply)),
             palette,
+            density,
         )
     }
 
-    fn port_column(&self, palette: &ForgePalette) -> impl IntoElement {
+    fn port_column(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
         setting_block(
             tr!("settings_ws_port_section_title"),
             Some(tr!("settings_ws_port_subtitle").into()),
             self.port_input.clone(),
             palette,
+            density,
         )
     }
 
@@ -1205,7 +1209,7 @@ impl SettingsWebSocketView {
             .items_center()
             .justify_between()
             .gap(spacing(Spacing::Xs, density))
-            .py(FIELD_PAD_V)
+            .py(scaled(FIELD_PAD_V, density))
             .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
@@ -1324,6 +1328,7 @@ impl SettingsWebSocketView {
                 .child(rows)
                 .child(self.overlay_token_block(palette, density, cx)),
             palette,
+            density,
         )
     }
 
@@ -1343,7 +1348,7 @@ impl SettingsWebSocketView {
             .items_center()
             .justify_between()
             .gap(spacing(Spacing::Xs, density))
-            .py(FIELD_PAD_V)
+            .py(scaled(FIELD_PAD_V, density))
             .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
@@ -1470,7 +1475,7 @@ impl SettingsWebSocketView {
             .min_w(px(0.0))
             .overflow_hidden()
             .text_ellipsis()
-            .py(FIELD_PAD_V)
+            .py(scaled(FIELD_PAD_V, density))
             .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
@@ -1537,7 +1542,7 @@ impl Render for SettingsWebSocketView {
             .flex_wrap()
             .items_start()
             .gap(spacing(Spacing::Md, density))
-            .child(grow_cell(self.port_column(&palette), 1.0).min_w(PORT_COLUMN_MIN_W))
+            .child(grow_cell(self.port_column(&palette, density), 1.0).min_w(PORT_COLUMN_MIN_W))
             .child(
                 grow_cell(self.token_column(&palette, density, cx), 1.6).min_w(TOKEN_COLUMN_MIN_W),
             );
@@ -1582,6 +1587,7 @@ impl Render for SettingsWebSocketView {
                                 .into_any_element(),
                         ],
                         &palette,
+                        density,
                     )),
             );
 

@@ -2,8 +2,10 @@ use super::field::SubFormField;
 use super::*;
 use crate::amount_scale::{AmountScale, AmountSeed};
 use crate::config_form::INTEGER_PLACEHOLDER;
+use forge_components::ActivePresentation;
 use forge_components::InputEvent;
 use forge_components::int_entry_invalid;
+use forge_components::scaled;
 use forge_types::SubActionConfig;
 
 impl SubFormField {
@@ -52,6 +54,7 @@ impl EditSubActionForm {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let unit_select = self.render_select_trigger(
             unit_picker_key,
             &scale.unit_options(),
@@ -62,7 +65,7 @@ impl EditSubActionForm {
         );
         div()
             .flex()
-            .gap(GRID_COL_GAP)
+            .gap(scaled(GRID_COL_GAP, density))
             .child(div().flex_1().child(input.clone()))
             .child(div().flex_1().child(unit_select))
             .into_any_element()

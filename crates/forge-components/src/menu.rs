@@ -15,7 +15,8 @@ use crate::icons::{Icon, icon};
 use crate::overlay::enter_animation;
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, DISABLED_OPACITY, Density, FONT_XS, Spacing, body_family, mono_family, spacing,
+    BORDER_THIN, DISABLED_OPACITY, Density, FONT_XS, Spacing, body_family, mono_family, scaled,
+    spacing,
 };
 
 const PANEL_MIN_WIDTH: Pixels = px(180.0);
@@ -177,7 +178,7 @@ impl MenuInk {
         let mut row = div()
             .flex()
             .items_center()
-            .gap(ITEM_GAP)
+            .gap(scaled(ITEM_GAP, density))
             .py(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Sm, density))
             .rounded(ITEM_RADIUS)

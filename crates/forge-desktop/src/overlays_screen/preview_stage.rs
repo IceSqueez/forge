@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use forge_components::{
     BORDER_THIN, ForgePalette, GlyphArt, Icon, body_family, empty_state, ghost_button_with_icon,
-    icon, mono_family, section_label, segment, segmented, tooltip_builder, tr,
+    icon, mono_family, scaled, section_label, segment, segmented, tooltip_builder, tr,
 };
 use forge_overlay::config::{DURATION, DURATION_MAX_SECS, DURATION_MIN_SECS};
 use forge_overlay::{
@@ -329,11 +329,12 @@ impl OverlaysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let region = div()
             .flex_1()
             .min_h(px(0.0))
             .w_full()
-            .p(REGION_PAD)
+            .p(scaled(REGION_PAD, density))
             .flex()
             .flex_col();
 

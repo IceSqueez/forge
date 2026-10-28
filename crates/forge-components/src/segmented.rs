@@ -1,3 +1,4 @@
+use crate::ActivePresentation;
 use crate::FONT_META;
 use gpui::{
     App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement, ParentElement, Pixels,
@@ -6,7 +7,7 @@ use gpui::{
 
 use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
-use crate::tokens::{BORDER_THIN, DISABLED_OPACITY, body_family};
+use crate::tokens::{BORDER_THIN, DISABLED_OPACITY, body_family, scaled};
 
 type SegClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -64,7 +65,6 @@ pub struct SegmentedControl {
     joined: bool,
     wrap_gap: Pixels,
     group_radius: Pixels,
-    group_pad: Pixels,
     group_border: Rgba,
     group_bg: Rgba,
     active_bg: Rgba,
@@ -73,8 +73,6 @@ pub struct SegmentedControl {
     disabled_fg: Rgba,
     hover_bg: Rgba,
     seg_radius: Pixels,
-    seg_pad_x: Pixels,
-    seg_pad_y: Pixels,
     seg_fs: Pixels,
     glyph_active: Rgba,
     glyph_idle: Rgba,
@@ -86,7 +84,6 @@ pub fn segmented(segments: Vec<Segment>, palette: &ForgePalette) -> SegmentedCon
         joined: true,
         wrap_gap: px(0.0),
         group_radius: GROUP_RADIUS,
-        group_pad: GROUP_PAD,
         group_border: palette.surface_overlay,
         group_bg: palette.shell,
         active_bg: palette.brand,
@@ -95,8 +92,6 @@ pub fn segmented(segments: Vec<Segment>, palette: &ForgePalette) -> SegmentedCon
         disabled_fg: palette.text_faint,
         hover_bg: with_alpha(palette.border_regular, HOVER_ALPHA),
         seg_radius: SEG_RADIUS,
-        seg_pad_x: SEG_PAD_H,
-        seg_pad_y: SEG_PAD_V,
         seg_fs: SEG_FS,
         glyph_active: palette.brand,
         glyph_idle: palette.text_faint,
@@ -126,12 +121,13 @@ impl SegmentedControl {
 }
 
 impl RenderOnce for SegmentedControl {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let density = cx.density();
         let mut container = if self.joined {
             div()
                 .flex()
                 .flex_row()
-                .p(self.group_pad)
+                .p(scaled(GROUP_PAD, density))
                 .rounded(self.group_radius)
                 .border(BORDER_THIN)
                 .border_color(self.group_border)
@@ -163,9 +159,9 @@ impl RenderOnce for SegmentedControl {
                 .id(seg.id)
                 .flex()
                 .items_center()
-                .gap(SEG_GLYPH_GAP)
-                .py(self.seg_pad_y)
-                .px(self.seg_pad_x)
+                .gap(scaled(SEG_GLYPH_GAP, density))
+                .py(scaled(SEG_PAD_V, density))
+                .px(scaled(SEG_PAD_H, density))
                 .rounded(self.seg_radius)
                 .font_family(body_family())
                 .font_weight(weight)

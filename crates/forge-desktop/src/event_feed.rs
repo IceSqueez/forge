@@ -10,8 +10,8 @@ use std::collections::{HashMap, HashSet};
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
     Radius, SearchState, SheetWidth, Spacing, TextInput, ToastKind, badge, body_family, chip,
-    empty_state, header_status, icon, mono_family, page_frame, radius, spacing, status_dot, tr,
-    with_alpha,
+    empty_state, header_status, icon, mono_family, page_frame, radius, scaled, spacing, status_dot,
+    tr, with_alpha,
 };
 use std::sync::Arc;
 
@@ -439,7 +439,7 @@ impl EventFeedView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .child(header_status(live_color, live_label))
+            .child(header_status(live_color, live_label, density))
             .child(count_readout)
             .into_any_element()
     }
@@ -460,14 +460,10 @@ impl EventFeedView {
             let glyph = Self::tab_glyph(filter, palette);
             let label = tr!(filter_tab_key(filter), n = i64::from(counts.get(filter)));
             let active = self.active_filter == filter;
-            chips = chips.child(
-                chip(label, glyph, active, palette)
-                    .density(density)
-                    .on_click(
-                        id,
-                        cx.listener(move |this, _: &ClickEvent, _, cx| this.set_filter(filter, cx)),
-                    ),
-            );
+            chips = chips.child(chip(label, glyph, active, palette).on_click(
+                id,
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.set_filter(filter, cx)),
+            ));
         }
 
         div()
@@ -627,8 +623,8 @@ impl EventFeedView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(ROW_PAD_V)
-            .px(ROW_PAD_H)
+            .py(scaled(ROW_PAD_V, density))
+            .px(scaled(ROW_PAD_H, density))
             .overflow_hidden()
             .child(
                 div()

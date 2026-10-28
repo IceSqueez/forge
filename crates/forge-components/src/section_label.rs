@@ -5,7 +5,7 @@ use gpui::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{FONT_SECTION_LABEL, FONT_XXS, Spacing, mono_family, spacing};
+use crate::tokens::{FONT_SECTION_LABEL, FONT_XXS, Spacing, mono_family, scaled, spacing};
 
 const ROW_MARGIN_BOTTOM: Pixels = px(8.0);
 
@@ -81,7 +81,7 @@ impl RenderOnce for SectionLabel {
             container = container
                 .w_full()
                 .mt(spacing(Spacing::Xxs, density))
-                .mb(ROW_MARGIN_BOTTOM)
+                .mb(scaled(ROW_MARGIN_BOTTOM, density))
                 .flex()
                 .items_center()
                 .justify_between();

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, body_family,
     ghost_button_with_icon, health_tile, hub_tile, icon, integration_inactive_badge, mono_family,
-    page_frame, primary_button_with_icon, radius, tr,
+    page_frame, primary_button_with_icon, radius, scaled, tr,
 };
 use forge_platform_core::{ConnectionAffordance, IntegrationDeclaration};
 use forge_registry::{IntegrationReferences, SubActionRegistry, TriggerRegistry};
@@ -254,7 +254,7 @@ pub fn hero_card(
         .items_center()
         .gap(spacing(Spacing::Md, density))
         .py(spacing(Spacing::Md, density))
-        .px(HERO_PAD_H)
+        .px(scaled(HERO_PAD_H, density))
         .bg(palette.shell)
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
@@ -331,6 +331,7 @@ impl IntegrationDisabledView {
                 palette.warning,
                 tr!("integration_disabled_affected"),
                 palette,
+                density,
             ))
             .child(
                 div()
@@ -343,8 +344,9 @@ impl IntegrationDisabledView {
             empty_line(
                 tr!("integration_disabled_unused", name = name.to_string()),
                 palette,
+                density,
             )
-            .py(EMPTY_PAD_V)
+            .py(scaled(EMPTY_PAD_V, density))
             .into_any_element()
         } else {
             let mut rows = div().py(spacing(Spacing::Xs, density)).flex().flex_col();
@@ -424,11 +426,12 @@ impl IntegrationDisabledView {
             palette.success,
             tr!("integration_disabled_kept"),
             palette,
+            density,
         ));
         let mut body = div()
-            .pt(KEPT_PAD_TOP)
-            .pb(KEPT_PAD_BOTTOM)
-            .px(PANEL_HEAD_PAD_H)
+            .pt(scaled(KEPT_PAD_TOP, density))
+            .pb(scaled(KEPT_PAD_BOTTOM, density))
+            .px(scaled(PANEL_HEAD_PAD_H, density))
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density));
@@ -436,6 +439,7 @@ impl IntegrationDisabledView {
             body = body.child(empty_line(
                 tr!("integration_disabled_nothing_kept"),
                 palette,
+                density,
             ));
         }
         for kept in &self.kept {
@@ -449,7 +453,7 @@ impl IntegrationDisabledView {
                 div()
                     .flex()
                     .items_center()
-                    .gap(KEPT_ROW_GAP)
+                    .gap(scaled(KEPT_ROW_GAP, density))
                     .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
@@ -479,7 +483,7 @@ fn panel_head(palette: &ForgePalette, density: Density) -> gpui::Div {
         .flex()
         .items_center()
         .py(spacing(Spacing::Sm, density))
-        .px(PANEL_HEAD_PAD_H)
+        .px(scaled(PANEL_HEAD_PAD_H, density))
         .border_b(BORDER_THIN)
         .border_color(palette.border_regular)
 }
@@ -489,11 +493,12 @@ fn panel_title(
     tint: gpui::Rgba,
     label: String,
     palette: &ForgePalette,
+    density: Density,
 ) -> impl IntoElement {
     div()
         .flex()
         .items_center()
-        .gap(PANEL_TITLE_GAP)
+        .gap(scaled(PANEL_TITLE_GAP, density))
         .font_family(body_family())
         .font_weight(FontWeight::MEDIUM)
         .text_size(PANEL_TITLE)
@@ -502,9 +507,9 @@ fn panel_title(
         .child(label)
 }
 
-fn empty_line(text: String, palette: &ForgePalette) -> gpui::Div {
+fn empty_line(text: String, palette: &ForgePalette, density: Density) -> gpui::Div {
     div()
-        .px(PANEL_HEAD_PAD_H)
+        .px(scaled(PANEL_HEAD_PAD_H, density))
         .font_family(body_family())
         .text_size(FONT_XS)
         .italic()
@@ -523,8 +528,8 @@ fn affected_row(
         .flex()
         .items_center()
         .gap(spacing(Spacing::Sm, density))
-        .py(ROW_PAD_V)
-        .px(PANEL_HEAD_PAD_H)
+        .py(scaled(ROW_PAD_V, density))
+        .px(scaled(PANEL_HEAD_PAD_H, density))
         .cursor_pointer()
         .hover(move |style| style.bg(hover))
 }
@@ -540,7 +545,7 @@ impl Render for IntegrationDisabledView {
         let panels = div()
             .w_full()
             .flex()
-            .gap(PANEL_GAP)
+            .gap(scaled(PANEL_GAP, density))
             .child(grow_cell(self.affected(&palette, cx), AFFECTED_WEIGHT))
             .child(grow_cell(self.kept_panel(&palette, density), KEPT_WEIGHT));
 
@@ -552,8 +557,8 @@ impl Render for IntegrationDisabledView {
             .child(
                 div()
                     .w_full()
-                    .py(BODY_PAD_V)
-                    .px(BODY_PAD_H)
+                    .py(scaled(BODY_PAD_V, density))
+                    .px(scaled(BODY_PAD_H, density))
                     .child(self.hero(&palette, cx))
                     .children(self.disclaimer(&palette, density))
                     .child(panels),

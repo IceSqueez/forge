@@ -6,7 +6,7 @@ use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize,
     OverlayPosition, Radius, Spacing, TextArea, TextInput, body_family, card, field_label,
     ghost_button, icon, modal, mono_family, overlay, primary_button_with_icon, radio_row,
-    radio_row_label, radius, spacing, toggle, tr, with_alpha,
+    radio_row_label, radius, scaled, spacing, toggle, tr, with_alpha,
 };
 use forge_speak_queue::{
     EmoteTokenSet, PipelineConfigHandle, Priority, ReplacementSource, RequestId, SpeakCommand,
@@ -1129,9 +1129,9 @@ impl TtsFiltersView {
         let mut col = div()
             .flex()
             .flex_col()
-            .gap(PIPELINE_GAP)
-            .py(PIPELINE_PAD_Y)
-            .px(PIPELINE_PAD_X)
+            .gap(scaled(PIPELINE_GAP, density))
+            .py(scaled(PIPELINE_PAD_Y, density))
+            .px(scaled(PIPELINE_PAD_X, density))
             .child(intro);
 
         if let Some(err) = &self.save_error {
@@ -1164,7 +1164,7 @@ impl TtsFiltersView {
         let mut stages = div()
             .flex()
             .flex_col()
-            .gap(PIPELINE_GAP)
+            .gap(scaled(PIPELINE_GAP, density))
             .child(self.skip_card(palette, density, cx))
             .child(self.blocklist_card(palette, density, cx))
             .child(self.replacements_card(palette, density, cx))
@@ -1856,7 +1856,7 @@ impl AddFilterModal {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let color = palette.danger;
-        let mut list = div().flex().flex_col().gap(px(5.0));
+        let mut list = div().flex().flex_col().gap(scaled(px(5.0), density));
         for preset in SKIP_PRESETS {
             let selected = self.skip_preset == preset;
             let id = SharedString::from(format!("filt-modal-skip-{}", preset.key()));
@@ -1866,7 +1866,7 @@ impl AddFilterModal {
                         id,
                         selected,
                         color,
-                        radio_row_label(preset.label(), None, selected, palette),
+                        radio_row_label(preset.label(), None, selected, palette, density),
                         palette,
                     )
                     .on_click(cx.listener(
@@ -1899,7 +1899,7 @@ impl AddFilterModal {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let color = palette.success;
-        let mut list = div().flex().flex_col().gap(px(5.0));
+        let mut list = div().flex().flex_col().gap(scaled(px(5.0), density));
         for preset in OUTPUT_PRESETS {
             let selected = self.output_preset == preset;
             let id = SharedString::from(format!("filt-modal-output-{}", preset.key()));
@@ -1908,7 +1908,13 @@ impl AddFilterModal {
                     id,
                     selected,
                     color,
-                    radio_row_label(preset.label(), Some(preset.hint()), selected, palette),
+                    radio_row_label(
+                        preset.label(),
+                        Some(preset.hint()),
+                        selected,
+                        palette,
+                        density,
+                    ),
                     palette,
                 )
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
@@ -1963,7 +1969,7 @@ impl AddFilterModal {
         let mode_list = div()
             .flex()
             .flex_col()
-            .gap(px(5.0))
+            .gap(scaled(px(5.0), density))
             .child(
                 radio_row(
                     "filt-modal-bl-censor",
@@ -1974,6 +1980,7 @@ impl AddFilterModal {
                         Some(tr!("tts_filters_modal_blocklist_censor_row_hint").into()),
                         censor_selected,
                         palette,
+                        density,
                     ),
                     palette,
                 )
@@ -1991,6 +1998,7 @@ impl AddFilterModal {
                         Some(tr!("tts_filters_modal_blocklist_skip_row_hint").into()),
                         skip_selected,
                         palette,
+                        density,
                     ),
                     palette,
                 )
@@ -2048,8 +2056,8 @@ impl AddFilterModal {
             };
             let mut chip = div()
                 .id(id)
-                .py(px(5.0))
-                .px(px(14.0))
+                .py(scaled(px(5.0), density))
+                .px(scaled(px(14.0), density))
                 .rounded(radius(Radius::Sm))
                 .cursor_pointer()
                 .font_family(mono_family())

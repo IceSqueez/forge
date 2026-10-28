@@ -35,6 +35,13 @@ impl Density {
             Density::Spacious => 1.2,
         }
     }
+
+    pub fn tighter(self) -> Density {
+        match self {
+            Density::Compact | Density::Cozy => Density::Compact,
+            Density::Spacious => Density::Cozy,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,7 +68,14 @@ impl Spacing {
 }
 
 pub fn spacing(s: Spacing, d: Density) -> Pixels {
-    px((s.base_px() * d.multiplier()).round())
+    scaled(px(s.base_px()), d)
+}
+
+pub fn scaled(value: Pixels, d: Density) -> Pixels {
+    match d {
+        Density::Cozy => value,
+        Density::Compact | Density::Spacious => px((value.as_f32() * d.multiplier()).round()),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

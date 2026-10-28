@@ -3,7 +3,7 @@ use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, Button, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, body_family,
-    empty_state, ghost_button_with_icon, icon, mono_family, radius, tr,
+    empty_state, ghost_button_with_icon, icon, mono_family, radius, scaled, tr,
 };
 use gpui::{AnyElement, App, ClickEvent, Entity, Pixels, SharedString, div, prelude::*, px};
 
@@ -48,7 +48,7 @@ pub(crate) fn render_readout(
                 .child(
                     empty_state(tr!("overlays_wire_empty"), palette)
                         .glyph(Icon::Bolt)
-                        .density(Density::Compact)
+                        .density(density.tighter())
                         .cta(entry_button(view, "overlays-wire-entry-empty", palette)),
                 )
                 .into_any_element(),
@@ -139,9 +139,9 @@ fn feed_chip(
         .w_full()
         .flex()
         .items_center()
-        .gap(CHIP_GAP)
+        .gap(scaled(CHIP_GAP, density))
         .px(spacing(Spacing::Sm, density))
-        .py(CHIP_PAD_V)
+        .py(scaled(CHIP_PAD_V, density))
         .rounded(radius(Radius::Sm))
         .border(BORDER_THIN)
         .border_color(palette.border_regular)

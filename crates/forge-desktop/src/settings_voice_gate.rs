@@ -8,8 +8,8 @@ use forge_audio::{
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, Radius,
     SettingRow, Spacing, TextInput, body_family, drive_overlay_focus, dropdown, dropdown_list,
-    dropdown_row, ghost_button, icon, icon_button, mono_family, radius, setting_block, setting_row,
-    setting_rows, spacing, toggle, tr,
+    dropdown_row, ghost_button, icon, icon_button, mono_family, radius, scaled, setting_block,
+    setting_row, setting_rows, spacing, toggle, tr,
 };
 use forge_storage::{DataProvider, SettingsRepo, VoiceGateSettings};
 use gpui::{
@@ -392,7 +392,7 @@ impl SettingsVoiceGateView {
             .justify_between()
             .w_full()
             .px(spacing(Spacing::Sm, density))
-            .py(px(7.0))
+            .py(scaled(px(7.0), density))
             .rounded(radius(Radius::Sm))
             .bg(palette.base)
             .border(BORDER_THIN)
@@ -630,7 +630,13 @@ impl Render for SettingsVoiceGateView {
             );
         }
 
-        setting_block(tr!("settings_voice_gate_title"), None, content, &palette)
+        setting_block(
+            tr!("settings_voice_gate_title"),
+            None,
+            content,
+            &palette,
+            density,
+        )
     }
 }
 

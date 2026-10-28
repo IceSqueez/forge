@@ -1,6 +1,6 @@
 use super::*;
 use forge_components::{
-    Density, FONT_SM, FONT_XS, ForgePalette, Icon, Spacing, body_family, icon, spacing, tr,
+    Density, FONT_SM, FONT_XS, ForgePalette, Icon, Spacing, body_family, icon, scaled, spacing, tr,
 };
 use forge_types::SubActionStep;
 use gpui::{AnyElement, Context, div};
@@ -149,8 +149,8 @@ impl ScreenActionsView {
             .min_w_0()
             .h_full()
             .overflow_y_scroll()
-            .py(PANE_PAD_V)
-            .px(PANE_PAD_H)
+            .py(scaled(PANE_PAD_V, density))
+            .px(scaled(PANE_PAD_H, density))
             .child(body)
             .into_any_element()
     }

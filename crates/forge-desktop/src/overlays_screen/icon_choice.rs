@@ -6,8 +6,8 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, Density, ForgePalette, GlyphArt, GridPicker, GridPickerArt, GridPickerConfig,
     GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle,
-    Icon, OverlayPosition, Radius, Spacing, body_family, glyph_art, icon, overlay, radius, spacing,
-    tr,
+    Icon, OverlayPosition, Radius, Spacing, body_family, glyph_art, icon, overlay, radius, scaled,
+    spacing, tr,
 };
 use forge_overlay::config::ICON;
 use forge_overlay::{
@@ -284,7 +284,7 @@ pub(super) fn icon_field_row(
         .items_center()
         .gap(spacing(Spacing::Xs, density))
         .py(CHOICE_PAD_V)
-        .px(CHOICE_PAD_H)
+        .px(scaled(CHOICE_PAD_H, density))
         .rounded(radius(Radius::Sm))
         .border(BORDER_THIN)
         .border_color(palette.border_input)

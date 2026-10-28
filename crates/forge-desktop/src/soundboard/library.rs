@@ -2,7 +2,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use forge_components::{
-    Density, FONT_XXS, ForgePalette, Icon, Spacing, icon, mono_family, pad_tile, spacing, tr,
+    ActivePresentation, Density, FONT_XXS, ForgePalette, Icon, Spacing, icon, mono_family,
+    pad_tile, scaled, spacing, tr,
 };
 use forge_soundboard::SoundboardError;
 use forge_soundboard::builtin_library::{
@@ -123,6 +124,7 @@ impl SoundboardView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let density = cx.density();
         let color = category_color(entry.category, palette);
         let glyph =
             glyph_for_name(entry.icon_name).unwrap_or_else(|| category_glyph(entry.category));
@@ -138,7 +140,7 @@ impl SoundboardView {
         .top_right(icon(Icon::Plus, SMALL_GLYPH, palette.text_faint))
         .sublabel(
             div()
-                .mt(px(3.0))
+                .mt(scaled(px(3.0), density))
                 .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)

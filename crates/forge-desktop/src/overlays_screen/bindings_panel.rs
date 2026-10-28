@@ -7,7 +7,7 @@ use forge_components::spacing;
 use std::ops::Range;
 
 use forge_components::{
-    BORDER_THIN, FONT_XXS, ForgePalette, body_family, mono_family, section_label, tr,
+    BORDER_THIN, FONT_XXS, ForgePalette, body_family, mono_family, scaled, section_label, tr,
 };
 use forge_overlay::config::{
     ACCENT, AUTHOR, AUTHOR_COLOR, BADGES, FONT, HEADLINE, ICON, LABEL, MESSAGE, PLACEHOLDER,
@@ -56,33 +56,33 @@ pub(super) fn bindings_reference(
                 palette,
             ))
             .into_any_element(),
-        intro(contract, palette),
-        group(tr!("overlays_bindings_api_heading"), palette)
+        intro(contract, palette, density),
+        group(tr!("overlays_bindings_api_heading"), palette, density)
             .children(
                 contract
                     .functions
                     .iter()
-                    .map(|function| function_entry(function, palette)),
+                    .map(|function| function_entry(function, palette, density)),
             )
             .into_any_element(),
     ];
-    let runtime = group(tr!("overlays_bindings_runtime_heading"), palette)
-        .children(runtime_entries(contract, palette))
+    let runtime = group(tr!("overlays_bindings_runtime_heading"), palette, density)
+        .children(runtime_entries(contract, palette, density))
         .into_any_element();
     match look {
         Some(look) => sections.extend([
-            group(tr!("overlays_bindings_content_heading"), palette)
+            group(tr!("overlays_bindings_content_heading"), palette, density)
                 .child(content_fields(look, palette, density))
                 .into_any_element(),
             runtime,
-            group(tr!("overlays_bindings_config_heading"), palette)
-                .child(config_keys(look, palette))
+            group(tr!("overlays_bindings_config_heading"), palette, density)
+                .child(config_keys(look, palette, density))
                 .into_any_element(),
         ]),
         None => sections.extend([
             runtime,
             div()
-                .pt(GROUP_TOP_GAP)
+                .pt(scaled(GROUP_TOP_GAP, density))
                 .child(summary(tr!("overlays_bindings_look_unavailable"), palette))
                 .into_any_element(),
         ]),
@@ -90,15 +90,19 @@ pub(super) fn bindings_reference(
     sections
 }
 
-fn group(heading: String, palette: &ForgePalette) -> Div {
-    div().flex().flex_col().pt(GROUP_TOP_GAP).child(
-        div()
-            .pb(GROUP_HEADING_GAP)
-            .child(section_label(heading.to_uppercase(), palette)),
-    )
+fn group(heading: String, palette: &ForgePalette, density: Density) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .pt(scaled(GROUP_TOP_GAP, density))
+        .child(
+            div()
+                .pb(scaled(GROUP_HEADING_GAP, density))
+                .child(section_label(heading.to_uppercase(), palette)),
+        )
 }
 
-fn intro(contract: &PageContract, palette: &ForgePalette) -> AnyElement {
+fn intro(contract: &PageContract, palette: &ForgePalette, density: Density) -> AnyElement {
     let marker = format!("{}=\"{EXAMPLE_NAME}\"", contract.bind.attribute);
     let writer = format!("{}.{}", contract.namespace, contract.bind.writer);
     let call = format!("{writer}({EXAMPLE_NAME}, {EXAMPLE_TEXT})");
@@ -119,7 +123,7 @@ fn intro(contract: &PageContract, palette: &ForgePalette) -> AnyElement {
         .with_font_family_overrides(ranges.into_iter().map(|range| (range, mono.clone())));
 
     div()
-        .pb(INTRO_GAP)
+        .pb(scaled(INTRO_GAP, density))
         .font_family(body_family())
         .text_size(INTRO_FS)
         .line_height(INTRO_LINE_H)
@@ -128,12 +132,12 @@ fn intro(contract: &PageContract, palette: &ForgePalette) -> AnyElement {
         .into_any_element()
 }
 
-fn function_entry(function: &PageFunction, palette: &ForgePalette) -> AnyElement {
+fn function_entry(function: &PageFunction, palette: &ForgePalette, density: Density) -> AnyElement {
     let callback = function
         .callback
         .map(|shape| code_line(shape, palette.text_muted));
     div()
-        .pb(ENTRY_GAP)
+        .pb(scaled(ENTRY_GAP, density))
         .flex()
         .flex_col()
         .children(
@@ -147,7 +151,11 @@ fn function_entry(function: &PageFunction, palette: &ForgePalette) -> AnyElement
         .into_any_element()
 }
 
-fn runtime_entries(contract: &PageContract, palette: &ForgePalette) -> Vec<AnyElement> {
+fn runtime_entries(
+    contract: &PageContract,
+    palette: &ForgePalette,
+    density: Density,
+) -> Vec<AnyElement> {
     let attribute = &contract.body_attribute;
     contract
         .custom_properties
@@ -159,7 +167,7 @@ fn runtime_entries(contract: &PageContract, palette: &ForgePalette) -> Vec<AnyEl
         )))
         .map(|(code, config_key)| {
             div()
-                .pb(ENTRY_GAP)
+                .pb(scaled(ENTRY_GAP, density))
                 .flex()
                 .flex_col()
                 .child(code_line(&code, palette.info))
@@ -176,20 +184,20 @@ fn content_fields(look: &LookContract, palette: &ForgePalette, density: Density)
     div()
         .flex()
         .flex_col()
-        .gap(CHIP_GAP)
+        .gap(scaled(CHIP_GAP, density))
         .children(look.content_keys.iter().map(|key| {
             div()
                 .flex()
                 .flex_wrap()
                 .items_center()
-                .gap(CHIP_GAP)
+                .gap(scaled(CHIP_GAP, density))
                 .child(key_chip(key, palette, density))
                 .children(binding_label(key).map(|label| summary(label, palette)))
         }))
         .into_any_element()
 }
 
-fn config_keys(look: &LookContract, palette: &ForgePalette) -> AnyElement {
+fn config_keys(look: &LookContract, palette: &ForgePalette, density: Density) -> AnyElement {
     if look.config_keys.is_empty() {
         return summary(tr!("overlays_bindings_config_empty"), palette);
     }
@@ -198,7 +206,7 @@ fn config_keys(look: &LookContract, palette: &ForgePalette) -> AnyElement {
         .flex_col()
         .children(look.config_keys.iter().map(|entry| {
             div()
-                .pb(ENTRY_GAP)
+                .pb(scaled(ENTRY_GAP, density))
                 .flex()
                 .flex_col()
                 .child(code_line(
@@ -214,7 +222,7 @@ fn key_chip(key: &str, palette: &ForgePalette, density: Density) -> AnyElement {
     div()
         .flex_none()
         .px(spacing(Spacing::Xs, density))
-        .py(CHIP_PAD_V)
+        .py(scaled(CHIP_PAD_V, density))
         .rounded(CHIP_RADIUS)
         .border(BORDER_THIN)
         .border_color(palette.border_regular)

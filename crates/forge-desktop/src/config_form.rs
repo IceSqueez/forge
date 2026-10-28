@@ -10,7 +10,7 @@ use forge_components::highlight::Language;
 use forge_components::{
     BORDER_THIN, CodeEditor, Density, ForgePalette, Icon, InputEvent, Picker, PickerEvent,
     PickerItem, PickerLabels, Radius, Spacing, TextInput, accent_swatch, body_family, dropdown,
-    icon, mono_family, radius, slider, spacing, toggle, tr,
+    icon, mono_family, radius, scaled, slider, spacing, toggle, tr,
 };
 use forge_registry::{CodeKind, CodeLanguage, FormField};
 
@@ -1262,7 +1262,7 @@ fn render_choice<V: 'static>(
         .justify_between()
         .gap(spacing(Spacing::Xs, density))
         .py(CHOICE_PAD_V)
-        .px(CHOICE_PAD_H)
+        .px(scaled(CHOICE_PAD_H, density))
         .rounded(radius(Radius::Sm))
         .border(BORDER_THIN)
         .border_color(palette.border_input)
@@ -1336,8 +1336,8 @@ pub(crate) fn render_config_row<V: 'static>(
         .flex()
         .items_center()
         .gap(spacing(Spacing::Sm, density))
-        .py(FILL_ROW_PAD_V)
-        .px(FILL_ROW_PAD_H)
+        .py(scaled(FILL_ROW_PAD_V, density))
+        .px(scaled(FILL_ROW_PAD_H, density))
         .when(!last, |row| {
             row.border_b(BORDER_THIN)
                 .border_color(palette.border_regular)

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use forge_audio::{AudioError, AudioSink, ControlledPlayback, PcmBuffer, PlaybackHandle};
+use forge_audio::{AudioError, AudioSink, ControlledPlayback, PlaybackHandle};
 use forge_events::Event;
 use forge_registry::{
     ActorBlock, ActorIdentity, ChatTriggerFamily, EventFilter, FormField, KindPlatformContract,
@@ -17,6 +17,7 @@ use forge_registry::{
 };
 use forge_runtime::{ActionCancelRegistry, Catalog, EventBus, spawn_action_engine};
 use forge_server::{ServerConfig, ServerHandle, stopped_server};
+use forge_speech_types::PcmBuffer;
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
     ActionRepo, ActionStats, ActionTelemetry, BanLedgerRepo, CatalogRevision, ChatHistoryRepo,
@@ -1680,7 +1681,7 @@ impl forge_events::EventPublisher for SilentPublisher {
 }
 
 pub(crate) fn spawn_speak_queue(
-    aliases: Vec<forge_voice::VoiceAlias>,
+    aliases: Vec<forge_speech_types::VoiceAlias>,
 ) -> (
     forge_speak_queue::SpeakQueueHandle,
     forge_speak_queue::SpeakEventStream,
@@ -1689,9 +1690,9 @@ pub(crate) fn spawn_speak_queue(
     let resolver = Arc::new(std::sync::RwLock::new(
         forge_voice::VoiceAliasResolver::new(
             aliases,
-            forge_voice::AssignmentStrategy::DeterministicByName,
-            forge_voice::IgnoreProfile::default(),
-            forge_voice::SynthesisDefaults::default(),
+            forge_speech_types::AssignmentStrategy::DeterministicByName,
+            forge_speech_types::IgnoreProfile::default(),
+            forge_speech_types::SynthesisDefaults::default(),
         ),
     ));
     let deps = forge_speak_queue::QueueDeps {
@@ -1713,7 +1714,7 @@ pub(crate) fn spawn_speak_queue(
 pub(crate) fn live_alias(
     resolver: &LiveAliases,
     viewer_id: &str,
-) -> Option<forge_voice::VoiceAlias> {
+) -> Option<forge_speech_types::VoiceAlias> {
     resolver
         .read()
         .expect("resolver lock")
@@ -1731,10 +1732,10 @@ pub(crate) type AliasShape = (
     String,
     Option<f32>,
     Option<f32>,
-    forge_voice::AliasState,
+    forge_speech_types::AliasState,
 );
 
-pub(crate) fn alias_shape(alias: &forge_voice::VoiceAlias) -> AliasShape {
+pub(crate) fn alias_shape(alias: &forge_speech_types::VoiceAlias) -> AliasShape {
     (
         alias.id.0.clone(),
         alias.viewer_id.clone(),

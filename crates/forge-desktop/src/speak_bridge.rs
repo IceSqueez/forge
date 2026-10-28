@@ -536,7 +536,7 @@ mod tests {
 
     struct Harness {
         per_user_limit: usize,
-        aliases: Vec<forge_voice::VoiceAlias>,
+        aliases: Vec<forge_speech_types::VoiceAlias>,
         pipeline: forge_tts_pipeline::PipelineConfig,
         bus: Arc<dyn forge_events::EventPublisher>,
         engines: forge_tts_core::TtsRegistry,
@@ -558,9 +558,9 @@ mod tests {
         fn spawn(self) -> (Arc<SpeakQueueHandle>, forge_speak_queue::SpeakEventStream) {
             let resolver = forge_voice::VoiceAliasResolver::new(
                 self.aliases,
-                forge_voice::AssignmentStrategy::DeterministicByName,
-                forge_voice::IgnoreProfile::default(),
-                forge_voice::SynthesisDefaults::default(),
+                forge_speech_types::AssignmentStrategy::DeterministicByName,
+                forge_speech_types::IgnoreProfile::default(),
+                forge_speech_types::SynthesisDefaults::default(),
             );
             let deps = forge_speak_queue::QueueDeps {
                 registry: Arc::new(std::sync::RwLock::new(self.engines)),
@@ -737,12 +737,12 @@ mod tests {
 
         async fn list_voices(
             &self,
-        ) -> Result<Vec<forge_tts_core::TtsVoice>, forge_tts_core::TtsError> {
-            Ok(vec![forge_tts_core::TtsVoice {
+        ) -> Result<Vec<forge_speech_types::TtsVoice>, forge_tts_core::TtsError> {
+            Ok(vec![forge_speech_types::TtsVoice {
                 id: VoiceId("cap-1".to_owned()),
                 name: "cap-1".to_owned(),
                 locale: "en-US".to_owned(),
-                gender: forge_tts_core::VoiceGender::Neutral,
+                gender: forge_speech_types::VoiceGender::Neutral,
                 engine_id: self.id.clone(),
                 is_neural: false,
                 sample_rate_hint: 22_050,
@@ -752,9 +752,9 @@ mod tests {
         async fn synthesize(
             &self,
             request: forge_tts_core::SynthesisRequest,
-        ) -> Result<forge_audio::PcmBuffer, forge_tts_core::TtsError> {
+        ) -> Result<forge_speech_types::PcmBuffer, forge_tts_core::TtsError> {
             self.heard.lock().unwrap().push(request.text);
-            Ok(forge_audio::PcmBuffer::new(vec![0i16; 4], 22_050, 1))
+            Ok(forge_speech_types::PcmBuffer::new(vec![0i16; 4], 22_050, 1))
         }
     }
 
@@ -917,15 +917,15 @@ mod tests {
     async fn a_blocked_viewers_speech_is_dropped() {
         for key in ["twitch:66", "grumpy"] {
             let (handle, mut stream) = Harness {
-                aliases: vec![forge_voice::VoiceAlias {
-                    id: forge_voice::AliasId::new(),
+                aliases: vec![forge_speech_types::VoiceAlias {
+                    id: forge_speech_types::AliasId::new(),
                     viewer_id: key.to_owned(),
                     viewer_name: key.to_owned(),
                     engine_id: EngineId("piper".to_owned()),
                     voice_id: VoiceId("amy".to_owned()),
                     pitch_semitones: None,
                     rate_multiplier: None,
-                    state: forge_voice::AliasState::Blocked,
+                    state: forge_speech_types::AliasState::Blocked,
                 }],
                 ..Harness::default()
             }
@@ -949,15 +949,15 @@ mod tests {
     #[tokio::test]
     async fn a_donation_show_speaks_with_the_donors_alias() {
         let (handle, mut stream) = Harness {
-            aliases: vec![forge_voice::VoiceAlias {
-                id: forge_voice::AliasId::new(),
+            aliases: vec![forge_speech_types::VoiceAlias {
+                id: forge_speech_types::AliasId::new(),
                 viewer_id: "aurora".to_owned(),
                 viewer_name: "Aurora".to_owned(),
                 engine_id: EngineId("piper".to_owned()),
                 voice_id: VoiceId("donor-voice".to_owned()),
                 pitch_semitones: None,
                 rate_multiplier: None,
-                state: forge_voice::AliasState::Active,
+                state: forge_speech_types::AliasState::Active,
             }],
             ..Harness::default()
         }
@@ -1162,14 +1162,14 @@ mod tests {
 
         async fn list_voices(
             &self,
-        ) -> Result<Vec<forge_tts_core::TtsVoice>, forge_tts_core::TtsError> {
+        ) -> Result<Vec<forge_speech_types::TtsVoice>, forge_tts_core::TtsError> {
             Ok(LISTED_VOICES
                 .iter()
-                .map(|(id, name)| forge_tts_core::TtsVoice {
+                .map(|(id, name)| forge_speech_types::TtsVoice {
                     id: VoiceId((*id).to_owned()),
                     name: (*name).to_owned(),
                     locale: "en-US".to_owned(),
-                    gender: forge_tts_core::VoiceGender::Neutral,
+                    gender: forge_speech_types::VoiceGender::Neutral,
                     engine_id: self.id.clone(),
                     is_neural: false,
                     sample_rate_hint: 22_050,
@@ -1180,8 +1180,8 @@ mod tests {
         async fn synthesize(
             &self,
             _: forge_tts_core::SynthesisRequest,
-        ) -> Result<forge_audio::PcmBuffer, forge_tts_core::TtsError> {
-            Ok(forge_audio::PcmBuffer::new(vec![0i16; 4], 22_050, 1))
+        ) -> Result<forge_speech_types::PcmBuffer, forge_tts_core::TtsError> {
+            Ok(forge_speech_types::PcmBuffer::new(vec![0i16; 4], 22_050, 1))
         }
     }
 

@@ -6,8 +6,8 @@ use std::collections::BTreeSet;
 use forge_speak_queue::{QueueConfig, SpeakCommand, SpeakEvent, SpeakQueueHandle};
 
 use common::{make_deps, recording_sink, request, standard_registry, wait_for};
-use forge_tts_core::EngineId;
-use forge_voice::{AssignmentStrategy, SynthesisDefaults};
+use forge_speech_types::EngineId;
+use forge_speech_types::{AssignmentStrategy, SynthesisDefaults};
 
 const HANG_GUARD_MS: u64 = 30_000;
 

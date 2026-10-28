@@ -3,20 +3,21 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_audio::{AudioError, AudioSink, PcmBuffer};
+use forge_audio::{AudioError, AudioSink};
 use forge_events::{Event, EventPublisher};
 use forge_speak_queue::{
     Priority, QueueDeps, RequestId, SpeakEvent, SpeakEventStream, SpeakRequest,
 };
+use forge_speech_types::PcmBuffer;
+use forge_speech_types::{
+    AliasId, AliasState, AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAlias,
+};
+use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
 use forge_tts_core::{
-    EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError,
-    TtsRegistry, TtsVoice, VoiceGender, VoiceId,
+    EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
 };
 use forge_types::EventId;
-use forge_voice::{
-    AliasId, AliasState, AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAlias,
-    VoiceAliasResolver,
-};
+use forge_voice::VoiceAliasResolver;
 
 pub const HANG_GUARD_MS: u64 = 30_000;
 

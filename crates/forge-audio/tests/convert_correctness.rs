@@ -4,8 +4,8 @@
     clippy::cast_sign_loss
 )]
 
-use forge_audio::PcmBuffer;
 use forge_audio::convert::{remix, resample};
+use forge_speech_types::PcmBuffer;
 
 #[test]
 fn resample_22050_mono_to_48000_produces_correct_frame_ratio() {

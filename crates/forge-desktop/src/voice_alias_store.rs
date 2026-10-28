@@ -56,9 +56,10 @@ mod tests {
     use std::time::Duration;
 
     use forge_speak_queue::SpeakCommand;
+    use forge_speech_types::VoiceAlias;
+    use forge_speech_types::{AliasId, AliasState, EngineId, VoiceId};
     use forge_storage::voice_aliases::MockVoiceAliasRepo;
-    use forge_storage::{DataProvider, StorageError, VoiceAlias};
-    use forge_voice::{AliasId, AliasState, EngineId, VoiceId};
+    use forge_storage::{DataProvider, StorageError};
 
     use super::{block_viewer, save_alias};
     use crate::test_support::{

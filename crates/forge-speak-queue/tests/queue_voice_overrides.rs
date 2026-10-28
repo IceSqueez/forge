@@ -3,7 +3,7 @@ mod common;
 use std::sync::Arc;
 
 use forge_speak_queue::{QueueConfig, SpeakCommand, SpeakEvent};
-use forge_voice::AssignmentStrategy;
+use forge_speech_types::AssignmentStrategy;
 
 use common::{
     make_deps, recording_sink, request_with_overrides, standard_registry, wait_for,

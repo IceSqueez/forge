@@ -6,15 +6,15 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_audio::PcmBuffer;
 use forge_speak_queue::{
     QueueConfig, RequestId, SpeakCommand, SpeakEvent, SpeakEventStream, SpeakQueueHandle,
 };
+use forge_speech_types::AssignmentStrategy;
+use forge_speech_types::PcmBuffer;
+use forge_speech_types::{EngineId, TtsVoice};
 use forge_tts_core::{
-    EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError,
-    TtsRegistry, TtsVoice,
+    EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
 };
-use forge_voice::AssignmentStrategy;
 use tokio::sync::Semaphore;
 
 use common::{alias, make_deps, recording_sink, request, request_with_overrides, voice, wait_for};
@@ -124,7 +124,10 @@ fn start(engines: &[(&str, Listing)]) -> Started {
     start_with(engines, vec![])
 }
 
-fn start_with(engines: &[(&str, Listing)], aliases: Vec<forge_voice::VoiceAlias>) -> Started {
+fn start_with(
+    engines: &[(&str, Listing)],
+    aliases: Vec<forge_speech_types::VoiceAlias>,
+) -> Started {
     let mut registry = TtsRegistry::new();
     let mut listings = Vec::new();
     for (id, listing) in engines {
@@ -583,7 +586,7 @@ async fn served_after(q: &mut Started, req: forge_speak_queue::SpeakRequest) -> 
 #[tokio::test(start_paused = true)]
 async fn startup_serves_an_override_or_active_alias_once_its_engine_settles_and_others_wait() {
     let mut blocked = alias("viewer", "alpha", "alpha-1");
-    blocked.state = forge_voice::AliasState::Blocked;
+    blocked.state = forge_speech_types::AliasState::Blocked;
     let cases = [
         (
             "override alpha",

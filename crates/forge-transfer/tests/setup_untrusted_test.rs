@@ -5,11 +5,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use forge_registry::{SubActionRegistry, TriggerRegistry};
+use forge_speech_types::{AssignmentStrategy, IgnoreProfile};
 use forge_storage::paths::{MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
 use forge_storage::settings::reserved_keys as key;
 use forge_storage::{
-    AssignmentStrategy, DATABASE_FILE_NAME, DataProvider, EXPECTED_SCHEMA_VERSION, IgnoreProfile,
-    MediaBlobId, MediaFormat, SettingsRepo, TtsPipelineSettings,
+    DATABASE_FILE_NAME, DataProvider, EXPECTED_SCHEMA_VERSION, MediaBlobId, MediaFormat,
+    SettingsRepo, TtsPipelineSettings,
 };
 use forge_storage_sqlite::{SqliteBackend, SqliteDatabaseFileSchema};
 use forge_transfer::{

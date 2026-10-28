@@ -3,13 +3,13 @@ mod common;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_audio::PcmBuffer;
 use forge_speak_queue::{QueueConfig, SpeakCommand, SpeakEvent};
+use forge_speech_types::AssignmentStrategy;
+use forge_speech_types::PcmBuffer;
+use forge_speech_types::{EngineId, TtsVoice};
 use forge_tts_core::{
-    EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError,
-    TtsRegistry, TtsVoice,
+    EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
 };
-use forge_voice::AssignmentStrategy;
 use tokio::sync::Notify;
 
 use common::{assert_no_event, make_deps, recording_sink, request, voice, wait_for};

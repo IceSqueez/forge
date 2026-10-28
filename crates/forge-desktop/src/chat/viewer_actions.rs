@@ -230,8 +230,8 @@ mod tests {
 
     use forge_runtime::{SpeakDispatcher, SpeechOrigin};
     use forge_speak_queue::SpeakEvent;
+    use forge_speech_types::{AliasId, AliasState, EngineId, VoiceAlias, VoiceId};
     use forge_types::ArgStack;
-    use forge_voice::{AliasId, AliasState, EngineId, VoiceAlias, VoiceId};
 
     use super::{ViewerAction, ViewerTarget};
     use crate::chat_author::AuthorKey;

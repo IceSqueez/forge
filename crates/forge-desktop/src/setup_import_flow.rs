@@ -392,12 +392,13 @@ mod tests {
     use std::time::Duration;
 
     use forge_components::{ToastKind, Toasts};
-    use forge_storage::{AliasId, Language, VoiceAlias};
+    use forge_speech_types::{AliasId, VoiceAlias};
+    use forge_speech_types::{AliasState, EngineId, VoiceId};
+    use forge_storage::Language;
     use forge_transfer::{
         PackItemKind, SetupExportRequest, SetupImportOutcome, SetupQueueChanges, StagedSetup,
         write_setup,
     };
-    use forge_voice::{AliasState, EngineId, VoiceId};
     use gpui::{AppContext, Entity, TestAppContext};
     use ulid::Ulid;
 

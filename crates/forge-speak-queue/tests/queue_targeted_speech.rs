@@ -5,18 +5,17 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use forge_audio::{
-    AudioSink, PcmBuffer, PlaybackCorrelation, RemoteDestinationId, TargetedSinkFactory,
-};
+use forge_audio::{AudioSink, PlaybackCorrelation, RemoteDestinationId, TargetedSinkFactory};
 use forge_speak_queue::{
     PlaybackTarget, QueueConfig, RequestId, SpeakCommand, SpeakEvent, SpeakEventStream,
     SpeakQueueHandle, SpeakRequest,
 };
+use forge_speech_types::AssignmentStrategy;
+use forge_speech_types::PcmBuffer;
+use forge_speech_types::{EngineId, TtsVoice};
 use forge_tts_core::{
-    EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError,
-    TtsRegistry, TtsVoice,
+    EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
 };
-use forge_voice::AssignmentStrategy;
 use tokio::sync::Notify;
 
 use common::{make_deps, recording_sink, request, standard_registry, voice, wait_for};

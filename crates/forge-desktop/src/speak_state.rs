@@ -269,8 +269,8 @@ mod tests {
     fn started(id: &str) -> SpeakEvent {
         SpeakEvent::Started {
             request_id: rid(id),
-            voice_id: forge_tts_core::VoiceId("amy".into()),
-            engine_id: forge_tts_core::EngineId("piper".into()),
+            voice_id: forge_speech_types::VoiceId("amy".into()),
+            engine_id: forge_speech_types::EngineId("piper".into()),
             viewer_name: format!("viewer-{id}"),
             text: "hello".into(),
             duration_secs: 3,

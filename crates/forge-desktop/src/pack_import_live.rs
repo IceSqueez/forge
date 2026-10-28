@@ -311,15 +311,14 @@ mod tests {
 
     use forge_hotkey::{HotkeyConfig, HotkeyReconciler};
     use forge_speak_queue::PipelineConfigHandle;
-    use forge_storage::{
-        AliasId, OverlayId, ScriptRecord, ScriptRepo, StoredClip, TtsPipelineSettings, VoiceAlias,
-    };
+    use forge_speech_types::{AliasId, VoiceAlias};
+    use forge_speech_types::{AliasState, AssignmentStrategy, EngineId, IgnoreProfile, VoiceId};
+    use forge_storage::{OverlayId, ScriptRecord, ScriptRepo, StoredClip, TtsPipelineSettings};
     use forge_transfer::{
         PackItemKey, PackItemKind, PackWrittenItem, SetupImportOutcome, SetupLivePart,
         SetupQueueChanges,
     };
     use forge_types::{ClipId, OutputDevice, ScriptContract, ScriptId, Shared};
-    use forge_voice::{AliasState, AssignmentStrategy, EngineId, IgnoreProfile, VoiceId};
     use time::OffsetDateTime;
 
     use super::{

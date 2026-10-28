@@ -99,35 +99,6 @@ mod tests {
     }
 
     #[test]
-    fn from_locale_keeps_the_primary_subtag_lowercased_across_every_shape_engines_emit() {
-        for (locale, expected) in [
-            ("uk-UA", "uk"),
-            ("en_US", "en"),
-            ("en-gb", "en"),
-            ("zh-Hans-CN", "zh"),
-            ("EN", "en"),
-            ("Ru", "ru"),
-            ("ja", "ja"),
-        ] {
-            let parsed = LanguageCode::from_locale(locale)
-                .unwrap_or_else(|| panic!("{locale} must yield a language code"));
-            assert_eq!(parsed.to_string(), expected, "locale {locale}");
-        }
-    }
-
-    #[test]
-    fn from_locale_rejects_anything_without_a_two_letter_primary_subtag() {
-        for locale in [
-            "", "und", "0409", "fil-PH", "eng", "e", "e1", "1e", "-", "_US", " en", "en ",
-        ] {
-            assert!(
-                LanguageCode::from_locale(locale).is_none(),
-                "locale {locale:?} must not resolve to a language"
-            );
-        }
-    }
-
-    #[test]
     fn new_returns_none_unless_two_distinct_compiled_candidates_survive() {
         for candidates in [
             vec![],

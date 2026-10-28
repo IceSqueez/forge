@@ -1046,8 +1046,8 @@ mod tests {
     use std::time::Duration;
 
     use forge_components::ThemeId;
+    use forge_speech_types::{EngineId, VoiceId};
     use forge_storage::{DataProvider, Language};
-    use forge_voice::{EngineId, VoiceId};
     use gpui::{TestAppContext, VisualTestContext};
 
     use super::*;
@@ -1432,13 +1432,15 @@ mod tests {
             Ok(())
         }
 
-        async fn get_ignore_profile(&self) -> Result<forge_voice::IgnoreProfile, StorageError> {
-            Ok(forge_voice::IgnoreProfile::default())
+        async fn get_ignore_profile(
+            &self,
+        ) -> Result<forge_speech_types::IgnoreProfile, StorageError> {
+            Ok(forge_speech_types::IgnoreProfile::default())
         }
 
         async fn set_ignore_profile(
             &self,
-            _profile: &forge_voice::IgnoreProfile,
+            _profile: &forge_speech_types::IgnoreProfile,
         ) -> Result<(), StorageError> {
             Ok(())
         }

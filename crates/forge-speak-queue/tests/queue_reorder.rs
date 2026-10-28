@@ -6,7 +6,7 @@ use forge_speak_queue::{
 };
 
 use common::{make_deps, recording_sink, request, standard_registry};
-use forge_voice::AssignmentStrategy;
+use forge_speech_types::AssignmentStrategy;
 
 const HANG_GUARD_MS: u64 = 30_000;
 

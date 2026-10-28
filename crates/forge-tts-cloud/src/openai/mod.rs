@@ -145,7 +145,8 @@ mod tests {
         API_KEY, OTHER_API_KEY, PAST_WAIT_THRESHOLD_SECS, freeze_clock, request_count, serving,
         throttled,
     };
-    use forge_tts_core::{TtsEngineFactory, VoiceId};
+    use forge_speech_types::VoiceId;
+    use forge_tts_core::TtsEngineFactory;
     use wiremock::ResponseTemplate;
 
     fn credentials(api_key: &str, base_url: &str) -> OpenAiCredentials {

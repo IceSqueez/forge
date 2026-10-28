@@ -8,9 +8,10 @@ use forge_speak_queue::{
     PipelineConfigHandle, QueueConfig, SpeakCommand, SpeakEvent, SpeakEventStream,
     SpeakQueueHandle, SpeakRequest,
 };
-use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceGender, VoiceId};
+use forge_speech_types::AssignmentStrategy;
+use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
+use forge_tts_core::TtsRegistry;
 use forge_tts_pipeline::{OutputConfig, PipelineConfig};
-use forge_voice::AssignmentStrategy;
 
 use common::{FakeFactory, make_deps, recording_sink, request};
 

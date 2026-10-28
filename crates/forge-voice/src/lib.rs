@@ -169,10 +169,11 @@ impl VoiceAliasResolver {
 
 #[cfg(test)]
 mod tests {
+    use forge_speech_types::{AliasId, VoiceGender};
+
     use super::*;
 
     fn make_voice(id: &str, locale: &str) -> TtsVoice {
-        use forge_tts_core::VoiceGender;
         TtsVoice {
             id: VoiceId(id.into()),
             name: id.into(),
@@ -182,93 +183,6 @@ mod tests {
             is_neural: false,
             sample_rate_hint: 22_050,
         }
-    }
-
-    #[test]
-    fn voice_alias_serde_roundtrip() {
-        let alias = VoiceAlias {
-            id: AliasId("01HWTEST".into()),
-            viewer_id: "123456".into(),
-            viewer_name: "testviewer".into(),
-            engine_id: EngineId("piper".into()),
-            voice_id: VoiceId("uk_UA-ukrainian-medium".into()),
-            pitch_semitones: Some(2.0),
-            rate_multiplier: None,
-            state: AliasState::Active,
-        };
-        let json = serde_json::to_string(&alias).unwrap();
-        let back: VoiceAlias = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.viewer_id, alias.viewer_id);
-        assert_eq!(back.state, AliasState::Active);
-        assert_eq!(back.pitch_semitones, Some(2.0));
-        assert!(back.rate_multiplier.is_none());
-    }
-
-    #[test]
-    fn assignment_strategy_serde_roundtrip() {
-        let strategy = AssignmentStrategy::Single {
-            voice_id: VoiceId("uk_UA-ukrainian-medium".into()),
-            engine_id: EngineId("piper".into()),
-        };
-        let json = serde_json::to_string(&strategy).unwrap();
-        let back: AssignmentStrategy = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, strategy);
-
-        let det = AssignmentStrategy::DeterministicByName;
-        let det_json = serde_json::to_string(&det).unwrap();
-        let det_back: AssignmentStrategy = serde_json::from_str(&det_json).unwrap();
-        assert_eq!(det_back, AssignmentStrategy::DeterministicByName);
-    }
-
-    #[test]
-    fn ignore_profile_serde_roundtrip() {
-        let profile = IgnoreProfile {
-            excluded_voice_ids: vec![VoiceId("boring".into())],
-            excluded_locales: vec!["de-DE".into()],
-        };
-        let json = serde_json::to_string(&profile).unwrap();
-        let back: IgnoreProfile = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.excluded_locales, vec!["de-DE".to_string()]);
-        assert_eq!(back.excluded_voice_ids.len(), 1);
-    }
-
-    #[test]
-    fn ignore_profile_is_eligible() {
-        use forge_tts_core::VoiceGender;
-        let profile = IgnoreProfile {
-            excluded_voice_ids: vec![VoiceId("boring".into())],
-            excluded_locales: vec!["de-DE".into()],
-        };
-        let eligible = TtsVoice {
-            id: VoiceId("uk_UA-medium".into()),
-            name: "Ukrainian".into(),
-            locale: "uk-UA".into(),
-            gender: VoiceGender::Neutral,
-            engine_id: EngineId("piper".into()),
-            is_neural: false,
-            sample_rate_hint: 22_050,
-        };
-        let excluded_by_id = TtsVoice {
-            id: VoiceId("boring".into()),
-            name: "Boring".into(),
-            locale: "en-US".into(),
-            gender: VoiceGender::Male,
-            engine_id: EngineId("piper".into()),
-            is_neural: false,
-            sample_rate_hint: 22_050,
-        };
-        let excluded_by_locale = TtsVoice {
-            id: VoiceId("german".into()),
-            name: "German".into(),
-            locale: "de-DE".into(),
-            gender: VoiceGender::Female,
-            engine_id: EngineId("piper".into()),
-            is_neural: false,
-            sample_rate_hint: 22_050,
-        };
-        assert!(profile.is_eligible(&eligible));
-        assert!(!profile.is_eligible(&excluded_by_id));
-        assert!(!profile.is_eligible(&excluded_by_locale));
     }
 
     #[test]

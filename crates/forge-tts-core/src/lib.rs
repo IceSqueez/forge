@@ -317,7 +317,7 @@ mod tests {
             ("my-engine", "my-engine"),
             ("", ""),
         ] {
-            assert_eq!(EngineId(id.to_owned()).display_name(), shown, "{id:?}");
+            assert_eq!(engine_display_name(id), shown, "{id:?}");
         }
     }
 

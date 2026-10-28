@@ -22,7 +22,7 @@ pub(crate) fn engine_voice_options(voices: &[TtsVoice]) -> Vec<(String, String)>
 
 #[cfg(test)]
 mod tests {
-    use forge_tts_core::{EngineId, VoiceGender, VoiceId};
+    use forge_speech_types::{EngineId, VoiceGender, VoiceId};
 
     use super::*;
 

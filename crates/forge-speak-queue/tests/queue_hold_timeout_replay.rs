@@ -3,18 +3,20 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_audio::{AudioError, AudioSink, PcmBuffer};
+use forge_audio::{AudioError, AudioSink};
 use forge_events::{Event, EventPublisher};
 use forge_speak_queue::{
     Priority, QueueConfig, QueueDeps, RequestId, SpeakCommand, SpeakEvent, SpeakEventStream,
     SpeakRequest,
 };
+use forge_speech_types::PcmBuffer;
+use forge_speech_types::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
+use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
 use forge_tts_core::{
-    EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError,
-    TtsRegistry, TtsVoice, VoiceGender, VoiceId,
+    EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
 };
 use forge_types::EventId;
-use forge_voice::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAliasResolver};
+use forge_voice::VoiceAliasResolver;
 use tokio::sync::Notify;
 
 const ENGINE: &str = "gated";

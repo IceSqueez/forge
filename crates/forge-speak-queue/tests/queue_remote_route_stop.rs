@@ -9,7 +9,7 @@ use forge_audio::{
     RemoteDelivery, RemoteDestinationId, RemoteSink, RemoteVerdict,
 };
 use forge_speak_queue::{QueueConfig, SpeakCommand, SpeakEvent};
-use forge_voice::AssignmentStrategy;
+use forge_speech_types::AssignmentStrategy;
 use tokio::sync::{Notify, mpsc};
 
 use common::{make_deps, request, standard_registry, wait_for};

@@ -2,8 +2,8 @@
 mod common;
 
 use forge_speak_queue::{QueueConfig, SpeakCommand, SpeakRequest};
-use forge_tts_core::{EngineId, VoiceId};
-use forge_voice::{AliasId, AssignmentStrategy};
+use forge_speech_types::{AliasId, AssignmentStrategy};
+use forge_speech_types::{EngineId, VoiceId};
 
 use common::{
     alias, make_deps, recording_sink, request, standard_registry, wait_for_resolved_voice,
@@ -227,7 +227,7 @@ fn viewer_request(viewer_id: &str, viewer_name: &str) -> SpeakRequest {
 }
 
 async fn voice_after_switch(
-    aliases: Vec<forge_voice::VoiceAlias>,
+    aliases: Vec<forge_speech_types::VoiceAlias>,
     switch_key: &str,
     speaker: SpeakRequest,
 ) -> (String, String) {

@@ -1,8 +1,7 @@
-use forge_tts_core::{EngineId, VoiceGender, VoiceId};
-use forge_voice::{
-    AssignmentStrategy, IgnoreProfile, ResolveResult, SynthesisDefaults, TtsVoice,
-    VoiceAliasResolver,
+use forge_speech_types::{
+    AssignmentStrategy, EngineId, IgnoreProfile, SynthesisDefaults, TtsVoice, VoiceGender, VoiceId,
 };
+use forge_voice::{ResolveResult, VoiceAliasResolver};
 
 fn make_voice(id: &str) -> TtsVoice {
     TtsVoice {

@@ -1620,7 +1620,7 @@ fn next_request<'a>(
 mod tests {
     use async_trait::async_trait;
     use forge_audio::{AudioError, AudioSink};
-    use forge_voice::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
+    use forge_speech_types::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
 
     use super::*;
 
@@ -2045,7 +2045,7 @@ mod tests {
             id: VoiceId("cap-1".into()),
             name: "cap-1".into(),
             locale: "en-US".into(),
-            gender: forge_tts_core::VoiceGender::Neutral,
+            gender: forge_speech_types::VoiceGender::Neutral,
             engine_id: engine_id.clone(),
             is_neural: false,
             sample_rate_hint: 22_050,
@@ -2402,7 +2402,7 @@ mod tests {
             id: VoiceId(id.into()),
             name: id.into(),
             locale: locale.into(),
-            gender: forge_tts_core::VoiceGender::Neutral,
+            gender: forge_speech_types::VoiceGender::Neutral,
             engine_id: EngineId(engine.into()),
             is_neural: false,
             sample_rate_hint: 22_050,
@@ -2475,8 +2475,8 @@ mod tests {
 
     #[test]
     fn an_explicit_alias_outranks_the_detected_language() {
-        let alias = forge_voice::VoiceAlias {
-            id: forge_voice::AliasId::new(),
+        let alias = forge_speech_types::VoiceAlias {
+            id: forge_speech_types::AliasId::new(),
             viewer_id: "nova".into(),
             viewer_name: "nova".into(),
             engine_id: EngineId("alpha".into()),

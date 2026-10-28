@@ -4,13 +4,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
+use forge_speech_types::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias};
+use forge_speech_types::{AliasState, EngineId, VoiceId};
 use forge_storage::settings::portability::is_portable;
 use forge_storage::settings::reserved_keys as key;
 use forge_storage::{
-    AliasId, AssignmentStrategy, BanLedgerEntry, BanLedgerKey, BanOrigin, CredentialId, FilterRule,
-    FilterRuleKind, GlobalsRepo, IgnoreProfile, LatestRecord, MediaBlobId, OverlayId, ScriptRepo,
-    SettingsRepo, StoredClip, StoredDonation, TtsPipelineSettings, Viewer, VoiceAlias,
-    clip_source_referrer,
+    BanLedgerEntry, BanLedgerKey, BanOrigin, CredentialId, FilterRule, FilterRuleKind, GlobalsRepo,
+    LatestRecord, MediaBlobId, OverlayId, ScriptRepo, SettingsRepo, StoredClip, StoredDonation,
+    TtsPipelineSettings, Viewer, clip_source_referrer,
 };
 use forge_storage_sqlite::SqliteDatabaseFileSchema;
 use forge_transfer::{
@@ -23,7 +24,6 @@ use forge_types::{
     IntegrationId, ModerationMarks, MoneyAmount, PlatformId, Queue, TriggerInstance,
     UnifiedChatRow, Variant,
 };
-use forge_voice::{AliasState, EngineId, VoiceId};
 use time::OffsetDateTime;
 use ulid::Ulid;
 

@@ -239,8 +239,8 @@ mod tests {
     use super::*;
     use crate::SqliteBackend;
     use crate::test_support::{Sandboxed, sandboxed_backend};
+    use forge_speech_types::AliasState;
     use forge_storage::DataProvider;
-    use forge_voice::AliasState;
 
     async fn open() -> Sandboxed<SqliteBackend> {
         sandboxed_backend([0xab; 32]).await

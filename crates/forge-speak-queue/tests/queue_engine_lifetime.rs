@@ -7,15 +7,15 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_audio::PcmBuffer;
 use forge_speak_queue::{
     QueueConfig, QueueDeps, RequestId, SpeakCommand, SpeakEvent, SpeakEventStream, SpeakQueueHandle,
 };
+use forge_speech_types::PcmBuffer;
+use forge_speech_types::{AssignmentStrategy, SynthesisDefaults};
+use forge_speech_types::{EngineId, TtsVoice};
 use forge_tts_core::{
-    EngineCapabilities, EngineId, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError,
-    TtsRegistry, TtsVoice,
+    EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
 };
-use forge_voice::{AssignmentStrategy, SynthesisDefaults};
 
 use common::{HANG_GUARD_MS, make_deps, recording_sink, request_with_overrides, voice};
 

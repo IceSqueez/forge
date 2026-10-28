@@ -155,7 +155,7 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
-    use forge_tts_core::VoiceId;
+    use forge_speech_types::VoiceId;
     use tokio::time::Instant;
 
     fn pcm() -> PcmBuffer {

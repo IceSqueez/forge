@@ -5,10 +5,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_audio::{AudioError, AudioSink, ControlledPlayback, PcmBuffer};
+use forge_audio::{AudioError, AudioSink, ControlledPlayback};
 use forge_events::{Event, EventPublisher};
 use forge_speak_queue::{QueueConfig, RequestId, SpeakCommand, SpeakEvent};
-use forge_voice::AssignmentStrategy;
+use forge_speech_types::AssignmentStrategy;
+use forge_speech_types::PcmBuffer;
 
 use common::{assert_no_event, make_deps, request, standard_registry};
 

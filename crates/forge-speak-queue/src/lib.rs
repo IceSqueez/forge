@@ -355,7 +355,7 @@ mod tests {
             resolver: Arc::new(std::sync::RwLock::new(VoiceAliasResolver::new(
                 vec![],
                 AssignmentStrategy::default(),
-                forge_voice::IgnoreProfile::default(),
+                forge_speech_types::IgnoreProfile::default(),
                 SynthesisDefaults::default(),
             ))),
             master_volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
@@ -379,7 +379,7 @@ mod tests {
             resolver: Arc::new(std::sync::RwLock::new(VoiceAliasResolver::new(
                 vec![],
                 AssignmentStrategy::default(),
-                forge_voice::IgnoreProfile::default(),
+                forge_speech_types::IgnoreProfile::default(),
                 SynthesisDefaults::default(),
             ))),
             master_volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),

@@ -46,10 +46,6 @@ jobs:
         shell: bash
         run: python3 .github/scripts/http-client-boundary.py
 
-      - name: Dependency closure
-        shell: bash
-        run: python3 .github/scripts/dependency-closure.py
-
       - name: Install dependency linters
         uses: taiki-e/install-action@v2.87.29
         with:

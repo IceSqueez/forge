@@ -26,7 +26,6 @@ pub(crate) fn is_chat_message_kind(kind: &str) -> bool {
         "twitch.channel.chat.message"
             | "youtube.chat.message"
             | "kick.chat.message.sent"
-            | "youtube.chat.command"
             | "kick.chat.command"
     )
 }

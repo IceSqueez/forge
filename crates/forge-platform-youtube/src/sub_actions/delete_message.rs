@@ -14,6 +14,8 @@ use time::OffsetDateTime;
 use crate::send_chat::YoutubeSendChat;
 
 const KIND_ID: &str = "youtube.chat.delete_message";
+const MESSAGE_ID_VARIABLE: &str = "%message_id%";
+const UNRESOLVED_REFERENCE_MARKER: char = '%';
 
 pub struct DeleteMessageRunner {
     sender: Arc<YoutubeSendChat>,
@@ -54,7 +56,7 @@ impl SubActionRunner for DeleteMessageRunner {
     fn default_config(&self) -> SubActionConfig {
         BTreeMap::from([(
             "message_id".to_owned(),
-            Variant::String("%chat.message_id%".to_owned()),
+            Variant::String(MESSAGE_ID_VARIABLE.to_owned()),
         )])
     }
 
@@ -62,7 +64,7 @@ impl SubActionRunner for DeleteMessageRunner {
         vec![FormField::Text {
             key: "message_id",
             label: "Message ID",
-            placeholder: "%chat.message_id%",
+            placeholder: MESSAGE_ID_VARIABLE,
         }]
     }
 
@@ -89,6 +91,8 @@ impl SubActionRunner for DeleteMessageRunner {
 
         let outcome = if message_id.is_empty() {
             SubActionOutcome::Failed("message_id is empty after interpolation".to_owned())
+        } else if message_id.contains(UNRESOLVED_REFERENCE_MARKER) {
+            SubActionOutcome::Failed("message_id has an unresolved variable reference".to_owned())
         } else {
             SubActionOutcome::from_result(&self.sender.delete(&message_id).await)
         };

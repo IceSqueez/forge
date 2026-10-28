@@ -102,12 +102,8 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
             .unwrap_or(ANY_BAN);
 
         match filter {
-            PERMANENT_BAN => {
-                event.payload.get(fields::TYPE).and_then(|v| v.as_str()) == Some(PERMANENT_BAN)
-            }
-            TEMPORARY_BAN => {
-                event.payload.get(fields::TYPE).and_then(|v| v.as_str()) == Some(TEMPORARY_BAN)
-            }
+            PERMANENT_BAN => ban_type(event) == PERMANENT_BAN,
+            TEMPORARY_BAN => ban_type(event) == TEMPORARY_BAN,
             _ => true,
         }
     }

@@ -70,9 +70,7 @@ impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
             TriggerVariables::new()
                 .actor(youtube_actor(ActorRole::Principal), gifter_identity)
                 .actor(youtube_actor(ActorRole::Gifter), gifter_identity)
-                .count(CanonicalCount::GiftCount, |event| {
-                    payload_read::number(event, fields::COUNT)
-                })
+                .count(CanonicalCount::GiftCount, gift_count)
                 .sub_tier(|event| payload_read::text(event, fields::LEVEL_NAME))
                 .legacy(
                     DeclaredVariable {
@@ -82,7 +80,7 @@ impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
                         synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 100 }),
                     },
                     CanonicalVariable::Count(CanonicalCount::GiftCount),
-                    |event| Variant::Int(payload_read::number(event, fields::COUNT)),
+                    |event| Variant::Int(gift_count(event)),
                 )
                 .legacy(
                     DeclaredVariable {
@@ -120,6 +118,10 @@ impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
     fn actors(&self) -> ActorDeclaration {
         ActorDeclaration::Actors(&[ActorRole::Gifter])
     }
+}
+
+fn gift_count(event: &Event) -> i64 {
+    payload_read::number(event, fields::COUNT).max(CanonicalCount::GiftCount.floor())
 }
 
 fn gifter_identity(event: &Event) -> ActorIdentity {

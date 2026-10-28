@@ -10,13 +10,13 @@ use forge_types::{
 };
 
 use super::payload_read::{self, youtube_actor};
-use crate::payload_fields::chat as fields;
+use crate::payload_fields::{chat as fields, kinds};
 
 pub(crate) struct ChatMessageDescriptor;
 
 impl TriggerKindDescriptor for ChatMessageDescriptor {
     fn id(&self) -> &str {
-        "youtube.chat.message"
+        kinds::CHAT_MESSAGE
     }
 
     fn category(&self) -> TriggerCategory {
@@ -58,7 +58,7 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::YouTube),
-            kind_prefix: Some("youtube.chat.message".to_owned()),
+            kind_prefix: Some(kinds::CHAT_MESSAGE.to_owned()),
         }
     }
 
@@ -72,6 +72,15 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
                 .actor(youtube_actor(ActorRole::Principal), author_identity)
                 .message_text(|event| payload_read::text(event, fields::MESSAGE_TEXT))
                 .first_chat_message()
+                .event_specific(
+                    DeclaredVariable {
+                        name: "message_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Message ID".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| Variant::String(payload_read::text(event, fields::MESSAGE_ID)),
+                )
                 .legacy(
                     DeclaredVariable {
                         name: "user_display_name".to_owned(),

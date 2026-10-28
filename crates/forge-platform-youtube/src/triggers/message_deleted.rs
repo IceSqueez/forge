@@ -1,12 +1,12 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
     TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{ActorRole, DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
+use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
-use super::payload_read::{self, youtube_actor};
-use crate::payload_fields::{chat as chat_fields, chat_mod as fields};
+use super::payload_read;
+use crate::payload_fields::chat_mod as fields;
 
 pub(crate) struct ChatMessageDeletedDescriptor;
 
@@ -63,28 +63,20 @@ impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
     }
 
     fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(youtube_actor(ActorRole::Principal), author_identity)
-                .event_specific(
-                    DeclaredVariable {
-                        name: "chat.message_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Deleted message ID".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::String(payload_read::text(event, fields::MESSAGE_ID)),
-                ),
-        )
+        Some(TriggerVariables::new().event_specific(
+            DeclaredVariable {
+                name: "chat.message_id".to_owned(),
+                kind: VariantKind::String,
+                label: "Deleted message ID".to_owned(),
+                synthesis: None,
+            },
+            |event| Variant::String(payload_read::text(event, fields::MESSAGE_ID)),
+        ))
     }
 
     fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::principal()
+        ActorDeclaration::Actorless
     }
-}
-
-fn author_identity(event: &Event) -> ActorIdentity {
-    payload_read::identity(event.payload.get(chat_fields::AUTHOR))
 }
 
 #[cfg(test)]

@@ -19,7 +19,7 @@ use crate::data_api::{DataApiError, YoutubeDataApi, malformed};
 use crate::live_chat_id::LiveChatIdHandle;
 use crate::payload_fields::{
     ban as ban_fields, chat as chat_fields, chat_mod as chat_mod_fields, entity,
-    gift as gift_fields, member as member_fields, stream as stream_fields,
+    gift as gift_fields, kinds, member as member_fields, stream as stream_fields,
     support as support_fields,
 };
 use crate::poll_health::{PollHealthReporter, PollHealthTracker};
@@ -527,13 +527,6 @@ impl YoutubeChatPoller {
                     .unwrap_or("")
                     .to_owned();
 
-                let is_command = text.starts_with('!');
-                let kind = if is_command {
-                    "youtube.chat.command"
-                } else {
-                    "youtube.chat.message"
-                };
-
                 let author = extract_author(author_details);
                 let badges = extract_badges(author_details);
 
@@ -549,23 +542,21 @@ impl YoutubeChatPoller {
                 };
 
                 let mut payload = serde_json::json!({
+                    (chat_fields::MESSAGE_ID): id,
                     (chat_fields::MESSAGE_TEXT): text,
                     (chat_fields::AUTHOR): author_json(author_details),
                     (chat_fields::BROADCASTER_CHANNEL_ID): self.channel_id,
                 });
 
-                if is_command {
-                    let (cmd_name, args) = parse_command(&text);
-                    payload[chat_fields::COMMAND_NAME] = serde_json::Value::String(cmd_name);
-                    payload[chat_fields::ARGS] =
-                        serde_json::Value::Array(args.into_iter().map(Into::into).collect());
-                }
-
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 if let Some(channel_id) = extract_author_channel_id(author_details) {
                     ChatViewer::new(channel_id, author).attach(&mut payload);
                 }
-                Some(Event::new(EventSource::YouTube, kind, payload))
+                Some(Event::new(
+                    EventSource::YouTube,
+                    kinds::CHAT_MESSAGE,
+                    payload,
+                ))
             }
 
             "superChatEvent" => {
@@ -954,14 +945,6 @@ fn item_type(item: &serde_json::Value) -> &str {
 
 fn sleep_duration(polling_interval_millis: u64, floor_ms: u64) -> Duration {
     Duration::from_millis(polling_interval_millis).max(Duration::from_millis(floor_ms))
-}
-
-fn parse_command(text: &str) -> (String, Vec<String>) {
-    let stripped = text.strip_prefix('!').unwrap_or(text);
-    let mut parts = stripped.split_whitespace();
-    let cmd = parts.next().unwrap_or("").to_owned();
-    let args = parts.map(ToOwned::to_owned).collect();
-    (cmd, args)
 }
 
 fn extract_author(author_details: Option<&serde_json::Value>) -> String {

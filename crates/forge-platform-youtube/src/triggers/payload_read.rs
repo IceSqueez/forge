@@ -1,6 +1,6 @@
 use forge_events::Event;
 use forge_registry::{ActorBlock, ActorIdentity, LoginSlot};
-use forge_types::{ActorRole, PlatformId, Variant};
+use forge_types::{ActorRole, PlatformId};
 
 use crate::payload_fields::entity as entity_fields;
 
@@ -39,23 +39,6 @@ pub(super) fn number(event: &Event, key: &str) -> i64 {
         .get(key)
         .and_then(|value| value.as_i64())
         .unwrap_or_default()
-}
-
-pub(super) fn text_list(event: &Event, key: &str) -> Variant {
-    Variant::Array(
-        event
-            .payload
-            .get(key)
-            .and_then(|value| value.as_array())
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|item| item.as_str())
-                    .map(|item| Variant::String(item.to_owned()))
-                    .collect()
-            })
-            .unwrap_or_default(),
-    )
 }
 
 fn entity_text(entity: Option<&serde_json::Value>, key: &str) -> String {

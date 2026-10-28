@@ -6,7 +6,7 @@ use std::ops::{Range, RangeInclusive};
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, EventEmitter, FocusHandle, Focusable,
-    KeyBinding, Pixels, Point, ScrollWheelEvent, SharedString, Subscription, Window, actions, div,
+    KeyBinding, Pixels, Point, ScrollEvent, SharedString, Subscription, Window, actions, div,
     point, prelude::*, px,
 };
 
@@ -287,12 +287,7 @@ impl CodeEditor {
         cx.emit(InputEvent::Blurred(self.committed.clone()));
     }
 
-    fn on_scroll_wheel(
-        &mut self,
-        event: &ScrollWheelEvent,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_scroll_wheel(&mut self, event: &ScrollEvent, _: &mut Window, cx: &mut Context<Self>) {
         let delta = event.delta.pixel_delta(self.line_height).y;
         if delta == px(0.0) {
             return;
@@ -440,7 +435,7 @@ impl Render for CodeEditor {
                 }
             })
             .on_action(|_: &FocusPreviousField, window, cx| window.focus_prev(cx))
-            .on_scroll_wheel(cx.listener(Self::on_scroll_wheel));
+            .on_scroll(cx.listener(Self::on_scroll_wheel));
         let editor = with_multiline_actions(with_editing_actions(editor, cx), cx)
             .w_full()
             .overflow_hidden()

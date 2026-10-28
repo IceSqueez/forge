@@ -20,8 +20,8 @@ use forge_platform_core::SENT_AS_FIELD;
 use forge_runtime::{BusError, EventBus};
 use forge_types::{EventId, PlatformId};
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, Entity, FocusHandle, Pixels, Rgba, ScrollStrategy,
-    ScrollWheelEvent, Stateful, Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Div, Entity, FocusHandle, Pixels, Rgba, ScrollEvent,
+    ScrollStrategy, Stateful, Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
     uniform_list,
 };
 
@@ -397,12 +397,7 @@ impl EventFeedView {
         cx.notify();
     }
 
-    fn on_wheel(
-        &mut self,
-        _event: &ScrollWheelEvent,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_wheel(&mut self, _event: &ScrollEvent, _window: &mut Window, cx: &mut Context<Self>) {
         self.auto_scroll = self.list_scroll.is_scrolled_to_end().unwrap_or(true);
         cx.notify();
     }
@@ -722,7 +717,7 @@ impl EventFeedView {
             .track_scroll(&self.list_scroll)
             .flex_1()
             .min_h(px(0.0))
-            .on_scroll_wheel(cx.listener(Self::on_wheel))
+            .on_scroll(cx.listener(Self::on_wheel))
             .into_any_element()
         };
 

@@ -4,8 +4,8 @@ use std::ops::Range;
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
     Entity, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla, LayoutId, PaintQuad,
-    Pixels, Point, ScrollWheelEvent, SharedString, Style, TextAlign, TextRun, UnderlineStyle,
-    Window, WrappedLine, div, fill, point, prelude::*, px, relative, size,
+    Pixels, Point, ScrollEvent, SharedString, Style, TextAlign, TextRun, UnderlineStyle, Window,
+    WrappedLine, div, fill, point, prelude::*, px, relative, size,
 };
 
 use crate::caret_blink::{CaretBlink, CaretHost, set_caret_blinking};
@@ -187,12 +187,7 @@ impl TextArea {
         }
     }
 
-    fn on_scroll_wheel(
-        &mut self,
-        event: &ScrollWheelEvent,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_scroll_wheel(&mut self, event: &ScrollEvent, _: &mut Window, cx: &mut Context<Self>) {
         let line_height = self.font_size * LINE_HEIGHT_RATIO;
         let delta = event.delta.pixel_delta(line_height).y;
         if delta == px(0.0) {
@@ -608,7 +603,7 @@ impl Render for TextArea {
             .cursor(CursorStyle::IBeam)
             .on_action(cx.listener(Self::insert_newline))
             .on_action(cx.listener(Self::paste))
-            .on_scroll_wheel(cx.listener(Self::on_scroll_wheel));
+            .on_scroll(cx.listener(Self::on_scroll_wheel));
         let field = with_multiline_actions(with_editing_actions(field, cx), cx)
             .w_full()
             .overflow_hidden()

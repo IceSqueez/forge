@@ -150,10 +150,10 @@ block2 = { version = "0.6" }
 
 axum = { version = "0.8", features = ["ws"] }
 
-gpui = { git = "https://github.com/zed-industries/zed", tag = "v1.24.3", features = [
+gpui = { git = "https://github.com/zed-industries/zed", tag = "v1.26.2", features = [
   "stacker",
 ] }
-gpui_platform = { git = "https://github.com/zed-industries/zed", tag = "v1.24.3", features = [
+gpui_platform = { git = "https://github.com/zed-industries/zed", tag = "v1.26.2", features = [
   "font-kit",
   "wayland",
   "x11",

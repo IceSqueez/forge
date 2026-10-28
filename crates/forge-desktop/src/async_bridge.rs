@@ -7,8 +7,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use forge_components::ToastKind;
-use forge_events::{Event, EventsError};
-use forge_runtime::{ActionEngineHandle, EventBus, EventSubscription};
+use forge_events::{Event, EventSubscription, EventsError};
+use forge_runtime::{ActionEngineHandle, EventBus};
 use forge_types::{SubActionOutcome, SubActionStep, integration_disabled_reason};
 use gpui::{App, AsyncApp, Context, Entity, SharedString};
 use tokio::runtime::Handle;

@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use forge_events::Event;
-use forge_runtime::{Delivery, EventBus, EventSubscription};
+use forge_events::{Delivery, Event, EventSubscription};
+use forge_runtime::EventBus;
 use gpui::{AsyncApp, Entity};
 use tokio::sync::Notify;
 

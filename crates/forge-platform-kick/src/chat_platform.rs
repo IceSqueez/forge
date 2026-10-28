@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventStream};
+use forge_events::{Event, EventChannel, EventSubscription};
 use forge_platform_core::{
     ChatPlatform, ConnectionState, PlatformCapabilities, PlatformEndpoints, PlatformError,
 };
@@ -16,14 +16,14 @@ use crate::chat::{ChatLinkStatus, KickChat};
 use crate::chat_session::{ChatSessions, PLATFORM_ID, SessionPublisher};
 use crate::credentials_manager::KickCredentialsManager;
 use crate::error::KickError;
-use crate::event_channel::PlatformEventChannel;
 use crate::send::KickSendChat;
 
 const CHAT_FORWARD_CAPACITY: usize = 256;
+pub(crate) const EVENT_CHANNEL_CAPACITY: usize = 256;
 
 pub struct KickPlatform {
     capabilities: PlatformCapabilities,
-    events: Arc<PlatformEventChannel>,
+    events: Arc<EventChannel>,
     credentials_manager: Arc<KickCredentialsManager>,
     endpoints: PlatformEndpoints,
     channel_info: Arc<ChannelInfoFetcher>,
@@ -40,7 +40,7 @@ impl KickPlatform {
         channel_info: Arc<ChannelInfoFetcher>,
         ban_ledger: Arc<dyn BanLedgerRepo>,
     ) -> Self {
-        let events = Arc::new(PlatformEventChannel::new());
+        let events = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         Self {
             capabilities: kick_capabilities(),
             sessions: ChatSessions::new(Arc::clone(&events)),
@@ -191,7 +191,7 @@ impl ChatPlatform for KickPlatform {
             .await
     }
 
-    fn events(&self) -> EventStream {
+    fn events(&self) -> EventSubscription {
         self.events.subscribe()
     }
 }

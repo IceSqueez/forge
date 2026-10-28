@@ -15,8 +15,9 @@ use tokio::time::Instant;
 use tracing::debug;
 
 use crate::action_engine::ACTION_DONE_KIND;
-use crate::bus::{Delivery, EventBus, EventSubscription};
+use crate::bus::EventBus;
 use crate::delivery::NOTIFICATION_POLICY;
+use forge_events::{Delivery, EventSubscription};
 
 pub use intent::{ActionFailureNotice, NotificationIntent, NotificationIntents};
 pub use preferences::NotificationPreferences;

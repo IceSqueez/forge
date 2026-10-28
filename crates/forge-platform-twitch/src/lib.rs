@@ -13,7 +13,6 @@ mod credentials_manager;
 mod custom_rewards;
 #[cfg(test)]
 mod endpoints_test_support;
-mod event_channel;
 pub mod event_kinds;
 mod follow_lookup;
 mod helix;

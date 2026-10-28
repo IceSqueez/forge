@@ -6,8 +6,9 @@ use forge_components::{
     Density, FONT_LG, FONT_SM, ForgePalette, Icon, Radius, Spacing, ToastKind, Toasts, body_family,
     card, icon, mono_family, primary_button, radius, secondary_button, spacing, toast_layer, tr,
 };
+use forge_events::EventSubscription;
 use forge_platform_core::{CONNECTION_STATE_CHANGED_KIND, PlatformEndpoints};
-use forge_runtime::{EventSubscription, LiveViewerAggregatorHandle, LossWatch, QueueDepthWatch};
+use forge_runtime::{LiveViewerAggregatorHandle, LossWatch, QueueDepthWatch};
 use forge_storage::CredentialsKeyLoss;
 use forge_storage::paths;
 use futures_util::StreamExt as _;

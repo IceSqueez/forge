@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_events::{EventPublisher, EventStream};
+use forge_events::{EventChannel, EventPublisher, EventSubscription};
 use forge_net::Gateway;
 use forge_platform_core::{
     ActingSender, ChatPlatform, ConnectionState, NON_HTTP_STATUS, PlatformCapabilities,
@@ -16,18 +16,18 @@ use crate::chat::{ChatConnectionState, ChatSendError, TwitchChat, TwitchChatHand
 use crate::chat_sender::{ChatDelivery, ChatSenders, SendFailure};
 use crate::credentials::load;
 use crate::credentials_manager::TwitchCredentialsManager;
-use crate::event_channel::PlatformEventChannel;
 use crate::helix::{HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport};
 use crate::lifecycle::TwitchLifecycle;
 use crate::sub_actions::identity::SelfIdentity;
 use crate::subscriptions::SubscriptionTracker;
 
 const PLATFORM_ID: &str = "twitch";
+pub(crate) const EVENT_CHANNEL_CAPACITY: usize = 4096;
 
 pub struct TwitchPlatform {
     capabilities: PlatformCapabilities,
     config: ChatSessionConfig,
-    events: Arc<PlatformEventChannel>,
+    events: Arc<EventChannel>,
     creds: Arc<dyn CredentialsRepo>,
     credentials_manager: Arc<TwitchCredentialsManager>,
     tracker: SubscriptionTracker,
@@ -60,7 +60,7 @@ impl TwitchPlatform {
                 limited_reason: None,
             },
             config,
-            events: Arc::new(PlatformEventChannel::new()),
+            events: Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY)),
             creds,
             credentials_manager,
             tracker,
@@ -276,7 +276,7 @@ impl ChatPlatform for TwitchPlatform {
         .map(Some)
     }
 
-    fn events(&self) -> EventStream {
+    fn events(&self) -> EventSubscription {
         self.events.subscribe()
     }
 }

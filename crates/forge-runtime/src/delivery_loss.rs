@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
-use forge_events::DeliveryLane;
+use forge_events::{DeliveryLane, LagRecorder};
 use tokio::sync::watch;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -85,11 +85,6 @@ impl ConsumerLossCounters {
         }
     }
 
-    pub(crate) fn lagged(&self, skipped: u64) {
-        self.skipped.fetch_add(skipped, Ordering::Relaxed);
-        self.notify();
-    }
-
     pub(crate) fn unwritten(&self, lost: u64) {
         if lost == 0 {
             return;
@@ -121,6 +116,13 @@ impl ConsumerLossCounters {
                 unwritten: self.unwritten.load(Ordering::Relaxed),
             },
         }
+    }
+}
+
+impl LagRecorder for ConsumerLossCounters {
+    fn lagged(&self, skipped: u64) {
+        self.skipped.fetch_add(skipped, Ordering::Relaxed);
+        self.notify();
     }
 }
 

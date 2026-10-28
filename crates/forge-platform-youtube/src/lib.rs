@@ -16,7 +16,6 @@ mod data_api;
 #[cfg(test)]
 mod endpoints_test_support;
 pub(crate) mod error_shape;
-mod event_channel;
 mod follow_lookup;
 mod integration;
 mod live_chat_id;

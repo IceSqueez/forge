@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use forge_events::{Event, EventPublisher, EventSource, EventStream, EventsError};
+use forge_events::{Event, EventPublisher, EventSource, EventSubscription, EventsError};
 use forge_platform_core::{
     ActingSender, BanListSource, BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth,
     BuiltinOptionSource, BuiltinStatus, ChatPlatform, FollowLookup, PlatformEndpoints,
@@ -409,7 +409,7 @@ pub(crate) fn creds_of(backend: &Arc<dyn DataProvider>) -> Arc<dyn CredentialsRe
 
 pub(crate) fn spawn_event_bridge(
     bus: Arc<dyn EventPublisher>,
-    mut events: EventStream,
+    mut events: EventSubscription,
     label: &'static str,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {

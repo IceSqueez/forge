@@ -1,11 +1,13 @@
 mod bus;
+mod channel;
 mod donation;
 mod lane;
 mod latest;
 mod publisher;
 mod source;
 
-pub use bus::{EventStream, EventsError};
+pub use bus::EventsError;
+pub use channel::{Delivery, EventChannel, EventObserver, EventSubscription, LagRecorder};
 pub use donation::{DONATION_RECEIVED_KIND, DonationReceived};
 pub use lane::DeliveryLane;
 pub use latest::{LATEST_CHANGED_KIND, LatestChanged, NOW_PLAYING_KIND, NowPlaying, PlaybackState};

@@ -1,8 +1,9 @@
 use std::fmt::{self, Write as _};
 use std::sync::{Arc, OnceLock};
 
-use crate::bus::{Delivery, EventBus};
+use crate::bus::EventBus;
 use crate::delivery::EVENT_TRAIL;
+use forge_events::Delivery;
 use forge_events::Event;
 use forge_types::redaction::RedactedText;
 use serde_json::{Map, Value};

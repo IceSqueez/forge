@@ -5,7 +5,8 @@ use forge_events::{Event, EventSource};
 use forge_registry::chat_emote_codes;
 use tokio::task::JoinHandle;
 
-use crate::bus::{Delivery, EventBus};
+use crate::bus::EventBus;
+use forge_events::Delivery;
 
 pub const LEARNED_TWITCH_EMOTE_CAPACITY: usize = 4096;
 const LEXICON_OBSERVER: &str = "twitch-emote-lexicon";

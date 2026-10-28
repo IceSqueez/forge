@@ -18,7 +18,6 @@ mod credentials_manager;
 #[cfg(test)]
 mod endpoints_test_support;
 pub mod error;
-mod event_channel;
 mod integration;
 #[cfg(test)]
 mod log_capture;

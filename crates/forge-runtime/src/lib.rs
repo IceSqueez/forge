@@ -58,7 +58,7 @@ pub use action_engine::{
     spawn_action_engine,
 };
 pub use audio_runners::register_audio_sub_actions;
-pub use bus::{BusError, Delivery, EventBus, EventSubscription, NullEventLogRepo};
+pub use bus::{BusError, EventBus, NullEventLogRepo};
 pub use catalog::{Catalog, CatalogBinding, CatalogSnapshot};
 pub use chain::{ChainEngine, ChainRun, ChainScope};
 pub use chat_history_persistence::{ChatHistoryRetentionHandle, spawn_chat_history_persistence};

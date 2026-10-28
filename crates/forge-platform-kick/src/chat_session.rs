@@ -6,7 +6,7 @@ use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 use crate::chat::{ChatLinkStatus, KickChatHandle};
-use crate::event_channel::PlatformEventChannel;
+use forge_events::EventChannel;
 
 pub(crate) const PLATFORM_ID: &str = "kick";
 
@@ -52,7 +52,7 @@ impl SessionSlot {
 #[derive(Clone)]
 struct SessionOutlet {
     slot: Arc<Mutex<SessionSlot>>,
-    events: Arc<PlatformEventChannel>,
+    events: Arc<EventChannel>,
     state_tx: watch::Sender<ConnectionState>,
 }
 
@@ -115,7 +115,7 @@ pub(crate) struct ChatSessions {
 }
 
 impl ChatSessions {
-    pub(crate) fn new(events: Arc<PlatformEventChannel>) -> Self {
+    pub(crate) fn new(events: Arc<EventChannel>) -> Self {
         let (state_tx, _) = watch::channel(ConnectionState::Disconnected);
         Self {
             outlet: SessionOutlet {

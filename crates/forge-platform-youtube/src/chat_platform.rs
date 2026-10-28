@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher, EventStream};
+use forge_events::{Event, EventChannel, EventPublisher, EventSubscription};
 use forge_platform_core::{
     ChatPlatform, ConnectionState, ConnectionTransition, PlatformError,
     connection_state_changed_event,
@@ -15,19 +15,19 @@ use crate::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::chat_poller::YoutubeChatPoller;
 use crate::credentials_manager::YoutubeCredentialsManager;
 use crate::data_api::YoutubeDataApi;
-use crate::event_channel::PlatformEventChannel;
 use crate::live_chat_id::LiveChatIdHandle;
 use crate::poll_health::{PollHealthReporter, PollLinkHealth};
 use crate::send_chat::YoutubeSendChat;
 
 const PLATFORM_ID: &str = "youtube";
+pub(crate) const EVENT_CHANNEL_CAPACITY: usize = 256;
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
 pub struct YoutubePlatform {
     api: YoutubeDataApi,
     channel_id: String,
-    events: Arc<PlatformEventChannel>,
+    events: Arc<EventChannel>,
     credentials_manager: Arc<YoutubeCredentialsManager>,
     sender: YoutubeSendChat,
     live_chat_id: LiveChatIdHandle,
@@ -56,7 +56,7 @@ impl YoutubePlatform {
         Self {
             api,
             channel_id,
-            events: Arc::new(PlatformEventChannel::new()),
+            events: Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY)),
             credentials_manager,
             sender,
             live_chat_id,
@@ -196,7 +196,7 @@ impl ChatPlatform for YoutubePlatform {
         self.sender.send(text).await
     }
 
-    fn events(&self) -> EventStream {
+    fn events(&self) -> EventSubscription {
         self.events.subscribe()
     }
 }
@@ -211,7 +211,7 @@ fn token_source(manager: Arc<YoutubeCredentialsManager>) -> TokenSource {
 fn health_reporter(
     state: Arc<Mutex<ConnectionState>>,
     state_tx: watch::Sender<ConnectionState>,
-    events: Arc<PlatformEventChannel>,
+    events: Arc<EventChannel>,
     cancel: CancellationToken,
 ) -> PollHealthReporter {
     Arc::new(move |health| {
@@ -229,7 +229,7 @@ fn health_reporter(
 fn publish_unless_cancelled(
     state: &Mutex<ConnectionState>,
     state_tx: &watch::Sender<ConnectionState>,
-    events: &PlatformEventChannel,
+    events: &EventChannel,
     cancel: &CancellationToken,
     new: ConnectionState,
     transition: ConnectionTransition,
@@ -243,7 +243,7 @@ fn publish_unless_cancelled(
 fn publish_transition(
     state: &Mutex<ConnectionState>,
     state_tx: &watch::Sender<ConnectionState>,
-    events: &PlatformEventChannel,
+    events: &EventChannel,
     new: ConnectionState,
     transition: ConnectionTransition,
 ) {
@@ -254,7 +254,7 @@ fn publish_transition(
 fn apply_transition(
     current: &mut ConnectionState,
     state_tx: &watch::Sender<ConnectionState>,
-    events: &PlatformEventChannel,
+    events: &EventChannel,
     new: ConnectionState,
     transition: ConnectionTransition,
 ) {

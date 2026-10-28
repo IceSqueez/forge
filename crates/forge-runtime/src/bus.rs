@@ -11,7 +11,9 @@ use crate::first_chat_ledger::FirstChatLedger;
 use crate::persist_batch::{BatchPolicy, FlushTicket, run_batched};
 use arc_swap::{ArcSwap, ArcSwapOption};
 use async_trait::async_trait;
-use forge_events::{DeliveryLane, Event, EventPublisher, EventsError};
+use forge_events::{
+    DeliveryLane, Event, EventChannel, EventObserver, EventPublisher, EventSubscription,
+};
 use forge_registry::TriggerRegistry;
 use forge_storage::{EventLogRepo, StorageError};
 use forge_types::EventId;
@@ -23,7 +25,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 use time::OffsetDateTime;
-use tokio::sync::{broadcast, oneshot, watch};
+use tokio::sync::{oneshot, watch};
 
 #[derive(Debug, thiserror::Error)]
 pub enum BusError {
@@ -59,7 +61,7 @@ impl EventLogRepo for NullEventLogRepo {
 }
 
 pub struct EventBus {
-    sender: broadcast::Sender<Arc<Event>>,
+    observers: EventChannel,
     ring: Mutex<EventRing>,
     lanes: ArcSwap<LaneTable>,
     critical: CriticalSinks,
@@ -115,47 +117,9 @@ impl Drop for LineageHold<'_> {
     }
 }
 
-pub enum Delivery {
-    Event(Arc<Event>),
-    Skipped(u64),
-    Closed,
-}
-
-pub struct EventSubscription {
-    receiver: broadcast::Receiver<Arc<Event>>,
-    loss: Arc<ConsumerLossCounters>,
-}
-
-impl EventSubscription {
-    pub async fn next(&mut self) -> Delivery {
-        match self.receiver.recv().await {
-            Ok(event) => Delivery::Event(event),
-            Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                self.loss.lagged(skipped);
-                Delivery::Skipped(skipped)
-            }
-            Err(broadcast::error::RecvError::Closed) => Delivery::Closed,
-        }
-    }
-
-    pub async fn recv(&mut self) -> Result<Event, EventsError> {
-        match self.next().await {
-            Delivery::Event(event) => Ok(Arc::unwrap_or_clone(event)),
-            Delivery::Skipped(_) => Err(EventsError::LaggingReceiver),
-            Delivery::Closed => Err(EventsError::BusClosed),
-        }
-    }
-
-    pub fn try_recv(&mut self) -> Result<Option<Event>, EventsError> {
-        match self.receiver.try_recv() {
-            Ok(event) => Ok(Some(Arc::unwrap_or_clone(event))),
-            Err(broadcast::error::TryRecvError::Empty) => Ok(None),
-            Err(broadcast::error::TryRecvError::Closed) => Err(EventsError::BusClosed),
-            Err(broadcast::error::TryRecvError::Lagged(skipped)) => {
-                self.loss.lagged(skipped);
-                Err(EventsError::LaggingReceiver)
-            }
-        }
+impl EventObserver for EventBus {
+    fn observe(&self, consumer: &'static str) -> EventSubscription {
+        self.subscribe_observer(consumer)
     }
 }
 
@@ -165,9 +129,8 @@ impl EventBus {
     }
 
     pub fn with_config(event_log: Arc<dyn EventLogRepo>, config: &Config) -> Arc<Self> {
-        let (sender, _) = broadcast::channel(config.bus_observer_capacity.max(1));
         Arc::new(Self {
-            sender,
+            observers: EventChannel::new(config.bus_observer_capacity),
             ring: Mutex::new(EventRing::new(config.bus_ring_retention)),
             lanes: ArcSwap::from_pointee(LaneTable::default()),
             critical: CriticalSinks::new(),
@@ -223,11 +186,7 @@ impl EventBus {
         };
         let lane = lanes.lane_of(&event);
         self.critical.deliver(&event, lane, transient);
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "having no subscribers is a normal state"
-        )]
-        let _ = self.sender.send(event);
+        self.observers.send(event);
         self.total_published.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -255,10 +214,8 @@ impl EventBus {
     }
 
     pub fn subscribe_observer(&self, consumer: &'static str) -> EventSubscription {
-        EventSubscription {
-            receiver: self.sender.subscribe(),
-            loss: self.loss.counters(consumer, DeliveryTier::Observer),
-        }
+        self.observers
+            .subscribe_recording(self.loss.counters(consumer, DeliveryTier::Observer))
     }
 
     pub fn subscribe_critical(&self, consumer: &'static str) -> CriticalSubscription {

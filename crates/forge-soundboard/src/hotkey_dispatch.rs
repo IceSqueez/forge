@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
-use forge_events::{Event, EventSource, EventsError};
+use forge_events::{Event, EventSource, EventSubscription, EventsError};
 use forge_hotkey::payload_fields::COMBO;
 use forge_hotkey::{ClipBindings, event_kinds};
-use forge_runtime::EventSubscription;
 use forge_types::ClipId;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;

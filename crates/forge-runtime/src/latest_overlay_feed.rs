@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use forge_events::LatestChanged;
 
-use crate::bus::{Delivery, EventBus};
+use crate::bus::EventBus;
 use crate::delivery::LATEST_OVERLAYS;
 use crate::overlay_service::OverlayServiceHandle;
+use forge_events::Delivery;
 
 pub fn spawn_latest_overlay_feed(bus: &Arc<EventBus>, overlays: OverlayServiceHandle) {
     let mut subscription = bus.subscribe_observer(LATEST_OVERLAYS);

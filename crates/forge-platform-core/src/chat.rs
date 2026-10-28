@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use async_trait::async_trait;
-use forge_events::{Event, EventSource, EventStream};
+use forge_events::{Event, EventSource, EventSubscription};
 use serde::{Deserialize, Serialize};
 
 use crate::PlatformError;
@@ -119,7 +119,7 @@ pub trait ChatPlatform: Send + Sync {
             .map(|()| None)
     }
 
-    fn events(&self) -> EventStream;
+    fn events(&self) -> EventSubscription;
 }
 
 const WHISPER_FEATURE: &str = "chat.whisper";

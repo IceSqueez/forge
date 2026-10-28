@@ -456,7 +456,9 @@ impl TwitchIntegrationBundle {
             health_tx,
             tracker,
             config,
-            bus: Arc::new(crate::event_channel::PlatformEventChannel::new()),
+            bus: Arc::new(forge_events::EventChannel::new(
+                crate::chat_platform::EVENT_CHANNEL_CAPACITY,
+            )),
             creds,
             credentials_manager,
             viewer_state: std::sync::RwLock::new(ViewerPollState::default()),

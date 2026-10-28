@@ -1,8 +1,7 @@
 use std::time::Duration;
 
-use forge_events::{Event, EventSource};
+use forge_events::{Delivery, Event, EventSource, EventSubscription};
 use forge_platform_core::{SENDER_FIELD, SenderPreference};
-use forge_runtime::{Delivery, EventSubscription};
 use forge_types::{EventId, PlatformId};
 
 use super::platform_gate::platform_integration;

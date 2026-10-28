@@ -47,7 +47,7 @@ jobs:
         run: python3 .github/scripts/http-client-boundary.py
 
       - name: Install dependency linters
-        uses: taiki-e/install-action@v2.87.29
+        uses: taiki-e/install-action@v2.87.31
         with:
           tool: cargo-machete@0.9.2,cargo-deny@0.20.2
 

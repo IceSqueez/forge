@@ -180,6 +180,8 @@ fn dismiss_toast(id: u64, cx: &mut App) {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
     use std::sync::Mutex;
 
     use forge_components::{ToastKind, Toasts};
@@ -282,6 +284,7 @@ mod tests {
         rt: tokio::runtime::Runtime,
         tx: watch::Sender<ScheduledBackupStatus>,
         port: Arc<RecordingPort>,
+        opened: Rc<RefCell<Vec<Screen>>>,
     }
 
     type ShownToast = (ToastKind, Option<String>);
@@ -298,12 +301,20 @@ mod tests {
         let port = Arc::new(RecordingPort::default());
         let notify = Arc::clone(&port) as Arc<dyn NotifyPort>;
         let handle = rt.handle().clone();
+        let opened = Rc::new(RefCell::new(Vec::new()));
+        let recorded = Rc::clone(&opened);
+        let navigator = Navigator::new(move |screen, _| recorded.borrow_mut().push(screen));
         cx.update(|cx| {
-            cx.spawn(async move |cx| drain_failures(rx, notify, handle, cx).await)
+            cx.spawn(async move |cx| drain_failures(rx, notify, handle, navigator, cx).await)
                 .detach();
         });
         settle(cx, &rt, |_, _| true);
-        Drain { rt, tx, port }
+        Drain {
+            rt,
+            tx,
+            port,
+            opened,
+        }
     }
 
     fn toasts(cx: &mut TestAppContext) -> Vec<ShownToast> {
@@ -412,6 +423,25 @@ mod tests {
         assert_eq!(
             (toasts(cx), rig.port.titles()),
             (vec![open_settings_error()], Vec::<String>::new())
+        );
+    }
+
+    #[gpui::test]
+    fn the_failure_toast_open_action_opens_the_storage_settings_pane(cx: &mut TestAppContext) {
+        let rig = drain(cx, false);
+        publish(cx, &rig, Some(streak(0, 1)), (0, 1));
+        let toast = cx.update(|cx| {
+            let id = cx.global::<Toasts>().items()[0].id;
+            cx.global_mut::<Toasts>().take(id)
+        });
+        let action = toast.and_then(|toast| toast.action).unwrap();
+
+        cx.add_empty_window()
+            .update(|window, cx| (action.on_action)(window, cx));
+
+        assert_eq!(
+            *rig.opened.borrow(),
+            vec![Screen::Settings(Some(SettingsSection::Storage))]
         );
     }
 }

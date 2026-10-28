@@ -49,7 +49,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::tts::TtsSection;
+    use crate::navigation::TtsSection;
     use forge_components::{ActivePresentation, Presentation};
 
     const WINDOW_W: f32 = 600.0;

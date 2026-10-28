@@ -412,7 +412,7 @@ mod tests {
     use gpui::{Entity, TestAppContext};
 
     use super::*;
-    use crate::screen::Screen;
+    use crate::navigation::Screen;
     use crate::test_support::{
         ReadFault, SETTINGS_READ_FAILED, Sandboxed, SettingWrite, TestBackend, hub_crumb_targets,
         install_presentation, pump, quiet_bus, runtime, sandboxed_provider, test_backend,

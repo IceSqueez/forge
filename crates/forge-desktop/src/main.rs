@@ -620,8 +620,8 @@ mod tests {
     use forge_update::CANDIDATE_FLAG;
 
     use super::{FLAG_SCREEN, StartupRequest, parse_startup_request};
+    use crate::navigation::Screen;
     use crate::restore_relaunch::PREVIOUS_INSTANCE_FLAG;
-    use crate::screen::Screen;
 
     fn parse(args: &[&str]) -> Result<StartupRequest, String> {
         parse_startup_request(args.iter().map(|arg| (*arg).to_owned()))

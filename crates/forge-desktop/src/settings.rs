@@ -1291,7 +1291,7 @@ fn choice_row(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::screen::Screen;
+    use crate::navigation::Screen;
 
     #[test]
     fn every_settings_nav_entry_opens_from_its_route_key() {
@@ -1302,6 +1302,16 @@ mod tests {
                 "{section:?}"
             );
         }
+    }
+
+    #[test]
+    fn the_settings_sidebar_lists_every_section_in_route_order() {
+        let sidebar: Vec<SettingsSection> = NAV_GROUPS
+            .iter()
+            .flat_map(|(_, sections)| sections.iter().copied())
+            .collect();
+
+        assert_eq!(sidebar, SettingsSection::ALL.to_vec());
     }
 
     #[test]

@@ -1568,17 +1568,17 @@ pub(crate) fn switch_lifecycle(
 }
 
 pub(crate) struct NavLog {
-    screens: Vec<crate::screen::Screen>,
+    screens: Vec<crate::navigation::Screen>,
     _sub: gpui::Subscription,
 }
 
 impl NavLog {
-    pub(crate) fn screens(&self) -> Vec<crate::screen::Screen> {
+    pub(crate) fn screens(&self) -> Vec<crate::navigation::Screen> {
         self.screens.clone()
     }
 }
 
-pub(crate) fn nav_log<V: gpui::EventEmitter<crate::sidebar::NavRequested>>(
+pub(crate) fn nav_log<V: gpui::EventEmitter<crate::navigation::NavRequested>>(
     view: &gpui::Entity<V>,
     cx: &mut gpui::App,
 ) -> gpui::Entity<NavLog> {
@@ -1586,7 +1586,7 @@ pub(crate) fn nav_log<V: gpui::EventEmitter<crate::sidebar::NavRequested>>(
         screens: Vec::new(),
         _sub: cx.subscribe(
             view,
-            |log: &mut NavLog, _, event: &crate::sidebar::NavRequested, _| {
+            |log: &mut NavLog, _, event: &crate::navigation::NavRequested, _| {
                 log.screens.push(event.0.clone());
             },
         ),
@@ -1641,9 +1641,9 @@ const CRUMB_SCAN_STEP: f32 = 4.0;
 pub(crate) fn hub_crumb_targets<V>(
     cx: &mut gpui::TestAppContext,
     build: impl FnOnce(&mut gpui::Window, &mut gpui::Context<V>) -> V,
-) -> Vec<crate::screen::Screen>
+) -> Vec<crate::navigation::Screen>
 where
-    V: gpui::Render + gpui::EventEmitter<crate::sidebar::NavRequested>,
+    V: gpui::Render + gpui::EventEmitter<crate::navigation::NavRequested>,
 {
     install_presentation(cx);
     let (view, vcx) = cx.add_window_view(build);
@@ -1664,7 +1664,7 @@ where
     );
     log.read_with(vcx, |log, _| log.screens())
         .into_iter()
-        .filter(|screen| matches!(screen, crate::screen::Screen::Integrations(_)))
+        .filter(|screen| matches!(screen, crate::navigation::Screen::Integrations(_)))
         .collect()
 }
 

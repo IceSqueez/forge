@@ -1107,7 +1107,7 @@ mod tests {
 
     use super::*;
     use crate::i18n::install_language;
-    use crate::screen::Screen;
+    use crate::navigation::Screen;
     use crate::test_support::{
         StubActions, hub_crumb_targets, install_presentation, quiet_bus, runtime, test_backend,
         worker_runtime,

@@ -2212,7 +2212,7 @@ mod tests {
         assert!(
             targets
                 .iter()
-                .all(|screen| *screen == crate::screen::Screen::Integrations(Some(category))),
+                .all(|screen| *screen == crate::navigation::Screen::Integrations(Some(category))),
             "{targets:?}"
         );
     }

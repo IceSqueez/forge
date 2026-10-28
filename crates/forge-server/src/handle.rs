@@ -225,6 +225,31 @@ impl ServerHandle {
         Arc::clone(&self.inner.lock().await.state.auth)
     }
 
+    pub async fn bearer_token(&self) -> SecretToken {
+        SecretToken::new(self.auth_state().await.current_token().await)
+    }
+
+    pub async fn regenerate_bearer_token(&self) -> Result<SecretToken, ServerError> {
+        let state = self.inner.lock().await.state.clone();
+        let fresh = state.auth.regenerate(state.credentials.as_ref()).await?;
+        Ok(SecretToken::new(fresh))
+    }
+
+    pub async fn reads_require_auth(&self) -> bool {
+        self.auth_state().await.reads_required()
+    }
+
+    pub async fn set_reads_require_auth(&self, required: bool) -> Result<(), ServerError> {
+        let state = self.inner.lock().await.state.clone();
+        ServerSettings::save_auth_required_for_reads(state.settings.as_ref(), required).await?;
+        state.auth.set_reads_required(required);
+        Ok(())
+    }
+
+    pub async fn overlay_token(&self) -> SecretToken {
+        SecretToken::new(self.auth_state().await.overlay_token().current())
+    }
+
     pub async fn set_http_overlay_token_required(&self, required: bool) {
         self.auth_state()
             .await

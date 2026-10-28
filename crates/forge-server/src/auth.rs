@@ -87,6 +87,10 @@ impl AuthState {
         Ok(new_token)
     }
 
+    pub(crate) async fn current_token(&self) -> String {
+        self.bearer_token.read().await.clone()
+    }
+
     pub async fn verify(&self, candidate: &str) -> bool {
         self.verify_generation(candidate).await.is_some()
     }

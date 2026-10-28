@@ -160,22 +160,9 @@ pub fn refresh_config_credential(
     id: &str,
     credential: &str,
 ) -> Result<bool, OverlayError> {
-    check_identity(id)?;
-
-    let Some(root) = optional_canonicalize(root)? else {
+    let Some(resolved) = existing_overlay_directory(root, id)? else {
         return Ok(false);
     };
-    let directory = root.join(id);
-    reject_symlink(&directory)?;
-
-    let Some(resolved) = optional_canonicalize(&directory)? else {
-        return Ok(false);
-    };
-    if !resolved.starts_with(&root) {
-        return Err(OverlayError::OutsideRoot {
-            path: display(&directory),
-        });
-    }
 
     let target = resolved.join(CONFIG_FILE);
     reject_symlink(&target)?;
@@ -204,22 +191,9 @@ pub fn refresh_config_credential(
 }
 
 pub fn remove_overlay_directory(root: &Path, id: &str) -> Result<bool, OverlayError> {
-    check_identity(id)?;
-
-    let Some(root) = optional_canonicalize(root)? else {
+    let Some(resolved) = existing_overlay_directory(root, id)? else {
         return Ok(false);
     };
-    let directory = root.join(id);
-    reject_symlink(&directory)?;
-
-    let Some(resolved) = optional_canonicalize(&directory)? else {
-        return Ok(false);
-    };
-    if !resolved.starts_with(&root) {
-        return Err(OverlayError::OutsideRoot {
-            path: display(&directory),
-        });
-    }
 
     fs::remove_dir_all(&resolved).map_err(|source| OverlayError::Io {
         path: display(&resolved),
@@ -236,13 +210,38 @@ pub(crate) fn overlay_directory(root: &Path, id: &str) -> Result<PathBuf, Overla
     reject_symlink(&directory)?;
     create_dir(&directory)?;
 
-    let resolved = canonicalize(&directory)?;
-    if !resolved.starts_with(&root) {
-        return Err(OverlayError::OutsideRoot {
-            path: display(&directory),
-        });
+    confine_to_root(&root, &directory, canonicalize(&directory)?)
+}
+
+pub(crate) fn existing_overlay_directory(
+    root: &Path,
+    id: &str,
+) -> Result<Option<PathBuf>, OverlayError> {
+    check_identity(id)?;
+    let Some(root) = optional_canonicalize(root)? else {
+        return Ok(None);
+    };
+    let directory = root.join(id);
+    reject_symlink(&directory)?;
+
+    let Some(resolved) = optional_canonicalize(&directory)? else {
+        return Ok(None);
+    };
+    confine_to_root(&root, &directory, resolved).map(Some)
+}
+
+fn confine_to_root(
+    root: &Path,
+    directory: &Path,
+    resolved: PathBuf,
+) -> Result<PathBuf, OverlayError> {
+    if resolved.starts_with(root) {
+        Ok(resolved)
+    } else {
+        Err(OverlayError::OutsideRoot {
+            path: display(directory),
+        })
     }
-    Ok(resolved)
 }
 
 pub(crate) fn check_identity(id: &str) -> Result<(), OverlayError> {

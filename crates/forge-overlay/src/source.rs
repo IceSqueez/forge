@@ -4,7 +4,8 @@ use std::path::Path;
 use crate::assets::OVERRIDABLE_FILES;
 use crate::error::OverlayError;
 use crate::materialize::{
-    check_identity, display, optional_canonicalize, overlay_directory, reject_symlink, write_atomic,
+    check_identity, display, existing_overlay_directory, overlay_directory, reject_symlink,
+    write_atomic,
 };
 
 pub fn read_overlay_source(
@@ -15,20 +16,9 @@ pub fn read_overlay_source(
     check_identity(id)?;
     check_overridable(name)?;
 
-    let Some(root) = optional_canonicalize(root)? else {
+    let Some(resolved) = existing_overlay_directory(root, id)? else {
         return Ok(None);
     };
-    let directory = root.join(id);
-    reject_symlink(&directory)?;
-
-    let Some(resolved) = optional_canonicalize(&directory)? else {
-        return Ok(None);
-    };
-    if !resolved.starts_with(&root) {
-        return Err(OverlayError::OutsideRoot {
-            path: display(&directory),
-        });
-    }
 
     let target = resolved.join(name);
     reject_symlink(&target)?;

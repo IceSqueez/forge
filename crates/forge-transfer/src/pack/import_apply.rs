@@ -128,7 +128,7 @@ enum TargetMode {
 
 #[derive(Debug, Clone)]
 struct Target {
-    local_id: String,
+    local_id: Option<String>,
     name: String,
     mode: TargetMode,
 }
@@ -136,6 +136,10 @@ struct Target {
 impl Target {
     fn replaces(&self) -> bool {
         self.mode == TargetMode::Replace
+    }
+
+    fn preassigned_id(&self) -> Result<&str, TransferError> {
+        self.local_id.as_deref().ok_or(TransferError::PackPlanStale)
     }
 }
 
@@ -185,14 +189,14 @@ fn is_name_keyed(kind: PackItemKind) -> bool {
     matches!(kind, PackItemKind::Script | PackItemKind::Global)
 }
 
-fn fresh_id(kind: PackItemKind, pack_id: &str) -> String {
+fn preassigned_copy_id(kind: PackItemKind) -> Option<String> {
     match kind {
-        PackItemKind::Action => ActionId::new().to_string(),
-        PackItemKind::Trigger => TriggerInstanceId::new().to_string(),
-        PackItemKind::Queue => QueueId::new().to_string(),
-        PackItemKind::Script => ScriptId::new().to_string(),
-        PackItemKind::Clip => ClipId::new().to_string(),
-        PackItemKind::Media | PackItemKind::Overlay | PackItemKind::Global => pack_id.to_owned(),
+        PackItemKind::Action => Some(ActionId::new().to_string()),
+        PackItemKind::Trigger => Some(TriggerInstanceId::new().to_string()),
+        PackItemKind::Queue => Some(QueueId::new().to_string()),
+        PackItemKind::Script => Some(ScriptId::new().to_string()),
+        PackItemKind::Clip => Some(ClipId::new().to_string()),
+        PackItemKind::Media | PackItemKind::Overlay | PackItemKind::Global => None,
     }
 }
 
@@ -272,7 +276,7 @@ impl<'a> PackImport<'_, 'a> {
             let (mode, local) = mode_of(item);
             let mut target = match (mode, local) {
                 (TargetMode::Copy, _) => Target {
-                    local_id: fresh_id(kind, &item.key.id),
+                    local_id: preassigned_copy_id(kind),
                     name: book.claim_copy(&item.name),
                     mode,
                 },
@@ -290,7 +294,7 @@ impl<'a> PackImport<'_, 'a> {
                         _ => item.name.clone(),
                     };
                     Target {
-                        local_id: local.to_owned(),
+                        local_id: Some(local.to_owned()),
                         name,
                         mode,
                     }
@@ -298,22 +302,22 @@ impl<'a> PackImport<'_, 'a> {
                 _ => {
                     book.claim(&item.name);
                     Target {
-                        local_id: item.key.id.clone(),
+                        local_id: Some(item.key.id.clone()),
                         name: item.name.clone(),
                         mode: TargetMode::Create,
                     }
                 }
             };
             if kind == PackItemKind::Global {
-                target.local_id = target.name.clone();
+                target.local_id = Some(target.name.clone());
             }
             let namespace = namespace_of(kind);
-            let (from, to) = if is_name_keyed(kind) {
-                (&item.name, &target.name)
+            let renamed = if is_name_keyed(kind) {
+                Some((&item.name, &target.name))
             } else {
-                (&item.key.id, &target.local_id)
+                target.local_id.as_ref().map(|id| (&item.key.id, id))
             };
-            if from != to {
+            if let Some((from, to)) = renamed.filter(|(from, to)| from != to) {
                 self.remap.insert(namespace, from.clone(), to.clone());
             }
             self.targets.insert(item.key.clone(), target);
@@ -429,7 +433,7 @@ impl<'a> PackImport<'_, 'a> {
                 continue;
             };
             let mut queue = queue_of(document);
-            queue.id = ulid_id(&target.local_id)?;
+            queue.id = ulid_id(target.preassigned_id()?)?;
             queue.name = target.name.clone();
             let previous = target
                 .replaces()
@@ -453,7 +457,7 @@ impl<'a> PackImport<'_, 'a> {
             let Some(target) = self.writable(&item) else {
                 continue;
             };
-            let id: ScriptId = ulid_id(&target.local_id)?;
+            let id: ScriptId = ulid_id(target.preassigned_id()?)?;
             let previous = target
                 .replaces()
                 .then(|| self.inventory.stored_script(id))
@@ -522,7 +526,7 @@ impl<'a> PackImport<'_, 'a> {
             let Some(target) = self.writable(&item) else {
                 continue;
             };
-            let id: ClipId = ulid_id(&target.local_id)?;
+            let id: ClipId = ulid_id(target.preassigned_id()?)?;
             let blob = match &document.source {
                 ClipSourceDocument::Media { media_id } => {
                     let stored = self
@@ -600,7 +604,7 @@ impl<'a> PackImport<'_, 'a> {
                 let previous = self
                     .inventory
                     .overlays
-                    .get(&OverlayId::new(target.local_id.as_str()))
+                    .get(&OverlayId::new(target.preassigned_id()?))
                     .cloned()
                     .ok_or(TransferError::PackPlanStale)?;
                 (previous.clone(), Some(previous))
@@ -684,7 +688,7 @@ impl<'a> PackImport<'_, 'a> {
                 continue;
             };
             let mut trigger = trigger_of(document);
-            trigger.id = ulid_id(&target.local_id)?;
+            trigger.id = ulid_id(target.preassigned_id()?)?;
             trigger.name = target.name.clone();
             if target.mode == TargetMode::Copy {
                 trigger.user_defined = true;
@@ -724,7 +728,7 @@ impl<'a> PackImport<'_, 'a> {
                 continue;
             };
             let mut action = action_of(document);
-            action.id = ulid_id(&target.local_id)?;
+            action.id = ulid_id(target.preassigned_id()?)?;
             action.name = target.name.clone();
             self.registries
                 .catalog()

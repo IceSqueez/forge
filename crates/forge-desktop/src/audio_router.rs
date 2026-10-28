@@ -120,11 +120,12 @@ mod tests {
     use std::time::Duration;
 
     use async_trait::async_trait;
-    use forge_audio::{AudioRoute, NullAudioEventSink};
+    use forge_audio::AudioRoute;
     use forge_overlay::kinds::alert::KIND_ID as ALERT_KIND;
     use forge_overlay::kinds::blank::KIND_ID as BLANK_KIND;
     use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
     use forge_runtime::{EventBus, OverlayFrameSink, OverlayReceivers};
+    use forge_soundboard::NullAudioEventSink;
     use forge_soundboard::{ClipLibrary, CpalSinkFactory, SoundboardSettingsHandle};
     use forge_storage::soundboard::MockSoundboardClipsRepo;
     use forge_storage::{

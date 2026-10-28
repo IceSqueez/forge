@@ -612,6 +612,39 @@ mod tests {
     }
 
     #[gpui::test]
+    fn escape_steps_back_out_of_the_formats_and_a_second_escape_from_the_search_cancels(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (picker, heard, vcx) = open(cx, groups());
+        vcx.simulate_keystrokes("down enter");
+
+        vcx.simulate_keystrokes("escape");
+        let search_focused = vcx.update(|window, cx| {
+            picker
+                .read(cx)
+                .search
+                .field()
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+        });
+        let after_first = (
+            submenu_open(&picker, vcx),
+            search_focused,
+            events(&heard, vcx),
+        );
+        vcx.simulate_keystrokes("escape");
+
+        assert_eq!(
+            (after_first, events(&heard, vcx)),
+            (
+                (false, true, Vec::new()),
+                vec![VariablePickerEvent::Cancelled]
+            ),
+        );
+    }
+
+    #[gpui::test]
     fn escape_in_the_list_cancels_once(cx: &mut gpui::TestAppContext) {
         let (_picker, heard, vcx) = open(cx, groups());
 

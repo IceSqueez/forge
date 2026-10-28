@@ -340,7 +340,115 @@ impl RenderOnce for AnchoredPopover {
 
 #[cfg(test)]
 mod tests {
-    use super::ease_out_cubic;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    use gpui::{
+        AppContext, Context, Entity, EntityInputHandler, IntoElement, Render, TestAppContext,
+        VisualTestContext, Window, div,
+    };
+
+    use super::{ease_out_cubic, overlay};
+    use crate::palette::FORGE_DEFAULT;
+    use crate::test_support::install_presentation;
+    use crate::text_input::{TextInput, bind_text_input_keys};
+    use gpui::ParentElement;
+
+    struct Host {
+        input: Entity<TextInput>,
+        outer: Rc<Cell<usize>>,
+        inner: Option<Rc<Cell<usize>>>,
+        busy: bool,
+    }
+
+    impl Render for Host {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let mut content = div().child(self.input.clone()).into_any_element();
+            if let Some(counter) = self.inner.clone() {
+                content = overlay(content, &FORGE_DEFAULT)
+                    .on_dismiss("inner-overlay", move |_, _| counter.set(counter.get() + 1))
+                    .into_any_element();
+            }
+            let outer = self.outer.clone();
+            overlay(content, &FORGE_DEFAULT)
+                .busy(self.busy)
+                .on_dismiss("outer-overlay", move |_, _| outer.set(outer.get() + 1))
+        }
+    }
+
+    struct Opened<'a> {
+        input: Entity<TextInput>,
+        outer: Rc<Cell<usize>>,
+        inner: Rc<Cell<usize>>,
+        vcx: &'a mut VisualTestContext,
+    }
+
+    fn open_focused_input(cx: &mut TestAppContext, nested: bool, busy: bool) -> Opened<'_> {
+        cx.update(bind_text_input_keys);
+        install_presentation(cx);
+        let outer = Rc::new(Cell::new(0));
+        let inner = Rc::new(Cell::new(0));
+        let (outer_seen, inner_seen) = (outer.clone(), inner.clone());
+        let (host, vcx) = cx.add_window_view(move |_window, cx| Host {
+            input: cx.new(|cx| TextInput::new("placeholder", cx)),
+            outer: outer_seen,
+            inner: nested.then_some(inner_seen),
+            busy,
+        });
+        vcx.run_until_parked();
+        let input = host.read_with(vcx, |host, _| host.input.clone());
+        vcx.update(|window, cx| input.update(cx, |input, cx| input.focus(window, cx)));
+        vcx.run_until_parked();
+        Opened {
+            input,
+            outer,
+            inner,
+            vcx,
+        }
+    }
+
+    #[gpui::test]
+    fn escape_in_a_focused_text_input_dismisses_the_enclosing_overlay_once(
+        cx: &mut TestAppContext,
+    ) {
+        let opened = open_focused_input(cx, false, false);
+
+        opened.vcx.simulate_keystrokes("escape");
+
+        assert_eq!(opened.outer.get(), 1);
+    }
+
+    #[gpui::test]
+    fn escape_during_an_ime_composition_does_not_dismiss_the_overlay(cx: &mut TestAppContext) {
+        let opened = open_focused_input(cx, false, false);
+        opened.vcx.update(|window, cx| {
+            opened.input.update(cx, |input, cx| {
+                input.replace_and_mark_text_in_range(None, "\u{304B}", None, window, cx)
+            })
+        });
+
+        opened.vcx.simulate_keystrokes("escape");
+
+        assert_eq!(opened.outer.get(), 0);
+    }
+
+    #[gpui::test]
+    fn escape_dismisses_only_the_innermost_of_nested_overlays(cx: &mut TestAppContext) {
+        let opened = open_focused_input(cx, true, false);
+
+        opened.vcx.simulate_keystrokes("escape");
+
+        assert_eq!((opened.inner.get(), opened.outer.get()), (1, 0));
+    }
+
+    #[gpui::test]
+    fn escape_does_not_dismiss_a_busy_overlay(cx: &mut TestAppContext) {
+        let opened = open_focused_input(cx, false, true);
+
+        opened.vcx.simulate_keystrokes("escape");
+
+        assert_eq!(opened.outer.get(), 0);
+    }
 
     #[test]
     fn ease_out_cubic_traces_the_expected_curve() {

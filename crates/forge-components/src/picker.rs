@@ -643,12 +643,28 @@ mod tests {
     }
 
     #[gpui::test]
-    fn cancelling_the_search_field_cancels_the_picker(cx: &mut gpui::TestAppContext) {
-        let (picker, heard, vcx) = open(cx, items(20), None);
+    fn escape_in_the_focused_search_field_cancels_the_picker_once(cx: &mut gpui::TestAppContext) {
+        let (picker, heard, vcx) = open_typable(cx, items(20));
+        let search_focused = vcx.update(|window, cx| {
+            picker
+                .read(cx)
+                .search
+                .field()
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+        });
 
-        search_event(&picker, vcx, InputEvent::Cancelled);
+        vcx.simulate_keystrokes("escape");
 
-        assert_eq!(cancellations(&heard, vcx), 1);
+        assert_eq!(
+            (
+                search_focused,
+                cancellations(&heard, vcx),
+                selections(&heard, vcx)
+            ),
+            (true, 1, Vec::<String>::new()),
+        );
     }
 
     #[gpui::test]

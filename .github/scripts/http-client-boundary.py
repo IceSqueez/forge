@@ -33,7 +33,7 @@ TEST_EXCEPTIONS = {
     "crates/forge-server/src/routes/api_v1.rs": LOCAL_SERVER,
     "crates/forge-server/src/routes/audio.rs": LOCAL_SERVER,
     "crates/forge-server/src/routes/overlays.rs": LOCAL_SERVER,
-    "crates/forge-platform-kick/src/auth.rs": LOOPBACK_CALLBACK,
+    "crates/forge-platform-kick/src/auth/mod.rs": LOOPBACK_CALLBACK,
     "crates/forge-platform-youtube/src/auth.rs": LOOPBACK_CALLBACK,
 }
 

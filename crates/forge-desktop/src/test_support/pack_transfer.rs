@@ -3,10 +3,10 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use forge_paths::{CREDENTIALS_KEY_FILE_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
 use forge_registry::{
     InternalNamespace, ReferenceCatalog, ReferenceNamespace, SubActionRegistry, TriggerRegistry,
 };
-use forge_storage::paths::{CREDENTIALS_KEY_FILE_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
 use forge_storage::{
     CredentialId, DATABASE_FILE_NAME, DataProvider, GlobalsRepo, MediaBlobId, MediaReferrer,
     MediaReferrerKind, OverlayId, ScriptRecord, ScriptRepo, StoredClip, clip_source_referrer,

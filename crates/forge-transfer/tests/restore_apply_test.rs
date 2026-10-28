@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use forge_storage::paths::CREDENTIALS_KEY_FILE_NAME;
+use forge_paths::CREDENTIALS_KEY_FILE_NAME;
 use forge_storage::{
     DATABASE_FILE_NAME, DatabaseFileSchema, EXPECTED_SCHEMA_VERSION, StorageError, StoredDatabase,
     StoredSchema, database_unit_file_names,

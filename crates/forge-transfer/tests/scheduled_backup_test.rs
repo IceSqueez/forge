@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use forge_storage::paths::{
+use forge_paths::{
     ASSETS_DIR_NAME, CREDENTIALS_KEY_FILE_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME, TTS_DIR_NAME,
 };
 use forge_storage::{CredentialId, CredentialsRepo, DATABASE_FILE_NAME, DataProvider};
@@ -595,11 +595,7 @@ async fn a_cancelled_scheduled_write_is_interrupted_and_leaves_no_file_behind() 
 
     let leftovers = (
         files_under(&source.folder()),
-        files_under(
-            &source
-                .data_dir()
-                .join(forge_storage::paths::BACKUPS_DIR_NAME),
-        ),
+        files_under(&source.data_dir().join(forge_paths::BACKUPS_DIR_NAME)),
     );
     assert!(
         matches!(result, Err(TransferError::Interrupted { .. })),

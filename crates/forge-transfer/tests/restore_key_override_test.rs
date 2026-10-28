@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used)]
 use std::path::Path;
 
-use forge_storage::paths::CREDENTIALS_KEY_FILE_NAME;
+use forge_paths::CREDENTIALS_KEY_FILE_NAME;
 use forge_transfer::{
     ARCHIVE_ROOT, RESTORE_MARKER_FILE, RestoreOutcome, apply_pending_restore, restore_staging_root,
 };

@@ -2,12 +2,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
+use forge_paths::{CREDENTIALS_KEY_FILE_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionCancelRegistry, EventBus, OverlayServiceHandle, QueueScheduler, ScriptRegistry,
     spawn_action_engine,
 };
-use forge_storage::paths::{CREDENTIALS_KEY_FILE_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
 use forge_storage::{DATABASE_FILE_NAME, DataProvider, SettingsRepo, reserved_keys};
 use forge_storage_sqlite::SqliteBackend;
 use forge_transfer::{

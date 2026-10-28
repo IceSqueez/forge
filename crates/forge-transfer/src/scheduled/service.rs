@@ -379,7 +379,7 @@ mod tests {
 
         service.attempt(Trigger::Due).await;
 
-        let backups = std::fs::read_dir(dir.path().join(forge_storage::paths::BACKUPS_DIR_NAME))
+        let backups = std::fs::read_dir(dir.path().join(forge_paths::BACKUPS_DIR_NAME))
             .map(|entries| entries.count())
             .unwrap_or(0);
         assert_eq!(

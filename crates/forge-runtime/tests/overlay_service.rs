@@ -15,7 +15,7 @@ use forge_runtime::{
     OverlayDefinitionChanges, OverlayDelivery, OverlayDispatch, OverlayFrameSink, OverlayReceivers,
     OverlayServiceError, OverlayServiceHandle,
 };
-use forge_storage::paths;
+
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
@@ -1094,7 +1094,7 @@ async fn an_overlay_root_setting_that_names_nowhere_falls_back_to_the_default_di
 
         assert_eq!(
             service.root().await,
-            paths::overlays_dir(),
+            forge_paths::overlays_dir(),
             "{label} must resolve to the default overlay directory, never to a relative path"
         );
     }

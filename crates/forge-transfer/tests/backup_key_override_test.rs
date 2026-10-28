@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use forge_storage::paths::CREDENTIALS_KEY_FILE_NAME;
-use forge_storage::paths::MEDIA_DIR_NAME;
+use forge_paths::CREDENTIALS_KEY_FILE_NAME;
+use forge_paths::MEDIA_DIR_NAME;
 use forge_storage::{CredentialId, CredentialsRepo, DATABASE_FILE_NAME, DataProvider};
 use forge_storage_sqlite::{SqliteBackend, SqliteCredentialsRepo, SqliteDatabaseFileSchema};
 use forge_transfer::{

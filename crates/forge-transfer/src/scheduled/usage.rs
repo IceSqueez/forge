@@ -88,12 +88,13 @@ fn bundle_bytes(folder: &Path) -> u64 {
 mod tests {
     use std::path::Path;
 
-    use forge_storage::DATABASE_FILE_NAME;
-    use forge_storage::paths::{
-        ASSETS_DIR_NAME, BACKUPS_DIR_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME, TTS_DIR_NAME,
+    use forge_paths::{
+        ASSETS_DIR_NAME, BACKUPS_DIR_NAME, LOGS_DIR_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME,
+        TTS_DIR_NAME,
     };
+    use forge_storage::DATABASE_FILE_NAME;
 
-    use super::{LOGS_DIR_NAME, StorageUsed, measure};
+    use super::{StorageUsed, measure};
 
     fn sized(path: &Path, bytes: usize) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();

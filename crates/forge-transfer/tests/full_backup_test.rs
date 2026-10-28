@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use age::secrecy::SecretString;
-use forge_storage::paths::{CREDENTIALS_KEY_FILE_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
+use forge_paths::{CREDENTIALS_KEY_FILE_NAME, LOGS_DIR_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
 use forge_storage::{
     CredentialId, CredentialsRepo, DATABASE_FILE_NAME, DataProvider, DatabaseFileSchema,
     EXPECTED_SCHEMA_VERSION, StorageError, StoredDatabase, StoredSchema,
@@ -323,8 +323,12 @@ impl LiveData {
             b"<html></html>",
         )
         .unwrap();
-        std::fs::create_dir_all(data.join("logs")).unwrap();
-        std::fs::write(data.join("logs").join("forge.log"), b"not part of a backup").unwrap();
+        std::fs::create_dir_all(data.join(LOGS_DIR_NAME)).unwrap();
+        std::fs::write(
+            data.join(LOGS_DIR_NAME).join("forge.log"),
+            b"not part of a backup",
+        )
+        .unwrap();
         Self {
             dir,
             provider: Arc::new(backend),

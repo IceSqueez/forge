@@ -2,7 +2,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use forge_storage::paths::{BACKUPS_DIR_NAME, MEDIA_DIR_NAME};
+use forge_paths::{BACKUPS_DIR_NAME, MEDIA_DIR_NAME};
 use forge_storage::{DATABASE_FILE_NAME, DataProvider, SettingsRepo, reserved_keys};
 use forge_storage_sqlite::SqliteBackend;
 use forge_transfer::{

@@ -78,7 +78,7 @@ fn segments(path: &Path) -> Vec<String> {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use forge_storage::paths::{MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
+    use forge_paths::{MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
     use tempfile::TempDir;
 
     use super::resolve_folder;

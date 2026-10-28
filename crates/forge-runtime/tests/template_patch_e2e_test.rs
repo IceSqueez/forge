@@ -246,7 +246,7 @@ async fn trigger_evaluator_applies_effective_config_overrides() {
     let instance = custom_instance("premium_event");
     dp.trigger_instance_repo().save(&instance).await.unwrap();
     dp.trigger_instance_repo()
-        .link_action(a_id, instance.id, 0)
+        .link_action(a_id, instance.id)
         .await
         .unwrap();
 
@@ -356,7 +356,7 @@ async fn sub_action_runner_sees_merged_default_and_override() {
     let instance = custom_instance("go");
     dp.trigger_instance_repo().save(&instance).await.unwrap();
     dp.trigger_instance_repo()
-        .link_action(a_id, instance.id, 0)
+        .link_action(a_id, instance.id)
         .await
         .unwrap();
 

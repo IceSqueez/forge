@@ -158,6 +158,13 @@ impl TriggerInstanceRepo for MockTriggerInstanceRepo {
         &self,
         _action_id: ActionId,
         _instance_id: TriggerInstanceId,
+    ) -> Result<(), StorageError> {
+        Ok(())
+    }
+    async fn link_action_at(
+        &self,
+        _action_id: ActionId,
+        _instance_id: TriggerInstanceId,
         _position: i64,
     ) -> Result<(), StorageError> {
         Ok(())

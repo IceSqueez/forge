@@ -1731,6 +1731,21 @@ mod tests {
             &self,
             action_id: ActionId,
             instance_id: TriggerInstanceId,
+        ) -> Result<(), StorageError> {
+            let mut store = self.lock();
+            let position = store
+                .links
+                .iter()
+                .filter(|(action, _, _)| *action == action_id)
+                .count() as i64;
+            store.links.push((action_id, instance_id, position));
+            Ok(())
+        }
+
+        async fn link_action_at(
+            &self,
+            action_id: ActionId,
+            instance_id: TriggerInstanceId,
             position: i64,
         ) -> Result<(), StorageError> {
             self.lock().links.push((action_id, instance_id, position));
@@ -1934,24 +1949,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn save_mapping_appends_the_new_link_after_the_actions_existing_triggers() {
+    async fn save_mapping_links_a_new_mapping_to_the_drafted_action() {
         let triggers = FakeTriggerRepo::default();
         let target = action("Play sound");
         let actions = FakeActionRepo::with(vec![target.clone()]);
-        for _ in 0..2 {
-            let existing = stored_instance("core.manual");
-            triggers.seed_link(target.id, existing.id, 0);
-            triggers.seed(existing);
-        }
+        let existing = stored_instance("core.manual");
+        triggers.seed_link(target.id, existing.id, 0);
+        triggers.seed(existing);
 
         save_mapping(&triggers, &actions, draft(None, note_signal(60), target.id))
             .await
             .unwrap();
 
-        let created = triggers.instances()[2].id;
+        let created = triggers.instances()[1].id;
         assert!(
-            triggers.links().contains(&(target.id, created, 2)),
-            "the new link must land after the two existing ones"
+            triggers
+                .links()
+                .iter()
+                .any(|(action, instance, _)| *action == target.id && *instance == created),
+            "the new mapping must be linked to the drafted action"
         );
     }
 

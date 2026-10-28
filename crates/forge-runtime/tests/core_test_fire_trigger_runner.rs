@@ -199,7 +199,7 @@ async fn fired_trigger_runs_the_chain_of_its_one_bound_enabled_action() {
         .await
         .unwrap();
     h.trigger_instances
-        .link_action(a_id, instance_id, 0)
+        .link_action(a_id, instance_id)
         .await
         .unwrap();
 
@@ -241,7 +241,7 @@ async fn fire_bound_action(override_outputs: Variant) -> Fired {
         .await
         .unwrap();
     h.trigger_instances
-        .link_action(bound, instance_id, 0)
+        .link_action(bound, instance_id)
         .await
         .unwrap();
 
@@ -482,7 +482,7 @@ async fn fired_trigger_dispatches_disabled_action_but_engine_skips_it() {
         .await
         .unwrap();
     h.trigger_instances
-        .link_action(disabled, instance_id, 0)
+        .link_action(disabled, instance_id)
         .await
         .unwrap();
 

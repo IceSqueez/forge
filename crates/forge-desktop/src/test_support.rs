@@ -1530,7 +1530,7 @@ pub(crate) async fn link(
 ) {
     backend
         .trigger_instance_repo()
-        .link_action(action, trigger, 0)
+        .link_action(action, trigger)
         .await
         .unwrap();
 }

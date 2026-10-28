@@ -126,11 +126,7 @@ async fn every_catalog_write_through_the_provider_advances_its_revision() {
 
     let i = instance();
     advances!(revision, "instance save", instances.save(&i));
-    advances!(
-        revision,
-        "instance link",
-        instances.link_action(a.id, i.id, 0)
-    );
+    advances!(revision, "instance link", instances.link_action(a.id, i.id));
     advances!(
         revision,
         "instance set_enabled",
@@ -141,6 +137,12 @@ async fn every_catalog_write_through_the_provider_advances_its_revision() {
         "instance unlink",
         instances.unlink_action(a.id, i.id)
     );
+    advances!(
+        revision,
+        "instance link at position",
+        instances.link_action_at(a.id, i.id, 3)
+    );
+    instances.unlink_action(a.id, i.id).await.unwrap();
     advances!(revision, "instance archive", instances.archive(i.id));
     advances!(revision, "instance restore", instances.restore(i.id));
     advances!(revision, "instance delete", instances.delete(i.id));
@@ -185,7 +187,7 @@ async fn reads_and_execution_telemetry_leave_the_revision_unchanged() {
     actions.save(&a).await.unwrap();
     let i = instance();
     instances.save(&i).await.unwrap();
-    instances.link_action(a.id, i.id, 0).await.unwrap();
+    instances.link_action(a.id, i.id).await.unwrap();
 
     holds!(
         revision,
@@ -225,7 +227,7 @@ async fn duplicating_through_the_provider_keeps_the_trigger_links() {
     let i = instance();
     let instances = backend.trigger_instance_repo();
     instances.save(&i).await.unwrap();
-    instances.link_action(a.id, i.id, 0).await.unwrap();
+    instances.link_action(a.id, i.id).await.unwrap();
 
     let copy = ActionId::new();
     backend

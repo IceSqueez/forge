@@ -1581,7 +1581,7 @@ mod tests {
             .await
             .unwrap();
         dp.trigger_instance_repo()
-            .link_action(fence.id, fence_instance.id, 0)
+            .link_action(fence.id, fence_instance.id)
             .await
             .unwrap();
 
@@ -1601,7 +1601,7 @@ mod tests {
                 .await
                 .unwrap();
             dp.trigger_instance_repo()
-                .link_action(target.id, target_instance.id, 0)
+                .link_action(target.id, target_instance.id)
                 .await
                 .unwrap();
         }
@@ -1677,7 +1677,7 @@ mod tests {
                 CatalogWrite::CreateAndLinkTarget => {
                     actions.save(&self.target).await.unwrap();
                     instances.save(&self.target_instance).await.unwrap();
-                    instances.link_action(target, instance, 0).await.unwrap();
+                    instances.link_action(target, instance).await.unwrap();
                 }
                 CatalogWrite::EnableTargetAction => {
                     actions.set_enabled(target, true).await.unwrap();

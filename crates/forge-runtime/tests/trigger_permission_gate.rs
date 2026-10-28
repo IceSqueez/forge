@@ -216,7 +216,7 @@ async fn harness(instances: &[(&TriggerInstance, ActionId)]) -> Harness {
         }
         dp.trigger_instance_repo().save(inst).await.unwrap();
         dp.trigger_instance_repo()
-            .link_action(*action_id, inst.id, 0)
+            .link_action(*action_id, inst.id)
             .await
             .unwrap();
     }

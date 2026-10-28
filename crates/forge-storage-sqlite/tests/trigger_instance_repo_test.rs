@@ -65,6 +65,33 @@ fn make_instance(kind_id: &str, name: &str, user_defined: bool) -> TriggerInstan
     }
 }
 
+async fn saved_instances_in_id_order<const N: usize>(
+    backend: &SqliteBackend,
+) -> [TriggerInstanceId; N] {
+    let repo = backend.trigger_instance_repo();
+    let mut ids = [(); N].map(|()| TriggerInstanceId::new());
+    ids.sort();
+    for (index, id) in ids.iter().enumerate() {
+        let instance = TriggerInstance {
+            id: *id,
+            ..make_instance("twitch.chat.command", &format!("Linked {index}"), true)
+        };
+        repo.save(&instance).await.expect("save instance");
+    }
+    ids
+}
+
+async fn linked_ids(backend: &SqliteBackend, action_id: ActionId) -> Vec<TriggerInstanceId> {
+    backend
+        .trigger_instance_repo()
+        .list_for_action(action_id)
+        .await
+        .expect("list_for_action")
+        .into_iter()
+        .map(|instance| instance.id)
+        .collect()
+}
+
 #[tokio::test]
 async fn save_and_get_roundtrip() {
     let backend = setup().await;
@@ -390,7 +417,7 @@ async fn link_action_inserts_row() {
     let inst = make_instance("twitch.chat.command", "Link Me", true);
     repo.save(&inst).await.expect("save");
 
-    repo.link_action(action_id, inst.id, 0)
+    repo.link_action(action_id, inst.id)
         .await
         .expect("link_action");
 
@@ -400,22 +427,107 @@ async fn link_action_inserts_row() {
 }
 
 #[tokio::test]
-async fn link_action_is_idempotent_on_duplicate() {
+async fn duplicate_links_are_ignored_and_keep_the_original_position() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
     let action_id = insert_action(&backend, "idempotent action").await;
-    let inst = make_instance("twitch.chat.command", "Idempotent", true);
-    repo.save(&inst).await.expect("save");
-
-    repo.link_action(action_id, inst.id, 0)
+    let [first, second] = saved_instances_in_id_order(&backend).await;
+    repo.link_action(action_id, first)
         .await
-        .expect("first link");
-    repo.link_action(action_id, inst.id, 0)
+        .expect("link first");
+    repo.link_action(action_id, second)
         .await
-        .expect("second link must succeed");
+        .expect("link second");
 
-    let list = repo.list_for_action(action_id).await.expect("list");
-    assert_eq!(list.len(), 1, "duplicate link must not insert a second row");
+    repo.link_action(action_id, first)
+        .await
+        .expect("an appended duplicate must succeed");
+    repo.link_action_at(action_id, first, 99)
+        .await
+        .expect("a positioned duplicate must succeed");
+
+    assert_eq!(linked_ids(&backend, action_id).await, vec![first, second]);
+}
+
+#[tokio::test]
+async fn link_action_appends_after_the_highest_position_left_by_an_unlink() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let action_id = insert_action(&backend, "gapped action").await;
+    let [late, first, middle, last] = saved_instances_in_id_order(&backend).await;
+    for instance in [first, middle, last] {
+        repo.link_action(action_id, instance).await.expect("link");
+    }
+    repo.unlink_action(action_id, middle).await.expect("unlink");
+
+    repo.link_action(action_id, late).await.expect("relink");
+
+    assert_eq!(
+        linked_ids(&backend, action_id).await,
+        vec![first, last, late],
+        "the new link must not reuse the position of the last surviving link"
+    );
+}
+
+#[tokio::test]
+async fn link_action_counts_archived_links_when_choosing_the_next_position() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let action_id = insert_action(&backend, "archive action").await;
+    let [late, first, archived] = saved_instances_in_id_order(&backend).await;
+    repo.link_action(action_id, first)
+        .await
+        .expect("link first");
+    repo.link_action(action_id, archived)
+        .await
+        .expect("link archived");
+    assert!(repo.archive(archived).await.expect("archive"));
+
+    repo.link_action(action_id, late).await.expect("link late");
+    assert!(repo.restore(archived).await.expect("restore"));
+
+    assert_eq!(
+        linked_ids(&backend, action_id).await,
+        vec![first, archived, late],
+        "a restored link must keep its slot ahead of links added while it was archived"
+    );
+}
+
+#[tokio::test]
+async fn link_action_at_places_the_instance_at_the_given_position() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let action_id = insert_action(&backend, "restore action").await;
+    let [first, second, third] = saved_instances_in_id_order(&backend).await;
+    for instance in [first, second, third] {
+        repo.link_action(action_id, instance).await.expect("link");
+    }
+    repo.unlink_action(action_id, first).await.expect("unlink");
+
+    repo.link_action_at(action_id, first, 0)
+        .await
+        .expect("relink at position");
+
+    assert_eq!(
+        linked_ids(&backend, action_id).await,
+        vec![first, second, third]
+    );
+}
+
+#[tokio::test]
+async fn list_for_action_orders_equal_positions_by_instance_id() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+    let action_id = insert_action(&backend, "tied action").await;
+    let [lower, higher] = saved_instances_in_id_order(&backend).await;
+    repo.link_action_at(action_id, higher, 0)
+        .await
+        .expect("link higher");
+    repo.link_action_at(action_id, lower, 0)
+        .await
+        .expect("link lower");
+
+    assert_eq!(linked_ids(&backend, action_id).await, vec![lower, higher]);
 }
 
 #[tokio::test]
@@ -426,7 +538,7 @@ async fn unlink_action_removes_row_returns_true() {
     let inst = make_instance("twitch.chat.command", "Unlink Me", true);
     repo.save(&inst).await.expect("save");
 
-    repo.link_action(action_id, inst.id, 0).await.expect("link");
+    repo.link_action(action_id, inst.id).await.expect("link");
     let removed = repo
         .unlink_action(action_id, inst.id)
         .await

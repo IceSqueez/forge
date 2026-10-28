@@ -80,7 +80,7 @@ async fn load_bindings_resolves_the_linked_action_and_leaves_unlinked_rows_bare(
     seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F2")).await;
     backend
         .trigger_instance_repo()
-        .link_action(action, bound, 0)
+        .link_action(action, bound)
         .await
         .unwrap();
 
@@ -103,7 +103,7 @@ async fn cleanup_stale_combo_instances_unlinks_the_action_before_deleting_the_in
     let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
     backend
         .trigger_instance_repo()
-        .link_action(action, instance, 0)
+        .link_action(action, instance)
         .await
         .unwrap();
 
@@ -145,7 +145,7 @@ async fn relink_action_moves_the_binding_from_the_previous_action_to_the_new_one
     let new_action = seed_action(&backend, "New").await;
     let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
     let repo = backend.trigger_instance_repo();
-    repo.link_action(old_action, instance, 0).await.unwrap();
+    repo.link_action(old_action, instance).await.unwrap();
 
     relink_action(Arc::clone(&backend), instance, new_action)
         .await
@@ -161,11 +161,11 @@ async fn relink_action_leaves_the_existing_link_in_place_when_the_action_is_unch
     let action = seed_action(&backend, "Play sound").await;
     let instance = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
     let repo = backend.trigger_instance_repo();
-    repo.link_action(action, instance, 0).await.unwrap();
+    repo.link_action(action, instance).await.unwrap();
     let mut expected = vec![instance];
     for (offset, combo) in ["Ctrl+F2", "Ctrl+F3"].into_iter().enumerate() {
         let sibling = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some(combo)).await;
-        repo.link_action(action, sibling, offset as i64 + 1)
+        repo.link_action_at(action, sibling, offset as i64 + 1)
             .await
             .unwrap();
         expected.push(sibling);
@@ -196,7 +196,7 @@ async fn relink_action_appends_the_binding_after_the_actions_existing_triggers()
     let repo = backend.trigger_instance_repo();
     for (position, combo) in ["Ctrl+F2", "Ctrl+F3"].into_iter().enumerate() {
         let existing = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some(combo)).await;
-        repo.link_action(action, existing, position as i64)
+        repo.link_action_at(action, existing, position as i64)
             .await
             .unwrap();
     }
@@ -292,8 +292,8 @@ async fn delete_binding_half_leaves_the_partner_half_and_its_action_link() {
     let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
     let release = seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("Ctrl+F1")).await;
     let repo = backend.trigger_instance_repo();
-    repo.link_action(start, press, 0).await.unwrap();
-    repo.link_action(stop, release, 0).await.unwrap();
+    repo.link_action(start, press).await.unwrap();
+    repo.link_action(stop, release).await.unwrap();
 
     delete_binding_half(Arc::clone(&backend), press)
         .await
@@ -554,7 +554,7 @@ async fn rebind_combo_moves_both_halves_of_a_hold_and_keeps_their_action_links()
     let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("F1")).await;
     seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("F1")).await;
     let repo = backend.trigger_instance_repo();
-    repo.link_action(action, press, 0).await.unwrap();
+    repo.link_action(action, press).await.unwrap();
     let rig = reconciled(&backend).await;
 
     rebind_combo(

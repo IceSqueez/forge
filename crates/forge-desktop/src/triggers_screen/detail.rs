@@ -1151,7 +1151,11 @@ mod tests {
             Ok(Vec::new())
         }
 
-        async fn link_action(
+        async fn link_action(&self, _: ActionId, _: TriggerInstanceId) -> Result<(), StorageError> {
+            unreachable!("the detail sheet never links an action")
+        }
+
+        async fn link_action_at(
             &self,
             _: ActionId,
             _: TriggerInstanceId,

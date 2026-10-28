@@ -112,3 +112,101 @@ async fn revert_setup(provider: &dyn DataProvider, undo: SetupUndo) -> Result<()
         )),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use forge_storage::DATABASE_FILE_NAME;
+    use forge_storage_sqlite::SqliteBackend;
+    use forge_types::{Action, ExecutionMode, PermissionRung, TriggerInstance};
+
+    use super::*;
+
+    async fn backend(dir: &tempfile::TempDir) -> SqliteBackend {
+        let url = format!("sqlite://{}", dir.path().join(DATABASE_FILE_NAME).display());
+        SqliteBackend::open_for_test(&url, [7; 32], dir.path().join("media"), None)
+            .await
+            .unwrap()
+    }
+
+    async fn saved_action(provider: &dyn DataProvider) -> ActionId {
+        let queue_id = provider
+            .queue_repo()
+            .get_by_name("Default")
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let action = Action {
+            id: ActionId::new(),
+            name: "Relinked".to_owned(),
+            group: None,
+            queue_id,
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: ExecutionMode::Sequential,
+            description: None,
+            sub_actions: vec![],
+        };
+        provider.action_repo().save(&action).await.unwrap();
+        action.id
+    }
+
+    async fn saved_trigger(provider: &dyn DataProvider) -> TriggerInstanceId {
+        let instance = TriggerInstance {
+            id: TriggerInstanceId::new(),
+            kind_id: "core.manual".to_owned(),
+            name: "Linked".to_owned(),
+            overrides: BTreeMap::new(),
+            enabled: true,
+            user_defined: true,
+            platform_scope: Default::default(),
+            cooldown_secs: 0,
+            cooldown_global: true,
+            permission_rung: PermissionRung::Everyone,
+        };
+        provider
+            .trigger_instance_repo()
+            .save(&instance)
+            .await
+            .unwrap();
+        instance.id
+    }
+
+    #[tokio::test]
+    async fn roll_back_relinks_unlinked_triggers_in_their_original_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = backend(&dir).await;
+        let provider: &dyn DataProvider = &backend;
+        let repo = provider.trigger_instance_repo();
+        let action = saved_action(provider).await;
+        let mut original = Vec::new();
+        for _ in 0..3 {
+            let trigger = saved_trigger(provider).await;
+            repo.link_action(action, trigger).await.unwrap();
+            original.push(trigger);
+        }
+        let mut journal = SetupJournal::default();
+        for (position, trigger) in original.iter().enumerate() {
+            repo.unlink_action(action, *trigger).await.unwrap();
+            journal.push(SetupUndo::Relink {
+                action,
+                trigger: *trigger,
+                position: position as i64,
+            });
+        }
+
+        journal.roll_back(provider).await.unwrap();
+
+        let restored: Vec<TriggerInstanceId> = repo
+            .list_for_action(action)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|trigger| trigger.id)
+            .collect();
+        assert_eq!(restored, original);
+    }
+}

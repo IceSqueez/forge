@@ -701,7 +701,7 @@ impl Wiring {
         match self.reach(Step::Link) {
             Reach::Runs => {
                 let log = Arc::clone(&written);
-                triggers.expect_link_action().returning(move |_, _, _| {
+                triggers.expect_link_action().returning(move |_, _| {
                     log.lock()
                         .expect("the recorder is not poisoned")
                         .order
@@ -710,9 +710,7 @@ impl Wiring {
                 });
             }
             Reach::Fails => {
-                triggers
-                    .expect_link_action()
-                    .returning(|_, _, _| Err(fault()));
+                triggers.expect_link_action().returning(|_, _| Err(fault()));
             }
             Reach::Never => {
                 triggers.expect_link_action().times(0);

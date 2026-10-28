@@ -488,15 +488,15 @@ pub(super) async fn seed(store: &Store) -> Fixture {
         actions.save(a).await.unwrap();
     }
     triggers
-        .link_action(root.id, root_trigger.id, 0)
+        .link_action(root.id, root_trigger.id)
         .await
         .unwrap();
     triggers
-        .link_action(helper.id, helper_trigger.id, 0)
+        .link_action(helper.id, helper_trigger.id)
         .await
         .unwrap();
     triggers
-        .link_action(unrelated.id, unrelated_trigger.id, 0)
+        .link_action(unrelated.id, unrelated_trigger.id)
         .await
         .unwrap();
 

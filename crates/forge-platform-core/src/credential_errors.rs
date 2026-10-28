@@ -1,5 +1,3 @@
-use forge_storage::StorageError;
-
 use crate::PlatformError;
 
 pub fn reauth_required(platform: &str) -> PlatformError {
@@ -8,10 +6,18 @@ pub fn reauth_required(platform: &str) -> PlatformError {
     }
 }
 
-pub fn credential_storage_error(platform: &str, error: StorageError) -> PlatformError {
-    match error {
-        StorageError::Decryption => reauth_required(platform),
-        other => PlatformError::Io(std::io::Error::other(other)),
+pub fn credential_storage_error<E>(
+    platform: &str,
+    stored_secret_unrecoverable: bool,
+    source: E,
+) -> PlatformError
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    if stored_secret_unrecoverable {
+        reauth_required(platform)
+    } else {
+        PlatformError::Io(std::io::Error::other(source))
     }
 }
 

@@ -145,7 +145,7 @@ impl CredentialStore {
             .repo
             .load(&CredentialId::new(CREDENTIAL_KEY))
             .await
-            .map_err(|e| credential_storage_error(PLATFORM, e))?
+            .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?
         else {
             return Ok(None);
         };
@@ -161,14 +161,14 @@ impl CredentialStore {
         self.repo
             .store(&CredentialId::new(CREDENTIAL_KEY), &json)
             .await
-            .map_err(|e| credential_storage_error(PLATFORM, e))
+            .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))
     }
 
     async fn clear(&self) -> Result<(), PlatformError> {
         self.repo
             .delete(&CredentialId::new(CREDENTIAL_KEY))
             .await
-            .map_err(|e| credential_storage_error(PLATFORM, e))?;
+            .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?;
         Ok(())
     }
 }

@@ -54,7 +54,7 @@ impl TwitchCredentialsManager {
     pub async fn load(&self) -> Result<Option<StoredCredential>, PlatformError> {
         load_at(self.repo.as_ref(), self.credential_id)
             .await
-            .map_err(|e| credential_storage_error(PLATFORM, e))
+            .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))
     }
 
     pub async fn get_valid_access_token(&self) -> Result<OAuthToken, PlatformError> {
@@ -111,7 +111,7 @@ impl TwitchCredentialsManager {
         self.repo
             .delete(&CredentialId::new(self.credential_id))
             .await
-            .map_err(|e| credential_storage_error(PLATFORM, e))?;
+            .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?;
         self.expiry_tx.send_replace(None);
         Ok(())
     }
@@ -128,7 +128,7 @@ impl TwitchCredentialsManager {
         self.repo
             .delete(&CredentialId::new(self.credential_id))
             .await
-            .map_err(|e| credential_storage_error(PLATFORM, e))?;
+            .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?;
         self.expiry_tx.send_replace(None);
         Ok(())
     }
@@ -179,7 +179,7 @@ impl TwitchCredentialsManager {
         };
         store_credential_at(self.repo.as_ref(), self.credential_id, &renewed)
             .await
-            .map_err(|e| credential_storage_error(PLATFORM, e))?;
+            .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?;
         self.expiry_tx.send_replace(renewed.expires_at);
         Ok(renewed)
     }

@@ -13,7 +13,6 @@ workspace = true
 [dependencies]
 forge-types = { path = "../forge-types" }
 forge-events = { path = "../forge-events" }
-forge-storage = { path = "../forge-storage" }
 forge-net = { path = "../forge-net" }
 async-trait = { workspace = true }
 tokio = { workspace = true }

@@ -26,7 +26,7 @@ impl OverlayTokenState {
         let id = CredentialId::new(SERVER_OVERLAY_TOKEN_CREDENTIAL_ID);
         let stored = match creds.load(&id).await {
             Ok(stored) => stored,
-            Err(StorageError::Decryption) => {
+            Err(e) if e.stored_secret_unrecoverable() => {
                 tracing::warn!(
                     "stored overlay token cannot be decrypted with the current credentials key; issuing a new token"
                 );

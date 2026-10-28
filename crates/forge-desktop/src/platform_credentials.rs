@@ -41,7 +41,9 @@ async fn delete_unmanaged(
     repo.delete(&CredentialId::new(credential_key(platform)))
         .await
         .map(drop)
-        .map_err(|e| credential_storage_error(platform.as_str(), e))
+        .map_err(|e| {
+            credential_storage_error(platform.as_str(), e.stored_secret_unrecoverable(), e)
+        })
 }
 
 fn credential_key(platform: PlatformId) -> &'static str {

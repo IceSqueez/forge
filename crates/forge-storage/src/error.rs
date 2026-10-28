@@ -87,6 +87,12 @@ pub enum StorageError {
     NotReady,
 }
 
+impl StorageError {
+    pub fn stored_secret_unrecoverable(&self) -> bool {
+        matches!(self, Self::Decryption)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

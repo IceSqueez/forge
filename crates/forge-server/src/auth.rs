@@ -30,7 +30,7 @@ impl AuthState {
         let id = CredentialId::new(forge_storage::SERVER_BEARER_CREDENTIAL_ID);
         let stored = match creds.load(&id).await {
             Ok(stored) => stored,
-            Err(StorageError::Decryption) => {
+            Err(e) if e.stored_secret_unrecoverable() => {
                 tracing::warn!(
                     "stored server token cannot be decrypted with the current credentials key; issuing a new token"
                 );

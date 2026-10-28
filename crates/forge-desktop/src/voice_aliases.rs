@@ -1220,6 +1220,66 @@ mod tests {
         assert_eq!(cx.update(|cx| error_toasts(cx)), 1);
     }
 
+    fn stored_ids(fixture: &Fixture, rt: &tokio::runtime::Runtime) -> Vec<String> {
+        let mut ids = rt
+            .block_on(fixture.backend.voice_alias_repo().list())
+            .expect("list")
+            .into_iter()
+            .map(|alias| alias.id.0)
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids
+    }
+
+    fn mount_loaded(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        seeded: Vec<VoiceAlias>,
+    ) -> Fixture {
+        let fixture = mount(cx, rt, seeded);
+        let view = fixture.view.clone();
+        settle(cx, rt, |cx| {
+            view.read_with(cx, |view, _| !view.aliases.is_empty())
+        });
+        fixture
+    }
+
+    #[gpui::test]
+    fn confirming_a_delete_after_the_list_was_reordered_deletes_the_chosen_alias(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let alice = keyed("a", "twitch:alice", "voice-a");
+        let bob = keyed("b", "twitch:bob", "voice-b");
+        let fixture = mount_loaded(cx, &rt, vec![alice.clone(), bob.clone()]);
+
+        fixture.view.update(cx, |view, cx| {
+            view.request_delete(AliasId("b".to_owned()), cx);
+            view.apply_aliases(vec![bob, alice], cx);
+            view.confirm_delete(cx);
+        });
+        settle(cx, &rt, |_| stored_ids(&fixture, &rt).len() == 1);
+
+        assert_eq!(stored_ids(&fixture, &rt), ["a"]);
+    }
+
+    #[gpui::test]
+    fn confirming_a_delete_of_an_alias_gone_from_the_list_deletes_nothing(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let alice = keyed("a", "twitch:alice", "voice-a");
+        let bob = keyed("b", "twitch:bob", "voice-b");
+        let fixture = mount_loaded(cx, &rt, vec![alice.clone(), bob]);
+
+        fixture.view.update(cx, |view, cx| {
+            view.request_delete(AliasId("b".to_owned()), cx);
+            view.apply_aliases(vec![alice], cx);
+            view.confirm_delete(cx);
+        });
+        cx.run_until_parked();
+
+        assert_eq!(stored_ids(&fixture, &rt), ["a", "b"]);
+    }
+
     fn stored_alias(viewer_id: &str, viewer_name: &str) -> VoiceAlias {
         VoiceAlias {
             id: AliasId::new(),
@@ -1252,7 +1312,11 @@ mod tests {
                 view.read_with(cx, |view, _| !view.aliases.is_empty())
             });
 
-            vcx.update(|window, cx| view.update(cx, |view, cx| view.open_edit(0, window, cx)));
+            vcx.update(|window, cx| {
+                view.update(cx, |view, cx| {
+                    view.open_edit(&AliasId("a1".to_owned()), window, cx)
+                })
+            });
             vcx.run_until_parked();
             vcx.simulate_input("x");
             vcx.simulate_keystrokes("enter");
@@ -1297,7 +1361,11 @@ mod tests {
             view.read_with(cx, |view, _| !view.aliases.is_empty())
         });
 
-        vcx.update(|window, cx| view.update(cx, |view, cx| view.open_edit(0, window, cx)));
+        vcx.update(|window, cx| {
+            view.update(cx, |view, cx| {
+                view.open_edit(&AliasId("a1".to_owned()), window, cx)
+            })
+        });
         vcx.run_until_parked();
         vcx.simulate_input("x");
         vcx.simulate_keystrokes("enter");

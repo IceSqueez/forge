@@ -1635,4 +1635,45 @@ mod tests {
             ]
         );
     }
+
+    #[gpui::test]
+    fn equal_row_names_in_one_list_each_run_only_their_own_step(cx: &mut TestAppContext) {
+        let fired = click_everywhere(
+            list(
+                "Sources",
+                vec![
+                    with_action_glyph(
+                        row("Mic", false, Some("obs.scene.set_current")),
+                        "obs.source.set_visibility",
+                    ),
+                    with_action_glyph(
+                        row("Mic", false, Some("obs.input.set_mute")),
+                        "obs.source.set_lock",
+                    ),
+                ],
+            ),
+            list("Scenes", Vec::new()),
+            cx,
+        );
+
+        let doubled: Vec<Vec<(String, String)>> = fired
+            .borrow()
+            .iter()
+            .filter(|click| click.len() > 1)
+            .cloned()
+            .collect();
+        assert!(
+            doubled.is_empty(),
+            "one click ran several steps: {doubled:?}"
+        );
+        assert_eq!(
+            distinct(&fired),
+            vec![
+                ("Mic".to_owned(), "obs.input.set_mute".to_owned()),
+                ("Mic".to_owned(), "obs.scene.set_current".to_owned()),
+                ("Mic".to_owned(), "obs.source.set_lock".to_owned()),
+                ("Mic".to_owned(), "obs.source.set_visibility".to_owned()),
+            ]
+        );
+    }
 }

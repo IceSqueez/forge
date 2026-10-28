@@ -765,7 +765,7 @@ mod tests {
         settle(cx, &rt);
 
         feed_and_absorb(cx, &feed, &history, |feed| {
-            feed.mark_deleted("m1");
+            feed.mark_deleted(ANN.0, "m1");
         });
 
         assert_eq!(loaded_moderated_ids(cx, &history), ["m1"]);

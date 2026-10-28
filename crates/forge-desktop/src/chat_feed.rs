@@ -544,6 +544,7 @@ mod tests {
     use forge_types::{
         ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
         ChatSegment, ChatViewer, EventId, ModerationMarks, PlatformId, UnifiedChatRow, UserBadge,
+        UserRemoval,
     };
     use time::OffsetDateTime;
 
@@ -851,8 +852,24 @@ mod tests {
         }
     }
 
+    fn moderated_on(feed: &ChatFeed, platform: PlatformId, id: &str) -> bool {
+        feed.messages()
+            .iter()
+            .find(|m| m.platform == platform && m.id == id)
+            .unwrap()
+            .moderated
+    }
+
+    fn remove_user(user_id: Option<&str>, user_name: &str) -> ChatModerationAction {
+        ChatModerationAction::RemoveUser {
+            user_id: user_id.map(str::to_string),
+            user_name: user_name.to_string(),
+            removal: UserRemoval::Ban,
+        }
+    }
+
     #[test]
-    fn mark_deleted_flips_only_the_message_with_matching_id() {
+    fn mark_deleted_flips_only_the_message_with_matching_id_on_its_platform() {
         let mut feed = ChatFeed::new();
         feed.push(ChatMessage::from_row(&feed_row(
             "m1",
@@ -864,46 +881,119 @@ mod tests {
             PlatformId::Twitch,
             "bob",
         )));
+        feed.push(ChatMessage::from_row(&feed_row(
+            "m1",
+            PlatformId::YouTube,
+            "carol",
+        )));
 
-        feed.mark_deleted("m1");
+        feed.mark_deleted(PlatformId::Twitch, "m1");
 
-        assert!(moderated_by_id(&feed, "m1"));
-        assert!(!moderated_by_id(&feed, "m2"));
+        assert_eq!(
+            [
+                moderated_on(&feed, PlatformId::Twitch, "m1"),
+                moderated_on(&feed, PlatformId::Twitch, "m2"),
+                moderated_on(&feed, PlatformId::YouTube, "m1"),
+            ],
+            [true, false, false]
+        );
     }
 
     #[test]
-    fn mark_user_flips_matching_platform_and_case_insensitive_username_only() {
+    fn a_delete_event_from_another_platform_leaves_a_row_with_the_same_id() {
         let mut feed = ChatFeed::new();
         feed.push(ChatMessage::from_row(&feed_row(
-            "same",
+            "m1",
             PlatformId::Twitch,
-            "Alice",
+            "alice",
         )));
-        feed.push(ChatMessage::from_row(&feed_row(
-            "other-name",
-            PlatformId::Twitch,
-            "Bob",
-        )));
-        feed.push(ChatMessage::from_row(&feed_row(
-            "other-platform",
-            PlatformId::YouTube,
-            "Alice",
-        )));
+        let youtube_delete = Event::new(
+            EventSource::YouTube,
+            "chat.moderation",
+            serde_json::json!({ ChatModerationPayload::KEY: ChatModerationPayload {
+                action: ChatModerationAction::DeleteMessage {
+                    message_id: "m1".to_owned(),
+                },
+            } }),
+        );
 
-        feed.mark_user(PlatformId::Twitch, "alice");
+        let changed = feed.apply_event(&youtube_delete);
 
-        assert!(
-            moderated_by_id(&feed, "same"),
-            "same platform, case-insensitive name match"
-        );
-        assert!(
-            !moderated_by_id(&feed, "other-name"),
-            "different username untouched"
-        );
-        assert!(
-            !moderated_by_id(&feed, "other-platform"),
-            "same name on another platform untouched"
-        );
+        assert!(!changed);
+        assert!(!moderated_on(&feed, PlatformId::Twitch, "m1"));
+    }
+
+    #[test]
+    fn mark_user_matches_the_author_by_id_then_by_ascii_nocase_name_on_its_platform_only() {
+        let cases = [
+            (
+                "id match with a renamed author",
+                PlatformId::Twitch,
+                "NewName",
+                Some("u1"),
+                remove_user(Some("u1"), "OldName"),
+                true,
+            ),
+            (
+                "id mismatch with the same name",
+                PlatformId::Twitch,
+                "bob",
+                Some("u2"),
+                remove_user(Some("u1"), "bob"),
+                false,
+            ),
+            (
+                "row without an id falls back to a case-insensitive name",
+                PlatformId::Twitch,
+                "Bob",
+                None,
+                remove_user(Some("u1"), "bob"),
+                true,
+            ),
+            (
+                "event without an id falls back to a case-insensitive name",
+                PlatformId::Twitch,
+                "BOB",
+                Some("u1"),
+                remove_user(None, "bob"),
+                true,
+            ),
+            (
+                "name fallback with a different name",
+                PlatformId::Twitch,
+                "alice",
+                None,
+                remove_user(None, "bob"),
+                false,
+            ),
+            (
+                "name fallback folds ASCII case only",
+                PlatformId::Twitch,
+                "Стрімер",
+                None,
+                remove_user(None, "стрімер"),
+                false,
+            ),
+            (
+                "id match on another platform",
+                PlatformId::Kick,
+                "bob",
+                Some("u1"),
+                remove_user(Some("u1"), "bob"),
+                false,
+            ),
+        ];
+        for (name, row_platform, author, author_id, action, expected) in cases {
+            let mut feed = ChatFeed::new();
+            feed.push(ChatMessage::from_row(&UnifiedChatRow {
+                author_id: author_id.map(str::to_string),
+                ..feed_row("m1", row_platform, author)
+            }));
+
+            feed.mark_user(PlatformId::Twitch, &action);
+
+            assert_eq!(moderated_by_id(&feed, "m1"), expected, "{name}");
+        }
     }
 
     #[test]
@@ -1220,17 +1310,23 @@ mod tests {
             "carol",
         )));
 
-        assert!(!feed.mark_deleted("ghost"), "no row has this id");
-        assert!(feed.mark_deleted("tw1"));
-        assert!(!feed.mark_deleted("tw1"), "already moderated");
+        assert!(
+            !feed.mark_deleted(PlatformId::Twitch, "ghost"),
+            "no row has this id"
+        );
+        assert!(feed.mark_deleted(PlatformId::Twitch, "tw1"));
+        assert!(
+            !feed.mark_deleted(PlatformId::Twitch, "tw1"),
+            "already moderated"
+        );
 
         assert!(
-            !feed.mark_user(PlatformId::YouTube, "bob"),
+            !feed.mark_user(PlatformId::YouTube, &remove_user(None, "bob")),
             "bob is on Twitch"
         );
-        assert!(feed.mark_user(PlatformId::Twitch, "BOB"));
+        assert!(feed.mark_user(PlatformId::Twitch, &remove_user(None, "BOB")));
         assert!(
-            !feed.mark_user(PlatformId::Twitch, "bob"),
+            !feed.mark_user(PlatformId::Twitch, &remove_user(None, "bob")),
             "already moderated"
         );
 

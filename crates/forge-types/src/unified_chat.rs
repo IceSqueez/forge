@@ -986,4 +986,80 @@ mod tests {
         let rendered = format!("{:?}", ChatViewer::new("4145994", "SecretName"));
         assert!(!rendered.contains("SecretName"), "{rendered}");
     }
+
+    #[test]
+    fn removes_author_matches_by_id_then_by_ascii_nocase_name_for_user_removals_only() {
+        let remove = |user_id: Option<&str>, user_name: &str| ChatModerationAction::RemoveUser {
+            user_id: user_id.map(str::to_string),
+            user_name: user_name.to_string(),
+            removal: UserRemoval::Timeout,
+        };
+        let cases = [
+            (
+                "id match with a renamed author",
+                remove(Some("u1"), "OldName"),
+                Some("u1"),
+                "NewName",
+                true,
+            ),
+            (
+                "id mismatch with the same name",
+                remove(Some("u1"), "bob"),
+                Some("u2"),
+                "bob",
+                false,
+            ),
+            (
+                "author without an id falls back to the name",
+                remove(Some("u1"), "bob"),
+                None,
+                "BOB",
+                true,
+            ),
+            (
+                "removal without an id falls back to the name",
+                remove(None, "Bob"),
+                Some("u1"),
+                "bob",
+                true,
+            ),
+            (
+                "neither side has an id and the names differ",
+                remove(None, "bob"),
+                None,
+                "alice",
+                false,
+            ),
+            (
+                "name fallback folds ASCII case only",
+                remove(None, "стрімер"),
+                None,
+                "Стрімер",
+                false,
+            ),
+            (
+                "message delete removes no author",
+                ChatModerationAction::DeleteMessage {
+                    message_id: "u1".to_string(),
+                },
+                Some("u1"),
+                "bob",
+                false,
+            ),
+            (
+                "chat clear removes no author",
+                ChatModerationAction::ClearChat,
+                Some("u1"),
+                "bob",
+                false,
+            ),
+        ];
+        for (name, action, author_id, author_name, expected) in cases {
+            assert_eq!(
+                action.removes_author(author_id, author_name),
+                expected,
+                "{name}"
+            );
+        }
+    }
 }

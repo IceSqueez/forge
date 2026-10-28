@@ -3,6 +3,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::Duration;
 
+const PLAYBACK_PROGRESS_TICK: Duration = Duration::from_secs(1);
+
 use forge_audio::{AudioError, AudioSink, PcmBuffer};
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_tts_core::{EngineId, SynthesisRequest, TtsError, TtsVoice, VoiceId};
@@ -902,7 +904,7 @@ async fn start_clip(
     };
     match started {
         Ok(playback) => {
-            let mut ticker = tokio::time::interval(Duration::from_secs(1));
+            let mut ticker = tokio::time::interval(PLAYBACK_PROGRESS_TICK);
             ticker.tick().await;
             *progress_ticker = Some(ticker);
             *current_playback = Some(CurrentPlayback::Playing(PlayingClip {

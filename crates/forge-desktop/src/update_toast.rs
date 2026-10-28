@@ -4,6 +4,7 @@ use gpui::{App, WeakEntity};
 
 use crate::update_flow::{UpdateCandidate, UpdateFailure, UpdateFlow, UpdateStage};
 
+const QUEUE_ASSIGNED_ID: u64 = 0;
 const PREPARING_PROGRESS: f32 = 1.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,7 +133,7 @@ pub fn toast_data(
             run(&flow, button.command, cx);
         })
     };
-    let mut data = ToastData::new(0, toast.kind, toast.message);
+    let mut data = ToastData::new(QUEUE_ASSIGNED_ID, toast.kind, toast.message);
     data.icon = toast.icon;
     data.progress = toast.progress;
     data.action = toast.primary.map(action);

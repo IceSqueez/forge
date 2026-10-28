@@ -50,7 +50,7 @@ impl HotkeyHealthSnapshot {
 }
 
 pub(crate) fn make_health_state() -> (HealthTx, Arc<Mutex<HotkeyHealthSnapshot>>) {
-    let (tx, _) = broadcast::channel(16);
+    let (tx, _) = broadcast::channel(forge_platform_core::HEALTH_CHANNEL_CAPACITY);
     (tx, Arc::new(Mutex::new(HotkeyHealthSnapshot::default())))
 }
 

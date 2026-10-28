@@ -7,6 +7,9 @@
 use std::sync::mpsc;
 
 #[cfg(target_os = "macos")]
+const SYNTHESIS_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+#[cfg(target_os = "macos")]
 use forge_tts_core::{PcmBuffer, SynthesisRequest};
 
 #[cfg(target_os = "macos")]
@@ -146,7 +149,7 @@ fn run_synthesis(
     let (mutex, cvar) = &*shared;
     let guard = mutex.lock().unwrap_or_else(|e| e.into_inner());
     let (final_state, timeout_result) = cvar
-        .wait_timeout_while(guard, std::time::Duration::from_secs(30), |s| !s.done)
+        .wait_timeout_while(guard, SYNTHESIS_WAIT_TIMEOUT, |s| !s.done)
         .unwrap_or_else(|e| e.into_inner());
 
     if timeout_result.timed_out() {

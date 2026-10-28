@@ -1,7 +1,9 @@
 use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+const EVENT_RATE_WINDOW: Duration = Duration::from_secs(60);
 
 use time::OffsetDateTime;
 use tokio::sync::broadcast;
@@ -23,7 +25,7 @@ pub(crate) struct MidiHealthSnapshot {
 }
 
 pub(crate) fn make_health_state() -> (HealthTx, Arc<Mutex<MidiHealthSnapshot>>) {
-    let (tx, _) = broadcast::channel(16);
+    let (tx, _) = broadcast::channel(forge_platform_core::HEALTH_CHANNEL_CAPACITY);
     (tx, Arc::new(Mutex::new(MidiHealthSnapshot::default())))
 }
 
@@ -42,7 +44,7 @@ pub(crate) fn input_port_health_value(enabled: bool, input_count: usize) -> Heal
 }
 
 pub(crate) fn events_per_minute(timestamps: &mut VecDeque<Instant>) -> usize {
-    let cutoff = Instant::now().checked_sub(std::time::Duration::from_secs(60));
+    let cutoff = Instant::now().checked_sub(EVENT_RATE_WINDOW);
     if let Some(cutoff) = cutoff {
         while timestamps.front().is_some_and(|t| *t < cutoff) {
             timestamps.pop_front();

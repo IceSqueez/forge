@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+const PIPER_SYNTHESIS_TIMEOUT: Duration = Duration::from_secs(30);
+
 use forge_audio::{DeviceSink, NullAudioEventSink, OutputDeviceHandle, stored_output_device};
 use forge_events::EventPublisher;
 use forge_runtime::EventBus;
@@ -28,7 +30,7 @@ async fn register_local_engines(registry: &mut TtsRegistry) {
             Arc::new(PiperEngineFactory {
                 piper_binary: piper_binary.clone(),
                 voices_dir,
-                timeout: Duration::from_secs(30),
+                timeout: PIPER_SYNTHESIS_TIMEOUT,
             }),
         );
         tracing::info!(path = %piper_binary.display(), "registered the Piper TTS engine");

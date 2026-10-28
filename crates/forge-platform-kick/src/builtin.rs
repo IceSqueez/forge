@@ -73,7 +73,7 @@ impl KickIntegrationBundle {
         viewer_report_rx: watch::Receiver<ViewerReport>,
         poller_auth_rx: watch::Receiver<PollerAuth>,
     ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
-        let (health_tx, _) = broadcast::channel(16);
+        let (health_tx, _) = broadcast::channel(forge_platform_core::HEALTH_CHANNEL_CAPACITY);
         let state_rx = platform.state_receiver();
         let bundle = Arc::new(Self {
             id: crate::KICK_INTEGRATION.id,

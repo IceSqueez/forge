@@ -232,6 +232,7 @@ const FLAG_SCREEN: &str = "--screen";
 const FLAG_SELECT: &str = "--select";
 const FLAG_HELP: &str = "--help";
 const EXIT_USAGE_ERROR: i32 = 2;
+const EXIT_STARTUP_FAILURE: i32 = 1;
 
 enum StartupRequest {
     Open(Screen),
@@ -422,7 +423,7 @@ fn main() {
         Err(err) => {
             tracing::error!(error = %err, "platform endpoint override refused; exiting");
             drop(log_guard);
-            std::process::exit(1);
+            std::process::exit(EXIT_STARTUP_FAILURE);
         }
     };
 
@@ -433,7 +434,7 @@ fn main() {
                 "another forge instance is already running for this data directory; exiting"
             );
             drop(log_guard);
-            std::process::exit(1);
+            std::process::exit(EXIT_STARTUP_FAILURE);
         }
         instance_lock::LockOutcome::Unavailable(err) => {
             tracing::warn!(error = %err, "single-instance lock unavailable; starting anyway");
@@ -447,7 +448,7 @@ fn main() {
             Err(err) => {
                 tracing::error!(error = %err, "pending restore could not be settled; exiting");
                 drop(log_guard);
-                std::process::exit(1);
+                std::process::exit(EXIT_STARTUP_FAILURE);
             }
         };
     if instance_lock.is_some()

@@ -25,11 +25,12 @@ pub use ban_list::{
 pub use builtin::{
     ActiveRow, BannerLevel, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus,
     CapabilityFlags, ContentList, ContentListItem, ControlFailure, ControlOutcome, DetailSection,
-    HeaderAction, HealthBar, HealthDelta, HealthLevel, HealthMetric, HealthStream, HealthValue,
-    HeroBadge, HeroBadgeTone, InfoField, KeyValueRow, ListFooter, QuickAction, QuickActionAccent,
-    QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField, QuickActionFieldKind,
-    QuickActionFieldValue, QuickActionLiveness, QuickActions, RowAction, SectionIcon, StatColumn,
-    SubscriptionRow, SubscriptionStatus, TokenColor, TrailingToken,
+    HEALTH_CHANNEL_CAPACITY, HeaderAction, HealthBar, HealthDelta, HealthLevel, HealthMetric,
+    HealthStream, HealthValue, HeroBadge, HeroBadgeTone, InfoField, KeyValueRow, ListFooter,
+    QuickAction, QuickActionAccent, QuickActionChoiceOption, QuickActionChoiceSource,
+    QuickActionField, QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness,
+    QuickActions, RowAction, SectionIcon, StatColumn, SubscriptionRow, SubscriptionStatus,
+    TokenColor, TrailingToken,
 };
 pub use capabilities::PlatformCapabilities;
 pub use chat::{

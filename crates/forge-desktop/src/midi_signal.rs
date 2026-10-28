@@ -4,14 +4,16 @@ use forge_midi::event_kinds::{CONTROL_CHANGE, NOTE_OFF, NOTE_ON, PITCH_BEND, PRO
 use forge_types::{TriggerConfig, Variant};
 use gpui::Rgba;
 
-const NOTE_NAMES: [&str; 12] = [
+const MIDI_NOTE_MAX: i64 = 127;
+const SEMITONES_PER_OCTAVE: i64 = 12;
+const NOTE_NAMES: [&str; SEMITONES_PER_OCTAVE as usize] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
 ];
 
 pub fn note_name(note: i64) -> String {
-    let clamped = note.clamp(0, 127);
-    let octave = clamped / 12 - 1;
-    let name = NOTE_NAMES[(clamped % 12) as usize];
+    let clamped = note.clamp(0, MIDI_NOTE_MAX);
+    let octave = clamped / SEMITONES_PER_OCTAVE - 1;
+    let name = NOTE_NAMES[(clamped % SEMITONES_PER_OCTAVE) as usize];
     format!("{name}{octave}")
 }
 

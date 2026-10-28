@@ -11,6 +11,7 @@ use forge_platform_core::{BuiltinHealth, HealthDelta, HealthMetric, HealthStream
 use crate::client::DiscordClient;
 
 const LATENCY_WINDOW: usize = 20;
+const ERROR_WINDOW: Duration = Duration::from_secs(3600);
 
 #[derive(Default)]
 pub(crate) struct DiscordHealthSnapshot {
@@ -26,7 +27,7 @@ pub(crate) fn make_health_state() -> (
     broadcast::Sender<HealthDelta>,
     Arc<Mutex<DiscordHealthSnapshot>>,
 ) {
-    let (tx, _) = broadcast::channel(16);
+    let (tx, _) = broadcast::channel(forge_platform_core::HEALTH_CHANNEL_CAPACITY);
     (tx, Arc::new(Mutex::new(DiscordHealthSnapshot::default())))
 }
 
@@ -161,7 +162,7 @@ impl DiscordClient {
 }
 
 fn age_out_errors(timestamps: &mut VecDeque<Instant>) -> usize {
-    if let Some(cutoff) = Instant::now().checked_sub(Duration::from_secs(3600)) {
+    if let Some(cutoff) = Instant::now().checked_sub(ERROR_WINDOW) {
         while timestamps.front().is_some_and(|t| *t < cutoff) {
             timestamps.pop_front();
         }

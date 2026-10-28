@@ -8,6 +8,8 @@ use forge_components::ROW_HOVER_WASH_ALPHA;
 use std::sync::Arc;
 use std::time::Duration;
 
+const AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(300);
+
 use crate::async_bridge;
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
@@ -1024,7 +1026,7 @@ async fn wait_for_youtube_authorization(
     let bundle = tokio::select! {
         biased;
         () = cancel.cancelled() => return Err(AUTH_CANCELLED.to_owned()),
-        outcome = flow.wait_for_authorization(Duration::from_secs(300)) => {
+        outcome = flow.wait_for_authorization(AUTHORIZATION_TIMEOUT) => {
             outcome.map_err(|e| e.to_string())?
         }
     };
@@ -1045,7 +1047,7 @@ async fn wait_for_kick_authorization(
     let bundle = tokio::select! {
         biased;
         () = cancel.cancelled() => return Err(AUTH_CANCELLED.to_owned()),
-        outcome = flow.wait_for_authorization(Duration::from_secs(300)) => {
+        outcome = flow.wait_for_authorization(AUTHORIZATION_TIMEOUT) => {
             outcome.map_err(|e| e.to_string())?
         }
     };

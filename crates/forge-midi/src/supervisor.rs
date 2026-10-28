@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
+const DEVICE_POLL_INTERVAL: Duration = Duration::from_secs(2);
+
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
 
@@ -45,8 +47,8 @@ pub(crate) async fn run_supervisor(
         &mut handles,
     );
 
-    let start = tokio::time::Instant::now() + Duration::from_secs(2);
-    let mut poll = tokio::time::interval_at(start, Duration::from_secs(2));
+    let start = tokio::time::Instant::now() + DEVICE_POLL_INTERVAL;
+    let mut poll = tokio::time::interval_at(start, DEVICE_POLL_INTERVAL);
 
     loop {
         tokio::select! {

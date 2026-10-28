@@ -19,7 +19,7 @@ pub(crate) struct HealthSnapshot {
 
 pub(crate) fn make_health_channel() -> (broadcast::Sender<HealthDelta>, Arc<RwLock<HealthSnapshot>>)
 {
-    let (tx, _) = broadcast::channel(16);
+    let (tx, _) = broadcast::channel(forge_platform_core::HEALTH_CHANNEL_CAPACITY);
     (tx, Arc::new(RwLock::new(HealthSnapshot::default())))
 }
 

@@ -106,7 +106,7 @@ pub struct TwitchIntegrationBundle {
 
 impl TwitchIntegrationBundle {
     pub fn new(login: Option<String>, platform: Arc<TwitchPlatform>) -> Arc<Self> {
-        let (health_tx, _) = broadcast::channel(16);
+        let (health_tx, _) = broadcast::channel(forge_platform_core::HEALTH_CHANNEL_CAPACITY);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
         let config = platform.config().clone();
         let bus = platform.publisher();

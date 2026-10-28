@@ -26,6 +26,19 @@ pub enum PreviewAccent {
     Red,
 }
 
+impl PreviewAccent {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Mauve => "mauve",
+            Self::Sky => "sky",
+            Self::Green => "green",
+            Self::Peach => "peach",
+            Self::Yellow => "yellow",
+            Self::Red => "red",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewFont {
     Sans,

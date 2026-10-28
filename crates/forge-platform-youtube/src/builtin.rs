@@ -79,7 +79,7 @@ impl YoutubeIntegrationBundle {
         platform: Arc<YoutubePlatform>,
         credentials_manager: Arc<YoutubeCredentialsManager>,
     ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
-        let (health_tx, _) = broadcast::channel(16);
+        let (health_tx, _) = broadcast::channel(forge_platform_core::HEALTH_CHANNEL_CAPACITY);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
         let viewer_report_rx = viewer_report_tx.subscribe();
         let state_rx = platform.state_receiver();

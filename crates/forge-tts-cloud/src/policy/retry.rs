@@ -9,6 +9,8 @@ use forge_tts_core::{EngineId, TtsError};
 use crate::network::ceil_secs;
 use crate::policy::rate_limit::{EXHAUSTED_THRESHOLD, SynthesisRateLimiter};
 
+const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+const DEFAULT_MAX_RETRIES: u32 = 3;
 const BACKOFF: [Duration; 3] = [
     Duration::from_millis(250),
     Duration::from_secs(1),
@@ -34,8 +36,8 @@ impl RetryConfig {
 impl Default for RetryConfig {
     fn default() -> Self {
         Self {
-            timeout: Duration::from_secs(10),
-            max_retries: 3,
+            timeout: DEFAULT_REQUEST_TIMEOUT,
+            max_retries: DEFAULT_MAX_RETRIES,
             cooldown: None,
         }
     }

@@ -454,6 +454,8 @@ pub trait BuiltinStatus: Send + Sync {
     }
 }
 
+pub const HEALTH_CHANNEL_CAPACITY: usize = 16;
+
 pub trait BuiltinHealth: Send + Sync {
     fn metrics(&self) -> [HealthMetric; 4];
     fn stream(&self) -> HealthStream;

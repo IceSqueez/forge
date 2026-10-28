@@ -139,6 +139,7 @@ const VIEWER_DELTA_WINDOW_MINUTES: u64 = 15;
 const VIEWER_DELTA_WINDOW: Duration =
     Duration::from_secs(VIEWER_DELTA_WINDOW_MINUTES * SECONDS_PER_MINUTE);
 const VIEWER_RING_CAP: usize = 256;
+const VIEWER_RING_SLACK: Duration = Duration::from_secs(60);
 const DETAIL_TICK: Duration = Duration::from_secs(30);
 const HISTORY_LIMIT: u32 = 50;
 
@@ -596,7 +597,7 @@ impl IntegrationDetail {
         while self.viewer_samples.len() > VIEWER_RING_CAP {
             self.viewer_samples.pop_front();
         }
-        let cutoff = now.checked_sub(VIEWER_DELTA_WINDOW + Duration::from_secs(60));
+        let cutoff = now.checked_sub(VIEWER_DELTA_WINDOW + VIEWER_RING_SLACK);
         if let Some(cutoff) = cutoff {
             while self
                 .viewer_samples

@@ -4,17 +4,17 @@ use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_platform_core::{SENDER_FIELD, SenderPreference, unknown_sender_reason};
-use forge_storage::GlobalsRepo;
 use forge_types::{
     EventId, IntegrationAvailability, IntegrationId, LatestScope, LatestValueReader,
     NO_CHAT_PLATFORM_ENABLED_REASON, NO_WHISPER_PLATFORM_ENABLED_REASON, REPLY_PARENT_FIELD,
-    SCRIPT_LOG_TARGET, ScriptId, Variant, WHISPER_RECIPIENT_FIELD, integration_disabled_reason,
+    SCRIPT_LOG_TARGET, ScriptId, WHISPER_RECIPIENT_FIELD, integration_disabled_reason,
     resolve_chat_target, whispers_unsupported_reason,
 };
 use rhai::{EvalAltResult, ImmutableString, Module, Position};
 use tokio::runtime::Handle;
 
 use crate::convert::{dynamic_to_variant, variant_to_dynamic};
+use crate::globals_port::{GlobalDeletion, ScriptGlobals};
 use crate::http_client::{HttpError, HttpResponse, ScriptHttpClient};
 use crate::schedule::ActionScheduler;
 use crate::schedule_api::build_schedule_module;
@@ -44,7 +44,7 @@ pub trait SpeakRequester: Send + Sync {
 
 pub struct ForgeApi {
     publisher: Arc<dyn EventPublisher>,
-    globals: Arc<dyn GlobalsRepo>,
+    globals: Arc<dyn ScriptGlobals>,
     caused_by: EventId,
     script_id: Option<ScriptId>,
     error_count: Arc<AtomicU32>,
@@ -59,7 +59,7 @@ pub struct ForgeApi {
 impl ForgeApi {
     pub fn new(
         publisher: Arc<dyn EventPublisher>,
-        globals: Arc<dyn GlobalsRepo>,
+        globals: Arc<dyn ScriptGlobals>,
         caused_by: EventId,
         deadline: Instant,
     ) -> Self {
@@ -193,7 +193,7 @@ impl ForgeApi {
             None => Module::new(),
         };
 
-        let globals = build_globals_module(self.publisher, self.caused_by, self.globals);
+        let globals = build_globals_module(self.caused_by, self.globals);
         root.set_sub_module("globals", globals);
 
         let tts = match self.speak {
@@ -768,11 +768,7 @@ fn register_sender_chat_fns(
     );
 }
 
-fn build_globals_module(
-    publisher: Arc<dyn EventPublisher>,
-    caused_by: EventId,
-    globals: Arc<dyn GlobalsRepo>,
-) -> Module {
+fn build_globals_module(caused_by: EventId, globals: Arc<dyn ScriptGlobals>) -> Module {
     let mut m = Module::new();
 
     let globals_get = Arc::clone(&globals);
@@ -794,73 +790,40 @@ fn build_globals_module(
     );
 
     let globals_set = Arc::clone(&globals);
-    let pub_set = Arc::clone(&publisher);
     m.set_native_fn(
         "set",
         move |key: ImmutableString,
               val: rhai::Dynamic,
               persisted: bool|
               -> Result<(), Box<EvalAltResult>> {
-            let key_str = key.as_str();
             let variant =
                 dynamic_to_variant(val).map_err(|e| -> Box<EvalAltResult> { e.into() })?;
-            let new_value_json = variant.to_plain_json();
             Handle::current()
-                .block_on(globals_set.set(key_str, variant, persisted))
+                .block_on(globals_set.set(key.as_str(), variant, persisted, caused_by))
                 .map_err(|e| -> Box<EvalAltResult> { e.to_string().into() })?;
-            pub_set.publish(Event::caused_by(
-                EventSource::Core,
-                "global.set",
-                serde_json::json!({
-                    "key": key_str,
-                    "new_value": new_value_json,
-                    "prev_value": serde_json::Value::Null,
-                }),
-                caused_by,
-            ));
             Ok(())
         },
     );
 
     let globals_incr = Arc::clone(&globals);
-    let pub_incr = Arc::clone(&publisher);
     m.set_native_fn(
         "incr",
         move |key: ImmutableString, amount: i64| -> Result<rhai::Dynamic, Box<EvalAltResult>> {
-            let key_str = key.as_str();
-            let new_val = Handle::current()
-                .block_on(globals_incr.incr(key_str, amount))
+            let increment = Handle::current()
+                .block_on(globals_incr.increment(key.as_str(), amount, caused_by))
                 .map_err(|e| -> Box<EvalAltResult> { e.to_string().into() })?;
-            let new_val_json = match &new_val {
-                Variant::Int(i) => serde_json::Value::from(*i),
-                _ => serde_json::Value::String(new_val.to_string()),
-            };
-            pub_incr.publish(Event::caused_by(
-                EventSource::Core,
-                "global.incremented",
-                serde_json::json!({ "key": key_str, "delta": amount, "new_value": new_val_json }),
-                caused_by,
-            ));
-            Ok(variant_to_dynamic(new_val))
+            Ok(variant_to_dynamic(increment.current))
         },
     );
 
     let globals_del = globals;
-    let pub_del = publisher;
     m.set_native_fn(
         "del",
         move |key: ImmutableString| -> Result<bool, Box<EvalAltResult>> {
-            let key_str = key.as_str();
-            let existed = Handle::current()
-                .block_on(globals_del.delete(key_str))
+            let deletion = Handle::current()
+                .block_on(globals_del.delete(key.as_str(), caused_by))
                 .map_err(|e| -> Box<EvalAltResult> { e.to_string().into() })?;
-            pub_del.publish(Event::caused_by(
-                EventSource::Core,
-                "global.deleted",
-                serde_json::json!({ "key": key_str }),
-                caused_by,
-            ));
-            Ok(existed)
+            Ok(matches!(deletion, GlobalDeletion::Deleted { .. }))
         },
     );
 

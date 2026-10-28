@@ -17,7 +17,7 @@ use forge_components::{
 };
 use forge_components::{DateShape, fmt_display};
 use forge_events::{Event, EventPublisher};
-use forge_runtime::{EventBus, SchedulingContext, ScriptRegistry};
+use forge_runtime::{EventBus, RuntimeScriptGlobals, SchedulingContext, ScriptRegistry};
 use forge_script::{
     MethodDescriptor, RunResult, ScriptError, ScriptHost, format_script, inert_annotation_lines,
     is_engine_bound_name, load_script_engine_config, run_inline, validate_syntax,
@@ -1320,7 +1320,10 @@ impl ScriptEditorView {
             .map(|o| o.record.contract.clone())
             .unwrap_or_default();
         let host = ScriptHost {
-            globals: Arc::clone(&self.backend) as Arc<dyn GlobalsRepo>,
+            globals: Arc::new(RuntimeScriptGlobals::new(
+                Arc::clone(&self.backend) as Arc<dyn GlobalsRepo>,
+                Arc::clone(&self.bus) as Arc<dyn EventPublisher>,
+            )),
             settings: Arc::clone(&self.backend) as Arc<dyn SettingsRepo>,
             bus: Arc::clone(&self.bus) as Arc<dyn EventPublisher>,
             integrations: Arc::clone(&self.integrations),

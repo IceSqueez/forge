@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventSource};
+use forge_events::EventSource;
 use forge_registry::references::GLOBAL_OPTIONS_KEY;
 use forge_registry::{
     FormField, ReferenceField, RegistryError, RunContext, StepTimer, SubActionCategory,
@@ -9,6 +9,8 @@ use forge_registry::{
 };
 use forge_storage::GlobalsRepo;
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+
+use crate::global_mutation::GlobalMutation;
 
 pub struct CoreGlobalsSetRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -99,27 +101,14 @@ impl SubActionRunner for CoreGlobalsSetRunner {
         let variant = super::interpolate::parse_variant(&raw);
         let persisted = config.bool("persisted").unwrap_or(false);
 
-        let prev_value = self.globals.get(&name).await.ok().flatten();
-        let new_value_json = variant.to_plain_json();
-        let prev_value_json = prev_value
-            .as_ref()
-            .map(Variant::to_plain_json)
-            .unwrap_or(serde_json::Value::Null);
-
-        let outcome = match self.globals.set(&name, variant, persisted).await {
-            Ok(()) => {
-                ctx.publisher.publish(Event::caused_by(
-                    EventSource::Core,
-                    "global.set",
-                    serde_json::json!({
-                        "key": name,
-                        "new_value": new_value_json,
-                        "prev_value": prev_value_json,
-                    }),
-                    ctx.parent_event_id,
-                ));
-                SubActionOutcome::Success
-            }
+        let mutation = GlobalMutation {
+            globals: self.globals.as_ref(),
+            publisher: ctx.publisher,
+            source: EventSource::Core,
+            caused_by: ctx.parent_event_id,
+        };
+        let outcome = match mutation.set(&name, variant, persisted).await {
+            Ok(_previous) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(e.to_string()),
         };
 

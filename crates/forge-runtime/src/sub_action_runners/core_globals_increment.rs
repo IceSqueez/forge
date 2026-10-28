@@ -1,13 +1,15 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventSource};
+use forge_events::EventSource;
 use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
     SubActionRunner,
 };
 use forge_storage::GlobalsRepo;
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+
+use crate::global_mutation::GlobalMutation;
 
 pub struct CoreGlobalsIncrementRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -85,24 +87,14 @@ impl SubActionRunner for CoreGlobalsIncrementRunner {
         let resolved_name =
             forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(name_template));
 
-        let outcome = match self.globals.incr(&resolved_name, amount).await {
-            Ok(new_val) => {
-                let new_val_json = match &new_val {
-                    Variant::Int(i) => serde_json::Value::from(*i),
-                    _ => serde_json::Value::String(new_val.to_string()),
-                };
-                ctx.publisher.publish(Event::caused_by(
-                    EventSource::Core,
-                    "global.incremented",
-                    serde_json::json!({
-                        "key": resolved_name,
-                        "delta": amount,
-                        "new_value": new_val_json,
-                    }),
-                    ctx.parent_event_id,
-                ));
-                SubActionOutcome::Success
-            }
+        let mutation = GlobalMutation {
+            globals: self.globals.as_ref(),
+            publisher: ctx.publisher,
+            source: EventSource::Core,
+            caused_by: ctx.parent_event_id,
+        };
+        let outcome = match mutation.increment(&resolved_name, amount).await {
+            Ok(_increment) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(e.to_string()),
         };
 

@@ -8,7 +8,7 @@ use forge_registry::{
     SubActionIo, SubActionRunner,
 };
 use forge_script::{
-    Engine, ForgeApi, ScriptError, ScriptHttpClient, build_scope_for_contract,
+    Engine, ForgeApi, ScriptError, ScriptGlobals, ScriptHttpClient, build_scope_for_contract,
     load_script_engine_config, load_script_http_config,
 };
 use forge_storage::{
@@ -20,6 +20,7 @@ use forge_types::{
 use serde_json::json;
 use time::OffsetDateTime;
 
+use crate::global_mutation::RuntimeScriptGlobals;
 use crate::scheduled_runs::SchedulingContext;
 use crate::script_registry::ScriptRegistry;
 
@@ -27,7 +28,7 @@ const TARGET_VAR_KEY: &str = "target_var";
 
 pub struct ScriptRunNamedRunner {
     registry: Arc<ScriptRegistry>,
-    globals: Arc<dyn GlobalsRepo>,
+    globals: Arc<dyn ScriptGlobals>,
     publisher: Arc<dyn EventPublisher>,
     settings: Arc<dyn SettingsRepo>,
     scripts: Arc<dyn ScriptRepo>,
@@ -43,7 +44,7 @@ impl ScriptRunNamedRunner {
     ) -> Self {
         Self {
             registry,
-            globals,
+            globals: Arc::new(RuntimeScriptGlobals::new(globals, Arc::clone(&publisher))),
             publisher,
             settings,
             scripts,

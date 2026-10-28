@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use forge_events::EventPublisher;
-use forge_storage::{GlobalsRepo, SettingsRepo};
+use forge_storage::SettingsRepo;
 use forge_types::{
     ArgStack, EventId, IntegrationAvailability, LatestValueReader, ScriptContract, ScriptId,
 };
 
 use crate::error::ScriptError;
+use crate::globals_port::ScriptGlobals;
 use crate::schedule::ActionScheduler;
 use crate::{Engine, ForgeApi, build_scope_for_contract, load_script_engine_config};
 
@@ -19,7 +20,7 @@ pub struct RunResult {
 }
 
 pub struct ScriptHost {
-    pub globals: Arc<dyn GlobalsRepo>,
+    pub globals: Arc<dyn ScriptGlobals>,
     pub settings: Arc<dyn SettingsRepo>,
     pub bus: Arc<dyn EventPublisher>,
     pub integrations: Arc<dyn IntegrationAvailability>,

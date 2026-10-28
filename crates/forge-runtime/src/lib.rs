@@ -21,6 +21,7 @@ mod event_log_bridge;
 mod event_log_writer;
 mod event_ring;
 mod first_chat_ledger;
+mod global_mutation;
 mod integration_gate;
 mod integration_supervisor;
 mod latest;
@@ -73,6 +74,7 @@ pub use donations::{
 pub use engine_voice_ref::{EngineVoiceError, EngineVoiceRef};
 pub use event_log_bridge::spawn_event_log_bridge;
 pub use first_chat_ledger::FirstChatLedger;
+pub use global_mutation::RuntimeScriptGlobals;
 pub use integration_gate::IntegrationGate;
 pub use integration_supervisor::{
     DEFAULT_TEARDOWN_GRACE, IntegrationFactory, IntegrationObjects, IntegrationSlot,

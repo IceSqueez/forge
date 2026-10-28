@@ -156,6 +156,21 @@ fn a_name_outside_the_overridable_set_is_refused_by_both_read_and_write() {
 }
 
 #[test]
+fn reading_with_both_an_unsafe_identity_and_a_foreign_name_reports_the_identity() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+
+    for &(id, label) in UNSAFE_IDENTITIES {
+        let err = read_overlay_source(&root, id, "../../etc/passwd")
+            .expect_err("both the identity and the name are refusable");
+        assert!(
+            matches!(&err, OverlayError::UnsafeIdentity(got) if got == id),
+            "reading under {label} ({id:?}) produced {err:?}"
+        );
+    }
+}
+
+#[test]
 fn an_identity_that_is_not_a_plain_directory_name_is_refused_before_anything_is_created() {
     for &(id, label) in UNSAFE_IDENTITIES {
         let home = TempDir::new().unwrap();

@@ -122,7 +122,7 @@ impl HomeView {
         let loss_obs = cx.observe(&event_loss, |_, _, cx| cx.notify());
         let transfers = TransferFlows::route(cx).unwrap_or_else(|| {
             let stats = stats.clone();
-            cx.new(|cx| TransferFlows::new(stats, pack, forge_storage::paths::data_dir(), cx))
+            cx.new(|cx| TransferFlows::new(stats, pack, forge_paths::data_dir(), cx))
         });
         let transfer_obs = cx.observe(&transfers, |_, _, cx| cx.notify());
         let flows = transfers.read(cx);

@@ -10,7 +10,6 @@ use forge_events::EventSubscription;
 use forge_platform_core::{CONNECTION_STATE_CHANGED_KIND, PlatformEndpoints};
 use forge_runtime::{LiveViewerAggregatorHandle, LossWatch, QueueDepthWatch};
 use forge_storage::CredentialsKeyLoss;
-use forge_storage::paths;
 use futures_util::StreamExt as _;
 use gpui::{
     AnyElement, App, AppContext, AsyncApp, Context, Entity, Window, WindowHandle, div, prelude::*,
@@ -239,7 +238,7 @@ pub fn run_boot(
                         UpdateFlow::new(
                             Arc::clone(&handles.backend),
                             handles.rt_handle.clone(),
-                            paths::data_dir(),
+                            forge_paths::data_dir(),
                         )
                         .with_exclusivity(handles.transfer_exclusivity.clone())
                         .with_scheduled_backups(handles.scheduled_backups.clone())
@@ -837,7 +836,7 @@ fn pre_baseline_screen(found: u32, palette: &ForgePalette, density: Density) -> 
         .child(
             secondary_button(tr!("boot_pre_baseline_open_folder"), palette)
                 .on_click("boot-open-data-folder", |_, _window, cx: &mut App| {
-                    cx.reveal_path(&paths::data_dir())
+                    cx.reveal_path(&forge_paths::data_dir())
                 }),
         )
         .child(

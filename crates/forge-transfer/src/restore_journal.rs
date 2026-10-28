@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use forge_storage::paths::CREDENTIALS_KEY_FILE_NAME;
+use forge_paths::CREDENTIALS_KEY_FILE_NAME;
 use forge_storage::{DATABASE_FILE_NAME, database_unit_file_names};
 use serde::{Deserialize, Serialize};
 

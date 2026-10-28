@@ -38,6 +38,7 @@ forge-server = { path = "../forge-server" }
 forge-soundboard = { path = "../forge-soundboard" }
 forge-speak-queue = { path = "../forge-speak-queue" }
 forge-storage = { path = "../forge-storage" }
+forge-paths = { path = "../forge-paths" }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
 forge-tts-core = { path = "../forge-tts-core" }
 forge-transfer = { path = "../forge-transfer" }

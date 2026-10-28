@@ -1,5 +1,5 @@
 use crate::layout::{ARCHIVE_SEPARATOR, INCLUDED_DIRS};
-use forge_storage::paths::{ASSETS_DIR_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME, TTS_DIR_NAME};
+use forge_paths::{ASSETS_DIR_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME, TTS_DIR_NAME};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

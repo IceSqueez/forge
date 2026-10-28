@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{Icon, ToastAction, ToastKind, tr};
-use forge_storage::paths;
 use forge_storage::{DataProvider, SettingsRepo, reserved_keys};
 use forge_update::{
     ApplyFailure, DatabaseRestore, GithubRepo, RollbackReason, UpdateError, UpdateReport,
@@ -138,7 +137,7 @@ pub fn start_update_report(
     backend: Arc<dyn DataProvider>,
     rt_handle: Handle,
 ) -> Task<Option<String>> {
-    let data_dir = paths::data_dir();
+    let data_dir = forge_paths::data_dir();
     let settle = cx
         .background_executor()
         .spawn(async move { settle_boot_update(data_dir) });

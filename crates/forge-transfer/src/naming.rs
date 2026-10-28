@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use forge_storage::paths::BACKUPS_DIR_NAME;
+use forge_paths::BACKUPS_DIR_NAME;
 use time::OffsetDateTime;
 
 pub const BUNDLE_EXTENSION: &str = "forgebundle";

@@ -1,13 +1,12 @@
 use std::path::Path;
 
+use forge_paths::BACKUPS_DIR_NAME;
 use forge_storage::DATABASE_FILE_NAME;
-use forge_storage::paths::BACKUPS_DIR_NAME;
 
 use crate::category::BackupCategory;
 use crate::naming::BUNDLE_EXTENSION;
 use crate::scheduled::destination::is_within;
 
-const LOGS_DIR_NAME: &str = "logs";
 const DATABASE_SIDECAR_SUFFIXES: [&str; 2] = ["-wal", "-shm"];
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -34,7 +33,7 @@ pub(crate) fn measure(data_dir: &Path, destination: Option<&Path>) -> StorageUse
         voices: category_bytes(BackupCategory::Voices),
         overlays: category_bytes(BackupCategory::Overlays),
         assets: category_bytes(BackupCategory::Assets),
-        logs: directory_bytes(&data_dir.join(LOGS_DIR_NAME)),
+        logs: directory_bytes(&data_dir.join(forge_paths::LOGS_DIR_NAME)),
         backups: directory_bytes(&data_dir.join(BACKUPS_DIR_NAME)),
         destination_outside_data_dir: destination
             .filter(|folder| !is_within(folder, data_dir))

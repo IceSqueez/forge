@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_runtime::{ActionEngineHandle, EventHistory};
-use forge_storage::paths;
 use forge_storage::{
     ActionRepo, CredentialsRepo, GlobalsRepo, OverlayRepo,
     SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT, SettingsRepo, StorageError, UserGlobalsRepo,
@@ -46,7 +45,7 @@ impl ServerConfig {
     ) -> Self {
         Self {
             bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9515),
-            overlay_root: paths::overlays_dir(),
+            overlay_root: forge_paths::overlays_dir(),
             auth_required_for_reads: false,
             overlay_cors_any_origin: true,
             lan_bind_enabled: false,

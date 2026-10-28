@@ -16,7 +16,6 @@ use forge_overlay::{
 use forge_registry::{
     CancelSignal, KindPlatformContract, SubActionRegistry, TriggerRegistry, declared_variables,
 };
-use forge_storage::paths;
 use forge_storage::{
     OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, StorageError,
     reserved_keys,
@@ -316,10 +315,10 @@ impl OverlayServiceHandle {
             .await
         {
             Ok(Some(root)) if !root.is_empty() => PathBuf::from(root),
-            Ok(_) => paths::overlays_dir(),
+            Ok(_) => forge_paths::overlays_dir(),
             Err(error) => {
                 tracing::warn!(%error, "overlay root setting unreadable; using the default");
-                paths::overlays_dir()
+                forge_paths::overlays_dir()
             }
         }
     }

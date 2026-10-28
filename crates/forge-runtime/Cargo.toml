@@ -15,6 +15,7 @@ forge-types = { path = "../forge-types" }
 forge-events = { path = "../forge-events" }
 forge-registry = { path = "../forge-registry" }
 forge-storage = { path = "../forge-storage" }
+forge-paths = { path = "../forge-paths" }
 forge-script = { path = "../forge-script" }
 forge-overlay = { path = "../forge-overlay" }
 forge-net = { path = "../forge-net" }

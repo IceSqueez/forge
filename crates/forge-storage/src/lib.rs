@@ -14,7 +14,6 @@ mod integration_state;
 pub mod latest_value;
 pub mod media;
 pub mod overlay;
-pub mod paths;
 mod provider;
 pub mod queue;
 pub mod scheduled_run;

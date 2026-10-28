@@ -18,6 +18,7 @@ flate2 = { workspace = true }
 forge-overlay = { path = "../forge-overlay" }
 forge-registry = { path = "../forge-registry" }
 forge-storage = { path = "../forge-storage" }
+forge-paths = { path = "../forge-paths" }
 forge-types = { path = "../forge-types" }
 forge-update = { path = "../forge-update" }
 jiff = { workspace = true }

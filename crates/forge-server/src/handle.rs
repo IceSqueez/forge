@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use forge_runtime::{OverlayConnectListener, OverlayReceivers, OverlayServiceHandle};
 use forge_storage::OverlayId;
-use forge_storage::paths;
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, watch};
 
@@ -155,7 +154,7 @@ impl ServerHandle {
             .overlay_root
             .filter(|root| !root.is_empty())
             .map(PathBuf::from)
-            .unwrap_or_else(paths::overlays_dir);
+            .unwrap_or_else(forge_paths::overlays_dir);
 
         server::validate_lan_bind(
             &bind_addr,

@@ -3,7 +3,6 @@ use std::fs::OpenOptions;
 use std::path::Path;
 use std::sync::Mutex;
 
-use forge_storage::paths;
 use forge_storage::{DATABASE_FILE_NAME, DatabaseFileSchema, database_unit_file_names};
 use forge_update::{
     DatabaseUnit, LaunchRole, SchemaProbe, StartAction, SupervisorContext, SupervisorOutcome,
@@ -18,7 +17,6 @@ const EXIT_SUPERVISOR_ERROR: i32 = 1;
 const EXIT_UPDATE_NOT_KEPT: i32 = 3;
 const EXIT_ROLLBACK_FAILED: i32 = 4;
 
-const SUPERVISOR_LOG_DIR: &str = "logs";
 const SUPERVISOR_LOG_FILE: &str = "update-supervisor.log";
 
 pub enum StartDecision {
@@ -32,7 +30,7 @@ pub fn decide_start(args: impl IntoIterator<Item = OsString>) -> StartDecision {
         LaunchRole::Candidate => StartDecision::Boot {
             deferred_error: None,
         },
-        LaunchRole::Regular => regular_start(&paths::data_dir()),
+        LaunchRole::Regular => regular_start(&forge_paths::data_dir()),
     }
 }
 
@@ -103,7 +101,7 @@ pub fn supervisor_exit_code(outcome: SupervisorOutcome) -> i32 {
 }
 
 fn init_supervisor_logging(data_dir: &Path) {
-    let log_dir = data_dir.join(SUPERVISOR_LOG_DIR);
+    let log_dir = data_dir.join(forge_paths::LOGS_DIR_NAME);
     let file = std::fs::create_dir_all(&log_dir).and_then(|()| {
         OpenOptions::new()
             .create(true)

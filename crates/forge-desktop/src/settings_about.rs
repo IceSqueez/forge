@@ -80,7 +80,7 @@ impl SettingsAboutView {
         speech_preference: Option<OutputDevice>,
         cx: &mut Context<Self>,
     ) {
-        let data_dir = forge_storage::paths::data_dir();
+        let data_dir = forge_paths::data_dir();
         async_bridge::run_blocking(
             &self.rt_handle,
             move || HostFacts::collect(&data_dir, speech_preference),

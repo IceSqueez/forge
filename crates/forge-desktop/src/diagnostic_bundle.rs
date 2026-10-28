@@ -99,7 +99,7 @@ fn health_shape(value: &HealthValue) -> String {
 }
 
 pub fn log_dir() -> PathBuf {
-    forge_storage::paths::data_dir().join("logs")
+    forge_paths::data_dir().join(forge_paths::LOGS_DIR_NAME)
 }
 
 pub async fn gather_input(

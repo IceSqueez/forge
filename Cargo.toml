@@ -24,6 +24,7 @@ members = [
   "crates/forge-hotkey",
   "crates/forge-awake",
   "crates/forge-server",
+  "crates/forge-paths",
   "crates/forge-speech-types",
   "crates/forge-audio",
   "crates/forge-soundboard",

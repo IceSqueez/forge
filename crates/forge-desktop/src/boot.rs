@@ -27,7 +27,6 @@ use forge_soundboard::{
     BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardControl, SoundboardPlayer,
     SoundboardSettingsHandle, load_soundboard_settings, register_soundboard_sub_actions,
 };
-use forge_storage::paths;
 use forge_storage::{
     CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo, StorageError,
     UserGlobalsRepo, get_json_setting, reserved_keys,
@@ -57,7 +56,7 @@ pub enum BootFailure {
 }
 
 fn default_db_path() -> PathBuf {
-    paths::data_dir().join(forge_storage::DATABASE_FILE_NAME)
+    forge_paths::data_dir().join(forge_storage::DATABASE_FILE_NAME)
 }
 
 const APPEARANCE_READ_BUDGET: Duration = Duration::from_secs(2);
@@ -222,13 +221,13 @@ pub async fn build_runtime(
     let transfer_exclusivity = forge_transfer::TransferExclusivity::new();
     crate::safety_copy_prune::spawn_boot_prune(
         Arc::clone(&backend),
-        paths::data_dir(),
+        forge_paths::data_dir(),
         transfer_exclusivity.clone(),
     );
     let scheduled_backups =
         forge_transfer::spawn_scheduled_backups(forge_transfer::ScheduledBackupParts {
             provider: Arc::clone(&backend),
-            data_dir: paths::data_dir(),
+            data_dir: forge_paths::data_dir(),
             exclusivity: transfer_exclusivity.clone(),
             clock: Arc::new(forge_transfer::SystemBackupClock),
         });

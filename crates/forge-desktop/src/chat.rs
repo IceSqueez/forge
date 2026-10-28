@@ -1051,7 +1051,7 @@ impl ChatView {
         let filename = format!("forge-chat-{}.txt", stamp.unix_timestamp());
 
         self.rt_handle.spawn(async move {
-            let path = forge_storage::paths::data_dir().join(filename);
+            let path = forge_paths::data_dir().join(filename);
             match tokio::fs::write(&path, contents).await {
                 Ok(()) => tracing::info!(path = %path.display(), "chat log exported"),
                 Err(e) => tracing::warn!(error = %e, "chat log export failed"),

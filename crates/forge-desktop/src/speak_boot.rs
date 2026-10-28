@@ -9,7 +9,6 @@ use forge_runtime::EventBus;
 use forge_speak_queue::{PipelineConfigHandle, QueueConfig, QueueDeps, SpeakEventStream};
 use forge_speech_types::EngineId;
 use forge_speech_types::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
-use forge_storage::paths;
 use forge_storage::{CredentialsRepo, DataProvider};
 use forge_tts_cloud::CloudGateways;
 use forge_tts_core::{TtsEngineFactory, TtsRegistry, build_engine};
@@ -23,7 +22,7 @@ use crate::cloud_tts_boot::register_cloud_engines;
 
 async fn register_local_engines(registry: &mut TtsRegistry) {
     if let Some(piper_binary) = PiperEngine::locate().await {
-        let voices_dir = PiperEngine::voices_dir(&paths::data_dir());
+        let voices_dir = PiperEngine::voices_dir(&forge_paths::data_dir());
         if let Err(e) = std::fs::create_dir_all(&voices_dir) {
             tracing::warn!(error = %e, path = %voices_dir.display(), "failed to create the piper voices dir");
         }

@@ -110,7 +110,7 @@ impl SqliteBackend {
             pool,
             credentials,
             PRUNE_INTERVAL_PRODUCTION,
-            forge_storage::paths::media_dir(),
+            forge_paths::media_dir(),
         ))
     }
 

@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use flate2::Compression;
 use flate2::write::GzEncoder;
+use forge_paths::credentials_key_path_in;
 use forge_storage::DataProvider;
-use forge_storage::paths::credentials_key_path_in;
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 

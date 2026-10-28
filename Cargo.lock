@@ -2680,6 +2680,7 @@ dependencies = [
  "forge-net",
  "forge-obs",
  "forge-overlay",
+ "forge-paths",
  "forge-platform-core",
  "forge-platform-kick",
  "forge-platform-twitch",
@@ -2911,6 +2912,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-paths"
+version = "0.6.3"
+dependencies = [
+ "directories",
+]
+
+[[package]]
 name = "forge-platform-core"
 version = "0.6.3"
 dependencies = [
@@ -3040,6 +3048,7 @@ dependencies = [
  "forge-events",
  "forge-net",
  "forge-overlay",
+ "forge-paths",
  "forge-platform-core",
  "forge-registry",
  "forge-script",
@@ -3096,6 +3105,7 @@ dependencies = [
  "base64 0.23.1",
  "forge-events",
  "forge-overlay",
+ "forge-paths",
  "forge-registry",
  "forge-runtime",
  "forge-storage",
@@ -3174,7 +3184,6 @@ name = "forge-storage"
 version = "0.6.3"
 dependencies = [
  "async-trait",
- "directories",
  "forge-events",
  "forge-speech-types",
  "forge-types",
@@ -3193,6 +3202,7 @@ dependencies = [
  "aes-gcm 0.11.1",
  "async-trait",
  "forge-events",
+ "forge-paths",
  "forge-speech-types",
  "forge-storage",
  "forge-types",
@@ -3217,6 +3227,7 @@ dependencies = [
  "base64 0.23.1",
  "flate2",
  "forge-overlay",
+ "forge-paths",
  "forge-registry",
  "forge-speech-types",
  "forge-storage",

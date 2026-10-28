@@ -14,7 +14,6 @@ workspace = true
 forge-types = { path = "../forge-types" }
 forge-events = { path = "../forge-events" }
 forge-speech-types = { path = "../forge-speech-types" }
-directories = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }

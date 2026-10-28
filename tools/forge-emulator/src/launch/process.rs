@@ -101,7 +101,7 @@ impl ForgeProcess {
     }
 
     pub fn log_dir(&self) -> PathBuf {
-        self.data_dir.join("logs")
+        self.data_dir.join(forge_paths::LOGS_DIR_NAME)
     }
 
     pub fn data_dir(&self) -> &Path {

@@ -202,7 +202,7 @@ impl ProblemReport {
             system_info: draft.system_info.clone(),
             crash_text: draft.subject.crash().map(CrashRecord::to_text),
         };
-        let reports_dir = forge_storage::paths::problem_reports_dir();
+        let reports_dir = forge_paths::problem_reports_dir();
         let folder_name = report_folder_name(OffsetDateTime::now_utc());
         async_bridge::run_blocking(
             &self.rt_handle,
@@ -403,7 +403,7 @@ async fn gather(
     let input =
         diagnostic_bundle::gather_input(backend, integrations, level.clone(), env_overridden)
             .await?;
-    let data_dir = forge_storage::paths::data_dir();
+    let data_dir = forge_paths::data_dir();
     tokio::task::spawn_blocking(move || {
         let host = HostFacts::collect(&data_dir, speech_preference);
         let mut bundle = diagnostic_bundle::assemble(&input)?;
@@ -447,7 +447,7 @@ pub fn write_report_folder(folder: &Path, contents: &ReportFolderContents) -> io
 }
 
 fn mark_crashes_handled(rt_handle: &Handle) {
-    let crashes_dir = forge_storage::paths::crashes_dir();
+    let crashes_dir = forge_paths::crashes_dir();
     let process_id = std::process::id();
     rt_handle.spawn_blocking(move || {
         if let Err(error) = crash_record::mark_handled(&crashes_dir, process_id) {
@@ -457,7 +457,7 @@ fn mark_crashes_handled(rt_handle: &Handle) {
 }
 
 pub fn start_crash_notice(cx: &mut AsyncApp, report: Entity<ProblemReport>, rt_handle: Handle) {
-    let crashes_dir = forge_storage::paths::crashes_dir();
+    let crashes_dir = forge_paths::crashes_dir();
     let process_id = std::process::id();
     let pending =
         rt_handle.spawn_blocking(move || crash_record::latest_pending(&crashes_dir, process_id));

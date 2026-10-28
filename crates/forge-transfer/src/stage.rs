@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use flate2::read::GzDecoder;
-use forge_storage::paths::CREDENTIALS_KEY_FILE_NAME;
+use forge_paths::CREDENTIALS_KEY_FILE_NAME;
 use forge_storage::{
     DATABASE_FILE_NAME, DatabaseFileSchema, LAST_PRE_BASELINE_RELEASE, StoredSchema,
 };

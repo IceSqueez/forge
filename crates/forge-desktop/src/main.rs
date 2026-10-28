@@ -211,7 +211,6 @@ use forge_components::{
     FOOTER_HEIGHT, IconAssets, bind_code_editor_keys, bind_picker_keys, bind_text_area_keys,
     bind_text_input_keys,
 };
-use forge_storage::paths;
 use gpui::{
     App, AppContext, Pixels, Point, QuitMode, SharedString, TitlebarOptions, WindowOptions, point,
     px, size,
@@ -316,7 +315,7 @@ fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTa
 
     const RETAINED_LOG_FILES: usize = 14;
 
-    let log_dir = paths::data_dir().join("logs");
+    let log_dir = forge_paths::data_dir().join(forge_paths::LOGS_DIR_NAME);
     let appender = std::fs::create_dir_all(&log_dir).ok().and_then(|()| {
         tracing_appender::rolling::Builder::new()
             .rotation(tracing_appender::rolling::Rotation::DAILY)
@@ -386,7 +385,7 @@ fn main() {
         update_launch::StartDecision::Boot { deferred_error } => deferred_error,
         update_launch::StartDecision::Exit(code) => std::process::exit(code),
     };
-    crash_hook::install(paths::crashes_dir());
+    crash_hook::install(forge_paths::crashes_dir());
 
     let initial_screen = match parse_startup_request(std::env::args().skip(1)) {
         Ok(StartupRequest::Open(screen)) => screen,
@@ -429,7 +428,7 @@ fn main() {
         }
     };
 
-    let instance_lock = match instance_lock::acquire(&paths::data_dir()) {
+    let instance_lock = match instance_lock::acquire(&forge_paths::data_dir()) {
         instance_lock::LockOutcome::Acquired(lock) => Some(lock),
         instance_lock::LockOutcome::AlreadyRunning => {
             boot_signal::already_running();
@@ -442,17 +441,19 @@ fn main() {
         }
     };
 
-    let restore_outcome =
-        match boot_restore::settle_pending_restore(&paths::data_dir(), instance_lock.is_some()) {
-            Ok(outcome) => outcome,
-            Err(err) => {
-                tracing::error!(error = %err, "pending restore could not be settled; exiting");
-                drop(log_guard);
-                std::process::exit(EXIT_STARTUP_FAILURE);
-            }
-        };
+    let restore_outcome = match boot_restore::settle_pending_restore(
+        &forge_paths::data_dir(),
+        instance_lock.is_some(),
+    ) {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            tracing::error!(error = %err, "pending restore could not be settled; exiting");
+            drop(log_guard);
+            std::process::exit(EXIT_STARTUP_FAILURE);
+        }
+    };
     if instance_lock.is_some()
-        && let Err(err) = forge_transfer::sweep_import_staging(&paths::data_dir())
+        && let Err(err) = forge_transfer::sweep_import_staging(&forge_paths::data_dir())
     {
         tracing::warn!(error = %err, "leftover import staging could not be removed");
     }

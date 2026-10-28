@@ -3,7 +3,6 @@ use std::time::{Duration, SystemTime};
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_server::ServerSettings;
-use forge_storage::paths;
 use forge_storage::{
     CredentialId, DataProvider, SERVER_BEARER_CREDENTIAL_ID, SettingsRepo, StorageError,
 };
@@ -52,7 +51,7 @@ pub async fn seed_forge_environment(fixture: &Fixture) -> Result<SeedReport, Emu
     let port = free_loopback_port()?;
     let bearer_token = forge_server::generate_token();
 
-    let database = paths::data_dir().join(DATABASE_FILE);
+    let database = forge_paths::data_dir().join(DATABASE_FILE);
     let url = format!("sqlite://{}?mode=rwc", database.display());
     let backend = SqliteBackend::open(&url)
         .await

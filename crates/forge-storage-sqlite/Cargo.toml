@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 forge-types = { path = "../forge-types" }
 forge-storage = { path = "../forge-storage" }
+forge-paths = { path = "../forge-paths" }
 forge-events = { path = "../forge-events" }
 forge-speech-types = { path = "../forge-speech-types" }
 serde = { workspace = true }

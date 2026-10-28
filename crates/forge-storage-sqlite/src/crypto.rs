@@ -7,7 +7,7 @@ use crate::error::SqliteStorageError;
 const NONCE_LEN: usize = 12;
 
 pub fn load_or_create_key() -> Result<CredentialsKey, SqliteStorageError> {
-    let path = forge_storage::paths::credentials_key_path();
+    let path = forge_paths::credentials_key_path();
     let minted = !path.exists();
     let key = load_or_create_file_key(&path)?;
     Ok(CredentialsKey { key, minted })

@@ -1,7 +1,7 @@
 use std::path::Path;
 
+use forge_paths::credentials_key_path_in;
 use forge_storage::DATABASE_FILE_NAME;
-use forge_storage::paths::credentials_key_path_in;
 use forge_update::update_in_flight;
 
 use crate::durable_fs::{

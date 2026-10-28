@@ -1,9 +1,9 @@
 use std::path::{Component, Path, PathBuf};
 
-use forge_storage::DATABASE_FILE_NAME;
-use forge_storage::paths::{
+use forge_paths::{
     ASSETS_DIR_NAME, CREDENTIALS_KEY_FILE_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME, TTS_DIR_NAME,
 };
+use forge_storage::DATABASE_FILE_NAME;
 
 use crate::error::TransferError;
 use crate::pack::layout::{PACK_LAYOUT, is_documents_scope};

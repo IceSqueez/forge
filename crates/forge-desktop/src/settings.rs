@@ -276,7 +276,7 @@ impl SettingsView {
                 handles.rt_handle.clone(),
                 handles.scheduled_backups.clone(),
                 handles.transfer_exclusivity.clone(),
-                forge_storage::paths::data_dir(),
+                forge_paths::data_dir(),
                 cx,
             )
         });
@@ -286,7 +286,7 @@ impl SettingsView {
                 handles.rt_handle.clone(),
                 handles.transfer_exclusivity.clone(),
                 handles.scheduled_backups.clone(),
-                forge_storage::paths::data_dir(),
+                forge_paths::data_dir(),
                 cx,
             )
         });

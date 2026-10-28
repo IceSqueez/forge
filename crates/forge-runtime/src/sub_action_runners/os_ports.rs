@@ -47,7 +47,7 @@ pub struct SystemNotifyPort;
 impl SystemNotifyPort {
     #[cfg(target_os = "macos")]
     pub fn adopt_app_identity() -> Result<(), OsPortError> {
-        notify_rust::set_application(forge_storage::paths::MACOS_BUNDLE_ID)
+        notify_rust::set_application(forge_paths::MACOS_BUNDLE_ID)
             .map_err(|e| OsPortError::Unavailable(e.to_string()))
     }
 

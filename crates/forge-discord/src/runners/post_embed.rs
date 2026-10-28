@@ -6,11 +6,12 @@ use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    SubActionIo, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
+use super::{message_id_scope_io, message_id_stack};
 use crate::embed::DiscordEmbed;
 use crate::sink::DiscordSink;
 
@@ -91,6 +92,10 @@ impl SubActionRunner for PostEmbedRunner {
         }
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        message_id_scope_io()
+    }
+
     async fn execute(
         &self,
         config: &SubActionConfig,
@@ -135,12 +140,15 @@ impl SubActionRunner for PostEmbedRunner {
             ..Default::default()
         };
 
-        let outcome = match embed.validate() {
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-            Ok(()) => match self.sink.post_embed(&webhook_name, embed).await {
-                Ok(_) => SubActionOutcome::Success,
-                Err(e) => SubActionOutcome::Failed(e.to_string()),
-            },
+        let (outcome, produced) = match embed.validate() {
+            Err(e) => (SubActionOutcome::Failed(e.to_string()), None),
+            Ok(()) => {
+                let posted = self.sink.post_embed(&webhook_name, embed).await;
+                (
+                    SubActionOutcome::from_result(&posted),
+                    message_id_stack(ctx.arg_stack, &posted),
+                )
+            }
         };
 
         (
@@ -153,7 +161,7 @@ impl SubActionRunner for PostEmbedRunner {
                 outcome,
                 index: ctx.index,
             },
-            None,
+            produced,
         )
     }
 }

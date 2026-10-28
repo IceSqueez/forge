@@ -71,7 +71,7 @@ impl SubActionRunner for EditMessageRunner {
             FormField::Text {
                 key: "message_id",
                 label: "Message ID",
-                placeholder: "123456789012345678",
+                placeholder: "%discord.message_id%",
             },
             FormField::TextArea {
                 key: "content",

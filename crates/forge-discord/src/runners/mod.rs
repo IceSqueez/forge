@@ -7,9 +7,11 @@ mod send_file;
 
 use std::sync::Arc;
 
-use forge_registry::{RegistryError, SubActionRegistry};
+use forge_registry::{RegistryError, SubActionIo, SubActionRegistry};
+use forge_types::{ArgStack, Variant};
 
 use crate::client::DiscordClient;
+use crate::error::DiscordError;
 use crate::sink::DiscordSink;
 
 pub use delete_message::DeleteMessageRunner;
@@ -17,6 +19,26 @@ pub use edit_message::EditMessageRunner;
 pub use post_embed::PostEmbedRunner;
 pub use post_text::PostTextRunner;
 pub use send_file::SendFileRunner;
+
+pub(crate) const MESSAGE_ID_VAR: &str = "discord.message_id";
+
+pub(crate) fn message_id_scope_io() -> SubActionIo {
+    SubActionIo {
+        fixed_outputs: vec![MESSAGE_ID_VAR.to_owned()],
+        ..SubActionIo::default()
+    }
+}
+
+pub(crate) fn message_id_stack(
+    stack: &ArgStack,
+    posted: &Result<String, DiscordError>,
+) -> Option<ArgStack> {
+    posted.as_ref().ok().map(|id| {
+        stack
+            .clone()
+            .set(MESSAGE_ID_VAR.to_owned(), Variant::String(id.clone()))
+    })
+}
 
 pub fn register_discord_sub_actions(
     reg: &mut SubActionRegistry,

@@ -7,12 +7,13 @@ use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     ConfigReason, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    SubActionIo, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use super::mention_fields::{mention_default_entries, mention_form_fields, mention_policy};
+use super::{message_id_scope_io, message_id_stack};
 use crate::sink::DiscordSink;
 
 pub struct SendFileRunner {
@@ -103,6 +104,10 @@ impl SubActionRunner for SendFileRunner {
         Ok(())
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        message_id_scope_io()
+    }
+
     async fn execute(
         &self,
         config: &SubActionConfig,
@@ -151,18 +156,17 @@ impl SubActionRunner for SendFileRunner {
             Err(e) => return fail(format!("cannot read file: {e}"), start),
         };
 
-        let outcome = SubActionOutcome::from_result(
-            &self
-                .sink
-                .send_file(
-                    &webhook_name,
-                    caption.as_deref(),
-                    &file_name,
-                    &file_bytes,
-                    mention_policy(config),
-                )
-                .await,
-        );
+        let posted = self
+            .sink
+            .send_file(
+                &webhook_name,
+                caption.as_deref(),
+                &file_name,
+                &file_bytes,
+                mention_policy(config),
+            )
+            .await;
+        let outcome = SubActionOutcome::from_result(&posted);
 
         (
             SubActionTelemetry {
@@ -174,7 +178,7 @@ impl SubActionRunner for SendFileRunner {
                 outcome,
                 index: ctx.index,
             },
-            None,
+            message_id_stack(ctx.arg_stack, &posted),
         )
     }
 }

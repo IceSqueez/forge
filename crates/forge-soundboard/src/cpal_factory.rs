@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_audio::{
-    AudioError, AudioSink, DeviceId, NullAudioEventSink, build_cpal_sink, list_output_devices,
-    resolve_device,
+    AudioError, AudioSink, DeviceId, build_cpal_sink, list_output_devices, resolve_device,
 };
 use forge_types::OutputDevice;
 
@@ -18,7 +17,7 @@ impl AudioSinkFactory for CpalSinkFactory {
         let device_id = tokio::task::spawn_blocking(move || resolve_device_id(&device))
             .await
             .map_err(|e| AudioError::Host(e.to_string()))??;
-        Ok(build_cpal_sink(device_id, Arc::new(NullAudioEventSink)))
+        Ok(build_cpal_sink(device_id))
     }
 }
 

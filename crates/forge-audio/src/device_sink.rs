@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use forge_types::{OutputDevice, Shared};
 
 use crate::error::AudioError;
-use crate::events::AudioEventSink;
 use crate::handle::{ControlledPlayback, PlaybackHandle};
 use crate::route::DevicePreference;
 use crate::sink::AudioSink;
@@ -41,8 +40,8 @@ pub struct DeviceSink {
 }
 
 impl DeviceSink {
-    pub fn new(device: OutputDeviceHandle, event_sink: Arc<dyn AudioEventSink>) -> Self {
-        Self::with_factory(device, Arc::new(CpalSinkFactory::new(event_sink)))
+    pub fn new(device: OutputDeviceHandle) -> Self {
+        Self::with_factory(device, Arc::new(CpalSinkFactory))
     }
 
     pub fn with_factory(device: OutputDeviceHandle, factory: Arc<dyn AudioSinkFactory>) -> Self {

@@ -3,7 +3,7 @@ use std::time::Duration;
 
 const PIPER_SYNTHESIS_TIMEOUT: Duration = Duration::from_secs(30);
 
-use forge_audio::{DeviceSink, NullAudioEventSink, OutputDeviceHandle, stored_output_device};
+use forge_audio::{DeviceSink, OutputDeviceHandle, stored_output_device};
 use forge_events::EventPublisher;
 use forge_runtime::EventBus;
 use forge_speak_queue::{PipelineConfigHandle, QueueConfig, QueueDeps, SpeakEventStream};
@@ -186,10 +186,9 @@ pub async fn build_speech_output(backend: &Arc<dyn DataProvider>) -> Arc<DeviceS
             None
         }
     };
-    Arc::new(DeviceSink::new(
-        OutputDeviceHandle::new(stored_output_device(stored_device_id)),
-        Arc::new(NullAudioEventSink),
-    ))
+    Arc::new(DeviceSink::new(OutputDeviceHandle::new(
+        stored_output_device(stored_device_id),
+    )))
 }
 
 pub async fn build_speak_queue(

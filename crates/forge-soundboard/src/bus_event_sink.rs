@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use forge_audio::{AudioEvent, AudioEventSink};
 use forge_events::{Event, EventPublisher, EventSource};
 use serde_json::json;
+
+use crate::audio_event::{AudioEvent, AudioEventSink};
 
 pub struct BusAudioEventSink {
     bus: Arc<dyn EventPublisher>,

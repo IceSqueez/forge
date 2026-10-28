@@ -1,11 +1,13 @@
 #![doc = "Soundboard: clip storage, playback, in-app hotkey wiring, sound sub-action runners."]
 
+mod audio_event;
 pub mod builtin_library;
 mod bus_event_sink;
 mod control;
 mod cpal_factory;
 mod duration;
 mod error;
+mod fan_out;
 mod hotkey_dispatch;
 mod library;
 mod player;
@@ -13,6 +15,7 @@ mod runners;
 mod settings;
 mod sink_factory;
 
+pub use audio_event::{AudioEvent, AudioEventSink, NullAudioEventSink};
 pub use builtin_library::{
     BUILTIN_FILE_EXTENSIONS, BUILTIN_SOUNDS, BuiltinSoundEntry, builtin_availability,
     resolve_builtin_path,

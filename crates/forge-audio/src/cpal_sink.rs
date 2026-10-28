@@ -10,7 +10,6 @@ use tokio::sync::oneshot;
 use crate::convert;
 use crate::device::{DeviceId, forget_output_devices};
 use crate::error::AudioError;
-use crate::events::{AudioEvent, AudioEventSink};
 use crate::handle::{ControlledPlayback, PlaybackHandle};
 use crate::sink::AudioSink;
 use forge_speech_types::PcmBuffer;
@@ -32,7 +31,6 @@ pub struct CpalSink {
     device_id: DeviceId,
     target_sample_rate: Option<u32>,
     target_channels: Option<u16>,
-    event_sink: Arc<dyn AudioEventSink>,
 }
 
 impl CpalSink {
@@ -40,13 +38,11 @@ impl CpalSink {
         device_id: DeviceId,
         target_sample_rate: Option<u32>,
         target_channels: Option<u16>,
-        event_sink: Arc<dyn AudioEventSink>,
     ) -> Self {
         Self {
             device_id,
             target_sample_rate,
             target_channels,
-            event_sink,
         }
     }
 
@@ -62,7 +58,6 @@ impl CpalSink {
             buffer,
             target_sr: self.target_sample_rate,
             target_ch: self.target_channels,
-            event_sink: Arc::clone(&self.event_sink),
             stop,
             paused,
             started: started_tx,
@@ -114,7 +109,6 @@ struct PlaybackRequest {
     buffer: PcmBuffer,
     target_sr: Option<u32>,
     target_ch: Option<u16>,
-    event_sink: Arc<dyn AudioEventSink>,
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     started: oneshot::Sender<()>,
@@ -132,7 +126,6 @@ fn run_playback(request: PlaybackRequest) -> Result<(), AudioError> {
         buffer,
         target_sr,
         target_ch,
-        event_sink,
         stop,
         paused,
         started,
@@ -169,11 +162,6 @@ fn run_playback(request: PlaybackRequest) -> Result<(), AudioError> {
             error = %reason,
             "no output device accepted the stream; nothing was played"
         );
-        event_sink.emit(AudioEvent::PlaybackFailed {
-            clip_id: None,
-            clip_label: None,
-            error: reason,
-        });
         return Err(last_error);
     };
 
@@ -189,13 +177,6 @@ fn run_playback(request: PlaybackRequest) -> Result<(), AudioError> {
         reason = "the requester may stop waiting for the reply"
     )]
     let _ = started.send(());
-    event_sink.emit(AudioEvent::PlaybackStarted {
-        clip_id: None,
-        clip_label: None,
-        device: started_stream.device_name,
-        duration_secs: Some(started_stream.duration_ms as f64 / 1000.0),
-        looped: false,
-    });
     wait_for_completion(started_stream.duration_ms, &stop, &paused, &failure);
     drop(started_stream.stream);
 
@@ -206,18 +187,9 @@ fn run_playback(request: PlaybackRequest) -> Result<(), AudioError> {
             error = %reason,
             "output device failed during playback; the clip was cut short"
         );
-        event_sink.emit(AudioEvent::PlaybackFailed {
-            clip_id: None,
-            clip_label: None,
-            error: reason.clone(),
-        });
         return Err(AudioError::DeviceLost(reason.clone()));
     }
 
-    event_sink.emit(AudioEvent::PlaybackFinished {
-        clip_id: None,
-        clip_label: None,
-    });
     Ok(())
 }
 

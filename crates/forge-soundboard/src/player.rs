@@ -5,17 +5,16 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_audio::{
-    AudioError, AudioEvent, AudioEventSink, AudioRoute, AudioSink, ControlledPlayback,
-    PlaybackHandle,
-};
+use forge_audio::{AudioError, AudioRoute, AudioSink, ControlledPlayback, PlaybackHandle};
 use forge_speech_types::PcmBuffer;
 use forge_storage::{SettingsRepo, StoredClip};
 use forge_types::{ClipId, OutputDevice, Shared};
 use tokio::sync::oneshot;
 
+use crate::audio_event::{AudioEvent, AudioEventSink};
 use crate::control::SoundboardControl;
 use crate::error::SoundboardError;
+use crate::fan_out::fan_out_targets;
 use crate::library::{ClipLibrary, ClipSource};
 use crate::settings::{SoundboardSettings, SoundboardSettingsHandle};
 use crate::sink_factory::AudioSinkFactory;
@@ -522,10 +521,7 @@ impl SoundboardPlayer {
         let mut sinks: Vec<Arc<dyn AudioSink>> = Vec::new();
 
         if clip_route.route.plays_local() {
-            for (idx, target) in forge_audio::fan_out_targets(device, also_headphones)
-                .iter()
-                .enumerate()
-            {
+            for (idx, target) in fan_out_targets(device, also_headphones).iter().enumerate() {
                 match self.sink_factory.build(target).await {
                     Ok(sink) => sinks.push(sink),
                     Err(e) if idx == 0 && overlay.is_none() => return Err(e),
@@ -770,8 +766,9 @@ mod tests {
 
     use time::OffsetDateTime;
 
+    use crate::{AudioEvent, AudioEventSink};
     use async_trait::async_trait;
-    use forge_audio::{AudioError, AudioEvent, AudioEventSink, AudioSink};
+    use forge_audio::{AudioError, AudioSink};
     use forge_speech_types::PcmBuffer;
     use forge_storage::{
         MediaBlob, MediaBlobId, MediaReferrer, MediaReferrerKind, MediaRepo, SoundboardClipsRepo,

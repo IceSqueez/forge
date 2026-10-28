@@ -5,7 +5,6 @@ use crate::device::{
     DeviceId, DeviceInfo, OutputDevice, list_output_devices, pick_default_output_device,
 };
 use crate::error::AudioError;
-use crate::events::AudioEventSink;
 use crate::sink::AudioSink;
 
 #[derive(Debug, Clone)]
@@ -80,17 +79,6 @@ pub async fn resolve_output_device(
     .map_err(|e| AudioError::JoinFailed(e.to_string()))?
 }
 
-pub fn build_cpal_sink(
-    device_id: DeviceId,
-    event_sink: Arc<dyn AudioEventSink>,
-) -> Arc<dyn AudioSink> {
-    Arc::new(CpalSink::new(device_id, None, None, event_sink))
-}
-
-pub fn fan_out_targets(primary: &OutputDevice, also_headphones: bool) -> Vec<OutputDevice> {
-    let mut targets = vec![primary.clone()];
-    if also_headphones && !matches!(primary, OutputDevice::Default) {
-        targets.push(OutputDevice::Default);
-    }
-    targets
+pub fn build_cpal_sink(device_id: DeviceId) -> Arc<dyn AudioSink> {
+    Arc::new(CpalSink::new(device_id, None, None))
 }

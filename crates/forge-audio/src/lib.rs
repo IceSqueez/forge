@@ -9,7 +9,6 @@ mod default_output;
 mod device;
 mod device_sink;
 mod error;
-mod events;
 mod fan_out;
 mod handle;
 mod remote;
@@ -33,7 +32,6 @@ pub use device::{
 };
 pub use device_sink::{DeviceSink, OutputDeviceHandle, stored_output_device};
 pub use error::AudioError;
-pub use events::{AudioEvent, AudioEventSink, NullAudioEventSink};
 pub use fan_out::{FanOutSink, fan_out_stoppable};
 pub use handle::{ControlledPlayback, PlaybackHandle};
 pub use remote::{
@@ -41,9 +39,7 @@ pub use remote::{
     RemoteCommand, RemoteDelivery, RemoteDestinationId, RemoteVerdict,
 };
 pub use remote_sink::RemoteSink;
-pub use route::{
-    DevicePreference, build_cpal_sink, fan_out_targets, resolve_device, resolve_output_device,
-};
+pub use route::{DevicePreference, build_cpal_sink, resolve_device, resolve_output_device};
 pub use sink::{AudioSink, NullSink};
 pub use sink_factory::{AudioSinkFactory, CpalSinkFactory};
 pub use targeted::{PlaybackTarget, RemoteLegFactory, TargetedSinkFactory};

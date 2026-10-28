@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_audio::{NullAudioEventSink, alert_cue, play_on_default_output};
+use forge_audio::{alert_cue, play_on_default_output};
 use forge_components::{PushToast, ToastKind, tr};
 use forge_runtime::sub_action_runners::{DesktopNotice, NotifyPort, NotifyUrgency, OsPortError};
 use forge_runtime::{
@@ -168,8 +168,7 @@ pub(crate) async fn show_off_thread(
 
 fn play_cue_detached(rt: &Handle) {
     rt.spawn(async {
-        if let Err(error) = play_on_default_output(alert_cue(), Arc::new(NullAudioEventSink)).await
-        {
+        if let Err(error) = play_on_default_output(alert_cue()).await {
             tracing::warn!(error = %error, "connection loss cue could not play");
         }
     });

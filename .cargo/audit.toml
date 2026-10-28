@@ -1,6 +1,6 @@
 # cargo-audit configuration (read by rustsec/audit-check in .github/workflows/audit.yml).
 #
-# The two ignored advisories are quadratic-runtime / memory-exhaustion DoS bugs in
+# The two quick-xml advisories are quadratic-runtime / memory-exhaustion DoS bugs in
 # quick-xml, reachable only through the gpui rendering stack:
 #   - quick-xml 0.30 via xcb -> zed-scap -> gpui           (X11 screen-capture codegen)
 #   - quick-xml 0.39 via wayland-scanner (a build-time      (Wayland protocol codegen +
@@ -14,8 +14,17 @@
 #
 # REVIEW TRIGGER: drop these ignores when the gpui / xcb / wayland-rs stack ships a release
 # that consumes quick-xml >= 0.41 (re-check on every gpui version bump).
+#
+# RUSTSEC-2026-0387 is a constant-time timing leak in crypto-bigint 0.5, reached only via
+# age -> p256 / hpke (age's P-256 plugin and hybrid recipient types). forge-transfer
+# encrypts bundles with age's scrypt passphrase and x25519 recipients only, so no P-256
+# secret-key operation ever runs. age 0.12.1 is the latest release and pins p256 0.13,
+# whose elliptic-curve 0.13 requires crypto-bigint ^0.5; the fixed 0.7.6 is out of reach.
+#
+# REVIEW TRIGGER: drop this ignore when age ships a release on p256 >= 0.14.
 [advisories]
 ignore = [
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
+    "RUSTSEC-2026-0387",
 ]

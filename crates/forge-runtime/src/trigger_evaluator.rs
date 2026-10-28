@@ -511,9 +511,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        EventBus, EventSubscription, NullEventLogRepo, QueueScheduler, ScriptRegistry,
+        EventBus, NullEventLogRepo, QueueScheduler, ScriptRegistry,
         sub_action_runners::register_core_sub_actions, triggers::register_core_triggers,
     };
+    use forge_events::EventSubscription;
 
     async fn make_backend() -> Sandboxed<Arc<SqliteBackend>> {
         sandboxed_backend([0xab; 32]).await.map(Arc::new)

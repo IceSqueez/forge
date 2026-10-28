@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 use async_trait::async_trait;
 use forge_emulator::fixture::TwitchAccount;
 use forge_emulator::twitch::{CredentialCheck, FakeTwitch, FakeTwitchConfig, Viewer, ViewerBadge};
-use forge_events::{Event, EventPublisher, EventStream};
+use forge_events::{Event, EventPublisher, EventSubscription};
 use forge_net::{Gateway, TokenBucketRateLimiter};
 use forge_platform_core::{
     BuiltinControl, CONNECTION_STATE_CHANGED_KIND, ChatPlatform, ConnectionState, EndpointSurface,
@@ -399,7 +399,7 @@ async fn forge_chat_send_returns_the_message_id_the_fake_issued() {
     assert_eq!(request.response["data"][0]["message_id"], sent.0.as_str());
 }
 
-async fn next_platform_event(events: &mut EventStream) -> Event {
+async fn next_platform_event(events: &mut EventSubscription) -> Event {
     timeout(DEADLINE, events.recv())
         .await
         .expect("the platform published nothing in time")

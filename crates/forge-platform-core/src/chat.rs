@@ -223,8 +223,8 @@ mod tests {
                 .push((channel.to_owned(), text.to_owned()));
             Ok(())
         }
-        fn events(&self) -> EventStream {
-            EventStream::new(tokio::sync::broadcast::channel(1).1)
+        fn events(&self) -> EventSubscription {
+            forge_events::EventChannel::new(1).subscribe()
         }
     }
 

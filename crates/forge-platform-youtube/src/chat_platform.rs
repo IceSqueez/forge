@@ -442,7 +442,7 @@ mod tests {
         )
     }
 
-    async fn announcements(mut stream: EventStream) -> Vec<(String, Option<bool>)> {
+    async fn announcements(mut stream: EventSubscription) -> Vec<(String, Option<bool>)> {
         let mut seen = Vec::new();
         while let Ok(event) = stream.recv().await {
             if let Some(state) = state_of(&event) {

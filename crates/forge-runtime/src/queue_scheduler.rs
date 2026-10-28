@@ -1036,7 +1036,8 @@ mod tests {
     use forge_types::{Action, ActionId, EventId, Queue, QueueId, SubActionStep};
 
     use super::*;
-    use crate::{EventBus, EventSubscription, NullEventLogRepo, spawn_action_engine};
+    use crate::{EventBus, NullEventLogRepo, spawn_action_engine};
+    use forge_events::EventSubscription;
 
     async fn make_dp() -> Sandboxed<Arc<dyn DataProvider>> {
         sandboxed_backend([0xab; 32])

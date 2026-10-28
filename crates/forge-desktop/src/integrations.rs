@@ -680,13 +680,13 @@ pub(crate) fn spawn_connect(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use forge_events::EventStream;
+    use forge_events::EventChannel;
     use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
     use forge_platform_core::{ConnectionState, PlatformError};
     use forge_platform_core::{SENDER_FIELD, SENT_AS_FIELD, SenderRole, unknown_sender_reason};
     use forge_runtime::NullEventLogRepo;
     use std::time::Duration;
-    use tokio::sync::{Semaphore, broadcast, mpsc};
+    use tokio::sync::{Semaphore, mpsc};
 
     struct NoopRateLimiter;
 
@@ -819,8 +819,8 @@ pub(crate) mod tests {
             });
             self.outcome()
         }
-        fn events(&self) -> EventStream {
-            EventStream::new(broadcast::channel(1).1)
+        fn events(&self) -> EventSubscription {
+            EventChannel::new(1).subscribe()
         }
     }
 
@@ -1026,7 +1026,7 @@ pub(crate) mod tests {
         );
     }
 
-    async fn next_of_kind(sub: &mut forge_runtime::EventSubscription, kind: &str) -> Event {
+    async fn next_of_kind(sub: &mut EventSubscription, kind: &str) -> Event {
         tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 let event = sub.recv().await.expect("observer subscription failed");
@@ -1039,7 +1039,7 @@ pub(crate) mod tests {
         .unwrap_or_else(|_| panic!("no {kind} event was published"))
     }
 
-    fn drain_of_kind(sub: &mut forge_runtime::EventSubscription, kind: &str) -> Vec<Event> {
+    fn drain_of_kind(sub: &mut EventSubscription, kind: &str) -> Vec<Event> {
         let mut seen = Vec::new();
         while let Some(event) = sub.try_recv().expect("observer subscription failed") {
             if event.kind == kind {
@@ -1454,8 +1454,8 @@ pub(crate) mod tests {
         ) -> Result<Option<ActingSender>, PlatformError> {
             self.record(SenderCall::Whisper(sender))
         }
-        fn events(&self) -> EventStream {
-            EventStream::new(broadcast::channel(1).1)
+        fn events(&self) -> EventSubscription {
+            EventChannel::new(1).subscribe()
         }
     }
 
@@ -2126,19 +2126,17 @@ pub(crate) mod tests {
     async fn event_bridge_forwards_a_platform_s_final_events_then_exits_once_its_channel_closes() {
         let bus = test_bus();
         let mut observer = bus.subscribe();
-        let (platform_tx, platform_rx) = broadcast::channel(16);
-        let bridge = spawn_event_bridge(publisher(&bus), EventStream::new(platform_rx), "twitch");
+        let platform = EventChannel::new(16);
+        let bridge = spawn_event_bridge(publisher(&bus), platform.subscribe(), "twitch");
 
         for state in ["connected", "disconnected"] {
-            platform_tx
-                .send(Event::new(
-                    EventSource::Core,
-                    "platform.connection.changed",
-                    serde_json::json!({ "platform_id": "twitch", "state": state }),
-                ))
-                .unwrap();
+            platform.publish(Event::new(
+                EventSource::Core,
+                "platform.connection.changed",
+                serde_json::json!({ "platform_id": "twitch", "state": state }),
+            ));
         }
-        drop(platform_tx);
+        drop(platform);
 
         tokio::time::timeout(Duration::from_secs(30), bridge)
             .await

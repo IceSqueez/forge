@@ -220,15 +220,17 @@ impl ChatSessions {
 mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
-    use forge_events::{EventSource, EventStream};
+    use forge_events::{EventChannel, EventSource, EventSubscription};
     use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
     use futures::FutureExt;
 
     use super::*;
     use crate::chat::tests::handle_reporting;
 
-    fn sessions() -> (ChatSessions, EventStream) {
-        let events = Arc::new(PlatformEventChannel::new());
+    fn sessions() -> (ChatSessions, EventSubscription) {
+        let events = Arc::new(EventChannel::new(
+            crate::chat_platform::EVENT_CHANNEL_CAPACITY,
+        ));
         let stream = events.subscribe();
         (ChatSessions::new(events), stream)
     }
@@ -248,7 +250,7 @@ mod tests {
         )
     }
 
-    fn drain(stream: &mut EventStream) -> Vec<Event> {
+    fn drain(stream: &mut EventSubscription) -> Vec<Event> {
         let mut published = Vec::new();
         while let Some(Ok(event)) = stream.recv().now_or_never() {
             published.push(event);
@@ -256,7 +258,7 @@ mod tests {
         published
     }
 
-    fn link_announcements(stream: &mut EventStream) -> Vec<(String, Option<bool>)> {
+    fn link_announcements(stream: &mut EventSubscription) -> Vec<(String, Option<bool>)> {
         drain(stream)
             .into_iter()
             .filter(|event| event.kind == CONNECTION_STATE_CHANGED_KIND)

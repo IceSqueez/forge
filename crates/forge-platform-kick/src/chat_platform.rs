@@ -528,7 +528,7 @@ pub(crate) mod tests {
         )
     }
 
-    async fn next_banned_event(stream: &mut EventStream) -> Event {
+    async fn next_banned_event(stream: &mut EventSubscription) -> Event {
         tokio::time::timeout(BANNED_STEP_DEADLINE, async {
             loop {
                 let event = stream.recv().await.unwrap();
@@ -679,7 +679,7 @@ pub(crate) mod tests {
         })
     }
 
-    async fn next_link_announcement(stream: &mut EventStream) -> (String, Option<bool>) {
+    async fn next_link_announcement(stream: &mut EventSubscription) -> (String, Option<bool>) {
         tokio::time::timeout(BANNED_STEP_DEADLINE, async {
             loop {
                 if let Some(announcement) = link_announcement(&stream.recv().await.unwrap()) {
@@ -691,11 +691,11 @@ pub(crate) mod tests {
         .unwrap()
     }
 
-    async fn await_link_state(stream: &mut EventStream, state: &str) {
+    async fn await_link_state(stream: &mut EventSubscription, state: &str) {
         while next_link_announcement(stream).await.0 != state {}
     }
 
-    fn published_link_announcements(stream: &mut EventStream) -> Vec<(String, Option<bool>)> {
+    fn published_link_announcements(stream: &mut EventSubscription) -> Vec<(String, Option<bool>)> {
         use futures::FutureExt;
 
         let mut announcements = Vec::new();

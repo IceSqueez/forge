@@ -69,7 +69,7 @@ mod tests {
     use crate::BroadcasterTier;
     use crate::builtin::{HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
     use crate::chat::ChatConnectionState;
-    use crate::event_channel::PlatformEventChannel;
+    use crate::chat_platform::EVENT_CHANNEL_CAPACITY;
     use crate::helix::{
         HelixError, HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport,
     };
@@ -78,6 +78,7 @@ mod tests {
         MockCreds, MockTransport, endpoints_with, unreachable_twitch_endpoints,
     };
     use crate::subscriptions::SubscriptionTracker;
+    use forge_events::EventChannel;
 
     const BROADCASTER: &str = "100000001";
     const VIEWER: &str = "200000042";
@@ -159,7 +160,7 @@ mod tests {
                     HELIX_BUDGET_CAPACITY,
                     HELIX_BUDGET_WINDOW,
                 )),
-                Arc::new(PlatformEventChannel::new()),
+                Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY)),
             )
             .unwrap(),
             "test-client".to_owned(),

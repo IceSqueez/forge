@@ -1578,7 +1578,7 @@ mod tests {
         )
     }
 
-    fn drain_lineage_ids(sub: &mut crate::EventSubscription) -> Vec<EventId> {
+    fn drain_lineage_ids(sub: &mut forge_events::EventSubscription) -> Vec<EventId> {
         let mut ids = Vec::new();
         while let Ok(Some(event)) = sub.try_recv() {
             if event.kind == ACTION_START_KIND || event.kind == "subaction.run" {

@@ -450,7 +450,7 @@ const _: () = {
 mod tests {
     use super::*;
     use crate::test_support::{Sandboxed, sandboxed_backend};
-    use forge_events::EventSource;
+    use forge_events::{Delivery, EventSource};
     use forge_storage::DataProvider;
     use forge_storage_sqlite::SqliteBackend;
     use std::sync::Arc;
@@ -605,30 +605,6 @@ mod tests {
         assert!(
             matches!(rx.try_recv(), Ok(None)),
             "record must not broadcast; only replay delivers, so exactly one event arrives"
-        );
-    }
-
-    #[tokio::test]
-    async fn lagged_subscriber_gets_lagging_error() {
-        let bus = null_bus();
-        let mut slow = bus.subscribe();
-        for i in 0..CHANNEL_CAP + 10 {
-            bus.publish(core_event(&format!("flood.{i}")));
-        }
-        let mut got_lagged = false;
-        loop {
-            match slow.recv().await {
-                Ok(_) => {}
-                Err(EventsError::LaggingReceiver) => {
-                    got_lagged = true;
-                    break;
-                }
-                Err(EventsError::BusClosed) | Err(_) => break,
-            }
-        }
-        assert!(
-            got_lagged,
-            "slow subscriber must receive LaggingReceiver error"
         );
     }
 
@@ -1082,7 +1058,8 @@ mod tests {
     #[tokio::test]
     async fn each_lagging_observer_counts_only_the_events_it_skipped_itself() {
         let bus = null_bus();
-        let mut lagging = bus.subscribe_observer("lagging");
+        let observer: &dyn EventObserver = bus.as_ref();
+        let mut lagging = observer.observe("lagging");
         let mut keeping_up = bus.subscribe_observer("keeping_up");
         let overflow = 6;
         for i in 0..CHANNEL_CAP / 2 {

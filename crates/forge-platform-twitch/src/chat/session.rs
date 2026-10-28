@@ -4234,16 +4234,17 @@ struct SessionInfo {
 mod tests {
     use std::time::Duration;
 
-    use crate::event_channel::PlatformEventChannel;
+    use crate::chat_platform::EVENT_CHANNEL_CAPACITY;
     use crate::sub_actions::test_support::MockCreds;
-    use forge_events::{EventSource, EventStream};
+    use forge_events::EventChannel;
+    use forge_events::{EventSource, EventSubscription};
     use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
     use forge_types::{ChatEventDetail, ChatPayload, ChatSegment};
     use tokio::sync::mpsc;
 
     use super::*;
 
-    fn make_session(bus: &Arc<PlatformEventChannel>) -> ChatSession {
+    fn make_session(bus: &Arc<EventChannel>) -> ChatSession {
         session_over_creds(bus, Arc::new(MockCreds::with_identity()))
     }
 
@@ -4325,7 +4326,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_chat_message_emits_the_documented_payload_shape() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -4369,7 +4370,7 @@ mod tests {
 
         let harness = BotHarness::connected().await;
         for (chatter_id, expected) in [(BOT_USER_ID, Some(true)), ("67890", None), ("", None)] {
-            let bus = Arc::new(PlatformEventChannel::new());
+            let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
             let session = make_session(&bus).with_bot(Some(Arc::clone(&harness.bot)));
             let mut sub = bus.subscribe();
 
@@ -4396,7 +4397,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_chat_message_surfaces_cheer_bits_without_anonymity_signal() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -4424,7 +4425,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_chat_message_surfaces_from_channel_for_shared_chat_source() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -4458,7 +4459,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_chat_message_omits_from_channel_for_own_channel_shared_chat_echo() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -4488,7 +4489,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_chat_message_omits_cheer_and_from_channel_when_not_applicable() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -4529,7 +4530,7 @@ mod tests {
 
     #[tokio::test]
     async fn chat_message_attaches_chat_payload() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -4568,7 +4569,7 @@ mod tests {
 
     #[tokio::test]
     async fn chat_payload_is_additive_to_existing_argstack_keys() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -4604,7 +4605,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscriber_event_attaches_chat_payload_with_event_detail() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -4640,7 +4641,7 @@ mod tests {
         );
     }
 
-    async fn published(mut sub: EventStream) -> Event {
+    async fn published(mut sub: EventSubscription) -> Event {
         tokio::time::timeout(Duration::from_millis(100), sub.recv())
             .await
             .expect("the ingest must publish within the wait")
@@ -4649,7 +4650,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_chat_message_carries_the_chatters_display_name_into_the_bus_payload() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let sub = bus.subscribe();
 
@@ -4671,7 +4672,7 @@ mod tests {
     #[tokio::test]
     async fn a_chat_message_without_a_display_name_carries_the_login_in_its_place() {
         for absent in [serde_json::json!(""), serde_json::json!(null)] {
-            let bus = Arc::new(PlatformEventChannel::new());
+            let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
             let session = make_session(&bus);
             let sub = bus.subscribe();
 
@@ -4698,7 +4699,7 @@ mod tests {
             (serde_json::json!({ "total": 5 }), 5),
             (serde_json::json!({}), 0),
         ] {
-            let bus = Arc::new(PlatformEventChannel::new());
+            let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
             let session = make_session(&bus);
             let sub = bus.subscribe();
 
@@ -4725,7 +4726,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_ad_break_carries_the_identity_of_whoever_requested_it() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let sub = bus.subscribe();
 
@@ -4757,7 +4758,7 @@ mod tests {
 
     #[tokio::test]
     async fn raid_received_attaches_event_detail_raid() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -4795,7 +4796,7 @@ mod tests {
 
     #[tokio::test]
     async fn raid_to_self_is_tagged_received_with_nested_to_broadcaster() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -4825,7 +4826,7 @@ mod tests {
 
     #[tokio::test]
     async fn raid_to_another_broadcaster_is_tagged_sent() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -4849,7 +4850,7 @@ mod tests {
 
     #[tokio::test]
     async fn follow_event_publishes_nested_user_and_followed_at() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -4882,7 +4883,7 @@ mod tests {
 
     #[tokio::test]
     async fn stream_online_event_publishes_nested_stream_and_broadcaster() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -4916,7 +4917,7 @@ mod tests {
 
     #[tokio::test]
     async fn reward_redemption_event_publishes_documented_payload_shape() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -4958,7 +4959,7 @@ mod tests {
 
     #[tokio::test]
     async fn reward_add_event_publishes_nested_reward_payload_shape() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -4986,7 +4987,7 @@ mod tests {
 
     #[tokio::test]
     async fn redemption_update_event_passes_through_status_into_redemption_payload() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5026,7 +5027,7 @@ mod tests {
 
     #[tokio::test]
     async fn message_delete_event_publishes_nested_target_user_payload() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5061,7 +5062,7 @@ mod tests {
 
     #[tokio::test]
     async fn chat_clear_event_publishes_nested_broadcaster_payload() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5087,7 +5088,7 @@ mod tests {
 
     #[tokio::test]
     async fn stream_offline_event_publishes_nested_broadcaster() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5112,7 +5113,7 @@ mod tests {
 
     #[tokio::test]
     async fn hype_train_begin_event_nests_numeric_fields_under_hype() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5146,7 +5147,7 @@ mod tests {
 
     #[tokio::test]
     async fn hype_train_progress_event_nests_numeric_fields_under_hype() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5173,7 +5174,7 @@ mod tests {
 
     #[tokio::test]
     async fn hype_train_end_event_carries_cooldown_under_hype() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5206,7 +5207,7 @@ mod tests {
 
     #[tokio::test]
     async fn charity_donation_event_flattens_amount_object_to_cents_and_currency() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5236,7 +5237,7 @@ mod tests {
 
     #[tokio::test]
     async fn charity_start_event_flattens_current_and_target_amount_objects() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5267,7 +5268,7 @@ mod tests {
 
     #[tokio::test]
     async fn ban_event_nests_user_and_moderator_and_passes_is_permanent_through() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5306,7 +5307,7 @@ mod tests {
 
     #[tokio::test]
     async fn timeout_ban_event_carries_ends_at_with_is_permanent_false() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5331,7 +5332,7 @@ mod tests {
 
     #[tokio::test]
     async fn unban_event_nests_user_and_moderator_only() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5361,7 +5362,7 @@ mod tests {
 
     #[tokio::test]
     async fn gift_sub_event_carries_no_recipient_block() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5387,7 +5388,7 @@ mod tests {
 
     #[tokio::test]
     async fn moderator_add_event_nests_user_under_user_key() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5415,7 +5416,7 @@ mod tests {
 
     #[tokio::test]
     async fn moderator_remove_event_nests_user_under_user_key() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5439,7 +5440,7 @@ mod tests {
 
     #[tokio::test]
     async fn shield_mode_begin_event_nests_moderator_and_carries_started_at() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5472,7 +5473,7 @@ mod tests {
 
     #[tokio::test]
     async fn shield_mode_end_event_nests_moderator_and_carries_ended_at() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5500,7 +5501,7 @@ mod tests {
 
     #[tokio::test]
     async fn shoutout_create_event_nests_target_broadcaster_and_lifts_viewer_count() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5538,7 +5539,7 @@ mod tests {
 
     #[tokio::test]
     async fn shoutout_receive_event_nests_source_broadcaster_and_lifts_viewer_count() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5575,7 +5576,7 @@ mod tests {
 
     #[tokio::test]
     async fn suspicious_user_event_flattens_nested_message_text_to_root_message_text() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5612,7 +5613,7 @@ mod tests {
 
     #[tokio::test]
     async fn warning_acknowledge_event_nests_user_under_user_key() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5640,7 +5641,7 @@ mod tests {
 
     #[tokio::test]
     async fn poll_begin_event_nests_poll_with_title_and_timing() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5681,7 +5682,7 @@ mod tests {
 
     #[tokio::test]
     async fn poll_progress_event_nests_poll_with_id_and_title_only() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5703,7 +5704,7 @@ mod tests {
 
     #[tokio::test]
     async fn poll_end_event_passes_status_through_to_poll_payload() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5732,7 +5733,7 @@ mod tests {
 
     #[tokio::test]
     async fn prediction_begin_event_nests_prediction_with_title_and_timing() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5780,7 +5781,7 @@ mod tests {
 
     #[tokio::test]
     async fn prediction_progress_event_nests_prediction_with_id_and_title_only() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5805,7 +5806,7 @@ mod tests {
 
     #[tokio::test]
     async fn prediction_lock_event_passes_locked_at_through_to_prediction_payload() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5835,7 +5836,7 @@ mod tests {
 
     #[tokio::test]
     async fn prediction_end_event_passes_winning_outcome_and_status_through() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5870,7 +5871,7 @@ mod tests {
 
     #[tokio::test]
     async fn goal_begin_event_nests_goal_with_amounts_and_description() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5902,7 +5903,7 @@ mod tests {
 
     #[tokio::test]
     async fn goal_progress_notification_publishes_a_live_unsynced_progress_event() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5926,7 +5927,7 @@ mod tests {
 
     #[tokio::test]
     async fn goal_end_event_passes_is_achieved_flag_through_to_goal_payload() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -5956,7 +5957,7 @@ mod tests {
 
     #[tokio::test]
     async fn automod_hold_event_flattens_message_text_and_carries_message_id() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6003,7 +6004,7 @@ mod tests {
 
     #[tokio::test]
     async fn automod_hold_with_blocked_term_reason_nulls_the_category_and_level() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6035,7 +6036,7 @@ mod tests {
 
     #[tokio::test]
     async fn automod_hold_terms_found_keeps_only_entries_carrying_a_string_term_id() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6069,7 +6070,7 @@ mod tests {
 
     #[tokio::test]
     async fn automod_message_update_with_blocked_term_reason_nulls_the_category_and_level() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6101,7 +6102,7 @@ mod tests {
 
     #[tokio::test]
     async fn automod_hold_message_text_reads_object_form_and_ignores_plain_string() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6128,7 +6129,7 @@ mod tests {
 
     #[tokio::test]
     async fn chat_settings_update_event_passes_through_bool_and_int_modes() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6162,7 +6163,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_guest_star_session_begin_event_nests_session_under_session_key() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6188,7 +6189,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_guest_star_session_end_event_carries_ended_at() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6214,7 +6215,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_guest_star_settings_event_preserves_int_and_bool_field_types() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6246,7 +6247,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_guest_star_guest_update_event_flattens_state_and_carries_guest_and_host() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6290,7 +6291,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_guest_star_guest_update_event_nulls_absent_guest_identity() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6316,7 +6317,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_automod_settings_update_event_nests_moderator_and_overall_level() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6341,7 +6342,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_automod_terms_update_event_carries_action_and_terms_array() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6364,7 +6365,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_automod_message_update_event_reads_nested_automod_and_flattens_text() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6405,7 +6406,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_shared_chat_begin_remaps_flat_host_fields_into_nested_payload() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6437,7 +6438,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_shared_chat_update_remaps_flat_host_fields_into_nested_payload() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6464,7 +6465,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_shared_chat_end_remaps_flat_host_fields_into_nested_payload() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6492,7 +6493,7 @@ mod tests {
 
     #[tokio::test]
     async fn channel_update_event_publishes_nested_channel_fields() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6525,7 +6526,7 @@ mod tests {
 
     #[tokio::test]
     async fn ad_break_begin_event_publishes_typed_duration_and_nested_requester() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6560,7 +6561,7 @@ mod tests {
 
     #[tokio::test]
     async fn automatic_reward_event_publishes_typed_cost_and_nested_user() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
@@ -6597,7 +6598,7 @@ mod tests {
     const EVENTSUB_SUBSCRIPTIONS_PATH: &str = "/helix/eventsub/subscriptions";
 
     fn session_over_creds(
-        bus: &Arc<PlatformEventChannel>,
+        bus: &Arc<EventChannel>,
         repo: Arc<dyn forge_storage::CredentialsRepo>,
     ) -> ChatSession {
         let (session, _state_rx, _shutdown_tx) = session_with(
@@ -6609,7 +6610,7 @@ mod tests {
     }
 
     fn session_with(
-        bus: &Arc<PlatformEventChannel>,
+        bus: &Arc<EventChannel>,
         repo: Arc<dyn forge_storage::CredentialsRepo>,
         endpoints: PlatformEndpoints,
     ) -> (
@@ -6779,7 +6780,7 @@ mod tests {
                 crate::sub_actions::test_support::oauth_client_at(&server.uri(), "client"),
                 Arc::new(NearExpiryCreds),
             ));
-            let bus = Arc::new(PlatformEventChannel::new());
+            let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
             let publisher: Arc<dyn EventPublisher> = bus.clone();
             let endpoints = crate::sub_actions::test_support::endpoints_with(&[(
                 EndpointSurface::TwitchApi,
@@ -6847,7 +6848,7 @@ mod tests {
 
     #[tokio::test]
     async fn session_welcome_routes_to_reauth_when_token_refresh_reports_reauth_required() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let mut session = session_over_creds(&bus, Arc::new(MockCreds::empty()));
         let mut sub = bus.subscribe();
 
@@ -6871,7 +6872,7 @@ mod tests {
 
     #[tokio::test]
     async fn session_welcome_disconnects_when_token_fetch_fails_without_reauth() {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let mut session = session_over_creds(&bus, Arc::new(FailingCreds));
 
         let mut session_id = None;
@@ -6897,7 +6898,7 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let endpoints = crate::sub_actions::test_support::endpoints_with(&[
             (EndpointSurface::TwitchApi, &server.uri()),
             (EndpointSurface::TwitchEventSubSocket, "ws://127.0.0.1:1"),
@@ -7090,7 +7091,7 @@ mod tests {
     }
 
     struct RunningSession {
-        bus: Arc<PlatformEventChannel>,
+        bus: Arc<EventChannel>,
         state: watch::Receiver<ChatConnectionState>,
         task: tokio::task::JoinHandle<()>,
         _shutdown: oneshot::Sender<()>,
@@ -7103,7 +7104,7 @@ mod tests {
     }
 
     fn spawn_session(socket_url: &str, api_url: &str) -> RunningSession {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let endpoints = crate::sub_actions::test_support::endpoints_with(&[
             (EndpointSurface::TwitchApi, api_url),
             (EndpointSurface::TwitchEventSubSocket, socket_url),
@@ -7162,7 +7163,7 @@ mod tests {
         .to_string()
     }
 
-    async fn next_event(events: &mut EventStream, kind: &str) -> Event {
+    async fn next_event(events: &mut EventSubscription, kind: &str) -> Event {
         let found = within_real_time(FAKE_WAIT, async {
             loop {
                 let event = events.recv().await.expect("the bus must stay open");
@@ -7180,14 +7181,14 @@ mod tests {
         found.expect("asserted just above")
     }
 
-    async fn next_chat_text(events: &mut EventStream) -> String {
+    async fn next_chat_text(events: &mut EventSubscription) -> String {
         next_event(events, CHAT_MESSAGE_KIND).await.payload["message"]
             .as_str()
             .expect("a chat event must carry its message text")
             .to_owned()
     }
 
-    async fn kinds_until_chat(events: &mut EventStream, text: &str) -> Vec<String> {
+    async fn kinds_until_chat(events: &mut EventSubscription, text: &str) -> Vec<String> {
         let mut kinds = Vec::new();
         let arrived = within_real_time(FAKE_WAIT, async {
             loop {
@@ -7209,7 +7210,7 @@ mod tests {
         kinds
     }
 
-    async fn chat_texts_until(events: &mut EventStream, last: &str) -> Vec<String> {
+    async fn chat_texts_until(events: &mut EventSubscription, last: &str) -> Vec<String> {
         let mut texts = Vec::new();
         let arrived = within_real_time(FAKE_WAIT, async {
             loop {
@@ -7255,7 +7256,7 @@ mod tests {
     }
 
     async fn connection_states_until(
-        events: &mut EventStream,
+        events: &mut EventSubscription,
         last: ConnectionState,
     ) -> Vec<ConnectionState> {
         let mut states = Vec::new();
@@ -7337,7 +7338,7 @@ mod tests {
         api: wiremock::MockServer,
         base: FakeEventSub,
         session: RunningSession,
-        events: EventStream,
+        events: EventSubscription,
         predecessor: Peer,
     }
 
@@ -7956,11 +7957,8 @@ mod tests {
         ])
     }
 
-    fn chat_over(
-        socket_url: &str,
-        api_url: &str,
-    ) -> (crate::chat::TwitchChat, Arc<PlatformEventChannel>) {
-        let bus = Arc::new(PlatformEventChannel::new());
+    fn chat_over(socket_url: &str, api_url: &str) -> (crate::chat::TwitchChat, Arc<EventChannel>) {
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let manager = Arc::new(TwitchCredentialsManager::new(
             crate::sub_actions::test_support::unreachable_oauth_client("client"),
             Arc::new(MockCreds::with_identity()),
@@ -7980,7 +7978,7 @@ mod tests {
     async fn live_handle(
         base: &mut FakeEventSub,
         api: &wiremock::MockServer,
-    ) -> (crate::chat::TwitchChatHandle, Peer, EventStream) {
+    ) -> (crate::chat::TwitchChatHandle, Peer, EventSubscription) {
         let (chat, bus) = chat_over(&base.url, &api.uri());
         let mut events = bus.subscribe();
         let handle = chat.start();
@@ -8043,7 +8041,7 @@ mod tests {
         );
     }
 
-    async fn next_state_jumping_backoffs(events: &mut EventStream, want: ConnectionState) {
+    async fn next_state_jumping_backoffs(events: &mut EventSubscription, want: ConnectionState) {
         const REAL_CLOCK_WINDOW: Duration = Duration::from_millis(10);
         const BACKOFF_JUMP: Duration = Duration::from_secs(1);
         let started = std::time::Instant::now();
@@ -8287,7 +8285,9 @@ mod tests {
         );
     }
 
-    async fn next_link_announcement(events: &mut EventStream) -> (ConnectionState, Option<bool>) {
+    async fn next_link_announcement(
+        events: &mut EventSubscription,
+    ) -> (ConnectionState, Option<bool>) {
         within_real_time(FAKE_WAIT, async {
             loop {
                 let event = events.recv().await.expect("the bus must stay open");
@@ -8422,7 +8422,10 @@ mod tests {
             creds,
             manager,
             SubscriptionTracker::default(),
-            helix_over(&endpoints, Arc::new(PlatformEventChannel::new())),
+            helix_over(
+                &endpoints,
+                Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY)),
+            ),
             TwitchLifecycle::new(),
         ));
         let bundle = crate::builtin::TwitchIntegrationBundle::new(
@@ -9026,7 +9029,7 @@ mod tests {
             "../../tests/fixtures/published_chat_message.json"
         ))
         .unwrap();
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);
         let sub = bus.subscribe();
 
@@ -9080,7 +9083,7 @@ mod tests {
         socket_url: &str,
         api_url: &str,
     ) -> (RunningSession, SubscriptionTracker) {
-        let bus = Arc::new(PlatformEventChannel::new());
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let tracker = SubscriptionTracker::default();
         let publisher: Arc<dyn EventPublisher> = bus.clone();
         let (session, state, shutdown) = session_over(
@@ -9112,7 +9115,7 @@ mod tests {
             .expect("the pass must have recorded every topic")
     }
 
-    async fn next_created(events: &mut EventStream, kind: &str) -> Event {
+    async fn next_created(events: &mut EventSubscription, kind: &str) -> Event {
         let found = within_real_time(FAKE_WAIT, async {
             loop {
                 let event = events.recv().await.expect("the bus must stay open");

@@ -379,6 +379,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn raid_sized_burst_published_before_the_first_read_arrives_whole_and_in_order() {
+        const RAID_BURST: usize = 1000;
+        let platform = platform_over(&Arc::new(MockTransport::returning(users_fixture("555"))));
+        let mut events = platform.events();
+        let publisher = platform.publisher();
+
+        for index in 0..RAID_BURST {
+            publisher.publish(forge_events::Event::new(
+                forge_events::EventSource::Twitch,
+                "twitch.channel.chat.message",
+                serde_json::json!({ "index": index }),
+            ));
+        }
+
+        for index in 0..RAID_BURST {
+            let event = events.recv().await.unwrap();
+            assert_eq!(event.payload["index"], index);
+        }
+    }
+
+    #[tokio::test]
     async fn send_whisper_posts_only_a_helix_whisper_from_the_signed_in_user() {
         let transport = Arc::new(MockTransport::returning_sequence(vec![
             users_fixture("555"),

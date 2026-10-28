@@ -1079,7 +1079,7 @@ mod tests {
         }
     }
 
-    async fn action_done(mut sub: forge_runtime::EventSubscription) {
+    async fn action_done(mut sub: forge_events::EventSubscription) {
         while let Ok(event) = sub.recv().await {
             if event.kind == "action.done" {
                 return;

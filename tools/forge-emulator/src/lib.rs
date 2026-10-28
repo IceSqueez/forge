@@ -1,20 +1,7 @@
-pub mod console;
-pub mod control;
-pub mod discord;
-pub mod donatello;
 mod error;
+pub mod fakes;
 pub mod fixture;
-pub mod kick;
-pub mod launch;
-pub mod monobank;
-pub mod obs;
-pub mod overlay;
-pub mod report;
-pub mod run;
-pub mod scenario;
-pub mod stress;
-pub mod twitch;
-pub mod vtube;
-pub mod youtube;
+pub mod harness;
+pub mod vocabulary;
 
 pub use error::EmulatorError;

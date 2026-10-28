@@ -5,27 +5,29 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use forge_emulator::EmulatorError;
-use forge_emulator::console::{
+use forge_emulator::fakes::console::{
     ConsoleRefusal, DonatelloConsole, MonobankConsole, parse_donatello_command, parse_jar,
     parse_monobank_command,
 };
-use forge_emulator::control::{
+use forge_emulator::fakes::donatello::{FakeDonatello, FakeDonatelloConfig};
+use forge_emulator::fakes::monobank::{FakeMonobank, FakeMonobankConfig};
+use forge_emulator::fakes::obs::{FakeObs, FakeObsConfig};
+use forge_emulator::fakes::twitch::{FakeTwitch, FakeTwitchConfig};
+use forge_emulator::fakes::vtube::{FakeVTube, FakeVTubeConfig};
+use forge_emulator::fixture::{Fixture, seed_forge_environment};
+use forge_emulator::harness::control::{
     ClientTimeouts, ControlClient, ControlEndpoint, EventFilter, Observation,
 };
-use forge_emulator::donatello::{FakeDonatello, FakeDonatelloConfig};
-use forge_emulator::fixture::{Fixture, seed_forge_environment};
-use forge_emulator::launch::{
+use forge_emulator::harness::launch::{
     DEFAULT_LOG_DIRECTIVES, ForgeCommand, ForgeProcess, GameGuard, LaunchOptions, LaunchedForge,
     LivePaths, OutputStream, launch_forge,
 };
-use forge_emulator::monobank::{FakeMonobank, FakeMonobankConfig};
-use forge_emulator::obs::{FakeObs, FakeObsConfig};
-use forge_emulator::report::{RunContext, RunReport, write_report};
-use forge_emulator::run::{RunOptions, ScenarioVerdict, run_scenario};
-use forge_emulator::scenario::load_scenario;
-use forge_emulator::stress::{StressOptions, load_profile, run_stress, write_stress_report};
-use forge_emulator::twitch::{FakeTwitch, FakeTwitchConfig};
-use forge_emulator::vtube::{FakeVTube, FakeVTubeConfig};
+use forge_emulator::harness::report::{RunContext, RunReport, write_report};
+use forge_emulator::harness::run::{RunOptions, ScenarioVerdict, run_scenario};
+use forge_emulator::harness::scenario::load_scenario;
+use forge_emulator::harness::stress::{
+    StressOptions, load_profile, run_stress, write_stress_report,
+};
 use forge_events::Event;
 use time::OffsetDateTime;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
@@ -125,7 +127,7 @@ enum Command {
     /// `fail <status>`, `fail malformed`, `profile complete|incomplete`.
     FakeDonatello {
         /// The token the fake accepts.
-        #[arg(long, default_value = forge_emulator::donatello::FAKE_DONATELLO_TOKEN)]
+        #[arg(long, default_value = forge_emulator::vocabulary::FAKE_DONATELLO_TOKEN)]
         token: String,
         /// The account nickname the fake reports.
         #[arg(long, default_value = "fake-streamer")]
@@ -139,7 +141,7 @@ enum Command {
     /// line: `top-up <jar> <amount_minor> <sender> [comment...]`.
     FakeMonobank {
         /// The token the fake accepts.
-        #[arg(long, default_value = forge_emulator::monobank::FAKE_MONOBANK_TOKEN)]
+        #[arg(long, default_value = forge_emulator::vocabulary::FAKE_MONOBANK_TOKEN)]
         token: String,
         /// A jar the token owns, as ID or ID=TITLE; repeatable. One `fake-jar` when omitted.
         #[arg(long = "jar", value_name = "ID=TITLE")]
@@ -717,7 +719,7 @@ fn absolute(path: &std::path::Path) -> PathBuf {
 async fn print_until_stopped(
     process: &mut ForgeProcess,
     client: &ControlClient,
-    events: &mut forge_emulator::control::EventStream,
+    events: &mut forge_emulator::harness::control::EventStream,
     stop: &mut std::pin::Pin<&mut impl std::future::Future<Output = ()>>,
 ) -> Result<(), EmulatorError> {
     client.subscribe(&[EventFilter::default()]).await?;

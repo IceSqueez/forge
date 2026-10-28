@@ -8,7 +8,7 @@ mod spec;
 
 pub use data_dir::{DATA_DIR_VARIABLE, ForgeDataDir, KEY_FILE_VARIABLE};
 pub use port::free_loopback_port;
-pub use redactions::{REDACTED, Redactions};
+pub use redactions::Redactions;
 pub use report::{
     SeedReport, SeededCommand, SeededEventTrigger, SeededOverlay, SeededServer, SeededTwitch,
 };

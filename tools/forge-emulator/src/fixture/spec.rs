@@ -4,8 +4,8 @@ use forge_storage::OverlayConfig;
 use forge_types::{SubActionStep, TriggerConfig};
 use serde::{Deserialize, Serialize};
 
-use super::redactions::REDACTED;
 use crate::EmulatorError;
+use crate::vocabulary::REDACTED;
 
 pub const OVERLAY_SEND_KIND: &str = "overlay.send";
 pub const OVERLAY_TARGET_KEY: &str = "overlay_id";
@@ -67,7 +67,7 @@ pub struct VTubeConnection {
 impl Default for VTubeConnection {
     fn default() -> Self {
         Self {
-            token: crate::vtube::DEFAULT_TOKEN.to_owned(),
+            token: crate::vocabulary::VTUBE_DEFAULT_TOKEN.to_owned(),
             port: 0,
         }
     }

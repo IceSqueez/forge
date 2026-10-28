@@ -23,8 +23,8 @@ use super::spec::{
     TwitchAccount, VTubeConnection, YouTubeAccount,
 };
 use crate::EmulatorError;
-use crate::donatello::FAKE_DONATELLO_TOKEN;
-use crate::monobank::FAKE_MONOBANK_TOKEN;
+use crate::vocabulary::FAKE_DONATELLO_TOKEN;
+use crate::vocabulary::FAKE_MONOBANK_TOKEN;
 use forge_donatello::DONATELLO_CREDENTIAL_ID;
 use forge_monobank::MONOBANK_CREDENTIAL_ID;
 

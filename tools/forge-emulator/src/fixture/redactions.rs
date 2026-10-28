@@ -4,8 +4,7 @@ use serde_json::{Map, Value};
 
 use super::report::SeedReport;
 use super::spec::Fixture;
-
-pub const REDACTED: &str = "<redacted>";
+use crate::vocabulary::REDACTED;
 
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Redactions {

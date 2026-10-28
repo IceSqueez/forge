@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::scenario::ScenarioProblem;
+use crate::harness::scenario::ScenarioProblem;
 
 #[derive(Debug, Error)]
 pub enum EmulatorError {

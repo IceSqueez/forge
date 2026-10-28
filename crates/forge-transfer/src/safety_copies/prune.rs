@@ -169,7 +169,7 @@ mod tests {
     use time::Duration;
 
     use super::{prune_after_safety_copy, remove_all};
-    use crate::naming::{
+    use crate::bundle::naming::{
         FILE_PREFIX, LEGACY_ARCHIVE_EXTENSION, PRE_PACK_PREFIX, backup_file_stem, backups_dir,
     };
     use crate::safety_copies::inventory::SafetyCopy;

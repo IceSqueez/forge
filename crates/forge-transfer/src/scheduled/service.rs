@@ -262,9 +262,9 @@ mod tests {
     use tokio_util::sync::CancellationToken;
 
     use super::{ScheduledBackupParts, Service, Signals, Trigger};
-    use crate::exclusivity::TransferExclusivity;
-    use crate::passphrase::Passphrase;
-    use crate::schedule_key::create_schedule_key;
+    use crate::bundle::exclusivity::TransferExclusivity;
+    use crate::bundle::passphrase::Passphrase;
+    use crate::bundle::schedule_key::create_schedule_key;
     use crate::scheduled::clock::BackupClock;
     use crate::scheduled::settings::{Progress, ScheduleSettings};
     use crate::scheduled::status::{ScheduleState, ScheduledBackupStatus};

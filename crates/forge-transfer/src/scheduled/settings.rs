@@ -177,7 +177,7 @@ mod tests {
     use time::{Date, Month};
 
     use super::{Progress, ScheduleSettings};
-    use crate::category::BackupCategory;
+    use crate::bundle::category::BackupCategory;
 
     async fn backend() -> (TempDir, SqliteBackend) {
         let dir = tempfile::tempdir().unwrap();
@@ -243,7 +243,7 @@ mod tests {
     #[tokio::test]
     async fn a_stored_key_loads_and_an_undecodable_one_is_flagged_unreadable() {
         let (_dir, repo) = backend().await;
-        let key = crate::schedule_key::ScheduleKey {
+        let key = crate::bundle::schedule_key::ScheduleKey {
             recipient: "age1recipient".to_owned(),
             wrapped_identity: "wrapped".to_owned(),
         };

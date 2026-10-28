@@ -134,8 +134,8 @@ mod tests {
     use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
 
     use super::{PruneReport, prune};
-    use crate::category::BackupCategory;
-    use crate::manifest::{
+    use crate::bundle::category::BackupCategory;
+    use crate::bundle::manifest::{
         BUNDLE_FORMAT_VERSION, BundleKind, BundleOrigin, EncryptionScheme, MANIFEST_ENTRY_NAME,
         PublicManifest,
     };

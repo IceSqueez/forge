@@ -31,7 +31,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::protection_for;
-    use crate::restore_journal::{RESTORE_JOURNAL_FILE, RestoreJournal};
+    use crate::full::restore_journal::{RESTORE_JOURNAL_FILE, RestoreJournal};
     use crate::safety_copies::kind::SafetyCopyKind;
 
     const SNAPSHOT_NAME: &str = "forge-pre-restore-20261022-090507Z-a1b2c3";

@@ -82,7 +82,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::resolve_folder;
-    use crate::naming::backups_dir;
+    use crate::bundle::naming::backups_dir;
     use crate::scheduled::status::FailureCategory;
 
     struct Layout {

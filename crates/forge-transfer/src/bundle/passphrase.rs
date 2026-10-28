@@ -33,3 +33,30 @@ impl fmt::Debug for Passphrase {
         f.write_str("<redacted>")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn passphrase_strength_counts_characters_not_bytes_at_the_minimum() {
+        for (case, passphrase, accepted) in [
+            ("one short", "a".repeat(MIN_PASSPHRASE_CHARS - 1), false),
+            ("at the minimum", "a".repeat(MIN_PASSPHRASE_CHARS), true),
+            (
+                "multibyte one short",
+                "ї".repeat(MIN_PASSPHRASE_CHARS - 1),
+                false,
+            ),
+            (
+                "multibyte at the minimum",
+                "ї".repeat(MIN_PASSPHRASE_CHARS),
+                true,
+            ),
+            ("empty", String::new(), false),
+        ] {
+            let checked = Passphrase::new(passphrase).ensure_strong_enough();
+            assert_eq!(checked.is_ok(), accepted, "{case}");
+        }
+    }
+}

@@ -2,11 +2,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use futures_util::{SinkExt, StreamExt};
 use time::OffsetDateTime;
 use tokio::sync::{Notify, broadcast, mpsc, oneshot, watch};
 use tokio::time::Instant;
-use tokio_tungstenite::tungstenite::Message;
 
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_net::Backoff;
@@ -17,17 +15,26 @@ use forge_platform_core::{
 use forge_storage::CredentialsRepo;
 
 use crate::auth::AuthState;
-use crate::client::{VTUBE_PLATFORM_ID, VtsWs};
+use crate::client::VTUBE_PLATFORM_ID;
 use crate::error::VTubeError;
 use crate::health::{
     HealthSnapshot, apply_model, apply_tracking, clear_session_state, update_from_event,
 };
 use crate::payload_fields::connection as connection_fields;
 use crate::payload_fields::expression as expression_fields;
-use crate::protocol::{
-    API_ERROR_MESSAGE_TYPE, TOKEN_REQUEST_DENIED_ERROR_ID, check_response, is_reply, new_request,
+use crate::vts::endpoint::split_endpoint;
+use crate::vts::event::{VtsEvent, subscribe_all};
+use crate::vts::message_type::{
+    AUTHENTICATION_REQUEST, AUTHENTICATION_RESPONSE, AUTHENTICATION_TOKEN_REQUEST,
+    AUTHENTICATION_TOKEN_RESPONSE, CURRENT_MODEL_REQUEST, EXPRESSION_STATE_REQUEST,
+    FACE_FOUND_REQUEST,
 };
-use crate::request::{PendingRequest, REQUEST_TIMEOUT};
+use crate::vts::protocol::{
+    API_ERROR_MESSAGE_TYPE, API_VERSION, TOKEN_REQUEST_DENIED_ERROR_ID, check_response, is_reply,
+    new_request,
+};
+use crate::vts::request::{PendingRequest, REQUEST_TIMEOUT};
+use crate::vts::socket::{Inbound, VtsWs, dial, exchange, next_inbound, send_text, send_ws_msg};
 
 const VTS_BACKOFF_CAP: Duration = Duration::from_secs(30);
 const EXPRESSION_POLL_INTERVAL: Duration = Duration::from_secs(3);
@@ -131,51 +138,6 @@ async fn await_expression_poll(poll: &mut Option<ExpressionPoll>) -> Option<serd
     }
 }
 
-pub(crate) async fn send_ws_msg<T: serde::Serialize>(
-    ws: &mut VtsWs,
-    msg: &T,
-) -> Result<(), VTubeError> {
-    let text = serde_json::to_string(msg).map_err(VTubeError::Json)?;
-    ws.send(Message::Text(text.into()))
-        .await
-        .map_err(|e| VTubeError::Connect(e.to_string()))
-}
-
-pub(crate) async fn recv_next_text(ws: &mut VtsWs) -> Result<serde_json::Value, VTubeError> {
-    loop {
-        match ws.next().await {
-            None => return Err(VTubeError::Connect("connection closed".to_owned())),
-            Some(Err(e)) => return Err(VTubeError::Connect(e.to_string())),
-            Some(Ok(Message::Text(text))) => {
-                return serde_json::from_str(&text).map_err(VTubeError::Json);
-            }
-            Some(Ok(_)) => {}
-        }
-    }
-}
-
-async fn recv_reply(ws: &mut VtsWs, request_id: &str) -> Result<serde_json::Value, VTubeError> {
-    loop {
-        let msg = recv_next_text(ws).await?;
-        if msg["requestID"].as_str() == Some(request_id) {
-            return Ok(msg);
-        }
-    }
-}
-
-async fn exchange(
-    ws: &mut VtsWs,
-    msg_type: &str,
-    data: serde_json::Value,
-    limit: Duration,
-) -> Result<serde_json::Value, VTubeError> {
-    let req = new_request(msg_type, data);
-    send_ws_msg(ws, &req).await?;
-    tokio::time::timeout(limit, recv_reply(ws, &req.request_id))
-        .await
-        .map_err(|_| VTubeError::Timeout)?
-}
-
 fn api_error_id(msg: &serde_json::Value) -> Option<i64> {
     msg["data"]["errorID"].as_i64()
 }
@@ -203,7 +165,7 @@ async fn request_new_token(ws: &mut VtsWs, endpoint: &str) -> Result<String, VTu
     );
     let msg = exchange(
         ws,
-        "AuthenticationTokenRequest",
+        AUTHENTICATION_TOKEN_REQUEST,
         serde_json::json!({
             "pluginName": crate::PLUGIN_NAME,
             "pluginDeveloper": crate::PLUGIN_NAME
@@ -217,7 +179,7 @@ async fn request_new_token(ws: &mut VtsWs, endpoint: &str) -> Result<String, VTu
     })?;
 
     match msg["messageType"].as_str().unwrap_or("") {
-        "AuthenticationTokenResponse" => msg["data"]["authenticationToken"]
+        AUTHENTICATION_TOKEN_RESPONSE => msg["data"]["authenticationToken"]
             .as_str()
             .filter(|s| !s.is_empty())
             .map(str::to_owned)
@@ -228,7 +190,7 @@ async fn request_new_token(ws: &mut VtsWs, endpoint: &str) -> Result<String, VTu
             Err(VTubeError::TokenDenied)
         }
         API_ERROR_MESSAGE_TYPE => Err(api_error(&msg)),
-        _ => Err(unexpected_reply("AuthenticationTokenResponse", &msg)),
+        _ => Err(unexpected_reply(AUTHENTICATION_TOKEN_RESPONSE, &msg)),
     }
 }
 
@@ -241,7 +203,7 @@ async fn authenticate_with_token(
     tracing::debug!(endpoint, "sending AuthenticationRequest");
     let msg = exchange(
         ws,
-        "AuthenticationRequest",
+        AUTHENTICATION_REQUEST,
         serde_json::json!({
             "pluginName": crate::PLUGIN_NAME,
             "pluginDeveloper": crate::PLUGIN_NAME,
@@ -252,15 +214,15 @@ async fn authenticate_with_token(
     .await?;
 
     let rejection = match msg["messageType"].as_str().unwrap_or("") {
-        "AuthenticationResponse" if msg["data"]["authenticated"].as_bool() == Some(true) => {
+        AUTHENTICATION_RESPONSE if msg["data"]["authenticated"].as_bool() == Some(true) => {
             return Ok(());
         }
-        "AuthenticationResponse" => msg["data"]["reason"].as_str().unwrap_or("").to_owned(),
+        AUTHENTICATION_RESPONSE => msg["data"]["reason"].as_str().unwrap_or("").to_owned(),
         API_ERROR_MESSAGE_TYPE if api_error_id(&msg) == Some(TOKEN_REQUEST_DENIED_ERROR_ID) => {
             msg["data"]["message"].as_str().unwrap_or("").to_owned()
         }
         API_ERROR_MESSAGE_TYPE => return Err(api_error(&msg)),
-        _ => return Err(unexpected_reply("AuthenticationResponse", &msg)),
+        _ => return Err(unexpected_reply(AUTHENTICATION_RESPONSE, &msg)),
     };
 
     if let Err(error) = crate::credentials::clear(creds).await {
@@ -296,8 +258,8 @@ async fn run_auth(
 
     authenticate_with_token(ws, creds, &token, endpoint).await?;
 
-    let (host, port) = crate::client::split_endpoint(endpoint);
-    if let Err(e) = crate::credentials::store(creds, &token, "1.0", &host, port).await {
+    let (host, port) = split_endpoint(endpoint);
+    if let Err(e) = crate::credentials::store(creds, &token, API_VERSION, &host, port).await {
         tracing::warn!(endpoint, error = %e, "failed to persist VTube Studio credential");
     }
     Ok(())
@@ -492,7 +454,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         tracing::debug!(endpoint = %endpoint, "attempting VTube Studio connection");
 
         let connect_attempt = tokio::select! {
-            outcome = tokio_tungstenite::connect_async(&endpoint) => outcome,
+            outcome = dial(&endpoint) => outcome,
             () = shutdown.notified() => {
                 set_connection_state(&state, &health_state, &*publisher, ConnectionState::Disconnected, ConnectionTransition::Expected);
                 emit_connection_changed(&*publisher, &endpoint, false, None, None);
@@ -501,14 +463,13 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         };
 
         let mut ws = match connect_attempt {
-            Ok((ws, _)) => ws,
-            Err(e) => {
+            Ok(ws) => ws,
+            Err(detail) => {
                 tracing::debug!(
                     endpoint = %endpoint,
-                    error = %e,
+                    error = %detail,
                     "VTube Studio connection attempt failed"
                 );
-                let detail = e.to_string();
                 failure = VTubeError::Connect(detail.clone()).to_string();
                 settle_unless_retrying(
                     *auto_reconnect.borrow_and_update(),
@@ -612,7 +573,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         }
 
         let subscribe_outcome = tokio::select! {
-            outcome = tokio::time::timeout(HANDSHAKE_REPLY_TIMEOUT, crate::events::subscribe_all(&mut ws)) => {
+            outcome = tokio::time::timeout(HANDSHAKE_REPLY_TIMEOUT, subscribe_all(&mut ws)) => {
                 outcome.unwrap_or(Err(VTubeError::Timeout))
             }
             () = shutdown.notified() => {
@@ -676,8 +637,8 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         let mut close_reason = REASON_SOCKET_CLOSED;
 
         for (msg_type, query) in [
-            ("CurrentModelRequest", SeedQuery::CurrentModel),
-            ("FaceFoundRequest", SeedQuery::FaceFound),
+            (CURRENT_MODEL_REQUEST, SeedQuery::CurrentModel),
+            (FACE_FOUND_REQUEST, SeedQuery::FaceFound),
         ] {
             let req = new_request(msg_type, serde_json::json!({}));
             if send_ws_msg(&mut ws, &req).await.is_ok() {
@@ -695,11 +656,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     return;
                 }
                 Some(req) = req_rx.recv() => {
-                    if ws
-                        .send(Message::Text(req.payload.into()))
-                        .await
-                        .is_ok()
-                    {
+                    if send_text(&mut ws, req.payload).await.is_ok() {
                         pending.insert(
                             req.request_id,
                             InFlight {
@@ -709,75 +666,67 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                         );
                     }
                 }
-                msg = ws.next() => {
-                    match msg {
-                        None | Some(Err(_)) => {
+                inbound = next_inbound(&mut ws) => {
+                    let val = match inbound {
+                        Inbound::Closed => {
                             tracing::info!(endpoint = %endpoint, "VTube Studio connection closed");
                             break;
                         }
-                        Some(Ok(Message::Text(text))) => {
-                            let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) else {
-                                continue;
-                            };
-                            let msg_type = val["messageType"].as_str().unwrap_or("");
-                            if is_reply(msg_type) {
-                                let req_id = val["requestID"].as_str().unwrap_or("");
-                                if let Some(in_flight) = pending.remove(req_id) {
-                                    #[expect(
-                                        clippy::let_underscore_must_use,
-                                        reason = "the requester may stop waiting for the reply"
-                                    )]
-                                    let _ = in_flight.respond_to.send(val["data"].clone());
-                                } else if let Some(query) = seeds.remove(req_id) {
-                                    apply_seed(
-                                        &query,
-                                        &val["data"],
-                                        &mut last_face_found,
-                                        &health_state,
-                                        &health_tx,
-                                    );
-                                } else if msg_type == API_ERROR_MESSAGE_TYPE {
-                                    tracing::debug!(
-                                        endpoint = %endpoint,
-                                        error_id = ?api_error_id(&val),
-                                        "VTube Studio error for a request nobody awaits"
-                                    );
-                                }
-                            } else if let Ok(env) =
-                                serde_json::from_value::<crate::events::RawEnvelope>(val)
-                            {
-                                if env.message_type == "ModelLoadedEvent" {
-                                    content_notifier.notify_model_changed();
-                                    expr_baseline = None;
-                                }
-                                if crate::events::changes_scene_items(&env) {
-                                    catalog_signal.bump_options();
-                                }
-                                if !is_repeated_face_state(&env, &mut last_face_found) {
-                                    crate::events::dispatch_vts_event(&env, &*publisher);
-                                }
-                                update_from_event(&env, &health_state, &health_tx);
-                            }
+                        Inbound::Skipped => continue,
+                        Inbound::Envelope(val) => val,
+                    };
+                    let msg_type = val["messageType"].as_str().unwrap_or("");
+                    if is_reply(msg_type) {
+                        let req_id = val["requestID"].as_str().unwrap_or("");
+                        if let Some(in_flight) = pending.remove(req_id) {
+                            #[expect(
+                                clippy::let_underscore_must_use,
+                                reason = "the requester may stop waiting for the reply"
+                            )]
+                            let _ = in_flight.respond_to.send(val["data"].clone());
+                        } else if let Some(query) = seeds.remove(req_id) {
+                            apply_seed(
+                                &query,
+                                &val["data"],
+                                &mut last_face_found,
+                                &health_state,
+                                &health_tx,
+                            );
+                        } else if msg_type == API_ERROR_MESSAGE_TYPE {
+                            tracing::debug!(
+                                endpoint = %endpoint,
+                                error_id = ?api_error_id(&val),
+                                "VTube Studio error for a request nobody awaits"
+                            );
                         }
-                        Some(Ok(_)) => {}
+                    } else if let Some(event) = VtsEvent::decode(&val) {
+                        if matches!(event, VtsEvent::ModelLoaded { .. }) {
+                            content_notifier.notify_model_changed();
+                            expr_baseline = None;
+                        }
+                        if event.changes_scene_items() {
+                            catalog_signal.bump_options();
+                        }
+                        if !is_repeated_face_state(&event, &mut last_face_found) {
+                            crate::events::dispatch_vts_event(&event, &*publisher);
+                        }
+                        update_from_event(&event, &health_state, &health_tx);
                     }
                 }
                 _ = expr_tick.tick(), if expr_poll.is_none() => {
-                    let req = new_request("ExpressionStateRequest", serde_json::json!({ "details": false }));
-                    if let Ok(text) = serde_json::to_string(&req) {
+                    let req = new_request(EXPRESSION_STATE_REQUEST, serde_json::json!({ "details": false }));
+                    if send_ws_msg(&mut ws, &req).await.is_ok() {
                         let (tx, rx) = oneshot::channel();
-                        if ws.send(Message::Text(text.into())).await.is_ok() {
-                            let sent_at = Instant::now();
-                            pending.insert(
-                                req.request_id.clone(),
-                                InFlight { respond_to: tx, sent_at },
-                            );
-                            expr_poll = Some(ExpressionPoll {
-                                request_id: req.request_id,
-                                reply: rx,
-                                deadline: sent_at + EXPRESSION_POLL_TIMEOUT,
-                            });
-                        }
+                        let sent_at = Instant::now();
+                        pending.insert(
+                            req.request_id.clone(),
+                            InFlight { respond_to: tx, sent_at },
+                        );
+                        expr_poll = Some(ExpressionPoll {
+                            request_id: req.request_id,
+                            reply: rx,
+                            deadline: sent_at + EXPRESSION_POLL_TIMEOUT,
+                        });
                     }
                 }
                 result = await_expression_poll(&mut expr_poll) => {
@@ -874,16 +823,12 @@ fn announce_stopped(
     emit_connection_changed(publisher, endpoint, false, None, None);
 }
 
-fn is_repeated_face_state(
-    env: &crate::events::RawEnvelope,
-    last_face_found: &mut Option<bool>,
-) -> bool {
-    if env.message_type != "TrackingStatusChangedEvent" {
+fn is_repeated_face_state(event: &VtsEvent, last_face_found: &mut Option<bool>) -> bool {
+    let VtsEvent::TrackingStatusChanged { face_found, .. } = *event else {
         return false;
-    }
-    let found = env.data["faceFound"].as_bool().unwrap_or(false);
-    let repeated = *last_face_found == Some(found);
-    *last_face_found = Some(found);
+    };
+    let repeated = *last_face_found == Some(face_found);
+    *last_face_found = Some(face_found);
     repeated
 }
 

@@ -1,98 +1,56 @@
 use forge_events::{Event, EventPublisher, EventSource};
-use serde::Deserialize;
 use serde_json::json;
 
-use crate::client::VtsWs;
-use crate::error::VTubeError;
 use crate::payload_fields::{
     hotkey as hotkey_fields, item as item_fields, model as model_fields,
     tracking as tracking_fields,
 };
-use crate::protocol::new_request;
+use crate::vts::event::{ItemChange, VtsEvent};
 
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct RawEnvelope {
-    #[serde(rename = "messageType")]
-    pub message_type: String,
-    pub data: serde_json::Value,
-}
-
-pub(crate) async fn subscribe_all(ws: &mut VtsWs) -> Result<(), VTubeError> {
-    for event_name in [
-        "ModelLoadedEvent",
-        "ModelConfigChangedEvent",
-        "HotkeyTriggeredEvent",
-        "TrackingStatusChangedEvent",
-        "ItemEvent",
-    ] {
-        let req = new_request(
-            "EventSubscriptionRequest",
-            json!({ "eventName": event_name, "subscribe": true }),
-        );
-        use futures_util::SinkExt;
-        use tokio_tungstenite::tungstenite::Message;
-        let text = serde_json::to_string(&req).map_err(VTubeError::Json)?;
-        ws.send(Message::Text(text.into()))
-            .await
-            .map_err(|e| VTubeError::Connect(e.to_string()))?;
-    }
-    Ok(())
-}
-
-const ITEM_EVENT_ADDED: &str = "Added";
-const ITEM_EVENT_REMOVED: &str = "Removed";
-
-pub(crate) fn changes_scene_items(env: &RawEnvelope) -> bool {
-    env.message_type == "ItemEvent"
-        && matches!(
-            env.data["itemEventType"].as_str(),
-            Some(ITEM_EVENT_ADDED | ITEM_EVENT_REMOVED)
-        )
-}
-
-pub(crate) fn dispatch_vts_event(env: &RawEnvelope, publisher: &dyn EventPublisher) {
-    match env.message_type.as_str() {
-        "ModelLoadedEvent" => {
-            let loaded = env.data["modelLoaded"].as_bool().unwrap_or(false);
-            let model_id = env.data["modelID"].as_str().unwrap_or("").to_owned();
-            let model_name = env.data["modelName"].as_str().unwrap_or("").to_owned();
-            if loaded {
-                publisher.publish(Event::new(
-                    EventSource::VTube,
-                    "vtube.model.loaded",
-                    json!({ (model_fields::MODEL_ID): model_id, (model_fields::MODEL_NAME): model_name }),
-                ));
+pub(crate) fn dispatch_vts_event(event: &VtsEvent, publisher: &dyn EventPublisher) {
+    match event {
+        VtsEvent::ModelLoaded {
+            loaded,
+            model_id,
+            model_name,
+        } => {
+            let kind = if *loaded {
+                "vtube.model.loaded"
             } else {
-                publisher.publish(Event::new(
-                    EventSource::VTube,
-                    "vtube.model.unloaded",
-                    json!({ (model_fields::MODEL_ID): model_id, (model_fields::MODEL_NAME): model_name }),
-                ));
-            }
+                "vtube.model.unloaded"
+            };
+            publisher.publish(Event::new(
+                EventSource::VTube,
+                kind,
+                json!({ (model_fields::MODEL_ID): model_id, (model_fields::MODEL_NAME): model_name }),
+            ));
         }
-        "ModelConfigChangedEvent" => {
-            let model_id = env.data["modelID"].as_str().unwrap_or("").to_owned();
-            let model_name = env.data["modelName"].as_str().unwrap_or("").to_owned();
+        VtsEvent::ModelConfigChanged {
+            model_id,
+            model_name,
+        } => {
             publisher.publish(Event::new(
                 EventSource::VTube,
                 "vtube.model.config_changed",
                 json!({ (model_fields::MODEL_ID): model_id, (model_fields::MODEL_NAME): model_name }),
             ));
         }
-        "HotkeyTriggeredEvent" => {
-            let hotkey_id = env.data["hotkeyID"].as_str().unwrap_or("").to_owned();
-            let hotkey_name = env.data["hotkeyName"].as_str().unwrap_or("").to_owned();
+        VtsEvent::HotkeyTriggered {
+            hotkey_id,
+            hotkey_name,
+        } => {
             publisher.publish(Event::new(
                 EventSource::VTube,
                 "vtube.hotkey.triggered",
                 json!({ (hotkey_fields::HOTKEY_ID): hotkey_id, (hotkey_fields::HOTKEY_NAME): hotkey_name }),
             ));
         }
-        "TrackingStatusChangedEvent" => {
-            let face_found = env.data["faceFound"].as_bool().unwrap_or(false);
-            let is_left_hand_found = env.data["leftHandFound"].as_bool().unwrap_or(false);
-            let is_right_hand_found = env.data["rightHandFound"].as_bool().unwrap_or(false);
-            let kind = if face_found {
+        VtsEvent::TrackingStatusChanged {
+            face_found,
+            left_hand_found,
+            right_hand_found,
+        } => {
+            let kind = if *face_found {
                 "vtube.tracking.face_found"
             } else {
                 "vtube.tracking.face_lost"
@@ -101,32 +59,29 @@ pub(crate) fn dispatch_vts_event(env: &RawEnvelope, publisher: &dyn EventPublish
                 EventSource::VTube,
                 kind,
                 json!({
-                    (tracking_fields::IS_LEFT_HAND_FOUND): is_left_hand_found,
-                    (tracking_fields::IS_RIGHT_HAND_FOUND): is_right_hand_found,
+                    (tracking_fields::IS_LEFT_HAND_FOUND): left_hand_found,
+                    (tracking_fields::IS_RIGHT_HAND_FOUND): right_hand_found,
                 }),
             ));
         }
-        "ItemEvent" => {
-            let item_event_type = env.data["itemEventType"].as_str().unwrap_or("");
-            let kind = match item_event_type {
-                ITEM_EVENT_ADDED => Some("vtube.item.added"),
-                ITEM_EVENT_REMOVED => Some("vtube.item.removed"),
-                _ => None,
+        VtsEvent::ItemChanged {
+            change,
+            item_instance_id,
+            item_file_name,
+        } => {
+            let kind = match change {
+                ItemChange::Added => "vtube.item.added",
+                ItemChange::Removed => "vtube.item.removed",
             };
-            if let Some(kind) = kind {
-                let item_instance_id = env.data["itemInstanceID"].as_str().unwrap_or("").to_owned();
-                let item_file_name = env.data["itemFileName"].as_str().unwrap_or("").to_owned();
-                publisher.publish(Event::new(
-                    EventSource::VTube,
-                    kind,
-                    json!({
-                        (item_fields::ITEM_INSTANCE_ID): item_instance_id,
-                        (item_fields::ITEM_FILE_NAME): item_file_name,
-                    }),
-                ));
-            }
+            publisher.publish(Event::new(
+                EventSource::VTube,
+                kind,
+                json!({
+                    (item_fields::ITEM_INSTANCE_ID): item_instance_id,
+                    (item_fields::ITEM_FILE_NAME): item_file_name,
+                }),
+            ));
         }
-        _ => {}
     }
 }
 

@@ -8,7 +8,7 @@ use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, Su
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-use crate::sink::VTubeSink;
+use crate::sink::{VTubeSink, result_keys};
 
 pub struct LookupItemsRunner {
     sink: Arc<dyn VTubeSink>,
@@ -70,13 +70,13 @@ impl SubActionRunner for LookupItemsRunner {
             Ok(variant) => {
                 let mut stack = ArgStack::new();
                 if let Variant::Object(ref map) = variant {
-                    if let Some(v) = map.get("instance_ids") {
+                    if let Some(v) = map.get(result_keys::INSTANCE_IDS) {
                         stack = stack.set("vtube.items.instance_ids".to_owned(), v.clone());
                     }
-                    if let Some(v) = map.get("file_names") {
+                    if let Some(v) = map.get(result_keys::FILE_NAMES) {
                         stack = stack.set("vtube.items.file_names".to_owned(), v.clone());
                     }
-                    if let Some(v) = map.get("count") {
+                    if let Some(v) = map.get(result_keys::COUNT) {
                         stack = stack.set("vtube.items.count".to_owned(), v.clone());
                     }
                 }

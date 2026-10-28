@@ -12,14 +12,9 @@ use forge_types::IntegrationId;
 use crate::auth::AuthState;
 use crate::error::VTubeError;
 use crate::health::{HealthSnapshot, make_health_channel};
-use crate::protocol::new_request;
-use crate::request::{PendingRequest, REQUEST_TIMEOUT, ReqTxSlot};
+use crate::vts::endpoint::{DEFAULT_VTS_HOST, DEFAULT_VTS_PORT, endpoint_url};
+use crate::vts::request::{PendingRequest, REQUEST_TIMEOUT, ReqTxSlot, round_trip};
 
-pub(crate) type VtsWs =
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
-
-pub(crate) const DEFAULT_VTS_HOST: &str = "127.0.0.1";
-pub(crate) const DEFAULT_VTS_PORT: u16 = 8001;
 pub(crate) const VTUBE_PLATFORM_ID: &str = "vtube";
 
 #[derive(Debug, Clone)]
@@ -30,28 +25,8 @@ pub struct VTubeConfig {
 impl Default for VTubeConfig {
     fn default() -> Self {
         Self {
-            endpoint: format!("ws://{DEFAULT_VTS_HOST}:{DEFAULT_VTS_PORT}/"),
+            endpoint: endpoint_url(DEFAULT_VTS_HOST, DEFAULT_VTS_PORT),
         }
-    }
-}
-
-pub(crate) fn split_endpoint(endpoint: &str) -> (String, u16) {
-    let without_scheme = endpoint
-        .strip_prefix("ws://")
-        .or_else(|| endpoint.strip_prefix("wss://"))
-        .unwrap_or(endpoint);
-
-    let authority = without_scheme
-        .split(['/', '?', '#'])
-        .next()
-        .unwrap_or(without_scheme);
-
-    match authority.rsplit_once(':') {
-        Some((host, port_str)) => match port_str.parse::<u16>() {
-            Ok(port) => (host.to_owned(), port),
-            Err(_) => (authority.to_owned(), DEFAULT_VTS_PORT),
-        },
-        None => (authority.to_owned(), DEFAULT_VTS_PORT),
     }
 }
 
@@ -196,23 +171,8 @@ impl VTubeClient {
         if !self.state.load().is_connected() {
             return Err(VTubeError::NotConnected);
         }
-        let req = new_request(msg_type, data);
-        let request_id = req.request_id.clone();
-        let payload = serde_json::to_string(&req).map_err(VTubeError::Json)?;
-        let (respond_to, rx) = tokio::sync::oneshot::channel();
-        {
-            let tx = self.req_tx.lock().await;
-            tx.send(PendingRequest {
-                request_id,
-                payload,
-                respond_to,
-            })
-            .map_err(|_| VTubeError::NotConnected)?;
-        }
-        tokio::time::timeout(REQUEST_TIMEOUT, rx)
-            .await
-            .map_err(|_| VTubeError::Timeout)?
-            .map_err(|_| VTubeError::NotConnected)
+        let req_tx = self.req_tx.lock().await.clone();
+        round_trip(&req_tx, msg_type, data, REQUEST_TIMEOUT).await
     }
 
     pub async fn shutdown(&self) {

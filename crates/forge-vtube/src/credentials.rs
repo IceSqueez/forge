@@ -4,7 +4,7 @@ use forge_events::EventPublisher;
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use serde::{Deserialize, Serialize};
 
-use crate::client::{DEFAULT_VTS_HOST, DEFAULT_VTS_PORT};
+use crate::vts::endpoint::{DEFAULT_VTS_HOST, DEFAULT_VTS_PORT, endpoint_url};
 use crate::{VTubeClient, VTubeConfig};
 
 pub const VTUBE_CREDENTIAL_ID: &str = "vtube:default";
@@ -79,7 +79,7 @@ pub async fn load_and_connect(
 ) -> Result<Arc<VTubeClient>, VTubeConnectError> {
     let stored = load(creds).await?.ok_or(VTubeConnectError::NotStored)?;
     let cfg = VTubeConfig {
-        endpoint: format!("ws://{}:{}/", stored.host, stored.port),
+        endpoint: endpoint_url(&stored.host, stored.port),
     };
     Ok(Arc::new(VTubeClient::connect(cfg, publisher, creds_arc)))
 }

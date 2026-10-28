@@ -7,7 +7,7 @@ use tokio_stream::wrappers::BroadcastStream;
 use forge_platform_core::{BuiltinHealth, HealthDelta, HealthMetric, HealthStream, HealthValue};
 
 use crate::client::VTubeClient;
-use crate::events::RawEnvelope;
+use crate::vts::event::VtsEvent;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct HealthSnapshot {
@@ -27,18 +27,18 @@ const MODEL_METRIC_INDEX: u8 = 0;
 const TRACKING_METRIC_INDEX: u8 = 3;
 
 pub(crate) fn update_from_event(
-    env: &RawEnvelope,
+    event: &VtsEvent,
     snap: &Arc<RwLock<HealthSnapshot>>,
     tx: &broadcast::Sender<HealthDelta>,
 ) {
-    match env.message_type.as_str() {
-        "TrackingStatusChangedEvent" => {
-            apply_tracking(env.data["faceFound"].as_bool().unwrap_or(false), snap, tx);
+    match event {
+        VtsEvent::TrackingStatusChanged { face_found, .. } => {
+            apply_tracking(*face_found, snap, tx);
         }
-        "ModelLoadedEvent" => {
-            let loaded = env.data["modelLoaded"].as_bool().unwrap_or(false);
-            let name = env.data["modelName"].as_str().unwrap_or("");
-            apply_model(loaded, name, None, snap, tx);
+        VtsEvent::ModelLoaded {
+            loaded, model_name, ..
+        } => {
+            apply_model(*loaded, model_name, None, snap, tx);
         }
         _ => {}
     }

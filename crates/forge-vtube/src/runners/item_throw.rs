@@ -12,7 +12,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::runners::numeric::optional_number;
-use crate::sink::VTubeSink;
+use crate::sink::{VTubeSink, result_keys};
 
 pub struct ItemThrowRunner {
     sink: Arc<dyn VTubeSink>,
@@ -203,7 +203,7 @@ impl SubActionRunner for ItemThrowRunner {
             .await;
 
         let instance_id = match load_result {
-            Ok(Variant::Object(ref map)) => match map.get("instance_id") {
+            Ok(Variant::Object(ref map)) => match map.get(result_keys::INSTANCE_ID) {
                 Some(Variant::String(id)) if !id.is_empty() => id.clone(),
                 _ => {
                     return (

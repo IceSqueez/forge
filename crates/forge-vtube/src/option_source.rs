@@ -11,7 +11,8 @@ use crate::catalog::{VTubeChoice, choice};
 use crate::client::VTubeClient;
 use crate::content::ContentSnapshot;
 use crate::error::VTubeError;
-use crate::protocol::check_response;
+use crate::vts::message_type::ITEM_LIST_REQUEST;
+use crate::vts::protocol::check_response;
 
 pub const MODEL_LIST: &str = "vtube.models";
 pub const HOTKEY_LIST: &str = "vtube.hotkeys";
@@ -146,7 +147,7 @@ impl VTubeClient {
             "includeAvailableItemFiles": true,
         });
         let response = self
-            .send_json_request("ItemListRequest", data)
+            .send_json_request(ITEM_LIST_REQUEST, data)
             .await
             .map_err(|e| listing_failure(&e))?;
         check_response(&response).map_err(|e| listing_failure(&e))?;

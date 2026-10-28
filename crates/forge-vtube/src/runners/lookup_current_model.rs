@@ -8,7 +8,7 @@ use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, Su
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-use crate::sink::VTubeSink;
+use crate::sink::{VTubeSink, result_keys};
 
 pub struct LookupCurrentModelRunner {
     sink: Arc<dyn VTubeSink>,
@@ -70,13 +70,13 @@ impl SubActionRunner for LookupCurrentModelRunner {
             Ok(variant) => {
                 let mut stack = ArgStack::new();
                 if let Variant::Object(ref map) = variant {
-                    if let Some(v) = map.get("name") {
+                    if let Some(v) = map.get(result_keys::NAME) {
                         stack = stack.set("vtube.model.name".to_owned(), v.clone());
                     }
-                    if let Some(v) = map.get("id") {
+                    if let Some(v) = map.get(result_keys::ID) {
                         stack = stack.set("vtube.model.id".to_owned(), v.clone());
                     }
-                    if let Some(v) = map.get("loaded") {
+                    if let Some(v) = map.get(result_keys::LOADED) {
                         stack = stack.set("vtube.model.loaded".to_owned(), v.clone());
                     }
                 }

@@ -11,9 +11,7 @@ mod integration;
 mod option_source;
 mod payload_fields;
 mod probe;
-mod protocol;
 mod quick_actions;
-pub(crate) mod request;
 mod runners;
 mod sink;
 mod sink_impl;
@@ -21,6 +19,7 @@ mod status;
 pub(crate) mod supervisor;
 mod switchable_sink;
 mod triggers;
+mod vts;
 
 pub const PLUGIN_NAME: &str = "Forge";
 

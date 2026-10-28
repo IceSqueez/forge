@@ -8,7 +8,7 @@ use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, Su
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-use crate::sink::VTubeSink;
+use crate::sink::{VTubeSink, result_keys};
 
 pub struct LookupHotkeysRunner {
     sink: Arc<dyn VTubeSink>,
@@ -70,13 +70,13 @@ impl SubActionRunner for LookupHotkeysRunner {
             Ok(variant) => {
                 let mut stack = ArgStack::new();
                 if let Variant::Object(ref map) = variant {
-                    if let Some(v) = map.get("names") {
+                    if let Some(v) = map.get(result_keys::NAMES) {
                         stack = stack.set("vtube.hotkeys.names".to_owned(), v.clone());
                     }
-                    if let Some(v) = map.get("ids") {
+                    if let Some(v) = map.get(result_keys::IDS) {
                         stack = stack.set("vtube.hotkeys.ids".to_owned(), v.clone());
                     }
-                    if let Some(v) = map.get("count") {
+                    if let Some(v) = map.get(result_keys::COUNT) {
                         stack = stack.set("vtube.hotkeys.count".to_owned(), v.clone());
                     }
                 }

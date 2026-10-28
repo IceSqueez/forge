@@ -1,4 +1,5 @@
 use std::sync::{Arc, OnceLock, RwLock};
+use std::time::Duration;
 
 use tokio::sync::{broadcast, mpsc};
 
@@ -7,9 +8,16 @@ use forge_platform_core::{
 };
 
 use crate::client::VTubeClient;
+use crate::error::VTubeError;
 use crate::health::HealthSnapshot;
-use crate::protocol::{check_response, new_request};
-use crate::request::{PendingRequest, ReqTxHandle};
+use crate::vts::message_type::{
+    API_STATE_REQUEST, AVAILABLE_MODELS_REQUEST, CURRENT_MODEL_REQUEST, EXPRESSION_STATE_REQUEST,
+    HOTKEYS_IN_CURRENT_MODEL_REQUEST, ITEM_LIST_REQUEST,
+};
+use crate::vts::protocol::check_response;
+use crate::vts::request::{PendingRequest, ReqTxHandle, round_trip};
+
+const CATALOG_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ContentSnapshot {
@@ -114,7 +122,7 @@ async fn run_catalog_metrics_task(
     req_tx: ReqTxHandle,
     health_tx: broadcast::Sender<HealthDelta>,
 ) {
-    use tokio::time::{Duration, MissedTickBehavior, interval};
+    use tokio::time::{MissedTickBehavior, interval};
 
     let mut tick = interval(Duration::from_secs(5));
     tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -236,7 +244,7 @@ async fn refresh_models_and_hotkeys(
     snap: &Arc<RwLock<ContentSnapshot>>,
     req_tx: &mpsc::UnboundedSender<PendingRequest>,
 ) {
-    if let Ok(data) = send_internal(req_tx, "AvailableModelsRequest", serde_json::json!({})).await {
+    if let Ok(data) = send_internal(req_tx, AVAILABLE_MODELS_REQUEST, serde_json::json!({})).await {
         let models: Vec<ModelItem> = data["availableModels"]
             .as_array()
             .map(|arr| {
@@ -257,7 +265,7 @@ async fn refresh_models_and_hotkeys(
         }
     }
 
-    if let Ok(data) = send_internal(req_tx, "CurrentModelRequest", serde_json::json!({})).await {
+    if let Ok(data) = send_internal(req_tx, CURRENT_MODEL_REQUEST, serde_json::json!({})).await {
         let loaded = data["modelLoaded"].as_bool().unwrap_or(false);
         let current_id = loaded.then(|| data["modelID"].as_str().unwrap_or("").to_owned());
         let param_count = loaded
@@ -276,7 +284,7 @@ async fn refresh_models_and_hotkeys(
 
     if let Ok(data) = send_internal(
         req_tx,
-        "HotkeysInCurrentModelRequest",
+        HOTKEYS_IN_CURRENT_MODEL_REQUEST,
         serde_json::json!({}),
     )
     .await
@@ -306,7 +314,7 @@ async fn refresh_expressions(
     snap: &Arc<RwLock<ContentSnapshot>>,
     req_tx: &mpsc::UnboundedSender<PendingRequest>,
 ) {
-    let Ok(data) = send_internal(req_tx, "ExpressionStateRequest", serde_json::json!({})).await
+    let Ok(data) = send_internal(req_tx, EXPRESSION_STATE_REQUEST, serde_json::json!({})).await
     else {
         return;
     };
@@ -337,7 +345,7 @@ async fn refresh_items(
 ) {
     let Ok(data) = send_internal(
         req_tx,
-        "ItemListRequest",
+        ITEM_LIST_REQUEST,
         serde_json::json!({
             "includeAvailableSpots": false,
             "includeItemInstancesInScene": false,
@@ -370,7 +378,7 @@ pub(crate) fn spawn_version_fetch(
                 continue;
             }
             let tx = req_tx.current().await;
-            if let Ok(data) = send_internal(&tx, "APIStateRequest", serde_json::json!({})).await
+            if let Ok(data) = send_internal(&tx, API_STATE_REQUEST, serde_json::json!({})).await
                 && let Some(version) = data["vTubeStudioVersion"].as_str()
             {
                 #[expect(
@@ -387,23 +395,9 @@ async fn send_internal(
     req_tx: &mpsc::UnboundedSender<PendingRequest>,
     msg_type: &str,
     data: serde_json::Value,
-) -> Result<serde_json::Value, ()> {
-    let req = new_request(msg_type, data);
-    let request_id = req.request_id.clone();
-    let payload = serde_json::to_string(&req).map_err(|_| ())?;
-    let (respond_to, rx) = tokio::sync::oneshot::channel();
-    req_tx
-        .send(PendingRequest {
-            request_id,
-            payload,
-            respond_to,
-        })
-        .map_err(|_| ())?;
-    let data = tokio::time::timeout(tokio::time::Duration::from_secs(5), rx)
-        .await
-        .map_err(|_| ())?
-        .map_err(|_| ())?;
-    check_response(&data).map_err(|_| ())?;
+) -> Result<serde_json::Value, VTubeError> {
+    let data = round_trip(req_tx, msg_type, data, CATALOG_REQUEST_TIMEOUT).await?;
+    check_response(&data)?;
     Ok(data)
 }
 

@@ -12,7 +12,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use crate::runners::numeric::{optional_integer, optional_number};
-use crate::sink::VTubeSink;
+use crate::sink::{VTubeSink, result_keys};
 
 pub struct ItemLoadRunner {
     sink: Arc<dyn VTubeSink>,
@@ -211,10 +211,10 @@ impl SubActionRunner for ItemLoadRunner {
             Ok(variant) => {
                 let mut stack = ArgStack::new();
                 if let Variant::Object(ref map) = variant {
-                    if let Some(v) = map.get("instance_id") {
+                    if let Some(v) = map.get(result_keys::INSTANCE_ID) {
                         stack = stack.set("vtube.item.instance_id".to_owned(), v.clone());
                     }
-                    if let Some(v) = map.get("file_name") {
+                    if let Some(v) = map.get(result_keys::FILE_NAME) {
                         stack = stack.set("vtube.item.file_name".to_owned(), v.clone());
                     }
                 }

@@ -101,3 +101,17 @@ pub trait VTubeSink: Send + Sync {
         override_seconds: f64,
     ) -> Result<(), VTubeError>;
 }
+
+pub(crate) mod result_keys {
+    pub(crate) const NAME: &str = "name";
+    pub(crate) const ID: &str = "id";
+    pub(crate) const LOADED: &str = "loaded";
+    pub(crate) const NAMES: &str = "names";
+    pub(crate) const IDS: &str = "ids";
+    pub(crate) const ACTIVE: &str = "active";
+    pub(crate) const COUNT: &str = "count";
+    pub(crate) const INSTANCE_IDS: &str = "instance_ids";
+    pub(crate) const FILE_NAMES: &str = "file_names";
+    pub(crate) const INSTANCE_ID: &str = "instance_id";
+    pub(crate) const FILE_NAME: &str = "file_name";
+}

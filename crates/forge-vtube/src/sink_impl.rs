@@ -7,21 +7,28 @@ use forge_types::Variant;
 
 use crate::client::VTubeClient;
 use crate::error::VTubeError;
-use crate::protocol::check_response;
-use crate::sink::VTubeSink;
+use crate::sink::{VTubeSink, result_keys};
+use crate::vts::message_type::{
+    COLOR_TINT_REQUEST, CURRENT_MODEL_REQUEST, EXPRESSION_ACTIVATION_REQUEST,
+    EXPRESSION_STATE_REQUEST, HOTKEY_TRIGGER_REQUEST, HOTKEYS_IN_CURRENT_MODEL_REQUEST,
+    INJECT_PARAMETER_DATA_REQUEST, INPUT_PARAMETER_LIST_REQUEST, ITEM_LIST_REQUEST,
+    ITEM_LOAD_REQUEST, ITEM_MOVE_REQUEST, ITEM_PIN_REQUEST, ITEM_UNLOAD_REQUEST,
+    MODEL_LOAD_REQUEST, MOVE_MODEL_REQUEST, SET_CURRENT_MODEL_PHYSICS_REQUEST,
+};
+use crate::vts::protocol::check_response;
 
 #[async_trait]
 impl VTubeSink for VTubeClient {
     async fn trigger_hotkey(&self, hotkey_id: &str) -> Result<(), VTubeError> {
         let data = json!({ "hotkeyID": hotkey_id });
-        let resp = self.send_json_request("HotkeyTriggerRequest", data).await?;
+        let resp = self.send_json_request(HOTKEY_TRIGGER_REQUEST, data).await?;
         check_response(&resp)
     }
 
     async fn set_expression(&self, expression_file: &str, active: bool) -> Result<(), VTubeError> {
         let data = json!({ "expressionFile": expression_file, "active": active });
         let resp = self
-            .send_json_request("ExpressionActivationRequest", data)
+            .send_json_request(EXPRESSION_ACTIVATION_REQUEST, data)
             .await?;
         check_response(&resp)
     }
@@ -33,14 +40,14 @@ impl VTubeSink for VTubeClient {
             "parameterValues": [{ "id": param_id, "value": value }]
         });
         let resp = self
-            .send_json_request("InjectParameterDataRequest", data)
+            .send_json_request(INJECT_PARAMETER_DATA_REQUEST, data)
             .await?;
         check_response(&resp)
     }
 
     async fn load_model(&self, model_id: &str) -> Result<(), VTubeError> {
         let data = json!({ "modelID": model_id });
-        let resp = self.send_json_request("ModelLoadRequest", data).await?;
+        let resp = self.send_json_request(MODEL_LOAD_REQUEST, data).await?;
         check_response(&resp)?;
         self.content_notifier.notify_model_changed();
         Ok(())
@@ -48,7 +55,7 @@ impl VTubeSink for VTubeClient {
 
     async fn reset_params(&self) -> Result<(), VTubeError> {
         let resp = self
-            .send_json_request("ExpressionStateRequest", json!({}))
+            .send_json_request(EXPRESSION_STATE_REQUEST, json!({}))
             .await?;
         check_response(&resp)?;
         let active_files: Vec<String> = resp["expressions"]
@@ -104,7 +111,7 @@ impl VTubeSink for VTubeClient {
         if let Some(v) = size {
             data["size"] = json!(v);
         }
-        let resp = self.send_json_request("MoveModelRequest", data).await?;
+        let resp = self.send_json_request(MOVE_MODEL_REQUEST, data).await?;
         check_response(&resp)
     }
 
@@ -134,21 +141,24 @@ impl VTubeSink for VTubeClient {
                 "userCanStop": false
             }]
         });
-        let resp = self.send_json_request("ItemMoveRequest", data).await?;
+        let resp = self.send_json_request(ITEM_MOVE_REQUEST, data).await?;
         check_response(&resp)?;
         check_items_moved(&resp)
     }
 
     async fn get_current_model(&self) -> Result<Variant, VTubeError> {
         let resp = self
-            .send_json_request("CurrentModelRequest", json!({}))
+            .send_json_request(CURRENT_MODEL_REQUEST, json!({}))
             .await?;
         check_response(&resp)?;
         let mut fields = BTreeMap::new();
-        fields.insert("name".to_owned(), string_field(&resp, "modelName"));
-        fields.insert("id".to_owned(), string_field(&resp, "modelID"));
         fields.insert(
-            "loaded".to_owned(),
+            result_keys::NAME.to_owned(),
+            string_field(&resp, "modelName"),
+        );
+        fields.insert(result_keys::ID.to_owned(), string_field(&resp, "modelID"));
+        fields.insert(
+            result_keys::LOADED.to_owned(),
             Variant::Bool(resp["modelLoaded"].as_bool().unwrap_or(false)),
         );
         Ok(Variant::Object(fields))
@@ -156,7 +166,7 @@ impl VTubeSink for VTubeClient {
 
     async fn get_hotkeys(&self) -> Result<Variant, VTubeError> {
         let resp = self
-            .send_json_request("HotkeysInCurrentModelRequest", json!({}))
+            .send_json_request(HOTKEYS_IN_CURRENT_MODEL_REQUEST, json!({}))
             .await?;
         check_response(&resp)?;
         let entries = resp["availableHotkeys"].as_array();
@@ -164,15 +174,15 @@ impl VTubeSink for VTubeClient {
         let ids = string_array(entries, "hotkeyID");
         let count = names.len() as i64;
         let mut fields = BTreeMap::new();
-        fields.insert("names".to_owned(), Variant::Array(names));
-        fields.insert("ids".to_owned(), Variant::Array(ids));
-        fields.insert("count".to_owned(), Variant::Int(count));
+        fields.insert(result_keys::NAMES.to_owned(), Variant::Array(names));
+        fields.insert(result_keys::IDS.to_owned(), Variant::Array(ids));
+        fields.insert(result_keys::COUNT.to_owned(), Variant::Int(count));
         Ok(Variant::Object(fields))
     }
 
     async fn get_expressions(&self) -> Result<Variant, VTubeError> {
         let resp = self
-            .send_json_request("ExpressionStateRequest", json!({}))
+            .send_json_request(EXPRESSION_STATE_REQUEST, json!({}))
             .await?;
         check_response(&resp)?;
         let entries = resp["expressions"].as_array();
@@ -180,23 +190,23 @@ impl VTubeSink for VTubeClient {
         let active = bool_array(entries, "active");
         let count = names.len() as i64;
         let mut fields = BTreeMap::new();
-        fields.insert("names".to_owned(), Variant::Array(names));
-        fields.insert("active".to_owned(), Variant::Array(active));
-        fields.insert("count".to_owned(), Variant::Int(count));
+        fields.insert(result_keys::NAMES.to_owned(), Variant::Array(names));
+        fields.insert(result_keys::ACTIVE.to_owned(), Variant::Array(active));
+        fields.insert(result_keys::COUNT.to_owned(), Variant::Int(count));
         Ok(Variant::Object(fields))
     }
 
     async fn get_parameters(&self) -> Result<Variant, VTubeError> {
         let resp = self
-            .send_json_request("InputParameterListRequest", json!({}))
+            .send_json_request(INPUT_PARAMETER_LIST_REQUEST, json!({}))
             .await?;
         check_response(&resp)?;
         let mut names = string_array(resp["defaultParameters"].as_array(), "name");
         names.extend(string_array(resp["customParameters"].as_array(), "name"));
         let count = names.len() as i64;
         let mut fields = BTreeMap::new();
-        fields.insert("names".to_owned(), Variant::Array(names));
-        fields.insert("count".to_owned(), Variant::Int(count));
+        fields.insert(result_keys::NAMES.to_owned(), Variant::Array(names));
+        fields.insert(result_keys::COUNT.to_owned(), Variant::Int(count));
         Ok(Variant::Object(fields))
     }
 
@@ -206,16 +216,22 @@ impl VTubeSink for VTubeClient {
             "includeItemInstancesInScene": true,
             "includeAvailableItemFiles": false
         });
-        let resp = self.send_json_request("ItemListRequest", data).await?;
+        let resp = self.send_json_request(ITEM_LIST_REQUEST, data).await?;
         check_response(&resp)?;
         let entries = resp["itemInstancesInScene"].as_array();
         let instance_ids = string_array(entries, "instanceID");
         let file_names = string_array(entries, "fileName");
         let count = instance_ids.len() as i64;
         let mut fields = BTreeMap::new();
-        fields.insert("instance_ids".to_owned(), Variant::Array(instance_ids));
-        fields.insert("file_names".to_owned(), Variant::Array(file_names));
-        fields.insert("count".to_owned(), Variant::Int(count));
+        fields.insert(
+            result_keys::INSTANCE_IDS.to_owned(),
+            Variant::Array(instance_ids),
+        );
+        fields.insert(
+            result_keys::FILE_NAMES.to_owned(),
+            Variant::Array(file_names),
+        );
+        fields.insert(result_keys::COUNT.to_owned(), Variant::Int(count));
         Ok(Variant::Object(fields))
     }
 
@@ -246,7 +262,7 @@ impl VTubeSink for VTubeClient {
                 "size": size
             });
         }
-        let resp = self.send_json_request("ItemPinRequest", data).await?;
+        let resp = self.send_json_request(ITEM_PIN_REQUEST, data).await?;
         check_response(&resp)
     }
 
@@ -278,17 +294,23 @@ impl VTubeSink for VTubeClient {
             "customDataBase64": "",
             "customDataAskUserFirst": false
         });
-        let resp = self.send_json_request("ItemLoadRequest", data).await?;
+        let resp = self.send_json_request(ITEM_LOAD_REQUEST, data).await?;
         check_response(&resp)?;
         let mut fields = BTreeMap::new();
-        fields.insert("instance_id".to_owned(), string_field(&resp, "instanceID"));
-        fields.insert("file_name".to_owned(), string_field(&resp, "fileName"));
+        fields.insert(
+            result_keys::INSTANCE_ID.to_owned(),
+            string_field(&resp, "instanceID"),
+        );
+        fields.insert(
+            result_keys::FILE_NAME.to_owned(),
+            string_field(&resp, "fileName"),
+        );
         Ok(Variant::Object(fields))
     }
 
     async fn unload_all_items(&self) -> Result<(), VTubeError> {
         let data = json!({ "unloadAllInScene": true });
-        let resp = self.send_json_request("ItemUnloadRequest", data).await?;
+        let resp = self.send_json_request(ITEM_UNLOAD_REQUEST, data).await?;
         check_response(&resp)
     }
 
@@ -313,7 +335,7 @@ impl VTubeSink for VTubeClient {
             "colorTint": color_tint,
             "artMeshMatcher": { "tintAll": true }
         });
-        let resp = self.send_json_request("ColorTintRequest", data).await?;
+        let resp = self.send_json_request(COLOR_TINT_REQUEST, data).await?;
         check_response(&resp)
     }
 
@@ -332,7 +354,7 @@ impl VTubeSink for VTubeClient {
             "windOverrides": []
         });
         let resp = self
-            .send_json_request("SetCurrentModelPhysicsRequest", data)
+            .send_json_request(SET_CURRENT_MODEL_PHYSICS_REQUEST, data)
             .await?;
         check_response(&resp)
     }

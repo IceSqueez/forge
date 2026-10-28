@@ -1813,15 +1813,33 @@ pub(crate) mod tests {
         }
     }
 
-    struct SilentSoundPlayer;
+    pub(crate) struct SilentSoundboard;
 
     #[async_trait::async_trait]
-    impl forge_runtime::SoundPlayer for SilentSoundPlayer {
+    impl forge_soundboard::SoundboardControl for SilentSoundboard {
         async fn play(
             &self,
             _clip_id: forge_types::ClipId,
             _output_device_override: Option<forge_types::OutputDevice>,
-        ) -> Result<(), forge_runtime::SoundPlayerError> {
+        ) -> Result<(), forge_soundboard::SoundboardError> {
+            Ok(())
+        }
+
+        async fn stop(
+            &self,
+            _clip_id: forge_types::ClipId,
+        ) -> Result<(), forge_soundboard::SoundboardError> {
+            Ok(())
+        }
+
+        async fn stop_all(&self) -> Result<(), forge_soundboard::SoundboardError> {
+            Ok(())
+        }
+
+        async fn set_master_volume(
+            &self,
+            _gain: f32,
+        ) -> Result<(), forge_soundboard::SoundboardError> {
             Ok(())
         }
     }
@@ -1905,9 +1923,13 @@ pub(crate) mod tests {
             forge_runtime::ScheduledRunsCell::new(),
         )
         .unwrap();
-        forge_runtime::register_audio_sub_actions(
+        forge_soundboard::register_soundboard_sub_actions(
             &mut sub_actions,
-            Arc::new(SilentSoundPlayer),
+            Arc::new(SilentSoundboard),
+        )
+        .unwrap();
+        forge_runtime::register_speech_sub_actions(
+            &mut sub_actions,
             Arc::new(SilentSpeaker),
             forge_runtime::TwitchEmoteLexicon::default(),
         )

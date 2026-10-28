@@ -4,10 +4,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_audio::{AudioError, AudioSink, NullAudioEventSink};
-use forge_events::{Event, EventSource};
+use forge_events::{
+    Event, EventChannel, EventObserver, EventPublisher, EventSource, EventSubscription,
+};
 use forge_hotkey::payload_fields::COMBO;
 use forge_hotkey::{ClipBindings, event_kinds};
-use forge_runtime::{EventBus, NullEventLogRepo};
 use forge_soundboard::{
     AudioSinkFactory, ClipLibrary, SoundboardPlayer, SoundboardSettingsHandle, pressed_combo,
     spawn_clip_hotkey_dispatcher,
@@ -19,6 +20,15 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::sync::watch;
 
 const EVENT_DEADLINE: Duration = Duration::from_secs(30);
+const EVENT_CAPACITY: usize = 16;
+
+struct ChannelObserver<'a>(&'a EventChannel);
+
+impl EventObserver for ChannelObserver<'_> {
+    fn observe(&self, _consumer: &'static str) -> EventSubscription {
+        self.0.subscribe()
+    }
+}
 
 struct LookupProbe(UnboundedSender<ClipId>);
 
@@ -52,7 +62,7 @@ impl AudioSinkFactory for NoDevice {
 }
 
 struct Dispatching {
-    bus: Arc<EventBus>,
+    bus: EventChannel,
     bindings: watch::Sender<Arc<ClipBindings>>,
     toggled: UnboundedReceiver<ClipId>,
 }
@@ -70,9 +80,9 @@ impl Dispatching {
             library,
             SoundboardSettingsHandle::default(),
         ));
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let bus = EventChannel::new(EVENT_CAPACITY);
         let (bindings, snapshot) = watch::channel(Arc::new(bindings));
-        spawn_clip_hotkey_dispatcher(bus.subscribe(), snapshot, player);
+        spawn_clip_hotkey_dispatcher(&ChannelObserver(&bus), snapshot, player);
         Self {
             bus,
             bindings,

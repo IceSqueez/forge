@@ -65,80 +65,79 @@ impl AudioEventSink for BusAudioEventSink {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::sync::Mutex;
 
-    use forge_runtime::NullEventLogRepo;
     use forge_types::ClipId;
 
     use super::*;
 
-    #[tokio::test]
-    async fn playback_started_publishes_audio_event_to_bus() {
-        let bus = Arc::new(EventBus::new(Arc::new(NullEventLogRepo)));
-        let mut sub = bus.subscribe();
-        let sink = BusAudioEventSink::new(Arc::clone(&bus));
-        let clip_id = ClipId::new();
+    #[derive(Default)]
+    struct RecordingPublisher(Mutex<Vec<Event>>);
 
-        sink.emit(AudioEvent::PlaybackStarted {
-            clip_id: Some(clip_id),
-            clip_label: Some("Air Horn".to_string()),
-            device: "default".to_string(),
-            duration_secs: Some(1.5),
-            looped: false,
-        });
-
-        let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(event.kind, "playback.started");
-        assert_eq!(event.source, EventSource::Audio);
-        assert_eq!(
-            event.payload["clip_id"].as_str(),
-            Some(clip_id.to_string().as_str())
-        );
-        assert_eq!(event.payload["clip_label"].as_str(), Some("Air Horn"));
-        assert_eq!(event.payload["device"].as_str(), Some("default"));
+    impl EventPublisher for RecordingPublisher {
+        fn publish(&self, event: Event) {
+            self.0.lock().unwrap().push(event);
+        }
     }
 
-    #[tokio::test]
-    async fn playback_finished_publishes_audio_event_to_bus() {
-        let bus = Arc::new(EventBus::new(Arc::new(NullEventLogRepo)));
-        let mut sub = bus.subscribe();
-        let sink = BusAudioEventSink::new(Arc::clone(&bus));
+    #[test]
+    fn each_playback_event_publishes_its_audio_kind_and_payload() {
         let clip_id = ClipId::new();
+        let cases = [
+            (
+                AudioEvent::PlaybackStarted {
+                    clip_id: Some(clip_id),
+                    clip_label: Some("Air Horn".to_owned()),
+                    device: "default".to_owned(),
+                    duration_secs: Some(1.5),
+                    looped: true,
+                },
+                "playback.started",
+                json!({
+                    "clip_id": clip_id.to_string(),
+                    "clip_label": "Air Horn",
+                    "device": "default",
+                    "duration_secs": 1.5,
+                    "looped": true,
+                }),
+            ),
+            (
+                AudioEvent::PlaybackFinished {
+                    clip_id: Some(clip_id),
+                    clip_label: None,
+                },
+                "playback.finished",
+                json!({ "clip_id": clip_id.to_string(), "clip_label": null }),
+            ),
+            (
+                AudioEvent::PlaybackFailed {
+                    clip_id: None,
+                    clip_label: None,
+                    error: "device not found".to_owned(),
+                },
+                "playback.failed",
+                json!({ "clip_id": null, "clip_label": null, "error": "device not found" }),
+            ),
+        ];
 
-        sink.emit(AudioEvent::PlaybackFinished {
-            clip_id: Some(clip_id),
-            clip_label: None,
-        });
+        for (audio_event, kind, payload) in cases {
+            let publisher = Arc::new(RecordingPublisher::default());
+            let sink = BusAudioEventSink::new(Arc::clone(&publisher) as Arc<dyn EventPublisher>);
 
-        let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(event.kind, "playback.finished");
-        assert_eq!(event.source, EventSource::Audio);
-    }
+            sink.emit(audio_event);
 
-    #[tokio::test]
-    async fn playback_failed_publishes_error_payload() {
-        let bus = Arc::new(EventBus::new(Arc::new(NullEventLogRepo)));
-        let mut sub = bus.subscribe();
-        let sink = BusAudioEventSink::new(Arc::clone(&bus));
-
-        sink.emit(AudioEvent::PlaybackFailed {
-            clip_id: None,
-            clip_label: None,
-            error: "device not found".to_string(),
-        });
-
-        let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(event.kind, "playback.failed");
-        assert_eq!(event.payload["error"].as_str(), Some("device not found"));
-        assert!(event.payload["clip_id"].is_null());
+            let published = publisher.0.lock().unwrap();
+            let [event] = published.as_slice() else {
+                panic!(
+                    "{kind}: expected exactly one event, got {}",
+                    published.len()
+                );
+            };
+            assert_eq!(
+                (&event.source, event.kind.as_str(), &event.payload),
+                (&EventSource::Audio, kind, &payload),
+                "{kind}"
+            );
+        }
     }
 }

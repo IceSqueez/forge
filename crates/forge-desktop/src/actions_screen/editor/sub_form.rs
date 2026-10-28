@@ -215,7 +215,7 @@ fn seed_absent_choices(
 #[cfg(test)]
 mod tests {
     use forge_storage::MockMediaRepo;
-    use forge_types::{ClipId, OutputDevice, Variant};
+    use forge_types::{ClipId, Variant};
     use time::OffsetDateTime;
 
     use super::super::tests::view_with;
@@ -225,19 +225,6 @@ mod tests {
 
     const PLAY_SOUND: &str = "soundboard.sound.play";
     const CLIP_FIELD: &str = "clip_id";
-
-    struct SilentPlayer;
-
-    #[async_trait::async_trait]
-    impl forge_runtime::SoundPlayer for SilentPlayer {
-        async fn play(
-            &self,
-            _: ClipId,
-            _: Option<OutputDevice>,
-        ) -> Result<(), forge_runtime::SoundPlayerError> {
-            Ok(())
-        }
-    }
 
     #[derive(Default)]
     struct SavedActions(std::sync::Mutex<Vec<Action>>);
@@ -308,9 +295,9 @@ mod tests {
             let rt = runtime();
             let mut sub_actions = SubActionRegistry::new();
             sub_actions
-                .register(Box::new(
-                    forge_runtime::audio_runners::PlaySoundRunner::new(Arc::new(SilentPlayer)),
-                ))
+                .register(Box::new(forge_soundboard::PlaySoundRunner::new(Arc::new(
+                    crate::integrations::tests::SilentSoundboard,
+                ))))
                 .unwrap();
             let saves = Arc::new(SavedActions::default());
             let mut media = MockMediaRepo::new();

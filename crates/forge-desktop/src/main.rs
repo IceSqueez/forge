@@ -12,6 +12,7 @@ mod backup_passphrase_modal;
 mod backup_schedule;
 mod boot;
 mod boot_restore;
+mod boot_signal;
 mod builtin_sections;
 mod bundle_preview;
 mod chat;
@@ -422,7 +423,7 @@ fn main() {
     let endpoints = match forge_platform_core::PlatformEndpoints::from_env() {
         Ok(endpoints) => endpoints,
         Err(err) => {
-            tracing::error!(error = %err, "platform endpoint override refused; exiting");
+            boot_signal::endpoint_override_refused(&err);
             drop(log_guard);
             std::process::exit(EXIT_STARTUP_FAILURE);
         }
@@ -431,9 +432,7 @@ fn main() {
     let instance_lock = match instance_lock::acquire(&paths::data_dir()) {
         instance_lock::LockOutcome::Acquired(lock) => Some(lock),
         instance_lock::LockOutcome::AlreadyRunning => {
-            tracing::error!(
-                "another forge instance is already running for this data directory; exiting"
-            );
+            boot_signal::already_running();
             drop(log_guard);
             std::process::exit(EXIT_STARTUP_FAILURE);
         }

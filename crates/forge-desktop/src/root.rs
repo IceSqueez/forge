@@ -311,6 +311,9 @@ pub fn run_boot(
                     root.mark_ready(shell);
                     cx.notify();
                 });
+                if applied.is_ok() {
+                    crate::boot_signal::ready();
+                }
                 if let (Ok(()), Some(update_flow), Some(problem_report)) =
                     (applied, flow_for_updates, report_for_crashes)
                 {
@@ -406,6 +409,7 @@ pub fn run_boot(
                 }
             }
             Err(failure) => {
+                crate::boot_signal::boot_failed(&failure);
                 #[expect(
                     clippy::let_underscore_must_use,
                     reason = "the view may close before the result arrives"

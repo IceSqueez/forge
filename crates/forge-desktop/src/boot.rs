@@ -701,7 +701,7 @@ async fn build_server(
     let settings = match forge_server::ServerSettings::load(backend.as_ref()).await {
         Ok(settings) => settings,
         Err(e) => {
-            tracing::error!(error = %e, "server settings load failed, leaving server off");
+            crate::boot_signal::server_settings_unavailable(&e);
             return ServerBoot::unavailable(e.to_string());
         }
     };
@@ -751,11 +751,16 @@ async fn build_server(
         config
     };
 
-    if settings.enabled && bind_addr.is_some() {
-        match forge_server::start_server(build_config()).await {
-            Ok(handle) => return ServerBoot::running(handle),
-            Err(e) => tracing::error!(error = %e, "server failed to start, leaving it off"),
-        }
+    match (settings.enabled, bind_addr) {
+        (true, Some(addr)) => match forge_server::start_server(build_config()).await {
+            Ok(handle) => {
+                crate::boot_signal::server_bound(handle.bind_addr().await);
+                return ServerBoot::running(handle);
+            }
+            Err(e) => crate::boot_signal::server_bind_failed(addr, &e),
+        },
+        (true, None) => crate::boot_signal::server_address_invalid(&settings.bind_address),
+        (false, _) => crate::boot_signal::server_disabled(),
     }
 
     match forge_server::stopped_server(build_config()).await {

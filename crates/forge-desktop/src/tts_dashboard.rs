@@ -850,7 +850,10 @@ impl TtsDashboardView {
 
         let play_id = item.request_id.clone();
         let play_btn = div()
-            .id(("tts-q-play", index))
+            .id(SharedString::from(format!(
+                "tts-q-play-{}",
+                item.request_id.0
+            )))
             .flex_shrink_0()
             .cursor_pointer()
             .tooltip(tooltip_builder(tr!("tts_dash_play_now"), palette))
@@ -861,7 +864,10 @@ impl TtsDashboardView {
 
         let remove_id = item.request_id.clone();
         let remove_btn = div()
-            .id(("tts-q-remove", index))
+            .id(SharedString::from(format!(
+                "tts-q-remove-{}",
+                item.request_id.0
+            )))
             .flex_shrink_0()
             .cursor_pointer()
             .tooltip(tooltip_builder(tr!("tts_dash_remove_queued"), palette))
@@ -885,7 +891,10 @@ impl TtsDashboardView {
         let dropped_on_id = item.request_id.clone();
 
         let mut row = div()
-            .id(("tts-q-row", index))
+            .id(SharedString::from(format!(
+                "tts-q-row-{}",
+                item.request_id.0
+            )))
             .w_full()
             .flex()
             .items_center()

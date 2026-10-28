@@ -303,12 +303,12 @@ impl ChatFeed {
             && let Ok(payload) = serde_json::from_value::<ChatModerationPayload>(value.clone())
             && let Some(platform) = event.source.to_platform_id()
         {
-            return match payload.action {
+            return match &payload.action {
                 ChatModerationAction::DeleteMessage { message_id } => {
-                    self.mark_deleted(&message_id)
+                    self.mark_deleted(platform, message_id)
                 }
-                ChatModerationAction::RemoveUser { user_name, .. } => {
-                    self.mark_user(platform, &user_name)
+                ChatModerationAction::RemoveUser { .. } => {
+                    self.mark_user(platform, &payload.action)
                 }
                 ChatModerationAction::ClearChat => self.clear_platform(platform),
             };
@@ -386,12 +386,14 @@ impl ChatFeed {
         true
     }
 
-    pub fn mark_deleted(&mut self, msg_id: &str) -> bool {
-        self.moderate_where(|m| m.id == msg_id)
+    pub fn mark_deleted(&mut self, platform: PlatformId, msg_id: &str) -> bool {
+        self.moderate_where(|m| m.platform == platform && m.id == msg_id)
     }
 
-    pub fn mark_user(&mut self, platform: PlatformId, username: &str) -> bool {
-        self.moderate_where(|m| m.platform == platform && m.username.eq_ignore_ascii_case(username))
+    pub fn mark_user(&mut self, platform: PlatformId, removal: &ChatModerationAction) -> bool {
+        self.moderate_where(|m| {
+            m.platform == platform && removal.removes_author(m.author_id.as_deref(), &m.username)
+        })
     }
 
     pub fn clear_platform(&mut self, platform: PlatformId) -> bool {

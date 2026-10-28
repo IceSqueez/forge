@@ -90,12 +90,12 @@ impl RecentModeration {
                     row.moderation.deleted = true;
                 }
             }
-            ChatModerationAction::RemoveUser {
-                user_id,
-                user_name,
-                removal,
-            } => {
-                if self.covers(row) && removes_author(user_id.as_deref(), user_name, row) {
+            ChatModerationAction::RemoveUser { removal, .. } => {
+                if self.covers(row)
+                    && self
+                        .action
+                        .removes_author(row.author_id.as_deref(), &row.author)
+                {
                     row.moderation.deleted = true;
                     match removal {
                         UserRemoval::Ban => row.moderation.banned = true,
@@ -113,13 +113,6 @@ impl RecentModeration {
 
     fn covers(&self, row: &UnifiedChatRow) -> bool {
         row.source == self.source && row.received_at <= self.at
-    }
-}
-
-fn removes_author(user_id: Option<&str>, user_name: &str, row: &UnifiedChatRow) -> bool {
-    match (user_id, row.author_id.as_deref()) {
-        (Some(user_id), Some(author_id)) => user_id == author_id,
-        _ => user_name.eq_ignore_ascii_case(&row.author),
     }
 }
 

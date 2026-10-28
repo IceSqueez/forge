@@ -127,7 +127,7 @@ pub struct VoiceAliasesView {
     table_scroll: UniformListScrollHandle,
     form: Option<Entity<AliasForm>>,
     _form_sub: Option<Subscription>,
-    pending_delete: Confirm<usize>,
+    pending_delete: Confirm<AliasId>,
     _search_sub: Subscription,
 }
 
@@ -260,6 +260,10 @@ impl VoiceAliasesView {
         self.loading = false;
     }
 
+    fn row_by_id(&self, id: &AliasId) -> Option<&AliasRow> {
+        self.aliases.iter().find(|row| row.id == *id)
+    }
+
     fn rebuild_visible(&mut self) {
         self.visible = self
             .aliases
@@ -324,8 +328,8 @@ impl VoiceAliasesView {
         self.mount_form(form, window, cx);
     }
 
-    fn open_edit(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(row) = self.aliases.get(index) else {
+    fn open_edit(&mut self, id: &AliasId, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(row) = self.row_by_id(id) else {
             return;
         };
         let id_keyed = row.viewer_id != alias_key(row.platform, &row.viewer_name);
@@ -408,8 +412,8 @@ impl VoiceAliasesView {
         );
     }
 
-    fn preview(&self, index: usize) {
-        let Some(row) = self.aliases.get(index) else {
+    fn preview(&self, id: &AliasId) {
+        let Some(row) = self.row_by_id(id) else {
             return;
         };
         if row.blocked {
@@ -441,8 +445,8 @@ impl VoiceAliasesView {
         });
     }
 
-    fn request_delete(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.pending_delete.request(index);
+    fn request_delete(&mut self, id: AliasId, cx: &mut Context<Self>) {
+        self.pending_delete.request(id);
         cx.notify();
     }
 
@@ -452,10 +456,10 @@ impl VoiceAliasesView {
     }
 
     fn confirm_delete(&mut self, cx: &mut Context<Self>) {
-        let Some(index) = self.pending_delete.take() else {
+        let Some(pending) = self.pending_delete.take() else {
             return;
         };
-        let Some(row) = self.aliases.get(index) else {
+        let Some(row) = self.row_by_id(&pending) else {
             cx.notify();
             return;
         };
@@ -671,7 +675,7 @@ impl VoiceAliasesView {
                 move |this, ix, _window, cx| {
                     let index = this.visible[ix];
                     match this.aliases.get(index) {
-                        Some(row) => this.alias_row(index, row, &pal, density, cx),
+                        Some(row) => this.alias_row(row, &pal, density, cx),
                         None => DataRow::new(Vec::new()),
                     }
                 },
@@ -709,7 +713,6 @@ impl VoiceAliasesView {
 
     fn alias_row(
         &self,
-        index: usize,
         row: &AliasRow,
         palette: &ForgePalette,
         density: Density,
@@ -817,30 +820,33 @@ impl VoiceAliasesView {
         } else {
             palette.success
         };
+        let preview_alias = row.id.clone();
+        let edit_alias = row.id.clone();
+        let delete_alias = row.id.clone();
         let mut preview = div()
             .id((gpui::ElementId::from("va-preview"), row_key.clone()))
             .flex()
             .child(icon(Icon::PlayerPlay, ACTION_GLYPH, preview_color));
         if !muted {
-            preview = preview
-                .cursor_pointer()
-                .on_click(cx.listener(move |this, _: &ClickEvent, _, _| this.preview(index)));
+            preview = preview.cursor_pointer().on_click(
+                cx.listener(move |this, _: &ClickEvent, _, _| this.preview(&preview_alias)),
+            );
         }
         let edit = div()
             .id((gpui::ElementId::from("va-edit"), row_key.clone()))
             .flex()
             .cursor_pointer()
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                this.open_edit(index, window, cx)
+                this.open_edit(&edit_alias, window, cx)
             }))
             .child(icon(Icon::Pencil, ACTION_GLYPH, palette.text_faint));
         let delete = div()
             .id((gpui::ElementId::from("va-delete"), row_key.clone()))
             .flex()
             .cursor_pointer()
-            .on_click(
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(index, cx)),
-            )
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.request_delete(delete_alias.clone(), cx)
+            }))
             .child(icon(Icon::Trash, ACTION_GLYPH, palette.text_faint));
         let actions = div()
             .w_full()
@@ -867,20 +873,18 @@ impl VoiceAliasesView {
         } else {
             self.pending_delete
                 .get()
-                .copied()
-                .map(|index| self.delete_confirm(index, palette, cx))
+                .map(|id| self.delete_confirm(id, palette, cx))
         }
     }
 
     fn delete_confirm(
         &self,
-        index: usize,
+        id: &AliasId,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let viewer = self
-            .aliases
-            .get(index)
+            .row_by_id(id)
             .map(|a| a.viewer_name.clone())
             .unwrap_or_default();
         let message = tr!("tts_aliases_delete_body", viewer = viewer.as_str());

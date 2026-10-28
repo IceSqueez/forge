@@ -60,14 +60,15 @@ struct RowHooks {
 }
 
 impl RowHooks {
-    fn element_id(&self, part: &str, name: &str) -> SharedString {
-        SharedString::from(format!("{}-{part}-{name}", self.scope))
+    fn element_id(&self, part: &str, row_index: usize) -> SharedString {
+        SharedString::from(format!("{}-{part}-{row_index}", self.scope))
     }
 }
 
 struct TokenSite<'a> {
     hooks: &'a RowHooks,
     row: &'a str,
+    row_index: usize,
     index: usize,
 }
 
@@ -651,7 +652,7 @@ fn content_list_panel(
                 owned.len(),
                 move |range, _window, _cx| {
                     range
-                        .map(|i| content_list_item_row(&owned[i], &rows, &pal, density))
+                        .map(|i| content_list_item_row(&owned[i], i, &rows, &pal, density))
                         .collect::<Vec<_>>()
                 },
             )
@@ -666,8 +667,10 @@ fn content_list_panel(
             if let Some(h) = pinned_h {
                 stack = stack.flex_none().h(px(h));
             }
-            for item in &list.items {
-                stack = stack.child(content_list_item_row(item, &rows, palette, density));
+            for (row_index, item) in list.items.iter().enumerate() {
+                stack = stack.child(content_list_item_row(
+                    item, row_index, &rows, palette, density,
+                ));
             }
             stack.into_any_element()
         }
@@ -696,6 +699,7 @@ fn content_list_panel(
 
 fn content_list_item_row(
     item: &ContentListItem,
+    row_index: usize,
     rows: &RowHooks,
     palette: &ForgePalette,
     density: Density,
@@ -746,6 +750,7 @@ fn content_list_item_row(
         let site = TokenSite {
             hooks: rows,
             row: &item.name,
+            row_index,
             index,
         };
         trailing = trailing.child(trailing_token_elem(token, dim, &site, palette, density));
@@ -776,7 +781,7 @@ fn content_list_item_row(
             };
             let hover_bg = palette.surface_overlay;
             row_surface(rows.pad_y, palette, density)
-                .id(rows.element_id("row", &item.name))
+                .id(rows.element_id("row", row_index))
                 .cursor_pointer()
                 .hover(move |s| s.bg(hover_bg))
                 .on_click(move |_: &ClickEvent, window, cx| run(&click, window, cx))
@@ -1233,7 +1238,7 @@ fn trailing_token_elem(
                 .text_color(tc)
                 .id(site
                     .hooks
-                    .element_id(&format!("token-{}", site.index), site.row))
+                    .element_id(&format!("token-{}", site.index), site.row_index))
                 .cursor_pointer()
                 .hover(move |s| s.text_color(hover_tint))
                 .on_click(move |_: &ClickEvent, window, cx| {

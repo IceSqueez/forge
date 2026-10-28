@@ -100,6 +100,20 @@ impl fmt::Debug for ChatModerationAction {
     }
 }
 
+impl ChatModerationAction {
+    pub fn removes_author(&self, author_id: Option<&str>, author_name: &str) -> bool {
+        match self {
+            Self::RemoveUser {
+                user_id, user_name, ..
+            } => match (user_id.as_deref(), author_id) {
+                (Some(user_id), Some(author_id)) => user_id == author_id,
+                _ => user_name.eq_ignore_ascii_case(author_name),
+            },
+            Self::DeleteMessage { .. } | Self::ClearChat => false,
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatReply {
     pub parent_author: String,

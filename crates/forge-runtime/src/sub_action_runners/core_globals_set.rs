@@ -120,7 +120,7 @@ impl SubActionRunner for CoreGlobalsSetRunner {
 mod tests {
     use super::*;
     use crate::sub_action_runners::interpolate::parse_variant;
-    use forge_events::EventPublisher;
+    use forge_events::{Event, EventPublisher};
     use forge_registry::RunContext;
     use forge_storage::{GlobalEntry, StorageError};
     use forge_types::{ArgStack, EventId};
@@ -131,13 +131,6 @@ mod tests {
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
         fn publish(&self, _event: Event) {}
-    }
-
-    struct CapturingPublisher(Arc<Mutex<Vec<Event>>>);
-    impl EventPublisher for CapturingPublisher {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
     }
 
     #[derive(Default)]
@@ -214,34 +207,5 @@ mod tests {
                 "configured persisted {configured:?} must reach set() as {expected}"
             );
         }
-    }
-
-    #[tokio::test]
-    async fn set_runner_emits_global_set_with_plain_json_values_and_raw_prev() {
-        let globals = Arc::new(MapGlobals::default());
-        globals
-            .set("counter", Variant::Int(1), false)
-            .await
-            .unwrap();
-        let mut config = SubActionConfig::new();
-        config.insert("name".to_owned(), Variant::String("counter".to_owned()));
-        config.insert("value".to_owned(), Variant::String("42".to_owned()));
-
-        let events: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
-        let publisher = CapturingPublisher(Arc::clone(&events));
-        let parent = EventId::new();
-        let stack = ArgStack::new();
-        let ctx = RunContext::leaf(&stack, 0, parent, &publisher);
-        let runner = CoreGlobalsSetRunner::new(Arc::clone(&globals) as Arc<dyn GlobalsRepo>);
-        let outcome = runner.execute(&config, &ctx).await.0.outcome;
-
-        assert!(matches!(outcome, SubActionOutcome::Success));
-        let captured = events.lock().unwrap();
-        let ev = &captured[0];
-        assert_eq!(ev.kind, "global.set");
-        assert_eq!(ev.caused_by, Some(parent));
-        assert_eq!(ev.payload["key"], "counter");
-        assert_eq!(ev.payload["new_value"].as_i64(), Some(42));
-        assert_eq!(ev.payload["prev_value"].as_i64(), Some(1));
     }
 }

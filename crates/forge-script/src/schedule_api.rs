@@ -201,7 +201,6 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use forge_events::{Event, EventPublisher};
-    use forge_storage::GlobalsRepo;
     use forge_types::EventId;
     use time::OffsetDateTime;
     use time::format_description::well_known::Rfc3339;
@@ -211,7 +210,7 @@ mod tests {
     use crate::ScriptError;
     use crate::engine::{Engine, EngineConfig};
     use crate::schedule::ScriptScheduleError;
-    use crate::test_support::sandboxed_backend;
+    use crate::test_support::{repo_globals, sandboxed_backend};
 
     const DUE_UNIX_SECS: i64 = 1_791_118_800;
     const PLACED_ID: i64 = 42;
@@ -293,7 +292,7 @@ mod tests {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
         let mut api = ForgeApi::new(
             Arc::new(NullPublisher),
-            Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+            repo_globals(Arc::clone(&backend)),
             EventId::new(),
             Instant::now() + Duration::from_secs(10),
         );

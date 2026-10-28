@@ -105,7 +105,7 @@ impl SubActionRunner for CoreGlobalsIncrementRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_events::EventPublisher;
+    use forge_events::{Event, EventPublisher};
     use forge_registry::RunContext;
     use forge_storage::{GlobalEntry, StorageError};
     use forge_types::{EventId, VariantKind};
@@ -113,28 +113,9 @@ mod tests {
     use std::sync::Mutex;
     use time::OffsetDateTime;
 
-    struct CapturingPublisher(Arc<Mutex<Vec<Event>>>);
-    impl EventPublisher for CapturingPublisher {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
-    }
-
     #[derive(Default)]
     struct MapGlobals {
         map: Mutex<BTreeMap<String, Variant>>,
-    }
-
-    impl MapGlobals {
-        fn with(entries: impl IntoIterator<Item = (&'static str, Variant)>) -> Self {
-            let map = entries
-                .into_iter()
-                .map(|(k, v)| (k.to_owned(), v))
-                .collect();
-            Self {
-                map: Mutex::new(map),
-            }
-        }
     }
 
     #[async_trait]
@@ -182,27 +163,6 @@ mod tests {
         c.insert("name".to_owned(), Variant::String(name.to_owned()));
         c.insert("amount".to_owned(), Variant::Int(amount));
         c
-    }
-
-    #[tokio::test]
-    async fn increment_runner_emits_global_incremented_with_positive_delta() {
-        let globals = Arc::new(MapGlobals::with([("counter", Variant::Int(10))]));
-        let events: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
-        let publisher = CapturingPublisher(Arc::clone(&events));
-        let parent = EventId::new();
-        let stack = ArgStack::new();
-        let ctx = RunContext::leaf(&stack, 0, parent, &publisher);
-        let runner = CoreGlobalsIncrementRunner::new(globals);
-        let outcome = runner.execute(&cfg("counter", 5), &ctx).await.0.outcome;
-
-        assert!(matches!(outcome, SubActionOutcome::Success));
-        let captured = events.lock().unwrap();
-        let ev = &captured[0];
-        assert_eq!(ev.kind, "global.incremented");
-        assert_eq!(ev.caused_by, Some(parent));
-        assert_eq!(ev.payload["key"], "counter");
-        assert_eq!(ev.payload["delta"].as_i64(), Some(5));
-        assert_eq!(ev.payload["new_value"].as_i64(), Some(15));
     }
 
     #[tokio::test]

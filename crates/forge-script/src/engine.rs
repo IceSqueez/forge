@@ -187,7 +187,7 @@ mod tests {
     use forge_storage::GlobalsRepo;
     use forge_storage_sqlite::SqliteBackend;
 
-    use crate::test_support::{Sandboxed, sandboxed_backend};
+    use crate::test_support::{Sandboxed, repo_globals, sandboxed_backend};
     use forge_types::{EventId, Variant};
     use std::sync::Arc;
 
@@ -211,7 +211,7 @@ mod tests {
     fn make_api(dp: Arc<SqliteBackend>) -> ForgeApi {
         ForgeApi::new(
             Arc::new(MockPublisher),
-            dp.clone() as Arc<dyn GlobalsRepo>,
+            repo_globals(dp.clone()),
             EventId::new(),
             Instant::now() + std::time::Duration::from_secs(10),
         )
@@ -220,7 +220,7 @@ mod tests {
     fn make_api_with_wall_ms(dp: Arc<SqliteBackend>, wall_ms: u64) -> ForgeApi {
         ForgeApi::new(
             Arc::new(MockPublisher),
-            dp.clone() as Arc<dyn GlobalsRepo>,
+            repo_globals(dp.clone()),
             EventId::new(),
             Instant::now() + std::time::Duration::from_millis(wall_ms),
         )
@@ -362,7 +362,7 @@ mod tests {
             .unwrap();
         let api = ForgeApi::new(
             Arc::new(MockPublisher),
-            dp.clone() as Arc<dyn GlobalsRepo>,
+            repo_globals(dp.clone()),
             EventId::new(),
             expired_deadline,
         );
@@ -517,7 +517,7 @@ mod tests {
         let caused_by = EventId::new();
         let api = ForgeApi::new(
             publisher,
-            dp.clone() as Arc<dyn GlobalsRepo>,
+            repo_globals(dp.clone()),
             caused_by,
             Instant::now() + std::time::Duration::from_secs(10),
         );

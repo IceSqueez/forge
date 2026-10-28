@@ -94,7 +94,7 @@ mod tests {
     use forge_types::IntegrationId;
 
     use super::*;
-    use crate::test_support::sandboxed_backend;
+    use crate::test_support::{repo_globals, sandboxed_backend};
 
     struct CapturingPublisher(Arc<Mutex<Vec<Event>>>);
 
@@ -117,7 +117,7 @@ mod tests {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
         let captured = Arc::new(Mutex::new(Vec::new()));
         let host = ScriptHost {
-            globals: Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+            globals: repo_globals(Arc::clone(&backend)),
             settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
             bus: Arc::new(CapturingPublisher(Arc::clone(&captured))),
             integrations: Arc::new(TwitchDisabled),
@@ -177,7 +177,7 @@ mod tests {
     ) -> Result<RunResult, ScriptError> {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
         let host = ScriptHost {
-            globals: Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+            globals: repo_globals(Arc::clone(&backend)),
             settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
             bus: Arc::new(CapturingPublisher(Arc::new(Mutex::new(Vec::new())))),
             integrations: Arc::new(TwitchDisabled),
@@ -235,7 +235,7 @@ mod tests {
     async fn an_editor_run_schedules_through_the_wired_scheduler() {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
         let host = ScriptHost {
-            globals: Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+            globals: repo_globals(Arc::clone(&backend)),
             settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
             bus: Arc::new(CapturingPublisher(Arc::new(Mutex::new(Vec::new())))),
             integrations: Arc::new(TwitchDisabled),

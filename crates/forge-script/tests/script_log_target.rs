@@ -4,10 +4,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventPublisher};
-use forge_script::{Engine, EngineConfig, ForgeApi};
-use forge_storage::GlobalsRepo;
-use forge_storage_sqlite::SqliteBackend;
-use forge_types::{EventId, SCRIPT_LOG_TARGET};
+use forge_script::{
+    Engine, EngineConfig, ForgeApi, GlobalDeletion, GlobalIncrement, ScriptGlobals,
+    ScriptGlobalsError,
+};
+use forge_types::{EventId, SCRIPT_LOG_TARGET, Variant};
 use tracing::field::{Field, Visit};
 use tracing::span;
 use tracing::subscriber::Interest;
@@ -100,25 +101,59 @@ impl EventPublisher for NullPublisher {
     fn publish(&self, _event: Event) {}
 }
 
-async fn engine() -> (Engine, tempfile::TempDir) {
-    let media_root = tempfile::tempdir().expect("a temporary media root");
-    let backend = Arc::new(
-        SqliteBackend::open_for_test(":memory:", [0xab; 32], media_root.path().to_owned(), None)
-            .await
-            .unwrap(),
-    );
+struct UnusedGlobals;
+
+fn unused() -> ScriptGlobalsError {
+    ScriptGlobalsError("globals are not under test".to_owned())
+}
+
+#[async_trait::async_trait]
+impl ScriptGlobals for UnusedGlobals {
+    async fn get(&self, _key: &str) -> Result<Option<Variant>, ScriptGlobalsError> {
+        Err(unused())
+    }
+
+    async fn set(
+        &self,
+        _key: &str,
+        _value: Variant,
+        _persisted: bool,
+        _caused_by: EventId,
+    ) -> Result<Option<Variant>, ScriptGlobalsError> {
+        Err(unused())
+    }
+
+    async fn increment(
+        &self,
+        _key: &str,
+        _delta: i64,
+        _caused_by: EventId,
+    ) -> Result<GlobalIncrement, ScriptGlobalsError> {
+        Err(unused())
+    }
+
+    async fn delete(
+        &self,
+        _key: &str,
+        _caused_by: EventId,
+    ) -> Result<GlobalDeletion, ScriptGlobalsError> {
+        Err(unused())
+    }
+}
+
+fn engine() -> Engine {
     let api = ForgeApi::new(
         Arc::new(NullPublisher),
-        backend as Arc<dyn GlobalsRepo>,
+        Arc::new(UnusedGlobals),
         EventId::new(),
         Instant::now() + Duration::from_secs(10),
     );
-    (Engine::with_api(EngineConfig::default(), api), media_root)
+    Engine::with_api(EngineConfig::default(), api)
 }
 
 #[tokio::test]
 async fn every_script_log_native_emits_on_the_script_target() {
-    let (engine, _media_root) = engine().await;
+    let engine = engine();
 
     let lines = capture(|| {
         for native in ["log", "warn", "error"] {

@@ -839,7 +839,8 @@ mod tests {
     use forge_storage::GlobalsRepo;
     use forge_storage_sqlite::SqliteBackend;
 
-    use crate::test_support::{Sandboxed, sandboxed_backend};
+    use crate::globals_port::ScriptGlobals;
+    use crate::test_support::{RepoGlobals, Sandboxed, repo_globals, sandboxed_backend};
     use forge_types::{EventId, Variant, unknown_chat_target_reason};
     use std::sync::{Arc, Mutex};
     use std::time::Instant;
@@ -870,107 +871,91 @@ mod tests {
         let caused_by = EventId::new();
         let api = ForgeApi::new(
             Arc::new(CapturingPublisher(captured)),
-            dp.clone() as Arc<dyn GlobalsRepo>,
+            repo_globals(dp.clone()),
             caused_by,
             Instant::now() + std::time::Duration::from_secs(30),
         );
         (api, caused_by)
     }
 
-    #[tokio::test]
-    async fn forge_globals_set_emits_global_set_event() {
+    async fn eval_against_recorded_globals(
+        seeded: &[(&str, Variant)],
+        script: &'static str,
+    ) -> (rhai::Dynamic, EventId, Arc<RepoGlobals>, Vec<Event>) {
         let dp = open_dp().await;
+        for (key, value) in seeded {
+            GlobalsRepo::set(dp.as_ref(), key, value.clone(), false)
+                .await
+                .unwrap();
+        }
+        let port = Arc::new(RepoGlobals::new(Arc::clone(&dp) as Arc<dyn GlobalsRepo>));
         let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
-        let (api, caused_by) = make_api_with_publisher(Arc::clone(&dp), Arc::clone(&captured));
-        let engine = Engine::with_api(unhurried(), api);
-
-        tokio::task::spawn_blocking(move || {
-            drop(
-                engine
-                    .eval_script(r#"forge::globals::set("score", 77, false)"#)
-                    .unwrap(),
-            );
-        })
-        .await
-        .unwrap();
-
-        let events = captured.lock().unwrap();
-        assert!(
-            events.iter().any(|e| e.kind == "global.set"),
-            "global.set must be emitted"
+        let caused_by = EventId::new();
+        let api = ForgeApi::new(
+            Arc::new(CapturingPublisher(Arc::clone(&captured))),
+            Arc::clone(&port) as Arc<dyn ScriptGlobals>,
+            caused_by,
+            Instant::now() + std::time::Duration::from_secs(30),
         );
-        let ev = events.iter().find(|e| e.kind == "global.set").unwrap();
-        assert_eq!(ev.caused_by, Some(caused_by));
-        assert_eq!(ev.payload["key"].as_str(), Some("score"));
-        assert_eq!(ev.payload["new_value"].as_i64(), Some(77));
-        assert!(ev.payload["prev_value"].is_null());
+        let engine = Engine::with_api(unhurried(), api);
+        let result = tokio::task::spawn_blocking(move || engine.eval_script(script).unwrap())
+            .await
+            .unwrap();
+        let events = captured.lock().unwrap().clone();
+        (result, caused_by, port, events)
+    }
+
+    fn seeded_hits_and_temp() -> Vec<(&'static str, Variant)> {
+        vec![("hits", Variant::Int(10)), ("temp", Variant::Int(1))]
     }
 
     #[tokio::test]
-    async fn forge_globals_incr_emits_global_incremented_event() {
-        let dp = open_dp().await;
-        GlobalsRepo::set(dp.as_ref(), "hits", Variant::Int(10), false)
-            .await
-            .unwrap();
+    async fn global_mutations_reach_the_port_carrying_the_run_event_as_cause() {
+        for script in [
+            r#"forge::globals::set("score", 77, false)"#,
+            r#"forge::globals::incr("hits", 3)"#,
+            r#"forge::globals::del("temp")"#,
+        ] {
+            let (_, caused_by, port, _) =
+                eval_against_recorded_globals(&seeded_hits_and_temp(), script).await;
 
-        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
-        let (api, caused_by) = make_api_with_publisher(Arc::clone(&dp), Arc::clone(&captured));
-        let engine = Engine::with_api(unhurried(), api);
-
-        tokio::task::spawn_blocking(move || {
-            drop(
-                engine
-                    .eval_script(r#"forge::globals::incr("hits", 3)"#)
-                    .unwrap(),
-            );
-        })
-        .await
-        .unwrap();
-
-        let events = captured.lock().unwrap();
-        assert!(
-            events.iter().any(|e| e.kind == "global.incremented"),
-            "global.incremented must be emitted"
-        );
-        let ev = events
-            .iter()
-            .find(|e| e.kind == "global.incremented")
-            .unwrap();
-        assert_eq!(ev.caused_by, Some(caused_by));
-        assert_eq!(ev.payload["key"].as_str(), Some("hits"));
-        assert_eq!(ev.payload["delta"].as_i64(), Some(3));
-        assert_eq!(ev.payload["new_value"].as_i64(), Some(13));
+            assert_eq!(port.causes(), [caused_by], "{script}");
+        }
     }
 
     #[tokio::test]
-    async fn forge_globals_del_emits_global_deleted_event() {
-        let dp = open_dp().await;
-        GlobalsRepo::set(dp.as_ref(), "temp", Variant::Int(1), false)
-            .await
-            .unwrap();
+    async fn global_mutations_publish_nothing_through_the_script_publisher() {
+        for script in [
+            r#"forge::globals::set("score", 77, false)"#,
+            r#"forge::globals::incr("hits", 3)"#,
+            r#"forge::globals::del("temp")"#,
+        ] {
+            let (_, _, _, events) =
+                eval_against_recorded_globals(&seeded_hits_and_temp(), script).await;
 
-        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
-        let (api, caused_by) = make_api_with_publisher(Arc::clone(&dp), Arc::clone(&captured));
-        let engine = Engine::with_api(unhurried(), api);
+            assert!(events.is_empty(), "{script}: {events:?}");
+        }
+    }
 
-        tokio::task::spawn_blocking(move || {
-            drop(
-                engine
-                    .eval_script(r#"forge::globals::del("temp")"#)
-                    .unwrap(),
-            );
-        })
-        .await
-        .unwrap();
+    #[tokio::test]
+    async fn del_returns_whether_the_key_existed() {
+        for (seeded, expected) in [(seeded_hits_and_temp(), true), (Vec::new(), false)] {
+            let (result, _, _, _) =
+                eval_against_recorded_globals(&seeded, r#"forge::globals::del("temp")"#).await;
 
-        let events = captured.lock().unwrap();
-        assert!(
-            events.iter().any(|e| e.kind == "global.deleted"),
-            "global.deleted must be emitted"
-        );
-        let ev = events.iter().find(|e| e.kind == "global.deleted").unwrap();
-        assert_eq!(ev.caused_by, Some(caused_by));
-        assert_eq!(ev.payload["key"].as_str(), Some("temp"));
+            assert_eq!(result.as_bool(), Ok(expected), "seeded: {expected}");
+        }
+    }
+
+    #[tokio::test]
+    async fn incr_returns_the_value_after_the_increment() {
+        let (result, _, _, _) = eval_against_recorded_globals(
+            &seeded_hits_and_temp(),
+            r#"forge::globals::incr("hits", 3)"#,
+        )
+        .await;
+
+        assert_eq!(result.as_int(), Ok(13));
     }
 
     fn build_engine_with_http_in_blocking(
@@ -982,7 +967,7 @@ mod tests {
         let http_client = Arc::new(ScriptHttpClient::new(config).unwrap());
         let api = ForgeApi::new(
             Arc::new(CapturingPublisher(captured)),
-            dp.clone() as Arc<dyn GlobalsRepo>,
+            repo_globals(dp.clone()),
             caused_by,
             Instant::now() + std::time::Duration::from_secs(30),
         )
@@ -1075,7 +1060,7 @@ mod tests {
             let script_id = ScriptId::new();
             let api = ForgeApi::new(
                 Arc::new(CapturingPublisher(Arc::clone(&captured))),
-                dp.clone() as Arc<dyn GlobalsRepo>,
+                repo_globals(dp.clone()),
                 caused_by,
                 Instant::now() + std::time::Duration::from_secs(30),
             )
@@ -1118,7 +1103,7 @@ mod tests {
         let caused_by = EventId::new();
         let api = ForgeApi::new(
             Arc::new(CapturingPublisher(captured)),
-            dp.clone() as Arc<dyn GlobalsRepo>,
+            repo_globals(dp.clone()),
             caused_by,
             Instant::now() + std::time::Duration::from_secs(30),
         );

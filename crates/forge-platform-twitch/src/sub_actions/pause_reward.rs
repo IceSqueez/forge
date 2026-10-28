@@ -8,7 +8,7 @@ use forge_types::{ArgStack, SubActionTelemetry};
 use super::enable_reward::{
     config_fields, default_config, execute_bool_runner, validate_reward_id,
 };
-use super::identity::SelfIdentity;
+use crate::account::identity::SelfIdentity;
 use crate::custom_rewards::RewardBody;
 use crate::helix::HelixTransport;
 

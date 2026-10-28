@@ -10,15 +10,15 @@ use forge_platform_core::{
 use forge_storage::CredentialsRepo;
 use tokio::sync::{Mutex, OnceCell, watch};
 
+use crate::account::identity::SelfIdentity;
 use crate::bot_account::TwitchBotAccount;
-use crate::builtin::ChatSessionConfig;
 use crate::chat::{ChatConnectionState, ChatSendError, TwitchChat, TwitchChatHandle, WhisperError};
 use crate::chat_sender::{ChatDelivery, ChatSenders, SendFailure};
+use crate::config::ChatSessionConfig;
 use crate::credentials::load;
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::helix::{HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport};
 use crate::lifecycle::TwitchLifecycle;
-use crate::sub_actions::identity::SelfIdentity;
 use crate::subscriptions::SubscriptionTracker;
 
 const PLATFORM_ID: &str = "twitch";

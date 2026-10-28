@@ -12,7 +12,7 @@ use super::guest_star::{
     GuestStarContext, interpolate, session_id_field, target_login_field, validate_session_id,
     validate_target_login, with_session_id, with_target_login,
 };
-use super::identity::SelfIdentity;
+use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
 const KIND_ID: &str = "twitch.guest_star.invite";

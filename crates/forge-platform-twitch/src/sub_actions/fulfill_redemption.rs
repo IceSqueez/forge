@@ -11,9 +11,9 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-use super::identity::SelfIdentity;
+use crate::account::identity::SelfIdentity;
+use crate::collection_keys::REWARD_OPTIONS_KEY;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
-use crate::reward_collection::REWARD_OPTIONS_KEY;
 
 const KIND_ID: &str = "twitch.channel_points.fulfill_redemption";
 

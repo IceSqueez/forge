@@ -11,6 +11,8 @@ use forge_types::SubActionOutcome;
 use thiserror::Error;
 use tracing::warn;
 
+use crate::account::identity::SelfIdentity;
+use crate::account::user_target::UserTarget;
 use crate::bot_account::{BotIdentity, BotModerator, BotUnavailable, TwitchBotAccount};
 use crate::cadence::CadenceLedger;
 use crate::chat::refusal_text;
@@ -18,8 +20,6 @@ use crate::chat::{
     ChatSendError, WhisperError, send_chat, send_chat_reply, send_whisper, send_whisper_to,
 };
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
-use crate::sub_actions::identity::SelfIdentity;
-use crate::sub_actions::user_target::UserTarget;
 
 const ANNOUNCEMENTS_PATH: &str = "/helix/chat/announcements";
 const SHOUTOUTS_PATH: &str = "/helix/chat/shoutouts";

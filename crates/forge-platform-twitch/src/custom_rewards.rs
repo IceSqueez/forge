@@ -155,7 +155,3 @@ pub(crate) fn delete_request(
         .query(BROADCASTER_ID_PARAM, broadcaster_id)
         .query(REWARD_ID_PARAM, reward_id)
 }
-
-pub(crate) fn first_row(response: &serde_json::Value) -> Option<&serde_json::Value> {
-    response["data"].as_array().and_then(|rows| rows.first())
-}

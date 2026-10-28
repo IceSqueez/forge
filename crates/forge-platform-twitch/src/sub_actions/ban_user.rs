@@ -11,8 +11,8 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-use super::identity::SelfIdentity;
-use super::user_target::{TargetKeys, UserTarget};
+use crate::account::identity::SelfIdentity;
+use crate::account::user_target::{TargetKeys, UserTarget};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
 const TARGET_KEYS: TargetKeys = TargetKeys {

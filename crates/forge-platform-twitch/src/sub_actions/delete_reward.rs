@@ -10,7 +10,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
 
 use super::enable_reward::{config_fields, default_config, validate_reward_id};
-use super::identity::SelfIdentity;
+use crate::account::identity::SelfIdentity;
 use crate::custom_rewards::delete_request;
 use crate::helix::HelixTransport;
 

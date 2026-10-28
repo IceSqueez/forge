@@ -11,10 +11,10 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-use super::identity::SelfIdentity;
+use crate::account::identity::SelfIdentity;
+use crate::collection_keys::MANAGEABLE_REWARD_OPTIONS_KEY;
 use crate::custom_rewards::{RewardBody, update_request};
 use crate::helix::HelixTransport;
-use crate::reward_collection::MANAGEABLE_REWARD_OPTIONS_KEY;
 
 const KIND_ID: &str = "twitch.channel_points.enable_reward";
 

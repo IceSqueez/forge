@@ -5,11 +5,11 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionTelemetry};
 
-use super::identity::SelfIdentity;
 use super::lock_prediction::{
     execute_prediction_runner, prediction_config_fields, prediction_default_config,
     validate_prediction_config,
 };
+use crate::account::identity::SelfIdentity;
 use crate::helix::HelixTransport;
 
 const KIND_ID: &str = "twitch.prediction.cancel";

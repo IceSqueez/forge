@@ -23,7 +23,6 @@ mod guest_star_end_session;
 mod guest_star_invite;
 mod guest_star_remove_guest;
 mod guest_star_update_slot;
-pub(crate) mod identity;
 mod lock_prediction;
 mod pause_reward;
 mod remove_blocked_term;
@@ -49,13 +48,14 @@ mod update_category;
 mod update_reward;
 mod update_tags;
 mod update_title;
-pub(crate) mod user_target;
 mod warn_user;
 
 use std::sync::Arc;
 
 use forge_registry::{RegistryError, SubActionRegistry};
 use forge_storage::CredentialsRepo;
+
+use crate::account::identity::SelfIdentity;
 
 pub use add_blocked_term::AddBlockedTermRunner;
 pub use add_moderator::AddModeratorRunner;
@@ -81,7 +81,6 @@ pub use guest_star_end_session::GuestStarEndSessionRunner;
 pub use guest_star_invite::GuestStarInviteRunner;
 pub use guest_star_remove_guest::GuestStarRemoveGuestRunner;
 pub use guest_star_update_slot::GuestStarUpdateSlotRunner;
-pub use identity::SelfIdentity;
 pub use lock_prediction::LockPredictionRunner;
 pub use pause_reward::PauseRewardRunner;
 pub use remove_blocked_term::RemoveBlockedTermRunner;
@@ -347,7 +346,7 @@ pub(crate) mod test_support {
     use forge_types::{ArgStack, EventId};
     use time::OffsetDateTime;
 
-    use crate::builtin::{HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
+    use crate::config::{HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
     use crate::helix::{HelixError, HelixRequest, HelixTransport};
     use crate::helix_gateway::HELIX_GATEWAY_PROFILE;
     use crate::oauth_client::{

@@ -10,8 +10,8 @@ use forge_types::{
 };
 
 use super::payload_read::{self, twitch_actor};
+use crate::collection_keys::REWARD_OPTIONS_KEY;
 use crate::payload_fields::channel_points as fields;
-use crate::reward_collection::REWARD_OPTIONS_KEY;
 
 pub(crate) struct ChannelPointsRedemptionDescriptor;
 

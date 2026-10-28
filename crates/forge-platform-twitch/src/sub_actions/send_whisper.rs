@@ -13,8 +13,8 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-use super::identity::SelfIdentity;
-use super::user_target::{TargetKeys, UserTarget};
+use crate::account::identity::SelfIdentity;
+use crate::account::user_target::{TargetKeys, UserTarget};
 use crate::bot_account::TwitchBotAccount;
 use crate::chat_sender::{ChatDelivery, ChatSenders, StepResult, configured_sender, step_result};
 use crate::helix::HelixTransport;

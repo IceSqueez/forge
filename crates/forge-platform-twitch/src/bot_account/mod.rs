@@ -548,8 +548,8 @@ pub(crate) mod test_support {
                 crate::helix_gateway::helix_gateway(
                     &endpoints,
                     Arc::new(forge_net::TokenBucketRateLimiter::new(
-                        crate::builtin::HELIX_BUDGET_CAPACITY,
-                        crate::builtin::HELIX_BUDGET_WINDOW,
+                        crate::config::HELIX_BUDGET_CAPACITY,
+                        crate::config::HELIX_BUDGET_WINDOW,
                     )),
                     Arc::clone(&bus) as Arc<dyn EventPublisher>,
                 )

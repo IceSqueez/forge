@@ -12,7 +12,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use super::guest_star::{interpolate, session_id_field, validate_session_id, with_session_id};
-use super::identity::SelfIdentity;
+use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
 const KIND_ID: &str = "twitch.guest_star.update_slot";

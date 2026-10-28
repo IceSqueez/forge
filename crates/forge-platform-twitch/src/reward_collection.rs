@@ -7,21 +7,20 @@ use forge_platform_core::{
     CollectionRevisions, CollectionToggle, QuickActionFieldValue, SectionIcon,
 };
 
-use crate::builtin::{TwitchIntegrationBundle, int_field, text_field, toggle_field};
+use crate::account::identity::BroadcasterTier;
+use crate::builtin::TwitchIntegrationBundle;
+use crate::collection_keys::REWARDS_COLLECTION;
 use crate::custom_rewards::{
     BACKGROUND_COLOR_KEY, COST_KEY, GLOBAL_COOLDOWN_SECONDS_KEY, HEX_COLOR_LEN, IS_ENABLED_KEY,
     IS_PAUSED_KEY, IS_USER_INPUT_REQUIRED_KEY, MAX_CUSTOM_REWARDS, MAX_PER_STREAM_KEY,
     MAX_PER_USER_PER_STREAM_KEY, MAX_PROMPT_CHARS, MAX_TITLE_CHARS, MIN_COST, PROMPT_KEY,
-    RewardBody, TITLE_KEY, create_request, delete_request, first_row, is_valid_hex_color,
-    list_request, update_request,
+    RewardBody, TITLE_KEY, create_request, delete_request, is_valid_hex_color, list_request,
+    update_request,
 };
 use crate::helix::{HelixError, HelixRequest};
-use crate::sub_actions::identity::BroadcasterTier;
+use crate::helix_envelope::{first_row, rows};
+use crate::quick_action_fields::{int_field, text_field, toggle_field};
 use forge_net::status::NOT_FOUND;
-
-pub(crate) const REWARDS_COLLECTION: &str = "rewards";
-pub(crate) const REWARD_OPTIONS_KEY: &str = "collections.twitch.rewards";
-pub(crate) const MANAGEABLE_REWARD_OPTIONS_KEY: &str = "collections.twitch.rewards.manageable";
 
 const ENABLED_TOGGLE: &str = "enabled";
 const PAUSED_TOGGLE: &str = "paused";
@@ -186,10 +185,6 @@ fn limit_value(
         return Err(invalid(key, "Must be 0 or more".to_owned()));
     }
     Ok(value)
-}
-
-fn rows(response: &serde_json::Value) -> impl Iterator<Item = &serde_json::Value> {
-    response["data"].as_array().into_iter().flatten()
 }
 
 fn row_id(row: &serde_json::Value) -> Option<&str> {

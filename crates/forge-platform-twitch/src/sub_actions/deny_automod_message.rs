@@ -8,7 +8,7 @@ use forge_types::{ArgStack, SubActionTelemetry};
 use super::approve_automod_message::{
     automod_config_fields, automod_default_config, execute_automod_runner, validate_automod_config,
 };
-use super::identity::SelfIdentity;
+use crate::account::identity::SelfIdentity;
 use crate::helix::HelixTransport;
 
 const KIND_ID: &str = "twitch.automod.deny_message";

@@ -8,7 +8,7 @@ use forge_registry::{RegistryError, RunContext, SubActionCategory, SubActionRunn
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
 
-use super::identity::SelfIdentity;
+use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
 async fn set_shield(

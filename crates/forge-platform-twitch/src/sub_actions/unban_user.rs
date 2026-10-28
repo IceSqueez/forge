@@ -8,8 +8,8 @@ use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, Su
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-use super::identity::SelfIdentity;
-use super::user_target::{TargetKeys, UserTarget};
+use crate::account::identity::SelfIdentity;
+use crate::account::user_target::{TargetKeys, UserTarget};
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
 use forge_net::status::BAD_REQUEST;
 

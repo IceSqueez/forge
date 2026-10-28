@@ -2,8 +2,8 @@ use thiserror::Error;
 
 use super::send::refusal_text;
 
+use crate::account::user_target::UserTarget;
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
-use crate::sub_actions::user_target::UserTarget;
 use forge_net::status::BAD_REQUEST;
 
 const WHISPERS_PATH: &str = "/helix/whispers";

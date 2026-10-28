@@ -11,11 +11,12 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-use super::identity::SelfIdentity;
+use crate::account::identity::SelfIdentity;
 use crate::custom_rewards::{
-    MAX_PROMPT_CHARS, MAX_TITLE_CHARS, RewardBody, create_request, first_row, is_valid_hex_color,
+    MAX_PROMPT_CHARS, MAX_TITLE_CHARS, RewardBody, create_request, is_valid_hex_color,
 };
 use crate::helix::HelixTransport;
+use crate::helix_envelope::first_row;
 
 const KIND_ID: &str = "twitch.channel_points.create_reward";
 

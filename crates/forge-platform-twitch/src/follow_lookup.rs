@@ -4,8 +4,8 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use crate::builtin::TwitchIntegrationBundle;
-use crate::custom_rewards::first_row;
 use crate::helix::{HelixMethod, HelixRequest};
+use crate::helix_envelope::first_row;
 
 const CHANNEL_FOLLOWERS_PATH: &str = "/helix/channels/followers";
 const BROADCASTER_ID_PARAM: &str = "broadcaster_id";

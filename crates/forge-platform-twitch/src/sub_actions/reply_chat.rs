@@ -13,7 +13,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-use super::identity::SelfIdentity;
+use crate::account::identity::SelfIdentity;
 use crate::bot_account::TwitchBotAccount;
 use crate::chat_sender::{
     ChatDelivery, ChatSenders, StepResult, configured_sender, failed_step, step_result,

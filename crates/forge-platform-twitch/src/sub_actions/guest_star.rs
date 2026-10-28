@@ -2,7 +2,7 @@ use forge_registry::runner::SubActionConfig;
 use forge_registry::{ConfigReason, FormField, RegistryError, SubActionConfigExt};
 use forge_types::Variant;
 
-use super::identity::{SelfIdentity, resolve_user_id};
+use crate::account::identity::{SelfIdentity, resolve_user_id};
 use crate::helix::{HelixError, HelixTransport};
 
 pub(crate) const SESSION_ID_DEFAULT: &str = "%guest_star.session_id%";

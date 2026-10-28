@@ -13,7 +13,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-use super::identity::SelfIdentity;
+use crate::account::identity::SelfIdentity;
 use crate::bot_account::TwitchBotAccount;
 use crate::cadence::CadenceLedger;
 use crate::chat_sender::{

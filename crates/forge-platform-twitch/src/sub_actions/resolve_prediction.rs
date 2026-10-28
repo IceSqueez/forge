@@ -7,11 +7,11 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
-use super::identity::SelfIdentity;
 use super::lock_prediction::{
     execute_prediction_runner, prediction_config_fields, prediction_default_config,
     validate_prediction_config,
 };
+use crate::account::identity::SelfIdentity;
 use crate::helix::HelixTransport;
 
 const KIND_ID: &str = "twitch.prediction.resolve";

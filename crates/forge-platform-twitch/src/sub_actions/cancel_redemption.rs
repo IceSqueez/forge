@@ -9,7 +9,7 @@ use super::fulfill_redemption::{
     execute_redemption_runner, redemption_config_fields, redemption_default_config,
     validate_redemption_config,
 };
-use super::identity::SelfIdentity;
+use crate::account::identity::SelfIdentity;
 use crate::helix::HelixTransport;
 
 const KIND_ID: &str = "twitch.channel_points.cancel_redemption";

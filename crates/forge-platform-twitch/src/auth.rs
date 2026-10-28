@@ -9,11 +9,11 @@ use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace};
 
+use crate::account::identity::BroadcasterTier;
 use crate::helix::CLIENT_ID_HEADER;
 use crate::oauth_client::{
     DevicePoll, TokenGrant, TwitchOAuthClient, ValidatedToken, decode, oauth_error,
 };
-use crate::sub_actions::identity::BroadcasterTier;
 
 const TWITCH_DEVICE_PATH: &str = "/device";
 const TWITCH_TOKEN_PATH: &str = "/token";

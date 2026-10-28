@@ -12,7 +12,7 @@ pub use session::ChatConnectionState;
 pub(crate) use whisper::{WhisperError, send_whisper, send_whisper_to};
 
 use crate::bot_account::TwitchBotAccount;
-use crate::builtin::ChatSessionConfig;
+use crate::config::ChatSessionConfig;
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;

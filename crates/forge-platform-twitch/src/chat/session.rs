@@ -1,9 +1,9 @@
 use crate::bot_account::TwitchBotAccount;
-use crate::builtin::ChatSessionConfig;
 use crate::chat::subscriber::{
     SubscribeError, SubscribePass, TopicRetries, TopicRetryRun, mark_revoked, subscribe_all,
     subscription_display_kind,
 };
+use crate::config::ChatSessionConfig;
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::event_kinds;
 use crate::helix::{FixedTokenSource, HelixHttpTransport, HelixTransport};

@@ -1,6 +1,6 @@
 {
   "name": "a YouTube chat command replies through the live chat insert endpoint",
-  "purpose": "forge resolves the active broadcast on the Data API, takes its liveChatId and polls liveChat/messages, following nextPageToken and pollingIntervalMillis. One viewer message that starts with the command phrase must arrive as youtube.chat.command, run the action bound to the youtube.chat.command trigger, and that action's Send Message step must insert the interpolated reply as a textMessageEvent into the same live chat, then publish chat.send. Every request forge makes must be one the fake models, so a YouTube call still aimed at a hard-coded production host or path shows up here.",
+  "purpose": "forge resolves the active broadcast on the Data API, takes its liveChatId and polls liveChat/messages, following nextPageToken and pollingIntervalMillis. One viewer message that starts with the command phrase must arrive as exactly one youtube.chat.message event carrying its message_id, fire the youtube.chat.command trigger bound to it, and that action's Send Message step must insert the reply interpolated with the sender and the command name the trigger split from the text as a textMessageEvent into the same live chat, then publish chat.send. Every request forge makes must be one the fake models, so a YouTube call still aimed at a hard-coded production host or path shows up here.",
   "fixture": {
     "youtube": {},
     "event_triggers": [
@@ -15,7 +15,7 @@
           {
             "kind_id": "youtube.chat.send_message",
             "config": {
-              "message": { "type": "string", "value": "hi %user_display_name%" }
+              "message": { "type": "string", "value": "hi %user_display_name% (%command_name%)" }
             },
             "enabled": true
           }
@@ -41,11 +41,12 @@
           "event": {
             "name": "chat",
             "source": "youtube",
-            "kind": "youtube.chat.command",
+            "kind": "youtube.chat.message",
             "payload": {
               "/message_text": { "equals": "!hello there" },
               "/author/display_name": { "equals": "Alice" },
-              "/command_name": { "equals": "hello" }
+              "/message_id": { "present": true },
+              "/command_name": { "present": false }
             },
             "within_ms": 10000
           }
@@ -67,7 +68,7 @@
             "body": {
               "/snippet/liveChatId": { "equals": "EmulatorLiveChatId0001" },
               "/snippet/type": { "equals": "textMessageEvent" },
-              "/snippet/textMessageDetails/messageText": { "equals": "hi Alice" }
+              "/snippet/textMessageDetails/messageText": { "equals": "hi Alice (hello)" }
             },
             "status": 200,
             "within_ms": 10000
@@ -79,7 +80,7 @@
             "kind": "chat.send",
             "payload": {
               "/channel": { "equals": "youtube" },
-              "/message": { "equals": "hi Alice" }
+              "/message": { "equals": "hi Alice (hello)" }
             },
             "within_ms": 10000
           }

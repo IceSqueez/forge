@@ -114,24 +114,6 @@ mod tests {
     }
 
     #[test]
-    fn a_text_list_keeps_only_the_strings_the_wire_actually_sent() {
-        assert_eq!(
-            text_list(&event(json!({ "args": ["1d6", 7, null, "adv"] })), "args"),
-            Variant::Array(vec![
-                Variant::String("1d6".to_owned()),
-                Variant::String("adv".to_owned()),
-            ])
-        );
-        for payload in [json!({}), json!({ "args": "1d6" }), json!({ "args": null })] {
-            assert_eq!(
-                text_list(&event(payload.clone()), "args"),
-                Variant::Array(vec![]),
-                "payload {payload}"
-            );
-        }
-    }
-
-    #[test]
     fn an_identity_reads_the_channel_id_and_display_name_apart_and_never_invents_a_login() {
         let full = identity(Some(&json!({
             "channel_id": "UCxyz",

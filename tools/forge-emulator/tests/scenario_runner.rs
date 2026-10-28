@@ -1833,8 +1833,8 @@ fn forge_youtube_echo(fake: &FakeYouTube) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let polling = tokio::spawn(poller.run(tokio_util::sync::CancellationToken::new()));
         while let Some(event) = event_rx.recv().await {
-            if event.kind == "youtube.chat.command" {
-                let text = event.payload["message_text"].as_str().unwrap_or_default();
+            let text = event.payload["message_text"].as_str().unwrap_or_default();
+            if event.kind == "youtube.chat.message" && text.starts_with('!') {
                 sender.send(&format!("echo {text}")).await.ok();
             }
         }

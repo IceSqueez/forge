@@ -1272,26 +1272,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn text_message_command_emits_youtube_chat_command() {
+    async fn a_bang_text_is_published_once_as_a_plain_chat_message() {
         let server = MockServer::start().await;
         mount_broadcast_mock(&server, broadcast_response("chat-cmd")).await;
         mount_chat_mock(
             &server,
             chat_response(
-                json!([text_item("cmd-1", "!shoutout user123", "Chatter")]),
+                json!([
+                    text_item("cmd-1", "!shoutout user123", "Chatter"),
+                    text_item("msg-2", "after the command", "Chatter"),
+                ]),
                 3000,
             ),
         )
         .await;
+        let (poller, mut rx) = make_poller_with_receiver(&server);
+        let cancel = CancellationToken::new();
+        let cancel_clone = cancel.clone();
+        let handle = tokio::spawn(async move { poller.run(cancel_clone).await });
+        assert_leading_online(&mut rx).await;
 
-        let event = first_event_from(&server).await;
+        let mut published = Vec::new();
+        for _ in 0..2 {
+            let event = tokio::time::timeout(Duration::from_secs(30), rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            published.push((event.kind, event.payload["message_id"].clone()));
+        }
+        cancel.cancel();
+        handle.await.unwrap().unwrap();
 
-        assert_eq!(event.kind, "youtube.chat.command");
-        assert_eq!(event.payload["command_name"].as_str().unwrap(), "shoutout");
-        let args = event.payload["args"].as_array().unwrap();
         assert_eq!(
-            args.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>(),
-            vec!["user123"]
+            published,
+            vec![
+                ("youtube.chat.message".to_owned(), json!("cmd-1")),
+                ("youtube.chat.message".to_owned(), json!("msg-2")),
+            ]
         );
     }
 
@@ -2439,16 +2456,6 @@ mod tests {
         poller
             .build_event(&raw, &mut DedupSet::bounded(DEDUP_WINDOW_SIZE))
             .unwrap()
-    }
-
-    #[test]
-    fn a_chat_command_carries_the_same_viewer_identity_as_a_plain_message() {
-        let ev = fixture_line(|raw| raw["snippet"]["displayMessage"] = json!("!hello"));
-        assert_eq!(ev.kind, "youtube.chat.command");
-        assert_eq!(
-            ChatViewer::read(&ev.payload),
-            Some(ChatViewer::new("UCviewer", "Глядач Ютубу"))
-        );
     }
 
     #[test]

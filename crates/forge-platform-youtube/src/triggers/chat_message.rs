@@ -131,6 +131,7 @@ mod tests {
             EventSource::YouTube,
             "youtube.chat.message",
             serde_json::json!({
+                "message_id": "LCC.msg-1",
                 "message_text": "hello world",
                 "author": { "display_name": "Viewer One", "channel_id": "UCxyz" }
             }),
@@ -163,12 +164,13 @@ mod tests {
     }
 
     #[test]
-    fn a_chat_message_publishes_its_author_as_the_canonical_principal() {
+    fn a_chat_message_publishes_its_author_as_the_canonical_principal_and_its_message_id() {
         let stack = ChatMessageDescriptor.build_arg_stack(&chat_event());
         for (name, value) in [
             ("user_id", "UCxyz"),
             ("user_name", "Viewer One"),
             ("message_text", "hello world"),
+            ("message_id", "LCC.msg-1"),
         ] {
             assert_eq!(
                 stack.get(name),

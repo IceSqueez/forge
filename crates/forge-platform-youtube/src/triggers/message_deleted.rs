@@ -105,16 +105,16 @@ mod tests {
     }
 
     #[test]
-    fn the_principal_block_stays_empty_because_a_tombstone_names_no_author() {
+    fn a_tombstone_offers_no_user_variables_because_it_names_no_author() {
         let event = deleted_event(json!({ "message_id": "msg-removed-1" }));
-
         let stack = ChatMessageDeletedDescriptor.build_arg_stack(&event);
+        let schema = ChatMessageDeletedDescriptor.output_schema().unwrap();
 
-        for name in ["user_id", "user_name"] {
-            assert_eq!(
-                stack.get(name),
-                Some(&Variant::String(String::new())),
-                "'{name}'"
+        for name in ["user_id", "user_name", "user_platform"] {
+            assert_eq!(stack.get(name), None, "stack '{name}'");
+            assert!(
+                schema.variables.iter().all(|v| v.name != name),
+                "schema '{name}'"
             );
         }
     }

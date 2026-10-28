@@ -120,6 +120,8 @@ mod tests {
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    use forge_registry::TriggerKindDescriptor;
+
     use super::*;
     use crate::live_chat_id::LiveChatIdHandle;
 
@@ -177,17 +179,59 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn empty_message_id_after_interpolation_fails_without_delete() {
+    async fn the_default_message_id_deletes_the_message_that_fired_a_chat_trigger() {
+        let event = Event::new(
+            forge_events::EventSource::YouTube,
+            "youtube.chat.message",
+            serde_json::json!({
+                "message_id": "LCC.abc-123",
+                "message_text": "!roll 1d6",
+                "author": { "display_name": "Viewer", "channel_id": "UCabc" }
+            }),
+        );
+        let stacks = [
+            crate::triggers::chat_message::ChatMessageDescriptor.build_arg_stack(&event),
+            crate::triggers::chat_command::ChatCommandDescriptor.build_arg_stack(&event),
+        ];
+        for stack in stacks {
+            let server = MockServer::start().await;
+            Mock::given(method("DELETE"))
+                .and(path("/liveChat/messages"))
+                .and(query_param("id", "LCC.abc-123"))
+                .respond_with(ResponseTemplate::new(204))
+                .expect(1)
+                .mount(&server)
+                .await;
+            let runner = runner_on(&server);
+
+            let (telemetry, _) = runner
+                .execute(&runner.default_config(), &make_ctx(&stack))
+                .await;
+
+            assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        }
+    }
+
+    #[tokio::test]
+    async fn an_empty_or_unresolved_message_id_fails_without_calling_the_api() {
         let server = MockServer::start().await;
         let runner = runner_on(&server);
-        let stack = ArgStack::new().set("mid".to_owned(), Variant::String(String::new()));
+        let blank = ArgStack::new().set("mid".to_owned(), Variant::String(String::new()));
+        for (template, stack) in [
+            ("%mid%", blank),
+            ("%message_id%", ArgStack::new()),
+            ("prefix-%missing%", ArgStack::new()),
+        ] {
+            let (telemetry, _) = runner.execute(&config(template), &make_ctx(&stack)).await;
 
-        let (telemetry, _) = runner.execute(&config("%mid%"), &make_ctx(&stack)).await;
-
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
+                "template {template:?}"
+            );
+        }
         assert!(
             server.received_requests().await.unwrap().is_empty(),
-            "empty message_id must not reach the delete transport"
+            "an unusable message_id must not reach the delete transport"
         );
     }
 

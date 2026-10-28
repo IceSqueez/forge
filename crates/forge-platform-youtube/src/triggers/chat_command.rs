@@ -216,6 +216,9 @@ fn author_identity(event: &Event) -> ActorIdentity {
 
 #[cfg(test)]
 mod tests {
+    use forge_registry::kind_matches_prefix;
+    use forge_types::ChatViewer;
+
     use super::*;
 
     fn make_config(phrase: &str, case_sensitive: bool) -> TriggerConfig {
@@ -225,17 +228,43 @@ mod tests {
         config
     }
 
-    fn command_event(message: &str) -> Event {
+    fn chat_line(message: &str) -> Event {
         Event::new(
             EventSource::YouTube,
-            "youtube.chat.command",
+            "youtube.chat.message",
             serde_json::json!({
+                "message_id": "LCC.cmd-1",
                 "message_text": message,
-                "command_name": "roll",
-                "args": ["1d6"],
                 "author": { "display_name": "Viewer", "channel_id": "UCabc" }
             }),
         )
+    }
+
+    fn published_chat_line(message: &str) -> Event {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/published_chat_message.json"
+        ))
+        .unwrap();
+        let mut payload = fixture["payload"].clone();
+        payload["message_text"] = serde_json::Value::String(message.to_owned());
+        Event::new(
+            serde_json::from_value(fixture["source"].clone()).unwrap(),
+            fixture["kind"].as_str().unwrap(),
+            payload,
+        )
+    }
+
+    #[test]
+    fn the_command_trigger_listens_to_and_matches_the_chat_line_the_poller_publishes() {
+        let event = published_chat_line("!roll 1d6");
+        let filter = ChatCommandDescriptor.event_filter();
+
+        assert_eq!(filter.source, Some(event.source));
+        assert!(kind_matches_prefix(
+            &event.kind,
+            filter.kind_prefix.as_deref().unwrap()
+        ));
+        assert!(ChatCommandDescriptor.matches_trigger(&make_config("!roll", false), &event));
     }
 
     #[test]
@@ -246,13 +275,13 @@ mod tests {
             ("!roll", true, "!roll 1d6", true),
             ("!roll", true, "!Roll 1d6", false),
             ("!roll", false, "please !roll", false),
+            ("!roll", false, "!", false),
+            ("!roll", false, "", false),
             ("", false, "!anything", false),
         ] {
             assert_eq!(
-                ChatCommandDescriptor.matches_trigger(
-                    &make_config(phrase, case_sensitive),
-                    &command_event(message)
-                ),
+                ChatCommandDescriptor
+                    .matches_trigger(&make_config(phrase, case_sensitive), &chat_line(message)),
                 expected,
                 "phrase {phrase:?} case_sensitive {case_sensitive} message {message:?}"
             );
@@ -260,13 +289,41 @@ mod tests {
     }
 
     #[test]
-    fn a_command_publishes_its_sender_its_name_and_its_arguments() {
-        let stack = ChatCommandDescriptor.build_arg_stack(&command_event("!roll 1d6"));
+    fn the_command_name_and_arguments_are_split_from_the_message_text() {
+        for (message, name, args) in [
+            ("!roll 1d6", "roll", vec!["1d6"]),
+            ("!roll   1d6 \t adv  ", "roll", vec!["1d6", "adv"]),
+            ("!Roll 1D6", "Roll", vec!["1D6"]),
+            ("!roll", "roll", vec![]),
+            ("!", "", vec![]),
+            ("hello there", "hello", vec!["there"]),
+        ] {
+            let stack = ChatCommandDescriptor.build_arg_stack(&chat_line(message));
+            assert_eq!(
+                stack.get("command_name"),
+                Some(&Variant::String(name.to_owned())),
+                "command_name for {message:?}"
+            );
+            assert_eq!(
+                stack.get("args"),
+                Some(&Variant::Array(
+                    args.into_iter()
+                        .map(|arg| Variant::String(arg.to_owned()))
+                        .collect()
+                )),
+                "args for {message:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_command_publishes_its_sender_its_text_and_the_id_of_its_message() {
+        let stack = ChatCommandDescriptor.build_arg_stack(&chat_line("!roll 1d6"));
         for (name, value) in [
             ("user_id", "UCabc"),
             ("user_name", "Viewer"),
             ("message_text", "!roll 1d6"),
-            ("command_name", "roll"),
+            ("message_id", "LCC.cmd-1"),
         ] {
             assert_eq!(
                 stack.get(name),
@@ -274,15 +331,30 @@ mod tests {
                 "'{name}'"
             );
         }
-        assert_eq!(
-            stack.get("args"),
-            Some(&Variant::Array(vec![Variant::String("1d6".to_owned())]))
-        );
+    }
+
+    #[test]
+    fn a_command_reports_whether_it_is_the_viewers_first_chat_message() {
+        for first_message in [true, false] {
+            let mut event = chat_line("!roll 1d6");
+            ChatViewer {
+                first_message,
+                ..ChatViewer::new("UCabc", "Viewer")
+            }
+            .attach(&mut event.payload);
+
+            let stack = ChatCommandDescriptor.build_arg_stack(&event);
+
+            assert_eq!(
+                stack.get("first_message"),
+                Some(&Variant::Bool(first_message))
+            );
+        }
     }
 
     #[test]
     fn the_legacy_sender_names_still_carry_what_their_canonical_twins_carry() {
-        let stack = ChatCommandDescriptor.build_arg_stack(&command_event("!roll 1d6"));
+        let stack = ChatCommandDescriptor.build_arg_stack(&chat_line("!roll 1d6"));
         assert_eq!(stack.get("user_display_name"), stack.get("user_name"));
         assert_eq!(stack.get("channel_id"), stack.get("user_id"));
         assert_eq!(

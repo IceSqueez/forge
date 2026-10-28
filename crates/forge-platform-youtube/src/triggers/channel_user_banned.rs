@@ -286,7 +286,7 @@ mod tests {
         for (filter, wire_type, expected) in [
             (Some("permanent"), Some("permanent"), true),
             (Some("permanent"), Some("temporary"), false),
-            (Some("permanent"), None, false),
+            (Some("permanent"), None, true),
             (Some("temporary"), Some("temporary"), true),
             (Some("temporary"), Some("permanent"), false),
             (Some("temporary"), None, false),

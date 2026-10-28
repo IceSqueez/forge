@@ -164,10 +164,12 @@ mod tests {
     }
 
     #[test]
-    fn the_gift_count_comes_from_the_batch_size_the_wire_reports() {
+    fn the_gift_count_and_its_legacy_twin_come_from_the_batch_size_floored_at_one() {
         for (wire_count, expected) in [
             (json!(5_i64), 5),
             (json!(1_i64), 1),
+            (json!(0_i64), 1),
+            (json!(-3_i64), 1),
             (json!(null), 1),
             (json!("5"), 1),
         ] {
@@ -175,13 +177,14 @@ mod tests {
                 "count": wire_count.clone(),
                 "level_name": "Diamond",
             }));
-            assert_eq!(
-                ChannelMemberGiftDescriptor
-                    .build_arg_stack(&event)
-                    .get("gift_count"),
-                Some(&Variant::Int(expected)),
-                "wire count {wire_count}"
-            );
+            let stack = ChannelMemberGiftDescriptor.build_arg_stack(&event);
+            for name in ["gift_count", "gift.count"] {
+                assert_eq!(
+                    stack.get(name),
+                    Some(&Variant::Int(expected)),
+                    "'{name}' for wire count {wire_count}"
+                );
+            }
         }
     }
 
@@ -211,6 +214,8 @@ mod tests {
                 "'{name}'"
             );
         }
-        assert_eq!(stack.get("gift_count"), Some(&Variant::Int(1)));
+        for name in ["gift_count", "gift.count"] {
+            assert_eq!(stack.get(name), Some(&Variant::Int(1)), "'{name}'");
+        }
     }
 }

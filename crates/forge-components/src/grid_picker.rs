@@ -1106,6 +1106,7 @@ fn grid_rail_entry(
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::install_presentation;
     use gpui::VisualTestContext;
 
     use super::*;
@@ -1173,6 +1174,7 @@ mod tests {
         cx: &mut gpui::TestAppContext,
         groups: Vec<GridPickerGroup>,
     ) -> (Entity<GridPicker>, Entity<Picked>, &mut VisualTestContext) {
+        install_presentation(cx);
         let (picker, vcx) = cx.add_window_view(|_window, cx| {
             GridPicker::new(settings(), groups, HashSet::new(), FORGE_DEFAULT, cx)
         });

@@ -761,12 +761,14 @@ impl Render for TextInput {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::install_presentation;
 
     fn with_input<R>(
         cx: &mut gpui::TestAppContext,
         content: &str,
         f: impl FnOnce(&mut TextInput, &mut Window, &mut Context<TextInput>) -> R,
     ) -> R {
+        install_presentation(cx);
         let window = cx.add_window(|_window, cx| TextInput::new("placeholder", cx));
         window
             .update(cx, |input, window, cx| {
@@ -807,6 +809,7 @@ mod tests {
             }),
         ];
         for (label, edit) in edits {
+            install_presentation(cx);
             let window =
                 cx.add_window(|_window, cx| TextInput::new("placeholder", cx).read_only(true));
             let content = window
@@ -964,6 +967,7 @@ mod tests {
         cx: &mut gpui::TestAppContext,
         act: impl FnOnce(&Entity<TextInput>, &mut gpui::VisualTestContext),
     ) -> Vec<String> {
+        install_presentation(cx);
         let (input, vcx) = cx.add_window_view(|_window, cx| TextInput::new("placeholder", cx));
         vcx.update(|window, _cx| window.activate_window());
         let commits = vcx.update(|_window, cx| {
@@ -1105,6 +1109,7 @@ mod tests {
         edit_first: bool,
         keys: &[&str],
     ) -> FocusWalk {
+        install_presentation(cx);
         let (form, vcx) = cx.add_window_view(|_window, cx| TwoFields {
             first: cx.new(|cx| TextInput::new("first", cx)),
             second: cx.new(|cx| TextInput::new("second", cx)),
@@ -1254,6 +1259,7 @@ mod tests {
             (true, "copy", copy, "untouched", "hunter2"),
             (true, "cut", cut, "untouched", ""),
         ] {
+            install_presentation(cx);
             let window =
                 cx.add_window(|_window, cx| TextInput::new("placeholder", cx).secure(secure));
             let seen = window
@@ -1282,6 +1288,7 @@ mod tests {
         secure: bool,
         f: impl FnOnce(&mut TextInput, &mut Window, &mut Context<TextInput>) -> R,
     ) -> R {
+        install_presentation(cx);
         let window = cx.add_window(|_window, cx| TextInput::new("placeholder", cx).secure(secure));
         window
             .update(cx, |input, window, cx| {
@@ -1359,6 +1366,7 @@ mod tests {
 
     #[gpui::test]
     fn insert_at_caret_announces_the_new_content(cx: &mut gpui::TestAppContext) {
+        install_presentation(cx);
         let window = cx.add_window(|_window, cx| TextInput::new("placeholder", cx));
         let input = window.root(cx).unwrap();
         let heard = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));

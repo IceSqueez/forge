@@ -419,6 +419,7 @@ impl Render for VariablePicker {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::install_presentation;
     use gpui::{AppContext, VisualTestContext};
 
     use super::*;
@@ -488,6 +489,7 @@ mod tests {
             bind_picker_keys(cx);
             bind_text_input_keys(cx);
         });
+        install_presentation(cx);
         let (picker, vcx) = cx.add_window_view(|window, cx| {
             VariablePicker::new(labels(), groups, FORGE_DEFAULT, window, cx)
         });

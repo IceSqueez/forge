@@ -630,12 +630,14 @@ impl Render for TextArea {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::install_presentation;
 
     fn with_area<R>(
         cx: &mut gpui::TestAppContext,
         content: &str,
         f: impl FnOnce(&mut TextArea, &mut Window, &mut Context<TextArea>) -> R,
     ) -> R {
+        install_presentation(cx);
         let window = cx.add_window(|_window, cx| TextArea::new("placeholder", cx));
         window
             .update(cx, |area, window, cx| {
@@ -650,6 +652,7 @@ mod tests {
         content: &str,
         f: impl FnOnce(&mut TextArea, &mut Window, &mut Context<TextArea>) -> R,
     ) -> R {
+        install_presentation(cx);
         let window = cx.add_window(|_window, cx| TextArea::new("placeholder", cx));
         window
             .update(cx, |area, _window, cx| {
@@ -736,6 +739,7 @@ mod tests {
         cx: &mut gpui::TestAppContext,
         f: impl FnOnce(&mut TextArea, &mut Window, &mut Context<TextArea>),
     ) -> (String, Vec<String>) {
+        install_presentation(cx);
         let window = cx.add_window(|_window, cx| TextArea::new("placeholder", cx));
         let area = window.root(cx).unwrap();
         window
@@ -832,6 +836,7 @@ mod tests {
     #[gpui::test]
     fn set_content_on_a_scrolled_area_returns_to_the_top(cx: &mut gpui::TestAppContext) {
         let content = tall_content();
+        install_presentation(cx);
         let window = cx.add_window(|_window, cx| TextArea::new("placeholder", cx));
         window
             .update(cx, |area, _window, cx| {

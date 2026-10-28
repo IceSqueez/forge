@@ -196,3 +196,84 @@ fn resolve_family(slot: &RwLock<Option<SharedString>>, fallback: &'static str) -
         Err(_) => SharedString::from(fallback),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use gpui::px;
+
+    use super::{Density, Spacing, scaled, spacing};
+
+    const ALL_DENSITIES: [Density; 3] = [Density::Compact, Density::Cozy, Density::Spacious];
+
+    #[test]
+    fn cozy_returns_every_value_unchanged_including_fractions() {
+        for value in [0.0, 1.0, 2.0, 8.0, 10.5, 13.3, 100.0] {
+            assert_eq!(scaled(px(value), Density::Cozy), px(value));
+        }
+    }
+
+    #[test]
+    fn compact_and_spacious_round_to_whole_pixels_across_the_scale_and_off_scale() {
+        for (base, compact, spacious) in [
+            (4.0, 3.0, 5.0),
+            (6.0, 5.0, 7.0),
+            (10.0, 9.0, 12.0),
+            (16.0, 14.0, 19.0),
+            (24.0, 20.0, 29.0),
+            (8.0, 7.0, 10.0),
+            (12.0, 10.0, 14.0),
+            (14.0, 12.0, 17.0),
+            (18.0, 15.0, 22.0),
+        ] {
+            assert_eq!(
+                scaled(px(base), Density::Compact),
+                px(compact),
+                "compact {base}"
+            );
+            assert_eq!(
+                scaled(px(base), Density::Spacious),
+                px(spacious),
+                "spacious {base}"
+            );
+        }
+    }
+
+    #[test]
+    fn hairline_values_stay_put_in_every_density() {
+        for density in ALL_DENSITIES {
+            for value in [1.0, 2.0] {
+                assert_eq!(scaled(px(value), density), px(value), "{density:?} {value}");
+            }
+        }
+    }
+
+    #[test]
+    fn zero_stays_zero_in_every_density() {
+        for density in ALL_DENSITIES {
+            assert_eq!(scaled(px(0.0), density), px(0.0));
+        }
+    }
+
+    #[test]
+    fn spacing_is_the_scaled_base_of_each_step() {
+        for step in [
+            (Spacing::None, 0.0),
+            (Spacing::Xxs, 4.0),
+            (Spacing::Xs, 6.0),
+            (Spacing::Sm, 10.0),
+            (Spacing::Md, 16.0),
+            (Spacing::Lg, 24.0),
+        ] {
+            for density in ALL_DENSITIES {
+                assert_eq!(spacing(step.0, density), scaled(px(step.1), density));
+            }
+        }
+    }
+
+    #[test]
+    fn tighter_steps_spacious_to_cozy_to_compact_and_stops_at_compact() {
+        assert_eq!(Density::Spacious.tighter(), Density::Cozy);
+        assert_eq!(Density::Cozy.tighter(), Density::Compact);
+        assert_eq!(Density::Compact.tighter(), Density::Compact);
+    }
+}

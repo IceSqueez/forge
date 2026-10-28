@@ -470,6 +470,7 @@ impl Render for CodeEditor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::install_presentation;
     use gpui::{Entity, TestAppContext, VisualTestContext};
 
     const LOADED: &str = "let a = 1;\nlet b=2;";
@@ -493,6 +494,7 @@ mod tests {
         cx: &mut TestAppContext,
         act: impl FnOnce(&Entity<CodeEditor>, &mut VisualTestContext),
     ) -> Vec<String> {
+        install_presentation(cx);
         let (editor, vcx) =
             cx.add_window_view(|_window, cx| CodeEditor::new(Language::Rhai, "", cx));
         vcx.update(|window, _cx| window.activate_window());
@@ -626,6 +628,7 @@ mod tests {
 
     #[gpui::test]
     fn replacing_in_place_keeps_the_caret_line_and_does_not_scroll_to_it(cx: &mut TestAppContext) {
+        install_presentation(cx);
         let (editor, vcx) =
             cx.add_window_view(|_window, cx| CodeEditor::new(Language::Rhai, "", cx));
         let kept = vcx.update(|_window, cx| {
@@ -700,6 +703,7 @@ mod tests {
             cx: &mut TestAppContext,
             surroundings: Surroundings,
         ) -> (Self, &mut VisualTestContext) {
+            install_presentation(cx);
             let (host, vcx) = cx.add_window_view(|_window, cx| Host {
                 editor: cx.new(|cx| {
                     let editor = CodeEditor::new(Language::Rhai, "", cx);
@@ -818,6 +822,7 @@ mod tests {
     fn a_field_shows_its_line_count_clamped_to_the_row_range(cx: &mut TestAppContext) {
         const LINE: Pixels = px(10.0);
         let chrome = PAD_Y + PAD_Y + BORDER_THIN + BORDER_THIN;
+        install_presentation(cx);
         let (editor, vcx) = cx.add_window_view(|_window, cx| {
             CodeEditor::new(Language::Rhai, "", cx)
                 .with_line_height(LINE)
@@ -915,6 +920,7 @@ mod tests {
             (lines(12), 4.0),
             ("x".repeat(2_000), 4.0),
         ] {
+            install_presentation(cx);
             let (editor, vcx) = cx.add_window_view(|_window, cx| {
                 CodeEditor::new(Language::Rhai, "", cx)
                     .with_line_height(LINE)
@@ -949,6 +955,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         const TOKEN: &str = "%user_id%";
+        install_presentation(cx);
         let (editor, vcx) = cx
             .add_window_view(|_window, cx| CodeEditor::new(Language::Rhai, "", cx).compact_field());
 

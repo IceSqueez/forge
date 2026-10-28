@@ -329,7 +329,7 @@ mod tests {
     };
     use crate::home_stats::{HomeStats, Integration};
     use crate::integration_lifecycle::IntegrationLifecycle;
-    use crate::test_support::{pump, runtime};
+    use crate::test_support::{install_presentation, pump, runtime};
     use crate::twitch_bot_presence::TwitchBotPresence;
     use forge_components::{InputBarEvent, Toasts};
     use forge_platform_core::SENDER_FIELD;
@@ -341,6 +341,7 @@ mod tests {
         rt: &tokio::runtime::Runtime,
         connected: &[Integration],
     ) -> (Entity<ChatComposer>, &'a mut VisualTestContext) {
+        install_presentation(cx);
         cx.update(|cx| cx.set_global(Toasts::new()));
         let connections: Vec<(Integration, bool)> =
             [Integration::Twitch, Integration::YouTube, Integration::Kick]

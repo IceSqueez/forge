@@ -569,6 +569,7 @@ pub(crate) use forward_input_handler;
 mod tests {
     use super::*;
     use crate::highlight::Language;
+    use crate::test_support::install_presentation;
     use crate::{CodeEditor, TextArea, TextInput};
     use gpui::{Render, TestAppContext};
 
@@ -621,6 +622,7 @@ mod tests {
         content: &str,
         act: impl FnOnce(&mut T, &mut Window, &mut Context<T>) -> R,
     ) -> R {
+        install_presentation(cx);
         let window = cx.add_window(|_window, cx| T::fresh(cx));
         window
             .update(cx, |editor, window, cx| {

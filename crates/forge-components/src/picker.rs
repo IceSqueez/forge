@@ -380,6 +380,7 @@ impl Render for Picker {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::install_presentation;
     use gpui::{AppContext, Modifiers, VisualTestContext, point, px};
 
     use super::*;
@@ -416,6 +417,7 @@ mod tests {
     ) -> (Entity<Picker>, Entity<Heard>, &'a mut VisualTestContext) {
         cx.update(bind_picker_keys);
         let current = current.map(|id| SharedString::from(id.to_owned()));
+        install_presentation(cx);
         let (picker, vcx) = cx.add_window_view(|_window, cx| {
             Picker::new(labels(), roster, FORGE_DEFAULT, cx).with_current(current)
         });
@@ -692,6 +694,7 @@ mod tests {
     ) -> (Entity<Picker>, Entity<Heard>, &mut VisualTestContext) {
         cx.update(bind_picker_keys);
         cx.update(crate::text_input::bind_text_input_keys);
+        install_presentation(cx);
         let (picker, vcx) = cx.add_window_view(|_window, cx| {
             Picker::new(labels(), roster, FORGE_DEFAULT, cx).with_custom_entry("custom".into())
         });

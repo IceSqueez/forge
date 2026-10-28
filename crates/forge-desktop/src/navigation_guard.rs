@@ -176,6 +176,7 @@ mod tests {
 
     use super::*;
     use crate::i18n::install_language;
+    use crate::test_support::install_presentation;
     use crate::unsaved_work::UnsavedWork;
 
     #[derive(Clone, Copy)]
@@ -241,6 +242,7 @@ mod tests {
     }
 
     fn rig(cx: &mut TestAppContext, dirty: bool, save_start: SaveStart) -> Rig {
+        install_presentation(cx);
         let window: AnyWindowHandle = cx
             .add_window(|_, _| FakeWork {
                 dirty: false,
@@ -502,6 +504,7 @@ mod tests {
 
     fn open_dialog(cx: &mut TestAppContext) -> (Heard, &mut VisualTestContext) {
         install_language(Language::En);
+        install_presentation(cx);
         let heard = Heard::default();
         let host_heard = Rc::clone(&heard);
         let (_host, vcx) = cx.add_window_view(|_, _| DialogHost { heard: host_heard });

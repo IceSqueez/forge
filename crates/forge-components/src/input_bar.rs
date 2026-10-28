@@ -616,6 +616,7 @@ impl Render for InputBar {
 mod tests {
     use super::*;
     use crate::palette::FORGE_DEFAULT;
+    use crate::test_support::install_presentation;
 
     const TWITCH: &str = "twitch";
     const YOUTUBE: &str = "youtube";
@@ -648,6 +649,7 @@ mod tests {
         targets: Vec<(SendTarget, bool)>,
         f: impl FnOnce(&mut InputBar, &mut Window, &mut Context<InputBar>) -> R,
     ) -> R {
+        install_presentation(cx);
         let window = cx.add_window(|_window, cx| {
             InputBar::new("placeholder", FORGE_DEFAULT, cx).with_targets(targets)
         });
@@ -762,6 +764,7 @@ mod tests {
 
     #[gpui::test]
     fn send_carries_only_the_available_selected_targets(cx: &mut gpui::TestAppContext) {
+        install_presentation(cx);
         let window = cx.add_window(|_window, cx| {
             InputBar::new("placeholder", FORGE_DEFAULT, cx).with_targets(strip(true, true, true))
         });
@@ -814,6 +817,7 @@ mod tests {
         switch: Option<InputBarSwitch>,
         picks: &[usize],
     ) -> (Vec<usize>, Option<InputBarSwitch>) {
+        install_presentation(cx);
         let window = cx.add_window(|_window, cx| {
             InputBar::new("placeholder", FORGE_DEFAULT, cx).with_targets(strip(true, true, true))
         });

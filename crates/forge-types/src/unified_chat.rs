@@ -565,15 +565,17 @@ mod tests {
             ),
             (
                 ChatModerationAction::RemoveUser {
+                    user_id: Some("u-1".to_string()),
                     user_name: "bob".to_string(),
-                    timeout: true,
+                    removal: UserRemoval::Timeout,
                 },
                 "remove_user",
             ),
             (
                 ChatModerationAction::RemoveUser {
+                    user_id: None,
                     user_name: "eve".to_string(),
-                    timeout: false,
+                    removal: UserRemoval::Ban,
                 },
                 "remove_user",
             ),
@@ -747,17 +749,53 @@ mod tests {
     }
 
     #[test]
-    fn chat_moderation_action_debug_hides_the_removed_user_name() {
+    fn remove_user_wire_shape_names_the_removal_and_omits_an_absent_user_id() {
+        let cases = [
+            (
+                ChatModerationAction::RemoveUser {
+                    user_id: Some("u-1".to_string()),
+                    user_name: "bob".to_string(),
+                    removal: UserRemoval::Ban,
+                },
+                serde_json::json!({
+                    "type": "remove_user",
+                    "user_id": "u-1",
+                    "user_name": "bob",
+                    "removal": "ban",
+                }),
+            ),
+            (
+                ChatModerationAction::RemoveUser {
+                    user_id: None,
+                    user_name: "bob".to_string(),
+                    removal: UserRemoval::Timeout,
+                },
+                serde_json::json!({
+                    "type": "remove_user",
+                    "user_name": "bob",
+                    "removal": "timeout",
+                }),
+            ),
+        ];
+
+        for (action, wire) in cases {
+            assert_eq!(serde_json::to_value(&action).unwrap(), wire);
+        }
+    }
+
+    #[test]
+    fn chat_moderation_action_debug_hides_the_removed_user_name_and_id() {
         let rendered = format!(
             "{:?}",
             ChatModerationAction::RemoveUser {
+                user_id: Some(AUTHOR_ID.to_string()),
                 user_name: AUTHOR.to_string(),
-                timeout: true,
+                removal: UserRemoval::Timeout,
             }
         );
         assert_eq!(
             rendered,
-            "RemoveUser { user_name: <redacted>, timeout: true }"
+            "RemoveUser { user_id: Some(<redacted>), user_name: <redacted>, removal: Timeout }"
         );
     }
 

@@ -84,7 +84,9 @@ fn try_map_chat_event(
 #[cfg(test)]
 mod tests {
     use forge_events::{Event, EventSource};
-    use forge_types::{ChatModerationAction, ChatModerationPayload, ChatSegment, ModerationMarks};
+    use forge_types::{
+        ChatModerationAction, ChatModerationPayload, ChatSegment, ModerationMarks, UserRemoval,
+    };
 
     use super::*;
 
@@ -244,8 +246,9 @@ mod tests {
     #[test]
     fn a_moderation_event_maps_to_a_mark_stamped_with_the_event_time() {
         let action = ChatModerationAction::RemoveUser {
+            user_id: Some("u-1".to_string()),
             user_name: "bob".to_string(),
-            timeout: true,
+            removal: UserRemoval::Timeout,
         };
         let event = moderation_event(EventSource::Kick, action.clone());
 

@@ -404,14 +404,32 @@ mod tests {
 
     #[tokio::test]
     async fn a_user_removal_marks_that_users_late_rows_received_before_it_only() {
-        for timeout in [true, false] {
+        for (removal, removed) in [
+            (
+                UserRemoval::Timeout,
+                ModerationMarks {
+                    deleted: true,
+                    timed_out: true,
+                    banned: false,
+                },
+            ),
+            (
+                UserRemoval::Ban,
+                ModerationMarks {
+                    deleted: true,
+                    timed_out: false,
+                    banned: true,
+                },
+            ),
+        ] {
             let mut rig = rig().await;
             let at = OffsetDateTime::now_utc();
-            let removal = ChatModerationAction::RemoveUser {
+            let action = ChatModerationAction::RemoveUser {
+                user_id: None,
                 user_name: "bob".to_string(),
-                timeout,
+                removal,
             };
-            flush(&mut rig.sink, vec![mark(PlatformId::Twitch, removal, at)]).await;
+            flush(&mut rig.sink, vec![mark(PlatformId::Twitch, action, at)]).await;
 
             flush(
                 &mut rig.sink,
@@ -424,11 +442,6 @@ mod tests {
             )
             .await;
 
-            let removed = ModerationMarks {
-                deleted: true,
-                timed_out: timeout,
-                banned: !timeout,
-            };
             assert_eq!(
                 [
                     marks_of(&rig, "before").await,
@@ -442,7 +455,177 @@ mod tests {
                     ModerationMarks::default(),
                     ModerationMarks::default(),
                 ],
-                "timeout = {timeout}"
+                "removal = {removal:?}"
+            );
+        }
+    }
+
+    struct MarkCase {
+        name: &'static str,
+        row_source: PlatformId,
+        row_id: &'static str,
+        row_author: &'static str,
+        row_author_id: Option<&'static str>,
+        source: PlatformId,
+        action: ChatModerationAction,
+        expected: ModerationMarks,
+    }
+
+    fn remove(
+        user_id: Option<&str>,
+        user_name: &str,
+        removal: UserRemoval,
+    ) -> ChatModerationAction {
+        ChatModerationAction::RemoveUser {
+            user_id: user_id.map(str::to_string),
+            user_name: user_name.to_string(),
+            removal,
+        }
+    }
+
+    fn banned() -> ModerationMarks {
+        ModerationMarks {
+            deleted: true,
+            timed_out: false,
+            banned: true,
+        }
+    }
+
+    fn timed_out() -> ModerationMarks {
+        ModerationMarks {
+            deleted: true,
+            timed_out: true,
+            banned: false,
+        }
+    }
+
+    fn mark_cases() -> Vec<MarkCase> {
+        let case = |name, row_author, row_author_id, action, expected| MarkCase {
+            name,
+            row_source: PlatformId::Twitch,
+            row_id: "m1",
+            row_author,
+            row_author_id,
+            source: PlatformId::Twitch,
+            action,
+            expected,
+        };
+        vec![
+            case(
+                "id match with a renamed author",
+                "NewName",
+                Some("u1"),
+                remove(Some("u1"), "OldName", UserRemoval::Ban),
+                banned(),
+            ),
+            case(
+                "id mismatch with the same name",
+                "bob",
+                Some("u2"),
+                remove(Some("u1"), "bob", UserRemoval::Ban),
+                ModerationMarks::default(),
+            ),
+            case(
+                "row without an id falls back to a case-insensitive name",
+                "Bob",
+                None,
+                remove(Some("u1"), "bob", UserRemoval::Timeout),
+                timed_out(),
+            ),
+            case(
+                "event without an id falls back to a case-insensitive name",
+                "BOB",
+                Some("u1"),
+                remove(None, "bob", UserRemoval::Timeout),
+                timed_out(),
+            ),
+            case(
+                "name fallback with a different name",
+                "alice",
+                None,
+                remove(None, "bob", UserRemoval::Ban),
+                ModerationMarks::default(),
+            ),
+            case(
+                "name fallback folds ASCII case only",
+                "Стрімер",
+                None,
+                remove(None, "стрімер", UserRemoval::Ban),
+                ModerationMarks::default(),
+            ),
+            MarkCase {
+                row_source: PlatformId::Kick,
+                ..case(
+                    "id match on another platform",
+                    "bob",
+                    Some("u1"),
+                    remove(Some("u1"), "bob", UserRemoval::Ban),
+                    ModerationMarks::default(),
+                )
+            },
+            MarkCase {
+                source: PlatformId::YouTube,
+                ..case(
+                    "delete of the same message id on another platform",
+                    "bob",
+                    None,
+                    delete("m1"),
+                    ModerationMarks::default(),
+                )
+            },
+        ]
+    }
+
+    fn case_row(case: &MarkCase, received_at: OffsetDateTime) -> ChatRecord {
+        let ChatRecord::Row(mut written) =
+            row(case.row_id, case.row_source, case.row_author, received_at)
+        else {
+            unreachable!("row always builds a chat row");
+        };
+        written.author_id = case.row_author_id.map(str::to_string);
+        ChatRecord::Row(written)
+    }
+
+    #[tokio::test]
+    async fn a_mark_on_already_stored_rows_matches_the_author_by_id_then_by_name() {
+        for case in mark_cases() {
+            let mut rig = rig().await;
+            let at = OffsetDateTime::now_utc();
+            flush(&mut rig.sink, vec![case_row(&case, at - MINUTE)]).await;
+
+            flush(
+                &mut rig.sink,
+                vec![mark(case.source, case.action.clone(), at)],
+            )
+            .await;
+
+            assert_eq!(
+                marks_of(&rig, case.row_id).await,
+                case.expected,
+                "{}",
+                case.name
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_mark_on_rows_arriving_after_it_matches_the_author_like_the_stored_rows() {
+        for case in mark_cases() {
+            let mut rig = rig().await;
+            let at = OffsetDateTime::now_utc();
+            flush(
+                &mut rig.sink,
+                vec![mark(case.source, case.action.clone(), at)],
+            )
+            .await;
+
+            flush(&mut rig.sink, vec![case_row(&case, at - MINUTE)]).await;
+
+            assert_eq!(
+                marks_of(&rig, case.row_id).await,
+                case.expected,
+                "{}",
+                case.name
             );
         }
     }
@@ -726,15 +909,14 @@ mod tests {
             settle(outcome).await.map(|()| 0)
         }
 
-        async fn mark_message_deleted(&self, _: &str) -> Result<u64, StorageError> {
+        async fn mark_message_deleted(&self, _: PlatformId, _: &str) -> Result<u64, StorageError> {
             Ok(0)
         }
 
         async fn mark_user_messages_moderated(
             &self,
-            _: PlatformId,
-            _: &str,
-            _: bool,
+            _: &ChatModerationTarget,
+            _: UserRemoval,
         ) -> Result<u64, StorageError> {
             Ok(0)
         }
@@ -832,15 +1014,14 @@ mod tests {
             Ok(0)
         }
 
-        async fn mark_message_deleted(&self, _: &str) -> Result<u64, StorageError> {
+        async fn mark_message_deleted(&self, _: PlatformId, _: &str) -> Result<u64, StorageError> {
             Ok(0)
         }
 
         async fn mark_user_messages_moderated(
             &self,
-            _: PlatformId,
-            _: &str,
-            _: bool,
+            _: &ChatModerationTarget,
+            _: UserRemoval,
         ) -> Result<u64, StorageError> {
             Ok(0)
         }

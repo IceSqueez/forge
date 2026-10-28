@@ -463,12 +463,13 @@ mod tests {
     use forge_types::EventId;
     use forge_types::PlatformId;
     use forge_types::unified_chat::{
-        ChatEventDetail, ChatSegment, ModerationMarks, UnifiedChatRow, UserBadge,
+        ChatEventDetail, ChatSegment, ModerationMarks, UnifiedChatRow, UserBadge, UserRemoval,
     };
     use time::OffsetDateTime;
 
     use forge_storage::{
         AUTHORLESS_CHAT_HISTORY_RETAINED, ChatAuthorKey, ChatAuthorPage, ChatAuthorTally,
+        ChatModerationTarget,
     };
 
     use super::SqliteChatHistoryRepo;
@@ -603,7 +604,10 @@ mod tests {
         let repo = make_repo().await;
         seed(&repo, &[("m1", 100)]).await;
 
-        let affected = repo.mark_message_deleted("m1").await.unwrap();
+        let affected = repo
+            .mark_message_deleted(PlatformId::Twitch, "m1")
+            .await
+            .unwrap();
 
         assert_eq!(affected, 1);
         assert_eq!(
@@ -617,19 +621,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mark_message_deleted_unknown_id_affects_no_rows() {
-        let repo = make_repo().await;
-        seed(&repo, &[("m1", 100)]).await;
+    async fn mark_message_deleted_affects_no_row_for_an_unknown_id_or_another_platform() {
+        for (source, id) in [(PlatformId::Twitch, "nope"), (PlatformId::YouTube, "m1")] {
+            let repo = make_repo().await;
+            seed(&repo, &[("m1", 100)]).await;
 
-        assert_eq!(repo.mark_message_deleted("nope").await.unwrap(), 0);
-        assert!(!moderation_of(&repo, "m1").await.deleted);
+            let affected = repo.mark_message_deleted(source, id).await.unwrap();
+
+            assert_eq!(
+                (affected, moderation_of(&repo, "m1").await.deleted),
+                (0, false),
+                "{source:?} {id}"
+            );
+        }
     }
 
     #[tokio::test]
     async fn mark_user_messages_moderated_sets_branch_flag_only_for_matching_source_and_author() {
-        for (timeout, expected) in [
+        for (removal, expected) in [
             (
-                true,
+                UserRemoval::Timeout,
                 ModerationMarks {
                     deleted: true,
                     timed_out: true,
@@ -637,7 +648,7 @@ mod tests {
                 },
             ),
             (
-                false,
+                UserRemoval::Ban,
                 ModerationMarks {
                     deleted: true,
                     timed_out: false,
@@ -659,31 +670,36 @@ mod tests {
                 .await
                 .unwrap();
 
+            let target = ChatModerationTarget {
+                source: PlatformId::Twitch,
+                author_id: None,
+                author_name: "victim".to_string(),
+            };
             let affected = repo
-                .mark_user_messages_moderated(PlatformId::Twitch, "victim", timeout)
+                .mark_user_messages_moderated(&target, removal)
                 .await
                 .unwrap();
 
-            assert_eq!(affected, 2, "timeout={timeout}");
+            assert_eq!(affected, 2, "removal={removal:?}");
             assert_eq!(
                 moderation_of(&repo, "v1").await,
                 expected,
-                "timeout={timeout}"
+                "removal={removal:?}"
             );
             assert_eq!(
                 moderation_of(&repo, "v2").await,
                 expected,
-                "timeout={timeout}"
+                "removal={removal:?}"
             );
             assert_eq!(
                 moderation_of(&repo, "by").await,
                 ModerationMarks::default(),
-                "same-source other-author must be untouched, timeout={timeout}"
+                "same-source other-author must be untouched, removal={removal:?}"
             );
             assert_eq!(
                 moderation_of(&repo, "yt").await,
                 ModerationMarks::default(),
-                "same-author other-source must be untouched, timeout={timeout}"
+                "same-author other-source must be untouched, removal={removal:?}"
             );
         }
     }

@@ -7,11 +7,13 @@ use forge_runtime::{EventBus, NullEventLogRepo, spawn_chat_history_persistence};
 use forge_storage::chat_history::MockChatHistoryRepo;
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::{
-    ChatHistoryRepo, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT, MAX_CHAT_HISTORY_PER_VIEWER_LIMIT,
-    SettingsRepo, StorageError, UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT,
+    ChatHistoryRepo, ChatModerationTarget, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
+    MAX_CHAT_HISTORY_PER_VIEWER_LIMIT, SettingsRepo, StorageError,
+    UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT,
 };
 use forge_types::{
     ChatModerationAction, ChatModerationPayload, ChatPayload, ModerationMarks, PlatformId,
+    UserRemoval,
 };
 use tokio::sync::{Notify, mpsc};
 use tokio::time::{Duration, timeout};
@@ -259,8 +261,8 @@ async fn retention_uses_the_default_limit_when_the_start_read_fails_or_stalls() 
 
 #[derive(Debug, PartialEq)]
 enum Call {
-    Delete(String),
-    User(PlatformId, String, bool),
+    Delete(PlatformId, String),
+    User(ChatModerationTarget, UserRemoval),
     Clear(PlatformId),
 }
 
@@ -273,23 +275,23 @@ async fn each_moderation_action_routes_to_its_repo_method_with_its_source() {
     let del_tx = tx.clone();
     repo.expect_mark_message_deleted()
         .times(1)
-        .returning(move |id| {
+        .returning(move |source, id| {
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the receiver may already be gone"
             )]
-            let _ = del_tx.send(Call::Delete(id.to_string()));
+            let _ = del_tx.send(Call::Delete(source, id.to_string()));
             Ok(1)
         });
     let user_tx = tx.clone();
     repo.expect_mark_user_messages_moderated()
         .times(1)
-        .returning(move |source, author, timeout| {
+        .returning(move |target, removal| {
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the receiver may already be gone"
             )]
-            let _ = user_tx.send(Call::User(source, author.to_string(), timeout));
+            let _ = user_tx.send(Call::User(target.clone(), removal));
             Ok(1)
         });
     repo.expect_clear_platform()
@@ -307,7 +309,7 @@ async fn each_moderation_action_routes_to_its_repo_method_with_its_source() {
     spawn_chat_history_persistence(Arc::clone(&bus), repo, no_settings());
 
     bus.publish(mod_event(
-        EventSource::Twitch,
+        EventSource::YouTube,
         ChatModerationAction::DeleteMessage {
             message_id: "abc".to_string(),
         },
@@ -315,8 +317,9 @@ async fn each_moderation_action_routes_to_its_repo_method_with_its_source() {
     bus.publish(mod_event(
         EventSource::Twitch,
         ChatModerationAction::RemoveUser {
+            user_id: Some("u-1".to_string()),
             user_name: "bob".to_string(),
-            timeout: true,
+            removal: UserRemoval::Timeout,
         },
     ));
     bus.publish(mod_event(
@@ -332,8 +335,15 @@ async fn each_moderation_action_routes_to_its_repo_method_with_its_source() {
     assert_eq!(
         calls,
         vec![
-            Call::Delete("abc".to_string()),
-            Call::User(PlatformId::Twitch, "bob".to_string(), true),
+            Call::Delete(PlatformId::YouTube, "abc".to_string()),
+            Call::User(
+                ChatModerationTarget {
+                    source: PlatformId::Twitch,
+                    author_id: Some("u-1".to_string()),
+                    author_name: "bob".to_string(),
+                },
+                UserRemoval::Timeout,
+            ),
             Call::Clear(PlatformId::Kick),
         ]
     );
@@ -365,14 +375,15 @@ async fn a_replayed_chat_message_and_moderation_store_nothing_and_mark_no_later_
     });
     repo.expect_apply_retention().returning(|_, _| Ok(0));
     let delete_tx = marks_tx.clone();
-    repo.expect_mark_message_deleted().returning(move |id| {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the receiver may already be gone"
-        )]
-        let _ = delete_tx.send(Call::Delete(id.to_string()));
-        Ok(1)
-    });
+    repo.expect_mark_message_deleted()
+        .returning(move |source, id| {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver may already be gone"
+            )]
+            let _ = delete_tx.send(Call::Delete(source, id.to_string()));
+            Ok(1)
+        });
     repo.expect_clear_platform().returning(move |source| {
         #[expect(
             clippy::let_underscore_must_use,
@@ -471,15 +482,14 @@ impl ChatHistoryRepo for StuckChatHistory {
         Ok(0)
     }
 
-    async fn mark_message_deleted(&self, _: &str) -> Result<u64, StorageError> {
+    async fn mark_message_deleted(&self, _: PlatformId, _: &str) -> Result<u64, StorageError> {
         Ok(0)
     }
 
     async fn mark_user_messages_moderated(
         &self,
-        _: PlatformId,
-        _: &str,
-        _: bool,
+        _: &ChatModerationTarget,
+        _: UserRemoval,
     ) -> Result<u64, StorageError> {
         Ok(0)
     }

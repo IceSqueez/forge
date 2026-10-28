@@ -5337,6 +5337,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ban_event_attaches_a_user_removal_keyed_by_the_banned_user_id() {
+        let cases = [
+            (
+                serde_json::json!({ "user_id": "777", "user_name": "ViewerOne", "is_permanent": true }),
+                Some("777"),
+                UserRemoval::Ban,
+            ),
+            (
+                serde_json::json!({ "user_id": "777", "user_name": "ViewerOne", "is_permanent": false }),
+                Some("777"),
+                UserRemoval::Timeout,
+            ),
+            (
+                serde_json::json!({ "user_id": "", "user_name": "ViewerOne", "is_permanent": true }),
+                None,
+                UserRemoval::Ban,
+            ),
+            (
+                serde_json::json!({ "user_name": "ViewerOne", "is_permanent": false }),
+                None,
+                UserRemoval::Timeout,
+            ),
+        ];
+
+        for (event_data, user_id, removal) in cases {
+            let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
+            let session = make_session(&bus);
+            let mut sub = bus.subscribe();
+
+            session.publish_ban_event(&event_data, "meta-ban-003");
+
+            let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            let attached: ChatModerationPayload =
+                serde_json::from_value(ev.payload[ChatModerationPayload::KEY].clone()).unwrap();
+            assert_eq!(
+                attached.action,
+                ChatModerationAction::RemoveUser {
+                    user_id: user_id.map(str::to_string),
+                    user_name: "ViewerOne".to_string(),
+                    removal,
+                },
+                "{event_data}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn unban_event_nests_user_and_moderator_only() {
         let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let session = make_session(&bus);

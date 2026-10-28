@@ -107,4 +107,91 @@ mod tests {
         assert!(msg.contains("5"), "expected not in message: {msg}");
         assert!(msg.contains("2"), "found not in message: {msg}");
     }
+
+    #[test]
+    fn only_a_decryption_failure_marks_the_stored_secret_unrecoverable() {
+        let text = || "x".to_owned();
+        let cases = [
+            (StorageError::Decryption, true),
+            (StorageError::Connection { reason: text() }, false),
+            (
+                StorageError::Migration {
+                    migration: text(),
+                    reason: text(),
+                },
+                false,
+            ),
+            (StorageError::Encryption, false),
+            (
+                StorageError::SchemaMismatch {
+                    expected: 2,
+                    found: 1,
+                },
+                false,
+            ),
+            (StorageError::PreBaselineSchema { found: 1 }, false),
+            (StorageError::NotFound { key: text() }, false),
+            (StorageError::NameCollision { name: text() }, false),
+            (StorageError::AliasViewerTaken, false),
+            (
+                StorageError::TypeMismatch {
+                    name: text(),
+                    actual: text(),
+                },
+                false,
+            ),
+            (
+                StorageError::Serialization(
+                    serde_json::from_str::<serde_json::Value>("{").unwrap_err(),
+                ),
+                false,
+            ),
+            (
+                StorageError::ValidationFailed {
+                    field: text(),
+                    reason: text(),
+                },
+                false,
+            ),
+            (
+                StorageError::ReferenceBlock {
+                    used_in_count: 1,
+                    sample_action_names: vec![text()],
+                },
+                false,
+            ),
+            (StorageError::DefaultQueueUndeletable, false),
+            (StorageError::MediaUnsupported { label: text() }, false),
+            (
+                StorageError::MediaTypeMismatch {
+                    label: text(),
+                    claimed: MediaFormat::Png,
+                    detected: MediaFormat::Wav,
+                },
+                false,
+            ),
+            (
+                StorageError::MediaTooLarge {
+                    label: text(),
+                    size: 2,
+                    limit: 1,
+                    kind: MediaKind::Image,
+                },
+                false,
+            ),
+            (StorageError::MediaReferenced { referrer_count: 1 }, false),
+            (StorageError::MalformedMediaBlobId { raw: text() }, false),
+            (StorageError::Parse(text()), false),
+            (StorageError::UndecodableSetting { key: text() }, false),
+            (StorageError::Io(std::io::Error::other("disk")), false),
+            (StorageError::NotReady, false),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(
+                error.stored_secret_unrecoverable(),
+                expected,
+                "for {error:?}"
+            );
+        }
+    }
 }

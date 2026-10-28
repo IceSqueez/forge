@@ -25,9 +25,13 @@ where
 mod tests {
     use super::*;
 
+    #[derive(Debug, thiserror::Error)]
+    #[error("database is locked")]
+    struct LockedStore;
+
     #[test]
-    fn an_undecryptable_credential_asks_the_named_platform_for_reauth() {
-        let mapped = credential_storage_error("kick", StorageError::Decryption);
+    fn an_unrecoverable_stored_secret_asks_the_named_platform_for_reauth() {
+        let mapped = credential_storage_error("kick", true, LockedStore);
 
         assert!(
             matches!(&mapped, PlatformError::ReauthRequired { platform } if platform == "kick"),
@@ -36,25 +40,12 @@ mod tests {
     }
 
     #[test]
-    fn every_other_storage_failure_becomes_io_carrying_the_storage_message() {
-        let failures = [
-            StorageError::Connection {
-                reason: "database is locked".to_owned(),
-            },
-            StorageError::Encryption,
-            StorageError::NotFound {
-                key: "twitch:broadcaster".to_owned(),
-            },
-        ];
-        for failure in failures {
-            let expected = failure.to_string();
+    fn a_recoverable_storage_failure_becomes_io_carrying_the_source_message() {
+        let mapped = credential_storage_error("twitch", false, LockedStore);
 
-            let mapped = credential_storage_error("twitch", failure);
-
-            assert!(
-                matches!(&mapped, PlatformError::Io(io) if io.to_string() == expected),
-                "expected Io({expected:?}), got {mapped:?}"
-            );
-        }
+        assert!(
+            matches!(&mapped, PlatformError::Io(io) if io.to_string() == LockedStore.to_string()),
+            "got {mapped:?}"
+        );
     }
 }

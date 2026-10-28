@@ -355,6 +355,38 @@ mod tests {
         }
     }
 
+    struct LoadFailsRepo(fn() -> StorageError);
+
+    #[async_trait]
+    impl CredentialsRepo for LoadFailsRepo {
+        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
+            Err((self.0)())
+        }
+
+        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn last_refresh(
+            &self,
+            _: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+
+        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
     fn stub_creds(expires_at: OffsetDateTime) -> YoutubeCredentials {
         YoutubeCredentials {
             access_token: EXISTING_ACCESS.to_owned(),
@@ -426,6 +458,22 @@ mod tests {
         );
 
         assert!(manager.load().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn load_of_an_undecryptable_stored_credential_asks_youtube_for_reauth() {
+        let manager = YoutubeCredentialsManager::new(
+            Arc::new(LoadFailsRepo(|| StorageError::Decryption)),
+            unreachable_oauth_client(),
+            unreachable_data_api(),
+        );
+
+        let err = manager.load().await.unwrap_err();
+
+        assert!(
+            matches!(&err, PlatformError::ReauthRequired { platform } if platform == "youtube"),
+            "got {err:?}"
+        );
     }
 
     #[tokio::test]

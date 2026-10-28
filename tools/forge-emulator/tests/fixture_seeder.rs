@@ -11,8 +11,11 @@ use forge_emulator::fixture::{
 use forge_events::{Event, EventSource};
 use forge_platform_twitch::TwitchCredentialsManager;
 use forge_registry::TriggerRegistry;
-use forge_server::{AuthState, ServerSettings};
-use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo, reserved_keys};
+use forge_server::ServerSettings;
+use forge_storage::{
+    CredentialId, CredentialsRepo, DataProvider, SERVER_BEARER_CREDENTIAL_ID, SettingsRepo,
+    reserved_keys,
+};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{SubActionStep, Variant};
 use tempfile::TempDir;
@@ -26,6 +29,13 @@ async fn seed_fresh(fixture: &Fixture) -> (TempDir, SeedReport) {
         .await
         .unwrap();
     (dir, report)
+}
+
+async fn stored_bearer_token(backend: &SqliteBackend) -> Option<String> {
+    backend
+        .load(&CredentialId::new(SERVER_BEARER_CREDENTIAL_ID))
+        .await
+        .unwrap()
 }
 
 async fn reopen(dir: &Path) -> SqliteBackend {
@@ -89,14 +99,13 @@ async fn seeded_server_is_explicitly_enabled_on_the_reported_loopback_port() {
 }
 
 #[tokio::test]
-async fn seeded_bearer_token_is_the_one_the_server_authenticates() {
+async fn seeded_bearer_token_is_the_one_stored_under_the_server_bearer_credential() {
     let (dir, report) = seed_fresh(&Fixture::default()).await;
     let backend = reopen(dir.path()).await;
-    let auth = AuthState::load(false, &backend).await.unwrap();
-    let accepted = auth.verify(&report.server.bearer_token).await;
+    let stored = stored_bearer_token(&backend).await;
     backend.shutdown().await;
 
-    assert!(accepted);
+    assert_eq!(stored, Some(report.server.bearer_token));
 }
 
 #[tokio::test]
@@ -280,10 +289,9 @@ async fn seeding_an_already_seeded_directory_is_refused_and_keeps_the_first_seed
     );
 
     let backend = reopen(dir.path()).await;
-    let auth = AuthState::load(false, &backend).await.unwrap();
-    let first_still_accepted = auth.verify(&first.server.bearer_token).await;
+    let stored = stored_bearer_token(&backend).await;
     backend.shutdown().await;
-    assert!(first_still_accepted);
+    assert_eq!(stored, Some(first.server.bearer_token));
 }
 
 #[tokio::test]

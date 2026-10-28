@@ -87,322 +87,99 @@ pub(crate) fn dispatch_vts_event(event: &VtsEvent, publisher: &dyn EventPublishe
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use forge_events::EventPublisher;
+    use serde_json::json;
 
     use super::*;
     use crate::client::tests::MockPublisher;
 
-    fn make_envelope(message_type: &str, data: serde_json::Value) -> RawEnvelope {
-        RawEnvelope {
-            message_type: message_type.to_owned(),
-            data,
+    fn model_loaded(loaded: bool) -> VtsEvent {
+        VtsEvent::ModelLoaded {
+            loaded,
+            model_id: "model-abc".to_owned(),
+            model_name: "MyAvatar".to_owned(),
+        }
+    }
+
+    fn tracking(face_found: bool) -> VtsEvent {
+        VtsEvent::TrackingStatusChanged {
+            face_found,
+            left_hand_found: true,
+            right_hand_found: false,
+        }
+    }
+
+    fn item(change: ItemChange) -> VtsEvent {
+        VtsEvent::ItemChanged {
+            change,
+            item_instance_id: "inst-1".to_owned(),
+            item_file_name: "crown.png".to_owned(),
         }
     }
 
     #[test]
-    fn model_loaded_event_emits_model_loaded() {
-        let publisher = MockPublisher::new();
-        let env = make_envelope(
-            "ModelLoadedEvent",
-            serde_json::json!({
-                "modelLoaded": true,
-                "modelID": "model-abc",
-                "modelName": "MyAvatar"
-            }),
-        );
-
-        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
-
-        let events = publisher.events.lock().unwrap();
-        let ev = events
-            .iter()
-            .find(|e| e.kind == "vtube.model.loaded")
-            .unwrap();
-        assert_eq!(ev.source, EventSource::VTube);
-        assert_eq!(ev.payload["model_id"], "model-abc");
-        assert_eq!(ev.payload["model_name"], "MyAvatar");
-    }
-
-    #[test]
-    fn model_unloaded_event_emits_model_unloaded() {
-        let publisher = MockPublisher::new();
-        let env = make_envelope(
-            "ModelLoadedEvent",
-            serde_json::json!({
-                "modelLoaded": false,
-                "modelID": "model-xyz",
-                "modelName": "OldAvatar"
-            }),
-        );
-
-        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
-
-        let events = publisher.events.lock().unwrap();
-        let ev = events
-            .iter()
-            .find(|e| e.kind == "vtube.model.unloaded")
-            .unwrap();
-        assert_eq!(ev.source, EventSource::VTube);
-        assert_eq!(ev.payload["model_id"], "model-xyz");
-        assert_eq!(ev.payload["model_name"], "OldAvatar");
-    }
-
-    #[test]
-    fn hotkey_triggered_event_emits_hotkey_triggered() {
-        let publisher = MockPublisher::new();
-        let env = make_envelope(
-            "HotkeyTriggeredEvent",
-            serde_json::json!({
-                "hotkeyID": "hk-001",
-                "hotkeyName": "BlushExpression"
-            }),
-        );
-
-        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
-
-        let events = publisher.events.lock().unwrap();
-        let ev = events
-            .iter()
-            .find(|e| e.kind == "vtube.hotkey.triggered")
-            .unwrap();
-        assert_eq!(ev.source, EventSource::VTube);
-        assert_eq!(ev.payload["hotkey_id"], "hk-001");
-        assert_eq!(ev.payload["hotkey_name"], "BlushExpression");
-    }
-
-    #[test]
-    fn unknown_event_type_produces_no_bus_event() {
-        let publisher = MockPublisher::new();
-        let env = make_envelope("FaceFoundEvent", serde_json::json!({ "found": true }));
-
-        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
-
-        assert!(
-            publisher.events.lock().unwrap().is_empty(),
-            "FaceFoundEvent should not produce a bus event"
-        );
-    }
-
-    #[test]
-    fn tracking_status_with_face_found_emits_face_found_with_hand_bools() {
-        let publisher = MockPublisher::new();
-        let env = make_envelope(
-            "TrackingStatusChangedEvent",
-            serde_json::json!({
-                "faceFound": true,
-                "leftHandFound": true,
-                "rightHandFound": false
-            }),
-        );
-
-        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
-
-        let events = publisher.events.lock().unwrap();
-        let ev = events
-            .iter()
-            .find(|e| e.kind == "vtube.tracking.face_found")
-            .unwrap();
-        assert_eq!(ev.source, EventSource::VTube);
-        assert_eq!(ev.payload["is_left_hand_found"], true);
-        assert_eq!(ev.payload["is_right_hand_found"], false);
-    }
-
-    #[test]
-    fn tracking_status_without_face_found_emits_face_lost() {
-        let publisher = MockPublisher::new();
-        let env = make_envelope(
-            "TrackingStatusChangedEvent",
-            serde_json::json!({
-                "faceFound": false,
-                "leftHandFound": false,
-                "rightHandFound": true
-            }),
-        );
-
-        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
-
-        let events = publisher.events.lock().unwrap();
-        let ev = events
-            .iter()
-            .find(|e| e.kind == "vtube.tracking.face_lost")
-            .unwrap();
-        assert_eq!(ev.payload["is_left_hand_found"], false);
-        assert_eq!(ev.payload["is_right_hand_found"], true);
-    }
-
-    #[test]
-    fn item_event_added_emits_item_added() {
-        let publisher = MockPublisher::new();
-        let env = make_envelope(
-            "ItemEvent",
-            serde_json::json!({
-                "itemEventType": "Added",
-                "itemInstanceID": "inst-1",
-                "itemFileName": "crown.png"
-            }),
-        );
-
-        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
-
-        let events = publisher.events.lock().unwrap();
-        let ev = events
-            .iter()
-            .find(|e| e.kind == "vtube.item.added")
-            .unwrap();
-        assert_eq!(ev.payload["item_instance_id"], "inst-1");
-        assert_eq!(ev.payload["item_file_name"], "crown.png");
-    }
-
-    #[test]
-    fn item_event_removed_emits_item_removed() {
-        let publisher = MockPublisher::new();
-        let env = make_envelope(
-            "ItemEvent",
-            serde_json::json!({
-                "itemEventType": "Removed",
-                "itemInstanceID": "inst-1",
-                "itemFileName": "crown.png"
-            }),
-        );
-
-        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
-
-        let events = publisher.events.lock().unwrap();
-        let ev = events
-            .iter()
-            .find(|e| e.kind == "vtube.item.removed")
-            .unwrap();
-        assert_eq!(ev.payload["item_instance_id"], "inst-1");
-        assert_eq!(ev.payload["item_file_name"], "crown.png");
-    }
-
-    #[test]
-    fn item_event_with_unknown_type_produces_no_bus_event() {
-        let publisher = MockPublisher::new();
-        let env = make_envelope(
-            "ItemEvent",
-            serde_json::json!({
-                "itemEventType": "DroppedPinned",
-                "itemInstanceID": "inst-1",
-                "itemFileName": "crown.png"
-            }),
-        );
-
-        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
-
-        assert!(
-            publisher.events.lock().unwrap().is_empty(),
-            "an unrecognised itemEventType must fall through without emitting"
-        );
-    }
-
-    #[test]
-    fn config_changed_event_carries_model_id_and_name() {
-        let publisher = MockPublisher::new();
-        let env = make_envelope(
-            "ModelConfigChangedEvent",
-            serde_json::json!({ "modelID": "m-99", "modelName": "Nova" }),
-        );
-
-        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
-
-        let events = publisher.events.lock().unwrap();
-        let ev = events
-            .iter()
-            .find(|e| e.kind == "vtube.model.config_changed")
-            .unwrap();
-        assert_eq!(ev.payload["model_id"], "m-99");
-        assert_eq!(ev.payload["model_name"], "Nova");
-    }
-
-    #[test]
-    fn every_dispatched_event_kind_is_vtube_prefixed() {
-        let publisher = MockPublisher::new();
-        let envelopes = [
-            make_envelope(
-                "ModelLoadedEvent",
-                serde_json::json!({ "modelLoaded": true }),
+    fn each_vts_event_publishes_exactly_one_vtube_event_with_its_kind_and_payload() {
+        for (event, kind, payload) in [
+            (
+                model_loaded(true),
+                "vtube.model.loaded",
+                json!({ "model_id": "model-abc", "model_name": "MyAvatar" }),
             ),
-            make_envelope(
-                "ModelLoadedEvent",
-                serde_json::json!({ "modelLoaded": false }),
+            (
+                model_loaded(false),
+                "vtube.model.unloaded",
+                json!({ "model_id": "model-abc", "model_name": "MyAvatar" }),
             ),
-            make_envelope("ModelConfigChangedEvent", serde_json::json!({})),
-            make_envelope("HotkeyTriggeredEvent", serde_json::json!({})),
-            make_envelope(
-                "TrackingStatusChangedEvent",
-                serde_json::json!({ "faceFound": true }),
+            (
+                VtsEvent::ModelConfigChanged {
+                    model_id: "m-99".to_owned(),
+                    model_name: "Nova".to_owned(),
+                },
+                "vtube.model.config_changed",
+                json!({ "model_id": "m-99", "model_name": "Nova" }),
             ),
-            make_envelope(
-                "TrackingStatusChangedEvent",
-                serde_json::json!({ "faceFound": false }),
+            (
+                VtsEvent::HotkeyTriggered {
+                    hotkey_id: "hk-001".to_owned(),
+                    hotkey_name: "BlushExpression".to_owned(),
+                },
+                "vtube.hotkey.triggered",
+                json!({ "hotkey_id": "hk-001", "hotkey_name": "BlushExpression" }),
             ),
-            make_envelope("ItemEvent", serde_json::json!({ "itemEventType": "Added" })),
-            make_envelope(
-                "ItemEvent",
-                serde_json::json!({ "itemEventType": "Removed" }),
+            (
+                tracking(true),
+                "vtube.tracking.face_found",
+                json!({ "is_left_hand_found": true, "is_right_hand_found": false }),
             ),
-        ];
-
-        for env in envelopes {
-            dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
-        }
-
-        let events = publisher.events.lock().unwrap();
-        assert_eq!(
-            events.len(),
-            8,
-            "each envelope must emit exactly one bus event"
-        );
-        for ev in events.iter() {
-            assert!(
-                ev.kind.starts_with("vtube."),
-                "emitted kind is not vtube-prefixed: {}",
-                ev.kind
-            );
-        }
-    }
-
-    #[test]
-    fn expression_activation_event_is_not_dispatched() {
-        let publisher = MockPublisher::new();
-        let env = make_envelope(
-            "ExpressionActivationEvent",
-            serde_json::json!({ "expressionFile": "smile.exp3.json", "active": true }),
-        );
-
-        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
-
-        assert!(
-            publisher.events.lock().unwrap().is_empty(),
-            "ExpressionActivationEvent has no VTS wire event and must not dispatch"
-        );
-    }
-
-    #[test]
-    fn only_item_spawns_and_removals_change_the_scene_item_lists() {
-        for (message_type, item_event_type, expected) in [
-            ("ItemEvent", Some("Added"), true),
-            ("ItemEvent", Some("Removed"), true),
-            ("ItemEvent", Some("DroppedPinned"), false),
-            ("ItemEvent", Some("Clicked"), false),
-            ("ItemEvent", Some("Locked"), false),
-            ("ItemEvent", Some("added"), false),
-            ("ItemEvent", None, false),
-            ("ModelLoadedEvent", Some("Added"), false),
-            ("HotkeyTriggeredEvent", Some("Removed"), false),
+            (
+                tracking(false),
+                "vtube.tracking.face_lost",
+                json!({ "is_left_hand_found": true, "is_right_hand_found": false }),
+            ),
+            (
+                item(ItemChange::Added),
+                "vtube.item.added",
+                json!({ "item_instance_id": "inst-1", "item_file_name": "crown.png" }),
+            ),
+            (
+                item(ItemChange::Removed),
+                "vtube.item.removed",
+                json!({ "item_instance_id": "inst-1", "item_file_name": "crown.png" }),
+            ),
         ] {
-            let data = match item_event_type {
-                Some(kind) => serde_json::json!({ "itemEventType": kind }),
-                None => serde_json::json!({}),
+            let publisher = MockPublisher::new();
+
+            dispatch_vts_event(&event, publisher.as_ref());
+
+            let events = publisher.events.lock().unwrap();
+            let [published] = events.as_slice() else {
+                panic!(
+                    "{kind}: expected exactly one bus event, got {}",
+                    events.len()
+                );
             };
-            assert_eq!(
-                changes_scene_items(&make_envelope(message_type, data)),
-                expected,
-                "{message_type} {item_event_type:?}"
-            );
+            assert_eq!(published.source, EventSource::VTube, "{kind}");
+            assert_eq!(published.kind, kind);
+            assert_eq!(published.payload, payload, "{kind}");
         }
     }
 }

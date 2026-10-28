@@ -85,3 +85,47 @@ pub(crate) async fn exchange(
         .await
         .map_err(|_| VTubeError::Timeout)?
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn a_json_text_frame_is_delivered_as_an_envelope() {
+        let frame = Some(Ok(Message::Text(
+            r#"{"messageType":"ItemEvent","data":{}}"#.into(),
+        )));
+
+        let Inbound::Envelope(value) = decode_inbound(frame) else {
+            panic!("a JSON text frame must decode to an envelope");
+        };
+        assert_eq!(value, json!({ "messageType": "ItemEvent", "data": {} }));
+    }
+
+    #[test]
+    fn frames_that_carry_no_json_text_are_skipped() {
+        for frame in [
+            Message::Text("not json".into()),
+            Message::Text("".into()),
+            Message::Binary(vec![b'{', b'}'].into()),
+            Message::Ping(Vec::new().into()),
+            Message::Pong(Vec::new().into()),
+        ] {
+            let label = format!("{frame:?}");
+
+            assert!(
+                matches!(decode_inbound(Some(Ok(frame))), Inbound::Skipped),
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_end_of_the_stream_or_a_transport_error_closes_the_session() {
+        for frame in [None, Some(Err(WsError::ConnectionClosed))] {
+            assert!(matches!(decode_inbound(frame), Inbound::Closed));
+        }
+    }
+}

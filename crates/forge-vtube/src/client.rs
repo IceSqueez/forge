@@ -1065,20 +1065,6 @@ pub(crate) mod tests {
         );
     }
 
-    #[test]
-    fn split_endpoint_recovers_the_host_and_port_that_get_persisted() {
-        for (endpoint, expected) in [
-            ("ws://127.0.0.1:8001/", ("127.0.0.1", 8001)),
-            ("wss://vts.local:9123", ("vts.local", 9123)),
-            ("ws://vts.local/", ("vts.local", 8001)),
-            ("ws://[::1]:8001/", ("[::1]", 8001)),
-        ] {
-            let (host, port) = split_endpoint(endpoint);
-
-            assert_eq!((host.as_str(), port), expected, "endpoint {endpoint}");
-        }
-    }
-
     struct StateProbePublisher {
         client: Arc<OnceLock<Arc<VTubeClient>>>,
         tx: mpsc::UnboundedSender<(Event, Option<ConnectionState>)>,

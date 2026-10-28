@@ -24,3 +24,33 @@ pub(crate) fn split_endpoint(endpoint: &str) -> (String, u16) {
         None => (authority.to_owned(), DEFAULT_VTS_PORT),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_endpoint_recovers_the_host_and_port_that_get_persisted() {
+        for (endpoint, expected) in [
+            ("ws://127.0.0.1:8001/", ("127.0.0.1", 8001)),
+            ("wss://vts.local:9123", ("vts.local", 9123)),
+            ("ws://vts.local/", ("vts.local", 8001)),
+            ("ws://[::1]:8001/", ("[::1]", 8001)),
+            ("ws://vts.local:65535/", ("vts.local", 65535)),
+            ("vts.local:9000?x=1", ("vts.local", 9000)),
+        ] {
+            let (host, port) = split_endpoint(endpoint);
+
+            assert_eq!((host.as_str(), port), expected, "endpoint {endpoint}");
+        }
+    }
+
+    #[test]
+    fn a_split_endpoint_rebuilds_into_the_same_url() {
+        let url = endpoint_url("vts.local", 9123);
+
+        let (host, port) = split_endpoint(&url);
+
+        assert_eq!(endpoint_url(&host, port), url);
+    }
+}

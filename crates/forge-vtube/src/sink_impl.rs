@@ -428,7 +428,7 @@ mod tests {
         FakeVts, MockPublisher, PeerConn, freeze_clock, settle_on_a_frozen_clock,
         stored_token_creds, wait_until,
     };
-    use crate::request::REQUEST_TIMEOUT;
+    use crate::vts::request::REQUEST_TIMEOUT;
 
     const SETTLE: Duration = Duration::from_secs(30);
     const TIMER_RESOLUTION: Duration = Duration::from_millis(1);

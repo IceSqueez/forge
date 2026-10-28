@@ -193,12 +193,20 @@ mod tests {
     use super::*;
     use crate::client::VTubeClient;
     use crate::content::ExpressionItem;
-    use crate::events::RawEnvelope;
 
-    fn make_envelope(message_type: &str, data: serde_json::Value) -> RawEnvelope {
-        RawEnvelope {
-            message_type: message_type.to_owned(),
-            data,
+    fn model_loaded(model_name: &str) -> VtsEvent {
+        VtsEvent::ModelLoaded {
+            loaded: true,
+            model_id: "m1".to_owned(),
+            model_name: model_name.to_owned(),
+        }
+    }
+
+    fn tracking(face_found: bool) -> VtsEvent {
+        VtsEvent::TrackingStatusChanged {
+            face_found,
+            left_hand_found: false,
+            right_hand_found: false,
         }
     }
 
@@ -215,15 +223,8 @@ mod tests {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
         let mut rx = c.health_tx.subscribe();
 
-        let env = make_envelope(
-            "ModelLoadedEvent",
-            serde_json::json!({
-                "modelLoaded": true,
-                "modelID": "m1",
-                "modelName": "MyAvatar"
-            }),
-        );
-        update_from_event(&env, &c.health_state, &c.health_tx);
+        let event = model_loaded("MyAvatar");
+        update_from_event(&event, &c.health_state, &c.health_tx);
 
         let delta = rx.try_recv().unwrap();
         assert_eq!(c.metrics()[usize::from(delta.index)].label, "MODEL");
@@ -238,11 +239,8 @@ mod tests {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
         let mut rx = c.health_tx.subscribe();
 
-        let env = make_envelope(
-            "TrackingStatusChangedEvent",
-            serde_json::json!({ "faceFound": true }),
-        );
-        update_from_event(&env, &c.health_state, &c.health_tx);
+        let event = tracking(true);
+        update_from_event(&event, &c.health_state, &c.health_tx);
 
         let delta = rx.try_recv().unwrap();
         assert_eq!(c.metrics()[usize::from(delta.index)].label, "TRACKING");
@@ -257,18 +255,11 @@ mod tests {
         let (tx, snap) = make_health_channel();
         let mut rx = tx.subscribe();
 
-        let env = make_envelope(
-            "ModelLoadedEvent",
-            serde_json::json!({
-                "modelLoaded": true,
-                "modelID": "m1",
-                "modelName": "SameAvatar"
-            }),
-        );
-        update_from_event(&env, &snap, &tx);
+        let event = model_loaded("SameAvatar");
+        update_from_event(&event, &snap, &tx);
         assert!(rx.try_recv().is_ok());
 
-        update_from_event(&env, &snap, &tx);
+        update_from_event(&event, &snap, &tx);
         assert!(
             rx.try_recv().is_err(),
             "second call with identical state must not emit a delta"
@@ -280,11 +271,8 @@ mod tests {
         let (tx, snap) = make_health_channel();
         let mut rx = tx.subscribe();
 
-        let env = make_envelope(
-            "TrackingStatusChangedEvent",
-            serde_json::json!({ "faceFound": false }),
-        );
-        update_from_event(&env, &snap, &tx);
+        let event = tracking(false);
+        update_from_event(&event, &snap, &tx);
         assert!(
             rx.try_recv().is_err(),
             "default state is false; identical update must not emit"

@@ -453,7 +453,7 @@ mod tests {
     use super::*;
     use crate::client::VTubeClient;
     use crate::client::tests::wait_for;
-    use crate::request::ReqTxSlot;
+    use crate::vts::request::ReqTxSlot;
 
     async fn mock_sequential_handler(
         mut rx: mpsc::UnboundedReceiver<PendingRequest>,
@@ -585,6 +585,23 @@ mod tests {
         assert_eq!(s.models.len(), 1);
         assert_eq!(s.models[0].name, "NewAvatar");
         assert_eq!(s.current_model_id.as_deref(), Some("m3"));
+    }
+
+    #[tokio::test]
+    async fn an_error_reply_from_vts_is_returned_as_a_rejection() {
+        let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
+        let done = serve(
+            req_rx,
+            vec![serde_json::json!({ "errorID": 8, "message": "item list unavailable" })],
+        );
+
+        let result = send_internal(&req_tx, "ItemListRequest", serde_json::json!({})).await;
+        await_served(done).await;
+
+        assert!(matches!(
+            result,
+            Err(VTubeError::Rejected { error_id: 8, ref message }) if message == "item list unavailable"
+        ));
     }
 
     #[tokio::test]

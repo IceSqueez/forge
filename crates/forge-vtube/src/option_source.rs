@@ -201,7 +201,7 @@ mod tests {
     use super::*;
     use crate::client::tests::{FakeVts, MockPublisher, stored_token_creds};
     use crate::content::{ExpressionItem, HotkeyItem, ModelItem};
-    use crate::request::PendingRequest;
+    use crate::vts::request::PendingRequest;
 
     const HANG_GUARD: Duration = Duration::from_secs(30);
 

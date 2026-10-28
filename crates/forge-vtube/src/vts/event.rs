@@ -112,3 +112,174 @@ pub(crate) async fn subscribe_all(ws: &mut VtsWs) -> Result<(), VTubeError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn envelope(message_type: &str, data: Value) -> Value {
+        json!({ "messageType": message_type, "data": data })
+    }
+
+    #[test]
+    fn each_subscribed_event_decodes_into_its_variant_with_the_wire_fields() {
+        for (message_type, data, expected) in [
+            (
+                "ModelLoadedEvent",
+                json!({ "modelLoaded": true, "modelID": "m-1", "modelName": "Avatar" }),
+                VtsEvent::ModelLoaded {
+                    loaded: true,
+                    model_id: "m-1".to_owned(),
+                    model_name: "Avatar".to_owned(),
+                },
+            ),
+            (
+                "ModelConfigChangedEvent",
+                json!({ "modelID": "m-2", "modelName": "Nova" }),
+                VtsEvent::ModelConfigChanged {
+                    model_id: "m-2".to_owned(),
+                    model_name: "Nova".to_owned(),
+                },
+            ),
+            (
+                "HotkeyTriggeredEvent",
+                json!({ "hotkeyID": "hk-1", "hotkeyName": "Blush" }),
+                VtsEvent::HotkeyTriggered {
+                    hotkey_id: "hk-1".to_owned(),
+                    hotkey_name: "Blush".to_owned(),
+                },
+            ),
+            (
+                "TrackingStatusChangedEvent",
+                json!({ "faceFound": true, "leftHandFound": false, "rightHandFound": true }),
+                VtsEvent::TrackingStatusChanged {
+                    face_found: true,
+                    left_hand_found: false,
+                    right_hand_found: true,
+                },
+            ),
+            (
+                "ItemEvent",
+                json!({ "itemEventType": "Added", "itemInstanceID": "i-1", "itemFileName": "crown.png" }),
+                VtsEvent::ItemChanged {
+                    change: ItemChange::Added,
+                    item_instance_id: "i-1".to_owned(),
+                    item_file_name: "crown.png".to_owned(),
+                },
+            ),
+            (
+                "ItemEvent",
+                json!({ "itemEventType": "Removed", "itemInstanceID": "i-2", "itemFileName": "hat.png" }),
+                VtsEvent::ItemChanged {
+                    change: ItemChange::Removed,
+                    item_instance_id: "i-2".to_owned(),
+                    item_file_name: "hat.png".to_owned(),
+                },
+            ),
+        ] {
+            assert_eq!(
+                VtsEvent::decode(&envelope(message_type, data)),
+                Some(expected),
+                "{message_type}"
+            );
+        }
+    }
+
+    #[test]
+    fn missing_or_mistyped_fields_decode_to_empty_text_and_false() {
+        for (message_type, data, expected) in [
+            (
+                "ModelLoadedEvent",
+                json!({}),
+                VtsEvent::ModelLoaded {
+                    loaded: false,
+                    model_id: String::new(),
+                    model_name: String::new(),
+                },
+            ),
+            (
+                "ModelLoadedEvent",
+                json!({ "modelLoaded": "true", "modelID": 7, "modelName": null }),
+                VtsEvent::ModelLoaded {
+                    loaded: false,
+                    model_id: String::new(),
+                    model_name: String::new(),
+                },
+            ),
+            (
+                "HotkeyTriggeredEvent",
+                json!({ "hotkeyID": ["hk"], "hotkeyName": { "n": 1 } }),
+                VtsEvent::HotkeyTriggered {
+                    hotkey_id: String::new(),
+                    hotkey_name: String::new(),
+                },
+            ),
+            (
+                "TrackingStatusChangedEvent",
+                json!({ "faceFound": 1, "leftHandFound": "yes" }),
+                VtsEvent::TrackingStatusChanged {
+                    face_found: false,
+                    left_hand_found: false,
+                    right_hand_found: false,
+                },
+            ),
+            (
+                "ItemEvent",
+                json!({ "itemEventType": "Added", "itemInstanceID": 3 }),
+                VtsEvent::ItemChanged {
+                    change: ItemChange::Added,
+                    item_instance_id: String::new(),
+                    item_file_name: String::new(),
+                },
+            ),
+            (
+                "ModelConfigChangedEvent",
+                Value::Null,
+                VtsEvent::ModelConfigChanged {
+                    model_id: String::new(),
+                    model_name: String::new(),
+                },
+            ),
+        ] {
+            assert_eq!(
+                VtsEvent::decode(&envelope(message_type, data.clone())),
+                Some(expected),
+                "{message_type} {data}"
+            );
+        }
+    }
+
+    #[test]
+    fn item_events_other_than_spawn_and_removal_are_not_decoded() {
+        for data in [
+            json!({ "itemEventType": "DroppedPinned", "itemInstanceID": "i-1" }),
+            json!({ "itemEventType": "Clicked" }),
+            json!({ "itemEventType": "added" }),
+            json!({ "itemEventType": true }),
+            json!({ "itemInstanceID": "i-1" }),
+            Value::Null,
+        ] {
+            assert_eq!(
+                VtsEvent::decode(&envelope("ItemEvent", data.clone())),
+                None,
+                "{data}"
+            );
+        }
+    }
+
+    #[test]
+    fn envelopes_that_are_not_a_subscribed_event_are_not_decoded() {
+        for frame in [
+            envelope("ExpressionActivationEvent", json!({ "active": true })),
+            envelope("CurrentModelResponse", json!({ "modelLoaded": true })),
+            envelope("modelloadedevent", json!({ "modelLoaded": true })),
+            json!({ "messageType": "ModelLoadedEvent" }),
+            json!({ "messageType": 7, "data": {} }),
+            json!({ "data": { "modelLoaded": true } }),
+            json!("ModelLoadedEvent"),
+            Value::Null,
+        ] {
+            assert_eq!(VtsEvent::decode(&frame), None, "{frame}");
+        }
+    }
+}

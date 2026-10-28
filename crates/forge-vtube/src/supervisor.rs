@@ -1176,8 +1176,8 @@ mod tests {
             FakeVts, MockCreds, MockPublisher, PeerConn, elapse, finishes_on_a_frozen_clock,
             freeze_clock, settle_on_a_frozen_clock, stored_token_creds, wait_until,
         };
-        use crate::request::REQUEST_TIMEOUT;
         use crate::sink::VTubeSink;
+        use crate::vts::request::REQUEST_TIMEOUT;
 
         const SETTLE: Duration = Duration::from_secs(30);
         const PROMPT: Duration = Duration::from_secs(1);

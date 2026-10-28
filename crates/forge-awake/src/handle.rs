@@ -78,40 +78,23 @@ impl StatusWatch {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use async_trait::async_trait;
     use tokio::task::JoinHandle;
 
-    use super::{EnabledPreference, StatusWatch, StayAwake};
+    use super::{StatusWatch, StayAwake};
     use crate::fake_backend::{Call, FakeBackend, spawn_supervisor};
     use crate::{Aspect, AwakeError, AwakeStatus};
 
     const WAIT: Duration = Duration::from_secs(30);
 
-    #[derive(Default)]
-    struct RecordingPreference(Mutex<Vec<bool>>);
-
-    #[async_trait]
-    impl EnabledPreference for RecordingPreference {
-        async fn store(&self, enabled: bool) {
-            self.0.lock().unwrap().push(enabled);
-        }
-    }
-
-    fn stay_awake(
-        backend: &FakeBackend,
-        enabled: bool,
-    ) -> (StayAwake, Arc<RecordingPreference>, JoinHandle<()>) {
+    fn stay_awake(backend: &FakeBackend, enabled: bool) -> (StayAwake, JoinHandle<()>) {
         let (harness, task) = spawn_supervisor(backend, enabled);
-        let preference = Arc::new(RecordingPreference::default());
         let handle = StayAwake {
             commands: harness.commands,
             status: harness.status,
-            preference: preference.clone(),
         };
-        (handle, preference, task)
+        (handle, task)
     }
 
     async fn wait_until(watch: &mut StatusWatch, mut done: impl FnMut(&AwakeStatus) -> bool) {
@@ -124,24 +107,19 @@ mod tests {
         .unwrap();
     }
 
-    #[tokio::test]
-    async fn set_enabled_persists_the_choice() {
-        let backend = FakeBackend::default();
-        let (handle, preference, _task) = stay_awake(&backend, true);
-
-        handle.set_enabled(false).await;
-
-        assert_eq!(*preference.0.lock().unwrap(), vec![false]);
+    async fn stopped(handle: &StayAwake, task: JoinHandle<()>) {
+        handle.release();
+        tokio::time::timeout(WAIT, task).await.unwrap().unwrap();
     }
 
     #[tokio::test]
     async fn set_enabled_false_releases_the_running_holds() {
         let backend = FakeBackend::default();
-        let (handle, _preference, _task) = stay_awake(&backend, true);
+        let (handle, _task) = stay_awake(&backend, true);
         let mut watch = handle.watch();
         wait_until(&mut watch, AwakeStatus::fully_held).await;
 
-        handle.set_enabled(false).await;
+        handle.set_enabled(false).unwrap();
         wait_until(&mut watch, |s| *s == AwakeStatus::initial(false)).await;
 
         assert!(!backend.holds(Aspect::Display) && !backend.holds(Aspect::System));
@@ -150,19 +128,53 @@ mod tests {
     #[tokio::test]
     async fn set_enabled_true_acquires_holds_without_restart() {
         let backend = FakeBackend::default();
-        let (handle, _preference, _task) = stay_awake(&backend, false);
+        let (handle, _task) = stay_awake(&backend, false);
         let mut watch = handle.watch();
 
-        handle.set_enabled(true).await;
+        handle.set_enabled(true).unwrap();
         wait_until(&mut watch, AwakeStatus::fully_held).await;
 
         assert!(backend.holds(Aspect::Display) && backend.holds(Aspect::System));
     }
 
     #[tokio::test]
+    async fn rapid_set_enabled_calls_apply_in_call_order_and_end_on_the_last_choice() {
+        let backend = FakeBackend::default();
+        let (handle, task) = stay_awake(&backend, true);
+
+        for enabled in [false, true, false] {
+            handle.set_enabled(enabled).unwrap();
+        }
+        stopped(&handle, task).await;
+
+        assert_eq!(
+            backend.calls(),
+            vec![
+                Call::Acquire(Aspect::Display),
+                Call::Acquire(Aspect::System),
+                Call::Release(Aspect::Display),
+                Call::Release(Aspect::System),
+                Call::Acquire(Aspect::Display),
+                Call::Acquire(Aspect::System),
+                Call::Release(Aspect::Display),
+                Call::Release(Aspect::System),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn set_enabled_after_the_service_stopped_reports_stopped() {
+        let backend = FakeBackend::default();
+        let (handle, task) = stay_awake(&backend, true);
+        stopped(&handle, task).await;
+
+        assert_eq!(handle.set_enabled(false), Err(AwakeError::Stopped));
+    }
+
+    #[tokio::test]
     async fn release_twice_releases_each_hold_once_and_stops() {
         let backend = FakeBackend::default();
-        let (handle, _preference, task) = stay_awake(&backend, true);
+        let (handle, task) = stay_awake(&backend, true);
         wait_until(&mut handle.watch(), AwakeStatus::fully_held).await;
 
         handle.release();
@@ -187,11 +199,10 @@ mod tests {
     #[tokio::test]
     async fn status_watch_reports_stopped_once_the_service_ends() {
         let backend = FakeBackend::default();
-        let (handle, _preference, task) = stay_awake(&backend, true);
+        let (handle, task) = stay_awake(&backend, true);
         let mut watch = handle.watch();
 
-        handle.release();
-        tokio::time::timeout(WAIT, task).await.unwrap().unwrap();
+        stopped(&handle, task).await;
         let mut outcome = watch.changed().await;
         while outcome.is_ok() {
             outcome = watch.changed().await;

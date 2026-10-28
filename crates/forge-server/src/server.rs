@@ -10,7 +10,8 @@ use axum::routing::get;
 use axum::{Extension, Json, Router, middleware};
 use tokio::net::TcpListener;
 
-use forge_runtime::{ActionEngineHandle, EventBus};
+use forge_events::EventObserver;
+use forge_runtime::{ActionEngineHandle, EventHistory};
 use forge_storage::{
     ActionRepo, CredentialsRepo, GlobalsRepo, OverlayRepo,
     SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_DEFAULT, SettingsRepo, UserGlobalsRepo, get_bool_setting,
@@ -29,7 +30,7 @@ use crate::{ServerConfig, ServerError, ServerHandle};
 #[derive(Clone)]
 pub struct AppState {
     pub auth: Arc<AuthState>,
-    pub bus: Arc<EventBus>,
+    pub bus: Arc<dyn EventHistory>,
     pub bus_adapter: Arc<BusAdapter>,
     pub actions: Arc<dyn ActionRepo>,
     pub globals: Arc<dyn GlobalsRepo>,
@@ -88,7 +89,8 @@ async fn build_state(config: ServerConfig, bind_addr: SocketAddr) -> Result<AppS
         .await,
     );
     let bus = Arc::clone(&config.event_bus);
-    let bus_adapter = BusAdapter::new(Arc::clone(&bus));
+    let observer: Arc<dyn EventObserver> = bus.clone();
+    let bus_adapter = BusAdapter::new(observer);
     bus_adapter.spawn();
     let allowed_origins = Arc::new(build_allowed_origins(bind_addr, &config.additional_origins));
     Ok(AppState {

@@ -5,8 +5,8 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-use forge_events::{Delivery, Event, EventSource};
-use forge_runtime::{EventBus, OverlayConnectListener, OverlayReceivers};
+use forge_events::{Delivery, Event, EventObserver, EventSource};
+use forge_runtime::{OverlayConnectListener, OverlayReceivers};
 use forge_storage::OverlayId;
 use forge_types::EventId;
 use serde::Serialize;
@@ -110,7 +110,7 @@ struct ConnectedClient {
 }
 
 pub struct BusAdapter {
-    bus: Arc<EventBus>,
+    observer: Arc<dyn EventObserver>,
     registry: Arc<RwLock<Vec<ConnectedClient>>>,
     overlay_connect: OnceLock<Arc<dyn OverlayConnectListener>>,
 }
@@ -268,9 +268,9 @@ async fn count_overlay(
 }
 
 impl BusAdapter {
-    pub fn new(bus: Arc<EventBus>) -> Arc<Self> {
+    pub fn new(observer: Arc<dyn EventObserver>) -> Arc<Self> {
         Arc::new(Self {
-            bus,
+            observer,
             registry: Arc::new(RwLock::new(Vec::new())),
             overlay_connect: OnceLock::new(),
         })
@@ -290,7 +290,7 @@ impl BusAdapter {
 
     pub fn spawn(self: &Arc<Self>) {
         let registry = Arc::clone(&self.registry);
-        let subscription = self.bus.subscribe_observer(BUS_CONSUMER);
+        let subscription = self.observer.observe(BUS_CONSUMER);
         tokio::spawn(async move {
             let mut subscription = subscription;
             loop {

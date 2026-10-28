@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use forge_runtime::{ActionEngineHandle, EventBus};
+use forge_runtime::{ActionEngineHandle, EventHistory};
 use forge_storage::{
     ActionRepo, CredentialsRepo, GlobalsRepo, OverlayCredential, OverlayRepo, UserGlobalsRepo,
 };
@@ -15,7 +15,7 @@ use crate::ws_client::WsClient;
 use super::envelope::WsResponse;
 
 pub struct DispatchContext {
-    pub bus: Arc<EventBus>,
+    pub bus: Arc<dyn EventHistory>,
     pub bus_adapter: Arc<BusAdapter>,
     pub actions: Arc<dyn ActionRepo>,
     pub globals: Arc<dyn GlobalsRepo>,

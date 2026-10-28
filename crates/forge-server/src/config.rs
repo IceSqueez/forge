@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use forge_runtime::{ActionEngineHandle, EventBus};
+use forge_runtime::{ActionEngineHandle, EventHistory};
 use forge_storage::paths;
 use forge_storage::{
     ActionRepo, CredentialsRepo, GlobalsRepo, OverlayRepo,
@@ -21,7 +21,7 @@ pub struct ServerConfig {
     pub additional_origins: Vec<String>,
     pub settings: Arc<dyn SettingsRepo>,
     pub credentials: Arc<dyn CredentialsRepo>,
-    pub event_bus: Arc<EventBus>,
+    pub event_bus: Arc<dyn EventHistory>,
     pub actions: Arc<dyn ActionRepo>,
     pub globals: Arc<dyn GlobalsRepo>,
     pub user_globals: Arc<dyn UserGlobalsRepo>,
@@ -37,7 +37,7 @@ impl ServerConfig {
     pub fn new(
         settings: Arc<dyn SettingsRepo>,
         credentials: Arc<dyn CredentialsRepo>,
-        event_bus: Arc<EventBus>,
+        event_bus: Arc<dyn EventHistory>,
         actions: Arc<dyn ActionRepo>,
         globals: Arc<dyn GlobalsRepo>,
         user_globals: Arc<dyn UserGlobalsRepo>,

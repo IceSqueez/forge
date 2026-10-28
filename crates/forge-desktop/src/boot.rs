@@ -10,11 +10,11 @@ use forge_platform_core::PlatformEndpoints;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionCancelRegistry, ActionEngineHandle, Catalog, CatchUpSettle, Config, CoreSubActionDeps,
-    DateNamesHandle, DonationIngest, DonationOverlayAudience, EventBus, FirstChatLedger,
-    LatestValues, NotificationPreferences, OverlayConnectFanout, OverlayConnectListener,
-    OverlayFrameSink, OverlayMediaLibrary, OverlayServiceCell, OverlayServiceHandle,
-    QueueScheduler, ScheduledRunsCell, ScheduledRunsParts, SchedulerCell, ScriptRegistry,
-    ScriptScheduling, SpeakDispatcher, SystemWallClock, TwitchEmoteLexicon,
+    DateNamesHandle, DonationIngest, DonationOverlayAudience, EventBus, EventHistory,
+    FirstChatLedger, LatestValues, NotificationPreferences, OverlayConnectFanout,
+    OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary, OverlayServiceCell,
+    OverlayServiceHandle, QueueScheduler, ScheduledRunsCell, ScheduledRunsParts, SchedulerCell,
+    ScriptRegistry, ScriptScheduling, SpeakDispatcher, SystemWallClock, TwitchEmoteLexicon,
     register_core_sub_actions, register_core_triggers, register_donation_sub_actions,
     register_latest_sub_actions, register_scheduled_run_sub_actions, register_speech_sub_actions,
     spawn_action_engine, spawn_chat_history_persistence, spawn_event_log_bridge,
@@ -723,10 +723,11 @@ async fn build_server(
         let globals: Arc<dyn GlobalsRepo> = Arc::clone(backend) as Arc<dyn GlobalsRepo>;
         let user_globals: Arc<dyn UserGlobalsRepo> =
             Arc::clone(backend) as Arc<dyn UserGlobalsRepo>;
+        let event_history: Arc<dyn EventHistory> = Arc::clone(bus) as Arc<dyn EventHistory>;
         let mut config = forge_server::ServerConfig::new(
             settings_repo,
             credentials,
-            Arc::clone(bus),
+            event_history,
             backend.action_repo(),
             globals,
             user_globals,

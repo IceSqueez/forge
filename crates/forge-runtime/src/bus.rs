@@ -441,6 +441,23 @@ impl EventPublisher for EventBus {
     }
 }
 
+#[async_trait]
+pub trait EventHistory: EventPublisher + EventObserver {
+    async fn recent_since(&self, limit: usize, since: Option<EventId>) -> Vec<Event>;
+    async fn replay_and_publish(&self, event_id: EventId) -> Result<(), BusError>;
+}
+
+#[async_trait]
+impl EventHistory for EventBus {
+    async fn recent_since(&self, limit: usize, since: Option<EventId>) -> Vec<Event> {
+        EventBus::recent_since(self, limit, since).await
+    }
+
+    async fn replay_and_publish(&self, event_id: EventId) -> Result<(), BusError> {
+        EventBus::replay_and_publish(self, event_id).await
+    }
+}
+
 const _: () = {
     fn assert_send_sync<T: Send + Sync>() {}
     let _ = assert_send_sync::<EventBus>;

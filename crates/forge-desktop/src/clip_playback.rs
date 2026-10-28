@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use forge_components::{ToastKind, tr};
 use forge_events::{Event, EventSource};
+use forge_soundboard::PLAY_ID_KEY;
 use forge_types::ClipId;
 use gpui::{App, Global};
 use serde_json::Value;
@@ -41,6 +42,10 @@ impl PadPlayClaims for App {
 pub fn clip_id_of(payload: &Value) -> Option<ClipId> {
     let raw = payload.get("clip_id").and_then(Value::as_str)?;
     serde_json::from_value::<ClipId>(Value::String(raw.to_owned())).ok()
+}
+
+pub fn play_id_of(payload: &Value) -> Option<u64> {
+    payload.get(PLAY_ID_KEY).and_then(Value::as_u64)
 }
 
 pub fn report_clip_playback(event: &Event, cx: &mut App) {

@@ -3,6 +3,7 @@ use forge_types::ClipId;
 #[derive(Debug, Clone)]
 pub enum AudioEvent {
     PlaybackStarted {
+        play_id: u64,
         clip_id: Option<ClipId>,
         clip_label: Option<String>,
         device: String,
@@ -10,10 +11,12 @@ pub enum AudioEvent {
         looped: bool,
     },
     PlaybackFinished {
+        play_id: u64,
         clip_id: Option<ClipId>,
         clip_label: Option<String>,
     },
     PlaybackFailed {
+        play_id: u64,
         clip_id: Option<ClipId>,
         clip_label: Option<String>,
         error: String,

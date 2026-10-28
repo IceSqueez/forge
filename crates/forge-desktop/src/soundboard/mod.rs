@@ -26,7 +26,7 @@ use gpui::{
 use crate::async_bridge::{self, BridgeFlow, drain_events};
 use crate::clip_editor::ClipEditor;
 use crate::clip_key_state::{ClipKeyState, changes_registrations};
-use crate::clip_playback::clip_id_of;
+use crate::clip_playback::{clip_id_of, play_id_of};
 use crate::hub_crumb::{core_category, hub_crumb};
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
@@ -74,6 +74,7 @@ struct SoundClip {
 }
 
 struct PlaybackProgress {
+    play_id: Option<u64>,
     started_at: Instant,
     duration_secs: Option<f64>,
     looped: bool,
@@ -204,6 +205,7 @@ impl SoundboardView {
                 self.playing.insert(
                     clip_id,
                     PlaybackProgress {
+                        play_id: play_id_of(&event.payload),
                         started_at: Instant::now(),
                         duration_secs,
                         looped,
@@ -213,7 +215,9 @@ impl SoundboardView {
                 cx.notify();
             }
             "playback.finished" | "playback.failed" => {
-                self.clear_playing(clip_id, cx);
+                if let Some(play_id) = play_id_of(&event.payload) {
+                    self.clear_ended_play(clip_id, play_id, cx);
+                }
             }
             "soundboard.clip.adopted" => {
                 if let Some(settled) = settled_adoption(&event.payload) {

@@ -20,7 +20,7 @@ pub use builtin_library::{
     BUILTIN_FILE_EXTENSIONS, BUILTIN_SOUNDS, BuiltinSoundEntry, builtin_availability,
     resolve_builtin_path,
 };
-pub use bus_event_sink::BusAudioEventSink;
+pub use bus_event_sink::{BusAudioEventSink, PLAY_ID_KEY};
 pub use control::SoundboardControl;
 pub use cpal_factory::CpalSinkFactory;
 pub use duration::probe_clip_duration_secs;

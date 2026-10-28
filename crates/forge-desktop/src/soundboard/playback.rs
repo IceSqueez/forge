@@ -66,6 +66,7 @@ impl SoundboardView {
         self.playing.insert(
             id,
             PlaybackProgress {
+                play_id: None,
                 started_at: Instant::now(),
                 duration_secs: known.map(f64::from),
                 looped: clip.loop_playback,
@@ -131,6 +132,17 @@ impl SoundboardView {
 
     pub(super) fn clear_playing(&mut self, id: ClipId, cx: &mut Context<Self>) {
         if self.playing.remove(&id).is_some() {
+            cx.notify();
+        }
+    }
+
+    pub(super) fn clear_ended_play(&mut self, id: ClipId, play_id: u64, cx: &mut Context<Self>) {
+        let tracks_this_play = self
+            .playing
+            .get(&id)
+            .is_some_and(|progress| progress.play_id == Some(play_id));
+        if tracks_this_play {
+            self.playing.remove(&id);
             cx.notify();
         }
     }

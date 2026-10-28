@@ -1,16 +1,42 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    ConfigReason, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 use crate::control::SoundboardControl;
 
-const MIN_VOLUME_DB: f64 = -30.0;
-const MAX_VOLUME_DB: f64 = 0.0;
-const UNITY_GAIN_DB: f64 = 0.0;
+const KIND: &str = "soundboard.volume.set_master";
+const VOLUME_DB_KEY: &str = "volume_db";
+const MIN_VOLUME_DB: i32 = -30;
+const MAX_VOLUME_DB: i32 = 0;
+const UNITY_GAIN_DB: i32 = 0;
+const DECADE_BASE: f64 = 10.0;
 const AMPLITUDE_DB_PER_DECADE: f64 = 20.0;
+
+fn read_volume_db(config: &SubActionConfig) -> Result<f64, RegistryError> {
+    match config.get(VOLUME_DB_KEY) {
+        Some(Variant::Int(db)) => {
+            let saturated =
+                i32::try_from(*db).unwrap_or(if db.is_negative() { i32::MIN } else { i32::MAX });
+            Ok(f64::from(saturated.clamp(MIN_VOLUME_DB, MAX_VOLUME_DB)))
+        }
+        Some(Variant::Float(db)) => {
+            Ok(db.clamp(f64::from(MIN_VOLUME_DB), f64::from(MAX_VOLUME_DB)))
+        }
+        Some(_) => Err(RegistryError::invalid_field(
+            VOLUME_DB_KEY,
+            ConfigReason::NotANumber,
+        )),
+        None => Err(RegistryError::invalid_field(
+            VOLUME_DB_KEY,
+            ConfigReason::Required,
+        )),
+    }
+}
 
 pub struct SetMasterVolumeRunner {
     control: Arc<dyn SoundboardControl>,
@@ -25,7 +51,7 @@ impl SetMasterVolumeRunner {
 #[async_trait]
 impl SubActionRunner for SetMasterVolumeRunner {
     fn id(&self) -> &str {
-        "soundboard.volume.set_master"
+        KIND
     }
 
     fn category(&self) -> SubActionCategory {
@@ -50,21 +76,24 @@ impl SubActionRunner for SetMasterVolumeRunner {
 
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
-        cfg.insert("volume_db".to_owned(), Variant::Float(UNITY_GAIN_DB));
+        cfg.insert(
+            VOLUME_DB_KEY.to_owned(),
+            Variant::Int(i64::from(UNITY_GAIN_DB)),
+        );
         cfg
     }
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![FormField::Integer {
-            key: "volume_db",
+            key: VOLUME_DB_KEY,
             label: "Volume (dB)",
-            min: MIN_VOLUME_DB as i64,
-            max: MAX_VOLUME_DB as i64,
+            min: i64::from(MIN_VOLUME_DB),
+            max: i64::from(MAX_VOLUME_DB),
         }]
     }
 
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
+        read_volume_db(config).map(|_| ())
     }
 
     async fn execute(
@@ -72,35 +101,17 @@ impl SubActionRunner for SetMasterVolumeRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-
-        let volume_db: f64 = config
-            .get("volume_db")
-            .and_then(|v| v.as_float().or_else(|| v.as_int().map(|i| i as f64)))
-            .unwrap_or(UNITY_GAIN_DB)
-            .clamp(MIN_VOLUME_DB, MAX_VOLUME_DB);
-        let gain = 10.0_f64.powf(volume_db / AMPLITUDE_DB_PER_DECADE) as f32;
+        let timer = StepTimer::start(ctx, KIND);
+        let volume_db = match read_volume_db(config) {
+            Ok(volume_db) => volume_db,
+            Err(e) => return (timer.failed(e.to_string()), None),
+        };
+        let gain = DECADE_BASE.powf(volume_db / AMPLITUDE_DB_PER_DECADE) as f32;
 
         let outcome = match self.control.set_master_volume(gain).await {
             Ok(()) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(e.to_string()),
         };
-
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "soundboard.volume.set_master".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }

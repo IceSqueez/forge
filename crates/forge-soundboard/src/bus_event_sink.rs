@@ -5,6 +5,8 @@ use serde_json::json;
 
 use crate::audio_event::{AudioEvent, AudioEventSink};
 
+pub const PLAY_ID_KEY: &str = "play_id";
+
 pub struct BusAudioEventSink {
     bus: Arc<dyn EventPublisher>,
 }
@@ -19,6 +21,7 @@ impl AudioEventSink for BusAudioEventSink {
     fn emit(&self, event: AudioEvent) {
         let bus_event = match event {
             AudioEvent::PlaybackStarted {
+                play_id,
                 clip_id,
                 clip_label,
                 device,
@@ -28,6 +31,7 @@ impl AudioEventSink for BusAudioEventSink {
                 EventSource::Audio,
                 "playback.started",
                 json!({
+                    PLAY_ID_KEY: play_id,
                     "clip_id": clip_id.map(|id| id.to_string()),
                     "clip_label": clip_label,
                     "device": device,
@@ -36,17 +40,20 @@ impl AudioEventSink for BusAudioEventSink {
                 }),
             ),
             AudioEvent::PlaybackFinished {
+                play_id,
                 clip_id,
                 clip_label,
             } => Event::new(
                 EventSource::Audio,
                 "playback.finished",
                 json!({
+                    PLAY_ID_KEY: play_id,
                     "clip_id": clip_id.map(|id| id.to_string()),
                     "clip_label": clip_label,
                 }),
             ),
             AudioEvent::PlaybackFailed {
+                play_id,
                 clip_id,
                 clip_label,
                 error,
@@ -54,6 +61,7 @@ impl AudioEventSink for BusAudioEventSink {
                 EventSource::Audio,
                 "playback.failed",
                 json!({
+                    PLAY_ID_KEY: play_id,
                     "clip_id": clip_id.map(|id| id.to_string()),
                     "clip_label": clip_label,
                     "error": error,

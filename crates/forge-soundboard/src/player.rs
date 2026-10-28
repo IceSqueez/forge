@@ -34,7 +34,19 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 #[derive(Default)]
 struct PlayLegs {
     stopped: bool,
+    started: bool,
+    finish_claimed: bool,
     handles: Vec<PlaybackHandle>,
+}
+
+impl PlayLegs {
+    fn claim_finish(&mut self) -> bool {
+        let owed = self.started && !self.finish_claimed;
+        if owed {
+            self.finish_claimed = true;
+        }
+        owed
+    }
 }
 
 #[derive(Default)]
@@ -42,16 +54,41 @@ struct PlayControl {
     legs: Mutex<PlayLegs>,
 }
 
+fn stop_handles(handles: &[PlaybackHandle]) {
+    for handle in handles {
+        handle.stop();
+    }
+}
+
 impl PlayControl {
-    fn stop(&self) {
+    fn claim_finish_on_stop(&self) -> bool {
+        let (handles, owed) = {
+            let mut legs = lock(&self.legs);
+            legs.stopped = true;
+            (std::mem::take(&mut legs.handles), legs.claim_finish())
+        };
+        stop_handles(&handles);
+        owed
+    }
+
+    fn claim_finish_after_start(&self) -> bool {
+        let mut legs = lock(&self.legs);
+        legs.started = true;
+        legs.stopped && legs.claim_finish()
+    }
+
+    fn claim_finish(&self) -> bool {
+        lock(&self.legs).claim_finish()
+    }
+
+    fn abandon(&self) {
         let handles = {
             let mut legs = lock(&self.legs);
             legs.stopped = true;
+            legs.finish_claimed = true;
             std::mem::take(&mut legs.handles)
         };
-        for handle in &handles {
-            handle.stop();
-        }
+        stop_handles(&handles);
     }
 
     fn is_stopped(&self) -> bool {
@@ -70,9 +107,7 @@ impl PlayControl {
         };
         match refused {
             Some(handles) => {
-                for handle in &handles {
-                    handle.stop();
-                }
+                stop_handles(&handles);
                 false
             }
             None => true,
@@ -152,8 +187,9 @@ impl PlayReporter {
         if !retire(&self.active, play.clip_id, play.play_id) {
             return;
         }
-        play.control.stop();
+        play.control.abandon();
         self.event_sink.emit(AudioEvent::PlaybackFailed {
+            play_id: play.play_id,
             clip_id: Some(play.clip_id),
             clip_label: Some(play.label.clone()),
             error,
@@ -161,13 +197,24 @@ impl PlayReporter {
     }
 
     fn finish(&self, play: &Reservation) {
-        if retire(&self.active, play.clip_id, play.play_id) {
-            self.event_sink.emit(AudioEvent::PlaybackFinished {
-                clip_id: Some(play.clip_id),
-                clip_label: Some(play.label.clone()),
-            });
+        retire(&self.active, play.clip_id, play.play_id);
+        if play.control.claim_finish() {
+            emit_finished(
+                self.event_sink.as_ref(),
+                play.clip_id,
+                play.play_id,
+                &play.label,
+            );
         }
     }
+}
+
+fn emit_finished(sink: &dyn AudioEventSink, clip_id: ClipId, play_id: u64, label: &str) {
+    sink.emit(AudioEvent::PlaybackFinished {
+        play_id,
+        clip_id: Some(clip_id),
+        clip_label: Some(label.to_owned()),
+    });
 }
 
 #[derive(Clone, Default)]
@@ -253,17 +300,11 @@ impl SoundboardPlayer {
     }
 
     fn halt(&self, clip_id: ClipId, plays: &[ActivePlay]) {
-        if plays.is_empty() {
-            return;
-        }
-        let clip_label = plays.first().map(|play| play.label.clone());
         for play in plays {
-            play.control.stop();
+            if play.control.claim_finish_on_stop() {
+                emit_finished(self.event_sink.as_ref(), clip_id, play.play_id, &play.label);
+            }
         }
-        self.event_sink.emit(AudioEvent::PlaybackFinished {
-            clip_id: Some(clip_id),
-            clip_label,
-        });
     }
 
     pub async fn toggle(
@@ -313,14 +354,7 @@ impl SoundboardPlayer {
     pub fn stop_all(&self) {
         let drained = std::mem::take(&mut *lock(&self.active));
         for (clip_id, plays) in &drained {
-            let clip_label = plays.first().map(|play| play.label.clone());
-            for play in plays {
-                play.control.stop();
-            }
-            self.event_sink.emit(AudioEvent::PlaybackFinished {
-                clip_id: Some(*clip_id),
-                clip_label,
-            });
+            self.halt(*clip_id, plays);
         }
     }
 
@@ -406,17 +440,15 @@ impl SoundboardPlayer {
         }
 
         self.event_sink.emit(AudioEvent::PlaybackStarted {
+            play_id: play.play_id,
             clip_id: Some(clip_id),
             clip_label: Some(clip.name.clone()),
             device: prepared.device_label,
             duration_secs: Some(prepared.duration_ms as f64 / 1000.0),
             looped: clip.loop_playback,
         });
-        if play.control.is_stopped() {
-            self.event_sink.emit(AudioEvent::PlaybackFinished {
-                clip_id: Some(clip_id),
-                clip_label: Some(clip.name.clone()),
-            });
+        if play.control.claim_finish_after_start() {
+            emit_finished(self.event_sink.as_ref(), clip_id, play.play_id, &play.label);
             return Ok(PlayOutcome::Started);
         }
 
@@ -636,7 +668,7 @@ async fn run_loop(looped: LoopPlay) {
             }
         }
     }
-    retire(&reporter.active, play.clip_id, play.play_id);
+    reporter.finish(&play);
 }
 
 async fn wait_cycle(control: &PlayControl, cycle_ms: u64) {

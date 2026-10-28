@@ -15,6 +15,9 @@ pub enum SoundboardError {
     #[error("audio backend error: {0}")]
     Audio(#[from] forge_audio::AudioError),
 
+    #[error("{0}")]
+    MasterVolumeNotSaved(StorageError),
+
     #[error("storage error: {0}")]
     Storage(String),
 

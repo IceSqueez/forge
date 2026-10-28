@@ -39,7 +39,6 @@ pub mod queue_scheduler;
 mod run_history;
 pub mod scheduled_runs;
 mod script_registry;
-mod sound_player;
 mod speak_dispatcher;
 mod stream_live;
 pub mod sub_action_runners;
@@ -57,7 +56,7 @@ pub use action_engine::{
     ActionEngineHandle, DispatchError, ExecutionRequest, MANUAL_TEST_RUN_KIND, PendingQuickAction,
     spawn_action_engine,
 };
-pub use audio_runners::register_audio_sub_actions;
+pub use audio_runners::register_speech_sub_actions;
 pub use bus::{BusError, EventBus, NullEventLogRepo};
 pub use catalog::{Catalog, CatalogBinding, CatalogSnapshot};
 pub use chain::{ChainEngine, ChainRun, ChainScope};
@@ -114,7 +113,6 @@ pub use scheduled_runs::{
     WallClock, spawn_scheduled_runs,
 };
 pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};
-pub use sound_player::{SoundPlayer, SoundPlayerError};
 pub use speak_dispatcher::{
     ShowSpeech, SpeakDispatchError, SpeakDispatcher, SpeakingViewer, SpeechOrigin,
     SpeechStartSignal, VoiceDescriptor,

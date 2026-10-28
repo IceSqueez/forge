@@ -7,15 +7,15 @@ use forge_types::{
 };
 use time::OffsetDateTime;
 
-use crate::sound_player::SoundPlayer;
+use crate::control::SoundboardControl;
 
 pub struct StopSoundRunner {
-    sound_player: Arc<dyn SoundPlayer>,
+    control: Arc<dyn SoundboardControl>,
 }
 
 impl StopSoundRunner {
-    pub fn new(sound_player: Arc<dyn SoundPlayer>) -> Self {
-        Self { sound_player }
+    pub fn new(control: Arc<dyn SoundboardControl>) -> Self {
+        Self { control }
     }
 }
 
@@ -77,7 +77,7 @@ impl SubActionRunner for StopSoundRunner {
         let interpolated = ctx.arg_stack.interpolate(clip_id_str);
 
         let outcome = if interpolated.is_empty() {
-            match self.sound_player.stop_all().await {
+            match self.control.stop_all().await {
                 Ok(()) => SubActionOutcome::Success,
                 Err(e) => SubActionOutcome::Failed(e.to_string()),
             }
@@ -88,7 +88,7 @@ impl SubActionRunner for StopSoundRunner {
                 Err(_) => {
                     SubActionOutcome::Failed("soundboard.sound.stop: invalid clip_id".to_owned())
                 }
-                Ok(clip_id) => match self.sound_player.stop(clip_id).await {
+                Ok(clip_id) => match self.control.stop(clip_id).await {
                     Ok(()) => SubActionOutcome::Success,
                     Err(e) => SubActionOutcome::Failed(e.to_string()),
                 },

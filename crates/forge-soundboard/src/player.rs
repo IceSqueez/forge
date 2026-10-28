@@ -9,12 +9,12 @@ use forge_audio::{
     AudioError, AudioEvent, AudioEventSink, AudioRoute, AudioSink, ControlledPlayback,
     PlaybackHandle,
 };
-use forge_runtime::{SoundPlayer, SoundPlayerError};
 use forge_speech_types::PcmBuffer;
 use forge_storage::{SettingsRepo, StoredClip};
 use forge_types::{ClipId, OutputDevice, Shared};
 use tokio::sync::oneshot;
 
+use crate::control::SoundboardControl;
 use crate::error::SoundboardError;
 use crate::library::{ClipLibrary, ClipSource};
 use crate::settings::{SoundboardSettings, SoundboardSettingsHandle};
@@ -718,36 +718,35 @@ fn resolve_device(
 }
 
 #[async_trait]
-impl SoundPlayer for SoundboardPlayer {
+impl SoundboardControl for SoundboardPlayer {
     async fn play(
         &self,
         clip_id: ClipId,
         output_device_override: Option<OutputDevice>,
-    ) -> Result<(), SoundPlayerError> {
+    ) -> Result<(), SoundboardError> {
         SoundboardPlayer::play(self, clip_id, output_device_override)
             .await
             .map(|_| ())
-            .map_err(|e| SoundPlayerError::Play(e.to_string()))
     }
 
-    async fn stop(&self, clip_id: ClipId) -> Result<(), SoundPlayerError> {
+    async fn stop(&self, clip_id: ClipId) -> Result<(), SoundboardError> {
         SoundboardPlayer::stop(self, clip_id);
         Ok(())
     }
 
-    async fn stop_all(&self) -> Result<(), SoundPlayerError> {
+    async fn stop_all(&self) -> Result<(), SoundboardError> {
         SoundboardPlayer::stop_all(self);
         Ok(())
     }
 
-    async fn set_master_volume(&self, gain: f32) -> Result<(), SoundPlayerError> {
+    async fn set_master_volume(&self, gain: f32) -> Result<(), SoundboardError> {
         let volume = SoundboardPlayer::set_master_volume(self, gain);
         let Some(store) = self.settings_store.load().as_ref().clone() else {
             return Ok(());
         };
         forge_storage::set_soundboard_master_volume(store.as_ref(), volume)
             .await
-            .map_err(|e| SoundPlayerError::Play(e.to_string()))
+            .map_err(SoundboardError::MasterVolumeNotSaved)
     }
 }
 
@@ -2139,7 +2138,7 @@ mod tests {
         let player = idle_player();
         player.install_settings_store(Arc::clone(&store) as Arc<dyn SettingsRepo>);
 
-        SoundPlayer::set_master_volume(&player, SUB_ACTION_VOLUME)
+        SoundboardControl::set_master_volume(&player, SUB_ACTION_VOLUME)
             .await
             .unwrap();
 
@@ -2158,7 +2157,9 @@ mod tests {
         let player = idle_player();
         player.install_settings_store(Arc::clone(&store) as Arc<dyn SettingsRepo>);
 
-        SoundPlayer::set_master_volume(&player, 10.0).await.unwrap();
+        SoundboardControl::set_master_volume(&player, 10.0)
+            .await
+            .unwrap();
 
         let persisted = forge_storage::soundboard_master_volume(store.as_ref())
             .await
@@ -2175,7 +2176,7 @@ mod tests {
     async fn a_sub_action_volume_survives_a_later_edit_of_another_soundboard_setting() {
         let player = idle_player();
 
-        SoundPlayer::set_master_volume(&player, SUB_ACTION_VOLUME)
+        SoundboardControl::set_master_volume(&player, SUB_ACTION_VOLUME)
             .await
             .unwrap();
         player.update_settings(|settings| settings.also_headphones = true);
@@ -2185,6 +2186,49 @@ mod tests {
             (volume - SUB_ACTION_VOLUME).abs() < f32::EPSILON,
             "editing another setting undid the sub-action volume: {volume}"
         );
+    }
+
+    struct UnwritableSettings;
+
+    fn read_only_store() -> StorageError {
+        StorageError::Connection {
+            reason: "database is read-only".to_owned(),
+        }
+    }
+
+    #[async_trait]
+    impl SettingsRepo for UnwritableSettings {
+        async fn get_string(&self, _key: &str) -> Result<Option<String>, StorageError> {
+            Ok(None)
+        }
+
+        async fn set_string(&self, _key: &str, _value: &str) -> Result<(), StorageError> {
+            Err(read_only_store())
+        }
+
+        async fn delete(&self, _key: &str) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+
+        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
+            Ok(HashMap::new())
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unsaved_master_volume_reports_the_storage_reason_verbatim() {
+        let player = idle_player();
+        player.install_settings_store(Arc::new(UnwritableSettings) as Arc<dyn SettingsRepo>);
+
+        let error = SoundboardControl::set_master_volume(&player, SUB_ACTION_VOLUME)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(error, SoundboardError::MasterVolumeNotSaved(_)),
+            "{error:?}"
+        );
+        assert_eq!(error.to_string(), read_only_store().to_string());
     }
     struct GatedToggle {
         player: Arc<SoundboardPlayer>,

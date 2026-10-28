@@ -16,7 +16,7 @@ forge-types = { path = "../forge-types" }
 forge-events = { path = "../forge-events" }
 forge-audio = { path = "../forge-audio" }
 forge-storage = { path = "../forge-storage" }
-forge-runtime = { path = "../forge-runtime" }
+forge-registry = { path = "../forge-registry" }
 forge-hotkey = { path = "../forge-hotkey" }
 async-trait = { workspace = true }
 futures = { workspace = true }

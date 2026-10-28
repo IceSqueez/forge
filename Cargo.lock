@@ -3124,7 +3124,7 @@ dependencies = [
  "forge-audio",
  "forge-events",
  "forge-hotkey",
- "forge-runtime",
+ "forge-registry",
  "forge-speech-types",
  "forge-storage",
  "forge-storage-sqlite",

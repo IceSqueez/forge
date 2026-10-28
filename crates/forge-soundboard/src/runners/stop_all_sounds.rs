@@ -2,28 +2,25 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
 
-use crate::sound_player::SoundPlayer;
+use crate::control::SoundboardControl;
 
-const MIN_VOLUME_DB: f64 = -30.0;
-const MAX_VOLUME_DB: f64 = 0.0;
-
-pub struct SetMasterVolumeRunner {
-    sound_player: Arc<dyn SoundPlayer>,
+pub struct StopAllSoundsRunner {
+    control: Arc<dyn SoundboardControl>,
 }
 
-impl SetMasterVolumeRunner {
-    pub fn new(sound_player: Arc<dyn SoundPlayer>) -> Self {
-        Self { sound_player }
+impl StopAllSoundsRunner {
+    pub fn new(control: Arc<dyn SoundboardControl>) -> Self {
+        Self { control }
     }
 }
 
 #[async_trait]
-impl SubActionRunner for SetMasterVolumeRunner {
+impl SubActionRunner for StopAllSoundsRunner {
     fn id(&self) -> &str {
-        "soundboard.volume.set_master"
+        "soundboard.sound.stop_all"
     }
 
     fn category(&self) -> SubActionCategory {
@@ -31,34 +28,27 @@ impl SubActionRunner for SetMasterVolumeRunner {
     }
 
     fn label(&self) -> &str {
-        "Set Master Volume"
+        "Stop All Sounds"
     }
 
     fn summary(&self) -> &str {
-        "Set the soundboard master volume applied to every clip"
+        "Stop every soundboard clip currently playing"
     }
 
     fn search_text(&self) -> &str {
-        "set master volume soundboard gain decibel db level"
+        "stop all sounds clips audio soundboard silence"
     }
 
     fn icon_name(&self) -> &str {
-        "volume"
+        "stop-circle"
     }
 
     fn default_config(&self) -> SubActionConfig {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("volume_db".to_owned(), Variant::Float(0.0));
-        cfg
+        SubActionConfig::new()
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Integer {
-            key: "volume_db",
-            label: "Volume (dB)",
-            min: MIN_VOLUME_DB as i64,
-            max: MAX_VOLUME_DB as i64,
-        }]
+        vec![]
     }
 
     fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
@@ -67,19 +57,12 @@ impl SubActionRunner for SetMasterVolumeRunner {
 
     async fn execute(
         &self,
-        config: &SubActionConfig,
+        _config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let started_at = OffsetDateTime::now_utc();
 
-        let volume_db: f64 = config
-            .get("volume_db")
-            .and_then(|v| v.as_float().or_else(|| v.as_int().map(|i| i as f64)))
-            .unwrap_or(0.0)
-            .clamp(MIN_VOLUME_DB, MAX_VOLUME_DB);
-        let gain = 10.0_f64.powf(volume_db / 20.0) as f32;
-
-        let outcome = match self.sound_player.set_master_volume(gain).await {
+        let outcome = match self.control.stop_all().await {
             Ok(()) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(e.to_string()),
         };
@@ -93,7 +76,7 @@ impl SubActionRunner for SetMasterVolumeRunner {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
-                kind: "soundboard.volume.set_master".to_owned(),
+                kind: "soundboard.sound.stop_all".to_owned(),
                 started_at,
                 duration_ms,
                 outcome,

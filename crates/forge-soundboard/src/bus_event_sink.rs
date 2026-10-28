@@ -1,16 +1,15 @@
 use std::sync::Arc;
 
 use forge_audio::{AudioEvent, AudioEventSink};
-use forge_events::{Event, EventSource};
-use forge_runtime::EventBus;
+use forge_events::{Event, EventPublisher, EventSource};
 use serde_json::json;
 
 pub struct BusAudioEventSink {
-    bus: Arc<EventBus>,
+    bus: Arc<dyn EventPublisher>,
 }
 
 impl BusAudioEventSink {
-    pub fn new(bus: Arc<EventBus>) -> Self {
+    pub fn new(bus: Arc<dyn EventPublisher>) -> Self {
         Self { bus }
     }
 }

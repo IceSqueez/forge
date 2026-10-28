@@ -1,13 +1,15 @@
-#![doc = "Soundboard: clip storage, playback, in-app hotkey wiring, PlaySound runner."]
+#![doc = "Soundboard: clip storage, playback, in-app hotkey wiring, sound sub-action runners."]
 
 pub mod builtin_library;
 mod bus_event_sink;
+mod control;
 mod cpal_factory;
 mod duration;
 mod error;
 mod hotkey_dispatch;
 mod library;
 mod player;
+mod runners;
 mod settings;
 mod sink_factory;
 
@@ -16,6 +18,7 @@ pub use builtin_library::{
     resolve_builtin_path,
 };
 pub use bus_event_sink::BusAudioEventSink;
+pub use control::SoundboardControl;
 pub use cpal_factory::CpalSinkFactory;
 pub use duration::probe_clip_duration_secs;
 pub use error::SoundboardError;
@@ -26,5 +29,9 @@ pub use library::{
     refusal_is_final,
 };
 pub use player::{ClipRoute, ClipToggle, PlayOutcome, SoundboardPlayer};
+pub use runners::{
+    PlaySoundRunner, SetMasterVolumeRunner, StopAllSoundsRunner, StopSoundRunner,
+    register_soundboard_sub_actions,
+};
 pub use settings::{SoundboardSettings, SoundboardSettingsHandle, load_soundboard_settings};
 pub use sink_factory::AudioSinkFactory;

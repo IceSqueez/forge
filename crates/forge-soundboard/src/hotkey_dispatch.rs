@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_events::{Event, EventSource, EventSubscription, EventsError};
+use forge_events::{Event, EventObserver, EventSource, EventsError};
 use forge_hotkey::payload_fields::COMBO;
 use forge_hotkey::{ClipBindings, event_kinds};
 use forge_types::ClipId;
@@ -8,6 +8,8 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::player::SoundboardPlayer;
+
+const CLIP_HOTKEY_DISPATCHER: &str = "clip_hotkey_dispatcher";
 
 pub fn pressed_combo(event: &Event) -> Option<&str> {
     if event.source != EventSource::Hotkey || event.kind != event_kinds::GLOBAL_PRESSED {
@@ -21,10 +23,11 @@ pub fn clips_bound_to(bindings: &ClipBindings, combo: &str) -> Vec<ClipId> {
 }
 
 pub fn spawn_clip_hotkey_dispatcher(
-    mut events: EventSubscription,
+    observer: &dyn EventObserver,
     bindings: watch::Receiver<Arc<ClipBindings>>,
     player: Arc<SoundboardPlayer>,
 ) -> JoinHandle<()> {
+    let mut events = observer.observe(CLIP_HOTKEY_DISPATCHER);
     tokio::spawn(async move {
         loop {
             let event = match events.recv().await {

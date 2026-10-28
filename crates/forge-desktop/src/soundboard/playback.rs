@@ -189,7 +189,8 @@ fn play_settled_without_outcome(result: &Result<PlayOutcome, SoundboardError>) -
         Err(
             SoundboardError::ClipNotFound(_)
             | SoundboardError::ImportRefused(_)
-            | SoundboardError::Storage(_),
+            | SoundboardError::Storage(_)
+            | SoundboardError::MasterVolumeNotSaved(_),
         ) => true,
     }
 }

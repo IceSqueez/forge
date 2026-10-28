@@ -14,9 +14,9 @@ use forge_runtime::{
     LatestValues, NotificationPreferences, OverlayConnectFanout, OverlayConnectListener,
     OverlayFrameSink, OverlayMediaLibrary, OverlayServiceCell, OverlayServiceHandle,
     QueueScheduler, ScheduledRunsCell, ScheduledRunsParts, SchedulerCell, ScriptRegistry,
-    ScriptScheduling, SoundPlayer, SpeakDispatcher, SystemWallClock, TwitchEmoteLexicon,
-    register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
-    register_donation_sub_actions, register_latest_sub_actions, register_scheduled_run_sub_actions,
+    ScriptScheduling, SpeakDispatcher, SystemWallClock, TwitchEmoteLexicon,
+    register_core_sub_actions, register_core_triggers, register_donation_sub_actions,
+    register_latest_sub_actions, register_scheduled_run_sub_actions, register_speech_sub_actions,
     spawn_action_engine, spawn_chat_history_persistence, spawn_event_log_bridge,
     spawn_latest_overlay_feed, spawn_latest_projector, spawn_live_viewer_aggregator,
     spawn_notification_policy, spawn_scheduled_runs, spawn_stream_live_signal,
@@ -24,8 +24,8 @@ use forge_runtime::{
     spawn_viewer_tracker,
 };
 use forge_soundboard::{
-    BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
-    load_soundboard_settings,
+    BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardControl, SoundboardPlayer,
+    SoundboardSettingsHandle, load_soundboard_settings, register_soundboard_sub_actions,
 };
 use forge_storage::paths;
 use forge_storage::{
@@ -378,32 +378,39 @@ pub async fn build_runtime(
     soundboard_library.install_event_publisher(Arc::clone(&bus) as Arc<dyn EventPublisher>);
     let soundboard_player = Arc::new(SoundboardPlayer::with_settings(
         Arc::new(CpalSinkFactory),
-        Arc::new(BusAudioEventSink::new(Arc::clone(&bus))),
+        Arc::new(BusAudioEventSink::new(
+            Arc::clone(&bus) as Arc<dyn EventPublisher>
+        )),
         soundboard_library,
         soundboard_settings,
     ));
     soundboard_player.install_settings_store(Arc::clone(&soundboard_settings_repo));
+    if let Err(e) = register_soundboard_sub_actions(
+        &mut sub_action_reg,
+        Arc::clone(&soundboard_player) as Arc<dyn SoundboardControl>,
+    ) {
+        tracing::error!(error = %e, "soundboard sub-action runner registration failed");
+    }
     match speak_dispatcher {
         Some(dispatcher) => {
             let reward_emotes = TwitchEmoteLexicon::default();
             spawn_twitch_emote_learning(&bus, reward_emotes.clone());
-            if let Err(e) = register_audio_sub_actions(
-                &mut sub_action_reg,
-                Arc::clone(&soundboard_player) as Arc<dyn SoundPlayer>,
-                dispatcher,
-                reward_emotes,
-            ) {
-                tracing::error!(error = %e, "audio sub-action runner registration failed");
+            if let Err(e) =
+                register_speech_sub_actions(&mut sub_action_reg, dispatcher, reward_emotes)
+            {
+                tracing::error!(error = %e, "speech sub-action runner registration failed");
             }
         }
         None => {
-            tracing::warn!("no speak dispatcher available; audio sub-action runners not registered")
+            tracing::warn!(
+                "no speak dispatcher available; speech sub-action runners not registered"
+            )
         }
     }
 
     if let Some(reconciler) = &integrations.hotkey_reconciler {
         spawn_clip_hotkey_dispatcher(
-            bus.subscribe(),
+            bus.as_ref(),
             reconciler.clip_bindings(),
             Arc::clone(&soundboard_player),
         );

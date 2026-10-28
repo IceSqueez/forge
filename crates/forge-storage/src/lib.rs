@@ -39,7 +39,7 @@ pub use catalog::{
 };
 pub use chat_history::{
     AUTHORLESS_CHAT_HISTORY_RETAINED, ChatAuthorKey, ChatAuthorPage, ChatAuthorTally,
-    ChatHistoryCursor, ChatHistoryRepo,
+    ChatHistoryCursor, ChatHistoryRepo, ChatModerationTarget,
 };
 pub use credentials::{
     CredentialId, CredentialsRepo, SERVER_BEARER_CREDENTIAL_ID, SERVER_OVERLAY_TOKEN_CREDENTIAL_ID,

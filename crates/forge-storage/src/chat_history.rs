@@ -3,7 +3,7 @@ use std::fmt;
 use async_trait::async_trait;
 use forge_types::PlatformId;
 use forge_types::redaction::Redacted;
-use forge_types::unified_chat::UnifiedChatRow;
+use forge_types::unified_chat::{UnifiedChatRow, UserRemoval};
 use time::OffsetDateTime;
 
 use crate::StorageError;
@@ -21,6 +21,23 @@ impl fmt::Debug for ChatAuthorKey {
         f.debug_struct("ChatAuthorKey")
             .field("source", &self.source)
             .field("author_id", &Redacted)
+            .finish()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct ChatModerationTarget {
+    pub source: PlatformId,
+    pub author_id: Option<String>,
+    pub author_name: String,
+}
+
+impl fmt::Debug for ChatModerationTarget {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ChatModerationTarget")
+            .field("source", &self.source)
+            .field("author_id", &self.author_id.as_ref().map(|_| Redacted))
+            .field("author_name", &Redacted)
             .finish()
     }
 }
@@ -73,13 +90,16 @@ pub trait ChatHistoryRepo: Send + Sync {
         per_author: usize,
     ) -> Result<u64, StorageError>;
 
-    async fn mark_message_deleted(&self, platform_msg_id: &str) -> Result<u64, StorageError>;
+    async fn mark_message_deleted(
+        &self,
+        source: PlatformId,
+        platform_msg_id: &str,
+    ) -> Result<u64, StorageError>;
 
     async fn mark_user_messages_moderated(
         &self,
-        source: PlatformId,
-        author: &str,
-        timeout: bool,
+        target: &ChatModerationTarget,
+        removal: UserRemoval,
     ) -> Result<u64, StorageError>;
 
     async fn clear_platform(&self, source: PlatformId) -> Result<u64, StorageError>;

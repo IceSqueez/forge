@@ -17,7 +17,7 @@ use forge_platform_core::{
 };
 use forge_types::{
     AUTHOR_IS_CONNECTED_BOT_FIELD, ChatModerationAction, ChatModerationPayload, ChatPayload,
-    ChatReply, ChatViewer, OAuthToken,
+    ChatReply, ChatViewer, OAuthToken, UserRemoval,
 };
 use futures_util::{FutureExt, StreamExt};
 use serde::Deserialize;
@@ -1612,6 +1612,7 @@ impl ChatSession {
             "ban event received"
         );
 
+        let removed_user_id = (!user_id.is_empty()).then(|| user_id.clone());
         let mut forge_payload = serde_json::json!({
             (moderation_fields::USER): {
                 (moderation_fields::USER_ID): user_id,
@@ -1631,8 +1632,13 @@ impl ChatSession {
         attach_moderation_payload(
             &mut forge_payload,
             ChatModerationAction::RemoveUser {
+                user_id: removed_user_id,
                 user_name: user_display_name,
-                timeout: !is_permanent,
+                removal: if is_permanent {
+                    UserRemoval::Ban
+                } else {
+                    UserRemoval::Timeout
+                },
             },
         );
 

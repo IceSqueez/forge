@@ -61,9 +61,23 @@ impl ChatModerationPayload {
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChatModerationAction {
-    DeleteMessage { message_id: String },
-    RemoveUser { user_name: String, timeout: bool },
+    DeleteMessage {
+        message_id: String,
+    },
+    RemoveUser {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        user_id: Option<String>,
+        user_name: String,
+        removal: UserRemoval,
+    },
     ClearChat,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UserRemoval {
+    Ban,
+    Timeout,
 }
 
 impl fmt::Debug for ChatModerationAction {
@@ -73,10 +87,13 @@ impl fmt::Debug for ChatModerationAction {
                 .debug_struct("DeleteMessage")
                 .field("message_id", message_id)
                 .finish(),
-            Self::RemoveUser { timeout, .. } => f
+            Self::RemoveUser {
+                user_id, removal, ..
+            } => f
                 .debug_struct("RemoveUser")
+                .field("user_id", &user_id.as_ref().map(|_| Redacted))
                 .field("user_name", &Redacted)
-                .field("timeout", timeout)
+                .field("removal", removal)
                 .finish(),
             Self::ClearChat => f.write_str("ClearChat"),
         }

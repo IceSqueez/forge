@@ -4,11 +4,11 @@ use std::time::Duration;
 
 use forge_events::Event;
 use forge_storage::{
-    ChatAuthorKey, ChatHistoryRepo, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT, SettingsRepo,
-    UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT, chat_history_per_viewer_limit,
+    ChatAuthorKey, ChatHistoryRepo, ChatModerationTarget, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
+    SettingsRepo, UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT, chat_history_per_viewer_limit,
     clamp_chat_history_per_viewer_limit,
 };
-use forge_types::{ChatModerationAction, PlatformId, UnifiedChatRow};
+use forge_types::{ChatModerationAction, PlatformId, UnifiedChatRow, UserRemoval};
 use time::OffsetDateTime;
 use tokio::sync::watch;
 
@@ -86,17 +86,20 @@ impl RecentModeration {
     fn mark(&self, row: &mut UnifiedChatRow) {
         match &self.action {
             ChatModerationAction::DeleteMessage { message_id } => {
-                if *message_id == row.id {
+                if row.source == self.source && *message_id == row.id {
                     row.moderation.deleted = true;
                 }
             }
-            ChatModerationAction::RemoveUser { user_name, timeout } => {
-                if self.covers(row) && *user_name == row.author {
+            ChatModerationAction::RemoveUser {
+                user_id,
+                user_name,
+                removal,
+            } => {
+                if self.covers(row) && removes_author(user_id.as_deref(), user_name, row) {
                     row.moderation.deleted = true;
-                    if *timeout {
-                        row.moderation.timed_out = true;
-                    } else {
-                        row.moderation.banned = true;
+                    match removal {
+                        UserRemoval::Ban => row.moderation.banned = true,
+                        UserRemoval::Timeout => row.moderation.timed_out = true,
                     }
                 }
             }
@@ -110,6 +113,13 @@ impl RecentModeration {
 
     fn covers(&self, row: &UnifiedChatRow) -> bool {
         row.source == self.source && row.received_at <= self.at
+    }
+}
+
+fn removes_author(user_id: Option<&str>, user_name: &str, row: &UnifiedChatRow) -> bool {
+    match (user_id, row.author_id.as_deref()) {
+        (Some(user_id), Some(author_id)) => user_id == author_id,
+        _ => user_name.eq_ignore_ascii_case(&row.author),
     }
 }
 
@@ -221,12 +231,25 @@ async fn apply_moderation(
 ) {
     let outcome = match action {
         ChatModerationAction::DeleteMessage { message_id } => {
-            tokio::time::timeout(PERSIST_OP_TIMEOUT, repo.mark_message_deleted(message_id)).await
-        }
-        ChatModerationAction::RemoveUser { user_name, timeout } => {
             tokio::time::timeout(
                 PERSIST_OP_TIMEOUT,
-                repo.mark_user_messages_moderated(source, user_name, *timeout),
+                repo.mark_message_deleted(source, message_id),
+            )
+            .await
+        }
+        ChatModerationAction::RemoveUser {
+            user_id,
+            user_name,
+            removal,
+        } => {
+            let target = ChatModerationTarget {
+                source,
+                author_id: user_id.clone(),
+                author_name: user_name.clone(),
+            };
+            tokio::time::timeout(
+                PERSIST_OP_TIMEOUT,
+                repo.mark_user_messages_moderated(&target, *removal),
             )
             .await
         }

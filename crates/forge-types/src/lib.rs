@@ -68,7 +68,7 @@ pub use trigger_instance::TriggerInstance;
 pub use unified_chat::{
     AUTHOR_IS_CONNECTED_BOT_FIELD, ChatEventDetail, ChatModerationAction, ChatModerationPayload,
     ChatPayload, ChatReply, ChatSegment, ChatViewer, KNOWN_BOT_ACCOUNTS, ModerationMarks,
-    UnifiedChatRow, UserBadge, authored_by_connected_bot, is_bot_account,
+    UnifiedChatRow, UserBadge, UserRemoval, authored_by_connected_bot, is_bot_account,
 };
 pub use variant::{
     MAX_COLLECTION_LEN as VARIANT_MAX_COLLECTION_LEN, MAX_DEPTH as VARIANT_MAX_DEPTH, Variant,

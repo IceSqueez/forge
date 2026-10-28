@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use forge_storage::{
     AUTHORLESS_CHAT_HISTORY_RETAINED, ChatAuthorKey, ChatAuthorPage, ChatAuthorTally,
-    ChatHistoryCursor, ChatHistoryRepo, StorageError,
+    ChatHistoryCursor, ChatHistoryRepo, ChatModerationTarget, StorageError,
 };
 use forge_types::unified_chat::{
-    ChatEventDetail, ChatSegment, ModerationMarks, UnifiedChatRow, UserBadge,
+    ChatEventDetail, ChatSegment, ModerationMarks, UnifiedChatRow, UserBadge, UserRemoval,
 };
 use forge_types::{EventId, PlatformId};
 
@@ -26,6 +26,13 @@ fn encode_source(source: PlatformId) -> Result<String, StorageError> {
 }
 
 const CHAT_HISTORY_COLUMNS: usize = 12;
+
+fn removal_mark_path(removal: UserRemoval) -> &'static str {
+    match removal {
+        UserRemoval::Ban => "$.banned",
+        UserRemoval::Timeout => "$.timed_out",
+    }
+}
 
 struct EncodedChatRow<'a> {
     id: &'a str,
@@ -386,12 +393,19 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
         Ok(deleted)
     }
 
-    async fn mark_message_deleted(&self, platform_msg_id: &str) -> Result<u64, StorageError> {
+    async fn mark_message_deleted(
+        &self,
+        source: PlatformId,
+        platform_msg_id: &str,
+    ) -> Result<u64, StorageError> {
+        let source_str = encode_source(source)?;
+
         let result = sqlx::query(
             "UPDATE chat_history
              SET moderation = json_set(moderation, '$.deleted', json('true'))
-             WHERE id = ?",
+             WHERE source = ? AND id = ?",
         )
+        .bind(&source_str)
         .bind(platform_msg_id)
         .execute(self.db.writer())
         .await
@@ -402,33 +416,25 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
 
     async fn mark_user_messages_moderated(
         &self,
-        source: PlatformId,
-        author: &str,
-        timeout: bool,
+        target: &ChatModerationTarget,
+        removal: UserRemoval,
     ) -> Result<u64, StorageError> {
-        let source_str = encode_source(source)?;
+        let source_str = encode_source(target.source)?;
 
-        let result = if timeout {
-            sqlx::query(
-                "UPDATE chat_history
-                 SET moderation = json_set(moderation, '$.timed_out', json('true'), '$.deleted', json('true'))
-                 WHERE source = ? AND author = ?",
-            )
-            .bind(&source_str)
-            .bind(author)
-            .execute(self.db.writer())
-            .await
-        } else {
-            sqlx::query(
-                "UPDATE chat_history
-                 SET moderation = json_set(moderation, '$.banned', json('true'), '$.deleted', json('true'))
-                 WHERE source = ? AND author = ?",
-            )
-            .bind(&source_str)
-            .bind(author)
-            .execute(self.db.writer())
-            .await
-        }
+        let result = sqlx::query(
+            "UPDATE chat_history
+             SET moderation = json_set(moderation, ?, json('true'), '$.deleted', json('true'))
+             WHERE source = ?
+               AND (author_id = ?
+                    OR ((? IS NULL OR author_id IS NULL) AND author = ? COLLATE NOCASE))",
+        )
+        .bind(removal_mark_path(removal))
+        .bind(&source_str)
+        .bind(target.author_id.as_deref())
+        .bind(target.author_id.as_deref())
+        .bind(&target.author_name)
+        .execute(self.db.writer())
+        .await
         .map_err(SqliteStorageError::Sqlx)?;
 
         Ok(result.rows_affected())

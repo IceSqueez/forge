@@ -187,11 +187,61 @@ mod tests {
         assert_eq!(split_parts(&cfg).await, vec!["a", "b", "c", "d"]);
     }
 
-    #[tokio::test]
-    async fn split_empty_separator_splits_between_each_char() {
+    fn empty_separator_cfg(source: &str, max_parts: i64) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
-        cfg.insert("source".to_owned(), Variant::String("Hi".to_owned()));
+        cfg.insert("source".to_owned(), Variant::String(source.to_owned()));
         cfg.insert("separator".to_owned(), Variant::String(String::new()));
-        assert_eq!(split_parts(&cfg).await, vec!["", "H", "i", ""]);
+        cfg.insert("max_parts".to_owned(), Variant::Int(max_parts));
+        cfg
+    }
+
+    #[tokio::test]
+    async fn split_empty_separator_yields_one_part_per_char() {
+        for (source, expected) in [("Hi", vec!["H", "i"]), ("При", vec!["П", "р", "и"])] {
+            assert_eq!(
+                split_parts(&empty_separator_cfg(source, 0)).await,
+                expected,
+                "{source}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn split_empty_separator_honours_max_parts_keeping_remainder_in_final_part() {
+        for (max_parts, expected) in [
+            (1, vec!["abc"]),
+            (2, vec!["a", "bc"]),
+            (3, vec!["a", "b", "c"]),
+            (4, vec!["a", "b", "c"]),
+        ] {
+            assert_eq!(
+                split_parts(&empty_separator_cfg("abc", max_parts)).await,
+                expected,
+                "max_parts {max_parts}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn split_empty_separator_on_empty_source_yields_no_parts() {
+        assert!(split_parts(&empty_separator_cfg("", 2)).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn split_interpolates_the_separator() {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("source".to_owned(), Variant::String("a;b;c".to_owned()));
+        cfg.insert("separator".to_owned(), Variant::String("%sep%".to_owned()));
+        let stack = ArgStack::new().set("sep".to_owned(), Variant::String(";".to_owned()));
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+        let out = CoreStringSplitRunner.execute(&cfg, &ctx).await.1.unwrap();
+        assert_eq!(
+            out.get("string.parts"),
+            Some(&Variant::Array(
+                ["a", "b", "c"]
+                    .map(|part| Variant::String(part.to_owned()))
+                    .to_vec()
+            ))
+        );
     }
 }

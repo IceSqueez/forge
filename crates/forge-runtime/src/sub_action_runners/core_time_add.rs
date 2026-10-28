@@ -329,7 +329,6 @@ mod tests {
             (25, "hours", utc(2024, Month::January, 2, 1, 0, 0)),
             (1, "days", utc(2024, Month::January, 2, 0, 0, 0)),
             (-1, "days", utc(2023, Month::December, 31, 0, 0, 0)),
-            (5, "weeks", utc(2024, Month::January, 1, 0, 0, 5)),
         ];
         for (amount, unit, expected) in cases {
             let (outcome, out) = run(&cfg(Variant::Datetime(base), amount, unit)).await;

@@ -440,3 +440,57 @@ async fn user_variable_read_is_independent_of_same_named_arg_stack_entry() {
         "the transient arg is left untouched"
     );
 }
+
+#[tokio::test]
+async fn every_user_variable_step_fails_without_storage_access_when_no_user_is_in_scope() {
+    let repo = Arc::new(MapUserGlobals::new());
+    let globals: Arc<dyn GlobalsRepo> = Arc::new(EmptyGlobals);
+    let get = CoreUsersGetVarRunner::new(globals.clone(), repo.clone());
+    let set = CoreUsersSetVarRunner::new(globals.clone(), repo.clone());
+    let increment = CoreUsersIncrementVarRunner::new(globals, repo.clone());
+    let config = cfg(&[
+        ("user_login", Variant::String("%user_login%".to_owned())),
+        ("var_name", Variant::String("points".to_owned())),
+        ("into_var", Variant::String("result".to_owned())),
+        ("value", Variant::String("1".to_owned())),
+        ("amount", Variant::Int(1)),
+    ]);
+    let blank_login = ArgStack::new().set("user_login".to_owned(), Variant::String(" ".to_owned()));
+    let runners: [(&str, &dyn SubActionRunner); 3] =
+        [("get", &get), ("set", &set), ("increment", &increment)];
+    for (label, runner) in runners {
+        for stack in [ArgStack::new(), blank_login.clone()] {
+            let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+            let (telemetry, produced) = runner.execute(&config, &ctx).await;
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
+                "{label}: {:?}",
+                telemetry.outcome
+            );
+            assert!(produced.is_none(), "{label}");
+        }
+    }
+    assert!(repo.get_keys.lock().unwrap().is_empty());
+    assert!(repo.store.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn set_var_stores_under_the_normalized_login() {
+    let repo = Arc::new(MapUserGlobals::new());
+    let runner = CoreUsersSetVarRunner::new(Arc::new(EmptyGlobals), repo.clone());
+    let config = cfg(&[
+        ("user_login", Variant::String("%user_login%".to_owned())),
+        ("var_name", Variant::String("points".to_owned())),
+        ("value", Variant::String("3".to_owned())),
+    ]);
+    let stack = ArgStack::new().set(
+        "user_login".to_owned(),
+        Variant::String("@Viewer ".to_owned()),
+    );
+    let (outcome, _) = run(&runner, &config, &stack).await;
+    assert!(matches!(outcome, SubActionOutcome::Success), "{outcome:?}");
+    assert!(matches!(
+        repo.stored("local", "viewer", "points"),
+        Some(Variant::Int(3))
+    ));
+}

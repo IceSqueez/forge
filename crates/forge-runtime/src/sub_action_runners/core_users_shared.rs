@@ -127,4 +127,47 @@ mod tests {
             "local"
         );
     }
+
+    fn login_stack(login: &str) -> ArgStack {
+        ArgStack::new().set("user_login".to_owned(), Variant::String(login.to_owned()))
+    }
+
+    #[test]
+    fn user_login_is_trimmed_stripped_of_at_and_lowercased() {
+        for (template, stack, expected) in [
+            ("%user_login%", login_stack("@Name "), "name"),
+            ("%user_login%", login_stack("  @ MiXeD"), "mixed"),
+            ("%user_login%", login_stack("viewer"), "viewer"),
+            ("  @Literal  ", ArgStack::new(), "literal"),
+        ] {
+            assert_eq!(
+                resolve_user_login(template, &stack).as_deref(),
+                Ok(expected),
+                "{template:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn user_login_fails_naming_the_variable_when_it_is_not_in_scope() {
+        let reason = resolve_user_login("%user_login%", &ArgStack::new()).unwrap_err();
+        assert!(reason.contains("%user_login%"), "{reason}");
+    }
+
+    #[test]
+    fn user_login_that_resolves_to_nothing_fails() {
+        for (template, stack) in [
+            ("", ArgStack::new()),
+            ("   ", ArgStack::new()),
+            ("@", ArgStack::new()),
+            ("%user_login%", login_stack("")),
+            ("%user_login%", login_stack("  @  ")),
+        ] {
+            assert_eq!(
+                resolve_user_login(template, &stack),
+                Err("user login is empty".to_owned()),
+                "{template:?}"
+            );
+        }
+    }
 }

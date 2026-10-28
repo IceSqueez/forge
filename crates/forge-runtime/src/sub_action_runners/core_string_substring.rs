@@ -245,4 +245,22 @@ mod tests {
         assert!(runner.validate_config(&cfg("x", 0, -1)).is_ok());
         assert!(runner.validate_config(&cfg("x", 0, 5)).is_ok());
     }
+
+    #[tokio::test]
+    async fn substring_negative_indices_fail_at_run_time_naming_the_original_value() {
+        for (start, end, named) in [
+            (-1, 3, "start_index -1"),
+            (i64::MIN, -1, "start_index -9223372036854775808"),
+            (0, -2, "end_index -2"),
+            (0, i64::MIN, "end_index -9223372036854775808"),
+        ] {
+            let (tel, stack) = run(&cfg("hello", start, end)).await;
+            assert!(
+                matches!(&tel.outcome, SubActionOutcome::Failed(reason) if reason.contains(named)),
+                "start={start} end={end}: {:?}",
+                tel.outcome
+            );
+            assert!(stack.is_none(), "start={start} end={end}");
+        }
+    }
 }

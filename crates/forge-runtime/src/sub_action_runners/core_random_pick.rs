@@ -277,4 +277,77 @@ mod tests {
             assert!(produced.is_none(), "{label} must not produce a scope stack");
         }
     }
+
+    #[tokio::test]
+    async fn pick_rejects_a_non_numeric_weight_naming_its_position() {
+        let mut text_weights = cfg(Variant::String("a\nb\nc".to_owned()), "chosen");
+        text_weights.insert(
+            "weights".to_owned(),
+            Variant::String("1\n\n  abc  \n2".to_owned()),
+        );
+
+        let mut array_weights = cfg(str_array(&["a", "b", "c"]), "chosen");
+        array_weights.insert(
+            "weights".to_owned(),
+            Variant::Array(vec![
+                Variant::Int(1),
+                Variant::String("abc".to_owned()),
+                Variant::Int(2),
+            ]),
+        );
+
+        let runner = CoreRandomPickRunner;
+        for (label, cfg) in [("text", text_weights), ("array", array_weights)] {
+            let (outcome, produced) = run(&runner, &cfg).await;
+            assert!(
+                matches!(&outcome, SubActionOutcome::Failed(reason)
+                    if reason.contains("weight 2") && reason.contains("abc")),
+                "{label}: {outcome:?}"
+            );
+            assert!(produced.is_none(), "{label}");
+        }
+    }
+
+    #[tokio::test]
+    async fn pick_accepts_integer_weights_in_an_array() {
+        let runner = CoreRandomPickRunner;
+        let mut cfg = cfg(str_array(&["never", "always"]), "chosen");
+        cfg.insert(
+            "weights".to_owned(),
+            Variant::Array(vec![Variant::Int(0), Variant::Int(3)]),
+        );
+        for _ in 0..50 {
+            let (outcome, produced) = run(&runner, &cfg).await;
+            assert!(matches!(outcome, SubActionOutcome::Success), "{outcome:?}");
+            assert_eq!(
+                produced.unwrap().get("chosen"),
+                Some(&Variant::String("always".to_owned()))
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn pick_text_items_are_trimmed_and_interpolated() {
+        let runner = CoreRandomPickRunner;
+        let stack = ArgStack::new().set("name".to_owned(), Variant::String("Ann".to_owned()));
+        for (weights, expected) in [("1\n0", "hi Ann"), ("0\n1", "bye")] {
+            let mut cfg = cfg(
+                Variant::String("  hi %name%  \n\n\t bye \t".to_owned()),
+                "chosen",
+            );
+            cfg.insert("weights".to_owned(), Variant::String(weights.to_owned()));
+            let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+            let (telemetry, produced) = runner.execute(&cfg, &ctx).await;
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Success),
+                "{weights:?}: {:?}",
+                telemetry.outcome
+            );
+            assert_eq!(
+                produced.unwrap().get("chosen"),
+                Some(&Variant::String(expected.to_owned())),
+                "{weights:?}"
+            );
+        }
+    }
 }

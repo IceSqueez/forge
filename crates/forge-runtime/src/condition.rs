@@ -218,14 +218,14 @@ mod tests {
             (r#""abc" == "abc""#, true, true),
             (r#""abc" == "abd""#, false, true),
             (r#""abc" != "abd""#, true, true),
-            ("1 == 1.0", true, false),            // mixed kinds
-            ("1 != 1.0", false, false),           // mixed kinds
-            (r#""a" < "b""#, true, false),        // string ordering
-            (r#""b" < "a""#, false, false),       // string ordering
-            ("1 < 2 && 3 < 4", true, false),      // logical operator
-            ("1 + 1 == 2", true, false),          // arithmetic operator
-            ("let n = 10; n > 3", true, false),   // identifier / statement
-            (r#""a\"b" == "a\"b""#, true, false), // embedded-quote string
+            ("1 == 1.0", true, false),
+            ("1 != 1.0", false, false),
+            (r#""a" < "b""#, true, false),
+            (r#""b" < "a""#, false, false),
+            ("1 < 2 && 3 < 4", true, false),
+            ("1 + 1 == 2", true, false),
+            ("let n = 10; n > 3", true, false),
+            (r#""a\"b" == "a\"b""#, true, false),
         ];
 
         let mut saw_fast = false;
@@ -395,6 +395,34 @@ mod tests {
                 matches!(err, ConditionError::Eval(_)),
                 "{expr}: expected Eval, got {err:?}"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn numeric_literal_forms_outside_the_shared_grammar_agree_with_full_evaluation() {
+        let cfg = unhurried();
+        let gate = ConditionGate::new(&cfg);
+        let evaluator = ConditionEvaluator::with_config(EngineConfig {
+            op_limit: cfg.condition_op_limit,
+            wall_time_ms: cfg.condition_wall_time_ms,
+        });
+        for expr in [
+            ".5 < 1.0",
+            "1.0 > .5",
+            ".5 == 0.5",
+            "5. < 6.0",
+            "5.0 == 5.",
+            "1e3 == 1000.0",
+            "1E3 == 1000.0",
+            "+5 == 5",
+            "5 == +5",
+            "1_000 == 1000",
+            "007 == 7",
+            "-0.5 < 0.5",
+        ] {
+            let full = evaluator.eval(expr).ok();
+            let gated = gate.evaluate_with_args(expr, &ArgStack::new()).await.ok();
+            assert_eq!(gated, full, "{expr}");
         }
     }
 }

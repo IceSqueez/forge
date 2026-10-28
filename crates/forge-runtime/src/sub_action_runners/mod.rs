@@ -378,7 +378,9 @@ mod tests {
     use super::{
         CoreActionScheduleRunner, CoreHttpRunner, CoreLogicIfThenElseRunner, CoreLogicLoopRunner,
         CoreLogicSwitchCaseRunner, CoreLogicWaitRunner, CoreLogicWaitUntilRunner,
-        CoreNotifyShowRunner, CoreSubActionDeps, SystemNotifyPort, register_core_sub_actions,
+        CoreNotifyShowRunner, CoreStringLengthRunner, CoreStringTrimRunner, CoreSubActionDeps,
+        CoreTimeAddRunner, CoreTimeDiffRunner, CoreTimeNowRunner, SystemNotifyPort,
+        register_core_sub_actions,
     };
     use crate::action_cancel::ActionCancelRegistry;
     use crate::condition::ConditionGate;
@@ -388,12 +390,13 @@ mod tests {
     use crate::test_support::sandboxed_backend;
     use crate::triggers::TimerTickDescriptor;
     use crate::{EventBus, NullEventLogRepo, OverlayServiceCell, SchedulerCell, ScriptRegistry};
-    use forge_events::EventPublisher;
+    use forge_events::{Event, EventPublisher};
     use forge_registry::{
-        CodeKind, DurationBounds, FormField, SubActionRegistry, SubActionRunner,
-        TriggerKindDescriptor,
+        CodeKind, DurationBounds, FormField, RegistryError, RunContext, SubActionRegistry,
+        SubActionRunner, TriggerKindDescriptor,
     };
     use forge_storage::{DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo, UserGlobalsRepo};
+    use forge_types::{ArgStack, EventId, SubActionConfig, SubActionOutcome, Variant};
     use std::sync::Arc;
 
     fn code_fields(fields: Vec<FormField>) -> Vec<(&'static str, CodeKind)> {
@@ -407,8 +410,7 @@ mod tests {
             .collect()
     }
 
-    #[tokio::test]
-    async fn only_condition_and_value_fields_edit_as_expressions_and_the_inline_body_as_a_script() {
+    async fn core_registry() -> SubActionRegistry {
         let backend = sandboxed_backend([0x23; 32]).await.map(Arc::new);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut registry = SubActionRegistry::new();
@@ -430,6 +432,12 @@ mod tests {
             },
         )
         .unwrap();
+        registry
+    }
+
+    #[tokio::test]
+    async fn only_condition_and_value_fields_edit_as_expressions_and_the_inline_body_as_a_script() {
+        let registry = core_registry().await;
 
         let mut roster: Vec<(String, &str, CodeKind)> = registry
             .all()
@@ -445,7 +453,6 @@ mod tests {
         let expected = [
             ("core.logic.if_then_else", "condition", CodeKind::Expression),
             ("core.logic.loop", "while_condition", CodeKind::Expression),
-            ("core.logic.switch_case", "expression", CodeKind::Expression),
             ("core.logic.wait_until", "condition", CodeKind::Expression),
             ("core.math.evaluate", "expression", CodeKind::Expression),
             ("script.run.inline", "body", CodeKind::Script),
@@ -556,6 +563,119 @@ mod tests {
                 Some(*expected),
                 "{owner} `{key}`"
             );
+        }
+    }
+
+    fn text_field_keys(fields: Vec<FormField>) -> Vec<&'static str> {
+        fields
+            .into_iter()
+            .flat_map(|field| match field {
+                FormField::Text { key, .. } | FormField::TextArea { key, .. } => vec![key],
+                FormField::Optional { inner, .. } => text_field_keys(vec![*inner]),
+                _ => Vec::new(),
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn text_edited_fields_default_to_text_so_a_new_step_opens_without_rendered_containers() {
+        let registry = core_registry().await;
+        let offenders: Vec<String> = registry
+            .all()
+            .flat_map(|runner| {
+                let defaults = runner.default_config();
+                let kind_id = runner.id().to_owned();
+                text_field_keys(runner.config_fields())
+                    .into_iter()
+                    .filter_map(move |key| match defaults.get(key) {
+                        None | Some(Variant::String(_)) => None,
+                        Some(other) => Some(format!("{kind_id} `{key}` = {other:?}")),
+                    })
+            })
+            .collect();
+        assert!(offenders.is_empty(), "{offenders:?}");
+    }
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    fn datetime(text: &str) -> Variant {
+        Variant::Datetime(
+            time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339)
+                .unwrap(),
+        )
+    }
+
+    type ChoiceCase<'a> = (
+        &'a dyn SubActionRunner,
+        &'static str,
+        &'static str,
+        Vec<(&'static str, Variant)>,
+    );
+
+    #[tokio::test]
+    async fn unknown_choice_values_fail_validation_and_execution_naming_the_field() {
+        let cases: [ChoiceCase<'_>; 5] = [
+            (
+                &CoreTimeAddRunner,
+                "unit",
+                "weeks",
+                vec![
+                    ("base", datetime("2024-01-01T00:00:00Z")),
+                    ("add_amount", Variant::Int(5)),
+                ],
+            ),
+            (
+                &CoreTimeDiffRunner,
+                "unit",
+                "months",
+                vec![
+                    ("from", datetime("2024-01-01T00:00:00Z")),
+                    ("to", datetime("2024-02-01T00:00:00Z")),
+                ],
+            ),
+            (
+                &CoreStringTrimRunner,
+                "mode",
+                "middle",
+                vec![("source", Variant::String("  hi  ".to_owned()))],
+            ),
+            (
+                &CoreStringLengthRunner,
+                "mode",
+                "graphemes",
+                vec![("source", Variant::String("hi".to_owned()))],
+            ),
+            (&CoreTimeNowRunner, "format", "rfc2822", Vec::new()),
+        ];
+        for (runner, key, bad, base) in cases {
+            let mut config = SubActionConfig::new();
+            for (field, value) in base {
+                config.insert(field.to_owned(), value);
+            }
+            config.insert(key.to_owned(), Variant::String(bad.to_owned()));
+            let id = runner.id().to_owned();
+
+            assert!(
+                matches!(
+                    runner.validate_config(&config),
+                    Err(RegistryError::InvalidConfig(problem))
+                        if problem.field.as_deref() == Some(key)
+                ),
+                "{id} must reject {key} = {bad} at validation"
+            );
+
+            let stack = ArgStack::new();
+            let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+            let (telemetry, produced) = runner.execute(&config, &ctx).await;
+            assert!(
+                matches!(&telemetry.outcome, SubActionOutcome::Failed(reason) if reason.contains(key)),
+                "{id} must fail {key} = {bad} at run time, got {:?}",
+                telemetry.outcome
+            );
+            assert!(produced.is_none(), "{id} must not write a scope stack");
         }
     }
 }

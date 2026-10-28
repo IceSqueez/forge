@@ -2,10 +2,10 @@
 use std::time::Duration;
 
 use forge_emulator::EmulatorError;
-use forge_emulator::fixture::TwitchAccount;
-use forge_emulator::twitch::{
+use forge_emulator::fakes::twitch::{
     CredentialCheck, FakeGoal, FakeTwitch, FakeTwitchConfig, Viewer, ViewerBadge,
 };
+use forge_emulator::fixture::TwitchAccount;
 use futures_util::StreamExt;
 use serde_json::{Value, json};
 use tokio::net::TcpStream;

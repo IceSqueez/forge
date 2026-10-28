@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_emulator::EmulatorError;
-use forge_emulator::vtube::{
+use forge_emulator::fakes::vtube::{
     FakeModel, FakeVTube, FakeVTubeConfig, HOTKEY_TRIGGERED_EVENT, ITEM_EVENT, MODEL_LOADED_EVENT,
     TokenCheck, VTubeLedger, hotkey_id, model_id,
 };

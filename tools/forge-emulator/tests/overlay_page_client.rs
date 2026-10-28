@@ -10,7 +10,7 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::Response;
 use axum::routing::get;
 use forge_emulator::EmulatorError;
-use forge_emulator::overlay::{OverlayPage, PageEndpoint};
+use forge_emulator::harness::overlay::{OverlayPage, PageEndpoint};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;

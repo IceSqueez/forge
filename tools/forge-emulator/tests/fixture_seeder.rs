@@ -756,10 +756,10 @@ async fn a_seeded_kick_account_is_served_by_forges_manager_refreshing_only_when_
             token_expired,
             ..forge_emulator::fixture::KickAccount::default()
         };
-        let fake = forge_emulator::kick::FakeKick::start(
-            forge_emulator::kick::FakeKickConfig::for_account(
+        let fake = forge_emulator::fakes::kick::FakeKick::start(
+            forge_emulator::fakes::kick::FakeKickConfig::for_account(
                 &account,
-                &forge_emulator::kick::FakeKickSetup::default(),
+                &forge_emulator::fakes::kick::FakeKickSetup::default(),
             ),
         )
         .await
@@ -835,10 +835,10 @@ async fn a_seeded_youtube_account_is_served_by_forges_manager_refreshing_only_wh
             token_expired,
             ..forge_emulator::fixture::YouTubeAccount::default()
         };
-        let fake = forge_emulator::youtube::FakeYouTube::start(
-            forge_emulator::youtube::FakeYouTubeConfig::for_account(
+        let fake = forge_emulator::fakes::youtube::FakeYouTube::start(
+            forge_emulator::fakes::youtube::FakeYouTubeConfig::for_account(
                 &account,
-                &forge_emulator::youtube::FakeYouTubeSetup::default(),
+                &forge_emulator::fakes::youtube::FakeYouTubeSetup::default(),
             ),
         )
         .await

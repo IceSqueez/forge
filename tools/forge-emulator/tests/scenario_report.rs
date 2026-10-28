@@ -3,21 +3,22 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use forge_emulator::EmulatorError;
-use forge_emulator::fixture::{Fixture, REDACTED, Redactions, seed};
-use forge_emulator::launch::{DEFAULT_LOG_DIRECTIVES, ForgeExit};
-use forge_emulator::report::{
+use forge_emulator::fakes::twitch::{
+    CredentialCheck, RecordedRequest, RecordedSession, RecordedSubscription,
+};
+use forge_emulator::fixture::{Fixture, Redactions, seed};
+use forge_emulator::harness::launch::{DEFAULT_LOG_DIRECTIVES, ForgeExit};
+use forge_emulator::harness::report::{
     BugEntry, JSON_FILE, MARKDOWN_FILE, RunContext, RunReport, bug_entries, write_report,
 };
-use forge_emulator::run::{
+use forge_emulator::harness::run::{
     ActionDetail, ActionReport, CausationEvidence, EventEvidence, Evidence, ExpectationOutcome,
     FailureCause, ForgeEvidence, Gap, GapKind, JournaledEvent, LedgerExcerpt, LogEvidence,
     LogRecord, NearMiss, OverlayEvidence, ReceivedContent, ScenarioOutcome, ScenarioVerdict,
     StepOutcome, StepStatus, Verdict,
 };
-use forge_emulator::scenario::Scenario;
-use forge_emulator::twitch::{
-    CredentialCheck, RecordedRequest, RecordedSession, RecordedSubscription,
-};
+use forge_emulator::harness::scenario::Scenario;
+use forge_emulator::vocabulary::REDACTED;
 use forge_events::{Event, EventSource};
 use forge_types::EventId;
 use serde_json::{Value, json};

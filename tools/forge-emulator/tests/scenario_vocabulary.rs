@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used)]
-use forge_emulator::scenario::{
+use forge_emulator::fakes::twitch::ViewerBadge;
+use forge_emulator::harness::scenario::{
     ChatViewer, Crowd, CrowdLine, EventPattern, ObservedEvent, PayloadMatchers,
 };
-use forge_emulator::twitch::ViewerBadge;
 use forge_events::{Event, EventSource};
 use serde_json::json;
 

@@ -6,12 +6,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use forge_emulator::EmulatorError;
-use forge_emulator::fixture::{REDACTED, YouTubeAccount};
-use forge_emulator::youtube::{
+use forge_emulator::fakes::youtube::{
     FakeYouTube, FakeYouTubeConfig, FakeYouTubeSetup, LIVE_BROADCASTS_PATH,
     LIVE_CHAT_MESSAGES_PATH, TOKEN_PATH, YouTubeChatter, YouTubeCredentialCheck,
     YouTubeRefreshAnswer, YouTubeRequest, YouTubeSubscriber,
 };
+use forge_emulator::fixture::YouTubeAccount;
+use forge_emulator::vocabulary::REDACTED;
 use forge_events::Event;
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError, ViewerReport};
 use forge_platform_youtube::{

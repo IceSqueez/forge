@@ -2,7 +2,7 @@
 use std::time::Duration;
 
 use forge_emulator::EmulatorError;
-use forge_emulator::control::{
+use forge_emulator::harness::control::{
     ClientTimeouts, ControlClient, ControlEndpoint, EventFilter, EventStream, Observation,
 };
 use forge_events::{Event, EventSource};

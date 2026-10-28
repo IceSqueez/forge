@@ -2,14 +2,13 @@
 use std::process::Stdio;
 use std::time::Duration;
 
-use forge_emulator::console::{
+use forge_emulator::fakes::console::{
     DonatelloCommand, DonatelloConsole, MonobankCommand, MonobankConsole, parse_donatello_command,
     parse_jar, parse_monobank_command,
 };
-use forge_emulator::donatello::{
-    DonatesFault, FAKE_DONATELLO_TOKEN, FakeDonatello, FakeDonatelloConfig,
-};
-use forge_emulator::monobank::{FAKE_MONOBANK_TOKEN, FakeJar, FakeMonobank, FakeMonobankConfig};
+use forge_emulator::fakes::donatello::{DonatesFault, FakeDonatello, FakeDonatelloConfig};
+use forge_emulator::fakes::monobank::{FakeJar, FakeMonobank, FakeMonobankConfig};
+use forge_emulator::vocabulary::{FAKE_DONATELLO_TOKEN, FAKE_MONOBANK_TOKEN};
 use forge_platform_core::EndpointSurface;
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};

@@ -3,22 +3,25 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_emulator::control::{ClientTimeouts, ControlClient, ControlEndpoint, Observation};
-use forge_emulator::discord::FakeDiscord;
-use forge_emulator::donatello::{FAKE_DONATELLO_TOKEN, FakeDonatello, FakeDonatelloConfig};
+use forge_emulator::fakes::discord::FakeDiscord;
+use forge_emulator::fakes::donatello::{FakeDonatello, FakeDonatelloConfig};
+use forge_emulator::fakes::kick::FakeKick;
+use forge_emulator::fakes::monobank::{FakeJar, FakeMonobank, FakeMonobankConfig};
+use forge_emulator::fakes::obs::{FakeObs, FakeObsConfig};
+use forge_emulator::fakes::twitch::{FakeTwitch, FakeTwitchConfig};
+use forge_emulator::fakes::vtube::{FakeVTube, FakeVTubeConfig};
+use forge_emulator::fakes::youtube::{FakeYouTube, FakeYouTubeConfig};
 use forge_emulator::fixture::{SeedReport, SeededCommand, SeededServer, TwitchAccount};
-use forge_emulator::kick::FakeKick;
-use forge_emulator::monobank::{FAKE_MONOBANK_TOKEN, FakeJar, FakeMonobank, FakeMonobankConfig};
-use forge_emulator::obs::{FakeObs, FakeObsConfig};
-use forge_emulator::overlay::OverlayPages;
-use forge_emulator::run::{
+use forge_emulator::harness::control::{
+    ClientTimeouts, ControlClient, ControlEndpoint, Observation,
+};
+use forge_emulator::harness::overlay::OverlayPages;
+use forge_emulator::harness::run::{
     ActionDetail, ActionIndex, ActionReport, DonationFakes, FailureCause, ForgeHost, Journal,
     RunClock, Session, StepOutcome, StepStatus, Verdict, execute_steps,
 };
-use forge_emulator::scenario::{Scenario, parse_scenario};
-use forge_emulator::twitch::{FakeTwitch, FakeTwitchConfig};
-use forge_emulator::vtube::{FakeVTube, FakeVTubeConfig};
-use forge_emulator::youtube::{FakeYouTube, FakeYouTubeConfig};
+use forge_emulator::harness::scenario::{Scenario, parse_scenario};
+use forge_emulator::vocabulary::{FAKE_DONATELLO_TOKEN, FAKE_MONOBANK_TOKEN};
 use forge_events::{Event, EventSource};
 use forge_types::{ActionId, EventId, TriggerInstanceId};
 use futures_util::{SinkExt, StreamExt};
@@ -897,7 +900,7 @@ async fn discord_post_with_a_different_mention_parse_fails_and_shows_what_arrive
         Verdict::Failed(FailureCause::NoDiscordPost { observed: 1 })
     );
     assert!(
-        matches!(&expectation.evidence, forge_emulator::run::Evidence::Discord(posts)
+        matches!(&expectation.evidence, forge_emulator::harness::run::Evidence::Discord(posts)
             if posts[0].mention_parse() == Some(vec!["users".to_owned()])),
         "{:?}",
         expectation.evidence
@@ -1528,7 +1531,7 @@ fn kick_scenario(steps: Value) -> Scenario {
 async fn harness_with_kick() -> Harness {
     let mut harness = Harness::start(COOPERATIVE, false).await;
     harness.kick = Some(
-        FakeKick::start(forge_emulator::kick::FakeKickConfig::default())
+        FakeKick::start(forge_emulator::fakes::kick::FakeKickConfig::default())
             .await
             .unwrap(),
     );

@@ -5,11 +5,11 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use forge_emulator::EmulatorError;
-use forge_emulator::launch::{
+use forge_emulator::harness::launch::{
     DEFAULT_LOG_DIRECTIVES, ForgeCommand, GameGuard, HyprlandProbe, LivePaths,
 };
-use forge_emulator::run::{RunOptions, ScenarioVerdict, StepStatus, run_scenario};
-use forge_emulator::scenario::{Scenario, parse_scenario};
+use forge_emulator::harness::run::{RunOptions, ScenarioVerdict, StepStatus, run_scenario};
+use forge_emulator::harness::scenario::{Scenario, parse_scenario};
 use tempfile::TempDir;
 use tokio::time::timeout;
 

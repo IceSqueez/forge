@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
+use forge_emulator::fakes::twitch::{FakeTwitch, FakeTwitchConfig, MAX_CUSTOM_REWARDS};
 use forge_emulator::fixture::TwitchAccount;
-use forge_emulator::twitch::{FakeTwitch, FakeTwitchConfig, MAX_CUSTOM_REWARDS};
 use forge_events::{Event, EventPublisher};
 use forge_net::{Gateway, TokenBucketRateLimiter};
 use forge_platform_core::{

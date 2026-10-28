@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use forge_emulator::EmulatorError;
-use forge_emulator::obs::{
+use forge_emulator::fakes::obs::{
     Authentication, FakeInput, FakeObs, FakeObsConfig, ObsLedger, authentication_string,
 };
 use forge_events::{Event, EventPublisher};

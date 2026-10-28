@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use forge_emulator::EmulatorError;
-use forge_emulator::scenario::{Scenario, load_scenario, parse_scenario};
+use forge_emulator::harness::scenario::{Scenario, load_scenario, parse_scenario};
 
 const EMULATOR: &str = env!("CARGO_BIN_EXE_forge-emulator");
 

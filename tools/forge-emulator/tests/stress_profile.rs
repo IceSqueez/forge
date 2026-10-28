@@ -2,7 +2,7 @@
 use std::path::{Path, PathBuf};
 
 use forge_emulator::EmulatorError;
-use forge_emulator::stress::{StressProfile, load_profile};
+use forge_emulator::harness::stress::{StressProfile, load_profile};
 use serde_json::{Value, json};
 
 fn base() -> Value {

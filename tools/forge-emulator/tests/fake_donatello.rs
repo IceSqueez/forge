@@ -6,11 +6,12 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_donatello::{DONATELLO_CREDENTIAL_ID, DonatelloConfig, DonatelloProvider};
-use forge_emulator::donatello::{
-    DonatesFault, DonatesOrder, FAKE_DONATELLO_TOKEN, FakeDonatello, FakeDonatelloConfig,
-    FakeDonation, PROFILE_INCOMPLETE_MESSAGE, UNAUTHORIZED_MESSAGE,
+use forge_emulator::fakes::donatello::{
+    DonatesFault, DonatesOrder, FakeDonatello, FakeDonatelloConfig, FakeDonation,
+    PROFILE_INCOMPLETE_MESSAGE, UNAUTHORIZED_MESSAGE,
 };
-use forge_emulator::scenario::DonatelloGift;
+use forge_emulator::harness::scenario::DonatelloGift;
+use forge_emulator::vocabulary::FAKE_DONATELLO_TOKEN;
 use forge_platform_core::{DonationProvider, DonationStream, PlatformEndpoints, PlatformError};
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::{Donation, DonationOrigin};

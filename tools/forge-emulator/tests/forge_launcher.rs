@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use forge_emulator::EmulatorError;
 use forge_emulator::fixture::Fixture;
-use forge_emulator::launch::{
+use forge_emulator::harness::launch::{
     DEFAULT_LOG_DIRECTIVES, ForgeCommand, GameGuard, HyprlandProbe, LaunchOptions, LivePaths,
     launch_forge,
 };

@@ -6,11 +6,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_emulator::EmulatorError;
-use forge_emulator::fixture::KickAccount;
-use forge_emulator::kick::{
+use forge_emulator::fakes::kick::{
     FakeKick, FakeKickConfig, FakeKickSetup, KickChatter, KickCredentialCheck, KickLedger,
     KickSurface, RefreshAnswer,
 };
+use forge_emulator::fixture::KickAccount;
 use forge_events::{Event, EventPublisher};
 use forge_net::{Gateway, RateLimitError, RateLimitOutcome, RateLimiter};
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
@@ -192,7 +192,7 @@ async fn send_frame(socket: &mut Socket, frame: Value) {
         .unwrap();
 }
 
-fn last_request(ledger: &KickLedger) -> &forge_emulator::kick::KickRequest {
+fn last_request(ledger: &KickLedger) -> &forge_emulator::fakes::kick::KickRequest {
     ledger.requests.last().unwrap()
 }
 

@@ -5,11 +5,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_emulator::monobank::{
-    FAKE_MONOBANK_TOKEN, FakeJar, FakeMonobank, FakeMonobankConfig, FakeTransaction,
-    MAX_STATEMENT_ITEMS, MAX_STATEMENT_WINDOW_SECS, MonobankEndpoint, TOO_MANY_REQUESTS_MESSAGE,
-    UNKNOWN_TOKEN_MESSAGE,
+use forge_emulator::fakes::monobank::{
+    FakeJar, FakeMonobank, FakeMonobankConfig, FakeTransaction, MAX_STATEMENT_ITEMS,
+    MAX_STATEMENT_WINDOW_SECS, MonobankEndpoint, TOO_MANY_REQUESTS_MESSAGE, UNKNOWN_TOKEN_MESSAGE,
 };
+use forge_emulator::vocabulary::FAKE_MONOBANK_TOKEN;
 use forge_monobank::{MonobankConfig, MonobankError, MonobankProvider, MonobankRateLimits};
 use forge_net::TokenBucketRateLimiter;
 use forge_platform_core::{DonationProvider, DonationStream, PlatformEndpoints, PlatformError};

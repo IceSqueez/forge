@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_discord::{DiscordClient, MentionPolicy};
 use forge_emulator::EmulatorError;
-use forge_emulator::discord::{FakeDiscord, UNKNOWN_WEBHOOK_CODE};
+use forge_emulator::fakes::discord::{FakeDiscord, UNKNOWN_WEBHOOK_CODE};
 use forge_emulator::fixture::{DiscordWebhook, Fixture};
 use forge_events::{Event, EventPublisher};
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};

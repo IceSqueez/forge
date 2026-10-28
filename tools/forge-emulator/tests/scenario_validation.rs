@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-use forge_emulator::scenario::Scenario;
+use forge_emulator::harness::scenario::Scenario;
 use serde_json::{Value, json};
 
 fn base() -> Value {
@@ -1024,7 +1024,7 @@ fn a_repeated_content_key_is_a_syntax_error_rather_than_a_silent_overwrite() {
     let json = r#"{ "overlay": "Alert Box", "values": { "headline": "a", "headline": "b" }, "within_ms": 5000 }"#;
 
     assert!(
-        serde_json::from_str::<forge_emulator::scenario::OverlayContent>(json).is_err(),
+        serde_json::from_str::<forge_emulator::harness::scenario::OverlayContent>(json).is_err(),
         "a duplicate key must not silently keep only the last value"
     );
 }

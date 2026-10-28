@@ -3443,6 +3443,7 @@ field_label_core__else_chain = Інакше
 field_label_core__encoding = Кодування
 field_label_core__end_index = Кінцевий індекс (-1 = до кінця, не включно)
 field_label_core__expression = Вираз
+field_label_core_logic_switch_case__expression = Значення
 field_label_core__follow_redirects = Переходити за перенаправленнями
 field_label_core__format = Шаблон дати (напр. dd.MM.yyyy HH:mm, yyyy-MM-dd'T'HH:mm:ssxxx)
 field_label_core__format_string = Шаблон дати (напр. HH:mm dd.MM.yyyy, d MMMM yyyy, EEEE)

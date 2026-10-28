@@ -3341,6 +3341,7 @@ field_label_core__else_chain = Else
 field_label_core__encoding = Encoding
 field_label_core__end_index = End index (-1 = to the end, exclusive)
 field_label_core__expression = Expression
+field_label_core_logic_switch_case__expression = Value
 field_label_core__follow_redirects = Follow redirects
 field_label_core__format = Date pattern (e.g. dd.MM.yyyy HH:mm, yyyy-MM-dd'T'HH:mm:ssxxx)
 field_label_core__format_string = Date pattern (e.g. HH:mm dd.MM.yyyy, d MMMM yyyy, EEEE)

@@ -328,11 +328,12 @@ mod tests {
     use crate::chat::send_plan::{
         CHAT_SEND_REQUEST_KIND, CHAT_SENT_KIND, DeliveryResult, SendReport,
     };
+    use crate::chat_input_bar::InputBarEvent;
     use crate::home_stats::{HomeStats, Integration};
     use crate::integration_lifecycle::IntegrationLifecycle;
     use crate::test_support::{install_presentation, pump, runtime};
     use crate::twitch_bot_presence::TwitchBotPresence;
-    use forge_components::{InputBarEvent, Toasts};
+    use forge_components::Toasts;
     use forge_platform_core::SENDER_FIELD;
     use forge_platform_twitch::{BotModerator, BotStatus};
     use forge_runtime::{LifecycleState, LifecycleStates};
@@ -358,11 +359,8 @@ mod tests {
         cx.add_window_view(|_window, cx| ChatComposer::new(home_stats, handle, FORGE_DEFAULT, cx))
     }
 
-    fn type_text(composer: &Entity<ChatComposer>, vcx: &mut VisualTestContext, text: &str) {
-        vcx.update(|window, cx| {
-            let input = composer.read(cx).input.clone();
-            input.update(cx, |bar, cx| bar.focus(window, cx));
-        });
+    fn type_text(vcx: &mut VisualTestContext, text: &str) {
+        vcx.update(|window, cx| window.focus_next(cx));
         vcx.simulate_input(text);
         vcx.run_until_parked();
     }
@@ -460,7 +458,7 @@ mod tests {
         ] {
             let rt = runtime();
             let (composer, vcx) = mount(cx, &rt, &[Integration::Twitch]);
-            type_text(&composer, vcx, typed);
+            type_text(vcx, typed);
             let report = SendReport {
                 message: "hello".to_owned(),
                 results: vec![(PlatformId::Twitch, result.clone())],
@@ -514,7 +512,7 @@ mod tests {
         let (composer, vcx) = mount(cx, &rt, &[Integration::Twitch]);
         let bus = connected_bus(&composer, vcx);
         let mut observer = bus.subscribe();
-        type_text(&composer, vcx, "hello");
+        type_text(vcx, "hello");
 
         send(&composer, vcx, "hello");
         pump(&rt);

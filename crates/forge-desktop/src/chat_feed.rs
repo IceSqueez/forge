@@ -536,8 +536,8 @@ fn format_amount(micros: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::chat_row::ChatBody;
     use crate::platform_visuals::BadgeKind;
-    use forge_components::ChatBody;
     use forge_events::{Event, EventSource};
     use forge_types::{
         ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,

@@ -481,7 +481,8 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-    use forge_components::{ChatBody, FORGE_DEFAULT};
+    use crate::chat_row::ChatBody;
+    use forge_components::FORGE_DEFAULT;
     use forge_storage::chat_history::MockChatHistoryRepo;
     use forge_storage::{
         ChatAuthorKey, ChatAuthorPage, ChatAuthorTally, ChatHistoryCursor, StorageError,

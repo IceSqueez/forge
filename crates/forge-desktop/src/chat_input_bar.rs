@@ -586,3 +586,230 @@ impl Render for InputBar {
             .child(body)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::install_presentation;
+    use forge_components::FORGE_DEFAULT;
+
+    const TWITCH: &str = "twitch";
+    const YOUTUBE: &str = "youtube";
+    const KICK: &str = "kick";
+
+    fn target(id: &'static str) -> SendTarget {
+        SendTarget {
+            id: SharedString::new_static(id),
+            mark: PlatformMark {
+                letter: SharedString::new_static("X"),
+                color: FORGE_DEFAULT.brand,
+            },
+        }
+    }
+
+    fn strip(twitch: bool, youtube: bool, kick: bool) -> Vec<(SendTarget, bool)> {
+        vec![
+            (target(TWITCH), twitch),
+            (target(YOUTUBE), youtube),
+            (target(KICK), kick),
+        ]
+    }
+
+    fn ids(raw: &[&'static str]) -> Vec<SharedString> {
+        raw.iter().map(|id| SharedString::new_static(id)).collect()
+    }
+
+    fn with_bar<R>(
+        cx: &mut gpui::TestAppContext,
+        targets: Vec<(SendTarget, bool)>,
+        f: impl FnOnce(&mut InputBar, &mut Window, &mut Context<InputBar>) -> R,
+    ) -> R {
+        install_presentation(cx);
+        let window = cx.add_window(|_window, cx| {
+            InputBar::new("placeholder", FORGE_DEFAULT, cx).with_targets(targets)
+        });
+        window
+            .update(cx, |bar, window, cx| f(bar, window, cx))
+            .unwrap()
+    }
+
+    #[gpui::test]
+    fn effective_targets_yield_the_on_target_ids_in_strip_order(cx: &mut gpui::TestAppContext) {
+        for (targets, expected) in [
+            (strip(true, false, true), ids(&[TWITCH, KICK])),
+            (strip(false, true, false), ids(&[YOUTUBE])),
+            (strip(false, false, false), ids(&[])),
+        ] {
+            let effective = with_bar(cx, targets.clone(), |bar, _window, _cx| {
+                bar.effective_targets()
+            });
+            assert_eq!(effective, expected, "effective_targets for {targets:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn toggling_a_target_flips_its_selection_and_round_trips(cx: &mut gpui::TestAppContext) {
+        let (after_off, after_on) = with_bar(cx, strip(true, true, true), |bar, _window, cx| {
+            bar.toggle_target(1, cx);
+            let off = bar.effective_targets();
+            bar.toggle_target(1, cx);
+            (off, bar.effective_targets())
+        });
+        assert_eq!(after_off, ids(&[TWITCH, KICK]));
+        assert_eq!(after_on, ids(&[TWITCH, YOUTUBE, KICK]));
+    }
+
+    #[gpui::test]
+    fn toggling_an_index_past_the_strip_changes_nothing(cx: &mut gpui::TestAppContext) {
+        let effective = with_bar(cx, strip(true, false, true), |bar, _window, cx| {
+            bar.toggle_target(3, cx);
+            bar.effective_targets()
+        });
+        assert_eq!(effective, ids(&[TWITCH, KICK]));
+    }
+
+    #[gpui::test]
+    fn unavailable_targets_drop_out_of_the_effective_targets(cx: &mut gpui::TestAppContext) {
+        let effective = with_bar(cx, strip(true, true, true), |bar, _window, cx| {
+            bar.set_available_targets(&ids(&[TWITCH, KICK]), cx);
+            bar.effective_targets()
+        });
+
+        assert_eq!(effective, ids(&[TWITCH, KICK]));
+    }
+
+    #[gpui::test]
+    fn a_selected_target_coming_back_rejoins_the_effective_targets(cx: &mut gpui::TestAppContext) {
+        let effective = with_bar(cx, strip(true, true, true), |bar, _window, cx| {
+            bar.set_available_targets(&ids(&[TWITCH]), cx);
+            bar.set_available_targets(&ids(&[TWITCH, YOUTUBE]), cx);
+            bar.effective_targets()
+        });
+
+        assert_eq!(effective, ids(&[TWITCH, YOUTUBE]));
+    }
+
+    #[gpui::test]
+    fn toggling_an_unavailable_target_leaves_its_selection_for_when_it_returns(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let effective = with_bar(cx, strip(true, true, true), |bar, _window, cx| {
+            bar.set_available_targets(&ids(&[TWITCH, KICK]), cx);
+            bar.toggle_target(1, cx);
+            bar.set_available_targets(&ids(&[TWITCH, YOUTUBE, KICK]), cx);
+            bar.effective_targets()
+        });
+
+        assert_eq!(effective, ids(&[TWITCH, YOUTUBE, KICK]));
+    }
+
+    #[gpui::test]
+    fn send_carries_only_the_available_selected_targets(cx: &mut gpui::TestAppContext) {
+        install_presentation(cx);
+        let window = cx.add_window(|_window, cx| {
+            InputBar::new("placeholder", FORGE_DEFAULT, cx).with_targets(strip(true, true, true))
+        });
+        let bar = window.root(cx).unwrap();
+        let sent = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let sink = std::rc::Rc::clone(&sent);
+        let _subscription = cx.update(|cx| {
+            cx.subscribe(&bar, move |_, event: &InputBarEvent, _| {
+                if let InputBarEvent::Send { targets, .. } = event {
+                    sink.borrow_mut().push(targets.clone());
+                }
+            })
+        });
+
+        bar.update(cx, |bar, cx| {
+            bar.set_available_targets(&ids(&[YOUTUBE]), cx);
+            bar.emit_send(cx);
+        });
+
+        assert_eq!(*sent.borrow(), vec![ids(&[YOUTUBE])]);
+    }
+
+    #[gpui::test]
+    fn char_count_counts_characters_of_the_trimmed_text(cx: &mut gpui::TestAppContext) {
+        for (text, expected) in [
+            ("  hello  ", 5),
+            ("привіт", 6),
+            ("👋 hi", 4),
+            (" \t ", 0),
+            ("", 0),
+        ] {
+            let count = with_bar(cx, strip(true, true, true), |bar, _window, cx| {
+                bar.field
+                    .update(cx, |field, cx| field.set_content(text, cx));
+                bar.char_count(cx)
+            });
+            assert_eq!(count, expected, "text {text:?}");
+        }
+    }
+
+    fn me_bot(selected: usize) -> Option<InputBarSwitch> {
+        Some(InputBarSwitch {
+            options: vec!["Me".into(), "Bot".into()],
+            selected,
+        })
+    }
+
+    fn pick_on_switch(
+        cx: &mut gpui::TestAppContext,
+        switch: Option<InputBarSwitch>,
+        picks: &[usize],
+    ) -> (Vec<usize>, Option<InputBarSwitch>) {
+        install_presentation(cx);
+        let window = cx.add_window(|_window, cx| {
+            InputBar::new("placeholder", FORGE_DEFAULT, cx).with_targets(strip(true, true, true))
+        });
+        let bar = window.root(cx).unwrap();
+        let emitted = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let sink = std::rc::Rc::clone(&emitted);
+        let _subscription = cx.update(|cx| {
+            cx.subscribe(&bar, move |_, event: &InputBarEvent, _| {
+                if let InputBarEvent::SwitchChanged(idx) = event {
+                    sink.borrow_mut().push(*idx);
+                }
+            })
+        });
+
+        let state = bar.update(cx, |bar, cx| {
+            bar.set_switch(switch, cx);
+            for idx in picks {
+                bar.pick_switch(*idx, cx);
+            }
+            bar.switch.clone()
+        });
+
+        let emitted = emitted.borrow().clone();
+        (emitted, state)
+    }
+
+    #[gpui::test]
+    fn picking_another_switch_option_selects_it_and_reports_its_index(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (emitted, state) = pick_on_switch(cx, me_bot(0), &[1, 0]);
+
+        assert_eq!(emitted, vec![1, 0]);
+        assert_eq!(state, me_bot(0));
+    }
+
+    #[gpui::test]
+    fn picking_the_selected_option_or_one_past_the_end_reports_nothing(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (emitted, state) = pick_on_switch(cx, me_bot(1), &[1, 2, usize::MAX]);
+
+        assert!(emitted.is_empty(), "{emitted:?}");
+        assert_eq!(state, me_bot(1));
+    }
+
+    #[gpui::test]
+    fn picking_without_a_switch_reports_nothing(cx: &mut gpui::TestAppContext) {
+        let (emitted, state) = pick_on_switch(cx, None, &[0, 1]);
+
+        assert!(emitted.is_empty());
+        assert_eq!(state, None);
+    }
+}

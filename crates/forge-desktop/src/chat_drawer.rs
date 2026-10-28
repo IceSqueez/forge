@@ -165,9 +165,10 @@ pub(crate) fn current_name(
 
 #[cfg(test)]
 mod tests {
+    use crate::chat_row::ChatBody;
     use crate::platform_visuals::BadgeKind;
     use forge_components::{
-        ChatBody, ClockStyle, DateFormatChoice, DisplayFormats, FORGE_DEFAULT, FirstWeekday,
+        ClockStyle, DateFormatChoice, DisplayFormats, FORGE_DEFAULT, FirstWeekday,
         install_display_formats,
     };
     use forge_storage::Viewer;

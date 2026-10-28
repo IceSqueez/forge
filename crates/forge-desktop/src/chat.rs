@@ -2260,7 +2260,8 @@ impl Render for ChatView {
 mod tests {
     use std::sync::Arc;
 
-    use forge_components::{ChatBody, FORGE_DEFAULT};
+    use crate::chat_row::ChatBody;
+    use forge_components::FORGE_DEFAULT;
     use forge_registry::SubActionRegistry;
     use forge_runtime::{ActionCancelRegistry, EventBus, spawn_action_engine};
     use forge_storage::Language;

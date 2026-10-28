@@ -121,7 +121,7 @@ impl ViewerMessages {
 
 #[cfg(test)]
 mod tests {
-    use forge_components::ChatBody;
+    use crate::chat_row::ChatBody;
     use forge_storage::{ChatAuthorKey, ChatAuthorTally};
     use forge_types::{EventId, PlatformId};
     use time::{Duration, OffsetDateTime};

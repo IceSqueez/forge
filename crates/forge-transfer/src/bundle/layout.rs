@@ -5,9 +5,8 @@ use forge_paths::{
 };
 use forge_storage::DATABASE_FILE_NAME;
 
+use crate::bundle::document_layout::{PACK_LAYOUT, SETUP_LAYOUT, is_documents_scope};
 use crate::error::TransferError;
-use crate::pack::layout::{PACK_LAYOUT, is_documents_scope};
-use crate::setup::layout::SETUP_LAYOUT;
 
 pub const ARCHIVE_ROOT: &str = "forge";
 

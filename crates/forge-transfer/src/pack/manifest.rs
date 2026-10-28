@@ -2,14 +2,9 @@ use forge_types::IntegrationId;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
+use crate::bundle::manifest::{BundleKind, ContentEntry, check_head, check_schema, expect_kind};
+use crate::documents::reference::PackReference;
 use crate::error::TransferError;
-use crate::manifest::{BundleKind, ContentEntry, check_head, check_schema, expect_kind};
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct PackReference {
-    pub namespace: String,
-    pub value: String,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PackManifest {

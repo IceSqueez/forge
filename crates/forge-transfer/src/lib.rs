@@ -1,98 +1,60 @@
-mod cancel;
-mod category;
-mod digest;
-mod document_bundle;
-mod durable_fs;
-mod encryption;
+mod bundle;
+mod documents;
 mod error;
-mod exclusivity;
-mod extract;
-mod full_writer;
-mod layout;
-mod limits;
-mod manifest;
-mod naming;
-mod outer;
+mod full;
 mod pack;
-mod passphrase;
-mod payload;
-mod private_file;
-mod protection;
-mod reader;
-mod restore_apply;
-mod restore_journal;
-mod restore_marker;
-mod restore_outcome;
 mod safety_copies;
-mod safety_snapshot;
-mod schedule_key;
 mod scheduled;
 mod setup;
-mod snapshot;
-mod stage;
 mod staging_sweep;
 
-pub use cancel::CancelFlag;
-pub use category::BackupCategory;
+pub use bundle::{
+    ARCHIVE_ROOT, BUNDLE_EXTENSION, BUNDLE_FORMAT_VERSION, BackupCategory, BundleKind,
+    BundleOrigin, BundleSummary, CancelFlag, ContentEntry, ENCRYPTED_PAYLOAD_ENTRY_NAME,
+    EncryptionScheme, FullManifest, INCLUDED_DIRS, LEGACY_ARCHIVE_EXTENSION, MANIFEST_ENTRY_NAME,
+    MAX_ARCHIVE_ENTRIES, MAX_DECRYPT_SCRYPT_WORK_FACTOR, MAX_ENTRY_BYTES, MAX_PACK_DOCUMENTS_BYTES,
+    MAX_UNPACKED_BYTES, MIN_PASSPHRASE_CHARS, PACK_ROOT, PRE_UPDATE_SNAPSHOT_EXTENSION, Passphrase,
+    PublicManifest, SETUP_ROOT, ScheduleKey, TransferExclusivity, TransferGuard, TransferHeldWatch,
+    backup_file_stem, backups_dir, change_schedule_passphrase, create_schedule_key,
+    read_bundle_kind, read_bundle_summary, unique_suffix,
+};
+pub use documents::{
+    ActionDocument, ClipDocument, ClipSourceDocument, ClosureRegistries, DocumentConfig,
+    GlobalDocument, MediaDocument, OverlayDocument, OverlayFileDocument, PACK_DOCUMENTS_VERSION,
+    PackDocuments, PackInventory, PackReference, PackSelection, QueueDocument, ScriptDocument,
+    StepDocument, TriggerDocument, load_pack_inventory, resolve_pack_closure,
+};
 pub use error::TransferError;
-pub use exclusivity::{TransferExclusivity, TransferGuard, TransferHeldWatch};
-pub use full_writer::{
-    BackupDestination, FullBackupRequest, ScheduledBackupRequest, ScheduledWrite,
+pub use full::{
+    BackupDestination, FullBackupRequest, RESTORE_JOURNAL_FILE, RESTORE_MARKER_FILE,
+    RESTORE_STAGING_DIR_NAME, RestoreDeferral, RestoreOutcome, RestoreRollback,
+    ScheduledBackupRequest, ScheduledWrite, StageRequest, StagedRestore, UpdateActivity,
+    apply_pending_restore, cancel_pending_restore, discard_staged_restore, record_pending_restore,
+    restore_in_flight, restore_pending, restore_staging_root, stage_full_restore,
     write_full_backup, write_scheduled_backup, write_scheduled_backup_cancellable,
     write_scheduled_backup_unless_unchanged,
 };
-pub use layout::{ARCHIVE_ROOT, INCLUDED_DIRS};
-pub use limits::{
-    MAX_ARCHIVE_ENTRIES, MAX_DECRYPT_SCRYPT_WORK_FACTOR, MAX_ENTRY_BYTES, MAX_PACK_DOCUMENTS_BYTES,
-    MAX_UNPACKED_BYTES,
-};
-pub use manifest::{
-    BUNDLE_FORMAT_VERSION, BundleKind, BundleOrigin, ContentEntry, ENCRYPTED_PAYLOAD_ENTRY_NAME,
-    EncryptionScheme, FullManifest, MANIFEST_ENTRY_NAME, PublicManifest,
-};
-pub use naming::{
-    BUNDLE_EXTENSION, LEGACY_ARCHIVE_EXTENSION, PRE_UPDATE_SNAPSHOT_EXTENSION, backup_file_stem,
-    backups_dir, unique_suffix,
-};
 pub use pack::{
-    ActionDocument, ClipDocument, ClipSourceDocument, ClosureRegistries, DocumentConfig,
-    ExecutableContent, GlobalDocument, MediaDocument, OverlayDocument, OverlayFileDocument,
-    PACK_DOCUMENTS_VERSION, PACK_ROOT, PACK_STAGING_DIR_NAME, PackConflict, PackDocuments,
-    PackExportRequest, PackImportLimit, PackImportOutcome, PackImportPlan, PackImportRequest,
-    PackInventory, PackItemKey, PackItemKind, PackManifest, PackMetadata, PackPlanItem,
-    PackReference, PackResolution, PackSelection, PackWarning, PackWrittenItem, QueueDocument,
-    ScriptDocument, StagedPack, StepDocument, TriggerDocument, apply_pack_import,
-    discard_staged_pack, load_pack_inventory, pack_staging_root, plan_pack_import,
-    resolve_pack_closure, stage_pack, write_pack,
+    ExecutableContent, PACK_STAGING_DIR_NAME, PackConflict, PackExportRequest, PackImportLimit,
+    PackImportOutcome, PackImportPlan, PackImportRequest, PackItemKey, PackItemKind, PackManifest,
+    PackMetadata, PackPlanItem, PackResolution, PackWarning, PackWrittenItem, StagedPack,
+    apply_pack_import, discard_staged_pack, pack_staging_root, plan_pack_import, stage_pack,
+    write_pack,
 };
-pub use passphrase::{MIN_PASSPHRASE_CHARS, Passphrase};
-pub use reader::{BundleSummary, read_bundle_kind, read_bundle_summary};
-pub use restore_apply::apply_pending_restore;
-pub use restore_journal::{RESTORE_JOURNAL_FILE, restore_in_flight};
-pub use restore_marker::{
-    RESTORE_MARKER_FILE, UpdateActivity, cancel_pending_restore, record_pending_restore,
-    restore_pending,
-};
-pub use restore_outcome::{RestoreDeferral, RestoreOutcome, RestoreRollback};
 pub use safety_copies::{
     SafetyCopyFailure, SafetyCopyKind, SafetyCopyMode, SafetyCopyReport, SafetyCopySettings,
     SafetyCopyUsage, change_safety_copy_settings, clean_up_safety_copies, prune_safety_copies,
     safety_copy_usage,
 };
-pub use schedule_key::{ScheduleKey, change_schedule_passphrase, create_schedule_key};
 pub use scheduled::{
     BackupClock, FailureCategory, FailureStreak, ScheduleState, ScheduledBackupHandle,
     ScheduledBackupParts, ScheduledBackupStatus, StorageUsed, SystemBackupClock,
     spawn_scheduled_backups,
 };
 pub use setup::{
-    ClipHotkeyDocument, SETUP_DOCUMENTS_VERSION, SETUP_ROOT, SETUP_STAGING_DIR_NAME,
-    SetupDocuments, SetupExportRequest, SetupImportOutcome, SetupImportRequest, SetupLivePart,
-    SetupManifest, SetupQueueChanges, StagedSetup, TtsDocument, VoicesDocument, apply_setup_import,
+    ClipHotkeyDocument, SETUP_DOCUMENTS_VERSION, SETUP_STAGING_DIR_NAME, SetupDocuments,
+    SetupExportRequest, SetupImportOutcome, SetupImportRequest, SetupLivePart, SetupManifest,
+    SetupQueueChanges, StagedSetup, TtsDocument, VoicesDocument, apply_setup_import,
     discard_staged_setup, setup_staging_root, stage_setup, write_setup,
-};
-pub use stage::{
-    RESTORE_STAGING_DIR_NAME, StageRequest, StagedRestore, discard_staged_restore,
-    restore_staging_root, stage_full_restore,
 };
 pub use staging_sweep::sweep_import_staging;

@@ -5,7 +5,7 @@ use forge_storage::settings::{
 };
 use forge_storage::{SettingsRepo, StorageError, reserved_keys};
 
-use crate::scheduled::settings::{bounded, text};
+use crate::bundle::settings_read::{bounded, text};
 
 const MODE_KEEP_NEWEST: &str = "keep_newest";
 const MODE_DELETE_AFTER_DAYS: &str = "delete_after_days";

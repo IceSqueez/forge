@@ -5,18 +5,18 @@ use flate2::Compression;
 use flate2::write::GzEncoder;
 use serde::{Deserialize, Serialize};
 
-use crate::digest::digest_reader;
+use crate::bundle::digest::digest_reader;
+use crate::bundle::document_layout::DocumentLayout;
+use crate::bundle::extract::Extractor;
+use crate::bundle::layout::{ARCHIVE_SEPARATOR, ArchiveScope};
+use crate::bundle::limits::{MAX_PACK_DOCUMENTS_BYTES, MAX_PACK_MANIFEST_BYTES};
+use crate::bundle::manifest::{ContentEntry, MANIFEST_ENTRY_NAME};
+use crate::bundle::naming::partial_path;
+use crate::bundle::outer::{open_outer, read_bounded};
+use crate::bundle::payload::{PayloadFile, append_bytes, append_verified};
+use crate::bundle::private_file::create_private;
+use crate::documents::model::{ClipSourceDocument, PackDocuments};
 use crate::error::TransferError;
-use crate::extract::Extractor;
-use crate::layout::{ARCHIVE_SEPARATOR, ArchiveScope};
-use crate::limits::{MAX_PACK_DOCUMENTS_BYTES, MAX_PACK_MANIFEST_BYTES};
-use crate::manifest::{ContentEntry, MANIFEST_ENTRY_NAME};
-use crate::naming::partial_path;
-use crate::outer::{open_outer, read_bounded};
-use crate::pack::documents::{ClipSourceDocument, PackDocuments};
-use crate::pack::layout::DocumentLayout;
-use crate::payload::{PayloadFile, append_bytes, append_verified};
-use crate::private_file::create_private;
 
 pub(crate) trait DocumentManifest: Sized {
     fn contents(&self) -> &[ContentEntry];

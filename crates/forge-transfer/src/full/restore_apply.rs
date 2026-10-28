@@ -4,17 +4,17 @@ use forge_paths::credentials_key_path_in;
 use forge_storage::DATABASE_FILE_NAME;
 use forge_update::update_in_flight;
 
-use crate::durable_fs::{
+use crate::bundle::durable_fs::{
     copy_atomically, exists, remove_dir_all_if_present, remove_file_if_present, sync_dir,
     sync_parent,
 };
+use crate::bundle::layout::ARCHIVE_ROOT;
+use crate::bundle::naming::fresh_pre_restore_dir;
 use crate::error::TransferError;
-use crate::layout::ARCHIVE_ROOT;
-use crate::naming::fresh_pre_restore_dir;
-use crate::restore_journal::{RestoreJournal, RestorePhase, backup_scope_entries};
-use crate::restore_marker::RestoreMarker;
-use crate::restore_outcome::{RestoreDeferral, RestoreOutcome, RestoreRollback};
-use crate::stage::restore_staging_root;
+use crate::full::restore_journal::{RestoreJournal, RestorePhase, backup_scope_entries};
+use crate::full::restore_marker::RestoreMarker;
+use crate::full::restore_outcome::{RestoreDeferral, RestoreOutcome, RestoreRollback};
+use crate::full::stage::restore_staging_root;
 
 pub fn apply_pending_restore(data_dir: &Path) -> Result<RestoreOutcome, TransferError> {
     if let Some(journal) = RestoreJournal::read(data_dir)? {

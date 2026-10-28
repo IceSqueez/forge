@@ -4,9 +4,9 @@ use std::path::Path;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+use crate::bundle::naming::sibling_with_extension;
+use crate::bundle::private_file::create_private;
 use crate::error::TransferError;
-use crate::naming::sibling_with_extension;
-use crate::private_file::create_private;
 
 const WRITING_EXTENSION: &str = "writing";
 

@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::category::{BackupCategory, admits_content, includes_database};
+use crate::bundle::category::{BackupCategory, admits_content, includes_database};
 use crate::error::TransferError;
+
+pub(crate) const FORGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const BUNDLE_FORMAT_VERSION: u32 = 1;
 pub const MANIFEST_ENTRY_NAME: &str = "manifest.json";

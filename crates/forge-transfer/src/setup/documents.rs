@@ -5,7 +5,7 @@ use forge_storage::{FilterRule, TtsPipelineSettings};
 use forge_types::{ClipId, Variant};
 use serde::{Deserialize, Serialize};
 
-use crate::pack::documents::PackDocuments;
+use crate::documents::model::PackDocuments;
 
 pub const SETUP_DOCUMENTS_VERSION: u32 = 1;
 

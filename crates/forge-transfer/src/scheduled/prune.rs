@@ -2,11 +2,11 @@ use std::path::{Path, PathBuf};
 
 use time::{Duration, OffsetDateTime, UtcOffset};
 
-use crate::manifest::BundleOrigin;
-use crate::naming::{
+use crate::bundle::manifest::BundleOrigin;
+use crate::bundle::naming::{
     BUNDLE_EXTENSION, CIPHERTEXT_EXTENSION, PARTIAL_EXTENSION, SCHEDULED_PREFIX, ciphertext_path,
 };
-use crate::reader::{BundleSummary, read_bundle_summary};
+use crate::bundle::reader::{BundleSummary, read_bundle_summary};
 use crate::scheduled::retention::{BackupFile, RetentionPolicy, expired};
 
 const STALE_PARTIAL_AGE: Duration = Duration::days(1);

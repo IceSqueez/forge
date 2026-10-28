@@ -4,22 +4,22 @@ use std::sync::Arc;
 use forge_storage::{DataProvider, MediaBlob};
 use time::OffsetDateTime;
 
-use crate::document_bundle::{encode_documents, write_document_bundle};
+use crate::bundle::blocking::run_blocking;
+use crate::bundle::document_layout::SETUP_LAYOUT;
+use crate::bundle::manifest::FORGE_VERSION;
+use crate::bundle::manifest::{BUNDLE_FORMAT_VERSION, BundleKind};
+use crate::bundle::naming::partial_path;
+use crate::documents::archive::{encode_documents, write_document_bundle};
+use crate::documents::closure::PackSelection;
+use crate::documents::inventory::PackInventory;
+use crate::documents::model::PackDocuments;
+use crate::documents::source::{DocumentSource, resolve_media};
 use crate::error::TransferError;
-use crate::full_writer::FORGE_VERSION;
-use crate::manifest::{BUNDLE_FORMAT_VERSION, BundleKind};
-use crate::naming::partial_path;
-use crate::pack::closure::PackSelection;
-use crate::pack::documents::PackDocuments;
-use crate::pack::inventory::PackInventory;
-use crate::pack::writer::{DocumentSource, resolve_media};
 use crate::setup::documents::{
     ClipHotkeyDocument, SETUP_DOCUMENTS_VERSION, SetupDocuments, TtsDocument, VoicesDocument,
 };
 use crate::setup::inventory::{SetupInventory, load_setup_inventory};
-use crate::setup::layout::SETUP_LAYOUT;
 use crate::setup::manifest::SetupManifest;
-use crate::snapshot::run_blocking;
 
 pub struct SetupExportRequest {
     pub provider: Arc<dyn DataProvider>,

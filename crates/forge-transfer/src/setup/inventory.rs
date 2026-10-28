@@ -4,8 +4,8 @@ use forge_speech_types::{AssignmentStrategy, IgnoreProfile, VoiceAlias};
 use forge_storage::settings::portability::is_portable;
 use forge_storage::{DataProvider, FilterRule, SettingsRepo, TtsPipelineSettings};
 
+use crate::documents::inventory::{PackInventory, load_pack_inventory};
 use crate::error::TransferError;
-use crate::pack::inventory::{PackInventory, load_pack_inventory};
 
 #[derive(Debug, Clone)]
 pub(crate) struct SetupInventory {

@@ -3,9 +3,9 @@ use std::collections::BTreeSet;
 use forge_registry::{SubActionCategory, SubActionRegistry, nested_chains};
 use forge_types::{IntegrationId, SubActionStep};
 
-use crate::pack::closure::ClosureRegistries;
-use crate::pack::documents::ClipSourceDocument;
-use crate::pack::import_convert::action_of;
+use crate::documents::closure::ClosureRegistries;
+use crate::documents::convert::action_of;
+use crate::documents::model::ClipSourceDocument;
 use crate::pack::import_plan::{ExecutableContent, PackWarning};
 use crate::pack::reader::StagedPack;
 

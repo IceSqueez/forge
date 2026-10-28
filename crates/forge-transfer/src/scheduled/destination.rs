@@ -1,8 +1,8 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use crate::layout::INCLUDED_DIRS;
-use crate::naming::backups_dir;
+use crate::bundle::layout::INCLUDED_DIRS;
+use crate::bundle::naming::backups_dir;
 use crate::scheduled::status::FailureCategory;
 
 const CASE_INSENSITIVE_FILESYSTEM: bool = cfg!(any(windows, target_os = "macos"));

@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::document_bundle::DocumentManifest;
+use crate::bundle::manifest::{BundleKind, ContentEntry, check_head, check_schema, expect_kind};
+use crate::documents::archive::DocumentManifest;
 use crate::error::TransferError;
-use crate::manifest::{BundleKind, ContentEntry, check_head, check_schema, expect_kind};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SetupManifest {

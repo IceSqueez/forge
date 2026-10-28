@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::durable_fs::remove_dir_all_if_present;
+use crate::bundle::durable_fs::remove_dir_all_if_present;
 use crate::error::TransferError;
 use crate::pack::pack_staging_root;
 use crate::setup::setup_staging_root;

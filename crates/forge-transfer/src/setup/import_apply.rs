@@ -7,10 +7,10 @@ use forge_registry::ReferenceRemap;
 use forge_storage::{DataProvider, MediaBlobId, OverlayId, StorageError};
 use forge_types::{Queue, QueueId};
 
+use crate::bundle::naming::fresh_pre_setup_stem;
+use crate::documents::closure::ClosureRegistries;
 use crate::error::TransferError;
-use crate::naming::fresh_pre_setup_stem;
-use crate::pack::closure::ClosureRegistries;
-use crate::safety_snapshot::write_safety_snapshot;
+use crate::safety_copies::safety_snapshot::write_safety_snapshot;
 use crate::setup::import_undo::SetupJournal;
 use crate::setup::inventory::{SetupInventory, load_setup_inventory};
 use crate::setup::reader::StagedSetup;

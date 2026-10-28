@@ -2,11 +2,11 @@ use std::io::Write;
 
 use age::stream::StreamWriter;
 
-use crate::encryption::{encrypt_into, encrypt_to_recipient};
+use crate::bundle::encryption::{encrypt_into, encrypt_to_recipient};
+use crate::bundle::manifest::{BundleOrigin, EncryptionScheme};
+use crate::bundle::passphrase::Passphrase;
+use crate::bundle::schedule_key::{ScheduleKey, parse_recipient};
 use crate::error::TransferError;
-use crate::manifest::{BundleOrigin, EncryptionScheme};
-use crate::passphrase::Passphrase;
-use crate::schedule_key::{ScheduleKey, parse_recipient};
 
 pub(crate) enum Protection {
     Passphrase(Passphrase),

@@ -2,9 +2,9 @@ use std::path::{Path, PathBuf};
 
 use time::OffsetDateTime;
 
-use crate::naming::backups_dir;
+use crate::bundle::fs_usage::{directory_bytes, file_bytes};
+use crate::bundle::naming::backups_dir;
 use crate::safety_copies::kind::{SafetyCopyKind, classify};
-use crate::scheduled::usage::{directory_bytes, file_bytes};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SafetyCopy {

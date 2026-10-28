@@ -1,12 +1,14 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use crate::bundle::blocking::run_blocking;
+use crate::bundle::layout::database_entry;
+use crate::bundle::limits::{MAX_PACK_MANIFEST_BYTES, MAX_PUBLIC_MANIFEST_BYTES};
+use crate::bundle::manifest::{
+    BundleKind, MANIFEST_ENTRY_NAME, PublicManifest, check_head, parse_public,
+};
+use crate::bundle::outer::{open_outer, read_bounded};
 use crate::error::TransferError;
-use crate::layout::database_entry;
-use crate::limits::{MAX_PACK_MANIFEST_BYTES, MAX_PUBLIC_MANIFEST_BYTES};
-use crate::manifest::{BundleKind, MANIFEST_ENTRY_NAME, PublicManifest, check_head, parse_public};
-use crate::outer::{open_outer, read_bounded};
-use crate::snapshot::run_blocking;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BundleSummary {

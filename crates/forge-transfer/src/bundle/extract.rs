@@ -2,12 +2,12 @@ use std::collections::{HashMap, HashSet};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
-use crate::digest::DigestingReader;
+use crate::bundle::digest::DigestingReader;
+use crate::bundle::layout::{ArchiveScope, EntryShape, confined_relative_path, entry_name};
+use crate::bundle::limits::{MAX_ARCHIVE_ENTRIES, MAX_ENTRY_BYTES, MAX_UNPACKED_BYTES};
+use crate::bundle::manifest::ContentEntry;
+use crate::bundle::private_file::create_private;
 use crate::error::TransferError;
-use crate::layout::{ArchiveScope, EntryShape, confined_relative_path, entry_name};
-use crate::limits::{MAX_ARCHIVE_ENTRIES, MAX_ENTRY_BYTES, MAX_UNPACKED_BYTES};
-use crate::manifest::ContentEntry;
-use crate::private_file::create_private;
 
 pub(crate) struct Extractor {
     root: PathBuf,

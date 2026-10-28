@@ -1,6 +1,6 @@
 use forge_types::{Action, Queue, SubActionStep, TriggerInstance};
 
-use crate::pack::documents::{ActionDocument, QueueDocument, StepDocument, TriggerDocument};
+use crate::documents::model::{ActionDocument, QueueDocument, StepDocument, TriggerDocument};
 
 pub(crate) fn action_of(document: &ActionDocument) -> Action {
     Action {

@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use forge_storage::DataProvider;
 
+use crate::bundle::blocking::run_blocking;
+use crate::bundle::naming::{backups_dir, snapshot_path};
 use crate::error::TransferError;
-use crate::naming::{backups_dir, snapshot_path};
 
 pub(crate) async fn with_database_snapshot<T, F>(
     provider: &Arc<dyn DataProvider>,
@@ -26,17 +27,4 @@ where
         tracing::debug!(%error, path = %snapshot.display(), "partial snapshot could not be removed");
     }
     result
-}
-
-pub(crate) async fn run_blocking<A, T, F>(argument: A, work: F) -> Result<T, TransferError>
-where
-    A: Send + 'static,
-    T: Send + 'static,
-    F: FnOnce(A) -> Result<T, TransferError> + Send + 'static,
-{
-    tokio::task::spawn_blocking(move || work(argument))
-        .await
-        .map_err(|e| TransferError::Interrupted {
-            reason: e.to_string(),
-        })?
 }

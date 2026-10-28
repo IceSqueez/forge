@@ -3,8 +3,8 @@ use std::collections::BTreeSet;
 use forge_storage::{GlobalsRepo, MediaReferrerKind, OverlayId, ScriptRepo, clip_source_referrer};
 use forge_types::{ActionId, ClipId, QueueId, ScriptId, TriggerInstanceId};
 
+use crate::documents::undo::Undo;
 use crate::error::TransferError;
-use crate::pack::import_undo::Undo;
 use crate::setup::import_apply::{SetupImport, SetupLivePart};
 use crate::setup::import_undo::SetupUndo;
 

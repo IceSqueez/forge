@@ -2,6 +2,7 @@ mod inventory;
 mod kind;
 mod protection;
 mod prune;
+pub(crate) mod safety_snapshot;
 mod selection;
 mod settings;
 

@@ -5,11 +5,11 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use sha2::{Digest, Sha256};
 
-use crate::digest::to_hex;
-use crate::encryption::classify;
+use crate::bundle::digest::to_hex;
+use crate::bundle::encryption::classify;
+use crate::bundle::limits::{ENCRYPT_SCRYPT_WORK_FACTOR, MAX_DECRYPT_SCRYPT_WORK_FACTOR};
+use crate::bundle::passphrase::Passphrase;
 use crate::error::TransferError;
-use crate::limits::{ENCRYPT_SCRYPT_WORK_FACTOR, MAX_DECRYPT_SCRYPT_WORK_FACTOR};
-use crate::passphrase::Passphrase;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ScheduleKey {
@@ -89,31 +89,4 @@ pub(crate) fn unwrap_identity(
         .map_err(|_| TransferError::damaged("the restore key is not readable"))?;
     age::x25519::Identity::from_str(secret.expose_secret())
         .map_err(|_| TransferError::damaged("the restore key is not readable"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ScheduleKey;
-
-    #[test]
-    fn an_encoded_key_decodes_to_the_same_pair() {
-        let key = ScheduleKey {
-            recipient: "age1recipient".to_owned(),
-            wrapped_identity: "d3JhcHBlZA==\"quoted\"".to_owned(),
-        };
-
-        assert_eq!(ScheduleKey::decode(&key.encode().unwrap()).unwrap(), key);
-    }
-
-    #[test]
-    fn decoding_rejects_text_that_is_not_a_whole_key() {
-        for stored in [
-            "",
-            "not json",
-            "{\"recipient\":\"age1\"}",
-            "{\"wrapped_identity\":\"w\"}",
-        ] {
-            assert!(ScheduleKey::decode(stored).is_err(), "{stored:?}");
-        }
-    }
 }

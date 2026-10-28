@@ -7,13 +7,13 @@ use flate2::write::GzEncoder;
 use forge_paths::credentials_key_path_in;
 use forge_storage::DataProvider;
 
-use crate::category::BackupCategory;
+use crate::bundle::category::BackupCategory;
+use crate::bundle::naming::{LEGACY_ARCHIVE_EXTENSION, backups_dir, partial_path};
+use crate::bundle::payload::{append_verified, collect_payload};
+use crate::bundle::private_file::create_private;
 use crate::error::TransferError;
-use crate::naming::{LEGACY_ARCHIVE_EXTENSION, backups_dir, partial_path};
-use crate::payload::{append_verified, collect_payload};
-use crate::private_file::create_private;
+use crate::full::snapshot::with_database_snapshot;
 use crate::safety_copies::prune_after_safety_copy;
-use crate::snapshot::with_database_snapshot;
 
 pub(crate) async fn write_safety_snapshot(
     provider: &Arc<dyn DataProvider>,

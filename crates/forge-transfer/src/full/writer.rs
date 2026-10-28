@@ -9,25 +9,25 @@ use forge_storage::DataProvider;
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
-use crate::cancel::CancelFlag;
-use crate::category::BackupCategory;
-use crate::digest::to_hex;
-use crate::error::TransferError;
-use crate::manifest::{
-    BUNDLE_FORMAT_VERSION, BundleKind, ENCRYPTED_PAYLOAD_ENTRY_NAME, FullManifest,
+use crate::bundle::cancel::CancelFlag;
+use crate::bundle::category::BackupCategory;
+use crate::bundle::digest::to_hex;
+use crate::bundle::manifest::{
+    BUNDLE_FORMAT_VERSION, BundleKind, ENCRYPTED_PAYLOAD_ENTRY_NAME, FORGE_VERSION, FullManifest,
     MANIFEST_ENTRY_NAME, PublicManifest,
 };
-use crate::naming::{
+use crate::bundle::naming::{
     BUNDLE_EXTENSION, backups_dir, ciphertext_path, fresh_scheduled_stem, fresh_stem, partial_path,
 };
-use crate::passphrase::Passphrase;
-use crate::payload::{PayloadFile, append_bytes, append_file, append_verified, collect_payload};
-use crate::private_file::create_private;
-use crate::protection::Protection;
-use crate::schedule_key::ScheduleKey;
-use crate::snapshot::with_database_snapshot;
-
-pub(crate) const FORGE_VERSION: &str = env!("CARGO_PKG_VERSION");
+use crate::bundle::passphrase::Passphrase;
+use crate::bundle::payload::{
+    PayloadFile, append_bytes, append_file, append_verified, collect_payload,
+};
+use crate::bundle::private_file::create_private;
+use crate::bundle::protection::Protection;
+use crate::bundle::schedule_key::ScheduleKey;
+use crate::error::TransferError;
+use crate::full::snapshot::with_database_snapshot;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackupDestination {

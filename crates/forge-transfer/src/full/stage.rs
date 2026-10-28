@@ -8,23 +8,23 @@ use forge_storage::{
     DATABASE_FILE_NAME, DatabaseFileSchema, LAST_PRE_BASELINE_RELEASE, StoredSchema,
 };
 
-use crate::category::BackupCategory;
-use crate::durable_fs::{read_record, write_record};
-use crate::encryption::{decrypt_from, decrypt_with_identity};
-use crate::error::TransferError;
-use crate::extract::Extractor;
-use crate::layout::{ARCHIVE_ROOT, ArchiveScope};
-use crate::limits::MAX_FULL_MANIFEST_BYTES;
-use crate::manifest::{
+use crate::bundle::blocking::run_blocking;
+use crate::bundle::category::BackupCategory;
+use crate::bundle::durable_fs::{read_record, write_record};
+use crate::bundle::encryption::{decrypt_from, decrypt_with_identity};
+use crate::bundle::extract::Extractor;
+use crate::bundle::layout::{ARCHIVE_ROOT, ArchiveScope};
+use crate::bundle::limits::MAX_FULL_MANIFEST_BYTES;
+use crate::bundle::manifest::{
     ENCRYPTED_PAYLOAD_ENTRY_NAME, FullManifest, MANIFEST_ENTRY_NAME, PublicManifest, check_schema,
     parse_full,
 };
-use crate::naming::fresh_stem;
-use crate::outer::{open_outer, read_bounded};
-use crate::passphrase::Passphrase;
-use crate::reader::{BundleSummary, summarize_first_entry};
-use crate::schedule_key::unwrap_identity;
-use crate::snapshot::run_blocking;
+use crate::bundle::naming::fresh_stem;
+use crate::bundle::outer::{open_outer, read_bounded};
+use crate::bundle::passphrase::Passphrase;
+use crate::bundle::reader::{BundleSummary, summarize_first_entry};
+use crate::bundle::schedule_key::unwrap_identity;
+use crate::error::TransferError;
 
 pub const RESTORE_STAGING_DIR_NAME: &str = "restore-staging";
 const STAGED_CATEGORIES_FILE: &str = "staged-categories.json";

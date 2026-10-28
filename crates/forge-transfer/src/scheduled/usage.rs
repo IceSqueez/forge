@@ -3,8 +3,9 @@ use std::path::Path;
 use forge_paths::BACKUPS_DIR_NAME;
 use forge_storage::DATABASE_FILE_NAME;
 
-use crate::category::BackupCategory;
-use crate::naming::BUNDLE_EXTENSION;
+use crate::bundle::category::BackupCategory;
+use crate::bundle::fs_usage::{directory_bytes, file_bytes};
+use crate::bundle::naming::BUNDLE_EXTENSION;
 use crate::scheduled::destination::is_within;
 
 const DATABASE_SIDECAR_SUFFIXES: [&str; 2] = ["-wal", "-shm"];
@@ -45,30 +46,6 @@ fn database_bytes(data_dir: &Path) -> u64 {
     std::iter::once(String::new())
         .chain(DATABASE_SIDECAR_SUFFIXES.iter().map(|s| (*s).to_owned()))
         .map(|suffix| file_bytes(&data_dir.join(format!("{DATABASE_FILE_NAME}{suffix}"))))
-        .sum()
-}
-
-pub(crate) fn file_bytes(path: &Path) -> u64 {
-    std::fs::symlink_metadata(path)
-        .ok()
-        .filter(|metadata| metadata.file_type().is_file())
-        .map_or(0, |metadata| metadata.len())
-}
-
-pub(crate) fn directory_bytes(path: &Path) -> u64 {
-    let Ok(entries) = std::fs::read_dir(path) else {
-        return 0;
-    };
-    entries
-        .flatten()
-        .map(|entry| {
-            let child = entry.path();
-            match entry.file_type() {
-                Ok(kind) if kind.is_dir() => directory_bytes(&child),
-                Ok(kind) if kind.is_file() => file_bytes(&child),
-                _ => 0,
-            }
-        })
         .sum()
 }
 

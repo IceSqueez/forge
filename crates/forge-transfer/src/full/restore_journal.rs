@@ -4,12 +4,12 @@ use forge_paths::CREDENTIALS_KEY_FILE_NAME;
 use forge_storage::{DATABASE_FILE_NAME, database_unit_file_names};
 use serde::{Deserialize, Serialize};
 
-use crate::category::{BackupCategory, directories_of};
-use crate::durable_fs::{exists, read_record, remove_record, write_record};
+use crate::bundle::category::{BackupCategory, directories_of};
+use crate::bundle::durable_fs::{exists, read_record, remove_record, write_record};
+use crate::bundle::layout::ARCHIVE_ROOT;
 use crate::error::TransferError;
-use crate::layout::ARCHIVE_ROOT;
-use crate::restore_outcome::RestoreRollback;
-use crate::stage::read_staged_categories;
+use crate::full::restore_outcome::RestoreRollback;
+use crate::full::stage::read_staged_categories;
 
 pub const RESTORE_JOURNAL_FILE: &str = "restore-journal.json";
 const RESTORE_JOURNAL_FORMAT: u32 = 1;

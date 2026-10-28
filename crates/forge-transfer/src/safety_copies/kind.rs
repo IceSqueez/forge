@@ -2,7 +2,7 @@ use std::ffi::OsStr;
 
 use time::OffsetDateTime;
 
-use crate::naming::{
+use crate::bundle::naming::{
     FILE_PREFIX, LEGACY_ARCHIVE_EXTENSION, PRE_PACK_PREFIX, PRE_RESTORE_PREFIX, PRE_SETUP_PREFIX,
     PRE_UPDATE_SNAPSHOT_EXTENSION, stamp_of,
 };

@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use forge_storage::StorageError;
 
-use crate::manifest::BundleKind;
+use crate::bundle::manifest::BundleKind;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TransferError {

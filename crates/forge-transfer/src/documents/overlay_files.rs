@@ -6,10 +6,10 @@ use forge_registry::{InternalNamespace, ReferenceRemap};
 use forge_storage::OverlayId;
 use forge_types::Variant;
 
+use crate::bundle::document_layout::safe_segments;
+use crate::documents::model::{DocumentConfig, OverlayFileDocument};
+use crate::documents::undo::Undo;
 use crate::error::TransferError;
-use crate::pack::documents::{DocumentConfig, OverlayFileDocument};
-use crate::pack::import_undo::Undo;
-use crate::pack::layout::safe_segments;
 
 pub(crate) async fn place_overlay_files(
     overlay_root: &Path,

@@ -1,6 +1,7 @@
-use crate::layout::{ARCHIVE_SEPARATOR, EntryShape, FORBIDDEN_NAME_CHARS};
+use crate::bundle::layout::{ARCHIVE_SEPARATOR, EntryShape, FORBIDDEN_NAME_CHARS};
 
 pub const PACK_ROOT: &str = "pack";
+pub const SETUP_ROOT: &str = "setup";
 
 const DOCUMENTS_FILE: &str = "documents.json";
 const MEDIA_DIR: &str = "media";
@@ -15,6 +16,7 @@ pub(crate) struct DocumentLayout {
 }
 
 pub(crate) const PACK_LAYOUT: DocumentLayout = DocumentLayout::rooted_at(PACK_ROOT);
+pub(crate) const SETUP_LAYOUT: DocumentLayout = DocumentLayout::rooted_at(SETUP_ROOT);
 
 impl DocumentLayout {
     pub(crate) const fn rooted_at(root: &'static str) -> Self {

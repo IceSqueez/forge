@@ -11,11 +11,11 @@ use forge_storage::{
 use forge_types::{ClipId, OutputDevice};
 use time::OffsetDateTime;
 
+use crate::documents::convert::{action_of, queue_of, trigger_of};
+use crate::documents::model::ClipSourceDocument;
+use crate::documents::overlay_files::{place_overlay_files, rewrite_overlay_media};
+use crate::documents::undo::Undo;
 use crate::error::TransferError;
-use crate::pack::documents::ClipSourceDocument;
-use crate::pack::import_convert::{action_of, queue_of, trigger_of};
-use crate::pack::import_undo::Undo;
-use crate::pack::overlay_files::{place_overlay_files, rewrite_overlay_media};
 use crate::setup::import_apply::{SetupImport, SetupLivePart};
 use crate::setup::import_undo::SetupUndo;
 

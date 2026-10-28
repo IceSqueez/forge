@@ -3,9 +3,9 @@ use std::io::{Read, Write};
 use age::DecryptError;
 use age::stream::{StreamReader, StreamWriter};
 
+use crate::bundle::limits::{ENCRYPT_SCRYPT_WORK_FACTOR, MAX_DECRYPT_SCRYPT_WORK_FACTOR};
+use crate::bundle::passphrase::Passphrase;
 use crate::error::TransferError;
-use crate::limits::{ENCRYPT_SCRYPT_WORK_FACTOR, MAX_DECRYPT_SCRYPT_WORK_FACTOR};
-use crate::passphrase::Passphrase;
 
 pub(crate) fn encrypt_into<W: Write>(
     passphrase: &Passphrase,

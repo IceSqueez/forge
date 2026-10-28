@@ -12,21 +12,21 @@ use forge_types::{ActionId, ClipId, OutputDevice, QueueId, ScriptId, TriggerInst
 use time::OffsetDateTime;
 use ulid::Ulid;
 
+use crate::bundle::naming::fresh_pre_pack_stem;
+use crate::documents::closure::ClosureRegistries;
+use crate::documents::convert::{action_of, queue_of, trigger_of};
+use crate::documents::inventory::{PackInventory, load_pack_inventory};
+use crate::documents::model::{ActionDocument, ClipSourceDocument, OverlayFileDocument};
+use crate::documents::overlay_files::{place_overlay_files, rewrite_overlay_media};
+use crate::documents::undo::{Undo, UndoJournal};
 use crate::error::TransferError;
-use crate::naming::fresh_pre_pack_stem;
-use crate::pack::closure::ClosureRegistries;
-use crate::pack::documents::{ActionDocument, ClipSourceDocument, OverlayFileDocument};
 use crate::pack::import_conflicts::detect_conflicts;
-use crate::pack::import_convert::{action_of, queue_of, trigger_of};
 use crate::pack::import_names::NameBook;
 use crate::pack::import_plan::{
     PackConflict, PackImportPlan, PackItemKey, PackItemKind, PackPlanItem, PackResolution,
 };
-use crate::pack::import_undo::{Undo, UndoJournal};
-use crate::pack::inventory::{PackInventory, load_pack_inventory};
-use crate::pack::overlay_files::{place_overlay_files, rewrite_overlay_media};
 use crate::pack::reader::StagedPack;
-use crate::safety_snapshot::write_safety_snapshot;
+use crate::safety_copies::safety_snapshot::write_safety_snapshot;
 
 pub struct PackImportRequest<'a> {
     pub provider: Arc<dyn DataProvider>,

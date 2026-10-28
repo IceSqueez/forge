@@ -1,7 +1,7 @@
 use forge_storage::SettingsRepo;
 
-use crate::cancel::CancelFlag;
-use crate::full_writer::{
+use crate::bundle::cancel::CancelFlag;
+use crate::full::writer::{
     ScheduledBackupRequest, ScheduledWrite, write_scheduled_backup_cancellable,
 };
 use crate::scheduled::destination::resolve_folder;

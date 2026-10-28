@@ -2,11 +2,11 @@ use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use crate::category::{BackupCategory, directories_of};
-use crate::digest::{DigestingReader, digest_reader};
+use crate::bundle::category::{BackupCategory, directories_of};
+use crate::bundle::digest::{DigestingReader, digest_reader};
+use crate::bundle::layout::{archive_name_of, credentials_key_entry, database_entry};
+use crate::bundle::manifest::ContentEntry;
 use crate::error::TransferError;
-use crate::layout::{archive_name_of, credentials_key_entry, database_entry};
-use crate::manifest::ContentEntry;
 
 const ARCHIVED_FILE_MODE: u32 = 0o600;
 

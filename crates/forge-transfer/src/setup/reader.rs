@@ -1,17 +1,17 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::document_bundle::{
+use crate::bundle::blocking::run_blocking;
+use crate::bundle::document_layout::SETUP_LAYOUT;
+use crate::bundle::layout::ArchiveScope;
+use crate::bundle::naming::fresh_stem;
+use crate::documents::archive::{
     carried_file, check_bundled_files, documents_version, stage_document_bundle,
 };
+use crate::documents::model::PACK_DOCUMENTS_VERSION;
 use crate::error::TransferError;
-use crate::layout::ArchiveScope;
-use crate::naming::fresh_stem;
-use crate::pack::documents::PACK_DOCUMENTS_VERSION;
 use crate::setup::documents::{SETUP_DOCUMENTS_VERSION, SetupDocuments};
-use crate::setup::layout::SETUP_LAYOUT;
 use crate::setup::manifest::{SetupManifest, parse_setup};
-use crate::snapshot::run_blocking;
 
 pub const SETUP_STAGING_DIR_NAME: &str = "setup-staging";
 

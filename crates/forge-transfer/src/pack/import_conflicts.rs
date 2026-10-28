@@ -1,8 +1,8 @@
 use forge_storage::OverlayId;
 
-use crate::pack::documents::{PackDocuments, TriggerDocument};
+use crate::documents::inventory::PackInventory;
+use crate::documents::model::{PackDocuments, TriggerDocument};
 use crate::pack::import_plan::{PackConflict, PackItemKey, PackItemKind};
-use crate::pack::inventory::PackInventory;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DetectedItem {

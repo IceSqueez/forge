@@ -7,7 +7,7 @@ use time::OffsetDateTime;
 use tokio::sync::{Notify, watch};
 use tokio_util::sync::CancellationToken;
 
-use crate::exclusivity::TransferExclusivity;
+use crate::bundle::exclusivity::TransferExclusivity;
 use crate::scheduled::clock::BackupClock;
 use crate::scheduled::due::next_due;
 use crate::scheduled::settings::{Progress, ScheduleSettings};

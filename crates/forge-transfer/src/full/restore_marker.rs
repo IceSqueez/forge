@@ -3,12 +3,12 @@ use std::path::{Component, Path, PathBuf};
 use forge_update::update_in_flight;
 use serde::{Deserialize, Serialize};
 
-use crate::durable_fs::{
+use crate::bundle::blocking::run_blocking;
+use crate::bundle::durable_fs::{
     exists, read_record, remove_dir_all_if_present, remove_record, write_record,
 };
 use crate::error::TransferError;
-use crate::snapshot::run_blocking;
-use crate::stage::{StagedRestore, restore_staging_root};
+use crate::full::stage::{StagedRestore, restore_staging_root};
 
 pub const RESTORE_MARKER_FILE: &str = "restore-pending.json";
 const RESTORE_MARKER_FORMAT: u32 = 1;

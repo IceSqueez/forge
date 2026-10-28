@@ -4,7 +4,7 @@ use forge_storage::{
 };
 use forge_types::{ActionId, TriggerInstanceId};
 
-use crate::pack::import_undo::{Undo, revert};
+use crate::documents::undo::{Undo, revert};
 
 pub(crate) enum SetupUndo {
     Configuration(Undo),

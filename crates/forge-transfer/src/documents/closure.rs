@@ -13,9 +13,9 @@ use forge_types::{
     ActionId, ClipId, IntegrationId, QueueId, SubActionStep, TriggerInstanceId, Variant,
 };
 
+use crate::documents::inventory::PackInventory;
+use crate::documents::reference::PackReference;
 use crate::error::TransferError;
-use crate::pack::inventory::PackInventory;
-use crate::pack::manifest::PackReference;
 
 #[derive(Clone, Copy)]
 pub struct ClosureRegistries<'a> {

@@ -4,15 +4,15 @@ use std::path::{Path, PathBuf};
 use forge_storage::SettingsRepo;
 use time::OffsetDateTime;
 
-use crate::durable_fs::{exists, remove_dir_all_if_present, remove_file_if_present};
+use crate::bundle::blocking::run_blocking;
+use crate::bundle::durable_fs::{exists, remove_dir_all_if_present, remove_file_if_present};
+use crate::bundle::exclusivity::TransferExclusivity;
 use crate::error::TransferError;
-use crate::exclusivity::TransferExclusivity;
 use crate::safety_copies::inventory::{SafetyCopy, inventory};
 use crate::safety_copies::kind::SafetyCopyKind;
 use crate::safety_copies::protection::protection_for;
 use crate::safety_copies::selection::{doomed, everything_unprotected};
 use crate::safety_copies::settings::SafetyCopySettings;
-use crate::snapshot::run_blocking;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SafetyCopyFailure {

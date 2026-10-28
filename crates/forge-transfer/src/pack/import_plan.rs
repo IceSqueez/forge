@@ -2,12 +2,12 @@ use std::fmt;
 
 use forge_types::IntegrationId;
 
+use crate::documents::closure::ClosureRegistries;
+use crate::documents::inventory::PackInventory;
+use crate::documents::reference::PackReference;
 use crate::error::TransferError;
-use crate::pack::closure::ClosureRegistries;
 use crate::pack::import_conflicts::detect_conflicts;
 use crate::pack::import_review::review_pack;
-use crate::pack::inventory::PackInventory;
-use crate::pack::manifest::PackReference;
 use crate::pack::reader::StagedPack;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

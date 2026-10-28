@@ -38,11 +38,11 @@ pub use unban_user::UnbanUserRunner;
 pub use update_info::UpdateInfoRunner;
 pub use update_reward::UpdateRewardRunner;
 
-use crate::categories::KickCategories;
-use crate::channel::KickChannel;
-use crate::moderation::KickModeration;
-use crate::rewards::KickRewards;
-use crate::send::KickSendChat;
+use crate::api::categories::KickCategories;
+use crate::api::channel::KickChannel;
+use crate::api::chat_messages::KickSendChat;
+use crate::api::moderation::KickModeration;
+use crate::api::rewards::KickRewards;
 
 pub struct KickSubActionDeps {
     pub client: Arc<KickSendChat>,

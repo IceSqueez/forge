@@ -13,7 +13,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
-use crate::rewards::KickRewards;
+use crate::api::rewards::KickRewards;
 
 const KIND_ID: &str = "kick.reward.redemption_accept";
 const MAX_BATCH: usize = 25;

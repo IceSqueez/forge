@@ -18,10 +18,10 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_util::sync::CancellationToken;
 
+use crate::api::poller::PollerAuth;
+use crate::auth::credentials_manager::KickCredentialsManager;
 use crate::capabilities::KICK_COMMUNITY_NOTE;
-use crate::chat_platform::KickPlatform;
-use crate::credentials_manager::KickCredentialsManager;
-use crate::poller::PollerAuth;
+use crate::platform::KickPlatform;
 use crate::triggers::ban::BanDescriptor;
 use crate::triggers::chat::ChatDescriptor;
 use crate::triggers::chat_command::ChatCommandDescriptor;

@@ -13,7 +13,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
-use crate::categories::KickCategories;
+use crate::api::categories::KickCategories;
 
 const KIND_ID: &str = "kick.lookup.category";
 

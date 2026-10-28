@@ -10,7 +10,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
-use crate::channel::KickChannel;
+use crate::api::channel::KickChannel;
 
 const KIND_ID: &str = "kick.lookup.stream_stats";
 

@@ -13,7 +13,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
-use crate::rewards::{CreateRewardParams, KickRewards};
+use crate::api::rewards::{CreateRewardParams, KickRewards};
 
 const KIND_ID: &str = "kick.reward.create";
 

@@ -13,7 +13,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
-use crate::moderation::KickModeration;
+use crate::api::moderation::KickModeration;
 
 const KIND_ID: &str = "kick.moderation.unban";
 

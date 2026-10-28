@@ -14,7 +14,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
-use crate::send::KickSendChat;
+use crate::api::chat_messages::KickSendChat;
 
 const KIND_ID: &str = "kick.chat.send_message";
 

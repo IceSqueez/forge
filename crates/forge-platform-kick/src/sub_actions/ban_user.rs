@@ -14,7 +14,7 @@ use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
 use super::{ban_reason, display_name};
-use crate::moderation::KickModeration;
+use crate::api::moderation::KickModeration;
 
 const KIND_ID: &str = "kick.moderation.ban";
 

@@ -13,7 +13,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
-use crate::channel::KickChannel;
+use crate::api::channel::KickChannel;
 
 const KIND_ID: &str = "kick.channel.update_info";
 const MAX_TAGS: usize = 10;

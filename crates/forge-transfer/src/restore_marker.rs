@@ -1,6 +1,6 @@
 use std::path::{Component, Path, PathBuf};
 
-use forge_update::{ApplyState, UpdateJournal};
+use forge_update::update_in_flight;
 use serde::{Deserialize, Serialize};
 
 use crate::durable_fs::{
@@ -53,10 +53,6 @@ impl RestoreMarker {
             _ => Err(TransferError::ForeignStaging),
         }
     }
-}
-
-pub(crate) fn update_in_flight(data_dir: &Path) -> Result<bool, TransferError> {
-    Ok(exists(&ApplyState::path_in(data_dir))? || exists(&UpdateJournal::path_in(data_dir))?)
 }
 
 pub fn restore_pending(data_dir: &Path) -> Result<bool, TransferError> {

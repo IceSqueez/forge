@@ -1,7 +1,8 @@
 use std::path::Path;
 
+use forge_update::update_in_flight;
+
 use crate::restore_journal::RestoreJournal;
-use crate::restore_marker::update_in_flight;
 use crate::safety_copies::kind::SafetyCopyKind;
 use crate::safety_copies::selection::Protection;
 

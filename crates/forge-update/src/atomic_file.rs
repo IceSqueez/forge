@@ -6,13 +6,6 @@ use crate::UpdateError;
 
 const TEMP_SUFFIX: &str = ".tmp-";
 
-pub(crate) async fn write_atomically(path: &Path, bytes: Vec<u8>) -> Result<(), UpdateError> {
-    let path = path.to_path_buf();
-    tokio::task::spawn_blocking(move || write_atomically_blocking(&path, &bytes))
-        .await
-        .map_err(|error| UpdateError::Io(std::io::Error::other(error.to_string())))?
-}
-
 pub(crate) fn write_atomically_blocking(path: &Path, bytes: &[u8]) -> Result<(), UpdateError> {
     let dir = path
         .parent()

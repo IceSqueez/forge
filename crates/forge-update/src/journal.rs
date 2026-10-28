@@ -3,45 +3,33 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::UpdateError;
-use crate::atomic_file::{write_atomically, write_atomically_blocking};
+use crate::atomic_file::write_atomically_blocking;
 use crate::record::remove_record;
 
-pub const JOURNAL_FILE: &str = "update-journal.json";
-pub const JOURNAL_FORMAT: u32 = 1;
+const JOURNAL_FILE: &str = "update-journal.json";
+pub(crate) const JOURNAL_FORMAT: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UpdateJournal {
-    pub format: u32,
-    pub from_version: String,
-    pub to_version: String,
-    pub install_target: PathBuf,
-    pub previous_build: PathBuf,
-    pub database_snapshot: PathBuf,
-    pub schema_version: u32,
+pub(crate) struct UpdateJournal {
+    pub(crate) format: u32,
+    pub(crate) from_version: String,
+    pub(crate) to_version: String,
+    pub(crate) install_target: PathBuf,
+    pub(crate) previous_build: PathBuf,
+    pub(crate) database_snapshot: PathBuf,
+    pub(crate) schema_version: u32,
 }
 
 impl UpdateJournal {
-    pub fn path_in(data_dir: &Path) -> PathBuf {
+    pub(crate) fn path_in(data_dir: &Path) -> PathBuf {
         data_dir.join(JOURNAL_FILE)
     }
 
-    pub async fn write(&self, data_dir: &Path) -> Result<(), UpdateError> {
-        write_atomically(&Self::path_in(data_dir), self.encode()?).await
-    }
-
-    pub async fn read(data_dir: &Path) -> Result<Option<Self>, UpdateError> {
-        match tokio::fs::read(Self::path_in(data_dir)).await {
-            Ok(bytes) => Self::decode(&bytes).map(Some),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error.into()),
-        }
-    }
-
-    pub fn write_blocking(&self, data_dir: &Path) -> Result<(), UpdateError> {
+    pub(crate) fn write_blocking(&self, data_dir: &Path) -> Result<(), UpdateError> {
         write_atomically_blocking(&Self::path_in(data_dir), &self.encode()?)
     }
 
-    pub fn read_blocking(data_dir: &Path) -> Result<Option<Self>, UpdateError> {
+    pub(crate) fn read_blocking(data_dir: &Path) -> Result<Option<Self>, UpdateError> {
         match std::fs::read(Self::path_in(data_dir)) {
             Ok(bytes) => Self::decode(&bytes).map(Some),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -49,7 +37,7 @@ impl UpdateJournal {
         }
     }
 
-    pub fn clear_blocking(data_dir: &Path) -> Result<(), UpdateError> {
+    pub(crate) fn clear_blocking(data_dir: &Path) -> Result<(), UpdateError> {
         remove_record(&Self::path_in(data_dir))
     }
 
@@ -68,13 +56,5 @@ impl UpdateJournal {
             )));
         }
         Ok(journal)
-    }
-
-    pub async fn clear(data_dir: &Path) -> Result<(), UpdateError> {
-        match tokio::fs::remove_file(Self::path_in(data_dir)).await {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error.into()),
-        }
     }
 }

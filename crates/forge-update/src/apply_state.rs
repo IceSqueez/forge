@@ -9,8 +9,8 @@ use crate::install::{InstallLayout, UpdatableInstall};
 use crate::journal::{JOURNAL_FORMAT, UpdateJournal};
 use crate::record::{read_record, remove_record, require_format, write_record};
 
-pub const APPLY_STATE_FILE: &str = "update-apply.json";
-pub const APPLY_STATE_FORMAT: u32 = 1;
+const APPLY_STATE_FILE: &str = "update-apply.json";
+const APPLY_STATE_FORMAT: u32 = 1;
 pub const PREVIOUS_BUILD_PREFIX: &str = ".forge-previous-";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -22,7 +22,7 @@ pub enum ApplyMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ApplyPhase {
+pub(crate) enum ApplyPhase {
     HandedOff,
     Applying,
     AwaitingFirstStart,
@@ -30,21 +30,21 @@ pub enum ApplyPhase {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ApplyState {
-    pub format: u32,
-    pub mode: ApplyMode,
-    pub layout: InstallLayout,
-    pub staged_artifact: PathBuf,
-    pub launch_executable: PathBuf,
-    pub phase: ApplyPhase,
+pub(crate) struct ApplyState {
+    pub(crate) format: u32,
+    pub(crate) mode: ApplyMode,
+    pub(crate) layout: InstallLayout,
+    pub(crate) staged_artifact: PathBuf,
+    pub(crate) launch_executable: PathBuf,
+    pub(crate) phase: ApplyPhase,
 }
 
 impl ApplyState {
-    pub fn path_in(data_dir: &Path) -> PathBuf {
+    pub(crate) fn path_in(data_dir: &Path) -> PathBuf {
         data_dir.join(APPLY_STATE_FILE)
     }
 
-    pub fn read(data_dir: &Path) -> Result<Option<Self>, UpdateError> {
+    pub(crate) fn read(data_dir: &Path) -> Result<Option<Self>, UpdateError> {
         let Some(state) = read_record::<Self>(&Self::path_in(data_dir))? else {
             return Ok(None);
         };
@@ -52,11 +52,11 @@ impl ApplyState {
         Ok(Some(state))
     }
 
-    pub fn write(&self, data_dir: &Path) -> Result<(), UpdateError> {
+    pub(crate) fn write(&self, data_dir: &Path) -> Result<(), UpdateError> {
         write_record(&Self::path_in(data_dir), self)
     }
 
-    pub fn clear(data_dir: &Path) -> Result<(), UpdateError> {
+    pub(crate) fn clear(data_dir: &Path) -> Result<(), UpdateError> {
         remove_record(&Self::path_in(data_dir))
     }
 }
@@ -75,8 +75,8 @@ pub struct HandoffRequest<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HandoffPlan {
-    pub journal: UpdateJournal,
-    pub state: ApplyState,
+    journal: UpdateJournal,
+    state: ApplyState,
 }
 
 impl HandoffPlan {

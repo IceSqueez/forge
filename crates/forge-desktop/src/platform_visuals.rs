@@ -1,4 +1,7 @@
-use forge_components::{ForgePalette, PlatformMark, RoleBadge, SendTarget, tr};
+use forge_components::{ForgePalette, tr};
+
+use crate::chat_input_bar::SendTarget;
+use crate::chat_row::{PlatformMark, RoleBadge};
 use forge_types::PlatformId;
 use gpui::{Rgba, SharedString};
 

@@ -1,7 +1,7 @@
 use crate::platform_visuals::{send_target, send_target_id, send_target_platforms};
 use std::sync::Arc;
 
-use forge_components::{ForgePalette, InputBar, InputBarEvent, InputBarSwitch, ToastKind, tr};
+use forge_components::{ForgePalette, ToastKind, tr};
 use forge_platform_core::SenderPreference;
 use forge_runtime::EventBus;
 use forge_types::{EventId, PlatformId};
@@ -13,6 +13,7 @@ use super::send_plan::{
     CHAT_SEND_RESPONSE_TIMEOUT, DeliveryResult, PlatformReach, SendPlan, SendRefusal, SendReport,
     attach_twitch_sender, collect_delivery, plan_send,
 };
+use crate::chat_input_bar::{InputBar, InputBarEvent, InputBarSwitch};
 use crate::home_stats::HomeStats;
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::twitch_bot_presence::TwitchBotPresence;

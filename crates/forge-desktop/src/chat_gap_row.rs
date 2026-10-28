@@ -1,10 +1,10 @@
 use gpui::{IntoElement, ParentElement, SharedString, Styled, div};
 
-use crate::icons::{Icon, icon};
-use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, Density, FONT_XXS, Spacing, mono_family, spacing};
+use forge_components::ForgePalette;
+use forge_components::{BORDER_THIN, Density, FONT_XXS, Spacing, mono_family, spacing};
+use forge_components::{Icon, icon};
 
-pub fn chat_gap_row(
+pub(crate) fn chat_gap_row(
     label: impl Into<SharedString>,
     palette: &ForgePalette,
     density: Density,

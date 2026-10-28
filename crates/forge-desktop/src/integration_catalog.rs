@@ -1,9 +1,10 @@
 use crate::platform_visuals::platform_color;
-use forge_components::{ForgePalette, HubTileGlyph, Icon};
+use forge_components::{ForgePalette, Icon};
 use forge_platform_core::{IntegrationCategory, IntegrationDeclaration};
 use forge_types::{IntegrationId, PlatformId};
 use gpui::Rgba;
 
+use crate::hub_card::HubTileGlyph;
 use crate::screen::Screen;
 
 pub fn declarations() -> [IntegrationDeclaration; 10] {

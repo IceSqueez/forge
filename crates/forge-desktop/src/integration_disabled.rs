@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, body_family,
-    ghost_button_with_icon, health_tile, hub_tile, icon, integration_inactive_badge, mono_family,
-    page_frame, primary_button_with_icon, radius, scaled, tr,
+    ghost_button_with_icon, health_tile, icon, integration_inactive_badge, mono_family, page_frame,
+    primary_button_with_icon, radius, scaled, tr,
 };
 use forge_platform_core::{ConnectionAffordance, IntegrationDeclaration};
 use forge_registry::{IntegrationReferences, SubActionRegistry, TriggerRegistry};
@@ -20,6 +20,7 @@ use gpui::{
     SharedString, Subscription, Window, div, prelude::*, px, relative,
 };
 
+use crate::hub_card::hub_tile;
 use crate::integration_catalog::{declaration_of, disclaimer_of, look_of};
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
 use crate::integrations::BuiltinObject;

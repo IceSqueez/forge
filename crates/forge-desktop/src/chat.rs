@@ -9,11 +9,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ChatBody, ChatRow, ChipGlyph, Density, FONT_MD, FONT_SM, FONT_XS,
-    FONT_XXS, ForgePalette, Icon, InputEvent, MenuPlacement, Radius, ResizeEdge, ResizeRange,
-    SearchState, Spacing, TextInput, ToastKind, avatar_tile, badge, body_family, chat_gap_row,
-    chat_row, chip, context_menu, empty_state, hash_accent, icon, install_resize, menu_button,
-    menu_divider, menu_header, menu_item, mono_family, page_frame, radius, spacing, status_dot, tr,
+    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, InputEvent, MenuPlacement, Radius, ResizeEdge, ResizeRange, SearchState,
+    Spacing, TextInput, ToastKind, avatar_tile, badge, body_family, chip, context_menu,
+    empty_state, hash_accent, icon, install_resize, menu_button, menu_divider, menu_header,
+    menu_item, mono_family, page_frame, radius, spacing, status_dot, tr,
 };
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::SpeakQueueHandle;
@@ -39,6 +39,9 @@ use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::{DateShape, fmt_display};
+
+use crate::chat_gap_row::chat_gap_row;
+use crate::chat_row::{ChatBody, ChatRow, chat_row};
 
 mod ban_labels;
 mod banned_panel;

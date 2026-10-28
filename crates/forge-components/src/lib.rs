@@ -3,8 +3,6 @@ pub mod breadcrumb;
 mod buttons;
 mod cards;
 pub(crate) mod caret_blink;
-pub mod chat_gap_row;
-pub mod chat_row;
 pub mod checkbox;
 pub mod chip;
 mod code_editor;
@@ -23,10 +21,8 @@ mod form_field;
 mod glyph;
 mod grid_picker;
 pub mod highlight;
-pub mod hub_card;
 mod icons;
 pub mod inline_edit;
-mod input_bar;
 mod integration_gating;
 pub mod locale;
 mod menu;
@@ -77,8 +73,6 @@ pub use cards::{
     field_hint, field_label, field_title, grow_cell, metric_card, pad_tile, row_card, stat_card,
     stat_row, toolbar_row,
 };
-pub use chat_gap_row::chat_gap_row;
-pub use chat_row::{ChatBody, ChatRow, ChatRowView, PlatformMark, RoleBadge, chat_row};
 pub use checkbox::{Checkbox, checkbox};
 pub use chip::{Chip, ChipGlyph, chip};
 pub use code_editor::{CodeEditor, SaveCode, bind_code_editor_keys};
@@ -114,14 +108,8 @@ pub use grid_picker::{
     FavoritesStatus, GridItemQuery, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent,
     GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle, LEADING_SCOPE,
 };
-pub use hub_card::{
-    BadgeMarker, CompactButton, CompactTone, HUB_CARD_HEIGHT, HUB_TILE_SIZE, HubCard, HubNote,
-    HubTileGlyph, compact_button, hub_card, hub_note, hub_section_header, hub_tile,
-    lifecycle_badge,
-};
 pub use icons::{Icon, IconAssets, icon, spinner};
 pub use inline_edit::{InlineEdit, InlineEditEvent, inline_edit};
-pub use input_bar::{InputBar, InputBarEvent, InputBarSwitch, SendTarget};
 pub use integration_gating::{
     IntegrationDisabledNotice, health_tile, integration_disabled_notice,
     integration_disabled_reason, integration_inactive_badge,

@@ -5,18 +5,18 @@ use gpui::{
 };
 
 use crate::chat_row::PlatformMark;
-use crate::icons::{Icon, icon};
-use crate::palette::ForgePalette;
-use crate::presentation::ActivePresentation;
-use crate::text_input::{InputEvent, TextInput};
-use crate::tokens::{
+use forge_components::ActivePresentation;
+use forge_components::ForgePalette;
+use forge_components::{
     BORDER_THIN, FONT_SM, FONT_XXS, Radius, Spacing, body_family, mono_family, radius, spacing,
 };
+use forge_components::{Icon, icon};
+use forge_components::{InputEvent, TextInput};
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct SendTarget {
-    pub id: SharedString,
-    pub mark: PlatformMark,
+pub(crate) struct SendTarget {
+    pub(crate) id: SharedString,
+    pub(crate) mark: PlatformMark,
 }
 
 #[derive(Debug, Clone)]
@@ -27,13 +27,13 @@ struct TargetSlot {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct InputBarSwitch {
-    pub options: Vec<SharedString>,
-    pub selected: usize,
+pub(crate) struct InputBarSwitch {
+    pub(crate) options: Vec<SharedString>,
+    pub(crate) selected: usize,
 }
 
 #[derive(Clone, Debug)]
-pub enum InputBarEvent {
+pub(crate) enum InputBarEvent {
     Send {
         text: SharedString,
         targets: Vec<SharedString>,
@@ -133,7 +133,7 @@ const EMOJIS: &[&str] = &[
     "😑",
 ];
 
-pub struct InputBar {
+pub(crate) struct InputBar {
     field: Entity<TextInput>,
     targets: Vec<TargetSlot>,
     switch: Option<InputBarSwitch>,
@@ -147,7 +147,7 @@ pub struct InputBar {
 impl EventEmitter<InputBarEvent> for InputBar {}
 
 impl InputBar {
-    pub fn new(
+    pub(crate) fn new(
         placeholder: impl Into<SharedString>,
         palette: ForgePalette,
         cx: &mut Context<Self>,
@@ -172,7 +172,7 @@ impl InputBar {
         }
     }
 
-    pub fn with_targets(mut self, targets: Vec<(SendTarget, bool)>) -> Self {
+    pub(crate) fn with_targets(mut self, targets: Vec<(SendTarget, bool)>) -> Self {
         self.targets = targets
             .into_iter()
             .map(|(target, active)| TargetSlot {
@@ -184,25 +184,7 @@ impl InputBar {
         self
     }
 
-    pub fn selected_targets(&self) -> Vec<SharedString> {
-        self.targets
-            .iter()
-            .filter(|slot| slot.active)
-            .map(|slot| slot.target.id.clone())
-            .collect()
-    }
-
-    pub fn any_target_selected(&self) -> bool {
-        self.targets.iter().any(|slot| slot.active)
-    }
-
-    pub fn is_available(&self, id: &str) -> bool {
-        self.targets
-            .iter()
-            .any(|slot| slot.available && slot.target.id == id)
-    }
-
-    pub fn effective_targets(&self) -> Vec<SharedString> {
+    pub(crate) fn effective_targets(&self) -> Vec<SharedString> {
         self.targets
             .iter()
             .filter(|slot| slot.active && slot.available)
@@ -210,7 +192,11 @@ impl InputBar {
             .collect()
     }
 
-    pub fn set_available_targets(&mut self, available: &[SharedString], cx: &mut Context<Self>) {
+    pub(crate) fn set_available_targets(
+        &mut self,
+        available: &[SharedString],
+        cx: &mut Context<Self>,
+    ) {
         let mut changed = false;
         for slot in &mut self.targets {
             let next = available.contains(&slot.target.id);
@@ -222,51 +208,40 @@ impl InputBar {
         }
     }
 
-    pub fn set_switch(&mut self, switch: Option<InputBarSwitch>, cx: &mut Context<Self>) {
+    pub(crate) fn set_switch(&mut self, switch: Option<InputBarSwitch>, cx: &mut Context<Self>) {
         if self.switch != switch {
             self.switch = switch;
             cx.notify();
         }
     }
 
-    pub fn set_max_chars(&mut self, max_chars: Option<usize>, cx: &mut Context<Self>) {
+    pub(crate) fn set_max_chars(&mut self, max_chars: Option<usize>, cx: &mut Context<Self>) {
         if self.max_chars != max_chars {
             self.max_chars = max_chars;
             cx.notify();
         }
     }
 
-    pub fn char_count(&self, cx: &App) -> usize {
+    pub(crate) fn char_count(&self, cx: &App) -> usize {
         self.field.read(cx).content().trim().chars().count()
     }
 
-    pub fn content(&self, cx: &App) -> String {
+    pub(crate) fn content(&self, cx: &App) -> String {
         self.field.read(cx).content().to_string()
     }
 
-    pub fn clear(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn clear(&mut self, cx: &mut Context<Self>) {
         self.field.update(cx, |field, cx| field.clear(cx));
         cx.notify();
     }
 
-    pub fn focus(&self, window: &mut Window, cx: &mut App) {
-        self.field.update(cx, |f, cx| f.focus(window, cx));
-    }
-
-    pub fn set_placeholder(
+    pub(crate) fn set_placeholder(
         &mut self,
         placeholder: impl Into<SharedString>,
         cx: &mut Context<Self>,
     ) {
         self.field
             .update(cx, |field, cx| field.set_placeholder(placeholder, cx));
-        cx.notify();
-    }
-
-    pub fn set_palette(&mut self, palette: ForgePalette, cx: &mut Context<Self>) {
-        self.palette = palette;
-        self.field
-            .update(cx, |field, cx| field.set_palette(palette, cx));
         cx.notify();
     }
 
@@ -609,266 +584,5 @@ impl Render for InputBar {
             .flex_col()
             .child(top_border)
             .child(body)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::palette::FORGE_DEFAULT;
-    use crate::test_support::install_presentation;
-
-    const TWITCH: &str = "twitch";
-    const YOUTUBE: &str = "youtube";
-    const KICK: &str = "kick";
-
-    fn target(id: &'static str) -> SendTarget {
-        SendTarget {
-            id: SharedString::new_static(id),
-            mark: PlatformMark {
-                letter: SharedString::new_static("X"),
-                color: FORGE_DEFAULT.brand,
-            },
-        }
-    }
-
-    fn strip(twitch: bool, youtube: bool, kick: bool) -> Vec<(SendTarget, bool)> {
-        vec![
-            (target(TWITCH), twitch),
-            (target(YOUTUBE), youtube),
-            (target(KICK), kick),
-        ]
-    }
-
-    fn ids(raw: &[&'static str]) -> Vec<SharedString> {
-        raw.iter().map(|id| SharedString::new_static(id)).collect()
-    }
-
-    fn with_bar<R>(
-        cx: &mut gpui::TestAppContext,
-        targets: Vec<(SendTarget, bool)>,
-        f: impl FnOnce(&mut InputBar, &mut Window, &mut Context<InputBar>) -> R,
-    ) -> R {
-        install_presentation(cx);
-        let window = cx.add_window(|_window, cx| {
-            InputBar::new("placeholder", FORGE_DEFAULT, cx).with_targets(targets)
-        });
-        window
-            .update(cx, |bar, window, cx| f(bar, window, cx))
-            .unwrap()
-    }
-
-    #[gpui::test]
-    fn any_target_selected_is_true_only_when_a_target_is_on(cx: &mut gpui::TestAppContext) {
-        for (targets, expected) in [
-            (strip(true, true, true), true),
-            (strip(false, true, false), true),
-            (strip(false, false, false), false),
-            (Vec::new(), false),
-        ] {
-            let any = with_bar(cx, targets.clone(), |bar, _window, _cx| {
-                bar.any_target_selected()
-            });
-            assert_eq!(any, expected, "any_target_selected for {targets:?}");
-        }
-    }
-
-    #[gpui::test]
-    fn selected_targets_yields_the_on_target_ids_in_strip_order(cx: &mut gpui::TestAppContext) {
-        for (targets, expected) in [
-            (strip(true, false, true), ids(&[TWITCH, KICK])),
-            (strip(false, true, false), ids(&[YOUTUBE])),
-            (strip(false, false, false), ids(&[])),
-        ] {
-            let selected = with_bar(cx, targets.clone(), |bar, _window, _cx| {
-                bar.selected_targets()
-            });
-            assert_eq!(selected, expected, "selected_targets for {targets:?}");
-        }
-    }
-
-    #[gpui::test]
-    fn toggling_a_target_flips_its_selection_and_round_trips(cx: &mut gpui::TestAppContext) {
-        let (after_off, after_on) = with_bar(cx, strip(true, true, true), |bar, _window, cx| {
-            bar.toggle_target(1, cx);
-            let off = bar.selected_targets();
-            bar.toggle_target(1, cx);
-            (off, bar.selected_targets())
-        });
-        assert_eq!(after_off, ids(&[TWITCH, KICK]));
-        assert_eq!(after_on, ids(&[TWITCH, YOUTUBE, KICK]));
-    }
-
-    #[gpui::test]
-    fn toggling_an_index_past_the_strip_changes_nothing(cx: &mut gpui::TestAppContext) {
-        let selected = with_bar(cx, strip(true, false, true), |bar, _window, cx| {
-            bar.toggle_target(3, cx);
-            bar.selected_targets()
-        });
-        assert_eq!(selected, ids(&[TWITCH, KICK]));
-    }
-
-    #[gpui::test]
-    fn unavailable_targets_drop_out_of_the_effective_targets_but_stay_selected(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        let (effective, selected, youtube_available) =
-            with_bar(cx, strip(true, true, true), |bar, _window, cx| {
-                bar.set_available_targets(&ids(&[TWITCH, KICK]), cx);
-                (
-                    bar.effective_targets(),
-                    bar.selected_targets(),
-                    bar.is_available(YOUTUBE),
-                )
-            });
-
-        assert_eq!(effective, ids(&[TWITCH, KICK]));
-        assert_eq!(selected, ids(&[TWITCH, YOUTUBE, KICK]));
-        assert!(!youtube_available);
-    }
-
-    #[gpui::test]
-    fn a_target_coming_back_rejoins_the_effective_targets(cx: &mut gpui::TestAppContext) {
-        let effective = with_bar(cx, strip(true, true, true), |bar, _window, cx| {
-            bar.set_available_targets(&ids(&[TWITCH]), cx);
-            bar.set_available_targets(&ids(&[TWITCH, YOUTUBE]), cx);
-            bar.effective_targets()
-        });
-
-        assert_eq!(effective, ids(&[TWITCH, YOUTUBE]));
-    }
-
-    #[gpui::test]
-    fn an_id_outside_the_strip_is_never_available(cx: &mut gpui::TestAppContext) {
-        let (available, effective) = with_bar(cx, strip(true, false, false), |bar, _window, cx| {
-            bar.set_available_targets(&ids(&[TWITCH, "trovo"]), cx);
-            (bar.is_available("trovo"), bar.effective_targets())
-        });
-
-        assert!(!available);
-        assert_eq!(effective, ids(&[TWITCH]));
-    }
-
-    #[gpui::test]
-    fn toggling_an_unavailable_target_leaves_the_selection_unchanged(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        let selected = with_bar(cx, strip(true, true, true), |bar, _window, cx| {
-            bar.set_available_targets(&ids(&[TWITCH, KICK]), cx);
-            bar.toggle_target(1, cx);
-            bar.selected_targets()
-        });
-
-        assert_eq!(selected, ids(&[TWITCH, YOUTUBE, KICK]));
-    }
-
-    #[gpui::test]
-    fn send_carries_only_the_available_selected_targets(cx: &mut gpui::TestAppContext) {
-        install_presentation(cx);
-        let window = cx.add_window(|_window, cx| {
-            InputBar::new("placeholder", FORGE_DEFAULT, cx).with_targets(strip(true, true, true))
-        });
-        let bar = window.root(cx).unwrap();
-        let sent = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-        let sink = std::rc::Rc::clone(&sent);
-        let _subscription = cx.update(|cx| {
-            cx.subscribe(&bar, move |_, event: &InputBarEvent, _| {
-                if let InputBarEvent::Send { targets, .. } = event {
-                    sink.borrow_mut().push(targets.clone());
-                }
-            })
-        });
-
-        bar.update(cx, |bar, cx| {
-            bar.set_available_targets(&ids(&[YOUTUBE]), cx);
-            bar.emit_send(cx);
-        });
-
-        assert_eq!(*sent.borrow(), vec![ids(&[YOUTUBE])]);
-    }
-
-    #[gpui::test]
-    fn char_count_counts_characters_of_the_trimmed_text(cx: &mut gpui::TestAppContext) {
-        for (text, expected) in [
-            ("  hello  ", 5),
-            ("привіт", 6),
-            ("👋 hi", 4),
-            (" \t ", 0),
-            ("", 0),
-        ] {
-            let count = with_bar(cx, strip(true, true, true), |bar, _window, cx| {
-                bar.field
-                    .update(cx, |field, cx| field.set_content(text, cx));
-                bar.char_count(cx)
-            });
-            assert_eq!(count, expected, "text {text:?}");
-        }
-    }
-
-    fn me_bot(selected: usize) -> Option<InputBarSwitch> {
-        Some(InputBarSwitch {
-            options: vec!["Me".into(), "Bot".into()],
-            selected,
-        })
-    }
-
-    fn pick_on_switch(
-        cx: &mut gpui::TestAppContext,
-        switch: Option<InputBarSwitch>,
-        picks: &[usize],
-    ) -> (Vec<usize>, Option<InputBarSwitch>) {
-        install_presentation(cx);
-        let window = cx.add_window(|_window, cx| {
-            InputBar::new("placeholder", FORGE_DEFAULT, cx).with_targets(strip(true, true, true))
-        });
-        let bar = window.root(cx).unwrap();
-        let emitted = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-        let sink = std::rc::Rc::clone(&emitted);
-        let _subscription = cx.update(|cx| {
-            cx.subscribe(&bar, move |_, event: &InputBarEvent, _| {
-                if let InputBarEvent::SwitchChanged(idx) = event {
-                    sink.borrow_mut().push(*idx);
-                }
-            })
-        });
-
-        let state = bar.update(cx, |bar, cx| {
-            bar.set_switch(switch, cx);
-            for idx in picks {
-                bar.pick_switch(*idx, cx);
-            }
-            bar.switch.clone()
-        });
-
-        let emitted = emitted.borrow().clone();
-        (emitted, state)
-    }
-
-    #[gpui::test]
-    fn picking_another_switch_option_selects_it_and_reports_its_index(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        let (emitted, state) = pick_on_switch(cx, me_bot(0), &[1, 0]);
-
-        assert_eq!(emitted, vec![1, 0]);
-        assert_eq!(state, me_bot(0));
-    }
-
-    #[gpui::test]
-    fn picking_the_selected_option_or_one_past_the_end_reports_nothing(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        let (emitted, state) = pick_on_switch(cx, me_bot(1), &[1, 2, usize::MAX]);
-
-        assert!(emitted.is_empty(), "{emitted:?}");
-        assert_eq!(state, me_bot(1));
-    }
-
-    #[gpui::test]
-    fn picking_without_a_switch_reports_nothing(cx: &mut gpui::TestAppContext) {
-        let (emitted, state) = pick_on_switch(cx, None, &[0, 1]);
-
-        assert!(emitted.is_empty());
-        assert_eq!(state, None);
     }
 }

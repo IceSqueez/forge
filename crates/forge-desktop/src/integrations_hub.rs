@@ -7,10 +7,14 @@ use forge_components::spacing;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::hub_card::{
+    BadgeMarker, CompactTone, HUB_TILE_SIZE, HubTileGlyph, compact_button, hub_card, hub_note,
+    hub_section_header, hub_tile, lifecycle_badge,
+};
+
 use forge_components::{
-    BadgeMarker, BreadcrumbCrumb, CompactTone, ForgePalette, HUB_TILE_SIZE, Icon, ToastKind,
-    body_family, compact_button, hub_card, hub_note, hub_section_header, hub_tile, icon,
-    lifecycle_badge, mono_family, page_frame, scaled, toggle, tr,
+    BreadcrumbCrumb, ForgePalette, Icon, ToastKind, body_family, icon, mono_family, page_frame,
+    scaled, toggle, tr,
 };
 use forge_platform_core::{
     ConnectionAffordance, ControlFailure, ControlOutcome, IntegrationCategory,
@@ -557,7 +561,7 @@ impl IntegrationsHubView {
             palette,
         )
         .tile(hub_tile(
-            forge_components::HubTileGlyph::Icon(feature.glyph),
+            HubTileGlyph::Icon(feature.glyph),
             core_tint(feature.key, palette),
             false,
             HUB_TILE_SIZE,

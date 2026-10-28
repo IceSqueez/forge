@@ -1,10 +1,10 @@
-use crate::FONT_LABEL;
-use crate::FONT_META;
-use crate::FONT_SM;
-use crate::presentation::ActivePresentation;
-use crate::tokens::Density;
-use crate::tokens::Spacing;
-use crate::tokens::spacing;
+use forge_components::ActivePresentation;
+use forge_components::Density;
+use forge_components::FONT_LABEL;
+use forge_components::FONT_META;
+use forge_components::FONT_SM;
+use forge_components::Spacing;
+use forge_components::spacing;
 use std::sync::Arc;
 
 use gpui::{
@@ -13,15 +13,15 @@ use gpui::{
     Window, div, px,
 };
 
-use crate::icons::{Icon, icon, spinner};
-use crate::palette::ForgePalette;
-use crate::status::status_dot;
-use crate::tokens::{
+use forge_components::ForgePalette;
+use forge_components::status_dot;
+use forge_components::tooltip_builder;
+use forge_components::{
     BORDER_THIN, FONT_SECTION_LABEL, FONT_XXS, Radius, body_family, mono_family, radius, scaled,
 };
-use crate::tooltip::tooltip_builder;
+use forge_components::{Icon, icon, spinner};
 
-pub const HUB_CARD_HEIGHT: Pixels = px(158.0);
+pub(crate) const HUB_CARD_HEIGHT: Pixels = px(158.0);
 const CARD_PAD_TOP: Pixels = px(14.0);
 const CARD_PAD_BOTTOM: Pixels = px(12.0);
 
@@ -33,7 +33,7 @@ const DESC_SIZE: Pixels = FONT_LABEL;
 const DESC_LINE: Pixels = px(16.0);
 const DESC_LINES: usize = 2;
 
-pub const HUB_TILE_SIZE: Pixels = px(40.0);
+pub(crate) const HUB_TILE_SIZE: Pixels = px(40.0);
 const TILE_CORNER_DIVISOR: f32 = 4.0;
 const TILE_GLYPH_DIVISOR: f32 = 2.0;
 
@@ -65,12 +65,12 @@ const SECTION_BLURB_SIZE: Pixels = FONT_META;
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-pub enum HubTileGlyph {
+pub(crate) enum HubTileGlyph {
     Letter(SharedString),
     Icon(Icon),
 }
 
-pub fn hub_tile(
+pub(crate) fn hub_tile(
     glyph: HubTileGlyph,
     color: Rgba,
     muted: bool,
@@ -109,14 +109,14 @@ pub fn hub_tile(
     }
 }
 
-pub enum BadgeMarker {
+pub(crate) enum BadgeMarker {
     None,
     Dot(Rgba),
     Glyph(Icon),
     Spinner(ElementId),
 }
 
-pub fn lifecycle_badge(
+pub(crate) fn lifecycle_badge(
     marker: BadgeMarker,
     label: impl Into<SharedString>,
     color: Rgba,
@@ -145,7 +145,7 @@ pub fn lifecycle_badge(
     row.child(label.into())
 }
 
-pub struct HubNote {
+pub(crate) struct HubNote {
     glyph: Icon,
     tint: Rgba,
     text: SharedString,
@@ -154,7 +154,7 @@ pub struct HubNote {
     action: Option<AnyElement>,
 }
 
-pub fn hub_note(glyph: Icon, tint: Rgba, text: impl Into<SharedString>) -> HubNote {
+pub(crate) fn hub_note(glyph: Icon, tint: Rgba, text: impl Into<SharedString>) -> HubNote {
     HubNote {
         glyph,
         tint,
@@ -167,26 +167,26 @@ pub fn hub_note(glyph: Icon, tint: Rgba, text: impl Into<SharedString>) -> HubNo
 
 impl HubNote {
     #[must_use]
-    pub fn emphasized(mut self) -> Self {
+    pub(crate) fn emphasized(mut self) -> Self {
         self.emphasized = true;
         self
     }
 
     #[must_use]
-    pub fn tooltip(mut self, text: impl Into<SharedString>) -> Self {
+    pub(crate) fn tooltip(mut self, text: impl Into<SharedString>) -> Self {
         self.tooltip = Some(text.into());
         self
     }
 
     #[must_use]
-    pub fn action(mut self, action: impl IntoElement) -> Self {
+    pub(crate) fn action(mut self, action: impl IntoElement) -> Self {
         self.action = Some(action.into_any_element());
         self
     }
 }
 
 #[derive(IntoElement)]
-pub struct HubCard {
+pub(crate) struct HubCard {
     id: ElementId,
     muted: bool,
     tile: Option<AnyElement>,
@@ -201,7 +201,7 @@ pub struct HubCard {
     palette: ForgePalette,
 }
 
-pub fn hub_card(
+pub(crate) fn hub_card(
     id: impl Into<ElementId>,
     title: impl Into<SharedString>,
     description: impl Into<SharedString>,
@@ -225,49 +225,49 @@ pub fn hub_card(
 
 impl HubCard {
     #[must_use]
-    pub fn muted(mut self, muted: bool) -> Self {
+    pub(crate) fn muted(mut self, muted: bool) -> Self {
         self.muted = muted;
         self
     }
 
     #[must_use]
-    pub fn tile(mut self, tile: impl IntoElement) -> Self {
+    pub(crate) fn tile(mut self, tile: impl IntoElement) -> Self {
         self.tile = Some(tile.into_any_element());
         self
     }
 
     #[must_use]
-    pub fn badge(mut self, badge: impl IntoElement) -> Self {
+    pub(crate) fn badge(mut self, badge: impl IntoElement) -> Self {
         self.badge = Some(badge.into_any_element());
         self
     }
 
     #[must_use]
-    pub fn trailing(mut self, trailing: impl IntoElement) -> Self {
+    pub(crate) fn trailing(mut self, trailing: impl IntoElement) -> Self {
         self.trailing = Some(trailing.into_any_element());
         self
     }
 
     #[must_use]
-    pub fn note(mut self, note: Option<HubNote>) -> Self {
+    pub(crate) fn note(mut self, note: Option<HubNote>) -> Self {
         self.note = note;
         self
     }
 
     #[must_use]
-    pub fn footer_left(mut self, el: impl IntoElement) -> Self {
+    pub(crate) fn footer_left(mut self, el: impl IntoElement) -> Self {
         self.footer_left = Some(el.into_any_element());
         self
     }
 
     #[must_use]
-    pub fn footer_action(mut self, el: impl IntoElement) -> Self {
+    pub(crate) fn footer_action(mut self, el: impl IntoElement) -> Self {
         self.footer_actions.push(el.into_any_element());
         self
     }
 
     #[must_use]
-    pub fn on_click(
+    pub(crate) fn on_click(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
@@ -421,13 +421,13 @@ impl RenderOnce for HubCard {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum CompactTone {
+pub(crate) enum CompactTone {
     Ghost,
     Primary,
 }
 
 #[derive(IntoElement)]
-pub struct CompactButton {
+pub(crate) struct CompactButton {
     id: ElementId,
     tone: CompactTone,
     glyph: Icon,
@@ -437,7 +437,7 @@ pub struct CompactButton {
     palette: ForgePalette,
 }
 
-pub fn compact_button(
+pub(crate) fn compact_button(
     id: impl Into<ElementId>,
     tone: CompactTone,
     glyph: Icon,
@@ -456,19 +456,19 @@ pub fn compact_button(
 
 impl CompactButton {
     #[must_use]
-    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+    pub(crate) fn label(mut self, label: impl Into<SharedString>) -> Self {
         self.label = Some(label.into());
         self
     }
 
     #[must_use]
-    pub fn tooltip(mut self, text: impl Into<SharedString>) -> Self {
+    pub(crate) fn tooltip(mut self, text: impl Into<SharedString>) -> Self {
         self.tooltip = Some(text.into());
         self
     }
 
     #[must_use]
-    pub fn on_click(
+    pub(crate) fn on_click(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
@@ -542,7 +542,7 @@ impl RenderOnce for CompactButton {
     }
 }
 
-pub fn hub_section_header(
+pub(crate) fn hub_section_header(
     label: impl Into<SharedString>,
     blurb: impl Into<SharedString>,
     count: Option<SharedString>,

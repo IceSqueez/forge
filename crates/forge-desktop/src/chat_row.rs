@@ -1,21 +1,21 @@
-use crate::FONT_LABEL;
-use crate::FONT_MICRO;
-use crate::FONT_ROLE_BADGE;
-use crate::Radius;
-use crate::presentation::ActivePresentation;
-use crate::radius;
-use crate::tokens::Density;
-use crate::tokens::Spacing;
-use crate::tokens::spacing;
+use forge_components::ActivePresentation;
+use forge_components::Density;
+use forge_components::FONT_LABEL;
+use forge_components::FONT_MICRO;
+use forge_components::FONT_ROLE_BADGE;
+use forge_components::Radius;
+use forge_components::Spacing;
+use forge_components::radius;
+use forge_components::spacing;
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement,
     ParentElement, Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled,
     Window, div, px,
 };
 
-use crate::icons::{Icon, icon};
-use crate::palette::{ForgePalette, with_alpha};
-use crate::tokens::{BORDER_THIN, FONT_XS, FONT_XXS, body_family, mono_family, scaled};
+use forge_components::{BORDER_THIN, FONT_XS, FONT_XXS, body_family, mono_family, scaled};
+use forge_components::{ForgePalette, with_alpha};
+use forge_components::{Icon, icon};
 
 const ROW_GAP: Pixels = px(8.0);
 
@@ -64,19 +64,19 @@ const REPLY_ICON: Pixels = px(11.0);
 const REPLY_SNIPPET_MAX: usize = 80;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct PlatformMark {
-    pub letter: SharedString,
-    pub color: Rgba,
+pub(crate) struct PlatformMark {
+    pub(crate) letter: SharedString,
+    pub(crate) color: Rgba,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct RoleBadge {
-    pub label: SharedString,
-    pub color: Rgba,
+pub(crate) struct RoleBadge {
+    pub(crate) label: SharedString,
+    pub(crate) color: Rgba,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ChatBody {
+pub(crate) enum ChatBody {
     Message(SharedString),
     Subscription {
         descriptor: SharedString,
@@ -101,28 +101,28 @@ pub enum ChatBody {
 }
 
 #[derive(Debug, Clone)]
-pub struct ChatRow {
-    pub id: SharedString,
-    pub timestamp: SharedString,
-    pub platform: PlatformMark,
-    pub badges: Vec<RoleBadge>,
-    pub username: SharedString,
-    pub username_color: Rgba,
-    pub body: ChatBody,
-    pub moderated: bool,
-    pub reply: Option<(SharedString, SharedString)>,
+pub(crate) struct ChatRow {
+    pub(crate) id: SharedString,
+    pub(crate) timestamp: SharedString,
+    pub(crate) platform: PlatformMark,
+    pub(crate) badges: Vec<RoleBadge>,
+    pub(crate) username: SharedString,
+    pub(crate) username_color: Rgba,
+    pub(crate) body: ChatBody,
+    pub(crate) moderated: bool,
+    pub(crate) reply: Option<(SharedString, SharedString)>,
 }
 
 type UsernameClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 #[derive(IntoElement)]
-pub struct ChatRowView {
+pub(crate) struct ChatRowView {
     palette: ForgePalette,
     data: ChatRow,
     click: Option<(ElementId, UsernameClick)>,
 }
 
-pub fn chat_row(palette: &ForgePalette, data: ChatRow) -> ChatRowView {
+pub(crate) fn chat_row(palette: &ForgePalette, data: ChatRow) -> ChatRowView {
     ChatRowView {
         palette: *palette,
         data,
@@ -131,7 +131,7 @@ pub fn chat_row(palette: &ForgePalette, data: ChatRow) -> ChatRowView {
 }
 
 impl ChatRowView {
-    pub fn on_username_click(
+    pub(crate) fn on_username_click(
         mut self,
         id: impl Into<ElementId>,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,

@@ -1,7 +1,7 @@
 use crate::platform_visuals::BadgeKind;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
-use forge_components::{ChatBody, tr};
+use forge_components::tr;
 use forge_events::Event;
 use forge_types::{
     ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
@@ -11,6 +11,7 @@ use gpui::{Rgba, SharedString};
 use time::OffsetDateTime;
 
 use crate::chat_author::AuthorKey;
+use crate::chat_row::ChatBody;
 
 pub use forge_storage::DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT as DEFAULT_DISPLAY_LIMIT;
 

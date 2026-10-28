@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
-    ToastKind, body_family, card, ghost_button_with_icon, hub_section_header, icon, mono_family,
-    radius, scaled, section_label, spacing, tr, with_alpha,
+    ToastKind, body_family, card, ghost_button_with_icon, icon, mono_family, radius, scaled,
+    section_label, spacing, tr, with_alpha,
 };
 use forge_runtime::{HandOff, ScheduledRunsHandle, WaitingForQueueWatch, WaitingRuns};
 use forge_storage::{ActionRepo, CatalogChanges, ScheduledRun, ScheduledRunId, ScheduledRunRepo};
@@ -19,6 +19,7 @@ use gpui::{
 use time::OffsetDateTime;
 
 use crate::async_bridge;
+use crate::hub_card::hub_section_header;
 use crate::queues::running_pill;
 use crate::scheduled_run_labels::{
     Countdown, OutcomeTone, Span, countdown, countdown_label, outcome_badge_key, outcome_tone,

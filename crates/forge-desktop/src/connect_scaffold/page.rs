@@ -12,8 +12,8 @@ use gpui::{
     div, prelude::*, px,
 };
 
-use crate::screen::Screen;
-use crate::sidebar::NavRequested;
+use crate::navigation::NavRequested;
+use crate::navigation::Screen;
 
 const BODY_PAD_V: Pixels = px(18.0);
 const BODY_PAD_H: Pixels = px(22.0);

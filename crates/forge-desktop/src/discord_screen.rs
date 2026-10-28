@@ -32,7 +32,7 @@ use crate::discord_webhooks::{
 };
 use crate::hub_crumb::hub_crumb;
 use crate::integrations::BuiltinObject;
-use crate::sidebar::NavRequested;
+use crate::navigation::NavRequested;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::{grow_cell, stat_card};

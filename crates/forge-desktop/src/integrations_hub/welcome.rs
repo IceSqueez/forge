@@ -18,7 +18,7 @@ use gpui::{
 };
 
 use super::IntegrationsHubView;
-use crate::screen::Screen;
+use crate::navigation::Screen;
 use crate::titlebar::brand_mark;
 
 const COLUMN_WIDTH: Pixels = px(1040.0);

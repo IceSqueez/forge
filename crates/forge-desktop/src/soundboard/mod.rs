@@ -28,8 +28,8 @@ use crate::clip_editor::ClipEditor;
 use crate::clip_key_state::{ClipKeyState, changes_registrations};
 use crate::clip_playback::clip_id_of;
 use crate::hub_crumb::{core_category, hub_crumb};
-use crate::screen::Screen;
-use crate::sidebar::NavRequested;
+use crate::navigation::NavRequested;
+use crate::navigation::Screen;
 use forge_components::ActivePresentation;
 
 mod adoption;

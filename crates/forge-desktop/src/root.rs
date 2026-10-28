@@ -26,12 +26,12 @@ use crate::globals::Globals;
 use crate::home_stats::{HomeStats, Integration};
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::log_tail::LogTail;
+use crate::navigation::Screen;
 use crate::platforms::PlatformConnectivity;
 use crate::problem_report::ProblemReport;
 use crate::queue_health::QueueHealth;
 use crate::runtime_handles::RuntimeHandles;
 use crate::runtime_status::RuntimeStatus;
-use crate::screen::Screen;
 use crate::shell::AppShell;
 use crate::speak_state::SpeakState;
 use crate::system_info::WindowFacts;
@@ -208,6 +208,7 @@ pub fn run_boot(
                 let mut flow_for_updates = None;
                 let mut report_for_crashes = None;
                 let mut window_facts = None;
+                let mut navigator_for_notices = None;
                 let credentials_key_loss = handles.credentials_key_loss;
                 let applied = window.update(cx, |root, window, cx| {
                     crate::i18n::install_language(handles.startup_language);
@@ -278,6 +279,8 @@ pub fn run_boot(
                             cx,
                         )
                     });
+                    AppShell::route_quit(&shell, cx);
+                    navigator_for_notices = Some(AppShell::navigator(&shell));
                     let mut shutdown =
                         Some(crate::shutdown::ShutdownHandles::from_handles(&handles));
                     let stay_awake = handles.stay_awake.clone();
@@ -313,9 +316,12 @@ pub fn run_boot(
                 if applied.is_ok() {
                     crate::boot_signal::ready();
                 }
-                if let (Ok(()), Some(update_flow), Some(problem_report)) =
-                    (applied, flow_for_updates, report_for_crashes)
-                {
+                if let (Ok(()), Some(update_flow), Some(problem_report), Some(navigator)) = (
+                    applied,
+                    flow_for_updates,
+                    report_for_crashes,
+                    navigator_for_notices,
+                ) {
                     cx.update(crate::boot_restore::raise_boot_restore_toast);
                     if let Some(loss) = credentials_key_loss {
                         cx.update(|cx| raise_credentials_key_loss_toast(loss, cx));
@@ -365,6 +371,7 @@ pub fn run_boot(
                         settings_for_backup_notices,
                         Arc::new(forge_runtime::sub_action_runners::SystemNotifyPort),
                         rt_handle_for_notices,
+                        navigator,
                     );
                     apply_persisted_shortcuts(cx, backend_for_shortcuts, rt_handle_for_shortcuts);
                     let boot_report = crate::update_report::start_update_report(

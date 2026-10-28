@@ -5,8 +5,8 @@ use forge_platform_core::IntegrationCategory;
 use gpui::{ClickEvent, Context, ElementId, EventEmitter};
 
 use crate::integration_catalog::core_features;
-use crate::screen::Screen;
-use crate::sidebar::NavRequested;
+use crate::navigation::NavRequested;
+use crate::navigation::Screen;
 
 const WHOLE_HUB_ID: &str = "hub-crumb";
 

@@ -24,8 +24,8 @@ use gpui::{
 };
 
 use crate::async_bridge::{self, Generation};
-use crate::screen::Screen;
-use crate::sidebar::NavRequested;
+use crate::navigation::NavRequested;
+use crate::navigation::Screen;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 

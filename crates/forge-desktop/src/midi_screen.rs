@@ -40,7 +40,7 @@ use crate::midi_mapping_modal::{
     MappingDraft, MappingModalLaunch, MidiMappingModal, MidiMappingModalEvent,
 };
 use crate::midi_signal::{MidiSignal, kind_color, note_name};
-use crate::sidebar::NavRequested;
+use crate::navigation::NavRequested;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::grow_cell;

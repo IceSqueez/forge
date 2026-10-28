@@ -14,8 +14,8 @@ use gpui::{
 
 use crate::integration_catalog::{core_features, declarations, look_of};
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
+use crate::navigation::{NavRequested, Screen};
 use crate::platforms::PlatformConnectivity;
-use crate::screen::Screen;
 use forge_components::{ActivePresentation, Presentation};
 
 const SIDEBAR_WIDTH: Pixels = px(210.0);
@@ -42,8 +42,6 @@ const MINI_LABEL_PAD_TOP: Pixels = px(8.0);
 const MINI_LABEL_PAD_BOTTOM: Pixels = px(3.0);
 const INTEGRATIONS_GAP: Pixels = px(8.0);
 const SECTION_BADGE: Pixels = FONT_MICRO;
-
-pub struct NavRequested(pub Screen);
 
 struct SidebarResizeDrag;
 

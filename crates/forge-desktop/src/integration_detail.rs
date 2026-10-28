@@ -44,13 +44,13 @@ use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEv
 use crate::integration_quick_actions::accent_color;
 use crate::integration_sign_out::forget_then_disconnect;
 use crate::integrations::{BuiltinObject, ObsInstallSeed, VTubeInstallSeed};
+use crate::navigation::NavRequested;
+use crate::navigation::Screen;
 use crate::obs_credentials_form::ObsConnected;
 use crate::obs_settings_modal::{ObsSettingsModal, ObsSettingsModalEvent};
 use crate::platform_credentials::PlatformCredentialManagers;
 use crate::platforms::PlatformConnectivity;
 use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal, RunHistoryOpenIntegration};
-use crate::screen::Screen;
-use crate::sidebar::NavRequested;
 use crate::twitch_bot_presence::TwitchBotPresence;
 use crate::twitch_bot_section::{StreamerSignInRequested, TwitchBotSection};
 use crate::window_presence::PresenceGate;

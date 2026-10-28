@@ -97,6 +97,7 @@ mod midi_mapping_modal;
 mod midi_screen;
 mod midi_signal;
 mod motion_labels;
+mod navigation;
 mod navigation_guard;
 mod obs_catalog_options;
 mod obs_connect;
@@ -140,7 +141,6 @@ mod safety_copy_prune;
 mod scheduled_backup_notices;
 mod scheduled_run_labels;
 mod scheduled_runs_section;
-mod screen;
 mod screen_shortcuts;
 mod script_editor;
 mod script_lifecycle;
@@ -223,8 +223,8 @@ use gpui::{
 
 use crate::actions::{bind_list_keys, register_shell_key_bindings};
 use crate::log_tail::LogTail;
+use crate::navigation::Screen;
 use crate::root::{RootView, run_boot};
-use crate::screen::Screen;
 use crate::settings::{NAV_WIDTH, PANE_MIN_WIDTH};
 use crate::shutdown::{RUNTIME_SHUTDOWN_BUDGET, RuntimeSlot, silence_logging};
 use crate::sidebar::SIDEBAR_MAX;
@@ -528,7 +528,7 @@ fn main() {
         bind_picker_keys(cx);
         bind_list_keys(cx);
         register_shell_key_bindings(cx);
-        cx.on_action(crate::shell::quit_requested);
+        cx.on_action(|_: &crate::actions::Quit, cx| cx.quit());
         if cfg!(target_os = "macos") {
             cx.set_menus([gpui::Menu::new("forge").items([gpui::MenuItem::action(
                 forge_components::tr!("app_menu_quit"),

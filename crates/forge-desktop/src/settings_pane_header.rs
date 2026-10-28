@@ -5,7 +5,7 @@ use gpui::{
     Styled, Window, div, px,
 };
 
-use crate::settings::SettingsSection;
+use crate::navigation::SettingsSection;
 
 const ICON_SIZE: Pixels = px(20.0);
 const SUBTITLE_FONT: Pixels = FONT_ROW;

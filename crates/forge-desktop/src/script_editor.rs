@@ -39,13 +39,13 @@ use time::OffsetDateTime;
 
 use crate::async_bridge::{self, BridgeFlow, drain_events};
 use crate::globals::variant_kind_color;
-use crate::screen::Screen;
+use crate::navigation::NavRequested;
+use crate::navigation::Screen;
 use crate::screen_shortcuts::ScreenShortcuts;
 use crate::script_lifecycle::{
     ScriptLifecycle, ScriptRenamed, counted_names, delete_hint, has_referrers, referrer_count,
     rename_hint,
 };
-use crate::sidebar::NavRequested;
 use crate::unsaved_work::UnsavedWork;
 use forge_components::ActivePresentation;
 use forge_components::{PushToast, ToastAction, ToastKind};

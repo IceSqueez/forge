@@ -1,7 +1,7 @@
 use forge_types::IntegrationId;
 
 use crate::integration_lifecycle::IntegrationLifecycle;
-use crate::screen::Screen;
+use crate::navigation::Screen;
 use forge_runtime::LifecycleState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

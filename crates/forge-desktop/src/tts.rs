@@ -16,8 +16,7 @@ use gpui::{
 };
 
 use crate::hub_crumb::{core_category, hub_crumb};
-use crate::screen::Screen;
-use crate::sidebar::NavRequested;
+use crate::navigation::{NavRequested, Screen, TtsSection};
 use crate::speak_state::SpeakState;
 use crate::tts_dashboard::TtsDashboardView;
 use crate::tts_engines::TtsEnginesView;
@@ -32,22 +31,7 @@ const TAB_GAP: Pixels = px(2.0);
 const TAB_BAR_PAD_T: Pixels = px(8.0);
 const TAB_BAR_PAD_H: Pixels = px(14.0);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TtsSection {
-    Dashboard,
-    Engines,
-    Aliases,
-    Filters,
-}
-
 impl TtsSection {
-    const ALL: [TtsSection; 4] = [
-        TtsSection::Dashboard,
-        TtsSection::Engines,
-        TtsSection::Aliases,
-        TtsSection::Filters,
-    ];
-
     fn label(self) -> String {
         match self {
             TtsSection::Dashboard => tr!("tts_tab_dashboard"),
@@ -55,19 +39,6 @@ impl TtsSection {
             TtsSection::Aliases => tr!("tts_tab_aliases"),
             TtsSection::Filters => tr!("tts_tab_filters"),
         }
-    }
-
-    fn key(self) -> &'static str {
-        match self {
-            TtsSection::Dashboard => "dashboard",
-            TtsSection::Engines => "engines",
-            TtsSection::Aliases => "aliases",
-            TtsSection::Filters => "filters",
-        }
-    }
-
-    pub(crate) fn from_key(key: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|section| section.key() == key)
     }
 }
 

@@ -15,8 +15,8 @@ use forge_storage::{DataProvider, SettingsRepo};
 use gpui::{AnyElement, ClickEvent, Context, Entity, FocusHandle, Window, div, prelude::*, px};
 
 use crate::async_bridge;
+use crate::navigation::SettingsSection;
 use crate::runtime_handles::RuntimeHandles;
-use crate::settings::SettingsSection;
 use crate::settings_audio_routing::SettingsAudioRoutingView;
 use crate::settings_pane_header::SettingsPaneHeader;
 use crate::settings_voice_gate::SettingsVoiceGateView;

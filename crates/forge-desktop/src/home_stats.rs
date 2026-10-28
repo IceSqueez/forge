@@ -7,7 +7,7 @@ use gpui::{Rgba, SharedString};
 use time::OffsetDateTime;
 
 use crate::event_log::EventLog;
-use crate::screen::Screen;
+use crate::navigation::Screen;
 
 const NO_DATA: &str = "-";
 

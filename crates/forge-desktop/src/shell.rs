@@ -10,7 +10,7 @@ use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, Sett
 use forge_types::{IntegrationAvailability, IntegrationId};
 use gpui::{
     AnyElement, AnyView, App, AppContext, AsyncApp, ClickEvent, Context, Entity, EventEmitter,
-    FocusHandle, Global, WeakEntity, Window, div, prelude::*,
+    FocusHandle, Window, div, prelude::*,
 };
 
 use crate::home_stats::HomeStats;
@@ -38,6 +38,7 @@ use crate::integration_switch::IntegrationSwitch;
 use crate::integrations::{obs_builtin_object, vtube_builtin_object};
 use crate::integrations_hub::{HubLaunch, IntegrationsHubView};
 use crate::midi_screen::MidiScreenView;
+use crate::navigation::{NavRequested, Navigator, Screen};
 use crate::navigation_guard::{LeaveDialogHandlers, LeaveTarget, NavigationGuard, leave_dialog};
 use crate::obs_connect::ObsConnectView;
 use crate::obs_credentials_form::ObsConnected;
@@ -49,14 +50,12 @@ use crate::restore_close::{RestoreClose, RestoreCloseEvent, RestoreRoute};
 use crate::runtime_handles::RuntimeHandles;
 use crate::runtime_status::RuntimeStatus;
 use crate::scheduled_runs_section::ScheduledRunsView;
-use crate::screen::Screen;
 use crate::screen_shortcuts::{
     ScreenShortcuts, ScreenShortcutsHandle, ToggleReturn, toggle_destination,
 };
 use crate::script_editor::ScriptEditorView;
 use crate::server_console::ServerConsoleView;
 use crate::settings::SettingsView;
-use crate::sidebar::NavRequested;
 use crate::soundboard::SoundboardView;
 use crate::topics::Topics;
 use crate::transfer_flows::{TransferFlows, TransferRoute};
@@ -121,31 +120,6 @@ impl<V: Render> From<Entity<V>> for RoutedContent {
     }
 }
 
-struct ShellRoute(WeakEntity<AppShell>);
-
-impl Global for ShellRoute {}
-
-pub fn open_screen(screen: Screen, cx: &mut App) {
-    let shell = cx.try_global::<ShellRoute>().map(|route| route.0.clone());
-    if let Some(shell) = shell {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the view may close before the result arrives"
-        )]
-        let _ = shell.update(cx, |shell, cx| shell.navigate(screen, cx));
-    }
-}
-
-pub fn quit_requested(_: &Quit, cx: &mut App) {
-    let routed = cx
-        .try_global::<ShellRoute>()
-        .map(|route| route.0.clone())
-        .and_then(|shell| shell.update(cx, |shell, cx| shell.request_close(cx)).ok());
-    if routed.is_none() {
-        cx.quit();
-    }
-}
-
 pub struct AppShell {
     router: Router,
     chrome: Chrome,
@@ -197,13 +171,7 @@ impl AppShell {
             cx,
         );
 
-        cx.subscribe(
-            &chrome.sidebar,
-            |this, _sidebar, event: &NavRequested, cx| {
-                this.navigate(event.0.clone(), cx);
-            },
-        )
-        .detach();
+        Self::follow_nav(&chrome.sidebar, cx);
 
         cx.observe_global::<Presentation>(|_, cx| cx.notify())
             .detach();
@@ -240,8 +208,6 @@ impl AppShell {
 
         window.focus(&focus, cx);
         cx.on_focus_lost(window, Self::restore_focus).detach();
-
-        cx.set_global(ShellRoute(cx.weak_entity()));
 
         let shell = cx.weak_entity();
         window.on_window_should_close(cx, move |_window, cx| {
@@ -291,10 +257,7 @@ impl AppShell {
                     )
                     .with_lifecycle(home_lifecycle, cx)
                 });
-                cx.subscribe(&home, |this, _home, event: &NavRequested, cx| {
-                    this.navigate(event.0.clone(), cx);
-                })
-                .detach();
+                Self::follow_nav(&home, cx);
                 let home_stats = topics.home_stats.clone();
                 let backend = Arc::clone(&handles.backend);
                 let stats_registry = Arc::clone(&handles.trigger_registry);
@@ -360,10 +323,7 @@ impl AppShell {
                 let hub = cx.new(|cx| {
                     IntegrationsHubView::new(None, lifecycle, connectivity, launch, cx).welcome()
                 });
-                cx.subscribe(&hub, |this, _view, event: &NavRequested, cx| {
-                    this.navigate(event.0.clone(), cx);
-                })
-                .detach();
+                Self::follow_nav(&hub, cx);
                 hub.into()
             }
             Screen::Integrations(focus) => {
@@ -373,10 +333,7 @@ impl AppShell {
                 let focus = *focus;
                 let hub = cx
                     .new(|cx| IntegrationsHubView::new(focus, lifecycle, connectivity, launch, cx));
-                cx.subscribe(&hub, |this, _view, event: &NavRequested, cx| {
-                    this.navigate(event.0.clone(), cx);
-                })
-                .detach();
+                Self::follow_nav(&hub, cx);
                 hub.into()
             }
             Screen::BuiltinDetail(id) => match Self::detail_route(id, topics, cx) {
@@ -494,10 +451,7 @@ impl AppShell {
                     Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
                 let console = cx
                     .new(|cx| ServerConsoleView::new(server, rt_handle, credentials, settings, cx));
-                cx.subscribe(&console, |this, _view, event: &NavRequested, cx| {
-                    this.navigate(event.0.clone(), cx);
-                })
-                .detach();
+                Self::follow_nav(&console, cx);
                 console.into()
             }
             Screen::Actions(preselect) => {
@@ -557,10 +511,7 @@ impl AppShell {
                     .with_pack_export(cx)
                     .with_integration_switch(switch, cx)
                 });
-                cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
-                    this.navigate(event.0.clone(), cx);
-                })
-                .detach();
+                Self::follow_nav(&view, cx);
                 RoutedContent::from(view.clone()).with_shortcuts(&view)
             }
             Screen::Triggers(preselect) => {
@@ -590,10 +541,7 @@ impl AppShell {
                     .with_event_bus(bus)
                     .with_integration_switch(switch, cx)
                 });
-                cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
-                    this.navigate(event.0.clone(), cx);
-                })
-                .detach();
+                Self::follow_nav(&view, cx);
                 RoutedContent::from(view.clone()).with_shortcuts(&view)
             }
             Screen::Scripts => {
@@ -618,14 +566,18 @@ impl AppShell {
         }
     }
 
+    fn follow_nav<V: EventEmitter<NavRequested>>(view: &Entity<V>, cx: &mut Context<Self>) {
+        cx.subscribe(view, |this, _view, event: &NavRequested, cx| {
+            this.navigate(event.0.clone(), cx);
+        })
+        .detach();
+    }
+
     fn routed<V: Render + EventEmitter<NavRequested>>(
         view: Entity<V>,
         cx: &mut Context<Self>,
     ) -> AnyView {
-        cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
-            this.navigate(event.0.clone(), cx);
-        })
-        .detach();
+        Self::follow_nav(&view, cx);
         view.into()
     }
 
@@ -780,10 +732,7 @@ impl AppShell {
             let presence = topics.twitch_bot.clone();
             detail.update(cx, |detail, cx| detail.attach_twitch_bot(bot, presence, cx));
         }
-        cx.subscribe(&detail, |this, _view, event: &NavRequested, cx| {
-            this.navigate(event.0.clone(), cx);
-        })
-        .detach();
+        Self::follow_nav(&detail, cx);
         cx.subscribe(&detail, |this, _view, _: &ObsConnected, cx| {
             this.enable_integration(&forge_obs::OBS_INTEGRATION.id);
             this.rebuild_current(cx);
@@ -812,10 +761,7 @@ impl AppShell {
         let id = id.clone();
         let view =
             cx.new(|cx| IntegrationFailedView::new(id.clone(), lifecycle, slot, rt_handle, cx));
-        cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
-            this.navigate(event.0.clone(), cx);
-        })
-        .detach();
+        Self::follow_nav(&view, cx);
         cx.subscribe(&view, move |this, _view, _: &SignInRequested, cx| {
             this.show_detail_despite_failure(&id, cx);
         })
@@ -839,10 +785,7 @@ impl AppShell {
         let lifecycle = topics.integration_lifecycle.clone();
         let id = id.clone();
         let view = cx.new(|cx| IntegrationDisabledView::new(id, lifecycle, launch, cx));
-        cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
-            this.navigate(event.0.clone(), cx);
-        })
-        .detach();
+        Self::follow_nav(&view, cx);
         view.into()
     }
 
@@ -854,10 +797,7 @@ impl AppShell {
         let seed = handles.obs_install_seed.clone();
         let connect =
             cx.new(|cx| ObsConnectView::new(rt_handle, credentials, settings, bus, seed, cx));
-        cx.subscribe(&connect, |this, _view, event: &NavRequested, cx| {
-            this.navigate(event.0.clone(), cx);
-        })
-        .detach();
+        Self::follow_nav(&connect, cx);
         cx.subscribe(&connect, |this, _view, _: &ObsConnected, cx| {
             this.enable_integration(&forge_obs::OBS_INTEGRATION.id);
             this.rebuild_current(cx);
@@ -933,10 +873,7 @@ impl AppShell {
         let connect = cx.new(|cx| {
             VTubeConnectView::new(rt_handle, credentials, settings, bus, event_bus, seed, cx)
         });
-        cx.subscribe(&connect, |this, _view, event: &NavRequested, cx| {
-            this.navigate(event.0.clone(), cx);
-        })
-        .detach();
+        Self::follow_nav(&connect, cx);
         cx.subscribe(&connect, |this, _view, _: &VTubeConnected, cx| {
             this.enable_integration(&forge_vtube::VTUBE_INTEGRATION.id);
             this.rebuild_current(cx);
@@ -1014,6 +951,29 @@ impl AppShell {
         self.router.content = content.view;
         self.router.guard.watch(content.work);
         self.router.shortcuts = content.shortcuts;
+    }
+
+    pub fn navigator(shell: &Entity<Self>) -> Navigator {
+        let shell = shell.downgrade();
+        Navigator::new(move |screen, cx| {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the shell may close before the request arrives"
+            )]
+            let _ = shell.update(cx, |shell, cx| shell.navigate(screen, cx));
+        })
+    }
+
+    pub fn route_quit(shell: &Entity<Self>, cx: &mut App) {
+        let shell = shell.downgrade();
+        cx.on_action(move |_: &Quit, cx| {
+            if shell
+                .update(cx, |shell, cx| shell.request_close(cx))
+                .is_err()
+            {
+                cx.quit();
+            }
+        });
     }
 
     fn navigate(&mut self, screen: Screen, cx: &mut Context<Self>) {

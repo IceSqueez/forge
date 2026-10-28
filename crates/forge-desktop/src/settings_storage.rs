@@ -25,8 +25,8 @@ use gpui::{
 
 use crate::async_bridge;
 use crate::backup_schedule::BackupScheduleView;
+use crate::navigation::SettingsSection;
 use crate::safety_copies::SafetyCopiesView;
-use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 use crate::transfer_flows::TransferFlows;
 use forge_components::ActivePresentation;

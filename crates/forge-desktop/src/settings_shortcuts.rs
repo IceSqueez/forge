@@ -16,7 +16,7 @@ use gpui::{
 
 use crate::actions::{SHORTCUTS, ShortcutEntry, shortcut_entry};
 use crate::async_bridge::{self, Loadable, SnapshotWriter, WriteOutcome};
-use crate::settings::SettingsSection;
+use crate::navigation::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 use crate::shortcut_overrides::{ChordVerdict, ShortcutOverrides, load_overrides, save_overrides};
 use forge_components::ActivePresentation;

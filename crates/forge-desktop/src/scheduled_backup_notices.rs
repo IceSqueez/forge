@@ -11,8 +11,7 @@ use tokio::runtime::Handle;
 use tokio::sync::watch;
 
 use crate::backup_schedule::failure_reason;
-use crate::screen::Screen;
-use crate::settings::SettingsSection;
+use crate::navigation::{Navigator, Screen, SettingsSection};
 use crate::system_notices::{FallbackLog, NoticeText, show_off_thread};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,12 +73,13 @@ pub fn start_scheduled_backup_notices(
     settings: Arc<dyn SettingsRepo>,
     port: Arc<dyn NotifyPort>,
     rt: Handle,
+    navigator: Navigator,
 ) {
     let status = scheduled.status();
     cx.spawn(async move |cx| {
         let enabled = load_preference(&rt, settings).await;
         cx.update(|cx| cx.set_global(BackupFailureNoticePreference(enabled)));
-        drain_failures(status, port, rt, cx).await;
+        drain_failures(status, port, rt, navigator, cx).await;
     })
     .detach();
 }
@@ -107,6 +107,7 @@ pub async fn drain_failures(
     mut status: watch::Receiver<ScheduledBackupStatus>,
     port: Arc<dyn NotifyPort>,
     rt: Handle,
+    navigator: Navigator,
     cx: &mut AsyncApp,
 ) {
     let mut streaks = FailureStreakWatch::default();
@@ -121,7 +122,7 @@ pub async fn drain_failures(
                     if let Some(previous) = toast.take() {
                         dismiss_toast(previous, cx);
                     }
-                    toast = raise_failure_toast(&text, cx);
+                    toast = raise_failure_toast(&text, &navigator, cx);
                     BackupFailureNoticePreference::current(cx)
                 });
                 if os_notice
@@ -148,13 +149,17 @@ pub async fn drain_failures(
     }
 }
 
-fn raise_failure_toast(text: &NoticeText, cx: &mut App) -> Option<u64> {
+fn raise_failure_toast(text: &NoticeText, navigator: &Navigator, cx: &mut App) -> Option<u64> {
     if !cx.has_global::<Toasts>() {
         return None;
     }
-    let action = ToastAction::new(tr!("system_notice_backup_failed_open"), |_window, cx| {
-        crate::shell::open_screen(Screen::Settings(Some(SettingsSection::Storage)), cx);
-    });
+    let navigator = navigator.clone();
+    let action = ToastAction::new(
+        tr!("system_notice_backup_failed_open"),
+        move |_window, cx| {
+            navigator.open(Screen::Settings(Some(SettingsSection::Storage)), cx);
+        },
+    );
     let id = cx.global_mut::<Toasts>().show(ToastData {
         id: 0,
         kind: ToastKind::Error,

@@ -30,9 +30,9 @@ use gpui::{
 };
 
 use crate::async_bridge;
+use crate::navigation::NavRequested;
 use crate::queue_health::QueueHealth;
 use crate::scheduled_runs_section::ScheduledRunsView;
-use crate::sidebar::NavRequested;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 

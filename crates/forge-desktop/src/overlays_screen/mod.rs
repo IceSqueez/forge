@@ -49,9 +49,9 @@ use gpui::{
 
 use crate::audio_router::AudioRouter;
 use crate::hub_crumb::{core_category, hub_crumb};
+use crate::navigation::NavRequested;
+use crate::navigation::Screen;
 use crate::picker_favorites::StoredFavorites;
-use crate::screen::Screen;
-use crate::sidebar::NavRequested;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 

@@ -20,13 +20,13 @@ use time::OffsetDateTime;
 
 use crate::async_bridge;
 use crate::hub_card::hub_section_header;
+use crate::navigation::NavRequested;
+use crate::navigation::Screen;
 use crate::queues::running_pill;
 use crate::scheduled_run_labels::{
     Countdown, OutcomeTone, Span, countdown, countdown_label, outcome_badge_key, outcome_tone,
     reason_label,
 };
-use crate::screen::Screen;
-use crate::sidebar::NavRequested;
 use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;

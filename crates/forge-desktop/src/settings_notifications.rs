@@ -9,8 +9,8 @@ use gpui::{App, ClickEvent, Context, IntoElement, ParentElement, Render, Styled,
 use tokio::runtime::Handle;
 
 use crate::async_bridge;
+use crate::navigation::SettingsSection;
 use crate::scheduled_backup_notices::BackupFailureNoticePreference;
-use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

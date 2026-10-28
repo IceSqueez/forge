@@ -24,7 +24,7 @@ use crate::diagnostic_bundle::{self, BUNDLE_FILE_NAME, Bundle};
 use crate::integrations::BuiltinRegistry;
 use crate::log_archive;
 use crate::log_tail::{LogLine, LogTail};
-use crate::settings::SettingsSection;
+use crate::navigation::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;

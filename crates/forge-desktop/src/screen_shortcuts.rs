@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use gpui::{App, Context, Entity, Window};
 
-use crate::screen::Screen;
+use crate::navigation::Screen;
 
 pub trait ScreenShortcuts: Sized + 'static {
     fn save_shortcut(&mut self, _cx: &mut Context<Self>) {}

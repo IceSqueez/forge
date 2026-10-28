@@ -19,11 +19,11 @@ use gpui::{
 };
 
 use crate::async_bridge::{self, ErrorSink};
+use crate::navigation::SettingsSection;
 use crate::overlay_build_failure::OverlayBuildFailure;
 use crate::overlay_link_token;
 use crate::server_bearer;
 use crate::server_restart::restart_ignoring_disabled;
-use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 use forge_components::ActivePresentation;
 

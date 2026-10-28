@@ -7,8 +7,8 @@ use gpui::{Context, Entity, EventEmitter, SharedString, Subscription, Window, pr
 
 use crate::connect_scaffold::{ConnectPage, GuideStep, fragment, mono_fragment};
 use crate::integrations::ObsInstallSeed;
+use crate::navigation::NavRequested;
 use crate::obs_credentials_form::{DEFAULT_PORT, ObsConnected, ObsCredentialsForm, ObsSubmit};
-use crate::sidebar::NavRequested;
 
 pub struct ObsConnectView {
     form: Entity<ObsCredentialsForm>,

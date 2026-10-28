@@ -23,7 +23,7 @@ use gpui::{
 use crate::async_bridge::{
     self, Debounced, ErrorSink, Loadable, SLIDER_PERSIST_DEBOUNCE, SnapshotWriter, WriteOutcome,
 };
-use crate::settings::SettingsSection;
+use crate::navigation::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 use forge_components::ActivePresentation;
 

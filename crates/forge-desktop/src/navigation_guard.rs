@@ -1,7 +1,7 @@
 use forge_components::{ConfirmTone, ForgePalette, OverlayPosition, confirm_modal, overlay, tr};
 use gpui::{AnyElement, AnyWindowHandle, App, ClickEvent, IntoElement, SharedString, Window};
 
-use crate::screen::Screen;
+use crate::navigation::Screen;
 use crate::screen_shortcuts::ToggleReturn;
 use crate::unsaved_work::UnsavedWorkHandle;
 

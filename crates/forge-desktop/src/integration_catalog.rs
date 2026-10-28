@@ -5,7 +5,7 @@ use forge_types::{IntegrationId, PlatformId};
 use gpui::Rgba;
 
 use crate::hub_card::HubTileGlyph;
-use crate::screen::Screen;
+use crate::navigation::Screen;
 
 pub fn declarations() -> [IntegrationDeclaration; 10] {
     [

@@ -19,6 +19,7 @@ use gpui::{
 use crate::async_bridge::{self, ErrorSink, WriteOutcome};
 use crate::awake_state::AwakeState;
 use crate::backup_schedule::BackupScheduleView;
+use crate::navigation::SettingsSection;
 use crate::presentation::{ActiveDisplayFormats, ActiveLanguage};
 use crate::problem_report::ProblemReport;
 use crate::runtime_handles::RuntimeHandles;
@@ -85,21 +86,6 @@ const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
     ),
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsSection {
-    General,
-    Appearance,
-    Language,
-    Shortcuts,
-    Notifications,
-    Audio,
-    Scripting,
-    Storage,
-    WebSocket,
-    About,
-    Diagnostics,
-}
-
 impl SettingsSection {
     pub(crate) fn label(self) -> String {
         match self {
@@ -131,30 +117,6 @@ impl SettingsSection {
             SettingsSection::About => Icon::InfoCircle,
             SettingsSection::Diagnostics => Icon::Bug,
         }
-    }
-
-    fn key(self) -> &'static str {
-        match self {
-            SettingsSection::General => "general",
-            SettingsSection::Appearance => "appearance",
-            SettingsSection::Language => "language",
-            SettingsSection::Shortcuts => "shortcuts",
-            SettingsSection::Notifications => "notifications",
-            SettingsSection::Audio => "audio",
-            SettingsSection::Scripting => "scripting",
-            SettingsSection::Storage => "storage",
-            SettingsSection::WebSocket => "websocket",
-            SettingsSection::About => "about",
-            SettingsSection::Diagnostics => "diagnostics",
-        }
-    }
-
-    pub(crate) fn from_key(key: &str) -> Option<Self> {
-        NAV_GROUPS
-            .iter()
-            .flat_map(|(_, sections)| sections.iter())
-            .copied()
-            .find(|section| section.key() == key)
     }
 }
 

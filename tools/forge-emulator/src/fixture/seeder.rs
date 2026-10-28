@@ -4,7 +4,9 @@ use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_server::ServerSettings;
 use forge_storage::paths;
-use forge_storage::{CredentialId, DataProvider, SettingsRepo, StorageError};
+use forge_storage::{
+    CredentialId, DataProvider, SERVER_BEARER_CREDENTIAL_ID, SettingsRepo, StorageError,
+};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, ExecutionMode, OAuthToken, PermissionRung, PlatformScope, Queue, QueueId,
@@ -28,7 +30,6 @@ use forge_donatello::DONATELLO_CREDENTIAL_ID;
 use forge_monobank::MONOBANK_CREDENTIAL_ID;
 
 const DATABASE_FILE: &str = "forge.db";
-const SERVER_BEARER_CREDENTIAL: &str = "server:bearer";
 const SERVER_BIND_ADDRESS: &str = "127.0.0.1";
 const DISCORD_CREDENTIAL_PREFIX: &str = "discord:";
 const OBS_HOST: &str = "127.0.0.1";
@@ -99,7 +100,10 @@ async fn write_fixture(
         .await
         .map_err(storage_error)?;
     provider
-        .store(&CredentialId::new(SERVER_BEARER_CREDENTIAL), bearer_token)
+        .store(
+            &CredentialId::new(SERVER_BEARER_CREDENTIAL_ID),
+            bearer_token,
+        )
         .await
         .map_err(storage_error)?;
 

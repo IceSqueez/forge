@@ -14,7 +14,7 @@ use crate::overlay_token::OverlayTokenState;
 const TOKEN_BYTE_LEN: usize = 64;
 const TOKEN_PREFIX: &str = "fg_";
 
-pub struct AuthState {
+pub(crate) struct AuthState {
     bearer_token: Arc<RwLock<String>>,
     token_generation: AtomicU64,
     reads_required: AtomicBool,

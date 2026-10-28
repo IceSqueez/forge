@@ -15,9 +15,10 @@ use std::time::Duration;
 use forge_events::EventSource;
 use forge_overlay::MARKUP_FILE;
 use forge_server::{
-    ConnectedClientSnapshot, EventFilterSnapshot, ServerHandle, ServerSettings, ServerSnapshot,
+    ConnectedClientSnapshot, EventFilterSnapshot, SecretToken, ServerHandle, ServerSettings,
+    ServerSnapshot,
 };
-use forge_storage::{CredentialId, CredentialsRepo, SettingsRepo};
+use forge_storage::{CredentialsRepo, SettingsRepo};
 use gpui::{
     AnyElement, ClickEvent, Context, Div, ElementId, EventEmitter, FontWeight, Pixels, Rgba,
     SharedString, Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
@@ -35,8 +36,6 @@ use forge_components::grow_cell;
 use forge_server::overlay_url::{
     extract_port, overlay_file_url, overlay_origin, overlay_page_url, resolve_routable_host,
 };
-
-const BEARER_CREDENTIAL_ID: &str = "server:bearer";
 
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_THROUGHPUT_SAMPLES: usize = 60;
@@ -356,15 +355,10 @@ impl ServerConsoleView {
 
     fn fetch_token(&self, cx: &mut Context<Self>) {
         let credentials = Arc::clone(&self.credentials);
+        let server = self.server.clone();
         async_bridge::run_async(
             &self.rt_handle,
-            async move {
-                credentials
-                    .load(&CredentialId::new(BEARER_CREDENTIAL_ID))
-                    .await
-                    .ok()
-                    .flatten()
-            },
+            crate::server_bearer::current_bearer_token(server, credentials),
             |this, result: Option<String>, cx| {
                 if let Some(token) = result {
                     this.bearer_token = token;
@@ -559,13 +553,13 @@ impl ServerConsoleView {
         let Some(handle) = self.server.clone() else {
             return;
         };
-        let credentials = Arc::clone(&self.credentials);
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let auth = handle.auth_state().await;
-                auth.regenerate(credentials.as_ref())
+                handle
+                    .regenerate_bearer_token()
                     .await
+                    .map(SecretToken::into_inner)
                     .map_err(|e| e.to_string())
             },
             |this, result: Result<String, String>, cx| match result {

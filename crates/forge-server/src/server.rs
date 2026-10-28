@@ -29,7 +29,7 @@ use crate::{ServerConfig, ServerError, ServerHandle};
 
 #[derive(Clone)]
 pub struct AppState {
-    pub auth: Arc<AuthState>,
+    pub(crate) auth: Arc<AuthState>,
     pub bus: Arc<dyn EventHistory>,
     pub bus_adapter: Arc<BusAdapter>,
     pub actions: Arc<dyn ActionRepo>,

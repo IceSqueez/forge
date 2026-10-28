@@ -28,7 +28,7 @@ pub use audio_clips::{
     AudioClipStore, ClipCapability, ClipMediaType, ClipOffer, ClipOutcome, ClipOutcomeHandle,
     ClipTicket, MAX_CLIP_BYTES, MAX_TOTAL_CLIP_BYTES,
 };
-pub use auth::{AuthState, generate_token, masked_token};
+pub use auth::{generate_token, masked_token};
 pub use bandwidth::BandwidthTracker;
 pub use bus_adapter::{BusAdapter, ClientId, EventFilter};
 pub use config::{ServerConfig, ServerSettings};

@@ -11,8 +11,8 @@ use forge_components::{
     setting_sections, spacing, toggle, tr, type_to_confirm,
 };
 use forge_runtime::OverlayServiceHandle;
-use forge_server::{ServerHandle, ServerSettings};
-use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SettingsRepo};
+use forge_server::{SecretToken, ServerHandle, ServerSettings};
+use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Focusable, FontWeight, Pixels, SharedString,
     Subscription, Window, div, prelude::*, px,
@@ -21,12 +21,12 @@ use gpui::{
 use crate::async_bridge::{self, ErrorSink};
 use crate::overlay_build_failure::OverlayBuildFailure;
 use crate::overlay_link_token;
+use crate::server_bearer;
 use crate::server_restart::restart_ignoring_disabled;
 use crate::settings::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
 use forge_components::ActivePresentation;
 
-const BEARER_CREDENTIAL_ID: &str = "server:bearer";
 const LAN_PHRASE: &str = "expose to LAN";
 const LOCALHOST_ADDR: &str = "127.0.0.1";
 const LAN_ADDR: &str = "0.0.0.0";
@@ -271,15 +271,10 @@ impl SettingsWebSocketView {
 
     fn fetch_token(&self, cx: &mut Context<Self>) {
         let credentials = Arc::clone(&self.backend) as Arc<dyn CredentialsRepo>;
+        let server = self.server.clone();
         async_bridge::run_async(
             &self.rt_handle,
-            async move {
-                credentials
-                    .load(&CredentialId::new(BEARER_CREDENTIAL_ID))
-                    .await
-                    .ok()
-                    .flatten()
-            },
+            server_bearer::current_bearer_token(server, credentials),
             |this, result: Option<String>, cx| {
                 if let Some(token) = result {
                     this.bearer_token = token;
@@ -704,13 +699,15 @@ impl SettingsWebSocketView {
             prev,
             |this, v| this.require_ws_token = v,
             async move {
-                ServerSettings::save_auth_required_for_reads(repo.as_ref(), value)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                if let Some(handle) = server {
-                    handle.auth_state().await.set_reads_required(value);
+                match server {
+                    Some(handle) => handle
+                        .set_reads_require_auth(value)
+                        .await
+                        .map_err(|e| e.to_string()),
+                    None => ServerSettings::save_auth_required_for_reads(repo.as_ref(), value)
+                        .await
+                        .map_err(|e| e.to_string()),
                 }
-                Ok(())
             },
             cx,
         );
@@ -910,13 +907,13 @@ impl SettingsWebSocketView {
         let Some(handle) = self.server.clone() else {
             return;
         };
-        let credentials = Arc::clone(&self.backend) as Arc<dyn CredentialsRepo>;
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let auth = handle.auth_state().await;
-                auth.regenerate(credentials.as_ref())
+                handle
+                    .regenerate_bearer_token()
                     .await
+                    .map(SecretToken::into_inner)
                     .map_err(|e| e.to_string())
             },
             |this, result: Result<String, String>, cx| {

@@ -221,7 +221,7 @@ impl ServerHandle {
         Ok(())
     }
 
-    pub async fn auth_state(&self) -> Arc<AuthState> {
+    pub(crate) async fn auth_state(&self) -> Arc<AuthState> {
         Arc::clone(&self.inner.lock().await.state.auth)
     }
 

@@ -21,7 +21,7 @@ pub struct DispatchContext {
     pub globals: Arc<dyn GlobalsRepo>,
     pub user_globals: Arc<dyn UserGlobalsRepo>,
     pub overlays: Arc<dyn OverlayRepo>,
-    pub auth_state: Arc<AuthState>,
+    pub(crate) auth_state: Arc<AuthState>,
     pub client: Arc<WsClient>,
     pub credentials: Arc<dyn CredentialsRepo>,
     pub server_info: Arc<ServerInfo>,

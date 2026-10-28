@@ -46,7 +46,7 @@ fn load_once(server: Option<&ServerHandle>, rt_handle: &tokio::runtime::Handle, 
             clippy::let_underscore_must_use,
             reason = "the view may close before the result arrives"
         )]
-        let _ = tx.send(handle.auth_state().await.overlay_token().current());
+        let _ = tx.send(handle.overlay_token().await.into_inner());
     });
     cx.spawn(async move |cx| {
         if let Ok(token) = rx.await {

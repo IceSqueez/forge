@@ -235,6 +235,18 @@ impl OutputPreset {
     }
 }
 
+fn set_emote_to_word(settings: &mut TtsPipelineSettings, value: bool) {
+    settings.output_emote_to_word = value;
+    settings.strip_twitch_emotes = false;
+}
+
+fn set_strip_twitch_emotes(settings: &mut TtsPipelineSettings, value: bool) {
+    settings.strip_twitch_emotes = value;
+    if value {
+        settings.output_emote_to_word = false;
+    }
+}
+
 fn parse_max_duration(raw: &str) -> Option<u32> {
     raw.trim()
         .parse::<u32>()
@@ -809,7 +821,9 @@ impl TtsFiltersView {
             OutputOpt::ReadName => settings.output_read_display_name_first,
             OutputOpt::EmoteWord => settings.output_emote_to_word,
             OutputOpt::Sanitize => settings.output_sanitize_punctuation,
-            OutputOpt::StripTwitchEmotes => settings.strip_twitch_emotes,
+            OutputOpt::StripTwitchEmotes => {
+                settings.strip_twitch_emotes && !settings.output_emote_to_word
+            }
             OutputOpt::StripRewardEmotes => settings.strip_reward_emotes,
             OutputOpt::StripEmoji => settings.strip_emoji,
         }
@@ -823,9 +837,9 @@ impl TtsFiltersView {
             let settings = &mut filters.settings;
             match opt {
                 OutputOpt::ReadName => settings.output_read_display_name_first = value,
-                OutputOpt::EmoteWord => settings.output_emote_to_word = value,
+                OutputOpt::EmoteWord => set_emote_to_word(settings, value),
                 OutputOpt::Sanitize => settings.output_sanitize_punctuation = value,
-                OutputOpt::StripTwitchEmotes => settings.strip_twitch_emotes = value,
+                OutputOpt::StripTwitchEmotes => set_strip_twitch_emotes(settings, value),
                 OutputOpt::StripRewardEmotes => settings.strip_reward_emotes = value,
                 OutputOpt::StripEmoji => settings.strip_emoji = value,
             }
@@ -1006,7 +1020,7 @@ impl TtsFiltersView {
         }
         self.try_apply(cx, |filters| match preset {
             OutputPreset::Name => filters.settings.output_read_display_name_first = true,
-            OutputPreset::Emote => filters.settings.output_emote_to_word = true,
+            OutputPreset::Emote => set_emote_to_word(&mut filters.settings, true),
             OutputPreset::Sanitize => filters.settings.output_sanitize_punctuation = true,
             OutputPreset::MaxDur => filters.settings.output_max_duration_secs = max_duration,
             OutputPreset::Lang => filters.settings.output_language_aware_voice = Some(true),
@@ -1713,7 +1727,7 @@ impl TtsFiltersView {
                 OutputOpt::EmoteWord,
                 tr!("tts_filters_output_emote").into(),
                 tr!("tts_filters_output_emote_meta").into(),
-                settings.output_emote_to_word,
+                self.output_flag(OutputOpt::EmoteWord),
             ),
             (
                 OutputOpt::Sanitize,
@@ -1725,7 +1739,7 @@ impl TtsFiltersView {
                 OutputOpt::StripTwitchEmotes,
                 tr!("tts_filters_output_strip_twitch_emotes").into(),
                 tr!("tts_filters_output_strip_twitch_emotes_meta").into(),
-                settings.strip_twitch_emotes,
+                self.output_flag(OutputOpt::StripTwitchEmotes),
             ),
             (
                 OutputOpt::StripRewardEmotes,

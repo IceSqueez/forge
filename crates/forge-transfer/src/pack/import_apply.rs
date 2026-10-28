@@ -774,7 +774,6 @@ impl<'a> PackImport<'_, 'a> {
                 .into_iter()
                 .map(|trigger| trigger.id)
                 .collect();
-            let mut position = i64::try_from(linked.len()).unwrap_or(i64::MAX);
             for pack_trigger in &document.trigger_ids {
                 let trigger = match self.remap.get(
                     InternalNamespace::TriggerInstance,
@@ -788,9 +787,8 @@ impl<'a> PackImport<'_, 'a> {
                 if linked.contains(&trigger) || !exists {
                     continue;
                 }
-                repo.link_action(action, trigger, position).await?;
+                repo.link_action(action, trigger).await?;
                 self.undo.push(Undo::Link { action, trigger });
-                position = position.saturating_add(1);
             }
         }
         Ok(())

@@ -136,13 +136,8 @@ impl ActionsService {
         action_id: ActionId,
         instance_id: TriggerInstanceId,
     ) -> Result<(), StorageError> {
-        let position = self
-            .trigger_instances
-            .list_for_action(action_id)
-            .await?
-            .len() as i64;
         self.trigger_instances
-            .link_action(action_id, instance_id, position)
+            .link_action(action_id, instance_id)
             .await
     }
 

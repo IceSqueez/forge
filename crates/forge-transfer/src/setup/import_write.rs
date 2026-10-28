@@ -367,9 +367,8 @@ impl SetupImport<'_, '_> {
                 .trigger_ids
                 .iter()
                 .filter(|trigger| carried.contains(*trigger));
-            for (position, trigger) in linked.enumerate() {
-                let position = i64::try_from(position).unwrap_or(i64::MAX);
-                repo.link_action(document.id, *trigger, position).await?;
+            for trigger in linked {
+                repo.link_action(document.id, *trigger).await?;
                 self.journal.push_configuration(Undo::Link {
                     action: document.id,
                     trigger: *trigger,

@@ -77,10 +77,18 @@ impl TriggerInstanceRepo for HotkeySyncedTriggerRepo {
         &self,
         action_id: ActionId,
         instance_id: TriggerInstanceId,
+    ) -> Result<(), StorageError> {
+        self.inner.link_action(action_id, instance_id).await
+    }
+
+    async fn link_action_at(
+        &self,
+        action_id: ActionId,
+        instance_id: TriggerInstanceId,
         position: i64,
     ) -> Result<(), StorageError> {
         self.inner
-            .link_action(action_id, instance_id, position)
+            .link_action_at(action_id, instance_id, position)
             .await
     }
 

@@ -253,13 +253,8 @@ async fn save_mapping(
                 .await
                 .map_err(|e| e.to_string())?;
         }
-        let position = triggers
-            .list_for_action(draft.action_id)
-            .await
-            .map_err(|e| e.to_string())?
-            .len() as i64;
         triggers
-            .link_action(draft.action_id, instance_id, position)
+            .link_action(draft.action_id, instance_id)
             .await
             .map_err(|e| e.to_string())?;
     }

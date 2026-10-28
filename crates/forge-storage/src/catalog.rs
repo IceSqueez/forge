@@ -290,11 +290,22 @@ impl TriggerInstanceRepo for RevisingTriggerInstanceRepo {
         &self,
         action_id: ActionId,
         instance_id: TriggerInstanceId,
+    ) -> Result<(), StorageError> {
+        let inner = Arc::clone(&self.inner);
+        self.revision
+            .after(async move { inner.link_action(action_id, instance_id).await })
+            .await
+    }
+
+    async fn link_action_at(
+        &self,
+        action_id: ActionId,
+        instance_id: TriggerInstanceId,
         position: i64,
     ) -> Result<(), StorageError> {
         let inner = Arc::clone(&self.inner);
         self.revision
-            .after(async move { inner.link_action(action_id, instance_id, position).await })
+            .after(async move { inner.link_action_at(action_id, instance_id, position).await })
             .await
     }
 

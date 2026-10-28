@@ -194,7 +194,7 @@ async fn store_binding(
     let repo = backend.trigger_instance_repo();
     let instance = binding_instance(combo_str, edge);
     repo.save(&instance).await.map_err(|e| e.to_string())?;
-    repo.link_action(action_id, instance.id, 0)
+    repo.link_action(action_id, instance.id)
         .await
         .map_err(|e| e.to_string())
 }
@@ -309,12 +309,7 @@ pub async fn relink_action(
             .await
             .map_err(|e| e.to_string())?;
     }
-    let position = repo
-        .list_for_action(action_id)
-        .await
-        .map_err(|e| e.to_string())?
-        .len() as i64;
-    repo.link_action(action_id, instance_id, position)
+    repo.link_action(action_id, instance_id)
         .await
         .map_err(|e| e.to_string())
 }

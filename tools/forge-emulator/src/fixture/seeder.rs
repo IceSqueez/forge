@@ -506,7 +506,7 @@ async fn seed_triggered_action(
     let triggers = provider.trigger_instance_repo();
     triggers.save(&instance).await.map_err(storage_error)?;
     triggers
-        .link_action(action.id, instance.id, 0)
+        .link_action(action.id, instance.id)
         .await
         .map_err(storage_error)?;
 

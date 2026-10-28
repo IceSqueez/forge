@@ -247,7 +247,7 @@ impl SqliteBackend {
         position: i64,
     ) -> Result<(), SqliteStorageError> {
         self.trigger_instance
-            .link_action(action_id, trigger_instance_id, position)
+            .link_action_at(action_id, trigger_instance_id, position)
             .await
             .map_err(|e| SqliteStorageError::Decode(e.to_string()))
     }

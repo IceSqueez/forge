@@ -20,6 +20,11 @@ pub trait TriggerInstanceRepo: Send + Sync {
         &self,
         action_id: ActionId,
         instance_id: TriggerInstanceId,
+    ) -> Result<(), StorageError>;
+    async fn link_action_at(
+        &self,
+        action_id: ActionId,
+        instance_id: TriggerInstanceId,
         position: i64,
     ) -> Result<(), StorageError>;
     async fn unlink_action(

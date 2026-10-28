@@ -67,7 +67,7 @@ async fn revert_setup(provider: &dyn DataProvider, undo: SetupUndo) -> Result<()
             position,
         } => provider
             .trigger_instance_repo()
-            .link_action(action, trigger, position)
+            .link_action_at(action, trigger, position)
             .await
             .map_err(storage),
         SetupUndo::Setting { key, previous } => match previous {

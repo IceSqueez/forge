@@ -8,6 +8,7 @@ use forge_types::{
 };
 use time::OffsetDateTime;
 
+use super::config_choice::{ConfigChoice, read_choice};
 use super::time_pattern::{
     CUSTOM_NOW_PATTERN_KEY, TIME_NOW_KIND_ID, UTC_KEY, resolve_time_pattern,
 };
@@ -15,7 +16,44 @@ use super::time_pattern::{
 const TIME_FORMATTED_VAR: &str = "time.formatted";
 const TIME_UNIX_SECONDS_VAR: &str = "time.unix_seconds";
 const FORMAT_KEY: &str = "format";
-const CUSTOM_FORMAT: &str = "custom";
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NowFormat {
+    Iso8601,
+    UnixSeconds,
+    UnixMillis,
+    Custom,
+}
+
+impl NowFormat {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Iso8601 => "iso8601",
+            Self::UnixSeconds => "unix_seconds",
+            Self::UnixMillis => "unix_millis",
+            Self::Custom => "custom",
+        }
+    }
+}
+
+impl ConfigChoice for NowFormat {
+    const ALL: &'static [Self] = &[
+        Self::Iso8601,
+        Self::UnixSeconds,
+        Self::UnixMillis,
+        Self::Custom,
+    ];
+    const WIRE_NAMES: &'static [&'static str] = &[
+        Self::Iso8601.as_str(),
+        Self::UnixSeconds.as_str(),
+        Self::UnixMillis.as_str(),
+        Self::Custom.as_str(),
+    ];
+
+    fn wire_name(self) -> &'static str {
+        self.as_str()
+    }
+}
 
 pub struct CoreTimeNowRunner;
 
@@ -48,7 +86,10 @@ impl SubActionRunner for CoreTimeNowRunner {
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
         cfg.insert("into_var".to_owned(), Variant::String("now".to_owned()));
-        cfg.insert(FORMAT_KEY.to_owned(), Variant::String("iso8601".to_owned()));
+        cfg.insert(
+            FORMAT_KEY.to_owned(),
+            Variant::String(NowFormat::Iso8601.as_str().to_owned()),
+        );
         cfg.insert(
             CUSTOM_NOW_PATTERN_KEY.to_owned(),
             Variant::String(String::new()),
@@ -62,7 +103,7 @@ impl SubActionRunner for CoreTimeNowRunner {
             FormField::Select {
                 key: FORMAT_KEY,
                 label: "Format",
-                options: &["iso8601", "unix_seconds", "unix_millis", CUSTOM_FORMAT],
+                options: NowFormat::WIRE_NAMES,
             },
             FormField::Text {
                 key: CUSTOM_NOW_PATTERN_KEY,
@@ -86,7 +127,7 @@ impl SubActionRunner for CoreTimeNowRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        if config.str(FORMAT_KEY) != Some(CUSTOM_FORMAT) {
+        if read_choice(config, FORMAT_KEY, NowFormat::Iso8601)? != NowFormat::Custom {
             return Ok(());
         }
         resolve_time_pattern(config, CUSTOM_NOW_PATTERN_KEY)
@@ -122,17 +163,20 @@ impl SubActionRunner for CoreTimeNowRunner {
         let timer = StepTimer::start(ctx, TIME_NOW_KIND_ID);
         let now: OffsetDateTime = timer.started_at();
 
-        let format = config.str(FORMAT_KEY).unwrap_or("iso8601");
+        let format = match read_choice(config, FORMAT_KEY, NowFormat::Iso8601) {
+            Ok(format) => format,
+            Err(e) => return (timer.failed(e.to_string()), None),
+        };
         let into_var =
             forge_types::strip_var_decoration(config.str_nonempty("into_var").unwrap_or("now"));
 
         let formatted = match format {
-            "unix_seconds" => now.unix_timestamp().to_string(),
-            "unix_millis" => {
+            NowFormat::UnixSeconds => now.unix_timestamp().to_string(),
+            NowFormat::UnixMillis => {
                 let ms = now.unix_timestamp() * 1000 + i64::from(now.millisecond());
                 ms.to_string()
             }
-            CUSTOM_FORMAT => {
+            NowFormat::Custom => {
                 let resolved = match resolve_time_pattern(config, CUSTOM_NOW_PATTERN_KEY) {
                     Ok(resolved) => resolved,
                     Err(e) => return (timer.failed(e), None),
@@ -142,7 +186,7 @@ impl SubActionRunner for CoreTimeNowRunner {
                     Err(e) => return (timer.failed(e), None),
                 }
             }
-            _ => datetime_to_text(&now),
+            NowFormat::Iso8601 => datetime_to_text(&now),
         };
 
         let new_stack = ctx

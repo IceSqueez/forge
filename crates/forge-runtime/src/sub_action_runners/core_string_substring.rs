@@ -116,17 +116,33 @@ impl SubActionRunner for CoreStringSubstringRunner {
             .arg_stack
             .interpolate(config.str("source").unwrap_or(""));
 
-        let start = config.int("start_index").unwrap_or(0).max(0) as usize;
+        let start_raw = config.int("start_index").unwrap_or(0);
+        let Ok(start) = usize::try_from(start_raw) else {
+            return (
+                timer.failed(format!("start_index {start_raw} must not be negative")),
+                None,
+            );
+        };
 
         let end_raw = config.int("end_index").unwrap_or(TO_END_INDEX);
 
         let chars: Vec<char> = source.chars().collect();
         let char_count = chars.len();
 
-        let end = if end_raw == -1 {
+        let end = if end_raw == TO_END_INDEX {
             char_count
         } else {
-            end_raw as usize
+            match usize::try_from(end_raw) {
+                Ok(end) => end,
+                Err(_) => {
+                    return (
+                        timer.failed(format!(
+                            "end_index {end_raw} must be {TO_END_INDEX} (to the end) or at least 0"
+                        )),
+                        None,
+                    );
+                }
+            }
         };
 
         let outcome = if start > char_count {

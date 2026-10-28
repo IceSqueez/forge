@@ -8,7 +8,7 @@ use forge_registry::{
 use forge_storage::{GlobalsRepo, StorageError, UserGlobalsRepo};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
-use super::core_users_shared::resolve_broadcaster_id;
+use super::core_users_shared::{resolve_broadcaster_id, resolve_user_login};
 
 pub struct CoreUsersIncrementVarRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -98,14 +98,18 @@ impl SubActionRunner for CoreUsersIncrementVarRunner {
 
         let resolve = |template: &str| ctx.arg_stack.interpolate(template);
 
-        let user_id = resolve(config.str("user_login").unwrap_or_default());
+        let user_login =
+            match resolve_user_login(config.str("user_login").unwrap_or_default(), ctx.arg_stack) {
+                Ok(login) => login,
+                Err(reason) => return (timer.failed(reason), None),
+            };
         let var_name = resolve(config.str("var_name").unwrap_or_default());
         let amount = config.int("amount").unwrap_or(1);
         let broadcaster_id = resolve_broadcaster_id(ctx.arg_stack, self.globals.as_ref()).await;
 
         let outcome = match self
             .user_globals
-            .incr(&broadcaster_id, &user_id, &var_name, amount)
+            .incr(&broadcaster_id, &user_login, &var_name, amount)
             .await
         {
             Ok(_) => SubActionOutcome::Success,

@@ -5,6 +5,48 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
+use super::config_choice::{ConfigChoice, read_choice};
+
+const MODE_KEY: &str = "mode";
+
+#[derive(Clone, Copy)]
+enum TrimSide {
+    Both,
+    Left,
+    Right,
+}
+
+impl TrimSide {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Both => "both",
+            Self::Left => "left",
+            Self::Right => "right",
+        }
+    }
+
+    fn apply(self, source: &str) -> &str {
+        match self {
+            Self::Both => source.trim(),
+            Self::Left => source.trim_start(),
+            Self::Right => source.trim_end(),
+        }
+    }
+}
+
+impl ConfigChoice for TrimSide {
+    const ALL: &'static [Self] = &[Self::Both, Self::Left, Self::Right];
+    const WIRE_NAMES: &'static [&'static str] = &[
+        Self::Both.as_str(),
+        Self::Left.as_str(),
+        Self::Right.as_str(),
+    ];
+
+    fn wire_name(self) -> &'static str {
+        self.as_str()
+    }
+}
+
 pub struct CoreStringTrimRunner;
 
 #[async_trait]
@@ -36,7 +78,10 @@ impl SubActionRunner for CoreStringTrimRunner {
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
         cfg.insert("source".to_owned(), Variant::String(String::new()));
-        cfg.insert("mode".to_owned(), Variant::String("both".to_owned()));
+        cfg.insert(
+            MODE_KEY.to_owned(),
+            Variant::String(TrimSide::Both.as_str().to_owned()),
+        );
         cfg.insert(
             "into_var".to_owned(),
             Variant::String("string.result".to_owned()),
@@ -52,9 +97,9 @@ impl SubActionRunner for CoreStringTrimRunner {
                 placeholder: "  hello  ",
             },
             FormField::Select {
-                key: "mode",
+                key: MODE_KEY,
                 label: "Mode",
-                options: &["both", "left", "right"],
+                options: TrimSide::WIRE_NAMES,
             },
             FormField::Text {
                 key: "into_var",
@@ -64,8 +109,8 @@ impl SubActionRunner for CoreStringTrimRunner {
         ]
     }
 
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
+        read_choice(config, MODE_KEY, TrimSide::Both).map(|_| ())
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -89,16 +134,15 @@ impl SubActionRunner for CoreStringTrimRunner {
         let source = ctx
             .arg_stack
             .interpolate(config.str("source").unwrap_or(""));
-        let mode = config.str("mode").unwrap_or("both");
+        let side = match read_choice(config, MODE_KEY, TrimSide::Both) {
+            Ok(side) => side,
+            Err(e) => return (timer.failed(e.to_string()), None),
+        };
         let into_var = forge_types::strip_var_decoration(
             config.str_nonempty("into_var").unwrap_or("string.result"),
         );
 
-        let result = match mode {
-            "left" => source.trim_start().to_owned(),
-            "right" => source.trim_end().to_owned(),
-            _ => source.trim().to_owned(),
-        };
+        let result = side.apply(&source).to_owned();
 
         let new_stack = ctx.arg_stack.clone().set(into_var, Variant::String(result));
 

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_registry::{
-    CASE_CHAIN_KEY, CodeKind, CodeLanguage, FormField, RegistryError, RunContext, StepTimer,
-    SubActionCategory, SubActionConfigExt, SubActionRunner, decode_steps,
+    CASE_CHAIN_KEY, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionRunner, decode_steps,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionStep, SubActionTelemetry, Variant};
 
@@ -24,11 +24,11 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
     }
 
     fn summary(&self) -> &str {
-        "Run the sub-chain whose case matches an expression"
+        "Run the sub-chain whose case matches a value"
     }
 
     fn search_text(&self) -> &str {
-        "switch case match expression branch select flow control"
+        "switch case match value branch select flow control"
     }
 
     fn icon_name(&self) -> &str {
@@ -44,11 +44,10 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
-            FormField::Code {
+            FormField::Text {
                 key: "expression",
-                label: "Expression",
-                language: CodeLanguage::Rhai,
-                kind: CodeKind::Expression,
+                label: "Value",
+                placeholder: "%user_level%",
             },
             FormField::CaseList {
                 key: "cases",

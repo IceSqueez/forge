@@ -155,15 +155,20 @@ fn parse_literal(s: &str) -> Option<Lit> {
         }
         return None;
     }
-    if let Ok(n) = s.parse::<i64>() {
-        return Some(Lit::Int(n));
+    let unsigned = s.strip_prefix('-').unwrap_or(s);
+    match unsigned.split_once('.') {
+        None if is_digit_run(unsigned) => s.parse::<i64>().ok().map(Lit::Int),
+        Some((whole, fraction)) if is_digit_run(whole) && is_digit_run(fraction) => s
+            .parse::<f64>()
+            .ok()
+            .filter(|f| f.is_finite())
+            .map(Lit::Float),
+        _ => None,
     }
-    if let Ok(f) = s.parse::<f64>()
-        && f.is_finite()
-    {
-        return Some(Lit::Float(f));
-    }
-    None
+}
+
+fn is_digit_run(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
 }
 
 #[cfg(test)]

@@ -10,7 +10,7 @@ use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
 
-use super::core_users_shared::resolve_broadcaster_id;
+use super::core_users_shared::{resolve_broadcaster_id, resolve_user_login};
 
 const INTO_VAR_KEY: &str = "into_var";
 
@@ -119,7 +119,11 @@ impl SubActionRunner for CoreUsersGetVarRunner {
 
         let resolve = |template: &str| ctx.arg_stack.interpolate(template);
 
-        let user_id = resolve(config.str("user_login").unwrap_or_default());
+        let user_login =
+            match resolve_user_login(config.str("user_login").unwrap_or_default(), ctx.arg_stack) {
+                Ok(login) => login,
+                Err(reason) => return (timer.failed(reason), None),
+            };
         let var_name = resolve(config.str("var_name").unwrap_or_default());
         let into_var = forge_types::strip_var_decoration(&resolve(
             config.str(INTO_VAR_KEY).unwrap_or_default(),
@@ -129,7 +133,7 @@ impl SubActionRunner for CoreUsersGetVarRunner {
 
         let (outcome, updated_stack) = match self
             .user_globals
-            .get(&broadcaster_id, &user_id, &var_name)
+            .get(&broadcaster_id, &user_login, &var_name)
             .await
         {
             Ok(Some(value)) => {

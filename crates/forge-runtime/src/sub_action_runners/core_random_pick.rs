@@ -40,8 +40,8 @@ impl SubActionRunner for CoreRandomPickRunner {
 
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
-        cfg.insert("items".to_owned(), Variant::Array(vec![]));
-        cfg.insert("weights".to_owned(), Variant::Array(vec![]));
+        cfg.insert("items".to_owned(), Variant::String(String::new()));
+        cfg.insert("weights".to_owned(), Variant::String(String::new()));
         cfg.insert("into_var".to_owned(), Variant::String("picked".to_owned()));
         cfg
     }
@@ -86,64 +86,80 @@ impl SubActionRunner for CoreRandomPickRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, "core.random.pick");
 
-        let items: Vec<Variant> = match config.get("items") {
-            Some(Variant::Array(arr)) => arr.clone(),
-            Some(v) => v
-                .as_str()
-                .unwrap_or("")
-                .lines()
-                .filter(|s| !s.is_empty())
-                .map(|s| Variant::String(s.to_owned()))
-                .collect(),
-            None => vec![],
-        };
+        let items = read_items(config, ctx.arg_stack);
 
         let into_var =
             forge_types::strip_var_decoration(config.str_nonempty("into_var").unwrap_or("picked"));
 
-        let (outcome, produced) = if items.is_empty() {
-            (
-                SubActionOutcome::Failed("items list must not be empty".to_owned()),
-                None,
-            )
+        if items.is_empty() {
+            return (timer.failed("items list must not be empty"), None);
+        }
+
+        let weights = match read_weights(config) {
+            Ok(weights) => weights,
+            Err(reason) => return (timer.failed(reason), None),
+        };
+
+        let idx = if weights.is_empty() {
+            Ok(rand::rng().random_range(0..items.len()))
+        } else if weights.len() != items.len() {
+            Err(format!(
+                "weights length ({}) must match items length ({})",
+                weights.len(),
+                items.len()
+            ))
         } else {
-            let weights: Vec<f64> = match config.get("weights") {
-                Some(Variant::Array(arr)) => arr.iter().filter_map(|v| v.as_float()).collect(),
-                Some(v) => v
-                    .as_str()
-                    .unwrap_or("")
-                    .lines()
-                    .filter(|s| !s.is_empty())
-                    .filter_map(|s| s.trim().parse::<f64>().ok())
-                    .collect(),
-                None => vec![],
-            };
+            WeightedIndex::new(&weights)
+                .map(|dist| dist.sample(&mut rand::rng()))
+                .map_err(|e| format!("invalid weights: {e}"))
+        };
 
-            let idx = if weights.is_empty() {
-                Ok(rand::rng().random_range(0..items.len()))
-            } else if weights.len() != items.len() {
-                Err(format!(
-                    "weights length ({}) must match items length ({})",
-                    weights.len(),
-                    items.len()
-                ))
-            } else {
-                WeightedIndex::new(&weights)
-                    .map(|dist| dist.sample(&mut rand::rng()))
-                    .map_err(|e| format!("invalid weights: {e}"))
-            };
-
-            match idx {
-                Err(msg) => (SubActionOutcome::Failed(msg), None),
-                Ok(i) => {
-                    let picked = items[i].clone();
-                    let stack = ctx.arg_stack.clone().set(into_var, picked);
-                    (SubActionOutcome::Success, Some(stack))
-                }
+        let (outcome, produced) = match idx {
+            Err(msg) => (SubActionOutcome::Failed(msg), None),
+            Ok(i) => {
+                let picked = items[i].clone();
+                let stack = ctx.arg_stack.clone().set(into_var, picked);
+                (SubActionOutcome::Success, Some(stack))
             }
         };
 
         (timer.finish(outcome), produced)
+    }
+}
+
+fn non_blank_lines(text: &str) -> impl Iterator<Item = &str> {
+    text.lines().map(str::trim).filter(|line| !line.is_empty())
+}
+
+fn read_items(config: &SubActionConfig, arg_stack: &ArgStack) -> Vec<Variant> {
+    match config.get("items") {
+        Some(Variant::Array(arr)) => arr.clone(),
+        Some(v) => non_blank_lines(v.as_str().unwrap_or_default())
+            .map(|line| Variant::String(arg_stack.interpolate(line)))
+            .collect(),
+        None => Vec::new(),
+    }
+}
+
+fn read_weights(config: &SubActionConfig) -> Result<Vec<f64>, String> {
+    match config.get("weights") {
+        Some(Variant::Array(arr)) => arr
+            .iter()
+            .enumerate()
+            .map(|(index, value)| match value {
+                Variant::Float(weight) => Ok(*weight),
+                Variant::Int(weight) => Ok(*weight as f64),
+                other => Err(format!("weight {} is not a number: {other}", index + 1)),
+            })
+            .collect(),
+        Some(v) => non_blank_lines(v.as_str().unwrap_or_default())
+            .enumerate()
+            .map(|(index, line)| {
+                line.parse::<f64>()
+                    .map_err(|_| format!("weight {} is not a number: {line}", index + 1))
+            })
+            .collect(),
+        None => Ok(Vec::new()),
     }
 }
 

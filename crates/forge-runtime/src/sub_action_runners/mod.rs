@@ -1,3 +1,4 @@
+mod config_choice;
 mod core_action_cancel;
 mod core_action_cancel_scheduled;
 mod core_action_disable;

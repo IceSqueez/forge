@@ -4,8 +4,54 @@ use forge_registry::{
     SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
+use time::Duration;
 
+use super::config_choice::{ConfigChoice, read_choice};
 use super::datetime_input::resolve_datetime;
+
+const UNIT_KEY: &str = "unit";
+
+#[derive(Clone, Copy)]
+enum DiffUnit {
+    Seconds,
+    Minutes,
+    Hours,
+    Days,
+}
+
+impl DiffUnit {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Seconds => "seconds",
+            Self::Minutes => "minutes",
+            Self::Hours => "hours",
+            Self::Days => "days",
+        }
+    }
+
+    const fn span(self) -> Duration {
+        match self {
+            Self::Seconds => Duration::SECOND,
+            Self::Minutes => Duration::MINUTE,
+            Self::Hours => Duration::HOUR,
+            Self::Days => Duration::DAY,
+        }
+    }
+}
+
+impl ConfigChoice for DiffUnit {
+    const ALL: &'static [Self] = &[Self::Seconds, Self::Minutes, Self::Hours, Self::Days];
+    const WIRE_NAMES: &'static [&'static str] = &[
+        Self::Seconds.as_str(),
+        Self::Minutes.as_str(),
+        Self::Hours.as_str(),
+        Self::Days.as_str(),
+    ];
+
+    fn wire_name(self) -> &'static str {
+        self.as_str()
+    }
+}
 
 pub struct CoreTimeDiffRunner;
 
@@ -39,7 +85,10 @@ impl SubActionRunner for CoreTimeDiffRunner {
         let mut cfg = SubActionConfig::new();
         cfg.insert("from".to_owned(), Variant::String(String::new()));
         cfg.insert("to".to_owned(), Variant::String(String::new()));
-        cfg.insert("unit".to_owned(), Variant::String("seconds".to_owned()));
+        cfg.insert(
+            UNIT_KEY.to_owned(),
+            Variant::String(DiffUnit::Seconds.as_str().to_owned()),
+        );
         cfg.insert(
             "into_var".to_owned(),
             Variant::String("time.diff_value".to_owned()),
@@ -58,9 +107,9 @@ impl SubActionRunner for CoreTimeDiffRunner {
                 label: "To (datetime or %var%)",
             },
             FormField::Select {
-                key: "unit",
+                key: UNIT_KEY,
                 label: "Unit",
-                options: &["seconds", "minutes", "hours", "days"],
+                options: DiffUnit::WIRE_NAMES,
             },
             FormField::Text {
                 key: "into_var",
@@ -70,8 +119,8 @@ impl SubActionRunner for CoreTimeDiffRunner {
         ]
     }
 
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
+        read_choice(config, UNIT_KEY, DiffUnit::Seconds).map(|_| ())
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -112,18 +161,16 @@ impl SubActionRunner for CoreTimeDiffRunner {
             Err(e) => return (timer.failed(format!("'to': {e}")), None),
         };
 
-        let unit = config.str("unit").unwrap_or("seconds");
+        let unit = match read_choice(config, UNIT_KEY, DiffUnit::Seconds) {
+            Ok(unit) => unit,
+            Err(e) => return (timer.failed(e.to_string()), None),
+        };
         let into_var = forge_types::strip_var_decoration(
             config.str_nonempty("into_var").unwrap_or("time.diff_value"),
         );
 
         let diff_ns = (to_dt - from_dt).whole_nanoseconds() as f64;
-        let diff_value = match unit {
-            "minutes" => diff_ns / 60_000_000_000.0,
-            "hours" => diff_ns / 3_600_000_000_000.0,
-            "days" => diff_ns / 86_400_000_000_000.0,
-            _ => diff_ns / 1_000_000_000.0,
-        };
+        let diff_value = diff_ns / unit.span().whole_nanoseconds() as f64;
 
         let new_stack = ctx
             .arg_stack

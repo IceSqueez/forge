@@ -1,5 +1,5 @@
 use forge_storage::GlobalsRepo;
-use forge_types::ArgStack;
+use forge_types::{ArgStack, variable_references};
 
 const SINGLE_BROADCASTER_NAMESPACE: &str = "local";
 
@@ -20,6 +20,28 @@ pub(super) async fn resolve_broadcaster_id(
         SINGLE_BROADCASTER_NAMESPACE.to_owned()
     } else {
         resolved
+    }
+}
+
+pub(super) fn resolve_user_login(template: &str, arg_stack: &ArgStack) -> Result<String, String> {
+    if let Some(missing) =
+        variable_references(template).find(|name| arg_stack.resolve(name).is_none())
+    {
+        return Err(format!(
+            "user login variable %{missing}% is not set in this run"
+        ));
+    }
+    let interpolated = arg_stack.interpolate(template);
+    let trimmed = interpolated.trim();
+    let login = trimmed
+        .strip_prefix('@')
+        .unwrap_or(trimmed)
+        .trim_start()
+        .to_lowercase();
+    if login.is_empty() {
+        Err("user login is empty".to_owned())
+    } else {
+        Ok(login)
     }
 }
 

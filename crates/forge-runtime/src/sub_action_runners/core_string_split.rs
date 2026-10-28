@@ -101,19 +101,21 @@ impl SubActionRunner for CoreStringSplitRunner {
         let source = ctx
             .arg_stack
             .interpolate(config.str("source").unwrap_or(""));
-        let separator = config.str("separator").unwrap_or(",");
+        let separator = ctx
+            .arg_stack
+            .interpolate(config.str("separator").unwrap_or(","));
         let trim_each = config.bool("trim_each").unwrap_or(false);
-        let max_parts = config.int("max_parts").unwrap_or(0).max(0) as usize;
+        let max_parts = usize::try_from(config.int("max_parts").unwrap_or(0)).unwrap_or(0);
         let into_var = forge_types::strip_var_decoration(
             config.str_nonempty("into_var").unwrap_or("string.parts"),
         );
 
         let raw_parts: Vec<&str> = if separator.is_empty() {
-            source.split("").collect()
+            split_chars(&source, max_parts)
         } else if max_parts > 0 {
-            source.splitn(max_parts, separator).collect()
+            source.splitn(max_parts, separator.as_str()).collect()
         } else {
-            source.split(separator).collect()
+            source.split(separator.as_str()).collect()
         };
 
         let parts: Vec<Variant> = raw_parts
@@ -128,6 +130,21 @@ impl SubActionRunner for CoreStringSplitRunner {
 
         (timer.success(), Some(new_stack))
     }
+}
+
+fn split_chars(source: &str, max_parts: usize) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut rest = source;
+    while let Some(first) = rest.chars().next() {
+        if max_parts > 0 && parts.len() + 1 == max_parts {
+            parts.push(rest);
+            break;
+        }
+        let (head, tail) = rest.split_at(first.len_utf8());
+        parts.push(head);
+        rest = tail;
+    }
+    parts
 }
 
 #[cfg(test)]

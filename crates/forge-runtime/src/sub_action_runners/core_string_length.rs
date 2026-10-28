@@ -5,6 +5,41 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
+use super::config_choice::{ConfigChoice, read_choice};
+
+const MODE_KEY: &str = "mode";
+
+#[derive(Clone, Copy)]
+enum LengthMode {
+    Chars,
+    Bytes,
+}
+
+impl LengthMode {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Chars => "chars",
+            Self::Bytes => "bytes",
+        }
+    }
+
+    fn measure(self, source: &str) -> usize {
+        match self {
+            Self::Chars => source.chars().count(),
+            Self::Bytes => source.len(),
+        }
+    }
+}
+
+impl ConfigChoice for LengthMode {
+    const ALL: &'static [Self] = &[Self::Chars, Self::Bytes];
+    const WIRE_NAMES: &'static [&'static str] = &[Self::Chars.as_str(), Self::Bytes.as_str()];
+
+    fn wire_name(self) -> &'static str {
+        self.as_str()
+    }
+}
+
 pub struct CoreStringLengthRunner;
 
 #[async_trait]
@@ -36,7 +71,10 @@ impl SubActionRunner for CoreStringLengthRunner {
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
         cfg.insert("source".to_owned(), Variant::String(String::new()));
-        cfg.insert("mode".to_owned(), Variant::String("chars".to_owned()));
+        cfg.insert(
+            MODE_KEY.to_owned(),
+            Variant::String(LengthMode::Chars.as_str().to_owned()),
+        );
         cfg.insert(
             "into_var".to_owned(),
             Variant::String("string.result".to_owned()),
@@ -52,9 +90,9 @@ impl SubActionRunner for CoreStringLengthRunner {
                 placeholder: "Hello",
             },
             FormField::Select {
-                key: "mode",
+                key: MODE_KEY,
                 label: "Mode",
-                options: &["chars", "bytes"],
+                options: LengthMode::WIRE_NAMES,
             },
             FormField::Text {
                 key: "into_var",
@@ -64,8 +102,8 @@ impl SubActionRunner for CoreStringLengthRunner {
         ]
     }
 
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
+        read_choice(config, MODE_KEY, LengthMode::Chars).map(|_| ())
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -89,16 +127,15 @@ impl SubActionRunner for CoreStringLengthRunner {
         let source = ctx
             .arg_stack
             .interpolate(config.str("source").unwrap_or(""));
-        let mode = config.str("mode").unwrap_or("chars");
+        let mode = match read_choice(config, MODE_KEY, LengthMode::Chars) {
+            Ok(mode) => mode,
+            Err(e) => return (timer.failed(e.to_string()), None),
+        };
         let into_var = forge_types::strip_var_decoration(
             config.str_nonempty("into_var").unwrap_or("string.result"),
         );
 
-        let length = if mode == "bytes" {
-            source.len() as i64
-        } else {
-            source.chars().count() as i64
-        };
+        let length = i64::try_from(mode.measure(&source)).unwrap_or(i64::MAX);
 
         let new_stack = ctx.arg_stack.clone().set(into_var, Variant::Int(length));
 

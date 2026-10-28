@@ -6,11 +6,72 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use time::{Date, Duration, Month, OffsetDateTime};
 
+use super::config_choice::{ConfigChoice, read_choice};
 use super::datetime_input::resolve_datetime;
 
 pub struct CoreTimeAddRunner;
 
 const MONTHS_PER_YEAR: i64 = 12;
+const UNIT_KEY: &str = "unit";
+
+#[derive(Clone, Copy)]
+enum TimeUnit {
+    Seconds,
+    Minutes,
+    Hours,
+    Days,
+    Months,
+    Years,
+}
+
+impl TimeUnit {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Seconds => "seconds",
+            Self::Minutes => "minutes",
+            Self::Hours => "hours",
+            Self::Days => "days",
+            Self::Months => "months",
+            Self::Years => "years",
+        }
+    }
+
+    fn shift(self, base: OffsetDateTime, amount: i64) -> Option<OffsetDateTime> {
+        match self {
+            Self::Seconds => add_fixed(base, amount, Duration::SECOND),
+            Self::Minutes => add_fixed(base, amount, Duration::MINUTE),
+            Self::Hours => add_fixed(base, amount, Duration::HOUR),
+            Self::Days => add_fixed(base, amount, Duration::DAY),
+            Self::Months => add_calendar_months(base, amount),
+            Self::Years => amount
+                .checked_mul(MONTHS_PER_YEAR)
+                .and_then(|months| add_calendar_months(base, months)),
+        }
+    }
+}
+
+impl ConfigChoice for TimeUnit {
+    const ALL: &'static [Self] = &[
+        Self::Seconds,
+        Self::Minutes,
+        Self::Hours,
+        Self::Days,
+        Self::Months,
+        Self::Years,
+    ];
+    const WIRE_NAMES: &'static [&'static str] = &[
+        Self::Seconds.as_str(),
+        Self::Minutes.as_str(),
+        Self::Hours.as_str(),
+        Self::Days.as_str(),
+        Self::Months.as_str(),
+        Self::Years.as_str(),
+    ];
+
+    fn wire_name(self) -> &'static str {
+        self.as_str()
+    }
+}
 
 fn add_calendar_months(dt: OffsetDateTime, months: i64) -> Option<OffsetDateTime> {
     let date = dt.date();
@@ -59,7 +120,10 @@ impl SubActionRunner for CoreTimeAddRunner {
         let mut cfg = SubActionConfig::new();
         cfg.insert("base".to_owned(), Variant::String(String::new()));
         cfg.insert("add_amount".to_owned(), Variant::Int(0));
-        cfg.insert("unit".to_owned(), Variant::String("seconds".to_owned()));
+        cfg.insert(
+            UNIT_KEY.to_owned(),
+            Variant::String(TimeUnit::Seconds.as_str().to_owned()),
+        );
         cfg.insert(
             "into_var".to_owned(),
             Variant::String("time.result".to_owned()),
@@ -80,9 +144,9 @@ impl SubActionRunner for CoreTimeAddRunner {
                 max: i64::MAX,
             },
             FormField::Select {
-                key: "unit",
+                key: UNIT_KEY,
                 label: "Unit",
-                options: &["seconds", "minutes", "hours", "days", "months", "years"],
+                options: TimeUnit::WIRE_NAMES,
             },
             FormField::Text {
                 key: "into_var",
@@ -92,8 +156,8 @@ impl SubActionRunner for CoreTimeAddRunner {
         ]
     }
 
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
+    fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
+        read_choice(config, UNIT_KEY, TimeUnit::Seconds).map(|_| ())
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -125,25 +189,20 @@ impl SubActionRunner for CoreTimeAddRunner {
         };
 
         let add_amount = config.int("add_amount").unwrap_or(0);
-        let unit = config.str("unit").unwrap_or("seconds");
+        let unit = match read_choice(config, UNIT_KEY, TimeUnit::Seconds) {
+            Ok(unit) => unit,
+            Err(e) => return (timer.failed(e.to_string()), None),
+        };
         let into_var = forge_types::strip_var_decoration(
             config.str_nonempty("into_var").unwrap_or("time.result"),
         );
 
-        let result = match unit {
-            "months" => add_calendar_months(base_dt, add_amount),
-            "years" => add_amount
-                .checked_mul(MONTHS_PER_YEAR)
-                .and_then(|months| add_calendar_months(base_dt, months)),
-            "minutes" => add_fixed(base_dt, add_amount, Duration::MINUTE),
-            "hours" => add_fixed(base_dt, add_amount, Duration::HOUR),
-            "days" => add_fixed(base_dt, add_amount, Duration::DAY),
-            _ => add_fixed(base_dt, add_amount, Duration::SECOND),
-        };
+        let result = unit.shift(base_dt, add_amount);
         let Some(result) = result else {
             return (
                 timer.failed(format!(
-                    "adding {add_amount} {unit} to {base_dt} leaves the supported date range"
+                    "adding {add_amount} {} to {base_dt} leaves the supported date range",
+                    unit.as_str()
                 )),
                 None,
             );

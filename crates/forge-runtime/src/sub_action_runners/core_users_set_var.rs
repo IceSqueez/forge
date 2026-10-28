@@ -8,7 +8,7 @@ use forge_registry::{
 use forge_storage::{GlobalsRepo, UserGlobalsRepo};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
-use super::core_users_shared::resolve_broadcaster_id;
+use super::core_users_shared::{resolve_broadcaster_id, resolve_user_login};
 
 pub struct CoreUsersSetVarRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -97,7 +97,11 @@ impl SubActionRunner for CoreUsersSetVarRunner {
 
         let resolve = |template: &str| ctx.arg_stack.interpolate(template);
 
-        let user_id = resolve(config.str("user_login").unwrap_or_default());
+        let user_login =
+            match resolve_user_login(config.str("user_login").unwrap_or_default(), ctx.arg_stack) {
+                Ok(login) => login,
+                Err(reason) => return (timer.failed(reason), None),
+            };
         let var_name = resolve(config.str("var_name").unwrap_or_default());
         let raw_value = resolve(config.str("value").unwrap_or_default());
         let value = super::interpolate::parse_variant(&raw_value);
@@ -105,7 +109,7 @@ impl SubActionRunner for CoreUsersSetVarRunner {
 
         let outcome = match self
             .user_globals
-            .set(&broadcaster_id, &user_id, &var_name, value)
+            .set(&broadcaster_id, &user_login, &var_name, value)
             .await
         {
             Ok(()) => SubActionOutcome::Success,

@@ -174,13 +174,16 @@ mod tests {
     use crate::auth::AuthState;
     use std::collections::BTreeMap;
 
-    use forge_events::{Event, EventSource};
+    use forge_events::{
+        Event, EventChannel, EventObserver, EventPublisher, EventSource, EventSubscription,
+    };
     use forge_registry::SubActionRegistry;
     use forge_runtime::{
-        ActionEngineHandle, EventBus, NullEventLogRepo, ScriptRegistry, spawn_action_engine,
+        ActionEngineHandle, BusError, EventBus, EventHistory, NullEventLogRepo, ScriptRegistry,
+        spawn_action_engine,
     };
-    use forge_storage::{DataProvider, GlobalsRepo, UserGlobalsRepo};
-    use forge_types::{Action, ActionId, QueueId, SubActionStep, Variant};
+    use forge_storage::{DataProvider, GlobalsRepo, StorageError, UserGlobalsRepo};
+    use forge_types::{Action, ActionId, EventId, QueueId, SubActionStep, Variant};
 
     use super::*;
     use crate::bus_adapter::{BusAdapter, ClientFilterSet, ClientId, EventFilter};
@@ -209,7 +212,7 @@ mod tests {
 
     fn make_ctx(authenticated: bool, auth_required_for_reads: bool) -> DispatchContext {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let bus_adapter = BusAdapter::new(Arc::clone(&bus));
+        let bus_adapter = BusAdapter::new(bus.clone());
         let mut tdp = TestDataProvider::new();
         tdp.action().expect_list().returning(|| Ok(vec![]));
         tdp.action().expect_get().returning(|_| Ok(None));
@@ -258,7 +261,7 @@ mod tests {
 
     fn make_ctx_with_dp(authenticated: bool, dp: Arc<dyn DataProvider>) -> DispatchContext {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let bus_adapter = BusAdapter::new(Arc::clone(&bus));
+        let bus_adapter = BusAdapter::new(bus.clone());
         let auth_state = AuthState::for_test(false, "test-token");
         let drop_counter = Arc::new(AtomicU64::new(0));
         let client = Arc::new(WsClient::new(
@@ -295,7 +298,7 @@ mod tests {
         auth_required_for_reads: bool,
     ) -> DispatchContext {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let bus_adapter = BusAdapter::new(Arc::clone(&bus));
+        let bus_adapter = BusAdapter::new(bus.clone());
         let dp: Arc<dyn DataProvider> = test_dp();
         let actions = dp.action_repo();
         let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
@@ -581,7 +584,7 @@ mod tests {
         tdp.history().expect_save().returning(|_| Ok(()));
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(true, dp);
-        let mut sub = ctx.bus.subscribe();
+        let mut sub = ctx.bus.observe("ws_dispatch_test");
 
         let req = WsEnvelope {
             id: Some("9".to_owned()),
@@ -696,52 +699,137 @@ mod tests {
         assert_eq!(events[0]["replay"], false);
     }
 
-    #[tokio::test]
-    async fn get_events_since_with_limit_returns_events_after_anchor() {
-        let ctx = make_ctx(false, false);
-        let ev1 = Event::new(EventSource::Core, "test.a", serde_json::json!({}));
-        let anchor_id = ev1.id.to_string();
-        ctx.bus.publish(ev1);
-        ctx.bus.publish(Event::new(
-            EventSource::Core,
-            "test.b",
-            serde_json::json!({}),
-        ));
-        ctx.bus.publish(Event::new(
-            EventSource::Core,
-            "test.c",
-            serde_json::json!({}),
-        ));
+    struct ScriptedHistory {
+        channel: EventChannel,
+        asked: std::sync::Mutex<Vec<(usize, Option<EventId>)>>,
+        replay_failure: std::sync::Mutex<Option<BusError>>,
+    }
 
-        let req = WsEnvelope {
+    impl ScriptedHistory {
+        fn failing_replay_with(failure: Option<BusError>) -> Arc<Self> {
+            Arc::new(Self {
+                channel: EventChannel::new(16),
+                asked: std::sync::Mutex::new(Vec::new()),
+                replay_failure: std::sync::Mutex::new(failure),
+            })
+        }
+
+        fn asked(&self) -> Vec<(usize, Option<EventId>)> {
+            self.asked.lock().unwrap().clone()
+        }
+    }
+
+    impl EventPublisher for ScriptedHistory {
+        fn publish(&self, event: Event) {
+            self.channel.publish(event);
+        }
+    }
+
+    impl EventObserver for ScriptedHistory {
+        fn observe(&self, _consumer: &'static str) -> EventSubscription {
+            self.channel.subscribe()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl EventHistory for ScriptedHistory {
+        async fn recent_since(&self, limit: usize, since: Option<EventId>) -> Vec<Event> {
+            self.asked.lock().unwrap().push((limit, since));
+            Vec::new()
+        }
+
+        async fn replay_and_publish(&self, _event_id: EventId) -> Result<(), BusError> {
+            match self.replay_failure.lock().unwrap().take() {
+                Some(failure) => Err(failure),
+                None => Ok(()),
+            }
+        }
+    }
+
+    fn ctx_over(history: Arc<ScriptedHistory>) -> DispatchContext {
+        DispatchContext {
+            bus: history,
+            ..make_ctx(true, false)
+        }
+    }
+
+    fn get_events(limit: Option<u32>, since: Option<String>) -> WsEnvelope<WsRequest> {
+        WsEnvelope {
             id: Some("13".to_owned()),
-            inner: WsRequest::GetEvents {
-                limit: Some(1),
-                since: Some(anchor_id),
-            },
-        };
-        let resp = dispatch(req, &ctx).await;
-        let json = serialize_response_frame(&resp);
-        assert_eq!(json["status"], "ok");
-        let events = json["events"].as_array().unwrap();
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0]["kind"], "test.c");
+            inner: WsRequest::GetEvents { limit, since },
+        }
     }
 
     #[tokio::test]
-    async fn replay_event_nonexistent_id_returns_not_found() {
-        let ctx = make_ctx(true, false);
-        let ghost_id = forge_types::EventId::new().to_string();
-        let req = WsEnvelope {
-            id: Some("14".to_owned()),
-            inner: WsRequest::ReplayEvent { event_id: ghost_id },
-        };
-        let resp = dispatch(req, &ctx).await;
-        match resp.inner {
-            WsResponse::Error {
-                code: Some(code), ..
-            } => assert_eq!(code, "NOT_FOUND"),
-            other => panic!("expected NOT_FOUND, got {other:?}"),
+    async fn get_events_asks_history_for_the_requested_limit_clamped_to_the_maximum() {
+        let history = ScriptedHistory::failing_replay_with(None);
+        let ctx = ctx_over(Arc::clone(&history));
+
+        for limit in [None, Some(499), Some(500), Some(501), Some(u32::MAX)] {
+            dispatch(get_events(limit, None), &ctx).await;
+        }
+
+        let limits: Vec<usize> = history
+            .asked()
+            .into_iter()
+            .map(|(limit, _)| limit)
+            .collect();
+        assert_eq!(limits, vec![100, 499, 500, 500, 500]);
+    }
+
+    #[tokio::test]
+    async fn get_events_forwards_the_since_anchor_to_history() {
+        let history = ScriptedHistory::failing_replay_with(None);
+        let ctx = ctx_over(Arc::clone(&history));
+        let anchor = EventId::new();
+
+        dispatch(get_events(Some(1), Some(anchor.to_string())), &ctx).await;
+
+        assert_eq!(history.asked(), vec![(1, Some(anchor))]);
+    }
+
+    #[tokio::test]
+    async fn get_events_rejects_a_malformed_since_without_asking_history() {
+        let history = ScriptedHistory::failing_replay_with(None);
+        let ctx = ctx_over(Arc::clone(&history));
+
+        let resp = dispatch(get_events(None, Some("not-an-event-id".to_owned())), &ctx).await;
+
+        assert_eq!(error_code(&resp), Some("INVALID_PAYLOAD"));
+        assert!(history.asked().is_empty());
+    }
+
+    #[tokio::test]
+    async fn replay_event_maps_history_outcomes_to_wire_error_codes() {
+        let ghost = EventId::new();
+        let cases = [
+            (
+                ghost.to_string(),
+                Some(BusError::EventNotFound(ghost)),
+                "NOT_FOUND",
+            ),
+            (
+                EventId::new().to_string(),
+                Some(BusError::Storage(StorageError::Connection {
+                    reason: "database is locked".to_owned(),
+                })),
+                "RUNTIME_ERROR",
+            ),
+            ("not-an-event-id".to_owned(), None, "NOT_FOUND"),
+        ];
+
+        for (event_id, failure, expected) in cases {
+            let ctx = ctx_over(ScriptedHistory::failing_replay_with(failure));
+            let req = WsEnvelope {
+                id: Some("14".to_owned()),
+                inner: WsRequest::ReplayEvent {
+                    event_id: event_id.clone(),
+                },
+            };
+
+            let resp = dispatch(req, &ctx).await;
+
+            assert_eq!(error_code(&resp), Some(expected), "replay of {event_id:?}");
         }
     }
 
@@ -752,7 +840,7 @@ mod tests {
         let original_id = original.id.to_string();
         ctx.bus.publish(original);
 
-        let mut bus_sub = ctx.bus.subscribe();
+        let mut bus_sub = ctx.bus.observe("ws_dispatch_test");
 
         let req = WsEnvelope {
             id: Some("14".to_owned()),
@@ -1001,7 +1089,7 @@ mod tests {
     #[tokio::test]
     async fn set_global_with_auth_returns_ok_and_emits_event() {
         let ctx = make_ctx(true, false);
-        let mut bus_sub = ctx.bus.subscribe();
+        let mut bus_sub = ctx.bus.observe("ws_dispatch_test");
         let req = WsEnvelope {
             id: Some("10".to_owned()),
             inner: WsRequest::SetGlobal {
@@ -1141,7 +1229,7 @@ mod tests {
     #[tokio::test]
     async fn trigger_code_event_with_auth_publishes_bus_event() {
         let ctx = make_ctx(true, false);
-        let mut bus_sub = ctx.bus.subscribe();
+        let mut bus_sub = ctx.bus.observe("ws_dispatch_test");
         let req = WsEnvelope {
             id: Some("12".to_owned()),
             inner: WsRequest::TriggerCodeEvent {
@@ -1441,7 +1529,7 @@ mod tests {
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let bus_adapter = BusAdapter::new(Arc::clone(&bus));
+        let bus_adapter = BusAdapter::new(bus.clone());
         let (handle, _rx) = bus_adapter
             .register_client(ClientFilterSet::new(HashSet::new()))
             .await;

@@ -267,7 +267,7 @@ mod tests {
         settings: Arc<MemSettings>,
     ) -> Fixture {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let bus_adapter = BusAdapter::new(Arc::clone(&bus));
+        let bus_adapter = BusAdapter::new(bus.clone());
         bus_adapter.spawn();
         let dp: Arc<dyn DataProvider> = test_dp();
         let action_engine = Arc::new(spawn_action_engine(

@@ -303,7 +303,7 @@ mod tests {
             .expect("auth load");
         let creds_dyn: Arc<dyn CredentialsRepo> = creds;
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let bus_adapter = BusAdapter::new(Arc::clone(&bus));
+        let bus_adapter = BusAdapter::new(bus.clone());
         bus_adapter.spawn();
         let mut tdp = TestDataProvider::new();
         tdp.globals().expect_list().returning(|| Ok(vec![]));

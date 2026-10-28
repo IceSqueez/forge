@@ -438,10 +438,38 @@ impl BusAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::{EventChannel, EventSubscription};
     use forge_runtime::{EventBus, NullEventLogRepo};
 
     fn make_bus() -> Arc<EventBus> {
         EventBus::new(Arc::new(NullEventLogRepo))
+    }
+
+    struct ChannelObserver(EventChannel);
+
+    impl EventObserver for ChannelObserver {
+        fn observe(&self, _consumer: &'static str) -> EventSubscription {
+            self.0.subscribe()
+        }
+    }
+
+    #[tokio::test]
+    async fn adapter_fans_out_events_from_a_bare_event_observer() {
+        let observer = Arc::new(ChannelObserver(EventChannel::new(16)));
+        let adapter = BusAdapter::new(observer.clone());
+        adapter.spawn();
+        let (_, mut rx) = adapter.register_client(wildcard_filter()).await;
+
+        observer.0.send(Arc::new(Event::new(
+            EventSource::Twitch,
+            "chat.message",
+            serde_json::Value::Null,
+        )));
+
+        match rx.recv().await {
+            Ok(WsFrame::Text(text)) => assert!(text.contains("chat.message")),
+            _ => panic!("expected the observed event as a text frame"),
+        }
     }
 
     fn twitch_filter() -> ClientFilterSet {
@@ -458,7 +486,7 @@ mod tests {
     #[tokio::test]
     async fn matching_event_reaches_subscribed_client() {
         let bus = make_bus();
-        let adapter = BusAdapter::new(Arc::clone(&bus));
+        let adapter = BusAdapter::new(bus.clone());
         adapter.spawn();
 
         let (_, mut rx) = adapter.register_client(twitch_filter()).await;
@@ -480,7 +508,7 @@ mod tests {
     #[tokio::test]
     async fn non_matching_event_does_not_reach_client() {
         let bus = make_bus();
-        let adapter = BusAdapter::new(Arc::clone(&bus));
+        let adapter = BusAdapter::new(bus.clone());
         adapter.spawn();
 
         let (_, mut filtered_rx) = adapter.register_client(twitch_filter()).await;
@@ -506,7 +534,7 @@ mod tests {
     #[tokio::test]
     async fn unregistered_client_does_not_receive_events() {
         let bus = make_bus();
-        let adapter = BusAdapter::new(Arc::clone(&bus));
+        let adapter = BusAdapter::new(bus.clone());
         adapter.spawn();
 
         let (handle, mut rx) = adapter.register_client(twitch_filter()).await;
@@ -546,7 +574,7 @@ mod tests {
     #[tokio::test]
     async fn kicked_client_stops_receiving_events_while_the_others_keep_theirs() {
         let bus = make_bus();
-        let adapter = BusAdapter::new(Arc::clone(&bus));
+        let adapter = BusAdapter::new(bus.clone());
         adapter.spawn();
 
         let (kicked, mut kicked_rx) = adapter.register_client(wildcard_filter()).await;
@@ -579,7 +607,7 @@ mod tests {
     #[tokio::test]
     async fn kick_client_with_unknown_id_returns_false_and_leaves_the_registry_intact() {
         let bus = make_bus();
-        let adapter = BusAdapter::new(Arc::clone(&bus));
+        let adapter = BusAdapter::new(bus.clone());
         adapter.spawn();
 
         let (_client, mut rx) = adapter.register_client(wildcard_filter()).await;
@@ -804,7 +832,7 @@ mod tests {
     #[tokio::test]
     async fn an_overlay_connection_that_subscribes_to_everything_still_receives_no_bus_events() {
         let bus = make_bus();
-        let adapter = BusAdapter::new(Arc::clone(&bus));
+        let adapter = BusAdapter::new(bus.clone());
         adapter.spawn();
         let (handle, _initial_rx) = adapter.register_client(no_filters()).await;
         let mut overlay_rx = adapter
@@ -872,7 +900,7 @@ mod tests {
     #[tokio::test]
     async fn wildcard_source_filter_matches_all_twitch_kinds() {
         let bus = make_bus();
-        let adapter = BusAdapter::new(Arc::clone(&bus));
+        let adapter = BusAdapter::new(bus.clone());
         adapter.spawn();
 
         let (_, mut rx) = adapter.register_client(twitch_filter()).await;
@@ -925,7 +953,7 @@ mod tests {
             ..forge_runtime::Config::default()
         };
         let bus = EventBus::with_config(Arc::new(NullEventLogRepo), &config);
-        let adapter = BusAdapter::new(Arc::clone(&bus));
+        let adapter = BusAdapter::new(bus.clone());
         adapter.spawn();
         let (_, subscribed) = adapter.register_client(wildcard_filter()).await;
         let (_, unsubscribed) = adapter.register_client(no_filters()).await;

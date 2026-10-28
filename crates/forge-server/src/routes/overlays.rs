@@ -333,7 +333,7 @@ mod tests {
         let auth = AuthState::load(false, &*creds).await.expect("auth load");
         let creds_dyn: Arc<dyn CredentialsRepo> = creds;
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let bus_adapter = BusAdapter::new(Arc::clone(&bus));
+        let bus_adapter = BusAdapter::new(bus.clone());
         bus_adapter.spawn();
         let dp: Arc<dyn DataProvider> = test_dp();
         let actions = dp.action_repo();

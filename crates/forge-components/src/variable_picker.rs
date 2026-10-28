@@ -251,9 +251,8 @@ impl VariablePicker {
                 self.recompute();
                 cx.notify();
             }
-            InputEvent::Cancelled => cx.emit(VariablePickerEvent::Cancelled),
             InputEvent::Submitted(_) => self.confirm(window, cx),
-            InputEvent::Blurred(_) => {}
+            InputEvent::Cancelled | InputEvent::Blurred(_) => {}
         }
     }
 

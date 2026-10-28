@@ -310,6 +310,9 @@ impl TextInput {
 
     fn cancel(&mut self, _: &Cancel, _: &mut Window, cx: &mut Context<Self>) {
         cx.emit(InputEvent::Cancelled);
+        if self.buffer.marked_range().is_none() {
+            cx.propagate();
+        }
     }
 
     fn display_offset(&self, offset: usize) -> usize {

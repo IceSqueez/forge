@@ -7,10 +7,10 @@ use forge_net::{Gateway, RateLimitError, RateLimitOutcome, RateLimiter};
 use forge_platform_core::{EndpointSurface, PlatformEndpoints};
 use forge_storage::CredentialsRepo;
 
-use crate::api_gateway::{kick_api_gateway, kick_channel_info_gateway};
-use crate::channel_info::ChannelInfoFetcher;
-use crate::credentials_manager::KickCredentialsManager;
-use crate::oauth_client::{KickOAuthClient, kick_oauth_gateway};
+use crate::auth::credentials_manager::KickCredentialsManager;
+use crate::auth::oauth_client::{KickOAuthClient, kick_oauth_gateway};
+use crate::gateway::{kick_api_gateway, kick_channel_info_gateway};
+use crate::pusher::chatroom_lookup::ChannelInfoFetcher;
 
 const UNREACHABLE_HTTP: &str = "http://127.0.0.1:0";
 const UNREACHABLE_WS: &str = "ws://127.0.0.1:0";

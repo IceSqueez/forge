@@ -124,3 +124,273 @@ struct ChannelResponse {
 struct ChatroomField {
     id: Option<u64>,
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use forge_net::{RateLimiter, TokenBucketRateLimiter};
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::*;
+    use crate::endpoints_test_support::{RecordingPublisher, channel_info_at, channel_info_with};
+    use crate::gateway::{KICK_CHANNEL_INFO_BUDGET_CAPACITY, KICK_CHANNEL_INFO_BUDGET_WINDOW};
+
+    const SLUG: &str = "streamer_slug";
+    const SLUG_PATH: &str = "/channels/streamer_slug";
+
+    fn live_channel() -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "chatroom": { "id": 12345 },
+            "livestream": { "viewer_count": 500, "session_title": "Playing games" }
+        }))
+    }
+
+    async fn server_replying(template: ResponseTemplate) -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(SLUG_PATH))
+            .respond_with(template)
+            .mount(&server)
+            .await;
+        server
+    }
+
+    async fn request_count(server: &MockServer) -> usize {
+        server.received_requests().await.unwrap().len()
+    }
+
+    #[tokio::test]
+    async fn fetch_maps_chatroom_id_from_the_channel_body() {
+        let server = server_replying(live_channel()).await;
+
+        let info = channel_info_at(&server.uri()).fetch(SLUG).await.unwrap();
+
+        assert_eq!(info.chatroom_id, 12345);
+    }
+
+    #[tokio::test]
+    async fn fetch_identifies_itself_with_the_project_user_agent() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(SLUG_PATH))
+            .and(header("user-agent", USER_AGENT))
+            .respond_with(live_channel())
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = channel_info_at(&server.uri()).fetch(SLUG).await;
+
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn fetch_reports_an_error_status_as_http_with_its_code() {
+        let server = server_replying(ResponseTemplate::new(404).set_body_string("not found")).await;
+
+        let err = channel_info_at(&server.uri())
+            .fetch(SLUG)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(err, KickError::Http { status: 404, .. }),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_reports_a_missing_chatroom_as_chatroom_id_not_found() {
+        let server = server_replying(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "chatroom": null,
+            "livestream": null
+        })))
+        .await;
+
+        let err = channel_info_at(&server.uri())
+            .fetch(SLUG)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(err, KickError::ChatroomIdNotFound { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_reports_an_undecodable_success_body_as_channel_info_unavailable() {
+        let server = server_replying(ResponseTemplate::new(200).set_body_string("<html>")).await;
+
+        let err = channel_info_at(&server.uri())
+            .fetch(SLUG)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(&err, KickError::ChannelInfoUnavailable { slug, .. } if slug == SLUG),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn bounded_body_cuts_at_the_char_limit_without_splitting_a_char() {
+        let cases = [
+            "short".to_owned(),
+            "a".repeat(ERROR_BODY_LIMIT),
+            "a".repeat(ERROR_BODY_LIMIT + 1),
+            "\u{1f600}".repeat(ERROR_BODY_LIMIT * 2),
+            "\u{456}".repeat(ERROR_BODY_LIMIT - 1),
+        ];
+
+        for body in cases {
+            let expected_chars = body.chars().count().min(ERROR_BODY_LIMIT);
+            let bounded = bounded_body(&body);
+            assert_eq!(
+                bounded.chars().count(),
+                expected_chars,
+                "wrong length for a {}-char body",
+                body.chars().count()
+            );
+            assert!(body.starts_with(&bounded), "cut changed the body prefix");
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_bounds_a_challenge_page_body_on_an_error_status() {
+        let server = server_replying(
+            ResponseTemplate::new(403)
+                .set_body_string(format!("<html>{}</html>", "x".repeat(5_000))),
+        )
+        .await;
+
+        let err = channel_info_at(&server.uri())
+            .fetch(SLUG)
+            .await
+            .unwrap_err();
+
+        let KickError::Http { status, body } = err else {
+            panic!("expected an Http error, got {err:?}");
+        };
+        assert_eq!((status, body.chars().count()), (403, ERROR_BODY_LIMIT));
+    }
+
+    #[tokio::test]
+    async fn transport_failure_is_unavailable_without_the_request_url() {
+        let err = channel_info_at("http://127.0.0.1:0")
+            .fetch(SLUG)
+            .await
+            .unwrap_err();
+
+        let KickError::ChannelInfoUnavailable { reason, .. } = err else {
+            panic!("expected ChannelInfoUnavailable, got {err:?}");
+        };
+        assert!(!reason.contains("127.0.0.1"), "url leaked into {reason:?}");
+    }
+
+    #[tokio::test]
+    async fn a_success_is_served_from_cache_until_the_refresh_interval_elapses() {
+        let server = server_replying(live_channel()).await;
+        let fetcher = channel_info_at(&server.uri());
+        fetcher.fetch(SLUG).await.unwrap();
+        tokio::time::pause();
+
+        tokio::time::advance(CHANNEL_INFO_REFRESH_INTERVAL - Duration::from_secs(1)).await;
+        let cached = fetcher.fetch(SLUG).await.unwrap();
+        let after_cached = request_count(&server).await;
+        tokio::time::advance(Duration::from_secs(1)).await;
+        tokio::time::resume();
+        fetcher.fetch(SLUG).await.unwrap();
+
+        assert_eq!(
+            (
+                cached.chatroom_id,
+                after_cached,
+                request_count(&server).await
+            ),
+            (12345, 1, 2)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_cached_success_does_not_answer_for_another_slug() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(live_channel())
+            .mount(&server)
+            .await;
+        let fetcher = channel_info_at(&server.uri());
+
+        fetcher.fetch(SLUG).await.unwrap();
+        fetcher.fetch("other_slug").await.unwrap();
+
+        let paths: Vec<String> = server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .map(|request| request.url.path().to_owned())
+            .collect();
+        assert_eq!(paths, vec![SLUG_PATH, "/channels/other_slug"]);
+    }
+
+    #[tokio::test]
+    async fn a_failure_is_not_cached_so_the_next_fetch_asks_again() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(SLUG_PATH))
+            .respond_with(ResponseTemplate::new(500))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(SLUG_PATH))
+            .respond_with(live_channel())
+            .mount(&server)
+            .await;
+        let fetcher = channel_info_at(&server.uri());
+
+        let first = fetcher.fetch(SLUG).await;
+        let second = fetcher.fetch(SLUG).await;
+
+        assert!(
+            matches!(first, Err(KickError::Http { status: 500, .. })),
+            "{first:?}"
+        );
+        assert_eq!(second.unwrap().chatroom_id, 12345);
+    }
+
+    #[tokio::test]
+    async fn a_retry_inside_the_budget_window_waits_then_reports_unavailable_without_a_request() {
+        let server = server_replying(ResponseTemplate::new(500)).await;
+        let limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
+            KICK_CHANNEL_INFO_BUDGET_CAPACITY,
+            KICK_CHANNEL_INFO_BUDGET_WINDOW,
+        ));
+        let fetcher = channel_info_with(
+            &server.uri(),
+            limiter,
+            Arc::new(RecordingPublisher::default()),
+        );
+        fetcher.fetch(SLUG).await.unwrap_err();
+        tokio::time::pause();
+        let started = Instant::now();
+
+        let retry = fetcher.fetch(SLUG).await;
+
+        assert!(
+            matches!(&retry, Err(KickError::ChannelInfoUnavailable { slug, .. }) if slug == SLUG),
+            "{retry:?}"
+        );
+        let waited = started.elapsed();
+        assert!(
+            waited >= forge_net::MAX_THROTTLE_WAIT
+                && waited < forge_net::MAX_THROTTLE_WAIT + Duration::from_secs(1),
+            "waited {waited:?}"
+        );
+        assert_eq!(request_count(&server).await, 1);
+    }
+}

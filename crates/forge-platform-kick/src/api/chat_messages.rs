@@ -97,3 +97,116 @@ impl KickSendChat {
             .map_err(|failure| platform_error(failure, DELETE_REFUSALS))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn sender_on(server: &MockServer) -> KickSendChat {
+        KickSendChat::new(crate::endpoints_test_support::api_at(&server.uri()))
+    }
+
+    async fn chat_server() -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        server
+    }
+
+    async fn bodies(server: &MockServer) -> Vec<serde_json::Value> {
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .map(|request| serde_json::from_slice(&request.body).unwrap())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn send_body_author_mode_drives_type_and_broadcaster_id_presence() {
+        for (as_bot, expected_type, expects_broadcaster_id) in
+            [(false, "user", true), (true, "bot", false)]
+        {
+            let server = chat_server().await;
+
+            sender_on(&server)
+                .send("hi", "tok", 42, as_bot)
+                .await
+                .unwrap();
+
+            let body = &bodies(&server).await[0];
+            assert_eq!(
+                (
+                    body["type"].as_str(),
+                    body.get("broadcaster_user_id").is_some()
+                ),
+                (Some(expected_type), expects_broadcaster_id),
+                "as_bot={as_bot}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn reply_to_message_id_is_sent_only_on_replies() {
+        let server = chat_server().await;
+        let sender = sender_on(&server);
+
+        sender.send("plain", "tok", 42, false).await.unwrap();
+        sender
+            .send_reply("reply", "tok", 42, "parent-7")
+            .await
+            .unwrap();
+
+        let sent = bodies(&server).await;
+        assert!(sent[0].get("reply_to_message_id").is_none(), "{}", sent[0]);
+        assert_eq!(
+            (
+                &sent[1]["reply_to_message_id"],
+                &sent[1]["content"],
+                &sent[1]["broadcaster_user_id"]
+            ),
+            (
+                &serde_json::json!("parent-7"),
+                &serde_json::json!("reply"),
+                &serde_json::json!(42)
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn send_carries_the_token_as_a_bearer_credential() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat"))
+            .and(header("authorization", "Bearer tok-123"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = sender_on(&server).send("hi", "tok-123", 42, false).await;
+
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn delete_targets_the_message_id_path() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/chat/msg-77"))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = sender_on(&server).delete("msg-77", "tok").await;
+
+        assert!(result.is_ok(), "{result:?}");
+    }
+}

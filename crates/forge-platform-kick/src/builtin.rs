@@ -778,7 +778,7 @@ mod tests {
         use time::OffsetDateTime;
 
         use super::super::*;
-        use crate::chat_platform::KickPlatform;
+        use crate::platform::KickPlatform;
 
         struct EmptyRepo;
         #[async_trait]
@@ -830,7 +830,7 @@ mod tests {
             let platform = Arc::new(KickPlatform::new(
                 &crate::endpoints_test_support::unreachable_endpoints(),
                 manager.clone(),
-                Arc::new(crate::send::KickSendChat::new(
+                Arc::new(crate::api::chat_messages::KickSendChat::new(
                     crate::endpoints_test_support::unreachable_api(),
                 )),
                 crate::endpoints_test_support::unreachable_channel_info(),
@@ -894,7 +894,7 @@ mod tests {
             Arc<KickPlatform>,
             wiremock::MockServer,
         ) {
-            let (platform, server) = crate::chat_platform::tests::platform_on_chat(
+            let (platform, server) = crate::platform::tests::platform_on_chat(
                 "{}".to_owned(),
                 crate::ban_ledger_test_support::MemoryBanLedger::shared(),
             )
@@ -1052,11 +1052,11 @@ mod tests {
 
         use super::super::*;
         use super::lifecycle::{GrantLimiter, disconnected_bundle};
-        use crate::categories::KickCategories;
-        use crate::channel::KickChannel;
-        use crate::moderation::KickModeration;
-        use crate::rewards::KickRewards;
-        use crate::send::KickSendChat;
+        use crate::api::categories::KickCategories;
+        use crate::api::channel::KickChannel;
+        use crate::api::chat_messages::KickSendChat;
+        use crate::api::moderation::KickModeration;
+        use crate::api::rewards::KickRewards;
         use crate::sub_actions::{KickSubActionDeps, register_kick_sub_actions};
 
         fn runner_registry() -> SubActionRegistry {

@@ -71,10 +71,10 @@ mod tests {
     use tokio::sync::watch;
 
     use super::*;
+    use crate::api::poller::PollerAuth;
+    use crate::auth::credentials::KickCredentials;
     use crate::ban_ledger_test_support::{LedgerOp, MemoryBanLedger};
-    use crate::chat_platform::KickPlatform;
-    use crate::credentials::KickCredentials;
-    use crate::poller::PollerAuth;
+    use crate::platform::KickPlatform;
 
     enum StoredCredentials {
         Absent,
@@ -151,7 +151,7 @@ mod tests {
         let platform = Arc::new(KickPlatform::new(
             &endpoints,
             Arc::clone(&manager),
-            Arc::new(crate::send::KickSendChat::new(
+            Arc::new(crate::api::chat_messages::KickSendChat::new(
                 crate::endpoints_test_support::unreachable_api(),
             )),
             crate::endpoints_test_support::unreachable_channel_info(),

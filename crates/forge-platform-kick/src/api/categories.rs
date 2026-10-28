@@ -65,3 +65,102 @@ impl KickCategories {
             .collect())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn categories_on(server: &MockServer) -> KickCategories {
+        KickCategories::new(crate::endpoints_test_support::api_at(&server.uri()))
+    }
+
+    async fn mount_categories(server: &MockServer, template: ResponseTemplate) {
+        Mock::given(method("GET"))
+            .and(path("/categories"))
+            .respond_with(template)
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn search_passes_the_query_and_maps_id_and_name() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/categories"))
+            .and(query_param("q", "just chatting"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{"id": 15, "name": "Just Chatting"}]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let matches = categories_on(&server)
+            .search("tok", "just chatting")
+            .await
+            .unwrap();
+
+        assert_eq!(
+            matches
+                .iter()
+                .map(|m| (m.id, m.name.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(15, "Just Chatting")]
+        );
+    }
+
+    #[tokio::test]
+    async fn search_truncates_an_oversized_result_set() {
+        let server = MockServer::start().await;
+        let data: Vec<serde_json::Value> = (0..MAX_MATCHES + 5)
+            .map(|i| serde_json::json!({"id": i, "name": format!("cat {i}")}))
+            .collect();
+        mount_categories(
+            &server,
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "data": data })),
+        )
+        .await;
+
+        let matches = categories_on(&server).search("tok", "cat").await.unwrap();
+
+        assert_eq!(matches.len(), MAX_MATCHES);
+        assert_eq!(matches[MAX_MATCHES - 1].id, (MAX_MATCHES - 1) as u64);
+    }
+
+    #[tokio::test]
+    async fn search_with_no_results_returns_an_empty_list_not_an_error() {
+        let server = MockServer::start().await;
+        mount_categories(
+            &server,
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "data": [] })),
+        )
+        .await;
+
+        let matches = categories_on(&server)
+            .search("tok", "nothing")
+            .await
+            .unwrap();
+
+        assert!(matches.is_empty());
+    }
+
+    #[tokio::test]
+    async fn search_reports_an_undecodable_success_body_as_malformed() {
+        let server = MockServer::start().await;
+        mount_categories(
+            &server,
+            ResponseTemplate::new(200).set_body_string("<html>"),
+        )
+        .await;
+
+        let result = categories_on(&server).search("tok", "q").await;
+
+        assert!(
+            matches!(result, Err(PlatformError::MalformedResponse { .. })),
+            "{:?}",
+            result.map(|m| m.len())
+        );
+    }
+}

@@ -83,7 +83,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::chat::build_event;
+    use crate::pusher::chat::build_event;
 
     fn banned_at() -> OffsetDateTime {
         OffsetDateTime::from_unix_timestamp(1_791_316_800).unwrap()

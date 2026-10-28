@@ -195,3 +195,234 @@ pub(crate) fn channel_hosted(raw: &Value) -> Value {
         (host::VIEWER_COUNT): viewer_count,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn chat_message_sent_flattens_sender_identity_into_canonical_shape() {
+        let out = chat_message_sent(&json!({
+            "id": "msg-uuid",
+            "content": "hello",
+            "sender": {
+                "id": 42,
+                "username": "viewer",
+                "slug": "Viewer Display",
+                "identity": { "color": "#00FF00" }
+            }
+        }));
+        assert_eq!(out["message_id"], json!("msg-uuid"));
+        assert_eq!(out["content"], json!("hello"));
+        assert_eq!(out["sender"]["id"], json!(42));
+        assert_eq!(out["sender"]["username"], json!("viewer"));
+        assert_eq!(out["sender"]["display_name"], json!("Viewer Display"));
+        assert_eq!(out["sender"]["color"], json!("#00FF00"));
+    }
+
+    #[test]
+    fn chat_message_viewer_needs_a_numeric_id_and_a_non_empty_username() {
+        let sender = |username: Value| json!({ "sender": { "id": 42, "username": username } });
+        for raw in [
+            sender(json!("")),
+            sender(json!(null)),
+            json!({ "sender": { "id": 42 } }),
+        ] {
+            assert_eq!(chat_message_viewer(&raw), None, "accepted {raw}");
+        }
+        assert_eq!(
+            chat_message_viewer(&sender(json!("viewer"))),
+            Some(ChatViewer::new("42", "viewer"))
+        );
+    }
+
+    fn fixture_message_with_badges(badges: Value) -> Value {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/published_chat_message.json"
+        ))
+        .unwrap();
+        let mut raw = fixture["raw"].clone();
+        raw["sender"]["identity"]["badges"] = badges;
+        raw
+    }
+
+    #[test]
+    fn chat_payload_maps_pusher_identity_badges_onto_the_shared_vocabulary() {
+        for (raw_badges, expected) in [
+            (json!([]), vec![]),
+            (
+                json!([{ "type": "broadcaster", "text": "Broadcaster" }]),
+                vec![UserBadge::Broadcaster],
+            ),
+            (
+                json!([{ "type": "moderator", "text": "Moderator" }]),
+                vec![UserBadge::Moderator],
+            ),
+            (
+                json!([{ "type": "vip", "text": "VIP" }]),
+                vec![UserBadge::Vip],
+            ),
+            (
+                json!([{ "type": "founder", "text": "Founder" }]),
+                vec![UserBadge::Founder],
+            ),
+            (
+                json!([{ "type": "bot", "text": "Bot" }]),
+                vec![UserBadge::Bot],
+            ),
+            (
+                json!([{ "type": "verified", "text": "Verified channel" }]),
+                vec![UserBadge::Partner],
+            ),
+            (
+                json!([{ "type": "subscriber", "text": "Subscriber", "count": 7 }]),
+                vec![UserBadge::Subscriber { months: 7 }],
+            ),
+            (
+                json!([{ "type": "subscriber", "text": "Subscriber" }]),
+                vec![UserBadge::Subscriber { months: 0 }],
+            ),
+            (
+                json!([
+                    { "type": "sub_gifter", "text": "Sub Gifter", "count": 20 },
+                    { "type": "og", "text": "OG" },
+                    { "type": "staff", "text": "Staff" },
+                    { "type": "sidekick", "text": "Sidekick" },
+                    { "type": "trainwreckstv", "text": "Trainwreckstv" },
+                    { "type": "a_future_badge", "text": "Future" },
+                    { "text": "Moderator" }
+                ]),
+                vec![],
+            ),
+            (
+                json!([
+                    { "type": "broadcaster", "text": "Broadcaster" },
+                    { "type": "sub_gifter", "text": "Sub Gifter", "count": 5 },
+                    { "type": "subscriber", "text": "Subscriber", "count": 3 }
+                ]),
+                vec![UserBadge::Broadcaster, UserBadge::Subscriber { months: 3 }],
+            ),
+        ] {
+            let payload =
+                chat_message_chat_payload(&fixture_message_with_badges(raw_badges.clone()));
+            assert_eq!(payload.badges, expected, "badges: {raw_badges}");
+        }
+    }
+
+    #[test]
+    fn chat_payload_carries_no_badges_when_the_sender_identity_is_absent() {
+        let payload = chat_message_chat_payload(&json!({ "id": "m", "content": "hi" }));
+        assert!(
+            payload.badges.is_empty(),
+            "a sender with no identity resolves to the floor rung, never above it"
+        );
+    }
+
+    #[test]
+    fn chat_message_sent_reply_id_reads_metadata_original_message() {
+        let out = chat_message_sent(&json!({
+            "id": "m",
+            "metadata": { "original_message": { "id": "parent-1" } }
+        }));
+        assert_eq!(out["reply_to_message_id"], json!("parent-1"));
+    }
+
+    #[test]
+    fn chat_message_sent_reply_id_is_null_when_not_a_reply() {
+        let out = chat_message_sent(&json!({ "id": "m", "metadata": null }));
+        assert!(out["reply_to_message_id"].is_null());
+    }
+
+    #[test]
+    fn chat_message_deleted_maps_message_id_and_deleter_entity() {
+        let out = chat_message_deleted(&json!({
+            "message": { "id": "msg-999" },
+            "deleted_by": { "id": 5, "username": "mod_person" }
+        }));
+        assert_eq!(out["message_id"], json!("msg-999"));
+        assert_eq!(out["deleted_by"]["id"], json!(5));
+        assert_eq!(out["deleted_by"]["username"], json!("mod_person"));
+    }
+
+    #[test]
+    fn moderation_banned_timeout_carries_duration_and_is_not_permanent() {
+        let out = moderation_banned(&json!({
+            "user": { "id": 77, "username": "bad" },
+            "banned_by": { "id": 2, "username": "mod" },
+            "duration": 300,
+            "permanent_ban_reason": ""
+        }));
+        assert_eq!(out["banned_user"]["id"], json!(77));
+        assert_eq!(out["moderator"]["username"], json!("mod"));
+        assert_eq!(out["is_permanent"], json!(false));
+        assert_eq!(out["duration_secs"], json!(300));
+        assert!(out["reason"].is_null());
+    }
+
+    #[test]
+    fn moderation_banned_permanent_has_null_duration_and_maps_reason() {
+        let out = moderation_banned(&json!({
+            "user": { "id": 77, "username": "bad" },
+            "banned_by": { "id": 2, "username": "mod" },
+            "permanent_ban_reason": "spam"
+        }));
+        assert_eq!(out["is_permanent"], json!(true));
+        assert!(out["duration_secs"].is_null());
+        assert_eq!(out["reason"], json!("spam"));
+    }
+
+    #[test]
+    fn channel_subscribed_takes_first_user_id_and_tier_slug() {
+        let out = channel_subscribed(&json!({
+            "user_ids": [123, 456],
+            "username": "sub",
+            "months": 3,
+            "subscription": { "slug": "tier1" }
+        }));
+        assert_eq!(out["subscriber"]["id"], json!(123));
+        assert_eq!(out["subscriber"]["username"], json!("sub"));
+        assert_eq!(out["months"], json!(3));
+        assert_eq!(out["tier"], json!("tier1"));
+    }
+
+    #[test]
+    fn channel_subscription_gifted_expands_giftees_and_counts_them() {
+        let out = channel_subscription_gifted(&json!({
+            "gifter_user_id": 200,
+            "gifter_username": "gen",
+            "gifted_usernames": ["a", "b", "c"],
+            "subscription": { "slug": "tier1" }
+        }));
+        assert_eq!(out["gifter"]["id"], json!(200));
+        assert_eq!(out["count"], json!(3));
+        assert_eq!(out["giftees"][0]["username"], json!("a"));
+        assert!(out["giftees"][0]["id"].is_null());
+        assert_eq!(out["tier"], json!("tier1"));
+    }
+
+    #[test]
+    fn channel_hosted_maps_host_username_and_viewer_count() {
+        let out = channel_hosted(&json!({
+            "host_username": "hoster",
+            "number_viewers": 250
+        }));
+        assert_eq!(out["host"]["username"], json!("hoster"));
+        assert!(out["host"]["id"].is_null());
+        assert_eq!(out["viewer_count"], json!(250));
+    }
+
+    #[test]
+    fn malformed_payloads_yield_null_scalars_without_panic() {
+        let empty = json!({});
+        assert!(chat_message_sent(&empty)["message_id"].is_null());
+        assert!(chat_message_sent(&empty)["sender"]["id"].is_null());
+        assert!(chat_message_deleted(&empty)["message_id"].is_null());
+        assert!(moderation_banned(&empty)["banned_user"]["id"].is_null());
+        assert!(channel_subscribed(&empty)["subscriber"]["id"].is_null());
+        assert!(channel_subscription_gifted(&empty)["gifter"]["id"].is_null());
+        assert_eq!(channel_subscription_gifted(&empty)["count"], json!(0));
+        assert!(channel_hosted(&empty)["host"]["username"].is_null());
+    }
+}

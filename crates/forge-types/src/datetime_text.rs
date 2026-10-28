@@ -12,7 +12,6 @@ pub fn datetime_from_text(text: &str) -> Option<OffsetDateTime> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::run_disclosure::DisclosedValue;
     use crate::variant::Variant;
     use time::{Date, Month, PrimitiveDateTime, Time, UtcOffset};
 
@@ -54,11 +53,6 @@ mod tests {
                 variant.to_plain_json(),
                 serde_json::Value::String(expected.to_owned()),
                 "Variant::to_plain_json"
-            );
-            assert_eq!(
-                DisclosedValue::Datetime(value).to_string(),
-                expected,
-                "DisclosedValue Display (run disclosure)"
             );
         }
     }

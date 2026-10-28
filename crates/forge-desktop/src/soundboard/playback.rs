@@ -102,7 +102,7 @@ impl SoundboardView {
                 }
                 match &result {
                     Err(error) => this.on_play_error(id, error, cx),
-                    Ok(_) if settled_silently => this.clear_playing(id, cx),
+                    Ok(_) if settled_silently => this.clear_ended_play(id, None, cx),
                     Ok(_) => {}
                 }
             });
@@ -130,18 +130,13 @@ impl SoundboardView {
         cx.notify();
     }
 
-    pub(super) fn clear_playing(&mut self, id: ClipId, cx: &mut Context<Self>) {
-        if self.playing.remove(&id).is_some() {
-            cx.notify();
-        }
-    }
-
-    pub(super) fn clear_ended_play(&mut self, id: ClipId, play_id: u64, cx: &mut Context<Self>) {
-        let tracks_this_play = self
-            .playing
-            .get(&id)
-            .is_some_and(|progress| progress.play_id == Some(play_id));
-        if tracks_this_play {
+    pub(super) fn clear_ended_play(
+        &mut self,
+        id: ClipId,
+        play_id: Option<u64>,
+        cx: &mut Context<Self>,
+    ) {
+        if progress_tracks_play(self.playing.get(&id), play_id) {
             self.playing.remove(&id);
             cx.notify();
         }
@@ -191,8 +186,8 @@ fn availability_after_play_error(error: &SoundboardError) -> Option<ClipAvailabi
 
 fn play_settled_without_outcome(result: &Result<PlayOutcome, SoundboardError>) -> bool {
     match result {
-        Ok(PlayOutcome::Started | PlayOutcome::StoppedBeforeStart) => false,
-        Ok(PlayOutcome::BoardDisabled) => true,
+        Ok(PlayOutcome::Started) => false,
+        Ok(PlayOutcome::BoardDisabled | PlayOutcome::StoppedBeforeStart) => true,
         Err(
             SoundboardError::SourceMissing(_)
             | SoundboardError::Audio(_)
@@ -205,6 +200,10 @@ fn play_settled_without_outcome(result: &Result<PlayOutcome, SoundboardError>) -
             | SoundboardError::MasterVolumeNotSaved(_),
         ) => true,
     }
+}
+
+fn progress_tracks_play(progress: Option<&PlaybackProgress>, play_id: Option<u64>) -> bool {
+    progress.is_some_and(|progress| progress.play_id == play_id)
 }
 
 pub(super) fn readout_total(

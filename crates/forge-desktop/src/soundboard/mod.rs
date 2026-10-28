@@ -216,7 +216,7 @@ impl SoundboardView {
             }
             "playback.finished" | "playback.failed" => {
                 if let Some(play_id) = play_id_of(&event.payload) {
-                    self.clear_ended_play(clip_id, play_id, cx);
+                    self.clear_ended_play(clip_id, Some(play_id), cx);
                 }
             }
             "soundboard.clip.adopted" => {

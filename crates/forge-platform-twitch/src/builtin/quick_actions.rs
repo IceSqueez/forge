@@ -663,3 +663,138 @@ impl QuickActions for TwitchIntegrationBundle {
         ]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::builtin::tests::make_bundle_with_tier;
+    use crate::chat::ChatConnectionState;
+
+    #[test]
+    fn commercial_action_locks_for_standard_tier_and_unlocks_for_affiliate() {
+        let standard =
+            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Standard);
+        let affiliate =
+            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+
+        let find_commercial = |bundle: &TwitchIntegrationBundle| {
+            bundle
+                .actions()
+                .into_iter()
+                .find(|a| a.subaction_template.kind_id == "twitch.channel.run_ad")
+                .unwrap()
+        };
+
+        let locked = find_commercial(&standard);
+        assert_eq!(locked.locked_reason.as_deref(), Some(TIER_LOCKED_REASON));
+        assert!(
+            !locked.enabled,
+            "commercial must be disabled under standard"
+        );
+
+        let unlocked = find_commercial(&affiliate);
+        assert!(unlocked.locked_reason.is_none());
+        assert!(unlocked.enabled, "commercial must be enabled at affiliate");
+
+        for bundle in [&standard, &affiliate] {
+            let open = bundle
+                .actions()
+                .into_iter()
+                .find(|a| a.subaction_template.kind_id == "twitch.chat.send_message")
+                .unwrap();
+            assert!(open.locked_reason.is_none());
+        }
+    }
+
+    #[test]
+    fn every_poll_and_prediction_action_locks_for_standard_and_unlocks_for_affiliate() {
+        let standard =
+            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Standard);
+        let affiliate =
+            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        let is_gated =
+            |a: &QuickAction| matches!(a.group.as_deref(), Some("Polls" | "Predictions"));
+
+        let standard_actions = standard.actions();
+        let gated: Vec<&QuickAction> = standard_actions.iter().filter(|a| is_gated(a)).collect();
+        assert!(
+            gated.len() >= 6,
+            "expected every Polls and Predictions action, got {}",
+            gated.len()
+        );
+        for a in gated {
+            assert_eq!(
+                a.locked_reason.as_deref(),
+                Some(TIER_LOCKED_REASON),
+                "{} must lock under standard tier",
+                a.label
+            );
+            assert!(
+                !a.enabled,
+                "{} must be disabled under standard tier",
+                a.label
+            );
+        }
+
+        for a in affiliate.actions().iter().filter(|a| is_gated(a)) {
+            assert!(
+                a.locked_reason.is_none(),
+                "{} must unlock at affiliate tier",
+                a.label
+            );
+            assert!(a.enabled, "{} must be enabled at affiliate tier", a.label);
+        }
+    }
+
+    fn shield_face(action: &QuickAction) -> (&str, &str, QuickActionLiveness) {
+        (
+            action.label.as_str(),
+            action.subaction_template.kind_id.as_str(),
+            action.liveness,
+        )
+    }
+
+    #[test]
+    fn the_shield_toggle_offers_to_end_only_an_active_shield() {
+        let end = (
+            "End Shield mode",
+            "twitch.moderation.shield_mode_off",
+            QuickActionLiveness::Live,
+        );
+        let start = (
+            "Start Shield mode",
+            "twitch.moderation.shield_mode_on",
+            QuickActionLiveness::Unknown,
+        );
+        for (phase, expected) in [
+            (ShieldPhase::Active, end),
+            (ShieldPhase::Inactive, start),
+            (ShieldPhase::Unknown, start),
+            (ShieldPhase::Unauthorized, start),
+        ] {
+            let toggle = shield_mode_toggle(true, phase);
+            assert_eq!(shield_face(&toggle), expected, "{phase:?}");
+        }
+    }
+
+    #[test]
+    fn the_shield_toggle_is_usable_only_while_connected_and_authorized() {
+        let reason = Some(SHIELD_SCOPE_MISSING_REASON.to_owned());
+        for (connected, phase, enabled, locked_reason) in [
+            (true, ShieldPhase::Active, true, None),
+            (true, ShieldPhase::Inactive, true, None),
+            (true, ShieldPhase::Unknown, true, None),
+            (true, ShieldPhase::Unauthorized, false, reason.clone()),
+            (false, ShieldPhase::Active, false, None),
+            (false, ShieldPhase::Inactive, false, None),
+            (false, ShieldPhase::Unauthorized, false, reason.clone()),
+        ] {
+            let toggle = shield_mode_toggle(connected, phase);
+            assert_eq!(
+                (toggle.enabled, toggle.locked_reason),
+                (enabled, locked_reason),
+                "connected={connected} {phase:?}"
+            );
+        }
+    }
+}

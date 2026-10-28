@@ -67,9 +67,9 @@ mod tests {
 
     use super::*;
     use crate::BroadcasterTier;
-    use crate::builtin::{HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
     use crate::chat::ChatConnectionState;
     use crate::chat_platform::EVENT_CHANNEL_CAPACITY;
+    use crate::config::{HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
     use crate::helix::{
         HelixError, HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport,
     };

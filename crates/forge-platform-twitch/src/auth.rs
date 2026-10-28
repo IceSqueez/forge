@@ -767,8 +767,8 @@ mod tests {
             let helix = crate::helix_gateway::helix_gateway(
                 &endpoints_with(&[(EndpointSurface::TwitchApi, server.uri().as_str())]),
                 Arc::new(forge_net::TokenBucketRateLimiter::new(
-                    crate::builtin::HELIX_BUDGET_CAPACITY,
-                    crate::builtin::HELIX_BUDGET_WINDOW,
+                    crate::config::HELIX_BUDGET_CAPACITY,
+                    crate::config::HELIX_BUDGET_WINDOW,
                 )),
                 Arc::clone(&bus) as Arc<dyn EventPublisher>,
             )

@@ -582,6 +582,7 @@ mod tests {
     use tokio::sync::watch;
 
     use super::*;
+    use crate::account::identity::SelfIdentity;
     use crate::bot_account::test_support::RecordingBus;
     use crate::chat::ChatConnectionState;
     use crate::helix::{HelixMethod, HelixTransport};
@@ -591,7 +592,7 @@ mod tests {
     use crate::sub_actions::test_support::{REQUEST_FAIL_KIND, observed_helix_at};
     use crate::sub_actions::{
         DeleteRewardRunner, DisableRewardRunner, EnableRewardRunner, PauseRewardRunner,
-        ResumeRewardRunner, SelfIdentity, UpdateRewardRunner,
+        ResumeRewardRunner, UpdateRewardRunner,
     };
     use crate::subscriptions::SubscriptionTracker;
     use forge_types::SubActionOutcome;

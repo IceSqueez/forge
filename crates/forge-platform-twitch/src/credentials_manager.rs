@@ -643,7 +643,7 @@ pub(crate) mod tests {
         let repo: Arc<dyn CredentialsRepo> = InMemRepo::seeded(&cred);
         let mgr = Arc::new(manager_with_server(Arc::clone(&repo), &server));
         let platform = Arc::new(crate::chat_platform::TwitchPlatform::new(
-            crate::builtin::ChatSessionConfig {
+            crate::config::ChatSessionConfig {
                 client_id: "test_client_id".to_owned(),
                 broadcaster_id: "user_1".to_owned(),
                 user_id: "user_1".to_owned(),

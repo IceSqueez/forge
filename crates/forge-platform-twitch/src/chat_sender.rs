@@ -410,6 +410,7 @@ mod tests {
     use wiremock::ResponseTemplate;
 
     use super::*;
+    use crate::account::user_target::UserTarget;
     use crate::auth::TWITCH_BOT_SCOPES;
     use crate::bot_account::BotStatus;
     use crate::bot_account::test_support::{
@@ -417,7 +418,6 @@ mod tests {
     };
     use crate::credentials::TWITCH_BOT_CREDENTIAL_ID;
     use crate::sub_actions::test_support::{MockTransport, SELF_USER_ID, users_fixture};
-    use crate::sub_actions::user_target::UserTarget;
 
     const CHAT_PATH: &str = "/helix/chat/messages";
     const WHISPER_PATH: &str = "/helix/whispers";

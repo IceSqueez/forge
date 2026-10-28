@@ -93,3 +93,82 @@ pub async fn resolve_broadcaster_tier(
         .unwrap_or_default();
     Ok(BroadcasterTier::from_helix_str(raw))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sub_actions::test_support::{MockTransport, users_fixture};
+
+    #[tokio::test]
+    async fn resolve_user_id_queries_users_by_login_and_returns_first_id() {
+        let transport = MockTransport::returning(users_fixture("555"));
+
+        let id = resolve_user_id(&transport, "target").await.unwrap();
+
+        assert_eq!(id, "555");
+        let request = transport.last_request();
+        assert_eq!(request.method, HelixMethod::Get);
+        assert_eq!(request.path, "/helix/users");
+        assert!(
+            request
+                .query
+                .contains(&("login".to_owned(), "target".to_owned())),
+            "lookup must be keyed by the login query parameter"
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_user_id_sends_the_lowercased_login_without_at_sign_or_padding() {
+        for raw in ["@Name", "  @name ", "NAME", "name", "@ Name"] {
+            let transport = MockTransport::returning(users_fixture("555"));
+
+            resolve_user_id(&transport, raw).await.unwrap();
+
+            let request = transport.last_request();
+            assert_eq!(
+                request.query,
+                vec![("login".to_owned(), "name".to_owned())],
+                "raw login {raw:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_broadcaster_tier_maps_helix_type_and_fails_soft_to_standard() {
+        for (raw, expected) in [
+            ("", BroadcasterTier::Standard),
+            ("affiliate", BroadcasterTier::Affiliate),
+            ("partner", BroadcasterTier::Partner),
+            ("gold_plus", BroadcasterTier::Standard),
+        ] {
+            let transport = MockTransport::returning(Ok(serde_json::json!({
+                "data": [{ "id": "555", "broadcaster_type": raw }],
+            })));
+
+            let tier = resolve_broadcaster_tier(&transport, "555").await.unwrap();
+
+            assert_eq!(tier, expected, "broadcaster_type {raw:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_broadcaster_tier_defaults_to_standard_when_field_absent() {
+        let transport = MockTransport::returning(users_fixture("555"));
+
+        let tier = resolve_broadcaster_tier(&transport, "555").await.unwrap();
+
+        assert_eq!(tier, BroadcasterTier::Standard);
+    }
+
+    #[tokio::test]
+    async fn resolve_user_id_errs_when_no_user_matches() {
+        let transport = MockTransport::returning(Ok(serde_json::json!({ "data": [] })));
+
+        let err = resolve_user_id(&transport, "ghost").await.unwrap_err();
+
+        assert!(
+            matches!(err, HelixError::Http { status: 404, .. }),
+            "empty data array must map to a not-found error, got: {err}"
+        );
+    }
+}

@@ -86,8 +86,8 @@ impl SubActionRunner for DisableRewardRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::account::identity::SelfIdentity;
     use crate::helix::{HelixMethod, HelixTransport};
-    use crate::sub_actions::identity::SelfIdentity;
     use crate::sub_actions::test_support::{MockCreds, MockTransport, SELF_USER_ID, make_ctx};
     use forge_types::{SubActionOutcome, Variant};
 

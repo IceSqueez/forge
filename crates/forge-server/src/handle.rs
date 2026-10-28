@@ -411,10 +411,17 @@ mod tests {
     use crate::test_helpers::{MemSettings, TestDataProvider};
 
     async fn stopped_handle() -> ServerHandle {
-        let dp = Arc::new(TestDataProvider::new());
         let mut credentials = MockCredentialsRepo::new();
         credentials.expect_load().returning(|_| Ok(None));
         credentials.expect_store().returning(|_, _| Ok(()));
+        stopped_handle_over(MemSettings::new() as Arc<dyn SettingsRepo>, credentials).await
+    }
+
+    async fn stopped_handle_over(
+        settings: Arc<dyn SettingsRepo>,
+        credentials: MockCredentialsRepo,
+    ) -> ServerHandle {
+        let dp = Arc::new(TestDataProvider::new());
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = Arc::new(spawn_action_engine(
             Arc::clone(&bus),
@@ -429,7 +436,7 @@ mod tests {
             Arc::new(ActionCancelRegistry::new()),
         ));
         let config = ServerConfig::new(
-            MemSettings::new() as Arc<dyn SettingsRepo>,
+            settings,
             Arc::new(credentials) as Arc<dyn CredentialsRepo>,
             bus,
             dp.action_repo(),
@@ -804,5 +811,170 @@ mod tests {
             OverlayReceivers::default(),
             "the handle credited one overlay with another overlay's pages"
         );
+    }
+
+    fn credentials_with_a_write_switch() -> (
+        MockCredentialsRepo,
+        CredentialSlots,
+        Arc<std::sync::atomic::AtomicBool>,
+    ) {
+        let slots: CredentialSlots = Arc::default();
+        let refuse_writes = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut credentials = MockCredentialsRepo::new();
+        let read = Arc::clone(&slots);
+        credentials
+            .expect_load()
+            .returning(move |id| Ok(read.lock().expect("lock").get(id.as_str()).cloned()));
+        let write = Arc::clone(&slots);
+        let refuse = Arc::clone(&refuse_writes);
+        credentials.expect_store().returning(move |id, value| {
+            if refuse.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(forge_storage::StorageError::Connection {
+                    reason: "disk is full".into(),
+                });
+            }
+            write
+                .lock()
+                .expect("lock")
+                .insert(id.as_str().to_owned(), value.to_owned());
+            Ok(())
+        });
+        (credentials, slots, refuse_writes)
+    }
+
+    fn stored_bearer_token(slots: &CredentialSlots) -> Option<String> {
+        slots
+            .lock()
+            .expect("lock")
+            .get(forge_storage::SERVER_BEARER_CREDENTIAL_ID)
+            .cloned()
+    }
+
+    #[tokio::test]
+    async fn regenerating_the_bearer_token_makes_the_new_token_live_and_stored_and_refuses_the_old_one()
+     {
+        let (credentials, slots, _refuse) = credentials_with_a_write_switch();
+        let handle =
+            stopped_handle_over(MemSettings::new() as Arc<dyn SettingsRepo>, credentials).await;
+        let old = handle.bearer_token().await;
+
+        let fresh = handle.regenerate_bearer_token().await.expect("regenerate");
+
+        assert_ne!(fresh, old);
+        assert_eq!(handle.bearer_token().await, fresh);
+        assert_eq!(
+            stored_bearer_token(&slots).as_deref(),
+            Some(fresh.as_str()),
+            "a restart would bring the old token back"
+        );
+        let gate = handle.auth_state().await;
+        assert!(
+            !gate.verify(&old).await,
+            "the old bearer still authenticates"
+        );
+        assert!(gate.verify(&fresh).await);
+    }
+
+    #[tokio::test]
+    async fn a_bearer_regenerate_the_store_refuses_keeps_the_old_token_live() {
+        let (credentials, slots, refuse) = credentials_with_a_write_switch();
+        let handle =
+            stopped_handle_over(MemSettings::new() as Arc<dyn SettingsRepo>, credentials).await;
+        let old = handle.bearer_token().await;
+        refuse.store(true, std::sync::atomic::Ordering::SeqCst);
+
+        let result = handle.regenerate_bearer_token().await;
+
+        assert!(
+            matches!(&result, Err(ServerError::Storage(reason)) if reason.contains("disk is full")),
+            "{result:?}"
+        );
+        assert_eq!(handle.bearer_token().await, old);
+        assert!(handle.auth_state().await.verify(&old).await);
+        assert_eq!(stored_bearer_token(&slots).as_deref(), Some(old.as_str()));
+    }
+
+    #[tokio::test]
+    async fn the_reads_switch_is_stored_and_applied_live_in_both_directions() {
+        let settings = MemSettings::new();
+        let handle = stopped_handle_over(
+            Arc::clone(&settings) as Arc<dyn SettingsRepo>,
+            slot_credentials().0,
+        )
+        .await;
+
+        for required in [true, false] {
+            handle
+                .set_reads_require_auth(required)
+                .await
+                .expect("set reads switch");
+
+            assert_eq!(handle.reads_require_auth().await, required);
+            let stored = ServerSettings::load(settings.as_ref())
+                .await
+                .expect("load settings");
+            assert_eq!(
+                stored.auth_required_for_reads, required,
+                "a restart would revert the reads switch"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_reads_switch_the_settings_store_refuses_leaves_the_live_switch_unchanged() {
+        let mut settings = forge_storage::settings::MockSettingsRepo::new();
+        settings.expect_get_string().returning(|_| Ok(None));
+        settings
+            .expect_load_all()
+            .returning(|| Ok(Default::default()));
+        settings.expect_set_string().returning(|_, _| {
+            Err(forge_storage::StorageError::Connection {
+                reason: "database is locked".into(),
+            })
+        });
+        let handle = stopped_handle_over(
+            Arc::new(settings) as Arc<dyn SettingsRepo>,
+            slot_credentials().0,
+        )
+        .await;
+        let before = handle.reads_require_auth().await;
+
+        let result = handle.set_reads_require_auth(!before).await;
+
+        assert!(
+            matches!(&result, Err(ServerError::Storage(reason)) if reason.contains("database is locked")),
+            "{result:?}"
+        );
+        assert_eq!(handle.reads_require_auth().await, before);
+    }
+
+    #[tokio::test]
+    async fn the_handed_out_overlay_token_is_the_one_the_gate_admits_across_a_rotation() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let (handle, _slots) = rotation_handle(Ok(Vec::new())).await;
+        let before = handle.overlay_token().await;
+        assert!(handle.auth_state().await.overlay_token().verify(&before));
+
+        let fresh = handle
+            .regenerate_overlay_token(&empty_overlay_service(root.path()).await)
+            .await
+            .expect("regenerate");
+
+        assert_eq!(handle.overlay_token().await.as_str(), fresh);
+    }
+
+    #[tokio::test]
+    async fn tokens_handed_out_by_the_handle_never_print_in_debug() {
+        let handle = stopped_handle().await;
+        let regenerated = handle.regenerate_bearer_token().await.expect("regenerate");
+
+        for token in [
+            handle.bearer_token().await,
+            regenerated,
+            handle.overlay_token().await,
+        ] {
+            let debug = format!("{token:?}");
+            assert!(!debug.contains(token.as_str()), "token leaked: {debug}");
+        }
     }
 }
